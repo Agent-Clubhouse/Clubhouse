@@ -1361,6 +1361,12 @@ The local record is also the record of who changed what. There's no separate aud
   - It's held to the settings audit's rule (`local-detail.ts`): booleans, whole numbers, null, short words or ids (`^[\w.:[\]-]{1,64}$`), lists of up to 8 of those, and one level of nesting.
   - Anything else is left out, so names, paths, commands and free text never reach the file.
   - Ids in the detail are hashed like `hash` attributes (`detailIds`).
+  - **Secret and content values are never recorded, even locally.** The token format doesn't keep secrets out: an API key, bearer token or header value can look like a short id. So `clubhouse.audit.setting` carries a setting's old and new values only when two checks pass (`eventKeepsValues` in `settings-audit.ts`):
+    - The key is on an allowlist: the key's last part is named in `EVENT_VALUE_KEYS` (CLI, model, effort, access, idle sleep, colour, template and the like), or its family is `orchestration.` or `helper_presets.`. A boolean is allowed too, since it can't hold anything but itself.
+    - The key's name doesn't look secret or content-bearing: token, secret, password, credential, auth, header, cookie, API, private or access key, endpoint, URL, env, args, command, mission, prompt or instructions. This check wins over the allowlist and over booleans.
+
+    Every other key records only `changed: true`. That's on top of each row's own catalog, which already keeps values only for keys it marks as values.
+  - **Backfill must drop the detail.** The detail is local by construction. A replay of the local record to a destination (#2920 part four) must strip `detail` from every line, and its tests must show that.
 - **Ids stay hashed locally.** Without an install identity, local recording keeps one salt from run to run in `telemetry-local-salt.json`: 0600, next to `telemetry-settings.json`, and holding the salt only, never an install id.
   - The first install identity adopts that salt and the file is removed, so hashes recorded before export was set up match exported ones, and a later backfill needs no rehashing.
   - Resetting the install id and "Delete local telemetry data" both remove it.

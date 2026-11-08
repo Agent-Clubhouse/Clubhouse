@@ -16,6 +16,7 @@ import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { createIdentity, type TelemetryIdentity } from './ids';
 
 const FILE = 'telemetry-local-salt.json';
 
@@ -49,6 +50,17 @@ export function localSalt(): Buffer {
     // Read-only or missing userData: hashes hold for this run only.
   }
   return Buffer.from(hashSalt, 'base64');
+}
+
+/**
+ * The first install identity: it adopts the local record's salt, if there is
+ * one, and the file goes, so the identity is the one place the salt lives. A
+ * delete of the identity then leaves nothing to bring it back.
+ */
+export function identityForNewInstall(): TelemetryIdentity {
+  const identity = createIdentity(peekLocalSalt());
+  deleteLocalSalt();
+  return identity;
 }
 
 /** Remove the saved salt: the install id was reset, or local telemetry data deleted. Never throws. */

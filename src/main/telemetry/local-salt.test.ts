@@ -6,7 +6,7 @@ import * as path from 'path';
 const dir = vi.hoisted(() => ({ path: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => dir.path } }));
 
-import { deleteLocalSalt, localSalt, peekLocalSalt } from './local-salt';
+import { deleteLocalSalt, identityForNewInstall, localSalt, peekLocalSalt } from './local-salt';
 
 beforeEach(() => { dir.path = fs.mkdtempSync(path.join(os.tmpdir(), 'local-salt-')); });
 afterEach(() => { fs.rmSync(dir.path, { recursive: true, force: true }); });
@@ -37,4 +37,28 @@ describe('local record salt (#2920)', () => {
     expect(peekLocalSalt()).toBeUndefined();
     expect(localSalt()).toHaveLength(32);
   });
+
+  it('is adopted by the first identity, and after a delete a later destination gets a fresh salt, never the old one', () => {
+    const recorded = localSalt().toString('base64');
+    const first = identityForNewInstall();
+    expect(first.hashSalt).toBe(recorded);
+    // The identity is now the only place it lives.
+    expect(peekLocalSalt()).toBeUndefined();
+    // "Delete local telemetry data": the identity and any local salt go, and recording restarts on a new one.
+    deleteLocalSalt();
+    const afterDelete = localSalt().toString('base64');
+    expect(afterDelete).not.toBe(recorded);
+    // A destination added later adopts the new salt, not the deleted one.
+    const second = identityForNewInstall();
+    expect(second.hashSalt).toBe(afterDelete);
+    expect(second.hashSalt).not.toBe(first.hashSalt);
+    expect(second.installId).not.toBe(first.installId);
+  });
+
+  it('gives the first identity a fresh salt when nothing was recorded', () => {
+    const identity = identityForNewInstall();
+    expect(Buffer.from(identity.hashSalt, 'base64')).toHaveLength(32);
+    expect(peekLocalSalt()).toBeUndefined();
+  });
 });
+

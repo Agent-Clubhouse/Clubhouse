@@ -245,5 +245,46 @@ describe('as telemetry audit events (#2920)', () => {
     // The JSONL file still gets every row until nothing reads it.
     expect(await rows()).toHaveLength(3);
   });
+
+  it('never writes a secret or content value to the local record, whatever the catalog says', async () => {
+    const { createLocalRecorder } = await import('../telemetry/local-recorder');
+    const { createScrubber } = await import('../telemetry/scrubber');
+    const { setLocalSink } = await import('../telemetry/facade');
+    const dir = path.join(W.home, 'record');
+    const recorder = createLocalRecorder({
+      dir, fileBase: '2026-11-08T00-00-00.000', level: 'standard', hashSalt: Buffer.alloc(32, 3),
+      scrub: createScrubber({ homeDir: W.home, username: 'tester', hostname: 'host' }),
+      session: { appVersion: '1.0.0', platform: 'darwin', arch: 'arm64', uiChrome: 'v2' }, flushIntervalMs: 60_000,
+    });
+    setLocalSink(recorder);
+    // Each looks like a short token, so the token format alone would keep it.
+    const secrets = ['sk-live-SECRET1', 'ghp_SECRET2', 'Bearer.SECRET3', 'https:SECRET4', 'SECRET5-mission', 'SECRET6env'];
+    try {
+      const catalog = { apiKey: 'value', otlpEndpoint: 'value', authHeader: 'value', mission: 'value', env: 'value', model: 'value' } as const;
+      await auditChanges('agent', 'agent', 'a1',
+        { apiKey: 'a', otlpEndpoint: 'a', authHeader: 'a', mission: 'a', env: 'a', model: 'opus' },
+        { apiKey: secrets[0], otlpEndpoint: secrets[3], authHeader: secrets[2], mission: secrets[4], env: secrets[5], model: 'sonnet' }, catalog);
+      await appendSettingsAudit({ surface: 'mcp', scope: 'app', key: 'telemetry.destinations.token', before: 'x', after: secrets[1], outcome: 'ok' });
+      // A store that lists a secret key as fit to keep still can't put it in an event.
+      enableSettingsAudit();
+      const store = createSettingsStore('audit-secret-test.json', { apiToken: 'none', theme: 'dark', enabled: false }, undefined, { audit: { key: 'store_test', keys: ['apiToken', 'theme'] } });
+      await store.save({ apiToken: secrets[0], theme: 'light', enabled: true });
+      await recorder.flush();
+    } finally {
+      setLocalSink(null);
+      await recorder.stop();
+    }
+    const text = fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f), 'utf-8')).join('');
+    for (const secret of secrets) expect(text).not.toContain(secret);
+    const details = text.trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.name === 'clubhouse.audit.setting').map((r) => r.detail);
+    const of = (key: string) => details.find((d) => d.key === key);
+    for (const key of ['agent.apiKey', 'agent.otlpEndpoint', 'agent.authHeader', 'agent.mission', 'agent.env', 'telemetry.destinations.token', 'store_test.apiToken']) {
+      expect(of(key), key).toEqual({ key, changed: true });
+    }
+    expect(of('agent.model')).toEqual({ key: 'agent.model', before: 'opus', after: 'sonnet' });
+    expect(of('store_test.enabled')).toMatchObject({ key: 'store_test.enabled', after: true });
+    // theme is a value key for its store, but not one the event allowlist names.
+    expect(of('store_test.theme')).toEqual({ key: 'store_test.theme', changed: true });
+  });
 });
 

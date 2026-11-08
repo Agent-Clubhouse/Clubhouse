@@ -8,7 +8,7 @@
  * chunk is never imported. When on, it starts buffering facade calls and
  * loads the SDK asynchronously so it never blocks `ready`.
  */
-import { deleteLocalSalt, peekLocalSalt } from './local-salt';
+import { deleteLocalSalt, identityForNewInstall } from './local-salt';
 import * as os from 'os';
 import { telemetryInstanceId as instanceId } from './instance';
 import { app } from 'electron';
@@ -25,7 +25,7 @@ import {
   tel,
 } from './facade';
 import { restartLocalRecording, syncLocalRecording } from './local-control';
-import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
+import { isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
 import { newChromeEnabled } from '../window-chrome';
@@ -183,10 +183,8 @@ export function checkConfirmedHost(confirmedHost: string | undefined, host: stri
 async function ensureIdentity(settings: TelemetrySettings): Promise<TelemetryIdentity> {
   if (isValidIdentity(settings)) return { installId: settings.installId, hashSalt: settings.hashSalt };
   // The local record's salt carries over (#2920): what's recorded keeps its hashes.
-  const identity = createIdentity(peekLocalSalt());
+  const identity = identityForNewInstall();
   await updateTelemetrySettings((s) => ({ ...s, ...identity }));
-  // The identity holds it now, so deleting the identity later removes it everywhere.
-  deleteLocalSalt();
   return identity;
 }
 

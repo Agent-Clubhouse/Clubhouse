@@ -6,6 +6,7 @@
  * Azure exporter's own Microsoft-bound traffic (Statsbeat, OneSettings) is
  * switched off, and that payloads carry no hostname or home directory.
  */
+import { ATTR } from '../../shared/telemetry/attributes';
 import { createRequire } from 'module';
 import * as http from 'http';
 import * as https from 'https';
@@ -211,6 +212,9 @@ function assertOnlyConfiguredHost(): void {
 
 const DIAG_CANARY = 'DIAG-CANARY-2299';
 const APPLOG_CANARY = 'APPLOG-CANARY-2301';
+/** A short token, so the local detail keeps it (#2920). */
+const DETAIL_CANARY = 'detail-canary-2920';
+const DETAIL_ID_CANARY = 'detail-id-canary-2920';
 
 function assertNoMachineIdentifiers(): void {
   const all = received.map((r) => r.body).join('\n');
@@ -218,6 +222,10 @@ function assertNoMachineIdentifiers(): void {
   expect(all).not.toContain(DIAG_CANARY);
   // Nor do appLog's, which go through diag (#2301).
   expect(all).not.toContain(APPLOG_CANARY);
+  // An event's local-only detail (#2920) never reaches an exporter, as an event or as a span event.
+  expect(all).toContain('clubhouse.audit.setting');
+  expect(all).not.toContain(DETAIL_CANARY);
+  expect(all).not.toContain(DETAIL_ID_CANARY);
   expect(all).not.toContain(os.hostname());
   expect(all).not.toContain(os.homedir());
   expect(all).not.toContain(JSON.stringify(os.homedir()).slice(1, -1));
@@ -234,6 +242,12 @@ async function exerciseAllSignals(): Promise<void> {
   diag('core:test', 'error', `${DIAG_CANARY} failed`, { error: new Error(DIAG_CANARY), lastOutput: DIAG_CANARY });
   appLog('core:test', 'error', `${APPLOG_CANARY} failed`, { projectId: APPLOG_CANARY, meta: { error: APPLOG_CANARY } });
   tel.exception(new Error(`failed reading ${os.homedir()}/secret on ${os.hostname()}`), { origin: 'main', handled: true });
+  const audit = () => tel.event('clubhouse.audit.setting', [ATTR.auditSurface('ui'), ATTR.auditScope('app'), ATTR.auditOutcome('ok')], {
+    detail: { key: DETAIL_CANARY, before: DETAIL_CANARY, nested: { value: DETAIL_CANARY } }, detailIds: { targets: [DETAIL_ID_CANARY] },
+  });
+  audit();
+  // Inside a span, where the SDK may attach it as a span event.
+  tel.flow('clubhouse.annex.rest', {}, () => audit());
   for (const id of getActiveDestinations().map((d) => d.id)) {
     const result = await sendTestEvent(id, 10_000);
     expect(result.ok).toBe(true);

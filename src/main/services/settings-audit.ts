@@ -50,9 +50,40 @@ export const settingsAuditPath = log.path;
 export const readSettingsAudit = log.read;
 
 /**
+ * Settings whose old and new values a telemetry audit event may carry (#2920):
+ * by the key's last part, or its family. An allowlist, checked on top of each
+ * row's own catalog: anything not named here records only that it changed.
+ * Each holds an enum, a level, a whole number, a colour or an opaque id.
+ */
+const EVENT_VALUE_KEYS: ReadonlySet<string> = new Set([
+  'orchestrator', 'model', 'contextWindow', 'freeAgentMode', 'access', 'runtimeMode', 'idleSleep', 'effort',
+  'helperTemplateId', 'sourceControlProvider', 'color', 'profileId', 'persona', 'helperAuto', 'managed', 'templateId',
+  'clubhouseFeatures', 'defaultMode', 'defaultAccess', 'provider', 'globalHelperCap', 'themeId',
+  'defaultHelperTemplate', 'helperTemplateChoice',
+]);
+const EVENT_VALUE_FAMILIES = ['orchestration.', 'helper_presets.'];
+/**
+ * A key whose name says it may hold a secret or content never carries a value,
+ * even if listed above or a boolean: destination endpoints, headers and tokens,
+ * env, args, keys, credentials, and free text such as a mission.
+ */
+const SECRET_OR_CONTENT_NAME = /token|secret|passw|credential|auth|header|cookie|api[_-]?key|private[_-]?key|access[_-]?key|\.key$|endpoint|url|env|args|command|mission|prompt|instruction/i;
+
+/** May an event carry this row's before and after? */
+export function eventKeepsValues(row: Pick<SettingsAuditRow, 'key' | 'before' | 'after'>): boolean {
+  if (SECRET_OR_CONTENT_NAME.test(row.key)) return false;
+  const last = row.key.slice(row.key.lastIndexOf('.') + 1);
+  if (EVENT_VALUE_KEYS.has(last) || EVENT_VALUE_FAMILIES.some((f) => row.key.startsWith(f))) return true;
+  // A switch can't hold anything but itself.
+  const isSwitch = (v: unknown) => v === undefined || v === null || typeof v === 'boolean';
+  return isSwitch(row.before) && isSwitch(row.after) && (typeof row.before === 'boolean' || typeof row.after === 'boolean');
+}
+
+/**
  * The row as a telemetry audit event (#2920): enums and hashed ids as attributes,
- * the key, values and code in the local record's detail only. Written alongside
- * the JSONL file until nothing reads that. Never throws.
+ * the key, values and code in the local record's detail only. Values go in only
+ * when `eventKeepsValues` allows; otherwise the detail says `changed`. Written
+ * alongside the JSONL file until nothing reads that. Never throws.
  */
 function recordEvent(row: SettingsAuditRow): void {
   try {
@@ -64,9 +95,9 @@ function recordEvent(row: SettingsAuditRow): void {
       severity: row.outcome === 'ok' ? 'info' : 'warn',
       detail: {
         key: row.key,
-        ...(row.before !== undefined && { before: row.before }),
-        ...(row.after !== undefined && { after: row.after }),
-        ...(row.changed && { changed: true }),
+        ...(eventKeepsValues(row)
+          ? { ...(row.before !== undefined && { before: row.before }), ...(row.after !== undefined && { after: row.after }), ...(row.changed && { changed: true }) }
+          : (row.before !== undefined || row.after !== undefined || row.changed) && { changed: true }),
         ...(row.code && { code: row.code }),
       },
     });

@@ -52,6 +52,8 @@ vi.mock('./secret-store', () => ({
   getSecureStorageState: async () => state.storage,
 }));
 
+const localSalt = vi.hoisted(() => ({ deleted: 0 }));
+vi.mock('./local-salt', () => ({ deleteLocalSalt: () => { localSalt.deleted++; } }));
 vi.mock('./bootstrap', () => ({
   isRunning: () => state.running,
   getLastStartError: () => undefined,
@@ -280,7 +282,10 @@ describe('telemetry settings control', () => {
     await control.setFilter('azure', 'errors', 'all');
     await control.setAdvanced({ sampleRate: 0.5, otlpTemporality: 'delta' });
     const before = state.settings.installId;
+    const saltsDeleted = localSalt.deleted;
     await control.resetInstallId();
+    // A reset salt can't come back from the local record's (#2920).
+    expect(localSalt.deleted).toBe(saltsDeleted + 1);
     expect(state.settings).toMatchObject({ sampleRate: 0.5 });
     expect(entry('azure').level).toBe('errors');
     expect(entry('otlp').otlp?.temporality).toBe('delta');
@@ -314,9 +319,12 @@ describe('telemetry settings control', () => {
     state.settings = { ...state.settings, installId: 'x' };
     setEntry('azure', { enabled: true });
     setEntry('otlp', { enabled: true });
+    const deletedBefore = localSalt.deleted;
     await control.deleteLocalData();
     expect(entries().some((d) => d.enabled)).toBe(false);
     expect(state.calls).toEqual(['disable']);
+    // The local record's salt goes too (#2920).
+    expect(localSalt.deleted).toBe(deletedBefore + 1);
   });
 
   it('sends the test event to one destination and explains its failures', async () => {

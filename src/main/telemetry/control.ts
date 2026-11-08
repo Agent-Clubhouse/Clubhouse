@@ -642,6 +642,8 @@ export async function deleteLocalData(): Promise<TelemetryActionResult> {
     destinations: s.destinations.map((d) => ({ ...d, enabled: false, ...(d.kind === 'framebriar' ? { framebriar: { userOff: true } } : {}) })),
   }));
   await disableTelemetry({ deleteLocalData: true });
+  // And the local record's salt (#2920): a destination added later starts from a fresh one.
+  deleteLocalSalt();
   return done();
 }
 
