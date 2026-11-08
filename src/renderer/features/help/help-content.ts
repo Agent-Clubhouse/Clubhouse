@@ -11,6 +11,7 @@ import agentsDurable from './content/agents-durable.md';
 import agentsQuick from './content/agents-quick.md';
 import agentsTerminal from './content/agents-terminal.md';
 import agentsOrchestratedHelpers from './content/agents-orchestrated-helpers.md';
+import agentsActions from './content/agents-actions.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
 import pluginsOverview from './content/plugins-overview.md';
 import pluginsPermissions from './content/plugins-permissions.md';
@@ -84,6 +85,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-quick', title: 'Quick Agents', content: agentsQuick },
       { id: 'agents-terminal', title: 'CLI & Transcripts', content: agentsTerminal },
       { id: 'agents-orchestrated-helpers', title: 'Orchestrated Helpers', content: agentsOrchestratedHelpers },
+      { id: 'agents-actions', title: 'Actions', content: agentsActions },
       { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
     ],
   },
@@ -153,6 +155,7 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-quick', title: 'Quick agents', content: agentsQuickChrome },
       { id: 'agents-terminal', title: 'CLI and transcripts', content: agentsTerminalChrome },
       { id: 'agents-orchestrated-helpers', title: 'Orchestrated helpers', content: agentsOrchestratedHelpers },
+      { id: 'agents-actions', title: 'Actions', content: agentsActions },
       { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
     ],
   },
