@@ -37,7 +37,7 @@ describe('PluginErrorBoundary', () => {
             id: 'test-plugin',
             name: 'Test Plugin',
             version: '1.0.0',
-            engine: { api: 0.5 },
+            engine: { api: 0.9 },
             scope: 'project',
           },
           status: 'activated',

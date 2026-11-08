@@ -676,7 +676,7 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Monitor and control the local Goobers instance — gaggles, runs, and daemon health.',
   author: 'Clubhouse',
-  engine: { api: 0.8 },
+  engine: { api: 0.9 },
   scope: 'app',
   // Phase 1 set — minimal and exact. `badges` + `notifications` are added in Phase 2
   // when §8.3 lands, not before.

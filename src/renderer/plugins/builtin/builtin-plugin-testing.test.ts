@@ -7,7 +7,7 @@ const validManifest: PluginManifest = {
   id: 'test-builtin',
   name: 'Test Built-in',
   version: '1.0.0',
-  engine: { api: 0.5 },
+  engine: { api: 0.9 },
   scope: 'app',
   permissions: [],
   contributes: { help: {} },
@@ -50,7 +50,7 @@ describe('validateBuiltinPlugin', () => {
       makePlugin({ engine: { api: 99 } }),
     );
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes('not supported'))).toBe(true);
+    expect(result.errors.some((e) => e.includes("plugin API 99, which this version of Clubhouse can't load"))).toBe(true);
   });
 
   it('non-function deactivate fails', () => {
