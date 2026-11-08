@@ -19,10 +19,12 @@ export interface CronSpec {
   dayOfMonth: ReadonlySet<number>;
   month: ReadonlySet<number>;
   dayOfWeek: ReadonlySet<number>;
-  /** The day-of-month field was `*` (or covers every day). */
+  /** The day-of-month field starts with `*`, so it doesn't restrict days (standard cron's rule). */
   anyDayOfMonth: boolean;
-  /** The day-of-week field was `*` (or covers every day). */
+  /** The day-of-week field starts with `*`. */
   anyDayOfWeek: boolean;
+  /** The hour field starts with `*`: such schedules also run in an hour a fall-back repeats. */
+  anyHour: boolean;
 }
 
 export type CronParseResult = { ok: true; spec: CronSpec; error?: undefined } | { ok: false; error: string; spec?: undefined };
@@ -109,8 +111,9 @@ export function parseCron(expression: string): CronParseResult {
     ok: true,
     spec: {
       minute, hour, dayOfMonth, month, dayOfWeek,
-      anyDayOfMonth: dayOfMonth.size === 31,
-      anyDayOfWeek: dayOfWeek.size === 7,
+      anyDayOfMonth: fields[2].startsWith('*'),
+      anyDayOfWeek: fields[4].startsWith('*'),
+      anyHour: fields[1].startsWith('*'),
     },
   };
 }
@@ -121,13 +124,12 @@ export function validateCron(expression: string): string | null {
   return parsed.ok ? null : parsed.error;
 }
 
-function dayMatches(spec: CronSpec, d: Date): boolean {
-  const dom = spec.dayOfMonth.has(d.getDate());
-  const dow = spec.dayOfWeek.has(d.getDay());
-  if (spec.anyDayOfMonth && spec.anyDayOfWeek) return true;
-  if (spec.anyDayOfMonth) return dow;
-  if (spec.anyDayOfWeek) return dom;
-  return dom || dow;
+function dayMatchesFields(spec: CronSpec, date: number, weekday: number): boolean {
+  const dom = spec.dayOfMonth.has(date);
+  const dow = spec.dayOfWeek.has(weekday);
+  // Standard cron: when either field starts with `*` both must match (a bare
+  // `*` matches every day); when both are restricted, either may.
+  return spec.anyDayOfMonth || spec.anyDayOfWeek ? dom && dow : dom || dow;
 }
 
 /** Whether the spec matches this local minute. */
@@ -135,45 +137,103 @@ export function cronMatches(spec: CronSpec, d: Date): boolean {
   return spec.minute.has(d.getMinutes())
     && spec.hour.has(d.getHours())
     && spec.month.has(d.getMonth() + 1)
-    && dayMatches(spec, d);
+    && dayMatchesFields(spec, d.getDate(), d.getDay());
 }
 
 /** Enough steps to search more than four years of skipped days and hours. */
 const SEARCH_LIMIT = 50_000;
+const MINUTE_MS = 60_000;
+
+/**
+ * The next wall-clock minute that matches, strictly after `wall`. Wall-clock
+ * times are held in a UTC Date used as a plain calendar, so the search itself
+ * never meets a daylight saving change.
+ */
+function nextWallTime(spec: CronSpec, wall: Date): Date | null {
+  const d = new Date(wall.getTime());
+  d.setUTCSeconds(0, 0);
+  d.setUTCMinutes(d.getUTCMinutes() + 1);
+  for (let i = 0; i < SEARCH_LIMIT; i++) {
+    if (!spec.month.has(d.getUTCMonth() + 1)) {
+      d.setUTCMonth(d.getUTCMonth() + 1, 1);
+      d.setUTCHours(0, 0, 0, 0);
+      continue;
+    }
+    if (!dayMatchesFields(spec, d.getUTCDate(), d.getUTCDay())) {
+      d.setUTCDate(d.getUTCDate() + 1);
+      d.setUTCHours(0, 0, 0, 0);
+      continue;
+    }
+    if (!spec.hour.has(d.getUTCHours())) {
+      d.setUTCHours(d.getUTCHours() + 1, 0, 0, 0);
+      continue;
+    }
+    if (!spec.minute.has(d.getUTCMinutes())) {
+      d.setUTCMinutes(d.getUTCMinutes() + 1, 0, 0);
+      continue;
+    }
+    return d;
+  }
+  return null;
+}
+
+/** A local instant as a wall-clock calendar date. */
+function toWall(instant: number): Date {
+  const l = new Date(instant);
+  return new Date(Date.UTC(l.getFullYear(), l.getMonth(), l.getDate(), l.getHours(), l.getMinutes()));
+}
+
+function sameWall(instant: number, wall: Date): boolean {
+  return toWall(instant).getTime() === wall.getTime();
+}
 
 /**
  * The first matching minute strictly after `after`, or null when the spec
  * never matches (e.g. 30 February).
+ *
+ * Daylight saving: a wall time a spring-forward skips runs at the first
+ * minute after the jump. In an hour a fall-back repeats, a schedule with a
+ * fixed hour runs once (the first time); one whose hour field is `*` runs in
+ * both.
  */
 export function nextCronTime(spec: CronSpec, after: Date | number): Date | null {
-  const d = new Date(typeof after === 'number' ? after : after.getTime());
-  d.setSeconds(0, 0);
-  d.setMinutes(d.getMinutes() + 1);
+  const afterMs = typeof after === 'number' ? after : after.getTime();
+  const byWall = nextByWallClock(spec, afterMs);
+  if (!spec.anyHour) return byWall;
+  // An hour a fall-back repeats lies behind the wall clock: look at the next
+  // two real hours minute by minute, so `*` hours run through it.
+  const start = Math.floor(afterMs / MINUTE_MS) * MINUTE_MS + MINUTE_MS;
+  const limit = Math.min(byWall ? byWall.getTime() : Infinity, afterMs + 120 * MINUTE_MS);
+  for (let t = start; t < limit; t += MINUTE_MS) {
+    if (cronMatches(spec, new Date(t))) return new Date(t);
+  }
+  return byWall;
+}
+
+function nextByWallClock(spec: CronSpec, afterMs: number): Date | null {
+  let wall = toWall(afterMs);
   for (let i = 0; i < SEARCH_LIMIT; i++) {
-    if (!spec.month.has(d.getMonth() + 1)) {
-      d.setMonth(d.getMonth() + 1, 1);
-      d.setHours(0, 0, 0, 0);
+    const next = nextWallTime(spec, wall);
+    if (!next) return null;
+    wall = next;
+    const y = next.getUTCFullYear(), mo = next.getUTCMonth(), day = next.getUTCDate(), h = next.getUTCHours(), mi = next.getUTCMinutes();
+    const first = new Date(y, mo, day, h, mi).getTime();
+    if (!sameWall(first, next)) {
+      // Skipped by a spring-forward: the first real minute after the jump.
+      const afterJump = new Date(y, mo, day, h, 0).getTime();
+      const jump = sameWall(afterJump, new Date(Date.UTC(y, mo, day, h, 0))) ? first : afterJump;
+      if (jump > afterMs) return new Date(jump);
       continue;
     }
-    if (!dayMatches(spec, d)) {
-      d.setDate(d.getDate() + 1);
-      d.setHours(0, 0, 0, 0);
-      continue;
+    if (first > afterMs) return new Date(first);
+    // The wall time came round again after a fall-back: its second instance.
+    for (const shift of [30, 60, 120]) {
+      const second = first + shift * MINUTE_MS;
+      if (second > afterMs && sameWall(second, next)) {
+        if (spec.anyHour) return new Date(second);
+        break;
+      }
     }
-    if (!spec.hour.has(d.getHours())) {
-      const hour = d.getHours();
-      const day = d.getDate();
-      d.setHours(hour + 1, 0, 0, 0);
-      // A spring-forward skipped a whole hour: a schedule time in that hour
-      // runs at the first minute after the jump, as standard cron does.
-      if (d.getDate() === day && d.getHours() > hour + 1 && spec.hour.has(hour + 1)) return d;
-      continue;
-    }
-    if (!spec.minute.has(d.getMinutes())) {
-      d.setMinutes(d.getMinutes() + 1, 0, 0);
-      continue;
-    }
-    return new Date(d.getTime());
   }
   return null;
 }
@@ -245,17 +305,22 @@ function everyN(values: number[], min: number, max: number): number | null {
 function describeDays(spec: CronSpec): string {
   const dows = sorted(spec.dayOfWeek);
   const doms = sorted(spec.dayOfMonth);
+  const monthText = spec.month.size === 12 ? '' : ` in ${joinWords(sorted(spec.month).map((m) => MONTH_WORDS[m - 1]))}`;
+  // Standard cron: a day field starting with `*` doesn't restrict; two restricted fields match either.
+  const dowRestricts = !spec.anyDayOfWeek && dows.length < 7;
+  const domRestricts = !spec.anyDayOfMonth && doms.length < 31;
+  const everyDay = (!spec.anyDayOfWeek && !spec.anyDayOfMonth)
+    ? !(dowRestricts && domRestricts)
+    : !(spec.anyDayOfWeek ? domRestricts : dowRestricts);
+  if (everyDay) return monthText ? `every day${monthText}` : 'every day';
   const dowText = (() => {
-    if (spec.anyDayOfWeek) return '';
     if (dows.join() === '1,2,3,4,5') return 'weekdays';
     if (dows.join() === '0,6') return 'weekends';
     return joinWords(dows.map((d) => `${DAY_WORDS[d]}s`));
   })();
-  const domText = spec.anyDayOfMonth ? '' : `the ${joinWords(doms.map(ordinal))}`;
-  const monthText = spec.month.size === 12 ? '' : ` in ${joinWords(sorted(spec.month).map((m) => MONTH_WORDS[m - 1]))}`;
-  if (!dowText && !domText) return monthText ? `every day${monthText}` : 'every day';
-  if (dowText && domText) return `on ${domText} or on ${dowText}${monthText}`;
-  if (domText) return `on ${domText} of the month${monthText}`;
+  const domText = `the ${joinWords(doms.map(ordinal))}`;
+  if (!spec.anyDayOfWeek && !spec.anyDayOfMonth) return `on ${domText} or on ${dowText}${monthText}`;
+  if (spec.anyDayOfWeek) return `on ${domText} of the month${monthText}`;
   return `on ${dowText}${monthText}`;
 }
 

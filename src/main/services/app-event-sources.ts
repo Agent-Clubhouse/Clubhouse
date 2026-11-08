@@ -16,6 +16,7 @@ import * as projectStore from './project-store';
 
 interface KnownAgent {
   projectPath: string;
+  name?: string;
   parentAgentId?: string;
 }
 
@@ -33,7 +34,7 @@ function snapshot(projectPath: string, configs: DurableAgentConfig[]): Map<strin
   const out = new Map<string, KnownAgent>();
   for (const c of configs) {
     if (!exists(c)) continue;
-    out.set(c.id, { projectPath, ...(c.parentAgentId && { parentAgentId: c.parentAgentId }) });
+    out.set(c.id, { projectPath, ...(c.name && { name: c.name }), ...(c.parentAgentId && { parentAgentId: c.parentAgentId }) });
   }
   return out;
 }
@@ -62,12 +63,25 @@ export async function diffProjectAgents(projectPath: string): Promise<void> {
   remember(projectPath, next);
   // The first read of a project is the baseline, not a burst of creations.
   if (!prev) return;
+  const fields = (a: KnownAgent) => ({ ...(a.name && { name: a.name }), ...(a.parentAgentId && { parentAgentId: a.parentAgentId }) });
   for (const [id, a] of next) {
-    if (!prev.has(id)) publishAppEvent({ type: 'agent.created', agentId: id, projectPath, ...(a.parentAgentId && { parentAgentId: a.parentAgentId }) });
+    if (!prev.has(id)) publishAppEvent({ type: 'agent.created', agentId: id, projectPath, ...fields(a) });
   }
   for (const [id, a] of prev) {
-    if (!next.has(id)) publishAppEvent({ type: 'agent.deleted', agentId: id, projectPath, ...(a.parentAgentId && { parentAgentId: a.parentAgentId }) });
+    if (!next.has(id)) publishAppEvent({ type: 'agent.deleted', agentId: id, projectPath, ...fields(a) });
   }
+}
+
+/** Forget a removed project's agents without publishing deletions. */
+function forgetProject(projectPath: string): void {
+  const prev = projectAgents.get(projectPath);
+  if (prev) for (const id of prev.keys()) agents.delete(id);
+  projectAgents.delete(projectPath);
+}
+
+/** An agent's last known name, also after it was deleted from the read. */
+export function knownAgentName(agentId: string): string | undefined {
+  return agents.get(agentId)?.name;
 }
 
 /** The parent of a helper, from the last read of its project. */
@@ -96,8 +110,11 @@ export async function startAppEventSources(): Promise<void> {
       publishAppEvent({ type: 'agent.asleep', agentId, exitCode });
     }),
     onAgentConfigChanged(queueDiff),
-    // A helper's finished turn is its parent's "helper finished".
     onAppEvent((event) => {
+      // A project added later needs its own baseline, or its first agent goes unreported.
+      if (event.type === 'project.added') { queueDiff(event.projectPath); return; }
+      if (event.type === 'project.removed') { forgetProject(event.projectPath); return; }
+      // A helper's finished turn is its parent's "helper finished".
       if (event.type !== 'turn.ended' || event.outcome !== 'completed') return;
       const parent = knownHelperParent(event.agentId);
       if (parent) publishAppEvent({ type: 'helper.finished', agentId: event.agentId, ...parent, ...(event.chain && { chain: event.chain }) });
@@ -106,7 +123,9 @@ export async function startAppEventSources(): Promise<void> {
   stop = () => { for (const u of unsubs) u(); };
   try {
     const projects = await projectStore.list();
-    await Promise.all(projects.map((p) => diffProjectAgents(p.path)));
+    // Through the queue, so a change read during startup can't be compared with an older baseline.
+    for (const p of projects) queueDiff(p.path);
+    await Promise.all(projects.map((p) => pending.get(p.path)));
   } catch (err) {
     // telemetry-exempt: logged; created and deleted events start with the next change
     appLog('core:app-events', 'warn', 'Could not read projects for the agent baseline', {

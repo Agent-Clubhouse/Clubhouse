@@ -19,6 +19,13 @@ describe('validateActionInput', () => {
     });
   });
 
+  it('labels a preset whose line doesn’t match it as custom', () => {
+    const r = validateActionInput({ trigger: { kind: 'schedule', preset: 'daily', cron: '* * * * *' }, steps: [{ kind: 'notify', text: 'hi' }] });
+    expect(r.ok && r.value.trigger).toMatchObject({ preset: 'cron', cron: '* * * * *' });
+    const weekly = validateActionInput({ trigger: { kind: 'schedule', preset: 'weekly', cron: '15 8 * * 2' }, steps: [{ kind: 'notify', text: 'hi' }] });
+    expect(weekly.ok && weekly.value.trigger).toMatchObject({ preset: 'weekly' });
+  });
+
   it('defaults an unknown missed-run rule to skip and an unknown preset to custom', () => {
     const r = validateActionInput({ trigger: { kind: 'schedule', preset: 'x', cron: '0 9 * * *', missed: 'x' }, steps: [{ kind: 'notify', text: 'hi' }] });
     expect(r.ok && r.value.trigger).toEqual({ kind: 'schedule', preset: 'cron', cron: '0 9 * * *', missed: 'skip' });

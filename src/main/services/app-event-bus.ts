@@ -30,8 +30,8 @@ interface Stamp {
 export type AppEvent = Stamp & (
   | { type: 'agent.awake'; agentId: string }
   | { type: 'agent.asleep'; agentId: string; exitCode?: number }
-  | { type: 'agent.created'; agentId: string; projectPath: string; parentAgentId?: string }
-  | { type: 'agent.deleted'; agentId: string; projectPath: string; parentAgentId?: string }
+  | { type: 'agent.created'; agentId: string; projectPath: string; name?: string; parentAgentId?: string }
+  | { type: 'agent.deleted'; agentId: string; projectPath: string; name?: string; parentAgentId?: string }
   | { type: 'turn.started'; agentId: string; via: TurnVia }
   | { type: 'turn.ended'; agentId: string; via: TurnVia; outcome: TurnOutcome }
   | { type: 'agent.waiting'; agentId: string; via: TurnVia; reason: 'permission' | 'question' }
@@ -155,35 +155,69 @@ export function publishFromChatEvent(event: ChatEvent): void {
   }
 }
 
-/** Terminal agents whose turn is under way, as far as their hooks tell. */
-const hookTurns = new Set<string>();
+/** Terminal agents whose turn is under way, as far as their hooks tell, and when they last reported. */
+const hookTurns = new Map<string, number>();
 
 /**
- * Turn a terminal CLI hook into bus events. A turn starts with the first tool
- * or prompt after a stop, and ends at the stop hook.
+ * A turn that has said nothing for this long is treated as over: Claude runs
+ * no Stop hook when the person interrupts a turn.
  */
-export function publishFromHookEvent(agentId: string, kind: HookEventKind, message?: string): void {
+const HOOK_TURN_STALE_MS = 5 * 60 * 1000;
+
+/** Raw hook names that mean the person (or Clubhouse) sent a prompt. */
+const PROMPT_HOOKS: ReadonlySet<string> = new Set(['UserPromptSubmit', 'userPromptSubmitted']);
+/** Raw hook names that mean a turn finished. Copilot's sessionEnd is the process ending, not a turn. */
+const TURN_END_HOOKS: ReadonlySet<string> = new Set(['Stop']);
+/** Tools that put a question to the person. */
+const QUESTION_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion']);
+
+export interface HookFacts {
+  /** The normalized kind. */
+  kind: HookEventKind;
+  /** The CLI's own hook name (e.g. Stop, UserPromptSubmit, sessionEnd). */
+  rawName?: string;
+  toolName?: string;
+}
+
+function startHookTurn(agentId: string, at: number): void {
+  hookTurns.set(agentId, at);
+  publishAppEvent({ type: 'turn.started', agentId, via: 'hook', at });
+}
+
+/**
+ * Turn a terminal CLI hook into bus events. Terminal coverage is what the
+ * CLIs' hooks allow:
+ * - a turn starts at a prompt hook, or at the first tool when the CLI has no
+ *   prompt hook registered (Claude);
+ * - it ends at a Stop hook (Claude, Codex); Copilot has none per turn;
+ * - waiting on you is a permission request, or a question tool;
+ * - tool failures are not "hits an error" (a failed grep is routine), and
+ *   session start and notification hooks publish nothing.
+ */
+export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Date.now()): void {
+  const { kind, rawName, toolName } = facts;
+  if (rawName && PROMPT_HOOKS.has(rawName)) {
+    startHookTurn(agentId, now);
+    return;
+  }
   switch (kind) {
     case 'pre_tool':
-    case 'post_tool':
-      if (!hookTurns.has(agentId)) {
-        hookTurns.add(agentId);
-        publishAppEvent({ type: 'turn.started', agentId, via: 'hook' });
+    case 'post_tool': {
+      const last = hookTurns.get(agentId);
+      if (last === undefined || now - last > HOOK_TURN_STALE_MS) startHookTurn(agentId, now);
+      else hookTurns.set(agentId, now);
+      if (kind === 'pre_tool' && toolName && QUESTION_TOOLS.has(toolName)) {
+        publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'question', at: now });
       }
       return;
+    }
     case 'stop':
+      if (rawName && !TURN_END_HOOKS.has(rawName)) return;
       hookTurns.delete(agentId);
-      publishAppEvent({ type: 'turn.ended', agentId, via: 'hook', outcome: 'completed' });
+      publishAppEvent({ type: 'turn.ended', agentId, via: 'hook', outcome: 'completed', at: now });
       return;
     case 'permission_request':
-      publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'permission' });
-      return;
-    case 'notification':
-      // Claude's Notification hook fires when it is waiting for input.
-      publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'question' });
-      return;
-    case 'tool_error':
-      publishAppEvent({ type: 'agent.error', agentId, via: 'hook', message: message ?? 'A tool failed.' });
+      publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'permission', at: now });
       return;
     default:
       return;

@@ -63,6 +63,17 @@ describe('app event sources', () => {
     expect(events.map((e) => e.type)).toEqual(['agent.deleted']);
   });
 
+  it('takes a baseline for a project added later, so its first agent is reported', async () => {
+    await start();
+    durables['/p2'] = [];
+    publishAppEvent({ type: 'project.added', projectId: 'p2', projectPath: '/p2' });
+    await flush(); await flush();
+    durables['/p2'] = [{ id: 'n1', name: 'new' }];
+    configListeners[0]('/p2');
+    await flush(); await flush();
+    expect(events.filter((e) => e.type === 'agent.created')).toMatchObject([{ agentId: 'n1', name: 'new', projectPath: '/p2' }]);
+  });
+
   it('publishes asleep on exit', async () => {
     await start();
     exitListeners[0]('a1', 0);

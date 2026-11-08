@@ -362,7 +362,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const hookEvent = buildHookEvent(provider, normalized);
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
     annexEventBus.emitHookEvent(agentId, hookEvent as any);
-    publishFromHookEvent(agentId, normalized.kind, hookEvent.message);
+    publishFromHookEvent(agentId, { kind: normalized.kind, rawName: typeof raw?.hook_event_name === 'string' ? raw.hook_event_name : undefined, toolName: normalized.toolName });
 
     if (normalized.kind === 'permission_request') {
       handlePermissionRequest(agentId, normalized, res, provider.id);
