@@ -1225,3 +1225,16 @@ describe('slash command output (#2179)', () => {
     expect(screen.getAllByTestId('chat-command-output')).toHaveLength(1);
   });
 });
+
+describe('context beside model and effort (#2790)', () => {
+  afterEach(() => { useProjectStore.setState({ projects: [] }); });
+
+  it('gives the composer what the session reports and the saved next-start choice', async () => {
+    useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'p', path: '/work/p' }] as never });
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: FIXTURE_AGENT_ID, contextWindow: '500000' })) as never;
+    const state = { ...fold(chatFixture('claude', 'conversation')), contextLimits: { effectiveTokens: 300000, compactAtTokens: null, reservedTokens: null } };
+    renderState(state);
+    await waitFor(() => expect(screen.getByTestId('chat-model-pill').getAttribute('title')).toContain('Context 300K. Next start: 500K'));
+    expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith('/work/p', FIXTURE_AGENT_ID);
+  });
+});

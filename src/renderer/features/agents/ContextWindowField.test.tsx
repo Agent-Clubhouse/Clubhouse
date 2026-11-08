@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { claudeContextWindowOptions, copilotContextWindowOptions } from '../../../shared/context-window';
-import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice } from './ContextWindowField';
+import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice, nowAndNextStart, sessionModelLine } from './ContextWindowField';
 
 describe('ContextWindowSelect', () => {
   const options = claudeContextWindowOptions('claude-haiku-4-5');
@@ -53,5 +53,23 @@ describe('copy', () => {
     expect(formatContextChoice('500000')).toBe('500K');
     expect(formatContextChoice('long_context')).toBe('Long context');
     expect(formatContextChoice('default')).toBe('Standard');
+  });
+});
+
+describe('now and next start (#2790)', () => {
+  it('puts a waiting choice after what runs now, and says only one when that is all there is', () => {
+    expect(nowAndNextStart('300K, compacts at 267K', '500K')).toBe('300K, compacts at 267K. Next start: 500K');
+    expect(nowAndNextStart('300K', null)).toBe('300K');
+    expect(nowAndNextStart(null, '500K')).toBe('Next start: 500K');
+    expect(nowAndNextStart('500K', '500K')).toBe('500K');
+    expect(nowAndNextStart(null, null)).toBeNull();
+  });
+
+  it('names a session model only when it differs from a saved named model', () => {
+    expect(sessionModelLine('Opus 5.5', 'sonnet', 'Sonnet 5.5')).toBe('Opus 5.5. Next start: Sonnet 5.5');
+    expect(sessionModelLine('Opus 5.5', 'opus', 'Opus 5.5')).toBeNull();
+    expect(sessionModelLine('Opus 5.5', 'default', 'Default model')).toBeNull();
+    expect(sessionModelLine('Opus 5.5', undefined, 'Default model')).toBeNull();
+    expect(sessionModelLine(null, 'sonnet', 'Sonnet 5.5')).toBeNull();
   });
 });

@@ -268,3 +268,36 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(screen.getByTestId('chat-level-native-ask')).toHaveTextContent('default');
   });
 });
+
+describe('Composer context beside model and effort (#2790)', () => {
+  it('shows what runs now and what waits for next start in the model menu, read only, with a way to change it', () => {
+    const onOpen = vi.fn();
+    renderComposer({ context: { now: '300K, compacts at 267K', next: '500K', onOpen } });
+    const pill = screen.getByTestId('chat-model-pill');
+    expect(pill.getAttribute('title')).toContain('Context 300K, compacts at 267K. Next start: 500K');
+    fireEvent.click(pill);
+    const section = screen.getByTestId('chat-model-menu-context');
+    expect(section).toHaveTextContent('300K, compacts at 267K');
+    expect(section).toHaveTextContent('Next start: 500K.');
+    expect(section).toHaveTextContent('A running session keeps its context.');
+    expect(section.querySelectorAll('[role="menuitemradio"]')).toHaveLength(0);
+    fireEvent.click(screen.getByTestId('chat-model-menu-context-open'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('chat-model-menu')).toBeNull();
+  });
+
+  it("opens for the context alone when the model can't change here, and offers no model to pick", () => {
+    renderComposer({ context: { now: '200K', next: null } }, { modelSwitch: 'none' });
+    const pill = screen.getByTestId('chat-model-pill');
+    expect(pill).not.toBeDisabled();
+    fireEvent.click(pill);
+    expect(screen.queryAllByRole('menuitemradio')).toHaveLength(0);
+    expect(screen.getByTestId('chat-model-menu-context')).toHaveTextContent('200K');
+    expect(screen.queryByTestId('chat-model-menu-context-open')).toBeNull();
+  });
+
+  it('shows nothing about context when nothing is known, and stays disabled where the model is fixed', () => {
+    renderComposer({}, { modelSwitch: 'none' });
+    expect(screen.getByTestId('chat-model-pill')).toBeDisabled();
+  });
+});

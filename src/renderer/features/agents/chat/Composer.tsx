@@ -245,7 +245,28 @@ function Radio({ on }: { on: boolean }) {
   return <span className={`w-3 h-3 rounded-full flex-shrink-0 ${on ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />;
 }
 
-function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefault, capabilities, onChange }: {
+/**
+ * The context beside Model and Effort (#2790), read only: no CLI changes it in
+ * a running session, so it says what runs now and what waits for next start.
+ */
+export interface ComposerContext {
+  /** What the session runs with: "300K, compacts at 267K". */
+  now: string | null;
+  /** A saved choice that applies at the next start: "500K". */
+  next: string | null;
+  /** Where the choice is changed, when this agent has one. */
+  onOpen?: () => void;
+}
+
+/** "Context 300K, compacts at 267K. Next start: 500K". */
+export function composerContextLine(context: ComposerContext | undefined): string | null {
+  if (!context) return null;
+  if (context.now && context.next && context.next !== context.now) return `Context ${context.now}. Next start: ${context.next}`;
+  if (context.now) return `Context ${context.now}`;
+  return context.next ? `Context next start: ${context.next}` : null;
+}
+
+function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefault, capabilities, context, onChange }: {
   models: ChatModelOption[];
   efforts: string[];
   model: string | null;
@@ -253,13 +274,17 @@ function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefau
   effort: string | null;
   effortIsDefault?: boolean;
   capabilities: ChatCapabilities | null;
+  context?: ComposerContext;
   onChange: (modelId: string, effort?: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   useCloseOnMouseDown(open, close);
+  const contextLine = composerContextLine(context);
   const modelSwitch = capabilities?.modelSwitch ?? 'none';
   const canChange = models.length > 0 && modelSwitch !== 'none';
+  // The menu also opens just for the context, when the model can't change here.
+  const canOpen = canChange || !!contextLine;
   const current = models.find((m) => m.id === model);
   const label = model ? modelLabel(model, models) : modelUnknown ? 'Default model' : model;
   if (!label) return null;
@@ -273,21 +298,21 @@ function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefau
     <div className={PILL_WRAP}>
       <button
         type="button"
-        disabled={!canChange}
+        disabled={!canOpen}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={canChange ? fullName : `${fullName}. This agent can't change model mid-session.`}
+        title={[canChange ? fullName : `${fullName}. This agent can't change model mid-session.`, contextLine].filter(Boolean).join('\n')}
         className={chipClass}
         data-testid="chat-model-pill"
       >
         <span className="truncate min-w-0">{label}</span>
-        {canChange && <ChevronDown className="text-ctp-overlay1 flex-shrink-0" />}
+        {canOpen && <ChevronDown className="text-ctp-overlay1 flex-shrink-0" />}
       </button>
       {open && (
         <div role="menu" className={`${menuClass} w-[300px] max-h-[360px] overflow-y-auto`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-model-menu">
-          <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Model</div>
-          {models.map((m) => {
+          {canChange && <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Model</div>}
+          {canChange && models.map((m) => {
             const selected = m.id === current?.id;
             return (
               <button
@@ -307,7 +332,27 @@ function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefau
               </button>
             );
           })}
-          {note && <div className="px-2 pt-1.5 text-[11px] text-ctp-overlay1">{note}</div>}
+          {canChange && note && <div className="px-2 pt-1.5 text-[11px] text-ctp-overlay1">{note}</div>}
+          {context && contextLine && (
+            <div className={canChange ? 'mt-1.5 pt-1.5 border-t border-surface-0' : ''} data-testid="chat-model-menu-context">
+              <div className="px-2 py-1 text-[11.5px] font-semibold text-ctp-overlay1">Context</div>
+              <div className="px-2 text-[12px] text-ctp-text">{context.now ?? 'Not reported yet'}</div>
+              <div className="px-2 pt-0.5 text-[11px] text-ctp-overlay1">
+                {context.next && context.next !== context.now ? `Next start: ${context.next}. ` : ''}A running session keeps its context. A change applies the next time the agent starts.
+              </div>
+              {context.onOpen && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setOpen(false); context.onOpen?.(); }}
+                  className="mx-2 mt-1 text-[11.5px] text-ctp-link underline focus-ring rounded-sm"
+                  data-testid="chat-model-menu-context-open"
+                >
+                  Change for next start
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -471,6 +516,8 @@ export interface ComposerProps {
    * permissions and model under +.
    */
   layout?: ComposerLayout;
+  /** Context beside Model and Effort, read only (#2790). */
+  context?: ComposerContext;
 }
 
 export type ComposerLayout = 'wide' | 'narrow' | 'line';
@@ -736,6 +783,7 @@ export function Composer(props: ComposerProps) {
         effort={props.effort}
         effortIsDefault={props.effortIsDefault}
         capabilities={capabilities}
+        context={props.context}
         onChange={(m, e) => props.onModelChange?.(m, e)}
       />
       <EffortPill

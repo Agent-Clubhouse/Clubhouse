@@ -46,6 +46,24 @@ export function formatContextChoice(value: string): string {
   return tokens > 0 ? formatContextTokens(tokens) : value;
 }
 
+/**
+ * What applies now, and what's saved for the next start when that differs
+ * (#2790): "300K, compacts at 267K. Next start: 500K". With nothing running,
+ * just "Next start: 500K". Used for context and for a model changed in the
+ * session, so the two read the same way.
+ */
+export function nowAndNextStart(now: string | null | undefined, next: string | null | undefined): string | null {
+  if (now && next && next !== now) return `${now}. Next start: ${next}`;
+  if (now) return now;
+  return next ? `Next start: ${next}` : null;
+}
+
+/** A model changed in the session, beside the saved one the next start uses. Null when they agree or the saved one is the default. */
+export function sessionModelLine(sessionLabel: string | null, savedModel: string | null | undefined, savedLabel: string): string | null {
+  if (!sessionLabel || !savedModel || savedModel === 'default' || savedLabel === sessionLabel) return null;
+  return nowAndNextStart(sessionLabel, savedLabel);
+}
+
 /** What a running session reports, kept apart from the saved choice: "300K, compacts at 267K, 33K in reserve". */
 export function contextSummary(limits: ContextLimits | null | undefined, usageSize?: number): string | null {
   const size = limits?.effectiveTokens ?? usageSize;
