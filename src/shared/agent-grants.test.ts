@@ -37,6 +37,10 @@ describe('agent grants (#2966)', () => {
       [{ kind: 'app' }, { kind: 'project', projectPath: '/p' }, false],
       [{ kind: 'any' }, { kind: 'agent', relations: [] }, true],
       [{ kind: 'any' }, { kind: 'library' }, true],
+      [{ kind: 'action', id: 'a1' }, { kind: 'action', actionId: 'a1' }, true],
+      [{ kind: 'action', id: 'a1' }, { kind: 'action', actionId: 'a2' }, false],
+      [{ kind: 'self' }, { kind: 'action', actionId: 'a1', relations: ['self'] }, true],
+      [{ kind: 'app' }, { kind: 'action', actionId: 'a1' }, false],
     ];
     it.each(cases)('%j covers %j: %s', (grant, target, covered) => {
       expect(targetCovers(grant, agent, target)).toBe(covered);
@@ -100,6 +104,15 @@ describe('agent grants (#2966)', () => {
       expect(give(ask('agent.wake', { kind: 'my_helpers' })).outcome).toBe('allow');
       // A narrower held target doesn't cover a wider one.
       expect(give(allow('agent.read', { kind: 'any' })).outcome).toBe('refuse');
+    });
+
+    it('2: a wider held target covers a narrower given one', () => {
+      const target: GrantCallTarget = { kind: 'agent', relations: ['connected'] };
+      const give = (held: Grant[], g: Grant) => evaluateGrant(call('agent.grant', target, { change: { grants: [g] } }), [allow('agent.grant', { kind: 'connected' }), ...held]).outcome;
+      expect(give([allow('agent.reset', { kind: 'connected' })], allow('agent.reset', { kind: 'connected', excludeDispatcher: true }))).toBe('allow');
+      expect(give([allow('agent.reset', { kind: 'connected', excludeDispatcher: true })], allow('agent.reset', { kind: 'connected' }))).toBe('refuse');
+      expect(give([allow('agent.create', { kind: 'project', project: 'any' })], allow('agent.create', { kind: 'project', project: 'own' }))).toBe('allow');
+      expect(give([allow('agent.create', { kind: 'project', project: 'own' })], allow('agent.create', { kind: 'project', project: 'any' }))).toBe('refuse');
     });
 
     it('4: the user is above every agent', () => {

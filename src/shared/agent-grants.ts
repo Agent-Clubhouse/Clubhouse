@@ -76,11 +76,14 @@ export type GrantTarget =
   | { kind: 'self' }
   | { kind: 'parent' }
   | { kind: 'my_helpers' }
-  | { kind: 'connected' }
+  /** `excludeDispatcher`: not the Dispatcher, which nothing connected to it may reset (#2921 gap fix). */
+  | { kind: 'connected'; excludeDispatcher?: boolean }
   | { kind: 'project'; project: 'own' | 'any' | { path: string } }
   | { kind: 'group_project'; role: 'member' | 'admin' }
   | { kind: 'group_members' }
   | { kind: 'app' }
+  /** One Action (#2918), by id: an explicit grant on an Action the caller doesn't own. */
+  | { kind: 'action'; id: string }
   | { kind: 'any' };
 
 export type GrantMode = 'allow' | 'ask';
@@ -110,8 +113,12 @@ export interface GrantCaller {
  * how a target agent stands to the caller; the rest places the target.
  */
 export interface GrantCallTarget {
-  kind: 'agent' | 'project' | 'group_project' | 'app' | 'library';
+  kind: 'agent' | 'browser' | 'project' | 'group_project' | 'app' | 'library' | 'action';
+  /** For an Action target: its id. `relations` has `self` when the caller owns it. */
+  actionId?: string;
   relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member'>;
+  /** The target agent is the Dispatcher. */
+  isDispatcher?: boolean;
   /** The project the target agent lives in, or the project itself. */
   projectPath?: string;
   /** For a group project target: the caller's role in it. */
@@ -156,9 +163,10 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
     case 'self': return rel.includes('self');
     case 'parent': return rel.includes('parent');
     case 'my_helpers': return rel.includes('my_helper');
-    case 'connected': return rel.includes('connected');
+    case 'connected': return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher);
     case 'group_members': return rel.includes('group_member');
     case 'app': return target.kind === 'app';
+    case 'action': return target.kind === 'action' && target.actionId === grant.id;
     case 'group_project':
       if (target.kind !== 'group_project' || !target.groupRole) return false;
       return grant.role === 'member' || target.groupRole === 'admin';
@@ -185,11 +193,20 @@ function rank(level: AccessLevel | undefined): number {
 function holds(held: readonly Grant[], given: Grant): boolean {
   return held.some((h) => h.action === given.action
     && (h.mode === 'allow' || given.mode === 'ask')
-    && (h.target.kind === 'any' || sameTarget(h.target, given.target)));
+    && widerOrSame(h.target, given.target));
 }
 
-function sameTarget(a: GrantTarget, b: GrantTarget): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+/** Whether a held target covers everything a given one does. */
+function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
+  if (held.kind === 'any') return true;
+  if (held.kind !== given.kind) return false;
+  if (held.kind === 'connected' && given.kind === 'connected') return !held.excludeDispatcher || !!given.excludeDispatcher;
+  if (held.kind === 'project' && given.kind === 'project') {
+    return held.project === 'any' || JSON.stringify(held.project) === JSON.stringify(given.project);
+  }
+  if (held.kind === 'group_project' && given.kind === 'group_project') return held.role === 'member' || given.role === 'admin';
+  if (held.kind === 'action' && given.kind === 'action') return held.id === given.id;
+  return true;
 }
 
 /**
@@ -219,7 +236,7 @@ export function evaluateGrant(call: GrantCall, grants: readonly Grant[], held: r
 
 /** The message an agent gets for a refusal. Plain, and never says whether the target exists. */
 export const GRANT_REFUSAL_MESSAGES: Readonly<Record<GrantRefusal, string>> = {
-  no_grant: 'You don\'t have a Clubhouse permission for this. Ask for it with request_grant, or ask the user.',
-  raise_self: 'You can\'t change your own Clubhouse permissions or Access. Ask for it with request_grant.',
+  no_grant: 'You don\'t have a Clubhouse permission for this. Ask the user if you need it.',
+  raise_self: 'You can\'t change your own Clubhouse permissions or Access. Ask the user if you need it.',
   exceeds_caller: 'You can\'t give another agent more than you have yourself.',
 };
