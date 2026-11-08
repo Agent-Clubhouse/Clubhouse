@@ -113,6 +113,15 @@ function normalizeEntry(raw: unknown): TelemetryDestinationEntry | null {
     preset: TELEMETRY_FILTER_PRESETS.includes(r.preset as never) ? (r.preset as TelemetryDestinationEntry['preset']) : defaultEntry(kind).preset,
   };
   if (typeof r.confirmedHost === 'string') entry.confirmedHost = r.confirmedHost;
+  if (typeof r.backfilledThrough === 'number' && Number.isFinite(r.backfilledThrough) && r.backfilledThrough > 0) entry.backfilledThrough = r.backfilledThrough;
+  if (r.backfillProgress && typeof r.backfillProgress === 'object') {
+    const progress: NonNullable<TelemetryDestinationEntry['backfillProgress']> = {};
+    for (const kind of ['span', 'log', 'metric'] as const) {
+      const p = (r.backfillProgress as Record<string, { t?: unknown; n?: unknown }>)[kind];
+      if (p && typeof p.t === 'number' && Number.isFinite(p.t) && typeof p.n === 'number' && Number.isSafeInteger(p.n) && p.n >= 0) progress[kind] = { t: p.t, n: p.n };
+    }
+    if (Object.keys(progress).length > 0) entry.backfillProgress = progress;
+  }
   if (kind === 'framebriar') {
     const f = (r.framebriar && typeof r.framebriar === 'object' ? r.framebriar : {}) as Record<string, unknown>;
     entry.framebriar = { userOff: f.userOff === true };

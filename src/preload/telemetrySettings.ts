@@ -11,6 +11,9 @@ import type {
   TelemetryPreviewItem,
   TelemetryStatus,
   TelemetryTestReport,
+  BackfillOffer,
+  BackfillRange,
+  BackfillStatus,
 } from '../shared/telemetry/settings-types';
 
 
@@ -35,5 +38,11 @@ export const telemetrySettings = {
     clearOffline: (): Promise<TelemetryActionResult> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.CLEAR_OFFLINE),
     deleteLocalData: (): Promise<TelemetryActionResult> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.DELETE_LOCAL_DATA),
     resume: (): Promise<TelemetryActionResult> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.RESUME),
+    backfillOffer: (destinationId: string): Promise<BackfillOffer | null> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.BACKFILL_OFFER, destinationId),
+    backfillStart: (destinationId: string, range: BackfillRange): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.BACKFILL_START, destinationId, range),
+    backfillCancel: (destinationId: string): Promise<void> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.BACKFILL_CANCEL, destinationId),
+    backfillStatus: (destinationId: string): Promise<BackfillStatus | null> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.BACKFILL_STATUS, destinationId),
+    backfillDismiss: (destinationId: string): Promise<void> => ipcRenderer.invoke(IPC.TELEMETRY_SETTINGS.BACKFILL_DISMISS, destinationId),
   },
 };
