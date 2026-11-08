@@ -170,10 +170,10 @@ function createEngine(): ActionsEngine {
       changed: broadcastChanged,
       failed: (action, reason) => {
         appLog('core:actions', 'warn', 'An action couldn’t run', { meta: { actionId: action.id, reason } });
-        broadcastToAllWindows(IPC.ACTIONS.NOTICE, { actionId: action.id, name: action.name, message: `“${action.name}” couldn’t run. ${reason}` } satisfies ActionNotice);
+        broadcastToAllWindows(IPC.ACTIONS.NOTICE, { actionId: action.id, name: action.name, message: `“${action.name}” couldn’t run. ${reason}`, exists: !!engine?.get(action.id) } satisfies ActionNotice);
       },
       turnedOff: (action, reason) => {
-        broadcastToAllWindows(IPC.ACTIONS.NOTICE, { actionId: action.id, name: action.name, message: `“${action.name}”: ${reason}` } satisfies ActionNotice);
+        broadcastToAllWindows(IPC.ACTIONS.NOTICE, { actionId: action.id, name: action.name, message: `“${action.name}”: ${reason}`, exists: true } satisfies ActionNotice);
       },
       observe: (o) => { for (const fn of observers) { try { fn(o); } catch { /* telemetry-exempt: an observer can't break a run */ } } },
     },
