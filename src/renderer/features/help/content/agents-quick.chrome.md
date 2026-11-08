@@ -33,6 +33,8 @@ For more options, click **New** at the top of the sidebar and choose **Quick age
 
 Each CLI only lists the levels it can start at. Claude Code has all five. In the terminal, Codex CLI has Ask first, Auto and Full access, and Copilot CLI has Ask first and Full access. In chat, each CLI offers the levels its chat connection supports. A quick agent with a parent agent takes the level from the parent's **Quick agents** settings, or the parent's own level when those don't set one. See **Durable agents** for more.
 
+A quick agent's CLI gets a few tools allowed ahead of time, and they follow its level. At Plan and Ask first only tools that read files are allowed ahead, so it asks before any edit or command. At Auto-accept edits, file edits are allowed too. At Auto and Full access, the CLI's usual git, npm and npx commands are as well. A CLI with no Plan start mode (Codex and Copilot in a terminal) starts a Plan quick agent at Ask first, which still asks before any change.
+
 ## Headless or interactive
 
 | | Headless | Interactive |
