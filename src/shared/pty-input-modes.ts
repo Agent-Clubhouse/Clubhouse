@@ -1,6 +1,7 @@
 /**
  * Two input modes at a raw replay's head, accumulated through evicted output.
- * This is not a screen emulator or a repair for a cut escape sequence.
+ * This is not a screen emulator. Its parser state at the cut also says where
+ * a sequence or control string cut by eviction ends (`sequenceEnd`, #2743).
  *
  * Syntax follows the pinned xterm 6 parser/InputHandler: private CSI h/l,
  * RIS and DECSTR, C1 introducers, cancellation and control-string termination.
@@ -26,6 +27,25 @@ export class PtyInputModeTracker {
 
   /** All fields are scalars; completing a skipped prefix must not advance the stored head. */
   clone(): PtyInputModeTracker { return Object.assign(new PtyInputModeTracker(), this); }
+
+  /**
+   * Where the sequence or control string this tracker is inside ends in
+   * `data`, the output that follows what it has read: 0 when it is between
+   * sequences, else the offset just past the fragment. A new introducer
+   * (ESC or C1) abandons the fragment, so the replay starts at it.
+   * Undefined when the fragment runs past the end of `data`.
+   */
+  sequenceEnd(data: string): number | undefined {
+    if (this.state === 'ground') return 0;
+    const probe = this.clone();
+    for (let i = 0; i < data.length; i++) {
+      const code = data.charCodeAt(i);
+      if (code === 0x1b || code === 0x9b || code === 0x90 || code === 0x9d || code === 0x98 || code === 0x9e || code === 0x9f) return i;
+      probe.feed(data[i]!);
+      if (probe.state === 'ground') return i + 1;
+    }
+    return undefined;
+  }
 
   /** Existing replay targets start fresh, with both modes disabled. */
   replayPrefix(skipped = ''): string {

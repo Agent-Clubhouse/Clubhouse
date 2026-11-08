@@ -17,7 +17,7 @@ import { diag, redactDiagText } from '../telemetry/diag';
 import { tagError, type ErrorType } from '../telemetry/types';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
 import * as renderDiag from './pty-render-diagnostics';
-import { altScreenAfter, resyncOffset, type PtyBufferSnapshot, type PtySnapshotSize } from '../../shared/pty-snapshot';
+import { altScreenAfter, replayStart, type PtyBufferSnapshot, type PtySnapshotSize } from '../../shared/pty-snapshot';
 import { PtyInputModeTracker } from '../../shared/pty-input-modes';
 
 /** Pattern matching common API key environment variable names. */
@@ -332,14 +332,14 @@ export function getBuffer(agentId: string): string {
   return session ? getSessionBuffer(session) : '';
 }
 
+
 /**
  * Get the raw buffer together with the output sequence number it includes and
  * the PTY size each part of it was written at.  Live PTY.DATA events whose seq
  * is <= `seq` are already in `data`.
  *
- * After eviction, the existing resync heuristic skips a cut prefix where it
- * finds a boundary. The replay restores the alt screen and two input modes at
- * that start; it does not repair incomplete sequences with no boundary (#2743).
+ * After eviction, `replayStart` skips a cut prefix. The replay restores the
+ * alt screen and two input modes at that start (#2743).
  */
 export function getBufferSnapshot(agentId: string): PtyBufferSnapshot {
   const session = sessions.get(agentId);
@@ -347,7 +347,7 @@ export function getBufferSnapshot(agentId: string): PtyBufferSnapshot {
   const raw = getSessionBuffer(session);
   const startSeq = session.outputSeq - raw.length;
   const truncated = session.evictedChars > 0;
-  const skip = truncated ? resyncOffset(raw) : 0;
+  const skip = truncated ? replayStart(session.headInputModes, raw) : 0;
   const prefix = truncated
     ? (session.headAltScreen ? '\x1b[?1049h' : '') + session.headInputModes.replayPrefix(raw.slice(0, skip))
     : '';

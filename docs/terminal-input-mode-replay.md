@@ -1,7 +1,7 @@
 # Two input modes at a shortened replay head
 
-This is a bounded slice of #2743, not full issue closure. Raw PTY history still
-uses the existing whole-chunk cap and resync heuristic. A per-session checkpoint
+Raw PTY history uses a whole-chunk cap. A replay of a shortened history
+starts at `replayStart` (below). A per-session checkpoint
 tracks application cursor and bracketed paste mode through evicted output. A
 copy consumes the prefix discarded by resync; fixed enables for the resulting
 head state precede retained output. Retained disables and resets then win in
@@ -22,22 +22,28 @@ ESC terminates those strings and begins an actual subsequent escape command.
 Only these two input modes are checkpointed. The existing alt-screen tracker,
 resync policy, frame limits, private-shell gates and PTY input remain in place.
 
-## Explicit remaining boundary defect
+## A sequence or control string cut at the head
 
-If evicted output ends in `ESC[?20` and the retained output is `04htext`,
-`resyncOffset` returns zero: no ESC or LF occurs in its bounded search. The
-checkpoint has not yet seen a completed mode command, so replay remains
-`04htext`. A fresh terminal shows those characters and has bracketed paste off;
-the original full stream shows `text` with bracketed paste on. The scanner can
-consume that split stream correctly, but the truncated replay lacks its
-introducer. The labeled manager and in-memory characterization cases deliberately
-retain this defect; passing them is not proof of complete split-boundary recovery.
-No pending-CSI reinsertion or resync redesign is included.
+The tracker has read every evicted byte, so its parser state at the cut says
+whether the retained output starts inside a CSI, OSC, DCS or other control
+string. `replayStart` (`src/shared/pty-snapshot.ts`) uses it:
 
-Similarly, the existing ESC/LF heuristic is not a general restoration of parser
-state for a head cut inside OSC/DCS or another control string. The scanner does
-not treat ordinary string payload as commands, but a replay starting mid-string
-can still be interpreted differently. This slice makes no claim for arbitrary
-control fragments, other terminal modes, historical resize reconstruction in an
-activation mirror, OS PTYs or Go's paste/key encoding. Those need separate
-disposition and evidence. There is no live-terminal or phone acceptance here.
+- Between sequences, the replay starts where the resync heuristic says.
+- Inside one, it skips to the end of that fragment, then applies the resync
+  heuristic from there. The skipped bytes go through a copy of the tracker,
+  so `ESC[?20` evicted and `04htext` kept replays as `ESC[?2004h` + `text`,
+  as the full stream would show it.
+- A new ESC or C1 introducer abandons the fragment, as it does in xterm, so the
+  replay starts at it.
+- An OSC, DCS or other string that runs past the end of the kept output
+  replays nothing, since the terminal would print none of it.
+
+The in-memory xterm oracle cases in `pty-input-mode-replay.test.ts` compare
+each of these with the full stream.
+
+## Remaining limits
+
+C0 controls executed in the middle of a cut sequence (a line feed inside a
+CSI, say) are skipped with it. This makes no claim for other terminal modes,
+historical resize reconstruction in an activation mirror, OS PTYs or Go's
+paste/key encoding. There is no live-terminal or phone acceptance here.

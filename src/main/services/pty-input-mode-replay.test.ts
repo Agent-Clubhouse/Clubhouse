@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { Terminal } from '@xterm/headless';
 import { PtyInputModeTracker } from '../../shared/pty-input-modes';
-import { resyncOffset } from '../../shared/pty-snapshot';
+import { replayStart, resyncOffset } from '../../shared/pty-snapshot';
 import * as headless from './pty-headless-terminal';
 
 const terminals: Terminal[] = [];
@@ -65,17 +65,29 @@ describe('two-mode replay in memory', () => {
   });
 });
 
-describe('two-mode replay known limitation', () => {
-  it('characterizes UNRESOLVED evicted ESC[?20 plus retained 04htext when resyncOffset is zero', async () => {
-    const evicted = '\x1b[?20', retained = '04htext'; const head = new PtyInputModeTracker(); head.feed(evicted);
-    const skip = resyncOffset(retained); expect(skip).toBe(0);
+describe('a sequence or control string cut by eviction (#2743)', () => {
+  it.each([
+    ['split mode command', '\x1b[?20', '04htext'],
+    ['split combined mode', '\x1b[?1;20', '04h\x1b[mtext'],
+    ['cut CSI abandoned by a new one', '\x1b[?20', '\x1b[?1htext'],
+    ['cut OSC ended by BEL', '\x1b]0;ti', 'tle\x07text'],
+    ['cut OSC ended by ST', '\x1b]0;ti', 'tle\x1b\\text'],
+    ['cut DCS', '\x1bPqda', 'ta\x1b\\text'],
+    ['cut after ESC alone', '\x1b', '[?2004htext'],
+    ['cut OSC never ended', '\x1b]0;ti', 'tle text'],
+    ['cut between sequences', on, 'text'],
+  ] as const)('replays like the full stream: %s', async (_name, evicted, retained) => {
+    const head = new PtyInputModeTracker(); head.feed(evicted);
+    const start = replayStart(head, retained);
     const live = fresh(), replay = fresh();
-    await write(live, evicted + retained); await write(replay, head.replayPrefix(retained.slice(0, skip)) + retained.slice(skip));
-    expect(live.modes.bracketedPasteMode).toBe(true); expect(replay.modes.bracketedPasteMode).toBe(false);
-    expect(state(live).screen[0]).toBe('text'); expect(state(replay).screen[0]).toBe('04htext');
-    // A correct scanner can consume the split stream, but this truncated raw
-    // replay still lacks the introducer. This passing characterization is a
-    // remaining defect, not evidence that #2743 is fully fixed.
-    head.feed(retained); expect(head.modes.bracketedPaste).toBe(true);
+    await write(live, evicted + retained);
+    await write(replay, head.replayPrefix(retained.slice(0, start)) + retained.slice(start));
+    expect(state(replay)).toEqual(state(live));
+  });
+
+  it('starts at a line or escape boundary after the fragment, as the resync does', () => {
+    const head = new PtyInputModeTracker(); head.feed('\x1b[?20');
+    expect(replayStart(head, '04hpartial\n\x1b[mvisible')).toBe('04hpartial\n'.length);
+    expect(replayStart(new PtyInputModeTracker(), 'partial\nvisible')).toBe(resyncOffset('partial\nvisible'));
   });
 });
