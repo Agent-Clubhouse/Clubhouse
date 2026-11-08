@@ -385,7 +385,8 @@ describe('DispatcherSettingsView', () => {
 
     it('Card opens the agent with its Dispatcher card', async () => {
       await renderOn();
-      await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Open the card for webapp-lead in webapp' })); });
+      const card = await screen.findByRole('button', { name: 'Open the card for webapp-lead in webapp' });
+      await act(async () => { fireEvent.click(card); });
       expect(useAgentDetailsStore.getState().focus).toMatchObject({ agentId: 'lead', card: 'dispatcher' });
       expect(useAgentDetailsStore.getState().open).toBe(true);
     });
