@@ -16,6 +16,8 @@ const h = vi.hoisted(() => ({
   access: new Map<string, string>(),
   engine: null as unknown,
   history: new Map<string, unknown>(),
+  /** Steps the engine ran, in order. */
+  stepCalls: [] as Array<{ step: unknown; ctx: unknown }>,
   unavailable: false,
   build: null as unknown as () => void,
 }));
@@ -50,6 +52,7 @@ vi.mock('../../actions', async () => {
   const agentProjectId = (id: string) => h.known.get(id)?.projectId;
   h.build = () => {
     h.history.clear();
+    h.stepCalls.length = 0;
     h.engine = new ActionsEngine({
       clock: { now: () => Date.now(), setTimeout: () => 0, clearTimeout: () => undefined },
       storage: { load: () => ({ actions: [], state: { nextAt: {}, waits: [] } }), saveActions: () => undefined, saveState: () => undefined },
@@ -58,15 +61,17 @@ vi.mock('../../actions', async () => {
         list: (id) => [...(h.history.values() as Iterable<ActionRun>)].filter((r) => r.actionId === id),
       },
       facts: {
-        agentExists: (id) => h.known.has(id),
+        // The Dispatcher counts as an agent, as in the service, so its subscriptions can message it.
+        agentExists: (id) => h.known.has(id) || h.dispatchers.has(id),
         isRunning: () => false,
-        agentName,
+        agentName: (id) => agentName(id) ?? (h.dispatchers.has(id) ? 'Dispatcher' : undefined),
         agentProjectId,
         projectName,
-        projectIdForPath: () => undefined,
-        repoOwner: () => ({}),
+        projectIdForPath: (p) => projects.find((x) => x.path === p)?.id,
+        repoOwner: (p) => ({ projectId: projects.find((x) => x.path === p)?.id }),
+        dispatcherAgentId: () => (h.dispatchers.has('dispatcher') ? 'dispatcher' : undefined),
       },
-      steps: { run: async (step) => ({ kind: step.kind, outcome: 'done', detail: 'ok' }) },
+      steps: { run: async (step, ctx) => { h.stepCalls.push({ step, ctx }); return { kind: step.kind, outcome: 'done', detail: 'ok' }; } },
       rights: createInterimRights({
         agentName,
         parentOf: (id) => h.known.get(id)?.parentAgentId,
@@ -92,6 +97,7 @@ vi.mock('../../actions', async () => {
     listActions: vi.fn(() => e().list().filter((a) => a.owner.kind !== 'app').map(view)),
     getAction: vi.fn((id: string) => { const a = e().get(id); return a && a.owner.kind !== 'app' ? view(a) : undefined; }),
     createAction: vi.fn((input: unknown, owner: ActionOwner) => view(e().create(input, owner))),
+    subscribe: vi.fn((input: unknown, owner: ActionOwner) => view(e().subscribe(input, owner))),
     updateAction: vi.fn((id: string, input: unknown) => { visible(id); return view(e().update(id, input)); }),
     setActionEnabled: vi.fn((id: string, enabled: boolean) => { visible(id); return view(e().setEnabled(id, enabled)); }),
     deleteAction: vi.fn((id: string) => { visible(id); e().remove(id); }),
@@ -156,10 +162,11 @@ describe('action tools', () => {
     registerActionTools();
   });
 
-  it('registers all six tools, each mapped to an action.* permission', () => {
+  it('registers all seven tools, each mapped to an action.* permission', () => {
     expect(ACTION_TOOL_PERMISSIONS).toEqual({
       create_action: 'action.create', list_actions: 'action.list', update_action: 'action.update',
       delete_action: 'action.delete', run_action: 'action.run', action_history: 'action.history',
+      subscribe: 'action.create',
     });
     for (const tool of Object.keys(ACTION_TOOL_PERMISSIONS)) expect(isGlobalTool(tool)).toBe(true);
   });
@@ -169,9 +176,9 @@ describe('action tools', () => {
       vi.spyOn(agentRegistry, 'get').mockReturnValue({ projectPath: 'web-root', orchestrator: 'claude-code', runtime: 'chat' });
       return getScopedToolList(id).map((t) => t.name).filter((n) => n in ACTION_TOOL_PERMISSIONS);
     };
-    expect(listed('agent-a')).toHaveLength(6);
-    expect(listed('helper-a')).toHaveLength(6);
-    expect(listed('dispatcher')).toHaveLength(6);
+    expect(listed('agent-a')).toHaveLength(7);
+    expect(listed('helper-a')).toHaveLength(7);
+    expect(listed('dispatcher')).toHaveLength(7);
     expect(listed('quick-1')).toEqual([]);
     h.dispatchers.delete('dispatcher');
     h.trackedDispatchers.add('dispatcher');
@@ -461,6 +468,84 @@ describe('action tools', () => {
       expect((await call('dispatcher', 'action_history', { id })).body.runs).toHaveLength(1);
       expect((await call('agent-b', 'action_history', { id })).body.runs).toHaveLength(1);
       expect((await call('agent-b', 'action_history', { id: 'never' })).body.error.code).toBe('not_found');
+    });
+  });
+
+  describe('subscribe (#3042)', () => {
+    const fire = (event: Record<string, unknown>) => engine().handleEvent({ at: Date.now(), ...event } as never);
+    // Events reach a started engine, as in the app.
+    beforeEach(() => engine().start());
+
+    it('an agent’s subscription is its own action, listed with the others, telling it', async () => {
+      const r = await call('agent-a', 'subscribe', { event: 'git.remote_updated', branch: 'main', note: 'Tag the release.' });
+      expect(r.isError).toBe(false);
+      expect(r.body.action).toMatchObject({
+        owner: { kind: 'agent', agentId: 'agent-a' },
+        subscription: true,
+        name: 'Tell release-lead when web is pushed, pulled or fetched (main)',
+        description: 'When web is pushed, pulled or fetched (main) → Tell release-lead',
+        // Left out, the source is the agent's own project.
+        trigger: { kind: 'event', event: 'git.remote_updated', source: { kind: 'project', projectId: 'proj-1' }, branch: 'main' },
+        steps: [{ kind: 'message', agentId: 'agent-a', text: 'Tag the release.' }],
+      });
+      const listed = await call('agent-b', 'list_actions', {});
+      expect(listed.body.actions.map((a: { id: string }) => a.id)).toContain(r.body.action.id);
+      // Its owner manages it like any action it made; others can't.
+      expect((await call('agent-b', 'delete_action', { id: r.body.action.id })).body.text).toMatch(/an Action you don't own/);
+      expect((await call('agent-a', 'delete_action', { id: r.body.action.id })).isError).toBe(false);
+    });
+
+    it('messages its owner when the event fires, and not for other branches or projects', async () => {
+      const r = await call('agent-a', 'subscribe', { event: 'git.remote_updated', branch: 'main' });
+      const id = r.body.action.id as string;
+      fire({ type: 'git.remote_updated', repoPath: 'web-root', branch: 'dev' });
+      fire({ type: 'git.remote_updated', repoPath: 'api-root', branch: 'main' });
+      await flush();
+      expect(h.stepCalls).toHaveLength(0);
+      fire({ type: 'git.remote_updated', repoPath: 'web-root', branch: 'main' });
+      await flush();
+      expect(h.stepCalls).toHaveLength(1);
+      expect(h.stepCalls[0]).toMatchObject({
+        step: { kind: 'message', agentId: 'agent-a', text: 'You asked to be told when this happens.' },
+        ctx: { action: { id }, trigger: { kind: 'event', detail: 'web is pushed, pulled or fetched (main)' } },
+      });
+    });
+
+    it('follows the same rights as any action: an agent watches only what it may', async () => {
+      // agent-b isn't connected to agent-a, and api is another project.
+      const peer = await call('agent-a', 'subscribe', { event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'agent-b' } });
+      expect(peer.body.error).toEqual({ code: 'not_allowed', message: 'release-lead can’t act on that agent.' });
+      const other = await call('agent-a', 'subscribe', { event: 'git.commit', source: { kind: 'project', projectId: 'api-root' } });
+      expect(other.body.error.code).toBe('invalid_input');
+      h.wires.add('agent-a>agent-b');
+      expect((await call('agent-a', 'subscribe', { event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'agent-b' } })).isError).toBe(false);
+      // A helper only itself; a quick agent owns no actions.
+      expect((await call('helper-a', 'subscribe', { event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'agent-a' } })).body.error.code).toBe('not_allowed');
+      expect((await call('helper-a', 'subscribe', { event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'self' } })).isError).toBe(false);
+      expect((await call('quick-1', 'subscribe', { event: 'app.started' })).isError).toBe(true);
+    });
+
+    it('the Dispatcher subscribes to a connected agent’s events for itself the same way', async () => {
+      const r = await call('dispatcher', 'subscribe', { event: 'agent.slept', source: { kind: 'agent', agentId: 'agent-a' }, note: 'Read its handoff.' });
+      expect(r.isError).toBe(false);
+      expect(r.body.action).toMatchObject({
+        owner: { kind: 'dispatcher' },
+        subscription: true,
+        steps: [{ kind: 'message', agentId: 'dispatcher', text: 'Read its handoff.' }],
+        description: 'When release-lead goes to sleep → Tell the Dispatcher',
+      });
+      fire({ type: 'agent.asleep', agentId: 'agent-a' });
+      await flush();
+      expect(h.stepCalls).toMatchObject([{ step: { kind: 'message', agentId: 'dispatcher' }, ctx: { trigger: { detail: 'release-lead goes to sleep' } } }]);
+      // Only agents connected to it, and it names what it watches.
+      expect((await call('dispatcher', 'subscribe', { event: 'agent.slept', source: { kind: 'agent', agentId: 'agent-c' } })).body.error.code).toBe('not_allowed');
+      expect((await call('dispatcher', 'subscribe', { event: 'agent.slept' })).body.error.code).toBe('invalid_input');
+      expect((await call('dispatcher', 'subscribe', { event: 'app.started' })).isError).toBe(false);
+    });
+
+    it('needs an event', async () => {
+      expect((await call('agent-a', 'subscribe', {})).isError).toBe(true);
+      expect((await call('agent-a', 'subscribe', { event: 'agent.idle', source: { kind: 'agent', agentId: 'self' } })).body.error.code).toBe('invalid_input');
     });
   });
 });

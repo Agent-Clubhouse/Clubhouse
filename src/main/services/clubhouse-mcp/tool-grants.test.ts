@@ -148,6 +148,7 @@ describe('tool grant declarations (#2967)', () => {
       delete_action: action.write on action_arg
       run_action: action.run on action_arg
       action_history: action.read on app
+      subscribe: action.write on app
       read_helper_presets: settings.app.read on app
       set_helper_presets: settings.app.write on app
       request_grant: grant.request on self"

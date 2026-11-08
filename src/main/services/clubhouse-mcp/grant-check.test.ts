@@ -277,6 +277,21 @@ describe('a person\'s changes reach the next call (#2971)', () => {
     expect(checkToolGrant('plain', presets.grant, {}).ok).toBe(false);
   });
 
+  it('subscribing is making an Action (#3042): it follows action.write on the app', async () => {
+    const subscribe = registerAll().find((t) => t.name === 'subscribe')!;
+    expect(subscribe.grant).toEqual({ actions: ['action.write'], target: 'app' });
+    for (const caller of CALLERS) expect(checkToolGrant(caller, subscribe.grant, {}).ok, caller).toBe(true);
+    await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'action.write', target: { kind: 'app' }, mode: 'off' }] }));
+    try {
+      const refused = checkToolGrant('plain', subscribe.grant, {});
+      expect(refused).toMatchObject({ ok: false, reason: 'no_grant' });
+      if (refused.ok === false) expect(refused.message).toContain('action.write on the app');
+      expect(checkToolGrant('orchestrator', subscribe.grant, {}).ok).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+
   it('an explicit grant on one person\'s Action opens just that one (#2918)', async () => {
     registerActionOwnerLookup((args) => (typeof args.id === 'string' ? { actionId: args.id } : undefined));
     try {

@@ -556,7 +556,7 @@ export const ATTR = {
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     // actions (#2952), the permission model's action.* (#2921)
-    'create_action', 'list_actions', 'update_action', 'delete_action', 'run_action', 'action_history',
+    'create_action', 'list_actions', 'update_action', 'delete_action', 'run_action', 'action_history', 'subscribe',
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
