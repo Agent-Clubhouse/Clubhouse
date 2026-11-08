@@ -142,7 +142,8 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { callTool, getScopedToolList, _resetForTesting } from './clubhouse-mcp/tool-registry';
 import { registerDispatcherControlTools } from './clubhouse-mcp/tools/dispatcher-control-tools';
 import { agentRegistry } from './agent-registry';
-import { auditPath, appendAudit as actualAppendAudit, readAudit as actualReadAudit, MAX_AUDIT_BYTES, _resetDispatcherAuditForTesting, type AuditRow } from './dispatcher-audit';
+import { type AuditRow } from './dispatcher-audit';
+import { captureAuditEvents, type AuditCapture } from '../telemetry/__test-utils__/audit-capture';
 import {
   dispatcherConnectionSource,
   clearUserRemoval as actualClearUserRemoval,
@@ -211,8 +212,6 @@ function ownOperation<A extends unknown[], R>(operation: (...args: A) => Promise
     return work.observe(operation.apply(this, args));
   };
 }
-const appendAudit = ownOperation(actualAppendAudit);
-const readAudit = ownOperation(actualReadAudit);
 const clearUserRemoval = ownOperation(actualClearUserRemoval);
 const isRemovalUnsaved = ownOperation(actualIsRemovalUnsaved);
 const listDispatcherLinksForUser = ownOperation(actualListDispatcherLinksForUser);
@@ -257,7 +256,7 @@ async function restart(): Promise<void> {
     for (const { agentId } of bindingManager.getAllBindings()) bindingManager.unbindAgent(agentId);
     _resetPersistedBindingSourcesForTesting();
     _resetDispatcherConnectionsForTesting();
-    _resetDispatcherAuditForTesting();
+    audit?.clear();
     startApp();
     return undefined;
   };
@@ -271,9 +270,12 @@ const call = ownOperation((name: string, args: Record<string, unknown> = {}, cal
 const isBound = (a: string, b: string) => bindingManager.getBindingsForAgent(a).some((x) => x.targetId === b);
 const storedPairs = async () => (await readDispatcherConnections()).map((c) => `${c.agentId}>${c.targetId}`);
 
+// The Dispatcher's audit rows (#2920): the audit events the local recorder receives, oldest first.
+let audit: AuditCapture | undefined;
+rawBeforeEach(() => { audit = captureAuditEvents(); });
+afterEach(() => { audit?.stop(); audit = undefined; });
 function auditRows(): AuditRow[] {
-  if (!fs.existsSync(auditPath())) return [];
-  return fs.readFileSync(auditPath(), 'utf-8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  return (audit?.controls() ?? []) as AuditRow[];
 }
 const lastAudit = () => auditRows().at(-1)!;
 
@@ -1342,27 +1344,11 @@ describe('audit', () => {
     expect(row.requested?.fields).toEqual(['max_helpers', 'note']);
   });
 
-  it('rotates to one older file and reads across it', async () => {
-    const big = { tool: 'x', actorId: 'dispatcher', targets: ['y'.repeat(100)], outcome: 'ok' as const };
-    fs.writeFileSync(auditPath(), `${JSON.stringify({ ts: 'old', ...big })}\n${'z'.repeat(MAX_AUDIT_BYTES)}\n`);
-    await appendAudit({ tool: 'new', actorId: 'dispatcher', targets: [], outcome: 'ok' });
-    expect(fs.existsSync(`${auditPath()}.1`)).toBe(true);
-    expect(fs.statSync(auditPath()).size).toBeLessThan(1000);
-    const rows = await readAudit(5);
-    expect(rows.map((r) => r.tool)).toEqual(['new', 'x']);
-  });
-
-  it('skips a torn line', async () => {
-    await appendAudit({ tool: 'first', actorId: 'dispatcher', targets: [], outcome: 'ok' });
-    fs.appendFileSync(auditPath(), '{"torn');
-    expect((await readAudit(5)).map((r) => r.tool)).toEqual(['first']);
-  });
-
-  it('keeps the change and warns when the row can\'t be written', async () => {
-    fs.mkdirSync(auditPath());
+  it('keeps the change and warns when local telemetry recording is off, so nothing records it', async () => {
+    audit?.stop();
     const result = JSON.parse(text(await call('set_orchestrator_helpers', { agent_id: 'a', max_helpers: 3 })));
     expect(state.policies.get('a')?.maxHelpers).toBe(3);
-    expect(result.audit_warning).toEqual(expect.stringContaining('audit record'));
+    expect(result.audit_warning).toEqual(expect.stringContaining('recording is off'));
   });
 });
 
@@ -1383,6 +1369,5 @@ describe('the store', () => {
 
   it('lives outside the Dispatcher\'s working folder', () => {
     expect(dispatcherConnectionsPath().startsWith(path.join(state.base, 'dispatcher') + path.sep)).toBe(false);
-    expect(auditPath().startsWith(path.join(state.base, 'dispatcher') + path.sep)).toBe(false);
   });
 });

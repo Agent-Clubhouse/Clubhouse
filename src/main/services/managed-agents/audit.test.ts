@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { captureAuditEvents, type AuditCapture } from '../../telemetry/__test-utils__/audit-capture';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +13,7 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => W.home } }
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 
 import { createAssetCatalogStore, withDispatcherCatalogWrites } from '../asset-catalog/store';
-import { _resetSettingsAuditForTesting, readSettingsAudit, withSettingsSurface } from '../settings-audit';
+import { _resetSettingsAuditForTesting, withSettingsSurface } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import { BUILTIN_BLOCK_IDS } from './builtins';
@@ -23,12 +24,16 @@ let service: ManagedAgentsService;
 let agents: Map<string, DurableAgentConfig>;
 
 /** Managed rows only, oldest first, without timestamps. */
+let capture: AuditCapture | undefined;
 async function managedRows() {
-  const rows = await readSettingsAudit(50);
-  return rows.reverse().map(({ ts: _ts, ...row }) => row).filter((r) => r.key.startsWith('managed.'));
+  // The audit events the local recorder receives (#2920), oldest first.
+  return (capture?.settings() ?? []).filter((r) => r.key.startsWith('managed.'));
 }
 
+afterEach(() => { capture?.stop(); capture = undefined; });
+
 beforeEach(async () => {
+  capture = captureAuditEvents();
   W.home = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-audit-'));
   agents = new Map();
   service = createManagedAgentsService({
@@ -67,7 +72,7 @@ describe('managed agents settings audit (D13)', () => {
       { surface: 'ui', scope: 'app', key: 'managed.part.updated', targetId: part.id, changed: true, outcome: 'ok' },
       { surface: 'ui', scope: 'app', key: 'managed.part.deleted', targetId: part.id, changed: true, outcome: 'ok' },
     ]);
-    const raw = fs.readFileSync(path.join(W.home, '.clubhouse-dev', 'settings-audit.jsonl'), 'utf-8');
+    const raw = JSON.stringify(await managedRows());
     for (const secret of ['region-hunter2', 'region-another', 'VAULT_TOKEN', 'Secret server', 'vault-mcp', 'Uses the vault']) expect(raw).not.toContain(secret);
   });
 

@@ -75,7 +75,7 @@ export class DispatcherControlError extends Error {
 export const DEFAULT_CONTROLS_PAGE = 10;
 export const MAX_CONTROLS_PAGE = 25;
 
-const AUDIT_FAILED = 'The change was made, but it could not be written to the audit record.';
+const AUDIT_FAILED = 'The change was made, but local telemetry recording is off, so it is not in the audit record.';
 
 /** Run one tool call, leaving its audit row whatever happens. */
 async function audited<T extends object>(

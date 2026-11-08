@@ -1,21 +1,17 @@
 /**
  * The audit record of the Dispatcher's controls over orchestrators (#2661): one
- * JSON line per call, refusals included, in `dispatcher-audit.jsonl` under the
- * Clubhouse base dir. Not the Dispatcher's folder, which is its working
- * directory. appLog isn't enough: it can be off.
+ * `clubhouse.audit.dispatcher_control` event per call, refusals included, in the
+ * local telemetry record (#2920, docs/telemetry-otel-spec.md §6.13). appLog isn't
+ * enough: it can be off.
  *
  * Rows hold allowlisted values only, and strings the caller supplied are cut
- * short. At {@link MAX_AUDIT_BYTES} the file moves to `.1`, replacing the last
- * one, so the record stays bounded.
+ * short. The record's retention keeps it bounded.
  */
 
-import { tel } from '../telemetry/facade';
+import { isTelemetryActive, tel } from '../telemetry/facade';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { localRecordSalt, readLocalEvents } from '../telemetry/local-control';
 import { hashId } from '../telemetry/ids';
-import { createAuditLog, MAX_AUDIT_BYTES } from './bounded-audit-log';
-
-export { MAX_AUDIT_BYTES };
 export const MAX_AUDIT_READ = 50;
 const MAX_CALLER_STRING = 100;
 const MAX_CALLER_LIST = 8;
@@ -36,9 +32,6 @@ export interface AuditRow {
   code?: string;
 }
 
-const log = createAuditLog<Omit<AuditRow, 'ts'>>('dispatcher-audit.jsonl', (row) => ({ tool: row.tool }), MAX_AUDIT_READ);
-
-export const auditPath = log.path;
 
 /** A string the caller supplied, safe to keep in a row. */
 export function auditString(value: unknown): string {
@@ -80,18 +73,13 @@ function recordEvent(row: Omit<AuditRow, 'ts'>): void {
 }
 
 /**
- * Append a row. Returns false when it couldn't be written: the change it
- * describes has already happened, so the caller reports that and carries on.
- * Also recorded as a telemetry audit event (#2920).
+ * Record a row. Returns false when nothing records it: local telemetry recording
+ * is off. The change it describes has already happened, so the caller reports
+ * that and carries on.
  */
-export function appendAudit(row: Omit<AuditRow, 'ts'>): Promise<boolean> {
+export async function appendAudit(row: Omit<AuditRow, 'ts'>): Promise<boolean> {
   recordEvent(row);
-  return log.append(row);
-}
-
-/** The newest rows from the old JSONL file, newest first, up to {@link MAX_AUDIT_READ}. */
-export function readAudit(limit: number): Promise<AuditRow[]> {
-  return log.read(limit);
+  return isTelemetryActive();
 }
 
 type Flat = Record<string, AuditValue>;
@@ -136,5 +124,3 @@ export async function readAuditFromRecord(limit: number, knownIds: Iterable<stri
   });
 }
 
-/** For testing: forget pending work. */
-export const _resetDispatcherAuditForTesting = log.reset;
