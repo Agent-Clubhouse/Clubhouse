@@ -533,7 +533,7 @@ export const ATTR = {
     // appearance (#2597)
     'update_project', 'update_agent',
     // settings reads (#2653)
-    'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets',
+    'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
     // Dispatcher controls over connected orchestrators (#2661)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls',
     // orchestration: connection tools (#2230)
@@ -547,7 +547,7 @@ export const ATTR = {
    * Why the tool registry refused a call before any handler ran (#2308). Only on
    * `clubhouse.mcp.tool_call` spans whose result is `tool_error`.
    */
-  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown', 'no_grant']),
+  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown', 'no_grant', 'ask_first']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
   // Phase 4b: spawn, create, delete, kill, shoulder taps
   agentResume: boolAttr('clubhouse.agent.resume'),

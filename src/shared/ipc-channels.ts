@@ -155,6 +155,12 @@ export const IPC = {
     GET_GRANTS: 'agent:get-grants',
     SET_GRANT: 'agent:set-grant',
     RESET_GRANTS: 'agent:reset-grants',
+    /** Main → renderer (#2970): a Clubhouse permission request waiting on the user. */
+    GRANT_REQUEST: 'agent:grant-request',
+    /** Main → renderer (#2970): permission requests that were answered, expired or dropped. */
+    GRANT_REQUESTS_CLOSED: 'agent:grant-requests-closed',
+    LIST_GRANT_REQUESTS: 'agent:list-grant-requests',
+    ANSWER_GRANT_REQUEST: 'agent:answer-grant-request',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
     LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
     CREATE_SKILL: 'agent:create-skill',

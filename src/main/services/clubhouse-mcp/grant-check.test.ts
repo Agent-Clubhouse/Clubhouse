@@ -9,7 +9,7 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
 import { listToolGrants, _resetForTesting, type RegisteredToolGrant } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
-import { checkToolGrant, registerActionOwnerLookup } from './grant-check';
+import { checkToolGrant, isListable, registerActionOwnerLookup } from './grant-check';
 import { updateAgentGrantChanges } from '../agent-grants-store';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
@@ -277,5 +277,53 @@ describe('a person\'s changes reach the next call (#2971)', () => {
       registerActionOwnerLookup(null);
       await updateAgentGrantChanges('plain', () => undefined);
     }
+  });
+});
+
+describe('Ask first (#2970)', () => {
+  beforeEach(setupCallers);
+  const wire = { binding: { targetKind: 'agent' as const, targetId: 'peer' } };
+  const read = { actions: ['agent.read'] as const, target: 'connected' as const };
+
+  it('a permission set to Ask first asks, and the tool stays listed', async () => {
+    await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.read', target: { kind: 'connected' }, mode: 'ask' }] }));
+    try {
+      const check = checkToolGrant('plain', read, {});
+      expect(check).toMatchObject({ ok: false, reason: 'ask_first', asks: [{ action: 'agent.read', where: 'an agent you are connected to' }] });
+      expect(isListable(check)).toBe(true);
+      expect(isListable(checkToolGrant('plain', { actions: ['settings.app.write'], target: 'app' }, {}))).toBe(false);
+      const status = registerAll().find((t) => t.kind === 'agent' && t.name === 'get_status')!;
+      expect(checkToolGrant('plain', status.grant, {}, wire)).toMatchObject({ reason: 'ask_first' });
+    } finally {
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+
+  it('a refusal wins over an ask, so the user is never asked for a call that would fail', async () => {
+    await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.read', target: { kind: 'connected' }, mode: 'ask' }] }));
+    try {
+      const both: ToolGrant = [read, { actions: ['settings.app.write'], target: 'app' }];
+      expect(checkToolGrant('plain', both, {})).toMatchObject({ ok: false, reason: 'no_grant' });
+    } finally {
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+
+  it('a tool that asks itself gets the call (start_helper, dispose_helper)', async () => {
+    await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.read', target: { kind: 'connected' }, mode: 'ask' }] }));
+    try {
+      expect(checkToolGrant('plain', { ...read, askedByTool: true }, {}).ok).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+
+  it('the Dispatcher\'s app settings write asks by default', () => {
+    expect(checkToolGrant('dispatcher', { actions: ['settings.app.write'], target: 'app' }, {})).toMatchObject({ reason: 'ask_first', asks: [{ where: 'the app' }] });
+  });
+
+  it('every agent can ask for a permission for itself', () => {
+    const request = registerAll().find((t) => t.name === 'request_grant')!;
+    for (const caller of CALLERS) expect(checkToolGrant(caller, request.grant, {}).ok).toBe(true);
   });
 });

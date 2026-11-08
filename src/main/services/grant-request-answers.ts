@@ -1,0 +1,58 @@
+/**
+ * The user's answer to a Clubhouse permission request (#2970). Only the
+ * user's own surfaces call this.
+ *
+ * - A call request: Allow lets that one call through when the agent makes it
+ *   again; the agent's permissions don't change.
+ * - A permission request: Allow adds the permission to the agent's saved
+ *   permissions, through the same path as its permissions page.
+ *
+ * Either way the agent is told, if it is running.
+ */
+
+import { GRANT_ACTION_LABELS } from '../../shared/agent-grant-changes';
+import type { GrantRequest, GrantRequestAnswer } from '../../shared/grant-requests';
+import { setAgentGrant } from './agent-grants-service';
+import { deliverHelperUpdate } from './clubhouse-mcp/tools/helper-delivery';
+import { peekGrantRequest, takeGrantRequest } from './grant-requests';
+import { appLog } from './log-service';
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function tell(agentId: string, text: string): void {
+  deliverHelperUpdate(agentId, `[Clubhouse] ${text}`, { fromClubhouse: true, text }).then((delivery) => {
+    if (delivery !== 'delivered') appLog('core:mcp', 'info', 'Permission answer not delivered: the agent is not running', { meta: { agentId, delivery } });
+  }).catch((err: unknown) => {
+    // telemetry-exempt: logged; the answer stands whether or not the agent hears it
+    appLog('core:mcp', 'warn', 'Permission answer not delivered', { meta: { agentId, error: errorText(err) } });
+  });
+}
+
+function what(request: GrantRequest): string {
+  if (request.kind === 'call') return `your ${request.toolName ?? 'tool'} call`;
+  const action = request.actions[0];
+  return `${GRANT_ACTION_LABELS[action] ?? action} (${action}) on ${request.where}`;
+}
+
+export async function answerGrantRequest(requestId: string, allow: boolean): Promise<GrantRequestAnswer> {
+  const request = peekGrantRequest(requestId);
+  if (!request) return { ok: false, error: 'This request has expired or was already answered.' };
+  if (allow && request.kind === 'grant' && request.target) {
+    try {
+      await setAgentGrant(request.projectPath, request.agentId, { action: request.actions[0], target: request.target, mode: 'allow' });
+    } catch (err) {
+      // The request stays, so the user can decline it or change the permissions page instead.
+      return { ok: false, error: errorText(err) };
+    }
+  }
+  if (!takeGrantRequest(requestId, allow)) return { ok: false, error: 'This request has expired or was already answered.' };
+  appLog('core:mcp', 'info', allow ? 'Permission request allowed' : 'Permission request declined', {
+    meta: { agentId: request.agentId, requestId, kind: request.kind },
+  });
+  if (!allow) tell(request.agentId, `The user declined ${what(request)}. Don't ask again for the same thing; carry on without it or ask them in your reply.`);
+  else if (request.kind === 'call') tell(request.agentId, `The user allowed ${what(request)}. Make the same call again, with the same arguments, to run it once.`);
+  else tell(request.agentId, `The user allowed ${what(request)}. You have it now.`);
+  return { ok: true };
+}

@@ -363,7 +363,7 @@ export function registerHelperDisposeTools(): void {
       },
     },
     handOff,
-    { group: 'orchestration', grant: { actions: ['agent.dispose'], target: 'my_helpers' } },
+    { group: 'orchestration', grant: { actions: ['agent.dispose'], target: 'my_helpers', askedByTool: true } },
   );
 
   registerGlobalTool(
@@ -386,6 +386,6 @@ export function registerHelperDisposeTools(): void {
       },
     },
     disposeHelperTool,
-    { group: 'orchestration', grant: { actions: ['agent.dispose'], target: 'my_helpers' } },
+    { group: 'orchestration', grant: { actions: ['agent.dispose'], target: 'my_helpers', askedByTool: true } },
   );
 }
