@@ -18,7 +18,7 @@ export interface NeedsAttentionItem {
    * `start_request`: this orchestrator is waiting for approval to start a helper (#2234).
    * `question` and `permission` are told apart so a question isn't read as a permission prompt (#2366).
    */
-  reason: 'question' | 'permission' | 'tool_error' | 'error' | 'dispose_request' | 'start_request';
+  reason: 'question' | 'permission' | 'tool_error' | 'error' | 'dispose_request' | 'start_request' | 'grant_request';
   message: string;
   /** When the agent started waiting, for ordering across hosts. */
   at: number;
@@ -49,8 +49,9 @@ function permissionMessage(d: AgentDetailedStatus): string {
  * errored agent, each labeled as what it is (#2366).
  * `disposeRequests` (keyed by helper id) adds helpers an orchestrator asked to
  * dispose (#2229), and `startRequests` (keyed by orchestrator id) adds
- * orchestrators waiting for approval to start a helper (#2234); an agent
- * already listed for another reason keeps that one.
+ * orchestrators waiting for approval to start a helper (#2234), and
+ * `grantRequests` (keyed by agent id) agents asking for a Clubhouse permission
+ * (#2970); an agent already listed for another reason keeps that one.
  */
 export function selectNeedsAttention(
   agents: Record<string, Agent>,
@@ -58,6 +59,7 @@ export function selectNeedsAttention(
   projectIds: ReadonlySet<string>,
   disposeRequests: Readonly<Record<string, { message: string; at: number }>> = {},
   startRequests: Readonly<Record<string, { message: string; at: number }>> = {},
+  grantRequests: Readonly<Record<string, { message: string; at: number }>> = {},
 ): NeedsAttentionItem[] {
   const items: NeedsAttentionItem[] = [];
   for (const agent of Object.values(agents)) {
@@ -80,6 +82,9 @@ export function selectNeedsAttention(
     } else if (startRequests[agent.id]) {
       const { message, at: requestedAt } = startRequests[agent.id];
       items.push({ agent, at: requestedAt, reason: 'start_request', message });
+    } else if (grantRequests[agent.id]) {
+      const { message, at: requestedAt } = grantRequests[agent.id];
+      items.push({ agent, at: requestedAt, reason: 'grant_request', message });
     }
   }
   // Oldest request first, so the queue reads in the order things happened.

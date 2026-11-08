@@ -764,7 +764,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
         name,
         severity: evOpts?.severity ?? 'info',
         attrs: attrsOf(attrs),
-      }, als.getStore()));
+      }, evOpts?.trace && /^[0-9a-f]{32}$/.test(evOpts.trace.traceId) && /^[0-9a-f]{16}$/.test(evOpts.trace.spanId) ? evOpts.trace : als.getStore()));
     },
 
     exception(error, exOpts) {

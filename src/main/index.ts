@@ -13,6 +13,7 @@ import { getSettings as getThemeSettings } from './services/theme-service';
 import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
+import { isFailedCopilotWrite } from './chat/copilot/failed-writes';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
@@ -151,6 +152,14 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
   const stack = reason instanceof Error ? reason.stack : undefined;
+  // A failed Copilot message write, usually to a CLI that is going away, that
+  // its caller already got as an error. vscode-jsonrpc 8.2.1 left a second
+  // copy of every failed request write; 10.0.0 doesn't, but a notification
+  // write still rethrows, so the guard stays (#2706, failed-writes.ts).
+  if (isFailedCopilotWrite(reason)) {
+    appLog('core:process', 'warn', 'A Copilot message write failed, and its request already failed with it', { meta: { error: msg, stack } });
+    return;
+  }
   appLog('core:process', 'error', 'Unhandled promise rejection', {
     meta: { error: msg, stack },
   });

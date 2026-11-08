@@ -1305,7 +1305,7 @@ describe('annex-client', () => {
       expect(WsMock).toHaveBeenCalled();
     });
 
-    it('auto-connects to legacy peers without role (backward compat)', async () => {
+    it('lists a legacy peer without a role as a satellite that needs pairing again, and never dials it', async () => {
       const { WebSocket: WsMock } = await import('ws');
 
       mockHttpGetIdentity({
@@ -1327,12 +1327,16 @@ describe('annex-client', () => {
         // No role field — legacy peer
       });
 
+      // The real rule: an entry with no role (or no pin) needs pairing again.
+      const { peerNeedsPairing } = await vi.importActual<typeof import('./annex-peers')>('./annex-peers');
+      vi.mocked(annexPeers.peerNeedsPairing).mockImplementation(peerNeedsPairing);
+      vi.mocked(WsMock).mockClear();
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
 
-      // Should connect (backward compat: no role = satellite)
       expect(annexClient.getSatellites()).toHaveLength(1);
-      expect(WsMock).toHaveBeenCalled();
+      expect(annexClient.getSatellite('LL:LL:LL:LL')).toMatchObject({ needsPairing: true, state: 'disconnected' });
+      expect(WsMock).not.toHaveBeenCalled();
     });
 
   });
@@ -2373,11 +2377,50 @@ describe('annex-client', () => {
       expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, lastError: expect.stringMatching(/expired/) });
     });
 
-    it('reports another certificate at the address as a mismatch, and keeps trying', async () => {
+    it('stops on another certificate at the address, and tries once more only at a newly announced address', async () => {
+      await discover('192.168.1.50');
+      vi.useFakeTimers();
+      try {
+        sockets[0].handlers.error(Object.assign(new Error('Peer certificate does not match the pinned certificate'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', needsPairing: true, lastError: expect.stringMatching(/different certificate/) });
+        vi.advanceTimersByTime(120_000);
+        expect(WebSocketMock).toHaveBeenCalledTimes(1);
+      } finally { vi.useRealTimers(); }
+      await bonjourFindCallback!(makeService({ addresses: ['192.168.1.50'] }));
+      expect(WebSocketMock).toHaveBeenCalledTimes(1);
+      await bonjourFindCallback!(makeService({ addresses: ['10.9.9.9'] }));
+      expect(WebSocketMock).toHaveBeenCalledTimes(2);
+      expect(WebSocketMock.mock.calls.at(-1)![0]).toBe('wss://10.9.9.9:9000/ws?client=desktop');
+    });
+
+    it('waits for a retry when the satellite certificate is not valid yet (a clock difference)', async () => {
       await discover();
-      sockets[0].handlers.error(Object.assign(new Error('Peer certificate does not match the pinned certificate'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
-      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', lastError: 'Peer certificate mismatch' });
-      expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+      vi.useFakeTimers();
+      try {
+        sockets[0].handlers.error(Object.assign(new Error('certificate is not yet valid'), { code: 'CERT_NOT_YET_VALID' }));
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', lastError: expect.stringMatching(/date and time/) });
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+        vi.advanceTimersByTime(120_000);
+        expect(WebSocketMock).toHaveBeenCalledTimes(1);
+      } finally { vi.useRealTimers(); }
+      annexClient.retry(FP);
+      expect(WebSocketMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('treats a REST 401 needs_pairing or peer_not_paired like the same refusal on the WebSocket', async () => {
+      await discover();
+      sockets[0].handlers.open();
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _options: unknown, cb: any) => {
+        const req = Object.assign(new EventEmitter(), { setTimeout: vi.fn(), destroy: vi.fn(), write: vi.fn(), end: () => {
+          const res = Object.assign(new EventEmitter(), { statusCode: 401 });
+          cb(res);
+          res.emit('data', Buffer.from(JSON.stringify({ error: 'peer_not_paired', message: 'x' })));
+          res.emit('end');
+        } });
+        return req;
+      }) as any);
+      await expect(annexClient.requestGroupProjectGet(FP, 'gp_1')).rejects.toThrow(/401/);
+      expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, lastError: expect.stringMatching(/no longer paired/) });
     });
 
     it('never moves a connected satellite to an address discovery announces', async () => {
@@ -2452,7 +2495,7 @@ describe('annex-client', () => {
 
     it('pairs from a link: PIN only to the certificate it names, binding sent, answer checked, pin stored', async () => {
       const result = await annexClient.pairWithLink(await link());
-      expect(result).toEqual({ success: true, alias: 'Mini' });
+      expect(result).toEqual({ success: true, alias: 'Mini', fingerprint: SAT_FP });
       expect(annexTls.probePeerCertificate).toHaveBeenCalledWith('192.168.1.60', 9443);
       expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'PROBED-PEM', fingerprint: CERT_COLONS });
       expect(posted).toHaveLength(1);

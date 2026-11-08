@@ -295,6 +295,13 @@ describe('useCommandSource', () => {
     expect(mockSetSettingsSubPage).toHaveBeenCalledWith('orchestrators');
   });
 
+  it('export project as blueprint bundle opens the active project\'s settings', () => {
+    const { result } = renderHook(() => useCommandSource());
+    findItem(result.current, 'action:export-project-blueprints').execute();
+    expect(mockOpenProjectSettings).toHaveBeenCalledWith('p1');
+    expect(mockSetSettingsContext).not.toHaveBeenCalledWith('project');
+  });
+
   // ── Canvas resolution tests ──────────────────────────
 
   it('all canvas items have the canvas icon and Canvases category', () => {

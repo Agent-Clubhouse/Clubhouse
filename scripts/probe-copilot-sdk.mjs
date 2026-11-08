@@ -196,7 +196,8 @@ async function main() {
     permission: async () => {
       const seen = [];
       return withSession({ onPermissionRequest: (r) => { seen.push(r.kind); return { kind: 'reject', feedback: 'no' }; } }, async (session) => {
-        fake.script({ tools: [{ name: 'bash', args: { command: 'true', description: 'x', mode: 'sync', initial_wait: 5 } }] }, { text: 'ok' });
+        // A command that writes: from CLI 1.0.107 a read-only one such as `true` runs without asking.
+        fake.script({ tools: [{ name: 'bash', args: { command: 'touch probe-marker', description: 'x', mode: 'sync', initial_wait: 5 } }] }, { text: 'ok' });
         await turn(session, 'PERM');
         return { pass: seen.includes('shell'), seen };
       });

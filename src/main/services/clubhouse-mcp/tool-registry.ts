@@ -15,7 +15,8 @@ import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChang
 import { dispatcherGateVersion, isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
-import { checkToolGrant, type GrantCheck, type GrantCheckWire } from './grant-check';
+import { checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
+import { askFirst } from './ask-first';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -495,8 +496,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       if (deniedTools.has(template.nameSuffix)) {
         continue;
       }
-      // Listed only when a grant covers it, as callTool checks (#2968).
-      if (!checkToolGrant(agentId, template.grant, {}, wireOf(binding)).ok) continue;
+      // Listed only when a grant covers it or the agent can ask for it, as callTool checks (#2968, #2970).
+      if (!isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding)))) continue;
 
       let description = template.definition.description;
 
@@ -528,7 +529,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   for (const [, tool] of globalTools) {
     if (!groupAllows(tool.group, agentId)) continue;
     if (tool.when && !tool.when.isOn()) continue;
-    if (!checkToolGrant(agentId, tool.grant, {}).ok) continue;
+    if (!isListable(checkToolGrant(agentId, tool.grant, {}))) continue;
     tools.push(tool.definition);
   }
 
@@ -564,8 +565,6 @@ export async function callTool(
       appLog('core:mcp', 'info', 'Tool call refused: the tool is turned off', { meta: { agentId, toolName } });
       return refuse('group_off', globalTool.when.refusal);
     }
-    const granted = checkToolGrant(agentId, globalTool.grant, args);
-    if (granted.ok === false) return grantRefusal(agentId, toolName, granted);
     const schema = globalTool.definition.inputSchema;
     if (schema && typeof schema === 'object') {
       const required = (schema.required as string[]) || [];
@@ -581,6 +580,12 @@ export async function callTool(
           return refuse('invalid_args', `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}`);
         }
       }
+    }
+    // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
+    const granted = checkToolGrant(agentId, globalTool.grant, args);
+    if (granted.ok === false) {
+      const refused = await grantRefusal(agentId, toolName, granted, args);
+      if (refused) return refused;
     }
     return withSettingsSurface('mcp', agentId, () => globalTool.handler(agentId, args));
   }
@@ -674,7 +679,10 @@ export async function callTool(
   }
 
   const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding));
-  if (granted.ok === false) return grantRefusal(agentId, toolName, granted);
+  if (granted.ok === false) {
+    const refused = await grantRefusal(agentId, toolName, granted, args);
+    if (refused) return refused;
+  }
 
   return withSettingsSurface('mcp', agentId, () => template.handler(binding.targetId, agentId, args));
 }
@@ -687,8 +695,16 @@ function wireOf(binding: McpBinding): GrantCheckWire {
   };
 }
 
-/** A call no grant covers (#2968). The refusal never says whether the target exists. */
-function grantRefusal(agentId: string, toolName: string, check: Extract<GrantCheck, { ok: false }>): McpToolResult {
+/**
+ * A call no grant covers (#2968), or one the user is asked about first
+ * (#2970). Null: the user allowed this call, so it runs. The refusal never
+ * says whether the target exists.
+ */
+async function grantRefusal(agentId: string, toolName: string, check: Extract<GrantCheck, { ok: false }>, args: Record<string, unknown>): Promise<McpToolResult | null> {
+  if (check.reason === 'ask_first') {
+    const outcome = await askFirst(agentId, toolName, args, check.asks);
+    return outcome.kind === 'approved' ? null : refuse('ask_first', outcome.text);
+  }
   appLog('core:mcp', 'info', 'Tool call refused: no Clubhouse permission covers it', { meta: { agentId, toolName, reason: check.reason } });
   return refuse('no_grant', check.message);
 }

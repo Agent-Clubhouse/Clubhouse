@@ -14,6 +14,7 @@ vi.mock('../grant-check', async (original) => {
 });
 
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../agent-config', () => ({ getDurableConfig: vi.fn(async () => ({ name: 'Dispatcher' })) }));
 vi.mock('../../helper-routing', () => {
   class HelperRoutingError extends Error {
     constructor(readonly code: string, message: string, readonly settings?: { revision: string; providers: unknown }) { super(message); }
@@ -27,6 +28,7 @@ import { HelperRoutingError } from '../../helper-routing';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
 import { setDispatcherAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
 import { registerHelperPresetTools } from './helper-preset-tools';
+import { listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
 
 const parse = (r: { content: Array<{ text?: string }> }) => JSON.parse(r.content[0].text ?? '{}');
 
@@ -38,6 +40,7 @@ beforeEach(() => {
   for (const id of [...agentRegistry.getAllRegistrations().keys()]) agentRegistry.untrack(id);
   for (const id of ['plain', 'dispatcher']) agentRegistry.register(id, { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
   setDispatcherAgent('dispatcher', true);
+  _resetGrantRequestsForTesting();
   registerHelperPresetTools();
 });
 
@@ -49,12 +52,59 @@ describe('helper presets over MCP (#2785)', () => {
     expect(getScopedToolList('plain').map((t) => t.name)).toContain('read_helper_presets');
   });
 
-  it('no agent can change them without the app settings permission, the Dispatcher included', async () => {
-    for (const agent of ['plain', 'dispatcher']) {
-      const result = await callTool(agent, 'set_helper_presets', { revision: 'r1', reset: {} });
-      expect(result.isError).toBe(true);
-      expect(getScopedToolList(agent).map((t) => t.name)).not.toContain('set_helper_presets');
-    }
+  it('an agent without the app settings permission is refused, and isn\'t offered the tool', async () => {
+    const result = await callTool('plain', 'set_helper_presets', { revision: 'r1', reset: {} });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('settings.app.write');
+    expect(getScopedToolList('plain').map((t) => t.name)).not.toContain('set_helper_presets');
+    expect(listGrantRequests()).toEqual([]);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('the Dispatcher\'s change waits for the user in Needs you, then goes through once (#2970)', async () => {
+    expect(getScopedToolList('dispatcher').map((t) => t.name)).toContain('set_helper_presets');
+    const args = { revision: 'r1', reset: {} };
+    const asked = await callTool('dispatcher', 'set_helper_presets', args);
+    expect(asked.isError).toBe(true);
+    expect(asked.content[0].text).toContain('needs the user\'s approval');
+    const [request] = listGrantRequests();
+    expect(request).toMatchObject({ kind: 'call', agentId: 'dispatcher', agentName: 'Dispatcher', toolName: 'set_helper_presets', actions: ['settings.app.write'], where: 'the app' });
+    expect(mocks.update).not.toHaveBeenCalled();
+
+    // Asking again for the same call reuses the request.
+    await callTool('dispatcher', 'set_helper_presets', { reset: {}, revision: 'r1' });
+    expect(listGrantRequests()).toHaveLength(1);
+
+    takeGrantRequest(request.requestId, true);
+    expect(parse(await callTool('dispatcher', 'set_helper_presets', args))).toMatchObject({ ok: true });
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    // Once: the next call asks again.
+    expect((await callTool('dispatcher', 'set_helper_presets', args)).isError).toBe(true);
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('a call with bad arguments fails on them, without asking the user', async () => {
+    const r = await callTool('dispatcher', 'set_helper_presets', { reset: {} });
+    expect(r.content[0].text).toContain('Missing required argument: revision');
+    expect(listGrantRequests()).toEqual([]);
+  });
+
+  it('shows the user every argument, and doesn\'t ask about a call too long to review', async () => {
+    const cells = Array.from({ length: 3 }, (_, i) => ({ provider: 'claude-code', difficulty: 'easy', model: `m${i}`, effort: null }));
+    await callTool('dispatcher', 'set_helper_presets', { revision: 'r1', cells });
+    expect(JSON.parse(listGrantRequests()[0].details ?? '{}')).toEqual({ revision: 'r1', cells });
+
+    const huge = Array.from({ length: 400 }, (_, i) => ({ provider: 'claude-code', difficulty: 'easy', model: `model-${i}`, effort: null }));
+    const r = await callTool('dispatcher', 'set_helper_presets', { revision: 'r1', cells: huge });
+    expect(r.content[0].text).toContain('too long for them to review');
+    expect(listGrantRequests()).toHaveLength(1);
+  });
+
+  it('a declined call stays refused', async () => {
+    const args = { revision: 'r1', reset: {} };
+    await callTool('dispatcher', 'set_helper_presets', args);
+    takeGrantRequest(listGrantRequests()[0].requestId, false);
+    expect((await callTool('dispatcher', 'set_helper_presets', args)).isError).toBe(true);
     expect(mocks.update).not.toHaveBeenCalled();
   });
 });

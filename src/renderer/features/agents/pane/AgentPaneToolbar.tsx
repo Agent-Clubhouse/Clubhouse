@@ -19,6 +19,7 @@ import { AgentContextMenu, useAgentRowActions } from '../useAgentRowActions';
 import { agentDot, DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
 import { useAgentStatus } from '../agent-status-store';
 import { useNarrow } from './useNarrow';
+import { useEffectiveOrchestrator } from '../effective-orchestrator';
 
 export type RuntimeView = 'chat' | 'terminal';
 
@@ -221,6 +222,7 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
   const ref = useRef<HTMLDivElement>(null);
   const narrow = useNarrow(ref);
   const shownModel = model && model !== 'default' ? model : null;
+  const agentCli = useEffectiveOrchestrator(agent);
   const glyphDetails = [...(narrow && shownModel ? [`Model ${shownModel}`] : []), ...(details ?? [])];
 
   return (
@@ -236,7 +238,7 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
       <span className="text-ctp-text flex-shrink-0" data-testid="pane-status">{DOT_LABEL[dot]}</span>
       {activity && <span className="min-w-0 truncate" title={activity} data-testid="pane-activity">{activity}</span>}
       <span className="ml-auto flex-shrink-0 flex items-center gap-1">
-        <OrchestratorGlyph orchestrator={orchestrator ?? agent.orchestrator ?? 'claude-code'} details={glyphDetails} testId="pane-orchestrator" />
+        <OrchestratorGlyph orchestrator={orchestrator ?? agentCli} details={glyphDetails} testId="pane-orchestrator" />
         {shownModel && !narrow && <span className="ml-1 text-ctp-overlay1" data-testid="pane-model">{shownModel}</span>}
         {usage && <UsageMeter usage={usage} compact={narrow} />}
         {(switchShown || detailsToggle) && <span className="w-px h-4 bg-surface-0 mx-1" aria-hidden="true" />}

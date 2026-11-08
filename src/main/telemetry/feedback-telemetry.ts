@@ -2,9 +2,10 @@
  * Framebriar feedback telemetry (#2309): capture, submit, delivery, failures with a
  * closed error class, connect and access transitions.
  *
- * Only booleans, counts, states and codes: never notes, screenshots, invitations,
- * error messages or the report id. The report id goes to the local-only diag tier
- * (`core:feedback`) so maintainers can match a Framebriar report to the user's record.
+ * Only booleans, counts, states and codes: never notes, screenshots, invitations
+ * or error messages. The report id goes on `feedback.submitted` for the developer
+ * destination only, with the report's trace and span (#2524); the other
+ * destinations drop it. It is also in the local diag tier (`core:feedback`).
  *
  * No OpenTelemetry imports: part of the main bundle.
  */
@@ -41,13 +42,17 @@ export function recordFeedbackCaptured(opts: { screenshot: boolean; shots: numbe
   ]);
 }
 
-export function recordFeedbackSubmitted(opts: { screenshot: boolean; annotated: boolean; shots: number; accessState: string }): void {
+export function recordFeedbackSubmitted(opts: {
+  screenshot: boolean; annotated: boolean; shots: number; accessState: string;
+  reportId?: string; trace?: { traceId: string; spanId: string };
+}): void {
   tel.event('clubhouse.feedback.submitted', [
     ATTR.feedbackScreenshot(opts.screenshot),
     ATTR.feedbackAnnotated(opts.annotated),
     ATTR.feedbackShots(opts.shots),
     ATTR.feedbackAccessState(accessState(opts.accessState)),
-  ]);
+    ...(opts.reportId ? [ATTR.feedbackReportId(opts.reportId)] : []),
+  ], opts.trace ? { trace: opts.trace } : undefined);
 }
 
 export function recordFeedbackDelivered(): void {

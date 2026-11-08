@@ -302,6 +302,8 @@ export class FeedbackService {
   private readonly received: string[] = [];
   /** Drafts already saved as reports, so a late Send on one can say what really happened. */
   private readonly sentDrafts = new Set<string>();
+  /** Each saved report's trace and span, for its telemetry event, keyed by send()'s result. */
+  private readonly submittedTraces = new WeakMap<object, { traceId: string; spanId: string }>();
   private readonly excerpts = new Set<FramebriarTelemetry>();
   private readonly listeners = new Set<(status: FeedbackStatus) => void>();
   private readonly now: () => number;
@@ -632,9 +634,12 @@ export class FeedbackService {
       // With the field on, access is no part of sending: a failed read can't undo a saved report.
       const state = inReport ? this.afterSave(() => this.fb?.access.status().state) : this.fb?.access.status().state;
       // The report id links a Framebriar report to this user's local record (a diag line,
-      // through appLog); telemetry can't carry it. Don't drop it.
+      // through appLog). Telemetry carries it to the developer destination only (#2524). Don't drop it.
       this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state, diagnostics: result.diagnostics ? diagnosticsBreadcrumbCode(result.diagnostics) : null });
-      recordFeedbackSubmitted({ screenshot: input.includeScreenshot, annotated: input.includeScreenshot && input.annotatedPng !== undefined, shots, accessState: state ?? 'stopped' });
+      recordFeedbackSubmitted({
+        screenshot: input.includeScreenshot, annotated: input.includeScreenshot && input.annotatedPng !== undefined, shots, accessState: state ?? 'stopped',
+        reportId: result.id, ...(this.submittedTraces.has(result) && { trace: this.submittedTraces.get(result)! }),
+      });
       return result;
     } catch (err) {
       this.log('warn', 'Feedback send failed', { ...meta, ...errorMeta(err) });
@@ -751,12 +756,15 @@ export class FeedbackService {
     if (this.sentDrafts.size > RECEIPT_MEMORY) this.sentDrafts.delete(this.sentDrafts.values().next().value as string);
     if (inReport) this.afterSave(() => this.emit());
     else this.emit();
+    const { traceId, spanId } = prepared.report as { traceId?: string; spanId?: string };
+
     // Never `attached`: those lines are already in the report, and would go twice.
     if (outcome.status === 'queued') {
-      const { traceId, spanId } = prepared.report as { traceId?: string; spanId?: string };
       this.sendExcerpt(fb, ack.id, draft.diagnostics.lines, traceId && spanId ? { traceId, spanId } : {});
     }
-    return { id: ack.id, status: ack.status, diagnostics: outcome, ...(draft.earlierMayDeliver && { earlierMayDeliver: true as const }) };
+    const result = { id: ack.id, status: ack.status, diagnostics: outcome, ...(draft.earlierMayDeliver && { earlierMayDeliver: true as const }) };
+    if (traceId && spanId) this.submittedTraces.set(result, { traceId, spanId });
+    return result;
   }
 
   /**

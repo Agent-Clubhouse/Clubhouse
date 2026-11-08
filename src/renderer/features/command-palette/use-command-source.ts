@@ -552,8 +552,9 @@ export function useCommandSource(): CommandItem[] {
         category: CATEGORY.commands,
         keywords: ['blueprint', 'bundle', 'project', 'export', 'all', 'canvases', 'backup'],
         execute: () => {
-          // Open project settings which has the export bundle button
-          setSettingsContext('project');
+          // Project settings has the export bundle button. This used to set
+          // the scope to the word 'project', which no project has.
+          openProjectSettings(activeProjectId);
         },
       });
     }
@@ -573,7 +574,7 @@ export function useCommandSource(): CommandItem[] {
   }, [
     shortcuts, activeProjectId, annexSettings, annexStatus,
     toggleSettings, toggleExplorerCollapse, toggleAccessoryCollapse,
-    removeProject, setSettingsContext, setSettingsSubPage,
+    removeProject, setSettingsContext, setSettingsSubPage, openProjectSettings,
   ]);
 
   const pluginCommandItems = useMemo((): CommandItem[] =>

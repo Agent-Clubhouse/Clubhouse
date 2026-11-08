@@ -1,3 +1,4 @@
+import { TELEMETRY_SCHEMA_VERSION } from '../../../shared/telemetry/attributes';
 import { describe, expect, it, vi } from 'vitest';
 import { AggregationTemporality, InstrumentType } from '@opentelemetry/sdk-metrics';
 import { createFramebriarExporters, framebriarAuthorizer, gated, sessionResourceView, withSessionId } from './framebriar';
@@ -155,8 +156,11 @@ describe('Framebriar destination adapter', () => {
     expect(describeTestFailure({ errorMessage: FRAMEBRIAR_NOT_CONNECTED } as never, 'framebriar')).toMatch(/Feedback isn't connected/);
   });
 
-  it('copies layout and channel onto events, and drops the install id (#2526)', () => {
-    expect(getAdapter('framebriar').copyResourceAttributes).toEqual(['clubhouse.ui.chrome', 'clubhouse.channel']);
+  it('copies layout, channel, schema, OS and Electron versions onto events, and drops the install id (#2526, #2525)', () => {
+    expect(getAdapter('framebriar').copyResourceAttributes).toEqual(['clubhouse.ui.chrome', 'clubhouse.channel', 'clubhouse.telemetry.schema', 'os.version', 'clubhouse.electron.version']);
+    expect(getAdapter('framebriar').itemAttributes).toEqual({ 'app.telemetry.schema_version': TELEMETRY_SCHEMA_VERSION });
+    // The report id goes to the developer destination only; the SDK drops it for the rest (fanout.test.ts).
+    expect(getAdapter('framebriar').dropAttributes).not.toContain('feedback.report.id');
     expect(getAdapter('framebriar').dropAttributes).toEqual(['enduser.pseudo.id', 'clubhouse.install.id']);
     expect(getAdapter('framebriar').label).toBe('Clubhouse developer');
   });
