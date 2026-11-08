@@ -44,6 +44,7 @@ import {
   type HelperLaunch,
 } from '../../shared/orchestration-policy';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { publishAppEvent } from './app-event-bus';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
@@ -243,6 +244,12 @@ async function capHelperLaunch(
     meta: { agentId, orchestratorId: helper.parentAgentId, asked: askedLevel, level: cap.level },
   });
   return { freeAgentMode: cap.freeAgentMode, permissionMode: cap.permissionMode };
+}
+
+/** The agent is up: tell windows, and the app event bus (#2950). */
+function announceAwake(agentId: string): void {
+  broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, agentId);
+  publishAppEvent({ type: 'agent.awake', agentId });
 }
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
@@ -608,7 +615,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (chatStart === 'cancelled') return;
     if (chatStart === 'chat') {
       facts.runtime = 'chat';
-      broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+      announceAwake(params.agentId);
       return;
     }
 
@@ -711,7 +718,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           headlessResult.createEventNormalizer,
         ));
         facts.noPid = !headlessManager.hasPid(params.agentId);
-        broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+        announceAwake(params.agentId);
         return;
       }
     }
@@ -719,7 +726,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // Fall back to PTY mode
     facts.runtime = 'pty';
     await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
-    if (!managed || ptyManager.isRunning(params.agentId)) broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+    if (!managed || ptyManager.isRunning(params.agentId)) announceAwake(params.agentId);
   } catch (err) {
     if (!(err instanceof ProcessStartedReceiptError)) untrackAgent(params.agentId);
     throw err;

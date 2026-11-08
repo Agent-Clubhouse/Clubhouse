@@ -1,0 +1,129 @@
+/**
+ * Feeds the app event bus (#2950) from facts the main process already has:
+ * chat events, agent exits, and agent config changes (created, deleted, and
+ * which agents are helpers). Agent starts, terminal hooks and project changes
+ * publish where they happen (agent-system, hook-server, project-store).
+ */
+
+import { isDisposedAgent } from '../../shared/agent-helpers';
+import type { DurableAgentConfig } from '../../shared/types';
+import { listDurable, onAgentConfigChanged } from './agent-config';
+import { onAgentExit } from './agent-exit-broadcast';
+import { onChatEvent } from './agent-runtime/chat-event-bus';
+import { forgetHookTurn, onAppEvent, publishAppEvent, publishFromChatEvent } from './app-event-bus';
+import { appLog } from './log-service';
+import * as projectStore from './project-store';
+
+interface KnownAgent {
+  projectPath: string;
+  parentAgentId?: string;
+}
+
+/** Agents that exist (created, not disposed), per project, from the last read. */
+const projectAgents = new Map<string, Map<string, KnownAgent>>();
+/** Every known agent by id, for helper lookups. */
+const agents = new Map<string, KnownAgent>();
+
+function exists(config: DurableAgentConfig): boolean {
+  const state = config.creation?.state;
+  return state !== 'creating' && state !== 'failed' && !isDisposedAgent(config);
+}
+
+function snapshot(projectPath: string, configs: DurableAgentConfig[]): Map<string, KnownAgent> {
+  const out = new Map<string, KnownAgent>();
+  for (const c of configs) {
+    if (!exists(c)) continue;
+    out.set(c.id, { projectPath, ...(c.parentAgentId && { parentAgentId: c.parentAgentId }) });
+  }
+  return out;
+}
+
+function remember(projectPath: string, next: Map<string, KnownAgent>): void {
+  const prev = projectAgents.get(projectPath);
+  if (prev) for (const id of prev.keys()) if (!next.has(id)) agents.delete(id);
+  for (const [id, a] of next) agents.set(id, a);
+  projectAgents.set(projectPath, next);
+}
+
+/** Compare a project's agents with the last read and publish created and deleted. */
+export async function diffProjectAgents(projectPath: string): Promise<void> {
+  let configs: DurableAgentConfig[];
+  try {
+    configs = await listDurable(projectPath);
+  } catch (err) {
+    // telemetry-exempt: logged; the next change reads again
+    appLog('core:app-events', 'warn', 'Could not read agents for created and deleted events', {
+      meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+    });
+    return;
+  }
+  const prev = projectAgents.get(projectPath);
+  const next = snapshot(projectPath, configs);
+  remember(projectPath, next);
+  // The first read of a project is the baseline, not a burst of creations.
+  if (!prev) return;
+  for (const [id, a] of next) {
+    if (!prev.has(id)) publishAppEvent({ type: 'agent.created', agentId: id, projectPath, ...(a.parentAgentId && { parentAgentId: a.parentAgentId }) });
+  }
+  for (const [id, a] of prev) {
+    if (!next.has(id)) publishAppEvent({ type: 'agent.deleted', agentId: id, projectPath, ...(a.parentAgentId && { parentAgentId: a.parentAgentId }) });
+  }
+}
+
+/** The parent of a helper, from the last read of its project. */
+export function knownHelperParent(agentId: string): { parentAgentId: string; projectPath: string } | undefined {
+  const a = agents.get(agentId);
+  return a?.parentAgentId ? { parentAgentId: a.parentAgentId, projectPath: a.projectPath } : undefined;
+}
+
+let stop: (() => void) | null = null;
+
+/** Start feeding the bus. Reads every project once for the created and deleted baseline. */
+export async function startAppEventSources(): Promise<void> {
+  if (stop) return;
+  // Serialized per project, so two quick writes can't publish the same creation twice.
+  const pending = new Map<string, Promise<void>>();
+  const queueDiff = (projectPath: string) => {
+    const prev = pending.get(projectPath) ?? Promise.resolve();
+    const next = prev.then(() => diffProjectAgents(projectPath));
+    pending.set(projectPath, next);
+    void next.finally(() => { if (pending.get(projectPath) === next) pending.delete(projectPath); });
+  };
+  const unsubs = [
+    onChatEvent(publishFromChatEvent),
+    onAgentExit((agentId, exitCode) => {
+      forgetHookTurn(agentId);
+      publishAppEvent({ type: 'agent.asleep', agentId, exitCode });
+    }),
+    onAgentConfigChanged(queueDiff),
+    // A helper's finished turn is its parent's "helper finished".
+    onAppEvent((event) => {
+      if (event.type !== 'turn.ended' || event.outcome !== 'completed') return;
+      const parent = knownHelperParent(event.agentId);
+      if (parent) publishAppEvent({ type: 'helper.finished', agentId: event.agentId, ...parent, ...(event.chain && { chain: event.chain }) });
+    }),
+  ];
+  stop = () => { for (const u of unsubs) u(); };
+  try {
+    const projects = await projectStore.list();
+    await Promise.all(projects.map((p) => diffProjectAgents(p.path)));
+  } catch (err) {
+    // telemetry-exempt: logged; created and deleted events start with the next change
+    appLog('core:app-events', 'warn', 'Could not read projects for the agent baseline', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+/** Publish "Clubhouse started", once its subscribers are listening. */
+export function publishAppStarted(): void {
+  publishAppEvent({ type: 'app.started' });
+}
+
+/** For tests. */
+export function stopAppEventSources(): void {
+  stop?.();
+  stop = null;
+  projectAgents.clear();
+  agents.clear();
+}

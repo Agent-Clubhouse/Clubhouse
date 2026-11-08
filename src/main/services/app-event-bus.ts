@@ -1,0 +1,203 @@
+/**
+ * The app-level event bus (#2950): an always-on main-process bus of what
+ * agents, repos and the app do. Actions (#2918) subscribe to it, and other
+ * features can too. Unlike the Annex bus it runs whether or not Annex does.
+ *
+ * Publishers call the typed helpers below from the one place each fact is
+ * known (agent start, agent exit, config create and delete, chat events,
+ * terminal hooks, the git watcher). The bus imports none of its consumers.
+ */
+
+import type { HookEventKind } from '../../shared/types';
+import type { ChatEvent, TurnStopReason } from '../../shared/chat';
+import { COMPACTION_SETTLED } from '../../shared/chat';
+
+export type TurnOutcome = 'completed' | 'failed' | 'interrupted';
+
+/** Where a turn event came from: a chat runtime, or a terminal CLI's hooks. */
+export type TurnVia = 'chat' | 'hook';
+
+interface Stamp {
+  /** Epoch ms when it was published. */
+  at: number;
+  /**
+   * Ids of the actions whose steps led to this event, oldest first. Set by
+   * the publisher when it knows (see setAgentChain); empty otherwise.
+   */
+  chain?: string[];
+}
+
+export type AppEvent = Stamp & (
+  | { type: 'agent.awake'; agentId: string }
+  | { type: 'agent.asleep'; agentId: string; exitCode?: number }
+  | { type: 'agent.created'; agentId: string; projectPath: string; parentAgentId?: string }
+  | { type: 'agent.deleted'; agentId: string; projectPath: string; parentAgentId?: string }
+  | { type: 'turn.started'; agentId: string; via: TurnVia }
+  | { type: 'turn.ended'; agentId: string; via: TurnVia; outcome: TurnOutcome }
+  | { type: 'agent.waiting'; agentId: string; via: TurnVia; reason: 'permission' | 'question' }
+  | { type: 'agent.error'; agentId: string; via: TurnVia; message: string }
+  | { type: 'agent.compacted'; agentId: string }
+  | { type: 'helper.finished'; agentId: string; parentAgentId: string; projectPath: string }
+  | { type: 'git.commit'; repoPath: string; branch: string; agentId?: string }
+  | { type: 'git.branch_switched'; repoPath: string; branch: string; previousBranch?: string; agentId?: string }
+  | { type: 'git.remote_updated'; repoPath: string; branch: string; remote: string; agentId?: string }
+  | { type: 'app.started' }
+  | { type: 'project.added'; projectId: string; projectPath: string }
+  | { type: 'project.removed'; projectId: string; projectPath: string }
+);
+
+export type AppEventType = AppEvent['type'];
+export type AppEventOf<T extends AppEventType> = Extract<AppEvent, { type: T }>;
+
+/** An event without its stamp, as publishers pass it. */
+type Unstamped<E> = E extends unknown ? Omit<E, 'at'> & { at?: number } : never;
+export type AppEventInput = Unstamped<AppEvent>;
+
+export type AppEventListener = (event: AppEvent) => void;
+
+const listeners = new Set<AppEventListener>();
+
+/** Subscribe to every event. Returns the unsubscribe. */
+export function onAppEvent(listener: AppEventListener): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+/** Publish an event. A failing listener never breaks the publisher or other listeners. */
+export function publishAppEvent(input: AppEventInput): void {
+  const agentId = 'agentId' in input ? input.agentId : undefined;
+  const chain = input.chain ?? (agentId ? currentAgentChain(agentId, input.at ?? Date.now()) : undefined);
+  const event = { ...input, at: input.at ?? Date.now(), ...(chain?.length ? { chain } : {}) } as AppEvent;
+  for (const listener of listeners) {
+    try {
+      listener(event);
+    } catch {
+      // telemetry-exempt: a failing consumer must not break the publisher or the others.
+    }
+  }
+}
+
+// ── Chains ──────────────────────────────────────────────────────────────────
+
+/**
+ * How long an agent's events count as caused by the action that just woke,
+ * messaged or started it. Long enough to cover the turn it started.
+ */
+export const CHAIN_WINDOW_MS = 30 * 60 * 1000;
+
+const agentChains = new Map<string, { chain: string[]; until: number }>();
+
+/**
+ * Mark an agent's next events as caused by these actions (for loop
+ * protection). Called by Actions when a step acts on the agent.
+ */
+export function setAgentChain(agentId: string, chain: string[], now = Date.now()): void {
+  agentChains.set(agentId, { chain: [...chain], until: now + CHAIN_WINDOW_MS });
+}
+
+function currentAgentChain(agentId: string, now: number): string[] | undefined {
+  const entry = agentChains.get(agentId);
+  if (!entry) return undefined;
+  if (entry.until < now) {
+    agentChains.delete(agentId);
+    return undefined;
+  }
+  return entry.chain;
+}
+
+/** Forget an agent's chain, e.g. when the person sends it a message of their own. */
+export function clearAgentChain(agentId: string): void {
+  agentChains.delete(agentId);
+}
+
+// ── Normalizers ─────────────────────────────────────────────────────────────
+
+/** Notice codes that mean a compaction finished (not failed or cancelled). */
+const COMPACTION_DONE_CODES: readonly string[] = COMPACTION_SETTLED.filter((c) => c !== 'compaction_failed' && c !== 'compaction_cancelled');
+
+export function turnOutcomeFromStopReason(reason: TurnStopReason): TurnOutcome {
+  if (reason === 'cancelled') return 'interrupted';
+  if (reason === 'error' || reason === 'refusal' || reason === 'timeout') return 'failed';
+  return 'completed';
+}
+
+/** Turn a chat event into bus events. Most chat events publish nothing. */
+export function publishFromChatEvent(event: ChatEvent): void {
+  const agentId = event.agentId;
+  switch (event.type) {
+    case 'turn_started':
+      publishAppEvent({ type: 'turn.started', agentId, via: 'chat' });
+      return;
+    case 'turn_ended':
+      publishAppEvent({ type: 'turn.ended', agentId, via: 'chat', outcome: turnOutcomeFromStopReason(event.data.stopReason) });
+      return;
+    case 'permission_request':
+      publishAppEvent({ type: 'agent.waiting', agentId, via: 'chat', reason: 'permission' });
+      return;
+    case 'question':
+      publishAppEvent({ type: 'agent.waiting', agentId, via: 'chat', reason: 'question' });
+      return;
+    case 'error':
+      // A retried error isn't the agent hitting one yet.
+      if (!event.data.willRetry) publishAppEvent({ type: 'agent.error', agentId, via: 'chat', message: event.data.message });
+      return;
+    case 'notice':
+      if (COMPACTION_DONE_CODES.includes(event.data.code)) {
+        publishAppEvent({ type: 'agent.compacted', agentId });
+      }
+      return;
+    case 'user_message':
+      // The person (or a phone) talking to the agent ends any action chain on it.
+      if (event.data.source === 'user' || event.data.source === 'annex') clearAgentChain(agentId);
+      return;
+    default:
+      return;
+  }
+}
+
+/** Terminal agents whose turn is under way, as far as their hooks tell. */
+const hookTurns = new Set<string>();
+
+/**
+ * Turn a terminal CLI hook into bus events. A turn starts with the first tool
+ * or prompt after a stop, and ends at the stop hook.
+ */
+export function publishFromHookEvent(agentId: string, kind: HookEventKind, message?: string): void {
+  switch (kind) {
+    case 'pre_tool':
+    case 'post_tool':
+      if (!hookTurns.has(agentId)) {
+        hookTurns.add(agentId);
+        publishAppEvent({ type: 'turn.started', agentId, via: 'hook' });
+      }
+      return;
+    case 'stop':
+      hookTurns.delete(agentId);
+      publishAppEvent({ type: 'turn.ended', agentId, via: 'hook', outcome: 'completed' });
+      return;
+    case 'permission_request':
+      publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'permission' });
+      return;
+    case 'notification':
+      // Claude's Notification hook fires when it is waiting for input.
+      publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'question' });
+      return;
+    case 'tool_error':
+      publishAppEvent({ type: 'agent.error', agentId, via: 'hook', message: message ?? 'A tool failed.' });
+      return;
+    default:
+      return;
+  }
+}
+
+/** An agent's process ended: its terminal turn state goes with it. */
+export function forgetHookTurn(agentId: string): void {
+  hookTurns.delete(agentId);
+}
+
+/** For tests. */
+export function resetAppEventBus(): void {
+  listeners.clear();
+  agentChains.clear();
+  hookTurns.clear();
+}
