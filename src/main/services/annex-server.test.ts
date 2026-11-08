@@ -7364,6 +7364,19 @@ describe('annex-server', () => {
       await new Promise((r) => setTimeout(r, 20));
     }, 10_000);
 
+    it('shows a neutral name for a controller stored under this machine\'s own name (#2442)', async () => {
+      const { _testing } = await import('./annex-server');
+      await startAndPair();
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === TEST_CONTROLLER.fingerprint ? { ...TEST_CONTROLLER, alias: 'test machine', icon: 'iphone' } : undefined) as any);
+      const { EventEmitter } = await import('events');
+      const mockWs = Object.assign(new EventEmitter(), { send: vi.fn(), ping: vi.fn(), readyState: 1 }) as any;
+      _testing.registerPeerSocket(mockWs, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
+      mockBroadcastToAllWindows.mockClear();
+      _testing.wss!.emit('connection', mockWs);
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('annex:lock-state-changed', expect.objectContaining({ locked: true, controllerAlias: 'Phone' }));
+      await new Promise((r) => setTimeout(r, 20));
+    }, 10_000);
+
     it('a fellow network member connecting does not lock this screen, and its leaving does not unlock it (#3061)', async () => {
       const { _testing } = await import('./annex-server');
       await startAndPair();
