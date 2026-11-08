@@ -227,10 +227,13 @@ describe('Annex Network membership (#3061)', () => {
       expect(membership.ownPairing()).toBeUndefined();
       const own = membership.ensureOwnPairing();
       expect(membership.ensureOwnPairing()).toEqual(own);
-      // A pairing answer sets this machine's own; a member's record of it afterwards can't move it.
+      // A pairing answer sets this machine's own; a member's record of an older pairing of it doesn't move it,
+      // and one of a later pairing (a phone joined it again where it had been removed) does.
       membership.adoptOwnPairing({ id: NEW, joinedAt: '2026-11-08T10:00:00.000Z' });
-      listener!(A, view([member(SELF, '00', 'Me', { joinedAt: '2030-01-01T00:00:00.000Z', pairingId: 'pairing-later-03' })]));
+      listener!(A, view([member(SELF, '00', 'Me', { joinedAt: '2026-11-01T09:00:00.000Z', pairingId: OLD })]));
       expect(membership.ownPairing()).toEqual({ id: NEW, joinedAt: '2026-11-08T10:00:00.000Z' });
+      listener!(A, view([member(SELF, '00', 'Me', { joinedAt: '2030-01-01T00:00:00.000Z', pairingId: 'pairing-later-03' })]));
+      expect(membership.ownPairing()).toEqual({ id: 'pairing-later-03', joinedAt: '2030-01-01T00:00:00.000Z' });
     });
 
     it('rejects a pairing record that doesn\'t hold together', () => {

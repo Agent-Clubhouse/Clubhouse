@@ -236,9 +236,11 @@ function removedSince(member: Pairing & { fingerprint: string }, s: MembershipSt
 
 /** Learns which pairing put this machine in its network, from a member's record of it. */
 function learnSelfPairing(member: NetworkMember, s: MembershipState): boolean {
-  // Only when it isn't known: this machine's pairing comes from the pairing answer (or its own, for the
-  // first machine), and a member's record of it can't move it (#3107).
-  if (!member.pairingId || s.selfPairing) return false;
+  // When it isn't known, or the network has a later pairing of this machine (a phone joined it again on a
+  // desktop that had removed it). Nobody mints for a member that offers its own pairing, so a later one is real.
+  if (!member.pairingId) return false;
+  const known = s.selfPairing;
+  if (known && !laterPairing(member, { pairingId: known.id, joinedAt: known.joinedAt })) return false;
   s.selfPairing = { id: member.pairingId, joinedAt: member.joinedAt };
   return true;
 }
@@ -276,6 +278,11 @@ export function ensureOwnPairing(): PairingRecord {
  */
 export function pairingForJoiner(fingerprint: string, offered: PairingRecord | undefined): PairingRecord {
   const removal = removalOf(fingerprint);
+  const held = annexPeers.getPeer(fingerprint);
+  // A later pairing of it already known here stands over an older one it offers.
+  if (held?.role === 'member' && held.pairingId && offered && laterPairing(pairingOf(held), { pairingId: offered.id, joinedAt: offered.joinedAt })) {
+    return { id: held.pairingId, joinedAt: held.pairedAt };
+  }
   if (offered && !(removal && endsPairing(removal, { pairingId: offered.id, joinedAt: offered.joinedAt }))) return offered;
   return { id: randomUUID(), joinedAt: new Date().toISOString() };
 }
@@ -427,13 +434,17 @@ function leaveNetwork(from: string, s: MembershipState): void {
   }
   // Its pairing ended with it: pairing again makes a new one (#3107). Cleared on the state the caller saves.
   delete s.selfPairing;
+  left = true;
 }
 
 /** While this machine leaves the network: the pairings it ends are its own, not removals to announce. */
 let leaving = false;
+/** This machine left the network while handling the current message. */
+let left = false;
 
 function onMessage(from: string, message: NetworkMessage): void {
   if (!annexSettings.networkEnabled()) return;
+  left = false;
   // Only members speak for the network. One-to-one pairings are heard, not followed.
   const sender = annexPeers.getPeer(from);
   if (sender?.role !== 'member') return;
@@ -453,6 +464,11 @@ function onMessage(from: string, message: NetworkMessage): void {
       break;
     case 'members': {
       for (const removal of message.removals) changed = applyRemoval(removal, from, s) || changed;
+      // Removed: this machine has left, so the rest of the view (its members, the sender) isn't taken back in.
+      if (left) {
+        save(s);
+        return;
+      }
       for (const member of message.members) changed = addMember(member, from, s) || changed;
       // What this sender's view shows is confirmed by it.
       const theirs = new Set(message.members.map((m) => lower(m.fingerprint)));

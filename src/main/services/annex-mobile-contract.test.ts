@@ -174,7 +174,7 @@ vi.mock('./annex-network-membership', () => ({
   // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
   ownPairing: vi.fn(() => undefined),
   readPairing: (v: { id?: unknown; joinedAt?: unknown } | null | undefined) => (v && typeof v.id === 'string' && typeof v.joinedAt === 'string' ? { id: v.id, joinedAt: v.joinedAt } : undefined),
-  pairingForJoiner: vi.fn((_fp: string, offered?: { id: string; joinedAt: string }) => offered ?? { id: '6f1c2a3e-0000-4000-8000-00000000j01n', joinedAt: '2026-11-08T10:00:00.000Z' }),
+  pairingForJoiner: vi.fn((_fp: string, offered?: { id: string; joinedAt: string }) => offered ?? { id: '6f1c2a3e-0000-4000-8000-00000000a001', joinedAt: '2026-11-08T10:00:00.000Z' }),
   ensureOwnPairing: vi.fn(() => ({ id: '6f1c2a3e-0000-4000-8000-00000000aaaa', joinedAt: '2026-11-01T09:00:00.000Z' })),
   adoptOwnPairing: vi.fn(),
   noteLocalRemoval: vi.fn(),

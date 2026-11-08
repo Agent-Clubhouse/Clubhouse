@@ -265,6 +265,40 @@ describe('four desktops (#3107)', () => {
     for (const n of ['C', 'A', 'X'] as Name[]) expect(has(n, 'P')).toBe(false);
   });
 
+  it('a member phone pairing with a new desktop offers its kept pairing, so a removal of it made elsewhere still takes', () => {
+    network(['P', 'A', 'C']);
+    // The phone is a member on P, A and C with one pairing; it keeps that pairing from its first answer.
+    const PHONE_FP = fp('0f');
+    const phonePairing = { id: 'pairing-phone-001', joinedAt: T0 };
+    const phonePeer = (owner: Name) => ({ ...peer('P', T0, owner, phonePairing.id), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone', alias: 'Phone' });
+    for (const n of ['P', 'A', 'C'] as Name[]) as(n, () => worlds[n].peers.set(PHONE_FP, phonePeer(n)));
+    // It pairs with new desktop X, sending its kept pairing: X keeps it.
+    const joined = as('X', () => worlds.X.mod!.pairingForJoiner(PHONE_FP, phonePairing));
+    expect(joined).toEqual(phonePairing);
+    as('X', () => { worlds.X.peers.set(PHONE_FP, phonePeer('X')); worlds.X.mod!.ensureOwnPairing(); });
+    const view = as('P', () => worlds.P.provider!()) as { members: unknown[] };
+    as('X', () => worlds.X.mod!.vouchFromPhone(PHONE_FP, view.members as never));
+    offline('C');
+    open('X', 'P'); open('X', 'A');
+    for (const n of ['P', 'A', 'X'] as Name[]) expect(as(n, () => worlds[n].peers.get(PHONE_FP)?.pairingId)).toBe(phonePairing.id);
+    as('C', () => { worlds.C.mod!.noteLocalRemoval(PHONE_FP); worlds.C.peers.delete(PHONE_FP); });
+    down.clear();
+    open('C', 'A'); open('C', 'X'); open('C', 'P');
+    for (const n of ['P', 'A', 'C', 'X'] as Name[]) expect(as(n, () => worlds[n].peers.has(PHONE_FP))).toBe(false);
+  });
+
+  it('a machine that learns of its removal inside a view takes nothing else from it', () => {
+    network(['P', 'A', 'C']);
+    offline('P');
+    removeOn('A', 'P');
+    // A's view, with the removal of P, reaches P.
+    as('P', () => worlds.P.listener!(FPS.A, { v: 1, type: 'members', ...as('A', () => worlds.A.provider!()) }));
+    expect(worlds.P.ended.sort()).toEqual(['A', 'C']);
+    expect(has('P', 'A')).toBe(false);
+    expect(has('P', 'C')).toBe(false);
+    expect(selfOf('P')).toBeUndefined();
+  });
+
   it('a removed machine leaves quietly: a member that hadn\'t heard of the removal stays', () => {
     network(['A', 'C', 'X']);
     down.add(linkKey('A', 'C'));
