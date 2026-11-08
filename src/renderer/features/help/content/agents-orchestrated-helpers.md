@@ -34,7 +34,7 @@ While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in t
 
 ## Starting helpers
 
-The orchestrator calls `start_helper` with a name, a task and, if it wants, a CLI, a model, a reasoning effort, a difficulty and a branch to start from. A helper runs on the same CLI as its orchestrator unless the orchestrator picks another.
+The orchestrator calls `start_helper` with a name, a task and, if it wants, a CLI, a model, a reasoning effort, a difficulty, an access level (`plan`, `ask`, `auto_edit`, `auto` or `full_access`, never more than its own) and a branch to start from. A helper runs on the same CLI as its orchestrator unless the orchestrator picks another.
 
 Every helper is a Clubhouse managed agent built from a template. It gets the **Default helper template** from **Settings > Managed agents > Helpers**, which starts as the built-in **Helper** template. Turn on **Let orchestrators choose helper templates** there to let an orchestrator name another template, or add and leave out parts, for one helper. Nothing it picks is saved. With the switch off, a start that names another template or changes parts is refused, and the orchestrator is told to ask you. Helpers don't take a persona: one passed by an older orchestrator is ignored, and the orchestrator is told so.
 
@@ -64,14 +64,14 @@ The link from a helper to an orchestrator in another project is saved in the hel
 
 ## Access
 
-A helper never gets more access than its orchestrator has right now. Clubhouse reads the orchestrator's live permission level when the helper starts. If the orchestrator isn't running, or its level isn't known, the ceiling is **Ask first**.
+A helper never gets more access than its orchestrator has right now, on the full ladder: under an orchestrator at **Plan**, a helper starts at Plan too. Clubhouse reads the orchestrator's live Access level when the helper starts and at every wake. If the orchestrator isn't running, or its level isn't known, the ceiling is **Ask first**.
 
 | Helpers get | What that means |
 |-------------|-----------------|
 | **Same as**, with the orchestrator's name | The orchestrator's live level. This is the default, so an orchestrator with **Full access** starts helpers with full access. |
 | **Ask first**, **Auto** or **Full access** | That level, or the ceiling if it's lower |
 
-A helper's level is lowered until its CLI's own flags fit under the ceiling. Copilot CLI helpers only run at Ask first or Full access, so under an orchestrator at Auto they start at Ask first.
+A helper's level is lowered until its CLI's own flags fit under the ceiling. Copilot CLI helpers only run at Ask first or Full access, so under an orchestrator at Auto they start at Ask first. When a helper gets less than it asked for, `start_helper` says so.
 
 When the orchestrator wakes a helper with `wake_helper`, Clubhouse checks the ceiling again and never raises the helper above the access the orchestrator asked for when it started it. Permission prompts from a helper's own tool calls follow the helper's level as usual. The orchestrator can't answer them for you.
 

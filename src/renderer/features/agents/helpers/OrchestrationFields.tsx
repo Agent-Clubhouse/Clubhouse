@@ -16,6 +16,7 @@ import {
   type OrchestrationControl,
 } from '../../../../shared/orchestration-policy';
 import { Toggle } from '../../../components/Toggle';
+import { PERMISSION_LEVEL_LABELS } from '../../../../shared/chat/capabilities';
 import { ACCESS_LEVEL_LABELS, CONTROL_LABELS, aboveCeiling, accessLabel } from './helper-model';
 import { parseHelperCount } from './orchestration-hooks';
 
@@ -29,7 +30,8 @@ export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Cod
 /** The note under the access control: the live ceiling, or the rule when it isn't running. */
 export function accessNote(access: HelperAccessResolution | null, running: boolean, name: string): string {
   if (!running || !access) return `Never more than ${name}’s level when a helper starts.`;
-  const ceiling = ACCESS_LEVEL_LABELS[access.ceiling];
+  // The five-level levels where known (#3000), so Plan reads as Plan.
+  const ceiling = access.ceilingAccess ? PERMISSION_LEVEL_LABELS[access.ceilingAccess] : ACCESS_LEVEL_LABELS[access.ceiling];
   if (access.clamped) return `${name} runs at ${ceiling} now, so helpers get ${ACCESS_LEVEL_LABELS[access.level]}.`;
   return `At most ${ceiling}, ${name}’s level now.`;
 }
