@@ -78,6 +78,8 @@ vi.mock('./dispatcher/dispatcher-service', () => {
     getDispatcherChatConfig: () => (config() ? { ...config() } : null),
     isDispatcherAgentId: (id?: string | null) => !!id && id === config()?.id,
     isDispatcherChatAgentId: (id?: string | null) => !!id && id === config()?.id,
+    getDispatcherAgentId: () => config()?.id ?? null,
+    getDispatcherChatAgentId: () => config()?.id ?? null,
     isDispatcherEnabled: enabled,
     getDispatcherState: state,
     onDispatcherChanged: (l: (s: unknown) => void) => { W.dispatcherListeners.add(l); return () => W.dispatcherListeners.delete(l); },
@@ -2825,6 +2827,73 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const changed = frames(ws).find((f) => f.type === 'network:changed');
     expect(changed.payload).toEqual(listed.response.body);
     fixtures.set('network-changed.json', { direction: 'desktop-to-phone', frame: changed });
+  });
+
+  it('the Dispatcher\'s chat reaches a phone as its group chat, and other agents\' whole (#3043)', async () => {
+    resetWorld();
+    W.dispatcher = { enabled: true, newLayout: true, running: false, classicUnsaved: false };
+    // One conversation, as the Dispatcher's and as an ordinary agent's.
+    const script = (agentId: string, sessionId: string): ChatEvent[] => {
+      let seq = 0;
+      const e = (type: string, data: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+        ({ v: 2, agentId, sessionId, seq: ++seq, ts: ts(seq), type, data, ...extra }) as ChatEvent;
+      return [
+        e('session_started', { driver: 'claude_agent_sdk', provider: 'claude-code', cwd: '/work', resumed: false, capabilities: CHAT_CAPS }),
+        e('turn_started', { trigger: 'prompt' }, { turnId: 'turn_1' }),
+        e('user_message', { messageId: 'msg_you', source: 'annex', delivery: 'prompt', content: [{ type: 'text', text: 'Tell me when checkout is fixed.' }] }, { turnId: 'turn_1' }),
+        e('agent_thought', { messageId: 'th_1', text: 'Who owns checkout?' }, { turnId: 'turn_1' }),
+        e('tool_call', { toolCallId: 'tool_1', kind: 'other', title: 'list_agents', status: 'in_progress', toolName: 'mcp__clubhouse__list_agents' }, { turnId: 'turn_1' }),
+        e('tool_call_update', { toolCallId: 'tool_1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '[{"id":"durable_sleepy"}]' } }] }, { turnId: 'turn_1' }),
+        e('agent_message', { messageId: 'sub_1', text: 'Looked it up.', subagentId: 'sa_1' }, { turnId: 'turn_1' }),
+        e('agent_message_chunk', { messageId: 'amsg_1', text: 'On it (task_id=t_1abcdef).' }, { turnId: 'turn_1' }),
+        e('agent_message', { messageId: 'amsg_1', text: 'On it (task_id=t_1abcdef).' }, { turnId: 'turn_1' }),
+        e('turn_ended', { stopReason: 'end_turn', durationMs: 900 }, { turnId: 'turn_1' }),
+        e('user_message', { messageId: 'msg_news', source: 'mcp', delivery: 'prompt',
+          content: [{ type: 'text', text: '2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM:brave-otter@App] Checkout is fixed (task_id=t_2abcdef).\n\n--- 2 of 2 ---\n[Clubhouse] brave-otter is asleep.' }],
+          routed: [{ sender: { agentId: 'durable_sleepy', name: 'brave-otter' }, text: 'Checkout is fixed (task_id=t_2abcdef).' }, { fromClubhouse: true, text: 'brave-otter is asleep.' }] }),
+        e('user_message', { messageId: 'msg_notice', source: 'system', delivery: 'prompt', content: [{ type: 'text', text: 'Continued from the terminal.' }] }),
+      ];
+    };
+    const dispatcherEvents = script('durable_dispatcher', 'sess_dispatch');
+    const agentEvents = script('durable_sleepy', 'sess_old');
+    W.transcripts.durable_dispatcher = dispatcherEvents as never;
+    W.transcripts.durable_sleepy = agentEvents as never;
+    const dispatcherHistory = await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/chat');
+    const agentHistory = await exchange('GET', '/api/v1/mobile/agents/durable_sleepy/chat');
+
+    const ws = await connect();
+    const before = eventReplay.getLastSeq();
+    ws.send.mockClear();
+    for (const event of [...dispatcherEvents, ...agentEvents]) publishChatEvent(event);
+    const live = frames(ws).filter((f) => f.type === 'chat:event');
+    const liveOf = (agentId: string) => live.filter((f) => f.payload.agentId === agentId).map((f) => f.payload.event);
+
+    // The ordinary agent: every event, as it is.
+    expect(agentHistory.response.body.events).toEqual(agentEvents);
+    expect(liveOf('durable_sleepy')).toEqual(agentEvents);
+    // The Dispatcher: no tool calls, thoughts or subagent work, no Clubhouse updates, no task ids; turns still end.
+    const shown = [
+      { seq: 1, type: 'session_started' }, { seq: 2, type: 'turn_started' }, { seq: 3, type: 'user_message', text: 'Tell me when checkout is fixed.' },
+      { seq: 8, type: 'agent_message_chunk' }, { seq: 9, type: 'agent_message', text: 'On it.' }, { seq: 10, type: 'turn_ended' },
+      { seq: 11, type: 'user_message', routed: [{ sender: { agentId: 'durable_sleepy', name: 'brave-otter' }, text: 'Checkout is fixed.' }] },
+    ];
+    const read = (event: any) => ({ seq: event.seq, type: event.type,
+      ...(event.type === 'agent_message' && { text: event.data.text }),
+      ...(event.type === 'user_message' && (event.data.routed ? { routed: event.data.routed } : { text: event.data.content[0].text })) });
+    expect(dispatcherHistory.response.body.events.map(read)).toEqual(shown);
+    expect(liveOf('durable_dispatcher').map(read)).toEqual(shown);
+    // The cursor still counts every event.
+    expect(dispatcherHistory.response.body.lastSeq).toBe(dispatcherEvents.length);
+    // An event the group chat doesn't show isn't there to fetch whole either.
+    expect((await send('GET', '/api/v1/mobile/agents/durable_dispatcher/chat/events/5?sessionId=sess_dispatch')).status).toBe(404);
+
+    fixtures.set('dispatcher-group-chat.json', {
+      direction: 'desktop-to-phone',
+      note: 'The same conversation as the Dispatcher\'s (`dispatcher`) and as an ordinary agent\'s (`agent`): the Dispatcher\'s comes as its group chat shows it, the agent\'s whole.',
+      dispatcher: { history: dispatcherHistory, frames: renumberFrames(live.filter((f) => f.payload.agentId === 'durable_dispatcher'), before) },
+      agent: { history: agentHistory, frames: renumberFrames(live.filter((f) => f.payload.agentId === 'durable_sleepy'), before) },
+    });
+    resetWorld();
   });
 
   it('every command type has an accepted request and receipt', () => {

@@ -9,10 +9,15 @@
  * A phone sees the agent the user talks to (#3036): the Dispatcher's chat,
  * with its folder as the project. The agent that holds its connections and
  * does the work is never listed, and its id answers as no agent at all.
+ *
+ * Its chat reaches a phone as the desktop draws it (#3043): a group chat with
+ * no tool calls, thoughts or Clubhouse updates. See phoneChatEvent.
  */
 
 import type { Project } from '../../shared/types';
+import type { ChatEvent } from '../../shared/chat';
 import { DISPATCHER_PROJECT_ID, type DispatcherState } from '../../shared/dispatcher-types';
+import { groupChatEvent, groupChatEvents, type GroupChatContext } from '../../shared/dispatcher-group-chat';
 import * as dispatcher from './dispatcher/dispatcher-service';
 import { newChromeEnabled } from '../window-chrome';
 import { MobileControlError } from './mobile-control';
@@ -157,4 +162,27 @@ export async function setDispatcherEnabledFromPhone(enabled: boolean, assertAuth
   }
   assertAuthorized();
   return dispatcherChange(await dispatcher.setDispatcherEnabled(enabled));
+}
+
+/** The group chat's context for the Dispatcher's agents (its chat and the coordinator), else null: any other agent's chat goes whole. */
+function groupChatContextFor(agentId: string): GroupChatContext | null {
+  if (!dispatcher.isDispatcherChatAgentId(agentId) && !dispatcher.isDispatcherAgentId(agentId)) return null;
+  const ids = [dispatcher.getDispatcherChatAgentId(), dispatcher.getDispatcherAgentId()].filter((id): id is string => !!id);
+  return { ownAgentIds: new Set(ids) };
+}
+
+/**
+ * A chat event as Annex sends it, live and on replay: the Dispatcher's as its
+ * group chat shows them (shared/dispatcher-group-chat.ts), or null when it
+ * isn't sent. Every other agent's event is returned as it is.
+ */
+export function phoneChatEvent(event: ChatEvent): ChatEvent | null {
+  const ctx = groupChatContextFor(event.agentId);
+  return ctx ? groupChatEvent(event, ctx) : event;
+}
+
+/** An agent's chat history as Annex pages it: the Dispatcher's as its group chat shows it, every other agent's whole. */
+export function phoneChatEvents(agentId: string, events: ChatEvent[]): ChatEvent[] {
+  const ctx = groupChatContextFor(agentId);
+  return ctx ? groupChatEvents(events, ctx) : events;
 }

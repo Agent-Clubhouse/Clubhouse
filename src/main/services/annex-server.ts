@@ -31,7 +31,7 @@ import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, build
 import {
   DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject,
   dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
-  setDispatcherEnabledFromPhone,
+  phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
 import { getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
@@ -3690,7 +3690,9 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     const sessionId = requestedSession ?? (live ? liveSessionId : events[events.length - 1]?.sessionId);
     live = live && getAgentRuntime(agentId) === runtime && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const current = events.filter((e) => e.sessionId === sessionId);
-    const eligible = beforeSeq === undefined ? current : current.filter((e) => e.seq < beforeSeq);
+    // The Dispatcher's chat comes as its group chat shows it (#3043); the cursor and what's pending still read it all.
+    const shown = phoneChatEvents(agentId, current);
+    const eligible = beforeSeq === undefined ? shown : shown.filter((e) => e.seq < beforeSeq);
     // The agent's folders (#2457): relative paths resolve against the first. Older phones
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
     const richContent = isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG);
@@ -3790,7 +3792,9 @@ async function handleMobileFullEventRoute(ctx: AnnexRouteContext, match: RegExpM
     const runtime = getAgentRuntime(agentId);
     const live = runtime?.kind === 'chat' && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const events = live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId });
-    const event = findFullEvent(events, sessionId, seq);
+    const found = findFullEvent(events, sessionId, seq);
+    // An event the Dispatcher's group chat doesn't show isn't there for a phone either (#3043).
+    const event = found ? phoneChatEvent(found) : undefined;
     if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
     if (!event || event.agentId !== agentId) { sendJson(ctx.res, 404, { error: 'event_not_found' }); return; }
     const body = JSON.stringify({ version: 1, agentId, sessionId, seq, digest: fullEventDigest(event), event });
@@ -5032,8 +5036,10 @@ export function start(): void {
   unsubChatEvent = onChatEvent((event) => {
     noteAgentActivity(event.agentId, event.ts);
     if (event.type === 'session_ended') forgetAppendedNotes(event.agentId, event.sessionId);
+    // The Dispatcher's chat goes as its group chat shows it (#3043): fewer events, the same shape.
+    const shown = phoneChatEvent(event);
     // Remote clients never get desktop paths or inline image bytes (#2453).
-    broadcastAndBuffer('chat:event', { agentId: event.agentId, event: remoteChatEvent(event) }, chatEventTraceparent(event));
+    if (shown) broadcastAndBuffer('chat:event', { agentId: event.agentId, event: remoteChatEvent(shown) }, chatEventTraceparent(event));
     pushChatStatus(event);
   });
 
