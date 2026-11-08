@@ -119,6 +119,13 @@ describe('help-content', () => {
       expect(content).toContain('| `connectToDispatcher` |');
     });
 
+    it('covers the Dispatcher card in details (#3049)', () => {
+      const content = find(HELP_SECTIONS, 'agents-orchestrated-helpers').content;
+      expect(content).toContain('Asking what it does…');
+      expect(content).toContain('**When to reach it**');
+      expect(content).toContain('**Undo**');
+    });
+
     it('keeps the new copy free of em dashes', () => {
       for (const id of ['agents-orchestrated-helpers']) {
         expect(find(HELP_SECTIONS, id).content, id).not.toContain('\u2014');

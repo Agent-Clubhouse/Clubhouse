@@ -563,6 +563,9 @@ vi.stubGlobal('clubhouse', {
     get: async () => DISPATCHER_OFF,
     setEnabled: async () => DISPATCHER_OFF,
     onChanged: () => noop,
+    getAgentCard: async () => null,
+    saveAgentCard: async () => ({ state: 'none', card: null }),
+    onAgentCardChanged: () => noop,
   },
   actions: {
     list: async () => [],

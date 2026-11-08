@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { DispatcherState } from '../shared/dispatcher-types';
+import type { AgentCardFields, AgentCardView } from '../shared/dispatcher-agent-card';
 
 export const dispatcher = {
   dispatcher: {
@@ -12,6 +13,18 @@ export const dispatcher = {
       ipcRenderer.on(IPC.DISPATCHER.CHANGED, listener);
       return () => {
         ipcRenderer.removeListener(IPC.DISPATCHER.CHANGED, listener);
+      };
+    },
+    /** An agent's card (#3049), or null when Clubhouse has never asked it for one. */
+    getAgentCard: (agentId: string): Promise<AgentCardView | null> => ipcRenderer.invoke(IPC.DISPATCHER.GET_AGENT_CARD, agentId),
+    /** The user's edit of an agent's card. Fields left out keep what the card said. */
+    saveAgentCard: (agentId: string, fields: Partial<AgentCardFields>): Promise<AgentCardView> =>
+      ipcRenderer.invoke(IPC.DISPATCHER.SAVE_AGENT_CARD, agentId, fields),
+    onAgentCardChanged: (callback: (agentId: string) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string) => callback(agentId);
+      ipcRenderer.on(IPC.DISPATCHER.AGENT_CARD_CHANGED, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.DISPATCHER.AGENT_CARD_CHANGED, listener);
       };
     },
   },
