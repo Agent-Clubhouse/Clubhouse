@@ -142,3 +142,19 @@ describe('interim rights: how many actions', () => {
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toBeNull();
   });
 });
+
+describe('interim rights: the Dispatcher telling itself (#3042)', () => {
+  it('its actions may message or wake the Dispatcher, never put it to sleep', () => {
+    expect(rights.checkStep(dispatcher, { kind: 'message', agentId: 'disp', text: 'x' })).toBeNull();
+    expect(rights.checkStep(dispatcher, { kind: 'wake', agentId: 'disp' })).toBeNull();
+    expect(rights.checkStep(dispatcher, { kind: 'sleep', agentId: 'disp' })).toBe('The Dispatcher can’t act on that agent.');
+    // Still only agents connected to it otherwise.
+    expect(rights.checkStep(dispatcher, { kind: 'message', agentId: 'qa', text: 'x' })).toBe('The Dispatcher can’t act on that agent.');
+  });
+
+  it('an agent’s actions reach the Dispatcher only over a wire to it, like any agent', () => {
+    expect(rights.checkStep(lead, { kind: 'message', agentId: 'disp', text: 'x' })).toBe('release-lead can’t act on that agent.');
+    dispatcherId = undefined;
+    expect(rights.checkStep(dispatcher, { kind: 'message', agentId: 'disp', text: 'x' })).toBe('The Dispatcher can’t act on that agent.');
+  });
+});

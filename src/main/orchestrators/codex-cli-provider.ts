@@ -767,29 +767,31 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   }
 
   /**
-   * Read a rollout transcript by session id.  The id is the UUID suffix of the
-   * rollout filename, so this locates the file by scanning names rather than
-   * guessing a path.
+   * The rollout file for `sessionId`, found by the id in its filename. Rollouts
+   * aren't kept by cwd, so `cwd` isn't needed. null when there is none.
    */
-  async readSessionTranscript(
-    sessionId: string,
-    _cwd: string,
-    opts?: TranscriptReadOptions,
-  ): Promise<StreamJsonEvent[] | null> {
+  async transcriptPath(sessionId: string, _cwd: string): Promise<string | null> {
     const sessionsDir = path.join(this.resolveCodexHome(), 'sessions');
-
     let files: string[];
     try {
       files = await this.collectRolloutFiles(sessionsDir);
     } catch {
       return null;
     }
+    return files.find((f) => ROLLOUT_FILE_PATTERN.exec(path.basename(f))?.[2] === sessionId) ?? null;
+  }
 
-    const filePath = files.find((f) => {
-      const match = ROLLOUT_FILE_PATTERN.exec(path.basename(f));
-      return match?.[2] === sessionId;
-    });
-
+  /**
+   * Read a rollout transcript by session id.  The id is the UUID suffix of the
+   * rollout filename, so this locates the file by scanning names rather than
+   * guessing a path.
+   */
+  async readSessionTranscript(
+    sessionId: string,
+    cwd: string,
+    opts?: TranscriptReadOptions,
+  ): Promise<StreamJsonEvent[] | null> {
+    const filePath = await this.transcriptPath(sessionId, cwd);
     if (!filePath) return null;
 
     const events = await parseJsonlFile(filePath, opts);

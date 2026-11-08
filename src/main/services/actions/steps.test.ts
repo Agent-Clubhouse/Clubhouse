@@ -95,4 +95,56 @@ describe('step runner', () => {
     expect(calls.map((c) => c.headless)).toEqual([true, true]);
     expect(calls.some((c) => 'interactive' in c)).toBe(false);
   });
+
+  it('a run an event set off says what happened', async () => {
+    const d = deps();
+    const evCtx: StepContext = { ...ctx, trigger: { kind: 'event', at: 1, detail: 'web is pushed, pulled or fetched (main)' } };
+    await createStepRunner(d).run({ kind: 'message', agentId: 'pm', text: 'Tag the release.' }, evCtx);
+    expect(d.wake).toHaveBeenCalledWith(expect.objectContaining({
+      mission: '[Clubhouse action “Morning”] Tag the release.\nWhat happened: web is pushed, pulled or fetched (main).',
+    }));
+  });
+
+  describe('the Dispatcher as a target (#3042)', () => {
+    const deliver = vi.fn(async (): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string }> => ({ delivered: true, woke: true }));
+    const withDispatcher = (over: Partial<StepDeps> = {}) => deps({
+      agentName: (id) => (id === 'disp' ? 'Rosie' : id),
+      dispatcher: { is: (id) => id === 'disp', deliver },
+      ...over,
+    });
+    const owned = (owner: StepContext['action']['owner']): StepContext => ({
+      ...ctx, action: { ...ctx.action, owner }, trigger: { kind: 'event', at: 1, detail: 'release-lead goes to sleep' },
+    });
+
+    beforeEach(() => deliver.mockClear());
+
+    it('goes through its one delivery path, never the plain wake', async () => {
+      const d = withDispatcher();
+      const r = await createStepRunner(d).run({ kind: 'message', agentId: 'disp', text: 'Check its handoff.' }, owned({ kind: 'dispatcher' }));
+      expect(r).toMatchObject({ outcome: 'done', detail: 'Woke Rosie with the message', agentId: 'disp' });
+      expect(d.wake).not.toHaveBeenCalled();
+      // Its own subscription sends as itself: waking yourself needs no grant.
+      expect(deliver).toHaveBeenCalledWith({
+        senderId: 'disp', targetId: 'disp', targetName: 'Rosie', actionId: 'a1',
+        text: '[Clubhouse action “Morning”] Check its handoff.\nWhat happened: release-lead goes to sleep.',
+        routed: [{ fromClubhouse: true, text: 'Action “Morning”: Check its handoff.\nWhat happened: release-lead goes to sleep.' }],
+      });
+    });
+
+    it('an agent’s action wakes it only as that agent, and an undelivered message is a failure', async () => {
+      deliver.mockResolvedValueOnce({ delivered: false, text: 'Rosie is asleep, and waking it asks the user first.' });
+      const r = await createStepRunner(withDispatcher()).run({ kind: 'message', agentId: 'disp', text: 'hi' }, owned({ kind: 'agent', agentId: 'lead' }));
+      expect(deliver).toHaveBeenCalledWith(expect.objectContaining({ senderId: 'lead' }));
+      expect(r).toMatchObject({ outcome: 'failed', detail: 'Couldn’t deliver the message: Rosie is asleep, and waking it asks the user first.' });
+    });
+
+    it('a message to an awake Dispatcher is sent, and a delivery error is a failure', async () => {
+      deliver.mockResolvedValueOnce({ delivered: true, woke: false });
+      expect(await createStepRunner(withDispatcher()).run({ kind: 'message', agentId: 'disp', text: 'hi' }, owned({ kind: 'app' })))
+        .toMatchObject({ outcome: 'done', detail: 'Sent the message to Rosie' });
+      deliver.mockRejectedValueOnce(new Error('pipe closed'));
+      expect(await createStepRunner(withDispatcher()).run({ kind: 'message', agentId: 'disp', text: 'hi' }, owned({ kind: 'app' })))
+        .toMatchObject({ outcome: 'failed', detail: 'Couldn’t deliver the message to Rosie: pipe closed' });
+    });
+  });
 });
