@@ -9,30 +9,20 @@
  * are real, which the unit tests can't give.
  *
  * Note: the canvas right-click flow is known to flake on macOS/Windows CI.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). Only reaching the project's Canvas tab differs between them.
  */
 import { test, expect, _electron as electron, type Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
-import { clickExplorerTab } from './smoke-helpers';
+import { addProject, assertActiveProject, assertRunLayout, clickExplorerTab } from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 const FIXTURE_PROJECT = path.resolve(__dirname, 'fixtures/project-a');
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
-
-async function stubDialogForPath(dirPath: string) {
-  await electronApp.evaluate(
-    async ({ dialog, BrowserWindow }, fixturePath) => {
-      const win =
-        BrowserWindow.getAllWindows().find(
-          (w: any) => !w.webContents.getURL().startsWith('devtools://'),
-        ) ?? BrowserWindow.getAllWindows()[0] ?? null;
-      (BrowserWindow as any).getFocusedWindow = () => win;
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixturePath] });
-    },
-    dirPath,
-  );
-}
 
 /** The workspace's transform container style, which changes when the canvas pans. */
 async function viewportTransform(): Promise<string> {
@@ -43,13 +33,19 @@ async function viewportTransform(): Promise<string> {
 }
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
-  await stubDialogForPath(FIXTURE_PROJECT);
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
   await expect(window.locator('[data-testid="nav-add-project"]')).toBeVisible({ timeout: 5_000 });
-  await window.locator('[data-testid="nav-add-project"]').click();
-  await expect(window.locator(`text=${path.basename(FIXTURE_PROJECT)}`).first()).toBeVisible({ timeout: 10_000 });
-  const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
-  await expect(canvasTab).toBeVisible({ timeout: 10_000 });
+  await addProject(electronApp, window, FIXTURE_PROJECT);
+  // The project's tabs (the title bar's, on the new layout) are for the active project.
+  await assertActiveProject(window, path.basename(FIXTURE_PROJECT));
+  // Classic shows the Canvas tab in the explorer column. The new layout shows
+  // it in the title bar, or in its More menu when the tabs don't all fit, so
+  // it may have no element until clickExplorerTab opens that menu.
+  if (!(await isNewLayout(window))) {
+    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+    await expect(canvasTab).toBeVisible({ timeout: 10_000 });
+  }
   await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:canvas');
   await expect(window.locator('[data-testid="canvas-panel"]')).toBeVisible({ timeout: 10_000 });
 });
