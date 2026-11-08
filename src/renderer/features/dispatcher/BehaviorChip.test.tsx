@@ -24,7 +24,7 @@ function renderChip(behavior: DispatcherBehaviorState = STANDARD, onChange = vi.
 }
 
 beforeEach(() => {
-  useOrchestratorStore.setState({ allOrchestrators: [cli('claude-code', 'Claude Code'), cli('copilot-cli', 'Copilot CLI')] });
+  useOrchestratorStore.setState({ allOrchestrators: [cli('claude-code', 'Claude Code'), cli('future-cli', 'Future CLI')] });
 });
 afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
 
@@ -81,7 +81,7 @@ describe('BehaviorChip (#3045)', () => {
   });
 
   it('explains a provider with no Auto mapping and still lets the level change', async () => {
-    const { onChange } = renderChip({ level: 'standard', provider: 'copilot-cli', auto: { ready: false, code: 'auto_not_supported' } });
+    const { onChange } = renderChip({ level: 'standard', provider: 'future-cli', auto: { ready: false, code: 'auto_not_supported' } });
     fireEvent.click(screen.getByTestId('dispatcher-behavior-chip'));
     expect(screen.getByTestId('dispatcher-behavior-auto').textContent).toContain('Auto doesn’t support Codex CLI yet');
     expect(screen.queryByTestId('dispatcher-behavior-setup-auto')).toBeNull();

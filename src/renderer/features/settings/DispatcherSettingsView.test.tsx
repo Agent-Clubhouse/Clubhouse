@@ -47,7 +47,7 @@ beforeEach(() => {
   window.clubhouse.agent.getModelOptions = vi.fn(async () => [{ id: 'default', label: 'Default' }, { id: 'gpt-5', label: 'GPT-5' }]) as never;
   useOrchestratorStore.setState({
     enabled: ['claude-code', 'codex-cli'],
-    allOrchestrators: [cli('claude-code', 'Claude Code'), cli('copilot-cli', 'Copilot CLI'), cli('codex-cli', 'Codex CLI')],
+    allOrchestrators: [cli('claude-code', 'Claude Code'), cli('copilot-cli', 'Copilot CLI'), cli('codex-cli', 'Codex CLI'), cli('future-cli', 'Future CLI')],
     loadSettings: async () => {},
   });
 });
@@ -222,9 +222,9 @@ describe('DispatcherSettingsView', () => {
       expect(screen.getByTestId('dispatcher-behavior-auto-note').textContent).toContain('Codex CLI');
       unmount();
 
-      state = { ...ON, behavior: { level: 'standard', provider: 'copilot-cli', auto: { ready: false, code: 'auto_not_supported' } } };
+      state = { ...ON, behavior: { level: 'standard', provider: 'future-cli', auto: { ready: false, code: 'auto_not_supported' } } };
       render(<DispatcherSettingsView />);
-      expect((await screen.findByTestId('dispatcher-behavior-auto-note')).textContent).toContain('Auto doesn’t support Copilot CLI yet');
+      expect((await screen.findByTestId('dispatcher-behavior-auto-note')).textContent).toContain('Auto doesn’t support Future CLI yet');
       expect(screen.queryByTestId('dispatcher-behavior-setup-auto')).toBeNull();
       // The level can still change: it still sets how often it checks in.
       expect((screen.getByLabelText('Behavior') as HTMLSelectElement).disabled).toBe(false);

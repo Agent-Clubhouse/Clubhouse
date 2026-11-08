@@ -7,7 +7,7 @@
  * Models come from the Auto mapping (shared/helper-routing.ts): each level
  * names an Auto level per role, and the provider's mapping turns that into a
  * model and effort (services/helper-routing.ts resolveAutoLevel). A provider
- * with no mapping (Copilot today, #3085) runs on its CLI's default model, and
+ * with no mapping (any provider without presets) keeps the model it has, and
  * the frequencies still apply.
  *
  * Frequencies are named buckets, never times. What a bucket means in minutes
@@ -79,7 +79,7 @@ export const DISPATCHER_BEHAVIOR_LABELS: Readonly<Record<DispatcherBehavior, { l
 
 /**
  * Whether the provider's Auto mapping can give this level its models.
- * `auto_not_supported`: the provider has no mapping at all (Copilot today).
+ * `auto_not_supported`: the provider has no mapping at all (no presets).
  * `no_valid_mapping`: it has one, but nothing it maps for this level is offered now.
  */
 export type DispatcherBehaviorAuto =

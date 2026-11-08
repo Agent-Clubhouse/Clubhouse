@@ -56,7 +56,7 @@ describe('Dispatcher Behavior levels (#3045)', () => {
 });
 
 describe('resolveBehaviorModels: the level per provider', () => {
-  it('maps each level to models on Claude and Codex through the Auto mapping', async () => {
+  it('maps each level to models on every preset provider through the Auto mapping', async () => {
     const expected: Record<string, Record<string, { chat: string; work: string }>> = {
       'claude-code': {
         light: { chat: 'haiku', work: 'haiku' },
@@ -68,7 +68,13 @@ describe('resolveBehaviorModels: the level per provider', () => {
         standard: { chat: 'gpt-6.1-terra', work: 'gpt-6.1-terra' },
         thorough: { chat: 'gpt-6.1-terra', work: 'gpt-6.1-sol' },
       },
+      'copilot-cli': {
+        light: { chat: 'claude-haiku-5.5', work: 'claude-haiku-5.5' },
+        standard: { chat: 'claude-sonnet-5.5', work: 'claude-sonnet-5.5' },
+        thorough: { chat: 'claude-sonnet-5.5', work: 'claude-opus-5.5' },
+      },
     };
+    expect(Object.keys(expected).sort()).toEqual([...PRESET_PROVIDERS].sort());
     for (const provider of PRESET_PROVIDERS) {
       for (const level of DISPATCHER_BEHAVIORS) {
         const result = await resolveBehaviorModels(provider, level, builtinResolve);
@@ -92,9 +98,9 @@ describe('resolveBehaviorModels: the level per provider', () => {
     expect(resolve).toHaveBeenCalledWith('claude-code', 'medium');
   });
 
-  it('reports a provider with no Auto mapping (Copilot) rather than guessing a model', async () => {
+  it('reports a provider with no Auto mapping rather than guessing a model', async () => {
     for (const level of DISPATCHER_BEHAVIORS) {
-      const result = await resolveBehaviorModels('copilot-cli', level, builtinResolve);
+      const result = await resolveBehaviorModels('future-cli', level, builtinResolve);
       expect(result).toMatchObject({ ok: false, code: 'auto_not_supported' });
     }
   });
@@ -115,8 +121,8 @@ describe('the missing-Auto line', () => {
   });
 
   it('explains a provider Auto doesn\'t support, with nothing to set up', () => {
-    const note = behaviorAutoNote({ ready: false, code: 'auto_not_supported' }, 'GitHub Copilot');
-    expect(note).toContain('Auto doesn’t support GitHub Copilot yet');
+    const note = behaviorAutoNote({ ready: false, code: 'auto_not_supported' }, 'Future CLI');
+    expect(note).toContain('Auto doesn’t support Future CLI yet');
     expect(note).not.toMatch(/coordinator|session/i);
     expect(canSetUpAuto({ ready: false, code: 'auto_not_supported' })).toBe(false);
   });

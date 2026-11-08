@@ -145,11 +145,18 @@ beforeEach(async () => {
       medium: { model: 'terra', effort: 'medium' },
       maximum: { model: 'sol', effort: 'high' },
     },
+    'copilot-cli': {
+      easy: { model: 'claude-haiku-5.5', effort: 'low' },
+      medium: { model: 'claude-sonnet-5.5', effort: 'medium' },
+      maximum: { model: 'claude-opus-5.5', effort: 'high' },
+    },
   };
   providers.list = [
     fakeProvider('claude-code', 'CLAUDE.md'),
     fakeProvider('copilot-cli', path.join('.github', 'copilot-instructions.md')),
     fakeProvider('codex-cli', 'AGENTS.md'),
+    // A provider with no Auto presets, for the missing-mapping path.
+    fakeProvider('future-cli', 'FUTURE.md'),
   ];
   svc._resetDispatcherForTesting();
   _resetDispatcherBehaviorForTesting();
@@ -623,6 +630,16 @@ describe('Behavior (#3045)', () => {
     expect(svc.getDispatcherState().behavior).toEqual({ level: 'light', provider: 'codex-cli', auto: { ready: true } });
   });
 
+  it('gives Copilot its models through its Auto mapping like any preset provider (#3114)', async () => {
+    h.enabledProviders = ['copilot-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherBehavior('thorough');
+    await settle();
+    expect(coordinator()).toMatchObject({ orchestrator: 'copilot-cli', model: 'claude-opus-5.5', effort: 'high' });
+    expect(chat()).toMatchObject({ model: 'claude-sonnet-5.5', effort: 'medium' });
+    expect(svc.getDispatcherState().behavior).toEqual({ level: 'thorough', provider: 'copilot-cli', auto: { ready: true } });
+  });
+
   it('switches a running chat\'s model when the level changes', async () => {
     await svc.setDispatcherEnabled(true);
     await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2');
@@ -636,14 +653,14 @@ describe('Behavior (#3045)', () => {
   });
 
   it('keeps the model it has where the provider has no Auto mapping, and says so', async () => {
-    h.enabledProviders = ['copilot-cli'];
+    h.enabledProviders = ['future-cli'];
     await svc.setDispatcherEnabled(true);
     await svc.setDispatcherBehavior('thorough');
     expect(await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2')).toBeNull();
     await settle();
     expect(chat()?.model).toBeUndefined();
     expect(coordinator()?.model).toBeUndefined();
-    expect(svc.getDispatcherState().behavior).toEqual({ level: 'thorough', provider: 'copilot-cli', auto: { ready: false, code: 'auto_not_supported' } });
+    expect(svc.getDispatcherState().behavior).toEqual({ level: 'thorough', provider: 'future-cli', auto: { ready: false, code: 'auto_not_supported' } });
     // The level still holds, for how often it checks in.
     expect(getDispatcherBehaviorPlan().checkIns).toBe('frequently');
   });
