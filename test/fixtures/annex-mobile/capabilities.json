@@ -81,6 +81,12 @@
       "finishedQuickAgents": {
         "version": 1
       },
+      "fullEvents": {
+        "approvalField": "reviewedDigest",
+        "maximumBytes": 33554432,
+        "path": "/api/v1/mobile/agents/{agentId}/chat/events/{seq}?sessionId={sessionId}",
+        "version": 1
+      },
       "helperRequests": {
         "commands": [
           "helper.approve",

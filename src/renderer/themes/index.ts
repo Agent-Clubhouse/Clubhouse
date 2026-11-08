@@ -9,6 +9,21 @@ import { tokyoNight } from './tokyo-night';
 import { gruvboxDark } from './gruvbox-dark';
 import { cyberpunk } from './cyberpunk';
 import { completeThemePalette } from '../../shared/theme-colors';
+import { FALL_THEMES } from './packs/fall';
+import { WINTER_THEMES } from './packs/winter';
+import { SPRING_THEMES } from './packs/spring';
+import { SUMMER_THEMES } from './packs/summer';
+import { OCEAN_THEMES } from './packs/ocean';
+import { TECH_MODERN_THEMES } from './packs/tech-modern';
+import { NEON_THEMES } from './packs/neon';
+
+/** The themes from the seven Workshop packs (#2753), in collection order. */
+export const PACK_THEMES: readonly ThemeDefinition[] = [
+  ...FALL_THEMES, ...WINTER_THEMES, ...SPRING_THEMES, ...SUMMER_THEMES,
+  ...OCEAN_THEMES, ...TECH_MODERN_THEMES, ...NEON_THEMES,
+];
+
+type OriginalThemeId = 'catppuccin-mocha' | 'catppuccin-latte' | 'solarized-dark' | 'terminal' | 'nord' | 'dracula' | 'tokyo-night' | 'gruvbox-dark' | 'cyberpunk';
 
 /** Built-in themes — static, never mutated. */
 export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
@@ -21,6 +36,7 @@ export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
   'tokyo-night': tokyoNight,
   'gruvbox-dark': gruvboxDark,
   'cyberpunk': cyberpunk,
+  ...(Object.fromEntries(PACK_THEMES.map((t) => [t.id, t])) as Record<Exclude<BuiltinThemeId, OriginalThemeId>, ThemeDefinition>),
 };
 
 /** Dynamic theme registry — includes builtins plus plugin-contributed themes. */
