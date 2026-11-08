@@ -1,5 +1,5 @@
 /**
- * The theme picker with the real 44 built-ins plus plugin themes (#2754),
+ * The theme picker with the real 48 built-ins plus plugin themes (#2754),
  * and a larger set, so the design isn't tuned to one count.
  */
 import { act, fireEvent, render, screen, within } from '@testing-library/react';

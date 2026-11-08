@@ -24,7 +24,7 @@ describe('theme picker grouping (#2754)', () => {
     expect(pluginIdOf('plugin:')).toBeNull();
   });
 
-  it('groups the originals, then the seven collections, then plugins by name, with no theme lost', () => {
+  it('groups the originals, then the eight collections, then plugins by name, with no theme lost', () => {
     const groups = groupThemes(all, { query: '', kind: 'all', pluginName });
     expect(groups.map((g) => g.label)).toEqual([
       'Clubhouse', 'Gradients', 'Fall', 'Winter', 'Spring', 'Summer', 'Ocean', 'Tech Modern', 'Neon',
