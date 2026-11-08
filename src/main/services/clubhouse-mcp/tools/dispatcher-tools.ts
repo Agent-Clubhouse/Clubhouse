@@ -7,7 +7,8 @@
  *
  * - list_agents: every agent with "Connect to Dispatcher" on (#2534, #2578),
  *   across every registered project, with its status, whether it orchestrates,
- *   whether it is connected now, its helpers and its branch.
+ *   whether it is connected now, its helpers, its branch, and its card
+ *   (#3041): what the agent says it's for, or "No description yet".
  * - inspect_helper: one helper's state and recent output (#2579), for helpers
  *   of those agents only. Helpers talk only to their parent, so nothing here
  *   can message, wake, sleep or dispose one.
@@ -32,6 +33,8 @@ import * as projectStore from '../../project-store';
 import { onDispatcherChanged } from '../../dispatcher/dispatcher-service';
 import { appLog } from '../../log-service';
 import { refreshDispatcherGate } from '../dispatcher-gate';
+import { NO_DESCRIPTION } from '../../dispatcher/dispatcher-agent-cards';
+import { getAgentCards } from '../../dispatcher/dispatcher-agent-cards-watch';
 import { describeHelper, helperStatus, nameOfProject, projectName } from './helper-tools';
 import { numberWithDefault, requireString } from './validation';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
@@ -74,14 +77,28 @@ async function currentBranch(agent: DurableAgentConfig, projectPath: string): Pr
   }
 }
 
+/** The agent's card as list_agents shows it. A card that can't be read is shown as missing. */
+async function cardOf(agentId: string): Promise<Record<string, unknown>> {
+  try {
+    const status = await getAgentCards().status(agentId);
+    if (!status) return { description: NO_DESCRIPTION };
+    return { description: status.text, page: status.page, ...(status.state === 'asking' && { asking: true }) };
+  } catch (err) {
+    // telemetry-exempt: logged; the agent is listed without its card
+    appLog('core:mcp', 'warn', 'list_agents: could not read a card', { meta: { agentId, error: errorText(err) } });
+    return { description: NO_DESCRIPTION };
+  }
+}
+
 async function describeAgent(
   project: Project,
   { agent, orchestrates }: ConnectedAgent,
   projects: readonly Project[],
 ): Promise<Record<string, unknown>> {
-  const [helpers, branch] = await Promise.all([
+  const [helpers, branch, card] = await Promise.all([
     listHelpersEverywhere(project.path, agent.id),
     currentBranch(agent, project.path),
+    cardOf(agent.id),
   ]);
   const helperRows = await Promise.all(helpers.map(async ({ projectPath, config }) => ({
     id: config.id,
@@ -99,6 +116,7 @@ async function describeAgent(
     connected: !!agentRegistry.get(agent.id) && !!getAgentConnection(agent.id),
     branch,
     helpers: { count: helperRows.length, helpers: helperRows },
+    card,
   };
 }
 
@@ -232,8 +250,9 @@ export function registerDispatcherTools(): void {
       description:
         'List the agents that are connected to you (their "Connect to Dispatcher" setting is on), ' +
         'in every Clubhouse project: id, name, project, status, whether it orchestrates, whether it is ' +
-        'connected now (running and reachable with send_message), its current branch, and its helpers ' +
-        'with each one\'s project and status.',
+        'connected now (running and reachable with send_message), its current branch, its helpers ' +
+        'with each one\'s project and status, and its card: what the agent says it\'s for, when to reach it ' +
+        'and what it owns, with its page in memory.',
       inputSchema: { type: 'object', properties: {} },
     },
     async (agentId) => {

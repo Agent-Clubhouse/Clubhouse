@@ -152,7 +152,8 @@ describe('tool grant declarations (#2967)', () => {
       subscribe: action.write on app
       read_helper_presets: settings.app.read on app
       set_helper_presets: settings.app.write on app
-      request_grant: grant.request on self"
+      request_grant: grant.request on self
+      update_my_card: agent.display on self"
     `);
   });
 });
