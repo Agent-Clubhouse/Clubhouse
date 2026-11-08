@@ -752,3 +752,10 @@ jobs:
               exit 1
             fi
           done
+      - name: Report the glibc that native modules need
+        # node-pty is compiled on the runner, so its glibc floor follows the runner image.
+        run: |
+          for f in $(find out -path '*node-pty*' -name '*.node' -type f); do
+            need=$(objdump -T "$f" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)
+            echo "$f needs ${need:-no versioned glibc}"
+          done
