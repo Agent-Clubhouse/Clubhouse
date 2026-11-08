@@ -124,7 +124,7 @@ describe('step runner', () => {
   });
 
   describe('the Dispatcher as a target (#3042)', () => {
-    const deliver = vi.fn(async (): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string }> => ({ delivered: true, woke: true }));
+    const deliver = vi.fn(async (): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string; skipped?: boolean }> => ({ delivered: true, woke: true }));
     const withDispatcher = (over: Partial<StepDeps> = {}) => deps({
       agentName: (id) => (id === 'disp' ? 'Rosie' : id),
       dispatcher: { is: (id) => id === 'disp', deliver },
@@ -143,7 +143,7 @@ describe('step runner', () => {
       expect(d.wake).not.toHaveBeenCalled();
       // Its own subscription sends as itself: waking yourself needs no grant.
       expect(deliver).toHaveBeenCalledWith({
-        senderId: 'disp', targetId: 'disp', targetName: 'Rosie', actionId: 'a1',
+        senderId: 'disp', targetId: 'disp', targetName: 'Rosie', actionId: 'a1', actionName: 'Morning', owner: { kind: 'dispatcher' },
         text: '[Clubhouse action “Morning”] Check its handoff.\nWhat happened: release-lead goes to sleep.',
         routed: [{ fromClubhouse: true, text: 'Action “Morning”: Check its handoff.\nWhat happened: release-lead goes to sleep.' }],
       });
@@ -163,6 +163,12 @@ describe('step runner', () => {
       deliver.mockRejectedValueOnce(new Error('pipe closed'));
       expect(await createStepRunner(withDispatcher()).run({ kind: 'message', agentId: 'disp', text: 'hi' }, owned({ kind: 'app' })))
         .toMatchObject({ outcome: 'failed', detail: 'Couldn’t deliver the message to Rosie: pipe closed' });
+    });
+
+    it('a message Clubhouse found it didn’t need to send is a finished step, not a failure (#3040)', async () => {
+      deliver.mockResolvedValueOnce({ delivered: false, skipped: true, text: 'Nothing needed checking.' });
+      expect(await createStepRunner(withDispatcher()).run({ kind: 'message', agentId: 'disp', text: 'hi' }, owned({ kind: 'app' })))
+        .toMatchObject({ outcome: 'done', detail: 'Nothing needed checking.', agentId: 'disp' });
     });
   });
 });

@@ -309,6 +309,13 @@ app.on('ready', () => {
     } catch (err) {
       appLog('core:actions', 'error', 'Actions did not start', { meta: { code: codeOf(err) } });
     }
+    // The Dispatcher's hidden upkeep and check-ins (#3040) are Actions, so they start after them.
+    try {
+      const { startDispatcherBackground } = await import('./services/dispatcher/dispatcher-background');
+      startDispatcherBackground();
+    } catch (err) {
+      appLog('core:dispatcher', 'warn', 'The Dispatcher background work did not start', { meta: { code: codeOf(err) } });
+    }
     publishAppStarted();
   }).catch((err) => {
     appLog('core:app-events', 'warn', 'The app event bus did not start', { meta: { code: codeOf(err) } });

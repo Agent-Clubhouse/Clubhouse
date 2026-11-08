@@ -682,6 +682,8 @@ export const IPC = {
     SET_BEHAVIOR: 'dispatcher:set-behavior',
     /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
     CLEAR_CHAT: 'dispatcher:clear-chat',
+    /** Today's usage, split into conversations and background work (#3040). Resolves with a DispatcherUsageSplit. */
+    GET_USAGE: 'dispatcher:get-usage',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
     /** An agent's card, for its Dispatcher card in Details (#3049). */
