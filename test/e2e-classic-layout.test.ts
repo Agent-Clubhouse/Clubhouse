@@ -45,7 +45,8 @@ describe('E2E classic layout lists (#2843)', () => {
     expect(start).toBeGreaterThan(-1);
     const job = workflow.slice(start, workflow.indexOf('\n  # ', start + 1));
     expect(job).toMatch(/CLUBHOUSE_E2E_LAYOUT: classic/);
-    expect(job).toMatch(/npx playwright test --reporter/);
+    expect(job).toMatch(/npx playwright test --shard=\$\{\{ matrix\.shard \}\}\/2 --reporter/);
+    expect(job).toMatch(/shard: \[1, 2\]/);
   });
 
   it('turn the list into globs, and refuse an empty one', () => {
