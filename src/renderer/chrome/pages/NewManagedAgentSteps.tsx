@@ -28,6 +28,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { IS_MAC, Row, Rule, Segmented, footerLinkClass, inputClass, selectClass, tabPanelProps } from './newAgentUi';
+import { templateGrantSummary } from '../../../shared/grant-summary';
 
 /**
  * The managed steps of New agent (#2893): Start with template, the builder
@@ -76,6 +77,28 @@ export function templateSummary(t: Pick<ManagedTemplate, 'setup' | 'settings'>):
   const o = t.settings.orchestration;
   if (o?.orchestrate) parts.push(`helpers on, up to ${o.maxHelpers ?? DEFAULT_MAX_HELPERS}`);
   return parts.join(' · ');
+}
+
+/**
+ * What agents made from a template can do through Clubhouse (#2971): one
+ * line, and the full list by target when expanded. From the same default
+ * grants the call-time check uses.
+ */
+function TemplateGrants({ template }: { template: Pick<ManagedTemplate, 'id' | 'settings'> }) {
+  const { line, groups } = useMemo(() => templateGrantSummary(template.settings.orchestration), [template.settings.orchestration]);
+  return (
+    <details className="text-xs text-ctp-overlay1 leading-normal" data-testid={`managed-template-grants-${template.id}`}>
+      <summary className="cursor-pointer select-none hover:text-ctp-subtext1">{line}</summary>
+      <dl className="mt-1 ml-3 flex flex-col gap-1">
+        {groups.map((g) => (
+          <div key={g.label}>
+            <dt className="text-ctp-subtext1">{g.label}</dt>
+            <dd>{g.actions.join(', ')}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
 }
 
 /** The step's heading takes focus, so a screen reader hears the new page. */
@@ -135,6 +158,7 @@ export function TemplateStep({ name, projectName, busy, error, onCreate, onCusto
                     </div>
                     {t.description && <div className="text-xs text-ctp-subtext0 leading-normal">{t.description}</div>}
                     <div className="text-xs text-ctp-overlay1 truncate">{templateSummary(t)}</div>
+                    <TemplateGrants template={t} />
                   </div>
                   <div className="flex items-center gap-2 pt-0.5">
                     <Button kind="ghost" onClick={() => onCustomize(t)} disabled={busy} aria-label={`Customize ${t.name}`} className="focus-ring">Customize</Button>

@@ -137,6 +137,11 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(screen.queryByTestId('managed-template-builtin-template-project-manager')).toBeNull();
     expect(screen.queryByText('Project Manager')).toBeNull();
     expect(screen.getByTestId('managed-template-custom-release').textContent).toContain('Custom');
+    // What agents from it can do through Clubhouse, from the default grants (#2971).
+    const grants = screen.getByTestId('managed-template-grants-builtin-template-orchestrator');
+    expect(grants.querySelector('summary')?.textContent).toBe('Through Clubhouse it can read and message agents it\'s connected to, and start and manage its own helpers.');
+    expect(within(grants).getByText('Its helpers')).toBeTruthy();
+    expect(screen.getByTestId('managed-template-grants-custom-release').querySelector('summary')?.textContent).not.toContain('helpers');
 
     fireEvent.click(within(builtin).getByRole('button', { name: 'Create from Orchestrator' }));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', { name: 'keen-heron', color: 'emerald', templateId: 'builtin-template-orchestrator' }));
