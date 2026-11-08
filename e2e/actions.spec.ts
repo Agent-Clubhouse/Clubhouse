@@ -33,9 +33,14 @@ async function openActions(w: Page): Promise<void> {
   await expect(w.getByTestId('actions-settings')).toBeVisible();
 }
 
-async function readActions(userDataDir: string): Promise<Array<{ name: string; enabled: boolean }>> {
-  const file = path.join(userDataDir, 'actions.json');
-  return fs.existsSync(file) ? JSON.parse(await fs.promises.readFile(file, 'utf8')).actions : [];
+/** The saved actions, or undefined while the file is missing or can't be parsed yet, so a poll tries again. */
+async function readActions(userDataDir: string): Promise<Array<{ name: string; enabled: boolean }> | undefined> {
+  try {
+    const parsed = JSON.parse(await fs.promises.readFile(path.join(userDataDir, 'actions.json'), 'utf8'));
+    return Array.isArray(parsed?.actions) ? parsed.actions : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 test('create, run and turn off an action from Settings', async () => {
@@ -63,7 +68,7 @@ test('create, run and turn off an action from Settings', async () => {
   await expect(row).toBeVisible();
   await expect(row).toContainText('Weekdays at 9:00 AM → Notify you');
   await expect(row).toContainText('You');
-  await expect.poll(async () => (await readActions(app!.userDataDir)).map((a) => a.name)).toEqual(['Morning check']);
+  await expect.poll(async () => (await readActions(app!.userDataDir))?.map((a) => a.name)).toEqual(['Morning check']);
 
   // Run now from its card records a run.
   await row.getByText('Morning check', { exact: true }).click();
@@ -76,7 +81,7 @@ test('create, run and turn off an action from Settings', async () => {
 
   // Turn it off from its row; it's saved.
   await row.getByRole('switch').click();
-  await expect.poll(async () => (await readActions(app!.userDataDir))[0]?.enabled).toBe(false);
+  await expect.poll(async () => (await readActions(app!.userDataDir))?.[0]?.enabled).toBe(false);
   await w.getByRole('tab', { name: 'Turned off' }).click();
   await expect(w.getByTestId('action-row')).toHaveCount(1);
 });
