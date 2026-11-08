@@ -204,12 +204,13 @@ export function registerPluginHandlers(): void {
     return findRetiredPluginData(pluginId, await retiredDataOptions());
   }));
 
-  ipcMain.handle(IPC.PLUGIN.RETIRED_DATA_EXPORT, withValidatedArgs([retiredPluginArg], async (_event, pluginId: string): Promise<{
+  ipcMain.handle(IPC.PLUGIN.RETIRED_DATA_EXPORT, withValidatedArgs([retiredPluginArg], async (event, pluginId: string): Promise<{
     canceled: boolean;
     filePath?: string;
     error?: string;
   }> => {
-    const win = BrowserWindow.getFocusedWindow();
+    // The dialog belongs to the window that asked.
+    const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return { canceled: true };
     const picked = await dialog.showSaveDialog(win, {
       title: 'Export plugin data',
