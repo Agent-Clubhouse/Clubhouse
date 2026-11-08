@@ -11,7 +11,7 @@ Automates the release preparation workflow: analyze changes since the last relea
 
 - You must be on a clean working tree (no uncommitted changes)
 - `gh` CLI must be authenticated
-- The repository must have at least one existing `v*` tag
+- The repository must have at least one stable `vX.Y.Z` tag (a beta tag alone is not a baseline)
 
 ## Phase 1: Gather Data
 
@@ -23,13 +23,13 @@ Automates the release preparation workflow: analyze changes since the last relea
 2. **Read current version** from `package.json` (the `"version"` field).
 
 3. **Check for prerelease suffix:**
-   If the current `package.json` version carries a prerelease suffix (`-beta.N`; `release.yml` rejects any other shape, including `-rc.N`), the target stable version **is** the base version with the suffix stripped. Do not apply minor or patch bump logic; record the prerelease base version as the target (e.g., `0.41.0-beta.5` → `0.41.0`) and continue to Phase 4 so the user can review and confirm it. This mirrors the promotion path documented in `prepare-beta/SKILL.md:199-207`.
+   If the current `package.json` version carries a prerelease suffix (`-beta.N`; `release.yml` rejects any other shape, including `-rc.N`), the target stable version **is** the base version with the suffix stripped. Do not apply minor or patch bump logic; record the prerelease base version as the target (e.g., `0.41.0-beta.5` → `0.41.0`). Then continue with steps 4 and 5 and Phases 2 and 3 as usual: the notes for a promoted release cover everything since the previous stable tag, betas included. Only Phase 4's bump logic is skipped. This mirrors the promotion path documented in `prepare-beta/SKILL.md:199-207`.
 
 4. **Find the last stable release:**
    ```bash
    git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1
    ```
-   This is the baseline. All commits between this tag and `HEAD` are candidates. Stable notes always start from the previous stable tag, never a beta: `--sort=-v:refname` puts `v0.42.0-beta.14` above `v0.42.0`, so without the filter a patch release would be diffed from a beta. (Only used if the current version is already a clean release; skipped for prerelease promotion.)
+   This is the baseline. All commits between this tag and `HEAD` are candidates. Stable notes always start from the previous stable tag, never a beta: `--sort=-v:refname` puts `v0.42.0-beta.14` above `v0.42.0`, so without the filter a patch release would be diffed from a beta. This applies to prerelease promotion too. If the command prints nothing, stop and tell the user: there is no stable baseline to draft notes from.
 
 5. **Collect commits since the last stable tag** (from step 4):
    ```bash
@@ -39,7 +39,6 @@ Automates the release preparation workflow: analyze changes since the last relea
    ```bash
    git log <last-tag>..HEAD --format='%H %s' --no-merges
    ```
-   Only use this command if the current version is already a clean release; skip it for prerelease promotion.
 
 ## Phase 2: Classify Commits
 

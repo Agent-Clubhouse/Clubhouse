@@ -25,7 +25,7 @@ Windows preview-channel clients only read `squirrel/preview`, even when the mani
 
 Tags must be `vX.Y.Z` or `vX.Y.Z-beta.N`, and legacy `vX.Y.Zrc` tags still parse. Anything else fails at Verify Tag. Clients read `0.42.0-rc.1` as `0.42.0` stable and would never be offered the real `0.42.0`, so use `-beta.N` for a candidate.
 
-Release notes come from the version bump PR's body (`scripts/ci/release-notes.mjs`), and `republish-notes.yml` corrects them after a release. When the `prepare-release` skill drafts that body, its commit scan starts from the previous stable tag, never a beta tag (step 4), since `v0.42.0-beta.14` sorts above `v0.42.0`.
+Release notes come from the version bump PR's body (`scripts/ci/release-notes.mjs`), and `republish-notes.yml` corrects them after a release. When the `prepare-release` skill drafts that body, its commit scan starts from the previous stable tag, never a beta tag (step 4), since `v0.42.0-beta.14` sorts above `v0.42.0`. That holds for a beta promoted to stable as well as for a patch or minor bump.
 
 ## If a step fails
 
