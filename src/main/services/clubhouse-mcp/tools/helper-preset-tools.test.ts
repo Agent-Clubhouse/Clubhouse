@@ -120,6 +120,17 @@ describe('set_helper_presets with the permission', () => {
     expect(parse(result)).toMatchObject({ ok: true, revision: 'r2' });
   });
 
+  it('passes a Copilot cell with no effort through, and the tools describe Copilot and empty efforts (#3085)', async () => {
+    const cells = [{ provider: 'copilot-cli', difficulty: 'minimum', model: 'claude-haiku-4.5', effort: null }];
+    expect(parse(await handler({ revision: 'r1', cells }))).toMatchObject({ ok: true });
+    expect(mocks.update).toHaveBeenCalledWith({ revision: 'r1', cells }, { surface: 'mcp' });
+    const tools = getScopedToolList('dispatcher');
+    const set = tools.find((t) => t.name === 'set_helper_presets')!;
+    expect(set.description).toContain('claude-code, codex-cli, copilot-cli');
+    expect(set.description).toContain('null when it lists none');
+    expect(tools.find((t) => t.name === 'read_helper_presets')!.description).toContain('autoCandidate');
+  });
+
   it('a stale revision changes nothing and returns the current values', async () => {
     mocks.update.mockRejectedValueOnce(new HelperRoutingError('helper_routing_stale', 'Changed since you read it.', { revision: 'r3', providers: {} } as never));
     const result = await handler({ revision: 'r1', reset: {} });

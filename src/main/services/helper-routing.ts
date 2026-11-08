@@ -11,6 +11,7 @@
 
 import { createHash, randomUUID } from 'crypto';
 import {
+  AUTO_CANDIDATE_PROVIDERS,
   AUTO_LEVEL_FOLLOWS,
   AUTO_LEVELS,
   BUILTIN_PRESETS,
@@ -23,10 +24,12 @@ import {
   PRESET_PROVIDERS,
   routingLabel,
   isAutoBoundLevel,
+  isAutoCandidateProvider,
   isAutoLevel,
   isHelperDifficulty,
   isPresetModel,
   isPresetProvider,
+  type AutoCandidateProvider,
   type AutoLevel,
   type HelperDifficulty,
   type HelperAutoView,
@@ -75,6 +78,14 @@ function errorText(err: unknown): string {
 /** The id that means "pass no --model". */
 const CLI_DEFAULT_MODEL = 'default';
 
+/**
+ * Ids that leave the model to the CLI, so a preset can't name them: Clubhouse's
+ * `default`, and Copilot's own `auto`, where Copilot picks (#3085).
+ */
+function leavesModelToCli(provider: string, model: string): boolean {
+  return model === CLI_DEFAULT_MODEL || (provider === 'copilot-cli' && model === 'auto');
+}
+
 interface CellCheck {
   state: PresetCellState;
   staleReason?: PresetStaleReason;
@@ -85,8 +96,8 @@ interface CellCheck {
 /** Check a model and effort against the CLI's list. Never throws. */
 async function checkCell(provider: string, cell: PresetCell): Promise<CellCheck> {
   // A difficulty must not run on whatever the CLI happens to default to.
-  if (cell.model === CLI_DEFAULT_MODEL) {
-    return { state: 'stale', staleReason: 'model_unavailable', message: 'A preset has to name a model, not the CLI\'s default.' };
+  if (leavesModelToCli(provider, cell.model)) {
+    return { state: 'stale', staleReason: 'model_unavailable', message: 'A preset has to name a model, not leave it to the CLI.' };
   }
   const model = await checkHelperModel(provider, cell.model);
   if (model.ok === false) return { state: 'stale', staleReason: 'model_unavailable', message: model.message };
@@ -210,8 +221,9 @@ export type AutoLevelResolution =
  * doesn't depend on the Auto provider switch, which only governs choosing
  * between providers, and it never falls back to a CLI's default model.
  *
- * A provider without presets (Copilot today) returns `auto_not_supported`, so
- * the caller picks its own fallback. Never throws for a bad provider or level.
+ * Copilot has a mapping too (#3085), though `cli: "auto"` doesn't choose it. A
+ * provider without presets returns `auto_not_supported`, so the caller picks
+ * its own fallback. Never throws for a bad provider or level.
  */
 export async function resolveAutoLevel(provider: string, level: AutoLevel): Promise<AutoLevelResolution> {
   if (!isAutoLevel(level)) {
@@ -268,7 +280,7 @@ export interface StartPlanRequest {
 
 /** One provider Auto could still use, with what it would run. */
 interface AutoOption {
-  provider: PresetProvider;
+  provider: AutoCandidateProvider;
   cell: ResolvedCell;
   quota: QuotaView;
   /** Provider: see candidateKey. */
@@ -427,11 +439,12 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
   const difficulty = request.difficulty as HelperDifficulty;
   const enabled = getOrchestratorSettings().enabled ?? [];
   const skipped: Record<string, HelperRoutingSkip> = {};
+  // Copilot has a mapping but isn't a candidate (#3085), so it's skipped like a provider without one.
   for (const other of getAllProviders()) {
-    if (!isPresetProvider(other.id) && (enabled.length === 0 || enabled.includes(other.id))) skipped[other.id] = 'auto_not_supported';
+    if (!isAutoCandidateProvider(other.id) && (enabled.length === 0 || enabled.includes(other.id))) skipped[other.id] = 'auto_not_supported';
   }
   const options: AutoOption[] = [];
-  await Promise.all(PRESET_PROVIDERS.map(async (provider) => {
+  await Promise.all(AUTO_CANDIDATE_PROVIDERS.map(async (provider) => {
     if (enabled.length > 0 && !enabled.includes(provider)) { skipped[provider] = 'cli_disabled'; return; }
     if (!(await providerUsable(provider, projectPath))) { skipped[provider] = 'cli_unavailable'; return; }
     if (await isProviderCoolingDown(provider)) { skipped[provider] = 'cooling_down'; return; }
@@ -839,7 +852,7 @@ async function viewProvider(provider: PresetProvider, refresh: boolean): Promise
       if (list) {
         listSource = list.source;
         modelCount = list.models.length;
-        const models: PresetChoice[] = list.models.filter((m) => !m.hidden && m.id !== CLI_DEFAULT_MODEL).map((m) => ({ id: m.id, label: m.label, efforts: m.efforts ?? [] }));
+        const models: PresetChoice[] = list.models.filter((m) => !m.hidden && !leavesModelToCli(provider, m.id)).map((m) => ({ id: m.id, label: m.label, efforts: m.efforts ?? [] }));
         choices = { source: list.source, asOf: new Date(list.fetchedAt).toISOString(), models };
       }
     } catch (err) {
@@ -860,6 +873,7 @@ async function viewProvider(provider: PresetProvider, refresh: boolean): Promise
   }
   return {
     autoEligible: true,
+    autoCandidate: isAutoCandidateProvider(provider),
     quota,
     choices,
     cells: Object.fromEntries(AUTO_LEVELS.map((level, i) => [level, cells[i]])) as Record<AutoLevel, PresetCellView>,
@@ -939,7 +953,7 @@ function checkShape(update: HelperRoutingUpdate): void {
     if (!isPresetProvider(cell?.provider)) throw invalid(`${String(cell?.provider)} has no presets.`);
     if (!isAutoLevel(cell.difficulty)) throw invalid(`difficulty must be one of ${AUTO_LEVELS.join(', ')}.`);
     if (!isPresetModel(cell.model)) throw invalid('That isn\'t a model id.');
-    if (cell.model === CLI_DEFAULT_MODEL) throw invalid('A preset has to name a model, not the CLI\'s default.');
+    if (leavesModelToCli(cell.provider, cell.model)) throw invalid('A preset has to name a model, not leave it to the CLI.');
     if (cell.effort !== null && !isEffortValue(cell.effort)) throw invalid('effort must be a level or null.');
   }
   const { reset } = update;
