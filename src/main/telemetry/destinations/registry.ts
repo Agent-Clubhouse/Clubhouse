@@ -16,7 +16,7 @@
  */
 import type { TelemetryDestinationEntry, TelemetryDestinationKind } from '../../../shared/telemetry/settings-types';
 import { loadAzureDestination, loadFramebriarDestination, loadOtlpDestination } from '../lazy-chunks';
-import { currentFramebriarExport, FRAMEBRIAR_NOT_CONNECTED, setBoundFramebriarSession, type FramebriarTelemetryExport } from './framebriar-source';
+import { currentFramebriarExport, FRAMEBRIAR_DROPPED_ATTRIBUTES, FRAMEBRIAR_NOT_CONNECTED, setBoundFramebriarSession, type FramebriarTelemetryExport } from './framebriar-source';
 import type { TelemetrySecrets } from '../secret-store';
 import {
   resolveDestination,
@@ -101,7 +101,10 @@ const framebriar: DestinationAdapter<FramebriarTelemetryExport> = {
   },
   describeFailure: framebriarFailure,
   // Framebriar keeps service.* and session.id from the resource and drops the rest.
-  copyResourceAttributes: ['clubhouse.install.id', 'clubhouse.ui.chrome', 'clubhouse.channel'],
+  copyResourceAttributes: ['clubhouse.ui.chrome', 'clubhouse.channel'],
+  // The install id outlives a Feedback enrollment, so it would link one person's
+  // records across enrollments; Framebriar's own player id rotates (#2526).
+  dropAttributes: FRAMEBRIAR_DROPPED_ATTRIBUTES,
 };
 
 const ADAPTERS: Record<TelemetryDestinationKind, DestinationAdapter<never>> = {

@@ -19,6 +19,7 @@ import { useHelperDisposeRequestStore, describeHelperDispose } from './stores/he
 import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
 import { useFilePreviewStore } from './stores/filePreviewStore';
 import { useToastStore } from './stores/toastStore';
+import { openActionsSettings } from './features/actions/useActions';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { handleShortcutKeydown } from './shortcut-dispatch';
 import { pluginEventBus } from './plugins/plugin-events';
@@ -39,6 +40,7 @@ import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
 import { showCopilotAcpRemovedNotice } from './services/copilot-acp-removal-notice';
 import { showRetiredPluginNotices } from './services/retired-plugin-notice';
+import { showRemovedPluginApiNotice } from './services/removed-plugin-api-notice';
 import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
@@ -282,10 +284,12 @@ function initPtyExitListener(): () => void {
           baseSha: agent.runBaseSha,
           startedAt,
           freeAgentMode: agent.freeAgentMode,
+          ...(agent.access && { access: agent.access }),
           toolCalls,
           inputTokens,
           outputTokens,
           ...(agent.managedTemplateId && { managedTemplateId: agent.managedTemplateId }),
+          ...(agent.managedQuickChanges && { managedQuickChanges: agent.managedQuickChanges }),
         });
 
         // Keep the finished run on screen when it was the one being viewed,
@@ -809,6 +813,16 @@ function initProtocolActionListener(): () => void {
   return removeListener;
 }
 
+/** Actions (#2918): a toast for a mechanical failure or an action Clubhouse turned off, never for a task that went badly. */
+function initActionNoticeListener(): () => void {
+  return window.clubhouse.actions.onNotice((notice) => {
+    useToastStore.getState().addToast(notice.message, 'error', notice.exists ? {
+      label: 'Open',
+      onClick: () => openActionsSettings({ cardId: notice.actionId }),
+    } : undefined);
+  });
+}
+
 export function initAppEventBridge(): () => void {
   // Tear down previous subscriptions to prevent accumulation on re-init
   previousCleanup?.();
@@ -833,12 +847,14 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initActiveAgentSound());
   cleanups.push(initNotificationClearing());
   cleanups.push(initAgentAttentionListener());
+  cleanups.push(initActionNoticeListener());
   cleanups.push(initStaleStatusCleanup());
 
   // One after the other: each reads the flags and saves them back without its own marker.
   showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ })
     .then(() => showCopilotAcpRemovedNotice()).catch(() => { /* best-effort one-time notice */ });
   showRetiredPluginNotices().catch(() => { /* best-effort one-time notice */ });
+  showRemovedPluginApiNotice().catch(() => { /* best-effort one-time notice */ });
   // The one call site for the first-launch Chat tip: a welcome intro (#2814) can run first or gate it here.
   showChatDefaultTip().catch(() => { /* best-effort one-time tip; asked again next launch */ });
   cleanups.push(initKeyboardShortcuts());

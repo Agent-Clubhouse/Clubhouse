@@ -51,6 +51,7 @@ import { configuredRecordingLevel } from './telemetry/bootstrap';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
 import { installChatTelemetry } from './telemetry/chat-telemetry';
 import { installHelperUsageTelemetry } from './telemetry/helper-usage';
+import { installActionsTelemetry } from './telemetry/actions-telemetry';
 import { getBaseDirPath } from './services/base-dir';
 import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { installOsSessionEndFlush } from './os-session-end';
@@ -287,6 +288,26 @@ app.on('ready', () => {
   )).catch((err) => {
     appLog('core:managed', 'warn', 'The managed agents startup work stopped', { meta: { code: codeOf(err) } });
   });
+  // The app event bus (#2950): fed from here on, then "Clubhouse started" once subscribers listen.
+  void import('./services/app-event-sources').then(async ({ startAppEventSources, publishAppStarted }) => {
+    await startAppEventSources();
+    // Actions (#2918) subscribe before "Clubhouse started" goes out.
+    try {
+      const { startActions, observeActions } = await import('./services/actions');
+      // Telemetry listens first, so the "Clubhouse started" triggers are counted. It never changes a run.
+      installActionsTelemetry(observeActions);
+      await startActions();
+    } catch (err) {
+      appLog('core:actions', 'error', 'Actions did not start', { meta: { code: codeOf(err) } });
+    }
+    publishAppStarted();
+  }).catch((err) => {
+    appLog('core:app-events', 'warn', 'The app event bus did not start', { meta: { code: codeOf(err) } });
+  });
+  // Commits, branch switches and remote-tracking updates for the bus (#2955).
+  void import('./services/git-watcher').then(({ startGitWatcher }) => startGitWatcher()).catch((err) => {
+    appLog('core:app-events', 'warn', 'The git watcher did not start', { meta: { code: codeOf(err) } });
+  });
   // Provider profiles were removed (#2749): one log line, once, for anyone who had saved some.
   void import('./services/provider-profiles-removed').then(({ noteRemovedProviderProfiles }) => noteRemovedProviderProfiles()).catch((err) => {
     appLog('core:agent', 'warn', 'Could not check for removed provider profiles', { meta: { code: codeOf(err) } });
@@ -487,6 +508,7 @@ setShutdownBegin(() => {
   mcpBridgeServer.stop();
   unpublishCliEndpoint();
   stopAllWatches();
+  void import('./services/git-watcher').then(({ stopGitWatcher }) => stopGitWatcher()).catch((): void => undefined);
   // Bounded; queued feedback stays on disk for the next run.
   void shutdownFeedback();
 });

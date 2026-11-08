@@ -311,6 +311,25 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   feedbackNotice: { good: ATTR.feedbackNotice('expired'), key: 'clubhouse.feedback.notice' },
   feedbackRefusal: { good: ATTR.feedbackRefusal('not-configured'), key: 'clubhouse.feedback.refusal' },
   configFormat: { good: ATTR.configFormat('toml'), key: 'clubhouse.config.format' },
+  actionOwner: { good: ATTR.actionOwner('app'), key: 'clubhouse.action.owner' },
+  actionTrigger: { good: ATTR.actionTrigger('catch_up'), key: 'clubhouse.action.trigger' },
+  actionEvent: { good: ATTR.actionEvent('git.commit'), key: 'clubhouse.action.event' },
+  actionDelayed: { good: ATTR.actionDelayed(true), key: 'clubhouse.action.delayed' },
+  actionWait: { good: ATTR.actionWait('restarted'), key: 'clubhouse.action.wait' },
+  actionOverlap: { good: ATTR.actionOverlap('queued'), key: 'clubhouse.action.overlap' },
+  actionLimit: { good: ATTR.actionLimit('hourly'), key: 'clubhouse.action.limit' },
+  actionChainDepth: { good: ATTR.actionChainDepth('3+'), key: 'clubhouse.action.chain_depth' },
+  actionMissedRule: { good: ATTR.actionMissedRule('each'), key: 'clubhouse.action.missed_rule' },
+  actionMissedBucket: { good: ATTR.actionMissedBucket('10+'), key: 'clubhouse.action.missed_bucket' },
+  actionRunOutcome: { good: ATTR.actionRunOutcome('skipped'), key: 'clubhouse.action.run.outcome' },
+  actionRunReason: { good: ATTR.actionRunReason('condition_changed'), key: 'clubhouse.action.run.reason' },
+  actionRunSteps: { good: ATTR.actionRunSteps(3), key: 'clubhouse.action.run.steps' },
+  actionRunDurationMs: { good: ATTR.actionRunDurationMs(1200), key: 'clubhouse.action.run.duration_ms' },
+  actionRunFailedStep: { good: ATTR.actionRunFailedStep('none'), key: 'clubhouse.action.run.failed_step' },
+  actionStepKind: { good: ATTR.actionStepKind('quick'), key: 'clubhouse.action.step.kind' },
+  actionStepOutcome: { good: ATTR.actionStepOutcome('failed'), key: 'clubhouse.action.step.outcome' },
+  actionStepIndex: { good: ATTR.actionStepIndex(2), key: 'clubhouse.action.step.index' },
+  actionIdHash: { good: ATTR.actionIdHash('act_1'), key: 'clubhouse.action.id_hash' },
 };
 
 describe('telemetry attribute registry', () => {
@@ -344,6 +363,25 @@ describe('telemetry attribute registry', () => {
   it('snapshots the full key list so additions show up in review', () => {
     expect(allAttributeKeys()).toMatchInlineSnapshot(`
       [
+        "clubhouse.action.chain_depth",
+        "clubhouse.action.delayed",
+        "clubhouse.action.event",
+        "clubhouse.action.id_hash",
+        "clubhouse.action.limit",
+        "clubhouse.action.missed_bucket",
+        "clubhouse.action.missed_rule",
+        "clubhouse.action.overlap",
+        "clubhouse.action.owner",
+        "clubhouse.action.run.duration_ms",
+        "clubhouse.action.run.failed_step",
+        "clubhouse.action.run.outcome",
+        "clubhouse.action.run.reason",
+        "clubhouse.action.run.steps",
+        "clubhouse.action.step.index",
+        "clubhouse.action.step.kind",
+        "clubhouse.action.step.outcome",
+        "clubhouse.action.trigger",
+        "clubhouse.action.wait",
         "clubhouse.agent.delete.mode",
         "clubhouse.agent.exit.class",
         "clubhouse.agent.id_hash",
@@ -682,9 +720,10 @@ describe('telemetry attribute registry', () => {
     }
   });
 
-  it('sends plugin API versions as strings, never truncated', () => {
-    expect(ATTR.pluginApiVersion('0.8').value).toBe('0.8');
+  it('sends plugin API versions as strings, never truncated, and removed versions as other', () => {
     expect(ATTR.pluginApiVersion('0.9').value).toBe('0.9');
+    expect(ATTR.pluginApiVersion('0.7').value).toBe('0.7');
+    expect(ATTR.pluginApiVersion('0.6').value).toBe('other');
     expect(ATTR.pluginApiVersion('7.5').value).toBe('other');
   });
 });

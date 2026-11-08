@@ -79,12 +79,16 @@ export function HeadlessRunFinished({ completed, onDismiss, onDelete, onRetried,
     if (!project || retrying) return;
     setRetrying(true);
     try {
-      // The same template (D25).
+      // The same template (D25), with the same part changes the run had (#2928).
       const managedTemplateId = completed.managedTemplateId;
+      const changes = completed.managedQuickChanges;
       await spawnQuickAgent(
         completed.projectId, project.path, completed.mission, completed.model, completed.parentAgentId,
-        completed.orchestrator, completed.freeAgentMode, completed.pluginMetadata, completed.cwd,
-        ...(managedTemplateId ? [{ managedTemplateId }] as const : []),
+        completed.orchestrator, completed.access ?? completed.freeAgentMode, completed.pluginMetadata, completed.cwd,
+        ...(managedTemplateId ? [{
+          managedTemplateId,
+          ...(changes && { addParts: changes.added, removeParts: changes.removed }),
+        }] as const : []),
       );
       onRetried?.();
     } catch {

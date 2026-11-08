@@ -1,4 +1,5 @@
 import { useAgentStore } from '../../stores/agentStore';
+import { isLegacyFreeAgent, type AccessLevel } from '../../../shared/agent-access';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useToastStore } from '../../stores/toastStore';
 import { isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
@@ -21,7 +22,8 @@ export interface DurableAgentInput {
   model: string;
   useWorktree: boolean;
   orchestrator?: string;
-  freeAgentMode?: boolean;
+  /** Access (#2761). Unset gives the app's Default access. */
+  access?: AccessLevel;
   mcpIds?: string[];
   /**
    * False turns Clubhouse's hooks and permission prompts off (#2893, D70),
@@ -56,7 +58,7 @@ export async function createDurableAgent(
   { onError }: { onError?: (message: string) => void } = {},
 ): Promise<string | null> {
   const fail = (err: unknown) => (onError ? onError(err instanceof Error ? err.message : String(err)) : toastFailure(err));
-  const { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, clubhouseFeatures } = input;
+  const { name, color, model, useWorktree, orchestrator, access, mcpIds, clubhouseFeatures } = input;
 
   if (isRemoteProjectId(project.id)) {
     // Remote project — proxy create to satellite via REST
@@ -69,7 +71,8 @@ export async function createDurableAgent(
         model: model !== 'default' ? model : undefined,
         useWorktree,
         orchestrator,
-        freeAgentMode,
+        // A satellite takes the legacy on/off; it maps it with its own settings.
+        ...(access !== undefined && { freeAgentMode: isLegacyFreeAgent(access) }),
         mcpIds,
       });
       // Snapshot refresh is broadcast by the satellite — controller will update automatically
@@ -85,12 +88,12 @@ export async function createDurableAgent(
   const { registerCreatingAgent, removeAgent, spawnDurableAgent } = useAgentStore.getState();
   // Show agent in 'creating' state immediately while worktree is set up
   const tempId = useWorktree
-    ? registerCreatingAgent(project.id, name, color, orchestrator, freeAgentMode)
+    ? registerCreatingAgent(project.id, name, color, orchestrator, access)
     : null;
 
   try {
     const config = await window.clubhouse.agent.createDurable(
-      project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds,
+      project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, access, mcpIds,
     );
     if (tempId) removeAgent(tempId);
     if (clubhouseFeatures === false) {

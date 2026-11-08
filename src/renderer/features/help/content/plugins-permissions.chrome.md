@@ -11,7 +11,7 @@ Clubhouse enforces a permission system that controls what each plugin can access
 | **git** | Git status, log, branches, diffs |
 | **terminal** | Spawn and control shell sessions |
 | **agents** | List, run, kill, resume, and monitor agents |
-| **agents.free-agent-mode** | Spawn agents using the configured Free agent permission mode (elevated, requires `agents`) |
+| **agents.free-agent-mode** | Start agents above Ask first, at Auto or Full access (elevated, requires `agents`) |
 | **notifications** | Show notices, errors, confirmations, input prompts, open URLs |
 | **storage** | Persistent data storage (project, project-local, global scopes) |
 | **navigation** | Focus agents and switch project tabs |
@@ -60,9 +60,9 @@ Plugins with `process` permission must list exactly which CLI commands they can 
 
 Any unlisted command is blocked.
 
-## Free agent mode
+## Starting agents above Ask first
 
-The `agents.free-agent-mode` permission lets a plugin spawn agents with autonomous permission handling. By default it skips all permission prompts. That follows **Free agent permission mode** in **Settings > Agents & providers**. If your CLI supports it, you can switch that to **Auto**. Auto uses a classifier to decide which actions need approval. The classifier can be wrong.
+The `agents.free-agent-mode` permission lets a plugin start agents at Auto or Full access. The plugin passes `freeAgentMode: true` to `api.agents.runQuick()`. Without this permission declared, the call throws an error.
 
 ```json
 {
@@ -70,6 +70,6 @@ The `agents.free-agent-mode` permission lets a plugin spawn agents with autonomo
 }
 ```
 
-The plugin passes `freeAgentMode: true` to `api.agents.runQuick()`. Without this permission declared, the call throws an error.
+The agent starts at your **Default access** in **Settings > Agents & providers** when that is **Auto** or **Full access**. Otherwise it starts at the level Clubhouse used for these agents before the Access setting: **Full access**, or **Auto** if you had picked Auto. With Auto, a check decides what needs your approval, and it can be wrong. Without `freeAgentMode`, a plugin's agents start at your Default access.
 
 Only grant to plugins you fully trust.

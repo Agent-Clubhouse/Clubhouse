@@ -93,10 +93,10 @@ describe('annex-client-handlers', () => {
     expect(annexClient.scan).toHaveBeenCalled();
   });
 
-  it('CONNECT delegates to annexClient.connect', () => {
+  it('CONNECT delegates to annexClient.connect, ignoring a token from older callers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.CONNECT)!;
     handler({}, 'fp:aa:bb', 'token-123');
-    expect(annexClient.connect).toHaveBeenCalledWith('fp:aa:bb', 'token-123');
+    expect(annexClient.connect).toHaveBeenCalledWith('fp:aa:bb');
   });
 
   it('DISCONNECT delegates to annexClient.disconnect', () => {

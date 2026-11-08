@@ -15,9 +15,9 @@ import { launchApp } from '../launch';
 import {
   enableAnnexViaPreload,
   getAnnexStatus,
-  pairViaHttp,
-  connectWs,
-  connectWsPlain,
+  pairOverTls,
+  connectWsWithoutCertificate,
+  upgradeOutcome,
   waitForOpen,
   waitForMessage,
   collectPtyData,
@@ -35,9 +35,9 @@ const SHELL_CWD = os.homedir();
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 let identity: TestIdentity;
-let bearerToken: string;
+/** The vestigial token from pairing: it authenticates nothing. */
+let token: string;
 let satPort: number;
-let pairingPort: number;
 
 test.setTimeout(180_000);
 
@@ -50,21 +50,15 @@ test.beforeAll(async () => {
 
   const status = await getAnnexStatus(window);
   satPort = status.port;
-  pairingPort = status.pairingPort;
 
   // Generate test identity
   identity = generateTestIdentity();
 
-  // Pair with public key (registers fingerprint as peer for mTLS)
-  const pairResult = await pairViaHttp(
-    '127.0.0.1',
-    pairingPort,
-    status.pin,
-    identity.ed25519PublicKeyBase64,
-  );
-  bearerToken = pairResult.token;
+  // Pair over TLS with the identity's client certificate, which the server pins
+  const pairResult = await pairOverTls('127.0.0.1', satPort, status.pin, identity);
+  token = pairResult.token;
 
-  console.log(`Satellite ready: port=${satPort}, pairingPort=${pairingPort}`);
+  console.log(`Satellite ready: port=${satPort}`);
   console.log(`Test identity fingerprint: ${identity.fingerprint}`);
 });
 
@@ -73,7 +67,7 @@ test.afterAll(async () => {
 });
 
 test('mTLS WebSocket receives snapshot with protocolVersion 2', async () => {
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     const snapshot = await waitForMessage(ws, 'snapshot', 15_000);
@@ -90,41 +84,17 @@ test('mTLS WebSocket receives snapshot with protocolVersion 2', async () => {
   }
 });
 
-test('bearer-only WS rejects pty:input with error', async () => {
-  // Connect with bearer token only (no mTLS cert)
-  let ws = connectWs('127.0.0.1', satPort, bearerToken);
-  try {
-    await waitForOpen(ws, 5_000);
-  } catch {
-    ws.close();
-    ws = connectWsPlain('127.0.0.1', satPort, bearerToken);
-    await waitForOpen(ws, 10_000);
-  }
-
-  try {
-    // Drain the initial snapshot
-    await waitForMessage(ws, 'snapshot', 10_000);
-
-    // Try sending a control message — should be rejected
-    ws.send(JSON.stringify({
-      type: 'pty:input',
-      payload: { agentId: 'test', data: 'hello\n' },
-    }));
-
-    const error = await waitForMessage(ws, 'error', 10_000);
-    expect(error.type).toBe('error');
-    const errorPayload = error.payload as Record<string, unknown>;
-    expect(errorPayload.message).toContain('mTLS');
-  } finally {
-    ws.close();
-  }
+test('a WebSocket with the pairing token but no client certificate is refused at the upgrade', async () => {
+  // No socket opens, so no control message (pty:input or any other) can be sent on one.
+  const outcome = await upgradeOutcome(connectWsWithoutCertificate('127.0.0.1', satPort, `token=${encodeURIComponent(token)}`));
+  expect(outcome).toEqual({ status: 401, body: { error: 'unauthorized', message: expect.any(String) } });
 });
 
 test('spawn shell, send echo command, receive output back', async () => {
   const shellId = `remote-shell-${Date.now()}`;
 
   // Connect via mTLS first so we don't miss early pty:data events
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
 
@@ -196,7 +166,7 @@ test('pty:resize accepted without error', async () => {
   );
   await window.waitForTimeout(500);
 
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     await waitForMessage(ws, 'snapshot', 10_000);
@@ -235,7 +205,7 @@ test('agent:kill terminates remote shell', async () => {
   );
   await window.waitForTimeout(500);
 
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     await waitForMessage(ws, 'snapshot', 10_000);
@@ -258,7 +228,7 @@ test('agent:kill terminates remote shell', async () => {
 });
 
 test('pty:input over 64KB rejected', async () => {
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     await waitForMessage(ws, 'snapshot', 10_000);
@@ -290,7 +260,7 @@ test('buffer endpoint returns output after shell produces data', async () => {
     [shellId, SHELL_CWD] as [string, string],
   );
 
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     await waitForMessage(ws, 'snapshot', 10_000);
@@ -345,7 +315,7 @@ test('buffer endpoint returns output after shell produces data', async () => {
 });
 
 test('agent:spawn with invalid projectId returns error', async () => {
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     await waitForMessage(ws, 'snapshot', 10_000);

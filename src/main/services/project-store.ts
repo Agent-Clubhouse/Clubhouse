@@ -8,6 +8,7 @@ import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } fr
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 import { pathExists } from './fs-utils';
 import { persist } from '../telemetry/persist';
+import { publishAppEvent } from './app-event-bus';
 import { getBaseDirPath } from './base-dir';
 import { auditChanges, type AuditKeyFormat } from './settings-audit';
 
@@ -531,12 +532,15 @@ export async function add(dirPath: string): Promise<Project> {
   }
 
   await updateProjects((projects) => [...projects, project]);
+  publishAppEvent({ type: 'project.added', projectId: project.id, projectPath: project.path });
   return project;
 }
 
 export async function remove(id: string): Promise<void> {
+  let removed: Project | undefined;
   await updateProjects(async (projects: Project[]): Promise<Project[]> => {
     const removedProject = projects.find((p) => p.id === id);
+    removed = removedProject;
 
     if (removedProject) {
       await preserveSettings(removedProject);
@@ -549,6 +553,7 @@ export async function remove(id: string): Promise<void> {
 
     return projects.filter((p) => p.id !== id);
   });
+  if (removed) publishAppEvent({ type: 'project.removed', projectId: removed.id, projectPath: removed.path });
 }
 
 /** What the audit keeps of a project's own settings (#2671). A name is free text. */

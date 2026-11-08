@@ -10,7 +10,7 @@ describe('managedSettingsSummary', () => {
       ['CLI', 'The project\'s CLI'],
       ['Model', 'CLI default'],
       ['Effort', 'CLI default'],
-      ['Free Agent Mode', 'Off'],
+      ['Access', 'Ask first'],
       ['Orchestration', 'Off'],
       ['Dispatcher', 'Not connected'],
     ]);
@@ -18,10 +18,11 @@ describe('managedSettingsSummary', () => {
 
   it('describes helpers: the limit, how they are picked, approvals and the template', () => {
     const rows = managedSettingsSummary({
-      cliName: 'Codex', model: 'gpt-5', effort: 'xhigh', freeAgentMode: true,
+      cliName: 'Codex', model: 'gpt-5', effort: 'xhigh', access: 'auto',
       orchestration: { orchestrate: true, maxHelpers: 2, autoHelpers: false, control: 'ask-before-start', connectToDispatcher: false },
       helperTemplateName: 'Quality Assurance',
     });
+    expect(value(rows, 'access')).toBe('Auto');
     expect(value(rows, 'helpers')).toBe('Up to 2 at once, fixed selection, asks before starting');
     expect(value(rows, 'helperTemplate')).toBe('Quality Assurance');
     expect(value(rows, 'dispatcher')).toBe('Not connected');

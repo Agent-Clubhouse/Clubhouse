@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import http from 'http';
+import https from 'https';
+import forgeLib from 'node-forge';
 import net from 'net';
 import { PassThrough } from 'stream';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import * as nodeCrypto from 'crypto';
 import { createHash } from 'crypto';
+import * as tlsLib from 'tls';
 import { readMobileChatContent } from './annex-chat-content';
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: vi.fn() }));
 import { agentFolders } from './agent-runtime/chat-files';
@@ -158,14 +162,14 @@ vi.mock('./annex-identity', () => ({
   computeFingerprint: vi.fn().mockReturnValue('AA:BB:CC:DD'),
 }));
 
-// Mock annex-tls
+// Mock annex-tls: the suite runs a real TLS server with throwaway credentials, and
+// these say which paired peer each connection is (see TEST_CONTROLLER below).
 vi.mock('./annex-tls', () => ({
-  createTlsServerOptions: vi.fn().mockImplementation(() => {
-    // Throw so the server falls back to plain HTTP (simpler for tests)
-    throw new Error('TLS not available in test');
-  }),
+  createTlsServerOptions: vi.fn(),
   extractPeerFingerprint: vi.fn().mockReturnValue(null),
   extractPeerCertificateFingerprint: vi.fn().mockReturnValue(undefined),
+  extractPeerCertificateDer: vi.fn().mockReturnValue(undefined),
+  verifyCertBinding: vi.fn().mockReturnValue(false),
   getCertificateFingerprint: vi.fn().mockReturnValue(undefined),
 }));
 
@@ -178,6 +182,7 @@ vi.mock('./annex-peers', () => ({
   getPeer: vi.fn().mockReturnValue(null),
   updateLastSeen: vi.fn(),
   listPeers: vi.fn().mockReturnValue([]),
+  listPeersForDisplay: vi.fn().mockReturnValue([]),
   removePeer: vi.fn(),
   removeAllPeers: vi.fn(),
   unlockPairing: vi.fn(),
@@ -299,6 +304,12 @@ import * as annexServer from './annex-server';
 import * as annexSettings from './annex-settings';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
+
+/** A positive, minimally encoded certificate serial (first byte 0x01 to 0x7f). See #2992. */
+function positiveSerial(): string {
+  const bytes = forgeLib.random.getBytesSync(16);
+  return forgeLib.util.bytesToHex(String.fromCharCode((bytes.charCodeAt(0) & 0x7f) || 0x01) + bytes.slice(1));
+}
 import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
@@ -319,13 +330,47 @@ import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BY
 import Bonjour from 'bonjour-service';
 import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 
+/** Throwaway TLS credentials for the suite's server and clients (loopback only). */
+let testCredentials: { cert: string; key: string } | null = null;
+function suiteCredentials(): { cert: string; key: string } {
+  if (testCredentials) return testCredentials;
+  const keys = forgeLib.pki.rsa.generateKeyPair(2048);
+  const cert = forgeLib.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '01';
+  cert.validity.notBefore = new Date(Date.now() - 60_000);
+  cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+  cert.setSubject([{ name: 'commonName', value: 'annex-server-test' }]);
+  cert.setIssuer(cert.subject.attributes);
+  cert.sign(keys.privateKey, forgeLib.md.sha256.create());
+  testCredentials = { cert: forgeLib.pki.certificateToPem(cert), key: forgeLib.pki.privateKeyToPem(keys.privateKey) };
+  return testCredentials;
+}
+
+/** The paired controller every suite connection presents unless a test says otherwise. */
+const TEST_CONTROLLER = {
+  fingerprint: 'c0:c0:c0:c0',
+  publicKey: 'controller-public-key',
+  alias: 'Test Controller',
+  icon: 'computer',
+  color: 'indigo',
+  pairedAt: '2026-01-01T00:00:00.000Z',
+  lastSeen: '2026-01-01T00:00:00.000Z',
+  role: 'controller' as const,
+  tlsCertificateFingerprint: 'AB:CD:EF:01',
+};
+
 function request(port: number, method: string, path: string, body?: object, headers?: Record<string, string>): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({
+    // The pairing port is plain HTTP; the main port is TLS only.
+    const plain = port === (annexServer.getStatus() as { pairingPort?: number }).pairingPort;
+    const transport = plain ? http : https;
+    const req = transport.request({
       hostname: '127.0.0.1',
       port,
       path,
       method,
+      ...(plain ? {} : { ...suiteCredentials(), rejectUnauthorized: false, agent: false }),
       headers: {
         'Content-Type': 'application/json',
         ...headers,
@@ -341,15 +386,18 @@ function request(port: number, method: string, path: string, body?: object, head
   });
 }
 
+/** Starts the server; every request then comes from TEST_CONTROLLER, already paired and pinned. */
 async function startAndPair(): Promise<{ port: number; token: string; pin: string }> {
   annexServer.start();
-  await new Promise((r) => setTimeout(r, 100));
+  await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
   const status = annexServer.getStatus();
-  // Pair on the pairing port (plain HTTP), then use the main port for authenticated requests
-  const pairingPort = (status as any).pairingPort || status.port;
-  const pairRes = await request(pairingPort, 'POST', '/pair', { pin: status.pin });
-  const { token } = JSON.parse(pairRes.body);
-  return { port: status.port, token, pin: status.pin };
+  // `token` is kept so call sites read the same; the server ignores Authorization headers.
+  return { port: status.port, token: 'ignored-bearer', pin: status.pin };
+}
+
+/** The next connection presents no paired identity. */
+function asUnpaired(): void {
+  vi.mocked(annexTls.extractPeerFingerprint).mockReturnValueOnce(null);
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -374,7 +422,6 @@ describe('annex-server', () => {
       fingerprint: 'aa:bb:cc',
     });
     vi.mocked(annexIdentity.computeFingerprint).mockReturnValue('dd:ee:ff');
-    vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => { throw new Error('TLS disabled in test'); });
     vi.mocked(annexPeers.checkBruteForce).mockReturnValue({ allowed: true, locked: false } as any);
     vi.mocked(annexPeers.recordFailedAttempt).mockReturnValue(undefined);
     vi.mocked(annexPeers.recordSuccessfulAttempt).mockReturnValue(undefined);
@@ -408,10 +455,10 @@ describe('annex-server', () => {
       publicKey: 'fake-public-key',
       fingerprint: 'AA:BB:CC:DD',
     } as any);
-    vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => {
-      throw new Error('TLS not available in test');
-    });
-    vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
+    vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => ({ ...suiteCredentials(), requestCert: true, rejectUnauthorized: false }));
+    vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(TEST_CONTROLLER.fingerprint);
+    vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue(TEST_CONTROLLER.tlsCertificateFingerprint);
+    vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === TEST_CONTROLLER.fingerprint ? { ...TEST_CONTROLLER } : undefined) as any);
     vi.mocked(annexPeers.checkBruteForce).mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 } as any);
     vi.mocked(annexEventBus.setActive).mockReturnValue(undefined);
     vi.mocked(annexEventBus.onPtyData).mockReturnValue(() => {});
@@ -422,6 +469,7 @@ describe('annex-server', () => {
 
   afterEach(() => {
     annexServer.stop();
+    annexServer._testing.setPinReusable(false);
   });
 
   // -------------------------------------------------------------------------
@@ -1227,6 +1275,10 @@ describe('annex-server', () => {
       ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'remote-agent' } }));
       expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('Control messages require mTLS authentication'));
       expect(agentSystem.killAgent).not.toHaveBeenCalled();
+      // Canvas changes are control too.
+      ws.send.mockClear();
+      ws.emit('message', JSON.stringify({ type: 'canvas:mutation', payload: { projectId: 'p', mutation: { type: 'noop' } } }));
+      expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('Control messages require mTLS authentication'));
     });
 
     it('waits for a chat stop before deleting its worktree', async () => {
@@ -1258,12 +1310,11 @@ describe('annex-server', () => {
 
   it('advertises mobile capabilities only after authentication', async () => {
     const { port, token } = await startAndPair();
-    expect((await request(port, 'GET', '/api/v1/mobile/capabilities')).status).toBe(401);
+    asUnpaired();
+    expect((await request(port, 'GET', '/api/v1/mobile/capabilities')).status).toBe(403);
     const res = await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token));
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toMatchObject({ version: 1, controlAuth: 'mtls-pinned-client', controlAvailable: false, commands: expect.arrayContaining(['chat.send', 'agent.stop']) });
-    // Phones only connect over TLS, so the HTTP fallback offers them no routes.
-    expect(JSON.parse(res.body).routes).toBeUndefined();
+    expect(JSON.parse(res.body)).toMatchObject({ version: 1, controlAuth: 'mtls-pinned-client', controlAvailable: true, commands: expect.arrayContaining(['chat.send', 'agent.stop']) });
   });
 
   it('advertises agent.create, agent.update and their option and settings routes (#2451, #2452)', async () => {
@@ -1314,7 +1365,8 @@ describe('annex-server', () => {
   it('serves create options per registered project', async () => {
     vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
     const { port, token } = await startAndPair();
-    expect((await request(port, 'GET', '/api/v1/mobile/projects/p/create-options')).status).toBe(401);
+    asUnpaired();
+    expect((await request(port, 'GET', '/api/v1/mobile/projects/p/create-options')).status).toBe(403);
     const res = await request(port, 'GET', '/api/v1/mobile/projects/p/create-options', undefined, authHeaders(token));
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ version: 1, epoch: expect.any(String), projectId: 'p', suggestedName: 'brave-otter' });
@@ -1360,15 +1412,19 @@ describe('annex-server', () => {
       { agentId: 'a', name: 'calm-otter', color: 'rose', emoji: null, model: null, orchestrator: 'codex-cli', freeAgentMode: true });
   });
 
-  it('rejects mobile bearer control even on HTTP fallback and leaves legacy reads working', async () => {
+  it('serves neither mobile control nor reads to a connection without a paired certificate, bearer or not', async () => {
     const { port, token } = await startAndPair();
+    asUnpaired();
     const response = await request(port, 'POST', '/api/v1/mobile/commands', { type: 'agent.stop' }, authHeaders(token));
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body).error.code).toBe('client_certificate_required');
     expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    asUnpaired();
     expect((await request(port, 'GET', '/api/v1/mobile/agents/a/content?path=src/a.ts', undefined, authHeaders(token))).status).toBe(403);
     expect(readMobileChatContent).not.toHaveBeenCalled();
-    expect((await request(port, 'GET', '/api/v1/projects', undefined, authHeaders(token))).status).toBe(200);
+    asUnpaired();
+    expect((await request(port, 'GET', '/api/v1/projects', undefined, authHeaders(token))).status).toBe(401);
+    expect((await request(port, 'GET', '/api/v1/projects')).status).toBe(200);
   });
 
   it('rejects a mobile chat snapshot for unknown agents', async () => {
@@ -1543,7 +1599,7 @@ describe('annex-server', () => {
       const makeCertificate = () => {
         const keys = forge.pki.rsa.generateKeyPair(2048);
         const cert = forge.pki.createCertificate(); cert.publicKey = keys.publicKey;
-        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+        cert.serialNumber = positiveSerial();
         cert.validity.notBefore = new Date(Date.now() - 1000); cert.validity.notAfter = new Date(Date.now() + 86400000);
         cert.setSubject([{ name: 'commonName', value: 'mobile-test-identity' }]); cert.setIssuer(cert.subject.attributes);
         cert.sign(keys.privateKey, forge.md.sha256.create());
@@ -1554,6 +1610,7 @@ describe('annex-server', () => {
       vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({ ...credentials, requestCert: true, rejectUnauthorized: false });
       vi.mocked(annexTls.extractPeerFingerprint).mockImplementation(actualTls.extractPeerFingerprint);
       vi.mocked(annexTls.extractPeerCertificateFingerprint).mockImplementation(actualTls.extractPeerCertificateFingerprint);
+      vi.mocked(annexTls.extractPeerCertificateDer).mockImplementation(actualTls.extractPeerCertificateDer);
       vi.mocked(annexTls.getCertificateFingerprint).mockReturnValue(new crypto.X509Certificate(credentials.cert).fingerprint256);
       vi.mocked(annexIdentity.computeFingerprint).mockReturnValue('mobile-test-identity');
       const peers = new Map<string, import('../../shared/types').AnnexPeer>();
@@ -1654,7 +1711,7 @@ describe('annex-server', () => {
       const makeCertificate = () => {
         const keys = forge.pki.rsa.generateKeyPair(2048);
         const cert = forge.pki.createCertificate(); cert.publicKey = keys.publicKey;
-        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+        cert.serialNumber = positiveSerial();
         cert.validity.notBefore = new Date(Date.now() - 1000); cert.validity.notAfter = new Date(Date.now() + 86400000);
         cert.setSubject([{ name: 'commonName', value: 'mobile-test-identity' }]); cert.setIssuer(cert.subject.attributes);
         cert.sign(keys.privateKey, forge.md.sha256.create());
@@ -1667,6 +1724,7 @@ describe('annex-server', () => {
       vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({ ...credentials, requestCert: true, rejectUnauthorized: false });
       vi.mocked(annexTls.extractPeerFingerprint).mockImplementation(actualTls.extractPeerFingerprint);
       vi.mocked(annexTls.extractPeerCertificateFingerprint).mockImplementation(actualTls.extractPeerCertificateFingerprint);
+      vi.mocked(annexTls.extractPeerCertificateDer).mockImplementation(actualTls.extractPeerCertificateDer);
       vi.mocked(annexTls.getCertificateFingerprint).mockReturnValue(new crypto.X509Certificate(credentials.cert).fingerprint256);
       vi.mocked(annexIdentity.computeFingerprint).mockReturnValue('mobile-test-identity');
       const peers = new Map<string, import('../../shared/types').AnnexPeer>();
@@ -1725,30 +1783,27 @@ describe('annex-server', () => {
       expect(await secureRequest('POST', '/api/v1/mobile/commands', input)).toEqual(accepted);
       expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
       const forged = await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'forged' }, impostor);
-      expect(forged.status).toBe(401); expect(forged.body.error).toBe('unauthorized');
+      expect(forged.status).toBe(401); expect(forged.body.error).toBe('peer_not_paired');
       expect((await secureRequest('POST', '/api/v1/agents/a/wake', {}, impostor)).status).toBe(401);
-      expect(annexServer._testing.isValidToken(pair.body.token)).toBe(true);
       peers.clear();
-      expect(annexServer._testing.isValidToken(pair.body.token)).toBe(false);
       expect((await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'revoked' })).status).toBe(401);
       expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
       vi.mocked(annexPeers.addPeer).mockClear();
-      const sessionPair = await secureRequest('POST', '/pair', { pin: status.pin, publicKey, pairingMode: 'session' });
+      const sessionPair = await secureRequest('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' });
       expect(sessionPair.status).toBe(200); expect(sessionPair.body.pairingMode).toBe('session');
       expect(annexPeers.addPeer).not.toHaveBeenCalled();
       expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).body.controlAvailable).toBe(true);
-      annexServer.disconnectPeer('mobile-test-identity');
+      annexServer.revokePeer('mobile-test-identity');
       expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(401);
-      expect(annexServer._testing.isValidToken(sessionPair.body.token)).toBe(false);
-      // A bearer-authenticated WebSocket has no mTLS peer tag, but still belongs to its token's peer.
-      const secondPair = await secureRequest('POST', '/pair', { pin: status.pin, publicKey, pairingMode: 'session' });
+      // Removing a pairing closes that peer's open WebSockets with the code a client stops on.
+      await secureRequest('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' });
       const { EventEmitter } = await import('events');
-      const bearerWs = Object.assign(new EventEmitter(), { readyState: 1, close: vi.fn(), send: vi.fn() });
-      annexServer._testing.wss!.clients.add(bearerWs as any);
-      annexServer._testing.wsBearerTokens.set(bearerWs as any, secondPair.body.token);
-      annexServer.disconnectPeer('mobile-test-identity');
-      expect(bearerWs.close).toHaveBeenCalledWith(1000, 'disconnected_by_satellite');
-      await secureRequest('POST', '/pair', { pin: status.pin, publicKey, pairingMode: 'session' });
+      const peerWs = Object.assign(new EventEmitter(), { readyState: 1, close: vi.fn(), send: vi.fn() });
+      annexServer._testing.wss!.clients.add(peerWs as any);
+      annexServer._testing.wsPeerFingerprints.set(peerWs as any, 'mobile-test-identity');
+      annexServer.revokePeer('mobile-test-identity');
+      expect(peerWs.close).toHaveBeenCalledWith(annexServer.PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+      await secureRequest('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' });
       let finishSpawn!: () => void;
       vi.mocked(agentSystem.spawnAgent).mockImplementationOnce(() => new Promise<void>((resolve) => { finishSpawn = resolve; }));
       const spawning = secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'slow-spawn' });
@@ -1779,10 +1834,10 @@ describe('annex-server', () => {
       expect(selfRevoke).toMatchObject({ status: 200, body: { revoked: true, pairingMode: 'session' } });
       finishLookup([{ id: 'test-project', name: 'Test', path: '/test/project' }]);
       expect((await revokedDuringLookup).body).toMatchObject({ status: 'rejected', error: { code: 'authorization_revoked' } });
-      await secureRequest('POST', '/pair', { pin: status.pin, publicKey, pairingMode: 'session' });
+      await secureRequest('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' });
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
       vi.mocked(readMobileChatContent).mockImplementationOnce(async () => {
-        annexServer.disconnectPeer('mobile-test-identity');
+        annexServer.revokePeer('mobile-test-identity');
         return { kind: 'text', name: 'secret.txt', text: 'must never return after revocation' } as any;
       });
       const revokedContent = await secureRequest('GET', '/api/v1/mobile/agents/a/content?path=src/a.ts', undefined);
@@ -1807,48 +1862,357 @@ describe('annex-server', () => {
     expect(stopped.pin).toBe('');
   });
 
-  it('rejects pairing with wrong PIN', async () => {
-    annexServer.start();
-    await new Promise((r) => setTimeout(r, 50));
-    const status = annexServer.getStatus();
-    const pairingPort = (status as any).pairingPort || status.port;
+  describe('pinned peer identity', () => {
+    type Credentials = { cert: string; key: string };
+    type Device = Credentials & { publicKey: string; privateKey: nodeCrypto.KeyObject; fingerprint: string; der: Buffer; certFingerprint: string };
+    type Answer = { status: number; body: any };
+    type AnnexPeerShape = import('../../shared/types').AnnexPeer;
 
-    const res = await request(pairingPort, 'POST', '/pair', { pin: '000000' });
-    expect(res.status).toBe(401);
-    expect(JSON.parse(res.body)).toEqual({ error: 'invalid_pin' });
-  });
+    let actualTls: typeof import('./annex-tls');
+    let actualIdentity: typeof import('./annex-identity');
+    let serverCredentials: Credentials;
+    const peers = new Map<string, AnnexPeerShape>();
 
-  it('rejects a six-character non-ASCII PIN without throwing', async () => {
-    annexServer.start();
-    await new Promise((r) => setTimeout(r, 50));
-    const status = annexServer.getStatus();
-    const pairingPort = (status as any).pairingPort || status.port;
+    /** A self-signed certificate (native RSA key, signed with forge). */
+    function certificateFor(cn: string, validity: { notBefore?: Date; notAfter?: Date } = {}): Credentials {
+      const { privateKey, publicKey } = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+      const cert = forgeLib.pki.createCertificate();
+      cert.publicKey = forgeLib.pki.publicKeyFromPem(publicKey.export({ type: 'spki', format: 'pem' }) as string);
+      cert.serialNumber = positiveSerial();
+      cert.validity.notBefore = validity.notBefore ?? new Date(Date.now() - 60_000);
+      cert.validity.notAfter = validity.notAfter ?? new Date(Date.now() + 86_400_000);
+      cert.setSubject([{ name: 'commonName', value: cn }]);
+      cert.setIssuer(cert.subject.attributes);
+      const keyPem = privateKey.export({ type: 'pkcs1', format: 'pem' }) as string;
+      cert.sign(forgeLib.pki.privateKeyFromPem(keyPem), forgeLib.md.sha256.create());
+      return { cert: forgeLib.pki.certificateToPem(cert), key: keyPem };
+    }
 
-    const res = await request(pairingPort, 'POST', '/pair', { pin: 'éééééé' });
-    expect(res.status).toBe(401);
-    expect(JSON.parse(res.body)).toEqual({ error: 'invalid_pin' });
-  });
+    /** A phone or computer: an Ed25519 identity and a client certificate named for it. */
+    function device(validity?: { notBefore?: Date; notAfter?: Date }, identity?: Pick<Device, 'publicKey' | 'privateKey' | 'fingerprint'>): Device {
+      const ed = identity ?? (() => {
+        const pair = nodeCrypto.generateKeyPairSync('ed25519');
+        const publicKey = pair.publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+        return { publicKey, privateKey: pair.privateKey, fingerprint: actualIdentity.computeFingerprint(publicKey) };
+      })();
+      const credentials = certificateFor(ed.fingerprint, validity);
+      const x509 = new nodeCrypto.X509Certificate(credentials.cert);
+      return { ...ed, ...credentials, der: x509.raw, certFingerprint: x509.fingerprint256 };
+    }
 
-  it('accepts pairing with correct PIN and returns token', async () => {
-    annexServer.start();
-    await new Promise((r) => setTimeout(r, 50));
-    const status = annexServer.getStatus();
-    const pairingPort = (status as any).pairingPort || status.port;
+    function binding(owner: Device, der: Buffer): string {
+      const message = Buffer.concat([Buffer.from('annex-cert-binding/v1'), nodeCrypto.createHash('sha256').update(der).digest()]);
+      return nodeCrypto.sign(null, message, owner.privateKey).toString('base64');
+    }
 
-    const res = await request(pairingPort, 'POST', '/pair', { pin: status.pin });
-    expect(res.status).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.token).toBeDefined();
-    expect(typeof body.token).toBe('string');
-  });
+    function pinned(d: Device, extra: Partial<AnnexPeerShape> = {}): AnnexPeerShape {
+      return { fingerprint: d.fingerprint, publicKey: d.publicKey, alias: 'Paired', icon: 'phone', color: 'blue', pairedAt: '2026-01-01T00:00:00.000Z',
+        lastSeen: '2026-01-01T00:00:00.000Z', role: 'controller', tlsCertificateFingerprint: d.certFingerprint, ...extra };
+    }
 
-  it('rejects authenticated endpoints without token', async () => {
-    annexServer.start();
-    await new Promise((r) => setTimeout(r, 50));
-    const status = annexServer.getStatus();
+    function call(method: string, route: string, client: Credentials | null, body?: object): Promise<Answer> {
+      return new Promise((resolve, reject) => {
+        const raw = body ? JSON.stringify(body) : undefined;
+        const req = https.request({ host: '127.0.0.1', port: annexServer.getStatus().port, path: route, method, ...(client ?? {}),
+          // Loopback test server with a throwaway self-signed certificate.
+          rejectUnauthorized: false, agent: false,
+          headers: { 'Content-Type': 'application/json', ...(raw && { 'Content-Length': String(Buffer.byteLength(raw)) }) } }, (res) => {
+          let data = ''; res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => { let parsed: unknown = data; try { parsed = JSON.parse(data); } catch { /* not JSON */ } resolve({ status: res.statusCode!, body: parsed }); });
+        });
+        req.on('error', reject);
+        if (raw) req.write(raw);
+        req.end();
+      });
+    }
 
-    const res = await request(status.port, 'GET', '/api/v1/status');
-    expect(res.status).toBe(401);
+    function pair(d: Device, extra: Record<string, unknown> = {}, pin = annexServer.getStatus().pin): Promise<Answer> {
+      return call('POST', '/pair', d, { pin, publicKey: d.publicKey, alias: 'Phone', icon: 'phone', color: 'blue', ...extra });
+    }
+
+    /**
+     * Sends a WebSocket upgrade over a raw socket (this suite stubs `ws`, so an accepted upgrade
+     * writes nothing back). Resolves with the refusal's status and JSON body, or with the
+     * server-side socket it accepted.
+     */
+    function upgrade(client: Credentials | null, secure = true): Promise<{ accepted?: { close: (...args: unknown[]) => void }; status?: number; body?: any }> {
+      return new Promise((resolve, reject) => {
+        const wss = annexServer._testing.wss!;
+        const before = new Set(wss.clients);
+        const port = annexServer.getStatus().port;
+        const socket = secure
+          ? tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...(client ?? {}) })
+          : net.connect({ host: '127.0.0.1', port });
+        let data = '';
+        socket.once(secure ? 'secureConnect' : 'connect', () => socket.write([
+          'GET /ws HTTP/1.1', 'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
+          'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', '', '',
+        ].join('\r\n')));
+        socket.on('data', (chunk) => { data += chunk; });
+        socket.on('error', reject);
+        socket.on('close', () => {
+          if (!data) return;
+          const [head, body] = data.split('\r\n\r\n');
+          resolve({ status: Number(head.split(' ')[1]), body: JSON.parse(body) });
+        });
+        setTimeout(() => {
+          if (data) return;
+          const accepted = [...wss.clients].find((c) => !before.has(c)) as unknown as { close: (...args: unknown[]) => void } | undefined;
+          socket.destroy();
+          resolve({ accepted });
+        }, 300);
+      });
+    }
+
+    async function startServer(): Promise<void> {
+      annexServer.start();
+      await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
+    }
+
+    beforeEach(async () => {
+      actualTls = await vi.importActual<typeof import('./annex-tls')>('./annex-tls');
+      actualIdentity = await vi.importActual<typeof import('./annex-identity')>('./annex-identity');
+      serverCredentials ??= certificateFor('annex-test-server');
+      vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({ ...serverCredentials, requestCert: true, rejectUnauthorized: false });
+      vi.mocked(annexTls.extractPeerFingerprint).mockImplementation(actualTls.extractPeerFingerprint);
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockImplementation(actualTls.extractPeerCertificateFingerprint);
+      vi.mocked(annexTls.extractPeerCertificateDer).mockImplementation(actualTls.extractPeerCertificateDer);
+      vi.mocked(annexTls.verifyCertBinding).mockImplementation(actualTls.verifyCertBinding);
+      vi.mocked(annexTls.getCertificateFingerprint).mockReturnValue(new nodeCrypto.X509Certificate(serverCredentials.cert).fingerprint256);
+      vi.mocked(annexIdentity.computeFingerprint).mockImplementation(actualIdentity.computeFingerprint);
+      peers.clear();
+      vi.mocked(annexPeers.addPeer).mockImplementation((peer) => { peers.set(peer.fingerprint, { ...peer }); });
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp) => peers.get(fp));
+      vi.mocked(annexPeers.removePeer).mockImplementation((fp) => peers.delete(fp));
+      vi.mocked(annexPeers.listPeers).mockImplementation(() => [...peers.values()]);
+      vi.mocked(annexPeers.recordFailedAttempt).mockClear();
+    });
+
+    afterEach(() => {
+      annexServer._testing.setPinReusable(false);
+      vi.restoreAllMocks();
+    });
+
+    it('pairs over TLS, pins the client certificate, and answers with the fields phones read', async () => {
+      await startServer();
+      const phone = device();
+      const pin = annexServer.getStatus().pin;
+      const res = await pair(phone);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body).sort()).toEqual(['alias', 'color', 'fingerprint', 'icon', 'mobileProtocolVersion', 'pairingMode', 'publicKey', 'tlsCertificateFingerprint', 'token']);
+      expect(res.body).toMatchObject({ mobileProtocolVersion: 1, pairingMode: 'persistent', fingerprint: 'AA:BB:CC:DD', publicKey: 'fake-public-key',
+        tlsCertificateFingerprint: new nodeCrypto.X509Certificate(serverCredentials.cert).fingerprint256 });
+      expect(peers.get(phone.fingerprint)).toMatchObject({ role: 'controller', alias: 'Phone', tlsCertificateFingerprint: phone.certFingerprint });
+      // One use: Settings now shows a new PIN.
+      expect(annexServer.getStatus().pin).not.toBe(pin);
+      // The main-port identity a phone checks on every connection is unchanged.
+      expect(await call('GET', '/api/v1/identity', phone)).toEqual({ status: 200,
+        body: { alias: 'Test Machine', icon: 'computer', color: 'indigo', fingerprint: 'AA:BB:CC:DD', publicKey: 'fake-public-key' } });
+    });
+
+    it('answers a wrong PIN with 409, and an expired or replaced one with 410, each with a plain message', async () => {
+      await startServer();
+      const phone = device();
+      const pin = annexServer.getStatus().pin;
+      const wrong = pin === '000000' ? '111111' : '000000';
+      expect(await pair(phone, {}, wrong)).toEqual({ status: 409, body: { error: 'invalid_pin', message: expect.stringMatching(/doesn't match/) } });
+      expect((await pair(phone, {}, 'éééééé')).status).toBe(409);
+      expect(annexPeers.recordFailedAttempt).toHaveBeenCalledTimes(2);
+
+      annexServer.regeneratePin();
+      expect(await pair(phone, {}, pin)).toEqual({ status: 410, body: { error: 'pin_expired', message: expect.stringMatching(/expired/) } });
+
+      const current = annexServer.getStatus().pin;
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now + annexServer._testing.PIN_TTL_MS + 1);
+      expect((await pair(phone, {}, current)).body.error).toBe('pin_expired');
+      expect(peers.size).toBe(0);
+    });
+
+    it('a used PIN pairs nobody else, and the same device retrying gets the same answer with no change', async () => {
+      await startServer();
+      const first = device(); const second = device();
+      const pin = annexServer.getStatus().pin;
+      const paired = await pair(first, {}, pin);
+      expect(paired.status).toBe(200);
+      expect(await pair(second, {}, pin)).toEqual({ status: 410, body: { error: 'pin_used', message: expect.stringMatching(/new code/) } });
+      expect(peers.has(second.fingerprint)).toBe(false);
+      // The answer to the first pairing was lost: asking again gets it again.
+      expect(await pair(first, { alias: 'Renamed' }, pin)).toEqual(paired);
+      expect(annexPeers.addPeer).toHaveBeenCalledTimes(1);
+      expect(peers.get(first.fingerprint)?.alias).toBe('Phone');
+    });
+
+    it('pairing again with a new identity adds a second entry beside the old one', async () => {
+      await startServer();
+      const before = device(); const after = device();
+      expect((await pair(before)).status).toBe(200);
+      expect((await pair(after)).status).toBe(200);
+      expect([...peers.keys()].sort()).toEqual([before.fingerprint, after.fingerprint].sort());
+    });
+
+    it('replaces a pinned certificate only with the identity key binding the new one', async () => {
+      await startServer();
+      const phone = device();
+      expect((await pair(phone)).status).toBe(200);
+      const newCert = device(undefined, phone);
+      const pin = annexServer.getStatus().pin;
+      expect(await pair(newCert, {}, pin)).toEqual({ status: 409, body: { error: 'peer_already_paired', message: expect.stringMatching(/Remove it/) } });
+      expect((await pair(newCert, { certBinding: binding(phone, phone.der) }, pin)).status).toBe(409);
+      expect(peers.get(phone.fingerprint)?.tlsCertificateFingerprint).toBe(phone.certFingerprint);
+      // Refused with no change, so the PIN is still unused.
+      expect(annexServer.getStatus().pin).toBe(pin);
+      expect((await pair(newCert, { certBinding: binding(phone, newCert.der) }, pin)).status).toBe(200);
+      expect(peers.get(phone.fingerprint)?.tlsCertificateFingerprint).toBe(newCert.certFingerprint);
+      expect((await call('GET', '/api/v1/status', phone)).status).toBe(401);
+      expect((await call('GET', '/api/v1/status', newCert)).status).toBe(200);
+    });
+
+    it('needs a valid Ed25519 key and a client certificate named for it', async () => {
+      await startServer();
+      const phone = device();
+      expect(await pair(phone, { publicKey: Buffer.from('not-a-key').toString('base64') })).toEqual({ status: 400, body: { error: 'invalid_public_key' } });
+      expect((await call('POST', '/pair', null, { pin: annexServer.getStatus().pin, publicKey: phone.publicKey })).body.error).toBe('client_certificate_required');
+      expect((await pair(phone, { publicKey: device().publicKey })).body.error).toBe('client_certificate_required');
+      expect(peers.size).toBe(0);
+    });
+
+    it('drops a pairing that never connects while its PIN is live, and keeps one that did', async () => {
+      await startServer();
+      const connected = device(); const lost = device();
+      expect((await pair(connected)).status).toBe(200);
+      expect((await pair(lost)).status).toBe(200);
+      expect((await call('GET', '/api/v1/status', connected)).status).toBe(200);
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now + annexServer._testing.PIN_TTL_MS + 1);
+      annexServer._testing.dropUnconnectedPeers();
+      expect(peers.has(connected.fingerprint)).toBe(true);
+      expect(peers.has(lost.fingerprint)).toBe(false);
+    });
+
+    it('authenticates every kind of entry the same way over REST and WebSocket', async () => {
+      await startServer();
+      const own = device(); const sameName = device(undefined, own);
+      const unpinned = device(); const legacy = device(); const legacyPinned = device(); const satellite = device(); const unknown = device();
+      peers.set(own.fingerprint, pinned(own));
+      peers.set(unpinned.fingerprint, pinned(unpinned, { tlsCertificateFingerprint: undefined }));
+      peers.set(legacy.fingerprint, pinned(legacy, { role: undefined, tlsCertificateFingerprint: undefined }));
+      peers.set(legacyPinned.fingerprint, pinned(legacyPinned, { role: undefined }));
+      peers.set(satellite.fingerprint, pinned(satellite, { role: 'satellite' }));
+      const cases: Array<[string, Credentials | null, number, string | null]> = [
+        ['pinned controller, its own certificate', own, 200, null],
+        ['pinned controller, another certificate with its name', sameName, 401, 'peer_not_paired'],
+        ['controller from before pinning', unpinned, 401, 'needs_pairing'],
+        ['entry from before roles', legacy, 401, 'needs_pairing'],
+        ['entry from before roles, with a pin', legacyPinned, 401, 'needs_pairing'],
+        ['satellite', satellite, 403, 'peer_role_not_allowed'],
+        ['unknown device', unknown, 401, 'peer_not_paired'],
+        ['no client certificate', null, 401, 'unauthorized'],
+      ];
+      for (const [name, client, status, error] of cases) {
+        const rest = await call('GET', '/api/v1/projects', client);
+        expect({ name, status: rest.status }).toEqual({ name, status });
+        const ws = await upgrade(client);
+        if (error === null) {
+          expect(ws.accepted).toBeDefined();
+        } else {
+          expect({ name, rest: rest.body, ws: { status: ws.status, body: ws.body } })
+            .toEqual({ name, rest: { error, message: expect.any(String) }, ws: { status, body: { error, message: expect.any(String) } } });
+        }
+      }
+      // Refused entries stay, so Settings can show them as needing pairing again.
+      expect(peers.size).toBe(5);
+      expect(annexPeers.removePeer).not.toHaveBeenCalled();
+    }, 30_000);
+
+    it('a removed peer is closed and then refused on REST and WebSocket', async () => {
+      await startServer();
+      const phone = device();
+      peers.set(phone.fingerprint, pinned(phone));
+      const { accepted } = await upgrade(phone);
+      const close = vi.spyOn(accepted!, 'close');
+      expect(annexServer.revokePeer(phone.fingerprint)).toBe(true);
+      expect(close).toHaveBeenCalledWith(annexServer.PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+      for (const route of ['/api/v1/identity', '/api/v1/mobile/capabilities']) {
+        expect(await call('GET', route, phone)).toEqual({ status: 401, body: { error: 'peer_not_paired', message: expect.any(String) } });
+      }
+      expect(await upgrade(phone)).toEqual({ status: 401, body: { error: 'peer_not_paired', message: expect.any(String) } });
+    });
+
+    it('accepts a pinned client certificate past its end date: the pin is the trust decision', async () => {
+      await startServer();
+      const phone = device({ notBefore: new Date(Date.now() - 2 * 86_400_000), notAfter: new Date(Date.now() - 86_400_000) });
+      peers.set(phone.fingerprint, pinned(phone));
+      expect((await call('GET', '/api/v1/status', phone)).status).toBe(200);
+    });
+
+    it('plain HTTP /pair answers 410 and changes nothing', async () => {
+      await startServer();
+      const pin = annexServer.getStatus().pin;
+      const res = await request(annexServer.getStatus().pairingPort, 'POST', '/pair', { pin, publicKey: device().publicKey });
+      expect(res.status).toBe(410);
+      expect(JSON.parse(res.body)).toEqual({ error: 'update_required', message: expect.stringMatching(/pairing link/) });
+      expect(annexPeers.addPeer).not.toHaveBeenCalled();
+      expect(annexServer.getStatus().pin).toBe(pin);
+      // The pairing port still answers identity, as a discovery hint.
+      expect((await request(annexServer.getStatus().pairingPort, 'GET', '/api/v1/identity')).status).toBe(200);
+    });
+
+    it('serves nothing over plain HTTP when TLS cannot start', async () => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => { throw new Error('no TLS'); });
+      await startServer();
+      const status = annexServer.getStatus();
+      expect(status.tlsEnabled).toBe(false);
+      expect(status.pairingUrl).toBeUndefined();
+      const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        http.get({ host: '127.0.0.1', port: status.port, path: '/api/v1/status', headers: { Authorization: 'Bearer anything' } }, (r) => {
+          let data = ''; r.on('data', (c) => { data += c; }); r.on('end', () => resolve({ status: r.statusCode!, body: data }));
+        }).on('error', reject);
+      });
+      expect(res.status).toBe(503);
+      expect(JSON.parse(res.body).error).toBe('tls_unavailable');
+      expect(await upgrade(null, false)).toEqual({ status: 503, body: { error: 'tls_unavailable', message: expect.any(String) } });
+    });
+
+    it('replaces the PIN after repeated wrong PINs from any address', async () => {
+      await startServer();
+      const phone = device();
+      const pin = annexServer.getStatus().pin;
+      const wrong = pin === '000000' ? '111111' : '000000';
+      for (let i = 0; i < 9; i++) await pair(phone, {}, wrong);
+      expect(annexServer.getStatus().pin).toBe(pin);
+      await pair(phone, {}, wrong);
+      expect(annexServer.getStatus().pin).not.toBe(pin);
+    });
+
+    it('regenerating the PIN leaves paired devices connected', async () => {
+      await startServer();
+      const phone = device();
+      peers.set(phone.fingerprint, pinned(phone));
+      const { accepted } = await upgrade(phone);
+      const close = vi.spyOn(accepted!, 'close');
+      annexServer.regeneratePin();
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('an entry from before pinning pairs again over TLS and is pinned', async () => {
+      await startServer();
+      const computer = device();
+      peers.set(computer.fingerprint, pinned(computer, { role: undefined, tlsCertificateFingerprint: undefined }));
+      expect((await call('GET', '/api/v1/status', computer)).body.error).toBe('needs_pairing');
+      expect((await pair(computer)).status).toBe(200);
+      expect(peers.get(computer.fingerprint)).toMatchObject({ role: 'controller', tlsCertificateFingerprint: computer.certFingerprint });
+      expect((await call('GET', '/api/v1/status', computer)).status).toBe(200);
+    });
+
+    it('the harness switch keeps one PIN usable for many devices', async () => {
+      await startServer();
+      annexServer._testing.setPinReusable(true);
+      const pin = annexServer.getStatus().pin;
+      expect((await pair(device(), {}, pin)).status).toBe(200);
+      expect((await pair(device(), {}, pin)).status).toBe(200);
+      expect(annexServer.getStatus().pin).toBe(pin);
+    });
   });
 
   it('allows authenticated endpoints with valid token', async () => {
@@ -1860,67 +2224,6 @@ describe('annex-server', () => {
     expect(body.version).toBe('1');
     expect(body.deviceName).toBe('Test Machine');
   });
-
-  it('regeneratePin invalidates existing tokens', async () => {
-    const { port, token } = await startAndPair();
-
-    annexServer.regeneratePin();
-
-    const res = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects expired bearer tokens after 24 hours', async () => {
-    const { port, token } = await startAndPair();
-
-    // Token works before expiry
-    const res1 = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
-    expect(res1.status).toBe(200);
-
-    // Advance Date.now() past 24h TTL
-    const originalNow = Date.now;
-    Date.now = () => originalNow() + 24 * 60 * 60 * 1000 + 1;
-    try {
-      const res2 = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
-      expect(res2.status).toBe(401);
-    } finally {
-      Date.now = originalNow;
-    }
-  }, 10_000);
-
-  it('rejects pairing with invalid public key', async () => {
-    annexServer.start();
-    await new Promise((r) => setTimeout(r, 50));
-    const status = annexServer.getStatus();
-    const pairingPort = (status as any).pairingPort || status.port;
-
-    const invalidKey = Buffer.from('not-a-valid-key').toString('base64');
-    const res = await request(pairingPort, 'POST', '/pair', {
-      pin: status.pin,
-      publicKey: invalidKey,
-    });
-    expect(res.status).toBe(400);
-    expect(JSON.parse(res.body)).toEqual({ error: 'invalid_public_key' });
-  }, 10_000);
-
-  it('accepts pairing with valid Ed25519 SPKI public key', async () => {
-    annexServer.start();
-    await new Promise((r) => setTimeout(r, 50));
-    const status = annexServer.getStatus();
-    const pairingPort = (status as any).pairingPort || status.port;
-
-    const { publicKey } = require('crypto').generateKeyPairSync('ed25519', {
-      publicKeyEncoding: { type: 'spki', format: 'der' },
-    });
-    const validKey = publicKey.toString('base64');
-    const res = await request(pairingPort, 'POST', '/pair', {
-      pin: status.pin,
-      publicKey: validKey,
-      alias: 'Test Client',
-    });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body).token).toBeDefined();
-  }, 10_000);
 
   it('returns 404 for unknown routes', async () => {
     const { port, token } = await startAndPair();
@@ -2251,6 +2554,8 @@ describe('annex-server', () => {
         { id: 'proj_1', name: 'test', path: '/tmp/test' },
       ]);
 
+      // The flag reports how it actually started (#2951), not always headless.
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(true);
       const { port, token } = await startAndPair();
       mockBroadcastToAllWindows.mockClear();
 
@@ -2767,7 +3072,7 @@ describe('annex-server', () => {
           let raw = '';
           let sent = 0;
           let socketError: string | null = null;
-          const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+          const onConnect = () => {
             socket.write([
               // Connection: close, so a reply the server keeps the socket open after still ends the read.
               `POST ${route} HTTP/1.1`, 'Host: 127.0.0.1', 'Connection: close', 'Content-Type: application/json',
@@ -2775,7 +3080,11 @@ describe('annex-server', () => {
               opts.chunked ? 'Transfer-Encoding: chunked' : `Content-Length: ${total}`, '', '',
             ].join('\r\n'));
             pump();
-          });
+          };
+          // The main port is TLS only; the pairing port is plain HTTP.
+          const socket = port === annexServer.getStatus().pairingPort
+            ? net.createConnection({ host: '127.0.0.1', port }, onConnect)
+            : tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() }, onConnect);
           const pump = () => {
             while (sent < total && !socket.destroyed) {
               const part = block.subarray(0, Math.min(block.length, total - sent));
@@ -2822,10 +3131,8 @@ describe('annex-server', () => {
       });
 
       it('refuses an oversized pairing body with a 413, not a dropped connection', async () => {
-        annexServer.start();
-        await new Promise((r) => setTimeout(r, 100));
-        const status = annexServer.getStatus() as { port: number; pairingPort?: number };
-        const result = await upload(status.pairingPort || status.port, '/pair', LIMIT + 1);
+        const { port } = await startAndPair();
+        const result = await upload(port, '/pair', LIMIT + 1);
         expect(result).toMatchObject({ status: 413, body: TOO_LARGE, sent: LIMIT + 1, socketError: null });
       });
 
@@ -2849,7 +3156,7 @@ describe('annex-server', () => {
       token: string,
     ): Promise<{ status: number | null }> {
       return new Promise((resolve) => {
-        const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+        const socket = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() }, () => {
           // Declare a large Content-Length but send nothing
           const headers = [
             `POST ${path} HTTP/1.1`,
@@ -3046,30 +3353,6 @@ describe('annex-server', () => {
   // ---------------------------------------------------------------------------
   // Pairing: directional role
   // ---------------------------------------------------------------------------
-
-  describe('pairing stores directional role', () => {
-    it('stores paired client with role "controller"', async () => {
-      annexServer.start();
-      await new Promise((r) => setTimeout(r, 100));
-      const status = annexServer.getStatus();
-      const pairingPort = (status as any).pairingPort || status.port;
-
-      await request(pairingPort, 'POST', '/pair', {
-        pin: status.pin,
-        publicKey: require('crypto').generateKeyPairSync('ed25519', { publicKeyEncoding: { type: 'spki', format: 'der' } }).publicKey.toString('base64'),
-        alias: 'Controller Mac',
-        icon: 'laptop',
-        color: 'blue',
-      });
-
-      expect(annexPeers.addPeer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          role: 'controller',
-          alias: 'Controller Mac',
-        }),
-      );
-    });
-  });
 
   // ---------------------------------------------------------------------------
   // Snapshot: icon data URLs
@@ -3554,7 +3837,8 @@ describe('annex-server', () => {
       expect(JSON.parse(project.body)).toEqual({ projectId: 'proj_1', state: { canvases: [{ id: 'canvas-of-/p' }], activeCanvasId: 'canvas-of-/p' } });
       expect(JSON.parse(app.body)).toEqual({ state: { canvases: [{ id: 'app-canvas' }], activeCanvasId: 'app-canvas' } });
       expect(missing.status).toBe(404);
-      expect((await request(port, 'GET', '/api/v1/mobile/canvas/proj_1')).status).toBe(401);
+      asUnpaired();
+      expect((await request(port, 'GET', '/api/v1/mobile/canvas/proj_1')).status).toBe(403);
     }, 30_000);
 
     it('serves the thumbnail from the icon route, and a 404 when there is none', async () => {
@@ -3745,7 +4029,7 @@ describe('annex-server', () => {
         const { port, token } = await startAndPair();
         const version = createHash('sha256').update(THUMBNAIL).digest('hex');
         const get = (query: string, headers: Record<string, string> = {}) => new Promise<http.IncomingMessage & { text: string }>((resolve, reject) => {
-          http.get({ hostname: '127.0.0.1', port, path: `/api/v1/icons/agent/a0${query}`, headers: { ...authHeaders(token), ...headers } }, (res) => {
+          https.get({ hostname: '127.0.0.1', port, ...suiteCredentials(), rejectUnauthorized: false, agent: false, path: `/api/v1/icons/agent/a0${query}`, headers: { ...authHeaders(token), ...headers } }, (res) => {
             let text = '';
             res.on('data', (c) => { text += c; });
             res.on('end', () => resolve(Object.assign(res, { text })));
@@ -4879,7 +5163,7 @@ describe('annex-server', () => {
 
     describe('GET /api/v1/agents/:id/buffer', () => {
       const getBuffer = (port: number, token: string) => new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
-        http.get({ hostname: '127.0.0.1', port, path: '/api/v1/agents/agent_pty/buffer', headers: authHeaders(token) }, (res) => {
+        https.get({ hostname: '127.0.0.1', port, ...suiteCredentials(), rejectUnauthorized: false, agent: false, path: '/api/v1/agents/agent_pty/buffer', headers: authHeaders(token) }, (res) => {
           const chunks: Buffer[] = [];
           res.on('data', (c: Buffer) => chunks.push(c));
           res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers, body: Buffer.concat(chunks) }));
@@ -5246,7 +5530,7 @@ describe('annex-server', () => {
 
       // Trigger a WS connection using raw TCP to exercise the snapshot path
       await new Promise<void>((resolve) => {
-        const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+        const socket = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() }, () => {
           const wsKey = Buffer.from(`test-${Date.now()}`).toString('base64');
           socket.write([
             `GET /ws?token=${encodeURIComponent(token)} HTTP/1.1`,
@@ -5311,7 +5595,7 @@ describe('annex-server', () => {
       // Connect via raw TCP
       const socket = await new Promise<net.Socket>((resolve) => {
         const timer = setTimeout(() => resolve(null as any), 5_000);
-        const s = net.createConnection({ host: '127.0.0.1', port }, () => {
+        const s = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() }, () => {
           const wsKey = Buffer.from(`ws-key-${Date.now()}`).toString('base64');
           s.write([
             `GET /ws?token=${encodeURIComponent(token)} HTTP/1.1`,
@@ -5343,10 +5627,7 @@ describe('annex-server', () => {
       }
     }, 10_000);
 
-    it('mTLS gating — bearer-only WS cannot access mTLS-only features', async () => {
-      // Bearer auth gives limited access. This test verifies that
-      // a bearer-auth WS connection is tracked as 'bearer' auth type.
-      // Full mTLS gating on destructive REST routes is tested in unit tests.
+    it('the pinned controller reaches REST routes', async () => {
       const { port, token } = await startAndPair();
 
       const res = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
@@ -5355,13 +5636,13 @@ describe('annex-server', () => {
       expect(body.version).toBe('1');
     });
 
-    it('accepts WS upgrade with token in Authorization header (SEC-CRIT-07)', async () => {
+    it('accepts a WS upgrade from the pinned controller (a bearer header is ignored)', async () => {
       // The mock wss.handleUpgrade does not write a 101 response to the raw socket,
       // so we verify auth success via connectedCount (mock adds to wss.clients on auth pass).
       const { port, token } = await startAndPair();
 
       await new Promise<void>((resolve) => {
-        const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+        const socket = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() }, () => {
           const wsKey = Buffer.from(`ws-key-header-${Date.now()}`).toString('base64');
           socket.write([
             'GET /ws HTTP/1.1',
@@ -5381,11 +5662,12 @@ describe('annex-server', () => {
 
     it('unauthorized WS upgrade is rejected', async () => {
       const { port } = await startAndPair();
+      asUnpaired();
 
       // Try to upgrade without a token
       const response = await new Promise<string>((resolve) => {
         const timer = setTimeout(() => resolve('timeout'), 5_000);
-        const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+        const socket = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() }, () => {
           const wsKey = Buffer.from(`ws-key-${Date.now()}`).toString('base64');
           socket.write([
             'GET /ws HTTP/1.1',
@@ -6208,7 +6490,7 @@ describe('annex-server', () => {
   describe('remote terminal replay metadata', () => {
     function getWithHeaders(port: number, path: string, headers: Record<string, string>) {
       return new Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
-        const req = http.request({ hostname: '127.0.0.1', port, path, method: 'GET', headers }, (res) => {
+        const req = https.request({ hostname: '127.0.0.1', port, ...suiteCredentials(), rejectUnauthorized: false, agent: false, path, method: 'GET', headers }, (res) => {
           let data = '';
           res.on('data', (chunk) => { data += chunk; });
           res.on('end', () => resolve({ status: res.statusCode || 0, body: data, headers: res.headers }));
@@ -6658,37 +6940,6 @@ describe('annex-server', () => {
     }, 10_000);
   });
 
-  // --- SEC-11: Session token expiry ---
-  describe('session token expiry', () => {
-    it('rejects expired tokens', async () => {
-      const { _testing } = await import('./annex-server');
-      const { sessionTokens, isValidToken, TOKEN_TTL_MS } = _testing;
-
-      // Add a token that's expired
-      sessionTokens.set('expired-token', { issuedAt: Date.now() - TOKEN_TTL_MS - 1000 });
-      expect(isValidToken('expired-token')).toBe(false);
-      // Token should be evicted from the map
-      expect(sessionTokens.has('expired-token')).toBe(false);
-    });
-
-    it('accepts valid (non-expired) tokens', async () => {
-      const { _testing } = await import('./annex-server');
-      const { sessionTokens, isValidToken } = _testing;
-
-      sessionTokens.set('valid-token', { issuedAt: Date.now() });
-      expect(isValidToken('valid-token')).toBe(true);
-      expect(sessionTokens.has('valid-token')).toBe(true);
-      // Cleanup
-      sessionTokens.delete('valid-token');
-    });
-
-    it('rejects undefined/missing tokens', async () => {
-      const { _testing } = await import('./annex-server');
-      expect(_testing.isValidToken(undefined as any)).toBe(false);
-      expect(_testing.isValidToken('nonexistent')).toBe(false);
-    });
-  });
-
   describe('readBody — chunked accumulation (P-C-1)', () => {
     it('correctly assembles a body delivered in many small chunks', async () => {
       const { _testing } = await import('./annex-server');
@@ -6774,66 +7025,16 @@ describe('annex-server', () => {
 
   // ── mTLS and brute-force security gates coverage (F-14-3) ──
   describe('security gate coverage: requireMtls and checkBruteForce', () => {
-    it('requires mTLS for destructive routes when TLS is enabled (git operation)', async () => {
-      // Setup: mock projectStore to include a test project
+    it('checks the peer again on a destructive route, so one removed mid-request is refused (git operation)', async () => {
       vi.mocked(projectStore.list).mockReturnValue([
         { id: 'test-proj-id', name: 'Test Project', path: '/test/path', icon: '' } as any,
       ]);
-
-      // Setup: enable TLS by using real certificate
-      const annexTlsOriginal = await vi.importActual<typeof import('./annex-tls')>('./annex-tls');
-      const identity = annexIdentity.getOrCreateIdentity();
-      fs.mkdirSync(path.join(os.tmpdir(), 'clubhouse-test-userData'), { recursive: true });
-      const cert = annexTlsOriginal.getOrCreateCert(identity);
-      
-      vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({
-        cert: cert.certPem,
-        key: cert.keyPem,
-        requestCert: true,
-        rejectUnauthorized: false,
-      } as any);
-
-      // Mock extractPeerFingerprint to return null — simulating no mTLS cert
-      vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
-
-      const { port, token } = await startAndPair();
-
-      // Make HTTPS request to a destructive route with bearer token but no mTLS
-      const httpsRes = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-        const https = require('https');
-        const postData = JSON.stringify({ branch: 'main' });
-        const options = {
-          hostname: '127.0.0.1',
-          port,
-          path: '/api/v1/projects/test-proj-id/git/pull',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(postData),
-            'Authorization': `Bearer ${token}`,
-          },
-          rejectUnauthorized: false, // Skip cert verification for self-signed cert
-        };
-
-        const req = https.request(options, (res: any) => {
-          let data = '';
-          res.on('data', (chunk: any) => { data += chunk; });
-          res.on('end', () => resolve({ status: res.statusCode, body: data }));
-        });
-        req.on('error', reject);
-        req.write(postData);
-        req.end();
-      });
-
-      // Should return 403 mtls_required because TLS is enabled but no mTLS cert provided
-      expect(httpsRes.status).toBe(403);
-      const body = JSON.parse(httpsRes.body);
-      expect(body.error).toBe('mtls_required');
-
-      // Restore mocks
-      vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => {
-        throw new Error('TLS not available in test');
-      });
+      const { port } = await startAndPair();
+      // Paired when the request arrives, removed by the time the route acts.
+      vi.mocked(annexPeers.getPeer).mockReset().mockReturnValueOnce({ ...TEST_CONTROLLER } as any).mockReturnValue(undefined);
+      const res = await request(port, 'POST', '/api/v1/projects/test-proj-id/git/pull', { branch: 'main' });
+      expect(res.status).toBe(401);
+      expect(JSON.parse(res.body)).toEqual({ error: 'peer_not_paired', message: expect.any(String) });
       vi.mocked(projectStore.list).mockReturnValue([]);
     });
 
@@ -6879,23 +7080,25 @@ describe('annex-server', () => {
         }
       });
 
-      annexServer.start();
-      await new Promise((r) => setTimeout(r, 50));
+      // Pairing is on the TLS port, from a device whose certificate names its key.
+      vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue('dd:ee:ff');
+      vi.mocked(annexTls.extractPeerCertificateDer).mockReturnValue(Buffer.from('device-certificate'));
+      const publicKey = nodeCrypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+      const { port } = await startAndPair();
       const status = annexServer.getStatus();
-      const pairingPort = (status as any).pairingPort || status.port;
       const wrongPin = status.pin === '000000' ? '000001' : '000000';
 
       // Make 6 wrong PIN attempts (these trigger recordFailedAttempt)
       for (let i = 1; i <= 6; i++) {
-        const res = await request(pairingPort, 'POST', '/pair', { pin: wrongPin });
-        // All 6 should return 401 invalid_pin
-        expect(res.status).toBe(401);
+        const res = await request(port, 'POST', '/pair', { pin: wrongPin, publicKey });
+        // All 6 should return 409 invalid_pin
+        expect(res.status).toBe(409);
         const body = JSON.parse(res.body);
         expect(body.error).toBe('invalid_pin');
       }
 
       // The 7th attempt should return 429 pairing_locked (lockout triggered after 6 failures)
-      const lockedRes = await request(pairingPort, 'POST', '/pair', { pin: wrongPin });
+      const lockedRes = await request(port, 'POST', '/pair', { pin: wrongPin, publicKey });
       expect(lockedRes.status).toBe(429);
       const lockedBody = JSON.parse(lockedRes.body);
       expect(lockedBody.error).toBe('pairing_locked');

@@ -339,8 +339,8 @@ export const IPC = {
     UNINSTALL_CLI: 'app:uninstall-cli',
     GET_HEADLESS_SETTINGS: 'app:get-headless-settings',
     SAVE_HEADLESS_SETTINGS: 'app:save-headless-settings',
-    GET_FREE_AGENT_SETTINGS: 'app:get-free-agent-settings',
-    SAVE_FREE_AGENT_SETTINGS: 'app:save-free-agent-settings',
+    GET_DEFAULT_ACCESS: 'app:get-default-access',
+    SET_DEFAULT_ACCESS: 'app:set-default-access',
     GET_ORCHESTRATION_SETTINGS: 'app:get-orchestration-settings',
     SAVE_ORCHESTRATION_SETTINGS: 'app:save-orchestration-settings',
     ORCHESTRATION_SETTINGS_CHANGED: 'app:orchestration-settings-changed',
@@ -360,6 +360,7 @@ export const IPC = {
     GET_VERSION_HISTORY: 'app:get-version-history',
     GET_CLIPBOARD_SETTINGS: 'app:get-clipboard-settings',
     SAVE_CLIPBOARD_SETTINGS: 'app:save-clipboard-settings',
+    CONTENT_CONTEXT_MENU: 'app:content-context-menu',
     READ_CLIPBOARD_TEXT: 'app:read-clipboard-text',
     READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
@@ -501,6 +502,8 @@ export const IPC = {
     SATELLITE_EVENT: 'annex-client:satellite-event',
     GET_DISCOVERED: 'annex-client:get-discovered',
     PAIR_WITH: 'annex-client:pair-with',
+    PROBE_SERVICE: 'annex-client:probe-service',
+    PAIR_WITH_LINK: 'annex-client:pair-with-link',
     DISCOVERED_CHANGED: 'annex-client:discovered-changed',
     PTY_INPUT: 'annex-client:pty-input',
     PTY_RESIZE: 'annex-client:pty-resize',
@@ -619,6 +622,20 @@ export const IPC = {
      * import blueprints from anywhere on disk (e.g. ~/Downloads).
      */
     OPEN_AND_READ: 'blueprint:open-and-read',
+  },
+  /** Actions (#2918): workflows that run on a schedule, on events, or once. */
+  ACTIONS: {
+    LIST: 'actions:list',
+    CREATE: 'actions:create',
+    UPDATE: 'actions:update',
+    SET_ENABLED: 'actions:set-enabled',
+    DELETE: 'actions:delete',
+    RUN_NOW: 'actions:run-now',
+    HISTORY: 'actions:history',
+    /** Main → renderer: the actions or a run changed. No payload; the renderer re-lists. */
+    CHANGED: 'actions:changed',
+    /** Main → renderer: a mechanical failure or an action Clubhouse turned off, for a toast. */
+    NOTICE: 'actions:notice',
   },
   /** The app-wide Dispatcher agent (#2533). */
   DISPATCHER: {

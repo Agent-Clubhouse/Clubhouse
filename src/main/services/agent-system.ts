@@ -22,7 +22,7 @@ import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
-import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
+import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode, QuickTemplateChoice } from '../../shared/types';
 import type { RoutedMessagePart } from '../../shared/chat';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
@@ -40,10 +40,20 @@ import {
   launchAccessFor,
   providerAccessLevel,
   rankHelperLaunch,
+  type AgentAccessLevel,
   type AgentLaunchAccess,
   type HelperLaunch,
 } from '../../shared/orchestration-policy';
+import {
+  ACCESS_LEVELS, accessForLegacyToggle, accessFromLegacy, isAccessLevel, legacyLaunchFor, quickToolsForAccess, savedAccess, startableAccess, type AccessLevel,
+} from '../../shared/agent-access';
+
+/** The lower of two levels. */
+function lowerAccess(a: AccessLevel, b: AccessLevel): AccessLevel {
+  return ACCESS_LEVELS.indexOf(a) <= ACCESS_LEVELS.indexOf(b) ? a : b;
+}
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { publishAppEvent } from './app-event-bus';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
@@ -95,6 +105,8 @@ export interface SpawnAgentParams {
   maxTurns?: number;
   maxBudgetUsd?: number;
   freeAgentMode?: boolean;
+  /** Access (#2761): the level to start at. Wins over `freeAgentMode` and `permissionMode`, which are derived from it. */
+  access?: AccessLevel;
   /** When true, attempt to resume the previous CLI session instead of starting fresh */
   resume?: boolean;
   /** Guided resume must fail rather than substitute a fresh conversation. */
@@ -122,7 +134,7 @@ export interface SpawnAgentParams {
    * template. Its instructions go in the system prompt and its MCP servers in
    * the launch flags; nothing is written into the folder it runs in.
    */
-  managedTemplate?: { id: string; agentName: string };
+  managedTemplate?: QuickTemplateChoice;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -223,7 +235,7 @@ async function capHelperLaunch(
   helper: DurableAgentConfig & { parentAgentId: string },
   providerId: string,
   asked: AgentLaunchAccess,
-): Promise<AgentLaunchAccess> {
+): Promise<AgentLaunchAccess & { ceiling: AgentAccessLevel }> {
   let cap: Pick<HelperLaunch, 'freeAgentMode' | 'permissionMode' | 'level'>;
   try {
     const parent = await findParent(projectPath, helper);
@@ -238,11 +250,37 @@ async function capHelperLaunch(
     cap = { ...launchAccessFor('standard'), level: 'standard' };
   }
   const askedLevel = providerAccessLevel(providerId, asked);
-  if (!isLowerAccess(cap.level, askedLevel)) return asked;
+  if (!isLowerAccess(cap.level, askedLevel)) return { ...asked, ceiling: cap.level };
   appLog('core:orchestration', 'info', 'Lowered a helper\'s launch access to its orchestrator\'s ceiling', {
     meta: { agentId, orchestratorId: helper.parentAgentId, asked: askedLevel, level: cap.level },
   });
-  return { freeAgentMode: cap.freeAgentMode, permissionMode: cap.permissionMode };
+  return { freeAgentMode: cap.freeAgentMode, permissionMode: cap.permissionMode, ceiling: cap.level };
+}
+
+/**
+ * The Access a start uses (#2761). An explicit level wins. A legacy on/off
+ * (the plugin API, an older phone, a restart entry from before #2761) keeps
+ * the agent's saved level when it agrees, else maps with the old mode. A
+ * durable agent otherwise starts at its saved level, and a quick agent at
+ * Ask first, as with Free Agent Mode off.
+ */
+export function spawnAccess(
+  params: Pick<SpawnAgentParams, 'access' | 'freeAgentMode' | 'permissionMode'>,
+  config: { access?: unknown; freeAgentMode?: boolean } | null | undefined,
+  legacyMode: FreeAgentPermissionMode,
+): AccessLevel {
+  if (isAccessLevel(params.access)) return params.access;
+  const saved = config ? savedAccess(config, legacyMode) : 'ask';
+  if (params.freeAgentMode === undefined) return saved;
+  // A restart entry's mode is what the agent ran with; it wins over the saved level.
+  if (params.freeAgentMode && params.permissionMode !== undefined) return accessFromLegacy(true, params.permissionMode);
+  return accessForLegacyToggle(saved, params.freeAgentMode, legacyMode);
+}
+
+/** The agent is up: tell windows, and the app event bus (#2950). */
+function announceAwake(agentId: string): void {
+  broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, agentId);
+  publishAppEvent({ type: 'agent.awake', agentId });
 }
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
@@ -404,7 +442,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
     }
 
-    const allowedTools = params.allowedTools
+    let allowedTools = params.allowedTools
       || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
 
     // Resolve launch wrapper config (if any)
@@ -429,13 +467,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       }
     }
 
-    // Resolve the free-agent permission mode (auto vs skip-all) from settings,
-    // but honour an explicit override (e.g. from session resume)
-    let permissionMode = params.permissionMode ?? freeAgentSettings.getPermissionMode(params.projectPath);
+    // The old free agent permission mode, frozen since #2761: it turns a legacy
+    // on/off into a level, and is what a CLI that reads it with Free Agent Mode
+    // off (Copilot) still gets, so those start exactly as before.
+    const legacyMode = params.permissionMode ?? freeAgentSettings.getPermissionMode(params.projectPath);
 
     // For durable agents, fall back to stored config for flags that callers may
     // not pass (e.g. session resume after app update only carries a subset of
-    // fields).  This ensures freeAgentMode, model and the agent file are
+    // fields).  This ensures access, model and the agent file are
     // honoured even when the resume path doesn't explicitly provide them.
     let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
     let configUnreadable = false;
@@ -443,7 +482,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       try {
         durableConfig = await getDurableConfig(params.projectPath, params.agentId);
         if (durableConfig) {
-          if (params.freeAgentMode === undefined) params = { ...params, freeAgentMode: durableConfig.freeAgentMode };
           if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
           if (isEffortValue(durableConfig.effort)) params = { ...params, effort: durableConfig.effort };
           if (params.agentFile === undefined && durableConfig.agentFile) params = { ...params, agentFile: durableConfig.agentFile };
@@ -458,29 +496,49 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         appLog('core:agent', 'warn', 'Could not read the agent\'s config; starting it at standard access', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
         });
-        const standard = launchAccessFor('standard');
-        params = { ...params, freeAgentMode: standard.freeAgentMode, permissionMode: standard.permissionMode };
-        permissionMode = standard.permissionMode;
       }
     }
+    // Access (#2761): the level this start uses.
+    let access: AccessLevel = configUnreadable ? 'ask' : spawnAccess(params, durableConfig, legacyMode);
+    // An agent saved before #2761 that nobody has given a level yet starts exactly
+    // as before: below Free Agent Mode with the old mode, which Copilot reads,
+    // and at any level the CLI took before. Everything else starts at its level:
+    // below Free Agent Mode with the mode at auto, and clamped to the levels the
+    // CLI has (below, once the runtime is known).
+    const legacyRecord = !configUnreadable && !isAccessLevel(params.access) && !!durableConfig && !isAccessLevel(durableConfig.access);
+    // Unreadable config starts at standard with the mode pinned, as before #2761.
+    let launch = configUnreadable ? launchAccessFor('standard') : legacyLaunchFor(access, legacyRecord ? legacyMode : 'auto');
     // A disposed helper keeps its row but has no worktree to run in (#2224).
     if (isDisposedAgent(durableConfig)) {
       throw tagError(new Error(`${durableConfig?.name ?? 'This agent'} was disposed and can't be started`), 'preflight_failed');
     }
     // A helper never starts above its orchestrator's ceiling, whoever wakes it.
     if (params.kind === 'durable' && durableConfig?.parentAgentId) {
-      const capped = await capHelperLaunch(params.projectPath, params.agentId, { ...durableConfig, parentAgentId: durableConfig.parentAgentId }, provider.id, {
-        freeAgentMode: params.freeAgentMode === true,
-        permissionMode,
-      });
-      params = { ...params, freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
-      permissionMode = capped.permissionMode;
+      const capped = await capHelperLaunch(params.projectPath, params.agentId, { ...durableConfig, parentAgentId: durableConfig.parentAgentId }, provider.id, launch);
+      if (capped.freeAgentMode !== launch.freeAgentMode || capped.permissionMode !== launch.permissionMode) {
+        // Only ever lower: a level below the cap (Plan) stays.
+        access = lowerAccess(access, accessFromLegacy(capped.freeAgentMode, capped.permissionMode));
+        launch = { freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
+      }
+      // The helper ceiling has three ranks; the levels between them stay at or under it.
+      if (capped.ceiling === 'standard' && access === 'auto_edit') access = 'ask';
     }
+    params = { ...params, access, freeAgentMode: launch.freeAgentMode, permissionMode: launch.permissionMode };
+    const permissionMode = launch.permissionMode;
     // Every spawn retries a bridge that failed at app start; only a helper waits for it.
     await prepareMcpBridge(durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
-    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
+    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: launch.freeAgentMode, permissionMode });
+    // A quick agent's default tools follow its level (#3007): at Plan or Ask first nothing that
+    // edits or runs commands is pre-allowed, so the level picked is the level it gets. Copilot
+    // runs a terminal quick agent one-shot (-p), where it can't ask: its defaults stay, as
+    // they're the only way it gets anything done.
+    const defaultQuickTools = params.kind === 'quick' && !params.allowedTools ? allowedTools : undefined;
+    const filterQuickTools = (level: AccessLevel) => {
+      if (defaultQuickTools && provider.id !== 'copilot-cli') allowedTools = quickToolsForAccess(defaultQuickTools, level);
+    };
+    filterQuickTools(access);
     // The orchestration tools are listed from this gate (#2228); set it before the MCP connects.
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
     // Likewise the Dispatcher's tools (#2536), only for the Dispatcher.
@@ -573,6 +631,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           systemPrompt: p.systemPrompt,
           freeAgentMode: p.freeAgentMode,
           permissionMode,
+          access: p.access,
           resume: p.resume,
           strictResume: p.strictResume,
           sessionId: p.sessionId,
@@ -608,7 +667,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (chatStart === 'cancelled') return;
     if (chatStart === 'chat') {
       facts.runtime = 'chat';
-      broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+      announceAwake(params.agentId);
       return;
     }
 
@@ -623,7 +682,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         agentId: params.agentId,
         noSessionPersistence: true,
         freeAgentMode: params.freeAgentMode,
-        permissionMode,
+        // A headless run can't ask, so it runs on its own: below Full access at
+        // Auto, where a check decides, never skipping every prompt (#2761).
+        permissionMode: params.access === 'full_access' ? 'skip-all' : 'auto',
+        access: params.access,
       });
 
       if (headlessResult) {
@@ -711,15 +773,29 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           headlessResult.createEventNormalizer,
         ));
         facts.noPid = !headlessManager.hasPid(params.agentId);
-        broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+        announceAwake(params.agentId);
         return;
       }
     }
 
     // Fall back to PTY mode
     facts.runtime = 'pty';
+    // A terminal agent starts at the nearest level its CLI has a start flag for (#2761).
+    if (!legacyRecord && !configUnreadable && params.access) {
+      const startable = startableAccess(params.access, provider.id, 'terminal');
+      if (startable !== params.access) {
+        const lowered = legacyLaunchFor(startable, 'auto');
+        appLog('core:agent', 'info', 'Started a terminal agent at the nearest level its CLI has', {
+          meta: { agentId: params.agentId, provider: provider.id, saved: params.access, level: startable },
+        });
+        params = { ...params, access: startable, freeAgentMode: lowered.freeAgentMode, permissionMode: lowered.permissionMode };
+        // The tools follow the level it really starts at.
+        filterQuickTools(startable);
+        agentRegistry.reportLaunchAccess(params.agentId, lowered);
+      }
+    }
     await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
-    if (!managed || ptyManager.isRunning(params.agentId)) broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+    if (!managed || ptyManager.isRunning(params.agentId)) announceAwake(params.agentId);
   } catch (err) {
     if (!(err instanceof ProcessStartedReceiptError)) untrackAgent(params.agentId);
     throw err;
@@ -826,11 +902,13 @@ async function spawnPtyAgent(
       agentId: params.agentId,
       freeAgentMode: params.freeAgentMode,
       permissionMode,
+      access: params.access,
       resume: params.resume,
       sessionId: params.sessionId,
       agentFile: params.agentFile,
       agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
-      interactive: params.kind === 'durable',
+      // A quick agent someone follows (a phone start, an action below Auto) runs as a session it can ask in, not one-shot.
+      interactive: params.kind === 'durable' || !!params.interactive,
     })),
   ]));
 

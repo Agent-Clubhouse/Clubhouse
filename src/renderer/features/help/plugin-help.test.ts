@@ -8,7 +8,7 @@ describe('plugin-help', () => {
     name: 'Test Plugin',
     version: '1.2.3',
     author: 'Test Author',
-    engine: { api: 0.5 },
+    engine: { api: 0.9 },
     scope: 'project',
     permissions: [],
     contributes: { help: {} },
@@ -33,7 +33,7 @@ describe('plugin-help', () => {
 
   it('About contains API version', () => {
     const topics = getPluginHelpTopics(baseManifest);
-    expect(topics[0].content).toContain('0.5');
+    expect(topics[0].content).toContain('0.9');
   });
 
   it('About contains scope', () => {

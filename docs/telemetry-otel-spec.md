@@ -250,7 +250,7 @@ Each subsection lists the **spans** (with boundaries in code), **metrics**, **er
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.update.check` (root) | `checkForUpdates` `:577` → state set | `c.update.trigger` (`startup`/`periodic`/`manual`), `c.update.channel` (`stable`/`preview`), `c.update.result` (`up_to_date`/`available`/`dismissed`/`no_artifact`/`skipped_busy`/`disabled`), `c.retry.count` | S (E if failed) |
+| `c.update.check` (root) | `checkForUpdates` `:577` → state set | `c.update.trigger` (`startup`/`periodic`/`manual`), `c.update.channel` (`stable`/`preview`), `c.update.result` (`up_to_date`/`available`/`dismissed`/`no_artifact`/`os_too_old`/`skipped_busy`/`disabled`), `c.retry.count` | S (E if failed) |
 | ↳ `c.update.fetch_manifest` | `fetchJSON` `:384`, per channel | `http.response.status_code`, `error.type` | S |
 | `c.update.download` (root) | `downloadUpdate` `:674` → ready/error | `c.update.result` (`downloaded`/`already_downloaded`), `c.size_bucket`, `c.retry.count` | S |
 | ↳ `c.update.verify` | `verifySHA256` `:514` | — | S |
@@ -428,7 +428,7 @@ The trigger is recorded where the caller is known, before the runtime manager is
 | Instrument | Boundaries / attributes | Level |
 |---|---|---|
 | `c.mcp.bridge.start` span | `bridge-server.ts:302` | S |
-| `c.mcp.tool_call` span | `handleToolsCall` → JSON-RPC return. Attributes: `c.mcp.tool_kind` (`clubhouse`/`browser`/`terminal`/`group`/`plugin`/`global`/`other`, from the tool-name prefix or global-tool membership), `c.mcp.tool` (the **built-in Clubhouse tool suffix or global tool name only**, from a fixed list kept in sync with `clubhouse-mcp/tools` by a test; plugin tools are always `other`; the binding segment of the name is never sent), `c.mcp.result` (`ok`/`tool_error`/`threw`), `error.type ∈ {mcp_tool_error, mcp_tool_threw}`, `c.agent.id_hash` (the calling agent), `c.mcp.refusal.reason` (`group_off`/`unparseable`/`no_binding`/`unknown_tool`/`invalid_args`/`tool_denied`/`caller_unknown`, only when the registry refused the call before a handler ran; `caller_unknown` is a caller the call gate doesn't know, such as an agent whose settings couldn't be read at start) (#2308). Tool arguments are never recorded in any tier; the local `core:mcp` line keeps only their names. | S |
+| `c.mcp.tool_call` span | `handleToolsCall` → JSON-RPC return. Attributes: `c.mcp.tool_kind` (`clubhouse`/`browser`/`terminal`/`group`/`plugin`/`global`/`other`, from the tool-name prefix or global-tool membership), `c.mcp.tool` (the **built-in Clubhouse tool suffix or global tool name only**, from a fixed list kept in sync with `clubhouse-mcp/tools` by a test; plugin tools are always `other`; the binding segment of the name is never sent), `c.mcp.result` (`ok`/`tool_error`/`threw`), `error.type ∈ {mcp_tool_error, mcp_tool_threw}`, `c.agent.id_hash` (the calling agent), `c.mcp.refusal.reason` (`group_off`/`unparseable`/`no_binding`/`unknown_tool`/`invalid_args`/`tool_denied`/`caller_unknown`/`no_grant`, only when the registry refused the call before a handler ran; `caller_unknown` is a caller the call gate doesn't know, such as an agent whose settings couldn't be read at start; `no_grant` is a call no Clubhouse permission covers, #2968) (#2308). Tool arguments are never recorded in any tier; the local `core:mcp` line keeps only their names. | S |
 | `c.mcp.tool_calls` counter | tool kind, tool, result | S |
 | `c.mcp.tool_call.duration` histogram | tool kind | S |
 | `c.mcp.auth_rejected` counter | nonce 403s (`:71-82`) | E |
@@ -624,6 +624,27 @@ Event records only. Booleans, counts, states and codes: never notes, screenshots
 | `c.feedback.request_refused` | `c.feedback.refusal` (`not-configured`/`no-main-window`/`unauthorized-caller`) | S |
 
 **Report id.** Maintainers match a Framebriar report to the user's local record by its id. The id is not an attribute. It is in the `core:feedback` lines `Feedback saved for delivery` and `Feedback delivered`, which appLog writes as `t:"diag"` lines in `telemetry-*.jsonl` (local only, [#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299), [#2301](https://github.com/Agent-Clubhouse/Clubhouse/issues/2301)). Match by id and timestamp.
+
+### 4.17 Actions (`services/actions/`, [#2956](https://github.com/Agent-Clubhouse/Clubhouse/issues/2956), epic [#2918](https://github.com/Agent-Clubhouse/Clubhouse/issues/2918))
+
+Event records from `telemetry/actions-telemetry.ts`, which subscribes to the engine's observations (`observeActions`) at startup. The engine never imports telemetry, and an observer that throws can't affect a run, so Actions behave the same with telemetry off. Every event carries `c.action.owner` (`user`/`dispatcher`/`agent`/`app`); Clubhouse's own hidden actions are counted as `app`. Standard events carry closed codes and counts only: never an action's name, a prompt or message, a reason in words, or an agent, project or action id.
+
+**Volume.** The chatty events (`c.action.triggered`, `c.action.wait`, `c.action.overlap`, `c.action.step`) are capped at 300 each per hour across all actions, timed on a monotonic clock. Runs, limit hits and catch-up are not capped there, since the engine already limits each action to 60 runs an hour, so a busy trigger can't push out run outcomes or failures. When an hour with drops ends, the dropped counts per event are logged under `core:actions` (local only).
+
+| Event | Attributes | Level |
+|---|---|---|
+| `c.action.triggered` | `c.action.trigger` (`schedule`/`once`/`event`/`catch_up`/`manual`); for event triggers `c.action.event` (the trigger's event kind) and `c.action.delayed` | S |
+| `c.action.wait` | `c.action.wait` (`started`/`restarted`/`cancelled`/`fired`/`dropped`), `c.action.event` | S |
+| `c.action.overlap` | `c.action.overlap` (`skipped`/`queued`), `c.action.trigger` | S |
+| `c.action.limit_hit` | `c.action.limit` (`chain`/`self`/`hourly`), `c.action.chain_depth` (`0`/`1`/`2`/`3+`) | S |
+| `c.action.catch_up` | `c.action.missed_bucket` (`0`/`1`/`2-4`/`5-9`/`10+`), `c.action.missed_rule` (`skip`/`once`/`each`) | S |
+| `c.action.run` | `c.action.run.outcome` (`done`/`failed`/`cancelled`/`skipped`), `c.action.run.reason` (`none`, `self_trigger`, `chain_limit`, `overlap`, `hourly_limit`, `missed`, `condition_changed`, `turned_off`, `edited`, `deleted` (a queued run dropped because its action was deleted; observed only, not in history), `rights_refused`, `step_failed`, `step_threw`), `c.action.trigger`, `c.action.run.steps`, `c.action.run.failed_step` (a step kind or `none`), `c.action.chain_depth`, `c.action.run.duration_ms` | S |
+| `c.action.step` | `c.action.step.kind` (`wake`/`message`/`quick`/`sleep`/`notify`), `c.action.step.outcome` (`done`/`failed`), `c.action.step.index` (1 to 3) | S |
+| `c.action.run_detail` | the run's outcome, reason code and trigger, plus `c.action.id_hash` and, for an agent's action, `c.agent.id_hash` | D |
+
+**What stays local.** The action and owning agent ids are on `c.action.run_detail` only, hashed, and that event is Detailed: it is recorded only when the person chose Detailed and exported only to destinations they set to Detailed. Names, prompts, message text and reasons in words are never in telemetry at any level (the registry has no free-text attribute); they stay in the Actions run history.
+
+**MCP tool calls.** The Actions MCP tools (`create_action`, `list_actions`, `update_action`, `delete_action`, `run_action`, `action_history`) are not registered yet. Once they land they report through the generic Clubhouse MCP tool-call telemetry (the `c.mcp.tool_call` span and `c.mcp.tool_calls` metric, §4.5), with no Actions-specific code. The change that registers them adds their names to the `c.mcp.tool` list; a test keeps that list and the registered tools in step both ways, and a name not on the list reports as `other`.
 
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 
@@ -1238,7 +1259,7 @@ To add a kind:
 
 Fan-out, filters, consent, health and the test event are shared.
 
-**Resource attributes on events.** Some backends keep only a few resource attributes. `copyResourceAttributes` copies chosen resource keys (for example `service.version`) onto that destination's spans and log records only. It works on a per-destination view of the shared item, so other destinations are unaffected.
+**Resource attributes on events.** Some backends keep only a few resource attributes. `copyResourceAttributes` copies chosen resource keys (for example `service.version`) onto that destination's spans and log records only. It works on a per-destination view of the shared item, so other destinations are unaffected. `dropAttributes` does the reverse, removing chosen keys from one destination's spans and log records.
 
 **Consent, UI and health.**
 
@@ -1250,8 +1271,8 @@ Fan-out, filters, consent, health and the test event are shared.
 
 **The Framebriar destination** ([#2006](https://github.com/Agent-Clubhouse/Clubhouse/pull/2006)). This is the one developer-run destination: the Clubhouse developer's Framebriar service, which also receives Feedback reports. It exists so that a feedback report comes with context about what the user was doing. It has no URL or key fields; it rides on Feedback's enrollment.
 
-- **What it gets:** its default preset is "User activity and errors" at Standard, so never prompts, terminal output, paths or Detailed high-volume spans (§5, the preset table above). Its exporter is OTLP with delta temporality. It sets `session.id` to the Feedback session on a per-destination view of the resource, which is how reports and telemetry correlate. It copies `clubhouse.install.id`, `clubhouse.ui.chrome` and `clubhouse.channel` onto items, because Framebriar keeps few resource attributes.
-- **When it runs:** it is derived, not a sticky switch. It is on exactly while Feedback is connected, consent is recorded, its host is the one the user confirmed, and the user hasn't switched it off. It doesn't need any of the user's own destinations on (#2097: with that rule, feedback reports came with no telemetry), and turning those off or clearing them leaves it on. **Upgrade:** a one-time migration (`developerRule: 2` in the settings file) records it as switched off for anyone who had confirmed its host while none of their own destinations was on, since under the old rule it sent nothing for them; it starts only when they turn it on. Users whose own export was on keep it. Delete local data also records it as switched off, so reconnecting Feedback doesn't bring it back. Before every batch it re-reads Feedback's state, and with Feedback disconnected, switched off, in another session, or without a token, nothing is sent.
+- **What it gets:** its default preset is "User activity and errors" at Standard, so never prompts, terminal output, paths or Detailed high-volume spans (§5, the preset table above). Its exporter is OTLP with delta temporality. It sets `session.id` to the Feedback session on a per-destination view of the resource, which is how reports and telemetry correlate. It copies `clubhouse.ui.chrome` and `clubhouse.channel` onto items, because Framebriar keeps few resource attributes. It never receives the install id: `enduser.pseudo.id` and `clubhouse.install.id` are dropped from its items and its view of the resource (`dropAttributes`, #2526), because the install id only rotates on Delete local data and would link one person's records across Feedback enrollments. Framebriar's server-stamped player id rotates per enrollment instead. The user's own Azure and OTLP destinations still get it.
+- **When it runs:** it is derived, not a sticky switch. It is on exactly while Feedback is connected, consent is recorded, its host is the one the user confirmed, and the user hasn't switched it off. It doesn't need any of the user's own destinations on (#2097: with that rule, feedback reports came with no telemetry), and turning those off or clearing them leaves it on. **Upgrade:** a one-time migration (`developerRule: 2` in the settings file) records it as switched off for anyone who had confirmed its host while none of their own destinations was on, since under the old rule it sent nothing for them; it starts only when they turn it on. Users whose own export was on keep it. Delete local data also records it as switched off, so reconnecting Feedback doesn't bring it back. Before every batch it re-reads Feedback's state, and with Feedback disconnected, switched off, in another session, or without a token, nothing is sent. **Cold start** (#2522): Feedback restores its enrollment well after telemetry starts, so when this is the only destination that would export and only Feedback is missing (consent recorded, host confirmed, not switched off), startup signals such as `c.app.startup`, `c.app.sessions` and early exceptions are buffered in memory. When Feedback connects, the start it triggers replays them. If it hasn't connected within two minutes (`FRAMEBRIAR_STARTUP_HOLD_MS`), the buffer is dropped.
 - **Consent:** its host is listed in the export consent dialog when Feedback is connected. After connecting Feedback, the Feedback page asks "Share telemetry with the developer?", naming every host; when no consent was given yet, the prompt is the consent and lists what is never sent. Not now records it as off. Settings → Feedback → "Telemetry for the developer" has its switch, level, preset, health and test event; user-facing text calls it "Clubhouse developer", never by the service's name.
 
 ### 6.12 Local recording without an exporter ([#2278](https://github.com/Agent-Clubhouse/Clubhouse/issues/2278))
@@ -1608,6 +1629,8 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 **Spans added in revision 2:** `c.shell.spawn`ᴿ, `c.provider.list_sessions`, `c.pty.inject`, `c.hooks.teardown`, `c.editor.monaco_load`, plugin spans `clubhouse.plugin.<name>`ᴿ.
 
 **Events added in revision 2:** `c.process.eventloop.blocked`, `c.persist.recovery`, `c.persist.guard_blocked`, `c.agent.turn.stalled`, `c.agent.hooks.silent_run`, `c.agent_config.id_collision_repaired`, `c.ui.action_failed`, `c.update.apply.verified`, `c.terminal.replay`, `c.mcp.tools_list`, `c.annex.identity.regenerated`, `c.goobers.stream.mode`, plugin events `clubhouse.plugin.<name>`.
+
+**Actions events (§4.17):** `c.action.triggered`, `c.action.wait`, `c.action.overlap`, `c.action.limit_hit`, `c.action.catch_up`, `c.action.run`, `c.action.step`, `c.action.run_detail` (D).
 
 **Metrics:**
 

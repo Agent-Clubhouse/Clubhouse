@@ -8,7 +8,7 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Project file browser with Monaco editor, markdown preview, and image display.',
   author: 'Clubhouse',
-  engine: { api: 0.8 },
+  engine: { api: 0.9 },
   scope: 'project',
   permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas', 'annex', 'projects'],
   contributes: {
