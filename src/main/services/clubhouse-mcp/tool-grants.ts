@@ -52,6 +52,12 @@ export const TOOL_GRANT_TARGETS = [
   'app',
   /** The managed agents library: shared parts and templates (#2819). */
   'library',
+  /**
+   * An Action (#2918) named in the arguments. The Actions module tells the
+   * check who owns it (`registerActionOwnerLookup`): the caller's own Action
+   * is `self`; anyone else's needs a grant on that Action, or on `any`.
+   */
+  'action_arg',
 ] as const;
 
 export type ToolGrantTarget = (typeof TOOL_GRANT_TARGETS)[number];

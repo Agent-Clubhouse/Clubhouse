@@ -48,8 +48,10 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     every('agent.sleep', { kind: 'group_members' }), every('agent.reset', { kind: 'group_members' }),
     every('settings.app.read', APP), every('user.notify', APP), every('models.read', APP),
     every('grant.request', SELF),
-    // Actions (#2918) declare the app; each agent reaches only its own, which the Action tools check.
-    every('action.read', APP), every('action.write', APP), every('action.run', APP),
+    // Actions (#2918): every agent reads all of them and creates its own (the app); it changes
+    // and runs only its own. A person's Action, or another agent's, needs a grant on it.
+    every('action.read', APP), every('action.write', APP),
+    every('action.write', SELF), every('action.run', SELF),
   ];
   if (facts.helper) out.push(structural('agent.message', { kind: 'parent' }));
   if (facts.orchestrates && !facts.dispatcher) {

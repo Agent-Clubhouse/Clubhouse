@@ -82,6 +82,8 @@ export type GrantTarget =
   | { kind: 'group_project'; role: 'member' | 'admin' }
   | { kind: 'group_members' }
   | { kind: 'app' }
+  /** One Action (#2918), by id: an explicit grant on an Action the caller doesn't own. */
+  | { kind: 'action'; id: string }
   | { kind: 'any' };
 
 export type GrantMode = 'allow' | 'ask';
@@ -111,7 +113,9 @@ export interface GrantCaller {
  * how a target agent stands to the caller; the rest places the target.
  */
 export interface GrantCallTarget {
-  kind: 'agent' | 'browser' | 'project' | 'group_project' | 'app' | 'library';
+  kind: 'agent' | 'browser' | 'project' | 'group_project' | 'app' | 'library' | 'action';
+  /** For an Action target: its id. `relations` has `self` when the caller owns it. */
+  actionId?: string;
   relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member'>;
   /** The target agent is the Dispatcher. */
   isDispatcher?: boolean;
@@ -162,6 +166,7 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
     case 'connected': return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher);
     case 'group_members': return rel.includes('group_member');
     case 'app': return target.kind === 'app';
+    case 'action': return target.kind === 'action' && target.actionId === grant.id;
     case 'group_project':
       if (target.kind !== 'group_project' || !target.groupRole) return false;
       return grant.role === 'member' || target.groupRole === 'admin';
@@ -200,6 +205,7 @@ function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
     return held.project === 'any' || JSON.stringify(held.project) === JSON.stringify(given.project);
   }
   if (held.kind === 'group_project' && given.kind === 'group_project') return held.role === 'member' || given.role === 'admin';
+  if (held.kind === 'action' && given.kind === 'action') return held.id === given.id;
   return true;
 }
 

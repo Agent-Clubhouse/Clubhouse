@@ -37,6 +37,10 @@ describe('agent grants (#2966)', () => {
       [{ kind: 'app' }, { kind: 'project', projectPath: '/p' }, false],
       [{ kind: 'any' }, { kind: 'agent', relations: [] }, true],
       [{ kind: 'any' }, { kind: 'library' }, true],
+      [{ kind: 'action', id: 'a1' }, { kind: 'action', actionId: 'a1' }, true],
+      [{ kind: 'action', id: 'a1' }, { kind: 'action', actionId: 'a2' }, false],
+      [{ kind: 'self' }, { kind: 'action', actionId: 'a1', relations: ['self'] }, true],
+      [{ kind: 'app' }, { kind: 'action', actionId: 'a1' }, false],
     ];
     it.each(cases)('%j covers %j: %s', (grant, target, covered) => {
       expect(targetCovers(grant, agent, target)).toBe(covered);

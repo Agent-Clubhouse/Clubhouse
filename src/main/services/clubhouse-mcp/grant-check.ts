@@ -60,7 +60,7 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
 }
 
 /** The target a declaration names, resolved for this call. Null: not checked here (see the file comment). */
-function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantCheckWire | undefined): GrantCallTarget | null {
+function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantCheckWire | undefined, args: Record<string, unknown>): GrantCallTarget | null {
   switch (target) {
     case 'bound': return wire ? boundTarget(agentId, wire) : null;
     // Members of a group project its admins act on: the caller must administer the bound group.
@@ -71,10 +71,26 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     case 'app': return { kind: 'app' };
     case 'library': return { kind: 'library' };
     case 'all_projects': return { kind: 'project' };
+    case 'action_arg': {
+      if (!actionOwnerLookup) return null;
+      const action = actionOwnerLookup(args);
+      // An unknown id reads like someone else's: a refusal never says whether it exists.
+      return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId ? ['self'] : [] };
+    }
     case 'agent_arg':
     case 'project_arg':
       return null;
   }
+}
+
+/** Who owns the Action a call names: an agent, or a person (no `ownerAgentId`). Undefined when the id is unknown. */
+export type ActionOwnerLookup = (args: Record<string, unknown>) => { actionId: string; ownerAgentId?: string } | undefined;
+
+let actionOwnerLookup: ActionOwnerLookup | null = null;
+
+/** The Actions module registers how to find an Action's owner from a call's arguments (#2918). */
+export function registerActionOwnerLookup(lookup: ActionOwnerLookup | null): void {
+  actionOwnerLookup = lookup;
 }
 
 /** Where a refused call was aimed, in the caller's terms. Never says whether a target exists. */
@@ -85,6 +101,7 @@ function whereText(target: GrantCallTarget): string {
   if (rel.includes('my_helper')) return 'your helpers';
   if (rel.includes('connected')) return target.kind === 'browser' ? 'a canvas browser you are wired to' : 'an agent you are connected to';
   if (rel.includes('group_member')) return 'members of this group project';
+  if (target.kind === 'action') return rel.includes('self') ? 'your own Action' : 'an Action you don\'t own';
   if (rel.includes('self')) return 'yourself';
   switch (target.kind) {
     case 'group_project': return 'this group project';
@@ -132,7 +149,7 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
   const caller: GrantCaller = { kind: 'agent', agentId, projectPath: agentRegistry.get(agentId)?.projectPath };
   const grants = callerGrants(agentId);
   for (const d of declarations) {
-    const target = resolveTarget(agentId, d.target, wire);
+    const target = resolveTarget(agentId, d.target, wire, args);
     if (!target) continue;
     for (const action of d.actions) {
       const decision = evaluateGrant({ caller, action, target }, grants);

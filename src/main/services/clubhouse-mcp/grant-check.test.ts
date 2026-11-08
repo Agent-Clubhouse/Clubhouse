@@ -9,7 +9,7 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
 import { listToolGrants, _resetForTesting, type RegisteredToolGrant } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
-import { checkToolGrant } from './grant-check';
+import { checkToolGrant, registerActionOwnerLookup } from './grant-check';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { setDispatcherAgent, isDispatcherAgent, isTrackedDispatcher, _resetDispatcherGateForTesting } from './dispatcher-gate';
@@ -197,11 +197,29 @@ describe('everyday flows keep working (#2968)', () => {
     }
   });
 
-  it('Actions tools, declared on the app (#2918), for every caller', () => {
-    for (const caller of CALLERS) {
-      for (const action of ['action.read', 'action.write', 'action.run'] as const) {
-        expect(checkToolGrant(caller, { actions: [action], target: 'app' }, {}).ok, `${caller} ${action}`).toBe(true);
+  it('Actions (#2918): every agent reads all and creates its own, and changes or runs only its own', () => {
+    registerActionOwnerLookup((args) => (args.id === 'mine' ? { actionId: 'mine', ownerAgentId: 'plain' }
+      : args.id === 'persons' ? { actionId: 'persons' } : undefined));
+    try {
+      for (const caller of CALLERS) {
+        expect(checkToolGrant(caller, { actions: ['action.read'], target: 'app' }, {}).ok, `${caller} read`).toBe(true);
+        expect(checkToolGrant(caller, { actions: ['action.write'], target: 'app' }, {}).ok, `${caller} create`).toBe(true);
       }
+      const run = { actions: ['action.run'] as const, target: 'action_arg' as const };
+      const edit = { actions: ['action.write'] as const, target: 'action_arg' as const };
+      expect(checkToolGrant('plain', run, { id: 'mine' }).ok).toBe(true);
+      expect(checkToolGrant('plain', edit, { id: 'mine' }).ok).toBe(true);
+      // A person's Action runs at that person's Access: an agent needs a grant on it.
+      const refused = checkToolGrant('plain', run, { id: 'persons' });
+      expect(refused).toMatchObject({ ok: false, reason: 'no_grant' });
+      if (refused.ok === false) expect(refused.message).toContain('action.run on an Action you don\'t own');
+      expect(checkToolGrant('orchestrator', edit, { id: 'mine' }).ok).toBe(false);
+      // An unknown id is refused the same way, so a refusal never says whether it exists.
+      expect(checkToolGrant('plain', run, { id: 'nope' })).toMatchObject({ ok: false, reason: 'no_grant' });
+      // The Dispatcher keeps its v1 reach.
+      expect(checkToolGrant('dispatcher', run, { id: 'persons' }).ok).toBe(true);
+    } finally {
+      registerActionOwnerLookup(null);
     }
   });
 });
