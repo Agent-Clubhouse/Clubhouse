@@ -58,6 +58,8 @@ export interface StreamBlockOptions {
   mediaVisible?: boolean;
   /** Tool calls with a permission request still open: these stay out of a group. */
   awaitingApproval?: ReadonlySet<string>;
+  /** The Dispatcher's group chat (#3043): each agent's interjection is its own row, never folded. */
+  groupChat?: boolean;
 }
 
 /**
@@ -73,7 +75,7 @@ function groupRole(item: ChatItem, opts: StreamBlockOptions): 'counted' | 'carri
       if (opts.mediaVisible && item.media?.length) return null;
       return 'counted';
     case 'user_message':
-      if (item.sendState || HELPER_QUESTION.test(item.text)) return null;
+      if (item.sendState || HELPER_QUESTION.test(item.text) || opts.groupChat) return null;
       return messageDisplay(item).from === 'others' ? 'counted' : null;
     case 'thought':
       return 'carried';

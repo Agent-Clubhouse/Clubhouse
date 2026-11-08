@@ -18,6 +18,8 @@ vi.mock('../services/dispatcher/dispatcher-service', () => ({
   onDispatcherChanged: vi.fn((l: (s: DispatcherState) => void) => { h.listener = l; return () => {}; }),
   initDispatcher: vi.fn(async () => undefined),
 }));
+vi.mock('../services/dispatcher/dispatcher-clear-chat', () => ({ clearDispatcherChat: vi.fn(async () => ({ cleared: 'now' })) }));
+vi.mock('../services/dispatcher/dispatcher-news', () => ({ installGroupChat: vi.fn() }));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('./mcp-binding-handlers', () => ({ restorePersistedBindings: vi.fn(async () => {}) }));
 
@@ -25,6 +27,8 @@ import { IPC } from '../../shared/ipc-channels';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { restorePersistedBindings } from './mcp-binding-handlers';
+import { clearDispatcherChat } from '../services/dispatcher/dispatcher-clear-chat';
+import { installGroupChat } from '../services/dispatcher/dispatcher-news';
 import { registerDispatcherHandlers, _resetDispatcherHandlersForTesting } from './dispatcher-handlers';
 
 beforeEach(() => {
@@ -38,6 +42,12 @@ describe('dispatcher handlers', () => {
   it('starts the service once and answers get', async () => {
     expect(dispatcher.initDispatcher).toHaveBeenCalledTimes(1);
     expect(await h.handlers.get(IPC.DISPATCHER.GET)!({})).toEqual(ON);
+  });
+
+  it('makes its chat a group chat, and clears the chat on request (#3043)', async () => {
+    expect(installGroupChat).toHaveBeenCalledTimes(1);
+    expect(await h.handlers.get(IPC.DISPATCHER.CLEAR_CHAT)!({})).toEqual({ cleared: 'now' });
+    expect(clearDispatcherChat).toHaveBeenCalledTimes(1);
   });
 
   it('setEnabled takes a boolean only', async () => {

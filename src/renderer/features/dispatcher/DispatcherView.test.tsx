@@ -14,6 +14,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestrationCards } from '../agents/helpers/OrchestrationCards';
 import { DispatcherView } from './DispatcherView';
 import { useDispatcherStore } from './dispatcherStore';
+import { ClearChatHost } from './ClearChat';
 
 const dispatcher = (over: Partial<Agent> = {}): Agent =>
   ({ id: 'disp', projectId: DISPATCHER_PROJECT_ID, name: 'Dispatcher', kind: 'durable', status: 'sleeping', color: 'indigo', ...over }) as Agent;
@@ -45,6 +46,21 @@ describe('DispatcherView', () => {
       expect(within(menu).queryByTestId(`ctx-${id}`)).toBeNull();
     }
     expect(within(menu).getByTestId('ctx-settings')).toBeTruthy();
+  });
+
+  it('offers Clear chat in its menu, which asks first and then starts the conversation over (#3043)', async () => {
+    const clearChat = vi.spyOn(window.clubhouse.dispatcher, 'clearChat');
+    useAgentStore.setState({ agents: { disp: dispatcher() } });
+    render(<><DispatcherView /><ClearChatHost /></>);
+    fireEvent.click(screen.getByTestId('sleeping-more'));
+    fireEvent.click(within(screen.getByTestId('agent-context-menu')).getByTestId('ctx-clear-chat'));
+    const confirm = await waitFor(() => screen.getByTestId('dispatcher-clear-chat-confirm'));
+    expect(confirm.textContent).toContain('Dispatcher still remembers');
+    expect(clearChat).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('dispatcher-clear-chat-confirm-button'));
+    await waitFor(() => expect(screen.queryByTestId('dispatcher-clear-chat-confirm')).toBeNull());
+    expect(clearChat).toHaveBeenCalledTimes(1);
+    clearChat.mockRestore();
   });
 
   it('sends a failed launch to Settings > Dispatcher, not the agent settings view', async () => {

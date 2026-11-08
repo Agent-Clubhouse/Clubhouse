@@ -5933,9 +5933,23 @@ function closePeerSockets(fingerprint: string, code: number, reason: string, har
   }
 }
 
-/** Disconnect a peer's WebSockets. It stays paired and may reconnect. */
+/**
+ * Disconnect a peer's WebSockets. A paired peer stays paired and may reconnect.
+ * A phone's session-only pairing ends here: it lasts until a desktop disconnect
+ * or Annex stops (docs/mobile-control-v1.md), so it's removed like any pairing,
+ * refreshing the device list and closing with the revoked code (#3105).
+ */
 export function disconnectPeer(fingerprint: string): void {
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
+  if (mobileSessionPeers.has(fingerprint)) {
+    // Only the session ends: a lasting pairing the same phone also holds stays, as removing one never ends the other.
+    if (!annexPeers.getPeer(fingerprint)) {
+      revokePeer(fingerprint);
+      return;
+    }
+    mobileSessionPeers.delete(fingerprint);
+    devicesChanged();
+  }
   closePeerSockets(fingerprint, 1000, 'disconnected_by_satellite');
   networkChannel.closeFor(fingerprint, 'in');
 }
