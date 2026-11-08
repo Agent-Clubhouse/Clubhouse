@@ -1235,7 +1235,9 @@ function startDiscovery(): void {
           }
           // After a certificate mismatch, a newly announced address gets one more try, through the same pin.
           const halted = sat.halt || sat.needsPairing;
-          if (sat.state === 'disconnected' && (!halted || (sat.halt === 'mismatch' && hostChanged)) && sat.host && sat.mainPort) {
+          // A satellite waiting to be found (Retry before discovery saw it) connects now too.
+          const waiting = sat.state === 'disconnected' || sat.state === 'discovering';
+          if (waiting && (!halted || (sat.halt === 'mismatch' && hostChanged)) && sat.host && sat.mainPort) {
             connectToSatellite(sat);
           }
           return;
@@ -2045,6 +2047,7 @@ async function pairWithServiceImpl(fingerprint: string, pin: string): Promise<Pa
     expectedFingerprint: fingerprint,
     pairingPort,
     pin,
+    alias: discoveredServices.get(fingerprint)?.alias ?? satellites.get(fingerprint)?.alias,
   });
 }
 
@@ -2074,14 +2077,14 @@ async function pairWithLinkImpl(link: string): Promise<PairResultForUi> {
       lastError = 'The computer at that address is not the one in the link.';
       continue;
     }
-    return pairOverTls({ host, port: parts.port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin });
+    return pairOverTls({ host, port: parts.port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin, alias: parts.name });
   }
   return { success: false, error: lastError };
 }
 
 /** A failure to reach a computer while pairing, as what happened and what to do. */
 function pairingReachError(err: unknown, alias: string): string {
-  return annexProblemText(describeAnnexProblem(classifyConnectionError(err), alias));
+  return annexProblemText(describeAnnexProblem(classifyConnectionError(err), alias, { pairing: true }));
 }
 
 /** Plain messages for a satellite's pairing refusals that don't carry their own. */
@@ -2100,6 +2103,8 @@ async function pairOverTls(target: {
   expectedFingerprint: string;
   pairingPort: number;
   pin: string;
+  /** The name it's known by so far, for messages. */
+  alias?: string;
 }): Promise<PairResultForUi> {
   const localIdentity = annexIdentity.getOrCreateIdentity();
   if (target.expectedFingerprint.toLowerCase() === localIdentity.fingerprint.toLowerCase()) {
@@ -2118,7 +2123,7 @@ async function pairOverTls(target: {
       certBinding: annexTls.signCertBinding(localIdentity),
     });
   } catch (err) { // telemetry-exempt: shown to the person pairing; the pair flow records the result
-    return { success: false, error: pairingReachError(err, '') };
+    return { success: false, error: pairingReachError(err, target.alias ?? '') };
   }
 
   let body: Record<string, unknown> = {};

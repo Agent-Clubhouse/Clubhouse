@@ -714,6 +714,7 @@ function dropUnconnectedPeers(now = Date.now()): void {
     if (deadline > now) continue;
     awaitingFirstConnection.delete(fingerprint);
     mobileSessionPeers.delete(fingerprint);
+    devicesChanged();
     if (annexPeers.removePeer(fingerprint)) {
       appLog('core:annex', 'info', 'Removed a pairing that never connected', { meta: { fingerprint } });
       broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
@@ -2335,6 +2336,11 @@ const PAIR_MESSAGES = {
   client_certificate_required: 'Pairing needs the device certificate that matches its identity.',
 } as const;
 
+/** Phones send `pairingMode`, and older ones a phone or tablet icon; Clubhouse desktops send neither. */
+function sentByPhone(body: Record<string, unknown>): boolean {
+  return body.pairingMode !== undefined || (typeof body.icon === 'string' && /phone|pad|tablet|mobile/i.test(body.icon));
+}
+
 /**
  * The name to store for a device pairing with this machine (#2442). A device
  * that sends this machine's own name (an older Clubhouse Go sent the desktop's
@@ -2481,7 +2487,7 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   const pairedPeer: AnnexPeer = {
     fingerprint,
     publicKey: clientPublicKey,
-    alias: pairedDeviceAlias(body.alias, settings, body.pairingMode !== undefined, fingerprint),
+    alias: pairedDeviceAlias(body.alias, settings, sentByPhone(body), fingerprint),
     icon: typeof body.icon === 'string' && body.icon ? body.icon : 'computer',
     color: typeof body.color === 'string' && body.color ? body.color : 'indigo',
     pairedAt: now,
@@ -2491,7 +2497,7 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   };
   // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
   if (replacesPin) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
-  if (sessionOnly) mobileSessionPeers.set(fingerprint, pairedPeer);
+  if (sessionOnly) { mobileSessionPeers.set(fingerprint, pairedPeer); devicesChanged(); }
   else { mobileSessionPeers.delete(fingerprint); annexPeers.addPeer(pairedPeer); }
   loggedRefusals.delete(fingerprint);
   broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
@@ -5060,6 +5066,7 @@ export function stop(): void {
   mobileCommands.reset();
   mobileAttachments.reset();
   mobileSessionPeers.clear();
+  devicesChanged();
   // Starts already accepted may still be awaiting a driver; stop them on completion.
   for (const starting of mobileStartingAgents.values()) starting.cancelled = true;
 
@@ -5570,6 +5577,7 @@ export const PEER_REVOKED_CLOSE_CODE = 4401;
  */
 export function revokePeer(fingerprint: string): boolean {
   const wasSession = mobileSessionPeers.delete(fingerprint);
+  if (wasSession) devicesChanged();
   const removed = annexPeers.removePeer(fingerprint) || wasSession;
   awaitingFirstConnection.delete(fingerprint);
   loggedRefusals.delete(fingerprint);

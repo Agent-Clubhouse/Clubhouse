@@ -23,6 +23,7 @@ export type AnnexProblemCode =
   | 'cert-not-yet-valid'
   | 'cert-mismatch'
   | 'not-found-yet'
+  | 'client-off'
   | 'connection-failed';
 
 export interface AnnexProblem {
@@ -33,8 +34,25 @@ export interface AnnexProblem {
   action: string;
 }
 
-/** The two sentences for a problem with the device called `alias`. */
-export function describeAnnexProblem(code: AnnexProblemCode, alias: string, detail?: { status?: number }): AnnexProblem {
+/** Problems a live connection retries by itself. While pairing nothing retries, so they say to try again. */
+const PAIRING_ACTIONS: Partial<Record<AnnexProblemCode, string>> = {
+  unreachable: "Check this computer's network connection, then try again.",
+  dropped: 'Try again.',
+  'stopped-answering': 'Check that it is awake, then try again.',
+  'cert-mismatch': "The computer at that address isn't the one you meant. Check the link or code, then try again.",
+  'connection-failed': 'Check that Annex is on there, then try again.',
+  'http-refused': 'Try again.',
+};
+
+/**
+ * The two sentences for a problem with the device called `alias`. With
+ * `pairing`, the advice suits a pairing attempt, which never retries by itself.
+ */
+export function describeAnnexProblem(
+  code: AnnexProblemCode,
+  alias: string,
+  detail?: { status?: number; pairing?: boolean },
+): AnnexProblem {
   const name = alias || 'That computer';
   const text = ((): [string, string] => {
     switch (code) {
@@ -45,7 +63,7 @@ export function describeAnnexProblem(code: AnnexProblemCode, alias: string, deta
       case 'unreachable':
         return [`This computer can't reach ${name} at its last address.`, "Check this computer's network connection. Clubhouse tries again when it's back."];
       case 'not-found':
-        return [`No computer answers to ${name}'s address name.`, 'Check the address, or connect both computers to the same network.'];
+        return [`Couldn't find ${name} by its address.`, 'Check the address, or connect both computers to the same network.'];
       case 'dropped':
         return [`The connection to ${name} dropped.`, 'Clubhouse is reconnecting.'];
       case 'stopped-answering':
@@ -70,11 +88,14 @@ export function describeAnnexProblem(code: AnnexProblemCode, alias: string, deta
         return [`${name} showed a different certificate.`, 'If it was reset, pair again.'];
       case 'not-found-yet':
         return [`${name} hasn't been found on the network yet.`, 'Check that Clubhouse is open there with Annex turned on.'];
+      case 'client-off':
+        return ['Connecting to other computers is turned off here.', 'Turn on Connect to satellites in Annex control.'];
       case 'connection-failed':
         return [`Couldn't connect to ${name}.`, 'Retry. If it keeps failing, check that Annex is on there.'];
     }
   })();
-  return { code, message: text[0], action: text[1] };
+  const action = (detail?.pairing && PAIRING_ACTIONS[code]) || text[1];
+  return { code, message: text[0], action };
 }
 
 /** Both sentences as one line, for places that show a single string. */
@@ -100,6 +121,12 @@ const SOCKET_CODES: Record<string, AnnexProblemCode> = {
   ECONNABORTED: 'dropped',
   CERT_HAS_EXPIRED: 'cert-expired',
   CERT_NOT_YET_VALID: 'cert-not-yet-valid',
+  // A certificate other than the pinned or expected one.
+  ERR_ANNEX_PIN_MISMATCH: 'cert-mismatch',
+  DEPTH_ZERO_SELF_SIGNED_CERT: 'cert-mismatch',
+  SELF_SIGNED_CERT_IN_CHAIN: 'cert-mismatch',
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'cert-mismatch',
+  ERR_TLS_CERT_ALTNAME_INVALID: 'cert-mismatch',
 };
 
 /**

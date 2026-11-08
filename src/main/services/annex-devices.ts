@@ -13,12 +13,15 @@ import { describeAnnexProblem, type AnnexProblem } from '../../shared/annex-prob
 import * as annexPeers from './annex-peers';
 import * as annexClient from './annex-client';
 import * as annexServer from './annex-server';
+import * as annexSettings from './annex-settings';
 
 interface Sources {
   peers: AnnexPeer[];
   sessionPeers: AnnexPeer[];
   satellites: annexClient.SatelliteConnection[];
   connected: ReadonlySet<string>;
+  /** Whether this machine connects to its satellites ("Connect to satellites"). */
+  clientOn: boolean;
 }
 
 function readSources(): Sources {
@@ -27,6 +30,7 @@ function readSources(): Sources {
     sessionPeers: annexServer.sessionOnlyPeers(),
     satellites: annexClient.getSatellites(),
     connected: annexServer.connectedPeerFingerprints(),
+    clientOn: annexSettings.getSettings().enableClient,
   };
 }
 
@@ -63,8 +67,13 @@ export function buildDeviceList(sources: Sources): AnnexDevice[] {
     seen.add(peer.fingerprint);
     const sat = peer.role === 'satellite' ? satellites.get(peer.fingerprint) : undefined;
     let state: AnnexDeviceState;
+    let problem: AnnexProblem | null = null;
     if (annexPeers.peerNeedsPairing(peer)) state = 'needs-pairing';
-    else if (peer.role === 'satellite') state = satelliteState(sat);
+    else if (peer.role === 'satellite' && !sources.clientOn) {
+      // Not this satellite's doing: this machine isn't connecting to any.
+      state = 'offline';
+      problem = describeAnnexProblem('client-off', peer.alias);
+    } else if (peer.role === 'satellite') state = satelliteState(sat);
     else state = sources.connected.has(peer.fingerprint) ? 'connected' : 'offline';
     devices.push({
       fingerprint: peer.fingerprint,
@@ -76,7 +85,7 @@ export function buildDeviceList(sources: Sources): AnnexDevice[] {
       pairedAt: peer.pairedAt || '',
       lastSeen: peer.lastSeen || '',
       ...(sessionOnly && { sessionOnly: true }),
-      problem: problemFor(peer, state, sat),
+      problem: problem ?? problemFor(peer, state, sat),
     });
   };
 

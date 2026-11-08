@@ -11,6 +11,7 @@ vi.mock('./annex-client', () => ({
   getSatellite: vi.fn(() => null),
   forgetSatellite: vi.fn(),
 }));
+vi.mock('./annex-settings', () => ({ getSettings: vi.fn(() => ({ enableClient: true })) }));
 vi.mock('./annex-server', () => ({
   sessionOnlyPeers: vi.fn(() => []),
   connectedPeerFingerprints: vi.fn(() => new Set()),
@@ -45,7 +46,7 @@ function satellite(overrides: Partial<annexClient.SatelliteConnection>): annexCl
   };
 }
 
-const empty = { peers: [], sessionPeers: [], satellites: [], connected: new Set<string>() };
+const empty = { peers: [], sessionPeers: [], satellites: [], connected: new Set<string>(), clientOn: true };
 
 describe('annex device list', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -93,6 +94,16 @@ describe('annex device list', () => {
     const [device] = buildDeviceList({ ...empty, peers: [peer({ alias: 'Studio', role: 'satellite', tlsCertificatePem: 'PEM' })] });
     expect(device.state).toBe('offline');
     expect(device.problem).toEqual(describeAnnexProblem('not-found-yet', 'Studio'));
+  });
+
+  it("says a satellite is offline because this machine's client is off, not because of the satellite", () => {
+    const [device] = buildDeviceList({
+      ...empty,
+      clientOn: false,
+      peers: [peer({ alias: 'Studio', role: 'satellite', tlsCertificatePem: 'PEM' })],
+      satellites: [satellite({ fingerprint: 'fp', state: 'discovering', host: '' })],
+    });
+    expect(device).toMatchObject({ state: 'offline', problem: { code: 'client-off', action: 'Turn on Connect to satellites in Annex control.' } });
   });
 
   it('marks pairings from before pinning as needing pairing again, whichever way', () => {

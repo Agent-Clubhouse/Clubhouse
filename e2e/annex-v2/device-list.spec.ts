@@ -8,7 +8,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { launchDual, cleanupDual, type DualInstanceHandles } from './dual-launch';
-import { enableAnnexViaPreload, getAnnexStatus } from './helpers';
+import { enableAnnexViaPreload } from './helpers';
 
 interface Device {
   fingerprint: string;
@@ -32,6 +32,11 @@ test.afterAll(async () => {
   if (handles) await cleanupDual(handles);
 });
 
+/** The full status (the shared helper keeps only some fields). */
+function status(page: Page): Promise<{ fingerprint: string; pairingUrl?: string }> {
+  return page.evaluate(() => (window as any).clubhouse.annex.getStatus());
+}
+
 function listDevices(page: Page): Promise<Device[]> {
   return page.evaluate(() => (window as any).clubhouse.annex.listDevices());
 }
@@ -44,7 +49,7 @@ async function deviceOn(page: Page, fingerprint: string): Promise<Device | undef
 async function loopbackPairingLink(page: Page): Promise<string> {
   let link: string | undefined;
   await expect.poll(async () => {
-    link = (await getAnnexStatus(page) as unknown as { pairingUrl?: string }).pairingUrl;
+    link = (await status(page)).pairingUrl;
     return !!link;
   }, { timeout: 15_000 }).toBe(true);
   const url = new URL(link!);
@@ -55,8 +60,10 @@ async function loopbackPairingLink(page: Page): Promise<string> {
 
 test('two desktops pair, list each other, and removal cuts the connection with a clear reason', async () => {
   const { satellite, controller } = handles;
-  const satStatus = await getAnnexStatus(satellite.window);
-  const ctrlStatus = await getAnnexStatus(controller.window);
+  const satStatus = await status(satellite.window);
+  const ctrlStatus = await status(controller.window);
+  expect(satStatus.fingerprint).toBeTruthy();
+  expect(ctrlStatus.fingerprint).toBeTruthy();
 
   // Pair from the controller with the satellite's link.
   const link = await loopbackPairingLink(satellite.window);

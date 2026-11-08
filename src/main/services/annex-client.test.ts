@@ -2372,10 +2372,14 @@ describe('annex-client', () => {
       expect(annexClient.getSatellite(FP)?.problem).toBeUndefined();
     });
 
-    it('Retry on a paired satellite not seen since startup starts looking for it', () => {
+    it('Retry on a paired satellite not seen since startup starts looking for it, and connects once it is found', async () => {
       expect(annexClient.getSatellite(FP)).toBeNull();
       annexClient.retry(FP);
       expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'discovering', alias: 'Pinned Mac' });
+      expect(WebSocketMock).not.toHaveBeenCalled();
+      await discover();
+      expect(WebSocketMock).toHaveBeenCalledTimes(1);
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connecting', host: '192.168.1.50' });
     });
 
     it('says what a 403 for the wrong role means, and keeps retrying', async () => {
@@ -2577,6 +2581,18 @@ describe('annex-client', () => {
       expect(await annexClient.pairWithLink(await link())).toEqual({ success: false, error: 'That code was already used. Show a new code.' });
       answerPair(404, { error: 'not_found' });
       expect((await annexClient.pairWithLink(await link())).error).toMatch(/newer version/);
+    });
+
+    it('says the certificate changed, not to retry blindly, when it changes between the check and the pairing', async () => {
+      vi.mocked(annexTls.createPinnedTlsClientOptions).mockReturnValueOnce({ pinned: true } as any);
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _options: unknown, _cb: unknown) => {
+        const req = Object.assign(new EventEmitter(), { setTimeout: vi.fn(), write: vi.fn(), end: () => req.emit('error', Object.assign(new Error('pin mismatch'), { code: 'ERR_ANNEX_PIN_MISMATCH' })), destroy: vi.fn() });
+        return req;
+      }) as any);
+      expect(await annexClient.pairWithLink(await link())).toEqual({
+        success: false,
+        error: "Mini showed a different certificate. The computer at that address isn't the one you meant. Check the link or code, then try again.",
+      });
     });
 
     it('says what happened and what to do when no address in the link answers', async () => {

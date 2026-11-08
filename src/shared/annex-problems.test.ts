@@ -10,7 +10,7 @@ import {
 const ALL: AnnexProblemCode[] = [
   'refused', 'timeout', 'unreachable', 'not-found', 'dropped', 'stopped-answering', 'incompatible',
   'wrong-role', 'tls-unavailable', 'http-refused', 'old-pairing', 'removed-there', 'cert-expired',
-  'cert-not-yet-valid', 'cert-mismatch', 'not-found-yet', 'connection-failed',
+  'cert-not-yet-valid', 'cert-mismatch', 'not-found-yet', 'client-off', 'connection-failed',
 ];
 
 describe('annex problems', () => {
@@ -42,6 +42,8 @@ describe('annex problems', () => {
     [{ code: 'ETIMEDOUT' }, 'timeout'],
     [{ code: 'ECONNRESET' }, 'dropped'],
     [{ code: 'CERT_HAS_EXPIRED' }, 'cert-expired'],
+    [{ code: 'ERR_ANNEX_PIN_MISMATCH' }, 'cert-mismatch'],
+    [{ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' }, 'cert-mismatch'],
     [new Error('connect ECONNREFUSED 10.0.0.2:9000'), 'refused'],
     [new Error('getaddrinfo ENOTFOUND studio.tail1234.ts.net'), 'not-found'],
     [new Error('Opening handshake has timed out'), 'timeout'],
@@ -54,6 +56,14 @@ describe('annex problems', () => {
     [null, 'connection-failed'],
   ] as const)('classifies %s as %s', (err, code) => {
     expect(classifyConnectionError(err)).toBe(code);
+  });
+
+  it('gives pairing advice that never promises a retry', () => {
+    for (const code of ['unreachable', 'dropped', 'stopped-answering', 'connection-failed'] as const) {
+      expect(describeAnnexProblem(code, 'Mini', { pairing: true }).action).not.toMatch(/reconnecting|tries again/);
+    }
+    expect(describeAnnexProblem('dropped', 'Mini').action).toBe('Clubhouse is reconnecting.');
+    expect(describeAnnexProblem('refused', 'Mini', { pairing: true }).action).toBe('Check that Clubhouse is open there with Annex turned on.');
   });
 
   it.each([

@@ -2147,8 +2147,12 @@ describe('annex-server', () => {
         expect((await pair(phone, { alias: ' test MACHINE ', pairingMode: 'persistent' })).status).toBe(200);
         expect(peers.get(phone.fingerprint)?.alias).toBe('Phone');
         const computer = device();
-        expect((await pair(computer, { alias: 'Test Machine' })).status).toBe(200);
+        expect((await pair(computer, { alias: 'Test Machine', icon: 'computer' })).status).toBe(200);
         expect(peers.get(computer.fingerprint)?.alias).toBe('Computer');
+        // An older phone that sends no pairingMode still says what it is by its icon.
+        const olderPhone = device();
+        expect((await pair(olderPhone, { alias: 'Test Machine', icon: 'iphone' })).status).toBe(200);
+        expect(peers.get(olderPhone.fingerprint)?.alias).toBe('Phone');
       });
 
       it('keeps any other name, and names a device that sends none', async () => {
