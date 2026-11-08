@@ -32,7 +32,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `chat.send`: `{agentId, sessionId, text, delivery?, attachmentIds?}`; delivery `auto|prompt|steer|queued` (default auto). `attachmentIds` (1–10 distinct ids from the upload route below) sends images; `text` may then be `""` for an image-only message. See [Image attachments](#image-attachments).
 - `chat.queue.remove`: `{agentId, sessionId, messageIds:["id"]}`; removes only messages still held in the runtime queue, returns `{removed:["id"]}`. A native-provider queue may return no removed IDs.
 - `chat.interrupt`: `{agentId, sessionId}`; cancels the turn and keeps the session.
-- `chat.permission`: `{agentId, sessionId, requestId, optionId}`; exact pending option required. Any offered option, persistent ones (`allow_session`, `allow_always`, `reject_always`) included, is answered as the desktop's approval dock answers it, when capabilities have `permissions.persistentApprovals`. Older desktops refuse persistent options with 403 `persistent_approval_not_supported`.
+- `chat.permission`: `{agentId, sessionId, requestId, optionId, reviewedDigest?}`; exact pending option required. `reviewedDigest` approves a request sent only as a preview, after fetching it whole (see "Large permission requests"). Any offered option, persistent ones (`allow_session`, `allow_always`, `reject_always`) included, is answered as the desktop's approval dock answers it, when capabilities have `permissions.persistentApprovals`. Older desktops refuse persistent options with 403 `persistent_approval_not_supported`.
 - `chat.question`: `{agentId, sessionId, requestId, answers}`; question-ID to string/string-array map. Send each key exactly as the question's `id`, with no trimming or normalizing: a Claude question's `id` is its full text. Up to 100 keys, each key and answer string 1 to 65536 UTF-16 code units (an emoji is two), and up to 100 strings in an array. Older desktops refuse a key over 256 with 400 `invalid_command`.
 
   The whole request also has to fit the route's 1 MiB (1048576 bytes) limit, measured as UTF-8 JSON. Over it, the desktop [refuses it with 413 `too_large`](#oversized-commands). One key at the limit always fits, but a request can only hold so many: 15 of ASCII text, 7 of emoji, 5 of three-byte text such as CJK, or 2 when every character is escaped as `\uXXXX`. Answers count toward the same limit.
@@ -308,7 +308,7 @@ A `tool_call_update` whose `chat:event` is over 1 MiB goes out as a preview, liv
 - `rawOutput` is left out unless it's small. If no block was cut, a text block says it's a preview, because a client may ignore `truncated`. With no `content` at all, that note is the only `content`, with `contentMode: append` so what's shown stays, and only one update for a call carries it. After a desktop restart a call can get one more. These notes are in the tool's content, so on a client that collapses tool cards they're seen when a card is opened. The always-visible warning is the permission request's `description`, below.
 - `truncated: {originalBytes}` is the whole event's size.
 
-The transcript on the desktop is whole. `GET …/chat` still returns the full event, so this recovers the output only if the whole response fits in what you can receive. Permission requests have their own rules, below. Other `chat:event` types aren't bounded yet (#2673).
+The transcript on the desktop is whole. `GET …/chat` still returns the full event, so this recovers the output only if the whole response fits in what you can receive. With `fullEvents` in capabilities, fetch one event whole instead (see "The whole of an event"). Permission requests have their own rules, below. Other `chat:event` types aren't bounded yet (#2673).
 
 Conditions from Clubhouse Go's tests on build 147, for any later change here: a preview must keep the id and final status, and must replace rather than append. A frame may only be left out entirely if it carries no critical fact, so never a permission, question, queue or status frame.
 
@@ -323,11 +323,36 @@ The warning is: "Incomplete input: this request is too large to show in full her
 
 **Approve is refused:** `chat.permission` with anything but a deny option answers 409, `status:"rejected"`, `error:{code:"incomplete_representation",message}`. Denying still works. Full review is on the desktop, and the pending call itself is never changed. Approve is also refused when the desktop can't establish you were shown the whole request: one left pending across its restart, unless the whole original request, options included, is at most 4 KiB, which is whole on every path. It's refused too if the options the agent would act on aren't the ones you were sent.
 
+**Approving after fetching it whole (#2731):** a desktop with `fullEvents` in capabilities lets a phone fetch the request and then approve it. Fetch it as described in "The whole of an event", below, and keep the response's `digest`. Then send `chat.permission` with `reviewedDigest` set to that digest. The approval is taken when all of these hold, and refused with `incomplete_representation` otherwise:
+- this same paired device fetched the request, in this pairing epoch;
+- the request still pending is exactly what it fetched;
+- the options the agent would act on are the ones in the request.
+
+The record is in memory, so after a desktop restart, fetch it again.
+
 **The `tool_call` for it:** over 256 KiB, a `tool_call` keeps its id, title, kind, status and locations. Its `rawInput` has only small plain fields, its `content` starts with a text note saying it's a preview, then a preview of any content, and it has `truncated: {originalBytes}`.
 
 **All pending, together:** the permissions in `/chat` total at most 1 MiB. Past that each gets a share, and one forced below its own cap counts as incomplete, with the same warning and refusal. None is ever left out.
 
 **Paths that draw no card** (`hook:event`, outer `permission:request` and the snapshot's `pendingPermissions`) carry at most 64 KiB of `toolInput`: its small plain fields, and `toolInputTruncated: {originalBytes}`. `POST …/permission-response` refuses `allow` with 409 `incomplete_representation` for a call that's over that. `hook:event` keeps `detailedStatus`.
+
+## The whole of an event
+
+Capabilities `fullEvents: {version:1, path, maximumBytes, approvalField:"reviewedDigest"}` (#2731). Any `chat:event`, or event in `GET …/chat`, that came with `truncated` can be fetched whole:
+
+`GET /api/v1/mobile/agents/{agentId}/chat/events/{seq}?sessionId={sessionId}`, with pinned mTLS like `/content`.
+
+It answers `{"version":1,"agentId":"…","sessionId":"…","seq":7,"digest":"sha256:…","event":{…}}`, where `event` is the original from the desktop's transcript.
+
+Errors:
+- 400 `invalid_query`: the seq or `sessionId` is missing or bad.
+- 404 `agent_not_found` or `event_not_found`.
+- 413 `event_too_large` with `bytes` and `maximumBytes`: the response would be over `maximumBytes`, 32 MiB.
+- 403 `client_certificate_required` or `authorization_revoked`.
+
+It's an HTTP response, not a frame, so it isn't held to the socket's 16 MiB. A permission request's `digest` is what `chat.permission` takes as `reviewedDigest` (see "Large permission requests").
+
+Events over 16 MiB that carry a fact that can't be left out (a `user_message`, `question` or `plan_document`, for example) still close the socket. That part of #2731 waits for `clubhouse.annex.frames.over_limit` to show it happens.
 
 ## Who sent a message
 
