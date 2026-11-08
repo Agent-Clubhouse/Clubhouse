@@ -9,6 +9,9 @@ import type {
   ProjectInfo,
 } from '../../shared/plugin-types';
 import { useProjectStore } from '../stores/projectStore';
+import { useAgentStore } from '../stores/agentStore';
+import { useChromeStore } from '../chrome/chromeStore';
+import { sidebarProjectOrder } from '../chrome/sidebar/sidebarProjectOrder';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 
 export function createProjectAPI(ctx: PluginContext): ProjectAPI {
@@ -56,7 +59,13 @@ export function createProjectAPI(ctx: PluginContext): ProjectAPI {
 export function createProjectsAPI(): ProjectsAPI {
   return {
     list(): ProjectInfo[] {
-      const local = useProjectStore.getState().projects.map((p) => ({
+      // In the sidebar's order (#2447), so a canvas card's picker matches it: pinned first, idle last.
+      const projectState = useProjectStore.getState();
+      const runningIds = new Set(Object.values(useAgentStore.getState().agents).filter((a) => a.status === 'running').map((a) => a.projectId));
+      const ordered = sidebarProjectOrder(projectState.projects, useChromeStore.getState(), {
+        runningIds, activeProjectId: projectState.activeProjectId ?? null, now: Date.now(),
+      });
+      const local = ordered.map((p) => ({
         id: p.id,
         name: p.displayName || p.name,
         path: p.path,

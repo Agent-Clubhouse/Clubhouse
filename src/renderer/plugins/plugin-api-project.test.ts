@@ -3,6 +3,8 @@ import { createProjectAPI, createProjectsAPI } from './plugin-api-project';
 import type { PluginContext } from '../../shared/plugin-types';
 import { useProjectStore } from '../stores/projectStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
+import { useChromeStore } from '../chrome/chromeStore';
+import { useAgentStore } from '../stores/agentStore';
 
 const mockRead = vi.fn();
 const mockWrite = vi.fn();
@@ -132,6 +134,27 @@ describe('createProjectsAPI', () => {
     useRemoteProjectStore.setState({
       satelliteProjects: {},
     });
+  });
+
+  it('lists local projects in the sidebar\'s order: sorted, pinned first, idle and inactive last (#2447)', () => {
+    const now = Date.now();
+    const day = 24 * 60 * 60_000;
+    useProjectStore.setState({
+      projects: ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, name: id, path: `/p/${id}` })) as any,
+      activeProjectId: null,
+    } as any);
+    useAgentStore.setState({ agents: { r: { id: 'r', projectId: 'e', status: 'running' } } } as any);
+    useChromeStore.setState({
+      projectSort: 'recent',
+      // b and e are old enough to be idle, but e has a running agent.
+      projectActivity: { a: now - 2 * day, b: now - 60 * day, c: now - day, d: now - 3 * day, e: now - 90 * day },
+      pinnedProjectIds: ['d'],
+      inactiveProjectIds: ['c'],
+      idleDays: 14,
+    } as any);
+    expect(createProjectsAPI().list().map((p) => p.id)).toEqual(['d', 'a', 'e', 'c', 'b']);
+    useChromeStore.setState({ projectSort: 'manual', pinnedProjectIds: [], inactiveProjectIds: [], idleDays: 0 } as any);
+    expect(createProjectsAPI().list().map((p) => p.id)).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
 
   it('returns local projects', () => {
