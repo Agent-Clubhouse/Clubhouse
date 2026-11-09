@@ -11,6 +11,8 @@ const classicRun = process.env[CLASSIC_LAYOUT_ENV] === 'classic';
 
 /** The explicit list a sharded job runs, or undefined to run everything testIgnore leaves (#2843). */
 function shardTestMatch(): string[] | undefined {
+  const chosen = [classicRun && CLASSIC_LAYOUT_ENV, chatShard && 'PLAYWRIGHT_CHAT_SHARD', e2eShard && E2E_SHARD_ENV, annexShard && ANNEX_SHARD_ENV].filter(Boolean);
+  if (chosen.length > 1) throw new Error(`Set one of ${chosen.join(', ')}: each picks a different job's list`);
   if (classicRun) return classicTestMatch(process.env[CLASSIC_SHARD_ENV]);
   if (chatShard) return chatShardTestMatch(chatShard);
   if (e2eShard) return listShardTestMatch(E2E_SHARD_ENV, e2eShard, E2E_SHARDS);

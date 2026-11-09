@@ -33,12 +33,13 @@ async function loadConfig(env: Record<string, string | undefined>) {
   }
 }
 
-/** The job's block in validate.yml, up to the next job's comment. */
+/** The job's block in validate.yml, up to the next job's header. */
 function workflowJob(id: string): string {
-  const start = WORKFLOW.indexOf(`\n  ${id}:`);
+  const start = WORKFLOW.indexOf(`\n  ${id}:\n`);
   expect(start, id).toBeGreaterThan(-1);
-  const next = WORKFLOW.indexOf('\n  # ', start + 1);
-  return WORKFLOW.slice(start, next === -1 ? undefined : next);
+  const header = /\n {2}[a-z0-9-]+:\n/g;
+  header.lastIndex = start + 1;
+  return WORKFLOW.slice(start, header.exec(WORKFLOW)?.index);
 }
 
 const E2E_JOB_ENV = { PLAYWRIGHT_IGNORE_ANNEX: '1', PLAYWRIGHT_IGNORE_CHAT_RICH: '1', CLUBHOUSE_E2E_LAYOUT: undefined, PLAYWRIGHT_CHAT_SHARD: undefined };
@@ -63,6 +64,10 @@ describe('E2E and Annex E2E shard lists (#2843)', () => {
       const job = workflowJob(id);
       expect(job, id).toContain(`${env}: \${{ matrix.shard }}`);
       expect(job, id).not.toMatch(/--shard/);
+      // The config refuses a second shard variable; keep the job from setting one.
+      for (const other of ['CLUBHOUSE_E2E_LAYOUT', 'PLAYWRIGHT_CHAT_SHARD', 'PLAYWRIGHT_CLASSIC_SHARD', E2E_SHARD_ENV, ANNEX_SHARD_ENV].filter((v) => v !== env)) {
+        expect(job, `${id} sets ${other}`).not.toContain(other);
+      }
       const matrix = /\n\s+shard: \[([^\]]*)\]/.exec(job)?.[1];
       expect(matrix?.split(',').map((x) => x.trim()), id).toEqual(Object.keys(shards));
     }
@@ -74,6 +79,10 @@ describe('E2E and Annex E2E shard lists (#2843)', () => {
     const annex = await loadConfig({ ...E2E_JOB_ENV, PLAYWRIGHT_IGNORE_ANNEX: undefined, PLAYWRIGHT_IGNORE_CHAT_RICH: undefined, [E2E_SHARD_ENV]: undefined, [ANNEX_SHARD_ENV]: '1' });
     expect(annex.testMatch).toEqual(ANNEX_SHARDS[1].map((spec) => `**/${spec}`));
     expect(annex.testIgnore ?? []).not.toContain('**/annex-v2/**');
+  });
+
+  it('refuse two shard variables at once, rather than let one win', async () => {
+    await expect(loadConfig({ ...E2E_JOB_ENV, PLAYWRIGHT_CHAT_SHARD: '1', [E2E_SHARD_ENV]: '1', [ANNEX_SHARD_ENV]: undefined })).rejects.toThrow(/Set one of PLAYWRIGHT_CHAT_SHARD, PLAYWRIGHT_E2E_SHARD/);
   });
 
   it('turn a shard into globs, and refuse one that does not exist or is empty', () => {
