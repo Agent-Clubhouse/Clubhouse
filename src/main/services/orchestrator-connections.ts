@@ -32,10 +32,10 @@ import { listDurable, onAgentConfigChanged, projectKey } from './agent-config';
 import { listHelpersEverywhere } from './helper-index';
 import { pathExists } from './fs-utils';
 import { groupProjectRegistry } from './group-project-registry';
-import { onBindingRemovedByUser, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
+import { onBindingRemovedByUser, startingTools, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
-import { AUTOMATIC_CONNECTION_DISABLED_TOOLS } from '../../shared/connection-grants';
+import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
 import { appLog } from './log-service';
 
 export const ORCHESTRATOR_CONNECTION_SOURCE_ID = 'orchestrator-connections';
@@ -351,8 +351,8 @@ export function bindingsFromConnections(
       out.push({
         agentId: from.id, targetId: to.config.id, targetKind: 'agent', label: to.config.name,
         agentName: from.name, targetName: to.config.name, ...(to.projectName ? { projectName: to.projectName } : {}),
-        // Like a link made today (#3215): an older one starts without clear or compact too (#3214).
-        disabledTools: [...AUTOMATIC_CONNECTION_DISABLED_TOOLS.orchestratorLink], startingTools: true,
+        // Like a new connection: send and wake, no clear or compact (#3214).
+        ...startingTools(AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink),
       });
     } else {
       let name = c.targetId;

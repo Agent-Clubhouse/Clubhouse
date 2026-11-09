@@ -92,7 +92,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
       // A new reverse direction starts like any new agent wire (#2969); one that exists keeps its list.
       const disabledTools = newWireDisabledTools(bindings, binding.targetId, binding.agentId, 'agent');
       await bind(binding.targetId, revTarget);
-      if (disabledTools) await setDisabledTools(binding.targetId, binding.agentId, disabledTools);
+      if (disabledTools) await setDisabledTools(binding.targetId, binding.agentId, disabledTools, { start: true });
       onAddWireDefinition?.({ agentId: binding.targetId, ...revTarget, ...(disabledTools && { disabledTools }) } as McpBindingEntry);
     }
   };

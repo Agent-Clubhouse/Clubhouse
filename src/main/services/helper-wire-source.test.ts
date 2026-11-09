@@ -115,8 +115,8 @@ afterEach(() => {
 describe('bindingsFromHelperAgents', () => {
   it('wires each live parent and helper both ways, like a bidirectional canvas agent wire', () => {
     const out = bindingsFromHelperAgents(configs.get(projectPath)!, 'Wardfall');
-    const starting = { disabledTools: ['clear_agent', 'compact_agent'], startingTools: true };
-    const allOn = { disabledTools: [], startingTools: true };
+    const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true };
+    const allOn = { disabledTools: [], enabledTools: ['wake_agent'], startingTools: true };
     expect(out).toEqual([
       { agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent', label: 'h1', agentName: 'lead', targetName: 'h1', projectName: 'Wardfall', ...allOn },
       { agentId: 'durable_h1', targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'h1', targetName: 'lead', projectName: 'Wardfall', ...starting },
@@ -125,15 +125,13 @@ describe('bindingsFromHelperAgents', () => {
     ]);
   });
 
-  it('lets the parent clear or compact its helper, and starts the helper without that over its parent (#3214)', () => {
+  it('starts the parent with every tool on its helper, and the helper with send and wake but no clear or compact over its parent (#3214)', () => {
     const out = bindingsFromHelperAgents([agent('durable_p'), agent('durable_h', { parentAgentId: 'durable_p' })]);
     const toHelper = out.find((b) => b.agentId === 'durable_p')!;
     const toParent = out.find((b) => b.agentId === 'durable_h')!;
     // Everything on, as its starting list, so no other source starts it with less.
-    expect(toHelper.disabledTools).toEqual([]);
-    expect(toHelper.startingTools).toBe(true);
-    expect(toParent.disabledTools).toEqual(['clear_agent', 'compact_agent']);
-    expect(toParent.startingTools).toBe(true);
+    expect(toHelper).toMatchObject({ disabledTools: [], enabledTools: ['wake_agent'], startingTools: true });
+    expect(toParent).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true });
   });
 
   it('starts a helper in another project without clear or compact over its parent too (#2513, #3214)', async () => {

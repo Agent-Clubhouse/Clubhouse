@@ -119,7 +119,7 @@ describe('LinkDropdown', () => {
     }));
   });
 
-  it('a new agent wire starts with clear and compact off; a browser wire doesn\'t (#2969)', async () => {
+  it('a new agent wire starts with clear and compact off and wake on; a browser wire doesn\'t (#2969, #3214)', async () => {
     const agentView = makeAgentView('a1', 'agent-1');
     const otherView = makeAgentView('a2', 'agent-2');
     const browserView = makeBrowserView('b1');
@@ -130,7 +130,7 @@ describe('LinkDropdown', () => {
       <LinkDropdown agentView={agentView} views={[agentView, otherView, browserView]} onClose={vi.fn()} />,
     );
     fireEvent.click(getByTestId('link-target-a2'));
-    await vi.waitFor(() => expect(setDisabledTools).toHaveBeenCalledWith('agent-1', 'agent-2', ['clear_agent', 'compact_agent']));
+    await vi.waitFor(() => expect(setDisabledTools).toHaveBeenCalledWith('agent-1', 'agent-2', ['clear_agent', 'compact_agent'], { start: true }));
     fireEvent.click(getByTestId('link-target-b1'));
     await vi.waitFor(() => expect(bindMock).toHaveBeenCalledTimes(2));
     expect(setDisabledTools).toHaveBeenCalledTimes(1);

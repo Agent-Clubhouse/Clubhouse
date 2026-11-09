@@ -7,6 +7,12 @@ import type { McpBinding, BindingTargetKind } from './types';
 
 export type BindingChangeListener = (agentId: string) => void;
 
+/** How a source restored a binding's list: `starting` (#3214) with the switches it turns on. */
+export interface RestoreOptions {
+  starting: boolean;
+  enabledTools?: string[];
+}
+
 /** The same tools, in any order (no list: none). */
 const sameList = (a: readonly string[] | undefined, b: readonly string[]) => (a ?? []).length === b.length && b.every((t) => a!.includes(t));
 
@@ -21,12 +27,12 @@ class BindingManager {
    * connection store, registered by main. Unset in tests that don't need it.
    */
   private toolsResolver: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => string[] | undefined) | null = null;
-  private toolsRestorer: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: { starting: boolean }) => void) | null = null;
+  private toolsRestorer: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: RestoreOptions) => void) | null = null;
 
   /** Register the connection store: a new binding takes its list from it, and a restored list migrates into it. */
   setConnectionToolsSource(
     resolve: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => string[] | undefined) | null,
-    restore: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: { starting: boolean }) => void) | null,
+    restore: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: RestoreOptions) => void) | null,
   ): void {
     this.toolsResolver = resolve;
     this.toolsRestorer = restore;
@@ -36,14 +42,16 @@ class BindingManager {
    * A source restored a binding with its own disabled tools (a canvas wire's,
    * from before the connection store): the store's list wins, and a list the
    * store doesn't have yet moves into it. `starting`: the list a helper or
-   * Dispatcher link starts with (#3214), not a saved one. Without a registered
-   * store, set as is.
+   * Dispatcher link starts with (#3214), not a saved one, with the switches it
+   * turns on (`enabledTools`: wake). Without a registered store, set as is.
    */
-  restoreDisabledTools(agentId: string, targetId: string, legacy: string[], options: { starting?: boolean } = {}): void {
+  restoreDisabledTools(agentId: string, targetId: string, legacy: string[], options: { starting?: boolean; enabledTools?: string[] } = {}): void {
     const binding = this.bindings.get(agentId)?.find((b) => b.targetId === targetId);
     if (!binding) return;
-    if (this.toolsRestorer) this.toolsRestorer(agentId, targetId, binding.targetKind, legacy, { starting: options.starting === true });
-    else if (!options.starting || !sameList(binding.disabledTools, legacy)) this.setDisabledTools(agentId, targetId, legacy);
+    const starting = options.starting === true;
+    const enabledTools = starting ? options.enabledTools ?? [] : undefined;
+    if (this.toolsRestorer) this.toolsRestorer(agentId, targetId, binding.targetKind, legacy, { starting, ...(enabledTools && { enabledTools }) });
+    else if (!starting || !sameList(binding.disabledTools, legacy) || !sameList(binding.enabledTools, enabledTools ?? [])) this.setDisabledTools(agentId, targetId, legacy, enabledTools);
   }
 
   /**
@@ -135,8 +143,8 @@ class BindingManager {
     return changed;
   }
 
-  /** Set disabled tools on a binding. */
-  setDisabledTools(agentId: string, targetId: string, disabledTools: string[]): void {
+  /** Set disabled tools on a binding, and its starting switches turned on when given (#3214). */
+  setDisabledTools(agentId: string, targetId: string, disabledTools: string[], enabledTools?: string[]): void {
     const agentBindings = this.bindings.get(agentId);
     if (!agentBindings) return;
 
@@ -144,6 +152,7 @@ class BindingManager {
     if (!binding) return;
 
     binding.disabledTools = disabledTools.length > 0 ? disabledTools : undefined;
+    if (enabledTools) binding.enabledTools = enabledTools.length > 0 ? enabledTools : undefined;
     this.notifyChange(agentId);
   }
 

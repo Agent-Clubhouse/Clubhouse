@@ -304,15 +304,15 @@ describe('connecting and persistence', () => {
     expect(ptyWrite).not.toHaveBeenCalled();
   });
 
-  it('a new link starts with clear and compact off and no wake; a pair already connected or with tools saved keeps them (#3215)', async () => {
+  it('a new link starts with clear and compact off and wake on; a pair already connected or with tools saved keeps them (#3215, #3214)', async () => {
     const direction = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
     await setConnectionTools({ agentId: 'durable_h2' }, { agentId: 'durable_h1' }, ['send_file']);
     bindingManager.bind('durable_h1', { targetId: 'durable_lead', targetKind: 'agent', label: 'lead' });
     await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
     await call('connect_agents', { from: 'h1', to: 'h2', twoWay: true });
     expect(direction('durable_lead', 'durable_h1')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'] });
-    expect(direction('durable_lead', 'durable_h1')?.enabledTools).toBeUndefined();
-    expect(direction('durable_h1', 'durable_h2')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'] });
+    expect(direction('durable_lead', 'durable_h1')?.enabledTools).toEqual(['wake_agent']);
+    expect(direction('durable_h1', 'durable_h2')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
     // Already bound (a canvas wire, a helper link): nothing written.
     expect(direction('durable_h1', 'durable_lead')).toBeUndefined();
     // Tools the user saved stay.

@@ -647,13 +647,20 @@ describe('tools on its links (#3215)', () => {
   };
   const entry = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
 
-  it('a new link starts with clear, compact and wake off, read back on each direction', async () => {
+  it('a new link starts with clear and compact off and wake on, read back on each direction (2026-11-09 defaults)', async () => {
     const made = await links({ from: 'a', to: 'b', two_way: true });
     for (const link of made) {
-      expect(link.tools).toEqual({ allowed: READ_AND_MESSAGE, disabled: ['clear_agent', 'compact_agent', 'wake_agent'] });
+      expect(link.tools).toEqual({ allowed: [...READ_AND_MESSAGE, 'wake_agent'], disabled: ['clear_agent', 'compact_agent'] });
       expect(link.tools_yours).toBe(true);
     }
-    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], setBy: 'dispatcher' });
+    for (const [from, to] of [['a', 'b'], ['b', 'a']]) {
+      expect(entry(from, to)).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], setBy: 'dispatcher' });
+    }
+  });
+
+  it('an explicit allow still wins over the defaults: wake left out stays off', async () => {
+    const [link] = await links({ from: 'a', to: 'b', allow: ['get_status', 'send_message'] });
+    expect(link.tools.disabled).toEqual(['read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent', 'wake_agent']);
     expect(entry('a', 'b')?.enabledTools).toBeUndefined();
   });
 
@@ -740,7 +747,7 @@ describe('tools on its links (#3215)', () => {
     userDraws('a', 'b');
     expect((await call('set_connection_tools', { from: 'a', to: 'b', allow: ONLY })).isError).toBe(true);
     expect(lastAudit()).toMatchObject({ code: 'user_tools' });
-    expect(entry('a', 'b')?.enabledTools).toBeUndefined();
+    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
   });
 
   it('disconnecting drops the tools it set; while the user\'s wire still holds the pair they stay as the user\'s, with wake off', async () => {
@@ -807,17 +814,16 @@ describe('links made before #3215 get the new defaults once', () => {
     await restart();
   }
 
-  it('a link only the Dispatcher holds, with nothing saved, gets clear, compact and wake off, marked as its own', async () => {
+  it('a link only the Dispatcher holds, with nothing saved, gets clear and compact off and wake on, marked as its own', async () => {
     await olderLinks([['a', 'b'], ['b', 'a']]);
     expect(isBound('a', 'b')).toBe(true);
     expect(entry('a', 'b')).toBeUndefined();
     expect(await migrateDispatcherLinkTools()).toBe('done');
     for (const [from, to] of [['a', 'b'], ['b', 'a']]) {
-      expect(entry(from, to)).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], setBy: 'dispatcher' });
-      expect(entry(from, to)?.enabledTools).toBeUndefined();
+      expect(entry(from, to)).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], setBy: 'dispatcher' });
     }
     expect(connectionMigrationDone(DISPATCHER_LINK_DEFAULTS_MIGRATION)).toBe(true);
-    expect(await linkRow('a', 'b')).toMatchObject({ tools: { disabled: ['clear_agent', 'compact_agent', 'wake_agent'] }, tools_yours: true });
+    expect(await linkRow('a', 'b')).toMatchObject({ tools: { disabled: ['clear_agent', 'compact_agent'] }, tools_yours: true });
   });
 
   it('waits while a source can\'t be read, since it might list the pair, and runs once it can', async () => {

@@ -18,10 +18,10 @@
 
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged, projectKey } from './agent-config';
-import { bindingSignature, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
+import { bindingSignature, startingTools, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
-import { AUTOMATIC_CONNECTION_DISABLED_TOOLS } from '../../shared/connection-grants';
+import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
 import { appLog } from './log-service';
 
 export const HELPER_WIRE_SOURCE_ID = 'helper-wires';
@@ -29,9 +29,9 @@ export const HELPER_WIRE_SOURCE_ID = 'helper-wires';
 /**
  * Both directions of one parent ↔ helper pair. Each binding is labelled with
  * its target's project, as a canvas wire is. Empty when either is disposed: a
- * disposed helper keeps its link for history, but has no wire. The parent may
- * clear or compact its helper; the helper starts without that over its parent
- * (#3214).
+ * disposed helper keeps its link for history, but has no wire. The parent
+ * starts with every tool on its helper; the helper starts like a new
+ * connection over its parent: send and wake, no clear or compact (#3214).
  */
 function pairBindings(
   parent: DurableAgentConfig,
@@ -45,12 +45,12 @@ function pairBindings(
       agentId: parent.id, targetId: helper.id, targetKind: 'agent', label: helper.name, agentName: parent.name, targetName: helper.name,
       ...(helperProjectName ? { projectName: helperProjectName } : {}),
       // Everything on, given as its starting list so another source listing the pair doesn't start it with less.
-      disabledTools: [...AUTOMATIC_CONNECTION_DISABLED_TOOLS.parentToHelper], startingTools: true,
+      ...startingTools(AUTOMATIC_CONNECTION_SWITCHES.parentToHelper),
     },
     {
       agentId: helper.id, targetId: parent.id, targetKind: 'agent', label: parent.name, agentName: helper.name, targetName: parent.name,
       ...(parentProjectName ? { projectName: parentProjectName } : {}),
-      disabledTools: [...AUTOMATIC_CONNECTION_DISABLED_TOOLS.helperToParent], startingTools: true,
+      ...startingTools(AUTOMATIC_CONNECTION_SWITCHES.helperToParent),
     },
   ];
 }

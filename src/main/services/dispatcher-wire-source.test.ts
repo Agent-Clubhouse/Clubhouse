@@ -161,24 +161,24 @@ afterEach(() => {
 describe('dispatcherWiresForProject', () => {
   it('wires an orchestrator with the switch on both ways, named Dispatcher at its end', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!, 'Wardfall');
-    const starting = { disabledTools: ['clear_agent', 'compact_agent'], startingTools: true };
+    const allOn = { disabledTools: [], enabledTools: ['wake_agent'], startingTools: true };
+    const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true };
     expect(out).toEqual([
-      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName: 'Wardfall', ...starting },
+      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName: 'Wardfall', ...allOn },
       { agentId: 'durable_lead', targetId: DISPATCHER, targetKind: 'agent', label: 'Dispatcher', agentName: 'lead', targetName: 'Dispatcher', projectName: 'Wardfall', ...starting },
     ]);
   });
 
-  it('starts both directions without clear or compact, and with wake off (#3214)', async () => {
+  it('starts the Dispatcher with every tool on the agent, and the agent with send and wake but no clear or compact over it (#3214)', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!);
     expect(out).toHaveLength(2);
-    for (const b of out) {
-      expect(b.disabledTools).toEqual(['clear_agent', 'compact_agent']);
-      expect(b.startingTools).toBe(true);
-      // Wake is off by having no entry turning it on, never by a list here.
-      expect(b.disabledTools).not.toContain('wake_agent');
-    }
+    const [toAgent, toDispatcher] = out;
+    expect(toAgent).toMatchObject({ agentId: DISPATCHER, disabledTools: [], enabledTools: ['wake_agent'], startingTools: true });
+    expect(toDispatcher).toMatchObject({ targetId: DISPATCHER, disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true });
+    // Wake is a switch turned on, never a tool left off the list.
+    for (const b of out) expect(b.disabledTools).not.toContain('wake_agent');
     // Each direction has its own copy.
-    expect(out[0].disabledTools).not.toBe(out[1].disabledTools);
+    expect(out[0].enabledTools).not.toBe(out[1].enabledTools);
   });
 
   it('depends only on the resolved switch, not on orchestrate (#2578)', async () => {

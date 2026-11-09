@@ -21,8 +21,11 @@ export const mcpBinding = {
     ipcRenderer.invoke(IPC.MCP_BINDING.UNREGISTER_WEBVIEW, widgetId),
   setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) =>
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
-  /** One direction's disabled tools; agent-to-agent ones are saved in the connection store (D129). `restore`: a canvas wire bound again. */
-  setDisabledTools: (agentId: string, targetId: string, disabledTools: string[], options?: { restore?: boolean }) =>
+  /**
+   * One direction's disabled tools; agent-to-agent ones are saved in the connection store (D129).
+   * `restore`: a canvas wire bound again. `start`: a wire just drawn, which starts with wake on too.
+   */
+  setDisabledTools: (agentId: string, targetId: string, disabledTools: string[], options?: { restore?: boolean; start?: boolean }) =>
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_DISABLED_TOOLS, agentId, targetId, disabledTools, ...(options ? [options] : [])),
   /** Per-direction connection permissions touching an agent (D129, #2972). */
   getConnectionGrants: (agentId: string): Promise<ConnectionDirection[]> =>

@@ -231,6 +231,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
         otherId={managing.id}
         grants={grants}
         liveTools={new Map(bindings.filter((b) => b.targetKind === 'agent').map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
+        liveEnabled={new Map(bindings.filter((b) => b.targetKind === 'agent').map((b) => [`${b.agentId}>${b.targetId}`, b.enabledTools ?? []]))}
         agentName={agent.name}
         otherName={rail[managing.id]?.name ?? managing.name}
         dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}

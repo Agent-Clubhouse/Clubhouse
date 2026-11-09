@@ -5,16 +5,16 @@
  * agent can write), `{ version: 1, directions: ConnectionDirection[] }`.
  * One entry per direction that has anything to say: a direction with no
  * entry keeps what its source gave it: a helper or Dispatcher link's starting
- * list (#3214), until it's saved here.
+ * list, wake included (#3214), until it's saved here.
  *
  * The API, for the canvas, the Connections card, and agents across machines
  * (#3056 Stage 7, where the receiving machine checks a call):
  * - getConnectionDirection(from, to): the entry, or undefined;
  * - deniedConnectionTools(from, to): the tools `from` may not use on `to`;
- * - localConnectionWakeOn(fromId, toId): whether Wake it is on, on this computer (#3215);
+ * - localConnectionWakeOn(fromId, toId): whether Wake it is on, on this computer (#3215), else as its source started it (#3214);
  * - setConnectionTools(from, to, disabledTools, enabledTools?): replace one direction's lists;
  * - setConnectionDirections(changes, guard): the Dispatcher's lists for several directions, checked under the lock;
- * - fillConnectionTools(from, to, disabledTools): the list a connection Clubhouse made starts with, where none is saved (#3214);
+ * - fillConnectionTools(from, to, disabledTools, enabledTools): the lists a connection Clubhouse made starts with, where none is saved (#3214);
  * - removeConnectionDirection(from, to): drop one direction's entry;
  * - setConnectionLink(from, to, on): the user's own link for one direction;
  * - listConnectionDirections(agentId): every entry touching an agent;
@@ -23,16 +23,17 @@
  * - listAllConnectionDirections(): every entry (Stage 7 sends another machine its share);
  * - putConnectionDirection(direction): write one entry as given, keeping its
  *   `updatedAt` (Stage 7: another machine's newer copy of a direction with it);
- * - runConnectionMigration(name, directions) / connectionMigrationDone(name): a one-time change with its done marker;
+ * - runConnectionMigration(name, directions, replaceIf?) / connectionMigrationDone(name): a one-time change with its done marker;
  * - onConnectionGrantsChanged(listener): told after each write.
  * A write updates the live binding's disabled tools, so calls are checked
  * against the store with the existing call path.
  */
 
 import {
-  directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
+  WAKE_TOOL, directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
 } from '../../shared/connection-grants';
 import { createSettingsStore } from './settings-store';
+import { bindingManager } from './clubhouse-mcp/binding-manager';
 
 export const CONNECTION_GRANTS_VERSION = 1;
 
@@ -88,9 +89,15 @@ export function deniedConnectionTools(from: AgentAddress, to: AgentAddress): str
   return getConnectionDirection(from, to)?.disabledTools;
 }
 
-/** Whether `fromId`'s connection to `toId`, both on this computer, has Wake it on (#3215). */
+/**
+ * Whether `fromId`'s connection to `toId`, both on this computer, has Wake it
+ * on (#3215): as saved, else as the source that bound it started it (#3214).
+ */
 export function localConnectionWakeOn(fromId: string, toId: string): boolean {
-  return localWakeOn(getConnectionDirection({ agentId: fromId }, { agentId: toId }));
+  const saved = getConnectionDirection({ agentId: fromId }, { agentId: toId });
+  if (saved) return localWakeOn(saved);
+  const live = bindingManager.getBindingsForAgent(fromId).find((b) => b.targetKind === 'agent' && b.targetId === toId);
+  return localWakeOn(undefined, live?.enabledTools) && !live?.disabledTools?.includes(WAKE_TOOL);
 }
 
 /** Every entry where the agent sends or receives. */
@@ -209,16 +216,17 @@ export async function setConnectionDirections(
 }
 
 /**
- * Save the list a direction starts with, only where it has no entry yet
+ * Save the lists a direction starts with, only where it has no entry yet
  * (decided under the store's lock): a connection Clubhouse made (#3214), so a
  * choice saved meanwhile stands. Returns whether it was written.
  */
-export async function fillConnectionTools(from: AgentAddress, to: AgentAddress, disabledTools: readonly string[]): Promise<boolean> {
+export async function fillConnectionTools(from: AgentAddress, to: AgentAddress, disabledTools: readonly string[], enabledTools: readonly string[] = []): Promise<boolean> {
   let written = false;
   await updateDirection(from, to, (current) => {
     if (current) return UNCHANGED;
     written = true;
-    return { from, to, disabledTools: [...new Set(disabledTools)], updatedAt: new Date().toISOString() };
+    const enabled = [...new Set(enabledTools)];
+    return { from, to, disabledTools: [...new Set(disabledTools)], ...(enabled.length > 0 && { enabledTools: enabled }), updatedAt: new Date().toISOString() };
   });
   return written;
 }
@@ -282,20 +290,27 @@ export function connectionMigrationDone(name: string): boolean {
 
 /**
  * Make a one-time change, in one write with its done marker: each direction
- * given is written only where the store has no entry for it yet, and the
- * marker is kept so it never runs again (#3215). Returns the directions it
- * wrote, or null when the change was already made (decided under the store's lock).
+ * given is written only where the store has no entry for it yet, or where
+ * `replaceIf` says the entry there may go (both decided under the store's
+ * lock), and the marker is kept so it never runs again (#3215). Returns the
+ * directions it wrote, or null when the change was already made.
  */
-export async function runConnectionMigration(name: string, directions: readonly ConnectionDirection[]): Promise<ConnectionDirection[] | null> {
+export async function runConnectionMigration(
+  name: string, directions: readonly ConnectionDirection[], replaceIf: (current: ConnectionDirection, next: ConnectionDirection) => boolean = () => false,
+): Promise<ConnectionDirection[] | null> {
   if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
   let written = null as ConnectionDirection[] | null;
   await store.update((file) => {
     const done = Array.isArray(file.migrations) ? file.migrations.filter((m): m is string => typeof m === 'string') : [];
     if (done.includes(name)) return file;
     const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
-    const keys = new Set(list.map((d) => directionKey(d.from, d.to)));
-    written = directions.filter((d) => !keys.has(directionKey(d.from, d.to)));
-    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: [...list, ...written], migrations: [...done, name] };
+    const current = new Map(list.map((d) => [directionKey(d.from, d.to), d]));
+    written = directions.filter((d) => {
+      const there = current.get(directionKey(d.from, d.to));
+      return !there || replaceIf(there, d);
+    });
+    const replaced = new Set(written.map((d) => directionKey(d.from, d.to)));
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: [...list.filter((d) => !replaced.has(directionKey(d.from, d.to))), ...written], migrations: [...done, name] };
   });
   for (const d of written ?? []) {
     for (const listener of [...listeners]) {

@@ -11,19 +11,22 @@
  */
 
 import type { AgentAddress, ConnectionDirection, DirectionTools } from '../../shared/connection-grants';
-import { NEW_CONNECTION_DISABLED_TOOLS, WAKE_TOOL, directionKey, localDirectionTools } from '../../shared/connection-grants';
+import {
+  NEW_CONNECTION_DISABLED_TOOLS, NEW_CONNECTION_ENABLED_TOOLS, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localDirectionTools,
+} from '../../shared/connection-grants';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
-import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { bindingManager, type RestoreOptions } from './clubhouse-mcp/binding-manager';
 import {
   connectionGrantsWritable, connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
-  listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
+  listAllConnectionDirections, listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
 import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
 import {
-  clearBindingRemovedByUser, collectSourcesByPair, isBindingRemovedByUser, listStartingTools, onBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings,
+  clearBindingRemovedByUser, collectSourcesByPair, isBindingRemovedByUser, listPairsWithoutTools, listStartingTools, onBindingRemovedByUser, registerPersistedBindingSource,
+  rebuildPersistedBindings,
   type PersistedBinding, type PersistedBindingSource,
 } from './persisted-bindings';
 import { removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
@@ -78,15 +81,20 @@ export function _resetConnectionFileWarningForTesting(): void {
 
 const sameTools = (a: readonly string[] | undefined, b: readonly string[]) => (a ?? []).length === b.length && b.every((t) => a!.includes(t));
 
+/** The live binding of one agent-to-agent direction. */
+const liveAgentBinding = (agentId: string, targetId: string) => bindingManager.getBindingsForAgent(agentId).find((b) => b.targetKind === 'agent' && b.targetId === targetId);
+
 /**
  * Restore: the store wins; a list it doesn't have moves in. `starting`: the
- * list a connection Clubhouse made starts with (#3214), whichever source
- * bound the pair. A saved direction (an explicit everything-on included) is
- * left as it is; otherwise the list applies, and it's saved once the one-time
- * pass has run (it decides for connections made before it), never over a
- * choice saved meanwhile. Everything on is never saved: no entry says that.
+ * lists a connection Clubhouse made starts with (#3214), its switches turned
+ * on (wake) included, whichever source bound the pair. A saved direction (an
+ * explicit everything-on included) is left as it is; otherwise the lists
+ * apply, and they're saved once the one-time pass has run (it decides for
+ * connections made before it), never over a choice saved meanwhile. A start
+ * with every connection tool on is never saved: with no entry, the live
+ * binding says that, wake included.
  */
-function restoreTools(agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: { starting?: boolean } = {}): void {
+function restoreTools(agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: Partial<RestoreOptions> = {}): void {
   if (targetKind !== 'agent') {
     bindingManager.setDisabledTools(agentId, targetId, legacy);
     return;
@@ -95,10 +103,11 @@ function restoreTools(agentId: string, targetId: string, targetKind: BindingTarg
   if (options.starting) {
     // Bind and every store write keep the live list in step with a saved one.
     if (saved) return;
-    const live = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === targetId)?.disabledTools;
-    if (!sameTools(live, legacy)) bindingManager.setDisabledTools(agentId, targetId, legacy);
+    const enabled = options.enabledTools ?? [];
+    const live = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === targetId);
+    if (!sameTools(live?.disabledTools, legacy) || !sameTools(live?.enabledTools, enabled)) bindingManager.setDisabledTools(agentId, targetId, legacy, enabled);
     if (legacy.length === 0 || !connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION) || connectionFileIsNewer()) return;
-    void fillConnectionTools(local(agentId), connectionEnd(targetId), legacy).catch((err) => {
+    void fillConnectionTools(local(agentId), connectionEnd(targetId), legacy, enabled).catch((err) => {
       // telemetry-exempt: logged; the live binding already has the list, and the next rebuild tries again
       appLog('core:mcp', 'warn', 'Could not save the tools a new connection starts with', { meta: { agentId, targetId, error: errorText(err) } });
     });
@@ -122,9 +131,10 @@ function restoreTools(agentId: string, targetId: string, targetKind: BindingTarg
  * Set one direction's disabled tools: the store for an agent-to-agent
  * direction (an edit from the canvas popover or the Connections card), the
  * binding alone for any other target. `restore`: a canvas wire bound again,
- * whose list only fills a store that has none.
+ * whose list only fills a store that has none. `start`: a wire the user just
+ * drew, which starts with wake on too (the maintainer's default, 2026-11-09).
  */
-export async function applyConnectionTools(agentId: string, targetId: string, disabledTools: string[], options: { restore?: boolean } = {}): Promise<string[]> {
+export async function applyConnectionTools(agentId: string, targetId: string, disabledTools: string[], options: { restore?: boolean; start?: boolean } = {}): Promise<string[]> {
   const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === targetId);
   const targetKind = binding?.targetKind;
   if (targetKind && targetKind !== 'agent') {
@@ -144,7 +154,11 @@ export async function applyConnectionTools(agentId: string, targetId: string, di
   }
   // An edit (the canvas popover, the Connections card), or a sleeping agent's wire: the store, then the binding follows.
   const before = deniedConnectionTools(local(agentId), connectionEnd(targetId));
-  await setConnectionTools(local(agentId), connectionEnd(targetId), disabledTools);
+  // A new wire turns wake on. A first edit on a direction with nothing saved keeps the wake its source started it with.
+  const enabled = options.start
+    ? [...NEW_CONNECTION_ENABLED_TOOLS]
+    : before === undefined && !connectionEnd(targetId).machineId ? [...(liveAgentBinding(agentId, targetId)?.enabledTools ?? [])] : undefined;
+  await setConnectionTools(local(agentId), connectionEnd(targetId), disabledTools, enabled);
   // Recorded only when it changed something: the popover saving the same list again isn't a change.
   const same = before !== undefined && before.length === new Set(disabledTools).size && disabledTools.every((t) => before.includes(t));
   if (!same) recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools });
@@ -162,20 +176,20 @@ export async function setLocalWake(fromAgentId: string, toAgentId: string, on: b
   const to = connectionEnd(toAgentId);
   if (to.machineId) throw new Error('That agent is on another computer.');
   const current = getConnectionDirection(from, to);
-  const live = bindingManager.getBindingsForAgent(fromAgentId).find((b) => b.targetKind === 'agent' && b.targetId === toAgentId);
+  const live = liveAgentBinding(fromAgentId, toAgentId);
   const disabledTools = (current?.disabledTools ?? live?.disabledTools ?? []).filter((t) => t !== WAKE_TOOL);
-  const enabled = (current?.enabledTools ?? []).filter((t) => t !== WAKE_TOOL);
+  const enabled = ((current ? current.enabledTools : live?.enabledTools) ?? []).filter((t) => t !== WAKE_TOOL);
   await setConnectionTools(from, to, disabledTools, on ? [...enabled, WAKE_TOOL] : enabled);
   recordConnectionChange({ fromAgentId, toAgentId, disabledTools: on ? disabledTools : [...disabledTools, WAKE_TOOL] });
 }
 
 /**
  * One direction's switches read back (#3215): its saved entry, else the live
- * binding's list, with wake as {@link localDirectionTools} reads it.
+ * binding's lists (its source's start, #3214).
  */
 export function readLocalDirectionTools(fromAgentId: string, toAgentId: string): DirectionTools {
-  const live = bindingManager.getBindingsForAgent(fromAgentId).find((b) => b.targetKind === 'agent' && b.targetId === toAgentId);
-  return localDirectionTools(getConnectionDirection(local(fromAgentId), local(toAgentId)), live?.disabledTools ?? []);
+  const live = liveAgentBinding(fromAgentId, toAgentId);
+  return localDirectionTools(getConnectionDirection(local(fromAgentId), local(toAgentId)), live?.disabledTools ?? [], live?.enabledTools ?? []);
 }
 
 /**
@@ -196,24 +210,44 @@ export async function forgetDispatcherDirection(fromAgentId: string, toAgentId: 
   await setConnectionTools(local(fromAgentId), local(toAgentId), entry.disabledTools, (entry.enabledTools ?? []).filter((t) => t !== WAKE_TOOL));
 }
 
-/** The done marker of the one-time pass below, in connection-grants.json. */
-export const AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION = 'automatic-connection-defaults-3214';
+/**
+ * The done marker of the one-time pass below, in connection-grants.json. Named
+ * for the maintainer's defaults (2026-11-09), so a build that ran an earlier
+ * draft of this pass runs it again: it only fills directions with nothing saved.
+ */
+export const AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION = 'connection-defaults-3214-2026-11-09';
 
 let automaticDeferralLogged = false;
 
 /**
- * Once, after a rebuild: connections Clubhouse made before #3214 (helper and
- * Dispatcher links, an orchestrator's connections; `sourceIds`) had every
- * tool on. Each direction one of them lists, with nothing saved for it, gets
- * the starting list that source gave at its last collect, whichever source
- * bound the pair (a canvas wire with no list included). A direction with
- * saved tools (the user's, an explicit everything-on included, a canvas
- * wire's, a Make two-way link) is never touched, and one that starts with
- * everything on gets no entry. Waits while a source can't be read, or the
- * file is a newer build's. Until this has run, a new connection's list is
- * live only; from then on it's kept (restoreTools).
+ * A direction #3216's pass, or connect_orchestrators without `allow`, saved
+ * for a link the Dispatcher made, still exactly as it saved it: clear and
+ * compact off, wake off, nothing else. The Dispatcher's to change.
  */
-export async function migrateAutomaticConnectionTools(sourceIds: readonly string[]): Promise<'done' | 'already' | 'deferred'> {
+function isOldDispatcherDefault(d: ConnectionDirection): boolean {
+  return d.setBy === 'dispatcher' && !d.link && sameTools(d.disabledTools, NEW_CONNECTION_DISABLED_TOOLS) && !d.enabledTools?.length && !d.from.machineId && !d.to.machineId;
+}
+
+/**
+ * Once, after a rebuild, the maintainer's defaults (2026-11-09) for
+ * connections made before them, only where nothing is saved:
+ * - Each direction a source Clubhouse connects with (helper and Dispatcher
+ *   links, an orchestrator's connections; `sourceIds`) lists gets the
+ *   starting lists that source gave at its last collect, whichever source
+ *   bound the pair (a canvas wire with no list included). One that starts
+ *   with every connection tool on gets no entry: its binding says so.
+ * - A wire the user drew (`drawnSourceIds`, the canvas) with no list of its
+ *   own, that none of those lists, starts like a new connection: clear and
+ *   compact off, wake on.
+ * - A link the Dispatcher made, still exactly as #3216 saved it (wake off),
+ *   gets wake on, as connect_orchestrators gives a new one.
+ * A direction with saved tools (the user's, an explicit everything-on
+ * included, a canvas wire's list, a Make two-way link) is never touched.
+ * Waits while a source can't be read, or the file is a newer build's. Until
+ * this has run, a new connection's lists are live only; from then on they're
+ * kept (restoreTools).
+ */
+export async function migrateAutomaticConnectionTools(sourceIds: readonly string[], drawnSourceIds: readonly string[] = []): Promise<'done' | 'already' | 'deferred'> {
   if (connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION)) return 'already';
   if (connectionFileIsNewer()) return 'deferred';
   const { failed } = await collectSourcesByPair();
@@ -227,19 +261,32 @@ export async function migrateAutomaticConnectionTools(sourceIds: readonly string
   const now = new Date().toISOString();
   const directions: ConnectionDirection[] = [];
   const seen = new Set<string>();
+  const fill = (agentId: string, targetId: string, disabledTools: readonly string[], enabledTools: readonly string[]) => {
+    const key = directionKey(local(agentId), local(targetId));
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (disabledTools.length === 0 || connectionEnd(targetId).machineId || isBindingRemovedByUser(agentId, targetId)) return;
+    if (getConnectionDirection(local(agentId), local(targetId))) return;
+    directions.push({
+      from: local(agentId), to: local(targetId), disabledTools: [...disabledTools], ...(enabledTools.length > 0 && { enabledTools: [...enabledTools] }), updatedAt: now,
+    });
+  };
   for (const id of sourceIds) {
-    for (const t of listStartingTools(id)) {
-      const key = directionKey(local(t.agentId), local(t.targetId));
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (t.disabledTools.length === 0 || connectionEnd(t.targetId).machineId || isBindingRemovedByUser(t.agentId, t.targetId)) continue;
-      if (getConnectionDirection(local(t.agentId), local(t.targetId))) continue;
-      directions.push({ from: local(t.agentId), to: local(t.targetId), disabledTools: t.disabledTools, updatedAt: now });
-    }
+    for (const t of listStartingTools(id)) fill(t.agentId, t.targetId, t.disabledTools, t.enabledTools);
   }
-  const written = await runConnectionMigration(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION, directions);
+  for (const id of drawnSourceIds) {
+    for (const p of listPairsWithoutTools(id)) fill(p.agentId, p.targetId, NEW_CONNECTION_SWITCHES.disabledTools, NEW_CONNECTION_SWITCHES.enabledTools);
+  }
+  const dispatcherLinks = listAllConnectionDirections().filter(isOldDispatcherDefault)
+    .map((d): ConnectionDirection => ({ ...d, enabledTools: [...NEW_CONNECTION_ENABLED_TOOLS], updatedAt: now }));
+  const written = await runConnectionMigration(
+    AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION,
+    [...directions, ...dispatcherLinks],
+    // Checked again under the store's lock: a Dispatcher link the user or the Dispatcher changed meanwhile stays.
+    (current, next) => next.setBy === 'dispatcher' && isOldDispatcherDefault(current),
+  );
   if (written === null) return 'already';
-  appLog('core:mcp', 'info', 'Helper and Dispatcher links made before #3214 now keep the tools they start with', {
+  appLog('core:mcp', 'info', 'Connections made before the 2026-11-09 defaults now keep the tools they start with', {
     meta: { directions: written.length, pairs: written.map((d) => `${d.from.agentId}>${d.to.agentId}`) },
   });
   return 'done';
@@ -354,14 +401,15 @@ async function agentNames(): Promise<Map<string, string>> {
 
 /**
  * Make a one-way connection two-way (#2972): the user's own link for the
- * other direction, starting like any new connection (read and message).
+ * other direction, starting like any new connection (read, message and wake).
  */
 export async function makeTwoWay(fromAgentId: string, toAgentId: string): Promise<void> {
   // The user's own act: a pair they removed this session may be connected again.
   clearBindingRemovedByUser(fromAgentId, toAgentId);
   const existing = getConnectionDirection(local(fromAgentId), local(toAgentId));
-  // A new link starts like a new connection; only an existing link keeps its list.
-  await setConnectionTools(local(fromAgentId), local(toAgentId), existing?.link ? existing.disabledTools : [...NEW_CONNECTION_DISABLED_TOOLS]);
+  // A new link starts like a new connection, wake on; only an existing link keeps its lists.
+  if (existing?.link) await setConnectionTools(local(fromAgentId), local(toAgentId), existing.disabledTools);
+  else await setConnectionTools(local(fromAgentId), local(toAgentId), [...NEW_CONNECTION_DISABLED_TOOLS], [...NEW_CONNECTION_ENABLED_TOOLS]);
   await setConnectionLink(local(fromAgentId), local(toAgentId), true);
   recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: true });
   await rebuildPersistedBindings();

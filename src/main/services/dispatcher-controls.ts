@@ -52,7 +52,7 @@ import {
 } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
-import { CONNECTION_SWITCHES, NEW_CONNECTION_DISABLED_TOOLS, localToolsFromAllow, type DirectionTools } from '../../shared/connection-grants';
+import { CONNECTION_SWITCHES, NEW_CONNECTION_DISABLED_TOOLS, NEW_CONNECTION_ENABLED_TOOLS, localToolsFromAllow, type DirectionTools } from '../../shared/connection-grants';
 import { connectionMigrationDone, getConnectionDirection, runConnectionMigration, setConnectionDirections, type DirectionToolsChange } from './connection-grants-store';
 import { connectionFileIsNewer, forgetDispatcherDirection, readLocalDirectionTools } from './connection-grants';
 import { maxHelpersCeiling } from '../../shared/orchestration-policy';
@@ -312,7 +312,7 @@ async function writeDirectionTools(writes: ReadonlyArray<{ pair: Pair; allow?: r
     labels.set(`${pair.agentId}>${pair.targetId}`, label);
     const { disabledTools, enabledTools } = allow
       ? localToolsFromAllow(allow)
-      : { disabledTools: [...NEW_CONNECTION_DISABLED_TOOLS], enabledTools: [] };
+      : { disabledTools: [...NEW_CONNECTION_DISABLED_TOOLS], enabledTools: [...NEW_CONNECTION_ENABLED_TOOLS] };
     return { from: local(pair.agentId), to: local(pair.targetId), disabledTools, enabledTools };
   });
   await setConnectionDirections(changes, (current, change) => {
@@ -475,8 +475,8 @@ let deferralLogged = false;
  * Once, at startup: links the Dispatcher made before #3215 have no saved
  * tools, so every tool was on. Each one that is still only the Dispatcher's
  * (in its store, no other source lists the pair, nothing saved for the
- * direction) gets what a new link starts with: clear, compact and wake off,
- * marked as the Dispatcher's. A direction with saved tools and any pair the
+ * direction) gets what a new link starts with: clear and compact off, wake on
+ * (the maintainer's defaults, 2026-11-09), marked as the Dispatcher's. A direction with saved tools and any pair the
  * user connects too are never touched. Waits for a later rebuild while a
  * source can't be read, since it might list the pair.
  */
@@ -498,11 +498,11 @@ export async function migrateDispatcherLinkTools(): Promise<'done' | 'already' |
     .filter((c) => !getConnectionDirection(local(c.agentId), local(c.targetId)) && !listedElsewhere(c) && !isBindingRemovedByUser(c.agentId, c.targetId))
     .map((c) => ({
       from: local(c.agentId), to: local(c.targetId),
-      disabledTools: [...NEW_CONNECTION_DISABLED_TOOLS], setBy: 'dispatcher' as const, updatedAt: now,
+      disabledTools: [...NEW_CONNECTION_DISABLED_TOOLS], enabledTools: [...NEW_CONNECTION_ENABLED_TOOLS], setBy: 'dispatcher' as const, updatedAt: now,
     }));
   const written = await runConnectionMigration(DISPATCHER_LINK_DEFAULTS_MIGRATION, directions);
   if (written === null) return 'already';
-  appLog('core:mcp', 'info', 'Dispatcher links made before #3215 now start like new links: clear, compact and wake off', {
+  appLog('core:mcp', 'info', 'Dispatcher links made before #3215 now start like new links: clear and compact off, wake on', {
     meta: { links: written.length, pairs: written.map((d) => `${d.from.agentId}>${d.to.agentId}`) },
   });
   return 'done';

@@ -53,7 +53,8 @@ const CONFIRMED: ReadonlySet<ConnectionSourceKind> = new Set(['dispatcher_auto',
 /**
  * One direction of the connection view (#2972): what the sender may do to
  * the receiver, each tool a switch, saved in the connection store (D129).
- * Wake it comes last, off until turned on (#3215). A wire with the Dispatcher
+ * Wake it comes last (#3215): on for a new connection, off for one saved
+ * before the switch, until turned on. A wire with the Dispatcher
  * has none, since the Dispatcher's own wake doesn't depend on it, and neither
  * does a helper's link with its orchestrator, where it can't take effect.
  * A direction that isn't connected offers Make two-way instead.
@@ -159,7 +160,7 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
   );
 }
 
-export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName, dispatcherEnd, familyLink = false, pairs, grants = [], liveTools, unreadable = [], onClose, onRemoved }: {
+export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName, dispatcherEnd, familyLink = false, pairs, grants = [], liveTools, liveEnabled, unreadable = [], onClose, onRemoved }: {
   /** This agent and the other end, for the directions (#2972). */
   agentId?: string;
   otherId?: string;
@@ -169,6 +170,8 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
   grants?: readonly ConnectionDirection[];
   /** The live bindings' disabled tools, by "from>to", for a direction the store has nothing for. */
   liveTools?: ReadonlyMap<string, readonly string[]>;
+  /** The live bindings' switches their source started on (wake, #3214), by "from>to", likewise. */
+  liveEnabled?: ReadonlyMap<string, readonly string[]>;
   /** For a wire to the Dispatcher: the other agent's name, whose switch goes off. */
   dispatcherEnd?: string;
   /** The other end is this agent's helper or orchestrator: they wake each other with their helper tools, so no Wake it. */
@@ -238,7 +241,7 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
               {...d}
               connected={connectedWay(d.from, d.to)}
               disabledTools={toolsOf(d.from, d.to)}
-              wakeOn={localWakeOn(savedOf(d.from, d.to))}
+              wakeOn={localWakeOn(savedOf(d.from, d.to), liveEnabled?.get(`${d.from}>${d.to}`))}
               showWake={!dispatcherEnd && !familyLink}
               canMakeTwoWay={connectedWay(d.to, d.from)}
               onChanged={onRemoved}

@@ -37,7 +37,8 @@ import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { updateAgentGrantChanges } from '../agent-grants-store';
 import { removeConnectionDirections, setConnectionDirections, setConnectionTools, getConnectionDirection } from '../connection-grants-store';
 import { markBindingRemovedByUser } from '../persisted-bindings';
-import { readLocalDirectionTools, setLocalWake, startConnectionGrants } from '../connection-grants';
+import { applyConnectionTools, readLocalDirectionTools, setLocalWake, startConnectionGrants } from '../connection-grants';
+import { AUTOMATIC_CONNECTION_SWITCHES, EVERY_SWITCH_ON, type StartingSwitches } from '../../../shared/connection-grants';
 import type { McpBinding } from './types';
 
 const wire = (agentId: string, targetId: string): McpBinding => ({ agentId, targetId, targetKind: 'agent', label: targetId, targetName: targetId, projectName: 'app' });
@@ -204,5 +205,65 @@ describe('wake on a local connection (#3215)', () => {
       allowed: ['get_status', 'read_output', 'check_connectivity', 'send_message', 'send_file', 'wake_agent'],
       disabled: ['clear_agent', 'compact_agent'],
     });
+  });
+});
+
+describe('wake on by default (the maintainer\'s defaults, 2026-11-09)', () => {
+  /** What a source gives a connection it makes: its starting lists, with nothing saved (#3214). */
+  const start = (from: string, to: string, switches: StartingSwitches) =>
+    bindingManager.restoreDisabledTools(from, to, [...switches.disabledTools], { starting: true, enabledTools: [...switches.enabledTools] });
+
+  it('a connection Clubhouse makes starts with wake on and nothing saved: a sleeping target lists wake_agent, and the call wakes it', async () => {
+    start('a', 'b', AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink);
+    expect(getConnectionDirection({ agentId: 'a' }, { agentId: 'b' })).toBeUndefined();
+    expect(suffixes('a', 'b')).toEqual(expect.arrayContaining(['get_status', 'wake_agent']));
+    expect((await call('a', 'b', 'wake_agent')).isError).toBeFalsy();
+    expect(lifecycle.wakeWiredAgent).toHaveBeenCalledWith(expect.objectContaining({ callerId: 'a', targetId: 'b' }));
+  });
+
+  it('a wire the user draws starts with wake on', async () => {
+    await applyConnectionTools('a', 'b', ['clear_agent', 'compact_agent'], { start: true });
+    expect(suffixes('a', 'b')).toContain('wake_agent');
+    expect((await call('a', 'b', 'wake_agent')).isError).toBeFalsy();
+  });
+
+  it('still needs the agent.wake grant: Ask first asks, Off refuses', async () => {
+    start('a', 'b', AUTOMATIC_CONNECTION_SWITCHES.helperToParent);
+    await updateAgentGrantChanges('a', () => ({ changes: [{ action: 'agent.wake', target: WAKE_ON, mode: 'ask' }] }));
+    expect(suffixes('a', 'b')).toContain('wake_agent');
+    expect(refusalReasonOf(await call('a', 'b', 'wake_agent'))).toBe('ask_first');
+    expect(ask.askFirst).toHaveBeenCalled();
+
+    await updateAgentGrantChanges('a', () => ({ changes: [{ action: 'agent.wake', target: WAKE_ON, mode: 'off' }] }));
+    expect(suffixes('a', 'b')).not.toContain('wake_agent');
+    expect(refusalReasonOf(await call('a', 'b', 'wake_agent'))).toBe('no_grant');
+    expect(lifecycle.wakeWiredAgent).not.toHaveBeenCalled();
+  });
+
+  it('turned off by the user, it stays off over the start', async () => {
+    start('a', 'b', AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink);
+    await setLocalWake('a', 'b', false);
+    start('a', 'b', AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink);
+    expect(suffixes('a', 'b')).not.toContain('wake_agent');
+    expect(refusalReasonOf(await call('a', 'b', 'wake_agent'))).toBe('tool_denied');
+  });
+
+  it('never offers sleep to an agent that is not the Dispatcher, every tool on or not', async () => {
+    start('a', 'b', EVERY_SWITCH_ON);
+    running.add('b');
+    expect(suffixes('a', 'b')).toEqual(expect.arrayContaining(['clear_agent', 'compact_agent']));
+    expect(suffixes('a', 'b')).not.toContain('sleep_agent');
+    expect(refusalReasonOf(await call('a', 'b', 'sleep_agent'))).toBe('group_off');
+    expect(lifecycle.sleepAgent).not.toHaveBeenCalled();
+  });
+
+  it('the Dispatcher starts with every tool on an agent: clear, compact, wake, and sleep', async () => {
+    bindingManager.bind('dispatcher', wire('dispatcher', 'b'));
+    start('dispatcher', 'b', AUTOMATIC_CONNECTION_SWITCHES.dispatcherToAgent);
+    expect(readLocalDirectionTools('dispatcher', 'b').disabled).toEqual([]);
+    expect(suffixes('dispatcher', 'b')).toEqual(expect.arrayContaining(['get_status', 'wake_agent']));
+    expect((await call('dispatcher', 'b', 'wake_agent')).isError).toBeFalsy();
+    running.add('b');
+    expect(suffixes('dispatcher', 'b')).toEqual(expect.arrayContaining(['clear_agent', 'compact_agent', 'sleep_agent', 'send_message']));
   });
 });

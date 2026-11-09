@@ -227,7 +227,7 @@ const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_
 /**
  * Whether an agent wire offers its sender wake_agent (#3215): the Dispatcher
  * as before, and any other agent only on a connection on this computer whose
- * Wake it switch is on (off by default). Across machines it stays the
+ * Wake it switch is on (on for a new connection, #3214). Across machines it stays the
  * Dispatcher's (D232). The call's grant, agent.wake on that agent, is checked
  * after this, so Ask first and Off on the permissions page still apply.
  */

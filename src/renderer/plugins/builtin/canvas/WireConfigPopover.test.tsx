@@ -74,7 +74,7 @@ describe('WireConfigPopover', () => {
       <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} onAddWireDefinition={onAddWireDefinition} />,
     );
     fireEvent.click(getByRole('switch', { name: 'Both directions' }));
-    await waitFor(() => expect(setDisabledTools).toHaveBeenCalledWith('agent-2', 'agent-1', ['clear_agent', 'compact_agent']));
+    await waitFor(() => expect(setDisabledTools).toHaveBeenCalledWith('agent-2', 'agent-1', ['clear_agent', 'compact_agent'], { start: true }));
     expect(onAddWireDefinition).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent-2', targetId: 'agent-1', disabledTools: ['clear_agent', 'compact_agent'] }));
   });
 
