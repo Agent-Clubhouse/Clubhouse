@@ -943,6 +943,24 @@ describe('ToolRegistry', () => {
       expect(refusalReasonOf(result)).toBe('tool_denied');
     });
 
+    it('an admin calling a privileged tool switched off on its own wire is refused at call time, by name (#3176)', async () => {
+      groupProjectRegistry._setForTesting({
+        id: 'gp_test_5', name: 'TestProj', description: '', instructions: '',
+        createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+      });
+      bindingManager.bind('agent-1', { targetId: 'gp_test_5', targetKind: 'group-project', label: 'GP', targetName: 'TestProj' });
+      bindingManager.setDisabledTools('agent-1', 'gp_test_5', ['wake_agent', 'clear_agent']);
+      const name = (tool: string) => buildToolName(makeBinding({ agentId: 'agent-1', targetId: 'gp_test_5', targetKind: 'group-project', targetName: 'TestProj' }), tool);
+      for (const tool of ['wake_agent', 'clear_agent']) {
+        const result = await callTool('agent-1', name(tool), { target_agent_id: 'agent-2' });
+        expect(result.content[0].text).toBe(`${tool} is turned off on this wire.`);
+        expect(refusalReasonOf(result)).toBe('tool_denied');
+      }
+      // The same admin's other privileged tools still run past the wire check.
+      const other = await callTool('agent-1', name('compact_agent'), { target_agent_id: 'agent-2' });
+      expect(other?.content?.[0]?.text).not.toBe('compact_agent is turned off on this wire.');
+    });
+
     it('an admin wire can disable individual tools without affecting others', () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_test_3', name: 'TestProj', description: '', instructions: '',
