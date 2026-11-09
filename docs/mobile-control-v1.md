@@ -52,7 +52,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 
 - `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
 - `helper.decline`: `{requestId}`; decline it. The orchestrator is told, as from the desktop.
-- `grant.answer`: `{requestId, answer}`; answer a Clubhouse permission request (an Ask-first call or a `request_grant` ask) as Needs you does. `answer` is `allow_once`, `allow_lasting` or `decline`. See [Grant requests](#grant-requests).
+- `grant.answer`: `{requestId, answer}`; answer a Clubhouse permission request (an Ask-first call or a `request_grant` ask) as Needs you does, from any device that controls this computer. `answer` is `allow_once`, `allow_lasting` or `decline`. See [Grant requests](#grant-requests).
 
 For `chat.send`, `result` is `{delivery:"prompt"|"steer"|"queued",messageId:"authoritative runtime ID"}`. The matching `user_message.data` additionally echoes `clientCommandId` equal to the request commandId, including queued/steered sends. The event may arrive before the receipt: reconcile by clientCommandId immediately, then by messageId; never guess by text or timestamps. Local/legacy sends omit the optional field.
 
@@ -107,6 +107,8 @@ Errors (`message` is the desktop's sentence for all but `helper_request_not_foun
 
 Additive (#3205). An agent's Clubhouse MCP call that one of its permissions holds for Ask first (#2970), including Manage devices (#3068), and an agent's own `request_grant` ask (#3021) go to the desktop's Needs you. Desktops that advertise `grantRequests` also list them in the Annex snapshot as `grantRequests`, announce each one opening and resolving, and accept `grant.answer`. Without the capability, don't show them and don't send the command; older phones ignore the field and the events.
 
+Who can answer: any device that controls this computer (a paired phone, or a desktop or phone in its Annex Network), the same devices that can send `chat.permission` and `helper.approve`.
+
 ```json
 "grantRequests":{"version":1,"snapshotField":"grantRequests","events":{"opened":"grant_request:opened","resolved":"grant_request:resolved"},
  "commands":["grant.answer"],"answers":["allow_once","allow_lasting","decline"]}
@@ -116,13 +118,18 @@ These are not CLI permission requests (`permission_request` chat events, answere
 
 ### Snapshot
 
-`grantRequests` is every waiting request from an agent in a registered project or the Dispatcher, oldest first. Replace the whole list from each snapshot.
+`grantRequests` lists every waiting request that desktop Needs you shows, oldest first. Replace the whole list from each snapshot.
+
+- Requests from agents in registered projects.
+- The Dispatcher's requests while Needs you shows them: while it is on, or still running after being turned off. They are shown on the Dispatcher agent you talk to (`dispatcher.agent.id`), under `projectId` `__dispatcher__`.
+- Not a Manage devices call that names the receiving device itself (its `id` argument is that device's fingerprint). Each device's snapshot leaves that row out, and only the desktop or another device can answer it.
 
 ```json
 {"requestId":"grant_…","kind":"call","projectId":"__dispatcher__","agent":{"agentId":"durable_dispatcher","name":"Dispatcher"},
  "actions":["device.manage"],"actionLabels":["Manage devices"],"where":"the app","toolName":"remove_device","target":null,
  "summary":"Wants to run remove_device, which needs: Manage devices on the app.",
- "detail":"Remove Phone (phone, in this network)","arguments":"{\n  \"device_id\": \"dev_phone\"\n}","reason":"You said the phone was lost.",
+ "detail":"Remove Phone (phone, in this network). A device in the network goes from every device in it, and comes back only when a person pairs it again.",
+ "arguments":"{\n  \"id\": \"aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99\"\n}","reason":"You said the phone was lost.",
  "allowEffect":"Allow runs this one call when it tries again. Its permissions stay as they are.",
  "requestedAt":"2027-01-15T07:58:00.000Z","expiresAt":"2027-01-16T07:58:00.000Z","answers":["allow_once","decline"]}
 {"requestId":"grant_…","kind":"grant","projectId":"proj_app","agent":{"agentId":"durable_chat","name":"planner"},
@@ -141,12 +148,12 @@ These are not CLI permission requests (`permission_request` chat events, answere
 
 ### Events
 
-Each is broadcast and buffered for `mobile:replay`, and a fresh `snapshot` follows it.
+Each is broadcast and buffered for `mobile:replay`, and a fresh `snapshot` follows it. Neither carries the request's arguments, detail or reason: read the row from the snapshot.
 
-- `{"type":"grant_request:opened","payload":{"request":{…the row above…}},"seq":n}`
-- `{"type":"grant_request:resolved","payload":{"requestIds":["grant_…"],"outcome":"answered"|"expired"|"withdrawn"},"seq":n}`. `answered` is any answer from any surface (the desktop or a phone); `withdrawn` is its agent being deleted. Tolerate other outcomes.
+- `{"type":"grant_request:opened","payload":{"agentId":"…","requestId":"grant_…","kind":"call"|"grant","projectId":"…"},"seq":n}`. `agentId` is the agent the row shows on. An id the next snapshot doesn't list isn't one this device may see (it names this device): ignore it.
+- `{"type":"grant_request:resolved","payload":{"requestIds":["grant_…"],"outcome":"answered"|"expired"|"withdrawn"},"seq":n}`. `answered` is any answer from any device or the desktop; `withdrawn` is its agent being deleted. Tolerate other outcomes, and ids you never saw.
 
-A request whose lasting Allow couldn't be saved comes back: `resolved` (`answered`), then `opened` with the same `requestId`.
+A request whose lasting Allow couldn't be saved comes back: `resolved` (`answered`), then `opened` with the same `requestId`. It doesn't come back if its agent was deleted meanwhile, or if the agent asked for the same thing again meanwhile (that newer request waits instead).
 
 ### grant.answer
 
@@ -156,11 +163,11 @@ A request whose lasting Allow couldn't be saved comes back: `resolved` (`answere
 - **`allow_lasting`** (a `grant`): the permission is added to the agent's saved permissions, as on its permissions page, where the user can remove it later. The agent is told it has it.
 - **`decline`**: nothing changes. The agent is told not to ask again for the same thing.
 
-Result `{requestId, kind, answer}`. The request is used up as the answer starts, so a phone and the desktop (or two phones) answering at once resolve it exactly once: the other answer is refused with `grant_request_not_found`. Every answer is recorded in the telemetry record's `clubhouse.audit.grant_request`, as a desktop answer is, with `clubhouse.audit.surface` `mobile` (the desktop's is `ui`).
+Result `{requestId, kind, answer}`. The request is used up as the answer starts, so two answers at once (from the desktop and a device, or two devices) resolve it exactly once: the other is refused with `grant_request_not_found`. Every answer is recorded in the telemetry record's `clubhouse.audit.grant_request`, as a desktop answer is, with `clubhouse.audit.surface` naming where it came from: `ui` for the desktop itself, `mobile` for a phone, `annex_desktop` for another computer controlling this one. A one-to-one pairing that isn't in a network is a phone when it paired in session mode or with a phone or tablet icon.
 
 Errors (`message` is a sentence to show):
 
-- 404 `grant_request_not_found`: expired, already answered (from anywhere), withdrawn, or never shown to a phone. Drop the row.
+- 404 `grant_request_not_found`: expired, already answered (from anywhere), withdrawn, or not one this device may see (a Manage devices call naming it, the Dispatcher's while Needs you hides them, or an agent in no registered project). Drop the row.
 - 409 `grant_answer_not_offered`: an `answer` the request's `answers` don't list (`allow_lasting` for a call, `allow_once` for a grant). Nothing changed; the request still waits.
 - 409 `grant_answer_failed`: a lasting Allow couldn't be saved. Nothing changed; the request still waits, so the user can try again or decline.
 - 400 `invalid_command`: any other `answer` value.
@@ -1207,7 +1214,7 @@ A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; 
 
 `sender-identity.json` is for [Who sent a message](#who-sent-a-message). `catalog` is the snapshot's agent rows and `agentIcons`, `frames` are the live `chat:event`s, and `expected` is, for each event, what the desktop's code draws given only `catalog` and that event: `{from:"you", text}` or `{from:"others", parts:[{name, agentId, text, avatar}]}`, where `agentId` is the row it found or null. `avatar` is null, `{type:"quick"}`, `{type:"emoji", emoji, background}`, `{type:"image", image}` or `{type:"initials", initials, background}`, with `background` a CSS hex color. `history` and `replay` carry the same messages through the chat route and `mobile:replay`. `colors` (with `initialsText`, the [text color](#initials-text-color) for each) and `initials` are the tables to check against. `queued-bursts.json` is for [Queued messages](#queued-messages): events from the real chat runtime for a burst, the same burst missing its first event, a failed send, a provider-held queue and a system turn over a held row, with `rowId` and the combined `routed` to expect.
 
-Grant requests (#3205) are in `snapshot-grant-requests.json` (a held call from the Dispatcher and a `request_grant` ask), `grant-request-events.json` (opened, and resolved with each outcome) and `commands/grant.answer.json`.
+Grant requests (#3205) are in `snapshot-grant-requests.json` (a held Remove device call from the Dispatcher and a `request_grant` ask), `grant-request-events.json` (opened, and resolved with each outcome) and `commands/grant.answer.json`.
 
 The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder), and `dispatcher-group-chat.json` (one conversation as the Dispatcher's group chat and as an ordinary agent's, history and live).
 

@@ -158,7 +158,8 @@ export interface MobileHelperRequest {
 }
 
 /**
- * How a phone answers a Clubhouse permission request (#3205), as Needs you
+ * How a device that controls this computer (a paired phone, or a desktop or
+ * phone in its Annex Network) answers a Clubhouse permission request (#3205), as Needs you
  * does. `allow_once` lets one call through, with exactly the arguments shown,
  * and changes no permission; it is only for a `call` request. `allow_lasting`
  * adds the permission to the agent's saved permissions; it is only for a
@@ -172,7 +173,8 @@ export type MobileGrantAnswer = typeof MOBILE_GRANT_ANSWERS[number];
  * snapshot's `grantRequests` lists it: an agent's call that a permission set
  * to Ask first held (#2970, Manage devices included, #3068), or an agent's
  * `request_grant` ask (#3021). Not a CLI `permission_request`, and not a
- * helper start or dispose (`helperRequests`).
+ * helper start or dispose (`helperRequests`). Each device's snapshot leaves
+ * out a Manage devices call that names that device.
  */
 export interface MobileGrantRequest {
   requestId: string;

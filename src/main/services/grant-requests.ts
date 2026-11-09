@@ -30,6 +30,8 @@ type Listener = (change: GrantRequestChange) => void;
 interface Entry { request: GrantRequest; key: string }
 
 const pending = new Map<string, Entry>();
+/** Requests taken for an answer that hasn't finished, by id, with their agent: only these can be put back. */
+const answering = new Map<string, string>();
 /** One-time approvals of call requests, by call key, with when they lapse. */
 const approvals = new Map<string, number>();
 const listeners = new Set<Listener>();
@@ -118,13 +120,23 @@ export function peekGrantRequest(requestId: string, now = Date.now()): GrantRequ
 
 /**
  * Put back a request taken for an answer that then failed, so the user can
- * try again or decline it. Not if it would already have expired.
+ * try again or decline it. Not if it would already have expired, its agent
+ * was deleted meanwhile, or the agent asked the same again (that request
+ * waits instead). True when it was put back.
  */
-export function restoreGrantRequest(request: GrantRequest, key: string, now = Date.now()): void {
-  if (Date.parse(request.expiresAt) <= now || pending.has(request.requestId)) return;
+export function restoreGrantRequest(request: GrantRequest, key: string, now = Date.now()): boolean {
+  const taken = answering.delete(request.requestId);
+  if (!taken || Date.parse(request.expiresAt) <= now || pending.has(request.requestId)) return false;
+  if ([...pending.values()].some((e) => e.key === key && e.request.agentId === request.agentId)) return false;
   pending.set(request.requestId, { request, key });
   schedule();
   emit({ kind: 'added', request });
+  return true;
+}
+
+/** An answer to a taken request went through: it can't be put back. */
+export function finishGrantAnswer(requestId: string): void {
+  answering.delete(requestId);
 }
 
 /** The key a waiting request was recorded under; null when it isn't waiting. */
@@ -141,6 +153,7 @@ export function takeGrantRequest(requestId: string, allowed: boolean, now = Date
   const entry = pending.get(requestId);
   if (!entry) return null;
   pending.delete(requestId);
+  answering.set(requestId, entry.request.agentId);
   if (allowed && entry.request.kind === 'call') approvals.set(entry.key, Date.parse(entry.request.expiresAt));
   schedule();
   emit({ kind: 'closed', requestIds: [requestId], reason: 'answered' });
@@ -170,6 +183,8 @@ export function dropCallApprovalsFor(agentId: string): void {
 export function dropGrantRequestsFor(agentId: string): string[] {
   const ids = [...pending.values()].filter((e) => e.request.agentId === agentId).map((e) => e.request.requestId);
   for (const id of ids) pending.delete(id);
+  // An answer still saving for this agent can't put its request back.
+  for (const [id, owner] of answering) if (owner === agentId) answering.delete(id);
   dropCallApprovalsFor(agentId);
   schedule();
   emit({ kind: 'closed', requestIds: ids, reason: 'withdrawn' });
@@ -186,6 +201,7 @@ export function _resetGrantRequestsForTesting(opts: { keepListeners?: boolean } 
   if (timer) clearTimeout(timer);
   timer = null;
   pending.clear();
+  answering.clear();
   approvals.clear();
   if (!opts.keepListeners) listeners.clear();
 }

@@ -18,8 +18,8 @@
         "allow_once",
         "decline"
       ],
-      "arguments": "{\n  \"device_id\": \"dev_phone\"\n}",
-      "detail": "Remove Phone (phone, in this network)",
+      "arguments": "{\n  \"id\": \"aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99\"\n}",
+      "detail": "Remove Phone (phone, in this network). A device in the network goes from every device in it, and comes back only when a person pairs it again.",
       "expiresAt": "2027-01-16T07:58:00.000Z",
       "kind": "call",
       "projectId": "__dispatcher__",

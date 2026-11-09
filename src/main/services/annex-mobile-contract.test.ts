@@ -710,10 +710,10 @@ function helperDispose(checks: Record<string, unknown> = { dirty: 2, unpushed: 1
   return listDisposeRequests().find((r) => r.request.helperId === 'durable_docs')!.requestId;
 }
 
-/** The Dispatcher's Remove device call held by Ask first (#3068), as ask-first.ts records it. */
-function grantCall(at = NOW - 120_000): string {
-  const args = { device_id: 'dev_phone' };
-  const detail = 'Remove Phone (phone, in this network)';
+/** The Dispatcher's Remove device call held by Ask first (#3068), as ask-first.ts records it. `id` is the device's fingerprint. */
+function grantCall(at = NOW - 120_000, id = 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99'): string {
+  const args = { id };
+  const detail = 'Remove Phone (phone, in this network). A device in the network goes from every device in it, and comes back only when a person pairs it again.';
   const argumentsText = JSON.stringify(args, null, 2);
   const result = recordGrantRequest(callKey('durable_dispatcher', 'remove_device', args), {
     kind: 'call', agentId: 'durable_dispatcher', agentName: 'Dispatcher', projectPath: DISPATCHER_PATH, actions: ['device.manage'], where: 'the app',
@@ -2938,6 +2938,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
   it('Clubhouse permission requests: snapshot, events and grant.answer (#3205)', async () => {
     resetWorld();
+    // Desktop Needs you shows the Dispatcher's requests while it is on (or still running).
+    W.dispatcher.enabled = true;
     const ws = await connect();
     ws.send.mockClear();
     const call = grantCall();
@@ -2971,6 +2973,25 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.grantSaveFails = false;
     _resetGrantRequestsForTesting({ keepListeners: true });
 
+    // A Manage devices call that names this device is the desktop's to answer: left out of its snapshot, and not answerable from it.
+    const aboutMe = grantCall(NOW - 30_000, 'mobile-fixture-identity');
+    // The refresh this device is sent, and the one it gets on connecting, both leave it out.
+    await eventually(() => {
+      const all = frames(ws);
+      const openedAt = all.findIndex((f) => f.type === 'grant_request:opened' && f.payload.requestId === aboutMe);
+      expect(openedAt).toBeGreaterThanOrEqual(0);
+      const refreshed = all.slice(openedAt).filter((f) => f.type === 'snapshot').at(-1);
+      expect(refreshed?.payload.grantRequests).toEqual([]);
+    });
+    const mine = frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests;
+    expect(mine).toEqual([]);
+    await command('grant_request_not_found (names this device)', { type: 'grant.answer', requestId: aboutMe, answer: 'decline' });
+    W.dispatcher.enabled = false;
+    await command('grant_request_not_found (the Dispatcher is off, as Needs you hides it)', { type: 'grant.answer', requestId: aboutMe, answer: 'decline' });
+    expect(frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests).toEqual([]);
+    W.dispatcher.enabled = true;
+    _resetGrantRequestsForTesting({ keepListeners: true });
+
     ws.send.mockClear();
     // Expires as it is answered.
     const expiring = grantCall(NOW - GRANT_REQUEST_TTL_MS);
@@ -2983,7 +3004,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await eventually(() => expect(resolved().some((f) => f.payload.outcome === 'withdrawn')).toBe(true));
     events.push(seq(resolved().find((f) => f.payload.outcome === 'withdrawn')));
     fixtures.set('grant-request-events.json', { direction: 'desktop-to-phone',
-      note: 'seq is the replay sequence; a snapshot follows each. outcome: answered (from any surface), expired, or withdrawn (its agent was deleted).', frames: events });
+      note: 'seq is the replay sequence; a snapshot follows each, with the row. opened never carries the arguments. outcome: answered (from any device), expired, or withdrawn (its agent was deleted).', frames: events });
+    W.dispatcher.enabled = false;
   });
 
   it('every command type has an accepted request and receipt', () => {

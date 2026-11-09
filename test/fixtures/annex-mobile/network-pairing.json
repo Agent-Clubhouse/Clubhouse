@@ -21,13 +21,13 @@
       "mobileProtocolVersion": 1,
       "network": 1,
       "pairing": {
-        "id": "00000000-0000-4000-8000-000000000032",
+        "id": "00000000-0000-4000-8000-000000000033",
         "joinedAt": "2026-11-08T10:00:00.000Z"
       },
       "pairingMode": "persistent",
       "publicKey": "fixture-public-key",
       "serverPairing": {
-        "id": "00000000-0000-4000-8000-000000000028",
+        "id": "00000000-0000-4000-8000-000000000029",
         "joinedAt": "2026-11-01T09:00:00.000Z"
       },
       "tlsCertificateFingerprint": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",

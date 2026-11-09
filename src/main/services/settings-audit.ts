@@ -20,7 +20,8 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { createHash } from 'crypto';
 import { setSettingsStoreAuditor } from './settings-store';
 
-export type SettingsAuditSurface = 'ui' | 'mcp' | 'mobile' | 'dispatcher' | 'persona' | 'cli' | 'system';
+/** `mobile` is a paired phone; `annex_desktop` is another computer controlling this one over Annex (#3205). */
+export type SettingsAuditSurface = 'ui' | 'mcp' | 'mobile' | 'annex_desktop' | 'dispatcher' | 'persona' | 'cli' | 'system';
 export type SettingsAuditValue = boolean | number | string | null;
 
 export interface SettingsAuditRow {

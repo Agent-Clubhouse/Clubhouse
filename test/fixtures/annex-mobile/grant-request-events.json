@@ -3,35 +3,10 @@
   "frames": [
     {
       "payload": {
-        "request": {
-          "actionLabels": [
-            "Manage devices"
-          ],
-          "actions": [
-            "device.manage"
-          ],
-          "agent": {
-            "agentId": "durable_dispatcher",
-            "name": "Dispatcher"
-          },
-          "allowEffect": "Allow runs this one call when it tries again. Its permissions stay as they are.",
-          "answers": [
-            "allow_once",
-            "decline"
-          ],
-          "arguments": "{\n  \"device_id\": \"dev_phone\"\n}",
-          "detail": "Remove Phone (phone, in this network)",
-          "expiresAt": "2027-01-16T07:58:00.000Z",
-          "kind": "call",
-          "projectId": "__dispatcher__",
-          "reason": "You said the phone was lost.",
-          "requestId": "grant_00000000-0000-4000-8000-000000000006",
-          "requestedAt": "2027-01-15T07:58:00.000Z",
-          "summary": "Wants to run remove_device, which needs: Manage devices on the app.",
-          "target": null,
-          "toolName": "remove_device",
-          "where": "the app"
-        }
+        "agentId": "durable_dispatcher",
+        "kind": "call",
+        "projectId": "__dispatcher__",
+        "requestId": "grant_00000000-0000-4000-8000-000000000006"
       },
       "seq": 1000,
       "type": "grant_request:opened"
@@ -50,7 +25,7 @@
       "payload": {
         "outcome": "expired",
         "requestIds": [
-          "grant_00000000-0000-4000-8000-000000000011"
+          "grant_00000000-0000-4000-8000-000000000012"
         ]
       },
       "seq": 1000,
@@ -60,12 +35,12 @@
       "payload": {
         "outcome": "withdrawn",
         "requestIds": [
-          "grant_00000000-0000-4000-8000-000000000027"
+          "grant_00000000-0000-4000-8000-000000000028"
         ]
       },
       "seq": 1000,
       "type": "grant_request:resolved"
     }
   ],
-  "note": "seq is the replay sequence; a snapshot follows each. outcome: answered (from any surface), expired, or withdrawn (its agent was deleted)."
+  "note": "seq is the replay sequence; a snapshot follows each, with the row. opened never carries the arguments. outcome: answered (from any device), expired, or withdrawn (its agent was deleted)."
 }

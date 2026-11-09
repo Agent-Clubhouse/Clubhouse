@@ -1,7 +1,7 @@
 /**
  * The user's answer to a Clubhouse permission request (#2970). Only the
- * user's own surfaces call this: Needs you, and a paired phone's
- * `grant.answer` (#3205), which comes through here too.
+ * user's own surfaces call this: Needs you, and `grant.answer` (#3205) from
+ * a device that controls this computer, which comes through here too.
  *
  * - A call request: Allow lets that one call through when the agent makes it
  *   again; the agent's permissions don't change.
@@ -15,7 +15,7 @@ import { GRANT_ACTION_LABELS } from '../../shared/agent-grant-changes';
 import type { GrantRequest, GrantRequestAnswer } from '../../shared/grant-requests';
 import { setAgentGrant } from './agent-grants-service';
 import { deliverHelperUpdate } from './clubhouse-mcp/tools/helper-delivery';
-import { grantRequestKey, restoreGrantRequest, takeGrantRequest } from './grant-requests';
+import { finishGrantAnswer, grantRequestKey, restoreGrantRequest, takeGrantRequest } from './grant-requests';
 import { appLog } from './log-service';
 import { recordGrantRequest } from './grant-telemetry';
 import { currentSettingsOrigin } from './settings-audit';
@@ -53,6 +53,7 @@ export async function answerGrantRequest(requestId: string, allow: boolean): Pro
       return { ok: false, error: errorText(err) };
     }
   }
+  finishGrantAnswer(requestId);
   recordGrantRequest({ agentId: request.agentId, kind: request.kind, outcome: allow ? 'allowed' : 'declined', actions: request.actions });
   appLog('core:mcp', 'info', allow ? 'Permission request allowed' : 'Permission request declined', {
     meta: { agentId: request.agentId, requestId, kind: request.kind, surface: currentSettingsOrigin().surface },

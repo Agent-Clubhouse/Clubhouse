@@ -17,10 +17,11 @@ vi.mock('./grant-telemetry', async () => {
   };
 });
 
-import { buildMobileGrantRequests, runGrantCommand, type GrantRequestPlaces } from './mobile-grant-requests';
+import { buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, runGrantCommand, type GrantRequestPlaces } from './mobile-grant-requests';
 import { answerGrantRequest } from './grant-request-answers';
 import {
-  _resetGrantRequestsForTesting, callKey, consumeCallApproval, listGrantRequests, onGrantRequestsChanged, recordGrantRequest, type GrantRequestChange,
+  _resetGrantRequestsForTesting, callKey, consumeCallApproval, dropGrantRequestsFor, listGrantRequests, onGrantRequestsChanged, recordGrantRequest,
+  type GrantRequestChange,
 } from './grant-requests';
 import { MobileCommandService, MobileControlError } from './mobile-control';
 import { withSettingsSurface } from './settings-audit';
@@ -28,14 +29,20 @@ import { GRANT_REQUEST_TTL_MS } from '../../shared/grant-requests';
 import type { MobileGrantAnswer } from '../../shared/mobile-control';
 
 const NOW = Date.parse('2026-11-09T09:00:00Z');
-const places: GrantRequestPlaces = { projects: [{ id: 'proj', path: '/p' }], dispatcher: { projectId: '__dispatcher__', paths: ['/base/dispatcher', '/base/dispatcher-chat'] } };
-const REMOVE_ARGS = { device_id: 'dev_1' };
+/** The Dispatcher on: its coordinator (`disp`) asks, and its requests show on the chat agent you talk to (`disp_chat`, #3036). */
+const DISPATCHER = { projectId: '__dispatcher__', paths: ['/base/dispatcher', '/base/dispatcher-chat'], agentId: 'disp_chat', askingIds: ['disp', 'disp_chat'] };
+const places: GrantRequestPlaces = { projects: [{ id: 'proj', path: '/p' }], dispatcher: DISPATCHER };
+/** remove_device's real argument: the device's id, its fingerprint (#3068). */
+const PHONE_ID = 'ab:cd:ef:01';
+const REMOVE_ARGS = { id: PHONE_ID };
+/** What remove_device's describer says for it, in full. */
+const REMOVE_LINE = 'Remove Phone (phone, in this network). A device in the network goes from every device in it, and comes back only when a person pairs it again.';
 
 /** An Ask-first call, as ask-first.ts records it for Manage devices (#3068). */
-function callRequest(agentId = 'a1', projectPath = '/p', at = NOW - 60_000): string {
-  const argumentsText = JSON.stringify(REMOVE_ARGS, null, 2);
-  const detail = 'Remove Phone (phone, in this network)';
-  const result = recordGrantRequest(callKey(agentId, 'remove_device', REMOVE_ARGS), {
+function callRequest(agentId = 'a1', projectPath = '/p', at = NOW - 60_000, args: Record<string, unknown> = REMOVE_ARGS): string {
+  const argumentsText = JSON.stringify(args, null, 2);
+  const detail = REMOVE_LINE;
+  const result = recordGrantRequest(callKey(agentId, 'remove_device', args), {
     kind: 'call', agentId, agentName: 'Dispatcher', projectPath, actions: ['device.manage'], where: 'the app', toolName: 'remove_device',
     details: `${detail}\n\n${argumentsText}`, detail, argumentsText, reason: 'The phone is lost.',
   }, at);
@@ -54,8 +61,8 @@ function grantRequest(agentId = 'a1', at = NOW - 30_000): string {
 }
 
 const command = (requestId: string, answer: MobileGrantAnswer) => ({ version: 1 as const, commandId: 'c', epoch: 'e', type: 'grant.answer' as const, requestId, answer });
-const phone = (requestId: string, answer: MobileGrantAnswer, assertAuthorized = vi.fn()) =>
-  withSettingsSurface('mobile', 'peer-1', () => runGrantCommand(command(requestId, answer), places, { assertAuthorized }));
+const phone = (requestId: string, answer: MobileGrantAnswer, assertAuthorized = vi.fn(), viewer = 'peer-1', where = places) =>
+  withSettingsSurface('mobile', viewer, () => runGrantCommand(command(requestId, answer), where, { assertAuthorized, viewer }));
 const desktop = (requestId: string, allow: boolean) => withSettingsSurface('ui', undefined, () => answerGrantRequest(requestId, allow));
 
 async function rejection(promise: Promise<unknown>): Promise<MobileControlError> {
@@ -90,12 +97,13 @@ describe('grantRequests in the snapshot (#3205)', () => {
     callRequest('elsewhere', '/not/registered');
     const rows = buildMobileGrantRequests(places);
     expect(rows.map((r) => r.requestId)).toEqual([dispatcher, call, grant]);
-    expect(rows[0].projectId).toBe('__dispatcher__');
+    // The Dispatcher's coordinator asks; the request shows on the agent you talk to, as in the desktop sidebar.
+    expect(rows[0]).toMatchObject({ projectId: '__dispatcher__', agent: { agentId: 'disp_chat', name: 'Dispatcher' } });
     expect(rows[1]).toEqual({
       requestId: call, kind: 'call', projectId: 'proj', agent: { agentId: 'a1', name: 'Dispatcher' },
       actions: ['device.manage'], actionLabels: ['Manage devices'], where: 'the app', toolName: 'remove_device', target: null,
       summary: 'Wants to run remove_device, which needs: Manage devices on the app.',
-      detail: 'Remove Phone (phone, in this network)', arguments: '{\n  "device_id": "dev_1"\n}', reason: 'The phone is lost.',
+      detail: REMOVE_LINE, arguments: `{\n  "id": "${PHONE_ID}"\n}`, reason: 'The phone is lost.',
       allowEffect: 'Allow runs this one call when it tries again. Its permissions stay as they are.',
       requestedAt: new Date(NOW - 60_000).toISOString(), expiresAt: new Date(NOW - 60_000 + GRANT_REQUEST_TTL_MS).toISOString(),
       answers: ['allow_once', 'decline'],
@@ -104,6 +112,31 @@ describe('grantRequests in the snapshot (#3205)', () => {
       kind: 'grant', target: { kind: 'app' }, toolName: null, detail: null, arguments: null, summary: 'Asks for Change app settings on the app.',
       answers: ['allow_lasting', 'decline'],
     });
+  });
+
+  it('shows the Dispatcher\'s requests only while desktop Needs you does: on, or still running', () => {
+    callRequest('disp', '/base/dispatcher');
+    callRequest('disp_chat', '/base/dispatcher-chat', NOW - 30_000);
+    expect(buildMobileGrantRequests(places).map((r) => r.agent.agentId)).toEqual(['disp_chat', 'disp_chat']);
+    expect(buildMobileGrantRequests({ ...places, dispatcher: null })).toEqual([]);
+  });
+
+  it('leaves out, for the device itself, a Manage devices call that names it', () => {
+    const [row] = (callRequest(), buildMobileGrantRequests(places));
+    expect(grantRowVisibleTo(row, PHONE_ID)).toBe(false);
+    // Ids compare as fingerprints do, in any case.
+    expect(grantRowVisibleTo(row, PHONE_ID.toUpperCase())).toBe(false);
+    expect(grantRowVisibleTo(row, 'other:device')).toBe(true);
+    // A request that names no device, or one that isn't Manage devices, shows to everyone.
+    const [ask] = (_resetGrantRequestsForTesting(), grantRequest(), buildMobileGrantRequests(places));
+    expect(grantRowVisibleTo(ask, PHONE_ID)).toBe(true);
+    expect(grantRowVisibleTo({ ...row, actions: ['settings.app.write'] }, PHONE_ID)).toBe(true);
+  });
+
+  it('opened events carry who asked and the id, never the arguments', () => {
+    callRequest('disp', '/base/dispatcher');
+    const [row] = buildMobileGrantRequests(places);
+    expect(grantOpenedPayload(row)).toEqual({ agentId: 'disp_chat', requestId: row.requestId, kind: 'call', projectId: '__dispatcher__' });
   });
 
   it('leaves out a request that expired', () => {
@@ -236,6 +269,41 @@ describe('grant.answer: the desktop\'s answer, from a phone', () => {
     expect(listGrantRequests()).toEqual([]);
   });
 
+  it('a device can\'t answer a Manage devices call that names it; another device and the desktop can', async () => {
+    const id = callRequest();
+    const self = await rejection(phone(id, 'decline', vi.fn(), PHONE_ID));
+    expect(self).toMatchObject({ code: 'grant_request_not_found', statusCode: 404 });
+    expect((await rejection(phone(id, 'allow_once', vi.fn(), PHONE_ID.toUpperCase()))).code).toBe('grant_request_not_found');
+    expect(listGrantRequests().map((r) => r.requestId)).toEqual([id]);
+    expect(await phone(id, 'allow_once', vi.fn(), 'other:device')).toMatchObject({ requestId: id });
+    const again = callRequest();
+    expect(await desktop(again, false)).toEqual({ ok: true });
+  });
+
+  it('can\'t answer the Dispatcher\'s requests while desktop Needs you doesn\'t show them', async () => {
+    const id = callRequest('disp', '/base/dispatcher');
+    expect((await rejection(phone(id, 'decline', vi.fn(), 'peer-1', { ...places, dispatcher: null }))).code).toBe('grant_request_not_found');
+    expect(listGrantRequests().map((r) => r.requestId)).toEqual([id]);
+    await phone(id, 'decline');
+    expect(listGrantRequests()).toEqual([]);
+  });
+
+  it('a failed lasting save isn\'t put back once its agent was deleted meanwhile', async () => {
+    const id = grantRequest();
+    mocks.setAgentGrant.mockImplementationOnce(async () => { dropGrantRequestsFor('a1'); throw new Error('The agent is gone.'); });
+    expect((await rejection(phone(id, 'allow_lasting'))).code).toBe('grant_request_not_found');
+    expect(listGrantRequests()).toEqual([]);
+  });
+
+  it('a failed lasting save isn\'t put back when the agent asked the same again meanwhile', async () => {
+    const id = grantRequest();
+    let again = '';
+    mocks.setAgentGrant.mockImplementationOnce(async () => { again = grantRequest(); throw new Error('The permissions file is locked.'); });
+    expect((await rejection(phone(id, 'allow_lasting'))).code).toBe('grant_request_not_found');
+    // The newer one waits, once.
+    expect(listGrantRequests().map((r) => r.requestId)).toEqual([again]);
+  });
+
   it('answers nothing once the phone\'s authorization changed', async () => {
     const id = callRequest();
     const revoked = vi.fn(() => { throw new MobileControlError('authorization_revoked', 403); });
@@ -262,9 +330,16 @@ describe('grant.answer: the desktop\'s answer, from a phone', () => {
     }
     expect(run).not.toHaveBeenCalled();
     expect(listGrantRequests().map((r) => r.requestId)).toEqual([id]);
-    // A paired controller's command runs as the mobile surface.
-    const accepted = await service.execute('peer-1', body, (cmd) => runGrantCommand(cmd as ReturnType<typeof command>, places, { assertAuthorized: () => {} }));
+    // A paired controller's command runs as its device's surface: mobile for a phone.
+    const run2 = (cmd: unknown) => runGrantCommand(cmd as ReturnType<typeof command>, places, { assertAuthorized: () => {}, viewer: 'peer-1' });
+    const accepted = await service.execute('peer-1', body, run2);
     expect(accepted).toMatchObject({ statusCode: 200, body: { status: 'completed', result: { requestId: id, kind: 'call', answer: 'allow_once' } } });
-    expect(mocks.audit).toEqual([{ agentId: 'a1', kind: 'call', outcome: 'allowed', surface: 'mobile' }]);
+    // A computer controlling this one is audited as one.
+    const fromDesktop = callRequest('a2');
+    await service.execute('desk-1', { ...body, commandId: 'c2', requestId: fromDesktop, answer: 'decline' }, run2, 'annex_desktop');
+    expect(mocks.audit).toEqual([
+      { agentId: 'a1', kind: 'call', outcome: 'allowed', surface: 'mobile' },
+      { agentId: 'a2', kind: 'call', outcome: 'declined', surface: 'annex_desktop' },
+    ]);
   });
 });
