@@ -17,7 +17,7 @@
 
 import { isDispatcherAgent } from './clubhouse-mcp/dispatcher-gate';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { appendAudit, auditNames, auditString, type AuditRow, type AuditValue, readAuditFromRecord } from './dispatcher-audit';
+import { auditNames, auditString, readDispatcherControls, recordDispatcherControl, type AuditRow, type AuditValue } from '../telemetry/dispatcher-telemetry';
 import {
   DISPATCHER_CONNECTION_SOURCE_ID,
   DispatcherLinkRefused,
@@ -85,11 +85,11 @@ async function audited<T extends object>(
   try {
     if (!isDispatcherAgent(row.actorId)) throw new DispatcherControlError('not_dispatcher', 'Only the Dispatcher can do this.');
     const { result, before, after, code } = await run();
-    const written = await appendAudit({ ...row, outcome: 'ok', ...(before && { before }), ...(after && { after }), ...(code && { code }) });
+    const written = recordDispatcherControl({ ...row, outcome: 'ok', ...(before && { before }), ...(after && { after }), ...(code && { code }) });
     return written ? result : { ...result, audit_warning: AUDIT_FAILED };
   } catch (err) {
     const refusal = err instanceof DispatcherControlError ? err.code : undefined;
-    await appendAudit({ ...row, outcome: refusal ? 'refused' : 'error', ...(refusal && { code: refusal }) });
+    recordDispatcherControl({ ...row, outcome: refusal ? 'refused' : 'error', ...(refusal && { code: refusal }) });
     throw err;
   }
 }
@@ -392,6 +392,6 @@ export async function listOrchestratorControls(actorId: string, args: Record<str
     links,
     ...(unconfirmed.length > 0 && { unconfirmed_removals: unconfirmed }),
     // From the local telemetry record (#2920); ids are matched back against the agents it knows.
-    ...(auditRows > 0 && { audit: await readAuditFromRecord(auditRows, [actorId, ...census.agents.keys()]) }),
+    ...(auditRows > 0 && { audit: await readDispatcherControls(auditRows, [actorId, ...census.agents.keys()]) }),
   };
 }

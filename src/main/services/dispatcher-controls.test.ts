@@ -142,7 +142,7 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { callTool, getScopedToolList, _resetForTesting } from './clubhouse-mcp/tool-registry';
 import { registerDispatcherControlTools } from './clubhouse-mcp/tools/dispatcher-control-tools';
 import { agentRegistry } from './agent-registry';
-import { type AuditRow } from './dispatcher-audit';
+import { type AuditRow } from '../telemetry/dispatcher-telemetry';
 import { captureAuditEvents, type AuditCapture } from '../telemetry/__test-utils__/audit-capture';
 import {
   dispatcherConnectionSource,
