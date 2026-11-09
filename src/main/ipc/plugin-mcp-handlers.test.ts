@@ -7,6 +7,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../services/clubhouse-mcp/plugin-caller-check', () => ({ checkPluginCaller: vi.fn(async () => null), CALL_OVER: 'over' }));
 
 vi.mock('../services/clubhouse-mcp/plugin-tool-registry', () => ({
   registerPluginTools: vi.fn(),
@@ -203,6 +204,17 @@ describe('plugin-mcp-handlers', () => {
       },
     );
 
+    it('check-caller asks for the plugin the token names, and returns the refusal (D126, #3168)', async () => {
+      const { checkPluginCaller } = await import('../services/clubhouse-mcp/plugin-caller-check');
+      const token = await tokenFor('plugin-a');
+      await expect(handler(IPC.PLUGIN_MCP.CHECK_CALLER)(page.event, token, 'call-1', { kind: 'wake', agentId: 'x' })).resolves.toEqual({ ok: true });
+      expect(checkPluginCaller).toHaveBeenCalledWith('plugin-a', 'call-1', { kind: 'wake', agentId: 'x' });
+      vi.mocked(checkPluginCaller).mockResolvedValueOnce('No.');
+      await expect(handler(IPC.PLUGIN_MCP.CHECK_CALLER)(page.event, token, 'call-1', { kind: 'project_defaults', projectPath: '/p' })).resolves.toEqual({ ok: false, message: 'No.' });
+      await expect(handler(IPC.PLUGIN_MCP.CHECK_CALLER)(page.event, 'plugin-a', 'call-1', { kind: 'wake', agentId: 'x' })).rejects.toThrow(/unknown or revoked token/);
+      expect(() => handler(IPC.PLUGIN_MCP.CHECK_CALLER)(page.event, token, 'call-1', { kind: 'other' })).toThrow(/must be/);
+    });
+
     it("rejects a token used from a page other than the one it was issued to", async () => {
       const token = await tokenFor('plugin-a');
       const other = makePage(2);
@@ -334,6 +346,7 @@ describe('registerPluginMcpHandlers registration', () => {
     const channels = [
       IPC.PLUGIN_MCP.CLAIM_ISSUER, IPC.PLUGIN_MCP.ISSUE_TOKEN, IPC.PLUGIN_MCP.REVOKE_TOKEN,
       IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS, IPC.PLUGIN_MCP.REMOVE_TOOLS, IPC.PLUGIN_MCP.LIST_TOOLS,
+      IPC.PLUGIN_MCP.CHECK_CALLER,
     ];
     const removed = vi.mocked(ipcMain.removeHandler).mock.calls.map(([ch]) => ch);
     expect(removed).toEqual([...channels, ...channels]);

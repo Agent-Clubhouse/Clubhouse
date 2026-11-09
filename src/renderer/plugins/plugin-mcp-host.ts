@@ -167,6 +167,8 @@ export function claimPluginMcpIssuer(): void {
   issuer = slot;
   try {
     bridge = { ...window.clubhouse.pluginMcp };
+    // A call main settled without the plugin's answer (timeout, tools removed) is over here too (#3168).
+    bridge.onCallEnded?.((data) => endAnswering(data.pluginId, data.callId));
     fill(slot, bridge.claimIssuer(), (err) => {
       rendererLog('core:plugins', 'warn', 'Could not claim the plugin MCP issuer; plugin MCP tools are unavailable', {
         meta: { error: err instanceof Error ? err.message : String(err) },
@@ -304,6 +306,32 @@ export function createMcpAPI(ctx: PluginContext): McpAPI {
       return disposable;
     },
   };
+}
+
+export type PluginCallerCheck = { kind: 'wake'; agentId: string; withMessage?: boolean } | { kind: 'project_defaults'; projectPath: string };
+
+/**
+ * While the plugin answers agents' tool calls, whether each of those agents may do this (D126,
+ * #3168). Null when every one may, or the plugin isn't answering any, else the first refusal.
+ * The open calls are read before anything awaits, so a call ending meanwhile still counts.
+ */
+export function checkAnsweringCallers(pluginId: string, check: PluginCallerCheck): Promise<string | null> {
+  const open = mapGet(answering, pluginId);
+  if (!open || open.length === 0) return NativePromise.resolve(null);
+  const callIds: string[] = [];
+  for (let i = 0; i < open.length; i++) arrayPush(callIds, open[i].callId);
+  const entry = mapGet(tokens, pluginId);
+  const b = bridge;
+  if (!entry || !b) return NativePromise.resolve('This plugin has no MCP token, so it can\'t act for the agent whose call it was answering.');
+  return withToken(entry.slot, async (token) => {
+    for (let i = 0; i < callIds.length; i++) {
+      const answer = await b.checkCaller(token, callIds[i], check);
+      // Main settled that call meanwhile: it is over, and what the plugin does isn't for that agent.
+      if (!answer.ok && answer.over) { endAnswering(pluginId, callIds[i]); continue; }
+      if (!answer.ok) return answer.message ?? 'The calling agent can\'t do this.';
+    }
+    return null;
+  });
 }
 
 /** For tests: forget the issuer, tokens and handler state. */

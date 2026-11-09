@@ -225,6 +225,18 @@ describe('plugin-tool-registry', () => {
       expect(send.mock.calls[1][1]).toMatchObject({ callerAccess: 'ask' });
     });
 
+    it('a call main settles itself is reported to the page as ended, so the plugin stops treating it as open (#3168)', async () => {
+      trust('plugin-a');
+      issueToken(PAGE, secret, 'plugin-a');
+      registerPluginTools('plugin-a', [tool('lookup')]);
+      bindingManager.bind('agent-1', { targetId: 'plugin-a', targetKind: 'plugin', label: 'A' });
+      void callTool('agent-1', 'plugin__plugin_a__lookup', {});
+      await vi.waitFor(() => expect(send).toHaveBeenCalled());
+      const { callId } = send.mock.calls[0][1] as { callId: string };
+      removePluginTools('plugin-a');
+      expect(send).toHaveBeenCalledWith('plugin-mcp:call-ended', { pluginId: 'plugin-a', callId });
+    });
+
     it("calls go only to the issuer's page: once that page is gone, they fail at once", async () => {
       issueToken(PAGE, secret, 'plugin-a');
       bindingManager.bind('agent-1', { targetId: 'plugin-a', targetKind: 'plugin', label: 'A' });

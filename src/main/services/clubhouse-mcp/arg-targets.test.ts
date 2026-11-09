@@ -5,7 +5,10 @@ import type { DurableAgentConfig } from '../../../shared/types';
 const state = vi.hoisted(() => ({
   agents: new Map<string, DurableAgentConfig[]>(),
   connected: new Set<string>(),
+  /** The agent behind the plugin call being checked (#3168). */
+  pluginCaller: undefined as string | undefined,
 }));
+vi.mock('./plugin-tool-registry', () => ({ agentOfPluginCall: () => state.pluginCaller }));
 
 vi.mock('../project-store', () => ({
   peekProjects: async () => [{ id: 'p1', name: 'Home', path: '/home' }, { id: 'p2', name: 'Far', path: '/far' }],
@@ -28,6 +31,7 @@ import { setDispatcherAgent, _resetDispatcherGateForTesting } from './dispatcher
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import type { ToolGrant } from './tool-grants';
+import { checkPluginCaller } from './plugin-caller-check';
 
 const agent = (id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig => ({ id, name: id, color: 'blue', createdAt: '', ...extra });
 
@@ -168,5 +172,42 @@ describe('targets named in the arguments (#2974)', () => {
     } finally {
       await updateAgentGrantChanges('dispatcher', () => undefined);
     }
+  });
+});
+
+describe('what a plugin may do for the agent whose call it answers, with real grants (#3168)', () => {
+  const asCaller = (id: string) => { state.pluginCaller = id; };
+
+  it('changing a project\'s agent defaults needs project.configure there: none by default, the Dispatcher only with Ask first', async () => {
+    asCaller('plain');
+    expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/home' })).toMatch(/^A plugin can't do for an agent what the agent can't: .*project\.configure/);
+    asCaller('dispatcher');
+    expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/home' })).toMatch(/set to Ask first/);
+    // Granted on its own project, by the user: it may there, and not on another.
+    await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'project.configure', target: { kind: 'project', project: 'own' }, mode: 'allow' }] }));
+    try {
+      asCaller('plain');
+      expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/home' })).toBeNull();
+      expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/far' })).not.toBeNull();
+      // A folder that isn't a project is something it can't reach.
+      expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/nowhere' })).toBe('The calling agent can\'t change that project\'s agent defaults.');
+    } finally {
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+
+  it('resuming needs agent.wake on the target, and with a mission agent.message too', async () => {
+    asCaller('orch');
+    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'helper' })).toBeNull();
+    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'peer' })).toMatch(/agent\.wake/);
+    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'helper', withMessage: true })).toBeNull();
+    await updateAgentGrantChanges('orch', () => ({ changes: [{ action: 'agent.message', target: { kind: 'my_helpers' }, mode: 'ask' }] }));
+    try {
+      expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'helper' })).toBeNull();
+      expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'helper', withMessage: true })).toMatch(/set to Ask first/);
+    } finally {
+      await updateAgentGrantChanges('orch', () => undefined);
+    }
+    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'no-such-agent' })).toBe('The calling agent can\'t wake that agent.');
   });
 });

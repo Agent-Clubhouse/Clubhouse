@@ -33,6 +33,8 @@ const pluginTools = new Map<string, PluginToolEntry[]>();
 /** Pending tool call resolvers — keyed by callId */
 const pendingCalls = new Map<string, {
   pluginId: string;
+  /** The agent that made the call (D126, #3168). */
+  agentId: string;
   resolve: (result: McpToolResult) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -109,6 +111,20 @@ export function registerPluginTools(
 }
 
 /**
+ * Tell the plugin's page that main settled one of its calls without its answer (a timeout,
+ * its tools removed), so the page stops treating it as open (D126, #3168). Best effort.
+ */
+function notifyCallEnded(pluginId: string, callId: string): void {
+  try {
+    const hostId = webContentsIdForPlugin(pluginId);
+    const host = hostId === undefined ? undefined : webContents.fromId(hostId);
+    if (host && !host.isDestroyed()) host.send(IPC.PLUGIN_MCP.CALL_ENDED, { pluginId, callId });
+  } catch {
+    // telemetry-exempt: the page drops its open calls when the plugin deactivates anyway
+  }
+}
+
+/**
  * Remove all tools contributed by a plugin.
  */
 export function removePluginTools(pluginId: string): void {
@@ -118,6 +134,7 @@ export function removePluginTools(pluginId: string): void {
     if (pending.pluginId !== pluginId) continue;
     clearTimeout(pending.timer);
     pendingCalls.delete(callId);
+    notifyCallEnded(pluginId, callId);
     pending.resolve({
       content: [{ type: 'text', text: `Plugin ${pluginId} was removed before answering the tool call` }],
       isError: true,
@@ -156,13 +173,14 @@ async function invokePluginToolHandler(
   return new Promise<McpToolResult>((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingCalls.delete(callId);
+      notifyCallEnded(pluginId, callId);
       resolve({
         content: [{ type: 'text', text: `Plugin tool call timed out after ${TOOL_CALL_TIMEOUT_MS / 1000}s: ${pluginId}/${toolName}` }],
         isError: true,
       });
     }, TOOL_CALL_TIMEOUT_MS);
 
-    pendingCalls.set(callId, { pluginId, resolve, reject, timer });
+    pendingCalls.set(callId, { pluginId, agentId, resolve, reject, timer });
 
     const hostId = webContentsIdForPlugin(pluginId);
     const host = hostId === undefined ? undefined : webContents.fromId(hostId);
@@ -184,6 +202,12 @@ async function invokePluginToolHandler(
       });
     }
   });
+}
+
+/** The agent behind a call `pluginId` is answering now, or undefined once it's settled or for another plugin's call. */
+export function agentOfPluginCall(callId: string, pluginId: string): string | undefined {
+  const pending = pendingCalls.get(callId);
+  return pending && pending.pluginId === pluginId ? pending.agentId : undefined;
 }
 
 /**

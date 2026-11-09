@@ -32,5 +32,12 @@ export const pluginMcp = {
   },
   sendToolResult: (token: string, callId: string, result: PluginToolResult) =>
     ipcRenderer.send(IPC.PLUGIN_MCP.TOOL_RESULT, { token, callId, result }),
+  checkCaller: (token: string, callId: string, check: { kind: 'wake'; agentId: string; withMessage?: boolean } | { kind: 'project_defaults'; projectPath: string }) =>
+    ipcRenderer.invoke(IPC.PLUGIN_MCP.CHECK_CALLER, token, callId, check) as Promise<{ ok: boolean; message?: string; over?: boolean }>,
+  onCallEnded: (callback: (data: { pluginId: string; callId: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { pluginId: string; callId: string }) => callback(data);
+    ipcRenderer.on(IPC.PLUGIN_MCP.CALL_ENDED, listener);
+    return () => { ipcRenderer.removeListener(IPC.PLUGIN_MCP.CALL_ENDED, listener); };
+  },
   },
 };
