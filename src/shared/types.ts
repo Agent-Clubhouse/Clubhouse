@@ -1043,6 +1043,9 @@ export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
  */
 export const COPILOT_ACP_REMOVED_NOTICE_KEY = 'copilotLegacyAcpRemovedNotice';
 
+/** The Dispatcher debug view's switch (#3188); renderer/features/dispatcher/dispatcherDebug.ts reads it. */
+export const DISPATCHER_DEBUG_FLAG = 'dispatcherDebug';
+
 /**
  * Experimental features that count only in preview-eligible builds, where the
  * Experimental settings page is shown. Elsewhere they read as off and stay saved,
@@ -1051,6 +1054,7 @@ export const COPILOT_ACP_REMOVED_NOTICE_KEY = 'copilotLegacyAcpRemovedNotice';
  */
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'goobers',
+  DISPATCHER_DEBUG_FLAG,
   'copilotSdk', // Legacy preference retained for downgrade compatibility only.
 ];
 

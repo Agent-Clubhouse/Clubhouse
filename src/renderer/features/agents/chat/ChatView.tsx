@@ -38,7 +38,8 @@ import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, us
 import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 import { HelperHeader } from '../helpers/HelperHeader';
 import { SetupChangedBar } from '../../managed/SetupChangedBar';
-import { groupChatState, useGroupChatContext } from '../../dispatcher/group-chat';
+import { groupChatDebugMarks, groupChatState, useGroupChatContext, type GroupChatDebugMark } from '../../dispatcher/group-chat';
+import { useDispatcherDebug } from '../../dispatcher/dispatcherDebug';
 import { DispatcherChatIntro } from '../../dispatcher/DispatcherIntro';
 
 /** Where a ChatView is shown; several can show the same agent at once. */
@@ -62,6 +63,8 @@ export interface ChatViewBodyProps {
   onBrowseHistory?: () => void;
   /** The Dispatcher's group chat (#3043): `state` is already narrowed to what it shows. */
   groupChat?: boolean;
+  /** The Dispatcher debug view (#3188): `state` isn't narrowed, and these mark what the chat would hide or clean. */
+  debugMarks?: ReadonlyMap<string, GroupChatDebugMark>;
 }
 
 /**
@@ -155,7 +158,7 @@ function useComposerContext(agent: Agent, state: ChatViewState, view: ChatViewCo
   return { now, next, ...(canOpen && { onOpen: () => openAgentSettingsOn(agent.id, 'settings') }) };
 }
 
-export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory, groupChat }: ChatViewBodyProps) {
+export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory, groupChat, debugMarks }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
   // Only a queue the runtime holds can be edited; a CLI that queues natively (Claude) already has the message.
   const queueEditable = state.capabilities?.queue === 'client';
@@ -374,6 +377,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
             announce={context !== 'canvas'}
             onShowEarlier={onShowEarlier}
             groupChat={groupChat}
+            debugMarks={debugMarks}
             emptyState={dispatcherIntro}
           />
           {/* An approval card is capped so it can't squeeze the transcript out (#2412): the card and the lists
@@ -427,13 +431,17 @@ export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main
   const empty = useMemo(() => createChatViewState(agent.id), [agent.id]);
   const groupChat = useGroupChatContext(agent);
   const state = stored ?? empty;
-  const shown = useMemo(() => (groupChat ? groupChatState(state, groupChat) : state), [state, groupChat]);
+  // The Dispatcher debug view (#3188): everything, with what the group chat would hide or clean marked.
+  const debug = useDispatcherDebug() && !!groupChat;
+  const shown = useMemo(() => (groupChat && !debug ? groupChatState(state, groupChat) : state), [state, groupChat, debug]);
+  const debugMarks = useMemo(() => (groupChat && debug ? groupChatDebugMarks(state.items, groupChat) : undefined), [state.items, groupChat, debug]);
   if (historyOpen) return <ChatHistory key={agent.id} agentId={agent.id} currentSessionId={stored?.sessionId ?? null} onClose={() => setHistoryOpen(false)} />;
   return (
     <ChatViewBody
       agent={agent}
       state={shown}
       groupChat={!!groupChat}
+      debugMarks={debugMarks}
       actions={actions}
       loading={loading && !stored}
       onSwitchToTerminal={onSwitchToTerminal}

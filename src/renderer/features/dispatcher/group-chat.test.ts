@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createChatViewState, type ChatItem } from '../../stores/chatStore';
 import type { RoutedMessagePart } from '../../../shared/chat';
-import { groupChatItem, groupChatItems, groupChatState, type GroupChatContext } from './group-chat';
+import { groupChatDebugMarks, groupChatItem, groupChatItems, groupChatState, type GroupChatContext } from './group-chat';
 
 const ctx: GroupChatContext = { ownAgentIds: new Set(['chat', 'coordinator']) };
 let n = 0;
@@ -80,5 +80,18 @@ describe('the Dispatcher\'s group chat', () => {
     expect(groupChatState(state, ctx)).toBe(state);
     const noisy = { ...state, items: [...state.items, tool()] };
     expect(groupChatState(noisy, ctx).items).toHaveLength(2);
+  });
+});
+
+describe('the debug view\'s marks (#3188)', () => {
+  it('marks what the chat hides and what it shows cleaned, and nothing it shows as it is', () => {
+    const mine = you('hi');
+    const call = tool();
+    const update = routedMessage([{ fromClubhouse: true, text: '[FROM:webapp-lead] needs_user: pick a date' }]);
+    const noisy = said('Sent it (task_id=t_1abcdef).');
+    const clean = said('Done.');
+    const footer: ChatItem = { ...base(), kind: 'turn_end', stopReason: 'end_turn' };
+    const marks = groupChatDebugMarks([mine, call, update, noisy, clean, footer], ctx);
+    expect([...marks]).toEqual([[call.id, 'hidden'], [update.id, 'hidden'], [noisy.id, 'raw'], [footer.id, 'hidden']]);
   });
 });
