@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+const azureProbe = vi.hoisted(() => ({ ok: false, health: {} as Record<string, { lastSuccessAt?: number; lastFailureAt?: number }> }));
 const state = vi.hoisted(() => ({
   dir: '',
   destinations: [{ id: 'otlp', kind: 'otlp', backfilledThrough: undefined as number | undefined, backfillProgress: undefined as Record<string, { t: number; n: number }> | undefined }],
@@ -14,6 +15,12 @@ const state = vi.hoisted(() => ({
   result: { ok: true, spans: 1, logs: 1, metricPoints: 0, filtered: 0, skipped: 0 } as Record<string, unknown>,
 }));
 vi.mock('./bootstrap', () => ({
+  // The Azure probe: a test event, which updates health when it gets through.
+  sendTestEvent: vi.fn(async (destination: string) => {
+    if (!azureProbe.ok) return { ok: false };
+    azureProbe.health[destination] = { lastSuccessAt: Date.now() };
+    return { ok: true };
+  }),
   replayToDestination: vi.fn(async (destination: string, lines: string[], opts: { signal?: AbortSignal; errorTraceIds?: ReadonlySet<string> } = {}) => {
     if (state.gate) await state.gate;
     if (opts.signal?.aborted) return { ok: false, reason: 'cancelled', spans: 0, logs: 0, metricPoints: 0, filtered: 0, skipped: 0 };
@@ -23,6 +30,9 @@ vi.mock('./bootstrap', () => ({
   }),
 }));
 vi.mock('./local-control', () => ({ getLogDir: () => state.dir }));
+const azure = vi.hoisted(() => ({ health: {} as Record<string, { lastSuccessAt?: number; lastFailureAt?: number }>, queued: [0] as number[], probeOk: false }));
+vi.mock('./facade', () => ({ getRuntime: () => ({ destinationHealth: () => ({ ...azure.health, ...azureProbe.health }) }) }));
+vi.mock('./offline', () => ({ getOfflineDir: () => '/offline', countOfflineItems: async () => (azure.queued.length > 1 ? azure.queued.shift()! : azure.queued[0]) }));
 const salt = vi.hoisted(() => ({ since: 0 as number | undefined }));
 vi.mock('./local-salt', () => ({ localSaltSince: () => salt.since }));
 vi.mock('../services/log-settings', () => ({ getSettings: () => ({ retention: 'medium' }) }));
@@ -54,6 +64,10 @@ beforeEach(() => {
   state.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'backfill-'));
   state.destinations = [{ id: 'otlp', kind: 'otlp', backfilledThrough: undefined, backfillProgress: undefined }];
   salt.since = 0;
+  azure.health = {};
+  azure.queued = [0];
+  azureProbe.ok = false;
+  azureProbe.health = {};
   state.gate = undefined;
   state.identity = undefined;
   state.sent = [];
@@ -248,6 +262,77 @@ describe('backfill on connect (#2920)', () => {
     // 256 sent, then a slice told it may send 44 more, then nothing.
     expect(state.sent).toHaveLength(2);
     expect(getBackfillStatus('otlp')?.filtered).toBe(88);
+  });
+
+  describe('Azure, which queues what it can\'t send to its own disk', () => {
+    beforeEach(() => {
+      state.destinations = [{ id: 'azure', kind: 'azure', backfilledThrough: undefined, backfillProgress: undefined } as never];
+      writeRun(NOW - 2 * DAY, [session(NOW - 2 * DAY), event(NOW - 2 * DAY + 1000), metric(NOW - 2 * DAY + 2000), event(NOW - 2 * DAY + 3000)]);
+      noteDestinationEnabled('azure', 'azure', NOW);
+    });
+
+    it('refuses to start unless a live export succeeded recently, none failed since, and nothing is queued', async () => {
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      azure.health = { azure: { lastSuccessAt: Date.now() - 60 * 60 * 1000 } };
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000, lastFailureAt: Date.now() } };
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000 } };
+      azure.queued = [3];
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      expect(state.sent).toEqual([]);
+      // The offer stays for when it's reachable.
+      expect(await getBackfillOffer('azure')).not.toBeNull();
+    });
+
+    it('right after Azure is turned on, with nothing exported yet, one test event settles that it is reachable', async () => {
+      azureProbe.ok = true;
+      expect(await startBackfill('azure', 7)).toEqual({ ok: true });
+      await until(() => getBackfillStatus('azure')?.state === 'done');
+    });
+
+    it('a refused start keeps the earlier stopped send, so its resume is still offered', async () => {
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000 } };
+      azure.queued = [0, 0, 1, 1];
+      await startBackfill('azure', 7);
+      await until(() => getBackfillStatus('azure')?.state === 'failed');
+      azure.queued = [2];
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      expect(getBackfillStatus('azure')?.state).toBe('failed');
+      expect(await getBackfillOffer('azure')).toMatchObject({ resuming: true });
+    });
+
+    it('stops as soon as a slice goes to the disk queue instead of out, and resumes after it later', async () => {
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000 } };
+      // Empty at the check and before the first slice, then one item queued after it.
+      azure.queued = [0, 0, 1, 1];
+      await startBackfill('azure', 7);
+      await until(() => getBackfillStatus('azure')?.state === 'failed');
+      expect(getBackfillStatus('azure')?.reason).toBe('not_reachable');
+      expect(state.sent).toHaveLength(1);
+      // The queued slice will reach Azure when it's back, so it isn't sent again.
+      expect(state.destinations[0].backfillProgress).toEqual({ log: { t: NOW - 2 * DAY + 1000, n: 1 } });
+    });
+
+    it('sends everything while Azure keeps accepting', async () => {
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000 } };
+      await startBackfill('azure', 7);
+      await until(() => getBackfillStatus('azure')?.state === 'done');
+      expect(state.sent).toHaveLength(3);
+    });
+  });
+
+  it('a resume keeps the window of the first send, whatever is asked the second time', async () => {
+    writeRun(NOW - 10 * DAY, [session(NOW - 10 * DAY), event(NOW - 10 * DAY + 1000, 'ten-days-ago'), event(NOW - 10 * DAY + 2000, 'ten-days-later')]);
+    noteDestinationEnabled('otlp', 'otlp', NOW);
+    state.failOnCall = 0;
+    await startBackfill('otlp', 'all');
+    await until(() => getBackfillStatus('otlp')?.state === 'failed');
+    state.failOnCall = undefined;
+    // Asking for 7 days now would leave out the 10-day-old line; the first send's window is kept.
+    await startBackfill('otlp', 7);
+    await until(() => getBackfillStatus('otlp')?.state === 'done');
+    expect(state.sent.flatMap((x) => x.lines.slice(1).map((l) => JSON.parse(l).name))).toEqual(['ten-days-ago', 'ten-days-later']);
   });
 });
 

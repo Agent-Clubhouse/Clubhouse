@@ -26,7 +26,9 @@ import * as path from 'path';
 import { LOG_RETENTION_TIERS, type LogRetention } from '../../shared/types';
 import type { BackfillOffer, BackfillRange, BackfillStatus, TelemetryDestinationEntry } from '../../shared/telemetry/settings-types';
 import * as logSettings from '../services/log-settings';
-import { replayToDestination } from './bootstrap';
+import { replayToDestination, sendTestEvent } from './bootstrap';
+import { getRuntime } from './facade';
+import { countOfflineItems, getOfflineDir } from './offline';
 import { isValidIdentity } from './ids';
 import { getLogDir } from './local-control';
 import { recordFilesNewestFirst } from './local-record-reader';
@@ -48,7 +50,8 @@ const SLICE = 256;
 type Kind = 'span' | 'log' | 'metric';
 type Progress = NonNullable<TelemetryDestinationEntry['backfillProgress']>;
 
-const enabledAt = new Map<string, { until: number }>();
+/** Per destination: when it was turned on, and once a send started, the window's start (a resume keeps it). */
+const enabledAt = new Map<string, { until: number; from?: number }>();
 const running = new Map<string, { abort: AbortController; status: BackfillStatus }>();
 const finished = new Map<string, BackfillStatus>();
 
@@ -150,6 +153,37 @@ async function historyFiles(since: number, until: number): Promise<RecordFile[]>
   return out;
 }
 
+/** How recent a successful live export must be for Azure to count as reachable. */
+export const AZURE_REACHABLE_WITHIN_MS = 10 * 60 * 1000;
+
+/**
+ * Azure Monitor's exporter keeps batches it can't send in its own disk queue and
+ * reports success (spec §6.12), so a backfill to it would fill that queue rather
+ * than stop. Reachable means: a live export succeeded in the last ten minutes,
+ * none failed since, and the offline queue is empty (nothing is waiting to retry).
+ */
+async function azureReachable(destinationId: string, probe = false): Promise<boolean> {
+  const recent = () => {
+    const health = getRuntime()?.destinationHealth()[destinationId];
+    return !!health?.lastSuccessAt && Date.now() - health.lastSuccessAt <= AZURE_REACHABLE_WITHIN_MS
+      && (health.lastFailureAt ?? 0) <= health.lastSuccessAt;
+  };
+  if ((await queuedOffline()) !== 0) return false;
+  if (recent()) return true;
+  // Just turned on, nothing exported yet: one test event, as "Send test event" sends, settles it.
+  if (!probe) return false;
+  const test = await sendTestEvent(destinationId).catch(() => ({ ok: false }));
+  return test.ok && recent() && (await queuedOffline()) === 0;
+}
+
+async function queuedOffline(): Promise<number> {
+  try {
+    return await countOfflineItems(getOfflineDir());
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
 /** The first time history may come from for this destination. */
 function floorFor(destinationId: string): number {
   return Math.max(entryOf(destinationId)?.backfilledThrough ?? 0, saltSince());
@@ -171,6 +205,8 @@ export async function getBackfillOffer(destinationId: string): Promise<BackfillO
     oldest,
     days: Math.max(1, Math.ceil((pending.until - oldest) / DAY_MS)),
     bytes: files.reduce((n, f) => n + f.bytes, 0),
+    // A send already started: the rest goes in the window chosen then.
+    ...(pending.from !== undefined && { resuming: true }),
   };
 }
 
@@ -226,15 +262,23 @@ export async function startBackfill(destinationId: string, range: BackfillRange,
   const pending = enabledAt.get(destinationId);
   if (!pending) return { ok: false, reason: 'no_offer' };
   if (running.has(destinationId)) return { ok: false, reason: 'already_running' };
+  const azure = entryOf(destinationId)?.kind === 'azure';
   // Claimed before the first wait, so a second start (a double click) is refused.
   const abort = new AbortController();
   const status: BackfillStatus = { destinationId, state: 'running', spans: 0, logs: 0, metricPoints: 0, filtered: 0, runsDone: 0, runsTotal: 0 };
   running.set(destinationId, { abort, status });
-  finished.delete(destinationId);
   const changed = () => { try { onChange?.({ ...status }); } catch { /* a listener must never stop the send */ } };
 
+  if (azure && !await azureReachable(destinationId, true)) {
+    // Refused before anything started: an earlier stopped send's status stays.
+    running.delete(destinationId);
+    return { ok: false, reason: 'not_reachable' };
+  }
+  finished.delete(destinationId);
   const until = pending.until;
-  const from = Math.max(range === 'all' ? 0 : until - range * DAY_MS, floorFor(destinationId));
+  // A resume keeps the window of the first send, so nothing between its marks and a narrower new window is lost.
+  pending.from ??= range === 'all' ? 0 : until - range * DAY_MS;
+  const from = Math.max(pending.from, floorFor(destinationId));
   let files: RecordFile[];
   try {
     files = (await historyFiles(from, until)).reverse();
@@ -287,6 +331,7 @@ export async function startBackfill(destinationId: string, range: BackfillRange,
           const kind = s[0].kind;
           const remaining = kind === 'span' ? limits.spans - status.spans : kind === 'log' ? limits.logs - status.logs : Infinity;
           if (remaining > 0) {
+            const queuedBefore = azure ? await queuedOffline() : 0;
             const report = await replayToDestination(destinationId, [session, ...s.map((p) => p.line)], {
               signal: abort.signal, errorTraceIds: failedTraces, state,
               ...(kind === 'span' && { maxSpans: remaining }), ...(kind === 'log' && { maxLogs: remaining }),
@@ -298,6 +343,18 @@ export async function startBackfill(destinationId: string, range: BackfillRange,
             if (!report.ok) {
               status.state = report.reason === 'cancelled' ? 'cancelled' : 'failed';
               status.reason = report.reason;
+              break;
+            }
+            // Azure said yes but queued it to disk: it isn't sending now. Stop, so a backfill
+            // never fills that queue. The queued slice is sent when Azure is back, so it counts as sent.
+            if (azure && (await queuedOffline()) > queuedBefore) {
+              const last = s[s.length - 1].t;
+              const before = progress[kind];
+              const atLast = s.filter((p) => p.t === last).length;
+              progress[kind] = { t: last, n: before && before.t === last ? before.n + atLast : atLast };
+              await updateEntry(destinationId, (d) => ({ ...d, backfillProgress: { ...progress } }));
+              status.state = 'failed';
+              status.reason = 'not_reachable';
               break;
             }
           } else {

@@ -15,6 +15,8 @@ import { withValidatedArgs, booleanArg, objectArg, stringArg } from './validatio
 import { cleanCardEdit, type AgentCardFields, type AgentCardView } from '../../shared/dispatcher-agent-card';
 import { onAgentCardChanged, readAgentCardView, saveAgentCardEdit } from '../services/dispatcher/dispatcher-agent-card-source';
 import { isDispatcherBehavior } from '../../shared/dispatcher-behavior';
+import type { DispatcherTeaching } from '../../shared/dispatcher-teaching';
+import { readDispatcherTeaching } from '../services/dispatcher/dispatcher-teaching';
 
 let registered = false;
 
@@ -55,6 +57,9 @@ export function registerDispatcherHandlers(): void {
     async (_event, agentId, fields): Promise<AgentCardView> => saveAgentCardEdit(agentId, cleanCardEdit(fields)),
   ));
   onAgentCardChanged((agentId) => broadcastToAllWindows(IPC.DISPATCHER.AGENT_CARD_CHANGED, agentId));
+
+  // What its chat shows before the first message: the intro and suggestions (#3048).
+  ipcMain.handle(IPC.DISPATCHER.GET_TEACHING, (): Promise<DispatcherTeaching> => readDispatcherTeaching());
 
   let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {

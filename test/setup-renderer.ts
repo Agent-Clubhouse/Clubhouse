@@ -579,6 +579,7 @@ vi.stubGlobal('clubhouse', {
     getAgentCard: async () => null,
     saveAgentCard: async () => ({ state: 'none', card: null }),
     onAgentCardChanged: () => noop,
+    getTeaching: async () => ({ agents: [] }),
   },
   actions: {
     list: async () => [],
@@ -620,6 +621,11 @@ vi.stubGlobal('clubhouse', {
     clearOffline: async () => ({ ok: false }),
     deleteLocalData: async () => ({ ok: false }),
     resume: async () => ({ ok: false }),
+    backfillOffer: async () => null,
+    backfillStart: async () => ({ ok: false }),
+    backfillCancel: async () => {},
+    backfillStatus: async () => null,
+    backfillDismiss: async () => {},
   },
   chat: {
     readTranscript: async () => [],
