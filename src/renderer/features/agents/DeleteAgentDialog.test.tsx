@@ -313,6 +313,41 @@ describe('DeleteAgentDialog', () => {
     });
   });
 
+  describe('helpers the dialog didn\'t know about when it opened (#3182)', () => {
+    const scout = { id: 'h1', name: 'scout', color: 'blue', createdAt: 'x', parentAgentId: 'agent-1' };
+
+    afterEach(() => {
+      window.clubhouse.agent.listHelpers = vi.fn().mockResolvedValue([]);
+    });
+
+    it('asks about helpers when main says it has some now, instead of failing the same way again', async () => {
+      // None when it opened; one started before Delete was clicked.
+      let started = false;
+      window.clubhouse.agent.listHelpers = vi.fn(async () => (started ? [scout] : []));
+      mockExecuteDelete.mockImplementationOnce(async () => {
+        started = true;
+        return { ok: false, message: 'Choose what happens to bold-falcon\'s helpers' };
+      });
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByText(/No uncommitted changes detected/));
+      fireEvent.click(screen.getByText('Delete'));
+      await waitFor(() => screen.getByTestId('delete-agent-helpers-step'));
+      expect(screen.getByText(/bold-falcon has 1 helper\./)).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('delete-agent-helpers-dispose'));
+      await waitFor(() => screen.getByText(/No uncommitted changes detected/));
+      fireEvent.click(screen.getByText('Delete'));
+      await waitFor(() => expect(mockExecuteDelete).toHaveBeenLastCalledWith('force', '/home/user/project', 'dispose'));
+    });
+
+    it('asks about a live helper below a disposed one, which main counts too', async () => {
+      // No live direct helper; one live helper of a disposed helper.
+      window.clubhouse.agent.listHelpers = vi.fn(async (_p: string, _id: string, recursive?: boolean) => (recursive === false ? [] : [scout]));
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByTestId('delete-agent-helpers-step'));
+      expect(screen.getByText(/bold-falcon has 1 helper\./)).toBeInTheDocument();
+    });
+  });
+
   describe('agents outside the active project (the new chrome tree)', () => {
     it('reads and deletes the worktree in the agent’s own project', async () => {
       resetStores();

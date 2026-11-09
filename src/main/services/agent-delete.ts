@@ -12,13 +12,20 @@
  *    refuses one.
  * 3. Helpers are disposed (stopped first, each in its own project, with the
  *    dispose checks; work at risk stops it unless `forceHelpers`) or kept.
- *    If any helper is left, the agent is not deleted.
+ *    Its orchestration gate is closed meanwhile, so it can't start another;
+ *    one whose start was already under way is settled too. If any helper is
+ *    left, the agent is not deleted and the gate opens again.
  * 4. Quick agents running in its worktree are stopped, as the dialog stops
  *    its quick agents, so none is left working in a folder that is going.
- * 5. The agent is stopped and deleted in the chosen mode.
+ * 5. The agent is stopped. With `checkWorktree`, its worktree is checked
+ *    again now nothing runs in it: work written since the first check
+ *    refuses the delete (unless `forceWorktree`), with the helpers settled
+ *    and the agent stopped but nothing lost.
+ * 6. It is deleted in the chosen mode.
  *
  * It runs under the agent's lock, so a dispose_helper or orchestration change
  * for the same agent can't run in the middle. Nothing here asks the user.
+ * Each call is one `clubhouse.agent.delete` flow: a refusal is `skipped`.
  */
 
 import * as path from 'path';
@@ -29,6 +36,9 @@ import { listHelpersEverywhere } from './helper-index';
 import { settleHelpers, withAgentLock } from './orchestration-policy';
 import * as dispatcher from './dispatcher/dispatcher-service';
 import { appLog } from './log-service';
+import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl, setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
+import { tel, withErrorType } from '../telemetry/facade';
+import { ATTR } from '../../shared/telemetry/attributes';
 import type { AgentDeleteMode, AgentDeleteResult, DeleteResult, HelperCascadeResult, HelperDeleteChoice, WorktreeStatus } from '../../shared/types';
 
 export type { AgentDeleteMode, AgentDeleteResult };
@@ -76,6 +86,25 @@ function runningQuickAgentsIn(worktreePath: string | undefined): Array<{ id: str
   return out;
 }
 
+const MODE_ATTR: Record<AgentDeleteMode, Parameters<typeof ATTR.deleteMode>[0]> = {
+  'commit-push': 'commit_push',
+  'cleanup-branch': 'cleanup_branch',
+  'save-patch': 'save_patch',
+  force: 'force',
+  unregister: 'unregister',
+};
+
+/**
+ * A delete that was refused rather than failed: nothing was lost and the
+ * caller can choose again (helpers to choose for, work at risk, a worktree
+ * with unsaved work). A helper that failed part way is a failure.
+ */
+export function isDeleteRefusal(result: AgentDeleteResult): boolean {
+  if (result.ok) return false;
+  if (result.needsHelperChoice || result.worktree) return true;
+  return !!result.helpers && !result.helpers.ok && !result.helpers.failed?.length;
+}
+
 /** Modes that remove the worktree with whatever is in it. */
 function losesWorktree(mode: AgentDeleteMode): boolean {
   return mode === 'force';
@@ -91,7 +120,18 @@ export async function deleteAgent(projectPath: string, agentId: string, request:
   if (dispatcher.isDispatcherPath(projectPath) || dispatcher.isDispatcherIdentityAgentId(agentId)) {
     return { ok: false, message: 'The Dispatcher can\'t be deleted.' };
   }
-  return withAgentLock(projectPath, agentId, () => deleteLocked(projectPath, agentId, request));
+  return tel.flow('clubhouse.agent.delete', { attrs: [ATTR.deleteMode(MODE_ATTR[request.mode])] },
+    () => withErrorType('delete_failed', () => withAgentLock(projectPath, agentId, () => deleteLocked(projectPath, agentId, request))),
+    { classify: (r) => (r.ok ? 'ok' : isDeleteRefusal(r) ? { outcome: 'skipped' } : { error: 'delete_failed' }) });
+}
+
+/** Its orchestration gate as it is, to close while helpers settle and open again if the agent stays. */
+function closeGate(agentId: string): () => void {
+  if (!isOrchestrationEnabled(agentId)) return () => {};
+  const crossProject = isCrossProjectEnabled(agentId);
+  const control = orchestrationControl(agentId);
+  setOrchestrationEnabled(agentId, false);
+  return () => setOrchestrationEnabled(agentId, true, { crossProject, ...(control !== undefined && { control }) });
 }
 
 async function deleteLocked(projectPath: string, agentId: string, request: AgentDeleteRequest): Promise<AgentDeleteResult> {
@@ -107,42 +147,70 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
     };
   }
 
+  const checksWorktree = !!request.checkWorktree && losesWorktree(request.mode) && !!agent.worktreePath;
   // Checked before the helpers are touched, so a refusal changes nothing.
-  if (request.checkWorktree && losesWorktree(request.mode) && agent.worktreePath) {
-    const status = await agentConfig.getWorktreeStatus(projectPath, agentId);
-    if (status.checkError) {
-      return {
-        ok: false,
-        message: `${agent.name}'s worktree couldn't be checked for unsaved work (${status.checkError}), so it can't be deleted, even with force. Keeping its files on disk still works.`,
-        worktree: status,
-      };
-    }
-    if (worktreeHasWork(status) && !request.forceWorktree) {
-      return {
-        ok: false,
-        message: `${agent.name}'s worktree has unsaved work that deleting it would lose. Nothing was changed.`,
-        worktree: status,
-      };
-    }
+  if (checksWorktree) {
+    const refused = worktreeRefusal(agent.name, await agentConfig.getWorktreeStatus(projectPath, agentId), request, 'Nothing was changed.');
+    if (refused) return refused;
   }
 
-  let cascade: HelperCascadeResult | undefined;
-  if (helpers.length > 0 && request.helpers) {
-    cascade = await settleHelpers(projectPath, agentId, request.helpers, request.forceHelpers);
-    if (!cascade.ok) {
-      appLog('core:agent-config', 'info', 'Agent delete stopped by its helpers', {
-        meta: { agentId, choice: request.helpers, blocked: cascade.blocked?.length ?? 0, failed: cascade.failed?.length ?? 0 },
-      });
-      return { ok: false, message: cascade.message, helpers: cascade };
+  const reopenGate = closeGate(agentId);
+  let deleted = false;
+  try {
+    let cascade: HelperCascadeResult | undefined;
+    if (helpers.length > 0 && request.helpers) {
+      cascade = await settleHelpers(projectPath, agentId, request.helpers, request.forceHelpers);
+      // A start already under way when the gate closed can still land: settle it the same way.
+      if (cascade.ok && (await listHelpersEverywhere(projectPath, agentId, { recursive: true })).length > 0) {
+        const again = await settleHelpers(projectPath, agentId, request.helpers, request.forceHelpers);
+        cascade = { ...again, helperIds: [...(cascade.helperIds ?? []), ...(again.helperIds ?? [])] };
+      }
+      if (!cascade.ok) {
+        appLog('core:agent-config', 'info', 'Agent delete stopped by its helpers', {
+          meta: { agentId, choice: request.helpers, blocked: cascade.blocked?.length ?? 0, failed: cascade.failed?.length ?? 0 },
+        });
+        return { ok: false, message: cascade.message, helpers: cascade };
+      }
     }
+
+    // Waits for each to exit, so none holds the worktree open (EBUSY on Windows).
+    const quickAgents = runningQuickAgentsIn(agent.worktreePath);
+    for (const quick of quickAgents) await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
+
+    if (isAgentRunning(agentId)) await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true });
+    const stopped = { ...(cascade && { helpers: cascade }), ...(quickAgents.length > 0 && { stoppedQuickAgents: quickAgents.map((q) => q.id) }) };
+
+    // Again now nothing runs in it: work written while helpers settled and agents stopped isn't lost.
+    if (checksWorktree) {
+      const refused = worktreeRefusal(agent.name, await agentConfig.getWorktreeStatus(projectPath, agentId), request,
+        `${cascade ? 'Its helpers were settled and it' : 'It'} was stopped, but nothing was deleted.`);
+      if (refused) return { ...refused, ...stopped };
+    }
+
+    const result = await deleteInMode(projectPath, agentId, request);
+    deleted = result.ok;
+    return { ...result, ...(result.ok && { deleted: true }), ...stopped };
+  } finally {
+    if (!deleted) reopenGate();
   }
+}
 
-  // Waits for each to exit, so none holds the worktree open (EBUSY on Windows).
-  const quickAgents = runningQuickAgentsIn(agent.worktreePath);
-  for (const quick of quickAgents) await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
+/** Unsaved work in the worktree, or a check that couldn't run, refuses a delete that would remove it. */
+function worktreeRefusal(name: string, status: WorktreeStatus, request: AgentDeleteRequest, changed: string): AgentDeleteResult | null {
+  if (status.checkError) {
+    return {
+      ok: false,
+      message: `${name}'s worktree couldn't be checked for unsaved work (${status.checkError}), so it can't be deleted, even with force. Keeping its files on disk still works. ${changed}`,
+      worktree: status,
+    };
+  }
+  if (worktreeHasWork(status) && !request.forceWorktree) {
+    return { ok: false, message: `${name}'s worktree has unsaved work that deleting it would lose. ${changed}`, worktree: status };
+  }
+  return null;
+}
 
-  if (isAgentRunning(agentId)) await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true });
-
+async function deleteInMode(projectPath: string, agentId: string, request: AgentDeleteRequest): Promise<DeleteResult> {
   let result: DeleteResult;
   switch (request.mode) {
     case 'commit-push': result = await agentConfig.deleteCommitAndPush(projectPath, agentId); break;
@@ -151,10 +219,5 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
     case 'force': result = await agentConfig.deleteForce(projectPath, agentId); break;
     case 'unregister': result = await agentConfig.deleteUnregister(projectPath, agentId); break;
   }
-  return {
-    ...result,
-    ...(result.ok && { deleted: true }),
-    ...(cascade && { helpers: cascade }),
-    ...(quickAgents.length > 0 && { stoppedQuickAgents: quickAgents.map((q) => q.id) }),
-  };
+  return result;
 }

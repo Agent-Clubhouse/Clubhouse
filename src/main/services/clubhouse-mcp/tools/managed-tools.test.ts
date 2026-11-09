@@ -9,6 +9,8 @@ const state = vi.hoisted(() => ({
   agents: new Map<string, DurableAgentConfig>(),
   running: new Set<string>(),
   restartOrigins: [] as string[],
+  /** Rows the grant check's peek doesn't see, as when it can't place a name. */
+  hiddenFromPeek: new Set<string>(),
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -21,7 +23,7 @@ vi.mock('../dispatcher-gate', async (importOriginal) => ({
 vi.mock('../../project-store', () => ({ peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }] }));
 vi.mock('../../agent-config', () => ({
   listDurable: async () => [...state.agents.values()],
-  peekDurableConfigs: async () => [...state.agents.values()],
+  peekDurableConfigs: async () => [...state.agents.values()].filter((a) => !state.hiddenFromPeek.has(a.id)),
   getDurableConfig: async (_p: string, id: string) => state.agents.get(id) ?? null,
   createDurable: async (_p: string, name: string, color: string, model?: string, _worktree?: boolean, orchestrator?: string) => {
     const a: DurableAgentConfig = { id: `new-${name}`, name, color, createdAt: '', worktreePath: `/w/${name}`, ...(model && { model }), ...(orchestrator && { orchestrator: orchestrator as never }) };
@@ -87,6 +89,7 @@ beforeEach(async () => {
   state.agents = new Map();
   state.running = new Set();
   state.restartOrigins = [];
+  state.hiddenFromPeek = new Set();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
   grantMock.granted = false;
@@ -709,7 +712,8 @@ describe('delete_agent (#3182)', () => {
     const [request] = listGrantRequests();
     expect(request).toMatchObject({ kind: 'call', agentId: 'dispatcher', toolName: 'delete_agent', actions: ['agent.dispose'] });
     expect(request.details).toContain(
-      'Delete Lead in Clubhouse. Its worktree and branch are removed, unless it has uncommitted or unpushed work. '
+      'Delete Lead in Clubhouse. It is stopped if it is running, and so are quick agents running in its worktree. '
+      + 'Its worktree and branch are removed, unless it has uncommitted or unpushed work. '
       + 'Its helpers, and theirs, are disposed with their worktrees and branches, unless any has uncommitted or unpushed work.',
     );
 
@@ -726,11 +730,41 @@ describe('delete_agent (#3182)', () => {
 
   it('describes keeping files and helpers, and a forced delete, for the person asked', () => {
     expect(describeDeleteCall({ agent: 'Lead', project: 'Clubhouse', worktree: 'keep', helpers: 'keep' }))
-      .toBe('Delete Lead in Clubhouse. Its files stay on disk. Its helpers stay as ordinary agents.');
+      .toBe('Delete Lead in Clubhouse. It is stopped if it is running, and so are quick agents running in its worktree. Its files stay on disk. Its helpers stay as ordinary agents.');
     expect(describeDeleteCall({ agent: 'Lead', worktree: 'delete', helpers: 'dispose', force: true }))
-      .toBe('Delete Lead. Its worktree and branch are removed, even with uncommitted or unpushed work. '
+      .toBe('Delete Lead. It is stopped if it is running, and so are quick agents running in its worktree. Its worktree and branch are removed, even with uncommitted or unpushed work. '
         + 'Its helpers, and theirs, are disposed with their worktrees and branches, even with uncommitted or unpushed work.');
     expect(describeDeleteCall({ agent: 'Lead', worktree: 'delete' })).toMatch(/If it has helpers, nothing is deleted\.$/);
+  });
+
+  it('asks about the live agent when a disposed helper\'s row has the same name, and deletes only that one', async () => {
+    state.agents.set('old-lead', { id: 'old-lead', name: 'Lead', color: 'indigo', createdAt: '', parentAgentId: 'x', disposedAt: '2026-11-01T00:00:00.000Z' });
+    lead();
+    const args = { project: 'Clubhouse', agent: 'Lead', worktree: 'delete' };
+    const asked = await call('delete_agent', args);
+    expect(asked.content[0].text).toContain('needs the user\'s approval');
+    takeGrantRequest(listGrantRequests()[0].requestId, true);
+    await call('delete_agent', args);
+    expect(deleteAgent).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(deleteAgent).mock.calls[0][1]).toBe('lead');
+  });
+
+  it('never acts on a disposed helper\'s row, by name or id', async () => {
+    state.agents.set('old-lead', { id: 'old-lead', name: 'Old lead', color: 'indigo', createdAt: '', parentAgentId: 'x', disposedAt: '2026-11-01T00:00:00.000Z' });
+    grantMock.granted = true;
+    expect((await call('delete_agent', { project: 'Clubhouse', agent: 'Old lead', worktree: 'delete' })).content[0].text).toMatch(/No agent "Old lead"/);
+    expect((await call('delete_agent', { project: 'Clubhouse', agent: 'old-lead', worktree: 'delete' })).content[0].text).toMatch(/No agent "old-lead"/);
+    expect(deleteAgent).not.toHaveBeenCalled();
+  });
+
+  it('refuses an agent the grant check couldn\'t place, which was never asked about', async () => {
+    lead();
+    state.hiddenFromPeek.add('lead');
+    const r = await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', worktree: 'delete' });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/No agent "Lead" in Clubhouse/);
+    expect(listGrantRequests()).toHaveLength(0);
+    expect(deleteAgent).not.toHaveBeenCalled();
   });
 
   describe('with the user\'s permission', () => {

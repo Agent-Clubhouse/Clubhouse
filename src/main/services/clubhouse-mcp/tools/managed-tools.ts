@@ -10,6 +10,7 @@
  * argument and nothing opens a dialog; its grant asks first by default.
  */
 import { createHash, randomBytes } from 'crypto';
+import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import type { ToolGrant } from '../tool-grants';
@@ -33,6 +34,8 @@ import type { Project } from '../../../../shared/types';
 import { agentRegistry } from '../../agent-registry';
 import { capToHolder } from '../grant-check';
 import { describeCallsForAsk } from '../ask-first';
+import { resolveArgTargets } from '../arg-targets';
+import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import { deleteAgent } from '../../agent-delete';
 import type { AgentDeleteResult, HelperDeleteChoice } from '../../../../shared/types';
 
@@ -120,7 +123,8 @@ async function resolveProject(ref: string): Promise<Project> {
 async function resolveAgent(args: Record<string, unknown>): Promise<{ project: Project; agentId: string; agentName: string }> {
   const project = await resolveProject(requireString(args, 'project'));
   const ref = requireString(args, 'agent');
-  const agents = await agentConfig.listDurable(project.path);
+  // As the grant check resolves it (arg-targets.ts): a disposed helper's row is no agent to act on.
+  const agents = (await agentConfig.listDurable(project.path)).filter((a) => !isDisposedAgent(a));
   const agent = agents.find((a) => a.id === ref) ?? agents.find((a) => a.name === ref);
   if (!agent) throw new ArgError(`No agent "${ref}" in ${project.name}.`);
   return { project, agentId: agent.id, agentName: agent.name };
@@ -215,6 +219,7 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
   }, { group: ORCHESTRATOR_READS.has(name) ? ['dispatcher', 'orchestration'] : 'dispatcher', grant });
 }
 
+const DELETE_GRANT: ToolGrant = { actions: ['agent.dispose'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } };
 const HELPER_CHOICES = ['dispose', 'keep'] as const;
 const WORKTREE_CHOICES = ['delete', 'keep'] as const;
 
@@ -229,7 +234,7 @@ export function describeDeleteCall(args: Record<string, unknown>): string {
   const helpers = args.helpers === 'dispose'
     ? `Its helpers, and theirs, are disposed with their worktrees and branches${force ? ', even with uncommitted or unpushed work' : ', unless any has uncommitted or unpushed work'}.`
     : args.helpers === 'keep' ? 'Its helpers stay as ordinary agents.' : 'If it has helpers, nothing is deleted.';
-  return `Delete ${agent}${project}. ${worktree} ${helpers}`;
+  return `Delete ${agent}${project}. It is stopped if it is running, and so are quick agents running in its worktree. ${worktree} ${helpers}`;
 }
 
 function deletedFacts(name: string, worktree: string, result: AgentDeleteResult): Record<string, unknown> {
@@ -607,7 +612,7 @@ export function registerManagedTools(): void {
 
   describeCallsForAsk('delete_agent', describeDeleteCall);
 
-  tool('delete_agent', { actions: ['agent.dispose'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+  tool('delete_agent', DELETE_GRANT,
     'Delete a durable agent. Nothing is shown to the user to confirm: the call says what happens, and a refusal changes nothing and says why. '
       + 'helpers (needed when it has any, in any project): dispose removes their worktrees and branches, helpers of helpers too, and stops if any has uncommitted or unpushed work; keep makes them ordinary agents. '
       + 'worktree: delete removes its worktree and branch, and stops if it has uncommitted or unpushed work; keep only removes it from Clubhouse and leaves its files on disk. '
@@ -628,6 +633,11 @@ export function registerManagedTools(): void {
       const force = optionalBoolean(args, 'force') === true;
       const t = await resolveAgent(args);
       if (t.agentId === callerId) throw new ArgError('You can\'t delete yourself.');
+      // Only an agent the grant check saw: it resolves the same arguments, and a name it couldn't place got no check.
+      const [checked] = [...(await resolveArgTargets(callerId, DELETE_GRANT, args)).values()];
+      if (!checked?.some((target) => !!target.projectPath && path.resolve(target.projectPath) === path.resolve(t.project.path))) {
+        throw new ArgError(`No agent "${requireString(args, 'agent')}" in ${t.project.name}.`);
+      }
       // Windows drop the deleted agent and disposed helpers on the agents.json change (syncDurableMembership).
       const result = await deleteAgent(t.project.path, t.agentId, {
         mode: worktree === 'keep' ? 'unregister' : 'force',

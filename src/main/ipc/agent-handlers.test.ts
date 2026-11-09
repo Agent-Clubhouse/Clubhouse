@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ATTR } from '../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import { errorTypeOf, type Classification, type TelemetryRuntime } from '../telemetry/types';
 
@@ -331,14 +330,9 @@ describe('agent-handlers', () => {
     });
     afterEach(() => setProducingRuntime(null));
 
-    it('classifies deletes by result and mode', async () => {
-      vi.mocked(agentDelete.deleteAgent).mockResolvedValueOnce({ ok: false, message: 'dirty worktree' });
+    it('leaves the DELETE_AGENT flow to the delete service, which records MCP deletes too (#3182)', async () => {
       await handlers.get(IPC.AGENT.DELETE_AGENT)!({}, '/project', 'agent-1', 'force');
-      await handlers.get(IPC.AGENT.DELETE_AGENT)!({}, '/project', 'agent-1', 'unregister');
-      expect(flows).toEqual([
-        { name: 'clubhouse.agent.delete', attrs: [ATTR.deleteMode('force')], outcome: { error: 'delete_failed' } },
-        { name: 'clubhouse.agent.delete', attrs: [ATTR.deleteMode('unregister')], outcome: 'ok' },
-      ]);
+      expect(flows).toEqual([]);
     });
 
     it('rethrows the identical error from create and delete, typed for telemetry', async () => {

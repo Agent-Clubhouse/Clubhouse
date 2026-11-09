@@ -28,7 +28,7 @@ import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanAr
 import { isAccessLevel, type AccessLevel } from '../../shared/agent-access';
 import { withSavedAccess } from '../services/free-agent-settings';
 import { ATTR } from '../../shared/telemetry/attributes';
-import type { AgentDeleteMode, AgentDeleteResult, DeleteResult, HelperDeleteChoice, HelperDisposeChecks, HelperInProject, Project } from '../../shared/types';
+import type { AgentDeleteResult, DeleteResult, HelperDeleteChoice, HelperDisposeChecks, HelperInProject, Project } from '../../shared/types';
 import { deleteAgent, isAgentDeleteMode } from '../services/agent-delete';
 import { disposeHelperForUser, reportDisposeDecision } from '../services/helper-dispose-decisions';
 import { listStartRequests } from '../services/helper-start-requests';
@@ -47,14 +47,6 @@ import { parseFinishedQuickAgentOp } from '../../shared/finished-quick-agents';
 import { forgetConnectionAgent } from '../services/connection-grants';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
-
-const DELETE_MODE_ATTR: Record<AgentDeleteMode, DeleteMode> = {
-  'commit-push': 'commit_push',
-  'cleanup-branch': 'cleanup_branch',
-  'save-patch': 'save_patch',
-  force: 'force',
-  unregister: 'unregister',
-};
 
 /** Transcript read stats for the timing log, with durations in whole ms. */
 function roundStats(stats: TranscriptReadStats): TranscriptReadStats {
@@ -406,7 +398,8 @@ export function registerAgentHandlers(): void {
         if (picked.canceled || !picked.filePath) return { ok: false, message: 'cancelled' };
         savePath = picked.filePath;
       }
-      const result = await deleteFlow(DELETE_MODE_ATTR[mode], () => deleteAgent(projectPath, agentId, { mode, savePath, helpers: helperChoice as HelperDeleteChoice | undefined }));
+      // The service records the clubhouse.agent.delete flow, as for a delete over MCP.
+      const result = await deleteAgent(projectPath, agentId, { mode, savePath, helpers: helperChoice as HelperDeleteChoice | undefined });
       // Disposed helpers leave every window even when the agent itself stayed.
       if (result.ok || (result.helpers?.helperIds?.length ?? 0) > 0) broadcastSnapshotRefresh();
       return result;
