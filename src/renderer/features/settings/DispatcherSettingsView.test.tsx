@@ -89,10 +89,18 @@ beforeEach(() => {
   });
 });
 
+/**
+ * Mounts the page and lets its first read land inside act, so the read's render and its effects
+ * have all run before a test edits a field (#3180). React commits the read's render, then yields
+ * to the event loop before running its effects. findBy resolves on the DOM change and returns after
+ * a setTimeout(0), which on a slow machine can come first. A test's edit then lands before the
+ * effects that copy the saved name and personality into their drafts, and those effects undo it.
+ */
 async function renderOn(s: DispatcherState = ON) {
   state = s;
-  const view = render(<DispatcherSettingsView />);
-  await screen.findByRole('heading', { name: 'Identity' });
+  let view!: ReturnType<typeof render>;
+  await act(async () => { view = render(<DispatcherSettingsView />); });
+  expect(screen.getByRole('heading', { name: 'Identity' })).toBeInTheDocument();
   return view;
 }
 
