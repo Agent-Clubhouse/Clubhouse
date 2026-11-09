@@ -5,7 +5,8 @@ import { chatShardProblems } from '../e2e/chat-shards.mjs';
 import { ANNEX_SHARD_ENV, ANNEX_SHARDS, E2E_SHARD_ENV, E2E_SHARDS, listShardTestMatch } from '../e2e/e2e-shards.mjs';
 
 const E2E_DIR = path.resolve(__dirname, '..', 'e2e');
-const WORKFLOW = readFileSync(path.resolve(E2E_DIR, '..', '.github', 'workflows', 'validate.yml'), 'utf8');
+// Windows checkouts have CRLF line endings.
+const WORKFLOW = readFileSync(path.resolve(E2E_DIR, '..', '.github', 'workflows', 'validate.yml'), 'utf8').replace(/\r\n/g, '\n');
 
 /** Every spec under e2e/, as a path relative to it with forward slashes. */
 function specsOnDisk(dir = E2E_DIR): string[] {
