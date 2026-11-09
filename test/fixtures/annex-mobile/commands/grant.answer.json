@@ -115,7 +115,7 @@
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "grant_answer_not_offered",
-            "message": "This request is for a lasting permission. Allow it to keep, or decline it."
+            "message": "This request adds a lasting permission. Allow or decline it."
           },
           "status": "rejected",
           "version": 1
