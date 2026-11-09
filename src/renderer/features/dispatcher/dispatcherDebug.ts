@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DISPATCHER_DEBUG_FLAG } from '../../../shared/types';
 
 /**
  * The Dispatcher debug view (#3188), a switch in Settings > Experimental. It
@@ -15,7 +16,7 @@ import { create } from 'zustand';
  * on that page, so a stable build reads it as off.
  */
 
-export const DISPATCHER_DEBUG_FLAG = 'dispatcherDebug';
+export { DISPATCHER_DEBUG_FLAG };
 
 interface DispatcherDebugState {
   on: boolean;
