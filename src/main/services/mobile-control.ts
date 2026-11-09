@@ -38,8 +38,8 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'agent.providerPreview': ['agentId', 'provider'],
   'agent.providerChange': ['agentId', 'provider', 'expectedState'],
   'agent.spawn': ['projectId', 'prompt', 'model', 'orchestrator'],
-  'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration'],
-  'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'idleSleep', 'contextWindow', 'orchestration'],
+  'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration'],
+  'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'access', 'idleSleep', 'contextWindow', 'orchestration'],
   'project.setPinned': ['projectId', 'pinned'],
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
@@ -52,7 +52,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['reviewedDigest', 'delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped']);
 const ROUTING_OPTIONAL = new Set(['projectId', 'auto']);
-const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
+const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
   type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'helperRouting.update' && ROUTING_OPTIONAL.has(key) ? true
@@ -97,7 +97,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
       if (v !== true && v !== false && v !== 'off' && v !== null) throw new MobileControlError('invalid_command', 400);
     } else if (key === 'idleSleep') { if (!idleSleep(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'effort') { if (v !== null && !text(v, 64)) throw new MobileControlError('invalid_command', 400); }
-    else if (key === 'level') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
+    else if (key === 'level' || key === 'access') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'runtime') { if (!['default', 'chat', 'terminal'].includes(v as string)) throw new MobileControlError('invalid_command', 400); }
     else if (!text(v, ['text', 'message', 'prompt'].includes(key) ? 65536 : key === 'emoji' ? 16 : 256)) throw new MobileControlError('invalid_command', 400);
   }

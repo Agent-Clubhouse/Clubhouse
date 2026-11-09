@@ -5,6 +5,33 @@
   },
   "response": {
     "body": {
+      "accessLevels": [
+        {
+          "description": "Reads and plans. Makes no changes.",
+          "id": "plan",
+          "label": "Plan"
+        },
+        {
+          "description": "Asks before edits and commands.",
+          "id": "ask",
+          "label": "Ask first"
+        },
+        {
+          "description": "Makes file edits without asking. Asks before commands.",
+          "id": "auto_edit",
+          "label": "Auto-accept edits"
+        },
+        {
+          "description": "A check decides what needs your approval. It can be wrong.",
+          "id": "auto",
+          "label": "Auto"
+        },
+        {
+          "description": "Runs everything without asking.",
+          "id": "full_access",
+          "label": "Full access"
+        }
+      ],
       "colors": [
         {
           "hex": "#6366f1",
@@ -48,6 +75,7 @@
         }
       ],
       "defaults": {
+        "access": "ask",
         "color": "indigo",
         "model": "default",
         "orchestrator": "claude-code",
@@ -77,6 +105,13 @@
       },
       "orchestrators": [
         {
+          "accessLevels": [
+            "plan",
+            "ask",
+            "auto_edit",
+            "auto",
+            "full_access"
+          ],
           "available": true,
           "badge": "Beta",
           "chat": true,
@@ -100,6 +135,9 @@
           "shortName": "CC"
         },
         {
+          "accessLevels": [
+            "ask"
+          ],
           "available": false,
           "chat": false,
           "displayName": "Codex",

@@ -17,6 +17,7 @@
   "field": "dispatcher",
   "value": {
     "agent": {
+      "access": "full_access",
       "branch": null,
       "color": "indigo",
       "detailedStatus": null,

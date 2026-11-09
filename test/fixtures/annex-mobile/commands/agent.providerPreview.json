@@ -4,7 +4,7 @@
       "name": "guided: unavailable provider",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_175",
+        "commandId": "cmd_183",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "provider": "codex-cli",
         "type": "agent.providerPreview",
@@ -12,7 +12,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_175",
+          "commandId": "cmd_183",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "activeProvider": null,
@@ -49,7 +49,7 @@
       "name": "guided: preview",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_176",
+        "commandId": "cmd_184",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "provider": "codex-cli",
         "type": "agent.providerPreview",
@@ -57,7 +57,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_176",
+          "commandId": "cmd_184",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "activeProvider": null,
@@ -94,7 +94,7 @@
       "name": "guided: capture blocks save",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_183",
+        "commandId": "cmd_191",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "provider": "codex-cli",
         "type": "agent.providerPreview",
@@ -102,7 +102,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_183",
+          "commandId": "cmd_191",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "activeProvider": null,

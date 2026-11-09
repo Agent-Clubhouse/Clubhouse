@@ -3,6 +3,7 @@ import type { ChatCapabilities, ChatModelOption, ChatQuestionAnswers, Permission
 import type { AgentIdleSleep } from './idle-sleep';
 import type { ContextWindowApplies, ContextWindowChoice, ContextWindowKind } from './context-window';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch } from './orchestration-policy';
+import type { AccessLevel } from './agent-access';
 export const MOBILE_PROTOCOL_VERSION = 1;
 export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
@@ -41,6 +42,8 @@ export type MobileCommand = CommandBase & (
 export interface MobileAgentCreate {
   projectId: string; name: string; color: string; orchestrator?: string; model?: string; persona?: string;
   freeAgentMode?: boolean; useWorktree?: boolean; mcpIds?: string[]; branchName?: string; branchFrom?: string; folderName?: string;
+  /** Access (#3207): the level it starts at. Wins over `freeAgentMode`; neither gives the desktop's Default access. */
+  access?: AccessLevel;
   /** The agent's orchestration policy fields to set (#2228); unset ones follow the defaults. `persona` is refused (409 managed_agent): personas were retired (#2901). */
   orchestration?: Partial<OrchestrationPolicy>;
 }
@@ -48,6 +51,8 @@ export interface MobileAgentCreate {
 export interface MobileAgentUpdate {
   agentId: string; name?: string; color?: string; emoji?: string | null; orchestrator?: string; model?: string;
   runtime?: 'default' | 'chat' | 'terminal'; persona?: string | null; clubhouseMode?: boolean; freeAgentMode?: boolean; idleSleep?: AgentIdleSleep;
+  /** Access (#3207): the saved level it starts at. Wins over `freeAgentMode` in the same command. */
+  access?: AccessLevel;
   /** A `settings.contextWindow.choices[].id`, or null to clear it. */
   contextWindow?: string | null;
   /** Orchestration policy fields; a field set to null, or the whole object null, goes back to the default. A `persona` value is refused (409 managed_agent) and `null` is a no-op: personas were retired (#2901). */
@@ -57,6 +62,8 @@ export interface MobileAgentUpdate {
 export interface AnnexAgentUpdate {
   agentId: string; name: string; color: string; emoji: string | null; model: string | null; orchestrator: string | null;
   freeAgentMode: boolean;
+  /** The saved Access level (#3207). */
+  access: AccessLevel;
 }
 /**
  * The chat snapshot's `chatControls`: what the composer's level, model and
@@ -89,6 +96,24 @@ export interface MobileChatControls {
 }
 /** When a setting can change: at any time, only while the agent sleeps, or not from a phone. */
 export type MobileSettingEditable = 'always' | 'sleeping' | 'never';
+/** One Access level as the desktop's picker names it (#3207). */
+export interface MobileAccessLevel { id: AccessLevel; label: string; description: string }
+/**
+ * `settings.access` (#3207): the saved level the agent starts at, on the
+ * five-level ladder. `choices` are the levels its CLI and runtime can start
+ * at, `startsAt` the level it really starts at (the nearest lower one its
+ * runtime has, when the saved one isn't), `default` the desktop's Default
+ * access for new agents. A change always applies at the next start: a running
+ * session's level is `chatControls.level`, which chat.setLevel changes.
+ */
+export interface MobileAccess {
+  value: AccessLevel;
+  editable: MobileSettingEditable;
+  choices: MobileAccessLevel[];
+  startsAt: AccessLevel;
+  default: AccessLevel;
+  applies: 'next_start';
+}
 /**
  * `settings.contextWindow` (#2660): the saved next-start choice and what the CLI
  * offers for this model. `configurable` is whether the CLI offers it, `editable`

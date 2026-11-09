@@ -8,6 +8,7 @@
       "agents": {
         "proj_app": [
           {
+            "access": "ask",
             "branch": "planner/standby",
             "color": "indigo",
             "detailedStatus": {
@@ -62,6 +63,7 @@
             "status": "running"
           },
           {
+            "access": "ask",
             "branch": null,
             "color": "teal",
             "detailedStatus": {
@@ -116,6 +118,7 @@
             "status": "running"
           },
           {
+            "access": "ask",
             "branch": "brave-otter/standby",
             "color": "amber",
             "detailedStatus": null,
@@ -166,6 +169,7 @@
             "status": "sleeping"
           },
           {
+            "access": "ask",
             "branch": null,
             "color": "rose",
             "detailedStatus": null,
@@ -216,6 +220,7 @@
             "status": "running"
           },
           {
+            "access": "ask",
             "branch": null,
             "color": "cyan",
             "detailedStatus": null,
@@ -266,6 +271,7 @@
             "status": "sleeping"
           },
           {
+            "access": "ask",
             "branch": null,
             "color": "violet",
             "detailedStatus": null,

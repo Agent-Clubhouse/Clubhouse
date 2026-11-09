@@ -227,8 +227,9 @@ vi.mock('./project-store', () => ({
   onProjectsChanged: () => () => {},
   iconFilePath: async (icon: string) => (icon ? `iVBORw0KGgo=|${icon}` : null),
 }));
-vi.mock('./agent-config', () => {
+vi.mock('./agent-config', async () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
+  const access = await import('../../shared/agent-access');
   return {
     flushAgentConfig: async () => {},
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
@@ -238,7 +239,15 @@ vi.mock('./agent-config', () => {
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => {
       const agent = find(projectPath, id) ?? {};
       if (updates.orchestrator && updates.orchestrator !== agent.orchestrator) { delete agent.lastSessionId; delete agent.model; delete agent.effort; delete agent.routing; delete agent.contextWindow; }
-      Object.assign(agent, updates);
+      // agent-config's Access rule (#2761, its tests cover it): the level is saved with the legacy flag beside it; a legacy on/off moves to the nearest level.
+      const { access: level, freeAgentMode, ...rest } = updates;
+      if (level !== undefined || freeAgentMode !== undefined) {
+        const current = access.savedAccess(agent, 'skip-all');
+        agent.access = access.isAccessLevel(level) ? level : access.accessForLegacyToggle(current, freeAgentMode === true, 'skip-all');
+        if (access.legacyFreeAgentMode(agent.access)) agent.freeAgentMode = true;
+        else delete agent.freeAgentMode;
+      }
+      Object.assign(agent, rest);
       // agent-config's own rule (its tests cover it): null clears; a choice the new model lacks clears with a notice.
       if (agent.contextWindow === null) { delete agent.contextWindow; delete agent.contextWindowNotice; }
       if (updates.contextWindow) delete agent.contextWindowNotice;
@@ -1156,6 +1165,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('invalid_branch_name', { ...create, branchName: 'bad..branch' });
     await command('orchestrator_unavailable', { ...create, orchestrator: 'copilot-cli' });
     await command('free_agent_mode_unavailable', { ...create, orchestrator: 'codex-cli', freeAgentMode: true });
+    // Saved Access (#3207): a level wins over freeAgentMode beside it; one the CLI can't start at is refused.
+    await command('accepted with access', { ...create, name: 'careful-otter', access: 'auto_edit' });
+    await command('access_unavailable', { ...create, orchestrator: 'codex-cli', access: 'auto' });
+    await command('invalid_command (unknown access level)', { ...create, access: 'yolo' });
     // Personas were retired (#2901): any persona is refused, the existing 409.
     await command('managed_agent (persona)', { ...create, persona: 'qa' });
     await command('unknown_mcp', { ...create, mcpIds: ['jira'] });
@@ -1178,6 +1191,13 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('orchestrator_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'copilot-cli' });
     await command('runtime_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', runtime: 'chat' });
     await command('free_agent_mode_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', freeAgentMode: true });
+    // Saved Access (#3207): Auto and Full access both read freeAgentMode true; `access` tells them apart.
+    const auto = await command('accepted access', { type: 'agent.update', agentId: 'durable_sleepy', access: 'auto' });
+    expect(auto.body.result.settings).toMatchObject({ freeAgentMode: { value: true }, access: { value: 'auto', applies: 'next_start' } });
+    await command('accepted access below Auto (freeAgentMode false)', { type: 'agent.update', agentId: 'durable_sleepy', access: 'plan' });
+    await command('access_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', access: 'full_access' });
+    await command('agent_running (access)', { type: 'agent.update', agentId: 'durable_chat', access: 'plan' });
+    await command('invalid_command (unknown access level)', { type: 'agent.update', agentId: 'durable_sleepy', access: 'yolo' });
     await command('managed_agent (clubhouseMode)', { type: 'agent.update', agentId: 'durable_sleepy', clubhouseMode: true });
     await command('managed_agent (persona)', { type: 'agent.update', agentId: 'durable_sleepy', persona: 'qa' });
     // Clearing a persona is a no-op: there is none to clear.

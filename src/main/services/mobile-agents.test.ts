@@ -40,6 +40,7 @@ vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: vi.fn((provi
 vi.mock('./agent-runtime', () => ({ isChatAgent: vi.fn(() => false) }));
 vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true), getBranchChanges: vi.fn() }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./free-agent-settings');
 vi.mock('./orchestration-settings', () => ({
   getAutoHelpers: vi.fn(() => false), getGlobalHelperCap: vi.fn(() => 8) }));
 vi.mock('./orchestration-policy', async () => {
@@ -89,15 +90,17 @@ describe('create options', () => {
     vi.mocked(checkAvailability).mockImplementation(async (_p, id) => (id === 'codex-cli' ? { available: false, error: 'Codex not found' } : { available: true }));
     const options = await buildCreateOptions(project);
     expect(options.orchestrators).toEqual([
-      { id: 'claude-code', displayName: 'claude-code', shortName: 'cl', available: true, permissions: true, chat: true, models: [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }] },
-      { id: 'codex-cli', displayName: 'codex-cli', shortName: 'co', available: false, unavailableReason: 'Codex not found', permissions: false, chat: false, models: [{ id: 'default', label: 'Default' }] },
+      { id: 'claude-code', displayName: 'claude-code', shortName: 'cl', available: true, permissions: true, accessLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'], chat: true, models: [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }] },
+      { id: 'codex-cli', displayName: 'codex-cli', shortName: 'co', available: false, unavailableReason: 'Codex not found', permissions: false, accessLevels: ['ask'], chat: false, models: [{ id: 'default', label: 'Default' }] },
     ]);
     expect(options).toMatchObject({
       projectId: 'p1', personas: [], isGitRepo: true,
       mcp: { catalog: [{ id: 'ado', name: 'Azure DevOps', description: 'Work items' }], defaults: ['ado'] },
-      defaults: { orchestrator: 'claude-code', color: 'indigo', model: 'default', useWorktree: true },
+      defaults: { orchestrator: 'claude-code', color: 'indigo', model: 'default', useWorktree: true, access: 'ask' },
       freeAgentMode: { allowed: true },
     });
+    expect(options.accessLevels.map((l) => l.id)).toEqual(['plan', 'ask', 'auto_edit', 'auto', 'full_access']);
+    expect(options.accessLevels[3]).toEqual({ id: 'auto', label: 'Auto', description: 'A check decides what needs your approval. It can be wrong.' });
     expect(options.colors).toContainEqual({ id: 'rose', label: 'Rose', hex: '#f43f5e' });
     expect(options.suggestedName).toMatch(/^[a-z]+-[a-z]+$/);
   });
@@ -217,6 +220,100 @@ describe('Free Agent Mode from a phone (#2462)', () => {
   });
 });
 
+describe('saved Access from a phone (#3207)', () => {
+  const create = (extra = {}) => ({ projectId: 'p1', name: 'brave-otter', color: 'indigo', ...extra });
+  const live = { live: undefined, assertAuthorized: allow };
+  const levels = (a: { choices: Array<{ id: string }> }) => a.choices.map((c) => c.id);
+
+  it('reads the saved level, its choices for the CLI and runtime, what it starts at and the Default access', async () => {
+    const access = (await buildAgentSettings(project, agent({ access: 'auto_edit' }), undefined)).settings.access;
+    expect(access).toEqual({
+      value: 'auto_edit', editable: 'sleeping', startsAt: 'auto_edit', default: 'ask', applies: 'next_start',
+      choices: [
+        { id: 'plan', label: 'Plan', description: 'Reads and plans. Makes no changes.' },
+        { id: 'ask', label: 'Ask first', description: 'Asks before edits and commands.' },
+        { id: 'auto_edit', label: 'Auto-accept edits', description: 'Makes file edits without asking. Asks before commands.' },
+        { id: 'auto', label: 'Auto', description: 'A check decides what needs your approval. It can be wrong.' },
+        { id: 'full_access', label: 'Full access', description: 'Runs everything without asking.' },
+      ],
+    });
+  });
+  it('tells Auto from Full access, where freeAgentMode reads true for both', async () => {
+    const auto = (await buildAgentSettings(project, agent({ access: 'auto', freeAgentMode: true }), undefined)).settings;
+    const full = (await buildAgentSettings(project, agent({ access: 'full_access', freeAgentMode: true }), undefined)).settings;
+    expect([auto.freeAgentMode.value, auto.access.value]).toEqual([true, 'auto']);
+    expect([full.freeAgentMode.value, full.access.value]).toEqual([true, 'full_access']);
+  });
+  it('reads an agent saved before Access from its legacy flag, and a later legacy change over a stale level', async () => {
+    expect((await buildAgentSettings(project, agent(), undefined)).settings.access.value).toBe('ask');
+    // The old app mode is skip-all by default, so a legacy on reads as Full access.
+    expect((await buildAgentSettings(project, agent({ freeAgentMode: true }), undefined)).settings.access.value).toBe('full_access');
+    // An older phone turned the flag off after the level was saved: the flag wins.
+    expect((await buildAgentSettings(project, agent({ access: 'auto' }), undefined)).settings.access.value).toBe('ask');
+  });
+  it('offers only the levels the runtime can start at, and says where a saved level starts instead', async () => {
+    const terminal = (await buildAgentSettings(project, agent({ orchestrator: 'copilot-cli', runtimeMode: 'terminal', access: 'auto', freeAgentMode: true }), undefined)).settings.access;
+    expect(levels(terminal)).toEqual(['ask', 'full_access']);
+    expect(terminal).toMatchObject({ value: 'auto', startsAt: 'ask' });
+  });
+  it('reads as never editable, with only Ask first, on a CLI that sets access itself', async () => {
+    const access = (await buildAgentSettings(project, agent({ orchestrator: 'codex-cli' }), undefined)).settings.access;
+    expect(access).toMatchObject({ value: 'ask', editable: 'never', startsAt: 'ask' });
+    expect(levels(access)).toEqual(['ask']);
+  });
+  it('is editable at any time on the Dispatcher', async () => {
+    const access = (await buildAgentSettings(project, agent({ access: 'full_access', freeAgentMode: true }), 'running', { dispatcher: true })).settings.access;
+    expect(access).toMatchObject({ value: 'full_access', editable: 'always' });
+  });
+
+  it('creates an agent at a level, which wins over freeAgentMode beside it', async () => {
+    await createMobileAgent(project, create({ access: 'auto_edit', freeAgentMode: true }), allow);
+    const params = vi.mocked(startDurableCreation).mock.calls[0][1];
+    expect(params.access).toBe('auto_edit');
+    expect(params.freeAgentMode).toBeUndefined();
+  });
+  it('leaves the level out on create when neither is sent, so the Default access applies', async () => {
+    await createMobileAgent(project, create(), allow);
+    expect(vi.mocked(startDurableCreation).mock.calls[0][1]).not.toHaveProperty('access');
+  });
+  it('refuses a level the CLI has no way to start at, before creating anything', async () => {
+    expect(await refusal(createMobileAgent(project, create({ orchestrator: 'codex-cli', access: 'auto' }), allow))).toMatchObject({
+      code: 'access_unavailable', statusCode: 409, detail: "Auto isn't a level codex-cli can start at.",
+    });
+    expect(startDurableCreation).not.toHaveBeenCalled();
+    await createMobileAgent(project, create({ orchestrator: 'codex-cli', access: 'ask' }), allow);
+    expect(startDurableCreation).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves a level while the agent sleeps, and drops a legacy flag sent beside it', async () => {
+    const result = await updateMobileAgent(project, agent(), { agentId: 'durable_1', access: 'plan', freeAgentMode: true }, live);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(project.path, 'durable_1', { access: 'plan' });
+    expect(result.settings.access).toMatchObject({ applies: 'next_start' });
+  });
+  it('is a spawn setting: refused while the agent runs, and nothing is saved', async () => {
+    expect(await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', access: 'auto' }, { live: 'running', assertAuthorized: allow }))).toMatchObject({ code: 'agent_running' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+  });
+  it('checks the level against the CLI and runtime it will start on, in the same command too', async () => {
+    expect(await refusal(updateMobileAgent(project, agent({ orchestrator: 'copilot-cli', runtimeMode: 'terminal' }), { agentId: 'durable_1', access: 'auto' }, live))).toMatchObject({ code: 'access_unavailable' });
+    // The new CLI in the same command decides, not the saved one.
+    expect(await refusal(updateMobileAgent(project, agent({ access: 'auto', freeAgentMode: true }), { agentId: 'durable_1', orchestrator: 'codex-cli', access: 'auto' }, live))).toMatchObject({ code: 'access_unavailable' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    await updateMobileAgent(project, agent({ orchestrator: 'copilot-cli', runtimeMode: 'terminal' }), { agentId: 'durable_1', access: 'full_access' }, live);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(project.path, 'durable_1', { access: 'full_access' });
+  });
+  it('keeps a saved level the runtime lacks when it is sent back unchanged', async () => {
+    const cfg = agent({ orchestrator: 'copilot-cli', runtimeMode: 'terminal', access: 'auto', freeAgentMode: true });
+    await updateMobileAgent(project, cfg, { agentId: 'durable_1', access: 'auto', idleSleep: 30 }, live);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(project.path, 'durable_1', { access: 'auto', idleSleep: 30 });
+  });
+  it('changes the Dispatcher\'s level at any time, with the same checks', async () => {
+    await updateMobileDispatcher(project, agent({ orchestrator: 'claude-code' }), { agentId: 'durable_1', access: 'auto' }, { live: 'running', assertAuthorized: allow });
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(project.path, 'durable_1', { access: 'auto' });
+    expect(await refusal(updateMobileDispatcher(project, agent({ orchestrator: 'codex-cli' }), { agentId: 'durable_1', access: 'full_access' }, { live: undefined, assertAuthorized: allow }))).toMatchObject({ code: 'access_unavailable' });
+  });
+});
+
 describe('agent settings', () => {
   it('names a helper\'s parent, and leaves it out for a top-level agent', async () => {
     expect(await buildAgentSettings(project, agent({ parentAgentId: 'durable_parent' }), undefined)).toMatchObject({ parentAgentId: 'durable_parent' });
@@ -238,6 +335,7 @@ describe('agent settings', () => {
         persona: { value: null, editable: 'never' },
         clubhouseMode: { value: null, editable: 'never', projectEnabled: false },
         freeAgentMode: { value: true, editable: 'sleeping' },
+        access: expect.objectContaining({ value: 'full_access', editable: 'sleeping', startsAt: 'full_access', default: 'ask', applies: 'next_start' }),
         idleSleep: { value: 60, editable: 'always', minutes: 60, source: 'agent', applies: true },
         contextWindow: expect.objectContaining({ value: null, configurable: false, editable: 'never', kind: null, applies: ['launch', 'resume'] }),
       },

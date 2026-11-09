@@ -5,6 +5,7 @@
     "classicLayout": {
       "capabilities": {
         "agent": {
+          "access": "full_access",
           "branch": null,
           "color": "indigo",
           "detailedStatus": null,
@@ -43,6 +44,7 @@
       },
       "dispatcher:changed": {
         "agent": {
+          "access": "full_access",
           "branch": null,
           "color": "indigo",
           "detailedStatus": null,
@@ -74,6 +76,7 @@
       },
       "snapshot": {
         "agent": {
+          "access": "full_access",
           "branch": null,
           "color": "indigo",
           "detailedStatus": null,
@@ -107,6 +110,7 @@
     "switchedOff": {
       "capabilities": {
         "agent": {
+          "access": "full_access",
           "branch": null,
           "color": "indigo",
           "detailedStatus": null,
@@ -145,6 +149,7 @@
       },
       "dispatcher:changed": {
         "agent": {
+          "access": "full_access",
           "branch": null,
           "color": "indigo",
           "detailedStatus": null,
@@ -176,6 +181,7 @@
       },
       "snapshot": {
         "agent": {
+          "access": "full_access",
           "branch": null,
           "color": "indigo",
           "detailedStatus": null,

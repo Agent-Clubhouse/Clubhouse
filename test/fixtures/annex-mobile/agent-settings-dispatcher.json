@@ -16,6 +16,33 @@
       "epoch": "00000000-0000-4000-8000-000000000001",
       "isDispatcher": true,
       "options": {
+        "accessLevels": [
+          {
+            "description": "Reads and plans. Makes no changes.",
+            "id": "plan",
+            "label": "Plan"
+          },
+          {
+            "description": "Asks before edits and commands.",
+            "id": "ask",
+            "label": "Ask first"
+          },
+          {
+            "description": "Makes file edits without asking. Asks before commands.",
+            "id": "auto_edit",
+            "label": "Auto-accept edits"
+          },
+          {
+            "description": "A check decides what needs your approval. It can be wrong.",
+            "id": "auto",
+            "label": "Auto"
+          },
+          {
+            "description": "Runs everything without asking.",
+            "id": "full_access",
+            "label": "Full access"
+          }
+        ],
         "colors": [
           {
             "hex": "#6366f1",
@@ -69,6 +96,13 @@
         },
         "orchestrators": [
           {
+            "accessLevels": [
+              "plan",
+              "ask",
+              "auto_edit",
+              "auto",
+              "full_access"
+            ],
             "available": true,
             "badge": "Beta",
             "chat": true,
@@ -92,6 +126,9 @@
             "shortName": "CC"
           },
           {
+            "accessLevels": [
+              "ask"
+            ],
             "available": false,
             "chat": false,
             "displayName": "Codex",
@@ -116,6 +153,40 @@
       "orchestration": null,
       "projectId": "__dispatcher__",
       "settings": {
+        "access": {
+          "applies": "next_start",
+          "choices": [
+            {
+              "description": "Reads and plans. Makes no changes.",
+              "id": "plan",
+              "label": "Plan"
+            },
+            {
+              "description": "Asks before edits and commands.",
+              "id": "ask",
+              "label": "Ask first"
+            },
+            {
+              "description": "Makes file edits without asking. Asks before commands.",
+              "id": "auto_edit",
+              "label": "Auto-accept edits"
+            },
+            {
+              "description": "A check decides what needs your approval. It can be wrong.",
+              "id": "auto",
+              "label": "Auto"
+            },
+            {
+              "description": "Runs everything without asking.",
+              "id": "full_access",
+              "label": "Full access"
+            }
+          ],
+          "default": "ask",
+          "editable": "always",
+          "startsAt": "full_access",
+          "value": "full_access"
+        },
         "clubhouseMode": {
           "editable": "never",
           "projectEnabled": false,

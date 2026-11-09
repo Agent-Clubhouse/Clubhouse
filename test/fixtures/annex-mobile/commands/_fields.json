@@ -15,6 +15,7 @@
         "model",
         "persona",
         "freeAgentMode",
+        "access",
         "useWorktree",
         "mcpIds",
         "branchName",
@@ -94,6 +95,7 @@
         "persona",
         "clubhouseMode",
         "freeAgentMode",
+        "access",
         "idleSleep",
         "contextWindow",
         "orchestration"
@@ -109,6 +111,7 @@
         "persona",
         "clubhouseMode",
         "freeAgentMode",
+        "access",
         "idleSleep",
         "contextWindow",
         "orchestration"

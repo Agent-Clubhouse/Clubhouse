@@ -5,6 +5,9 @@
   },
   "response": {
     "body": {
+      "access": {
+        "version": 1
+      },
       "agentAddress": {
         "format": "{agentId}@{machine}",
         "snapshotField": "machine",

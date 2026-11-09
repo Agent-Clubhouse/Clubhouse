@@ -589,6 +589,8 @@ function initAnnexAgentUpdateListener(): () => void {
             model: update.model ?? undefined,
             orchestrator: update.orchestrator ?? undefined,
             freeAgentMode: update.freeAgentMode || undefined,
+            // An older desktop's update has no level; the legacy flag above still says on or off.
+            ...(update.access && { access: update.access }),
           },
         },
       };

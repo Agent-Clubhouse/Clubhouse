@@ -20,10 +20,10 @@ Every REST route and the `/ws` upgrade on the main port require a paired control
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear","dispatcher.setEnabled"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"contextWindow":{"version":1},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536},"dispatcher":{"version":1,"enabled":true,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__","snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear","dispatcher.setEnabled"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"contextWindow":{"version":1},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"access":{"version":1},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536},"dispatcher":{"version":1,"enabled":true,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__","snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). Gate the Dispatcher on `dispatcher.version >= 1` ([Dispatcher](#dispatcher)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). Gate saved Access on `access.version >= 1` ([Access](#access)). Gate the Dispatcher on `dispatcher.version >= 1` ([Dispatcher](#dispatcher)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
 
 ## Commands
 
@@ -41,8 +41,8 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `agent.start`: `{agentId, message?, resume?}`; wake durable agent using desktop's configured runtime and permissions.
 - `agent.stop`: `{agentId}`; stops agent process, including a start in progress.
 - `agent.spawn`: `{projectId, prompt, model?, orchestrator?}`; quick agent under registered project with ask-first permission mode.
-- `agent.create`: `{projectId, name, color, orchestrator?, model?, persona? (a value is refused), freeAgentMode?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?, orchestration?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
-- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona? (a value is refused, `null` is a no-op), clubhouseMode? (refused), freeAgentMode?, idleSleep?, contextWindow?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
+- `agent.create`: `{projectId, name, color, orchestrator?, model?, persona? (a value is refused), freeAgentMode?, access?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?, orchestration?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
+- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona? (a value is refused, `null` is a no-op), clubhouseMode? (refused), freeAgentMode?, access?, idleSleep?, contextWindow?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
 - `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 - `quick.dismiss`: `{projectId, agentId}`; dismiss one finished quick agent. See [Finished quick agents](#finished-quick-agents).
@@ -598,6 +598,7 @@ Capabilities advertise what the desktop accepts: `permissions: {version:1, persi
 - `persistentApprovals`: `chat.permission` answers persistent options (allow for the session, always allow, always reject).
 - `chat.setLevel` accepts any live level, raising included (`chatControls.version >= 1`).
 - `freeAgentMode`: `agent.create` and `agent.update` accept `freeAgentMode` (boolean), with the desktop's rules: see [Durable agents](#durable-agents).
+- Saved Access is its own capability, `access: {version:1}`: see [Access](#access).
 
 ## Durable agents
 
@@ -607,7 +608,30 @@ Create (#2451) and settings (#2452) follow the desktop New agent page and the De
 
 **Free Agent Mode** (skip all permission prompts) is settable from a phone when capabilities have `permissions.freeAgentMode` ([Permissions from a phone](#permissions-from-a-phone)). As on the desktop, it needs an orchestrator with `permissions:true`: turning it on for one without is 409 `free_agent_mode_unavailable`; turning it off is always allowed. Omitted on create, the agent follows the project's agent defaults, as on the desktop. Older desktops refuse the field with 403 `free_agent_mode_not_allowed`.
 
-**Access (#2761).** The desktop now stores one Access level per agent (Plan, Ask first, Auto-accept edits, Auto, Full access) instead of Free Agent Mode. The phone contract keeps `freeAgentMode` unchanged. It reads `true` when the agent is at Auto or Full access, and `false` at the other levels. Setting it from a phone moves the agent to the nearest level: `true` keeps a level that is already Auto or Full access, or takes the level the desktop's old free agent permission mode gives (Full access, or Auto when that mode was Auto); `false` keeps a level that is already below Auto, or becomes Ask first. Omitted on create, the agent starts at the desktop's Default access, which replaces the project's agent defaults for this.
+**Access (#2761).** The desktop now stores one Access level per agent (Plan, Ask first, Auto-accept edits, Auto, Full access) instead of Free Agent Mode. The phone contract keeps `freeAgentMode` unchanged. It reads `true` when the agent is at Auto or Full access, and `false` at the other levels. Setting it from a phone moves the agent to the nearest level: `true` keeps a level that is already Auto or Full access, or takes the level the desktop's old free agent permission mode gives (Full access, or Auto when that mode was Auto); `false` keeps a level that is already below Auto, or becomes Ask first. Omitted on create, the agent starts at the desktop's Default access, which replaces the project's agent defaults for this. A phone that knows `access.version >= 1` reads and sets the level itself instead: see [Access](#access).
+
+### Access
+
+Saved Access (#3207): the level an agent's CLI starts at, the same setting as the desktop's Access picker on the New agent page and the Settings card. Gated on `access: {version: 1}` in capabilities. Older desktops refuse an `access` field with 400 `invalid_command`.
+
+| id | label | description |
+|---|---|---|
+| `plan` | Plan | Reads and plans. Makes no changes. |
+| `ask` | Ask first | Asks before edits and commands. |
+| `auto_edit` | Auto-accept edits | Makes file edits without asking. Asks before commands. |
+| `auto` | Auto | A check decides what needs your approval. It can be wrong. |
+| `full_access` | Full access | Runs everything without asking. |
+
+The ids are the chat composer's levels (`chat.setLevel`, `chatControls.level`). The labels and descriptions come with every list (`accessLevels`, `settings.access.choices`), so draw those rather than this table.
+
+- **Agent rows.** The snapshot's `agents[projectId][]`, the Dispatcher's `agent` and `GET /api/v1/projects/:id/agents` carry `access`, the saved level. `freeAgentMode` stays beside it, `true` at Auto or Full access, so older phones read what they always did. Don't show `true` as "every permission skipped": Auto asks when its check says to.
+- **Create options.** `accessLevels` lists all five as `{id, label, description}`. Each orchestrator's `accessLevels` holds the ids a new agent on that CLI can be given (the levels either runtime has, since the runtime isn't decided yet), and only `["ask"]` when `permissions` is false. `defaults.access` is the desktop's Default access, which a new agent gets when the command sets neither `access` nor `freeAgentMode`.
+- **Settings.** `settings.access` is `{value, editable, choices, startsAt, default, applies}`. `value` is the saved level. `choices` are the levels its CLI can start at in the runtime it starts in (`settings.runtime.resolved`), as `{id, label, description}`. `startsAt` is the level it really starts at: the saved one, or when the runtime lacks it, the nearest lower one it has (Copilot in a terminal has no Auto, so Auto starts at Ask first). Show `value` even when it isn't in `choices`, as the desktop marks it "not available for this CLI". `default` is the desktop's Default access. `editable` follows the spawn settings: `sleeping` for an ordinary agent, `always` for the Dispatcher, `never` when the CLI sets access itself.
+- **When it applies.** `applies` is always `next_start`: saving never changes a running session. The running session's level is `chatControls.level`, which `chat.setLevel` changes for that session only. The desktop's details card shows both when they differ ("Auto now, starts at Ask first"), and a phone should too.
+- **agent.create `access`** sets the level. It must be one of that orchestrator's `accessLevels`, else 409 `access_unavailable` with a sentence in the message, before anything is created. It wins over `freeAgentMode` in the same command, which is then ignored.
+- **agent.update `access`** saves a level for the next start. It is a spawn setting, so it is 409 `agent_running` while an ordinary agent is awake, and accepted at any time on the Dispatcher. It must be one of the `choices` for the CLI and runtime the agent will start on, counting a new `orchestrator` or `runtime` in the same command, else 409 `access_unavailable`. Sending the saved level back unchanged is always accepted. It wins over `freeAgentMode` in the same command. The result's `settings.access` is fresh.
+
+Fixtures: `create-options.json`, every `agent-settings*.json`, the agent rows in `snapshot.json`, `rest-catalog.json` and `snapshot-dispatcher.json`, and the `access` cases in `commands/agent.create.json` and `commands/agent.update.json`.
 
 ### Create options
 
@@ -615,12 +639,13 @@ Create (#2451) and settings (#2452) follow the desktop New agent page and the De
 
 ```json
 {"version":1,"epoch":"uuid","projectId":"p1",
- "orchestrators":[{"id":"claude-code","displayName":"Claude Code","shortName":"CC","badge":"…","available":true,"unavailableReason":"…","permissions":true,"chat":true,"models":[{"id":"default","label":"Default"},{"id":"opus","label":"Opus"}]}],
+ "orchestrators":[{"id":"claude-code","displayName":"Claude Code","shortName":"CC","badge":"…","available":true,"unavailableReason":"…","permissions":true,"accessLevels":["plan","ask","auto_edit","auto","full_access"],"chat":true,"models":[{"id":"default","label":"Default"},{"id":"opus","label":"Opus"}]}],
  "personas":[],
  "colors":[{"id":"indigo","label":"Indigo","hex":"#6366f1"}],
+ "accessLevels":[{"id":"plan","label":"Plan","description":"Reads and plans. Makes no changes."}],
  "mcp":{"catalog":[{"id":"ado","name":"Azure DevOps","description":"…"}],"defaults":["ado"]},
  "isGitRepo":true,"suggestedName":"brave-otter",
- "defaults":{"orchestrator":"claude-code","color":"indigo","model":"default","useWorktree":true},
+ "defaults":{"orchestrator":"claude-code","color":"indigo","model":"default","useWorktree":true,"access":"ask"},
  "freeAgentMode":{"allowed":true}}
 ```
 
@@ -635,6 +660,7 @@ Validation matches the desktop. All of it runs before anything is created:
 - **orchestrator**: one of `orchestrators` (409 `orchestrator_unavailable`). The default is `defaults.orchestrator`.
 - **model**: `"default"` or omitted means the provider default.
 - **freeAgentMode**: `true` skips all permission prompts. Needs an orchestrator with `permissions:true` (409 `free_agent_mode_unavailable`). Omitted follows the project defaults.
+- **access**: the level it starts at, one of the orchestrator's `accessLevels` (409 `access_unavailable`). Wins over `freeAgentMode`. See [Access](#access).
 - **persona**: a value is refused with 409 `managed_agent` and a sentence in the receipt's message, and nothing is created. Personas were retired (#2901), so `personas` is always `[]`; the key stays for phones that read it.
 - **mcpIds**: unique catalog ids (400 `unknown_mcp`). Omitted means the project defaults when the agent starts.
 - **useWorktree**: defaults to `isGitRepo`. `true` outside a git repo is 409 `not_git_repo`.
@@ -669,6 +695,7 @@ We chose a route rather than snapshot fields. The settings need disk and CLI rea
   "persona":{"value":null,"editable":"never"},
   "clubhouseMode":{"value":null,"projectEnabled":false,"editable":"never"},
   "freeAgentMode":{"value":false,"editable":"sleeping"|"never"},
+  "access":{"value":"ask","editable":"sleeping"|"always"|"never","choices":[{"id":"ask","label":"Ask first","description":"Asks before edits and commands."}],"startsAt":"ask","default":"ask","applies":"next_start"},
   "idleSleep":{"value":"inherit"|"never"|30,"minutes":30,"source":"agent"|"app","applies":true,"editable":"always"}},
  "orchestration":{…},
  "options":{"orchestrators":[…],"personas":[…],"colors":[…],"idleSleep":{"minutes":[15,30,60,240],"appMinutes":30}},
@@ -699,6 +726,7 @@ Field notes:
 - **persona**: always `null` with `never`. Personas were retired (#2901); the key stays for phones that read it.
 - **idleSleep**: `minutes` and `source` are the resolved timeout, where 0 means never. An inherited value follows the app's chat idle timeout (`options.idleSleep.appMinutes`). Desktop copy: "After 30 min idle" / "Never", summary "Sleeps after 30 min" / "Never sleeps". Only chat agents idle-sleep (`applies`), but the value is kept either way.
 - **freeAgentMode**: `sleeping` when the agent's orchestrator has permission support, else `never` (the Settings card's Access row: "Free agent" / "Ask before edits").
+- **access**: the saved level, with its choices and when it applies. See [Access](#access).
 - **hasImageIcon**: image icons are read-only from a phone. Setting an emoji replaces an image icon.
 
 ### agent.update
@@ -714,6 +742,7 @@ Send only what changed:
 - **runtime**: `default`, `chat` or `terminal`. `chat` and `terminal` need chat to be available (409 `runtime_unavailable`).
 - Every agent refuses a **persona** value and any **clubhouseMode**, with 409 `managed_agent` and a sentence in the receipt's message. Nothing in the command is saved. `persona: null` changes nothing, so it is accepted, also while the agent runs, and the rest of the command applies.
 - **freeAgentMode**: boolean. `true` needs an orchestrator with permission support (409 `free_agent_mode_unavailable`).
+- **access**: a level from `settings.access.choices` (409 `access_unavailable`). Wins over `freeAgentMode`. See [Access](#access).
 - **idleSleep**: `"inherit"`, `"never"`, or one of `options.idleSleep.minutes`.
 - **orchestration**: a partial policy, or `null` to clear every override ([Orchestration](#orchestration)). It changes at any time, also while the agent runs, and is written first: a refused policy change saves nothing else.
 
@@ -977,7 +1006,7 @@ The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never 
 ```json
 "dispatcher":{"enabled":true,"flagOn":true,"projectId":"__dispatcher__",
  "agent":{"id":"durable_dispatcher","projectId":"__dispatcher__","name":"Dispatcher","kind":"durable","isDispatcher":true,"color":"indigo",
-  "emoji":null,"branch":null,"model":null,"orchestrator":"claude-code","freeAgentMode":true,"icon":null,"status":"sleeping",
+  "emoji":null,"branch":null,"model":null,"orchestrator":"claude-code","freeAgentMode":true,"access":"full_access","icon":null,"status":"sleeping",
   "detailedStatus":null,"executionMode":null,"hasSession":true,"lastActivityAt":1800000000000}}
 ```
 
@@ -1024,8 +1053,8 @@ See [While it is off](#while-it-is-off) for what changes while it is off.
 - **Shells.** `pty:spawn-shell` with `projectId: "__dispatcher__"` (with or without its `agentId`) opens a shell in its folder while it is on; otherwise `project_not_found`.
 - **No git.** Git routes for `__dispatcher__` answer 409 `{"error":"not_git_repo"}`. Its settings' `details.changes`, `branch` and `worktree` are null.
 - **No project.** `agent.create`, `agent.spawn`, `project.*` and `quick.*` with `projectId: "__dispatcher__"` are 409 `dispatcher_locked`.
-- **Settings.** `GET /mobile/agents/:id/settings` has `isDispatcher: true` and `orchestration: null`. `orchestrator`, `model`, `runtime` and `freeAgentMode` are `editable: "always"` (as on Settings > Dispatcher they apply the next time it starts), `idleSleep` `"always"`, and `name`, `color`, `emoji`, `persona` and `clubhouseMode` `"never"`.
-- **agent.update.** Only `orchestrator`, `model`, `runtime`, `freeAgentMode`, `idleSleep` and `contextWindow`, at any time. A new `orchestrator` resets `model` to `default` unless the command sets one; `model` must be `default` or one the CLI lists (400 `invalid_model`). `name`, `color`, `emoji`, `persona`, `clubhouseMode` or `orchestration` are 409 `dispatcher_locked`, the desktop's own rules.
+- **Settings.** `GET /mobile/agents/:id/settings` has `isDispatcher: true` and `orchestration: null`. `orchestrator`, `model`, `runtime`, `freeAgentMode` and `access` are `editable: "always"` (as on Settings > Dispatcher they apply the next time it starts), `idleSleep` `"always"`, and `name`, `color`, `emoji`, `persona` and `clubhouseMode` `"never"`.
+- **agent.update.** Only `orchestrator`, `model`, `runtime`, `freeAgentMode`, `access`, `idleSleep` and `contextWindow`, at any time. A new `orchestrator` resets `model` to `default` unless the command sets one; `model` must be `default` or one the CLI lists (400 `invalid_model`). `name`, `color`, `emoji`, `persona`, `clubhouseMode` or `orchestration` are 409 `dispatcher_locked`, the desktop's own rules.
 
 The Dispatcher can change its own color, emoji and image through the `update_agent` MCP tool, and the `clubhouse` CLI can change them too (#2645). A phone can't: `agent.update` stays `dispatcher_locked` for them. A fresh `snapshot` carries the new look. Its name stays "Dispatcher", whichever look it has. Messages it sends name it as the sender like any agent; find it in `dispatcher.agent`, not `agents`.
 
