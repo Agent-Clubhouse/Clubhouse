@@ -36,7 +36,7 @@ vi.mock('../agent-config', () => ({
       : agentId === 'escaper' ? { id: 'escaper', worktreePath: outside } : null),
 }));
 
-import { agentFolders, clearAgentFoldersCache, importChatImage, readChatFilePreview, resolveChatFile, statChatPaths } from './chat-files';
+import { agentFolders, clearAgentFoldersCache, importChatImage, readChatFilePreview, resolveChatFile, resolveChatLink, statChatPaths } from './chat-files';
 import { readMobileChatContent } from '../annex-chat-content';
 import { agentMediaDir } from './chat-transcript';
 import { CHAT_FILE_PREVIEW_PDF_MAX_BYTES, CHAT_FILE_PREVIEW_TEXT_MAX_BYTES } from '../../../shared/chat';
@@ -213,6 +213,49 @@ describe('readChatFilePreview', () => {
     await expect(readChatFilePreview('a1', path.join(outside, 'nope.txt'))).rejects.toThrow('not available');
     await expect(resolveChatFile('a1', path.join(outside, 'nope.txt'))).rejects.toThrow('not available');
     expect(await resolveChatFile('a1', 'src/main.ts')).toBe(fs.realpathSync.native(path.join(worktree, 'src', 'main.ts')));
+  });
+});
+
+describe('resolveChatLink (Markdown links in chat, #3189)', () => {
+  const real = (...parts: string[]) => fs.realpathSync.native(path.join(...parts));
+  beforeEach(() => {
+    fs.mkdirSync(path.join(worktree, 'Some Folder'), { recursive: true });
+    fs.writeFileSync(path.join(worktree, 'Some Folder', '00_Summary.md'), '# Summary\n');
+  });
+
+  it('resolves a relative file against the agent worktree', async () => {
+    expect(await resolveChatLink('a1', 'src/main.ts')).toEqual({ kind: 'file', path: real(worktree, 'src', 'main.ts') });
+    expect(await resolveChatLink('a1', './src/main.ts')).toEqual({ kind: 'file', path: real(worktree, 'src', 'main.ts') });
+  });
+
+  it('resolves a relative folder, with or without its trailing slash', async () => {
+    expect(await resolveChatLink('a1', 'src/')).toEqual({ kind: 'folder', path: real(worktree, 'src') });
+    expect(await resolveChatLink('a1', 'src')).toEqual({ kind: 'folder', path: real(worktree, 'src') });
+  });
+
+  it('decodes a percent-encoded href and drops a #heading', async () => {
+    const summary = { kind: 'file', path: real(worktree, 'Some Folder', '00_Summary.md') };
+    expect(await resolveChatLink('a1', 'Some%20Folder/00_Summary.md')).toEqual(summary);
+    expect(await resolveChatLink('a1', 'Some%20Folder/00_Summary.md#next-steps')).toEqual(summary);
+    expect(await resolveChatLink('a1', 'Some%20Folder/')).toEqual({ kind: 'folder', path: real(worktree, 'Some Folder') });
+  });
+
+  it('takes the platform separator, so a Windows agent\'s backslashes resolve there', async () => {
+    expect(await resolveChatLink('a1', path.join('Some Folder', '00_Summary.md'))).toEqual({ kind: 'file', path: real(worktree, 'Some Folder', '00_Summary.md') });
+  });
+
+  it('keeps an absolute path as it is, outside the project too', async () => {
+    expect(await resolveChatLink('a1', path.join(outside, 'secret.txt'))).toEqual({ kind: 'file', path: real(outside, 'secret.txt') });
+    expect(await resolveChatLink('a1', outside)).toEqual({ kind: 'folder', path: real(outside) });
+    expect(await resolveChatLink('a1', pathToFileURL(path.join(outside, 'secret.txt')).href)).toEqual({ kind: 'file', path: real(outside, 'secret.txt') });
+  });
+
+  it('marks a file chat cannot show, and refuses a missing one', async () => {
+    expect(await resolveChatLink('a1', 'blob.bin')).toEqual({ kind: 'unviewable', path: real(worktree, 'blob.bin') });
+    expect(await resolveChatLink('a1', 'shot.png')).toEqual({ kind: 'file', path: real(worktree, 'shot.png') });
+    await expect(resolveChatLink('a1', 'Some/Missing/')).rejects.toThrow('not available');
+    await expect(resolveChatLink('nobody', 'src/main.ts')).rejects.toThrow('not available');
+    await expect(resolveChatLink('a1', '')).rejects.toThrow('Not a file path');
   });
 });
 

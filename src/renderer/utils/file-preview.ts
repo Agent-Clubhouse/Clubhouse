@@ -20,3 +20,16 @@ export function openLocalFileLink(href: string): boolean {
   useFilePreviewStore.getState().open(location?.path ?? href, location?.line, location?.col);
   return true;
 }
+
+/**
+ * The path a chat link names, or null when it's a URL, an in-page anchor or a
+ * network path. Relative links count (#3189): main resolves them against the
+ * agent's worktree. Drive paths (`C:\…`, `C:/…`) aren't URL schemes.
+ */
+export function chatLinkPath(href: string): string | null {
+  const p = href.trim();
+  if (!p || p.length > 1024 || /[\0\r\n]/.test(p) || /^[#?]/.test(p) || /^[\\/]{2}/.test(p)) return null;
+  if (/^[A-Za-z]:[\\/]/.test(p) || /^file:\/\//i.test(p)) return p;
+  // Any other scheme (https:, mailto:, javascript:) is not a path.
+  return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(p) ? null : p;
+}

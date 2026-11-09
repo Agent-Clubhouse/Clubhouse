@@ -217,3 +217,42 @@ it('keeps remote absolute file links on their target rather than reading the con
   openLink('/remote/scratch.md', { projectId: 'remote||satellite||p1', repo: null });
   expect(useFilePreviewStore.getState().target).toBeNull();
 });
+
+describe('file and folder links (#3189)', () => {
+  beforeEach(() => {
+    useFilePreviewStore.getState().close();
+    setFlag(true);
+  });
+
+  it('opens a relative file link in the viewer, resolved by main against the agent', async () => {
+    const openLinkIpc = vi.fn(async () => ({ kind: 'file' as const, path: '/resolved/Some/Folder/00_Summary.md' }));
+    Object.assign(window.clubhouse.chat, { openLink: openLinkIpc });
+    const { container } = await renderIn(<Markdown text="See [the summary](Some/Folder/00_Summary.md)." />);
+    fireEvent.click(container.querySelector('a')!);
+    await act(async () => { await Promise.resolve(); });
+    expect(openLinkIpc).toHaveBeenCalledWith('a1', 'Some/Folder/00_Summary.md');
+    expect(useFilePreviewStore.getState().target).toEqual({ path: '/resolved/Some/Folder/00_Summary.md', line: undefined, col: undefined });
+    expect(window.clubhouse.app.openExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it('leaves a folder to main, which reveals it', async () => {
+    const openLinkIpc = vi.fn(async () => ({ kind: 'revealed' as const }));
+    Object.assign(window.clubhouse.chat, { openLink: openLinkIpc });
+    const { container } = await renderIn(<Markdown text="Saved in [the folder](Some/Folder/)." />);
+    fireEvent.click(container.querySelector('a')!);
+    await act(async () => { await Promise.resolve(); });
+    expect(openLinkIpc).toHaveBeenCalledWith('a1', 'Some/Folder/');
+    expect(useFilePreviewStore.getState().target).toBeNull();
+  });
+
+  it('falls back to the viewer for an absolute path main cannot find, and keeps URLs in the browser', async () => {
+    const openLinkIpc = vi.fn(async () => { throw new Error('That file is not available'); });
+    Object.assign(window.clubhouse.chat, { openLink: openLinkIpc });
+    openLink('/gone/notes.md', { agentId: 'a1', projectId: 'p1', repo: null });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(useFilePreviewStore.getState().target?.path).toBe('/gone/notes.md');
+    openLink('https://example.com/docs', { agentId: 'a1', projectId: 'p1', repo: null });
+    expect(openLinkIpc).toHaveBeenCalledTimes(1);
+    expect(window.clubhouse.app.openExternalUrl).toHaveBeenCalledWith('https://example.com/docs');
+  });
+});
