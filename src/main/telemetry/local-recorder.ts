@@ -64,6 +64,12 @@ export const LOCAL_FILE_PREFIX = 'telemetry-';
 export const LOCAL_FLUSH_INTERVAL_MS = 2_000;
 export const LOCAL_FLUSH_AT_LINES = 100;
 export const LOCAL_METRIC_INTERVAL_MS = 60_000;
+/**
+ * A gauge line is written only when the series' value changes, or when this
+ * long has passed since its last line (#3125). Between lines the last value
+ * holds; the heartbeat shows the series is still alive.
+ */
+export const LOCAL_GAUGE_HEARTBEAT_MS = 15 * 60_000;
 export const LOCAL_MAX_CHUNK_BYTES = 2 * 1024 * 1024;
 /** Rolling budget for one run's files: past it, the oldest chunks are deleted (#2297). */
 export const LOCAL_MAX_SESSION_BYTES = 10 * 1024 * 1024;
@@ -121,6 +127,7 @@ export interface LocalRecorderOptions {
   now?: () => number;
   flushIntervalMs?: number;
   metricIntervalMs?: number;
+  gaugeHeartbeatMs?: number;
   maxChunkBytes?: number;
   maxSessionBytes?: number;
   maxPendingLines?: number;
@@ -188,6 +195,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   const diagPriorityBudget = opts.diagPriorityEventBytes ?? LOCAL_DIAG_PRIORITY_EVENT_BYTES;
   const signals = opts.signals !== false;
   const metricInterval = opts.metricIntervalMs ?? LOCAL_METRIC_INTERVAL_MS;
+  const gaugeHeartbeat = opts.gaugeHeartbeatMs ?? LOCAL_GAUGE_HEARTBEAT_MS;
   const appendFile = opts.appendFile ?? ((file: string, data: string) => fsp.appendFile(file, data, 'utf-8'));
   const mkdir = opts.mkdir ?? (async (dir: string) => {
     await fsp.mkdir(dir, { recursive: true });
@@ -233,6 +241,8 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   let windowStart = startedAt;
   let capsWindowStart = windowStart;
   let metrics = new Map<MetricName, MetricWindow>();
+  /** Each gauge series' last written value and when, for change-only writing (#3125). */
+  const gaugeWritten = new Map<string, { value: number; at: number }>();
 
   const fileFor = (n: number): string =>
     path.join(opts.dir, n === 0 ? `${LOCAL_FILE_PREFIX}${opts.fileBase}.jsonl` : `${LOCAL_FILE_PREFIX}${opts.fileBase}.${n}.jsonl`);
@@ -623,11 +633,13 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
 
   // --- Metrics ---
 
+  const seriesKey = (attrs: Record<string, unknown>): string => JSON.stringify(Object.keys(attrs).sort().map((k) => [k, attrs[k]]));
+
   function recordMetric(name: MetricName, value: number, attrs: readonly TelAttr[] | undefined): void {
     const def = METRICS[name];
     if (!levelAllows(level, def.level) || typeof value !== 'number' || !Number.isFinite(value)) return;
     const clean = attrsOf(attrs, def.attributes);
-    const key = JSON.stringify(Object.keys(clean).sort().map((k) => [k, clean[k]]));
+    const key = seriesKey(clean);
     let win = metrics.get(name);
     if (!win) {
       win = { series: new Map() };
@@ -659,6 +671,13 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
       const def = METRICS[name];
       const all = win.overflow ? [...win.series.values(), win.overflow] : [...win.series.values()];
       for (const s of all) {
+        if (def.kind === 'gauge') {
+          // Unchanged since its last line, and that line is recent: the value still holds, so no line.
+          const key = `${name}\u0000${s === win.overflow ? '\u0000overflow' : seriesKey(s.attrs)}`;
+          const prev = gaugeWritten.get(key);
+          if (prev && prev.value === s.last && endMs - prev.at < gaugeHeartbeat) continue;
+          gaugeWritten.set(key, { value: s.last, at: endMs });
+        }
         const record: Record<string, unknown> = {
           t: 'metric',
           ts: iso(endMs),
@@ -731,6 +750,8 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
       // v4 (#2920): what replay needs to rebuild OpenTelemetry data without guessing (replay.ts).
       scope: 'clubhouse',
       temporality: 'delta',
+      // #3125: gauges are written on change; a gap means the last value held, up to this long.
+      gaugeHeartbeatMs: gaugeHeartbeat,
     };
     if (!signals) record.signals = false;
     push(record, true);
