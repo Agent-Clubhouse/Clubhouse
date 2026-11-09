@@ -237,7 +237,8 @@ export function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
  * 1. No raising yourself: `agent.grant` on yourself is refused. Ask for it
  *    with `grant.request` instead.
  * 2. No granting what you don't hold: `agent.grant` can't set an Access above
- *    the caller's own, or give a grant the caller doesn't hold.
+ *    the caller's own, or give a grant the caller doesn't hold. The tools that
+ *    set Access check the level where they decide it (main's access-ceiling.ts, D126).
  * 3. (The Clubhouse MCP always runs, D69, so there is no "MCP off" rule.)
  * 4. The user is above every agent.
  * `held` is the caller's own grants, for rule 2; it defaults to `grants`.

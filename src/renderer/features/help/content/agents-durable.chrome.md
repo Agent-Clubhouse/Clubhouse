@@ -83,6 +83,8 @@ A connection between two agents goes each way on its own: in each direction, the
 
 The Dispatcher can do the most by default. It can read, message, wake, put to sleep, reset, rename and configure the agents connected to it, create agents in any project, change an agent's setup up to its own level, make and remove connections, and create and run Actions. It asks first before it adds or opens a project (**Add or open projects**), changes project defaults or changes app settings. Its Clubhouse permissions page works like any other agent's, so you can set each of these to Off, Ask first or Allow.
 
+No agent sets Access above the level it runs at, the Dispatcher included. Creating an agent, pushing a template that changes the level, or starting a helper at a higher level is refused, and the agent is told both levels. That holds when the level comes from a template or from the Default access for new agents, too. You can set any level yourself.
+
 These permissions are a guardrail on Clubhouse, not a sandbox. Other programs running as you aren't limited by them.
 
 ## Deleting

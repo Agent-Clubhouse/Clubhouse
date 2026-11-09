@@ -14,8 +14,7 @@ import { addProject } from './smoke-helpers';
  * - one page: Identity, Behavior, Connected agents and Reset, with no model,
  *   context, access or "runs in" fields;
  * - a new name reaches both of its records and its sidebar row;
- * - Runs on and usage show; usage is conversations only until background
- *   work reports its share;
+ * - Runs on and today's usage show, conversations apart from background work;
  * - Connected agents lists the project's agents with the same switch as each
  *   agent's card, which moves the wire live; Card opens that card;
  * - Forget everything asks first, then clears memory and held news only: its
@@ -121,12 +120,12 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   await expect.poll(async () => (await recordOf(path.join(baseDir(), 'dispatcher-chat'))).name, { timeout: 10_000 }).toBe('Rosie');
   await expect(w.locator('[data-testid="dispatcher-row"]')).toContainText('Rosie');
 
-  // Behavior: the level, Runs on with its warning, and usage, conversations only for now.
+  // Behavior: the level, Runs on with its warning, and today's usage split (#3040).
   await expect(w.locator('[data-testid="dispatcher-behavior"]')).toHaveValue('standard');
   await expect(w.locator('[data-testid="dispatcher-runs-on"]')).toHaveValue('claude-code');
   await expect(page).toContainText('Switching starts a fresh conversation. Its memory stays');
   await expect(w.locator('[data-testid="dispatcher-usage-conversations-value"]')).toHaveText('None yet', { timeout: 15_000 });
-  await expect(w.locator('[data-testid="dispatcher-usage-background"]')).toHaveCount(0);
+  await expect(w.locator('[data-testid="dispatcher-usage-background-value"]')).toHaveText('None yet');
 
   // Connected agents: the orchestrator is on by default, the other agent isn't.
   const conductor = w.locator(`[data-testid="dispatcher-agent-${ORCHESTRATOR_ID}-switch"]`);

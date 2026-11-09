@@ -3,6 +3,8 @@
  * happens in main (here and in telemetry/control.ts); the renderer only ever
  * receives a masked TelemetryStatus, never a secret or the hash salt.
  */
+import * as backfill from '../telemetry/backfill';
+import { BACKFILL_DAY_CHOICES, type BackfillRange } from '../../shared/telemetry/settings-types';
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { TELEMETRY_LEVELS, type TelemetryLevel } from '../../shared/telemetry/attributes';
@@ -75,6 +77,11 @@ const advancedArg = objectArg<control.AdvancedInput>({
   },
 });
 
+const backfillRangeArg: ArgValidator<BackfillRange> = (value, argName) => {
+  if (value !== 'all' && !(BACKFILL_DAY_CHOICES as readonly unknown[]).includes(value)) invalid(argName, `must be ${BACKFILL_DAY_CHOICES.join(', ')} or all`);
+  return value as BackfillRange;
+};
+
 export function registerTelemetrySettingsHandlers(): void {
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.GET_STATUS, () => control.getStatus());
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.SAVE_AZURE, withValidatedArgs(
@@ -102,4 +109,10 @@ export function registerTelemetrySettingsHandlers(): void {
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.CLEAR_OFFLINE, () => control.clearOfflineQueue());
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.DELETE_LOCAL_DATA, () => control.deleteLocalData());
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.RESUME, () => control.resumeExport());
+  // Backfill on connect (#2920): nothing is sent until the user starts it.
+  ipcMain.handle(IPC.TELEMETRY_SETTINGS.BACKFILL_OFFER, withValidatedArgs([destinationArg], (_e, destination) => backfill.getBackfillOffer(destination)));
+  ipcMain.handle(IPC.TELEMETRY_SETTINGS.BACKFILL_START, withValidatedArgs([destinationArg, backfillRangeArg], (_e, destination, range) => backfill.startBackfill(destination, range)));
+  ipcMain.handle(IPC.TELEMETRY_SETTINGS.BACKFILL_CANCEL, withValidatedArgs([destinationArg], (_e, destination) => backfill.cancelBackfill(destination)));
+  ipcMain.handle(IPC.TELEMETRY_SETTINGS.BACKFILL_STATUS, withValidatedArgs([destinationArg], (_e, destination) => backfill.getBackfillStatus(destination)));
+  ipcMain.handle(IPC.TELEMETRY_SETTINGS.BACKFILL_DISMISS, withValidatedArgs([destinationArg], (_e, destination) => backfill.dismissBackfill(destination)));
 }

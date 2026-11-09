@@ -3,7 +3,8 @@ import { IPC } from '../shared/ipc-channels';
 import type { DispatcherState } from '../shared/dispatcher-types';
 import type { AgentCardFields, AgentCardView } from '../shared/dispatcher-agent-card';
 import type { DispatcherBehavior } from '../shared/dispatcher-behavior';
-import type { ConnectableAgent, DispatcherUsage, ForgetEverythingResult } from '../shared/dispatcher-settings-page';
+import type { ConnectableAgent, ForgetEverythingResult } from '../shared/dispatcher-settings-page';
+import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
 
 export const dispatcher = {
   dispatcher: {
@@ -16,10 +17,10 @@ export const dispatcher = {
     clearChat: (): Promise<{ cleared: 'now' | 'next_start' }> => ipcRenderer.invoke(IPC.DISPATCHER.CLEAR_CHAT),
     /** Forget everything (#3046): clears its memory and held news. Agents, connections and Actions stay. */
     forgetEverything: (): Promise<ForgetEverythingResult> => ipcRenderer.invoke(IPC.DISPATCHER.FORGET_EVERYTHING),
-    /** Its usage over the last days, conversations and background work (#3046). */
-    getUsage: (): Promise<DispatcherUsage> => ipcRenderer.invoke(IPC.DISPATCHER.GET_USAGE),
     /** Every agent that can connect to it, across projects, with its Connect switch (#3046). */
     listConnectableAgents: (): Promise<ConnectableAgent[]> => ipcRenderer.invoke(IPC.DISPATCHER.LIST_CONNECTABLE_AGENTS),
+    /** Today's usage, conversations apart from background work (#3040). */
+    getUsage: (): Promise<DispatcherUsageSplit> => ipcRenderer.invoke(IPC.DISPATCHER.GET_USAGE),
     onChanged: (callback: (state: DispatcherState) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: DispatcherState) => callback(state);
       ipcRenderer.on(IPC.DISPATCHER.CHANGED, listener);

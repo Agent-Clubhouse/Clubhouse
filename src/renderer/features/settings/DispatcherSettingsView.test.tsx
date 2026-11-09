@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
-import type { ConnectableAgent, DispatcherUsage } from '../../../shared/dispatcher-settings-page';
+import type { ConnectableAgent } from '../../../shared/dispatcher-settings-page';
+import { emptyUsageSplit, emptyUsageTotals, type DispatcherUsageSplit } from '../../../shared/dispatcher-usage';
 import type { OrchestratorInfo } from '../../../shared/types';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useAgentDetailsStore } from '../agents/details/detailsStore';
@@ -38,7 +39,7 @@ const AGENTS: ConnectableAgent[] = [
   { projectId: 'p-web', projectPath: '/p/web', projectName: 'webapp', agentId: 'lead', name: 'webapp-lead', connected: true, purpose: 'Checkout and payments' },
   { projectId: 'p-web', projectPath: '/p/web', projectName: 'webapp', agentId: 'api', name: 'api-lead', connected: false },
 ];
-const NO_USAGE: DispatcherUsage = { conversations: { inputTokens: 0, outputTokens: 0, sessions: 0 }, background: null, readAt: 1 };
+const NO_USAGE: DispatcherUsageSplit = emptyUsageSplit('2026-11-08');
 
 const cli = (id: string, displayName: string) => ({ id, displayName, shortName: displayName, capabilities: { permissions: true } }) as unknown as OrchestratorInfo;
 
@@ -320,24 +321,22 @@ describe('DispatcherSettingsView', () => {
       expect((await screen.findByTestId('dispatcher-save-error')).textContent).toBe('Couldn’t save. read-only');
     });
 
-    it('shows conversations only until background work reports its share', async () => {
-      window.clubhouse.dispatcher.getUsage = vi.fn(async () => ({ ...NO_USAGE, conversations: { inputTokens: 1_200_000, outputTokens: 48_000, sessions: 2 } }));
-      await renderOn();
-      await waitFor(() => expect(screen.getByTestId('dispatcher-usage-conversations-value').textContent).toBe('2 sessions, 1.2M tokens in and 48K out'));
-      expect(screen.getByTestId('dispatcher-usage-conversations').textContent).toContain('The last 7 days, on every provider it ran on.');
-      expect(screen.queryByTestId('dispatcher-usage-background')).toBeNull();
-    });
-
-    it('splits usage into conversations and background work', async () => {
+    it('shows today\'s usage, conversations apart from background work (#3040)', async () => {
       window.clubhouse.dispatcher.getUsage = vi.fn(async () => ({
-        conversations: { inputTokens: 900, outputTokens: 90, sessions: 1 },
-        background: { inputTokens: 300, outputTokens: 30, sessions: 4 },
-        readAt: 1,
+        day: '2026-11-08',
+        conversations: { ...emptyUsageTotals(), turns: 2, input: 1_200_000, output: 48_000 },
+        background: { ...emptyUsageTotals(), turns: 4, input: 300, output: 30 },
       }));
       await renderOn();
-      await waitFor(() => expect(screen.getByTestId('dispatcher-usage-background-value').textContent).toBe('4 sessions, 300 tokens in and 30 out'));
-      expect(screen.getByTestId('dispatcher-usage-conversations-value').textContent).toBe('1 session, 900 tokens in and 90 out');
+      await waitFor(() => expect(screen.getByTestId('dispatcher-usage-conversations-value').textContent).toBe('2 turns, 1.2M tokens in and 48K out'));
+      expect(screen.getByTestId('dispatcher-usage-background-value').textContent).toBe('4 turns, 300 tokens in and 30 out');
       expect(screen.getByText('Check-ins and memory upkeep it runs on its own.')).toBeInTheDocument();
+    });
+
+    it('says when there is none yet today', async () => {
+      await renderOn();
+      await waitFor(() => expect(screen.getByTestId('dispatcher-usage-conversations-value').textContent).toBe('None yet'));
+      expect(screen.getByTestId('dispatcher-usage-background-value').textContent).toBe('None yet');
     });
 
     it('says when usage can\'t be read', async () => {

@@ -1,34 +1,10 @@
 /**
  * What Settings › Dispatcher (#3046, part of #3034) reads from main besides
- * DispatcherState: its usage, the agents it can reach, and what Forget
- * everything did.
+ * DispatcherState: the agents it can reach, and what Forget everything did.
+ * Its usage is #3040's split (shared/dispatcher-usage).
  */
 
-/** Token counts summed over sessions, as their transcripts reported them. */
-export interface UsageTotals {
-  /** Input tokens, not counting cache reads and writes. */
-  inputTokens: number;
-  outputTokens: number;
-  /** Sessions that counted. */
-  sessions: number;
-}
-
-export const EMPTY_USAGE: UsageTotals = { inputTokens: 0, outputTokens: 0, sessions: 0 };
-
-/**
- * The Dispatcher's usage over the last {@link USAGE_WINDOW_DAYS} days, across
- * every provider it ran on. `background` is null until background work
- * (check-ins and memory upkeep, #3040) reports its own share; until then
- * `conversations` holds everything.
- */
-export interface DispatcherUsage {
-  conversations: UsageTotals;
-  background: UsageTotals | null;
-  /** When main read it, in ms. */
-  readAt: number;
-}
-
-export const USAGE_WINDOW_DAYS = 7;
+import type { DispatcherUsageTotals } from './dispatcher-usage';
 
 /** "1.2M", "48K", "950". */
 export function formatTokenCount(n: number): string {
@@ -37,11 +13,11 @@ export function formatTokenCount(n: number): string {
   return String(Math.max(0, Math.round(n)));
 }
 
-/** One line for a share of usage: "3 sessions, 1.2M tokens in and 48K out", or "None yet". */
-export function describeUsage(totals: UsageTotals): string {
-  if (totals.sessions === 0) return 'None yet';
-  const sessions = totals.sessions === 1 ? '1 session' : `${totals.sessions} sessions`;
-  return `${sessions}, ${formatTokenCount(totals.inputTokens)} tokens in and ${formatTokenCount(totals.outputTokens)} out`;
+/** One line for a side of the usage split: "3 turns, 1.2M tokens in and 48K out", or "None yet". */
+export function describeUsage(totals: Pick<DispatcherUsageTotals, 'turns' | 'input' | 'output'>): string {
+  if (totals.turns === 0) return 'None yet';
+  const turns = totals.turns === 1 ? '1 turn' : `${totals.turns} turns`;
+  return `${turns}, ${formatTokenCount(totals.input)} tokens in and ${formatTokenCount(totals.output)} out`;
 }
 
 /** One agent in Connected agents: a local durable agent that isn't a helper. */

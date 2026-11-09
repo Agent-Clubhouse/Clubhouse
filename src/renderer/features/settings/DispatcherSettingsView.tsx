@@ -5,7 +5,8 @@
  * - The switch that turns it on (#2535). Its row and view are in the new
  *   layout only, so on the classic layout a switch that's off stays off (#2565).
  * - Identity: name, color, icon and personality text.
- * - Behavior (#3045): the level, the provider it runs on, auto-sleep and its usage.
+ * - Behavior (#3045): the level, the provider it runs on, auto-sleep and
+ *   today's usage, conversations apart from background work (#3040).
  * - Connected agents: one list across projects (DispatcherConnectedAgents).
  * - Reset, at the bottom: Forget everything, behind a confirmation. It clears
  *   memory only.
@@ -20,7 +21,8 @@ import { DISPATCHER_CLASSIC_MESSAGE, DISPATCHER_PROJECT_ID, type DispatcherState
 import type { Agent, DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep } from '../../../shared/idle-sleep';
-import { USAGE_WINDOW_DAYS, describeUsage, type DispatcherUsage } from '../../../shared/dispatcher-settings-page';
+import { describeUsage } from '../../../shared/dispatcher-settings-page';
+import type { DispatcherUsageSplit } from '../../../shared/dispatcher-usage';
 import { Button } from '../../components/Button';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 import { EmojiPicker } from '../../components/EmojiPicker';
@@ -309,9 +311,9 @@ export function BehaviorField({ behavior }: { behavior: DispatcherBehaviorState 
   );
 }
 
-/** Its usage over the last days, read when the page opens. */
-function useDispatcherUsage(): { usage: DispatcherUsage | null; failed: boolean } {
-  const [usage, setUsage] = useState<DispatcherUsage | null>(null);
+/** Today's usage split (#3040), read when the page opens. */
+function useDispatcherUsage(): { usage: DispatcherUsageSplit | null; failed: boolean } {
+  const [usage, setUsage] = useState<DispatcherUsageSplit | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -325,20 +327,18 @@ function useDispatcherUsage(): { usage: DispatcherUsage | null; failed: boolean 
   return { usage, failed };
 }
 
+/** Usage today, on whichever providers it ran on: conversations, then background work. */
 function UsageRows() {
   const { usage, failed } = useDispatcherUsage();
   const pending = failed ? 'Couldn’t read it.' : 'Reading';
-  const period = `The last ${USAGE_WINDOW_DAYS} days, on every provider it ran on.`;
   return (
     <>
-      <SettingsField label="Conversations" help={usage?.background ? `When you talk with it. ${period}` : period} testId="dispatcher-usage-conversations">
+      <SettingsField label="Conversations today" help="Your chats with it and the work you hand it." testId="dispatcher-usage-conversations">
         <span className="text-xs text-ctp-subtext1" data-testid="dispatcher-usage-conversations-value">{usage ? describeUsage(usage.conversations) : pending}</span>
       </SettingsField>
-      {usage?.background && (
-        <SettingsField label="Background work" help="Check-ins and memory upkeep it runs on its own." testId="dispatcher-usage-background">
-          <span className="text-xs text-ctp-subtext1" data-testid="dispatcher-usage-background-value">{describeUsage(usage.background)}</span>
-        </SettingsField>
-      )}
+      <SettingsField label="Background work today" help="Check-ins and memory upkeep it runs on its own." testId="dispatcher-usage-background">
+        <span className="text-xs text-ctp-subtext1" data-testid="dispatcher-usage-background-value">{usage ? describeUsage(usage.background) : pending}</span>
+      </SettingsField>
     </>
   );
 }

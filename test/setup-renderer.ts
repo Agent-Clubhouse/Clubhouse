@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom';
 import { DISPATCHER_OFF } from '../src/shared/dispatcher-types';
+import { emptyUsageTotals } from '../src/shared/dispatcher-usage';
 
 // jsdom doesn't have ResizeObserver — provide a no-op polyfill for tests
 if (typeof globalThis.ResizeObserver === 'undefined') {
@@ -572,7 +573,7 @@ vi.stubGlobal('clubhouse', {
     setEnabled: async () => DISPATCHER_OFF,
     clearChat: async () => ({ cleared: 'now' as const }),
     forgetEverything: async () => ({ removed: 1, heldNews: 0 }),
-    getUsage: async () => ({ conversations: { inputTokens: 0, outputTokens: 0, sessions: 0 }, background: null, readAt: 0 }),
+    getUsage: async () => ({ day: '2026-11-08', conversations: emptyUsageTotals(), background: emptyUsageTotals() }),
     listConnectableAgents: async () => [],
     onChanged: () => noop,
     getAgentCard: async () => null,

@@ -684,10 +684,10 @@ export const IPC = {
     CLEAR_CHAT: 'dispatcher:clear-chat',
     /** Forget everything (#3046): clears its memory and held news only. Resolves with a ForgetEverythingResult. */
     FORGET_EVERYTHING: 'dispatcher:forget-everything',
-    /** Its usage, conversations and background work (#3046). Resolves with a DispatcherUsage. */
-    GET_USAGE: 'dispatcher:get-usage',
     /** Every agent that can connect to it, across projects (#3046). Resolves with ConnectableAgent[]. */
     LIST_CONNECTABLE_AGENTS: 'dispatcher:list-connectable-agents',
+    /** Today's usage, split into conversations and background work (#3040). Resolves with a DispatcherUsageSplit. */
+    GET_USAGE: 'dispatcher:get-usage',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
     /** An agent's card, for its Dispatcher card in Details (#3049). */
@@ -717,6 +717,12 @@ export const IPC = {
     CLEAR_OFFLINE: 'telemetry-settings:clear-offline',
     DELETE_LOCAL_DATA: 'telemetry-settings:delete-local-data',
     RESUME: 'telemetry-settings:resume',
+    /** Backfill on connect (#2920): the offer after turning a destination on, and its run. */
+    BACKFILL_OFFER: 'telemetry-settings:backfill-offer',
+    BACKFILL_START: 'telemetry-settings:backfill-start',
+    BACKFILL_CANCEL: 'telemetry-settings:backfill-cancel',
+    BACKFILL_STATUS: 'telemetry-settings:backfill-status',
+    BACKFILL_DISMISS: 'telemetry-settings:backfill-dismiss',
   },
   FEEDBACK: {
     GET_STATUS: 'feedback:get-status',
