@@ -43,6 +43,7 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import type { StartingSwitches } from '../../shared/connection-grants';
 import { appLog } from './log-service';
+import { trackOperation } from './main-stall-monitor';
 
 /** 'plugin' is left out (#2082): no source persists plugin wires, and one that does is skipped. */
 const VALID_TARGET_KINDS: ReadonlySet<string> = new Set<BindingTargetKind>([
@@ -696,7 +697,7 @@ async function runRebuild(): Promise<RebuildResult> {
  */
 export function rebuildPersistedBindings(): Promise<RebuildResult> {
   if (!inflight) {
-    inflight = runRebuild().finally(() => {
+    inflight = trackOperation('persisted bindings rebuild', runRebuild).finally(() => {
       inflight = null;
     });
     return inflight;

@@ -121,7 +121,21 @@ describe('renderer diag items (#2299)', () => {
     setLocalSink(local);
     emit(mainSender, [{ t: 'event', name: 'clubhouse.renderer.gone', attrs: [] }, { t: 'diag', ns: 'ui:perf', level: 'warn', msg: 'slow' }]);
     expect(local.event).toHaveBeenCalledTimes(1);
-    expect(sink.lines).toEqual([{ ns: 'ui:perf', level: 'warn', msg: 'slow', window: 'main' }]);
+    expect(sink.lines).toEqual([{ ns: 'ui:perf', level: 'warn', msg: 'slow', meta: { loadAvg: expect.any(Array) }, window: 'main' }]);
+  });
+
+  it('adds the load average to ui:perf lines only (#3230)', () => {
+    const sink = fakeDiagSink();
+    setDiagSink(sink);
+    emit(mainSender, [
+      { t: 'diag', ns: 'ui:perf', level: 'warn', msg: 'Slow interaction', meta: { kind: 'slow_interaction', maxMs: 17232 } },
+      { t: 'diag', ns: 'ui:nav', level: 'warn', msg: 'opened', meta: { view: 'x' } },
+    ]);
+    expect(sink.lines[0].meta).toMatchObject({ kind: 'slow_interaction', maxMs: 17232 });
+    const loadAvg = sink.lines[0].meta?.loadAvg as number[];
+    expect(loadAvg).toHaveLength(3);
+    expect(loadAvg.every((n) => typeof n === 'number' && n >= 0)).toBe(true);
+    expect(sink.lines[1].meta).toEqual({ view: 'x' });
   });
 
   it('drops diag items while diag recording is off', () => {

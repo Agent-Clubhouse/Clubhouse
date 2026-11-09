@@ -17,12 +17,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 30_000 });
 
 const chatListeners: Array<(event: unknown) => void> = [];
+const configListeners: Array<() => void> = [];
 let projects: Array<{ id: string; path: string }> = [];
 let durables: Record<string, Array<Record<string, unknown>>> = {};
 
 vi.mock('./agent-config', () => ({
   listDurable: vi.fn(async (p: string) => durables[p] ?? []),
-  onAgentConfigChanged: vi.fn(() => () => undefined),
+  onAgentConfigChanged: vi.fn((l: () => void) => { configListeners.push(l); return () => undefined; }),
 }));
 vi.mock('./agent-registry', () => ({ getAgentCwd: vi.fn(() => undefined) }));
 vi.mock('./agent-runtime/chat-event-bus', () => ({
@@ -92,10 +93,10 @@ async function waitFor(check: () => boolean, ms = 4_000): Promise<void> {
   }
 }
 
-interface FakeWatch { dir: string; fire: () => void; closed: boolean }
+interface FakeWatch { dir: string; fire: (filename?: string | null) => void; closed: boolean; recursive: boolean }
 let watches: FakeWatch[];
-function fakeWatch(dir: string, onChange: () => void): fsTypes.FSWatcher {
-  const entry: FakeWatch = { dir, fire: onChange, closed: false };
+function fakeWatch(dir: string, onChange: (filename?: string | null) => void, opts?: { recursive?: boolean }): fsTypes.FSWatcher {
+  const entry: FakeWatch = { dir, fire: onChange, closed: false, recursive: opts?.recursive ?? false };
   watches.push(entry);
   return Object.assign(new EventEmitter(), { close: () => { entry.closed = true; } }) as unknown as fsTypes.FSWatcher;
 }
@@ -111,6 +112,7 @@ function newWatcher(extra: Partial<GitWatcherOptions> = {}): GitWatcher {
     pollMs: 0,
     watch: fakeWatch,
     watchRemovableDirs: true,
+    recursiveWatch: false,
     agentCwd: (id) => cwds[id],
     ...extra,
   });
@@ -135,6 +137,7 @@ afterEach(() => {
   resetAppEventBus();
   resetGitCommandLog();
   chatListeners.length = 0;
+  configListeners.length = 0;
   for (const dir of temps.splice(0)) {
     try {
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
@@ -428,6 +431,81 @@ describe('GitWatcher', () => {
     await w.rescan();
     expect(events).toEqual([]);
   });
+
+  it('adds and closes watchers only for the worktrees that came or went, and reports the rebuild (#3230)', async () => {
+    const { repo, wt } = makeRepo();
+    const other = makeRepo();
+    const w = newWatcher();
+    await w.setPaths([repo, wt, other.repo]);
+    const first = watches.length;
+    expect(w.lastRebuildStats()).toMatchObject({ repos: 3, watched: 3, groupsAdded: 2, groupsRemoved: 0, groupsKept: 0, watchersCreated: first, watchersClosed: 0 });
+
+    // A helper is created: one new worktree joins the first repo.
+    const wt2 = path.join(repo, '.clubhouse', 'agents', 'a2');
+    git(repo, 'worktree', 'add', '-q', '-b', 'agent2', wt2);
+    await w.setPaths([repo, wt, wt2, other.repo]);
+    const wt2Dir = fs.realpathSync.native(path.join(repo, '.git', 'worktrees', 'a2'));
+    expect(watches.slice(first).map((x) => x.dir)).toEqual([wt2Dir]);
+    expect(watches.some((x) => x.closed)).toBe(false);
+    expect(w.lastRebuildStats()).toMatchObject({ repos: 4, groupsAdded: 0, groupsRemoved: 0, groupsKept: 2, watchersCreated: 1, watchersClosed: 0 });
+
+    // Then disposed: only its watcher closes; the other repo's are left alone.
+    await w.setPaths([repo, wt, other.repo]);
+    expect(watches.filter((x) => x.closed).map((x) => x.dir)).toEqual([wt2Dir]);
+    expect(w.lastRebuildStats()).toMatchObject({ groupsKept: 2, watchersCreated: 0, watchersClosed: 1 });
+    expect(appLog).toHaveBeenCalledWith('core:app-events', 'info', 'The git watcher rebuilt its repo list', {
+      meta: expect.objectContaining({ groupsKept: 2, watchersClosed: 1, totalMs: expect.any(Number), watchSyncMs: expect.any(Number) }),
+    });
+  });
+});
+
+describe('GitWatcher, one recursive watch per repo (macOS, #3230)', () => {
+  it('watches only the shared git dir, recursively', async () => {
+    const { repo, wt } = makeRepo();
+    await newWatcher({ recursiveWatch: true }).setPaths([repo, wt]);
+    expect(watches).toEqual([expect.objectContaining({ dir: fs.realpathSync.native(path.join(repo, '.git')), recursive: true })]);
+  });
+
+  it('scans for a ref change and not for objects or the index', async () => {
+    const { repo, wt } = makeRepo();
+    const w = newWatcher({ recursiveWatch: true, debounceMs: 10 });
+    await w.setPaths([repo, wt]);
+    commit(wt, 'b.txt');
+    watches[0].fire('objects/ab/cdef');
+    watches[0].fire(path.join('worktrees', 'a1', 'index'));
+    watches[0].fire('logs/HEAD');
+    await new Promise((r) => setTimeout(r, 80));
+    expect(events).toEqual([]);
+    watches[0].fire(path.join('refs', 'heads', 'agent.lock'));
+    await waitFor(() => events.length > 0);
+    expect(events).toEqual([{ type: 'git.commit', repoPath: wt, branch: 'agent' }]);
+  });
+
+  it('sees a branch switch in a linked worktree through its admin dir HEAD', async () => {
+    const { repo, wt } = makeRepo();
+    const w = newWatcher({ recursiveWatch: true, debounceMs: 10 });
+    await w.setPaths([repo, wt]);
+    git(wt, 'checkout', '-q', '-b', 'next');
+    watches[0].fire(path.join('worktrees', 'a1', 'HEAD'));
+    await waitFor(() => events.length > 0);
+    expect(events).toEqual([{ type: 'git.branch_switched', repoPath: wt, branch: 'next', previousBranch: 'agent' }]);
+  });
+
+  it('creates and closes no watchers when a helper worktree comes and goes', async () => {
+    const { repo, wt } = makeRepo();
+    const w = newWatcher({ recursiveWatch: true });
+    await w.setPaths([repo, wt]);
+    const wt2 = path.join(repo, '.clubhouse', 'agents', 'a2');
+    git(repo, 'worktree', 'add', '-q', '-b', 'helper/x', wt2);
+    await w.setPaths([repo, wt, wt2]);
+    expect(w.lastRebuildStats()).toMatchObject({ groupsKept: 1, watchersCreated: 0, watchersClosed: 0 });
+    git(repo, 'worktree', 'remove', '--force', wt2);
+    git(repo, 'branch', '-q', '-D', 'helper/x');
+    await w.setPaths([repo, wt]);
+    expect(w.lastRebuildStats()).toMatchObject({ groupsKept: 1, watchersCreated: 0, watchersClosed: 0 });
+    expect(watches).toHaveLength(1);
+    expect(watches[0].closed).toBe(false);
+  });
 });
 
 describe('startGitWatcher', () => {
@@ -448,5 +526,36 @@ describe('startGitWatcher', () => {
     expect(published.filter((e) => e.type.startsWith('git.'))).toMatchObject([
       { type: 'git.commit', repoPath: wt, branch: 'agent', agentId: 'a1' },
     ]);
+  });
+
+  it('rebuilds once for a burst of agent config changes, such as one helper create (#3230)', async () => {
+    const { repo, wt } = makeRepo();
+    projects = [{ id: 'p1', path: repo }];
+    durables = { [repo]: [{ id: 'a1', worktreePath: wt }] };
+    await startGitWatcher({ watch: fakeWatch, pollMs: 0 });
+    const rebuilds = () => vi.mocked(appLog).mock.calls.filter((c) => c[2] === 'The git watcher rebuilt its repo list').length;
+    const before = rebuilds();
+    // agents.json is written about five times while a helper is created.
+    for (let i = 0; i < 5; i++) {
+      configListeners[0]();
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(rebuilds()).toBe(before);
+    await waitFor(() => rebuilds() > before, 5_000);
+    await new Promise((r) => setTimeout(r, 1_200));
+    expect(rebuilds()).toBe(before + 1);
+  });
+
+  it('keeps every project root under the repo cap, leaving out agent worktrees instead (#3230)', async () => {
+    const one = makeRepo();
+    const two = makeRepo();
+    projects = [{ id: 'p1', path: one.repo }, { id: 'p2', path: two.repo }];
+    durables = { [one.repo]: [{ id: 'a1', worktreePath: one.wt }] };
+    const published: AppEvent[] = [];
+    onAppEvent((e) => published.push(e));
+    await startGitWatcher({ watch: fakeWatch, pollMs: 25, maxRepos: 2 });
+    commit(two.repo, 'b.txt');
+    await waitFor(() => published.some((e) => e.type === 'git.commit'));
+    expect(published.filter((e) => e.type === 'git.commit')).toMatchObject([{ repoPath: two.repo, branch: 'main' }]);
   });
 });

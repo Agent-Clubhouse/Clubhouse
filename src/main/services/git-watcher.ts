@@ -4,8 +4,10 @@
  * project root and durable agent worktree.
  *
  * It watches each repo's git dir (HEAD, refs/heads, refs/remotes and
- * packed-refs) with fs.watch on plain directories, debounces, then reads the
- * ref files directly and compares with the last snapshot. A slow timer reads
+ * packed-refs) with fs.watch, debounces, then reads the ref files directly
+ * and compares with the last snapshot. On macOS that is one recursive watch
+ * of the shared git dir, filtered to ref changes; elsewhere it is plain
+ * directories (see GitWatcherOptions.recursiveWatch for why). A slow timer reads
  * every repo again in case a watcher event never came (and, on Windows, for
  * the folders it doesn't watch). It never runs git and never fetches.
  * Worktrees that share a common git dir are one group, so a ref moving there
@@ -30,6 +32,7 @@ import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { publishAppEvent, type AppEventInput } from './app-event-bus';
 import { noteAgentToolCall, recentGitCommands, type GitCommandRecord, type GitVerb } from './git-command-log';
 import { appLog } from './log-service';
+import { beginOperation, trackOperation } from './main-stall-monitor';
 import * as projectStore from './project-store';
 
 export const GIT_WATCH_DEBOUNCE_MS = 500;
@@ -340,7 +343,7 @@ interface Group {
   signature: string | null;
   signaturePaths: string[];
   pollsSinceRead: number;
-  watchers: Map<string, fs.FSWatcher>;
+  watchers: Map<string, DirWatcher>;
   timer: ReturnType<typeof setTimeout> | null;
   scanning: Promise<void> | null;
   dirty: boolean;
@@ -362,7 +365,7 @@ export interface GitWatcherOptions {
   recentCommands?: (now: number) => readonly GitCommandRecord[];
   now?: () => number;
   /** fs.watch on one directory, or a fake in tests. */
-  watch?: (dir: string, onChange: () => void) => fs.FSWatcher;
+  watch?: WatchFn;
   /** 0 turns the periodic check off. */
   pollMs?: number;
   /**
@@ -371,9 +374,60 @@ export interface GitWatcherOptions {
    * an open watch handle can hold up their deletion; the poll covers them.
    */
   watchRemovableDirs?: boolean;
+  /**
+   * One recursive watch of each shared git dir (plus any worktree admin dir
+   * outside it) in place of a watch per ref folder and worktree. On by
+   * default on macOS only (#3230): there, closing a watch waits on the
+   * FSEvents thread, which measured 0.4 to 7 s a close on a busy machine, all
+   * of it blocking the main thread, and a helper's create or dispose closed
+   * some. With one watch per repo a worktree coming or going closes none.
+   * Linux would emulate recursion with a watch per folder, and Windows' plain
+   * watches are cheap to close, so both keep watching folders.
+   */
+  recursiveWatch?: boolean;
 }
 
-const watchDir = (dir: string, onChange: () => void): fs.FSWatcher => fs.watch(dir, { persistent: false }, onChange);
+/** What the watcher needs from a directory watch: an fs.FSWatcher, or a fake in tests. */
+export interface DirWatcher {
+  close(): void;
+  on(event: 'error', listener: (err: Error) => void): unknown;
+}
+
+/** `filename` is relative to the watched dir, when the platform says. */
+export type WatchFn = (dir: string, onChange: (filename?: string | null) => void, opts?: { recursive?: boolean }) => DirWatcher;
+
+const watchDir: WatchFn = (dir, onChange, opts) => fs.watch(
+  dir,
+  { persistent: false, recursive: opts?.recursive ?? false },
+  (_event, filename) => onChange(filename == null ? null : String(filename)),
+);
+
+const REF_CHANGE_RE = /^(?:HEAD|packed-refs|refs|refs\/(?:heads|remotes)(?:\/.*)?|worktrees(?:\/[^/]+(?:\/HEAD)?)?)$/;
+
+/**
+ * True when a change at `rel` (relative to a shared git dir, from a
+ * recursive watch) can move a branch, a HEAD or a remote-tracking ref.
+ * Objects, the index and logs can't. Lock files count as the ref they lock.
+ * No name (the platform didn't say) counts too.
+ */
+export function isRefChange(rel: string | null | undefined): boolean {
+  if (!rel) return true;
+  return REF_CHANGE_RE.test(rel.replace(/\\/g, '/').replace(/\.lock$/, ''));
+}
+
+/** What one setPaths did, for the rebuild log line. */
+export interface RebuildStats {
+  repos: number;
+  watched: number;
+  groupsAdded: number;
+  groupsRemoved: number;
+  groupsKept: number;
+  watchersCreated: number;
+  watchersClosed: number;
+  /** Time spent inside watch() and close() calls (synchronous). */
+  watchSyncMs: number;
+  totalMs: number;
+}
 
 export class GitWatcher {
   private readonly groups = new Map<string, Group>();
@@ -384,14 +438,20 @@ export class GitWatcher {
   private readonly agentCwd: (agentId: string) => string | undefined;
   private readonly recentCommands: (now: number) => readonly GitCommandRecord[];
   private readonly now: () => number;
-  private readonly watch: (dir: string, onChange: () => void) => fs.FSWatcher;
+  private readonly watch: WatchFn;
   private readonly pollMs: number;
   private readonly watchRemovableDirs: boolean;
+  private readonly recursiveWatch: boolean;
   private poll: ReturnType<typeof setInterval> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
   private lastCapped = 0;
   private readonly reftableLogged = new Set<string>();
+  /** Running totals; a rebuild reports the difference. */
+  private watchersCreated = 0;
+  private watchersClosed = 0;
+  private watchSyncMs = 0;
+  private lastRebuild: RebuildStats | null = null;
 
   constructor(opts: GitWatcherOptions = {}) {
     this.publish = opts.publish ?? publishAppEvent;
@@ -404,6 +464,7 @@ export class GitWatcher {
     this.watch = opts.watch ?? watchDir;
     this.pollMs = opts.pollMs ?? GIT_POLL_INTERVAL_MS;
     this.watchRemovableDirs = opts.watchRemovableDirs ?? process.platform !== 'win32';
+    this.recursiveWatch = opts.recursiveWatch ?? process.platform === 'darwin';
   }
 
   /** Watch exactly these worktree paths. Calls are serialized; resolves once baselines are read. */
@@ -411,6 +472,11 @@ export class GitWatcher {
     const run = () => this.applyPaths(paths);
     this.queue = this.queue.then(run, run);
     return this.queue;
+  }
+
+  /** What the last setPaths did, for tests. */
+  lastRebuildStats(): RebuildStats | null {
+    return this.lastRebuild;
   }
 
   /** The number of directories being watched, for tests and logs. */
@@ -442,9 +508,34 @@ export class GitWatcher {
 
   private async applyPaths(paths: readonly string[]): Promise<void> {
     if (this.closed) return;
+    const startedAt = performance.now();
+    const before = { created: this.watchersCreated, closed: this.watchersClosed, syncMs: this.watchSyncMs };
+    const counts = { added: 0, removed: 0, kept: 0, repos: 0, watched: 0 };
+    await trackOperation('git watcher rebuild', () => this.rebuild(paths, counts));
+    if (this.closed) return;
+    const stats: RebuildStats = {
+      repos: counts.repos,
+      watched: counts.watched,
+      groupsAdded: counts.added,
+      groupsRemoved: counts.removed,
+      groupsKept: counts.kept,
+      watchersCreated: this.watchersCreated - before.created,
+      watchersClosed: this.watchersClosed - before.closed,
+      watchSyncMs: Math.round(this.watchSyncMs - before.syncMs),
+      totalMs: Math.round(performance.now() - startedAt),
+    };
+    this.lastRebuild = stats;
+    appLog('core:app-events', 'info', 'The git watcher rebuilt its repo list', { meta: { ...stats } });
+  }
+
+  private async rebuild(
+    paths: readonly string[],
+    counts: { added: number; removed: number; kept: number; repos: number; watched: number },
+  ): Promise<void> {
     const unique = new Map<string, string>();
     for (const p of paths) if (p && !unique.has(keyOf(p))) unique.set(keyOf(p), p);
     let kept = [...unique.entries()];
+    counts.repos = kept.length;
     if (kept.length > this.maxRepos) {
       if (this.lastCapped !== kept.length) {
         appLog('core:app-events', 'warn', 'Too many repos for the git watcher; watching the first ones', {
@@ -456,6 +547,7 @@ export class GitWatcher {
     } else {
       this.lastCapped = 0;
     }
+    counts.watched = kept.length;
 
     const resolved = await Promise.all(kept.map(async ([key, p]) => {
       const dirs = await resolveGitDirs(p);
@@ -491,12 +583,14 @@ export class GitWatcher {
       if (!wanted.has(key)) {
         this.dispose(g);
         this.groups.delete(key);
+        counts.removed++;
       }
     }
     const scans: Promise<void>[] = [];
     for (const [key, w] of wanted) {
       const existing = this.groups.get(key);
       if (existing) {
+        counts.kept++;
         const same = existing.paths.size === w.paths.size
           && [...w.paths.values()].every((p) => existing.paths.get(p.key)?.gitDir === p.gitDir);
         existing.paths = w.paths;
@@ -509,6 +603,7 @@ export class GitWatcher {
           timer: null, scanning: null, dirty: false, wantFull: false, disposed: false, dirCapLogged: false,
         };
         this.groups.set(key, g);
+        counts.added++;
         scans.push(this.scan(g, true));
       }
     }
@@ -523,8 +618,15 @@ export class GitWatcher {
     g.disposed = true;
     if (g.timer) clearTimeout(g.timer);
     g.timer = null;
-    for (const w of g.watchers.values()) w.close();
+    for (const w of g.watchers.values()) this.closeWatcher(w);
     g.watchers.clear();
+  }
+
+  private closeWatcher(w: DirWatcher): void {
+    const t = performance.now();
+    w.close();
+    this.watchSyncMs += performance.now() - t;
+    this.watchersClosed++;
   }
 
   private schedule(g: Group): void {
@@ -621,17 +723,34 @@ export class GitWatcher {
   }
 
   private syncWatchers(g: Group, refDirs: string[]): void {
-    const ordered = [g.commonDir, path.join(g.commonDir, 'refs')];
-    const refsRoot = path.join(g.commonDir, 'refs');
-    if (this.watchRemovableDirs) {
-      for (const wp of g.paths.values()) ordered.push(wp.gitDir);
-      ordered.push(...refDirs);
+    const endOperation = beginOperation('git watcher watch sync');
+    try {
+      this.syncWatchersNow(g, refDirs);
+    } finally {
+      endOperation();
+    }
+  }
+
+  private syncWatchersNow(g: Group, refDirs: string[]): void {
+    const ordered: string[] = [];
+    if (this.recursiveWatch) {
+      // The shared git dir holds refs, packed-refs and each linked worktree's
+      // admin dir (worktrees/<name>); one outside it is watched on its own.
+      ordered.push(g.commonDir);
+      for (const wp of g.paths.values()) if (!within(g.key, keyOf(wp.gitDir))) ordered.push(wp.gitDir);
     } else {
-      // refs/heads, refs/remotes and refs/remotes/<remote> only: deleting an
-      // agent can remove anything deeper (and its .git/worktrees folder).
-      for (const dir of refDirs) {
-        const parts = path.relative(refsRoot, dir).split(path.sep);
-        if (parts.length === 1 || (parts.length === 2 && parts[0] === 'remotes')) ordered.push(dir);
+      const refsRoot = path.join(g.commonDir, 'refs');
+      ordered.push(g.commonDir, refsRoot);
+      if (this.watchRemovableDirs) {
+        for (const wp of g.paths.values()) ordered.push(wp.gitDir);
+        ordered.push(...refDirs);
+      } else {
+        // refs/heads, refs/remotes and refs/remotes/<remote> only: deleting an
+        // agent can remove anything deeper (and its .git/worktrees folder).
+        for (const dir of refDirs) {
+          const parts = path.relative(refsRoot, dir).split(path.sep);
+          if (parts.length === 1 || (parts.length === 2 && parts[0] === 'remotes')) ordered.push(dir);
+        }
       }
     }
     let want = [...new Set(ordered)];
@@ -647,23 +766,30 @@ export class GitWatcher {
     const wantSet = new Set(want);
     for (const [dir, w] of g.watchers) {
       if (!wantSet.has(dir)) {
-        w.close();
+        this.closeWatcher(w);
         g.watchers.delete(dir);
       }
     }
     for (const dir of want) {
       if (g.watchers.has(dir)) continue;
+      const recursive = this.recursiveWatch && dir === g.commonDir;
+      const t = performance.now();
       try {
-        const w = this.watch(dir, () => this.schedule(g));
+        const w = recursive
+          ? this.watch(dir, (filename) => { if (isRefChange(filename)) this.schedule(g); }, { recursive: true })
+          : this.watch(dir, () => this.schedule(g));
+        this.watchersCreated++;
         w.on('error', () => {
           // The dir went away (a deleted branch folder, a removed worktree).
           // Its parent's watcher scans again; this one is re-added if it returns.
-          w.close();
+          this.closeWatcher(w);
           if (g.watchers.get(dir) === w) g.watchers.delete(dir);
         });
         g.watchers.set(dir, w);
       } catch {
         // telemetry-exempt: missing right now; the next scan tries again
+      } finally {
+        this.watchSyncMs += performance.now() - t;
       }
     }
   }
@@ -768,10 +894,11 @@ const agentHomes = new Map<string, string>();
 
 async function collectPaths(): Promise<string[]> {
   const projects = await projectStore.list();
-  const paths: string[] = [];
+  const roots: string[] = [];
+  const worktrees: string[] = [];
   const homes = new Map<string, string>();
   for (const project of projects) {
-    paths.push(project.path);
+    roots.push(project.path);
     let configs: Awaited<ReturnType<typeof listDurable>> = [];
     try {
       configs = await listDurable(project.path);
@@ -784,12 +911,15 @@ async function collectPaths(): Promise<string[]> {
     for (const c of configs) {
       if (isDisposedAgent(c)) continue;
       homes.set(c.id, c.worktreePath || project.path);
-      if (c.worktreePath) paths.push(c.worktreePath);
+      if (c.worktreePath) worktrees.push(c.worktreePath);
     }
   }
   agentHomes.clear();
   for (const [id, home] of homes) agentHomes.set(id, home);
-  return paths;
+  // Roots first: past the repo cap, agent worktrees are left out, never a
+  // whole project, and a helper coming or going doesn't shift the cut onto
+  // another project's root (dropping and re-adding its watches, #3230).
+  return [...roots, ...worktrees];
 }
 
 async function refresh(): Promise<void> {

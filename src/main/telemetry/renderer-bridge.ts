@@ -13,6 +13,7 @@
  *
  * No OpenTelemetry imports: this file is part of the main bundle.
  */
+import * as os from 'os';
 import type { WebContents } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
@@ -94,6 +95,19 @@ function takeDiagRate(senderId: number, n: number, nowMs = Date.now()): number {
   return take;
 }
 
+/** The renderer's hang and slow-interaction log (renderer/telemetry/ui-perf.ts). */
+const UI_PERF_NS = 'ui:perf';
+
+/**
+ * A `ui:perf` line gets the machine's load average (1, 5, 15 min), so a stall
+ * from a busy machine can be told apart from one of the app's own (#3230).
+ * The renderer can't read it; main adds it on arrival.
+ */
+function withLoadAvg(ns: string, meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (ns !== UI_PERF_NS) return meta;
+  return { ...meta, loadAvg: os.loadavg().map((n) => Math.round(n * 100) / 100) };
+}
+
 /**
  * Feed parsed renderer items into the facade, and diag items into diag.ts
  * (local only). Signal items pass only while `signals` is on. Exported for tests.
@@ -103,7 +117,7 @@ export function dispatchRendererItems(items: RendererItem[], kind: WindowKind, s
   for (const item of items) {
     try {
       if (item.t === 'diag') {
-        diagFromRenderer({ ns: item.ns, level: item.level, msg: item.msg, meta: item.meta }, kind);
+        diagFromRenderer({ ns: item.ns, level: item.level, msg: item.msg, meta: withLoadAvg(item.ns, item.meta) }, kind);
         continue;
       }
       if (!signals) continue;

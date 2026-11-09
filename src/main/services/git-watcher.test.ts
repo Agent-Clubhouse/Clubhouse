@@ -7,7 +7,7 @@ vi.mock('./project-store', () => ({ list: vi.fn(async () => []), onProjectsChang
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import {
-  MANY_BRANCHES, coalesceRemoteUpdates, diffSnapshots, parseHead, parsePackedRefs, type RepoSnapshot, type WorktreeState,
+  MANY_BRANCHES, coalesceRemoteUpdates, diffSnapshots, isRefChange, parseHead, parsePackedRefs, type RepoSnapshot, type WorktreeState,
 } from './git-watcher';
 
 const A = 'a'.repeat(40);
@@ -31,6 +31,22 @@ describe('parsePackedRefs', () => {
       '',
     ].join('\r\n');
     expect([...parsePackedRefs(text)]).toEqual([['refs/heads/main', A], ['refs/remotes/origin/main', B]]);
+  });
+});
+
+describe('isRefChange', () => {
+  it('is true for HEADs, branches, remote-tracking refs, packed-refs and their locks', () => {
+    for (const rel of [
+      'HEAD', 'packed-refs', 'packed-refs.lock', 'refs', 'refs/heads', 'refs/heads/agent/x', 'refs/heads/agent/x.lock',
+      'refs/remotes/origin/main', 'worktrees', 'worktrees/a1', 'worktrees/a1/HEAD', 'worktrees\\a1\\HEAD.lock', null, undefined, '',
+    ]) expect(isRefChange(rel), String(rel)).toBe(true);
+  });
+
+  it('is false for objects, the index, logs, tags and a worktree\'s other files', () => {
+    for (const rel of [
+      'objects/ab/cdef', 'index', 'index.lock', 'logs/HEAD', 'logs/refs/heads/main', 'refs/tags/v1', 'worktrees/a1/index',
+      'worktrees/a1/logs/HEAD', 'FETCH_HEAD', 'ORIG_HEAD', 'config',
+    ]) expect(isRefChange(rel), rel).toBe(false);
   });
 });
 
