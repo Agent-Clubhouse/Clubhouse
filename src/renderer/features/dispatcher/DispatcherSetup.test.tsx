@@ -138,6 +138,22 @@ describe('DispatcherSetup: Behavior and Runs on', () => {
   });
 });
 
+describe('DispatcherSetup: models chosen by hand (#3191)', () => {
+  it('says finishing setup lets Behavior choose the models again', async () => {
+    renderSetup(makeState({ models: { byHand: true, chat: null, work: null } }));
+    next();
+    expect(screen.getByTestId('dispatcher-setup-models-by-hand').textContent).toBe('You chose its models yourself. Finishing setup lets Behavior choose them again. Your picks stay in Settings for next time.');
+    await waitFor(() => expect(d.checkBehavior).toHaveBeenCalled());
+  });
+
+  it('says nothing about it while Behavior chooses them', async () => {
+    renderSetup();
+    next();
+    expect(screen.queryByTestId('dispatcher-setup-models-by-hand')).toBeNull();
+    await waitFor(() => expect(d.checkBehavior).toHaveBeenCalled());
+  });
+});
+
 describe('DispatcherSetup: Personality', () => {
   const toPersonality = () => { next(); next(); };
 

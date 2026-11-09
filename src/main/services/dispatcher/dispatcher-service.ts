@@ -459,7 +459,7 @@ export async function setDispatcherModels(input: unknown): Promise<DispatcherSta
       // Back to one provider: the one Settings' "Runs on" shows.
       if (config && chatConfig) chatConfig = await mirror(config, chatConfig, getDispatcherChatPath());
     });
-    appLog(NS, 'info', 'Dispatcher models chosen by hand turned ' + (update.byHand ? 'on' : 'off'));
+    appLog(NS, 'info', 'Choose models yourself changed', { meta: { byHand: update.byHand } });
     emitChanged();
     if (!update.byHand) {
       const queuedIn = generation;
