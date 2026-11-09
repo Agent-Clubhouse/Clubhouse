@@ -20,7 +20,7 @@ Every REST route and the `/ws` upgrade on the main port require a paired control
 Authenticated `GET /api/v1/mobile/capabilities` returns:
 
 ```json
-{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear","dispatcher.setEnabled"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"contextWindow":{"version":1},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"access":{"version":1},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536},"dispatcher":{"version":1,"enabled":true,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__","snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}}
+{"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear","dispatcher.setEnabled","dispatcher.update","dispatcher.setModels","dispatcher.clearChat","dispatcher.forgetEverything"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"contextWindow":{"version":1},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"access":{"version":1},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536},"dispatcher":{"version":1,"enabled":true,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__","snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled","dispatcher.update","dispatcher.setModels","dispatcher.clearChat","dispatcher.forgetEverything"],"settings":{"version":1,"path":"/api/v1/mobile/dispatcher/settings"}}}
 ```
 
 A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). Gate saved Access on `access.version >= 1` ([Access](#access)). Gate the Dispatcher on `dispatcher.version >= 1` ([Dispatcher](#dispatcher)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
@@ -49,6 +49,10 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `quick.clear`: `{projectId}`; dismiss all of a project's finished quick agents. See [Finished quick agents](#finished-quick-agents).
 - `helperRouting.update`: `{revision, scope, cells?, reset?}`; change or reset the app-wide helper presets. See [Helper presets](#helper-presets).
 - `dispatcher.setEnabled`: `{enabled}`; turn the app-wide Dispatcher on or off, as Settings > Dispatcher does. See [Dispatcher](#dispatcher).
+- `dispatcher.update`: `{behavior?, name?, color?, emoji?, personality?}`; at least one. Settings > Dispatcher's Behavior, name, look and personality. See [Dispatcher settings](#dispatcher-settings).
+- `dispatcher.setModels`: `{byHand}` or `{role, provider?, model?, effort?, contextWindow?}`; Choose models yourself. See [Dispatcher settings](#dispatcher-settings).
+- `dispatcher.clearChat`: `{expectedState}`; start its conversation over, confirmed. See [Dispatcher settings](#dispatcher-settings).
+- `dispatcher.forgetEverything`: `{expectedState}`; clear its memory, confirmed separately. See [Dispatcher settings](#dispatcher-settings).
 
 - `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
 - `helper.decline`: `{requestId}`; decline it. The orchestrator is told, as from the desktop.
@@ -992,12 +996,14 @@ The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestr
 
 ```json
 "dispatcher":{"version":1,"enabled":false,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__",
- "snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}
+ "snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled","dispatcher.update","dispatcher.setModels","dispatcher.clearChat","dispatcher.forgetEverything"],
+ "settings":{"version":1,"path":"/api/v1/mobile/dispatcher/settings"}}
 ```
 
 - **enabled**: it is on now.
 - **flagOn**: always `true`. It was `false` while Clubhouse MCP was off at app level, which can no longer happen. The experimental flag it once reported is gone.
 - **newLayout**: the desktop runs the New layout this session. The Dispatcher's view is in the new layout only, so turning it on needs it; one that is still on can always be turned off.
+- **settings**: present when the desktop has the [Dispatcher settings](#dispatcher-settings) route and its four commands, which `commands` also lists. Gate them on `settings.version >= 1`.
 
 ### Snapshot
 
@@ -1053,7 +1059,7 @@ See [While it is off](#while-it-is-off) for what changes while it is off.
 - **Shells.** `pty:spawn-shell` with `projectId: "__dispatcher__"` (with or without its `agentId`) opens a shell in its folder while it is on; otherwise `project_not_found`.
 - **No git.** Git routes for `__dispatcher__` answer 409 `{"error":"not_git_repo"}`. Its settings' `details.changes`, `branch` and `worktree` are null.
 - **No project.** `agent.create`, `agent.spawn`, `project.*` and `quick.*` with `projectId: "__dispatcher__"` are 409 `dispatcher_locked`.
-- **Settings.** `GET /mobile/agents/:id/settings` has `isDispatcher: true` and `orchestration: null`. `orchestrator`, `model`, `runtime`, `freeAgentMode` and `access` are `editable: "always"` (as on Settings > Dispatcher they apply the next time it starts), `idleSleep` `"always"`, and `name`, `color`, `emoji`, `persona` and `clubhouseMode` `"never"`.
+- **Settings.** `GET /mobile/agents/:id/settings` has `isDispatcher: true`, `orchestration: null` and `notHonored`, the settings to hide ([Dispatcher settings](#dispatcher-settings)). `orchestrator`, `model`, `runtime`, `freeAgentMode` and `access` are `editable: "always"` (as on Settings > Dispatcher they apply the next time it starts), `idleSleep` `"always"`, and `name`, `color`, `emoji`, `persona` and `clubhouseMode` `"never"`.
 - **agent.update.** Only `orchestrator`, `model`, `runtime`, `freeAgentMode`, `access`, `idleSleep` and `contextWindow`, at any time. A new `orchestrator` resets `model` to `default` unless the command sets one; `model` must be `default` or one the CLI lists (400 `invalid_model`). `name`, `color`, `emoji`, `persona`, `clubhouseMode` or `orchestration` are 409 `dispatcher_locked`, the desktop's own rules.
 
 The Dispatcher can change its own color, emoji and image through the `update_agent` MCP tool, and the `clubhouse` CLI can change them too (#2645). A phone can't: `agent.update` stays `dispatcher_locked` for them. A fresh `snapshot` carries the new look. Its name stays "Dispatcher", whichever look it has. Messages it sends name it as the sender like any agent; find it in `dispatcher.agent`, not `agents`.
@@ -1061,6 +1067,61 @@ The Dispatcher can change its own color, emoji and image through the `update_age
 Messages other agents send the Dispatcher arrive as `user_message` with `source: "mcp"` and [`routed`](#live-events-and-replay) naming the sender, as for any agent. `content` is what the Dispatcher received, with a `[FROM:<name>@<project>]` tag in the text, and that tag is all older transcripts have.
 
 **Its chat is a group chat (#3043).** Live, on replay, in history pages and from `/chat/events/{seq}`, its chat comes as the desktop draws it: the same shapes, without tool calls, thoughts, plan documents, subagent work, Clubhouse updates or its own hand-offs, and with task ids, routing tags and JSON cleaned out of `routed` and the final `agent_message`. State events (turns, the session, the queue, approvals, questions) all still come, so `seq` can skip; `lastSeq` counts every event. Every other agent's chat comes whole.
+
+### Dispatcher settings
+
+Settings > Dispatcher from a phone (#3206): Behavior, Choose models yourself (#3191), name, look and personality, today's usage, and its two resets. Gated on `dispatcher.settings.version >= 1`. Everything here works only while it is on.
+
+`GET /api/v1/mobile/dispatcher/settings` answers 404 `{"error":"dispatcher_off"}` while it is off or not created yet. While it is on:
+
+```json
+{"version":1,"epoch":"uuid","agentId":"durable_dispatcher",
+ "behavior":{"value":"standard","editable":"always","applies":"now","setsModels":true,"auto":{"ready":true},"note":null,
+  "choices":[{"id":"light","label":"Light","description":"…"},{"id":"standard","label":"Standard","description":"…"},{"id":"thorough","label":"Thorough","description":"…"}]},
+ "models":{"byHand":false,"editable":"always","note":"…",
+  "applies":{"provider":"next_start","model":"now_or_next_start","effort":"now_or_next_start","contextWindow":"next_start"},
+  "roles":[{"id":"chat","label":"Talking with you","help":"…","pick":null},{"id":"work","label":"Working in the background","help":"…","pick":null}]},
+ "identity":{"name":{"value":"Dispatcher","editable":"always","maxLength":40},"color":{"value":"indigo","editable":"always"},"emoji":{"value":null,"editable":"always"},"hasImageIcon":false},
+ "personality":{"value":{"preset":"concise","text":"…"},"editable":"always","applies":"next_start","maxLength":2000,
+  "presets":[{"id":"friendly","label":"Friendly","description":"Warm and upbeat","text":"…"},{"id":"custom","label":"Custom","description":"Write your own","text":null}]},
+ "usage":{"day":"2027-01-15","conversations":{"turns":4,"turnsWithoutUsage":0,"input":182000,"cachedInput":120000,"cacheWrite":9000,"output":6400,"reasoning":0,"costUsd":0.42,"costIsEstimate":true},"background":{…}},
+ "notHonored":[{"setting":"model","reason":"behavior"},{"setting":"contextWindow","reason":"behavior"},{"setting":"runtime","reason":"not_offered"},{"setting":"freeAgentMode","reason":"not_offered"},{"setting":"access","reason":"not_offered"}],
+ "clearChat":{"expectedState":"opaque","applies":"next_start"},
+ "forgetEverything":{"expectedState":"opaque"}}
+```
+
+Draw `label`, `description`, `help` and `note` as sent; they are the desktop's words.
+
+- **behavior**: the level, saved at once (`applies: "now"`). The models it gives switch a running chat where the CLI allows, otherwise at the next start. `setsModels` is false while the models are chosen by hand: then Behavior only sets how often it checks in, and each choice's `description` says only that. `auto` is `{ready:true}` or `{ready:false, code:"auto_not_supported"|"no_valid_mapping"}`, and `note` is the line to show under the field, or null.
+- **models**: Choose models yourself. `byHand` is the switch. Each role is one row of Settings > Dispatcher, with `pick` `{provider, model, effort, contextWindow}` (each `default` or null meaning the CLI's own), or null before the switch was first turned on. Picks are kept while the switch is off, so turning it on again restores them. `applies` says when a change to each field takes effect. Model and effort lists come from the [create options](#create-options) `orchestrators`.
+- **identity**: its name (at most `maxLength`, one line), color (a [create options](#create-options) `colors` id), emoji, and whether it has an image icon, which a phone can't set. Setting an emoji replaces an image.
+- **personality**: what it's told about how to sound. A preset fills the text; the text is always what it's told. `applies: "next_start"`: its chat reads it when a session starts.
+- **usage**: today's split, the same numbers as Settings > Dispatcher. `conversations` are your chats with it and the work you hand it; `background` is the check-ins and memory upkeep it runs on its own. Token figures add up what the provider reported, and a turn that reported nothing counts in `turnsWithoutUsage` instead. The desktop's labels are "Conversations today" and "Background work today", with "None yet" for no turns.
+- **notHonored**: its raw agent settings ([Its agent](#its-agent)) that Settings > Dispatcher no longer offers, so hide those rows. The same list is on `GET /mobile/agents/:id/settings` as `notHonored`. `reason` is `behavior` (Behavior gives it before each start, so a saved change doesn't last) or `not_offered` (it stays as it is). It depends on `models.byHand`: off, `model` and `contextWindow` are listed; on, they aren't, since `orchestrator`, `model` and `contextWindow` in `agent.update` save the pick for talking with you. `runtime`, `freeAgentMode` and `access` are always listed. `agent.update` still takes all of them, for older phones. Tolerate settings and reasons you don't know.
+- **clearChat**, **forgetEverything**: the confirmations ([Confirmations](#confirmations)). `clearChat.applies` is `now` when its chat is running (it starts a new conversation at once) and `next_start` when it sleeps. `expectedState` is null for a client without the pinned certificate, which can't send commands.
+
+Every command below refuses with 409 `dispatcher_off` while it is off. Their results are the settings payload without `version` and `epoch`, except the two resets. A fresh `snapshot` follows a change to its name or look.
+
+**`dispatcher.update`** `{behavior?, name?, color?, emoji?, personality?}`, at least one. Everything is checked before anything is written.
+
+- **behavior**: `light`, `standard` or `thorough` (400 `invalid_behavior`).
+- **name**: one line; control characters become spaces, and it is trimmed and capped at `maxLength`. Nothing left is 400 `invalid_name`.
+- **color**: a `colors` id (400 `invalid_color`). **emoji**: up to 16 UTF-16 units, or null to clear it.
+- **personality**: `{preset?, text?}`, at least one. `preset` alone fills that preset's text (Custom keeps the current text). `text` alone becomes Custom unless it is exactly a preset's text. Both saves both. Empty text reads as Concise, as on the desktop. An unknown preset, or text over `maxLength`, is 400 `invalid_personality`.
+
+**`dispatcher.setModels`** `{byHand: bool}`, or `{role: "chat"|"work", provider?, model?, effort?, contextWindow?}` with `effort` and `contextWindow` null for the CLI's default. Not both at once. A malformed change is 400 `invalid_models` with the reason. A change the desktop refuses (the switch is off, a provider Clubhouse doesn't know, a model the CLI doesn't list, a context its model doesn't offer) is 409 `models_refused` with its sentence, and nothing is kept. Turning it on seeds each pick from what it runs now; turning it off puts Behavior back in charge of the models.
+
+#### Confirmations
+
+Clear chat and Forget everything each need explicit confirmation, the precondition pattern `agent.providerChange` uses. The phone reads the settings route, asks the person, and sends the `expectedState` it got for that action. Treat it as opaque. It is bound to this phone and this action, and to what the question showed: Clear chat's to the conversation it would end and whether the chat is running; Forget everything's to the memory it would clear. A token for one never confirms the other.
+
+A token that doesn't match now is 409 `stale_state` (message: "This changed since you were asked. Check again and confirm.") and nothing happens. Read the route again and ask again. A token works once: after the action, a new command with it is `stale_state`, while an identical retry with the same commandId gets the receipt. Tokens don't survive a desktop restart.
+
+**`dispatcher.clearChat`** `{expectedState}`: its conversation starts over, as Clear chat in its menu does. Its memory, its agents and their connections, Actions and news waiting for the next check-in all stay. Result `{cleared:"now"|"next_start"}`. A clear that fails is 409 `clear_failed` (outcome `failed`) with the reason. Desktop words: "Clear chat?" and "The conversation starts over. <name> still remembers what you decided and who is doing what, and your agents, connections and Actions stay as they are."
+
+**`dispatcher.forgetEverything`** `{expectedState}`: its memory goes and starts over empty, as Settings > Dispatcher's Forget everything does. This can't be undone. Its chat, agents, connections and Actions stay. Result `{removed, heldNews}`: folders removed, and news held for the next check-in that was dropped. Desktop words: "Forget everything?" and "<name> forgets its notes on your agents and your work, its timeline, and news waiting for the next check-in. This can’t be undone. Your agents, connections, Actions and its chat stay."
+
+Fixtures: `dispatcher-settings.json` (the route off, on, and with the models chosen by hand, with `notHonored` from the agent settings in both modes), and `commands/dispatcher.update.json`, `dispatcher.setModels.json`, `dispatcher.clearChat.json` and `dispatcher.forgetEverything.json` with every refusal.
 
 ## Project state
 
@@ -1171,7 +1232,7 @@ A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; 
 
 `sender-identity.json` is for [Who sent a message](#who-sent-a-message). `catalog` is the snapshot's agent rows and `agentIcons`, `frames` are the live `chat:event`s, and `expected` is, for each event, what the desktop's code draws given only `catalog` and that event: `{from:"you", text}` or `{from:"others", parts:[{name, agentId, text, avatar}]}`, where `agentId` is the row it found or null. `avatar` is null, `{type:"quick"}`, `{type:"emoji", emoji, background}`, `{type:"image", image}` or `{type:"initials", initials, background}`, with `background` a CSS hex color. `history` and `replay` carry the same messages through the chat route and `mobile:replay`. `colors` (with `initialsText`, the [text color](#initials-text-color) for each) and `initials` are the tables to check against. `queued-bursts.json` is for [Queued messages](#queued-messages): events from the real chat runtime for a burst, the same burst missing its first event, a failed send, a provider-held queue and a system turn over a held row, with `rowId` and the combined `routed` to expect.
 
-The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder), and `dispatcher-group-chat.json` (one conversation as the Dispatcher's group chat and as an ordinary agent's, history and live).
+The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder), `dispatcher-group-chat.json` (one conversation as the Dispatcher's group chat and as an ordinary agent's, history and live), and `dispatcher-settings.json` ([Dispatcher settings](#dispatcher-settings)).
 
 `commands/<type>.json` lists `cases` of `{name, request, response:{status, body}}`; `name` is `accepted…` or the error code. `commands/_common.json` has the refusals any command can get (`invalid_command`, `unsupported_version`, `epoch_mismatch`, `command_conflict`, `client_certificate_required`, `command_capacity`) and an identical retry. Not covered: `authorization_revoked`, `start_cancelled` and the upload `quota_exceeded` / `authorization_revoked`, which need races or a day of uploads; `/content` previews and git routes.
 

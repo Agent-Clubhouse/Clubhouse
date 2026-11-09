@@ -57,6 +57,8 @@ const W = vi.hoisted(() => ({
   finishedReady: true,
   // The app-wide Dispatcher (#2533): off unless a test turns it on.
   dispatcher: { enabled: false, newLayout: true, running: false, classicUnsaved: false },
+  // Settings > Dispatcher's own values (#3206): Behavior, Choose models yourself and the personality.
+  dispatcherSettings: null as null | { level: string; models: Record<string, unknown>; personality: { preset: string; text: string } },
   dispatcherListeners: new Set<(state: any) => void>(),
   // What the CLI offers for the model (#2660); a case sets it, else Claude's.
   contextOptions: null as null | Record<string, unknown>,
@@ -70,7 +72,10 @@ vi.mock('./dispatcher/dispatcher-service', () => {
   const state = () => ({ enabled: enabled(), flagOn: true, savedOn: W.dispatcher.enabled, classic: !W.dispatcher.newLayout, offReason: enabled() ? null : W.dispatcher.classicUnsaved ? 'classic_layout' : 'switch_off', running: W.dispatcher.running, agentId: config()?.id ?? null,
     path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null,
     // Phones see the Dispatcher's chat (#3036); here the one record stands for it, so the contract is unchanged.
-    chatAgentId: config()?.id ?? null, chatPath: config() ? DISPATCHER_PATH : null, chatRunning: W.dispatcher.running });
+    chatAgentId: config()?.id ?? null, chatPath: config() ? DISPATCHER_PATH : null, chatRunning: W.dispatcher.running,
+    behavior: { level: W.dispatcherSettings!.level, provider: config()?.orchestrator ?? null, auto: { ready: true } },
+    models: W.dispatcherSettings!.models, personality: W.dispatcherSettings!.personality });
+  const changed = () => { for (const l of W.dispatcherListeners) l(state()); };
   return {
     DISPATCHER_NAME: 'Dispatcher',
     getDispatcherPath: () => DISPATCHER_PATH,
@@ -88,8 +93,33 @@ vi.mock('./dispatcher/dispatcher-service', () => {
       for (const l of W.dispatcherListeners) l(state());
       return state();
     },
+    // dispatcher-service's own rules are its tests'; these keep what they were given.
+    setDispatcherBehavior: async (level: string) => { W.dispatcherSettings!.level = level; changed(); return state(); },
+    setDispatcherPersonality: async (personality: { preset: string; text: string }) => { W.dispatcherSettings!.personality = personality; changed(); return state(); },
+    setDispatcherModels: async (update: Record<string, unknown>) => {
+      const models = W.dispatcherSettings!.models;
+      if ('byHand' in update) {
+        const pick = { provider: config()?.orchestrator ?? 'claude-code', model: config()?.model ?? 'default', effort: null, contextWindow: null };
+        W.dispatcherSettings!.models = { byHand: update.byHand, chat: models.chat ?? pick, work: models.work ?? pick };
+      } else {
+        if (!models.byHand) throw new Error('Turn on Choose models yourself first.');
+        const { role, ...fields } = update as { role: 'chat' | 'work' };
+        W.dispatcherSettings!.models = { ...models, [role]: { ...(models[role] as object), ...fields } };
+      }
+      changed();
+      return state();
+    },
   };
 });
+vi.mock('./dispatcher/dispatcher-clear-chat', () => ({ clearDispatcherChat: async () => ({ cleared: 'next_start' }) }));
+vi.mock('./dispatcher/dispatcher-forget', () => ({ forgetEverything: async () => ({ removed: 1, heldNews: 0 }) }));
+vi.mock('./dispatcher/dispatcher-usage', () => ({
+  getDispatcherUsageSplit: () => ({
+    day: '2027-01-15',
+    conversations: { turns: 4, turnsWithoutUsage: 0, input: 182000, cachedInput: 120000, cacheWrite: 9000, output: 6400, reasoning: 0, costUsd: 0.42, costIsEstimate: true },
+    background: { turns: 2, turnsWithoutUsage: 1, input: 21000, cachedInput: 0, cacheWrite: 0, output: 900, reasoning: 0, costUsd: 0.03, costIsEstimate: true },
+  }),
+}));
 vi.mock('./dispatcher/dispatcher-settings', () => ({
   // Nothing saved: Behavior gives the models, so Choose models yourself (#3191) is off.
   getSettings: () => ({}),
@@ -497,6 +527,7 @@ import { findSenderAgent, messageDisplay, MINIMAL_CHAT_CAPABILITIES, sentPartNam
 import { agentAvatarSpec, agentInitials, initialsTextColor } from '../../shared/agent-avatar';
 import { AGENT_COLORS } from '../../shared/name-generator';
 import { MOBILE_COMMAND_FIELDS, MobileCommandService, NULLABLE_ON_UPDATE, isOptionalCommandField } from './mobile-control';
+import { _setConfirmationSaltForTesting } from './mobile-dispatcher-settings';
 import { MOBILE_COMMAND_TYPES } from '../../shared/mobile-control';
 import { CHAT_EVENT_TYPES, type ChatEvent } from '../../shared/chat';
 import { annexPtyHost } from '../../shared/annex-pty';
@@ -648,6 +679,7 @@ function resetWorld() {
     ],
   };
   W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
+  W.dispatcherSettings = { level: 'standard', models: { byHand: false, chat: null, work: null }, personality: { preset: 'concise', text: 'Be short and direct. Lead with the answer, use as few words as it takes, and skip pleasantries. Add detail only when asked.' } };
   W.running = new Set(['durable_term']);
   W.revert = new Set();
   W.transcripts = {
@@ -793,6 +825,8 @@ function renumberFrames(list: any[], before: number) {
 describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   beforeAll(async () => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    // Clear chat and Forget everything tokens are salted per app run; fixed here so the files don't change.
+    _setConfirmationSaltForTesting('fixture-salt');
     const server = certificate('clubhouse-fixture-desktop');
     client = certificate('mobile-fixture-identity');
     W.tls = { ...server, requestCert: true, rejectUnauthorized: false };
@@ -1555,6 +1589,58 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     fixtures.set('dispatcher-routes.json', routes);
     W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
+  });
+
+  it('Settings > Dispatcher from a phone (#3206)', async () => {
+    const route = '/api/v1/mobile/dispatcher/settings';
+    const cases: Record<string, unknown> = { off: await exchange('GET', route) };
+    await command('dispatcher_off', { type: 'dispatcher.update', behavior: 'light' });
+    await command('dispatcher_off', { type: 'dispatcher.setModels', byHand: true });
+    await command('dispatcher_off', { type: 'dispatcher.clearChat', expectedState: 'from-an-earlier-read' });
+    await command('dispatcher_off', { type: 'dispatcher.forgetEverything', expectedState: 'from-an-earlier-read' });
+    W.dispatcher.enabled = true;
+    const read = await exchange('GET', route);
+    expect(read.response.status).toBe(200);
+    expect(read.response.body).toMatchObject({ agentId: 'durable_dispatcher', behavior: { value: 'standard', setsModels: true }, models: { byHand: false }, clearChat: { applies: 'next_start' } });
+    cases.on = read;
+    // The Dispatcher's own agent settings say which raw settings it no longer honors.
+    const agentSettings = await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/settings');
+    cases.agentSettingsNotHonored = agentSettings.response.body.notHonored;
+
+    await command('accepted', { type: 'dispatcher.update', behavior: 'thorough', name: 'Robin', color: 'rose', emoji: '🦉', personality: { preset: 'friendly' } });
+    await command('accepted personality text (Custom)', { type: 'dispatcher.update', personality: { text: 'Talk like a ship\'s captain.' } });
+    await command('invalid_behavior', { type: 'dispatcher.update', behavior: 'turbo' });
+    await command('invalid_name', { type: 'dispatcher.update', name: '   ' });
+    await command('invalid_color', { type: 'dispatcher.update', color: 'chartreuse' });
+    await command('invalid_personality', { type: 'dispatcher.update', personality: { preset: 'pirate' } });
+    await command('invalid_command (no settings)', { type: 'dispatcher.update' });
+    await command('invalid_command (unknown field)', { type: 'dispatcher.update', model: 'opus' });
+
+    await command('models_refused', { type: 'dispatcher.setModels', role: 'work', model: 'opus' });
+    await command('accepted on', { type: 'dispatcher.setModels', byHand: true });
+    const pick = await command('accepted pick', { type: 'dispatcher.setModels', role: 'work', model: 'opus', effort: 'high' });
+    expect(pick.body.result).toMatchObject({ models: { byHand: true }, behavior: { setsModels: false }, notHonored: [{ setting: 'runtime' }, { setting: 'freeAgentMode' }, { setting: 'access' }] });
+    cases.byHand = await exchange('GET', route);
+    cases.byHandAgentSettingsNotHonored = (await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/settings')).response.body.notHonored;
+    await command('invalid_models', { type: 'dispatcher.setModels', role: 'boss', model: 'opus' });
+    await command('invalid_command (no fields)', { type: 'dispatcher.setModels' });
+    await command('accepted off', { type: 'dispatcher.setModels', byHand: false });
+
+    const tokens = (await send('GET', route)).body;
+    await command('stale_state (Forget everything\'s confirmation)', { type: 'dispatcher.clearChat', expectedState: tokens.forgetEverything.expectedState });
+    await command('accepted', { type: 'dispatcher.clearChat', expectedState: tokens.clearChat.expectedState });
+    await command('stale_state (already used)', { type: 'dispatcher.clearChat', expectedState: tokens.clearChat.expectedState });
+    await command('invalid_command (no confirmation)', { type: 'dispatcher.clearChat' });
+    await command('stale_state (Clear chat\'s confirmation)', { type: 'dispatcher.forgetEverything', expectedState: tokens.clearChat.expectedState });
+    await command('accepted', { type: 'dispatcher.forgetEverything', expectedState: tokens.forgetEverything.expectedState });
+    await command('stale_state (already used)', { type: 'dispatcher.forgetEverything', expectedState: tokens.forgetEverything.expectedState });
+    await command('invalid_command (no confirmation)', { type: 'dispatcher.forgetEverything' });
+
+    fixtures.set('dispatcher-settings.json', cases);
+    W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
+    W.dispatcherSettings = { level: 'standard', models: { byHand: false, chat: null, work: null }, personality: { preset: 'concise', text: 'Be short and direct.' } };
+    Object.assign(W.durables[DISPATCHER_PATH][0], { name: 'Dispatcher', color: 'indigo' });
+    delete W.durables[DISPATCHER_PATH][0].emoji;
   });
 
   it('serves the Dispatcher\'s image, which is in no project, only while it is on (#2645)', async () => {

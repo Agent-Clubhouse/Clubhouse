@@ -146,7 +146,7 @@
       "name": "guided: no cross-provider resume",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_187",
+        "commandId": "cmd_213",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "expectedProvider": "codex-cli",
         "expectedSessionId": "claude-native",
@@ -156,7 +156,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_187",
+          "commandId": "cmd_213",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "resume_unverified",
@@ -172,7 +172,7 @@
       "name": "guided: explicit fresh start",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_188",
+        "commandId": "cmd_214",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "expectedProvider": "codex-cli",
         "resume": false,
@@ -181,7 +181,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_188",
+          "commandId": "cmd_214",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_term",

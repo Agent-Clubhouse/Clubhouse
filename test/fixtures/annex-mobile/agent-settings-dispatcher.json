@@ -15,6 +15,28 @@
       },
       "epoch": "00000000-0000-4000-8000-000000000001",
       "isDispatcher": true,
+      "notHonored": [
+        {
+          "reason": "behavior",
+          "setting": "model"
+        },
+        {
+          "reason": "behavior",
+          "setting": "contextWindow"
+        },
+        {
+          "reason": "not_offered",
+          "setting": "runtime"
+        },
+        {
+          "reason": "not_offered",
+          "setting": "freeAgentMode"
+        },
+        {
+          "reason": "not_offered",
+          "setting": "access"
+        }
+      ],
       "options": {
         "accessLevels": [
           {

@@ -33,6 +33,9 @@ import {
   dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
   phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
+import {
+  buildDispatcherSettings, clearDispatcherChatFromPhone, forgetDispatcherFromPhone, setDispatcherModelsFromPhone, updateDispatcherFromPhone,
+} from './mobile-dispatcher-settings';
 import { getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
 import { HELPER_ROUTING_CHANGED_EVENT, helperRoutingCapability, mobileHelperRouting, runHelperRoutingUpdate } from './mobile-helper-routing';
@@ -3865,6 +3868,19 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
   }
 }
 
+/** Settings > Dispatcher (#3206): Behavior, models, identity, personality, usage and the confirmations. 404 while it is off. */
+async function handleMobileDispatcherSettingsRoute(ctx: AnnexRouteContext): Promise<void> {
+  try {
+    const settings = buildDispatcherSettings(ctx.mobilePrincipal);
+    if (!settings) { sendJson(ctx.res, 404, { error: 'dispatcher_off' }); return; }
+    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings });
+  } catch (err) {
+    // telemetry-exempt: read errors are bounded in the API response, and logged here.
+    appLog('core:annex', 'warn', 'Dispatcher settings read failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    sendJson(ctx.res, 500, { error: 'dispatcher_settings_failed' });
+  }
+}
+
 /** Helper presets, app-wide or for an agent's or project's Auto setting (#2671). No filter returns every label family too. */
 async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<void> {
   try {
@@ -3917,6 +3933,11 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     // onDispatcherChanged broadcasts dispatcher:changed and refreshes the snapshot.
     return setDispatcherEnabledFromPhone(command.enabled, assertAuthorized);
   }
+  // Settings > Dispatcher (#3206). Its state broadcasts refresh the snapshot and the desktop's page.
+  if (command.type === 'dispatcher.update') return updateDispatcherFromPhone(command, principal, assertAuthorized);
+  if (command.type === 'dispatcher.setModels') return setDispatcherModelsFromPhone(command, principal, assertAuthorized);
+  if (command.type === 'dispatcher.clearChat') return clearDispatcherChatFromPhone(command.expectedState, principal, assertAuthorized);
+  if (command.type === 'dispatcher.forgetEverything') return forgetDispatcherFromPhone(command.expectedState, principal, assertAuthorized);
   // The Dispatcher is in no project (#2533): nothing is created, pinned or listed under its id.
   if ('projectId' in command && isDispatcherProjectId(command.projectId)) {
     throw new MobileControlError('dispatcher_locked', 409, 'rejected', 'The Dispatcher is in no project.');
@@ -4226,6 +4247,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/projects\/([^/]+)\/create-options$/, handler: handleMobileCreateOptionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/settings$/, handler: handleMobileAgentSettingsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/helper-routing(\?.*)?$/, handler: handleMobileHelperRoutingRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/dispatcher\/settings$/, handler: handleMobileDispatcherSettingsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/identity$/, handler: handleIdentityRoute },
   { method: 'GET', pattern: /^\/api\/v1\/status$/, handler: handleStatusRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },

@@ -139,12 +139,16 @@ export function dispatcherSnapshotFlags() {
   return { enabled, flagOn };
 }
 
+/** Settings > Dispatcher from a phone (#3206): its read route and commands, beside dispatcher.setEnabled. */
+export const DISPATCHER_SETTINGS_COMMANDS = ['dispatcher.update', 'dispatcher.setModels', 'dispatcher.clearChat', 'dispatcher.forgetEverything'] as const;
+
 /** The capabilities' `dispatcher`. Turning it on needs `newLayout`; off always works. `flagOn` is always true. */
 export function dispatcherCapability(view: AgentView = (config) => config) {
   const state = dispatcher.getDispatcherState();
   return {
     version: 1 as const, enabled: state.enabled, flagOn: state.flagOn, newLayout: newChromeEnabled(),
-    projectId: DISPATCHER_PROJECT_ID, snapshotField: 'dispatcher', event: DISPATCHER_CHANGED_EVENT, commands: ['dispatcher.setEnabled'],
+    projectId: DISPATCHER_PROJECT_ID, snapshotField: 'dispatcher', event: DISPATCHER_CHANGED_EVENT, commands: ['dispatcher.setEnabled', ...DISPATCHER_SETTINGS_COMMANDS],
+    settings: { version: 1 as const, path: '/api/v1/mobile/dispatcher/settings' },
     ...dispatcherOffFields(state, view),
   };
 }

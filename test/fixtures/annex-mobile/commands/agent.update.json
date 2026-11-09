@@ -2500,6 +2500,28 @@
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
             "orchestration": null,
             "projectId": "__dispatcher__",
             "settings": {
@@ -2663,6 +2685,28 @@
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
             "orchestration": null,
             "projectId": "__dispatcher__",
             "sessionReset": true,
@@ -3088,7 +3132,7 @@
       "name": "accepted autoHelpers on",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_166",
+        "commandId": "cmd_192",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": true
@@ -3098,7 +3142,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_166",
+          "commandId": "cmd_192",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -3283,7 +3327,7 @@
       "name": "accepted autoHelpers off",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_167",
+        "commandId": "cmd_193",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": false
@@ -3293,7 +3337,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_167",
+          "commandId": "cmd_193",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -3478,7 +3522,7 @@
       "name": "accepted autoHelpers cleared (inherits)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_168",
+        "commandId": "cmd_194",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": null
@@ -3488,7 +3532,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_168",
+          "commandId": "cmd_194",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -3673,7 +3717,7 @@
       "name": "invalid_orchestration (autoHelpers)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_169",
+        "commandId": "cmd_195",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": "yes"
@@ -3683,7 +3727,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_169",
+          "commandId": "cmd_195",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -3699,7 +3743,7 @@
       "name": "accepted contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_173",
+        "commandId": "cmd_199",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3707,7 +3751,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_173",
+          "commandId": "cmd_199",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -3892,7 +3936,7 @@
       "name": "accepted contextWindow null reset",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_174",
+        "commandId": "cmd_200",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3900,7 +3944,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_174",
+          "commandId": "cmd_200",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -4085,7 +4129,7 @@
       "name": "invalid_context_window",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_175",
+        "commandId": "cmd_201",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -4093,7 +4137,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_175",
+          "commandId": "cmd_201",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -4109,7 +4153,7 @@
       "name": "agent_running (contextWindow)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_176",
+        "commandId": "cmd_202",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -4117,7 +4161,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_176",
+          "commandId": "cmd_202",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_running",
@@ -4133,7 +4177,7 @@
       "name": "accepted model change resets contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_177",
+        "commandId": "cmd_203",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "model": "sonnet",
         "type": "agent.update",
@@ -4141,7 +4185,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_177",
+          "commandId": "cmd_203",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -4310,7 +4354,7 @@
       "name": "accepted contextWindow (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_178",
+        "commandId": "cmd_204",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -4318,11 +4362,33 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_178",
+          "commandId": "cmd_204",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
             "orchestration": null,
             "projectId": "__dispatcher__",
             "settings": {
@@ -4473,7 +4539,7 @@
       "name": "accepted contextWindow null reset (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_179",
+        "commandId": "cmd_205",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -4481,11 +4547,33 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_179",
+          "commandId": "cmd_205",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
             "orchestration": null,
             "projectId": "__dispatcher__",
             "settings": {
@@ -4636,7 +4724,7 @@
       "name": "invalid_context_window (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_180",
+        "commandId": "cmd_206",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -4644,7 +4732,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_180",
+          "commandId": "cmd_206",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -4660,7 +4748,7 @@
       "name": "dispatcher_locked (name, with contextWindow)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_181",
+        "commandId": "cmd_207",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "Boss",
@@ -4669,7 +4757,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_181",
+          "commandId": "cmd_207",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",

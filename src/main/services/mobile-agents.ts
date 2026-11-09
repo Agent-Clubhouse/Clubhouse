@@ -10,7 +10,7 @@ import { mobileHelperRoutingDetail } from './mobile-helper-routing';
 import { CONTEXT_WINDOW_APPLIES, type ContextWindowOptions } from '../../shared/context-window';
 import { contextWindowCheck, contextWindowOptionsFor } from './context-window';
 import type { DurableAgentConfig, DurableConfigUpdates, McpCatalogEntry, StartDurableCreationParams } from '../../shared/types';
-import type { MobileAccess, MobileAccessLevel, MobileAgentCreate, MobileAgentUpdate, MobileContextWindow, MobileSettingEditable } from '../../shared/mobile-control';
+import { dispatcherNotHonored, type MobileAccess, type MobileAccessLevel, type MobileAgentCreate, type MobileAgentUpdate, type MobileContextWindow, type MobileSettingEditable } from '../../shared/mobile-control';
 import {
   ACCESS_DESCRIPTIONS, ACCESS_LEVELS as AGENT_ACCESS_LEVELS, accessLabel, accessLevelsFor, startableAccess, type AccessLevel, type AccessRuntime,
 } from '../../shared/agent-access';
@@ -318,6 +318,8 @@ export async function buildAgentSettings(
     agentId: config.id,
     projectId: project.id,
     ...(dispatcher && { isDispatcher: true as const }),
+    /** The Dispatcher's settings here that Settings > Dispatcher no longer offers, so a phone hides them (#3206). */
+    ...(dispatcher && { notHonored: dispatcherNotHonored(modelsChosenByHand()) }),
     /** The agent that started it, so a controller can tell a helper. Absent on a top-level agent. */
     ...(config.parentAgentId && { parentAgentId: config.parentAgentId }),
     state,

@@ -25,7 +25,11 @@
           "status": "sleeping"
         },
         "commands": [
-          "dispatcher.setEnabled"
+          "dispatcher.setEnabled",
+          "dispatcher.update",
+          "dispatcher.setModels",
+          "dispatcher.clearChat",
+          "dispatcher.forgetEverything"
         ],
         "commandsWhileOff": [
           "dispatcher.setEnabled"
@@ -38,6 +42,10 @@
         "offReason": "classic_layout",
         "projectId": "__dispatcher__",
         "running": false,
+        "settings": {
+          "path": "/api/v1/mobile/dispatcher/settings",
+          "version": 1
+        },
         "snapshotField": "dispatcher",
         "status": "sleeping",
         "version": 1
@@ -130,7 +138,11 @@
           "status": "sleeping"
         },
         "commands": [
-          "dispatcher.setEnabled"
+          "dispatcher.setEnabled",
+          "dispatcher.update",
+          "dispatcher.setModels",
+          "dispatcher.clearChat",
+          "dispatcher.forgetEverything"
         ],
         "commandsWhileOff": [
           "dispatcher.setEnabled"
@@ -143,6 +155,10 @@
         "offReason": "switched_off",
         "projectId": "__dispatcher__",
         "running": false,
+        "settings": {
+          "path": "/api/v1/mobile/dispatcher/settings",
+          "version": 1
+        },
         "snapshotField": "dispatcher",
         "status": "sleeping",
         "version": 1

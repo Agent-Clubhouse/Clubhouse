@@ -216,6 +216,22 @@
         "model"
       ]
     },
+    "dispatcher.clearChat": {
+      "fields": [
+        "expectedState"
+      ],
+      "required": [
+        "expectedState"
+      ]
+    },
+    "dispatcher.forgetEverything": {
+      "fields": [
+        "expectedState"
+      ],
+      "required": [
+        "expectedState"
+      ]
+    },
     "dispatcher.setEnabled": {
       "fields": [
         "enabled"
@@ -223,6 +239,27 @@
       "required": [
         "enabled"
       ]
+    },
+    "dispatcher.setModels": {
+      "fields": [
+        "byHand",
+        "role",
+        "provider",
+        "model",
+        "effort",
+        "contextWindow"
+      ],
+      "required": []
+    },
+    "dispatcher.update": {
+      "fields": [
+        "behavior",
+        "name",
+        "color",
+        "emoji",
+        "personality"
+      ],
+      "required": []
     },
     "helper.approve": {
       "fields": [

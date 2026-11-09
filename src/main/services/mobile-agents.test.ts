@@ -647,6 +647,21 @@ describe('the Dispatcher from a phone (#2533)', () => {
     expect((await buildAgentSettings(project, agent(), undefined))).not.toHaveProperty('isDispatcher');
   });
 
+  it('lists the settings Settings > Dispatcher no longer honors, by whether the models are chosen by hand (#3206)', async () => {
+    expect((await buildAgentSettings(folder, dispatcherAgent(), undefined, { dispatcher: true })).notHonored).toEqual([
+      { setting: 'model', reason: 'behavior' }, { setting: 'contextWindow', reason: 'behavior' },
+      { setting: 'runtime', reason: 'not_offered' }, { setting: 'freeAgentMode', reason: 'not_offered' }, { setting: 'access', reason: 'not_offered' },
+    ]);
+    modelsByHand.on = true;
+    try {
+      // CLI, model and context are the pick for talking with you, so they stay.
+      expect((await buildAgentSettings(folder, dispatcherAgent(), undefined, { dispatcher: true })).notHonored?.map((n) => n.setting)).toEqual(['runtime', 'freeAgentMode', 'access']);
+    } finally {
+      modelsByHand.on = false;
+    }
+    expect(await buildAgentSettings(project, agent(), undefined)).not.toHaveProperty('notHonored');
+  });
+
   it('reads the same with a config from before #2901 that still has persona: dispatcher', async () => {
     const settings = await buildAgentSettings(folder, dispatcherAgent({ persona: 'dispatcher' }), undefined, { dispatcher: true });
     expect(settings).toMatchObject({ isDispatcher: true, orchestration: null });

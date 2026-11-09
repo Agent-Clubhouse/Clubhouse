@@ -1,0 +1,117 @@
+{
+  "cases": [
+    {
+      "name": "dispatcher_off",
+      "request": {
+        "commandId": "cmd_148",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedState": "from-an-earlier-read",
+        "type": "dispatcher.clearChat",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_148",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_off",
+            "message": "The Dispatcher is turned off."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "stale_state (Forget everything's confirmation)",
+      "request": {
+        "commandId": "cmd_164",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedState": "f9ebae884fbce7f66ee9228d3a0166637b3660f067071ba623d16cbb186e3616",
+        "type": "dispatcher.clearChat",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_164",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "stale_state",
+            "message": "This changed since you were asked. Check again and confirm."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted",
+      "request": {
+        "commandId": "cmd_165",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedState": "2fb06052e0921d4ba7b61ae05f60d1afdf3e4e39dba77535464b8f3ace222b7d",
+        "type": "dispatcher.clearChat",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_165",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "cleared": "next_start"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "stale_state (already used)",
+      "request": {
+        "commandId": "cmd_166",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "expectedState": "2fb06052e0921d4ba7b61ae05f60d1afdf3e4e39dba77535464b8f3ace222b7d",
+        "type": "dispatcher.clearChat",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_166",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "stale_state",
+            "message": "This changed since you were asked. Check again and confirm."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_command (no confirmation)",
+      "request": {
+        "commandId": "cmd_167",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "dispatcher.clearChat",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    }
+  ],
+  "type": "dispatcher.clearChat"
+}

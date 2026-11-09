@@ -58,7 +58,11 @@
         "dispatcher.setEnabled",
         "helperRouting.update",
         "agent.providerPreview",
-        "agent.providerChange"
+        "agent.providerChange",
+        "dispatcher.update",
+        "dispatcher.setModels",
+        "dispatcher.clearChat",
+        "dispatcher.forgetEverything"
       ],
       "contextWindow": {
         "version": 1
@@ -71,13 +75,21 @@
       },
       "dispatcher": {
         "commands": [
-          "dispatcher.setEnabled"
+          "dispatcher.setEnabled",
+          "dispatcher.update",
+          "dispatcher.setModels",
+          "dispatcher.clearChat",
+          "dispatcher.forgetEverything"
         ],
         "enabled": false,
         "event": "dispatcher:changed",
         "flagOn": true,
         "newLayout": true,
         "projectId": "__dispatcher__",
+        "settings": {
+          "path": "/api/v1/mobile/dispatcher/settings",
+          "version": 1
+        },
         "snapshotField": "dispatcher",
         "version": 1
       },
