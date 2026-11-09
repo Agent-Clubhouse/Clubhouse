@@ -133,22 +133,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
         }
       }
 
-      // A durable agent of this project whose row is gone was deleted outside
-      // this window (the Dispatcher's delete_agent, #3182): it leaves the rail
-      // with its quick agents. One still being created has no row of its own yet.
-      const listed = new Set(allConfigs.map((config) => config.id));
-      const deleted = new Set(Object.values(agents)
-        .filter((a) => a.kind === 'durable' && a.projectId === projectId && !listed.has(a.id) && a.status !== 'creating')
-        .map((a) => a.id));
-      const gone = Object.values(agents)
-        .filter((a) => deleted.has(a.id) || (a.kind === 'quick' && !!a.parentAgentId && deleted.has(a.parentAgentId)))
-        .map((a) => a.id);
-
       set({ agents });
-      if (gone.length > 0) {
-        for (const id of gone) clearPendingActivityTimer(id);
-        set((s) => removeAgentsFromState(s, gone));
-      }
 
       // Reconcile status against the main process's live sessions. Durable
       // agents load as 'sleeping' (above), but their PTY/headless/structured
@@ -249,6 +234,12 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           // A 'creating' row may be a placeholder under a temporary id; its creation flow removes it.
           .filter((agent) => before.has(agent.id) && !live.has(agent.id) && agent.status !== 'creating')
           .map((agent) => agent.id);
+        // A deleted agent's quick agents go with it, as the delete dialog removes them;
+        // main stops them when it deletes (delete_agent, #3182).
+        const deleted = new Set(removed);
+        removed = [...removed, ...Object.values(s.agents)
+          .filter((agent) => agent.kind === 'quick' && !!agent.parentAgentId && deleted.has(agent.parentAgentId))
+          .map((agent) => agent.id)];
         const base = removeAgentsFromState(s, removed);
         let agents = base.agents ?? s.agents;
         for (const config of live.values()) {

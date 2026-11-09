@@ -10,7 +10,6 @@
  * argument and nothing opens a dialog; its grant asks first by default.
  */
 import { createHash, randomBytes } from 'crypto';
-import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import type { ToolGrant } from '../tool-grants';
@@ -35,9 +34,6 @@ import { agentRegistry } from '../../agent-registry';
 import { capToHolder } from '../grant-check';
 import { describeCallsForAsk } from '../ask-first';
 import { deleteAgent } from '../../agent-delete';
-import { listHelpersEverywhere } from '../../helper-index';
-import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
-import { IPC } from '../../../../shared/ipc-channels';
 import type { AgentDeleteResult, HelperDeleteChoice } from '../../../../shared/types';
 
 const ACTOR = 'Dispatcher';
@@ -234,18 +230,6 @@ export function describeDeleteCall(args: Record<string, unknown>): string {
     ? `Its helpers, and theirs, are disposed with their worktrees and branches${force ? ', even with uncommitted or unpushed work' : ', unless any has uncommitted or unpushed work'}.`
     : args.helpers === 'keep' ? 'Its helpers stay as ordinary agents.' : 'If it has helpers, nothing is deleted.';
   return `Delete ${agent}${project}. ${worktree} ${helpers}`;
-}
-
-/** Tell windows to reload these projects' agents, so deleted and disposed agents leave the rail. */
-async function reloadAgents(paths: string[]): Promise<void> {
-  try {
-    const wanted = new Set(paths.map((p) => path.resolve(p)));
-    for (const project of await projectStore.list()) {
-      if (wanted.has(path.resolve(project.path))) broadcastToAllWindows(IPC.WINDOW.REQUEST_DURABLE_RELOAD, project.id);
-    }
-  } catch {
-    // telemetry-exempt: the rail catches up on its next load
-  }
 }
 
 function deletedFacts(name: string, worktree: string, result: AgentDeleteResult): Record<string, unknown> {
@@ -644,8 +628,7 @@ export function registerManagedTools(): void {
       const force = optionalBoolean(args, 'force') === true;
       const t = await resolveAgent(args);
       if (t.agentId === callerId) throw new ArgError('You can\'t delete yourself.');
-      // Read before the delete: the windows showing its helpers reload after.
-      const helperProjects = (await listHelpersEverywhere(t.project.path, t.agentId, { recursive: true })).map((h) => h.projectPath);
+      // Windows drop the deleted agent and disposed helpers on the agents.json change (syncDurableMembership).
       const result = await deleteAgent(t.project.path, t.agentId, {
         mode: worktree === 'keep' ? 'unregister' : 'force',
         helpers: helpers as HelperDeleteChoice | undefined,
@@ -653,8 +636,6 @@ export function registerManagedTools(): void {
         checkWorktree: true,
         forceWorktree: force,
       });
-      const disposed = result.helpers?.helperIds?.length ?? 0;
-      if (result.ok || disposed > 0) await reloadAgents([t.project.path, ...helperProjects]);
       appLog('core:mcp', 'info', result.ok ? 'delete_agent deleted an agent' : 'delete_agent refused', {
         meta: { callerId, agentId: t.agentId, worktree, helpers, force, ok: result.ok },
       });

@@ -31,7 +31,6 @@ vi.mock('../../agent-config', () => ({
   deleteUnregister: async (_p: string, id: string) => { state.agents.delete(id); },
 }));
 vi.mock('../../agent-delete', () => ({ deleteAgent: vi.fn(async () => ({ ok: true, message: 'Force deleted', deleted: true })) }));
-vi.mock('../../helper-index', () => ({ listHelpersEverywhere: vi.fn(async () => []) }));
 const grantMock = vi.hoisted(() => ({ granted: false }));
 vi.mock('../grant-check', async (original) => {
   const real = await original<typeof import('../grant-check')>();
