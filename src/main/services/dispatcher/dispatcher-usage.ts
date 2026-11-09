@@ -10,8 +10,9 @@
  * over, is a conversation.
  *
  * Totals are kept per local day in `dispatcher-usage.json` beside the
- * Dispatcher's folders, for the last USAGE_KEEP_DAYS days, saved after each turn. Settings and
- * telemetry read them with getDispatcherUsageSplit. A Dispatcher running in a
+ * Dispatcher's folders, for the last USAGE_KEEP_DAYS days, saved after each turn. Settings
+ * reads them with getDispatcherUsageSplit; each turn is also a `clubhouse.dispatcher.turn`
+ * event (#3052). A Dispatcher running in a
  * terminal publishes no chat events, so it counts nothing.
  */
 import * as fs from 'fs';
@@ -24,6 +25,7 @@ import { appLog } from '../log-service';
 import { writeFileAtomic } from './dispatcher-memory';
 import { isDispatcherIdentityAgentId } from './dispatcher-service';
 import { dayKey } from './dispatcher-memory-timeline';
+import { recordDispatcherTurn } from '../../telemetry/dispatcher-telemetry';
 
 /** Days of totals kept on disk. */
 export const USAGE_KEEP_DAYS = 31;
@@ -180,6 +182,7 @@ export function countDispatcherChatEvent(event: ChatEvent): void {
   add(split[turn.kind], turn);
   days.set(day, split);
   scheduleSave();
+  recordDispatcherTurn(turn.kind, turn);
 }
 
 /**
@@ -192,7 +195,7 @@ export function getDispatcherUsageSplit(day: string = dayKey(new Date(now()))): 
   return split ? structuredClone(split) : emptyUsageSplit(day);
 }
 
-/** Every day kept, oldest first. For telemetry (#3052). */
+/** Every day kept, oldest first. */
 export function getDispatcherUsageDays(): DispatcherUsageSplit[] {
   load();
   return [...days.values()].sort((a, b) => a.day.localeCompare(b.day)).map((s) => structuredClone(s));

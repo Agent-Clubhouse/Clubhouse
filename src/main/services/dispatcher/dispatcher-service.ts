@@ -709,6 +709,18 @@ export function onExperimentalSettingsChanged(): Promise<void> {
   });
 }
 
+/**
+ * Write both agents' instructions again, so the memory index they carry is the
+ * one on disk now. Forget everything (#3046) calls it. Nothing while it's off.
+ */
+export function refreshDispatcherInstructions(): Promise<void> {
+  return enqueue(async () => {
+    if (!isDispatcherEnabled()) return;
+    if (config) await writeInstructions(config);
+    if (chatConfig) await writeInstructions(chatConfig, getDispatcherChatPath());
+  });
+}
+
 /** For tests: resolves once every queued change has run. */
 export async function _whenIdleForTesting(): Promise<void> {
   let seen: Promise<unknown> | null = null;

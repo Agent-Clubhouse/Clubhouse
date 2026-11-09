@@ -125,6 +125,33 @@ describe('convertRecordLines (#2920)', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('replays a change-only gauge as exactly its recorded points: no filled-in minutes, and the heartbeat kept (#3125)', async () => {
+    const files = new Map<string, string>();
+    let t = T0;
+    const rec = createLocalRecorder({
+      dir: '/logs', fileBase: 'gauges', level: 'standard', hashSalt: Buffer.alloc(32, 4), scrub, now: () => t,
+      session: { appVersion: '1.0.0', platform: 'darwin', arch: 'arm64', uiChrome: 'v2' }, flushIntervalMs: 60_000,
+      appendFile: async (file, data) => { files.set(file, (files.get(file) ?? '') + data); }, mkdir: async () => {},
+    });
+    // Twenty minutes of a value that changes once: lines at minutes 1, 5 and the heartbeat at 20.
+    for (let m = 1; m <= 20; m++) {
+      rec.count('clubhouse.projects.count', m >= 5 ? 6 : 5);
+      t = T0 + m * 60_000;
+      await rec.flush();
+    }
+    await rec.stop();
+    const lines = [...files.values()].join('').split('\n').filter(Boolean);
+    const recorded = lines.map((l) => JSON.parse(l)).filter((r) => r.t === 'metric');
+    expect(recorded.map((r) => [(r.startMs + r.durationMs - T0) / 60_000, r.value])).toEqual([[1, 5], [5, 6], [20, 6]]);
+    for (const temporality of ['delta', 'cumulative'] as const) {
+      const [{ metrics }] = convertRecordLines(lines, { resource: () => resource, temporality, scrub }).metrics.scopeMetrics;
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].dataPointType).toBe(DataPointType.GAUGE);
+      // One point per line, each at the window it was measured in; the repeated heartbeat value is not merged away.
+      expect(metrics[0].dataPoints.map((p) => [(p.endTime[0] * 1000 + p.endTime[1] / 1e6 - T0) / 60_000, p.value])).toEqual([[1, 5], [5, 6], [20, 6]]);
+    }
+  });
 });
 
 describe('convertRecordLines: what each destination gets (#2920 review)', () => {

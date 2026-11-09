@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -30,6 +30,7 @@ import {
 } from './dispatcher-news';
 import { recordAgentMessage } from './dispatcher-news-inbox';
 import type { RewriteRequest, RewriteResult } from './dispatcher-rewrite';
+import { captureEvents, type EventCapture } from '../../telemetry/__test-utils__/event-capture';
 
 const T0 = 1_700_000_000_000;
 let now = T0;
@@ -207,5 +208,52 @@ describe('state', () => {
     await _resetDispatcherNewsForTesting();
     expect(h.delivery).toBeNull();
     expect(h.handOff).toBeNull();
+  });
+});
+
+describe('triage telemetry (#3052)', () => {
+  let capture: EventCapture | null = null;
+  afterEach(() => { capture?.stop(); capture = null; });
+
+  const outcomes = () => capture!.named('clubhouse.dispatcher.news_triage').map((e) => e.attrs);
+
+  it('records each outcome while telemetry is on, with no names or text', async () => {
+    capture = captureEvents();
+    recordAgentMessage('a1', 'acme-webapp-lead', 'Fixed the Acme checkout for alice@example.com in /Users/alice/acme', now);
+    const { deps: d } = deps({ rewrite: async () => ({ text: '', by: 'fallback', reason: 'no_valid_mapping' }) });
+    const deliver = createGroupChatDelivery(d);
+    await deliver({ message: 'Acme checkout is fixed.', from: 'a1', kind: 'needs_user' });
+    await deliver({ message: 'Acme nightly build passed.', from: 'api-lead', kind: 'routine' });
+    await deliver({ message: 'Acme nightly build passed.', from: 'api-lead', kind: 'routine' });
+    await deliver({ message: 'Acme answer nobody asked for.', kind: 'answer' });
+    await deliver({ message: 'Here is what happened at Acme.', kind: 'check_in' });
+    await deliver({ message: 'Nothing new at Acme.', kind: 'check_in' });
+    await deliver({ message: 'Acme release-lead is asleep.' });
+
+    const base = { 'clubhouse.dispatcher.news.rewrite': 'none', 'clubhouse.dispatcher.news.rewrite_reason': 'none' };
+    expect(outcomes()).toEqual([
+      {
+        'clubhouse.dispatcher.news.kind': 'needs_user', 'clubhouse.dispatcher.news.show': 'now', 'clubhouse.dispatcher.news.reason': 'needs_user',
+        'clubhouse.dispatcher.news.from_agent': true,
+        'clubhouse.dispatcher.news.rewrite': 'fallback', 'clubhouse.dispatcher.news.rewrite_reason': 'no_valid_mapping',
+      },
+      { 'clubhouse.dispatcher.news.kind': 'routine', 'clubhouse.dispatcher.news.show': 'later', 'clubhouse.dispatcher.news.reason': 'routine', 'clubhouse.dispatcher.news.from_agent': true, ...base },
+      { 'clubhouse.dispatcher.news.kind': 'routine', 'clubhouse.dispatcher.news.show': 'never', 'clubhouse.dispatcher.news.reason': 'duplicate', 'clubhouse.dispatcher.news.from_agent': true, ...base },
+      { 'clubhouse.dispatcher.news.kind': 'answer', 'clubhouse.dispatcher.news.show': 'later', 'clubhouse.dispatcher.news.reason': 'nothing_asked', 'clubhouse.dispatcher.news.from_agent': false, ...base },
+      {
+        'clubhouse.dispatcher.news.kind': 'check_in', 'clubhouse.dispatcher.news.show': 'check_in', 'clubhouse.dispatcher.news.reason': 'none',
+        'clubhouse.dispatcher.news.from_agent': false, 'clubhouse.dispatcher.news.held': 2, ...base,
+      },
+      { 'clubhouse.dispatcher.news.kind': 'check_in', 'clubhouse.dispatcher.news.show': 'never', 'clubhouse.dispatcher.news.reason': 'nothing_changed', 'clubhouse.dispatcher.news.from_agent': false, ...base },
+      { 'clubhouse.dispatcher.news.kind': 'needs_user', 'clubhouse.dispatcher.news.show': 'now', 'clubhouse.dispatcher.news.reason': 'needs_user', 'clubhouse.dispatcher.news.from_agent': false, ...base },
+    ]);
+    expect(JSON.stringify(capture.events)).not.toMatch(/acme|alice|example\.com|\/Users|api-lead|a1|a2/i);
+  });
+
+  it('records nothing while telemetry is off, and the chat works the same', async () => {
+    const { deps: d } = deps();
+    shown(await createGroupChatDelivery(d)({ message: 'Deploy is blocked on a key.', from: 'api-lead', kind: 'needs_user' }));
+    capture = captureEvents();
+    expect(capture.events).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@ import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
 import type { BuiltinThemeId } from '../types';
 import { ACTION_EVENT_KINDS, ACTION_STEP_KINDS, MISSED_RUN_RULES } from '../actions/types';
 import { GRANT_ACTIONS } from '../agent-grants';
+import { DISPATCHER_USAGE_KINDS } from '../dispatcher-usage';
 import {
   DECISION_QUOTA_QUALITIES,
   DECISION_SCORE_BASES,
@@ -984,6 +985,62 @@ export const ATTR = {
   actionStepOutcome: enumAttr('clubhouse.action.step.outcome', ['done', 'failed']),
   actionStepIndex: intAttr('clubhouse.action.step.index'),
   actionIdHash: hashAttr('clubhouse.action.id_hash'),
+
+  // Dispatcher (#3052, epic #3034). Counts, sizes and closed codes only: never message text, page
+  // contents, page or agent names, paths or ids. Which of its agents did the work is never sent.
+  /** Which side of the usage split a turn counts toward (shared/dispatcher-usage.ts). */
+  dispatcherWork: enumAttr('clubhouse.dispatcher.work', DISPATCHER_USAGE_KINDS),
+  /** False when the provider reported no tokens or cost for the turn; the token attributes are then left out. */
+  dispatcherTurnUsageReported: boolAttr('clubhouse.dispatcher.turn.usage_reported'),
+  dispatcherTurnInputTokens: intAttr('clubhouse.dispatcher.turn.input_tokens'),
+  dispatcherTurnCachedInputTokens: intAttr('clubhouse.dispatcher.turn.cached_input_tokens'),
+  dispatcherTurnCacheWriteTokens: intAttr('clubhouse.dispatcher.turn.cache_write_tokens'),
+  dispatcherTurnOutputTokens: intAttr('clubhouse.dispatcher.turn.output_tokens'),
+  dispatcherTurnReasoningTokens: intAttr('clubhouse.dispatcher.turn.reasoning_tokens'),
+  /** The turn's cost in millionths of a dollar, from providers that report one. */
+  dispatcherTurnCostMicroUsd: intAttr('clubhouse.dispatcher.turn.cost_micro_usd'),
+  dispatcherMemoryPages: intAttr('clubhouse.dispatcher.memory.pages'),
+  dispatcherMemoryBytes: intAttr('clubhouse.dispatcher.memory.bytes'),
+  dispatcherMemoryTopics: intAttr('clubhouse.dispatcher.memory.topics'),
+  dispatcherMemoryAgentPages: intAttr('clubhouse.dispatcher.memory.agent_pages'),
+  dispatcherMemoryTimelinePages: intAttr('clubhouse.dispatcher.memory.timeline_pages'),
+  dispatcherMemoryIndexBytes: intAttr('clubhouse.dispatcher.memory.index_bytes'),
+  dispatcherMemoryIndexCapBytes: intAttr('clubhouse.dispatcher.memory.index_cap_bytes'),
+  dispatcherMemoryIndexOverCap: boolAttr('clubhouse.dispatcher.memory.index_over_cap'),
+  /** Topics no other page, the index included, links to or names. */
+  dispatcherMemoryUnlinkedTopics: intAttr('clubhouse.dispatcher.memory.unlinked_topics'),
+  /** Topics untouched for the upkeep's stale age (30 days), confirmed or not. */
+  dispatcherMemoryStaleTopics: intAttr('clubhouse.dispatcher.memory.stale_topics'),
+  dispatcherMemoryUnconfirmedTopics: intAttr('clubhouse.dispatcher.memory.unconfirmed_topics'),
+  /** Links between memory pages that upkeep couldn't fix. */
+  dispatcherMemoryBrokenLinks: intAttr('clubhouse.dispatcher.memory.broken_links'),
+  /** Cited files (transcripts, mostly) that are gone. */
+  dispatcherMemoryMissingSources: intAttr('clubhouse.dispatcher.memory.missing_sources'),
+  dispatcherUpkeepRolledDays: intAttr('clubhouse.dispatcher.upkeep.rolled_days'),
+  dispatcherUpkeepRolledWeeks: intAttr('clubhouse.dispatcher.upkeep.rolled_weeks'),
+  dispatcherUpkeepLinksFixed: intAttr('clubhouse.dispatcher.upkeep.links_fixed'),
+  /** Stale unconfirmed topics moved to the archive. */
+  dispatcherUpkeepPruned: intAttr('clubhouse.dispatcher.upkeep.pruned'),
+  /** Changed pages handed to the Dispatcher to check against transcripts. */
+  dispatcherUpkeepToCheck: intAttr('clubhouse.dispatcher.upkeep.to_check'),
+  /** Whether the Dispatcher was asked to review anything (a background turn follows). */
+  dispatcherUpkeepReview: boolAttr('clubhouse.dispatcher.upkeep.review'),
+  /** What the Dispatcher said a report was (tell_user's kind). */
+  dispatcherNewsKind: enumAttr('clubhouse.dispatcher.news.kind', ['needs_user', 'answer', 'routine', 'check_in']),
+  /** What triage did with it. */
+  dispatcherNewsShow: enumAttr('clubhouse.dispatcher.news.show', ['now', 'check_in', 'later', 'never']),
+  dispatcherNewsReason: enumAttr('clubhouse.dispatcher.news.reason', [
+    'none', 'needs_user', 'answer', 'routine', 'nothing_asked', 'empty', 'duplicate', 'nothing_changed',
+  ]),
+  /** The report is an agent's news rather than the Dispatcher's own words. */
+  dispatcherNewsFromAgent: boolAttr('clubhouse.dispatcher.news.from_agent'),
+  /** Held items a check-in summary took with it. */
+  dispatcherNewsHeld: intAttr('clubhouse.dispatcher.news.held'),
+  /** How an agent's news shown now was put into the chat: the rewrite step, its fallback, or neither. */
+  dispatcherNewsRewrite: enumAttr('clubhouse.dispatcher.news.rewrite', ['none', 'rewrite', 'fallback']),
+  dispatcherNewsRewriteReason: enumAttr('clubhouse.dispatcher.news.rewrite_reason', [
+    'none', 'no_raw', 'auto_not_supported', 'no_valid_mapping', 'run_failed', 'empty',
+  ]),
 } as const;
 
 /**
@@ -1779,6 +1836,21 @@ export const EVENTS = {
    * the target kind, and for a connection the disabled tools and the other end's id hash.
    */
   'clubhouse.audit.grant_change': { level: 'standard', audit: true },
+  // Dispatcher (#3052). Counts, sizes and closed codes only (spec §4.18).
+  /**
+   * One finished Dispatcher turn. Attributes: `clubhouse.dispatcher.work` (conversations or background),
+   * whether usage was reported, the turn's token counts and cost in micro-dollars, `clubhouse.cost.estimate`.
+   */
+  'clubhouse.dispatcher.turn': { level: 'standard' },
+  /**
+   * Memory health after each upkeep run: page counts and bytes, the index's bytes against its cap,
+   * unlinked, stale and unconfirmed topics, broken links and missing sources.
+   */
+  'clubhouse.dispatcher.memory_health': { level: 'standard' },
+  /** What one memory upkeep run did: days and weeks rolled, links fixed, topics pruned, pages to check, whether a review was asked for, `clubhouse.outcome`. */
+  'clubhouse.dispatcher.memory_upkeep': { level: 'standard' },
+  /** One report on its way to the Dispatcher's chat: its kind, what triage did and why, whether it was an agent's, held items a check-in took, and the rewrite outcome. */
+  'clubhouse.dispatcher.news_triage': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

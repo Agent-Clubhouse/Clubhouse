@@ -10,7 +10,7 @@ vi.mock('./clubhouse-mcp/mcp-call-gate', () => ({ mcpCallAccess: () => w.access 
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getVersion: () => w.version, getBindingsForAgent: () => [{ targetId: 'target', targetKind: 'agent', disabledTools: w.disabled }] } }));
 vi.mock('./persisted-bindings', () => ({ isBindingRemovedByUser: () => w.removed }));
 vi.mock('./dispatcher-connections', () => ({ readAgentCensus: async () => ({ agents: new Map([['target', { projectPath: '/project', agent: { id: 'target' }, policy: { control: w.control } }]]) }), isConnectedOrchestrator: () => w.connected && !w.helper }));
-vi.mock('./dispatcher-audit', () => ({ appendAudit: vi.fn(async () => true), auditString: (s: string) => s }));
+vi.mock('../telemetry/dispatcher-telemetry', () => ({ recordDispatcherControl: vi.fn(() => true), auditString: (s: string) => s }));
 vi.mock('./project-store', () => ({ list: async () => [{ path: '/project', id: 'project' }] }));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 import { dispatcherProviderControl } from './dispatcher-provider-control';
