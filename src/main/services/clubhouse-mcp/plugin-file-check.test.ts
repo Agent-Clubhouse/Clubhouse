@@ -29,6 +29,17 @@ for (const d of [path.join(home, '.clubhouse', 'agents', 'ada', 'src'), path.joi
 let linked = true;
 try { fs.symlinkSync(path.join(home, '.clubhouse'), path.join(home, 'innocent'), 'junction'); } catch { linked = false; }
 
+// Links agents read through, and a project registered inside another (#3174 review).
+fs.mkdirSync(path.join(home, 'docs'), { recursive: true });
+fs.writeFileSync(path.join(home, 'docs', 'guide.md'), 'x');
+let fileLinks = true;
+try {
+  fs.symlinkSync(path.join(home, 'docs', 'guide.md'), path.join(home, 'CLAUDE.md'));
+  fs.symlinkSync(path.join(home, 'AGENTS.md'), path.join(home, 'dangling.md'));
+} catch { fileLinks = false; }
+const nested = path.join(home, 'packages', 'b');
+fs.mkdirSync(path.join(nested, '.clubhouse'), { recursive: true });
+
 afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
 /** The calling agent runs at `level`, in the home project. */
@@ -102,6 +113,38 @@ describe('a file a plugin changes for an agent, judged in main (D126, #3174)', (
     runAt('auto');
     expect(await check(home, 'exec')).toBeNull();
     expect(await check(other, 'exec')).toMatch(/another project/);
+  });
+
+  it('a link is judged where it sits and where it leads: a config name linked elsewhere, or a dangling link to one', async () => {
+    if (!fileLinks) return;
+    h.configure = 'no project.configure';
+    // CLAUDE.md links to an ordinary file: writing or deleting it is still a config change.
+    expect(await check(path.join(home, 'CLAUDE.md'))).toBe('no project.configure');
+    expect(await check(path.join(home, 'CLAUDE.md'), 'delete')).toBe('no project.configure');
+    // dangling.md points at AGENTS.md, which doesn't exist yet: a write would create it.
+    expect(await check(path.join(home, 'dangling.md'))).toBe('no project.configure');
+    // Deleting the dangling link removes only the link: an ordinary edit.
+    h.configure = null;
+    expect(await check(path.join(home, 'dangling.md'), 'delete')).toBeNull();
+  });
+
+  it('a folder holding another project can\'t be deleted, moved or copied onto through its parent', async () => {
+    h.projects = [...h.projects, { id: 'b', name: 'B', path: nested }];
+    runAt('full_access');
+    expect(await check(path.join(home, 'packages'), 'delete')).toMatch(/holds another project/);
+    expect(await check(path.join(home, 'packages'))).toMatch(/holds another project/);
+    expect(await check(path.join(nested, '.clubhouse', 'agents.json'))).toMatch(/Clubhouse's own record/);
+    // A file beside it is fine.
+    expect(await check(path.join(home, 'packages', 'README.md'))).toBeNull();
+  });
+
+  it('a stream or short name, or a lookalike letter, is no way around it', async () => {
+    runAt('full_access');
+    expect(await check(path.join(home, 'CLAUDE2.md::$DATA'))).toMatch(/file stream or a short name/);
+    expect(await check(path.join(home, 'src', 'a.ts:hidden'))).toMatch(/file stream or a short name/);
+    h.configure = 'no project.configure';
+    expect(await check(path.join(home, 'AGENT\u017f.md'))).toBe('no project.configure');
+    expect(await check(path.join(home, '.g\u0131thub', 'mcp.json'))).toBe('no project.configure');
   });
 
   it('a call that is over is refused', async () => {
