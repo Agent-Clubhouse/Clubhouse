@@ -8,6 +8,8 @@ import { Button } from '../../components/Button';
 import { useDispatcherAgentId, useDispatcherStore } from './dispatcherStore';
 import { DispatcherSetup } from './DispatcherSetup';
 import { SetupOffer } from './SetupOffer';
+import { useDispatcherWorkOpen } from './dispatcherDebug';
+import { DispatcherWorkView } from './DispatcherWorkView';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -18,6 +20,9 @@ import { SetupOffer } from './SetupOffer';
  * Until it is set up (#3047) the view shows setup instead, and setup opened
  * again from the chat or its menu shows here too. After Set up later, a line
  * above the chat offers it again.
+ *
+ * With the debug view on (#3188), its work agent's row shows that agent's chat
+ * here instead, read-only.
  */
 export function DispatcherView() {
   const agentId = useDispatcherAgentId();
@@ -27,6 +32,7 @@ export function DispatcherView() {
   const state = useDispatcherStore((s) => s.state);
   const setupOpen = useDispatcherStore((s) => s.setupOpen);
   const setSetupOpen = useDispatcherStore((s) => s.setSetupOpen);
+  const workOpen = useDispatcherWorkOpen();
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
@@ -34,6 +40,8 @@ export function DispatcherView() {
     const raf = requestAnimationFrame(() => setFocused(true));
     return () => cancelAnimationFrame(raf);
   }, [agentId]);
+
+  if (workOpen && state?.agentId) return <DispatcherWorkView agentId={state.agentId} />;
 
   const setupStatus = state?.setup?.status;
   if (state?.config && (setupStatus === 'pending' || setupOpen)) {

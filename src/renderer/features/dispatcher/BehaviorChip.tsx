@@ -6,13 +6,18 @@
  *
  * The chip shows main's state, as Settings > Dispatcher does, so the two stay
  * in step: a pick here saves through main and comes back on the next state.
+ *
+ * With Choose models yourself on (#3191), the levels say only how often it
+ * checks in, and the menu says the models are picked in Settings.
  */
 
 import { useEffect, useState } from 'react';
 import {
   DISPATCHER_BEHAVIORS,
   DISPATCHER_BEHAVIOR_LABELS,
+  MODELS_BY_HAND_NOTE,
   behaviorAutoNote,
+  behaviorDescription,
   canSetUpAuto,
   type DispatcherBehavior,
   type DispatcherBehaviorState,
@@ -20,7 +25,7 @@ import {
 import { ChevronDown, GaugeIcon } from '../agents/chat/icons';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
-import { useDispatcherBehavior } from './dispatcherStore';
+import { useDispatcherBehavior, useDispatcherModelsByHand } from './dispatcherStore';
 import { openAutoSettings } from './dispatcherNav';
 
 export interface BehaviorChipProps {
@@ -33,15 +38,18 @@ export interface BehaviorChipProps {
   disabled?: boolean;
   /** Narrow composer: the icon only, with the level in the tooltip. */
   compact?: boolean;
+  /** Choose models yourself is on (#3191): Behavior sets only how often it checks in. */
+  modelsByHand?: boolean;
 }
 
-export function BehaviorChip({ behavior, providerName, onChange, onSetUpAuto, disabled, compact }: BehaviorChipProps) {
+export function BehaviorChip({ behavior, providerName, onChange, onSetUpAuto, disabled, compact, modelsByHand = false }: BehaviorChipProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const current = behavior.level;
   const label = DISPATCHER_BEHAVIOR_LABELS[current].label;
-  const note = behaviorAutoNote(behavior.auto, providerName);
+  const note = modelsByHand ? MODELS_BY_HAND_NOTE : behaviorAutoNote(behavior.auto, providerName);
+  const title = modelsByHand ? `Behavior: ${label}. Models chosen by you` : `Behavior: ${label}`;
 
   useEffect(() => {
     if (!open) return;
@@ -76,11 +84,12 @@ export function BehaviorChip({ behavior, providerName, onChange, onSetUpAuto, di
         onClick={() => { setError(null); setOpen((o) => !o); }}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={`Behavior: ${label}`}
-        aria-label={`Behavior: ${label}`}
+        title={title}
+        aria-label={title}
         className={`h-[26px] flex items-center gap-1.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] whitespace-nowrap disabled:opacity-60 ${compact ? 'px-2' : 'px-2.5'}`}
         data-testid="dispatcher-behavior-chip"
         data-level={current}
+        data-models-by-hand={modelsByHand ? 'true' : undefined}
       >
         <GaugeIcon size={13} className="text-ctp-overlay1" />
         {!compact && label}
@@ -109,14 +118,14 @@ export function BehaviorChip({ behavior, providerName, onChange, onSetUpAuto, di
               <span className={`w-3 h-3 rounded-full flex-shrink-0 ${level === current ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />
               <span className="flex flex-col">
                 <span>{DISPATCHER_BEHAVIOR_LABELS[level].label}</span>
-                <span className="text-[11px] text-ctp-overlay1">{DISPATCHER_BEHAVIOR_LABELS[level].description}</span>
+                <span className="text-[11px] text-ctp-overlay1">{behaviorDescription(level, modelsByHand)}</span>
               </span>
             </button>
           ))}
           {note && (
-            <div className="mt-1 pt-1.5 px-2 pb-1 border-t border-surface-0 flex flex-col gap-1.5" data-testid="dispatcher-behavior-auto">
+            <div className="mt-1 pt-1.5 px-2 pb-1 border-t border-surface-0 flex flex-col gap-1.5" data-testid={modelsByHand ? 'dispatcher-behavior-models-by-hand' : 'dispatcher-behavior-auto'}>
               <p className="text-[11.5px] text-ctp-subtext0">{note}</p>
-              {canSetUpAuto(behavior.auto) && (
+              {!modelsByHand && canSetUpAuto(behavior.auto) && (
                 <button
                   type="button"
                   onClick={() => { setOpen(false); onSetUpAuto(); }}
@@ -143,6 +152,7 @@ export function useProviderName(provider: string | null): string {
 /** The chip for the Dispatcher's composer, on main's state. Nothing until that state lands. */
 export function DispatcherBehaviorChip({ disabled, compact }: { disabled?: boolean; compact?: boolean }) {
   const behavior = useDispatcherBehavior();
+  const modelsByHand = useDispatcherModelsByHand();
   const providerName = useProviderName(behavior?.provider ?? null);
   if (!behavior) return null;
   return (
@@ -153,6 +163,7 @@ export function DispatcherBehaviorChip({ disabled, compact }: { disabled?: boole
       onSetUpAuto={openAutoSettings}
       disabled={disabled}
       compact={compact}
+      modelsByHand={modelsByHand}
     />
   );
 }

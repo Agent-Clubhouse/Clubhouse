@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import { Button } from '../../components/Button';
+import { DISPATCHER_DEBUG_FLAG, useDispatcherDebugStore } from '../dispatcher/dispatcherDebug';
 
 /** Feature definitions for the experimental settings page. */
 export const EXPERIMENTAL_FEATURES: Array<{
@@ -13,6 +14,11 @@ export const EXPERIMENTAL_FEATURES: Array<{
     id: 'goobers',
     label: 'Goobers',
     description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
+  },
+  {
+    id: DISPATCHER_DEBUG_FLAG,
+    label: 'Dispatcher debug view',
+    description: 'Adds a sidebar row for the Dispatcher\'s work agent, whose chat opens read-only, and shows the tool calls, Clubhouse updates and agents\' raw news the Dispatcher\'s chat hides, marked as debug. Changes nothing the Dispatcher does.',
   },
 ];
 
@@ -43,6 +49,8 @@ export function ExperimentalSettingsView() {
       const next = { ...previous, [id]: enabled };
       await window.clubhouse.app.saveExperimentalSettings(next);
       setSettings(next);
+      // Shown at once, no restart.
+      if (id === DISPATCHER_DEBUG_FLAG) useDispatcherDebugStore.getState().setOn(enabled);
     } catch {
       // telemetry-exempt: shown to the user, and the switch goes back to what's saved.
       setSettings(previous);

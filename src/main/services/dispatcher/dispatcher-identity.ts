@@ -11,6 +11,9 @@
  * default, since a model means nothing to another CLI, and Behavior sets it
  * again before the next start. Session ids, sleep records and anything else
  * per agent are never copied.
+ *
+ * With Choose models yourself on (#3191), each job has its own provider and
+ * context too, so neither is copied.
  */
 import type { DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
 
@@ -37,7 +40,7 @@ function modelOf(config: DurableAgentConfig): string {
  * shares. Empty when they already match, which is what stops a copy from
  * bouncing back.
  */
-export function mirrorUpdates(from: DurableAgentConfig, to: DurableAgentConfig): MirrorUpdates {
+export function mirrorUpdates(from: DurableAgentConfig, to: DurableAgentConfig, { modelsByHand = false }: { modelsByHand?: boolean } = {}): MirrorUpdates {
   const identity: IdentityUpdates = {};
   const config: DurableConfigUpdates = {};
 
@@ -47,11 +50,13 @@ export function mirrorUpdates(from: DurableAgentConfig, to: DurableAgentConfig):
   if ((from.icon ?? null) !== (to.icon ?? null)) identity.icon = from.icon ?? null;
   if ((from.emoji ?? null) !== (to.emoji ?? null)) identity.emoji = from.emoji ?? null;
 
-  if (from.orchestrator && from.orchestrator !== to.orchestrator) {
-    config.orchestrator = from.orchestrator;
-    if (modelOf(to) !== 'default') config.model = 'default';
+  if (!modelsByHand) {
+    if (from.orchestrator && from.orchestrator !== to.orchestrator) {
+      config.orchestrator = from.orchestrator;
+      if (modelOf(to) !== 'default') config.model = 'default';
+    }
+    if ((from.contextWindow ?? null) !== (to.contextWindow ?? null)) config.contextWindow = from.contextWindow ?? null;
   }
-  if ((from.contextWindow ?? null) !== (to.contextWindow ?? null)) config.contextWindow = from.contextWindow ?? null;
   if ((from.runtimeMode ?? null) !== (to.runtimeMode ?? null)) config.runtimeMode = from.runtimeMode ?? null;
   if ((from.idleSleep ?? null) !== (to.idleSleep ?? null)) config.idleSleep = from.idleSleep ?? null;
   // Access sets the legacy flag too; a record from before Access (#2761) has only the flag.

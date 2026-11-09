@@ -2,7 +2,8 @@ import { useId, useLayoutEffect, useRef } from 'react';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { AgentRow } from './AgentRow';
 import { agentDot } from './treeModel';
-import { StatusDot } from '../../features/agents/agent-status';
+import { StatusDot, type AgentDot } from '../../features/agents/agent-status';
+import { useChatStore } from '../../stores/chatStore';
 
 /**
  * The Dispatcher's pinned row (#2538), above every project and shown with
@@ -85,6 +86,54 @@ function PendingRow({ failed, active, onSelect }: { failed: boolean; active: boo
         <span id={noteId} className={`ml-auto flex-shrink-0 text-xs ${failed ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
           {failed ? 'couldn’t load' : 'loading'}
         </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Dispatcher debug view's row (#3188), under the Dispatcher's: its work
+ * agent, which opens that agent's chat read-only in the Dispatcher's view.
+ * The agent isn't in the agent store, so the row has no menu or hover card;
+ * its dot says whether it is running and in a turn.
+ */
+export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
+  agentId: string;
+  running: boolean;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const noteId = useId();
+  const inTurn = useChatStore((s) => !!s.agents[agentId]?.turnStartedAt);
+  const dot: AgentDot = !running ? 'sleeping' : inTurn ? 'working' : 'idle';
+  return (
+    <div role="tree" aria-label="Dispatcher work (debug)" data-testid="dispatcher-work-row" className="flex-shrink-0 px-1.5 pb-1">
+      <div
+        data-active={active}
+        aria-current={active ? 'true' : undefined}
+        onClick={onSelect}
+        className={`relative w-full h-[30px] flex-shrink-0 rounded-md flex items-center cursor-pointer transition-colors duration-100 ${
+          active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
+        }`}
+      >
+        <div
+          role="treeitem"
+          tabIndex={0}
+          aria-level={1}
+          aria-selected={active}
+          aria-label="Dispatcher work"
+          aria-describedby={noteId}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
+          }}
+          style={{ paddingLeft: 8 }}
+          className="relative min-w-0 flex-1 h-full pr-1 rounded-md flex items-center gap-2 text-[13px] text-left focus-ring"
+        >
+          <StatusDot dot={dot} />
+          <span className="w-[18px] h-[18px] flex-shrink-0 rounded-full bg-surface-1" aria-hidden="true" />
+          <span className="truncate font-medium">Dispatcher work</span>
+          <span id={noteId} className="ml-auto flex-shrink-0 text-xs text-ctp-overlay1">debug</span>
+        </div>
       </div>
     </div>
   );

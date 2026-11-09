@@ -119,6 +119,31 @@ describe('DispatcherBehaviorChip: in step with main', () => {
     await waitFor(() => expect(chip().getAttribute('data-level')).toBe('thorough'));
   });
 
+  it('with the models chosen by hand, says so and covers only how often it checks in (#3191)', () => {
+    const noMapping: DispatcherBehaviorState = { level: 'thorough', provider: 'claude-code', auto: { ready: false, code: 'no_valid_mapping' } };
+    render(<BehaviorChip behavior={noMapping} providerName="Claude Code" onChange={vi.fn()} onSetUpAuto={vi.fn()} modelsByHand />);
+    const chip = screen.getByTestId('dispatcher-behavior-chip');
+    expect(chip.getAttribute('aria-label')).toBe('Behavior: Thorough. Models chosen by you');
+    fireEvent.click(chip);
+    const items = screen.getAllByRole('menuitemradio').map((i) => i.textContent ?? '');
+    expect(items).toEqual([
+      expect.stringContaining('Doesn’t check in on its own.'), expect.stringContaining('Checks in on your agents occasionally.'), expect.stringContaining('Checks in on your agents frequently.'),
+    ]);
+    for (const item of items) expect(item).not.toMatch(/model/i);
+    expect(screen.getByTestId('dispatcher-behavior-models-by-hand').textContent).toBe('You choose its models in Settings > Dispatcher. Behavior sets how often it checks in.');
+    // Auto's note and Set up Auto don't apply to models it doesn't choose.
+    expect(screen.queryByTestId('dispatcher-behavior-auto')).toBeNull();
+    expect(screen.queryByTestId('dispatcher-behavior-setup-auto')).toBeNull();
+  });
+
+  it('reads whether the models are chosen by hand from main\'s state (#3191)', () => {
+    useDispatcherStore.getState().setState({ ...ON, models: { byHand: true, chat: null, work: null } });
+    render(<DispatcherBehaviorChip />);
+    expect(screen.getByTestId('dispatcher-behavior-chip').getAttribute('data-models-by-hand')).toBe('true');
+    act(() => useDispatcherStore.getState().setState(ON));
+    expect(screen.getByTestId('dispatcher-behavior-chip').getAttribute('data-models-by-hand')).toBeNull();
+  });
+
   it('Set up Auto opens Settings > Smart selection', () => {
     useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: true });
     useDispatcherStore.getState().setState({ ...ON, behavior: { level: 'thorough', provider: 'claude-code', auto: { ready: false, code: 'no_valid_mapping' } } });

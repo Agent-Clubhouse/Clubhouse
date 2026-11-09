@@ -2,6 +2,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { requestLeaveAgentSettings } from '../agents/agentSettingsPages';
 import { useDispatcherStore } from './dispatcherStore';
+import { useDispatcherDebugStore } from './dispatcherDebug';
 
 /**
  * Opening and closing the Dispatcher's view (#2538). The view is a uiStore
@@ -9,8 +10,11 @@ import { useDispatcherStore } from './dispatcherStore';
  * they were, and closing it goes back to them.
  */
 
-/** Show the Dispatcher's view. Does nothing while it's turned off. */
-export function openDispatcher(): void {
+/**
+ * Show the Dispatcher's view. Does nothing while it's turned off. `work` shows
+ * its work agent's chat instead, with the debug view on (#3188).
+ */
+export function openDispatcher(opts: { work?: boolean } = {}): void {
   if (!useDispatcherStore.getState().project) return;
   requestLeaveAgentSettings(() => {
     useChromeStore.getState().closeNewAgent();
@@ -19,6 +23,7 @@ export function openDispatcher(): void {
     if (ui.explorerTab === 'settings') ui.toggleSettings();
     else if (ui.explorerTab === 'help') ui.toggleHelp();
     else if (ui.explorerTab.startsWith('plugin:app:')) ui.setExplorerTab('agents');
+    useDispatcherDebugStore.getState().setWorkOpen(!!opts.work);
     useUIStore.getState().setDispatcherOpen(true);
   });
 }

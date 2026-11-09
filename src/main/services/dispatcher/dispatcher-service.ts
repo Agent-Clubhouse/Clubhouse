@@ -36,6 +36,12 @@
  * chat's model where its CLI allows. A provider with no mapping keeps the
  * model it has. The identity no longer shares a model between the two.
  *
+ * Choose models yourself (#3191) replaces Behavior's models with the user's
+ * picks, one per job, each with its own provider: applyBehavior then gives
+ * each agent its pick instead, at the same moments, and the identity stops
+ * copying the provider and context between the records. Behavior still sets
+ * the check-in and upkeep frequencies.
+ *
  * Turning its switch off stops both agents and leaves the folders, the memory
  * and the configs alone, so turning it back on resumes where it left off. MCP going off
  * at app level derives it off and stops nothing: a running Dispatcher keeps
@@ -58,7 +64,7 @@ export { appendSection } from './dispatcher-skills';
 import { appLog } from '../log-service';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
-import type { DurableAgentConfig } from '../../../shared/types';
+import type { DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
 import { agentRegistry } from '../agent-registry';
 import { newChromeEnabled } from '../../window-chrome';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
@@ -70,6 +76,8 @@ import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatche
 import { behaviorAuto, getDispatcherBehavior, resolveDispatcherModels, saveDispatcherBehavior } from './dispatcher-behavior';
 import { onHelperRoutingChanged } from '../helper-routing';
 import type { DispatcherBehavior, DispatcherRole } from '../../../shared/dispatcher-behavior';
+import { cleanModelsUpdate, mergeRoleModel, type DispatcherModelsState, type DispatcherRoleModel } from '../../../shared/dispatcher-models';
+import { getDispatcherModels, getModelsBefore, modelsChosenByHand, saveDispatcherModels, saveModelsBefore } from './dispatcher-models';
 import { setDispatcherIdLookup } from '../clubhouse-mcp/dispatcher-gate';
 import { DEFAULT_DISPATCHER_NAME } from '../../../shared/dispatcher-name';
 import { cleanDispatcherName, personalityInstructions } from '../../../shared/dispatcher-personality';
@@ -182,9 +190,10 @@ export function withDispatcherMemory(instructions: string): Promise<string> {
 /**
  * Called on the spawn path before either of the Dispatcher's agents starts:
  * rewrites its instructions file, so the session loads memory as it is now,
- * and gives it its Behavior model (#3045). Resolves with that model, which
- * the start uses over whatever model its caller last saw, or null when
- * Behavior set none. Anything else is left alone.
+ * and gives it its Behavior model (#3045), or the user's pick (#3191).
+ * Resolves with that model, which the start uses over whatever model its
+ * caller last saw, or null when neither set one. A pick also names its
+ * provider, which the start uses too. Anything else is left alone.
  */
 export async function prepareDispatcherSessionStart(projectPath: string, agentId: string): Promise<AppliedModel | null> {
   if (!isDispatcherEnabled()) return null;
@@ -195,8 +204,9 @@ export async function prepareDispatcherSessionStart(projectPath: string, agentId
   const dir = isDispatcherChatPath(projectPath) ? getDispatcherChatPath() : getDispatcherPath();
   const role: DispatcherRole = isDispatcherChatPath(projectPath) ? 'chat' : 'work';
   return enqueue(async () => {
-    await writeInstructions(agent, dir);
+    // The models first, so the instructions are written for the CLI it will start on.
     const applied = await applyBehavior([{ agent, dir, role }], { live: false });
+    await writeInstructions(await agentConfig.getDurableConfig(dir, agent.id) ?? agent, dir);
     return applied.get(agent.id) ?? null;
   });
 }
@@ -228,6 +238,7 @@ export function getDispatcherState(): DispatcherState {
     chatPath: chatConfig ? getDispatcherChatPath() : null,
     chatRunning,
     behavior: behaviorState(),
+    models: getDispatcherModels(),
     personality: getDispatcherPersonality(),
     setup: getDispatcherSetup(),
   };
@@ -246,6 +257,10 @@ function behaviorState(): DispatcherState['behavior'] {
 export interface AppliedModel {
   model: string;
   effort: string | null;
+  /** Set for a pick (#3191): the provider it runs on. */
+  orchestrator?: OrchestratorId;
+  /** Applying the pick moved its record to another provider, so its last session can't be resumed. */
+  providerChanged?: boolean;
 }
 
 interface BehaviorTarget {
@@ -266,14 +281,19 @@ function behaviorTargets(): BehaviorTarget[] {
  * Saved to its record, so the next start uses it. With `live`, a running chat
  * session also switches now where its CLI allows; one that can't picks it up
  * at its next start. Without an Auto mapping nothing is changed. Never throws.
+ *
+ * With Choose models yourself on (#3191), Behavior's models never apply:
+ * each agent gets the user's pick instead (applyChosenModels).
  */
 async function applyBehavior(targets: BehaviorTarget[], { live }: { live: boolean }): Promise<Map<string, AppliedModel>> {
+  if (modelsChosenByHand()) return applyChosenModels(targets, { live });
   const applied = new Map<string, AppliedModel>();
   if (targets.length === 0) return applied;
   const level = getDispatcherBehavior();
   const before = JSON.stringify(behaviorState());
   for (const { agent, dir, role } of targets) {
-    const provider = agent.orchestrator ?? defaultDispatcherOrchestrator();
+    const current = await agentConfig.getDurableConfig(dir, agent.id).catch((): null => null) ?? agent;
+    const provider = current.orchestrator ?? defaultDispatcherOrchestrator();
     if (!provider) continue;
     try {
       const resolved = await resolveDispatcherModels(provider, level);
@@ -285,12 +305,13 @@ async function applyBehavior(targets: BehaviorTarget[], { live }: { live: boolea
       }
       const { model, effort } = resolved.models[role];
       applied.set(agent.id, { model, effort });
-      const current = await agentConfig.getDurableConfig(dir, agent.id) ?? agent;
       const modelChanged = current.model !== model;
       const effortChanged = (current.effort ?? null) !== effort;
       if (modelChanged) await agentConfig.updateDurableConfig(dir, agent.id, { model, effort });
       else if (effortChanged) await agentConfig.updateDurableConfig(dir, agent.id, { effort });
-      if (live && (modelChanged || effortChanged)) await switchRunningModel(agent.id, model, effort);
+      // Only a session on the provider these models are for: one still on another picks them up at its next start.
+      const sameProvider = agentRegistry.get(agent.id)?.orchestrator === provider;
+      if (live && sameProvider && (modelChanged || effortChanged)) await switchRunningModel(agent.id, model, effort);
     } catch (err) {
       // telemetry-exempt: logged; the agent keeps the model it had, and the next start tries again
       appLog(NS, 'warn', 'Could not apply the Dispatcher\'s Behavior', {
@@ -300,6 +321,115 @@ async function applyBehavior(targets: BehaviorTarget[], { live }: { live: boolea
   }
   if (JSON.stringify(behaviorState()) !== before) emitChanged();
   return applied;
+}
+
+/** A model left out and 'default' both mean the CLI's default. */
+function savedModel(config: DurableAgentConfig): string {
+  return config.model && config.model !== 'default' ? config.model : 'default';
+}
+
+/**
+ * What to write to an agent's record so it runs the user's pick (#3191).
+ * Empty when it already does. A new provider or model sends the effort and
+ * context again, since updateDurableConfig clears them for the old one.
+ */
+export function chosenModelUpdates(current: DurableAgentConfig, pick: DispatcherRoleModel, fallbackProvider: string | undefined): DurableConfigUpdates {
+  const updates: DurableConfigUpdates = {};
+  const providerChanged = pick.provider !== (current.orchestrator ?? fallbackProvider);
+  const modelChanged = providerChanged || savedModel(current) !== pick.model;
+  if (providerChanged) updates.orchestrator = pick.provider as OrchestratorId;
+  if (modelChanged) updates.model = pick.model;
+  if (modelChanged || (current.effort ?? null) !== pick.effort) updates.effort = pick.effort;
+  if (modelChanged || (current.contextWindow ?? null) !== pick.contextWindow) updates.contextWindow = pick.contextWindow;
+  return updates;
+}
+
+/** What writing one agent's pick did. */
+interface ChosenWrite {
+  target: BehaviorTarget;
+  pick: DispatcherRoleModel;
+  /** Its model or effort changed, so a running session can switch. */
+  changed: boolean;
+  /** Its record moved to another provider. */
+  providerChanged: boolean;
+}
+
+/**
+ * Write each agent's pick to its record (#3191), so the next start uses it.
+ * A saved context its model no longer offers is dropped, from the record and
+ * the pick, and logged; the provider, model and effort apply anyway. With
+ * `throwOnError` anything the record refuses rejects, which is how a change
+ * from Settings is refused; otherwise it is logged and the agent keeps what
+ * it had.
+ */
+async function writeChosenModels(targets: BehaviorTarget[], { throwOnError = false }: { throwOnError?: boolean } = {}): Promise<ChosenWrite[]> {
+  const written: ChosenWrite[] = [];
+  for (const target of targets) {
+    const { agent, dir, role } = target;
+    let pick = getDispatcherModels()[role];
+    if (!pick) continue;
+    try {
+      const current = await agentConfig.getDurableConfig(dir, agent.id) ?? agent;
+      const updates = chosenModelUpdates(current, pick, defaultDispatcherOrchestrator());
+      if (Object.keys(updates).length > 0) {
+        try {
+          await agentConfig.updateDurableConfig(dir, agent.id, updates);
+        } catch (err) {
+          if (throwOnError || !updates.contextWindow) throw err;
+          await agentConfig.updateDurableConfig(dir, agent.id, { ...updates, contextWindow: null });
+          // telemetry-exempt: logged; it starts with the CLI's default context, and Settings shows the pick without one
+          appLog(NS, 'warn', 'The context chosen for the Dispatcher is no longer offered, so it was dropped', {
+            meta: { agentId: agent.id, role, provider: pick.provider, contextWindow: updates.contextWindow, error: err instanceof Error ? err.message : String(err) },
+          });
+          pick = { ...pick, contextWindow: null };
+          await saveDispatcherModels({ ...getDispatcherModels(), [role]: pick });
+        }
+      }
+      written.push({ target, pick, changed: updates.model !== undefined || updates.effort !== undefined, providerChanged: updates.orchestrator !== undefined });
+    } catch (err) {
+      if (throwOnError) throw err;
+      // telemetry-exempt: logged; the agent keeps the model it had, and the next start tries again
+      appLog(NS, 'warn', 'Could not give the Dispatcher the model chosen for it', {
+        meta: { agentId: agent.id, role, provider: pick.provider, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+  return written;
+}
+
+/**
+ * Give each agent the user's pick for its job (#3191), as applyBehavior does
+ * Behavior's: written to its record, and with `live` a running session on
+ * the same provider switches now (switchToPick). Never throws.
+ */
+async function applyChosenModels(targets: BehaviorTarget[], { live }: { live: boolean }): Promise<Map<string, AppliedModel>> {
+  const applied = new Map<string, AppliedModel>();
+  for (const { target, pick, changed, providerChanged } of await writeChosenModels(targets)) {
+    applied.set(target.agent.id, {
+      model: pick.model, effort: pick.effort, orchestrator: pick.provider as OrchestratorId, ...(providerChanged && { providerChanged: true }),
+    });
+    if (live && changed) await switchToPick(target.agent.id, pick);
+  }
+  return applied;
+}
+
+/**
+ * Queued after the caller, so it never waits on a CLI: switch each running
+ * session whose model or effort was just written to its job's pick as saved
+ * when this runs, so a later change queued in between wins.
+ */
+function switchToPicksLater(written: ChosenWrite[]): void {
+  const due = written.filter((w) => w.changed && !w.providerChanged);
+  if (due.length === 0) return;
+  const queuedIn = generation;
+  void enqueue(async () => {
+    if (queuedIn !== generation || !modelsChosenByHand()) return;
+    const picks = getDispatcherModels();
+    for (const { target } of due) {
+      const pick = picks[target.role];
+      if (pick) await switchToPick(target.agent.id, pick);
+    }
+  });
 }
 
 /** Switch a running chat session's model, where its CLI allows. Loaded here: agent-runtime is heavy. */
@@ -326,6 +456,169 @@ export async function setDispatcherBehavior(level: DispatcherBehavior): Promise<
       if (queuedIn === generation) await applyBehavior(behaviorTargets(), { live: true });
     });
   }
+  return getDispatcherState();
+}
+
+/**
+ * Switch a running session to a pick's model and effort where its CLI allows
+ * (#3191). Only on the provider it runs on: a new provider waits for the next
+ * start, as does the CLI's default model, which a running session can't be
+ * told by name. Never throws; one that can't switch picks it up at its next start.
+ */
+async function switchToPick(agentId: string, pick: DispatcherRoleModel): Promise<void> {
+  if (pick.model === 'default' || agentRegistry.get(agentId)?.orchestrator !== pick.provider) return;
+  try {
+    await switchRunningModel(agentId, pick.model, pick.effort);
+  } catch (err) {
+    // telemetry-exempt: logged; the record has the pick, so its next start uses it
+    appLog(NS, 'warn', 'Could not switch the Dispatcher\'s running session to the model chosen for it', {
+      meta: { agentId, provider: pick.provider, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+/** The picks to save as the switch goes on: a job with no pick gets what its agent runs now, so turning it on changes nothing by itself. */
+function seededModels(current: DispatcherModelsState): DispatcherModelsState {
+  const fallback = defaultDispatcherOrchestrator();
+  const seed = (agent: DurableAgentConfig | null): DispatcherRoleModel | null => {
+    const provider = agent?.orchestrator ?? fallback;
+    if (!agent || !provider) return null;
+    return { provider, model: savedModel(agent), effort: agent.effort ?? null, contextWindow: agent.contextWindow ?? null };
+  };
+  return { byHand: true, chat: current.chat ?? seed(chatConfig ?? config), work: current.work ?? seed(config) };
+}
+
+/** Refuses a provider Clubhouse doesn't know, or a model its CLI doesn't list. */
+async function assertPick(pick: DispatcherRoleModel): Promise<void> {
+  const provider = getProvider(pick.provider);
+  if (!provider) throw new Error(`${pick.provider} isn’t a provider Clubhouse knows.`);
+  if (pick.model === 'default') return;
+  let listed: Array<{ id: string }> = [];
+  try {
+    const options = await provider.getModelOptions();
+    if (Array.isArray(options)) listed = options;
+  } catch {
+    // telemetry-exempt: a list that can't be read lists nothing, so only the CLI's default is taken
+  }
+  if (!listed.some((o) => o.id === pick.model)) throw new Error(`${pick.model} isn’t a model ${provider.displayName} lists.`);
+}
+
+/**
+ * Put one record back on a provider and context (#3191). A context the
+ * provider no longer offers is cleared instead, and logged.
+ */
+async function restoreRecord(dir: string, agentId: string, provider: string | undefined, contextWindow: string | null): Promise<void> {
+  const current = await agentConfig.getDurableConfig(dir, agentId);
+  if (!current) return;
+  const updates: DurableConfigUpdates = {};
+  const providerChanged = !!provider && provider !== (current.orchestrator ?? defaultDispatcherOrchestrator());
+  if (providerChanged) Object.assign(updates, { orchestrator: provider as OrchestratorId, model: 'default', effort: null });
+  if (providerChanged || (current.contextWindow ?? null) !== contextWindow) updates.contextWindow = contextWindow;
+  if (Object.keys(updates).length === 0) return;
+  try {
+    await agentConfig.updateDurableConfig(dir, agentId, updates);
+  } catch (err) {
+    if (!updates.contextWindow) throw err;
+    await agentConfig.updateDurableConfig(dir, agentId, { ...updates, contextWindow: null });
+    // telemetry-exempt: logged; it runs with the CLI's default context
+    appLog(NS, 'warn', 'The Dispatcher\'s earlier context is no longer offered, so it was cleared', {
+      meta: { agentId, provider, contextWindow, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+/**
+ * Turn Choose models yourself off (#3191), from Settings or setup: both
+ * records go back to the provider and context they had when it went on, so
+ * no context from a pick stays hidden. Without that saved (it went on in an
+ * earlier build), the chat goes to the provider "Runs on" shows and both lose
+ * their context. The picks are kept for next time. Behavior gives the models
+ * after. Runs inside the queue.
+ */
+async function leaveModelsByHand(): Promise<boolean> {
+  const models = getDispatcherModels();
+  if (!models.byHand) return false;
+  await saveDispatcherModels({ ...models, byHand: false });
+  const before = getModelsBefore();
+  await saveModelsBefore(null);
+  const provider = before?.provider ?? config?.orchestrator ?? defaultDispatcherOrchestrator();
+  const contextWindow = before?.contextWindow ?? null;
+  for (const [agent, dir] of [[config, getDispatcherPath()], [chatConfig, getDispatcherChatPath()]] as const) {
+    if (agent) await restoreRecord(dir, agent.id, provider, contextWindow);
+  }
+  config = await readConfig() ?? config;
+  chatConfig = await readConfig(getDispatcherChatPath()) ?? chatConfig;
+  return true;
+}
+
+/**
+ * Choose models yourself (#3191), from Settings or a phone: turn the switch
+ * on or off, or change one job's provider, model, effort or context.
+ *
+ * On saves what its agents run now, to put back when it goes off, and a pick
+ * for each job from what its agent runs now. Off puts the provider and
+ * context back (leaveModelsByHand) and Behavior gives the models again.
+ * Every change reads the saved picks inside the queue, so two changes in a
+ * row both land. A pick its agent's record refuses (a context its model
+ * doesn't offer) is not kept. A running session on the same provider
+ * switches model and effort where its CLI allows, queued after; a new
+ * provider applies at its next start.
+ */
+export async function setDispatcherModels(input: unknown): Promise<DispatcherState> {
+  if (!isDispatcherEnabled()) throw new Error('Turn on the Dispatcher first, in Settings > Dispatcher.');
+  const update = cleanModelsUpdate(input);
+  if ('byHand' in update) {
+    const written = await enqueue(async (): Promise<ChosenWrite[] | null> => {
+      const now = getDispatcherModels();
+      if (now.byHand === update.byHand) return null;
+      if (!update.byHand) {
+        await leaveModelsByHand();
+        return [];
+      }
+      const chat = chatConfig ? await agentConfig.getDurableConfig(getDispatcherChatPath(), chatConfig.id) ?? chatConfig : config;
+      const provider = chat?.orchestrator ?? defaultDispatcherOrchestrator();
+      if (provider) await saveModelsBefore({ provider, contextWindow: chat?.contextWindow ?? null });
+      await saveDispatcherModels(seededModels(now));
+      return writeChosenModels(behaviorTargets());
+    });
+    if (written === null) return getDispatcherState();
+    appLog(NS, 'info', 'Choose models yourself changed', { meta: { byHand: update.byHand } });
+    emitChanged();
+    if (update.byHand) {
+      switchToPicksLater(written);
+    } else {
+      const queuedIn = generation;
+      // applyBehavior logs its own failures and never throws.
+      void enqueue(async () => {
+        if (queuedIn === generation) await applyBehavior(behaviorTargets(), { live: true });
+      });
+    }
+    return getDispatcherState();
+  }
+  const { role, ...fields } = update;
+  const { pick, written } = await enqueue(async () => {
+    const current = getDispatcherModels();
+    if (!current.byHand) throw new Error('Turn on Choose models yourself first.');
+    const base = current[role] ?? seededModels(current)[role];
+    if (!base) throw new Error('The Dispatcher isn’t set up on disk yet. Try again in a moment.');
+    const next = mergeRoleModel(base, fields);
+    await assertPick(next);
+    await saveDispatcherModels({ ...current, [role]: next });
+    const found = behaviorTargets().find((t) => t.role === role);
+    if (!found) return { pick: next, written: [] as ChosenWrite[] };
+    try {
+      return { pick: next, written: await writeChosenModels([found], { throwOnError: true }) };
+    } catch (err) {
+      // telemetry-exempt: the caller shows it; the saved pick goes back to what the record still runs
+      await saveDispatcherModels(current);
+      throw err;
+    }
+  });
+  appLog(NS, 'info', 'Dispatcher model chosen', {
+    meta: { role, provider: pick.provider, model: pick.model, effort: pick.effort, contextWindow: pick.contextWindow },
+  });
+  emitChanged();
+  switchToPicksLater(written);
   return getDispatcherState();
 }
 
@@ -359,13 +652,15 @@ export async function setDispatcherSetupStatus(status: Exclude<DispatcherSetupSt
  * Finish first-run setup (#3047): its name, look, provider, Behavior and
  * personality in one go. The name and look go on the record Settings edits,
  * and are copied onto the chat's as any change is. A new provider resets the
- * model, as Settings' CLI change does, and Behavior gives both agents theirs.
- * Starts nothing.
+ * model, as Settings' CLI change does, and Behavior gives both agents theirs,
+ * so Choose models yourself goes off (#3191). Starts nothing.
  */
 export async function completeDispatcherSetup(input: DispatcherSetupInput): Promise<DispatcherState> {
   if (!isDispatcherEnabled()) throw new Error('Turn on the Dispatcher first, in Settings > Dispatcher.');
   if (!getProvider(input.provider)) throw new Error(`${input.provider} isn’t a provider Clubhouse knows.`);
   await enqueue(async () => {
+    // Setup picks one provider and a Behavior, so Behavior gives the models again (#3191). The picks are kept.
+    await leaveModelsByHand();
     const coordinator = config ?? await readConfig();
     if (!coordinator) throw new Error('The Dispatcher isn’t set up on disk yet. Try again in a moment.');
     const dir = getDispatcherPath();
@@ -511,7 +806,7 @@ async function ensureCreated(): Promise<DurableAgentConfig> {
  * dispatcher-identity). Returns the target as it is now.
  */
 async function mirror(from: DurableAgentConfig, to: DurableAgentConfig, toDir: string): Promise<DurableAgentConfig> {
-  const updates = mirrorUpdates(from, to);
+  const updates = mirrorUpdates(from, to, { modelsByHand: modelsChosenByHand() });
   if (isEmptyMirror(updates)) return to;
   try {
     if (Object.keys(updates.identity).length > 0) await agentConfig.updateDurable(toDir, to.id, updates.identity);

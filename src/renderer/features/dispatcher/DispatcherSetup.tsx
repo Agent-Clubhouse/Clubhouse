@@ -143,7 +143,7 @@ export function DispatcherSetup({ state, reopened = false, onClose }: Dispatcher
         <div className="flex flex-col lg:flex-row gap-8 items-start">
           <div className="flex-1 min-w-0 w-full">
             {step === 'look' && <LookStep draft={draft} update={update} />}
-            {step === 'behavior' && <BehaviorStep draft={draft} update={update} currentProvider={state.behavior.provider} />}
+            {step === 'behavior' && <BehaviorStep draft={draft} update={update} currentProvider={state.behavior.provider} modelsByHand={!!state.models?.byHand} />}
             {step === 'personality' && <PersonalityStep draft={draft} update={update} />}
           </div>
           <SetupPreview draft={draft} chatAgentId={state.chatAgentId} emoji={state.config?.emoji ?? undefined} />
@@ -257,7 +257,7 @@ function KeepImageRemove({ update }: Pick<StepProps, 'update'>) {
   return <Button kind="quiet" onClick={() => update({ image: null })} data-testid="dispatcher-setup-image-remove">Remove</Button>;
 }
 
-function BehaviorStep({ draft, update, currentProvider }: StepProps & { currentProvider: string | null }) {
+function BehaviorStep({ draft, update, currentProvider, modelsByHand }: StepProps & { currentProvider: string | null; modelsByHand: boolean }) {
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledIds = useOrchestratorStore((s) => s.enabled);
   const providerName = useProviderName(draft.provider);
@@ -315,6 +315,12 @@ function BehaviorStep({ draft, update, currentProvider }: StepProps & { currentP
           {choices.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
         </select>
       </Row>
+      {/* Setup picks one provider and a Behavior, so finishing it turns Choose models yourself off (#3191). */}
+      {modelsByHand && (
+        <p className="text-xs text-ctp-subtext0" data-testid="dispatcher-setup-models-by-hand">
+          You chose its models yourself. Finishing setup lets Behavior choose them again. Your picks stay in Settings for next time.
+        </p>
+      )}
       {note && (
         <div className="flex flex-col gap-1.5" data-testid="dispatcher-setup-auto">
           <p className="text-xs text-ctp-subtext0">{note}</p>

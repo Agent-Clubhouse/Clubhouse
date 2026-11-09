@@ -13,6 +13,8 @@ import { resolveChatDriver } from './agent-runtime/chat-drivers';
 import { agentAccess } from './free-agent-settings';
 import { accessLevelsFor } from '../../shared/agent-access';
 import { MobileControlError } from './mobile-control';
+import { isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { modelsChosenByHand } from './dispatcher/dispatcher-models';
 import type { DurableAgentConfig } from '../../shared/types';
 
 export interface ProviderControlActor { key: string; assertAuthorized: () => void | Promise<void> }
@@ -20,8 +22,15 @@ const hash = (value: unknown): string => createHash('sha256').update(JSON.string
 const snapshot = (value: DurableAgentConfig): DurableAgentConfig => JSON.parse(JSON.stringify(value));
 const fail = (code: string): never => { throw new MobileControlError(code, 409); };
 
+/** While its models are chosen by hand (#3191), the Dispatcher's provider is a pick, changed in Settings, never here. */
+export const DISPATCHER_MODELS_BY_HAND_MESSAGE = 'The Dispatcher’s models are chosen by hand. Change its provider in Settings > Dispatcher, or turn off Choose models yourself first.';
+function assertNotChosenByHand(projectPath: string): void {
+  if (isDispatcherPath(projectPath) && modelsChosenByHand()) throw new MobileControlError('dispatcher_models_by_hand', 409, 'rejected', DISPATCHER_MODELS_BY_HAND_MESSAGE);
+}
+
 export async function previewAgentProvider(projectPath: string, agentId: string, providerId: string, actor: ProviderControlActor, tokenGeneration?: number) {
   await actor.assertAuthorized();
+  assertNotChosenByHand(projectPath);
   const found = await getDurableConfig(projectPath, agentId);
   if (!found || isDisposedAgent(found)) return fail('agent_not_found');
   const config = snapshot(found);

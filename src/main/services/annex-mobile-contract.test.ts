@@ -91,6 +91,8 @@ vi.mock('./dispatcher/dispatcher-service', () => {
   };
 });
 vi.mock('./dispatcher/dispatcher-settings', () => ({
+  // Nothing saved: Behavior gives the models, so Choose models yourself (#3191) is off.
+  getSettings: () => ({}),
   isDispatcherEnabled: () => W.dispatcher.enabled,
   dispatcherEnablement: () => ({
     savedOn: W.dispatcher.enabled,

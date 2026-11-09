@@ -6,6 +6,7 @@ import { rendererLog } from '../../plugins/renderer-logger';
 import { useDispatcherState } from './useDispatcherEnabled';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { useDispatcherStore } from './dispatcherStore';
+import { loadDispatcherDebug } from './dispatcherDebug';
 
 /**
  * Keeps the renderer's Dispatcher in step with main (#2538): the shared
@@ -20,6 +21,9 @@ export function useDispatcherSync(): void {
   const state = useDispatcherState();
   const loadedId = useRef<string | null>(null);
   const loadAttempt = useDispatcherStore((s) => s.loadAttempt);
+
+  // The debug view's switch (#3188), read once; Settings > Experimental keeps it current.
+  useEffect(() => { void loadDispatcherDebug(); }, []);
 
   useEffect(() => {
     const store = useDispatcherStore.getState();
