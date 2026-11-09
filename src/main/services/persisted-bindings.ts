@@ -59,6 +59,13 @@ export interface PersistedBinding {
   projectName?: string;
   instructions?: Record<string, string>;
   disabledTools?: string[];
+  /**
+   * `disabledTools` is what the source starts a connection it makes with (a
+   * helper or Dispatcher link, #3214), not a list someone saved: a saved
+   * direction wins, and the list is kept only once the one-time pass for
+   * older connections has run.
+   */
+  startingTools?: true;
 }
 
 /** Something that persists bindings and can list them at startup. */
@@ -407,7 +414,7 @@ export function applyPersistedBinding(binding: PersistedBinding, options: { rela
   }
   if (binding.disabledTools && binding.disabledTools.length > 0) {
     // The connection store's list wins; one it doesn't have yet moves into it (D129).
-    bindingManager.restoreDisabledTools(binding.agentId, binding.targetId, binding.disabledTools);
+    bindingManager.restoreDisabledTools(binding.agentId, binding.targetId, binding.disabledTools, { starting: binding.startingTools === true });
   }
   return 'created';
 }

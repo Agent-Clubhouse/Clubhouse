@@ -113,6 +113,25 @@ export function localToolsFromAllow(allow: readonly string[]): { disabledTools: 
  */
 export const NEW_CONNECTION_DISABLED_TOOLS: readonly string[] = ['clear_agent', 'compact_agent'];
 
+/**
+ * What each direction of a connection Clubhouse makes itself starts with
+ * (#3214): no more than one the user draws. An orchestrator may clear or
+ * compact its own helper; a helper can't do that to its orchestrator, and
+ * neither the Dispatcher nor an agent connected to it can to the other. Wake
+ * stays off on all of them (#3215); the Dispatcher's own wake doesn't use it.
+ */
+export const AUTOMATIC_CONNECTION_DISABLED_TOOLS: {
+  readonly parentToHelper: readonly string[];
+  readonly helperToParent: readonly string[];
+  readonly dispatcher: readonly string[];
+  readonly orchestratorLink: readonly string[];
+} = {
+  parentToHelper: [],
+  helperToParent: NEW_CONNECTION_DISABLED_TOOLS,
+  dispatcher: NEW_CONNECTION_DISABLED_TOOLS,
+  orchestratorLink: NEW_CONNECTION_DISABLED_TOOLS,
+};
+
 /** The key one direction is stored under. */
 export function directionKey(from: AgentAddress, to: AgentAddress): string {
   return `${from.machineId ?? ''}/${from.agentId}>${to.machineId ?? ''}/${to.agentId}`;

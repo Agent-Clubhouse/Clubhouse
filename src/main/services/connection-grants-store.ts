@@ -4,8 +4,8 @@
  * `connection-grants.json` in the app's data folder (not a project folder an
  * agent can write), `{ version: 1, directions: ConnectionDirection[] }`.
  * One entry per direction that has anything to say: a direction with no
- * entry keeps what its source gave it, which is how helper and Dispatcher
- * wires keep working unchanged.
+ * entry keeps what its source gave it: a helper or Dispatcher link's starting
+ * list (#3214), until it's saved here.
  *
  * The API, for the canvas, the Connections card, and agents across machines
  * (#3056 Stage 7, where the receiving machine checks a call):
@@ -14,6 +14,7 @@
  * - localConnectionWakeOn(fromId, toId): whether Wake it is on, on this computer (#3215);
  * - setConnectionTools(from, to, disabledTools, enabledTools?): replace one direction's lists;
  * - setConnectionDirections(changes, guard): the Dispatcher's lists for several directions, checked under the lock;
+ * - fillConnectionTools(from, to, disabledTools): the list a connection Clubhouse made starts with, where none is saved (#3214);
  * - removeConnectionDirection(from, to): drop one direction's entry;
  * - setConnectionLink(from, to, on): the user's own link for one direction;
  * - listConnectionDirections(agentId): every entry touching an agent;
@@ -194,6 +195,21 @@ export async function setConnectionDirections(
       }
     }
   }
+  return written;
+}
+
+/**
+ * Save the list a direction starts with, only where it has no entry yet
+ * (decided under the store's lock): a connection Clubhouse made (#3214), so a
+ * choice saved meanwhile stands. Returns whether it was written.
+ */
+export async function fillConnectionTools(from: AgentAddress, to: AgentAddress, disabledTools: readonly string[]): Promise<boolean> {
+  let written = false;
+  await updateDirection(from, to, (current) => {
+    if (current) return UNCHANGED;
+    written = true;
+    return { from, to, disabledTools: [...new Set(disabledTools)], updatedAt: new Date().toISOString() };
+  });
   return written;
 }
 

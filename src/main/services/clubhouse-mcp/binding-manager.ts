@@ -18,12 +18,12 @@ class BindingManager {
    * connection store, registered by main. Unset in tests that don't need it.
    */
   private toolsResolver: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => string[] | undefined) | null = null;
-  private toolsRestorer: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[]) => void) | null = null;
+  private toolsRestorer: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: { starting: boolean }) => void) | null = null;
 
   /** Register the connection store: a new binding takes its list from it, and a restored list migrates into it. */
   setConnectionToolsSource(
     resolve: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => string[] | undefined) | null,
-    restore: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[]) => void) | null,
+    restore: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: { starting: boolean }) => void) | null,
   ): void {
     this.toolsResolver = resolve;
     this.toolsRestorer = restore;
@@ -32,12 +32,14 @@ class BindingManager {
   /**
    * A source restored a binding with its own disabled tools (a canvas wire's,
    * from before the connection store): the store's list wins, and a list the
-   * store doesn't have yet moves into it. Without a registered store, set as is.
+   * store doesn't have yet moves into it. `starting`: the list a helper or
+   * Dispatcher link starts with (#3214), not a saved one. Without a registered
+   * store, set as is.
    */
-  restoreDisabledTools(agentId: string, targetId: string, legacy: string[]): void {
+  restoreDisabledTools(agentId: string, targetId: string, legacy: string[], options: { starting?: boolean } = {}): void {
     const binding = this.bindings.get(agentId)?.find((b) => b.targetId === targetId);
     if (!binding) return;
-    if (this.toolsRestorer) this.toolsRestorer(agentId, targetId, binding.targetKind, legacy);
+    if (this.toolsRestorer) this.toolsRestorer(agentId, targetId, binding.targetKind, legacy, { starting: options.starting === true });
     else this.setDisabledTools(agentId, targetId, legacy);
   }
 

@@ -38,7 +38,9 @@ import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from '.
 import { listConnectionSources, removeConnectionSource } from '../services/connection-sources';
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
 import { migrateDispatcherLinkTools } from '../services/dispatcher-controls';
-import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, setLocalWake, setToolsAcrossMachines, startConnectionGrants } from '../services/connection-grants';
+import {
+  applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
+} from '../services/connection-grants';
 import { listConnectionDirections } from '../services/connection-grants-store';
 import { startAgentCalls } from '../services/annex-agent-calls';
 import * as annexClient from '../services/annex-client';
@@ -418,6 +420,13 @@ export function restorePersistedBindings(): Promise<void> {
     await migrateDispatcherLinkTools().catch((err) => {
       // telemetry-exempt: logged; it runs again after the next rebuild until it's done
       appLog('core:mcp', 'warn', 'Could not give older Dispatcher links the new connection defaults', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+    // And helper, Dispatcher and orchestrator links from before #3214 keep the tools they now start with.
+    await migrateAutomaticConnectionTools([helperWireBindingSource.id, dispatcherWireBindingSource.id, orchestratorConnectionSource.id]).catch((err) => {
+      // telemetry-exempt: logged; it runs again after the next rebuild until it's done
+      appLog('core:mcp', 'warn', 'Could not save the starting tools of older helper and Dispatcher links', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
     });

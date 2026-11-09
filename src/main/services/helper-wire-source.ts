@@ -21,6 +21,7 @@ import { listDurable, onAgentConfigChanged, projectKey } from './agent-config';
 import { bindingSignature, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
+import { AUTOMATIC_CONNECTION_DISABLED_TOOLS } from '../../shared/connection-grants';
 import { appLog } from './log-service';
 
 export const HELPER_WIRE_SOURCE_ID = 'helper-wires';
@@ -28,7 +29,9 @@ export const HELPER_WIRE_SOURCE_ID = 'helper-wires';
 /**
  * Both directions of one parent ↔ helper pair. Each binding is labelled with
  * its target's project, as a canvas wire is. Empty when either is disposed: a
- * disposed helper keeps its link for history, but has no wire.
+ * disposed helper keeps its link for history, but has no wire. The parent may
+ * clear or compact its helper; the helper starts without that over its parent
+ * (#3214).
  */
 function pairBindings(
   parent: DurableAgentConfig,
@@ -45,6 +48,7 @@ function pairBindings(
     {
       agentId: helper.id, targetId: parent.id, targetKind: 'agent', label: parent.name, agentName: helper.name, targetName: parent.name,
       ...(parentProjectName ? { projectName: parentProjectName } : {}),
+      disabledTools: [...AUTOMATIC_CONNECTION_DISABLED_TOOLS.helperToParent], startingTools: true,
     },
   ];
 }

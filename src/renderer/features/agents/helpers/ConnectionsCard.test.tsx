@@ -203,6 +203,27 @@ describe('Connections card (#2232)', () => {
     expect(within(outgoing).queryByRole('switch', { name: /Wake it/ })).not.toBeInTheDocument();
   });
 
+  it('shows clear and compact off both ways on a fresh connection with the Dispatcher (#3214)', async () => {
+    // As main binds it: each direction with its starting list, nothing saved yet.
+    const starting = { disabledTools: ['clear_agent', 'compact_agent'] };
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'disp', ['epic-lead', 'Dispatcher'], 'agent', starting), wire('disp', 'lead', ['Dispatcher', 'epic-lead'], 'agent', starting)] });
+    useAgentStore.setState({ agents: { lead, disp: { id: 'disp', projectId: '__dispatcher__', name: 'Dispatcher', kind: 'durable', status: 'running', color: 'teal' } } } as never);
+    const auto = [{ kind: 'dispatcher_auto' as const, sourceId: 'dispatcher-wires' }];
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'lead', targetId: 'disp', bound: true, sources: auto }, { agentId: 'disp', targetId: 'lead', bound: true, sources: auto }],
+      unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('connection-sources'));
+    for (const [id, from, to] of [['connection-direction-lead-disp', 'epic-lead', 'Dispatcher'], ['connection-direction-disp-lead', 'Dispatcher', 'epic-lead']]) {
+      const direction = await screen.findByTestId(id);
+      expect(within(direction).getByRole('switch', { name: `Clear its context (${from} to ${to})` })).toHaveAttribute('aria-checked', 'false');
+      expect(within(direction).getByRole('switch', { name: `Compact its context (${from} to ${to})` })).toHaveAttribute('aria-checked', 'false');
+      expect(within(direction).getByRole('switch', { name: `Send messages (${from} to ${to})` })).toHaveAttribute('aria-checked', 'true');
+    }
+  });
+
   it('has no Wake it switch on a helper\'s link with its orchestrator, where it can\'t take effect (#3215)', async () => {
     useMcpBindingStore.setState({ bindings: [wire('lead', 'h1', ['epic-lead', 'impl-ipc']), wire('h1', 'lead', ['impl-ipc', 'epic-lead'])] });
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({

@@ -15,14 +15,17 @@ import { NEW_CONNECTION_DISABLED_TOOLS, WAKE_TOOL, localDirectionTools } from '.
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
-  deniedConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
-  listConnectionDirections, setConnectionLink, setConnectionTools,
+  connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
+  listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
 import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
-import { clearBindingRemovedByUser, onBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
+import {
+  clearBindingRemovedByUser, collectSourcesByPair, onBindingRemovedByUser, persistedPairKey, registerPersistedBindingSource, rebuildPersistedBindings,
+  type PersistedBinding, type PersistedBindingSource,
+} from './persisted-bindings';
 import { removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexIdentity from './annex-identity';
@@ -53,8 +56,13 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Restore: the store wins; a list it doesn't have moves in. */
-function restoreTools(agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[]): void {
+/**
+ * Restore: the store wins; a list it doesn't have moves in. `starting`: the
+ * list a connection Clubhouse made starts with (#3214), kept once the one-time
+ * pass has run (it decides for the connections made before it), and never
+ * over a choice saved meanwhile.
+ */
+function restoreTools(agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: { starting?: boolean } = {}): void {
   if (targetKind !== 'agent') {
     bindingManager.setDisabledTools(agentId, targetId, legacy);
     return;
@@ -65,6 +73,14 @@ function restoreTools(agentId: string, targetId: string, targetKind: BindingTarg
     return;
   }
   bindingManager.setDisabledTools(agentId, targetId, legacy);
+  if (options.starting) {
+    if (!connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION)) return;
+    void fillConnectionTools(local(agentId), connectionEnd(targetId), legacy).catch((err) => {
+      // telemetry-exempt: logged; the live binding already has the list, and the next restore tries again
+      appLog('core:mcp', 'warn', 'Could not save the tools a new connection starts with', { meta: { agentId, targetId, error: errorText(err) } });
+    });
+    return;
+  }
   void setConnectionTools(local(agentId), connectionEnd(targetId), legacy).then(() => {
     recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools: legacy, migrated: true });
   }, (err) => {
@@ -149,6 +165,48 @@ export async function forgetDispatcherDirection(fromAgentId: string, toAgentId: 
     return;
   }
   await setConnectionTools(local(fromAgentId), local(toAgentId), entry.disabledTools, (entry.enabledTools ?? []).filter((t) => t !== WAKE_TOOL));
+}
+
+/** The done marker of the one-time pass below, in connection-grants.json. */
+export const AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION = 'automatic-connection-defaults-3214';
+
+let automaticDeferralLogged = false;
+
+/**
+ * Once, after a rebuild: connections Clubhouse made before #3214 (helper and
+ * Dispatcher links, an orchestrator's connections; `sourceIds`) had every
+ * tool on. Each direction one of them lists, with nothing saved for it, keeps
+ * the list it has live: its source's starting list, or none when a canvas wire
+ * bound the pair first. A direction with saved tools (the user's, a canvas
+ * wire's, a Make two-way link) is never touched, and one with everything on
+ * gets no entry. Waits while a source can't be read: it may be the one that
+ * binds the pair. Until this has run, a new connection's list is live only;
+ * from then on it's kept (restoreTools).
+ */
+export async function migrateAutomaticConnectionTools(sourceIds: readonly string[]): Promise<'done' | 'already' | 'deferred'> {
+  if (connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION)) return 'already';
+  const { bySource, failed } = await collectSourcesByPair();
+  if (failed.length > 0) {
+    if (!automaticDeferralLogged) {
+      automaticDeferralLogged = true;
+      appLog('core:mcp', 'info', 'Connection defaults for helper and Dispatcher links wait: a connection source could not be read', { meta: { failed } });
+    }
+    return 'deferred';
+  }
+  const listed = (agentId: string, targetId: string) => sourceIds.some((id) => bySource.get(id)?.has(persistedPairKey(agentId, targetId)));
+  const now = new Date().toISOString();
+  const directions: ConnectionDirection[] = [];
+  for (const b of bindingManager.getAllBindings()) {
+    if (b.targetKind !== 'agent' || !b.disabledTools?.length || connectionEnd(b.targetId).machineId) continue;
+    if (!listed(b.agentId, b.targetId) || getConnectionDirection(local(b.agentId), local(b.targetId))) continue;
+    directions.push({ from: local(b.agentId), to: local(b.targetId), disabledTools: [...b.disabledTools], updatedAt: now });
+  }
+  const written = await runConnectionMigration(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION, directions);
+  if (written === null) return 'already';
+  appLog('core:mcp', 'info', 'Helper and Dispatcher links made before #3214 now keep the tools they start with', {
+    meta: { directions: written.length, pairs: written.map((d) => `${d.from.agentId}>${d.to.agentId}`) },
+  });
+  return 'done';
 }
 
 /** The user's links: one binding per direction with a link. */

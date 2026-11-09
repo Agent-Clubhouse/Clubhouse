@@ -161,10 +161,24 @@ afterEach(() => {
 describe('dispatcherWiresForProject', () => {
   it('wires an orchestrator with the switch on both ways, named Dispatcher at its end', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!, 'Wardfall');
+    const starting = { disabledTools: ['clear_agent', 'compact_agent'], startingTools: true };
     expect(out).toEqual([
-      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName: 'Wardfall' },
-      { agentId: 'durable_lead', targetId: DISPATCHER, targetKind: 'agent', label: 'Dispatcher', agentName: 'lead', targetName: 'Dispatcher', projectName: 'Wardfall' },
+      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName: 'Wardfall', ...starting },
+      { agentId: 'durable_lead', targetId: DISPATCHER, targetKind: 'agent', label: 'Dispatcher', agentName: 'lead', targetName: 'Dispatcher', projectName: 'Wardfall', ...starting },
     ]);
+  });
+
+  it('starts both directions without clear or compact, and with wake off (#3214)', async () => {
+    const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!);
+    expect(out).toHaveLength(2);
+    for (const b of out) {
+      expect(b.disabledTools).toEqual(['clear_agent', 'compact_agent']);
+      expect(b.startingTools).toBe(true);
+      // Wake is off by having no entry turning it on, never by a list here.
+      expect(b.disabledTools).not.toContain('wake_agent');
+    }
+    // Each direction has its own copy.
+    expect(out[0].disabledTools).not.toBe(out[1].disabledTools);
   });
 
   it('depends only on the resolved switch, not on orchestrate (#2578)', async () => {

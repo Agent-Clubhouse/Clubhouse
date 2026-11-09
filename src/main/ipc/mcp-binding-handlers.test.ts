@@ -50,6 +50,7 @@ vi.mock('../services/connection-grants', async () => {
     applyConnectionTools: vi.fn(async (agentId: string, targetId: string, tools: string[]) => { bindingManager.setDisabledTools(agentId, targetId, tools); }),
     startConnectionGrants: vi.fn(),
     makeTwoWay: vi.fn(async () => {}),
+    migrateAutomaticConnectionTools: vi.fn(async () => 'done'),
   };
 });
 vi.mock('../services/connection-grants-store', () => ({ listConnectionDirections: vi.fn(() => []) }));
@@ -131,6 +132,7 @@ import { orchestratorConnectionSource, watchOrchestratorConnections } from '../s
 import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispatcher-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
+import { migrateAutomaticConnectionTools } from '../services/connection-grants';
 import {
   registerMcpBindingHandlers,
   startMcpBridge,
@@ -598,6 +600,11 @@ describe('restorePersistedBindings (#1544)', () => {
       dispatcherConnectionSource,
     ]);
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
+  });
+
+  it('after the rebuild, gives older helper, Dispatcher and orchestrator links their starting tools once (#3214)', async () => {
+    await restorePersistedBindings();
+    expect(migrateAutomaticConnectionTools).toHaveBeenCalledWith(['helper-wires', 'dispatcher-wires', 'orchestrator-connections']);
   });
 
   it('registers the connection tools with the other tool templates (#2230)', () => {
