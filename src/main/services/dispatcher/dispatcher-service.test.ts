@@ -98,6 +98,17 @@ vi.mock('../agent-config', () => ({
     }
     notify(dir);
   }),
+  saveAgentIcon: vi.fn(async (dir: string, id: string) => {
+    const agent = h.agents.get(dir)?.find((a) => a.id === id);
+    if (agent) agent.icon = `${id}.png`;
+    notify(dir);
+    return `${id}.png`;
+  }),
+  removeAgentIcon: vi.fn(async (dir: string, id: string) => {
+    const agent = h.agents.get(dir)?.find((a) => a.id === id);
+    if (agent) delete agent.icon;
+    notify(dir);
+  }),
   onAgentConfigChanged: (l: (p: string) => void) => { h.configListeners.add(l); return () => { h.configListeners.delete(l); }; },
 }));
 
@@ -116,6 +127,7 @@ import { getSettings, updateSettings } from './dispatcher-settings';
 import { _resetDispatcherBehaviorForTesting, getDispatcherBehaviorPlan } from './dispatcher-behavior';
 import { agentRegistry } from '../agent-registry';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
+import { DEFAULT_DISPATCHER_PERSONALITY, PERSONALITY_PRESET_TEXT, personalityInstructions } from '../../../shared/dispatcher-personality';
 
 const dispatcherDir = () => path.join(h.baseDir, 'dispatcher');
 const chatDir = () => path.join(h.baseDir, 'dispatcher-chat');
@@ -713,5 +725,125 @@ describe('Behavior (#3045)', () => {
     await svc.setDispatcherEnabled(true);
     await expect(svc.setDispatcherBehavior('extreme' as never)).rejects.toThrow(/Unknown Behavior/);
     expect(getSettings().behavior).toBeUndefined();
+  });
+});
+
+describe('personality and first-run setup (#3047)', () => {
+  const chatFile = () => fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf-8');
+  const workFile = () => fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8');
+
+  it('a new Dispatcher waits for setup, with the default name, Standard and Concise in its chat\'s instructions', async () => {
+    const state = await svc.setDispatcherEnabled(true);
+    expect(state.setup).toEqual({ status: 'pending', upgrade: false });
+    expect(state.personality).toEqual(DEFAULT_DISPATCHER_PERSONALITY);
+    expect(state.behavior.level).toBe('standard');
+    expect(chatFile()).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
+    expect(chatFile()).toContain(personalityInstructions('Dispatcher', DEFAULT_DISPATCHER_PERSONALITY));
+    // The personality is the chat's: the agent that does the work isn't told it.
+    expect(workFile()).not.toContain(PERSONALITY_PRESET_TEXT.concise);
+  });
+
+  it('keeps Clubhouse\'s chat instructions whole, whatever their line ends (a Windows checkout has CRLF)', () => {
+    for (const text of ['# Dispatcher\r\n\r\nHello.\r\n', '# Dispatcher\n\nHello.\n', '# Dispatcher\n\nHello.']) {
+      const joined = svc.appendSection(text, '## Section');
+      expect(joined.startsWith(text)).toBe(true);
+      expect(joined.endsWith('\n\n## Section\n')).toBe(true);
+    }
+  });
+
+  it('a new install saves no settings for setup until the user acts', async () => {
+    await svc.setDispatcherEnabled(true);
+    expect(getSettings().setup).toBeUndefined();
+    expect(getSettings().personality).toBeUndefined();
+  });
+
+  it('an existing Dispatcher is an upgrade, and stays one across restarts', async () => {
+    fs.mkdirSync(dispatcherDir(), { recursive: true });
+    h.agents.set(dispatcherDir(), [{ id: 'durable_old', name: 'Rosie', color: 'rose', createdAt: 'then', orchestrator: 'codex-cli' }]);
+    expect((await svc.setDispatcherEnabled(true)).setup).toEqual({ status: 'pending', upgrade: true });
+    svc._resetDispatcherForTesting();
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState().setup).toEqual({ status: 'pending', upgrade: true });
+    // Its own name reaches its chat's instructions.
+    expect(fs.readFileSync(path.join(chatDir(), 'AGENTS.md'), 'utf-8')).toContain('Your name is Rosie.');
+  });
+
+  it('a Dispatcher turned on after a restart of a new install is still not an upgrade', async () => {
+    await svc.setDispatcherEnabled(true);
+    svc._resetDispatcherForTesting();
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState().setup).toEqual({ status: 'pending', upgrade: false });
+  });
+
+  it('a personality change rewrites the chat\'s instructions as written, and nothing starts', async () => {
+    await svc.setDispatcherEnabled(true);
+    const text = 'Talk like a ship\'s captain.\nKeep it short.';
+    const state = await svc.setDispatcherPersonality({ preset: 'custom', text });
+    expect(state.personality).toEqual({ preset: 'custom', text });
+    expect(chatFile()).toContain(text);
+    expect(workFile()).not.toContain(text);
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('a rename reaches the chat\'s instructions', async () => {
+    await svc.setDispatcherEnabled(true);
+    await agentConfig.updateDurable(dispatcherDir(), 'durable_1', { name: 'Rosie' });
+    await settle();
+    expect(chatFile()).toContain('Your name is Rosie.');
+  });
+
+  it('Set up later keeps the default name, Standard and Concise, and the chat offers setup again', async () => {
+    await svc.setDispatcherEnabled(true);
+    const state = await svc.setDispatcherSetupStatus('later');
+    expect(state.setup).toEqual({ status: 'later', upgrade: false });
+    expect(state.config?.name).toBe('Dispatcher');
+    expect(state.behavior.level).toBe('standard');
+    expect(state.personality).toEqual(DEFAULT_DISPATCHER_PERSONALITY);
+    expect(getSettings().behavior).toBeUndefined();
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('finishing setup saves name, look, provider, Behavior and personality on both agents, and starts nothing', async () => {
+    await svc.setDispatcherEnabled(true);
+    const state = await svc.completeDispatcherSetup({
+      name: 'Rosie',
+      color: 'rose',
+      image: 'data:image/png;base64,AAAA',
+      provider: 'codex-cli',
+      behavior: 'thorough',
+      personality: { preset: 'friendly', text: PERSONALITY_PRESET_TEXT.friendly },
+    });
+    await settle();
+    expect(state.setup.status).toBe('done');
+    expect(state.personality.preset).toBe('friendly');
+    expect(svc.getDispatcherState().behavior).toMatchObject({ level: 'thorough', provider: 'codex-cli' });
+    for (const dir of [dispatcherDir(), chatDir()]) {
+      expect(h.agents.get(dir)?.[0]).toMatchObject({ name: 'Rosie', color: 'rose', icon: 'durable_1.png', orchestrator: 'codex-cli' });
+    }
+    // Behavior gives each agent its model on the new provider.
+    expect(h.agents.get(dispatcherDir())?.[0]).toMatchObject({ model: 'sol', effort: 'high' });
+    expect(h.agents.get(chatDir())?.[0]).toMatchObject({ model: 'terra', effort: 'medium' });
+    const chatAgents = fs.readFileSync(path.join(chatDir(), 'AGENTS.md'), 'utf-8');
+    expect(chatAgents).toContain('Your name is Rosie.');
+    expect(chatAgents).toContain(PERSONALITY_PRESET_TEXT.friendly);
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('finishing setup can remove an image, and refuses a provider Clubhouse doesn\'t know', async () => {
+    await svc.setDispatcherEnabled(true);
+    const base = { name: 'Dispatcher', color: 'indigo', provider: 'claude-code', behavior: 'standard' as const, personality: DEFAULT_DISPATCHER_PERSONALITY };
+    await svc.completeDispatcherSetup({ ...base, image: 'data:image/png;base64,AAAA' });
+    await svc.completeDispatcherSetup({ ...base, image: null });
+    await settle();
+    expect(h.agents.get(dispatcherDir())?.[0].icon).toBeUndefined();
+    expect(h.agents.get(chatDir())?.[0].icon).toBeUndefined();
+    await expect(svc.completeDispatcherSetup({ ...base, provider: 'nope-cli' })).rejects.toThrow('nope-cli');
+  });
+
+  it('refuses to finish setup while it is off', async () => {
+    await svc.setDispatcherEnabled(false);
+    await expect(svc.completeDispatcherSetup({
+      name: 'Rosie', color: 'rose', provider: 'claude-code', behavior: 'standard', personality: DEFAULT_DISPATCHER_PERSONALITY,
+    })).rejects.toThrow('Turn on the Dispatcher first');
   });
 });

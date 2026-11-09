@@ -21,6 +21,7 @@ export const CHAT_SHARDS = {
     'chat-rich/media-cards.spec.ts',
     'chat-rich/media-images.spec.ts',
     'chat-rich/providers.spec.ts',
+    'dispatcher-setup.spec.ts',
     'managed-agents.spec.ts',
   ],
   3: [
