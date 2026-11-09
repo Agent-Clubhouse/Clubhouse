@@ -8,7 +8,7 @@ import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import { isDispatcherAgent } from '../dispatcher-gate';
 import { agentRegistry, getAgentCwd } from '../../agent-registry';
-import { AppearanceError, updateAgentAppearance, updateProjectAppearance, type AppearanceActor } from '../../appearance-service';
+import { AppearanceError, renameAgent, updateAgentAppearance, updateProjectAppearance, type AppearanceActor } from '../../appearance-service';
 import { appLog } from '../../log-service';
 import { McpArgError, optionalString } from './validation';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
@@ -54,7 +54,7 @@ const IMAGE_DESCRIPTION =
 const EMOJI_DESCRIPTION = 'A single emoji. Replaces the image. Empty removes the emoji.';
 
 const PROJECT_FIELDS = ['project', 'display_name', 'color', 'emoji', 'image_path'] as const;
-const AGENT_FIELDS = ['agent_id', 'color', 'emoji', 'image_path'] as const;
+const AGENT_FIELDS = ['agent_id', 'name', 'color', 'emoji', 'image_path'] as const;
 
 export function registerAppearanceTools(): void {
   registerGlobalTool(
@@ -91,12 +91,13 @@ export function registerAppearanceTools(): void {
     'update_agent',
     {
       description:
-        'Change how an agent looks: color, emoji or image, at any time. Set only what should change. It updates in ' +
-        'the app at once. You can change yourself; the Dispatcher can change itself and any other agent. Agents can\'t be renamed here.',
+        'Change an agent\'s color, emoji or image, at any time. Set only what should change. It updates in the app at once. ' +
+        'You can change yourself; the Dispatcher can change itself and any other agent. Only the Dispatcher can rename, and only another agent.',
       inputSchema: {
         type: 'object',
         properties: {
           agent_id: { type: 'string', description: 'The agent\'s id. Defaults to you.' },
+          name: { type: 'string', description: 'A new name for another agent. Dispatcher only. Its worktree and branch keep their names.' },
           color: { type: 'string', enum: [...COLOR_IDS], description: 'The agent color.' },
           emoji: { type: 'string', description: EMOJI_DESCRIPTION },
           image_path: { type: 'string', description: IMAGE_DESCRIPTION },
@@ -105,11 +106,17 @@ export function registerAppearanceTools(): void {
     },
     (agentId, args) => guarded('update_agent', agentId, async () => {
       assertOnly(args, AGENT_FIELDS);
-      const agent = await updateAgentAppearance(actorFor(agentId), optionalString(args, 'agent_id'), {
+      const actor = actorFor(agentId);
+      const target = optionalString(args, 'agent_id');
+      const name = optionalString(args, 'name');
+      const updates = {
         color: optionalString(args, 'color'),
         emoji: optionalString(args, 'emoji'),
         imagePath: optionalString(args, 'image_path'),
-      });
+      };
+      const renamed = name !== undefined ? await renameAgent(actor, target, name) : undefined;
+      const looks = Object.values(updates).some((value) => value !== undefined);
+      const agent = renamed && !looks ? renamed : await updateAgentAppearance(actor, target, updates);
       return { agent };
     }),
     { grant: { actions: ['agent.display'], target: 'agent_arg', from: { args: ['agent_id'], missing: 'caller' } } },

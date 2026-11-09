@@ -57,8 +57,8 @@ export function registerDispatcherChatTools(): void {
       description:
         'Get something done for the user: wake, message, create or connect agents, make or change Actions, ' +
         'or change settings. Describe what they want, with the agents, projects and details they named and ' +
-        'what done looks like. The outcome comes back here as a message from Clubhouse. Tell the user in a ' +
-        'few words that it\'s under way.',
+        'what done looks like. The outcome comes back here as an update. Tell the user in a few words, in the ' +
+        'first person, what you\'re doing, such as "I\'ll set that up."',
       inputSchema: {
         type: 'object',
         properties: {

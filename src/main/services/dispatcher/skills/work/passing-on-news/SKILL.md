@@ -23,7 +23,7 @@ Not worth telling: an acknowledgement, "starting now", tool chatter, or somethin
 ## 3. Write it
 
 - **An agent's news:** set `from` to the agent's name or id from `list_agents`. Write `message` as that agent would say it, in the first person: "Safari checkout is fixed in #412. All 41 tests pass now." Clubhouse rewrites it from what the agent sent when it can, and uses your version when it can't, so yours must stand on its own.
-- **Your own words:** leave `from` out. "That unblocks the release. release-lead is asleep; want me to wake it to tag 1.0?"
+- **Your own words:** leave `from` out. Say what you did and where the user can see it, in the first person: "I've scheduled an action. You can manage it in Settings > Actions." Never say how: not "I asked Clubhouse to", not "Clubhouse opened".
 - One or two plain sentences. Keep outcomes, numbers, names, PR and issue numbers, and anything the user must decide. Leave out tool names, JSON, task ids, file paths that don't matter, and instructions about how to reply.
 
 ## 4. Send it once

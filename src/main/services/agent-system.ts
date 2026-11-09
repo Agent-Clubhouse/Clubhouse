@@ -647,6 +647,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // after the Dispatcher was turned off while it prepared (#3110).
     assertLaunchesOpen();
     assertDispatcherCanStart(params);
+    // The Dispatcher acts through the Clubhouse MCP, never by driving the app's windows (#3185).
+    const desktopControlOff = isDispatcherPath(params.projectPath) ? provider.desktopControlOffArgs?.() ?? [] : [];
     const startChat = async (p: SpawnAgentParams): Promise<ChatStartResult> => {
       try {
         const result = await withErrorType('chat_start_failed', () => tryStartChatAgent({
@@ -668,6 +670,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           strictResume: p.strictResume,
           sessionId: p.sessionId,
           interactive: p.interactive,
+          ...(desktopControlOff.length > 0 && { extraArgs: desktopControlOff }),
         }, provider, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
         recordChatStart(chatStartMs, result, chatFacts, chatContext);
         return result;
@@ -952,6 +955,7 @@ async function spawnPtyAgent(
       agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
       // A quick agent someone follows (a phone start, an action below Auto) runs as a session it can ask in, not one-shot.
       interactive: params.kind === 'durable' || !!params.interactive,
+      ...(isDispatcherPath(params.projectPath) && { noDesktopControl: true }),
     })),
   ]));
 

@@ -40,6 +40,8 @@ export interface SpawnOpts {
   interactive?: boolean;
   /** The agent's context choice (#2660), already checked against this model. */
   contextWindow?: string;
+  /** Start without the CLI's own desktop and browser control (desktopControlOffArgs). The Dispatcher (#3185). */
+  noDesktopControl?: boolean;
 }
 
 export interface HeadlessOpts extends SpawnOpts {
@@ -487,4 +489,12 @@ export interface OrchestratorProvider {
    * passed this way and was left out.
    */
   buildMcpArgs?(servers: Record<string, McpServerDef>, onNotice?: (message: string) => void): string[];
+
+  /**
+   * Optional: CLI args that start a session without the CLI's own computer use
+   * and browser control, for an agent that must act through the Clubhouse MCP
+   * and never by driving the app's windows: the Dispatcher (#3185). Only a CLI
+   * that ships such control and can switch it off per session has it.
+   */
+  desktopControlOffArgs?(): string[];
 }

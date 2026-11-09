@@ -36,7 +36,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
 vi.mock('./dispatcher/dispatcher-paths', () => ({ getDispatcherPath: () => '/dispatcher' }));
 
 import * as agentConfig from './agent-config';
-import { AppearanceError, listAgentAppearances, listProjectAppearances, updateAgentAppearance, updateProjectAppearance, type AppearanceActor } from './appearance-service';
+import { AppearanceError, listAgentAppearances, listProjectAppearances, renameAgent, updateAgentAppearance, updateProjectAppearance, type AppearanceActor } from './appearance-service';
 import * as projectStore from './project-store';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -178,6 +178,42 @@ describe('updateAgentAppearance', () => {
     await updateAgentAppearance(CLI, 'a2', { color: 'rose' });
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/two', 'b1', { color: 'teal' });
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/one', 'a2', { color: 'rose' });
+  });
+
+  describe('renaming (#3185)', () => {
+    it('lets the Dispatcher rename another agent in any project, trimmed', async () => {
+      const result = await renameAgent(DISPATCHER, 'b1', '  Go-Orchestrator ');
+      expect(agentConfig.updateDurable).toHaveBeenCalledWith('/two', 'b1', { name: 'Go-Orchestrator' });
+      expect(result.id).toBe('b1');
+    });
+
+    it('refuses an ordinary agent, itself included, and the CLI', async () => {
+      expect(await refusal(renameAgent(SELF, 'a1', 'new'))).toBe('out_of_scope');
+      expect(await refusal(renameAgent(SELF, 'a2', 'new'))).toBe('out_of_scope');
+      expect(await refusal(renameAgent(CLI, 'a2', 'new'))).toBe('out_of_scope');
+      expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+    });
+
+    it('keeps the Dispatcher\'s own name, and needs a target', async () => {
+      expect(await refusal(renameAgent(DISPATCHER, 'dispatcher', 'Bob'))).toBe('out_of_scope');
+      expect(await refusal(renameAgent(DISPATCHER, undefined, 'Bob'))).toBe('out_of_scope');
+      expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+    });
+
+    it('refuses an empty or long name, and one another agent in the project has', async () => {
+      expect(await refusal(renameAgent(DISPATCHER, 'a1', '  '))).toBe('invalid_name');
+      expect(await refusal(renameAgent(DISPATCHER, 'a1', 'x'.repeat(257)))).toBe('invalid_name');
+      expect(await refusal(renameAgent(DISPATCHER, 'a1', 'A2'))).toBe('invalid_name');
+      expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+    });
+
+    it('allows a name only a disposed agent had, and writes nothing for the same name', async () => {
+      agents['/one'].push(agent('old', { name: 'free', disposedAt: '2026-01-02' } as Partial<DurableAgentConfig>));
+      await renameAgent(DISPATCHER, 'a1', 'a1');
+      expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+      await renameAgent(DISPATCHER, 'a1', 'free');
+      expect(agentConfig.updateDurable).toHaveBeenCalledWith('/one', 'a1', { name: 'free' });
+    });
   });
 
   describe('the Dispatcher', () => {
