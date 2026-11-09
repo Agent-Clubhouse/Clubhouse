@@ -37,7 +37,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from './validation';
 import { listConnectionSources, removeConnectionSource } from '../services/connection-sources';
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
-import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, setToolsAcrossMachines, startConnectionGrants } from '../services/connection-grants';
+import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, setLocalWake, setToolsAcrossMachines, startConnectionGrants } from '../services/connection-grants';
 import { listConnectionDirections } from '../services/connection-grants-store';
 import { startAgentCalls } from '../services/annex-agent-calls';
 import * as annexClient from '../services/annex-client';
@@ -244,6 +244,15 @@ export function registerMcpBindingHandlers(): void {
     void auditChanged('agent', 'agent.mcp_binding.link', fromId as string);
     await makeTwoWay(fromId as string, toId as string);
   }));
+
+  ipcMain.handle(IPC.MCP_BINDING.SET_LOCAL_WAKE, withValidatedArgs(
+    [stringArg({ maxLength: 200 }), stringArg({ maxLength: 200 }), booleanArg()],
+    async (event, fromId, toId, on) => {
+      assertCallerIsAppWindow(event);
+      void auditChanged('agent', 'agent.mcp_binding.disabled_tools', fromId as string);
+      await setLocalWake(fromId as string, toId as string, on as boolean);
+    },
+  ));
 
   // Connection sources (#2744): the user's own surface.
   ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_SOURCES, withValidatedArgs([stringArg({ maxLength: 200 })], (event, agentId) => {

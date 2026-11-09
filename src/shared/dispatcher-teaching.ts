@@ -105,7 +105,8 @@ function scopeOf(noun: Noun, target: GrantTarget): string | null {
     case 'agent':
       switch (target.kind) {
         case 'any': return 'any agent';
-        case 'connected': return target.onlyDispatcher ? null : 'agents connected to me';
+        // Wake it on a connection is the user's switch, said with the connection, not as a reach of its own.
+        case 'connected': return target.onlyDispatcher || target.wakeOn ? null : 'agents connected to me';
         case 'my_helpers': return 'my helpers';
         case 'project':
           if (target.project === 'any') return 'agents in any project';

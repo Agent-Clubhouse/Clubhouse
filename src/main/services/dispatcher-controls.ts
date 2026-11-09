@@ -49,6 +49,9 @@ import {
   releaseSourceBinding,
 } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { CONNECTION_SWITCHES, NEW_CONNECTION_DISABLED_TOOLS, localToolsFromAllow, type DirectionTools } from '../../shared/connection-grants';
+import { getConnectionDirection, setConnectionTools } from './connection-grants-store';
+import { forgetDispatcherDirection, readLocalDirectionTools } from './connection-grants';
 import { maxHelpersCeiling } from '../../shared/orchestration-policy';
 
 export type ControlRefusal =
@@ -63,7 +66,8 @@ export type ControlRefusal =
   | 'removed_by_user'
   | 'max_helpers_out_of_range'
   | 'link_limit'
-  | 'policy_refused';
+  | 'policy_refused'
+  | 'user_tools';
 
 export class DispatcherControlError extends Error {
   constructor(readonly code: ControlRefusal, message: string) {
@@ -205,16 +209,39 @@ export async function setOrchestratorHelpers(actorId: string, args: Record<strin
 // ── Links ────────────────────────────────────────────────────────────────
 
 const LINK_FIELDS = ['from', 'to', 'two_way'] as const;
+/** connect_orchestrators and set_connection_tools also take the tools to allow on each direction (#3215). */
+const TOOL_LINK_FIELDS = ['from', 'to', 'two_way', 'allow', 'allow_back'] as const;
 const LINK_NOTE = 'Links the user made and your own wires can\'t be changed here.';
+
+/** The tool names a direction's `allow` takes: the connection tools and wake (#3215). */
+export const CONNECTION_SWITCH_NAMES: readonly string[] = CONNECTION_SWITCHES.map((t) => t.tool);
+
+interface Pair { agentId: string; targetId: string }
 
 interface LinkRequest {
   from: string;
   to: string;
-  pairs: Array<{ agentId: string; targetId: string }>;
+  pairs: Pair[];
+  /** For each pair, in order: the tools to allow on it, when the call names them. */
+  allow: Array<string[] | undefined>;
 }
 
-function readLinkRequest(args: Record<string, unknown>): LinkRequest {
-  assertOnly(args, LINK_FIELDS, LINK_NOTE);
+function readAllow(args: Record<string, unknown>, key: string): string[] | undefined {
+  const value = args[key];
+  if (value === undefined) return undefined;
+  const names = `It takes tool names from: ${CONNECTION_SWITCH_NAMES.join(', ')}.`;
+  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
+    throw new DispatcherControlError('invalid_args', `${key} must be a list of tool names. ${names}`);
+  }
+  const unknown = value.filter((v) => !CONNECTION_SWITCH_NAMES.includes(v));
+  if (unknown.length > 0) {
+    throw new DispatcherControlError('invalid_args', `${key} has ${unknown.map(auditString).join(', ')}, which a connection doesn't carry. ${names} Sleep, provider changes and other control stay yours.`);
+  }
+  return [...new Set(value as string[])];
+}
+
+function readLinkRequest(args: Record<string, unknown>, fields: readonly string[] = LINK_FIELDS): LinkRequest {
+  assertOnly(args, fields, LINK_NOTE);
   const from = requireId(args, 'from');
   const to = requireId(args, 'to');
   if (from === to) throw new DispatcherControlError('invalid_args', 'from and to must be different agents.');
@@ -222,26 +249,69 @@ function readLinkRequest(args: Record<string, unknown>): LinkRequest {
   if (isDispatcherAgentId(from) || isDispatcherAgentId(to)) {
     throw new DispatcherControlError('dispatcher_wire', 'That is one of your own wires. Those follow the agent\'s Connect to Dispatcher setting, which is the user\'s.');
   }
-  return { from, to, pairs: [{ agentId: from, targetId: to }, ...(twoWay ? [{ agentId: to, targetId: from }] : [])] };
+  const allow = readAllow(args, 'allow');
+  const allowBack = readAllow(args, 'allow_back');
+  if (allowBack && !twoWay) throw new DispatcherControlError('invalid_args', 'allow_back is for the way back, so it needs two_way.');
+  return {
+    from, to,
+    pairs: [{ agentId: from, targetId: to }, ...(twoWay ? [{ agentId: to, targetId: from }] : [])],
+    // The way back takes allow_back, else the same tools as the way there.
+    allow: [allow, ...(twoWay ? [allowBack ?? allow] : [])],
+  };
 }
 
 function linkRow(tool: string, actorId: string, args: Record<string, unknown>): Pick<AuditRow, 'tool' | 'actorId' | 'targets' | 'requested'> {
+  const toolList = (key: string) => (Array.isArray(args[key]) ? { [key]: auditNames((args[key] as unknown[]).map(auditString)) } : {});
   return {
     tool,
     actorId,
     targets: [args.from, args.to].filter((v): v is string => typeof v === 'string').map(auditString),
-    requested: { fields: auditNames(Object.keys(args)), ...(typeof args.two_way === 'boolean' && { two_way: args.two_way }) },
+    requested: {
+      fields: auditNames(Object.keys(args)), ...(typeof args.two_way === 'boolean' && { two_way: args.two_way }),
+      ...toolList('allow'), ...toolList('allow_back'),
+    },
   };
 }
 
-const isBound = (pair: { agentId: string; targetId: string }) =>
+const isBound = (pair: Pair) =>
   bindingManager.getBindingsForAgent(pair.agentId).some((b) => b.targetId === pair.targetId);
 
 const pairLabel = (a: OrchestratorEntry, b: OrchestratorEntry) => `${a.agent.name} → ${b.agent.name}`;
 
+const local = (agentId: string) => ({ agentId });
+
+/**
+ * Whether the tools on a direction are the Dispatcher's to set (#3215): its
+ * own link, which nothing else binds (a canvas wire, the user's link), with
+ * no tools the user set. A direction with no tools saved yet counts as its own.
+ */
+function toolsAreOurs(pair: Pair, isOurs: boolean): boolean {
+  if (!isOurs) return false;
+  const entry = getConnectionDirection(local(pair.agentId), local(pair.targetId));
+  if (entry?.link || (entry && entry.setBy !== 'dispatcher')) return false;
+  return !isBound(pair) || listSoleOwnedPairs(DISPATCHER_CONNECTION_SOURCE_ID).some((p) => p.agentId === pair.agentId && p.targetId === pair.targetId);
+}
+
+/** One direction read back: what its sender may use, and whether the tools are still the Dispatcher's to change. */
+function directionReadback(pair: Pair, isOurs: boolean): { tools: DirectionTools; tools_yours: boolean } {
+  return { tools: readLocalDirectionTools(pair.agentId, pair.targetId), tools_yours: toolsAreOurs(pair, isOurs) };
+}
+
+/** Save the Dispatcher's tools on one direction: the ones it named, else what a new connection starts with. */
+async function writeDirectionTools(pair: Pair, allow: readonly string[] | undefined): Promise<void> {
+  const { disabledTools, enabledTools } = allow
+    ? localToolsFromAllow(allow)
+    : { disabledTools: [...NEW_CONNECTION_DISABLED_TOOLS], enabledTools: [] };
+  await setConnectionTools(local(pair.agentId), local(pair.targetId), disabledTools, enabledTools, { by: 'dispatcher' });
+}
+
+function userToolsRefusal(label: string): DispatcherControlError {
+  return new DispatcherControlError('user_tools', `The user set the tools on ${label}, or connects it another way too, so they stay theirs. Nothing changed. Ask the user to change them on the Connections card.`);
+}
+
 export async function connectOrchestrators(actorId: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   return audited(linkRow('connect_orchestrators', actorId, args), async () => {
-    const { from, to, pairs } = readLinkRequest(args);
+    const { from, to, pairs, allow } = readLinkRequest(args, TOOL_LINK_FIELDS);
     const census = await readAgentCensus();
     const ends = new Map([[from, requireOrchestrator(census, from)], [to, requireOrchestrator(census, to)]]);
     const stored = await readDispatcherConnections();
@@ -256,6 +326,21 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
       if (!isOurs(pair) && isBound(pair)) {
         throw new DispatcherControlError('already_linked', `${label} is already connected, and you didn't make it, so it stays the user's.`);
       }
+    }
+    // The tools on each direction (#3215): a new link starts like any new connection (no clear, compact or
+    // wake) unless the call names its tools. Tools the user saved are never changed: naming them is refused.
+    const writes: Array<{ pair: Pair; allow?: string[] }> = [];
+    for (const [i, pair] of pairs.entries()) {
+      const label = pairLabel(ends.get(pair.agentId)!, ends.get(pair.targetId)!);
+      const entry = getConnectionDirection(local(pair.agentId), local(pair.targetId));
+      const usersTools = !!entry && (entry.setBy !== 'dispatcher' || !!entry.link);
+      if (isOurs(pair) ? !toolsAreOurs(pair, true) : usersTools) {
+        if (allow[i]) throw userToolsRefusal(label);
+        continue;
+      }
+      // A link it made already keeps its tools unless the call names new ones; one without any saved gets the defaults.
+      if (isOurs(pair) && entry && !allow[i]) continue;
+      writes.push({ pair, allow: allow[i] });
     }
 
     const createdAt = new Date().toISOString();
@@ -274,6 +359,8 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
       if (err instanceof DispatcherLinkRefused) throw new DispatcherControlError(err.code, err.message);
       throw err;
     }
+    // Saved before binding, so the link has its tools from the moment it exists.
+    for (const w of writes) await writeDirectionTools(w.pair, w.allow);
 
     const outcomes = pairs.map((p) => claimSourceBinding(DISPATCHER_CONNECTION_SOURCE_ID, bindingFor(ends.get(p.agentId)!, ends.get(p.targetId)!)));
     // The user removed a pair between the check above and the claim: don't keep it.
@@ -285,12 +372,18 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
       await removeDispatcherConnections(added.filter((p) => !wasRemoved(p)));
       for (const p of added) releaseSourceBinding(DISPATCHER_CONNECTION_SOURCE_ID, p.agentId, p.targetId);
       await rebuildPersistedBindings();
+      for (const w of writes) await forgetDispatcherDirection(w.pair.agentId, w.pair.targetId);
       throw new DispatcherControlError('removed_by_user', 'The user removed this connection. It stays removed until the user draws it again.');
     }
     await rebuildPersistedBindings();
     return {
       code: outcomes.join(','),
-      result: { links: pairs.map((p, i) => ({ from: p.agentId, to: p.targetId, label: pairLabel(ends.get(p.agentId)!, ends.get(p.targetId)!), outcome: outcomes[i] })) },
+      result: {
+        links: pairs.map((p, i) => ({
+          from: p.agentId, to: p.targetId, label: pairLabel(ends.get(p.agentId)!, ends.get(p.targetId)!), outcome: outcomes[i],
+          ...directionReadback(p, true),
+        })),
+      },
     };
   });
 }
@@ -307,9 +400,43 @@ export async function disconnectOrchestrators(actorId: string, args: Record<stri
     // Only unbinds what this source owns: a wire the user also drew stays.
     const outcomes = pairs.map((p) => releaseSourceBinding(DISPATCHER_CONNECTION_SOURCE_ID, p.agentId, p.targetId));
     await rebuildPersistedBindings();
+    // The tools it set go with the link once nothing binds the pair, so a wire the user draws later starts fresh (#3215).
+    for (const p of pairs) await forgetDispatcherDirection(p.agentId, p.targetId);
     return {
       code: outcomes.join(','),
       result: { links: pairs.map((p, i) => ({ from: p.agentId, to: p.targetId, outcome: outcomes[i] })) },
+    };
+  });
+}
+
+/**
+ * Set the tools on links the Dispatcher made (#3215): each direction named
+ * gets exactly the tools in its `allow` (the connection tools and wake). A
+ * direction the user set tools on, or connects another way too, is refused,
+ * and nothing changes. Returns every direction read back.
+ */
+export async function setConnectionToolsForLink(actorId: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return audited(linkRow('set_connection_tools', actorId, args), async () => {
+    const { pairs, allow } = readLinkRequest(args, TOOL_LINK_FIELDS);
+    if (allow.some((a) => !a)) throw new DispatcherControlError('invalid_args', 'Set allow: the tools the link may use. An empty list turns them all off.');
+    const stored = await readDispatcherConnections();
+    const census = await readAgentCensus();
+    const nameOf = (id: string) => census.agents.get(id)?.agent.name ?? auditString(id);
+    // All checked first: a refusal for one direction changes neither.
+    for (const pair of pairs) {
+      const isOurs = stored.some((c) => c.agentId === pair.agentId && c.targetId === pair.targetId);
+      if (!isOurs) {
+        throw new DispatcherControlError('not_dispatcher_owned', `You didn't make the link from "${auditString(pair.agentId)}" to "${auditString(pair.targetId)}", so its tools can't be changed here. Nothing changed.`);
+      }
+      if (!toolsAreOurs(pair, true)) throw userToolsRefusal(`${nameOf(pair.agentId)} → ${nameOf(pair.targetId)}`);
+    }
+    const before = Object.fromEntries(pairs.map((p) => [`${auditString(p.agentId)}>${auditString(p.targetId)}`, readLocalDirectionTools(p.agentId, p.targetId).allowed.join(',')]));
+    for (const [i, pair] of pairs.entries()) await writeDirectionTools(pair, allow[i]);
+    const links = pairs.map((p) => ({ from: p.agentId, to: p.targetId, label: `${nameOf(p.agentId)} → ${nameOf(p.targetId)}`, ...directionReadback(p, true) }));
+    return {
+      before,
+      after: Object.fromEntries(links.map((l) => [`${auditString(l.from)}>${auditString(l.to)}`, l.tools.allowed.join(',')])),
+      result: { links },
     };
   });
 }
@@ -374,6 +501,8 @@ export async function listOrchestratorControls(actorId: string, args: Record<str
         ...(suspension && { reason: suspension.reason, ...(suspension.agentId && { reason_agent: suspension.agentId }) }),
         // The user drew this pair too: their wire stays whatever happens to this link.
         ...(isBound(c) && !owned.some((p) => p.agentId === c.agentId && p.targetId === c.targetId) && { also_user_wire: true }),
+        // What its sender may use now, and whether set_connection_tools can change it (#3215).
+        ...directionReadback(c, true),
         created_at: c.createdAt,
       };
     });

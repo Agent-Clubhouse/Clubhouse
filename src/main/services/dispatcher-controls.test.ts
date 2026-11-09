@@ -64,7 +64,8 @@ vi.mock('fs/promises', async (importOriginal) => {
     },
   };
 });
-vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
+// The connection store (#3215) lives in this test's folder too.
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base || os.tmpdir() } }));
 // The local telemetry record (#2920), in this test's folder: what list_orchestrator_controls reads back.
 const record = vi.hoisted(() => ({ salt: Buffer.alloc(32, 7), recorder: null as { flush(): Promise<void>; stop(): Promise<void> } | null }));
 vi.mock('../telemetry/local-control', async () => {
@@ -157,6 +158,7 @@ import {
   _resetDispatcherConnectionsForTesting,
 } from './dispatcher-connections';
 import { setOrchestratorHelpers as actualSetOrchestratorHelpers } from './dispatcher-controls';
+import { getConnectionDirection, removeConnectionDirections, setConnectionTools } from './connection-grants-store';
 import {
   clearBindingRemovedByUser,
   markBindingRemovedByUser,
@@ -337,6 +339,8 @@ beforeEach(async () => {
   registerDispatcherControlTools();
   agentRegistry.register('a', { projectPath: P1, orchestrator: 'claude-code', runtime: 'chat' });
   agentRegistry.register('dispatcher', { projectPath: state.base, orchestrator: 'claude-code', runtime: 'chat' });
+  // The connection store keeps its entries in memory between cases: start each with none.
+  for (const id of ['a', 'b', 'c']) await removeConnectionDirections(id);
   await restart();
 });
 
@@ -356,7 +360,7 @@ afterEach(async () => {
 });
 
 describe('callers', () => {
-  const TOOLS = ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls'];
+  const TOOLS = ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'set_connection_tools', 'list_orchestrator_controls'];
 
   it('lists the tools for the Dispatcher and nobody else', () => {
     expect(getScopedToolList('dispatcher').map((t) => t.name)).toEqual(expect.arrayContaining(TOOLS));
@@ -628,6 +632,124 @@ describe('disconnect_orchestrators', () => {
     const result = await call('disconnect_orchestrators', { from: 'a', to: 'b', all: true });
     expect(result.isError).toBe(true);
     expect(lastAudit()).toMatchObject({ code: 'unknown_field' });
+  });
+});
+
+describe('tools on its links (#3215)', () => {
+  const READ_AND_MESSAGE = ['get_status', 'read_output', 'check_connectivity', 'send_message', 'send_file'];
+  const ONLY = ['get_status', 'read_output', 'send_message', 'wake_agent'];
+  const links = async (args: Record<string, unknown>, tool = 'connect_orchestrators') => {
+    const result = await call(tool, args);
+    expect(result.isError, text(result)).toBeFalsy();
+    return JSON.parse(text(result)).links as Array<{ from: string; to: string; tools: { allowed: string[]; disabled: string[] }; tools_yours: boolean }>;
+  };
+  const entry = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
+
+  it('a new link starts with clear, compact and wake off, read back on each direction', async () => {
+    const made = await links({ from: 'a', to: 'b', two_way: true });
+    for (const link of made) {
+      expect(link.tools).toEqual({ allowed: READ_AND_MESSAGE, disabled: ['clear_agent', 'compact_agent', 'wake_agent'] });
+      expect(link.tools_yours).toBe(true);
+    }
+    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], setBy: 'dispatcher' });
+    expect(entry('a', 'b')?.enabledTools).toBeUndefined();
+  });
+
+  it('takes the tools to allow on each direction: allow there, allow_back for the way back', async () => {
+    const made = await links({ from: 'a', to: 'b', two_way: true, allow: ONLY, allow_back: ['send_message'] });
+    expect(made[0].tools).toEqual({ allowed: ONLY, disabled: ['check_connectivity', 'send_file', 'clear_agent', 'compact_agent'] });
+    expect(made[1].tools.allowed).toEqual(['send_message']);
+    expect(entry('a', 'b')).toMatchObject({ enabledTools: ['wake_agent'], setBy: 'dispatcher' });
+    // Without allow_back, the way back gets the same tools.
+    await call('disconnect_orchestrators', { from: 'a', to: 'b', two_way: true });
+    const same = await links({ from: 'a', to: 'b', two_way: true, allow: ONLY });
+    expect(same.map((l) => l.tools.allowed)).toEqual([ONLY, ONLY]);
+  });
+
+  it.each([
+    ['sleep, which no connection carries', { from: 'a', to: 'b', allow: ['send_message', 'sleep_agent'] }],
+    ['a list that is not names', { from: 'a', to: 'b', allow: ['send_message', 3] }],
+    ['allow_back without two_way', { from: 'a', to: 'b', allow_back: ['send_message'] }],
+  ])('refuses %s, connecting nothing', async (_name, args) => {
+    const result = await call('connect_orchestrators', args);
+    expect(result.isError).toBe(true);
+    expect(lastAudit()).toMatchObject({ outcome: 'refused', code: 'invalid_args' });
+    expect(isBound('a', 'b')).toBe(false);
+    expect(entry('a', 'b')).toBeUndefined();
+  });
+
+  it('keeps tools the user saved on a direction, and refuses to name new ones for it', async () => {
+    await setConnectionTools({ agentId: 'a' }, { agentId: 'b' }, ['send_file']);
+    const refused = await call('connect_orchestrators', { from: 'a', to: 'b', allow: ONLY });
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toContain('stay theirs');
+    expect(lastAudit()).toMatchObject({ outcome: 'refused', code: 'user_tools' });
+    expect(isBound('a', 'b')).toBe(false);
+    const [link] = await links({ from: 'a', to: 'b' });
+    expect(link.tools.disabled).toEqual(['send_file', 'wake_agent']);
+    expect(link.tools_yours).toBe(false);
+    expect(entry('a', 'b')?.setBy).toBeUndefined();
+  });
+
+  it('connecting a link it made again keeps its tools unless the call names new ones', async () => {
+    await links({ from: 'a', to: 'b', allow: ONLY });
+    expect((await links({ from: 'a', to: 'b' }))[0].tools.allowed).toEqual(ONLY);
+    expect((await links({ from: 'a', to: 'b', allow: ['get_status'] }))[0].tools.allowed).toEqual(['get_status']);
+  });
+
+  it('set_connection_tools changes its own link and reads it back', async () => {
+    await links({ from: 'a', to: 'b', two_way: true });
+    const set = await links({ from: 'a', to: 'b', two_way: true, allow: ONLY }, 'set_connection_tools');
+    expect(set.map((l) => [l.from, l.to, l.tools.allowed])).toEqual([['a', 'b', ONLY], ['b', 'a', ONLY]]);
+    expect(lastAudit()).toMatchObject({ tool: 'set_connection_tools', outcome: 'ok', requested: { allow: ONLY } });
+    expect(await linkRow('a', 'b')).toMatchObject({ tools: { allowed: ONLY }, tools_yours: true });
+  });
+
+  it('set_connection_tools needs allow, and refuses sleep', async () => {
+    await links({ from: 'a', to: 'b' });
+    expect((await call('set_connection_tools', { from: 'a', to: 'b' })).isError).toBe(true);
+    expect((await call('set_connection_tools', { from: 'a', to: 'b', allow: ['sleep_agent'] })).isError).toBe(true);
+    expect(entry('a', 'b')?.disabledTools).toEqual(['clear_agent', 'compact_agent']);
+  });
+
+  it('set_connection_tools refuses a link it didn\'t make', async () => {
+    userDraws('a', 'b');
+    const result = await call('set_connection_tools', { from: 'a', to: 'b', allow: ONLY });
+    expect(result.isError).toBe(true);
+    expect(lastAudit()).toMatchObject({ outcome: 'refused', code: 'not_dispatcher_owned' });
+    expect(entry('a', 'b')).toBeUndefined();
+  });
+
+  it('set_connection_tools refuses its own link once the user changed the tools, changing neither direction', async () => {
+    await links({ from: 'a', to: 'b', two_way: true });
+    // The user turned a switch on the Connections card: their write, with no Dispatcher mark.
+    await setConnectionTools({ agentId: 'b' }, { agentId: 'a' }, ['clear_agent']);
+    const result = await call('set_connection_tools', { from: 'a', to: 'b', two_way: true, allow: ONLY });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('Connections card');
+    expect(lastAudit()).toMatchObject({ outcome: 'refused', code: 'user_tools' });
+    expect(entry('a', 'b')?.disabledTools).toEqual(['clear_agent', 'compact_agent']);
+    expect(entry('b', 'a')?.disabledTools).toEqual(['clear_agent']);
+    expect(await linkRow('b', 'a')).toMatchObject({ tools_yours: false });
+  });
+
+  it('set_connection_tools refuses its own link when the user also drew the pair', async () => {
+    await links({ from: 'a', to: 'b' });
+    userDraws('a', 'b');
+    expect((await call('set_connection_tools', { from: 'a', to: 'b', allow: ONLY })).isError).toBe(true);
+    expect(lastAudit()).toMatchObject({ code: 'user_tools' });
+    expect(entry('a', 'b')?.enabledTools).toBeUndefined();
+  });
+
+  it('disconnecting drops the tools it set, but not while the user\'s wire still holds the pair', async () => {
+    await links({ from: 'a', to: 'b', allow: ONLY });
+    await call('disconnect_orchestrators', { from: 'a', to: 'b' });
+    expect(entry('a', 'b')).toBeUndefined();
+    await links({ from: 'a', to: 'b', allow: ONLY });
+    userDraws('a', 'b');
+    await call('disconnect_orchestrators', { from: 'a', to: 'b' });
+    expect(isBound('a', 'b')).toBe(true);
+    expect(entry('a', 'b')).toMatchObject({ enabledTools: ['wake_agent'] });
   });
 });
 

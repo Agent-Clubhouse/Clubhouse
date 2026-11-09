@@ -33,10 +33,48 @@ The ceiling is enforced in this tool only. `setOrchestrationPolicy` itself still
 | `from` | Required. The orchestrator that gets the tools. |
 | `to` | Required. The orchestrator it reaches. |
 | `two_way` | Both directions, all or nothing. Default false. |
+| `allow` | `connect_orchestrators` only. The tools `from` may use on `to` (#3215). |
+| `allow_back` | `connect_orchestrators` only, with `two_way`. The tools `to` may use on `from`. Default: the same as `allow`. |
 
 Limits: 50 links in total and 10 outgoing per orchestrator, since each wire adds tools to an agent's list.
 
-Connecting a pair already bound some other way is refused, so the Dispatcher never claims a wire it didn't make. Connecting a pair it already made is a successful no-op. Disconnecting only acts on pairs in its store.
+Connecting a pair already bound some other way is refused, so the Dispatcher never claims a wire it didn't make. Connecting a pair it already made is a successful no-op, unless the call names tools for it. Disconnecting only acts on pairs in its store.
+
+### Tools on a link (#3215)
+
+Each direction of a link has the switches of any connection (`CONNECTION_SWITCHES` in `shared/connection-grants.ts`): `get_status`, `read_output`, `check_connectivity`, `send_message`, `send_file`, `clear_agent`, `compact_agent` and `wake_agent`. `allow` names the ones to turn on; every other one is off. Sleep, provider changes and other control aren't connection tools, so naming them is refused (`invalid_args`).
+
+- **A new link** starts like any new connection: read and message, with `clear_agent`, `compact_agent` and `wake_agent` off (`NEW_CONNECTION_DISABLED_TOOLS`, plus wake off by default). With `allow`, it starts with exactly those.
+- **Tools the user saved** on a direction (an earlier wire's, or a switch they turned) are kept. Naming tools for that direction is refused (`user_tools`), and nothing changes.
+- **The Dispatcher's own tools** are marked `setBy: "dispatcher"` on the direction in `connection-grants.json`. Any other write (the Connections card, a canvas popover, Make two-way) drops the mark, and the tools are the user's from then on.
+- **Disconnecting** drops the tools the Dispatcher set once nothing else binds the pair, so a wire the user draws later starts fresh. So does the user removing the link on the Connections card. A pair the user also drew keeps them.
+- Links made before #3215 have no saved tools and keep every tool on, as before; connecting them again gives them the new defaults.
+
+The maintainer's link between two orchestrators (status and output, messages, wake, and nothing else) is:
+
+```json
+{ "from": "<a>", "to": "<b>", "two_way": true, "allow": ["get_status", "read_output", "send_message", "send_file", "wake_agent"] }
+```
+
+### `set_connection_tools`
+
+| Argument | Meaning |
+| --- | --- |
+| `from`, `to`, `two_way` | As for `connect_orchestrators`. |
+| `allow` | Required. The tools `from` may use on `to`. An empty list turns them all off. |
+| `allow_back` | With `two_way`. Default: the same as `allow`. |
+
+Changes only links in the Dispatcher's store whose tools are still its own: not a direction the user set tools on, linked with Make two-way, or also connects with a canvas wire (`user_tools`). A link it didn't make is `not_dispatcher_owned`. All directions are checked first, so a refusal changes neither.
+
+### Reading tools back
+
+`connect_orchestrators`, `set_connection_tools` and every row of `list_orchestrator_controls` return, per direction:
+
+```json
+{ "tools": { "allowed": ["get_status", "read_output", "send_message", "send_file", "wake_agent"], "disabled": ["check_connectivity", "clear_agent", "compact_agent"] }, "tools_yours": true }
+```
+
+`tools_yours` says whether `set_connection_tools` can change them.
 
 ### `list_orchestrator_controls`
 
@@ -60,7 +98,8 @@ Connecting a pair already bound some other way is refused, so the Dispatcher nev
 | The Dispatcher as an end or a target, which covers disconnecting a target from it | `dispatcher_wire` |
 | A helper | `helper` |
 | A disposed or unknown agent, or one that isn't a connected orchestrator | `not_connected_orchestrator` |
-| Disconnecting a link the Dispatcher didn't make | `not_dispatcher_owned` |
+| Disconnecting, or setting the tools of, a link the Dispatcher didn't make | `not_dispatcher_owned` |
+| Naming tools for a direction whose tools are the user's | `user_tools` |
 | Connecting a pair already bound some other way | `already_linked` |
 | Connecting a pair the user removed | `removed_by_user` |
 | `max_helpers` outside its range | `max_helpers_out_of_range` |

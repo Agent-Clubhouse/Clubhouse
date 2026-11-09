@@ -12,6 +12,7 @@ import { bindingManager } from '../binding-manager';
 import { isDispatcherAgent, isTrackedDispatcher } from '../dispatcher-gate';
 import { agentRegistry } from '../../agent-registry';
 import { currentRemoteCaller } from '../../annex-agent-calls';
+import { localConnectionWakeOn } from '../../connection-grants-store';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { requireString, optionalString, numberWithDefault } from './validation';
@@ -83,7 +84,9 @@ function buildTaggedMessage(agentId: string, targetId: string, message: string, 
 
 /** The error for a tool that needs the target awake. The Dispatcher wakes targets itself. */
 function sleepingError(agentId: string, targetId: string, action: string): McpToolResult {
-  const hint = isDispatcherAgent(agentId) ? `Call its wake_agent tool before ${action}.` : `Start it from Clubhouse before ${action}.`;
+  // Wake it on the connection offers wake_agent to any agent here (#3215).
+  const canWake = isDispatcherAgent(agentId) || localConnectionWakeOn(agentId, targetId);
+  const hint = canWake ? `Call its wake_agent tool before ${action}.` : `Start it from Clubhouse before ${action}.`;
   return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. ${hint}` }], isError: true };
 }
 
@@ -593,7 +596,7 @@ export function registerAgentTools(): void {
     id: 'agent.wakeAgent',
     category: 'agent',
     label: 'Wake Agent',
-    mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', group: 'dispatcher', grant: [{ actions: ['agent.wake'], target: 'bound' }, { actions: ['agent.message'], target: 'bound', ifArgs: ['message'] }] },
+    mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', grant: [{ actions: ['agent.wake'], target: 'bound' }, { actions: ['agent.message'], target: 'bound', ifArgs: ['message'] }] },
     description:
       'Wake the linked agent if it is sleeping. It resumes its last session when it has one, at its own access level.\n\n' +
       'An optional message is delivered as its first prompt, tagged like send_message, so include what to do and why. ' +

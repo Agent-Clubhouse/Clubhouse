@@ -11,7 +11,9 @@
  * (#3056 Stage 7, where the receiving machine checks a call):
  * - getConnectionDirection(from, to): the entry, or undefined;
  * - deniedConnectionTools(from, to): the tools `from` may not use on `to`;
- * - setConnectionTools(from, to, disabledTools): replace one direction's list;
+ * - localConnectionWakeOn(fromId, toId): whether Wake it is on, on this computer (#3215);
+ * - setConnectionTools(from, to, disabledTools, enabledTools?): replace one direction's lists;
+ * - removeConnectionDirection(from, to): drop one direction's entry;
  * - setConnectionLink(from, to, on): the user's own link for one direction;
  * - listConnectionDirections(agentId): every entry touching an agent;
  * - listLinkedDirections(): every direction the user linked (Make two-way);
@@ -25,7 +27,7 @@
  */
 
 import {
-  directionKey, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
+  directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
 } from '../../shared/connection-grants';
 import { createSettingsStore } from './settings-store';
 
@@ -69,6 +71,11 @@ export function getConnectionDirection(from: AgentAddress, to: AgentAddress): Co
 /** The tools `from` may not use on `to`: the entry's list, or undefined when the store has nothing to say. */
 export function deniedConnectionTools(from: AgentAddress, to: AgentAddress): string[] | undefined {
   return getConnectionDirection(from, to)?.disabledTools;
+}
+
+/** Whether `fromId`'s connection to `toId`, both on this computer, has Wake it on (#3215). */
+export function localConnectionWakeOn(fromId: string, toId: string): boolean {
+  return localWakeOn(getConnectionDirection({ agentId: fromId }, { agentId: toId }));
 }
 
 /** Every entry where the agent sends or receives. */
@@ -118,13 +125,29 @@ async function updateDirection(from: AgentAddress, to: AgentAddress, fn: (curren
   return next;
 }
 
-/** Replace one direction's disabled tools. An empty list with no link drops the entry. */
-export function setConnectionTools(from: AgentAddress, to: AgentAddress, disabledTools: readonly string[]): Promise<ConnectionDirection | null> {
+/**
+ * Replace one direction's disabled tools, and its turned-on tools when given
+ * (wake on this computer, #3215); left out, they stay as they are. `by`: the
+ * Dispatcher wrote it (on a link it made); any other write makes it the user's.
+ */
+export function setConnectionTools(
+  from: AgentAddress, to: AgentAddress, disabledTools: readonly string[], enabledTools?: readonly string[], options: { by?: 'dispatcher' } = {},
+): Promise<ConnectionDirection | null> {
   return updateDirection(from, to, (current) => {
     const tools = [...new Set(disabledTools)];
+    const enabled = enabledTools ? [...new Set(enabledTools)] : current?.enabledTools ?? [];
     // An entry is kept even when empty: "everything on" must not fall back to a source's list.
-    return { from, to, disabledTools: tools, ...(current?.link && { link: current.link }), updatedAt: new Date().toISOString() };
+    return {
+      from, to, disabledTools: tools, ...(enabled.length > 0 && { enabledTools: enabled }),
+      ...(options.by === 'dispatcher' && { setBy: 'dispatcher' as const }),
+      ...(current?.link && { link: current.link }), updatedAt: new Date().toISOString(),
+    };
   });
+}
+
+/** Drop one direction's entry, link and all: a link the Dispatcher made and removed again (#3215). */
+export function removeConnectionDirection(from: AgentAddress, to: AgentAddress): Promise<ConnectionDirection | null> {
+  return updateDirection(from, to, (current) => (current ? null : UNCHANGED));
 }
 
 /** Turn the user's own link for one direction on or off (Make two-way). */
@@ -134,6 +157,7 @@ export function setConnectionLink(from: AgentAddress, to: AgentAddress, on: bool
     return {
       from, to,
       disabledTools: current?.disabledTools ?? [...defaultTools],
+      ...(current?.enabledTools && { enabledTools: current.enabledTools }),
       link: current?.link ?? { createdAt: new Date().toISOString() },
       updatedAt: new Date().toISOString(),
     };

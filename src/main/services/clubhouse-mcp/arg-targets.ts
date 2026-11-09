@@ -19,6 +19,7 @@ import * as agentConfig from '../agent-config';
 import { agentRegistry } from '../agent-registry';
 import { resolveOrchestrationPolicies } from '../orchestration-policy';
 import * as projectStore from '../project-store';
+import { localConnectionWakeOn } from '../connection-grants-store';
 import { bindingManager } from './binding-manager';
 import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
@@ -136,8 +137,10 @@ async function agentTarget(lookup: Lookup, config: DurableAgentConfig, projectPa
   if (config.id === caller) relations.push('self');
   if (mcpCallerParent(caller) === config.id) relations.push('parent');
   if (config.parentAgentId === caller) relations.push('my_helper');
-  if (await isConnected(lookup, config, projectPath)) relations.push('connected');
-  return { kind: 'agent', relations, projectPath, isDispatcher: isTrackedDispatcher(config.id) };
+  const connected = await isConnected(lookup, config, projectPath);
+  if (connected) relations.push('connected');
+  const wakeOn = connected && localConnectionWakeOn(caller, config.id);
+  return { kind: 'agent', relations, projectPath, isDispatcher: isTrackedDispatcher(config.id), ...(wakeOn && { wakeOn: true }) };
 }
 
 /**

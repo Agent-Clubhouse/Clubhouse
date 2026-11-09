@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { CONNECTION_TOOLS, type ConnectionDirection } from '../../../../shared/connection-grants';
+import { CONNECTION_TOOLS, WAKE_SWITCH, localWakeOn, type ConnectionDirection } from '../../../../shared/connection-grants';
 import { Toggle } from '../../../components/Toggle';
 import {
   CONNECTION_SOURCE_LABELS, removalRoute, type ConnectionPairSources, type ConnectionSource, type ConnectionSourceKind,
@@ -53,15 +53,19 @@ const CONFIRMED: ReadonlySet<ConnectionSourceKind> = new Set(['dispatcher_auto',
 /**
  * One direction of the connection view (#2972): what the sender may do to
  * the receiver, each tool a switch, saved in the connection store (D129).
+ * Wake it comes last, off until turned on (#3215); a wire with the Dispatcher
+ * has none, since the Dispatcher's own wake doesn't depend on it.
  * A direction that isn't connected offers Make two-way instead.
  */
-function DirectionColumn({ from, to, fromName, toName, connected, disabledTools, canMakeTwoWay, onChanged }: {
+function DirectionColumn({ from, to, fromName, toName, connected, disabledTools, wakeOn, showWake, canMakeTwoWay, onChanged }: {
   from: string;
   to: string;
   fromName: string;
   toName: string;
   connected: boolean;
   disabledTools: readonly string[];
+  wakeOn: boolean;
+  showWake: boolean;
   canMakeTwoWay: boolean;
   onChanged: () => void;
 }) {
@@ -71,6 +75,9 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
   const [tools, setTools] = useState<readonly string[]>(disabledTools);
   const writes = useRef(0);
   useEffect(() => { if (writes.current === 0) setTools(disabledTools); }, [disabledTools]);
+  const [wake, setWake] = useState(wakeOn);
+  const wakeWrites = useRef(0);
+  useEffect(() => { if (wakeWrites.current === 0) setWake(wakeOn); }, [wakeOn]);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -99,6 +106,20 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
       },
     );
   };
+  const toggleWake = (on: boolean) => {
+    setWake(on);
+    wakeWrites.current += 1;
+    setError(null);
+    void Promise.resolve().then(() => window.clubhouse.mcpBinding.setLocalWake(from, to, on)).then(
+      () => { wakeWrites.current -= 1; onChanged(); },
+      (err) => {
+        wakeWrites.current -= 1;
+        reportChromeActionFailed('agent_settings_save', err);
+        setWake(!on);
+        setError('Couldn\u2019t save that, so it wasn\u2019t changed. Try again.');
+      },
+    );
+  };
   return (
     <section className="flex-1 min-w-0 flex flex-col gap-1.5" aria-label={`${fromName} to ${toName}`} data-testid={`connection-direction-${from}-${to}`}>
       <h3 className="text-[13px] text-ctp-text truncate">{fromName} to {toName}</h3>
@@ -113,6 +134,12 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
               </li>
             );
           })}
+          {showWake && (
+            <li className="flex items-center gap-2 text-xs text-ctp-subtext1">
+              <span className="flex-1 min-w-0 truncate">{WAKE_SWITCH.label}</span>
+              <Toggle aria-label={`${WAKE_SWITCH.label} (${fromName} to ${toName})`} checked={wake} onChange={toggleWake} data-testid={`connection-tool-${from}-${to}-${WAKE_SWITCH.tool}`} />
+            </li>
+          )}
         </ul>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -194,9 +221,8 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
     { from: agentId, to: otherId, fromName: agentName, toName: otherName },
     { from: otherId, to: agentId, fromName: otherName, toName: agentName },
   ] : [];
-  const toolsOf = (from: string, to: string): readonly string[] =>
-    grants.find((g) => g.from.agentId === from && g.to.agentId === to && !g.from.machineId && !g.to.machineId)?.disabledTools
-      ?? liveTools?.get(`${from}>${to}`) ?? [];
+  const savedOf = (from: string, to: string) => grants.find((g) => g.from.agentId === from && g.to.agentId === to && !g.from.machineId && !g.to.machineId);
+  const toolsOf = (from: string, to: string): readonly string[] => savedOf(from, to)?.disabledTools ?? liveTools?.get(`${from}>${to}`) ?? [];
   const connectedWay = (from: string, to: string) => pairs.some((p) => p.agentId === from && p.targetId === to && (p.bound || p.sources.length > 0));
 
   return (
@@ -209,6 +235,8 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
               {...d}
               connected={connectedWay(d.from, d.to)}
               disabledTools={toolsOf(d.from, d.to)}
+              wakeOn={localWakeOn(savedOf(d.from, d.to))}
+              showWake={!dispatcherEnd}
               canMakeTwoWay={connectedWay(d.to, d.from)}
               onChanged={onRemoved}
             />

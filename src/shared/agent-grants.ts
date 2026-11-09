@@ -85,8 +85,9 @@ export type GrantTarget =
   /**
    * `excludeDispatcher`: not the Dispatcher, which nothing connected to it may reset (#2921 gap fix).
    * `onlyDispatcher`: the Dispatcher alone, which a message from a connected agent wakes (#3037).
+   * `wakeOn`: only agents the caller's connection has Wake it turned on for (#3215).
    */
-  | { kind: 'connected'; excludeDispatcher?: boolean; onlyDispatcher?: boolean }
+  | { kind: 'connected'; excludeDispatcher?: boolean; onlyDispatcher?: boolean; wakeOn?: boolean }
   | { kind: 'project'; project: 'own' | 'any' | { path: string } }
   | { kind: 'group_project'; role: 'member' | 'admin' }
   | { kind: 'group_members' }
@@ -128,6 +129,8 @@ export interface GrantCallTarget {
   relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member'>;
   /** The target agent is the Dispatcher. */
   isDispatcher?: boolean;
+  /** The caller's connection to the target agent, on this computer, has Wake it on (#3215). */
+  wakeOn?: boolean;
   /** The project the target agent lives in, or the project itself. */
   projectPath?: string;
   /** A group admin named an agent that isn't a member of the group (#2974): said so in the refusal. */
@@ -175,7 +178,8 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
     case 'parent': return rel.includes('parent');
     case 'my_helpers': return rel.includes('my_helper');
     case 'connected':
-      return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher) && !(grant.onlyDispatcher && !target.isDispatcher);
+      return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher) && !(grant.onlyDispatcher && !target.isDispatcher)
+        && !(grant.wakeOn && !target.wakeOn);
     case 'group_members': return rel.includes('group_member');
     case 'app': return target.kind === 'app';
     case 'action': return target.kind === 'action' && target.actionId === grant.id;
@@ -220,6 +224,7 @@ export function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
   if (held.kind !== given.kind) return false;
   if (held.kind === 'connected' && given.kind === 'connected') {
     if (held.onlyDispatcher) return !!given.onlyDispatcher;
+    if (held.wakeOn && !given.wakeOn) return false;
     return !held.excludeDispatcher || !!given.excludeDispatcher;
   }
   if (held.kind === 'project' && given.kind === 'project') {

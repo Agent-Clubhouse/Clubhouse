@@ -10,8 +10,8 @@
  * - The user's own links (Make two-way) are a persisted binding source.
  */
 
-import type { AgentAddress, ConnectionDirection } from '../../shared/connection-grants';
-import { NEW_CONNECTION_DISABLED_TOOLS } from '../../shared/connection-grants';
+import type { AgentAddress, ConnectionDirection, DirectionTools } from '../../shared/connection-grants';
+import { NEW_CONNECTION_DISABLED_TOOLS, WAKE_TOOL, localDirectionTools } from '../../shared/connection-grants';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
@@ -23,7 +23,7 @@ import { recordConnectionChange } from './grant-telemetry';
 import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
 import { clearBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
-import { removeConnectionDirections } from './connection-grants-store';
+import { removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexIdentity from './annex-identity';
 import { isNetworkComputer, remoteAgentName, rememberRemoteAgentName } from './annex-agent-calls';
@@ -104,6 +104,45 @@ export async function applyConnectionTools(agentId: string, targetId: string, di
   const same = before !== undefined && before.length === new Set(disabledTools).size && disabledTools.every((t) => before.includes(t));
   if (!same) recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools });
   return disabledTools;
+}
+
+/**
+ * Turn Wake it on or off for one direction between two agents on this
+ * computer (#3215), the user's switch on the Connections card. The other
+ * tools stay as they are; a direction with no entry yet starts from its live
+ * binding's list.
+ */
+export async function setLocalWake(fromAgentId: string, toAgentId: string, on: boolean): Promise<void> {
+  const from = local(fromAgentId);
+  const to = connectionEnd(toAgentId);
+  if (to.machineId) throw new Error('That agent is on another computer.');
+  const current = getConnectionDirection(from, to);
+  const live = bindingManager.getBindingsForAgent(fromAgentId).find((b) => b.targetKind === 'agent' && b.targetId === toAgentId);
+  const disabledTools = (current?.disabledTools ?? live?.disabledTools ?? []).filter((t) => t !== WAKE_TOOL);
+  const enabled = (current?.enabledTools ?? []).filter((t) => t !== WAKE_TOOL);
+  await setConnectionTools(from, to, disabledTools, on ? [...enabled, WAKE_TOOL] : enabled);
+  recordConnectionChange({ fromAgentId, toAgentId, disabledTools: on ? disabledTools : [...disabledTools, WAKE_TOOL] });
+}
+
+/**
+ * One direction's switches read back (#3215): its saved entry, else the live
+ * binding's list, with wake as {@link localDirectionTools} reads it.
+ */
+export function readLocalDirectionTools(fromAgentId: string, toAgentId: string): DirectionTools {
+  const live = bindingManager.getBindingsForAgent(fromAgentId).find((b) => b.targetKind === 'agent' && b.targetId === toAgentId);
+  return localDirectionTools(getConnectionDirection(local(fromAgentId), local(toAgentId)), live?.disabledTools ?? []);
+}
+
+/**
+ * A link the Dispatcher made is gone (#3215): the tools it set on that
+ * direction go too, once nothing binds the pair, so a wire the user draws
+ * later starts like any new one. Tools the user set stay.
+ */
+export async function forgetDispatcherDirection(fromAgentId: string, toAgentId: string): Promise<void> {
+  if (bindingManager.getBindingsForAgent(fromAgentId).some((b) => b.targetId === toAgentId)) return;
+  const entry = getConnectionDirection(local(fromAgentId), local(toAgentId));
+  if (entry?.setBy !== 'dispatcher' || entry.link) return;
+  await removeConnectionDirection(local(fromAgentId), local(toAgentId));
 }
 
 /** The user's links: one binding per direction with a link. */

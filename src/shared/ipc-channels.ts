@@ -615,6 +615,8 @@ export const IPC = {
     DISCONNECT_ACROSS_MACHINES: 'mcp-binding:disconnect-across-machines',
     /** Set the tools turned off on one direction with an agent on another machine (#3064). */
     SET_TOOLS_ACROSS_MACHINES: 'mcp-binding:set-tools-across-machines',
+    /** Turn Wake it on or off for one direction between two agents on this computer (#3215). */
+    SET_LOCAL_WAKE: 'mcp-binding:set-local-wake',
     /** Remove one source of one connection (#2744). */
     REMOVE_CONNECTION_SOURCE: 'mcp-binding:remove-connection-source',
     /** Main→renderer: the agent id whose connection or tool count changed. */
