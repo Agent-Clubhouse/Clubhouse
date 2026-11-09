@@ -45,6 +45,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:cli',
   'core:orchestration',
   'core:orchestrator',
+  'core:perf',
   'core:permission-queue',
   'core:plugin-events',
   'core:plugin-storage',
