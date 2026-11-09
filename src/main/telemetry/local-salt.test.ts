@@ -18,7 +18,7 @@ describe('local record salt (#2920)', () => {
     expect(first).toHaveLength(32);
     expect(localSalt().equals(first)).toBe(true);
     const file = path.join(dir.path, 'telemetry-local-salt.json');
-    expect(Object.keys(JSON.parse(fs.readFileSync(file, 'utf-8')))).toEqual(['hashSalt']);
+    expect(Object.keys(JSON.parse(fs.readFileSync(file, 'utf-8'))).sort()).toEqual(['hashSalt', 'since']);
     if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o077).toBe(0);
     expect(peekLocalSalt()).toBe(first.toString('base64'));
   });

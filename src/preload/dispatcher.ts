@@ -5,6 +5,7 @@ import type { AgentCardFields, AgentCardView } from '../shared/dispatcher-agent-
 import type { DispatcherBehavior, DispatcherBehaviorAuto } from '../shared/dispatcher-behavior';
 import type { DispatcherPersonality } from '../shared/dispatcher-personality';
 import type { DispatcherSetupInput, TryItOutRequest, TryItOutResult } from '../shared/dispatcher-setup';
+import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
 
 export const dispatcher = {
   dispatcher: {
@@ -26,6 +27,8 @@ export const dispatcher = {
     /** Whether Auto gives a level its models on a provider (#3047), for setup before anything is saved. */
     checkBehavior: (provider: string, level: DispatcherBehavior): Promise<DispatcherBehaviorAuto> =>
       ipcRenderer.invoke(IPC.DISPATCHER.CHECK_BEHAVIOR, provider, level),
+    /** Today's usage, conversations apart from background work (#3040). */
+    getUsage: (): Promise<DispatcherUsageSplit> => ipcRenderer.invoke(IPC.DISPATCHER.GET_USAGE),
     onChanged: (callback: (state: DispatcherState) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: DispatcherState) => callback(state);
       ipcRenderer.on(IPC.DISPATCHER.CHANGED, listener);

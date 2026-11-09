@@ -9,7 +9,19 @@
 
 import * as path from 'path';
 import { powerMonitor } from 'electron';
-import { ActionError, type Action, type ActionNames, type ActionNotice, type ActionOwner, type ActionRun, type ActionView } from '../../../shared/actions';
+import {
+  ActionError,
+  assertActionInput,
+  subscriptionStep,
+  type Action,
+  type ActionNames,
+  type ActionNotice,
+  type ActionOwner,
+  type ActionRun,
+  type ActionView,
+  type EventTrigger,
+  type ValidActionInput,
+} from '../../../shared/actions';
 import { IPC } from '../../../shared/ipc-channels';
 import type { Project } from '../../../shared/types';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
@@ -20,7 +32,8 @@ import { bindingManager } from '../clubhouse-mcp/binding-manager';
 import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from '../clubhouse-mcp/orchestration-gate';
 import { isDispatcherEnabled } from '../dispatcher/dispatcher-settings';
 import { sleepAgent, wakeWiredAgent } from '../clubhouse-mcp/tools/agent-lifecycle';
-import { deliverToDispatcher } from '../clubhouse-mcp/tools/dispatcher-delivery';
+import { deliverToDispatcher, dispatcherInboxId } from '../clubhouse-mcp/tools/dispatcher-delivery';
+import { clearDispatcherBackgroundWork, noteDispatcherBackgroundWork } from '../dispatcher/dispatcher-usage';
 import { DISPATCHER_NAME, getDispatcherAgentId, getDispatcherState, isDispatcherAgentId } from '../dispatcher/dispatcher-service';
 import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
@@ -31,7 +44,7 @@ import { ActionsEngine, type EngineFacts, type EngineObservation } from './engin
 import { matchProjectRef } from './project-ref';
 import { createGrantRights } from './rights';
 import { grantsFromFacts } from '../agent-grants-service';
-import { createStepRunner } from './steps';
+import { actionMessage, createStepRunner, type DispatcherStepDelivery } from './steps';
 
 export { ActionError };
 
@@ -115,6 +128,64 @@ function parseToolResult(result: { content: Array<{ type: string; text?: string 
 
 // ── Engine ──────────────────────────────────────────────────────────────────
 
+/**
+ * A check one of Clubhouse's own actions runs before it messages the
+ * Dispatcher (#3040): the text to send, or why nothing needs sending.
+ */
+export type AppActionGate = (ctx: { actionId: string; name: string }) => Promise<{ send: string } | { skip: string }>;
+
+const appGates = new Map<string, AppActionGate>();
+
+/** Set (or clear, with null) the gate for Clubhouse's own action with this name. */
+export function setAppActionGate(name: string, gate: AppActionGate | null): void {
+  if (gate) appGates.set(name, gate);
+  else appGates.delete(name);
+}
+
+/**
+ * An action step's message to the Dispatcher. Clubhouse's own actions pass
+ * their gate first. Clubhouse's and the Dispatcher's own actions are its
+ * background work, so the turn they start counts apart from conversations.
+ */
+async function deliverActionToDispatcher(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string; skipped?: boolean }> {
+  let { text, routed } = req;
+  const gate = req.owner.kind === 'app' ? appGates.get(req.actionName) : undefined;
+  if (gate) {
+    let decision: Awaited<ReturnType<AppActionGate>>;
+    try {
+      decision = await gate({ actionId: req.actionId, name: req.actionName });
+    } catch (err) {
+      // telemetry-exempt: logged here, since a hidden run's failure is never shown; the step fails
+      appLog('core:actions', 'warn', 'A Clubhouse action could not get ready', { meta: { action: req.actionName, error: err instanceof Error ? err.message : String(err) } });
+      throw err;
+    }
+    if ('skip' in decision) return { delivered: false, skipped: true, text: decision.skip };
+    ({ text, routed } = actionMessage(req.actionName, decision.send));
+  }
+  const background = req.owner.kind === 'app' || req.owner.kind === 'dispatcher';
+  const inboxId = dispatcherInboxId(req.targetId);
+  if (background) noteDispatcherBackgroundWork(inboxId);
+  try {
+    const delivery = await deliverToDispatcher({
+      senderId: req.senderId,
+      targetId: req.targetId,
+      targetName: req.targetName,
+      text,
+      routed,
+      taskId: `action_${Date.now().toString(36)}`,
+      submit: true,
+      toolName: 'action',
+      args: { actionId: req.actionId },
+      fromAction: true,
+    });
+    if (background && !delivery.delivered) clearDispatcherBackgroundWork(inboxId);
+    return delivery;
+  } catch (err) {
+    if (background) clearDispatcherBackgroundWork(inboxId);
+    throw err;
+  }
+}
+
 const observers = new Set<(o: EngineObservation) => void>();
 
 /** For telemetry: every trigger, wait, overlap decision, limit hit and run outcome. */
@@ -188,18 +259,7 @@ function createEngine(): ActionsEngine {
     // Messages to the Dispatcher take its one delivery path, which wakes it (#3037).
     dispatcher: {
       is: (id) => isDispatcherAgentId(id),
-      deliver: (req) => deliverToDispatcher({
-        senderId: req.senderId,
-        targetId: req.targetId,
-        targetName: req.targetName,
-        text: req.text,
-        routed: req.routed,
-        taskId: `action_${Date.now().toString(36)}`,
-        submit: true,
-        toolName: 'action',
-        args: { actionId: req.actionId },
-        fromAction: true,
-      }),
+      deliver: deliverActionToDispatcher,
     },
   });
   return new ActionsEngine({
@@ -352,13 +412,64 @@ export function findProjectId(ref: string, usable: (projectId: string) => boolea
 
 // ── Clubhouse's own actions ─────────────────────────────────────────────────
 
+function findAppAction(e: ActionsEngine, key: string): Action | undefined {
+  return e.list().find((a) => a.owner.kind === 'app' && a.name === key);
+}
+
+/** Whether an action already says what valid input says, so replacing it would change nothing. */
+function sameDefinition(a: Action, v: ValidActionInput): boolean {
+  return a.name === v.name && a.overlap === v.overlap && a.enabled === v.enabled
+    && JSON.stringify(a.trigger) === JSON.stringify(v.trigger) && JSON.stringify(a.steps) === JSON.stringify(v.steps);
+}
+
 /**
  * Create or replace one of Clubhouse's own actions (internal upkeep). They
  * run like any other, but never appear in lists, agent pages or history.
+ * Input that matches what is there changes nothing, so a wait in progress
+ * or the next scheduled time is kept.
  */
 export function ensureAppAction(key: string, input: unknown): Action {
   const e = requireEngine();
-  const existing = e.list().find((a) => a.owner.kind === 'app' && a.name === key);
+  const existing = findAppAction(e, key);
   const named = { ...(input as Record<string, unknown>), name: key };
+  if (existing && sameDefinition(existing, assertActionInput(named))) return existing;
   return existing ? e.update(existing.id, named) : e.create(named, { kind: 'app' });
+}
+
+/**
+ * Create or replace one of Clubhouse's own subscriptions (#3040): an event
+ * that messages the Dispatcher with `note`, made the way subscribe makes
+ * one. Hidden like ensureAppAction's, and unchanged when it already matches.
+ */
+export function ensureAppSubscription(key: string, input: { trigger: EventTrigger; note?: string; enabled?: boolean }): Action {
+  const e = requireEngine();
+  const owner: ActionOwner = { kind: 'app' };
+  const recipient = e.subscriberOf(owner);
+  if (!recipient) throw new ActionError('not_allowed', 'There is no Dispatcher to tell yet.');
+  const existing = findAppAction(e, key);
+  if (existing?.subscription) {
+    const named = { name: key, trigger: input.trigger, steps: [subscriptionStep(recipient, input.note)], overlap: 'queue', enabled: input.enabled !== false };
+    if (sameDefinition(existing, assertActionInput(named))) return existing;
+    return e.update(existing.id, named);
+  }
+  if (existing) e.remove(existing.id);
+  return e.subscribe({ trigger: input.trigger, note: input.note, name: key, enabled: input.enabled !== false }, owner);
+}
+
+/** Remove one of Clubhouse's own actions, if there is one. Returns whether it was there. */
+export function removeAppAction(key: string): boolean {
+  const e = requireEngine();
+  const existing = findAppAction(e, key);
+  if (existing) e.remove(existing.id);
+  return !!existing;
+}
+
+/** Clubhouse's own actions, by name. Never shown to people or agents. */
+export function listAppActions(): Action[] {
+  return requireEngine().list().filter((a) => a.owner.kind === 'app');
+}
+
+/** Whether Actions have started, so Clubhouse's own can be set up. */
+export function actionsReady(): boolean {
+  return engine !== null;
 }

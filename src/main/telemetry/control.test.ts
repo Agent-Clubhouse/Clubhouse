@@ -53,6 +53,12 @@ vi.mock('./secret-store', () => ({
 }));
 
 const localSalt = vi.hoisted(() => ({ deleted: 0 }));
+const backfillCalls = vi.hoisted(() => [] as string[]);
+vi.mock('./backfill', () => ({
+  noteDestinationEnabled: (id: string) => { backfillCalls.push(`enabled:${id}`); },
+  noteDestinationDisabled: async (id: string) => { backfillCalls.push(`disabled:${id}`); },
+  dismissBackfill: (id: string) => { backfillCalls.push(`dismissed:${id}`); },
+}));
 const localRecording = vi.hoisted(() => ({ restarts: 0 }));
 vi.mock('./local-control', async (importActual) => ({ ...await importActual<typeof import('./local-control')>(), restartLocalRecording: async () => { localRecording.restarts++; } }));
 vi.mock('./local-salt', () => ({ deleteLocalSalt: () => { localSalt.deleted++; } }));
@@ -296,6 +302,44 @@ describe('telemetry settings control', () => {
     expect(state.settings.hashSalt).toBeDefined();
     expect(state.calls).toEqual(['restart:keep', 'restart:keep', 'restart:clear']);
     expect(await control.setAdvanced({ sampleRate: 2 })).toMatchObject({ ok: false, reason: 'invalid_sample_rate' });
+  });
+
+  it('notes a destination the user turned on for a backfill offer, and marks what it was sent when turned off (#2920)', async () => {
+    backfillCalls.length = 0;
+    state.secrets.connectionString = CS;
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
+    expect(backfillCalls).toEqual(['enabled:azure']);
+    expect(await control.setEnabled('azure', false)).toMatchObject({ ok: true });
+    expect(backfillCalls).toEqual(['enabled:azure', 'disabled:azure']);
+  });
+
+  it('marks live-sent history on every path that turns a destination off: clearing it, or deleting local data (#2920)', async () => {
+    backfillCalls.length = 0;
+    setEntry('azure', { enabled: true });
+    setEntry('otlp', { enabled: true });
+    await control.clearAzureConnectionString();
+    await control.clearOtlpConfig();
+    expect(backfillCalls).toEqual(['disabled:azure', 'disabled:otlp']);
+    backfillCalls.length = 0;
+    setEntry('azure', { enabled: true });
+    await control.deleteLocalData();
+    expect(backfillCalls).toContain('disabled:azure');
+    expect(backfillCalls).not.toContain('disabled:otlp');
+  });
+
+  it('notes no offer when a destination already on is turned on again (#2920)', async () => {
+    state.secrets.connectionString = CS;
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
+    backfillCalls.length = 0;
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
+    expect(backfillCalls).toEqual([]);
+  });
+
+  it('never notes an offer when export comes on without the user turning a destination on: Feedback reconnecting or a resume (#2920)', async () => {
+    backfillCalls.length = 0;
+    await control.syncFramebriarDestination();
+    await control.resumeExport();
+    expect(backfillCalls.filter((c) => c.startsWith('enabled:'))).toEqual([]);
   });
 
   it('shows a Phase 1 file without recorded consent as off, and asks for consent to turn it on', async () => {

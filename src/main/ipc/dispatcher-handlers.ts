@@ -4,6 +4,8 @@ import type { DispatcherState } from '../../shared/dispatcher-types';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import { clearDispatcherChat, type ClearChatResult } from '../services/dispatcher/dispatcher-clear-chat';
 import { installGroupChat } from '../services/dispatcher/dispatcher-news';
+import { getDispatcherUsageSplit } from '../services/dispatcher/dispatcher-usage';
+import type { DispatcherUsageSplit } from '../../shared/dispatcher-usage';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { restorePersistedBindings } from './mcp-binding-handlers';
 import { withValidatedArgs, booleanArg, objectArg, stringArg } from './validation';
@@ -32,6 +34,8 @@ export function registerDispatcherHandlers(): void {
     },
   ));
   ipcMain.handle(IPC.DISPATCHER.CLEAR_CHAT, (): Promise<ClearChatResult> => clearDispatcherChat());
+  // What it used today, conversations apart from background work (#3040).
+  ipcMain.handle(IPC.DISPATCHER.GET_USAGE, (): DispatcherUsageSplit => getDispatcherUsageSplit());
 
   // Personality and first-run setup (#3047).
   ipcMain.handle(IPC.DISPATCHER.SET_PERSONALITY, withValidatedArgs(

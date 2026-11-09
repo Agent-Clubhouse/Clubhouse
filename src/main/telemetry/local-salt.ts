@@ -28,14 +28,25 @@ function valid(salt: unknown): salt is string {
   return typeof salt === 'string' && Buffer.from(salt, 'base64').length === 32;
 }
 
-/** The saved local salt, if there is one. Never creates it. */
-export function peekLocalSalt(): string | undefined {
+/** The saved local salt and when it was made, if there is one. Never creates it. */
+function peekRecord(): { hashSalt: string; since?: number } | undefined {
   try {
-    const parsed = JSON.parse(fs.readFileSync(filePath(), 'utf-8')) as { hashSalt?: unknown };
-    return valid(parsed.hashSalt) ? parsed.hashSalt : undefined;
+    const parsed = JSON.parse(fs.readFileSync(filePath(), 'utf-8')) as { hashSalt?: unknown; since?: unknown };
+    if (!valid(parsed.hashSalt)) return undefined;
+    return { hashSalt: parsed.hashSalt, ...(typeof parsed.since === 'number' && Number.isFinite(parsed.since) && { since: parsed.since }) };
   } catch {
     return undefined;
   }
+}
+
+/** The saved local salt, if there is one. Never creates it. */
+export function peekLocalSalt(): string | undefined {
+  return peekRecord()?.hashSalt;
+}
+
+/** When the saved local salt was made (#2920: backfill sends nothing hashed before it). */
+export function localSaltSince(): number | undefined {
+  return peekRecord()?.since;
 }
 
 /** The local salt, made and saved on first use. If it can't be saved, a salt for this run only. */
@@ -45,7 +56,7 @@ export function localSalt(): Buffer {
   const hashSalt = randomBytes(32).toString('base64');
   try {
     fs.mkdirSync(path.dirname(filePath()), { recursive: true });
-    fs.writeFileSync(filePath(), JSON.stringify({ hashSalt }), { mode: 0o600 });
+    fs.writeFileSync(filePath(), JSON.stringify({ hashSalt, since: Date.now() }), { mode: 0o600 });
   } catch {
     // Read-only or missing userData: hashes hold for this run only.
   }
@@ -58,9 +69,12 @@ export function localSalt(): Buffer {
  * place the salt lives and a delete of the identity leaves nothing to bring it
  * back. If saving fails, the file stays and the next try adopts it again.
  */
-export async function adoptIdentity(save: (identity: TelemetryIdentity) => Promise<void>): Promise<TelemetryIdentity> {
-  const identity = createIdentity(peekLocalSalt());
-  await save(identity);
+export async function adoptIdentity(save: (identity: TelemetryIdentity, hashSaltSince: number) => Promise<void>): Promise<TelemetryIdentity> {
+  const record = peekRecord();
+  const identity = createIdentity(record?.hashSalt);
+  // An adopted salt keeps the time it was made; a new one starts now. A file from before `since` was kept counts from the start.
+  const since = record ? record.since ?? 0 : Date.now();
+  await save(identity, since);
   deleteLocalSalt();
   return identity;
 }
