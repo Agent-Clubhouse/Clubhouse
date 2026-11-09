@@ -234,6 +234,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
         agentName={agent.name}
         otherName={rail[managing.id]?.name ?? managing.name}
         dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}
+        familyLink={managing.family !== null}
         pairs={(sources?.pairs ?? []).filter((p) => (p.agentId === agent.id && p.targetId === managing.id) || (p.agentId === managing.id && p.targetId === agent.id))}
         unreadable={sources?.unreadable ?? []}
         onClose={() => setManagingId(null)}

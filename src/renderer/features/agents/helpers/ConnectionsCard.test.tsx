@@ -203,6 +203,25 @@ describe('Connections card (#2232)', () => {
     expect(within(outgoing).queryByRole('switch', { name: /Wake it/ })).not.toBeInTheDocument();
   });
 
+  it('has no Wake it switch on a helper\'s link with its orchestrator, where it can\'t take effect (#3215)', async () => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'h1', ['epic-lead', 'impl-ipc']), wire('h1', 'lead', ['impl-ipc', 'epic-lead'])] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [
+        { agentId: 'lead', targetId: 'h1', bound: true, sources: [{ kind: 'helper' as const, sourceId: 'helper-wires' }] },
+        { agentId: 'h1', targetId: 'lead', bound: true, sources: [{ kind: 'helper' as const, sourceId: 'helper-wires' }] },
+      ],
+      unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
+    render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('connection-sources'));
+    for (const id of ['connection-direction-lead-h1', 'connection-direction-h1-lead']) {
+      const direction = await screen.findByTestId(id);
+      expect(within(direction).getAllByRole('switch').length).toBeGreaterThan(0);
+      expect(within(direction).queryByRole('switch', { name: /Wake it/ })).not.toBeInTheDocument();
+    }
+  });
+
   it('a helper link says to dispose the helper; it can\'t be removed here', async () => {
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
       pairs: [{ agentId: 'lead', targetId: 'h1', bound: true, sources: [{ kind: 'helper' as const, sourceId: 'helper-wires' }] }],

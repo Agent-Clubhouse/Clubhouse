@@ -13,6 +13,7 @@
  * - deniedConnectionTools(from, to): the tools `from` may not use on `to`;
  * - localConnectionWakeOn(fromId, toId): whether Wake it is on, on this computer (#3215);
  * - setConnectionTools(from, to, disabledTools, enabledTools?): replace one direction's lists;
+ * - setConnectionDirections(changes, guard): the Dispatcher's lists for several directions, checked under the lock;
  * - removeConnectionDirection(from, to): drop one direction's entry;
  * - setConnectionLink(from, to, on): the user's own link for one direction;
  * - listConnectionDirections(agentId): every entry touching an agent;
@@ -130,11 +131,12 @@ async function updateDirection(from: AgentAddress, to: AgentAddress, fn: (curren
 
 /**
  * Replace one direction's disabled tools, and its turned-on tools when given
- * (wake on this computer, #3215); left out, they stay as they are. `by`: the
- * Dispatcher wrote it (on a link it made); any other write makes it the user's.
+ * (wake on this computer, #3215); left out, they stay as they are. It's the
+ * user's write: a Dispatcher mark (`setBy`) goes. The Dispatcher writes with
+ * {@link setConnectionDirections}.
  */
 export function setConnectionTools(
-  from: AgentAddress, to: AgentAddress, disabledTools: readonly string[], enabledTools?: readonly string[], options: { by?: 'dispatcher' } = {},
+  from: AgentAddress, to: AgentAddress, disabledTools: readonly string[], enabledTools?: readonly string[],
 ): Promise<ConnectionDirection | null> {
   return updateDirection(from, to, (current) => {
     const tools = [...new Set(disabledTools)];
@@ -142,10 +144,57 @@ export function setConnectionTools(
     // An entry is kept even when empty: "everything on" must not fall back to a source's list.
     return {
       from, to, disabledTools: tools, ...(enabled.length > 0 && { enabledTools: enabled }),
-      ...(options.by === 'dispatcher' && { setBy: 'dispatcher' as const }),
       ...(current?.link && { link: current.link }), updatedAt: new Date().toISOString(),
     };
   });
+}
+
+/** One direction's new lists, for {@link setConnectionDirections}. */
+export interface DirectionToolsChange {
+  from: AgentAddress;
+  to: AgentAddress;
+  disabledTools: readonly string[];
+  enabledTools: readonly string[];
+}
+
+/**
+ * Replace several directions' lists in one write, as the Dispatcher's (#3215).
+ * `guard` sees each direction's entry under the store's lock, so a user's
+ * write that lands after the caller looked is seen too; it throws to refuse,
+ * and then nothing is written.
+ */
+export async function setConnectionDirections(
+  changes: readonly DirectionToolsChange[],
+  guard: (current: ConnectionDirection | undefined, change: DirectionToolsChange) => void,
+): Promise<ConnectionDirection[]> {
+  if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
+  let written: ConnectionDirection[] = [];
+  await store.update((file) => {
+    const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
+    const now = new Date().toISOString();
+    const next = changes.map((c): ConnectionDirection => {
+      const current = list.find((d) => directionKey(d.from, d.to) === directionKey(c.from, c.to));
+      guard(current, c);
+      return {
+        from: c.from, to: c.to, disabledTools: [...new Set(c.disabledTools)],
+        ...(c.enabledTools.length > 0 && { enabledTools: [...new Set(c.enabledTools)] }),
+        setBy: 'dispatcher', ...(current?.link && { link: current.link }), updatedAt: now,
+      };
+    });
+    const keys = new Set(next.map((d) => directionKey(d.from, d.to)));
+    written = next;
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: [...list.filter((d) => !keys.has(directionKey(d.from, d.to))), ...next] };
+  });
+  for (const d of written) {
+    for (const listener of [...listeners]) {
+      try {
+        listener(d.from, d.to);
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+  return written;
 }
 
 /** Drop one direction's entry, link and all: a link the Dispatcher made and removed again (#3215). */

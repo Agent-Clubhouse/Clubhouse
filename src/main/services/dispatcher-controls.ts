@@ -53,7 +53,7 @@ import {
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { CONNECTION_SWITCHES, NEW_CONNECTION_DISABLED_TOOLS, localToolsFromAllow, type DirectionTools } from '../../shared/connection-grants';
-import { connectionMigrationDone, getConnectionDirection, runConnectionMigration, setConnectionTools } from './connection-grants-store';
+import { connectionMigrationDone, getConnectionDirection, runConnectionMigration, setConnectionDirections, type DirectionToolsChange } from './connection-grants-store';
 import { forgetDispatcherDirection, readLocalDirectionTools } from './connection-grants';
 import { maxHelpersCeiling } from '../../shared/orchestration-policy';
 
@@ -299,12 +299,27 @@ function directionReadback(pair: Pair): { tools: DirectionTools; tools_yours: bo
   return { tools: readLocalDirectionTools(pair.agentId, pair.targetId), tools_yours: toolsAreOurs(pair) };
 }
 
-/** Save the Dispatcher's tools on one direction: the ones it named, else what a new connection starts with. */
-async function writeDirectionTools(pair: Pair, allow: readonly string[] | undefined): Promise<void> {
-  const { disabledTools, enabledTools } = allow
-    ? localToolsFromAllow(allow)
-    : { disabledTools: [...NEW_CONNECTION_DISABLED_TOOLS], enabledTools: [] };
-  await setConnectionTools(local(pair.agentId), local(pair.targetId), disabledTools, enabledTools, { by: 'dispatcher' });
+/**
+ * Save the Dispatcher's tools on its directions in one write: the ones it
+ * named, else what a new connection starts with. Who owns each direction is
+ * checked again under the store's lock, so a switch the user turned since the
+ * caller looked refuses the whole write (`user_tools`) and nothing changes.
+ */
+async function writeDirectionTools(writes: ReadonlyArray<{ pair: Pair; allow?: readonly string[]; label: string }>): Promise<void> {
+  if (writes.length === 0) return;
+  const labels = new Map<string, string>();
+  const changes = writes.map(({ pair, allow, label }): DirectionToolsChange => {
+    labels.set(`${pair.agentId}>${pair.targetId}`, label);
+    const { disabledTools, enabledTools } = allow
+      ? localToolsFromAllow(allow)
+      : { disabledTools: [...NEW_CONNECTION_DISABLED_TOOLS], enabledTools: [] };
+    return { from: local(pair.agentId), to: local(pair.targetId), disabledTools, enabledTools };
+  });
+  await setConnectionDirections(changes, (current, change) => {
+    if (current && (current.link || current.setBy !== 'dispatcher')) {
+      throw userToolsRefusal(labels.get(`${change.from.agentId}>${change.to.agentId}`) ?? `${change.from.agentId} → ${change.to.agentId}`);
+    }
+  });
 }
 
 function userToolsRefusal(label: string): DispatcherControlError {
@@ -331,7 +346,7 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
     }
     // The tools on each direction (#3215): a new link starts like any new connection (no clear, compact or
     // wake) unless the call names its tools. Tools the user saved are never changed: naming them is refused.
-    const writes: Array<{ pair: Pair; allow?: string[] }> = [];
+    const writes: Array<{ pair: Pair; allow?: string[]; label: string }> = [];
     for (const [i, pair] of pairs.entries()) {
       const label = pairLabel(ends.get(pair.agentId)!, ends.get(pair.targetId)!);
       const entry = getConnectionDirection(local(pair.agentId), local(pair.targetId));
@@ -342,7 +357,7 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
       }
       // A link it made already keeps its tools unless the call names new ones; one without any saved gets the defaults.
       if (isOurs(pair) && entry && !allow[i]) continue;
-      writes.push({ pair, allow: allow[i] });
+      writes.push({ pair, allow: allow[i], label });
     }
 
     const createdAt = new Date().toISOString();
@@ -362,7 +377,13 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
       throw err;
     }
     // Saved before binding, so the link has its tools from the moment it exists.
-    for (const w of writes) await writeDirectionTools(w.pair, w.allow);
+    try {
+      await writeDirectionTools(writes);
+    } catch (err) {
+      // The user saved tools on a direction since the check above: the link isn't made.
+      await removeDispatcherConnections(added);
+      throw err;
+    }
 
     const outcomes = pairs.map((p) => claimSourceBinding(DISPATCHER_CONNECTION_SOURCE_ID, bindingFor(ends.get(p.agentId)!, ends.get(p.targetId)!)));
     // The user removed a pair between the check above and the claim: don't keep it.
@@ -433,7 +454,7 @@ export async function setConnectionToolsForLink(actorId: string, args: Record<st
       if (!toolsAreOurs(pair)) throw userToolsRefusal(`${nameOf(pair.agentId)} → ${nameOf(pair.targetId)}`);
     }
     const before = Object.fromEntries(pairs.map((p) => [`${auditString(p.agentId)}>${auditString(p.targetId)}`, readLocalDirectionTools(p.agentId, p.targetId).allowed.join(',')]));
-    for (const [i, pair] of pairs.entries()) await writeDirectionTools(pair, allow[i]);
+    await writeDirectionTools(pairs.map((pair, i) => ({ pair, allow: allow[i], label: `${nameOf(pair.agentId)} → ${nameOf(pair.targetId)}` })));
     const links = pairs.map((p) => ({ from: p.agentId, to: p.targetId, label: `${nameOf(p.agentId)} → ${nameOf(p.targetId)}`, ...directionReadback(p) }));
     return {
       before,

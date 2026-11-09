@@ -32,10 +32,11 @@ import { registerAgentTools } from './tools/agent-tools';
 import { buildToolName, callTool, getScopedToolList, refusalReasonOf, _resetForTesting as resetTools } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { bindingManager } from './binding-manager';
-import { setDispatcherAgent, _resetDispatcherGateForTesting } from './dispatcher-gate';
+import { setDispatcherAgent, setDispatcherChatAgent, _resetDispatcherGateForTesting } from './dispatcher-gate';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { updateAgentGrantChanges } from '../agent-grants-store';
-import { removeConnectionDirections, setConnectionTools, getConnectionDirection } from '../connection-grants-store';
+import { removeConnectionDirections, setConnectionDirections, setConnectionTools, getConnectionDirection } from '../connection-grants-store';
+import { markBindingRemovedByUser } from '../persisted-bindings';
 import { readLocalDirectionTools, setLocalWake, startConnectionGrants } from '../connection-grants';
 import type { McpBinding } from './types';
 
@@ -52,7 +53,7 @@ beforeEach(async () => {
   bindingManager._resetForTesting?.();
   _resetDispatcherGateForTesting();
   _resetMcpCallGateForTesting();
-  for (const id of ['a', 'b', 'dispatcher']) await removeConnectionDirections(id);
+  for (const id of ['a', 'b', 'dispatcher', 'chat']) await removeConnectionDirections(id);
   for (const id of ['a', 'b']) await updateAgentGrantChanges(id, () => undefined);
   stop = startConnectionGrants();
   registerAgentTools();
@@ -137,10 +138,18 @@ describe('wake on a local connection (#3215)', () => {
     expect(lifecycle.wakeWiredAgent).not.toHaveBeenCalled();
   });
 
-  it('a sleeping target with wake on points the sender at wake_agent', async () => {
+  it('points the sender at wake_agent only when it can call it', async () => {
+    const hint = async () => JSON.parse((await call('a', 'b', 'get_status')).content[0].text!).message as string;
+    const refused = async () => (await call('a', 'b', 'send_message', { message: 'hi' })).content[0].text!;
+    expect(await hint()).toBe('Agent is sleeping. Start it from Clubhouse or a group project wake_agent tool.');
+    expect(await refused()).toContain('Start it from Clubhouse');
     await setLocalWake('a', 'b', true);
-    const status = JSON.parse((await call('a', 'b', 'get_status')).content[0].text!);
-    expect(status.message).toContain('wake_agent');
+    expect(await hint()).toBe('Agent is sleeping. Call its wake_agent tool to start it.');
+    expect(await refused()).toContain('Call its wake_agent tool');
+    // The switch is on but the grant is Off: not pointed at a tool it can't use.
+    await updateAgentGrantChanges('a', () => ({ changes: [{ action: 'agent.wake', target: WAKE_ON, mode: 'off' }] }));
+    expect(await hint()).toBe('Agent is sleeping. Start it from Clubhouse or a group project wake_agent tool.');
+    expect(await refused()).toContain('Start it from Clubhouse');
   });
 
   it('never offers sleep to an agent that is not the Dispatcher, switch or not', async () => {
@@ -159,6 +168,29 @@ describe('wake on a local connection (#3215)', () => {
     expect(lifecycle.wakeWiredAgent).toHaveBeenCalledWith(expect.objectContaining({ callerId: 'dispatcher', targetId: 'b' }));
     running.add('b');
     expect(suffixes('dispatcher', 'b')).toContain('sleep_agent');
+  });
+
+  it('refuses wake_agent to the Dispatcher\'s chat, which wakes nothing but the Dispatcher, switch or not', async () => {
+    setMcpCaller('chat', '/p', {});
+    setDispatcherChatAgent('chat', true);
+    bindingManager.bind('chat', wire('chat', 'b'));
+    expect(suffixes('chat', 'b')).not.toContain('wake_agent');
+    expect(refusalReasonOf(await call('chat', 'b', 'wake_agent'))).toBe('tool_denied');
+    await setLocalWake('chat', 'b', true);
+    expect(suffixes('chat', 'b')).not.toContain('wake_agent');
+    expect(refusalReasonOf(await call('chat', 'b', 'wake_agent'))).toBe('no_grant');
+    expect(lifecycle.wakeWiredAgent).not.toHaveBeenCalled();
+  });
+
+  it('the user removing a pair drops what the Dispatcher set on it, and leaves what the user set (#3215)', async () => {
+    await setConnectionDirections([{ from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: [], enabledTools: ['wake_agent'] }], () => {});
+    await setConnectionTools({ agentId: 'b' }, { agentId: 'a' }, [], ['wake_agent']);
+    for (const [from, to] of [['a', 'b'], ['b', 'a']]) {
+      bindingManager.unbind(from, to);
+      markBindingRemovedByUser(from, to);
+    }
+    await vi.waitFor(() => expect(getConnectionDirection({ agentId: 'a' }, { agentId: 'b' })).toBeUndefined());
+    expect(getConnectionDirection({ agentId: 'b' }, { agentId: 'a' })).toMatchObject({ enabledTools: ['wake_agent'] });
   });
 
   it('reads a direction back: wake off until turned on, clear and compact as saved', async () => {

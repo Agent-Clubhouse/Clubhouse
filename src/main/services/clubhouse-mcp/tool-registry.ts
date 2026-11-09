@@ -236,6 +236,18 @@ function wakeOffered(agentId: string, binding: McpBinding): boolean {
   return !remoteMachineOf(binding.targetId) && localConnectionWakeOn(agentId, binding.targetId);
 }
 
+/**
+ * Whether `agentId` can call wake_agent on its wire to `targetId` now: the
+ * wire offers it and a grant covers it (or it can ask). For hints that point
+ * at wake_agent.
+ */
+export function canCallWake(agentId: string, targetId: string): boolean {
+  const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetKind === 'agent' && b.targetId === targetId);
+  const template = toolTemplates.get('agent')?.find((t) => t.nameSuffix === WAKE_TOOL);
+  if (!binding || !template || binding.disabledTools?.includes(WAKE_TOOL) || !wakeOffered(agentId, binding)) return false;
+  return isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding)));
+}
+
 /** wake_agent on an agent wire, which only some senders are offered. */
 function isAgentWake(binding: McpBinding, suffix: string): boolean {
   return binding.targetKind === 'agent' && suffix === WAKE_TOOL;

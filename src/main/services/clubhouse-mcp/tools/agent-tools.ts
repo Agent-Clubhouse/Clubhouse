@@ -6,13 +6,12 @@ import { dispatcherProviderControl } from '../../dispatcher-provider-control';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
-import { buildToolName, callTool, keepsFirstToolList, registerGlobalTool } from '../tool-registry';
+import { buildToolName, callTool, canCallWake, keepsFirstToolList, registerGlobalTool } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
-import { isDispatcherAgent, isTrackedDispatcher } from '../dispatcher-gate';
+import { isTrackedDispatcher } from '../dispatcher-gate';
 import { agentRegistry } from '../../agent-registry';
 import { currentRemoteCaller } from '../../annex-agent-calls';
-import { localConnectionWakeOn } from '../../connection-grants-store';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { requireString, optionalString, numberWithDefault } from './validation';
@@ -84,9 +83,8 @@ function buildTaggedMessage(agentId: string, targetId: string, message: string, 
 
 /** The error for a tool that needs the target awake. The Dispatcher wakes targets itself. */
 function sleepingError(agentId: string, targetId: string, action: string): McpToolResult {
-  // Wake it on the connection offers wake_agent to any agent here (#3215).
-  const canWake = isDispatcherAgent(agentId) || localConnectionWakeOn(agentId, targetId);
-  const hint = canWake ? `Call its wake_agent tool before ${action}.` : `Start it from Clubhouse before ${action}.`;
+  // Only a caller that has wake_agent on this wire is pointed at it (#3215).
+  const hint = canCallWake(agentId, targetId) ? `Call its wake_agent tool before ${action}.` : `Start it from Clubhouse before ${action}.`;
   return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. ${hint}` }], isError: true };
 }
 
@@ -284,7 +282,7 @@ export function registerAgentTools(): void {
           // A message wakes a sleeping Dispatcher (#3037).
           : isDispatcherTarget(targetId)
             ? sleepingDispatcherHint(agentId)
-            : isDispatcherAgent(agentId)
+            : canCallWake(agentId, targetId)
             ? 'Agent is sleeping. Call its wake_agent tool to start it.'
             : 'Agent is sleeping. Start it from Clubhouse or a group project wake_agent tool.',
       };

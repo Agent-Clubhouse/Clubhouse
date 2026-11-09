@@ -743,7 +743,7 @@ describe('tools on its links (#3215)', () => {
     expect(entry('a', 'b')?.enabledTools).toBeUndefined();
   });
 
-  it('disconnecting drops the tools it set, but not while the user\'s wire still holds the pair', async () => {
+  it('disconnecting drops the tools it set; while the user\'s wire still holds the pair they stay as the user\'s, with wake off', async () => {
     await links({ from: 'a', to: 'b', allow: ONLY });
     await call('disconnect_orchestrators', { from: 'a', to: 'b' });
     expect(entry('a', 'b')).toBeUndefined();
@@ -751,7 +751,48 @@ describe('tools on its links (#3215)', () => {
     userDraws('a', 'b');
     await call('disconnect_orchestrators', { from: 'a', to: 'b' });
     expect(isBound('a', 'b')).toBe(true);
-    expect(entry('a', 'b')).toMatchObject({ enabledTools: ['wake_agent'] });
+    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['check_connectivity', 'send_file', 'clear_agent', 'compact_agent'] });
+    expect(entry('a', 'b')?.enabledTools).toBeUndefined();
+    expect(entry('a', 'b')?.setBy).toBeUndefined();
+  });
+});
+
+describe('wake the Dispatcher set never outlives its link (#3215 QA)', () => {
+  const entry = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
+  const wakeOf = (from: string, to: string) => (entry(from, to)?.enabledTools ?? []).includes('wake_agent');
+
+  it('migrate, set wake, the user draws the pair, disconnect, the user removes and redraws it: wake is off', async () => {
+    fs.writeFileSync(dispatcherConnectionsPath(), JSON.stringify({ version: 1, connections: [
+      { agentId: 'a', targetId: 'b', agentProjectPath: P1, targetProjectPath: P1, createdAt: '', createdBy: 'dispatcher' },
+    ], removedByUser: [] }));
+    await restart();
+    expect(await migrateDispatcherLinkTools()).toBe('done');
+    expect((await call('set_connection_tools', { from: 'a', to: 'b', allow: ['send_message', 'wake_agent'] })).isError).toBeFalsy();
+    expect(wakeOf('a', 'b')).toBe(true);
+    userDraws('a', 'b');
+    await call('disconnect_orchestrators', { from: 'a', to: 'b' });
+    // Still bound by the user's wire: the tools stay as that wire's, the user's now, with wake off.
+    expect(isBound('a', 'b')).toBe(true);
+    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent'] });
+    expect(entry('a', 'b')?.setBy).toBeUndefined();
+    expect(wakeOf('a', 'b')).toBe(false);
+    await userRemoves('a', 'b');
+    userDraws('a', 'b');
+    expect(wakeOf('a', 'b')).toBe(false);
+  });
+
+  it('a switch the user turns between the check and the write refuses the link, and nothing is saved', async () => {
+    // Lands right after the Dispatcher's store takes the link, before its tools are written.
+    state.afterRename = () => { void setConnectionTools({ agentId: 'b' }, { agentId: 'a' }, ['send_file']); };
+    const result = await call('connect_orchestrators', { from: 'a', to: 'b', two_way: true, allow: ['send_message', 'wake_agent'] });
+    expect(result.isError).toBe(true);
+    expect(lastAudit()).toMatchObject({ outcome: 'refused', code: 'user_tools' });
+    expect(entry('b', 'a')).toMatchObject({ disabledTools: ['send_file'] });
+    expect(entry('b', 'a')?.setBy).toBeUndefined();
+    // All or nothing: the other direction got nothing either, and neither link is made.
+    expect(entry('a', 'b')).toBeUndefined();
+    expect(await storedPairs()).toEqual([]);
+    expect(isBound('a', 'b') || isBound('b', 'a')).toBe(false);
   });
 });
 
@@ -777,6 +818,24 @@ describe('links made before #3215 get the new defaults once', () => {
     }
     expect(connectionMigrationDone(DISPATCHER_LINK_DEFAULTS_MIGRATION)).toBe(true);
     expect(await linkRow('a', 'b')).toMatchObject({ tools: { disabled: ['clear_agent', 'compact_agent', 'wake_agent'] }, tools_yours: true });
+  });
+
+  it('waits while a source can\'t be read, since it might list the pair, and runs once it can', async () => {
+    await olderLinks([['a', 'b']]);
+    let broken = true;
+    const unregister = registerPersistedBindingSource({ id: 'unreadable', collect: async () => { if (broken) throw new Error('EACCES'); return []; } });
+    try {
+      await rebuildPersistedBindings();
+      expect(await migrateDispatcherLinkTools()).toBe('deferred');
+      expect(entry('a', 'b')).toBeUndefined();
+      expect(connectionMigrationDone(DISPATCHER_LINK_DEFAULTS_MIGRATION)).toBe(false);
+      broken = false;
+      await rebuildPersistedBindings();
+      expect(await migrateDispatcherLinkTools()).toBe('done');
+      expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], setBy: 'dispatcher' });
+    } finally {
+      unregister();
+    }
   });
 
   it('never touches a direction with saved tools or a pair the user connects too, and runs only once', async () => {

@@ -22,7 +22,7 @@ import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
 import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
-import { clearBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
+import { clearBindingRemovedByUser, onBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexIdentity from './annex-identity';
@@ -134,15 +134,21 @@ export function readLocalDirectionTools(fromAgentId: string, toAgentId: string):
 }
 
 /**
- * A link the Dispatcher made is gone (#3215): the tools it set on that
- * direction go too, once nothing binds the pair, so a wire the user draws
- * later starts like any new one. Tools the user set stay.
+ * A link the Dispatcher made is gone (#3215), so the tools it set on that
+ * direction aren't its any more. Nothing binds the pair: they go, so a wire
+ * the user draws later starts like any new one. Another source still binds it
+ * (a canvas wire, a helper link): they stay as that wire's, the user's from
+ * now on, with wake off, since the user never turned it on there. Tools the
+ * user set are left alone.
  */
 export async function forgetDispatcherDirection(fromAgentId: string, toAgentId: string): Promise<void> {
-  if (bindingManager.getBindingsForAgent(fromAgentId).some((b) => b.targetId === toAgentId)) return;
   const entry = getConnectionDirection(local(fromAgentId), local(toAgentId));
   if (entry?.setBy !== 'dispatcher' || entry.link) return;
-  await removeConnectionDirection(local(fromAgentId), local(toAgentId));
+  if (!bindingManager.getBindingsForAgent(fromAgentId).some((b) => b.targetId === toAgentId)) {
+    await removeConnectionDirection(local(fromAgentId), local(toAgentId));
+    return;
+  }
+  await setConnectionTools(local(fromAgentId), local(toAgentId), entry.disabledTools, (entry.enabledTools ?? []).filter((t) => t !== WAKE_TOOL));
 }
 
 /** The user's links: one binding per direction with a link. */
@@ -302,6 +308,13 @@ export function startConnectionGrants(options: { notify?: (from: string, to: str
     restoreTools,
   );
   const unregister = registerPersistedBindingSource(userConnectionSource);
+  // The user removed a pair, whatever held it (#3215): what the Dispatcher set on it goes once nothing binds it.
+  const unwatchRemovals = onBindingRemovedByUser((agentId, targetId) => {
+    void forgetDispatcherDirection(agentId, targetId).catch((err) => {
+      // telemetry-exempt: logged; the pair is removed either way, and its entry holds only what the Dispatcher set
+      appLog('core:mcp', 'warn', 'Could not drop the tools the Dispatcher set on a removed connection', { meta: { agentId, targetId, error: errorText(err) } });
+    });
+  });
   const unregisterNetwork = registerPersistedBindingSource(networkConnectionSource);
   const unsubscribe = onConnectionGrantsChanged((from, to) => {
     // A direction from another machine has no binding here: that machine's agent holds it (#3064).
@@ -328,6 +341,7 @@ export function startConnectionGrants(options: { notify?: (from: string, to: str
     bindingManager.setConnectionToolsSource(null, null);
     unregister();
     unregisterNetwork();
+    unwatchRemovals();
     unsubscribe();
     for (const u of unwatch) u();
     if (pending) clearTimeout(pending);
