@@ -25,6 +25,20 @@ export interface PendingAgentCard {
   agentId: string;
 }
 
+/**
+ * Whether a queued card may be placed: never for the Dispatcher, which has
+ * its own pane (#3184). An agent not in `agents` yet is still placed.
+ * `isDispatcher` is passed in, since this module can't import host internals.
+ */
+export function canPlaceAgentCard(
+  agentId: string,
+  agents: ReadonlyArray<{ id: string; projectId?: string }>,
+  isDispatcher: (agent: { id: string; projectId: string }) => boolean,
+): boolean {
+  const agent = agents.find((a) => a.id === agentId);
+  return !isDispatcher({ id: agentId, projectId: agent?.projectId ?? '' });
+}
+
 const queues = new WeakMap<object, PendingAgentCard[]>();
 const listeners = new WeakMap<object, Set<() => void>>();
 

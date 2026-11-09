@@ -6,6 +6,8 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentDetailsStore } from './details/detailsStore';
 import type { Agent } from '../../../shared/types';
+import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { rendererLog } from '../../plugins/renderer-logger';
 
 vi.mock('../../plugins/renderer-logger', async (orig) => {
@@ -598,3 +600,40 @@ describe('SleepingAgent details (#2281)', () => {
 
 });
 
+
+describe('SleepingAgent for the Dispatcher (#3184)', () => {
+  const dispatcher: Agent = { id: 'disp', projectId: DISPATCHER_PROJECT_ID, name: 'Navi', kind: 'durable', status: 'sleeping', color: 'indigo', branch: 'navi/standby' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([]);
+    window.clubhouse.agent.getSessionSummary = vi.fn().mockResolvedValue(null);
+    window.clubhouse.git.info = vi.fn().mockResolvedValue(undefined);
+    useAgentStore.setState({ agents: { disp: dispatcher }, agentIcons: {}, sessionNamePromptFor: null });
+    useDispatcherStore.setState({ project: { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: '/dispatcher' } } as never);
+  });
+  afterEach(() => {
+    useDispatcherStore.setState({ project: null } as never);
+  });
+
+  it('has its own wake page: its avatar, its own words, and no provider mascot', () => {
+    render(<SleepingAgent agent={{ ...dispatcher, emoji: '🧭' }} details />);
+    expect(screen.getByTestId('dispatcher-wake-avatar')).toBeInTheDocument();
+    // Neither the hero mascot nor the small one pinned above the composer, which overlapped the subtitle.
+    expect(screen.queryByTestId('sleeping-mascot')).toBeNull();
+    expect(screen.queryByTestId('agent-icon-hero')).toBeNull();
+    expect(screen.getByTestId('sleeping-greeting')).toHaveTextContent('Navi is asleep');
+    expect(screen.getByText('Ask Navi something to wake it, or press Wake to carry on where you left off.')).toBeInTheDocument();
+    expect(screen.getByTestId('wake-task-input')).toHaveAttribute('placeholder', 'Ask Navi something');
+    expect(screen.getByTestId('wake-composer').className).toContain('mt-[22px]');
+  });
+
+  it('leaves an agent\'s branch and files out of its last session', async () => {
+    window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'disp', name: 'Navi', lastSessionId: 's1' }]);
+    window.clubhouse.agent.getSessionSummary = vi.fn().mockResolvedValue({ summary: 'Sorted the review queue.', filesModified: ['/dispatcher/notes.md'] });
+    render(<SleepingAgent agent={dispatcher} />);
+    expect(await screen.findByText('Sorted the review queue.')).toBeInTheDocument();
+    expect(screen.queryByTestId('last-session-branch')).toBeNull();
+    expect(screen.queryByText('notes.md')).toBeNull();
+  });
+});

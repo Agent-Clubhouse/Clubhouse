@@ -49,6 +49,15 @@ describe('DispatcherIntro (#3048)', () => {
     expect(onPick).toHaveBeenCalledWith('What else can you do?');
   });
 
+  it('draws each suggestion as a button: outlined, with a send arrow (#3184)', () => {
+    render(<DispatcherIntro name="Rosie" teaching={TWO} onPick={vi.fn()} />);
+    for (const b of screen.getAllByTestId('dispatcher-suggestion')) {
+      expect(b.tagName).toBe('BUTTON');
+      expect(b).toHaveClass('border', 'border-surface-1', 'rounded-md', 'cursor-pointer');
+      expect(within(b).getByTestId('dispatcher-suggestion-arrow')).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
+
   it('waits for its agents before saying a count', () => {
     render(<DispatcherIntro name="Rosie" teaching={null} onPick={vi.fn()} />);
     expect(screen.queryByTestId('dispatcher-intro')).toBeNull();

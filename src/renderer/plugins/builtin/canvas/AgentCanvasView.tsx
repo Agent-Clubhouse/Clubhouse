@@ -9,6 +9,8 @@ import { cardDot } from './canvas-card-status';
 import { AgentView } from '../../../features/agents/chat/AgentView';
 import { openNewAgentPage } from '../../../chrome/startPage';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
+import { isDispatcherAgent, useDispatcherStore } from '../../../features/dispatcher/dispatcherStore';
+import { openDispatcher } from '../../../features/dispatcher/dispatcherNav';
 
 interface AgentCanvasViewProps {
   view: AgentCanvasViewType;
@@ -39,13 +41,16 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // The Dispatcher by the name the user gave it, else its working name.
+  const dispatcherName = useDispatcherStore((s) => s.state?.config?.name?.trim() || 'Dispatcher');
 
   useEffect(() => {
     const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
     return () => sub.dispose();
   }, [api]);
 
-  const agents = useMemo(() => api.agents.list(), [api, agentTick]);
+  // The Dispatcher has its own pane and is never a canvas card (#3184).
+  const agents = useMemo(() => api.agents.list().filter((a) => !isDispatcherAgent(a)), [api, agentTick]);
   const projects = useMemo(() => api.projects.list(), [api]);
   const assignedAgent = useMemo(
     () => view.agentId ? agents.find((a) => a.id === view.agentId) : null,
@@ -53,6 +58,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   );
 
   const handlePickAgent = useCallback((agent: AgentInfo) => {
+    if (isDispatcherAgent(agent)) return;
     if (onFocusAgentCard?.(view, agent.id)) return;
     const project = projects.find((p) => p.id === agent.projectId);
     const name = agent.name || agent.id;
@@ -191,6 +197,16 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
       }
     }
   }, [view.agentId, assignedAgent, agentFetchTriggered, view.projectId, view.metadata, api.projects]);
+
+  // A card that names the Dispatcher (an older board, a remote edit) says where it lives instead.
+  if (view.agentId && isDispatcherAgent({ id: view.agentId, projectId: view.projectId ?? '' })) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-2 p-4 text-center" data-testid="canvas-dispatcher-card">
+        <span className="text-xs text-ctp-subtext0">{dispatcherName} has its own pane and can’t be on a canvas.</span>
+        <button type="button" onClick={openDispatcher} className="text-xs text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Open {dispatcherName}</button>
+      </div>
+    );
+  }
 
   if (view.agentId && !assignedAgent) {
     const name = view.displayName || view.title || view.agentId;

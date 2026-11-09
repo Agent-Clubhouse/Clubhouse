@@ -70,19 +70,23 @@ export function DispatcherIntro({ name, teaching, onPick, disabled = false }: Di
         <div className="text-[12px] font-medium text-ctp-subtext1 mb-0.5">{name}</div>
         {intro.map((line) => <p key={line} className="m-0 mb-2 last:mb-0">{line}</p>)}
       </div>
-      <div className="flex flex-col items-start gap-0.5" role="group" aria-label="Things to ask" data-testid="dispatcher-suggestions">
-        <div className="text-[12px] text-ctp-subtext0 mb-1">Try asking</div>
+      <div className="flex flex-col items-start gap-1.5" role="group" aria-label="Things to ask" data-testid="dispatcher-suggestions">
+        <div className="text-[12px] text-ctp-subtext0">Try asking</div>
+        {/* Outlined like a button, with a send arrow, so each reads as something to click (#3184). */}
         {suggestions.map((s) => (
           <button
             key={s.kind + s.text}
             type="button"
             disabled={disabled}
             onClick={() => onPick(s.text)}
-            className="text-left text-[13px] text-ctp-text px-2 py-1 -mx-2 rounded-md hover:bg-surface-0 focus-visible:bg-surface-0 disabled:opacity-50 disabled:hover:bg-transparent"
+            className="group max-w-full inline-flex items-center gap-2 text-left text-[13px] text-ctp-text pl-3 pr-2.5 py-1.5 rounded-md border border-surface-1 bg-ctp-mantle cursor-pointer hover:bg-surface-0 hover:border-surface-2 focus-ring disabled:opacity-50 disabled:cursor-default disabled:hover:bg-ctp-mantle disabled:hover:border-surface-1"
             data-testid="dispatcher-suggestion"
             data-kind={s.kind}
           >
-            {s.text}
+            <span className="min-w-0">{s.text}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 text-ctp-overlay1 group-hover:text-ctp-text" aria-hidden="true" data-testid="dispatcher-suggestion-arrow">
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
           </button>
         ))}
       </div>

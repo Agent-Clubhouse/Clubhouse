@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
-import { queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
+import { isDispatcherAgent, useDispatcherStore } from '../../../features/dispatcher/dispatcherStore';
+import { canPlaceAgentCard, queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
 import type { CanvasView } from './canvas-types';
 
 const card = (over: Partial<PendingAgentCard> = {}): PendingAgentCard => ({
@@ -91,5 +93,21 @@ describe('canvasOfView', () => {
 
   it('falls back when no canvas has the card', () => {
     expect(canvasOfView(canvases, 'gone', 'c1')).toBe('c1');
+  });
+});
+
+describe('canPlaceAgentCard (#3184)', () => {
+  afterEach(() => { useDispatcherStore.setState({ state: null } as never); });
+
+  it('places an ordinary agent, and one not listed yet', () => {
+    expect(canPlaceAgentCard('a1', [{ id: 'a1', projectId: 'p1' }], isDispatcherAgent)).toBe(true);
+    expect(canPlaceAgentCard('new', [], isDispatcherAgent)).toBe(true);
+  });
+
+  it('never places the Dispatcher, by its project or by either of its ids', () => {
+    expect(canPlaceAgentCard('d0', [{ id: 'd0', projectId: DISPATCHER_PROJECT_ID }], isDispatcherAgent)).toBe(false);
+    useDispatcherStore.setState({ state: { agentId: 'disp', chatAgentId: 'disp-chat' } } as never);
+    expect(canPlaceAgentCard('disp', [], isDispatcherAgent)).toBe(false);
+    expect(canPlaceAgentCard('disp-chat', [{ id: 'disp-chat', projectId: 'p1' }], isDispatcherAgent)).toBe(false);
   });
 });
