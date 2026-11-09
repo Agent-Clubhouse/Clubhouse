@@ -26,7 +26,7 @@ function refusal(pluginId: string, name: string, reason: string): Error {
 
 /** Throws a refusal for any check the agent behind the open calls fails; resolves once main has said yes to every grant. */
 function runChecks(pluginId: string, name: string, level: AccessLevel, checks: PluginApiCheck[]): Promise<void> | void {
-  const grants: Array<Extract<PluginApiCheck, { grant: unknown }>> = [];
+  const asks: Array<Extract<PluginApiCheck, { grant: unknown } | { file: unknown }>> = [];
   for (const c of checks) {
     if ('refuse' in c) throw refusal(pluginId, name, c.refuse);
     if ('ownCommand' in c && !pluginCommandRegistry.has(c.ownCommand)) {
@@ -35,13 +35,14 @@ function runChecks(pluginId: string, name: string, level: AccessLevel, checks: P
     if ('access' in c && rank(level) < rank(c.access)) {
       throw new Error(`Plugin '${pluginId}' is answering a tool call from an agent that runs at ${accessLabel(level)}, so it can't ${c.what} (${name}): that acts at ${accessLabel(c.access)}, and no agent acts above its own level, even through a plugin. Ask the person to do it.`);
     }
-    if ('grant' in c) grants.push(c);
+    if ('grant' in c || 'file' in c) asks.push(c);
   }
-  if (grants.length === 0) return;
+  if (asks.length === 0) return;
   return (async () => {
-    for (const g of grants) {
-      const refused = await checkAnsweringCallers(pluginId, 'agentId' in g ? { action: g.grant, agentId: g.agentId } : { action: g.grant, projectPath: g.projectPath });
-      if (refused) throw new Error(refused);
+    for (const a of asks) {
+      const refused = await checkAnsweringCallers(pluginId, 'file' in a ? { filePath: a.file, op: a.op }
+        : 'agentId' in a ? { action: a.grant, agentId: a.agentId } : { action: a.grant, projectPath: a.projectPath });
+      if (refused) throw refusal(pluginId, name, refused);
     }
   })();
 }
@@ -58,9 +59,11 @@ function guardMethod(name: string, fn: Method, decl: PluginApiDeclaration | unde
       return guardNamespace(decl.as, result, { ...scope, base: result[FILES_BASE] as string | undefined });
     };
   }
-  return function guarded(this: unknown, ...args: unknown[]) {
+  return function guarded(this: unknown, ...given: unknown[]) {
     const level = pluginAnsweringLevel(pluginId);
-    if (!level) return fn.apply(this, args);
+    if (!level) return fn.apply(this, given);
+    // Read once: what is checked is what the method gets, even if an options object changes meanwhile.
+    const args = given.map((a) => (a && typeof a === 'object' && Object.getPrototypeOf(a) === Object.prototype ? { ...a } : a));
     try {
       // Undeclared (the parity test keeps this from shipping): refused during a call, never allowed unchecked.
       if (!decl || decl.kind !== 'change') throw refusal(pluginId, name, 'It isn\'t declared in the plugin API\'s permission table.');
@@ -73,9 +76,6 @@ function guardMethod(name: string, fn: Method, decl: PluginApiDeclaration | unde
     }
   };
 }
-
-/** Whether any declaration lives under `prefix.` (a nested namespace such as storage.project). */
-const hasNested = (prefix: string) => Object.keys(PLUGIN_API_GRANTS).some((k) => k.startsWith(`${prefix}.`));
 
 /**
  * A namespace with its state-changing methods guarded: a copy when any is, keeping getters, symbols
@@ -94,7 +94,7 @@ export function guardNamespace<T>(ns: string, obj: T, scope: GuardScope): T {
       if (decl?.kind === 'read' || decl?.kind === 'plugin') continue;
       d.value = guardMethod(name, d.value as Method, decl, scope);
       changed = true;
-    } else if (d.value && typeof d.value === 'object' && Object.getPrototypeOf(d.value) === Object.prototype && hasNested(name)) {
+    } else if (d.value && typeof d.value === 'object' && Object.getPrototypeOf(d.value) === Object.prototype) {
       const inner = guardNamespace(name, d.value, scope);
       if (inner !== d.value) { d.value = inner; changed = true; }
     }

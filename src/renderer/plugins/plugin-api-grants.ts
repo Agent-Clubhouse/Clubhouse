@@ -17,9 +17,11 @@
  *   refused during a call because it can't be checked here.
  * - `scope`: returns an API that is guarded the same way (files.forRoot).
  *
- * Access levels for what a plugin does with no prompts of its own: writing
- * files is what Auto-accept edits allows; running an allowed command is what
- * Auto allows; typing into a shell has no check at all, so Full access.
+ * Files a plugin changes, and the folder a command runs in, are judged in
+ * main against the agent (clubhouse-mcp/plugin-file-check.ts): symlinks
+ * followed, the real project found, Clubhouse's records and agent
+ * configuration held apart from ordinary edits. Typing into a shell has no
+ * check at all, so it needs Full access.
  */
 
 import type { AccessLevel } from '../../shared/agent-access';
@@ -33,6 +35,8 @@ export type PluginApiCheck =
   | { grant: GrantAction; agentId: string }
   | { grant: GrantAction; projectPath: string }
   | { access: AccessLevel; what: string }
+  /** A file changed (write, delete) or a command's working folder (exec), judged in main. */
+  | { file: string; op: 'write' | 'delete' | 'exec' }
   /** Allowed only when this command id is one the plugin registered itself. */
   | { ownCommand: string }
   | { refuse: string };
@@ -60,21 +64,14 @@ const projectPathOf = (projectId: unknown, scope: GuardScope): string | undefine
   return scope.ctx.projectPath;
 };
 
-/**
- * A file the plugin writes, moves or deletes. Inside a project's `.clubhouse` folder it changes how
- * that project's agents run (settings, skills, agent templates), which needs project.configure there;
- * anywhere else it is an edit, which needs Auto-accept edits.
- */
-function fileChange(base: string | undefined, relativePath: unknown): PluginApiCheck[] {
+/** A file the plugin writes or deletes, by its full path, for main to judge against the agent. */
+function fileChange(base: string | undefined, relativePath: unknown, op: 'write' | 'delete'): PluginApiCheck[] {
   if (!base || typeof relativePath !== 'string') return [{ refuse: 'It can\'t tell which file this is, so it can\'t check it for the agent.' }];
-  const full = resolvePath(base, relativePath).replace(/\\/g, '/');
-  const at = full.search(/\/\.clubhouse(\/|$)/);
-  if (at >= 0) return [{ grant: 'project.configure', projectPath: full.slice(0, at) || '/' }];
-  return [{ access: 'auto_edit', what: 'change files' }];
+  return [{ file: resolvePath(base, relativePath), op }];
 }
 
-const files = (...indexes: number[]) => change((args, scope) => indexes.flatMap((i) => fileChange(scope.base, args[i])));
-const projectFiles = change((args, scope) => fileChange(scope.ctx.projectPath, args[0]));
+const files = (...paths: Array<[number, 'write' | 'delete']>) => change((args, scope) => paths.flatMap(([i, op]) => fileChange(scope.base, args[i], op)));
+const projectFile = (op: 'write' | 'delete') => change((args, scope) => fileChange(scope.ctx.projectPath, args[0], op));
 
 /** An agentConfig write: a change to the target project's agent defaults. */
 const defaults = (optsIndex: number | null) => change((args, scope) => {
@@ -88,8 +85,8 @@ const OTHER_DESKTOP = change(() => [{ refuse: 'It changes another desktop, which
 
 export const PLUGIN_API_GRANTS: Readonly<Record<string, PluginApiDeclaration>> = {
   'project.readFile': READ,
-  'project.writeFile': projectFiles,
-  'project.deleteFile': projectFiles,
+  'project.writeFile': projectFile('write'),
+  'project.deleteFile': projectFile('delete'),
   'project.fileExists': READ,
   'project.listDirectory': READ,
 
@@ -113,7 +110,8 @@ export const PLUGIN_API_GRANTS: Readonly<Record<string, PluginApiDeclaration>> =
   'ui.showConfirm': PLUGIN,
   'ui.showInput': PLUGIN,
   'ui.showApprovalDialog': PLUGIN,
-  'ui.openExternalUrl': PLUGIN,
+  // The person's browser, signed in, at a page the agent could pick.
+  'ui.openExternalUrl': change(() => [{ refuse: 'It opens the person\'s browser, which an agent doesn\'t do.' }]),
 
   'commands.register': PLUGIN,
   // Its own commands run its own code, guarded the same way; another plugin's or the app's aren't checked for the agent.
@@ -195,20 +193,22 @@ export const PLUGIN_API_GRANTS: Readonly<Record<string, PluginApiDeclaration>> =
   'files.readTree': READ,
   'files.readFile': READ,
   'files.readBinary': READ,
-  'files.writeFile': files(0),
+  'files.writeFile': files([0, 'write']),
   'files.stat': READ,
-  // Moving a file changes both places.
-  'files.rename': files(0, 1),
-  'files.copy': files(1),
-  'files.mkdir': files(0),
-  'files.delete': files(0),
+  // Moving a file takes it from one place and puts it in another.
+  'files.rename': files([0, 'delete'], [1, 'write']),
+  'files.copy': files([1, 'write']),
+  'files.mkdir': files([0, 'write']),
+  'files.delete': files([0, 'delete']),
   'files.showInFolder': PLUGIN,
   'files.forRoot': { kind: 'scope', as: 'files' },
   'files.search': READ,
   'files.watch': READ,
 
-  // A command from the plugin's allowed list, run with no prompt.
-  'process.exec': change(() => [{ access: 'auto', what: 'run a command' }]),
+  // A command from the plugin's allowed list, run with no prompt in the plugin's project (else the home folder).
+  'process.exec': change((_args, scope) => (scope.ctx.projectPath
+    ? [{ file: scope.ctx.projectPath, op: 'exec' }]
+    : [{ access: 'full_access', what: 'run a command outside a project' }])),
 
   'badges.set': PLUGIN,
   'badges.clear': PLUGIN,

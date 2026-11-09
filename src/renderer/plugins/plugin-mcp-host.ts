@@ -331,7 +331,11 @@ export function createMcpAPI(ctx: PluginContext): McpAPI {
 }
 
 /** A Clubhouse permission the agent behind a call must hold: on an agent, or on a project (#3174). */
-export type PluginCallerCheck = { action: GrantAction; agentId: string } | { action: GrantAction; projectPath: string };
+export type PluginCallerCheck =
+  | { action: GrantAction; agentId: string }
+  | { action: GrantAction; projectPath: string }
+  /** A file changed, or a command's working folder, judged in main (plugin-file-check.ts). */
+  | { filePath: string; op: 'write' | 'delete' | 'exec' };
 
 /**
  * While the plugin answers agents' tool calls, whether each of those agents may do this (D126,

@@ -240,6 +240,13 @@ describe('what a plugin may do for the agent whose call it answers, with real gr
       // A member who isn't an admin gets nothing from the group.
       asCaller('peer');
       expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'plain' })).not.toBeNull();
+      // A group tool the person turned off on the admin's wire is off through a plugin too.
+      asCaller('plain');
+      bindingManager.setDisabledTools('plain', 'gp1', ['sleep_agent']);
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.sleep', agentId: 'peer' })).not.toBeNull();
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).toBeNull();
+      // Resetting a member isn't a plugin action at all: the relation is only for wake, sleep and message.
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.reset', agentId: 'peer' })).not.toBeNull();
     } finally {
       bindingManager.unbind('plain', 'gp1');
       bindingManager.unbind('peer', 'gp1');

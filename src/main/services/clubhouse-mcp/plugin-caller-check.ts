@@ -15,7 +15,7 @@
  */
 
 import { GRANT_ACTIONS, type GrantAction, type GrantCallTarget } from '../../../shared/agent-grants';
-import { isProjectAdmin } from '../../../shared/group-project-admin';
+import { deniedGroupProjectTools, isProjectAdmin } from '../../../shared/group-project-admin';
 import type { ToolGrantDeclaration } from './tool-grants';
 import { resolveArgTargets } from './arg-targets';
 import { bindingManager } from './binding-manager';
@@ -27,6 +27,9 @@ export type PluginCallerCheck =
   | { action: GrantAction; agentId: string }
   | { action: GrantAction; projectPath: string };
 
+/** A file a plugin changes, or a command's working folder, for the agent behind the call (plugin-file-check.ts). */
+export type PluginFileCheck = { filePath: string; op: 'write' | 'delete' | 'exec' };
+
 export function isPluginCallerCheck(value: unknown): value is PluginCallerCheck {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
@@ -34,15 +37,34 @@ export function isPluginCallerCheck(value: unknown): value is PluginCallerCheck 
   return (typeof v.agentId === 'string') !== (typeof v.projectPath === 'string');
 }
 
+export function isPluginFileCheck(value: unknown): value is PluginFileCheck {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.filePath === 'string' && v.filePath !== '' && (v.op === 'write' || v.op === 'delete' || v.op === 'exec') && v.action === undefined;
+}
+
 /** Main settled the call (answered, timed out, tools removed): what the plugin does now isn't for that agent. */
 export const CALL_OVER = 'The agent\'s tool call this plugin was answering is over, so this can\'t run for it.';
 
-/** Whether `callerId` administers a group project `agentId` is a member of. */
-function administersGroupWith(callerId: string, agentId: string): boolean {
+/** The group project tool that does each action to a member, as the group's tools are turned on or off per wire. */
+const GROUP_TOOL: Partial<Record<GrantAction, string>> = { 'agent.wake': 'wake_agent', 'agent.sleep': 'sleep_agent', 'agent.message': 'shoulder_tap' };
+
+/**
+ * Whether `callerId` administers a group project `agentId` is a member of, with that group's tool for
+ * `action` still on for its wire: the person can turn a group tool off on an admin's wire, and then the
+ * plugin can't do it for the admin either.
+ */
+function administersGroupWith(callerId: string, agentId: string, action: GrantAction): boolean {
+  const tool = GROUP_TOOL[action];
+  if (!tool) return false;
   const all = bindingManager.getAllBindings();
-  return all.some((b) => b.agentId === callerId && b.targetKind === 'group-project'
-    && isProjectAdmin(groupProjectRegistry.getSync(b.targetId)?.metadata, callerId)
-    && all.some((m) => m.targetKind === 'group-project' && m.targetId === b.targetId && m.agentId === agentId));
+  return all.some((b) => {
+    if (b.agentId !== callerId || b.targetKind !== 'group-project') return false;
+    const metadata = groupProjectRegistry.getSync(b.targetId)?.metadata;
+    return isProjectAdmin(metadata, callerId)
+      && !deniedGroupProjectTools(metadata, callerId, b.disabledTools).has(tool)
+      && all.some((m) => m.targetKind === 'group-project' && m.targetId === b.targetId && m.agentId === agentId);
+  });
 }
 
 /** Null when the agent behind `callId` may, else why not, for the plugin to throw. */
@@ -59,7 +81,7 @@ export async function checkPluginCaller(pluginId: string, callId: string, check:
   const resolved = targets.get(declaration);
   // Something the agent can't name is something it can't reach.
   if (!resolved?.length) return onAgent ? 'The calling agent can\'t reach that agent.' : 'The calling agent can\'t reach that project.';
-  if (onAgent && administersGroupWith(agentId, check.agentId)) {
+  if (onAgent && administersGroupWith(agentId, check.agentId, check.action)) {
     targets.set(declaration, resolved.map((t): GrantCallTarget => ({ ...t, relations: [...(t.relations ?? []), 'group_member'] })));
   }
   const result = checkToolGrant(agentId, declaration, args, undefined, targets);

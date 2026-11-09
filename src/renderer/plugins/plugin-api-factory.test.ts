@@ -4450,31 +4450,37 @@ describe('plugin-api-factory', () => {
         };
         const asked = () => pluginMcp.checkCaller.mock.calls.map((c) => c[2]);
 
-        it('a file write inside a project\'s .clubhouse folder needs project.configure there', async () => {
+        it('every file it writes, moves or deletes is sent to main by its full path, and main\'s answer holds', async () => {
           const { ctx, api } = await inCall('full_access');
           const write = vi.spyOn(window.clubhouse.file, 'write');
-          pluginMcp.checkCaller.mockResolvedValueOnce({ ok: false, message: 'No project.configure.' });
-          await expect(api.files.writeFile('.clubhouse/settings.json', '{}')).rejects.toThrow('No project.configure.');
-          expect(asked()).toEqual([{ action: 'project.configure', projectPath: '/projects/my-project' }]);
+          pluginMcp.checkCaller.mockResolvedValue({ ok: false, message: 'Clubhouse\'s own record.' });
+          await expect(api.files.writeFile('.clubhouse/settings.json', '{}')).rejects.toThrow('Clubhouse\'s own record.');
+          await expect(api.project.writeFile('.clubhouse/agents.json', '{}')).rejects.toThrow('Clubhouse\'s own record.');
+          await expect(api.files.rename('a.txt', 'b.txt')).rejects.toThrow();
+          await expect(api.files.delete('.')).rejects.toThrow();
+          expect(asked()).toEqual([
+            { filePath: '/projects/my-project/.clubhouse/settings.json', op: 'write' },
+            { filePath: '/projects/my-project/.clubhouse/agents.json', op: 'write' },
+            { filePath: '/projects/my-project/a.txt', op: 'delete' },
+            // main resolves it: the project itself, which it refuses.
+            { filePath: '/projects/my-project/.', op: 'delete' },
+          ]);
           expect(write).not.toHaveBeenCalled();
-          // project.writeFile is the same route.
-          pluginMcp.checkCaller.mockResolvedValueOnce({ ok: false, message: 'No project.configure.' });
-          await expect(api.project.writeFile('.clubhouse/skills/x/SKILL.md', 'x')).rejects.toThrow('No project.configure.');
+          // A move is checked at both ends.
+          pluginMcp.checkCaller.mockClear();
+          pluginMcp.checkCaller.mockResolvedValue({ ok: true });
+          await api.files.rename('a.txt', 'b.txt').catch(() => undefined);
+          expect(asked()).toEqual([{ filePath: '/projects/my-project/a.txt', op: 'delete' }, { filePath: '/projects/my-project/b.txt', op: 'write' }]);
+          await api.files.writeFile('src/a.ts', 'x');
+          expect(write).toHaveBeenCalledTimes(1);
           dispose(ctx);
         });
 
-        it('any other file change needs the caller at Auto-accept edits, both ends of a move included', async () => {
-          const { ctx, api } = await inCall('ask');
-          const write = vi.spyOn(window.clubhouse.file, 'write');
-          await expect(api.files.writeFile('src/a.ts', 'x')).rejects.toThrow(/runs at Ask first, so it can't change files \(files\.writeFile\): that acts at Auto-accept edits/);
-          await expect(api.files.delete('src/a.ts')).rejects.toThrow(/change files/);
-          await expect(api.files.rename('a.txt', '.clubhouse/settings.json')).rejects.toThrow(/change files/);
-          expect(write).not.toHaveBeenCalled();
+        it('a file path that escapes its folder is refused before anything is asked', async () => {
+          const { ctx, api } = await inCall('full_access');
+          await expect(api.files.writeFile('../elsewhere/a.ts', 'x')).rejects.toThrow(/traversal/);
+          expect(pluginMcp.checkCaller).not.toHaveBeenCalled();
           dispose(ctx);
-          const higher = await inCall('auto_edit', 'editing-plugin');
-          await higher.api.files.writeFile('src/a.ts', 'x');
-          expect(write).toHaveBeenCalledTimes(1);
-          dispose(higher.ctx);
         });
 
         it('stopping an agent needs agent.sleep; starting one needs agent.create, on top of the Access cap', async () => {
@@ -4492,11 +4498,27 @@ describe('plugin-api-factory', () => {
           dispose(ctx);
         });
 
-        it('a command runs at the caller\'s level: Auto for an allowed command, Full access for a shell, synchronously refused', async () => {
+        it('a command is judged in main by its folder; a shell needs Full access, refused synchronously for a write', async () => {
           const { ctx, api } = await inCall('auto_edit');
-          await expect(api.process.exec('git', ['status'])).rejects.toThrow(/can't run a command \(process\.exec\): that acts at Auto/);
+          pluginMcp.checkCaller.mockResolvedValueOnce({ ok: false, message: 'that acts at Auto' });
+          await expect(api.process.exec('git', ['status'])).rejects.toThrow('that acts at Auto');
+          expect(asked()).toEqual([{ filePath: '/projects/my-project', op: 'exec' }]);
           expect(() => api.terminal.write('s1', 'rm -rf ~\n')).toThrow(/can't type into a shell/);
           await expect(api.terminal.spawn('s1')).rejects.toThrow(/can't open a shell/);
+          await expect(api.ui.openExternalUrl('https://example.com')).rejects.toThrow(/opens the person's browser/);
+          dispose(ctx);
+        });
+
+        it('what is checked is what the method gets: options are read once', async () => {
+          const { ctx, api } = await inCall('full_access');
+          const spawn = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('x');
+          let reads = 0;
+          const options = { get mission() { reads++; return reads === 1 ? undefined : 'Sneaky'; } };
+          await api.agents.resume('agent-9', options).catch(() => undefined);
+          // Only agent.wake was asked, and the method saw the same (no mission).
+          expect(asked()).toEqual([{ action: 'agent.wake', agentId: 'agent-9' }]);
+          expect(reads).toBe(1);
+          spawn.mockRestore();
           dispose(ctx);
         });
 
