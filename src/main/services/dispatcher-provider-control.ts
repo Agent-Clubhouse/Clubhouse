@@ -10,7 +10,7 @@ import { mcpCallAccess } from './clubhouse-mcp/mcp-call-gate';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { isBindingRemovedByUser } from './persisted-bindings';
 import { readAgentCensus, isConnectedOrchestrator } from './dispatcher-connections';
-import { appendAudit, auditString } from './dispatcher-audit';
+import { auditString, recordDispatcherControl } from '../telemetry/dispatcher-telemetry';
 import { MobileControlError } from './mobile-control';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -51,7 +51,7 @@ export async function dispatcherProviderControl(callerId: string, targetId: stri
     const result = change
       ? await changeAgentProvider(projectPath, targetId, args.provider as string, args.expectedState as string, actor)
       : await previewAgentProvider(projectPath, targetId, args.provider as string, actor);
-    const audited = await appendAudit({ tool: suffix, actorId: callerId, targets: [targetId], requested: { provider: auditString(args.provider) }, outcome: 'ok' });
+    const audited = recordDispatcherControl({ tool: suffix, actorId: callerId, targets: [targetId], requested: { provider: auditString(args.provider) }, outcome: 'ok' });
     if (change) {
       const project = (await projectStore.list()).find((p) => p.path === projectPath);
       if (project) broadcastToAllWindows(IPC.WINDOW.REQUEST_DURABLE_RELOAD, project.id);
@@ -59,7 +59,7 @@ export async function dispatcherProviderControl(callerId: string, targetId: stri
     return { ...result, ...(!audited && { audit_warning: 'Local telemetry recording is off, so this is not in the audit record.' }) };
   } catch (err) {
     const code = err instanceof MobileControlError ? err.code : 'provider_control_failed';
-    await appendAudit({ tool: suffix, actorId: callerId, targets: [auditString(targetId)], outcome: 'refused', code });
+    recordDispatcherControl({ tool: suffix, actorId: callerId, targets: [auditString(targetId)], outcome: 'refused', code });
     throw err;
   }
 }

@@ -35,7 +35,8 @@ import {
   syncDispatcherBackground,
   upkeepReviewText,
 } from './dispatcher-background';
-import { renderTopicPage } from './dispatcher-memory';
+import { MEMORY_INDEX_CAP_BYTES, renderTopicPage } from './dispatcher-memory';
+import { captureEvents, type EventCapture } from '../../telemetry/__test-utils__/event-capture';
 
 const DISPATCHER = 'disp-1';
 
@@ -58,7 +59,7 @@ let world: World;
 let tmp: string;
 let memory: string;
 
-function install(): void {
+function install(over: Parameters<typeof _setBackgroundDepsForTesting>[0] = {}): void {
   _setBackgroundDepsForTesting({
     ready: () => world.ready,
     ensureAction: (name, input) => { world.writes++; world.actions.set(name, { kind: 'action', input }); },
@@ -74,6 +75,7 @@ function install(): void {
     memoryRoot: () => memory,
     stateFile: () => path.join(tmp, 'dispatcher-upkeep.json'),
     now: () => world.now,
+    ...over,
   });
 }
 
@@ -193,6 +195,95 @@ describe('the upkeep gate', () => {
 
   it('sends nothing for an empty memory', async () => {
     expect(await runDispatcherUpkeep()).toHaveProperty('skip');
+  });
+});
+
+describe('upkeep telemetry (#3052)', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  let capture: EventCapture | null = null;
+  afterEach(() => { capture?.stop(); capture = null; });
+
+  function write(rel: string, text: string, ageMs = 0): void {
+    const file = path.join(memory, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+    const t = new Date(world.now - ageMs);
+    fs.utimesSync(file, t, t);
+  }
+
+  /** A memory whose names and text are all things telemetry must never carry. */
+  function secretMemory(): string {
+    const index = 'Acme secret launch: see [release](topics/acme-release.md).\n';
+    write('index.md', index);
+    write('topics/acme-checkout.md', renderTopicPage({ status: 'unconfirmed', source: 'pm', body: 'Acme checkout is broken for alice@example.com\n' }), 60_000);
+    write('topics/acme-release.md', renderTopicPage({ status: 'confirmed', source: 'pm', body: 'Ships Friday. See [gone](acme-gone.md).\n' }), 40 * DAY_MS);
+    write('agents/acme-lead.md', '## Card\nOwns /Users/alice/acme\n\n## Notes\nQuiet.\n', 60_000);
+    write('timeline/2026-11-09.md', '- 10:00 acme-lead pushed\n', 60_000);
+    return index;
+  }
+
+  it('records what upkeep did and memory health, with counts only', async () => {
+    const index = secretMemory();
+    capture = captureEvents();
+    const result = await runDispatcherUpkeep();
+    expect(result).toHaveProperty('send');
+
+    expect(capture.named('clubhouse.dispatcher.memory_upkeep').map((e) => e.attrs)).toEqual([{
+      'clubhouse.outcome': 'ok',
+      'clubhouse.dispatcher.upkeep.rolled_days': 0,
+      'clubhouse.dispatcher.upkeep.rolled_weeks': 0,
+      'clubhouse.dispatcher.upkeep.links_fixed': 0,
+      'clubhouse.dispatcher.upkeep.pruned': 0,
+      'clubhouse.dispatcher.upkeep.to_check': 3,
+      'clubhouse.dispatcher.upkeep.review': true,
+    }]);
+    const [health] = capture.named('clubhouse.dispatcher.memory_health');
+    expect(health.attrs).toMatchObject({
+      'clubhouse.dispatcher.memory.pages': 5,
+      'clubhouse.dispatcher.memory.topics': 2,
+      'clubhouse.dispatcher.memory.agent_pages': 1,
+      'clubhouse.dispatcher.memory.timeline_pages': 1,
+      'clubhouse.dispatcher.memory.index_bytes': Buffer.byteLength(index),
+      'clubhouse.dispatcher.memory.index_cap_bytes': MEMORY_INDEX_CAP_BYTES,
+      'clubhouse.dispatcher.memory.index_over_cap': false,
+      'clubhouse.dispatcher.memory.unlinked_topics': 1,
+      'clubhouse.dispatcher.memory.stale_topics': 1,
+      'clubhouse.dispatcher.memory.unconfirmed_topics': 1,
+      'clubhouse.dispatcher.memory.broken_links': 1,
+      'clubhouse.dispatcher.memory.missing_sources': 0,
+    });
+    expect(health.attrs['clubhouse.dispatcher.memory.bytes']).toBeGreaterThan(Buffer.byteLength(index));
+
+    // No page names, text, people or paths.
+    expect(JSON.stringify(capture.events)).not.toMatch(/acme|alice|example\.com|\/Users|Ships|Quiet/i);
+  });
+
+  it('reports an index over its cap', async () => {
+    write('index.md', 'x'.repeat(MEMORY_INDEX_CAP_BYTES + 10));
+    capture = captureEvents();
+    await runDispatcherUpkeep();
+    expect(capture.named('clubhouse.dispatcher.memory_health')[0].attrs).toMatchObject({
+      'clubhouse.dispatcher.memory.index_bytes': MEMORY_INDEX_CAP_BYTES + 10,
+      'clubhouse.dispatcher.memory.index_over_cap': true,
+    });
+  });
+
+  it('records a failed run as an error and still throws', async () => {
+    secretMemory();
+    capture = captureEvents();
+    install({ stateFile: () => path.join(tmp, 'missing-dir', 'file-as-dir', 'x.json') });
+    fs.mkdirSync(path.join(tmp, 'missing-dir'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'missing-dir', 'file-as-dir'), 'not a folder');
+    await expect(runDispatcherUpkeep()).rejects.toThrow();
+    expect(capture.named('clubhouse.dispatcher.memory_upkeep').map((e) => e.attrs['clubhouse.outcome'])).toEqual(['error']);
+    expect(capture.named('clubhouse.dispatcher.memory_health')).toEqual([]);
+  });
+
+  it('records and measures nothing while telemetry is off', async () => {
+    secretMemory();
+    await runDispatcherUpkeep();
+    capture = captureEvents();
+    expect(capture.events).toEqual([]);
   });
 });
 
