@@ -170,16 +170,27 @@ describe('a write can\'t escape through a symlink (#3177)', () => {
   const project = path.join(tmp, 'project');
   const outside = path.join(tmp, 'outside');
   fs.mkdirSync(path.join(project, 'src'), { recursive: true });
-  fs.mkdirSync(outside, { recursive: true });
+  fs.mkdirSync(path.join(project, 'a', 'b', 'c'), { recursive: true });
+  fs.mkdirSync(path.join(outside, 'deep'), { recursive: true });
   /** A link, or false where this platform won't make one without privileges. */
   const link = (target: string, at: string, type?: 'junction') => { try { fs.symlinkSync(target, at, type); return true; } catch { return false; } };
-  const dangling = link(path.join(outside, 'planted.txt'), path.join(project, 'innocent.txt'));
-  const danglingDeep = link(path.join(outside, 'not', 'yet', 'here.txt'), path.join(project, 'deep.txt'));
-  const chain = link(path.join(project, 'innocent.txt'), path.join(project, 'chain.txt'));
+  // File links need a privilege on Windows: those cases are skipped there, and show as skipped.
+  const fileLinks = link(path.join(outside, 'planted.txt'), path.join(project, 'innocent.txt'));
+  link(path.join(outside, 'not', 'yet', 'here.txt'), path.join(project, 'deep.txt'));
+  link(path.join(project, 'innocent.txt'), path.join(project, 'chain.txt'));
+  link(path.join(project, 'src', 'later.ts'), path.join(project, 'inward.ts'));
+  link('loop-b', path.join(project, 'loop-a'));
+  link('loop-a', path.join(project, 'loop-b'));
+  // Folder links work as junctions on Windows, with no privilege.
   const dirLink = link(outside, path.join(project, 'docs'), 'junction');
-  const inward = link(path.join(project, 'src', 'later.ts'), path.join(project, 'inward.ts'));
+  link(path.join(outside, 'deep'), path.join(project, 'L'), 'junction');
   const projectLink = path.join(tmp, 'project-link');
   const linkedProject = link(project, projectLink, 'junction');
+  // Relative links, as a repository would carry them.
+  const relative = link('../../..', path.join(project, 'a', 'b', 'c', 's'));
+  link('../escaped.txt', path.join(project, 'x'));
+  // The target as written, not normalised: L/.. must be left for the OS to follow.
+  link(`L${path.sep}..${path.sep}b.txt`, path.join(project, 'B'));
 
   afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
@@ -188,30 +199,49 @@ describe('a write can\'t escape through a symlink (#3177)', () => {
     vi.mocked(app.getPath).mockReturnValue(path.join(tmp, 'home'));
   });
 
-  it('refuses a dangling link inside the project that points outside it', async () => {
-    if (!dangling) return;
-    await expect(assertAllowedPath(path.join(project, 'innocent.txt'))).rejects.toThrow(/outside allowed project directories/);
+  const refused = (p: string, options?: { linkItself?: boolean }) => expect(assertAllowedPath(p, options)).rejects.toThrow(/outside allowed project directories/);
+  const allowed = (p: string, options?: { linkItself?: boolean }) => expect(assertAllowedPath(p, options)).resolves.toBeUndefined();
+
+  it.skipIf(!fileLinks)('refuses a dangling link inside the project that points outside it, into folders that don\'t exist yet, or through a chain', async () => {
+    await refused(path.join(project, 'innocent.txt'));
+    await refused(path.join(project, 'deep.txt'));
+    await refused(path.join(project, 'chain.txt'));
   });
 
-  it('refuses one pointing into folders outside that don\'t exist yet, and a chain of links ending outside', async () => {
-    if (danglingDeep) await expect(assertAllowedPath(path.join(project, 'deep.txt'))).rejects.toThrow(/outside allowed/);
-    if (chain) await expect(assertAllowedPath(path.join(project, 'chain.txt'))).rejects.toThrow(/outside allowed/);
+  it.skipIf(!dirLink)('refuses a new file under a folder that links outside the project', async () => {
+    await refused(path.join(project, 'docs', 'new-file.txt'));
+    await refused(path.join(project, 'docs', 'a', 'b', 'c.txt'));
   });
 
-  it('refuses a new file under a folder that links outside the project', async () => {
-    if (!dirLink) return;
-    await expect(assertAllowedPath(path.join(project, 'docs', 'new-file.txt'))).rejects.toThrow(/outside allowed/);
-    await expect(assertAllowedPath(path.join(project, 'docs', 'a', 'b', 'c.txt'))).rejects.toThrow(/outside allowed/);
+  it.skipIf(!dirLink || process.platform === 'win32')('follows a link before the `..` after it, as the OS does', async () => {
+    // project/L is outside/deep, so L/.. is outside, not the project.
+    await refused(`${project}/L/../a.txt`);
   });
 
-  it('allows new files in the project, a dangling link that points inside it, and a project registered through a link', async () => {
-    await expect(assertAllowedPath(path.join(project, 'src', 'new.ts'))).resolves.toBeUndefined();
-    await expect(assertAllowedPath(path.join(project, 'new-dir', 'x', 'y.ts'))).resolves.toBeUndefined();
-    if (inward) await expect(assertAllowedPath(path.join(project, 'inward.ts'))).resolves.toBeUndefined();
+  it.skipIf(!fileLinks || !relative)('takes a link\'s relative target from where the link really is, and a `..` inside one after a link', async () => {
+    // a/b/c/s is the project itself, so s/x is project/x, whose target ../escaped.txt is beside the project.
+    await refused(path.join(project, 'a', 'b', 'c', 's', 'x'));
+    // B points at L/../b.txt: L is outside/deep, so that is outside/b.txt.
+    await refused(path.join(project, 'B'));
+  });
+
+  it.skipIf(!fileLinks)('refuses a loop of links rather than guessing', async () => {
+    await refused(path.join(project, 'loop-a'));
+  });
+
+  it.skipIf(!fileLinks)('a delete or rename acts on the link itself, so a dangling one inside the project may go', async () => {
+    await allowed(path.join(project, 'innocent.txt'), { linkItself: true });
+    await refused(path.join(project, 'innocent.txt'));
+  });
+
+  it('allows new files in the project, and a project registered through a link', async () => {
+    await allowed(path.join(project, 'src', 'new.ts'));
+    await allowed(path.join(project, 'new-dir', 'x', 'y.ts'));
+    if (fileLinks) await allowed(path.join(project, 'inward.ts'));
     if (linkedProject) {
       vi.mocked(projectStore.list).mockResolvedValue([{ id: 'p', name: 'project', path: projectLink }] as Awaited<ReturnType<typeof projectStore.list>>);
-      await expect(assertAllowedPath(path.join(projectLink, 'src', 'new.ts'))).resolves.toBeUndefined();
-      await expect(assertAllowedPath(path.join(project, 'src', 'new.ts'))).resolves.toBeUndefined();
+      await allowed(path.join(projectLink, 'src', 'new.ts'));
+      await allowed(path.join(project, 'src', 'new.ts'));
     }
   });
 });

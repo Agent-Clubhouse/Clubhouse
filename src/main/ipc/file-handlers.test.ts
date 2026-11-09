@@ -290,7 +290,9 @@ describe('file-handlers', () => {
         vi.clearAllMocks();
         const handler = handlers.get(channel)!;
         await handler({}, ...args);
-        expect(assertAllowedPath).toHaveBeenCalledWith(args[0]);
+        // A delete acts on a link itself, so it is judged where it sits (#3177).
+        if (channel === IPC.FILE.DELETE) expect(assertAllowedPath).toHaveBeenCalledWith(args[0], { linkItself: true });
+        else expect(assertAllowedPath).toHaveBeenCalledWith(args[0]);
       }
     });
 
@@ -304,8 +306,9 @@ describe('file-handlers', () => {
     it('validates both paths for RENAME', async () => {
       const handler = handlers.get(IPC.FILE.RENAME)!;
       await handler({}, '/project/old.ts', '/project/new.ts');
-      expect(assertAllowedPath).toHaveBeenCalledWith('/project/old.ts');
-      expect(assertAllowedPath).toHaveBeenCalledWith('/project/new.ts');
+      // A rename moves a link itself and replaces one at the destination (#3177).
+      expect(assertAllowedPath).toHaveBeenCalledWith('/project/old.ts', { linkItself: true });
+      expect(assertAllowedPath).toHaveBeenCalledWith('/project/new.ts', { linkItself: true });
     });
 
     it('validates both paths for COPY', async () => {

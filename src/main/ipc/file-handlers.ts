@@ -144,7 +144,8 @@ export function registerFileHandlers(): void {
   })));
 
   ipcMain.handle(IPC.FILE.DELETE, withValidatedArgs([stringArg()], (_event, filePath: string) => fileOp('delete', async () => {
-    await assertAllowedPath(filePath);
+    // A delete removes a link itself, not what it points at (#3177).
+    await assertAllowedPath(filePath, { linkItself: true });
     try {
       await fileService.deleteFile(filePath);
     } catch (err) {
@@ -158,8 +159,9 @@ export function registerFileHandlers(): void {
   })));
 
   ipcMain.handle(IPC.FILE.RENAME, withValidatedArgs([stringArg(), stringArg()], (_event, oldPath: string, newPath: string) => fileOp('rename', async () => {
-    await assertAllowedPath(oldPath);
-    await assertAllowedPath(newPath);
+    // A rename moves a link itself, and replaces one at the destination (#3177).
+    await assertAllowedPath(oldPath, { linkItself: true });
+    await assertAllowedPath(newPath, { linkItself: true });
     try {
       await fileService.rename(oldPath, newPath);
     } catch (err) {

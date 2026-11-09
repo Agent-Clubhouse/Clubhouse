@@ -27,7 +27,7 @@ import * as path from 'path';
 import { ACCESS_LEVELS, accessLabel, type AccessLevel } from '../../../shared/agent-access';
 import * as projectStore from '../project-store';
 import { agentRegistry } from '../agent-registry';
-import { resolveRealPath } from '../path-sandbox';
+import { resolveLocation, resolveRealPath } from '../path-sandbox';
 import { callerRunningAccess } from './access-ceiling';
 import { agentOfPluginCall } from './plugin-tool-registry';
 import { CALL_OVER, checkPluginCaller } from './plugin-caller-check';
@@ -55,10 +55,7 @@ const disguised = (segment: string) => segment.includes(':') || (process.platfor
 const realPath = resolveRealPath;
 
 /** Where a path sits: its folder followed to where it really is, its own name as given (a link itself, not its target). */
-async function location(p: string): Promise<string> {
-  const resolved = path.resolve(p);
-  return path.join(await realPath(path.dirname(resolved)), path.basename(resolved));
-}
+const location = resolveLocation;
 
 function segmentsUnder(root: string, target: string): string[] | null {
   const rel = path.relative(sameCase(root), sameCase(target));
@@ -69,8 +66,17 @@ function segmentsUnder(root: string, target: string): string[] | null {
 
 const atLeast = (level: AccessLevel, needed: AccessLevel) => ACCESS_LEVELS.indexOf(level) >= ACCESS_LEVELS.indexOf(needed);
 
-/** Null when the agent behind `callId` may, else why not. */
+/** Null when the agent behind `callId` may, else why not. A path that can't be resolved (a loop of links) is refused. */
 export async function checkPluginFileChange(pluginId: string, callId: string, filePath: string, op: PluginFileOp): Promise<string | null> {
+  try {
+    return await judgeFileChange(pluginId, callId, filePath, op);
+  } catch {
+    // telemetry-exempt: refused with the reason; the plugin gets it as the call's error
+    return 'Where that path leads can\'t be worked out (a loop of links, or a step out of a folder that doesn\'t exist), so a plugin can\'t change it for an agent.';
+  }
+}
+
+async function judgeFileChange(pluginId: string, callId: string, filePath: string, op: PluginFileOp): Promise<string | null> {
   const agentId = agentOfPluginCall(callId, pluginId);
   if (!agentId) return CALL_OVER;
   const level = callerRunningAccess(agentId);
