@@ -322,6 +322,17 @@ describe('backfill on connect (#2920)', () => {
     });
   });
 
+  it('sends a change-only gauge as recorded, heartbeat lines with an unchanged value included (#3125)', async () => {
+    const gauge = (ms: number, value: number) => JSON.stringify({ t: 'metric', ts: new Date(ms).toISOString(), name: 'clubhouse.projects.count', kind: 'gauge', startMs: ms - 60_000, durationMs: 60_000, attrs: {}, value });
+    const start = NOW - DAY;
+    writeRun(start, [session(start), gauge(start + 60_000, 5), gauge(start + 16 * 60_000, 5), gauge(start + 31 * 60_000, 5)]);
+    noteDestinationEnabled('otlp', 'otlp', NOW);
+    await startBackfill('otlp', 7);
+    await until(() => getBackfillStatus('otlp')?.state === 'done');
+    const sent = state.sent.flatMap((x) => x.lines.filter((l) => l.includes('"t":"metric"')));
+    expect(sent.map((l) => JSON.parse(l).ts)).toEqual([1, 16, 31].map((m) => new Date(start + m * 60_000).toISOString()));
+  });
+
   it('a resume keeps the window of the first send, whatever is asked the second time', async () => {
     writeRun(NOW - 10 * DAY, [session(NOW - 10 * DAY), event(NOW - 10 * DAY + 1000, 'ten-days-ago'), event(NOW - 10 * DAY + 2000, 'ten-days-later')]);
     noteDestinationEnabled('otlp', 'otlp', NOW);

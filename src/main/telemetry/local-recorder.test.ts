@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
-import { createLocalRecorder, LOCAL_DIAG_PRIORITY_EVENTS, LOCAL_FORMAT_VERSION, type LocalRecorder, type LocalRecorderOptions } from './local-recorder';
+import { createLocalRecorder, LOCAL_DIAG_PRIORITY_EVENTS, LOCAL_FORMAT_VERSION, LOCAL_GAUGE_HEARTBEAT_MS, type LocalRecorder, type LocalRecorderOptions } from './local-recorder';
 import { createScrubber } from './scrubber';
 import { tagError } from './types';
 
@@ -227,6 +227,59 @@ describe('local telemetry recorder', () => {
     });
     expect(metrics.find((m) => m.name === 'clubhouse.app.startup.duration')).toMatchObject({ kind: 'histogram', unit: 's', count: 2, sum: 7, min: 2, max: 5 });
     expect(metrics.find((m) => m.name === 'clubhouse.process.eventloop.delay.p99')).toMatchObject({ kind: 'gauge', value: 0.3 });
+  });
+
+  it('writes a gauge only when its value changes, plus a heartbeat every 15 minutes, per series (#3125)', async () => {
+    let t = 0;
+    const h = harness({ now: () => t });
+    const minute = (p99: number, browserCpu: number, rendererCpu: number) => {
+      h.rec.count('clubhouse.process.eventloop.delay.p99', p99);
+      h.rec.count('clubhouse.process.cpu', browserCpu, [ATTR.processType('browser')]);
+      h.rec.count('clubhouse.process.cpu', rendererCpu, [ATTR.processType('renderer')]);
+      h.rec.count('clubhouse.app.sessions', 1, [ATTR.startupKind('cold')]);
+    };
+    // 20 one-minute windows: p99 is 0.3 throughout except 0.5 in window 3; browser CPU never changes; renderer CPU changes every window.
+    for (let w = 1; w <= 20; w++) {
+      minute(w === 3 ? 0.5 : 0.3, 4, w);
+      t = w * 60_000;
+      await h.rec.flush();
+    }
+    const metrics = h.records().filter((r) => r.t === 'metric');
+    const at = (name: string, type?: string) => metrics
+      .filter((m) => m.name === name && (type === undefined || m.attrs['clubhouse.process.type'] === type))
+      .map((m) => [Date.parse(m.ts) / 60_000, m.value ?? m.sum]);
+    expect(at('clubhouse.process.eventloop.delay.p99')).toEqual([[1, 0.3], [3, 0.5], [4, 0.3], [19, 0.3]]);
+    expect(at('clubhouse.process.cpu', 'browser')).toEqual([[1, 4], [16, 4]]);
+    expect(at('clubhouse.process.cpu', 'renderer')).toHaveLength(20);
+    // Counters keep one line per window with data.
+    expect(at('clubhouse.app.sessions')).toHaveLength(20);
+    // The heartbeat follows the constant, and the session line says what a gap means.
+    expect(LOCAL_GAUGE_HEARTBEAT_MS).toBe(15 * 60_000);
+    expect(h.records()[0]).toMatchObject({ t: 'session', gaugeHeartbeatMs: LOCAL_GAUGE_HEARTBEAT_MS });
+  });
+
+  it('writes a gauge again once a window passes with no observation and it comes back changed, and starts every run with each value (#3125)', async () => {
+    let t = 0;
+    const first = harness({ now: () => t, gaugeHeartbeatMs: 10 * 60_000 });
+    first.rec.count('clubhouse.projects.count', 3);
+    t = 60_000;
+    await first.rec.flush();
+    // A window with no observation writes nothing for the series.
+    t = 120_000;
+    await first.rec.flush();
+    first.rec.count('clubhouse.projects.count', 3);
+    t = 180_000;
+    await first.rec.flush();
+    first.rec.count('clubhouse.projects.count', 4);
+    t = 240_000;
+    await first.rec.flush();
+    expect(first.records().filter((r) => r.t === 'metric').map((m) => m.value)).toEqual([3, 4]);
+    // A new run knows nothing of the old one's lines, so its first window writes the value.
+    const second = harness({ now: () => t, fileBase: 'run2' });
+    second.rec.count('clubhouse.projects.count', 4);
+    t = 300_000;
+    await second.rec.flush();
+    expect(second.records().filter((r) => r.t === 'metric').map((m) => m.value)).toEqual([4]);
   });
 
   it('rotates to a new chunk at the chunk size', async () => {
