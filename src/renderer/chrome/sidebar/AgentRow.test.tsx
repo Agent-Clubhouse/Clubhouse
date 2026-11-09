@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { AgentRow, HOVER_OPEN_MS } from './AgentRow';
+import { TOOLTIP_DELAY_MS } from '../../components/Tooltip';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { createChatViewState, useChatStore } from '../../stores/chatStore';
@@ -239,6 +240,35 @@ describe('AgentRow hover card', () => {
     const { row, focusable } = setup(durable());
     const overflow = row.querySelector('[data-testid="action-overflow"]')!;
     expect(focusable.contains(overflow)).toBe(false);
+  });
+
+  it('clamps a long command with an unbroken token, keeps the width, and shows the full text in a tooltip (#3212)', () => {
+    vi.useFakeTimers();
+    const token = '-only-testing:' + 'x'.repeat(200);
+    const command = `Running xcodebuild test -scheme App -destination 'platform=iOS Simulator' ${token} ${'then more words '.repeat(30)}`;
+    const { row } = setup(durable({ status: 'running' }), {
+      dot: 'working',
+      detailed: { state: 'working', message: command, timestamp: Date.now() } as never,
+    });
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    const card = screen.getByTestId('agent-hover-card');
+    // Width stays fixed.
+    expect(card.style.width).toBe('280px');
+    // The activity text is clamped and breaks inside long tokens.
+    const message = screen.getByTestId('agent-hover-message');
+    expect(message).toHaveClass('line-clamp-3', '[overflow-wrap:anywhere]');
+    expect(message.textContent).toBe(command);
+    // The detail rows and actions are still there.
+    for (const label of ['Runs on', 'Branch', 'Worktree', 'Access']) expect(card).toHaveTextContent(label);
+    expect(screen.getByText('Open terminal')).toBeTruthy();
+    expect(screen.getByTestId('hover-stop')).toBeTruthy();
+    // The full text is reachable from the tooltip, which breaks the token too.
+    fireEvent.mouseEnter(message);
+    act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
+    const tip = screen.getByRole('tooltip');
+    expect(tip.textContent).toBe(command);
+    expect(tip.querySelector('.\\[overflow-wrap\\:anywhere\\]')).not.toBeNull();
   });
 
   it('offers no Open terminal where the project has no Terminal tab', () => {
