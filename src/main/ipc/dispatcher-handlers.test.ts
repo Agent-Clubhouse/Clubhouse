@@ -15,6 +15,9 @@ vi.mock('../services/dispatcher/dispatcher-service', () => ({
   getDispatcherState: vi.fn(() => ON),
   setDispatcherEnabled: vi.fn(async (on: boolean) => ({ ...ON, enabled: on })),
   setDispatcherBehavior: vi.fn(async (level: string) => ({ ...ON, behavior: { ...ON.behavior, level } })),
+  setDispatcherPersonality: vi.fn(async (personality: unknown) => ({ ...ON, personality })),
+  setDispatcherSetupStatus: vi.fn(async (status: string) => ({ ...ON, setup: { status, upgrade: false } })),
+  completeDispatcherSetup: vi.fn(async () => ({ ...ON, setup: { status: 'done', upgrade: false } })),
   onDispatcherChanged: vi.fn((l: (s: DispatcherState) => void) => { h.listener = l; return () => {}; }),
   initDispatcher: vi.fn(async () => undefined),
 }));
@@ -22,6 +25,10 @@ vi.mock('../services/dispatcher/dispatcher-clear-chat', () => ({ clearDispatcher
 vi.mock('../services/dispatcher/dispatcher-news', () => ({ installGroupChat: vi.fn() }));
 vi.mock('../services/dispatcher/dispatcher-forget', () => ({ forgetEverything: vi.fn(async () => ({ removed: 1, heldNews: 2 })) }));
 vi.mock('../services/dispatcher/dispatcher-connected-agents', () => ({ listConnectableAgents: vi.fn(async () => [{ agentId: 'a1', connected: true }]) }));
+vi.mock('../services/dispatcher/dispatcher-setup', () => ({
+  tryDispatcherPersonality: vi.fn(async () => ({ ok: true, text: 'Hello.' })),
+  checkDispatcherBehavior: vi.fn(async () => ({ ready: true })),
+}));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('./mcp-binding-handlers', () => ({ restorePersistedBindings: vi.fn(async () => {}) }));
 
@@ -33,6 +40,7 @@ import { clearDispatcherChat } from '../services/dispatcher/dispatcher-clear-cha
 import { installGroupChat } from '../services/dispatcher/dispatcher-news';
 import { forgetEverything } from '../services/dispatcher/dispatcher-forget';
 import { registerDispatcherHandlers, _resetDispatcherHandlersForTesting } from './dispatcher-handlers';
+import { checkDispatcherBehavior, tryDispatcherPersonality } from '../services/dispatcher/dispatcher-setup';
 import { AGENT_CARDS_UNAVAILABLE, setAgentCardSource } from '../services/dispatcher/dispatcher-agent-card-source';
 
 beforeEach(() => {
@@ -112,5 +120,38 @@ describe('dispatcher handlers', () => {
     expect(saveUserCard).toHaveBeenCalledWith('lead', { owns: 'web app', contactWhen: 'releases' });
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.DISPATCHER.AGENT_CARD_CHANGED, 'lead');
     await expect(Promise.resolve().then(() => save({}, 'lead', 'text'))).rejects.toThrow();
+  });
+
+  describe('personality and setup (#3047)', () => {
+    const call = (channel: string, ...args: unknown[]) => Promise.resolve().then(() => h.handlers.get(channel)!({}, ...args));
+
+    it('saves a personality', async () => {
+      await call(IPC.DISPATCHER.SET_PERSONALITY, { preset: 'friendly', text: 'Hi' });
+      expect(dispatcher.setDispatcherPersonality).toHaveBeenCalledWith({ preset: 'friendly', text: 'Hi' });
+      await expect(call(IPC.DISPATCHER.SET_PERSONALITY, 'friendly')).rejects.toThrow();
+    });
+
+    it('finishes setup with what it sent, cleaned, and refuses an unusable one', async () => {
+      await call(IPC.DISPATCHER.COMPLETE_SETUP, { name: ' Rosie ', color: 'rose', provider: 'codex-cli', behavior: 'light', personality: { preset: 'concise', text: 'Short.' } });
+      expect(dispatcher.completeDispatcherSetup).toHaveBeenCalledWith({ name: 'Rosie', color: 'rose', provider: 'codex-cli', behavior: 'light', personality: { preset: 'concise', text: 'Short.' } });
+      await expect(call(IPC.DISPATCHER.COMPLETE_SETUP, { name: '', color: 'rose', provider: 'x', behavior: 'light' })).rejects.toThrow('Give it a name.');
+      expect(dispatcher.completeDispatcherSetup).toHaveBeenCalledTimes(1);
+    });
+
+    it('takes later or done for the setup status, never pending', async () => {
+      await call(IPC.DISPATCHER.SET_SETUP_STATUS, 'later');
+      expect(dispatcher.setDispatcherSetupStatus).toHaveBeenCalledWith('later');
+      await expect(call(IPC.DISPATCHER.SET_SETUP_STATUS, 'pending')).rejects.toThrow(/Unknown setup status/);
+      expect(dispatcher.setDispatcherSetupStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs Try it out and checks Behavior for an unsaved provider', async () => {
+      expect(await call(IPC.DISPATCHER.TRY_PERSONALITY, { name: 'Rosie', provider: 'claude-code', behavior: 'standard', personality: { preset: 'concise', text: 'Short.' } }))
+        .toEqual({ ok: true, text: 'Hello.' });
+      expect(tryDispatcherPersonality).toHaveBeenCalledWith({ name: 'Rosie', provider: 'claude-code', behavior: 'standard', personality: { preset: 'concise', text: 'Short.' } });
+      expect(await call(IPC.DISPATCHER.CHECK_BEHAVIOR, 'codex-cli', 'thorough')).toEqual({ ready: true });
+      expect(checkDispatcherBehavior).toHaveBeenCalledWith('codex-cli', 'thorough');
+      await expect(call(IPC.DISPATCHER.CHECK_BEHAVIOR, 'codex-cli', 'max')).rejects.toThrow(/Unknown Behavior/);
+    });
   });
 });

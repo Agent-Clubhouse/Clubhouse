@@ -14,11 +14,14 @@ import { addProject } from './smoke-helpers';
  * - one page: Identity, Behavior, Connected agents and Reset, with no model,
  *   context, access or "runs in" fields;
  * - a new name reaches both of its records and its sidebar row;
+ * - a personality preset fills the text, saves to its settings and reaches
+ *   its chat's instructions; an edit reads as Custom;
  * - Runs on and today's usage show, conversations apart from background work;
  * - Connected agents lists the project's agents with the same switch as each
  *   agent's card, which moves the wire live; Card opens that card;
  * - Forget everything asks first, then clears memory and held news only: its
- *   agents, the wire and Actions stay.
+ *   agents, the wire and Actions stay;
+ * - Set up… opens first-run setup in the Dispatcher's view.
  *
  * Runs in the Chat E2E job (Linux and Windows), like dispatcher.spec.ts.
  */
@@ -26,6 +29,8 @@ import { addProject } from './smoke-helpers';
 const USER_DATA_FILES = {
   'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },
   'chat-runtime-settings.json': { 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } },
+  // First-run setup (#3047) is done, so the Dispatcher's view shows its chat until Set up… asks for setup.
+  'dispatcher-settings.json': { setup: { status: 'done', upgrade: false } },
 };
 const ORCHESTRATOR_ID = 'orch_dispatcher_settings_e2e';
 const WORKER_ID = 'worker_dispatcher_settings_e2e';
@@ -120,6 +125,25 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   await expect.poll(async () => (await recordOf(path.join(baseDir(), 'dispatcher-chat'))).name, { timeout: 10_000 }).toBe('Rosie');
   await expect(w.locator('[data-testid="dispatcher-row"]')).toContainText('Rosie');
 
+  // Personality (#3047): a preset fills the text; Save writes it and the chat is told it as written.
+  const preset = w.locator('[data-testid="dispatcher-personality-preset"]');
+  const told = w.locator('[data-testid="dispatcher-personality"]');
+  await expect(preset).toHaveValue('concise');
+  await preset.selectOption('detailed');
+  const detailedText = await told.inputValue();
+  expect(detailedText).toContain('Give context and reasons.');
+  await w.locator('[data-testid="dispatcher-personality-save"]').click();
+  await expect(w.locator('[data-testid="dispatcher-personality-save"]')).toHaveCount(0);
+  const settingsFile = path.join(profile!.userDataDir, 'dispatcher-settings.json');
+  await expect.poll(async () => (await readJson<{ personality?: { preset: string } }>(settingsFile)).personality?.preset).toBe('detailed');
+  await expect.poll(async () => fs.promises.readFile(path.join(baseDir(), 'dispatcher-chat', 'CLAUDE.md'), 'utf8').catch(() => ''), { timeout: 10_000 })
+    .toContain('Give context and reasons.');
+  // An edit reads as Custom.
+  await told.fill(`${detailedText} Use first names.`);
+  await expect(preset).toHaveValue('custom');
+  await w.locator('[data-testid="dispatcher-personality-cancel"]').click();
+  await expect(preset).toHaveValue('detailed');
+
   // Behavior: the level, Runs on with its warning, and today's usage split (#3040).
   await expect(w.locator('[data-testid="dispatcher-behavior"]')).toHaveValue('standard');
   await expect(w.locator('[data-testid="dispatcher-runs-on"]')).toHaveValue('claude-code');
@@ -167,6 +191,8 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   expect(await hasWire(w, coordinator.id)).toBe(true);
   await expect(conductor).toHaveAttribute('aria-checked', 'true');
   expect(await w.evaluate(() => window.clubhouse.actions.list())).toEqual(actionsBefore);
+  // Its personality isn't memory: it stays too.
+  expect((await readJson<{ personality?: { preset: string } }>(settingsFile)).personality?.preset).toBe('detailed');
   // The index starts over, and its instructions carry the fresh one.
   expect(await fs.promises.readFile(path.join(memoryDir(), 'index.md'), 'utf8')).not.toContain('ship 1.0 on Friday');
   expect(await fs.promises.readFile(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf8')).toContain('## Your memory index');
@@ -175,6 +201,12 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   await w.locator(`[data-testid="dispatcher-agent-${ORCHESTRATOR_ID}-card"]`).click();
   await expect(w.locator('[data-testid="dispatcher-settings"]')).toHaveCount(0);
   await expect(w.locator('[data-testid="details-card-dispatcher-toggle"]')).toHaveAttribute('aria-expanded', 'true', { timeout: 10_000 });
+
+  // Set up… opens first-run setup in the Dispatcher's view.
+  await openDispatcherSettings(w);
+  await w.locator('[data-testid="dispatcher-open-setup"]').click();
+  await expect(w.locator('[data-testid="dispatcher-view"]')).toBeVisible();
+  await expect(w.locator('[data-testid="dispatcher-setup"]')).toHaveAttribute('data-step', 'look');
 
   // Nothing ever started the CLI.
   expect((await fakes.report('claude').catch(() => undefined))?.consumed ?? 0).toBe(0);

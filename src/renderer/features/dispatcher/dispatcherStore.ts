@@ -30,6 +30,9 @@ interface DispatcherStoreState {
   loadError: string | null;
   /** Bumped by Retry; useDispatcherSync loads again when it changes. */
   loadAttempt: number;
+  /** Setup opened again from the chat or its menu (#3047). First-run setup shows without it. */
+  setupOpen: boolean;
+  setSetupOpen: (open: boolean) => void;
   setState: (state: DispatcherState | null) => void;
   setLoadError: (error: string | null) => void;
   retryLoad: () => void;
@@ -40,6 +43,8 @@ export const useDispatcherStore = create<DispatcherStoreState>((set, get) => ({
   project: null,
   loadError: null,
   loadAttempt: 0,
+  setupOpen: false,
+  setSetupOpen: (setupOpen) => set({ setupOpen }),
   setState: (state) => {
     const path = (state?.enabled || state?.running) && state.chatAgentId ? state.chatPath : null;
     // Keep the same object while the folder is the same, so selectors stay stable.

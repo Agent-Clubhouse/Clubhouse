@@ -6,11 +6,9 @@ import { emptyUsageSplit, emptyUsageTotals, type DispatcherUsageSplit } from '..
 import type { OrchestratorInfo } from '../../../shared/types';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useAgentDetailsStore } from '../agents/details/detailsStore';
-
-const h = vi.hoisted(() => ({
-  personality: null as null | { text: string; save: (text: string) => Promise<void> },
-}));
-vi.mock('../dispatcher/personality-seam', () => ({ useDispatcherPersonality: () => h.personality }));
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
+import { DEFAULT_DISPATCHER_PERSONALITY, PERSONALITY_PRESET_TEXT } from '../../../shared/dispatcher-personality';
+import { NO_DISPATCHER_SETUP } from '../../../shared/dispatcher-setup';
 
 import { DispatcherSettingsView, dispatcherSwitchHelp } from './DispatcherSettingsView';
 
@@ -33,6 +31,8 @@ const ON: DispatcherState = {
   chatPath: 'dispatcher-chat-folder',
   chatRunning: false,
   behavior: { level: 'standard', provider: 'codex-cli', auto: { ready: true } },
+  personality: DEFAULT_DISPATCHER_PERSONALITY,
+  setup: NO_DISPATCHER_SETUP,
 };
 
 const AGENTS: ConnectableAgent[] = [
@@ -53,7 +53,12 @@ beforeEach(() => {
   agents = AGENTS;
   emit = null;
   configsChanged = null;
-  h.personality = null;
+  useDispatcherStore.setState({ setupOpen: false });
+  window.clubhouse.dispatcher.setPersonality = vi.fn(async (personality) => {
+    state = { ...state, personality };
+    emit?.(state);
+    return state;
+  });
   useAgentDetailsStore.setState({ focus: null });
   window.clubhouse.dispatcher.get = vi.fn(async () => state);
   window.clubhouse.dispatcher.setEnabled = vi.fn(async (on: boolean) => {
@@ -232,22 +237,62 @@ describe('DispatcherSettingsView', () => {
       expect(name.value).toBe('Rosie');
     });
 
-    it('leaves Personality out until first-run setup provides it', async () => {
-      await renderOn();
-      expect(screen.queryByLabelText('Personality')).toBeNull();
+    it('shows the saved personality: its preset and exactly what it\'s told (#3047)', async () => {
+      await renderOn({ ...ON, personality: { preset: 'friendly', text: PERSONALITY_PRESET_TEXT.friendly } });
+      expect((screen.getByLabelText('Personality') as HTMLSelectElement).value).toBe('friendly');
+      expect([...(screen.getByLabelText('Personality') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['Friendly', 'Concise', 'Detailed', 'Custom']);
+      expect((screen.getByLabelText('What it’s told') as HTMLTextAreaElement).value).toBe(PERSONALITY_PRESET_TEXT.friendly);
+      // Nothing to save until something changes.
+      expect(screen.queryByTestId('dispatcher-personality-save')).toBeNull();
     });
 
-    it('edits the personality text as written once it exists', async () => {
-      const save = vi.fn(async () => undefined);
-      h.personality = { text: 'Short and direct.', save };
+    it('a preset fills the text, and Save sends both', async () => {
       await renderOn();
-      const box = screen.getByLabelText('Personality') as HTMLTextAreaElement;
-      expect(box.value).toBe('Short and direct.');
-      const saveButton = screen.getByTestId('dispatcher-personality-save') as HTMLButtonElement;
-      expect(saveButton.disabled).toBe(true);
+      fireEvent.change(screen.getByLabelText('Personality'), { target: { value: 'detailed' } });
+      expect((screen.getByLabelText('What it’s told') as HTMLTextAreaElement).value).toBe(PERSONALITY_PRESET_TEXT.detailed);
+      await act(async () => { fireEvent.click(screen.getByTestId('dispatcher-personality-save')); });
+      expect(window.clubhouse.dispatcher.setPersonality).toHaveBeenCalledWith({ preset: 'detailed', text: PERSONALITY_PRESET_TEXT.detailed });
+      await waitFor(() => expect(screen.queryByTestId('dispatcher-personality-save')).toBeNull());
+    });
+
+    it('an edit reads as Custom, as in setup, and is saved as written', async () => {
+      await renderOn();
+      const box = screen.getByLabelText('What it’s told') as HTMLTextAreaElement;
       fireEvent.change(box, { target: { value: 'Warm and upbeat.\nUses first names.' } });
-      await act(async () => { fireEvent.click(saveButton); });
-      expect(save).toHaveBeenCalledWith('Warm and upbeat.\nUses first names.');
+      expect((screen.getByLabelText('Personality') as HTMLSelectElement).value).toBe('custom');
+      // Typing a preset's text back reads as that preset again.
+      fireEvent.change(box, { target: { value: PERSONALITY_PRESET_TEXT.friendly } });
+      expect((screen.getByLabelText('Personality') as HTMLSelectElement).value).toBe('friendly');
+      fireEvent.change(box, { target: { value: 'Warm and upbeat.\nUses first names.' } });
+      await act(async () => { fireEvent.click(screen.getByTestId('dispatcher-personality-save')); });
+      expect(window.clubhouse.dispatcher.setPersonality).toHaveBeenCalledWith({ preset: 'custom', text: 'Warm and upbeat.\nUses first names.' });
+    });
+
+    it('Cancel puts the saved text back, and an edit survives an unrelated state change', async () => {
+      await renderOn();
+      const box = screen.getByLabelText('What it’s told') as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: 'Draft' } });
+      await act(async () => { emit?.({ ...ON, running: true, personality: { ...DEFAULT_DISPATCHER_PERSONALITY } }); });
+      expect(box.value).toBe('Draft');
+      fireEvent.click(screen.getByTestId('dispatcher-personality-cancel'));
+      expect(box.value).toBe(DEFAULT_DISPATCHER_PERSONALITY.text);
+      expect(window.clubhouse.dispatcher.setPersonality).not.toHaveBeenCalled();
+    });
+
+    it('shows a failed personality save as an alert and keeps the draft', async () => {
+      window.clubhouse.dispatcher.setPersonality = vi.fn().mockRejectedValue(new Error('disk full'));
+      await renderOn();
+      const box = screen.getByLabelText('What it’s told') as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: 'Draft' } });
+      await act(async () => { fireEvent.click(screen.getByTestId('dispatcher-personality-save')); });
+      expect((await screen.findByTestId('dispatcher-personality-error')).textContent).toBe('Couldn’t save. disk full');
+      expect(box.value).toBe('Draft');
+    });
+
+    it('Set up… asks for its setup (its view opens it; the E2E spec covers that)', async () => {
+      await renderOn();
+      await act(async () => { fireEvent.click(screen.getByTestId('dispatcher-open-setup')); });
+      expect(useDispatcherStore.getState().setupOpen).toBe(true);
     });
   });
 

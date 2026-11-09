@@ -4,7 +4,7 @@
  *
  * - The switch that turns it on (#2535). Its row and view are in the new
  *   layout only, so on the classic layout a switch that's off stays off (#2565).
- * - Identity: name, color, icon and personality text.
+ * - Identity: setup again, name, color, icon and personality (#3047's field).
  * - Behavior (#3045): the level, the provider it runs on, auto-sleep and
  *   today's usage, conversations apart from background work (#3040).
  * - Connected agents: one list across projects (DispatcherConnectedAgents).
@@ -35,8 +35,18 @@ import { useAppIdleMinutes, SELECT_CLASS } from '../agents/details/AutoSleepRow'
 import { dispatcherName } from '../agents/details/DispatcherCard';
 import { useDispatcherRead } from '../dispatcher/useDispatcherEnabled';
 import { useProviderName } from '../dispatcher/BehaviorChip';
-import { openAutoSettings } from '../dispatcher/dispatcherNav';
-import { useDispatcherPersonality, type DispatcherPersonality } from '../dispatcher/personality-seam';
+import { openAutoSettings, openDispatcherSetup } from '../dispatcher/dispatcherNav';
+import {
+  DISPATCHER_NAME_MAX,
+  DISPATCHER_PERSONALITY_PRESETS,
+  PERSONALITY_PRESET_LABELS,
+  PERSONALITY_TEXT_MAX,
+  cleanDispatcherName,
+  isPersonalityPreset,
+  presetForText,
+  presetText,
+  type DispatcherPersonality,
+} from '../../../shared/dispatcher-personality';
 import {
   DISPATCHER_BEHAVIORS,
   DISPATCHER_BEHAVIOR_LABELS,
@@ -121,18 +131,31 @@ function useIconData(icon: string | undefined): string | undefined {
   return data;
 }
 
+/**
+ * Personality (#3047's field): a preset fills the text, and the text is exactly
+ * what it's told. Editing the text makes it Custom, as in setup.
+ */
 function PersonalityField({ personality }: { personality: DispatcherPersonality }) {
-  const [draft, setDraft] = useState(personality.text);
+  const [draft, setDraft] = useState<DispatcherPersonality>(personality);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setDraft(personality.text); }, [personality.text]);
-  const changed = draft !== personality.text;
+  // Only a change to what's saved resets the draft; other state broadcasts leave an edit alone.
+  useEffect(() => { setDraft({ preset: personality.preset, text: personality.text }); }, [personality.preset, personality.text]);
+  const changed = draft.text !== personality.text || draft.preset !== personality.preset;
+  const empty = !draft.text.trim();
+
+  const pick = (value: string) => {
+    if (!isPersonalityPreset(value)) return;
+    setDraft((d) => ({ preset: value, text: presetText(value, d.text) }));
+  };
+  const edit = (text: string) => setDraft({ preset: presetForText(text), text });
 
   const save = async () => {
     setSaving(true);
     setError(null);
     try {
-      await personality.save(draft);
+      // Main broadcasts the new state, which this field then shows.
+      await window.clubhouse.dispatcher.setPersonality(draft);
     } catch (err) {
       // telemetry-exempt: shown under the field, which keeps the draft.
       setError(`Couldn’t save. ${ipcErrorMessage(err)}`);
@@ -142,23 +165,47 @@ function PersonalityField({ personality }: { personality: DispatcherPersonality 
   };
 
   return (
-    <div className="py-2 border-t border-surface-0" data-testid="dispatcher-personality-field">
-      <label htmlFor="dispatcher-personality" className="block text-[13px] text-ctp-text">Personality</label>
-      <p className={`${settingsHelp} mt-px mb-2`}>Added to its instructions exactly as written. It applies from its next start.</p>
-      <textarea
-        id="dispatcher-personality"
-        className={`${settingsTextArea} min-h-[88px]`}
-        value={draft}
-        disabled={saving}
-        onChange={(e) => setDraft(e.target.value)}
-        data-testid="dispatcher-personality"
-      />
-      <div className="flex items-center gap-2 mt-2">
-        <Button kind="primary" disabled={!changed || saving} onClick={() => void save()} data-testid="dispatcher-personality-save">Save</Button>
-        {changed && <Button kind="quiet" disabled={saving} onClick={() => setDraft(personality.text)}>Cancel</Button>}
-        {error && <span className={settingsError} role="alert">{error}</span>}
+    <>
+      <SettingsField
+        label="Personality"
+        htmlFor="dispatcher-personality-preset"
+        help={PERSONALITY_PRESET_LABELS[draft.preset].description}
+      >
+        <select
+          id="dispatcher-personality-preset"
+          className={SELECT_CLASS}
+          value={draft.preset}
+          disabled={saving}
+          onChange={(e) => pick(e.target.value)}
+          data-testid="dispatcher-personality-preset"
+        >
+          {DISPATCHER_PERSONALITY_PRESETS.map((preset) => <option key={preset} value={preset}>{PERSONALITY_PRESET_LABELS[preset].label}</option>)}
+        </select>
+      </SettingsField>
+      <div className="pb-2" data-testid="dispatcher-personality-field">
+        <label htmlFor="dispatcher-personality" className="block text-xs text-ctp-overlay1 mb-1">What it’s told</label>
+        <textarea
+          id="dispatcher-personality"
+          className={`${settingsTextArea} min-h-[88px]`}
+          value={draft.text}
+          maxLength={PERSONALITY_TEXT_MAX}
+          disabled={saving}
+          onChange={(e) => edit(e.target.value)}
+          aria-describedby="dispatcher-personality-help"
+          data-testid="dispatcher-personality"
+        />
+        <p id="dispatcher-personality-help" className={`${settingsHelp} mt-1`}>
+          {empty ? 'Empty text uses Concise.' : 'Added to its instructions exactly as written. Its chat follows it from its next start.'}
+        </p>
+        {changed && (
+          <div className="flex items-center gap-2 mt-2">
+            <Button kind="primary" disabled={saving} onClick={() => void save()} data-testid="dispatcher-personality-save">Save</Button>
+            <Button kind="quiet" disabled={saving} onClick={() => setDraft(personality)} data-testid="dispatcher-personality-cancel">Cancel</Button>
+          </div>
+        )}
+        {error && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-personality-error">{error}</p>}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -169,11 +216,10 @@ function IdentitySection({ state, config }: { state: DispatcherState; config: Du
   const [cropping, setCropping] = useState<string | null>(null);
   const emojiButton = useRef<HTMLButtonElement>(null);
   const iconData = useIconData(config.icon);
-  const personality = useDispatcherPersonality(state);
   useEffect(() => { setName(config.name); }, [config.name]);
 
   const confirmName = async () => {
-    const trimmed = name.trim();
+    const trimmed = cleanDispatcherName(name);
     if (!trimmed) { setName(config.name); return; }
     if (trimmed !== config.name && !(await saveIdentity({ name: trimmed }))) setName(config.name);
   };
@@ -188,11 +234,15 @@ function IdentitySection({ state, config }: { state: DispatcherState; config: Du
 
   return (
     <SettingsSection title="Identity">
+      <SettingsField label="Setup" help="Name, look, Behavior and personality one step at a time, with Try it out to hear how it sounds.">
+        <Button onClick={openDispatcherSetup} data-testid="dispatcher-open-setup">Set up…</Button>
+      </SettingsField>
       <SettingsField label="Name" htmlFor="dispatcher-name" help="Shows in the sidebar, in its chat and on your phone.">
         <input
           id="dispatcher-name"
           className={`${settingsInput} w-48`}
           value={name}
+          maxLength={DISPATCHER_NAME_MAX}
           disabled={saving}
           spellCheck={false}
           onChange={(e) => setName(e.target.value)}
@@ -241,7 +291,7 @@ function IdentitySection({ state, config }: { state: DispatcherState; config: Du
           )}
         </div>
       </SettingsField>
-      {personality && <PersonalityField personality={personality} />}
+      <PersonalityField personality={state.personality} />
       {error && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-identity-error">{error}</p>}
       {cropping && (
         <ImageCropDialog

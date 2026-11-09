@@ -686,6 +686,16 @@ export const IPC = {
     FORGET_EVERYTHING: 'dispatcher:forget-everything',
     /** Every agent that can connect to it, across projects (#3046). Resolves with ConnectableAgent[]. */
     LIST_CONNECTABLE_AGENTS: 'dispatcher:list-connectable-agents',
+    /** Personality (#3047): `{ preset, text }`. Resolves with the DispatcherState. */
+    SET_PERSONALITY: 'dispatcher:set-personality',
+    /** First-run setup (#3047): saves name, look, provider, Behavior and personality. Resolves with the DispatcherState. */
+    COMPLETE_SETUP: 'dispatcher:complete-setup',
+    /** First-run setup (#3047): `later` (Set up later) or `done` (offer put away). Resolves with the DispatcherState. */
+    SET_SETUP_STATUS: 'dispatcher:set-setup-status',
+    /** Setup's Try it out (#3047): one sample question to the chosen model. Contacts no agent. */
+    TRY_PERSONALITY: 'dispatcher:try-personality',
+    /** Setup's Behavior step (#3047): whether Auto gives a level its models on a provider not saved yet. */
+    CHECK_BEHAVIOR: 'dispatcher:check-behavior',
     /** Today's usage, split into conversations and background work (#3040). Resolves with a DispatcherUsageSplit. */
     GET_USAGE: 'dispatcher:get-usage',
     /** Main → renderer broadcast: DispatcherState after any change. */
