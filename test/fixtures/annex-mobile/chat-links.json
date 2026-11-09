@@ -1,0 +1,140 @@
+{
+  "agentNotFound": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/missing/link?href=docs%2F"
+    },
+    "response": {
+      "body": {
+        "error": "agent_not_found"
+      },
+      "status": 404
+    }
+  },
+  "directory": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/link?href=docs%2F"
+    },
+    "response": {
+      "body": {
+        "entries": [
+          {
+            "kind": "file",
+            "name": "guide.md",
+            "size": 1234
+          },
+          {
+            "kind": "directory",
+            "name": "images"
+          },
+          {
+            "kind": "symlink",
+            "name": "latest.md"
+          },
+          {
+            "kind": "file",
+            "name": "screenshot.png",
+            "size": 48213
+          }
+        ],
+        "name": "docs",
+        "path": "/work/app/docs",
+        "truncated": false,
+        "type": "directory",
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "directoryEncoded": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/link?href=Release%2520Notes%2F"
+    },
+    "response": {
+      "body": {
+        "entries": [],
+        "name": "Release Notes",
+        "path": "/work/app/Release Notes",
+        "truncated": false,
+        "type": "directory",
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "file": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/link?href=docs%2Fguide.md%23setup"
+    },
+    "response": {
+      "body": {
+        "kind": "text",
+        "name": "guide.md",
+        "path": "/work/app/docs/guide.md",
+        "size": 1234,
+        "type": "file",
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "image": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/link?href=docs%2Fscreenshot.png"
+    },
+    "response": {
+      "body": {
+        "kind": "image",
+        "name": "screenshot.png",
+        "path": "/work/app/docs/screenshot.png",
+        "size": 48213,
+        "type": "file",
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "invalidQuery": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/link?href=a&href=b"
+    },
+    "response": {
+      "body": {
+        "error": "invalid_query"
+      },
+      "status": 400
+    }
+  },
+  "missing": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/link?href=docs%2Fold.md"
+    },
+    "response": {
+      "body": {
+        "type": "missing",
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "notAllowed": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/link?href=%2F%2Ffileserver%2Fshare%2Fnotes.md"
+    },
+    "response": {
+      "body": {
+        "type": "not_allowed",
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "note": "href is the link as the agent wrote it, URL-encoded once more for the query. Resolved like desktop chat links: relative against the agent's worktree, absolute as is, percent-decoded, #heading dropped. A folder with or without its trailing slash answers the same. A listing is sorted by name and capped at capabilities.chatLinks.maxEntries, with truncated: true when cut. Symlinks are not followed."
+}

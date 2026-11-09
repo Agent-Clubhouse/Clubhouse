@@ -106,7 +106,40 @@ vi.mock('./annex-chat-content', () => ({ readMobileChatContent: async () => ({ k
 vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-runtime/chat-files')>(),
   agentFolders: async () => ['/work/app/.clubhouse/agents/planner', '/work/app'],
+  // Chat links (#3208): what desktop resolution answers for each href the phone sends.
+  inspectChatLink: async (_agentId: string, href: string) => (({
+    'docs/guide.md#setup': { type: 'file', path: '/work/app/docs/guide.md', kind: 'text', size: 1234 },
+    'docs/screenshot.png': { type: 'file', path: '/work/app/docs/screenshot.png', kind: 'image', size: 48213 },
+    'docs': { type: 'directory', path: '/work/app/docs' },
+    'docs/': { type: 'directory', path: '/work/app/docs' },
+    'Release%20Notes/': { type: 'directory', path: '/work/app/Release Notes' },
+    '//fileserver/share/notes.md': { type: 'not_allowed' },
+  } as Record<string, unknown>)[href] ?? { type: 'missing' }),
 }));
+// The folders those links name: listed from here, not the disk.
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  const FOLDERS: Record<string, Array<{ name: string; kind: string; size?: number }>> = {
+    '/work/app/docs': [{ name: 'images', kind: 'dir' }, { name: 'latest.md', kind: 'link' }, { name: 'guide.md', kind: 'file', size: 1234 }, { name: 'screenshot.png', kind: 'file', size: 48213 }],
+    '/work/app/Release Notes': [],
+  };
+  const folder = (p: unknown) => (typeof p === 'string' ? FOLDERS[p.split('\\').join('/').replace(/^[A-Za-z]:/, '')] : undefined);
+  return {
+    ...actual,
+    opendir: async (p: string, ...rest: unknown[]) => {
+      const entries = folder(p);
+      if (!entries) return (actual.opendir as (...a: unknown[]) => unknown)(p, ...rest);
+      return (async function* () {
+        for (const e of entries) yield { name: e.name, isDirectory: () => e.kind === 'dir', isFile: () => e.kind === 'file', isSymbolicLink: () => e.kind === 'link' };
+      })();
+    },
+    lstat: async (p: string, ...rest: unknown[]) => {
+      const entry = folder(path.dirname(p))?.find((e) => e.name === path.basename(p));
+      if (entry) return { size: entry.size ?? 0 };
+      return (actual.lstat as (...a: unknown[]) => unknown)(p, ...rest);
+    },
+  };
+});
 vi.mock('./experimental-settings', () => ({ getSettings: () => ({ richChatContent: true }), isGraduatedFeatureOn: () => true, saveSettings: () => {} }));
 vi.mock('./agent-runtime/checkpoint-tracker', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-runtime/checkpoint-tracker')>(),
@@ -2115,6 +2148,25 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
     W.providers = {};
     vi.mocked(Date.now).mockRestore();
+  }, TEST_TIMEOUT_MS);
+
+  it('chat links: a file, a folder and its listing, missing and refused (#3208)', async () => {
+    const route = (href: string) => `/api/v1/mobile/agents/durable_chat/link?href=${encodeURIComponent(href)}`;
+    const folder = await exchange('GET', route('docs/'));
+    expect(folder.response.body).toMatchObject({ type: 'directory', truncated: false });
+    expect(folder.response.body.entries.map((e: { name: string }) => e.name)).toEqual(['guide.md', 'images', 'latest.md', 'screenshot.png']);
+    expect((await exchange('GET', route('docs'))).response).toEqual(folder.response);
+    fixtures.set('chat-links.json', {
+      note: 'href is the link as the agent wrote it, URL-encoded once more for the query. Resolved like desktop chat links: relative against the agent\'s worktree, absolute as is, percent-decoded, #heading dropped. A folder with or without its trailing slash answers the same. A listing is sorted by name and capped at capabilities.chatLinks.maxEntries, with truncated: true when cut. Symlinks are not followed.',
+      file: await exchange('GET', route('docs/guide.md#setup')),
+      image: await exchange('GET', route('docs/screenshot.png')),
+      directory: folder,
+      directoryEncoded: await exchange('GET', route('Release%20Notes/')),
+      missing: await exchange('GET', route('docs/old.md')),
+      notAllowed: await exchange('GET', route('//fileserver/share/notes.md')),
+      invalidQuery: await exchange('GET', '/api/v1/mobile/agents/durable_chat/link?href=a&href=b'),
+      agentNotFound: await exchange('GET', `/api/v1/mobile/agents/missing/link?href=${encodeURIComponent('docs/')}`),
+    });
   }, TEST_TIMEOUT_MS);
 
   it('session pairing revocation', async () => {

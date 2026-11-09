@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import type { ChatFileInfo, ChatFileKind, ChatFilePreview, ChatFileUnavailable, ChatLocalImageResult } from '../../../shared/chat';
 import { CHAT_FILE_PREVIEW_MEDIA_MAX_BYTES, CHAT_FILE_PREVIEW_PDF_MAX_BYTES, CHAT_FILE_PREVIEW_TEXT_MAX_BYTES, CHAT_MEDIA_MAX_BYTES, CHAT_MEDIA_MAX_PIXELS, mediaDimensions, sniffMediaType } from '../../../shared/chat';
 import { agentRegistry } from '../agent-registry';
-import { resolveLocalPath, storeMedia } from './chat-media';
+import { isNetworkOrDevicePath, resolveLocalPath, storeMedia } from './chat-media';
 import { agentMediaDir } from './chat-transcript';
 import { agentSessionOutputRoots } from './session-output';
 
@@ -267,26 +267,77 @@ export async function resolveChatFile(agentId: string, candidate: string): Promi
  */
 export async function resolveChatLink(agentId: string, href: string): Promise<{ kind: 'file' | 'folder' | 'unviewable'; path: string }> {
   if (!href || href.length > MAX_PATH_LENGTH) throw new Error('Not a file path');
+  const target = await inspectChatLink(agentId, href);
+  if (target.type === 'directory') return { kind: 'folder', path: target.path };
+  if (target.type === 'file') return { kind: target.kind === 'other' ? 'unviewable' : 'file', path: target.path };
+  throw new Error('That file is not available');
+}
+
+/**
+ * What a chat link names, resolved as `resolveChatLink` does: a file (its
+ * kind and size), a folder, nothing (`missing`), or something refused
+ * (`not_allowed`): a network or device path, a NUL byte, an href over the
+ * length cap, or a path that is there but can't be read or isn't a regular
+ * file. Annex answers phones with it (#3208).
+ */
+export type ChatLinkTarget =
+  | { type: 'file'; path: string; kind: ChatFileKind; size: number }
+  | { type: 'directory'; path: string }
+  | { type: 'missing' }
+  | { type: 'not_allowed' };
+
+export async function inspectChatLink(agentId: string, href: string): Promise<ChatLinkTarget> {
+  if (typeof href !== 'string' || !href) return { type: 'missing' };
+  if (href.length > MAX_PATH_LENGTH) return { type: 'not_allowed' };
   const hash = href.indexOf('#');
   const candidates = [href, percentDecoded(href), ...(hash > 0 ? [href.slice(0, hash), percentDecoded(href.slice(0, hash))] : [])];
+  let refused = false;
   for (const candidate of candidates) {
     if (!candidate) continue;
     const cleaned = cleanCandidate(candidate);
-    const real = cleaned ? await resolveLocalPath(cleaned, path.isAbsolute(cleaned) ? undefined : await agentBase(agentId)) : undefined;
-    if (!real) continue;
+    // A file: URL naming another host, or one that won't parse.
+    if (!cleaned) { refused = true; continue; }
+    const base = path.isAbsolute(cleaned) ? undefined : await agentBase(agentId);
+    const real = await resolveLocalPath(cleaned, base);
+    if (!real) {
+      if (await refusedPath(cleaned, base)) refused = true;
+      continue;
+    }
     const st = await fsp.stat(real).catch((): null => null);
-    if (st?.isDirectory()) return { kind: 'folder', path: real };
-    if (!st?.isFile()) continue;
+    if (st?.isDirectory()) return { type: 'directory', path: real };
+    if (!st?.isFile()) {
+      // A FIFO, socket or device.
+      if (st) refused = true;
+      continue;
+    }
     const opened = await openFile(real);
-    if ('reason' in opened) continue;
+    if ('reason' in opened) {
+      if (opened.reason !== 'missing') refused = true;
+      continue;
+    }
     try {
       const { kind } = kindOf(real, await readHead(opened.handle, opened.size));
-      return { kind: kind === 'other' ? 'unviewable' : 'file', path: real };
+      return { type: 'file', path: real, kind, size: opened.size };
     } finally {
       await opened.handle.close();
     }
   }
-  throw new Error('That file is not available');
+  return refused ? { type: 'not_allowed' } : { type: 'missing' };
+}
+
+/**
+ * Why `resolveLocalPath` found nothing: true when it refused the path (a NUL
+ * byte, a network or device path) or the path is there but can't be looked
+ * up, false when it just isn't there.
+ */
+async function refusedPath(cleaned: string, base: string | undefined): Promise<boolean> {
+  if (cleaned.includes('\0') || isNetworkOrDevicePath(cleaned)) return true;
+  if (!path.isAbsolute(cleaned) && !base) return false;
+  if (base && isNetworkOrDevicePath(base)) return true;
+  const absolute = base ? path.resolve(base, cleaned) : path.resolve(cleaned);
+  if (isNetworkOrDevicePath(absolute)) return true;
+  const code = await fsp.realpath(absolute).then((): undefined => undefined, (err: NodeJS.ErrnoException) => err.code);
+  return code === 'EACCES' || code === 'EPERM' || code === 'ELOOP';
 }
 
 /** `%20` and the like decoded, or undefined when there's nothing to decode (or it won't). */
