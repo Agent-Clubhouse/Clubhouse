@@ -595,7 +595,8 @@ describe('ChatView attachments', () => {
     });
     renderState(fold(events));
     const chips = screen.getAllByTestId('chat-user-attachments').at(-1)!;
-    expect(chips).toHaveTextContent('shot.png');
+    // The image is a thumbnail named by its label while rich chat content is on, else a chip.
+    expect(within(chips).getAllByTitle(/shot\.png/).length).toBeGreaterThan(0);
     expect(chips).toHaveTextContent('notes.md');
   });
 });
