@@ -20,7 +20,7 @@ import {
   revokeWebContents,
 } from '../services/clubhouse-mcp/plugin-mcp-tokens';
 import { withValidatedArgs, stringArg, arrayArg, objectArg } from './validation';
-import { CALL_OVER, checkPluginCaller, type PluginCallerCheck } from '../services/clubhouse-mcp/plugin-caller-check';
+import { CALL_OVER, checkPluginCaller, isPluginCallerCheck, type PluginCallerCheck } from '../services/clubhouse-mcp/plugin-caller-check';
 import { appLog } from '../services/log-service';
 
 type PluginToolDef = { name: string; description: string; inputSchema: Record<string, unknown> };
@@ -241,9 +241,7 @@ export function registerPluginMcpHandlers(): void {
 
   ipcMain.handle(IPC.PLUGIN_MCP.CHECK_CALLER, withValidatedArgs(
     [stringArg(), stringArg(), objectArg<PluginCallerCheck>({ validate: (c, argName) => {
-      const ok = (c.kind === 'wake' && typeof (c as { agentId?: unknown }).agentId === 'string')
-        || (c.kind === 'project_defaults' && typeof (c as { projectPath?: unknown }).projectPath === 'string');
-      if (!ok) throw new Error(`${argName} must be { kind: 'wake', agentId } or { kind: 'project_defaults', projectPath }`);
+      if (!isPluginCallerCheck(c)) throw new Error(`${argName} must be { action, agentId } or { action, projectPath }, with a Clubhouse permission action`);
     } })],
     async (event, token: string, callId: string, check: PluginCallerCheck) => {
       const refusal = await checkPluginCaller(requirePluginForToken(token, event.sender.id), callId, check);

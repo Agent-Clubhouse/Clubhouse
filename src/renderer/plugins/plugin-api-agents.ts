@@ -11,7 +11,7 @@ import type {
 } from '../../shared/plugin-types';
 import { ACCESS_LEVELS, accessLabel, isAccessLevel, isLegacyFreeAgent, type AccessLevel } from '../../shared/agent-access';
 import { hasPermission } from './plugin-api-shared';
-import { checkAnsweringCallers, pluginAnsweringLevel } from './plugin-mcp-host';
+import { pluginAnsweringLevel } from './plugin-mcp-host';
 import { useAgentStore } from '../stores/agentStore';
 import { getAgentStatus, onChatStatusChange } from '../features/agents/agent-status-store';
 import { useProjectStore } from '../stores/projectStore';
@@ -191,11 +191,6 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     async resume(agentId: string, options?: { mission?: string }): Promise<void> {
-      // While the plugin answers an agent's tool call, it wakes only an agent that agent may wake,
-      // and with a mission only one it may message (D126, #3168). One on another desktop can't be
-      // checked here, so it is refused then.
-      const refused = await checkAnsweringCallers(ctx.pluginId, { kind: 'wake', agentId, withMessage: !!options?.mission });
-      if (refused) throw new Error(refused);
       // Check remote agents first
       const remoteParts = parseNamespacedId(agentId);
       if (remoteParts) {
@@ -420,9 +415,6 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
 
     // v0.9 companion agent methods
     async spawnCompanion(options?: { model?: string; systemPrompt?: string }) {
-      // A companion starts at Ask first: above a caller at Plan (D126, #3161).
-      const refused = answeringRefusal(ctx.pluginId, pluginAnsweringLevel(ctx.pluginId), 'ask', '', () => 'Ask the person to start it.');
-      if (refused) throw new Error(refused);
       return window.clubhouse.agent.spawnCompanion(ctx.pluginId, options);
     },
     async getCompanionStatus() {

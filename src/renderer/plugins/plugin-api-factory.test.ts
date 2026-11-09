@@ -4279,7 +4279,7 @@ describe('plugin-api-factory', () => {
         await expect(api.agents.createDurable({ name: 'z', color: 'blue', access: 'full_access' })).resolves.toBe('made');
         // A companion starts at Ask first: refused only under a caller at Plan.
         await deliver({ callId: 'plan', pluginId: 'slow-plugin', toolName: 't', args: {}, callerAccess: 'plan' });
-        await expect(api.agents.spawnCompanion()).rejects.toThrow(/runs at Plan, so it can't start an agent at Ask first/);
+        await expect(api.agents.spawnCompanion()).rejects.toThrow(/runs at Plan, so it can't start its companion agent/);
         release[0](); release[2]();
         await settle();
       });
@@ -4351,7 +4351,7 @@ describe('plugin-api-factory', () => {
         const spawn = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('x');
         pluginMcp.checkCaller.mockResolvedValueOnce({ ok: false, message: 'A plugin can\'t do for an agent what the agent can\'t: no agent.wake.' });
         await expect(api.agents.resume('agent-9')).rejects.toThrow('A plugin can\'t do for an agent what the agent can\'t: no agent.wake.');
-        expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-waking-plugin-1', 'w1', { kind: 'wake', agentId: 'agent-9', withMessage: false });
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-waking-plugin-1', 'w1', { action: 'agent.wake', agentId: 'agent-9' });
         expect(spawn).not.toHaveBeenCalled();
         // Answered: the plugin acts for the person again, and main isn't asked.
         release[0]();
@@ -4374,7 +4374,7 @@ describe('plugin-api-factory', () => {
         pluginMcp.checkCaller.mockImplementation(async (_t: string, callId: string) => (callId === 'd2' ? { ok: false, message: 'Not that one.' } : { ok: true }));
         await expect(api.agentConfig.addPermissionAllowRules(['Bash(**)'])).rejects.toThrow('Not that one.');
         await expect(api.agentConfig.injectMcpServers({ evil: { command: 'x' } })).rejects.toThrow('Not that one.');
-        expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-config-plugin-1', 'd1', { kind: 'project_defaults', projectPath: '/projects/my-project' });
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-config-plugin-1', 'd1', { action: 'project.configure', projectPath: '/projects/my-project' });
         expect(mockAgentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
         // Both may: it writes.
         pluginMcp.checkCaller.mockImplementation(async () => ({ ok: true }));
@@ -4409,7 +4409,7 @@ describe('plugin-api-factory', () => {
         await deliver({ callId: 'w', pluginId: 'writer-plugin', toolName: 't', args: {}, callerAccess: 'full_access' });
         pluginMcp.checkCaller.mockResolvedValue({ ok: false, message: 'Refused for the agent.' });
         await expect(write(api)).rejects.toThrow('Refused for the agent.');
-        expect(pluginMcp.checkCaller).toHaveBeenCalledWith(expect.any(String), 'w', { kind: 'project_defaults', projectPath: '/projects/my-project' });
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith(expect.any(String), 'w', { action: 'project.configure', projectPath: '/projects/my-project' });
         dispose(ctx);
       });
 
@@ -4419,9 +4419,10 @@ describe('plugin-api-factory', () => {
         api.mcp.onToolCall(() => new Promise(() => {}));
         await settle();
         await deliver({ callId: 'm1', pluginId: 'mission-plugin', toolName: 't', args: {}, callerAccess: 'auto' });
-        pluginMcp.checkCaller.mockResolvedValue({ ok: false, message: 'No message.' });
+        pluginMcp.checkCaller.mockImplementation(async (_t: string, _c: string, check: { action: string }) => (check.action === 'agent.message' ? { ok: false, message: 'No message.' } : { ok: true }));
         await expect(api.agents.resume('agent-9', { mission: 'Go' })).rejects.toThrow('No message.');
-        expect(pluginMcp.checkCaller).toHaveBeenCalledWith(expect.any(String), 'm1', { kind: 'wake', agentId: 'agent-9', withMessage: true });
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith(expect.any(String), 'm1', { action: 'agent.wake', agentId: 'agent-9' });
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith(expect.any(String), 'm1', { action: 'agent.message', agentId: 'agent-9' });
         // Main timed the call out: the page is told, and the plugin acts for the person again.
         callEnded!({ pluginId: 'mission-plugin', callId: 'm1' });
         pluginMcp.checkCaller.mockClear();
@@ -4435,6 +4436,96 @@ describe('plugin-api-factory', () => {
         await expect(api.agents.resume('agent-9')).rejects.toThrow('Can only resume durable agents');
         expect(pluginMcp.checkCaller).not.toHaveBeenCalled();
         dispose(ctx);
+      });
+
+      describe('every method that changes state is checked against the calling agent (#3174)', () => {
+        /** A plugin with every permission answering one agent call at `level` that never ends. */
+        const inCall = async (level: string, pluginId = 'routes-plugin') => {
+          const ctx = makeCtx({ pluginId });
+          const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+          api.mcp.onToolCall(() => new Promise(() => {}));
+          await settle();
+          await deliver({ callId: 'r', pluginId, toolName: 't', args: {}, callerAccess: level });
+          return { ctx, api };
+        };
+        const asked = () => pluginMcp.checkCaller.mock.calls.map((c) => c[2]);
+
+        it('a file write inside a project\'s .clubhouse folder needs project.configure there', async () => {
+          const { ctx, api } = await inCall('full_access');
+          const write = vi.spyOn(window.clubhouse.file, 'write');
+          pluginMcp.checkCaller.mockResolvedValueOnce({ ok: false, message: 'No project.configure.' });
+          await expect(api.files.writeFile('.clubhouse/settings.json', '{}')).rejects.toThrow('No project.configure.');
+          expect(asked()).toEqual([{ action: 'project.configure', projectPath: '/projects/my-project' }]);
+          expect(write).not.toHaveBeenCalled();
+          // project.writeFile is the same route.
+          pluginMcp.checkCaller.mockResolvedValueOnce({ ok: false, message: 'No project.configure.' });
+          await expect(api.project.writeFile('.clubhouse/skills/x/SKILL.md', 'x')).rejects.toThrow('No project.configure.');
+          dispose(ctx);
+        });
+
+        it('any other file change needs the caller at Auto-accept edits, both ends of a move included', async () => {
+          const { ctx, api } = await inCall('ask');
+          const write = vi.spyOn(window.clubhouse.file, 'write');
+          await expect(api.files.writeFile('src/a.ts', 'x')).rejects.toThrow(/runs at Ask first, so it can't change files \(files\.writeFile\): that acts at Auto-accept edits/);
+          await expect(api.files.delete('src/a.ts')).rejects.toThrow(/change files/);
+          await expect(api.files.rename('a.txt', '.clubhouse/settings.json')).rejects.toThrow(/change files/);
+          expect(write).not.toHaveBeenCalled();
+          dispose(ctx);
+          const higher = await inCall('auto_edit', 'editing-plugin');
+          await higher.api.files.writeFile('src/a.ts', 'x');
+          expect(write).toHaveBeenCalledTimes(1);
+          dispose(higher.ctx);
+        });
+
+        it('stopping an agent needs agent.sleep; starting one needs agent.create, on top of the Access cap', async () => {
+          const { ctx, api } = await inCall('full_access');
+          pluginMcp.checkCaller.mockResolvedValue({ ok: false, message: 'Refused.' });
+          await expect(api.agents.kill('agent-9')).rejects.toThrow('Refused.');
+          await expect(api.agents.createDurable({ name: 'n', color: 'blue', access: 'ask' })).rejects.toThrow('Refused.');
+          await expect(api.agents.runQuick('go')).rejects.toThrow('Refused.');
+          expect(asked()).toEqual([
+            { action: 'agent.sleep', agentId: 'agent-9' },
+            { action: 'agent.create', projectPath: '/projects/my-project' },
+            { action: 'agent.create', projectPath: '/projects/my-project' },
+          ]);
+          expect(mockAgent.createDurable).not.toHaveBeenCalled();
+          dispose(ctx);
+        });
+
+        it('a command runs at the caller\'s level: Auto for an allowed command, Full access for a shell, synchronously refused', async () => {
+          const { ctx, api } = await inCall('auto_edit');
+          await expect(api.process.exec('git', ['status'])).rejects.toThrow(/can't run a command \(process\.exec\): that acts at Auto/);
+          expect(() => api.terminal.write('s1', 'rm -rf ~\n')).toThrow(/can't type into a shell/);
+          await expect(api.terminal.spawn('s1')).rejects.toThrow(/can't open a shell/);
+          dispose(ctx);
+        });
+
+        it('another plugin\'s or the app\'s command is refused; its own runs', async () => {
+          const { ctx, api } = await inCall('full_access');
+          let ran = false;
+          api.commands.register('mine', () => { ran = true; });
+          await api.commands.execute('mine');
+          expect(ran).toBe(true);
+          await expect(api.commands.execute('other-plugin:launch')).rejects.toThrow(/runs a command another plugin or Clubhouse registered/);
+          dispose(ctx);
+        });
+
+        it('a change to another desktop is refused: it can\'t be checked here', async () => {
+          const { ctx, api } = await inCall('full_access');
+          await expect(api.annex.agentWake('sat', 'a1')).rejects.toThrow(/changes another desktop/);
+          dispose(ctx);
+        });
+
+        it('outside a call none of this is asked, and each change runs as before', async () => {
+          const ctx = makeCtx({ pluginId: 'own-view-plugin' });
+          const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+          const write = vi.spyOn(window.clubhouse.file, 'write');
+          await api.files.writeFile('.clubhouse/settings.json', '{}');
+          await api.process.exec('git', ['status']);
+          expect(() => api.terminal.write('s1', 'ls\n')).not.toThrow();
+          expect(write).toHaveBeenCalledTimes(1);
+          expect(pluginMcp.checkCaller).not.toHaveBeenCalled();
+        });
       });
 
       it('outside a call, the plugin acts from its own view for the person, with what its manifest allows', async () => {

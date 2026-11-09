@@ -7,8 +7,11 @@ const state = vi.hoisted(() => ({
   connected: new Set<string>(),
   /** The agent behind the plugin call being checked (#3168). */
   pluginCaller: undefined as string | undefined,
+  /** Group projects' metadata, by id (#3174). */
+  groups: new Map<string, Record<string, unknown>>(),
 }));
 vi.mock('./plugin-tool-registry', () => ({ agentOfPluginCall: () => state.pluginCaller }));
+vi.mock('../group-project-registry', () => ({ groupProjectRegistry: { getSync: (id: string) => (state.groups.has(id) ? { metadata: state.groups.get(id) } : undefined) } }));
 
 vi.mock('../project-store', () => ({
   peekProjects: async () => [{ id: 'p1', name: 'Home', path: '/home' }, { id: 'p2', name: 'Far', path: '/far' }],
@@ -32,6 +35,7 @@ import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import type { ToolGrant } from './tool-grants';
 import { checkPluginCaller } from './plugin-caller-check';
+import { bindingManager } from './binding-manager';
 
 const agent = (id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig => ({ id, name: id, color: 'blue', createdAt: '', ...extra });
 
@@ -180,34 +184,66 @@ describe('what a plugin may do for the agent whose call it answers, with real gr
 
   it('changing a project\'s agent defaults needs project.configure there: none by default, the Dispatcher only with Ask first', async () => {
     asCaller('plain');
-    expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/home' })).toMatch(/^A plugin can't do for an agent what the agent can't: .*project\.configure/);
+    expect(await checkPluginCaller('p', 'c', { action: 'project.configure', projectPath: '/home' })).toMatch(/^A plugin can't do for an agent what the agent can't: .*project\.configure/);
     asCaller('dispatcher');
-    expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/home' })).toMatch(/set to Ask first/);
+    expect(await checkPluginCaller('p', 'c', { action: 'project.configure', projectPath: '/home' })).toMatch(/set to Ask first/);
     // Granted on its own project, by the user: it may there, and not on another.
     await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'project.configure', target: { kind: 'project', project: 'own' }, mode: 'allow' }] }));
     try {
       asCaller('plain');
-      expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/home' })).toBeNull();
-      expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/far' })).not.toBeNull();
+      expect(await checkPluginCaller('p', 'c', { action: 'project.configure', projectPath: '/home' })).toBeNull();
+      expect(await checkPluginCaller('p', 'c', { action: 'project.configure', projectPath: '/far' })).not.toBeNull();
       // A folder that isn't a project is something it can't reach.
-      expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/nowhere' })).toBe('The calling agent can\'t change that project\'s agent defaults.');
+      expect(await checkPluginCaller('p', 'c', { action: 'project.configure', projectPath: '/nowhere' })).toBe('The calling agent can\'t reach that project.');
     } finally {
       await updateAgentGrantChanges('plain', () => undefined);
     }
   });
 
-  it('resuming needs agent.wake on the target, and with a mission agent.message too', async () => {
+  it('waking and messaging follow the agent\'s own permissions on the target', async () => {
     asCaller('orch');
-    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'helper' })).toBeNull();
-    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'peer' })).toMatch(/agent\.wake/);
-    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'helper', withMessage: true })).toBeNull();
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'helper' })).toBeNull();
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).toMatch(/agent\.wake/);
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.message', agentId: 'helper' })).toBeNull();
     await updateAgentGrantChanges('orch', () => ({ changes: [{ action: 'agent.message', target: { kind: 'my_helpers' }, mode: 'ask' }] }));
     try {
-      expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'helper' })).toBeNull();
-      expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'helper', withMessage: true })).toMatch(/set to Ask first/);
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'helper' })).toBeNull();
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.message', agentId: 'helper' })).toMatch(/set to Ask first/);
     } finally {
       await updateAgentGrantChanges('orch', () => undefined);
     }
-    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'no-such-agent' })).toBe('The calling agent can\'t wake that agent.');
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'no-such-agent' })).toBe('The calling agent can\'t reach that agent.');
+  });
+
+  it('stopping an agent needs agent.sleep, and creating one agent.create in that project (#3174)', async () => {
+    asCaller('orch');
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.sleep', agentId: 'helper' })).toBeNull();
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.sleep', agentId: 'peer' })).toMatch(/agent\.sleep/);
+    // An orchestrator starts agents in its own project; a plain agent nowhere.
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.create', projectPath: '/home' })).toBeNull();
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.create', projectPath: '/far' })).not.toBeNull();
+    asCaller('plain');
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.create', projectPath: '/home' })).toMatch(/agent\.create/);
+  });
+
+  it('a group project\'s admin wakes and stops its members, as its group tools would, and no one else (#3174)', async () => {
+    asCaller('plain');
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).not.toBeNull();
+    state.groups.set('gp1', { admins: ['plain'] });
+    bindingManager.bind('plain', { targetId: 'gp1', targetKind: 'group-project', label: 'Team' });
+    bindingManager.bind('peer', { targetId: 'gp1', targetKind: 'group-project', label: 'Team' });
+    try {
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).toBeNull();
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.sleep', agentId: 'peer' })).toBeNull();
+      // Not a member: still refused.
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'faraway' })).not.toBeNull();
+      // A member who isn't an admin gets nothing from the group.
+      asCaller('peer');
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'plain' })).not.toBeNull();
+    } finally {
+      bindingManager.unbind('plain', 'gp1');
+      bindingManager.unbind('peer', 'gp1');
+      state.groups.clear();
+    }
   });
 });

@@ -26,6 +26,7 @@
 
 import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
 import { ACCESS_LEVELS, type AccessLevel } from '../../shared/agent-access';
+import type { GrantAction } from '../../shared/agent-grants';
 import { rendererLog } from './renderer-logger';
 
 type McpAPI = PluginAPI['mcp'];
@@ -77,14 +78,35 @@ function endAnswering(pluginId: string, callId: string): void {
   if (open.length === 0) mapDelete(answering, pluginId);
 }
 
+/**
+ * Levels the plugin API guard checked a call against, held while it runs the method it guarded, so
+ * the method's own Access cap applies even if the agent's call ended while the guard asked main (#3174).
+ */
+const pinned = new Map<string, AccessLevel[]>();
+
+/** Run `fn` with `level` counted as an open call's level for `pluginId`, for the synchronous part of `fn`. */
+export function withAnsweringLevel<R>(pluginId: string, level: AccessLevel, fn: () => R): R {
+  let stack = mapGet(pinned, pluginId);
+  if (!stack) { stack = []; mapSet(pinned, pluginId, stack); }
+  arrayPush(stack, level);
+  try {
+    return fn();
+  } finally {
+    arraySplice(stack, stack.length - 1, 1);
+    if (stack.length === 0) mapDelete(pinned, pluginId);
+  }
+}
+
 /** The lowest running level among the agent calls this plugin is answering now, or undefined outside one. */
 export function pluginAnsweringLevel(pluginId: string): AccessLevel | undefined {
+  let lowest: AccessLevel | undefined;
+  const consider = (level: AccessLevel) => {
+    if (lowest === undefined || arrayIndexOf(ACCESS_LEVELS, level) < arrayIndexOf(ACCESS_LEVELS, lowest)) lowest = level;
+  };
   const open = mapGet(answering, pluginId);
-  if (!open || open.length === 0) return undefined;
-  let lowest = open[0].level;
-  for (let i = 1; i < open.length; i++) {
-    if (arrayIndexOf(ACCESS_LEVELS, open[i].level) < arrayIndexOf(ACCESS_LEVELS, lowest)) lowest = open[i].level;
-  }
+  if (open) for (let i = 0; i < open.length; i++) consider(open[i].level);
+  const held = mapGet(pinned, pluginId);
+  if (held) for (let i = 0; i < held.length; i++) consider(held[i]);
   return lowest;
 }
 
@@ -308,7 +330,8 @@ export function createMcpAPI(ctx: PluginContext): McpAPI {
   };
 }
 
-export type PluginCallerCheck = { kind: 'wake'; agentId: string; withMessage?: boolean } | { kind: 'project_defaults'; projectPath: string };
+/** A Clubhouse permission the agent behind a call must hold: on an agent, or on a project (#3174). */
+export type PluginCallerCheck = { action: GrantAction; agentId: string } | { action: GrantAction; projectPath: string };
 
 /**
  * While the plugin answers agents' tool calls, whether each of those agents may do this (D126,
@@ -341,5 +364,6 @@ export function _resetPluginMcpStateForTests(): void {
   tokens.clear();
   handlerCounts.clear();
   answering.clear();
+  pinned.clear();
   fallbackInstalled = false;
 }
