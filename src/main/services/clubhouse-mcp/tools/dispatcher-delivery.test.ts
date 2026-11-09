@@ -52,7 +52,7 @@ import {
   deliverToDispatcher, dispatcherInboxId, isDispatcherTarget, sleepingDispatcherHint, _resetDispatcherDeliveryForTesting,
   type DispatcherDeliveryRequest,
 } from './dispatcher-delivery';
-import { clearAgentMessages, findInInbox, takeAgentMessages } from '../../dispatcher/dispatcher-news-inbox';
+import { clearAgentMessages, findInInbox } from '../../dispatcher/dispatcher-news-inbox';
 
 const DISPATCHER_PATH = '/home/.clubhouse/dispatcher';
 
@@ -106,21 +106,21 @@ describe('messages to the Dispatcher (#3037)', () => {
     expect(mocks.decideGrant).not.toHaveBeenCalled();
   });
 
-  it('keeps what an agent sent, without its routing text, for the group chat\'s rewrite (#3043)', async () => {
+  it('notes the agent that sent it, so the group chat can name it (#3043)', async () => {
     running = true;
     await deliverToDispatcher(request());
     expect(findInInbox('webapp-lead')).toEqual({ agentId: 'sender', name: 'webapp-lead' });
-    expect(takeAgentMessages('sender', Date.now())).toBe('checkout is fixed');
+    expect(findInInbox('sender')).toEqual({ agentId: 'sender', name: 'webapp-lead' });
   });
 
-  it('keeps nothing from the Dispatcher\'s own chat, or from a message that wasn\'t delivered', async () => {
+  it('notes nothing from the Dispatcher\'s own chat, or from a message that wasn\'t delivered', async () => {
     running = true;
     await deliverToDispatcher(request({ senderId: 'disp-chat', routed: [{ sender: { agentId: 'disp-chat', name: 'Conversation' }, text: 'wake it' }] }));
-    expect(takeAgentMessages('disp-chat', Date.now())).toBeUndefined();
+    expect(findInInbox('disp-chat')).toBeNull();
     mocks.dispatcherEnabled = false;
     running = false;
     await deliverToDispatcher(request());
-    expect(takeAgentMessages('sender', Date.now())).toBeUndefined();
+    expect(findInInbox('sender')).toBeNull();
   });
 
   it('wakes a sleeping Dispatcher from its own folder, resuming its session, with the message as its first prompt', async () => {

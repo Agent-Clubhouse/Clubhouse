@@ -114,7 +114,8 @@ function oneLine(text: string): string {
 
 /**
  * Try it out's prompt (#3047): the name and personality, then the sample
- * question. One line, for the same reason as the rewrite step's prompt.
+ * question. One line: the prompt may reach a CLI through a shell shim, which
+ * ends a command at a line break.
  */
 export function tryItOutPrompt(name: string, personality: DispatcherPersonality): string {
   const cleanName = cleanDispatcherName(name) || DEFAULT_DISPATCHER_NAME;

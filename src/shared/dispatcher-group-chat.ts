@@ -1,9 +1,10 @@
 /**
- * The Dispatcher's chat reads as a group chat (#3043): the person, the
- * Dispatcher, and brief interjections from agents in their own name and
- * avatar. Nothing else shows: no tool-call rows, thoughts or plans, no JSON,
+ * The Dispatcher's chat (#3043): the person and the Dispatcher. Agents' news
+ * reaches it as Clubhouse updates, which the Dispatcher puts in its own words
+ * (#3193). Nothing else shows: no tool-call rows, thoughts or plans, no JSON,
  * task ids or reply instructions, no normal turn footers, and no Clubhouse
- * updates, which the Dispatcher puts in its own words.
+ * updates. An agent's interjection under its own name and avatar shows only in
+ * a transcript from before #3193, which still reads as it did.
  *
  * One set of rules for every place the chat is drawn. The desktop applies
  * them to its chat items as it draws them (renderer/features/dispatcher/
@@ -17,7 +18,7 @@ import type { ChatEvent, MessageSource, RoutedMessagePart, TurnStopReason } from
 import { cleanChatText } from './dispatcher-chat-noise';
 
 export interface GroupChatContext {
-  /** The Dispatcher's own agents: a message from either is its own words, never an interjection. */
+  /** The Dispatcher's own agents: a message from either is its own words, never an agent's interjection. */
   ownAgentIds: ReadonlySet<string>;
 }
 
@@ -48,8 +49,9 @@ export function groupChatReply(text: string, streaming: boolean): string | null 
 
 /**
  * A message the Dispatcher received, as the chat shows it: `'own'` for the
- * person's own, which shows as it is; else the agents' interjections, cleaned,
- * or null when none is left.
+ * person's own, which shows as it is; else any agents' interjections (older
+ * transcripts only, see above), cleaned, or null when none is left, as for
+ * every Clubhouse update.
  */
 export function groupChatMessage(
   message: { source: MessageSource; text: string; routed?: RoutedMessagePart[] },

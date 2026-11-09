@@ -147,7 +147,6 @@ export function recordMemoryUpkeep(u: DispatcherUpkeepOutcome): void {
 // ── News triage ─────────────────────────────────────────────────────────────
 
 type NewsReason = Parameters<typeof ATTR.dispatcherNewsReason>[0];
-type RewriteReason = Parameters<typeof ATTR.dispatcherNewsRewriteReason>[0];
 
 export interface DispatcherNewsOutcome {
   kind: Parameters<typeof ATTR.dispatcherNewsKind>[0];
@@ -156,8 +155,6 @@ export interface DispatcherNewsOutcome {
   fromAgent: boolean;
   /** Held items a check-in summary took with it. */
   held?: number;
-  /** For an agent's news shown now: how it was put into the chat. */
-  rewrite?: { by: 'rewrite' | 'fallback'; reason?: RewriteReason };
 }
 
 /** One report's way to the chat. Never throws. */
@@ -170,8 +167,9 @@ export function recordNewsTriage(n: DispatcherNewsOutcome): void {
       ATTR.dispatcherNewsReason(n.reason ?? 'none'),
       ATTR.dispatcherNewsFromAgent(n.fromAgent === true),
       ...(n.show === 'check_in' ? [ATTR.dispatcherNewsHeld(count(n.held))] : []),
-      ATTR.dispatcherNewsRewrite(n.rewrite?.by ?? 'none'),
-      ATTR.dispatcherNewsRewriteReason(n.rewrite?.reason ?? 'none'),
+      // No rewrite step since #3193: the chat says agents' news in its own words. Kept so the event's attributes don't change.
+      ATTR.dispatcherNewsRewrite('none'),
+      ATTR.dispatcherNewsRewriteReason('none'),
     ]);
   } catch {
     // telemetry-exempt: telemetry never affects the chat
