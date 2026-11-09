@@ -1793,6 +1793,8 @@ export interface AgentDeleteResult extends DeleteResult {
   helpers?: HelperCascadeResult;
   /** The worktree check that refused the delete. Nothing changed. */
   worktree?: WorktreeStatus;
+  /** Quick agents that were running in its worktree and were stopped. */
+  stoppedQuickAgents?: string[];
 }
 
 // ── Canvas state sync (main window ↔ pop-out windows) ─────────────────

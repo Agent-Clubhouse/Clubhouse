@@ -33,7 +33,7 @@ describe('what agents from a template can do through Clubhouse (#2971)', () => {
   it('lists every default grant by target, marking Ask first', () => {
     const { groups } = templateGrantSummary({ orchestrate: true, control: 'ask-before-start' });
     const helpers = groups.find((g) => g.label === 'Its helpers');
-    expect(helpers?.actions).toContain('Remove helpers');
+    expect(helpers?.actions).toContain('Delete agents and remove helpers');
     expect(groups.find((g) => g.label === 'Its project')?.actions).toContain('Create agents (asks first)');
     // Nothing is left out: every default grant shows up somewhere.
     const facts = templateGrantFacts({ orchestrate: true });

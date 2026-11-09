@@ -737,6 +737,12 @@ describe('delete_agent (#3182)', () => {
   describe('with the user\'s permission', () => {
     beforeEach(() => { grantMock.granted = true; lead(); });
 
+    it('says which quick agents it stopped', async () => {
+      vi.mocked(deleteAgent).mockResolvedValueOnce({ ok: true, message: 'Force deleted', deleted: true, stoppedQuickAgents: ['quick_1_a'] });
+      const r = await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', worktree: 'delete' });
+      expect(r.json).toMatchObject({ status: 'deleted', stoppedQuickAgents: ['quick_1_a'] });
+    });
+
     it('maps the choices to the delete: keep files, keep helpers, force', async () => {
       await call('delete_agent', { project: 'Clubhouse', agent: 'lead', helpers: 'keep', worktree: 'keep', force: true });
       expect(deleteAgent).toHaveBeenCalledWith('/proj', 'lead', { mode: 'unregister', helpers: 'keep', forceHelpers: true, checkWorktree: true, forceWorktree: true });

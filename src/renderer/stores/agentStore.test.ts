@@ -1426,6 +1426,24 @@ describe('agentStore', () => {
       expect(getState().agents['durable_gone']).toBeUndefined();
     });
 
+    it('drops an agent deleted outside this window, with its quick agents, and nothing else (#3182)', async () => {
+      seedAgent({ id: 'durable_kept', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'durable_deleted', projectId: 'proj_1', status: 'running', kind: 'durable' });
+      seedAgent({ id: 'quick_child', projectId: 'proj_1', status: 'running', kind: 'quick', parentAgentId: 'durable_deleted' });
+      seedAgent({ id: 'quick_other', projectId: 'proj_1', status: 'running', kind: 'quick', parentAgentId: 'durable_kept' });
+      seedAgent({ id: 'durable_elsewhere', projectId: 'proj_2', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'creating_1_abcd', projectId: 'proj_1', status: 'creating', kind: 'durable' });
+      useAgentStore.setState({ activeAgentId: 'durable_deleted' });
+      vi.mocked(window.clubhouse.agent.listDurable).mockResolvedValue([{ id: 'durable_kept', name: 'kept', color: 'indigo', createdAt: '2024-01-01' }]);
+
+      await getState().loadDurableAgents('proj_1', '/project');
+
+      expect(getState().agents['durable_deleted']).toBeUndefined();
+      expect(getState().agents['quick_child']).toBeUndefined();
+      expect(getState().activeAgentId).toBeNull();
+      for (const id of ['durable_kept', 'quick_other', 'durable_elsewhere', 'creating_1_abcd']) expect(getState().agents[id], id).toBeDefined();
+    });
+
     it('loads model from durable config', async () => {
       const mockAgent = window.clubhouse.agent as any;
       mockAgent.listDurable.mockResolvedValue([

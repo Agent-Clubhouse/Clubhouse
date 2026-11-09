@@ -254,6 +254,7 @@ function deletedFacts(name: string, worktree: string, result: AgentDeleteResult)
     agent: name,
     worktree: worktree === 'keep' ? 'kept on disk' : 'removed',
     ...(result.helpers && { helpers: { message: result.helpers.message, ids: result.helpers.helperIds ?? [] } }),
+    ...(result.stoppedQuickAgents && { stoppedQuickAgents: result.stoppedQuickAgents }),
     message: result.message,
   };
 }
@@ -626,7 +627,7 @@ export function registerManagedTools(): void {
     'Delete a durable agent. Nothing is shown to the user to confirm: the call says what happens, and a refusal changes nothing and says why. '
       + 'helpers (needed when it has any, in any project): dispose removes their worktrees and branches, helpers of helpers too, and stops if any has uncommitted or unpushed work; keep makes them ordinary agents. '
       + 'worktree: delete removes its worktree and branch, and stops if it has uncommitted or unpushed work; keep only removes it from Clubhouse and leaves its files on disk. '
-      + 'force: true goes ahead despite uncommitted or unpushed work in its worktree and its helpers\' worktrees; a check that couldn\'t run still stops it. Never yourself or the Dispatcher.',
+      + 'force: true goes ahead despite uncommitted or unpushed work in its worktree and its helpers\' worktrees; a check that couldn\'t run still stops it. Quick agents running in its worktree are stopped. Never yourself or the Dispatcher.',
     {
       project: PROJECT,
       agent: AGENT,

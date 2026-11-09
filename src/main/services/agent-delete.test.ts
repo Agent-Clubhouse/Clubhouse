@@ -16,6 +16,8 @@ vi.mock('./agent-system', () => ({
   isAgentRunning: vi.fn(() => false),
   killAgent: vi.fn(async (id: string) => { calls.push(`kill:${id}`); }),
 }));
+const registrations = vi.hoisted(() => new Map<string, { projectPath: string; cwd?: string }>());
+vi.mock('./agent-registry', () => ({ agentRegistry: { getAllRegistrations: () => registrations } }));
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: vi.fn(async () => []) }));
 vi.mock('./orchestration-policy', () => ({
   settleHelpers: vi.fn(),
@@ -45,6 +47,7 @@ const clean: WorktreeStatus = { isValid: true, branch: 'lead/standby', uncommitt
 beforeEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
+  registrations.clear();
   vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(orchestrator as never);
   vi.mocked(agentConfig.getWorktreeStatus).mockResolvedValue(clean);
   vi.mocked(listHelpersEverywhere).mockResolvedValue([]);
@@ -139,6 +142,45 @@ describe('deleteAgent (#3182)', () => {
     vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(undefined as never);
     expect(await deleteAgent(PROJECT, 'gone', { mode: 'force' })).toEqual({ ok: false, message: 'Agent not found' });
     expect(calls.filter((c) => !c.startsWith('lock:'))).toEqual([]);
+  });
+
+  describe('quick agents in its worktree', () => {
+    const wt = orchestrator.worktreePath;
+    beforeEach(() => {
+      registrations.set('quick_1_child', { projectPath: PROJECT, cwd: wt });
+      registrations.set('quick_2_nested', { projectPath: PROJECT, cwd: `${wt}/packages/web` });
+      registrations.set('quick_3_root', { projectPath: PROJECT, cwd: PROJECT });
+      registrations.set('quick_4_sibling', { projectPath: PROJECT, cwd: `${wt}-other` });
+      registrations.set('quick_5_exited', { projectPath: PROJECT, cwd: wt });
+      registrations.set('durable_6_inside', { projectPath: PROJECT, cwd: wt });
+      vi.mocked(isAgentRunning).mockImplementation((id: string) => id !== 'quick_5_exited');
+    });
+
+    it('stops the running ones before the agent, waiting for each to exit, and says which', async () => {
+      const result = await deleteAgent(PROJECT, 'orch', { mode: 'force' });
+      expect(calls).toEqual(['lock:orch', 'kill:quick_1_child', 'kill:quick_2_nested', 'kill:orch', 'delete:force']);
+      expect(killAgent).toHaveBeenCalledWith('quick_1_child', PROJECT, undefined, 'user', { waitForExit: true });
+      expect(result.stoppedQuickAgents).toEqual(['quick_1_child', 'quick_2_nested']);
+    });
+
+    it('stops them when the files stay on disk too, as the dialog does', async () => {
+      await deleteAgent(PROJECT, 'orch', { mode: 'unregister' });
+      expect(calls).toEqual(['lock:orch', 'kill:quick_1_child', 'kill:quick_2_nested', 'kill:orch', 'delete:unregister']);
+    });
+
+    it('leaves them running when the helpers stop the delete', async () => {
+      vi.mocked(listHelpersEverywhere).mockResolvedValue(helperRows as never);
+      vi.mocked(settleHelpers).mockResolvedValueOnce({ ok: false, message: 'blocked', blocked: [] });
+      await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose' });
+      expect(killAgent).not.toHaveBeenCalled();
+    });
+
+    it('stops none for an agent with no worktree', async () => {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ ...orchestrator, worktreePath: undefined } as never);
+      const result = await deleteAgent(PROJECT, 'orch', { mode: 'unregister' });
+      expect(calls).toEqual(['lock:orch', 'kill:orch', 'delete:unregister']);
+      expect(result.stoppedQuickAgents).toBeUndefined();
+    });
   });
 
   describe('checkWorktree: callers with no dialog', () => {

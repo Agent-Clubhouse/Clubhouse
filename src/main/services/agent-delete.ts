@@ -13,13 +13,17 @@
  * 3. Helpers are disposed (stopped first, each in its own project, with the
  *    dispose checks; work at risk stops it unless `forceHelpers`) or kept.
  *    If any helper is left, the agent is not deleted.
- * 4. The agent is stopped and deleted in the chosen mode.
+ * 4. Quick agents running in its worktree are stopped, as the dialog stops
+ *    its quick agents, so none is left working in a folder that is going.
+ * 5. The agent is stopped and deleted in the chosen mode.
  *
  * It runs under the agent's lock, so a dispose_helper or orchestration change
  * for the same agent can't run in the middle. Nothing here asks the user.
  */
 
+import * as path from 'path';
 import * as agentConfig from './agent-config';
+import { agentRegistry } from './agent-registry';
 import { isAgentRunning, killAgent } from './agent-system';
 import { listHelpersEverywhere } from './helper-index';
 import { settleHelpers, withAgentLock } from './orchestration-policy';
@@ -47,6 +51,29 @@ export interface AgentDeleteRequest {
   checkWorktree?: boolean;
   /** With `checkWorktree`: delete a worktree with unsaved work anyway. A failed check still refuses. */
   forceWorktree?: boolean;
+}
+
+/** Whether `child` is `root` or a folder inside it. */
+function isWithin(root: string, child: string): boolean {
+  const norm = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
+  const rel = path.relative(norm(root), norm(child));
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Running quick agents working in the agent's worktree: the quick agents
+ * started from it (they run in its worktree), and any other quick run
+ * pointed inside it. Main knows no parent link for a quick agent, only where
+ * it runs.
+ */
+function runningQuickAgentsIn(worktreePath: string | undefined): Array<{ id: string; projectPath: string }> {
+  if (!worktreePath) return [];
+  const out: Array<{ id: string; projectPath: string }> = [];
+  for (const [id, registration] of agentRegistry.getAllRegistrations()) {
+    if (!id.startsWith('quick_') || !registration.cwd || !isAgentRunning(id)) continue;
+    if (isWithin(worktreePath, registration.cwd)) out.push({ id, projectPath: registration.projectPath });
+  }
+  return out;
 }
 
 /** Modes that remove the worktree with whatever is in it. */
@@ -110,6 +137,10 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
     }
   }
 
+  // Waits for each to exit, so none holds the worktree open (EBUSY on Windows).
+  const quickAgents = runningQuickAgentsIn(agent.worktreePath);
+  for (const quick of quickAgents) await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
+
   if (isAgentRunning(agentId)) await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true });
 
   let result: DeleteResult;
@@ -120,5 +151,10 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
     case 'force': result = await agentConfig.deleteForce(projectPath, agentId); break;
     case 'unregister': result = await agentConfig.deleteUnregister(projectPath, agentId); break;
   }
-  return { ...result, ...(result.ok && { deleted: true }), ...(cascade && { helpers: cascade }) };
+  return {
+    ...result,
+    ...(result.ok && { deleted: true }),
+    ...(cascade && { helpers: cascade }),
+    ...(quickAgents.length > 0 && { stoppedQuickAgents: quickAgents.map((q) => q.id) }),
+  };
 }

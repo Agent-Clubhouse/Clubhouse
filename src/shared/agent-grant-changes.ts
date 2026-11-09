@@ -293,7 +293,7 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'agent.display': 'Change name, color and icon',
   'agent.configure': 'Change CLI, model and effort',
   'agent.create': 'Create agents',
-  'agent.dispose': 'Remove helpers',
+  'agent.dispose': 'Delete agents and remove helpers',
   'agent.grant': 'Change setup, Access and permissions',
   'connection.manage': 'Make and remove connections',
   'group_project.read': 'Read the board',

@@ -53,7 +53,7 @@ async function setControlRow(projectPath: string, agentId: string, row: 'create'
   const control = controlFromGrantModes(modes);
   if (controlGrantModes(control)[row] !== mode) {
     // Asking before removing helpers always asks before starting them too.
-    throw new Error('Removing helpers asks first, which asks before starting them too. Set Remove helpers to Allow first.');
+    throw new Error('Removing helpers asks first, which asks before starting them too. Set Delete agents and remove helpers to Allow first.');
   }
   // Through the Helpers page's own path: the agent lock, the audit record, and the refresh.
   const result = await setOrchestrationPolicy(projectPath, agentId, { control });
