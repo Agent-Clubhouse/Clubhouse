@@ -22,7 +22,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
-import { CONNECTION_TOOLS, type AgentAddress as ConnectionEnd, type ConnectionDirection } from '../../shared/connection-grants';
+import { CONNECTION_TOOLS, WAKE_TOOL, type AgentAddress as ConnectionEnd, type ConnectionDirection } from '../../shared/connection-grants';
 import type { McpToolResult } from './clubhouse-mcp/types';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
@@ -35,7 +35,7 @@ import {
 export const AGENT_CALL_VERSION = 1;
 
 /** Wake, across machines: a switch of its own on the connection, as each connection tool has (D232). */
-export const WAKE_TOOL = 'wake_agent';
+export { WAKE_TOOL };
 /** The tools another machine's agent may call here: what a connection carries, and wake (D232). */
 export const AGENT_CALL_TOOLS: ReadonlySet<string> = new Set([...CONNECTION_TOOLS.map((t) => t.tool), WAKE_TOOL]);
 /** Tools whose call waits for an offline machine; the rest answer at once. */

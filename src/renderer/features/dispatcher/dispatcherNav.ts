@@ -47,11 +47,11 @@ export function openDispatcherSettings(): void {
   if (ui.explorerTab !== 'settings') ui.toggleSettings();
 }
 
-/** "Set up Auto" (#3045): Settings > Helpers, where the Auto mapping is chosen per provider. */
+/** "Set up Auto" (#3045): Settings > Smart selection (#3186), where the Auto mapping is chosen per provider. */
 export function openAutoSettings(): void {
   closeDispatcher();
   const ui = useUIStore.getState();
   ui.setSettingsContext('app');
-  ui.setSettingsSubPage('helpers');
+  ui.setSettingsSubPage('smart-selection');
   if (ui.explorerTab !== 'settings') ui.toggleSettings();
 }

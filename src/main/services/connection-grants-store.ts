@@ -11,7 +11,10 @@
  * (#3056 Stage 7, where the receiving machine checks a call):
  * - getConnectionDirection(from, to): the entry, or undefined;
  * - deniedConnectionTools(from, to): the tools `from` may not use on `to`;
- * - setConnectionTools(from, to, disabledTools): replace one direction's list;
+ * - localConnectionWakeOn(fromId, toId): whether Wake it is on, on this computer (#3215);
+ * - setConnectionTools(from, to, disabledTools, enabledTools?): replace one direction's lists;
+ * - setConnectionDirections(changes, guard): the Dispatcher's lists for several directions, checked under the lock;
+ * - removeConnectionDirection(from, to): drop one direction's entry;
  * - setConnectionLink(from, to, on): the user's own link for one direction;
  * - listConnectionDirections(agentId): every entry touching an agent;
  * - listLinkedDirections(): every direction the user linked (Make two-way);
@@ -19,13 +22,14 @@
  * - listAllConnectionDirections(): every entry (Stage 7 sends another machine its share);
  * - putConnectionDirection(direction): write one entry as given, keeping its
  *   `updatedAt` (Stage 7: another machine's newer copy of a direction with it);
+ * - runConnectionMigration(name, directions) / connectionMigrationDone(name): a one-time change with its done marker;
  * - onConnectionGrantsChanged(listener): told after each write.
  * A write updates the live binding's disabled tools, so calls are checked
  * against the store with the existing call path.
  */
 
 import {
-  directionKey, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
+  directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
 } from '../../shared/connection-grants';
 import { createSettingsStore } from './settings-store';
 
@@ -34,6 +38,8 @@ export const CONNECTION_GRANTS_VERSION = 1;
 interface ConnectionGrantsFile {
   version?: number;
   directions: unknown[];
+  /** One-time changes already made to the file, by name (#3215). */
+  migrations?: string[];
 }
 
 // Atomic, and a failed save rolls back, so the store and the live bindings never disagree.
@@ -71,6 +77,11 @@ export function deniedConnectionTools(from: AgentAddress, to: AgentAddress): str
   return getConnectionDirection(from, to)?.disabledTools;
 }
 
+/** Whether `fromId`'s connection to `toId`, both on this computer, has Wake it on (#3215). */
+export function localConnectionWakeOn(fromId: string, toId: string): boolean {
+  return localWakeOn(getConnectionDirection({ agentId: fromId }, { agentId: toId }));
+}
+
 /** Every entry where the agent sends or receives. */
 export function listConnectionDirections(agentId: string): ConnectionDirection[] {
   return entries().filter((d) => d.from.agentId === agentId || d.to.agentId === agentId);
@@ -105,7 +116,7 @@ async function updateDirection(from: AgentAddress, to: AgentAddress, fn: (curren
     }
     next = result;
     const rest = list.filter((d) => directionKey(d.from, d.to) !== key);
-    return { version: CONNECTION_GRANTS_VERSION, directions: next ? [...rest, next] : rest };
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: next ? [...rest, next] : rest };
   });
   if (!changed) return next;
   for (const listener of [...listeners]) {
@@ -118,13 +129,77 @@ async function updateDirection(from: AgentAddress, to: AgentAddress, fn: (curren
   return next;
 }
 
-/** Replace one direction's disabled tools. An empty list with no link drops the entry. */
-export function setConnectionTools(from: AgentAddress, to: AgentAddress, disabledTools: readonly string[]): Promise<ConnectionDirection | null> {
+/**
+ * Replace one direction's disabled tools, and its turned-on tools when given
+ * (wake on this computer, #3215); left out, they stay as they are. It's the
+ * user's write: a Dispatcher mark (`setBy`) goes. The Dispatcher writes with
+ * {@link setConnectionDirections}.
+ */
+export function setConnectionTools(
+  from: AgentAddress, to: AgentAddress, disabledTools: readonly string[], enabledTools?: readonly string[],
+): Promise<ConnectionDirection | null> {
   return updateDirection(from, to, (current) => {
     const tools = [...new Set(disabledTools)];
+    const enabled = enabledTools ? [...new Set(enabledTools)] : current?.enabledTools ?? [];
     // An entry is kept even when empty: "everything on" must not fall back to a source's list.
-    return { from, to, disabledTools: tools, ...(current?.link && { link: current.link }), updatedAt: new Date().toISOString() };
+    return {
+      from, to, disabledTools: tools, ...(enabled.length > 0 && { enabledTools: enabled }),
+      ...(current?.link && { link: current.link }), updatedAt: new Date().toISOString(),
+    };
   });
+}
+
+/** One direction's new lists, for {@link setConnectionDirections}. */
+export interface DirectionToolsChange {
+  from: AgentAddress;
+  to: AgentAddress;
+  disabledTools: readonly string[];
+  enabledTools: readonly string[];
+}
+
+/**
+ * Replace several directions' lists in one write, as the Dispatcher's (#3215).
+ * `guard` sees each direction's entry under the store's lock, so a user's
+ * write that lands after the caller looked is seen too; it throws to refuse,
+ * and then nothing is written.
+ */
+export async function setConnectionDirections(
+  changes: readonly DirectionToolsChange[],
+  guard: (current: ConnectionDirection | undefined, change: DirectionToolsChange) => void,
+): Promise<ConnectionDirection[]> {
+  if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
+  let written: ConnectionDirection[] = [];
+  await store.update((file) => {
+    const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
+    const now = new Date().toISOString();
+    const next = changes.map((c): ConnectionDirection => {
+      const current = list.find((d) => directionKey(d.from, d.to) === directionKey(c.from, c.to));
+      guard(current, c);
+      return {
+        from: c.from, to: c.to, disabledTools: [...new Set(c.disabledTools)],
+        ...(c.enabledTools.length > 0 && { enabledTools: [...new Set(c.enabledTools)] }),
+        setBy: 'dispatcher', ...(current?.link && { link: current.link }), updatedAt: now,
+      };
+    });
+    const keys = new Set(next.map((d) => directionKey(d.from, d.to)));
+    written = next;
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: [...list.filter((d) => !keys.has(directionKey(d.from, d.to))), ...next] };
+  });
+  for (const d of written) {
+    for (const listener of [...listeners]) {
+      try {
+        listener(d.from, d.to);
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+  return written;
+}
+
+/** Drop one direction's entry, link and all: a link the Dispatcher made and removed again (#3215). */
+export function removeConnectionDirection(from: AgentAddress, to: AgentAddress): Promise<ConnectionDirection | null> {
+  return updateDirection(from, to, (current) => (current ? null : UNCHANGED));
 }
 
 /** Turn the user's own link for one direction on or off (Make two-way). */
@@ -134,6 +209,7 @@ export function setConnectionLink(from: AgentAddress, to: AgentAddress, on: bool
     return {
       from, to,
       disabledTools: current?.disabledTools ?? [...defaultTools],
+      ...(current?.enabledTools && { enabledTools: current.enabledTools }),
       link: current?.link ?? { createdAt: new Date().toISOString() },
       updatedAt: new Date().toISOString(),
     };
@@ -165,10 +241,51 @@ export async function removeConnectionDirections(agentId: string, options: { kee
   await store.update((file) => {
     const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
     return {
+      ...file,
       version: CONNECTION_GRANTS_VERSION,
       directions: list.filter((d) => (d.from.agentId !== agentId && d.to.agentId !== agentId) || (options.keepOtherMachines && (!!d.from.machineId || !!d.to.machineId))),
     };
   });
+}
+
+/** Whether a one-time change named `name` was already made to the store (#3215). */
+export function connectionMigrationDone(name: string): boolean {
+  const done = store.get()?.migrations;
+  return Array.isArray(done) && done.includes(name);
+}
+
+/**
+ * Make a one-time change, in one write with its done marker: each direction
+ * given is written only where the store has no entry for it yet, and the
+ * marker is kept so it never runs again (#3215). Returns the directions it
+ * wrote, or null when the change was already made (decided under the store's lock).
+ */
+export async function runConnectionMigration(name: string, directions: readonly ConnectionDirection[]): Promise<ConnectionDirection[] | null> {
+  if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
+  let written = null as ConnectionDirection[] | null;
+  await store.update((file) => {
+    const done = Array.isArray(file.migrations) ? file.migrations.filter((m): m is string => typeof m === 'string') : [];
+    if (done.includes(name)) return file;
+    const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
+    const keys = new Set(list.map((d) => directionKey(d.from, d.to)));
+    written = directions.filter((d) => !keys.has(directionKey(d.from, d.to)));
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: [...list, ...written], migrations: [...done, name] };
+  });
+  for (const d of written ?? []) {
+    for (const listener of [...listeners]) {
+      try {
+        listener(d.from, d.to);
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+  return written;
+}
+
+/** For tests: forget a one-time change was made. */
+export async function _forgetConnectionMigrationForTesting(name: string): Promise<void> {
+  await store.update((file) => ({ ...file, migrations: (file.migrations ?? []).filter((m) => m !== name) }));
 }
 
 export function onConnectionGrantsChanged(listener: Listener): () => void {

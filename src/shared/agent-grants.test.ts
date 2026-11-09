@@ -26,6 +26,11 @@ describe('agent grants (#2966)', () => {
       [{ kind: 'connected', onlyDispatcher: true }, { kind: 'agent', relations: ['connected'] }, false],
       [{ kind: 'connected', onlyDispatcher: true }, { kind: 'agent', relations: ['parent'], isDispatcher: true }, false],
       [{ kind: 'connected', excludeDispatcher: true }, { kind: 'agent', relations: ['connected'], isDispatcher: true }, false],
+      // Wake it on the connection (#3215): only where the caller's switch is on.
+      [{ kind: 'connected', wakeOn: true }, { kind: 'agent', relations: ['connected'], wakeOn: true }, true],
+      [{ kind: 'connected', wakeOn: true }, { kind: 'agent', relations: ['connected'] }, false],
+      [{ kind: 'connected', wakeOn: true }, { kind: 'agent', relations: ['parent'], wakeOn: true }, false],
+      [{ kind: 'connected' }, { kind: 'agent', relations: ['connected'], wakeOn: true }, true],
       [{ kind: 'group_members' }, { kind: 'agent', relations: ['group_member'] }, true],
       [{ kind: 'project', project: 'own' }, { kind: 'project', projectPath: '/p/' }, true],
       [{ kind: 'project', project: 'own' }, { kind: 'project', projectPath: '/q' }, false],
@@ -145,6 +150,10 @@ describe('agent grants (#2966)', () => {
       expect(give([allow('agent.wake', { kind: 'connected' })], allow('agent.wake', { kind: 'connected', onlyDispatcher: true }))).toBe('allow');
       expect(give([allow('agent.wake', { kind: 'connected', onlyDispatcher: true })], allow('agent.wake', { kind: 'connected' }))).toBe('refuse');
       expect(give([allow('agent.wake', { kind: 'connected', excludeDispatcher: true })], allow('agent.wake', { kind: 'connected', onlyDispatcher: true }))).toBe('refuse');
+      // Connected agents with Wake it on are narrower than every connected agent (#3215).
+      expect(give([allow('agent.wake', { kind: 'connected' })], allow('agent.wake', { kind: 'connected', wakeOn: true }))).toBe('allow');
+      expect(give([allow('agent.wake', { kind: 'connected', wakeOn: true })], allow('agent.wake', { kind: 'connected' }))).toBe('refuse');
+      expect(give([allow('agent.wake', { kind: 'connected', wakeOn: true })], allow('agent.wake', { kind: 'connected', onlyDispatcher: true }))).toBe('refuse');
       expect(give([allow('agent.create', { kind: 'project', project: 'any' })], allow('agent.create', { kind: 'project', project: 'own' }))).toBe('allow');
       expect(give([allow('agent.create', { kind: 'project', project: 'own' })], allow('agent.create', { kind: 'project', project: 'any' }))).toBe('refuse');
     });

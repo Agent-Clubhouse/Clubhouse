@@ -29,6 +29,7 @@ import { isAgentRunning } from '../agent-system';
 import { onAppEvent } from '../app-event-bus';
 import { knownAgent, knownAgents } from '../app-event-sources';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
+import { localConnectionWakeOn } from '../connection-grants-store';
 import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from '../clubhouse-mcp/orchestration-gate';
 import { isDispatcherEnabled } from '../dispatcher/dispatcher-settings';
 import { sleepAgent, wakeWiredAgent } from '../clubhouse-mcp/tools/agent-lifecycle';
@@ -229,6 +230,7 @@ function createEngine(): ActionsEngine {
     agentProjectPath: (id) => knownAgent(id)?.projectPath,
     projectPath: (id) => projectById(id)?.path,
     isConnected: (from, to) => bindingManager.getBindingsForAgent(from).some((b) => b.targetKind === 'agent' && b.targetId === to),
+    wakeOn: localConnectionWakeOn,
     // The Dispatcher's wires exist only while it is on, so an off Dispatcher reaches no one.
     dispatcherAgentId: () => getDispatcherAgentId() ?? undefined,
     // The live gate for a running agent, else its saved switch (an asleep agent isn't synced to the gate).

@@ -14,7 +14,7 @@ const SETTING_NAMES: Record<string, string> = {
   helperTemplateId: 'Helper template',
   'orchestration.orchestrate': 'Orchestration',
   'orchestration.maxHelpers': 'Helper limit',
-  'orchestration.autoHelpers': 'Smart helper selection',
+  'orchestration.autoHelpers': 'Smart selection',
   'orchestration.access': 'Helper access',
   'orchestration.control': 'Helper control',
   'orchestration.crossProjectHelpers': 'Helpers in other projects',

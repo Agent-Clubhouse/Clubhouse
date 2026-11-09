@@ -125,6 +125,7 @@ export const IPC = {
     GET_DISPOSE_CHECKS: 'agent:get-dispose-checks',
     DISPOSE_HELPER: 'agent:dispose-helper',
     REMOVE_DISPOSED: 'agent:remove-disposed',
+    REMOVE_DISPOSED_MANY: 'agent:remove-disposed-many',
     REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
     /** Main → renderer: a project's agents.json changed (parent links, creation, disposal, handoff). Payload: the project path. */
     CONFIGS_CHANGED: 'agent:configs-changed',
@@ -615,6 +616,8 @@ export const IPC = {
     DISCONNECT_ACROSS_MACHINES: 'mcp-binding:disconnect-across-machines',
     /** Set the tools turned off on one direction with an agent on another machine (#3064). */
     SET_TOOLS_ACROSS_MACHINES: 'mcp-binding:set-tools-across-machines',
+    /** Turn Wake it on or off for one direction between two agents on this computer (#3215). */
+    SET_LOCAL_WAKE: 'mcp-binding:set-local-wake',
     /** Remove one source of one connection (#2744). */
     REMOVE_CONNECTION_SOURCE: 'mcp-binding:remove-connection-source',
     /** Main→renderer: the agent id whose connection or tool count changed. */

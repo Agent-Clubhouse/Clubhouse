@@ -1,6 +1,6 @@
 /**
  * Helper presets over the Clubhouse MCP (#2785): read them, and change or
- * reset them, through the same service as Settings > Helpers and the phone
+ * reset them, through the same service as Settings > Smart selection and the phone
  * (`readHelperRouting`, `updateHelperPresets`). No second write path.
  *
  * Reading is an app settings read (`settings.app.read`), which every agent

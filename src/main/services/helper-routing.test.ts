@@ -20,6 +20,8 @@ const W = vi.hoisted(() => ({
   unavailable: new Set<string>(),
   /** A provider with no Auto mapping at all, for the page's excluded branch. */
   extraProvider: false,
+  /** Milliseconds a provider's list read takes, to finish reads out of order. */
+  listDelay: new Map<string, number>(),
 }));
 
 vi.mock('../orchestrators', () => {
@@ -28,6 +30,8 @@ vi.mock('../orchestrators', () => {
     checkAvailability: async () => ({ available: !W.unavailable.has(id) }),
     listModels: async (opts: { refresh?: boolean } = {}) => {
       W.listCalls.push({ provider: id, refresh: opts.refresh === true });
+      const delay = W.listDelay.get(id);
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       if (!opts.refresh && W.listCache.has(id)) return W.listCache.get(id);
       const list = W.lists.get(id);
       if (list instanceof Error) throw list;
@@ -275,6 +279,16 @@ describe('readHelperRouting', () => {
       cells: { easy: { state: 'valid', source: 'builtin', custom: null, editable: true, effective: { model: 'gpt-6-luna', effort: 'low' } } },
     });
     expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoSource', 'autoOff', 'cell', 'generic']);
+  });
+
+  it('lists the preset providers in a fixed order, not the order their reads finish (#3186)', async () => {
+    W.listDelay.set('claude-code', 20);
+    W.listDelay.set('codex-cli', 10);
+    try {
+      expect(Object.keys((await readHelperRouting()).providers)).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
+    } finally {
+      W.listDelay.clear();
+    }
   });
 
   it('shows a stale saved choice with what is used instead, and nothing when nothing is left', async () => {

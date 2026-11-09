@@ -56,6 +56,8 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'About', page: 'about' },
     { label: 'Agents & providers', page: 'orchestrators' },
     ...MANAGED_PAGES,
+    // Auto and the difficulty presets (#3186): they pick for more than helpers, so not under Managed agents.
+    { label: 'Smart selection', page: 'smart-selection' },
     { label: 'Dispatcher', page: 'dispatcher' },
     // After Dispatcher for now; the settings reorganization (#2750) moves it.
     { label: 'Actions', page: 'actions' },

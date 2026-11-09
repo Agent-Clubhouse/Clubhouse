@@ -865,7 +865,7 @@ Rejections:
 
 ## Helper presets
 
-The model and effort a `difficulty` picks on each CLI (#2671), as Settings > Helpers edits them. Fixtures: `helper-routing.json`, `helper-routing-helper.json`, `helper-routing-changed.json`, `commands/helperRouting.update.json`. The design, and what later stages add, is in `docs/helper-auto-routing.md`.
+The model and effort a `difficulty` picks on each CLI (#2671), as Settings > Smart selection edits them. Fixtures: `helper-routing.json`, `helper-routing-helper.json`, `helper-routing-changed.json`, `commands/helperRouting.update.json`. The design, and what later stages add, is in `docs/helper-auto-routing.md`.
 
 Gate on `helperRouting` in capabilities. It lists only what works now, so don't offer anything it doesn't list. Offer Auto only when `modes` has `auto`.
 

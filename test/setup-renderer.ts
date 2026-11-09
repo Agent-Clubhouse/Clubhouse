@@ -94,6 +94,7 @@ vi.stubGlobal('clubhouse', {
     getDisposeChecks: async () => ({ dirty: 0, unpushed: 0, unmerged: 0 }),
     disposeHelper: async () => ({ ok: true, message: 'Disposed' }),
     removeDisposed: async () => ({ ok: true, message: 'Removed' }),
+    removeDisposedMany: async () => ({ removed: 0, failed: [] }),
     reportDisposeDecision: async () => ({ ok: true, delivered: false, message: 'The orchestrator isn\'t running' }),
     onHelperStartRequest: () => noop,
     onHelperStartRequestsClosed: () => noop,

@@ -114,4 +114,18 @@ describe('waking the Dispatcher by messaging it (#3037)', () => {
     expect(evaluateGrant({ caller, action: 'agent.wake', target: dispatcher }, grants).outcome).toBe('allow');
     expect(evaluateGrant({ caller, action: 'agent.wake', target: peer }, grants).outcome).toBe('refuse');
   });
+
+  it.each(facts)('every agent may wake a connected agent whose Wake it switch is on, and no other (#3215): %j', (f) => {
+    const grants = defaultGrants(f);
+    expect(evaluateGrant({ caller, action: 'agent.wake', target: { ...peer, wakeOn: true } }, grants).outcome).toBe('allow');
+    expect(evaluateGrant({ caller, action: 'agent.wake', target: peer }, grants).outcome).toBe('refuse');
+    // Sleep stays the Dispatcher's: no switch opens it.
+    expect(evaluateGrant({ caller, action: 'agent.sleep', target: { ...peer, wakeOn: true } }, grants).outcome).toBe('refuse');
+  });
+
+  it('the Dispatcher wakes every connected agent as before, switch or not', () => {
+    const grants = defaultGrants({ dispatcher: true, helper: false, orchestrates: false, crossProject: false });
+    expect(evaluateGrant({ caller, action: 'agent.wake', target: peer }, grants).outcome).toBe('allow');
+    expect(evaluateGrant({ caller, action: 'agent.sleep', target: peer }, grants).outcome).toBe('allow');
+  });
 });

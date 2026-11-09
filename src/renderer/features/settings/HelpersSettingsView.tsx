@@ -1,8 +1,9 @@
 /**
  * App settings, Helpers (#2232): the app-wide cap on running helpers across
- * every orchestrator, the presets behind `difficulty` (#2671), and disposed helpers no Helpers card can reach because
- * their orchestrator is gone. Each agent's own switches are in its
- * Orchestration card and on its Helpers settings page.
+ * every orchestrator, the default helper template, and disposed helpers no
+ * Helpers card can reach because their orchestrator is gone. Each agent's own
+ * switches are in its Orchestration card and on its Helpers settings page.
+ * Auto and the difficulty presets are on Smart selection (#3186).
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -17,7 +18,6 @@ import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAct
 import { orphanedDisposed } from '../agents/helpers/helper-model';
 import { sameProjectPath } from '../../utils/project-path';
 import { parseHelperCount, useGlobalHelperCap } from '../agents/helpers/orchestration-hooks';
-import { HelperPresetsSection } from './HelperPresetsSection';
 import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
 import { errorText, managed, unwrap, useManagedTemplates } from '../managed/managedApi';
 
@@ -160,6 +160,7 @@ export function HelpersSettingsView() {
   const projects = useProjectStore((s) => s.projects);
   const [orphans, setOrphans] = useState<OrphanRow[] | null>(null);
   const [removing, setRemoving] = useState<OrphanRow | null>(null);
+  const [clearing, setClearing] = useState<'confirm' | 'busy' | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
@@ -204,6 +205,22 @@ export function HelpersSettingsView() {
     setNonce((n) => n + 1);
   }, []);
 
+  const clearAll = useCallback(async (rows: OrphanRow[]) => {
+    setClearing('busy');
+    setRemoveError(null);
+    try {
+      const result = await window.clubhouse.agent.removeDisposedMany(rows.map((r) => ({ projectPath: r.projectPath, agentId: r.config.id })));
+      if (result.failed.length > 0) {
+        setRemoveError(`Couldn’t remove ${result.failed.length} of ${rows.length}. ${result.failed[0].message}`);
+      }
+    } catch (err) {
+      // telemetry-exempt: shown under the list.
+      setRemoveError(err instanceof Error ? err.message : String(err));
+    }
+    setClearing(null);
+    setNonce((n) => n + 1);
+  }, []);
+
   return (
     <SettingsPage
       title="Helpers"
@@ -238,30 +255,31 @@ export function HelpersSettingsView() {
 
       <DefaultHelperTemplateSection />
 
-      <HelperPresetsSection
-        title="Smart helper selection"
-        autoLabel="Smart helper selection"
-        toggleText="Let orchestrators use it"
-        footer="Smart helper selection balances load across your providers. Built-in templates ask orchestrators to use it."
-      />
-
       <SettingsSection title="Disposed helpers without an orchestrator" meta={orphans && orphans.length > 0 ? String(orphans.length) : undefined}>
         <SettingsBlock>
           {orphans === null ? (
             <p className={settingsHelp}>Loading…</p>
           ) : orphans.length === 0 ? (
-            <p className={settingsHelp} data-testid="helpers-orphans-empty">None. Disposed helpers show in their orchestrator’s Helpers card until you remove them.</p>
+            <p className={settingsHelp} data-testid="helpers-orphans-empty">None. Disposed helpers show in their orchestrator’s Helpers card until you remove them, and go when it’s deleted.</p>
           ) : (
-            <ul className="flex flex-col" data-testid="helpers-orphans">
-              {orphans.map((row) => (
-                <li key={`${row.projectId}:${row.config.id}`} className="h-8 flex items-center gap-2.5 text-[13px]" data-testid="helpers-orphan-row">
-                  <span className="text-ctp-text truncate">{row.config.name}</span>
-                  <span className="text-xs text-ctp-overlay1 truncate">{row.projectName}</span>
-                  <span className="text-xs text-ctp-overlay1 whitespace-nowrap">{formatWhen(row.config.disposedAt)}</span>
-                  <Button kind="quiet" className="ml-auto" onClick={() => setRemoving(row)} data-testid="helpers-orphan-remove">Remove</Button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="flex items-center gap-2.5">
+                <p className={`${settingsHelp} min-w-0 flex-1`}>Their orchestrator is gone, or its project isn’t open here.</p>
+                <Button kind="quiet" disabled={clearing !== null} aria-busy={clearing === 'busy'} onClick={() => setClearing('confirm')} data-testid="helpers-orphans-clear-all">
+                  {clearing === 'busy' ? 'Clearing…' : 'Clear all'}
+                </Button>
+              </div>
+              <ul className="flex flex-col" data-testid="helpers-orphans">
+                {orphans.map((row) => (
+                  <li key={`${row.projectId}:${row.config.id}`} className="h-8 flex items-center gap-2.5 text-[13px]" data-testid="helpers-orphan-row">
+                    <span className="text-ctp-text truncate">{row.config.name}</span>
+                    <span className="text-xs text-ctp-overlay1 truncate">{row.projectName}</span>
+                    <span className="text-xs text-ctp-overlay1 whitespace-nowrap">{formatWhen(row.config.disposedAt)}</span>
+                    <Button kind="quiet" className="ml-auto" onClick={() => setRemoving(row)} data-testid="helpers-orphan-remove">Remove</Button>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
           {removeError && <p className="mt-1.5 text-xs text-ctp-error" role="alert">{removeError}</p>}
         </SettingsBlock>
@@ -274,6 +292,15 @@ export function HelpersSettingsView() {
         confirmLabel="Remove"
         onCancel={() => setRemoving(null)}
         onConfirm={() => { if (removing) void remove(removing); }}
+      />
+
+      <ConfirmDestructiveAction
+        open={clearing === 'confirm'}
+        title={`Remove all ${orphans?.length ?? 0} disposed helpers for good?`}
+        description="Their folders are already gone. This removes them and their session lists from Clubhouse. It can’t be undone."
+        confirmLabel="Clear all"
+        onCancel={() => setClearing(null)}
+        onConfirm={() => { if (orphans) void clearAll(orphans); }}
       />
     </SettingsPage>
   );
