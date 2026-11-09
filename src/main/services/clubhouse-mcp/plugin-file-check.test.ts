@@ -20,7 +20,8 @@ vi.mock('./plugin-caller-check', () => ({
 import { agentRegistry } from '../agent-registry';
 import { checkPluginFileChange } from './plugin-file-check';
 
-const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-file-check-')));
+// The native realpath, as main uses: on Windows it expands short names (RUNNER~1).
+const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-file-check-')));
 const home = path.join(tmp, 'home');
 const other = path.join(tmp, 'other');
 const outside = path.join(tmp, 'outside');

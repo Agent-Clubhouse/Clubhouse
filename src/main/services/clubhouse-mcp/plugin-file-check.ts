@@ -101,7 +101,10 @@ export async function checkPluginFileChange(pluginId: string, callId: string, fi
   const agentId = agentOfPluginCall(callId, pluginId);
   if (!agentId) return CALL_OVER;
   const level = callerRunningAccess(agentId);
-  const roots = await Promise.all((await projectStore.peekProjects()).map((p) => realPath(p.path)));
+  // Each project's real folder, and the path it is registered under (which grants name).
+  const registered = await projectStore.peekProjects();
+  const roots = await Promise.all(registered.map((p) => realPath(p.path)));
+  const registeredPath = (root: string) => registered[roots.indexOf(root)]?.path ?? root;
   const own = agentRegistry.get(agentId)?.projectPath;
   const ownRoot = own ? await realPath(own) : undefined;
   const needed: AccessLevel = op === 'exec' ? 'auto' : 'auto_edit';
@@ -129,7 +132,7 @@ export async function checkPluginFileChange(pluginId: string, callId: string, fi
       }
       if (rest.length === 0) return 'That is the whole project or an agent\'s whole worktree, which a plugin can\'t change for an agent.';
       if (CONFIG_ENTRIES.has(rest[0])) {
-        return checkPluginCaller(pluginId, callId, { action: 'project.configure', projectPath: project });
+        return checkPluginCaller(pluginId, callId, { action: 'project.configure', projectPath: registeredPath(project) });
       }
     }
     if (!atLeast(level, needed)) return levelRefusal(needed);
