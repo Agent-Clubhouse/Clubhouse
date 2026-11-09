@@ -1358,6 +1358,8 @@ export interface UpdateSettings {
   autoUpdate: boolean;
   previewChannel: boolean;
   lastCheck: string | null;
+  /** Why the last finished check failed, or null when it succeeded. */
+  lastCheckError: string | null;
   dismissedVersion: string | null;
   lastSeenVersion: string | null;
 }

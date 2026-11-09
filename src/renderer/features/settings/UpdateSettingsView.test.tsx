@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { UpdateSettingsView } from './UpdateSettingsView';
 import { useUpdateStore } from '../../stores/updateStore';
 
@@ -8,7 +8,7 @@ const mockOpenUpdateDownload = vi.fn();
 
 function resetStores(overrides: Record<string, any> = {}) {
   useUpdateStore.setState({
-    settings: { autoUpdate: true, previewChannel: false, lastCheck: null },
+    settings: { autoUpdate: true, previewChannel: false, lastCheck: null, lastCheckError: null },
     status: { state: 'idle', availableVersion: null, downloadProgress: 0, error: null, artifactUrl: null },
     saveSettings: mockSaveSettings,
     checkForUpdates: mockCheckForUpdates,
@@ -106,8 +106,69 @@ describe('UpdateSettingsView', () => {
     expect(screen.getByText('Last checked')).toBeInTheDocument();
   });
 
+  it('shows why the last check failed', () => {
+    resetStores({
+      settings: { autoUpdate: true, previewChannel: false, lastCheck: '2026-01-15T10:00:00Z', lastCheckError: 'HTTP 503' },
+    });
+    render(<UpdateSettingsView />);
+    expect(screen.getByText(/Couldn't check: HTTP 503/)).toBeInTheDocument();
+  });
+
+  it('shows no failure line when the last check succeeded', () => {
+    resetStores({ settings: { autoUpdate: true, previewChannel: false, lastCheck: '2026-01-15T10:00:00Z', lastCheckError: null } });
+    render(<UpdateSettingsView />);
+    expect(screen.queryByText(/Couldn't check/)).not.toBeInTheDocument();
+  });
+
   it('hides last checked when null', () => {
     render(<UpdateSettingsView />);
     expect(screen.queryByText('Last checked')).not.toBeInTheDocument();
+  });
+});
+
+describe('UpdateSettingsView manual check (#3231)', () => {
+  const checkForUpdates = vi.fn();
+  const getUpdateSettings = vi.fn();
+  const idle = { state: 'idle', availableVersion: null, downloadProgress: 0, error: null, artifactUrl: null };
+
+  // Taken at collection time, before the tests above swap in mock actions.
+  const real = useUpdateStore.getState();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (window as any).clubhouse = { app: { checkForUpdates, getUpdateSettings } };
+    useUpdateStore.setState({
+      settings: { autoUpdate: true, previewChannel: false, lastCheck: '2026-01-01T00:00:00Z', lastCheckError: null } as any,
+      status: idle as any,
+      checkForUpdates: real.checkForUpdates,
+      refreshCheckSettings: real.refreshCheckSettings,
+    });
+  });
+
+  it('shows Checking, then the new Last checked time', async () => {
+    let resolveCheck: (s: unknown) => void = () => {};
+    checkForUpdates.mockReturnValue(new Promise((r) => { resolveCheck = r; }));
+    getUpdateSettings.mockResolvedValue({ lastCheck: '2026-11-09T12:00:00Z', lastCheckError: null });
+    render(<UpdateSettingsView />);
+    const oldTime = new Date('2026-01-01T00:00:00Z').toLocaleString();
+    expect(screen.getByText(oldTime)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Check now'));
+    expect(screen.getAllByText('Checking…').length).toBeGreaterThanOrEqual(1);
+
+    resolveCheck(idle);
+    await waitFor(() => expect(screen.getByText(new Date('2026-11-09T12:00:00Z').toLocaleString())).toBeInTheDocument());
+    expect(screen.queryByText(oldTime)).not.toBeInTheDocument();
+    expect(screen.getByText('Up to date')).toBeInTheDocument();
+  });
+
+  it('shows the reason when the check fails', async () => {
+    checkForUpdates.mockResolvedValue({ ...idle, state: 'error', error: 'HTTP 503' });
+    getUpdateSettings.mockResolvedValue({ lastCheck: '2026-11-09T12:00:00Z', lastCheckError: 'HTTP 503' });
+    render(<UpdateSettingsView />);
+
+    fireEvent.click(screen.getByText('Check now'));
+    await waitFor(() => expect(screen.getByText(/Couldn't check: HTTP 503/)).toBeInTheDocument());
+    expect(screen.getByText(new Date('2026-11-09T12:00:00Z').toLocaleString())).toBeInTheDocument();
   });
 });

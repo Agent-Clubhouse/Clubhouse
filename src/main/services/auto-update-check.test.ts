@@ -6,12 +6,14 @@ import type { UpdateManifest } from '../../shared/types';
 // Hoisted variables for use in vi.mock factories
 // ---------------------------------------------------------------------------
 
-const { httpsGetSpy, mockSettings } = vi.hoisted(() => ({
+const { httpsGetSpy, saveSettingsSpy, mockSettings } = vi.hoisted(() => ({
   httpsGetSpy: vi.fn(),
+  saveSettingsSpy: vi.fn(),
   mockSettings: {
     autoUpdate: true,
     previewChannel: false,
     lastCheck: null as string | null,
+    lastCheckError: null as string | null,
     dismissedVersion: null as string | null,
     lastSeenVersion: '0.25.0' as string | null,
   },
@@ -30,7 +32,7 @@ vi.mock('./log-service', () => ({
 vi.mock('./settings-store', () => ({
   createSettingsStore: () => ({
     get: () => ({ ...mockSettings }),
-    save: vi.fn(),
+    save: saveSettingsSpy,
     update: vi.fn(),
   }),
 }));
@@ -186,6 +188,52 @@ describe('checkForUpdates', () => {
 
     const result = await checkForUpdates(true);
     expect(result.state).toBe('idle');
+  });
+
+  describe('last check record (#3231)', () => {
+    const lastSaved = () => saveSettingsSpy.mock.calls.at(-1)?.[0];
+
+    it('saves the time and clears the error when up to date', async () => {
+      mockSettings.lastCheckError = 'old failure';
+      mockHttpsGet(200, JSON.stringify(makeManifest('0.0.0')));
+      const before = Date.now();
+      await checkForUpdates(true);
+      expect(saveSettingsSpy).toHaveBeenCalledTimes(1);
+      expect(Date.parse(lastSaved().lastCheck)).toBeGreaterThanOrEqual(before);
+      expect(lastSaved().lastCheckError).toBeNull();
+    });
+
+    it('saves the time when the update is dismissed', async () => {
+      mockSettings.dismissedVersion = '1.0.0';
+      mockHttpsGet(200, JSON.stringify(makeManifest('1.0.0')));
+      await checkForUpdates(false);
+      expect(lastSaved().lastCheck).toEqual(expect.any(String));
+      expect(lastSaved().lastCheckError).toBeNull();
+    });
+
+    it('saves the time when the manifest has no artifact for this platform', async () => {
+      mockHttpsGet(200, JSON.stringify(makeManifest('99.0.0', { artifacts: {} })));
+      await checkForUpdates(true);
+      expect(lastSaved().lastCheck).toEqual(expect.any(String));
+      expect(lastSaved().lastCheckError).toBeNull();
+    });
+
+    it('saves the time and the reason when the check fails', async () => {
+      mockHttpsGet(404, '');
+      const before = Date.now();
+      const result = await checkForUpdates(true);
+      expect(result.state).toBe('error');
+      expect(Date.parse(lastSaved().lastCheck)).toBeGreaterThanOrEqual(before);
+      expect(lastSaved().lastCheckError).toBe('HTTP 404');
+    });
+
+    it('keeps settings changed while the check was in flight', async () => {
+      mockHttpsGet(200, JSON.stringify(makeManifest('0.0.0')));
+      const pending = checkForUpdates(true);
+      mockSettings.previewChannel = true;
+      await pending;
+      expect(lastSaved().previewChannel).toBe(true);
+    });
   });
 
   it('skips dismissed version on non-manual check', async () => {
