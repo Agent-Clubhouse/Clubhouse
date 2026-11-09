@@ -196,9 +196,9 @@ export function readLocalDirectionTools(fromAgentId: string, toAgentId: string):
  * A link the Dispatcher made is gone (#3215), so the tools it set on that
  * direction aren't its any more. Nothing binds the pair: they go, so a wire
  * the user draws later starts like any new one. Another source still binds it
- * (a canvas wire, a helper link): they stay as that wire's, the user's from
- * now on, with wake off, since the user never turned it on there. Tools the
- * user set are left alone.
+ * (a canvas wire, a helper link): the direction goes back to a new
+ * connection's defaults, clear and compact off and wake on (2026-11-09), the
+ * user's from now on. Tools the user set are left alone.
  */
 export async function forgetDispatcherDirection(fromAgentId: string, toAgentId: string): Promise<void> {
   const entry = getConnectionDirection(local(fromAgentId), local(toAgentId));
@@ -207,7 +207,8 @@ export async function forgetDispatcherDirection(fromAgentId: string, toAgentId: 
     await removeConnectionDirection(local(fromAgentId), local(toAgentId));
     return;
   }
-  await setConnectionTools(local(fromAgentId), local(toAgentId), entry.disabledTools, (entry.enabledTools ?? []).filter((t) => t !== WAKE_TOOL));
+  // setConnectionTools is the user's write: the Dispatcher's mark goes.
+  await setConnectionTools(local(fromAgentId), local(toAgentId), [...NEW_CONNECTION_SWITCHES.disabledTools], [...NEW_CONNECTION_SWITCHES.enabledTools]);
 }
 
 /**
@@ -220,12 +221,15 @@ export const AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION = 'connection-defaults-3214
 let automaticDeferralLogged = false;
 
 /**
- * A direction #3216's pass, or connect_orchestrators without `allow`, saved
- * for a link the Dispatcher made, still exactly as it saved it: clear and
- * compact off, wake off, nothing else. The Dispatcher's to change.
+ * A direction saved exactly as a new connection started before the
+ * 2026-11-09 defaults: clear and compact off, nothing turned on, no link. A
+ * canvas wire drawn since #2969, or a Dispatcher link #3216's pass or
+ * connect_orchestrators saved (`setBy: "dispatcher"`). Wake it didn't exist
+ * when it was saved, so its wake off isn't a choice anyone made. On this
+ * computer only: across machines wake has its own rule (D232).
  */
-function isOldDispatcherDefault(d: ConnectionDirection): boolean {
-  return d.setBy === 'dispatcher' && !d.link && sameTools(d.disabledTools, NEW_CONNECTION_DISABLED_TOOLS) && !d.enabledTools?.length && !d.from.machineId && !d.to.machineId;
+function isOldNewConnectionDefault(d: ConnectionDirection): boolean {
+  return !d.link && sameTools(d.disabledTools, NEW_CONNECTION_DISABLED_TOOLS) && !d.enabledTools?.length && !d.from.machineId && !d.to.machineId;
 }
 
 /**
@@ -239,10 +243,13 @@ function isOldDispatcherDefault(d: ConnectionDirection): boolean {
  * - A wire the user drew (`drawnSourceIds`, the canvas) with no list of its
  *   own, that none of those lists, starts like a new connection: clear and
  *   compact off, wake on.
- * - A link the Dispatcher made, still exactly as #3216 saved it (wake off),
- *   gets wake on, as connect_orchestrators gives a new one.
- * A direction with saved tools (the user's, an explicit everything-on
- * included, a canvas wire's list, a Make two-way link) is never touched.
+ * - A direction saved exactly as a new connection started before these
+ *   defaults (clear and compact off, nothing turned on, no link: a canvas
+ *   wire's, a Dispatcher link's) gets wake on, keeping who set it. The
+ *   maintainer's ruling: Wake it didn't exist then, so wake off there wasn't
+ *   anyone's choice.
+ * Any other saved direction (the user's, an explicit everything-on included,
+ * a canvas wire's other list, a Make two-way link) is never touched.
  * Waits while a source can't be read, or the file is a newer build's. Until
  * this has run, a new connection's lists are live only; from then on they're
  * kept (restoreTools).
@@ -277,13 +284,13 @@ export async function migrateAutomaticConnectionTools(sourceIds: readonly string
   for (const id of drawnSourceIds) {
     for (const p of listPairsWithoutTools(id)) fill(p.agentId, p.targetId, NEW_CONNECTION_SWITCHES.disabledTools, NEW_CONNECTION_SWITCHES.enabledTools);
   }
-  const dispatcherLinks = listAllConnectionDirections().filter(isOldDispatcherDefault)
-    .map((d): ConnectionDirection => ({ ...d, enabledTools: [...NEW_CONNECTION_ENABLED_TOOLS], updatedAt: now }));
+  const wakeOn = new Set(listAllConnectionDirections().filter(isOldNewConnectionDefault)
+    .map((d): ConnectionDirection => ({ ...d, enabledTools: [...NEW_CONNECTION_ENABLED_TOOLS], updatedAt: now })));
   const written = await runConnectionMigration(
     AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION,
-    [...directions, ...dispatcherLinks],
-    // Checked again under the store's lock: a Dispatcher link the user or the Dispatcher changed meanwhile stays.
-    (current, next) => next.setBy === 'dispatcher' && isOldDispatcherDefault(current),
+    [...directions, ...wakeOn],
+    // Checked again under the store's lock: a direction changed meanwhile stays as it is.
+    (current, next) => wakeOn.has(next) && isOldNewConnectionDefault(current) && current.setBy === next.setBy,
   );
   if (written === null) return 'already';
   appLog('core:mcp', 'info', 'Connections made before the 2026-11-09 defaults now keep the tools they start with', {

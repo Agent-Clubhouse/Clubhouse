@@ -750,7 +750,7 @@ describe('tools on its links (#3215)', () => {
     expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
   });
 
-  it('disconnecting drops the tools it set; while the user\'s wire still holds the pair they stay as the user\'s, with wake off', async () => {
+  it('disconnecting drops the tools it set; while the user\'s wire still holds the pair it goes back to a new connection\'s defaults, the user\'s', async () => {
     await links({ from: 'a', to: 'b', allow: ONLY });
     await call('disconnect_orchestrators', { from: 'a', to: 'b' });
     expect(entry('a', 'b')).toBeUndefined();
@@ -758,8 +758,7 @@ describe('tools on its links (#3215)', () => {
     userDraws('a', 'b');
     await call('disconnect_orchestrators', { from: 'a', to: 'b' });
     expect(isBound('a', 'b')).toBe(true);
-    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['check_connectivity', 'send_file', 'clear_agent', 'compact_agent'] });
-    expect(entry('a', 'b')?.enabledTools).toBeUndefined();
+    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
     expect(entry('a', 'b')?.setBy).toBeUndefined();
   });
 });
@@ -768,24 +767,25 @@ describe('wake the Dispatcher set never outlives its link (#3215 QA)', () => {
   const entry = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
   const wakeOf = (from: string, to: string) => (entry(from, to)?.enabledTools ?? []).includes('wake_agent');
 
-  it('migrate, set wake, the user draws the pair, disconnect, the user removes and redraws it: wake is off', async () => {
+  it('migrate, set tools, the user draws the pair, disconnect: the wire is handed back at the defaults, the user\'s, and stays so when removed and redrawn', async () => {
     fs.writeFileSync(dispatcherConnectionsPath(), JSON.stringify({ version: 1, connections: [
       { agentId: 'a', targetId: 'b', agentProjectPath: P1, targetProjectPath: P1, createdAt: '', createdBy: 'dispatcher' },
     ], removedByUser: [] }));
     await restart();
     expect(await migrateDispatcherLinkTools()).toBe('done');
-    expect((await call('set_connection_tools', { from: 'a', to: 'b', allow: ['send_message', 'wake_agent'] })).isError).toBeFalsy();
-    expect(wakeOf('a', 'b')).toBe(true);
+    expect((await call('set_connection_tools', { from: 'a', to: 'b', allow: ['send_message', 'clear_agent'] })).isError).toBeFalsy();
+    expect(wakeOf('a', 'b')).toBe(false);
     userDraws('a', 'b');
     await call('disconnect_orchestrators', { from: 'a', to: 'b' });
-    // Still bound by the user's wire: the tools stay as that wire's, the user's now, with wake off.
+    // Still bound by the user's wire: a new connection's defaults (2026-11-09), the user's now. What the Dispatcher set is gone.
     expect(isBound('a', 'b')).toBe(true);
-    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent'] });
+    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
     expect(entry('a', 'b')?.setBy).toBeUndefined();
-    expect(wakeOf('a', 'b')).toBe(false);
+    // The user's entry now: removing and redrawing the wire leaves it.
     await userRemoves('a', 'b');
     userDraws('a', 'b');
-    expect(wakeOf('a', 'b')).toBe(false);
+    expect(entry('a', 'b')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
+    expect(wakeOf('a', 'b')).toBe(true);
   });
 
   it('a switch the user turns between the check and the write refuses the link, and nothing is saved', async () => {

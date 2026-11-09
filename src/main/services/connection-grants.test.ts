@@ -308,20 +308,34 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
     expect(getConnectionDirection({ agentId: 'z' }, B)).toBeUndefined();
   });
 
-  it('a Dispatcher link #3216 saved with wake off gets wake on, if still exactly as saved; one changed since, or the user\'s, stays', async () => {
-    const H_TO_B = [H, B] as const;
-    await setConnectionDirections([
-      { from: A, to: B, disabledTools: CLEAR_COMPACT, enabledTools: [] },
-      { from: B, to: A, disabledTools: [...CLEAR_COMPACT, 'send_file'], enabledTools: [] },
-    ], () => {});
-    await setConnectionTools(...H_TO_B, CLEAR_COMPACT); // the user's, the same lists
+  it('a direction saved exactly as a new connection started before (clear and compact off, nothing on, no link) gets wake on, keeping who set it', async () => {
+    // A canvas wire drawn since #2969, and a Dispatcher link #3216 saved.
+    await setConnectionTools(H, B, CLEAR_COMPACT);
+    await setConnectionDirections([{ from: A, to: B, disabledTools: CLEAR_COMPACT, enabledTools: [] }], () => {});
     await rebuildPersistedBindings();
     expect(await migrate()).toBe('done');
+    expect(getConnectionDirection(H, B)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
+    expect(getConnectionDirection(H, B)?.setBy).toBeUndefined();
     expect(getConnectionDirection(A, B)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'], setBy: 'dispatcher' });
-    expect(getConnectionDirection(B, A)).toMatchObject({ disabledTools: [...CLEAR_COMPACT, 'send_file'], setBy: 'dispatcher' });
-    expect(getConnectionDirection(B, A)?.enabledTools).toBeUndefined();
-    expect(getConnectionDirection(...H_TO_B)?.enabledTools).toBeUndefined();
-    expect(getConnectionDirection(...H_TO_B)?.setBy).toBeUndefined();
+    expect(localConnectionWakeOn('h', 'b')).toBe(true);
+  });
+
+  it('leaves every other saved shape as it is', async () => {
+    const Z = { agentId: 'z' };
+    const FAR = { agentId: 'f', machineId: Array(16).fill('bb').join(':') };
+    await setConnectionTools(A, B, ['clear_agent']); // only one of the two
+    await setConnectionTools(B, A, [...CLEAR_COMPACT, 'send_file']); // one more off
+    await setConnectionTools(H, B, CLEAR_COMPACT, ['some_newer_switch']); // something turned on
+    await setConnectionTools(Z, B, []); // everything on
+    await setConnectionDirections([{ from: Z, to: A, disabledTools: [...CLEAR_COMPACT, 'send_file'], enabledTools: [] }], () => {}); // the Dispatcher's, changed
+    await makeTwoWay('b', 'z'); // a link, then set back to the old shape with no wake
+    await setConnectionTools(B, Z, CLEAR_COMPACT, []);
+    await setConnectionTools(A, FAR, CLEAR_COMPACT); // another computer: wake has its own rule there
+    const before = [[A, B], [B, A], [H, B], [Z, B], [Z, A], [B, Z], [A, FAR]].map(([from, to]) => getConnectionDirection(from, to));
+    await rebuildPersistedBindings();
+    expect(await migrate()).toBe('done');
+    expect([[A, B], [B, A], [H, B], [Z, B], [Z, A], [B, Z], [A, FAR]].map(([from, to]) => getConnectionDirection(from, to))).toEqual(before);
+    expect(getConnectionDirection(B, Z)?.link).toBeDefined();
   });
 
   it('never overrides a saved everything-on, whichever source binds the pair', async () => {
