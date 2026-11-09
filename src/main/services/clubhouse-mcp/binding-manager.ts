@@ -7,6 +7,9 @@ import type { McpBinding, BindingTargetKind } from './types';
 
 export type BindingChangeListener = (agentId: string) => void;
 
+/** The same tools, in any order (no list: none). */
+const sameList = (a: readonly string[] | undefined, b: readonly string[]) => (a ?? []).length === b.length && b.every((t) => a!.includes(t));
+
 class BindingManager {
   /** agentId → array of bindings */
   private bindings = new Map<string, McpBinding[]>();
@@ -40,7 +43,7 @@ class BindingManager {
     const binding = this.bindings.get(agentId)?.find((b) => b.targetId === targetId);
     if (!binding) return;
     if (this.toolsRestorer) this.toolsRestorer(agentId, targetId, binding.targetKind, legacy, { starting: options.starting === true });
-    else this.setDisabledTools(agentId, targetId, legacy);
+    else if (!options.starting || !sameList(binding.disabledTools, legacy)) this.setDisabledTools(agentId, targetId, legacy);
   }
 
   /**

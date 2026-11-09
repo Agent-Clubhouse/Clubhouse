@@ -116,10 +116,11 @@ describe('bindingsFromHelperAgents', () => {
   it('wires each live parent and helper both ways, like a bidirectional canvas agent wire', () => {
     const out = bindingsFromHelperAgents(configs.get(projectPath)!, 'Wardfall');
     const starting = { disabledTools: ['clear_agent', 'compact_agent'], startingTools: true };
+    const allOn = { disabledTools: [], startingTools: true };
     expect(out).toEqual([
-      { agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent', label: 'h1', agentName: 'lead', targetName: 'h1', projectName: 'Wardfall' },
+      { agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent', label: 'h1', agentName: 'lead', targetName: 'h1', projectName: 'Wardfall', ...allOn },
       { agentId: 'durable_h1', targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'h1', targetName: 'lead', projectName: 'Wardfall', ...starting },
-      { agentId: 'durable_lead', targetId: 'durable_h2', targetKind: 'agent', label: 'h2', agentName: 'lead', targetName: 'h2', projectName: 'Wardfall' },
+      { agentId: 'durable_lead', targetId: 'durable_h2', targetKind: 'agent', label: 'h2', agentName: 'lead', targetName: 'h2', projectName: 'Wardfall', ...allOn },
       { agentId: 'durable_h2', targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'h2', targetName: 'lead', projectName: 'Wardfall', ...starting },
     ]);
   });
@@ -128,8 +129,9 @@ describe('bindingsFromHelperAgents', () => {
     const out = bindingsFromHelperAgents([agent('durable_p'), agent('durable_h', { parentAgentId: 'durable_p' })]);
     const toHelper = out.find((b) => b.agentId === 'durable_p')!;
     const toParent = out.find((b) => b.agentId === 'durable_h')!;
-    expect(toHelper.disabledTools).toBeUndefined();
-    expect(toHelper.startingTools).toBeUndefined();
+    // Everything on, as its starting list, so no other source starts it with less.
+    expect(toHelper.disabledTools).toEqual([]);
+    expect(toHelper.startingTools).toBe(true);
     expect(toParent.disabledTools).toEqual(['clear_agent', 'compact_agent']);
     expect(toParent.startingTools).toBe(true);
   });
@@ -143,7 +145,7 @@ describe('bindingsFromHelperAgents', () => {
     ]);
     const bindings = wires.get(far)!.bindings;
     expect(bindings.find((b) => b.agentId === 'durable_h')).toMatchObject({ targetId: 'durable_p', disabledTools: ['clear_agent', 'compact_agent'], startingTools: true });
-    expect(bindings.find((b) => b.agentId === 'durable_p')?.disabledTools).toBeUndefined();
+    expect(bindings.find((b) => b.agentId === 'durable_p')?.disabledTools).toEqual([]);
   });
 
   it('skips disposed helpers, disposed parents and parents that are gone', () => {

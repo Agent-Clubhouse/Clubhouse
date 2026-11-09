@@ -67,6 +67,16 @@ function writable(): boolean {
   return version === undefined || version <= CONNECTION_GRANTS_VERSION;
 }
 
+/** Whether this build may write the file: false for a newer build's (#3214 says so once, not on every rebuild). */
+export function connectionGrantsWritable(): boolean {
+  return writable();
+}
+
+/** For tests: mark the file as saved by another build's version. */
+export async function _setConnectionGrantsVersionForTesting(version: number): Promise<void> {
+  await store.update((file) => ({ ...file, version }));
+}
+
 const sameAddress = (a: AgentAddress, b: AgentAddress) => a.agentId === b.agentId && (a.machineId ?? '') === (b.machineId ?? '');
 
 export function getConnectionDirection(from: AgentAddress, to: AgentAddress): ConnectionDirection | undefined {

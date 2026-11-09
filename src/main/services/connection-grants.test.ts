@@ -15,11 +15,13 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-grants-'));
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   connectionMigrationDone, deniedConnectionTools, getConnectionDirection, listConnectionDirections, removeConnectionDirections, setConnectionTools,
-  _forgetConnectionMigrationForTesting,
+  _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
+import { appLog } from './log-service';
 import {
   AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION, applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, forgetConnectionAgent, makeTwoWay,
   migrateAutomaticConnectionTools, readLocalDirectionTools, removeUserLink, setToolsAcrossMachines, startConnectionGrants,
+  _resetConnectionFileWarningForTesting,
 } from './connection-grants';
 import {
   applyPersistedBinding, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource, _resetPersistedBindingSourcesForTesting,
@@ -40,6 +42,7 @@ beforeEach(async () => {
   await removeConnectionDirections('h');
   await removeConnectionDirections('disp');
   await _forgetConnectionMigrationForTesting(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION);
+  _resetConnectionFileWarningForTesting();
   stop = startConnectionGrants();
 });
 afterEach(() => stop());
@@ -193,7 +196,7 @@ describe('connections Clubhouse makes start without clear or compact (#3214)', (
   const starting = { disabledTools: ['clear_agent', 'compact_agent'], startingTools: true as const };
   const wire = (agentId: string, targetId: string, extra: Partial<PersistedBinding> = {}): PersistedBinding => ({ agentId, targetId, targetKind: 'agent', label: targetId, ...extra });
   /** A helper `h` of `a`, and `a` connected to the Dispatcher `disp`, as their sources list them. */
-  const helperWires = () => [wire('a', 'h'), wire('h', 'a', starting)];
+  const helperWires = () => [wire('a', 'h', { disabledTools: [], startingTools: true }), wire('h', 'a', starting)];
   const dispatcherWires = () => [wire('disp', 'a', starting), wire('a', 'disp', starting)];
   let canvas: PersistedBinding[] = [];
   let unregister: Array<() => void> = [];
@@ -249,16 +252,77 @@ describe('connections Clubhouse makes start without clear or compact (#3214)', (
     expect(getConnectionDirection(DISP, A)).toEqual(linked);
   });
 
-  it('leaves a pair a canvas wire lists to that wire, and a direction stored for it unchanged', async () => {
+  it('an older canvas wire with no list over a helper or Dispatcher link gets the starting list on the first run; one with its own list keeps it', async () => {
     canvas = [wire('h', 'a'), wire('a', 'disp', { disabledTools: ['send_file'] })];
     await rebuildPersistedBindings();
-    // The canvas bound them first: its list (none, or the one it stored), not the helper's or Dispatcher's.
-    expect(toolsOf('h', 'a')).toBeUndefined();
+    // The canvas bound both first. With no list of its own, the helper's starting list applies.
+    expect(toolsOf('h', 'a')).toEqual(['clear_agent', 'compact_agent']);
     await vi.waitFor(() => expect(getConnectionDirection(A, DISP)).toMatchObject({ disabledTools: ['send_file'] }));
     const stored = getConnectionDirection(A, DISP);
     expect(await migrateAutomaticConnectionTools(AUTOMATIC)).toBe('done');
-    expect(getConnectionDirection(H, A)).toBeUndefined();
+    expect(getConnectionDirection(H, A)).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'] });
     expect(getConnectionDirection(A, DISP)).toEqual(stored);
+    // Restart: the canvas binds the pair first again, and the saved list applies.
+    bindingManager._resetForTesting?.();
+    await rebuildPersistedBindings();
+    expect(toolsOf('h', 'a')).toEqual(['clear_agent', 'compact_agent']);
+    expect(toolsOf('a', 'disp')).toEqual(['send_file']);
+  });
+
+  it('never overrides a saved everything-on, whichever source binds the pair', async () => {
+    await setConnectionTools(H, A, []);
+    canvas = [wire('h', 'a')];
+    await rebuildPersistedBindings();
+    expect(await migrateAutomaticConnectionTools(AUTOMATIC)).toBe('done');
+    await rebuildPersistedBindings();
+    expect(toolsOf('h', 'a')).toBeUndefined();
+    expect(getConnectionDirection(H, A)).toMatchObject({ disabledTools: [] });
+  });
+
+  it('the first source to give a direction its starting list decides: an orchestrator connection doesn\'t start a parent with less over its own helper', async () => {
+    unregister.push(registerPersistedBindingSource({ id: 'orchestrator-connections', prune: true, collect: async () => [wire('a', 'h', starting)] }));
+    await rebuildPersistedBindings();
+    expect(toolsOf('a', 'h')).toBeUndefined();
+    expect(await migrateAutomaticConnectionTools([...AUTOMATIC, 'orchestrator-connections'])).toBe('done');
+    expect(getConnectionDirection(A, H)).toBeUndefined();
+    await rebuildPersistedBindings();
+    expect(toolsOf('a', 'h')).toBeUndefined();
+  });
+
+  it('a starting list that couldn\'t be saved is saved on a later rebuild, after a canvas wire is drawn over the pair', async () => {
+    await rebuildPersistedBindings();
+    expect(await migrateAutomaticConnectionTools(AUTOMATIC)).toBe('done');
+    await removeConnectionDirections('h');
+    // A newer build's file: the save is skipped, and said once however many rebuilds run.
+    await _setConnectionGrantsVersionForTesting(99);
+    bindingManager._resetForTesting?.();
+    vi.mocked(appLog).mockClear();
+    await rebuildPersistedBindings();
+    await rebuildPersistedBindings();
+    expect(toolsOf('h', 'a')).toEqual(['clear_agent', 'compact_agent']);
+    expect(getConnectionDirection(H, A)).toBeUndefined();
+    expect(vi.mocked(appLog).mock.calls.filter(([, level, message]) => level === 'warn' && String(message).includes('newer Clubhouse'))).toHaveLength(1);
+    await _setConnectionGrantsVersionForTesting(1);
+    canvas = [wire('h', 'a'), wire('a', 'h')];
+    await rebuildPersistedBindings();
+    await vi.waitFor(() => expect(getConnectionDirection(H, A)).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'] }));
+    expect(getConnectionDirection(A, H)).toBeUndefined();
+  });
+
+  it('waits while the file is a newer build\'s, saying so once, and runs once it isn\'t', async () => {
+    await _setConnectionGrantsVersionForTesting(99);
+    try {
+      vi.mocked(appLog).mockClear();
+      await rebuildPersistedBindings();
+      expect(await migrateAutomaticConnectionTools(AUTOMATIC)).toBe('deferred');
+      expect(await migrateAutomaticConnectionTools(AUTOMATIC)).toBe('deferred');
+      expect(connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION)).toBe(false);
+      expect(vi.mocked(appLog).mock.calls.filter(([, level, message]) => level === 'warn' && String(message).includes('newer Clubhouse'))).toHaveLength(1);
+    } finally {
+      await _setConnectionGrantsVersionForTesting(1);
+    }
+    expect(await migrateAutomaticConnectionTools(AUTOMATIC)).toBe('done');
+    expect(getConnectionDirection(H, A)).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'] });
   });
 
   it('drawing a canvas wire over a helper or Dispatcher link keeps the choices saved for it', async () => {

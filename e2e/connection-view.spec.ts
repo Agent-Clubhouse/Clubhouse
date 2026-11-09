@@ -101,7 +101,8 @@ test('the connection view: both directions with their own tools, saved in the st
   const out = dialog.locator(`[data-testid="connection-direction-${CONDUCTOR}-${PARTNER}"]`);
   await expect(out.getByRole('switch', { name: 'Clear its context (conductor to partner)' })).toHaveAttribute('aria-checked', 'false');
   await out.getByRole('switch', { name: 'Send files (conductor to partner)' }).click();
-  await expect.poll(async () => (await savedDirections()).find((d) => d.from.agentId === CONDUCTOR)?.disabledTools.sort())
+  // By both ends: conductor's link with the Dispatcher is saved here too (#3214).
+  await expect.poll(async () => (await savedDirections()).find((d) => d.from.agentId === CONDUCTOR && d.to.agentId === PARTNER)?.disabledTools.sort())
     .toEqual(['clear_agent', 'compact_agent', 'send_file']);
 
   // partner to conductor isn't connected: Make two-way adds the user's link for it, starting like a new connection.

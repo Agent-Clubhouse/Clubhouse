@@ -11,11 +11,11 @@
  */
 
 import type { AgentAddress, ConnectionDirection, DirectionTools } from '../../shared/connection-grants';
-import { NEW_CONNECTION_DISABLED_TOOLS, WAKE_TOOL, localDirectionTools } from '../../shared/connection-grants';
+import { NEW_CONNECTION_DISABLED_TOOLS, WAKE_TOOL, directionKey, localDirectionTools } from '../../shared/connection-grants';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
-  connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
+  connectionGrantsWritable, connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
   listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
@@ -23,7 +23,7 @@ import { recordConnectionChange } from './grant-telemetry';
 import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
 import {
-  clearBindingRemovedByUser, collectSourcesByPair, onBindingRemovedByUser, persistedPairKey, registerPersistedBindingSource, rebuildPersistedBindings,
+  clearBindingRemovedByUser, collectSourcesByPair, isBindingRemovedByUser, listStartingTools, onBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings,
   type PersistedBinding, type PersistedBindingSource,
 } from './persisted-bindings';
 import { removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
@@ -56,11 +56,35 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+let newerFileLogged = false;
+
+/**
+ * Whether connection-grants.json was saved by a newer Clubhouse, so this one
+ * won't change it. Said once per process, not on every rebuild.
+ */
+export function connectionFileIsNewer(): boolean {
+  if (connectionGrantsWritable()) return false;
+  if (!newerFileLogged) {
+    newerFileLogged = true;
+    appLog('core:mcp', 'warn', 'Connection permissions were saved by a newer Clubhouse, so this one won’t change them; new connections keep their starting tools only while running');
+  }
+  return true;
+}
+
+/** For tests: say the newer-file warning again. */
+export function _resetConnectionFileWarningForTesting(): void {
+  newerFileLogged = false;
+}
+
+const sameTools = (a: readonly string[] | undefined, b: readonly string[]) => (a ?? []).length === b.length && b.every((t) => a!.includes(t));
+
 /**
  * Restore: the store wins; a list it doesn't have moves in. `starting`: the
- * list a connection Clubhouse made starts with (#3214), kept once the one-time
- * pass has run (it decides for the connections made before it), and never
- * over a choice saved meanwhile.
+ * list a connection Clubhouse made starts with (#3214), whichever source
+ * bound the pair. A saved direction (an explicit everything-on included) is
+ * left as it is; otherwise the list applies, and it's saved once the one-time
+ * pass has run (it decides for connections made before it), never over a
+ * choice saved meanwhile. Everything on is never saved: no entry says that.
  */
 function restoreTools(agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: { starting?: boolean } = {}): void {
   if (targetKind !== 'agent') {
@@ -68,19 +92,24 @@ function restoreTools(agentId: string, targetId: string, targetKind: BindingTarg
     return;
   }
   const saved = deniedConnectionTools(local(agentId), connectionEnd(targetId));
+  if (options.starting) {
+    // Bind and every store write keep the live list in step with a saved one.
+    if (saved) return;
+    const live = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === targetId)?.disabledTools;
+    if (!sameTools(live, legacy)) bindingManager.setDisabledTools(agentId, targetId, legacy);
+    if (legacy.length === 0 || !connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION) || connectionFileIsNewer()) return;
+    void fillConnectionTools(local(agentId), connectionEnd(targetId), legacy).catch((err) => {
+      // telemetry-exempt: logged; the live binding already has the list, and the next rebuild tries again
+      appLog('core:mcp', 'warn', 'Could not save the tools a new connection starts with', { meta: { agentId, targetId, error: errorText(err) } });
+    });
+    return;
+  }
   if (saved) {
     bindingManager.setDisabledTools(agentId, targetId, saved);
     return;
   }
   bindingManager.setDisabledTools(agentId, targetId, legacy);
-  if (options.starting) {
-    if (!connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION)) return;
-    void fillConnectionTools(local(agentId), connectionEnd(targetId), legacy).catch((err) => {
-      // telemetry-exempt: logged; the live binding already has the list, and the next restore tries again
-      appLog('core:mcp', 'warn', 'Could not save the tools a new connection starts with', { meta: { agentId, targetId, error: errorText(err) } });
-    });
-    return;
-  }
+  if (connectionFileIsNewer()) return;
   void setConnectionTools(local(agentId), connectionEnd(targetId), legacy).then(() => {
     recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools: legacy, migrated: true });
   }, (err) => {
@@ -175,17 +204,19 @@ let automaticDeferralLogged = false;
 /**
  * Once, after a rebuild: connections Clubhouse made before #3214 (helper and
  * Dispatcher links, an orchestrator's connections; `sourceIds`) had every
- * tool on. Each direction one of them lists, with nothing saved for it, keeps
- * the list it has live: its source's starting list, or none when a canvas wire
- * bound the pair first. A direction with saved tools (the user's, a canvas
- * wire's, a Make two-way link) is never touched, and one with everything on
- * gets no entry. Waits while a source can't be read: it may be the one that
- * binds the pair. Until this has run, a new connection's list is live only;
- * from then on it's kept (restoreTools).
+ * tool on. Each direction one of them lists, with nothing saved for it, gets
+ * the starting list that source gave at its last collect, whichever source
+ * bound the pair (a canvas wire with no list included). A direction with
+ * saved tools (the user's, an explicit everything-on included, a canvas
+ * wire's, a Make two-way link) is never touched, and one that starts with
+ * everything on gets no entry. Waits while a source can't be read, or the
+ * file is a newer build's. Until this has run, a new connection's list is
+ * live only; from then on it's kept (restoreTools).
  */
 export async function migrateAutomaticConnectionTools(sourceIds: readonly string[]): Promise<'done' | 'already' | 'deferred'> {
   if (connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION)) return 'already';
-  const { bySource, failed } = await collectSourcesByPair();
+  if (connectionFileIsNewer()) return 'deferred';
+  const { failed } = await collectSourcesByPair();
   if (failed.length > 0) {
     if (!automaticDeferralLogged) {
       automaticDeferralLogged = true;
@@ -193,13 +224,18 @@ export async function migrateAutomaticConnectionTools(sourceIds: readonly string
     }
     return 'deferred';
   }
-  const listed = (agentId: string, targetId: string) => sourceIds.some((id) => bySource.get(id)?.has(persistedPairKey(agentId, targetId)));
   const now = new Date().toISOString();
   const directions: ConnectionDirection[] = [];
-  for (const b of bindingManager.getAllBindings()) {
-    if (b.targetKind !== 'agent' || !b.disabledTools?.length || connectionEnd(b.targetId).machineId) continue;
-    if (!listed(b.agentId, b.targetId) || getConnectionDirection(local(b.agentId), local(b.targetId))) continue;
-    directions.push({ from: local(b.agentId), to: local(b.targetId), disabledTools: [...b.disabledTools], updatedAt: now });
+  const seen = new Set<string>();
+  for (const id of sourceIds) {
+    for (const t of listStartingTools(id)) {
+      const key = directionKey(local(t.agentId), local(t.targetId));
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (t.disabledTools.length === 0 || connectionEnd(t.targetId).machineId || isBindingRemovedByUser(t.agentId, t.targetId)) continue;
+      if (getConnectionDirection(local(t.agentId), local(t.targetId))) continue;
+      directions.push({ from: local(t.agentId), to: local(t.targetId), disabledTools: t.disabledTools, updatedAt: now });
+    }
   }
   const written = await runConnectionMigration(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION, directions);
   if (written === null) return 'already';

@@ -61,9 +61,22 @@ The rewrite step that put agents' news into their own voice under their own name
 
 A separate thread per agent was considered instead. It would keep the clutter out of the main chat but leave the user two places to watch, put questions that need them out of sight, and need new UI on desktop and phone. The fix in place keeps one conversation.
 
-## What automatic connections start with (#3214)
+## What connections Clubhouse makes start with (#3214)
 
-A connection Clubhouse makes itself starts no more permissive than one the user draws (`AUTOMATIC_CONNECTION_DISABLED_TOOLS` in `shared/connection-grants.ts`): the Dispatcher and an agent connected to it can't clear or compact each other, a helper can't clear or compact its orchestrator, and an orchestrator keeps every tool on its own helper. An orchestrator's connections (`orchestrator-connections.ts`) start like a new link. Wake stays off on all of them, and the Dispatcher's own wake is unchanged. The sources list each direction's starting list (`startingTools` on the binding); a saved direction always wins. A one-time pass after the first complete rebuild (`migrateAutomaticConnectionTools`, done marker `automatic-connection-defaults-3214`) saves the starting list for older connections with nothing saved, and waits while any source can't be read. After it, a new connection's starting list is saved once (`fillConnectionTools`), never over a saved one. A canvas wire drawn over one of these pairs carries no list of its own, so the saved one stands.
+A connection Clubhouse makes itself starts no more permissive than one the user draws. The defaults are in `AUTOMATIC_CONNECTION_DISABLED_TOOLS` (`shared/connection-grants.ts`).
+
+| Direction | Starts with |
+|---|---|
+| Dispatcher → agent, agent → Dispatcher | `clear_agent` and `compact_agent` off |
+| Helper → its orchestrator | `clear_agent` and `compact_agent` off |
+| Orchestrator → its own helper | every tool on |
+| An orchestrator's connections (`orchestrator-connections.ts`) | `clear_agent` and `compact_agent` off, like a new link |
+
+Wake stays off on all of them, and the Dispatcher's own wake is unchanged.
+
+Each source gives every direction it lists a starting list (`startingTools` on the binding). The list applies whichever source bound the pair first, so a canvas wire with no list of its own doesn't leave the pair with every tool on. A saved direction always wins, an explicit everything-on included. When two sources give the same direction a starting list, the first one in the rebuild decides, so the helper source keeps an orchestrator's tools on its own helper.
+
+Connections made before this get their starting list from a one-time pass after a complete rebuild (`migrateAutomaticConnectionTools`, done marker `automatic-connection-defaults-3214`). It uses the lists the sources gave at their last collect, saves them only where nothing is saved, and waits while any source can't be read or the file is a newer build's. Until it has run, starting lists apply live only. After it, a direction's starting list is saved the first time a rebuild finds nothing saved for it (`fillConnectionTools`, decided under the store's lock). An everything-on start is never saved, since no entry already means that. When the file is a newer build's, nothing is saved and the warning is logged once per process.
 
 ## Links between orchestrators (#3215)
 

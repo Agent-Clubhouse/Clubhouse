@@ -44,6 +44,8 @@ function pairBindings(
     {
       agentId: parent.id, targetId: helper.id, targetKind: 'agent', label: helper.name, agentName: parent.name, targetName: helper.name,
       ...(helperProjectName ? { projectName: helperProjectName } : {}),
+      // Everything on, given as its starting list so another source listing the pair doesn't start it with less.
+      disabledTools: [...AUTOMATIC_CONNECTION_DISABLED_TOOLS.parentToHelper], startingTools: true,
     },
     {
       agentId: helper.id, targetId: parent.id, targetKind: 'agent', label: parent.name, agentName: helper.name, targetName: parent.name,

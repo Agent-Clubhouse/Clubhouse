@@ -54,7 +54,7 @@ import { isDisposedAgent } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { CONNECTION_SWITCHES, NEW_CONNECTION_DISABLED_TOOLS, localToolsFromAllow, type DirectionTools } from '../../shared/connection-grants';
 import { connectionMigrationDone, getConnectionDirection, runConnectionMigration, setConnectionDirections, type DirectionToolsChange } from './connection-grants-store';
-import { forgetDispatcherDirection, readLocalDirectionTools } from './connection-grants';
+import { connectionFileIsNewer, forgetDispatcherDirection, readLocalDirectionTools } from './connection-grants';
 import { maxHelpersCeiling } from '../../shared/orchestration-policy';
 
 export type ControlRefusal =
@@ -482,6 +482,8 @@ let deferralLogged = false;
  */
 export async function migrateDispatcherLinkTools(): Promise<'done' | 'already' | 'deferred'> {
   if (connectionMigrationDone(DISPATCHER_LINK_DEFAULTS_MIGRATION)) return 'already';
+  // A newer build's file: said once (connectionFileIsNewer), not on every rebuild.
+  if (connectionFileIsNewer()) return 'deferred';
   const { bySource, failed } = await collectSourcesByPair();
   if (failed.length > 0) {
     if (!deferralLogged) {
