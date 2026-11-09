@@ -47,6 +47,9 @@ export const chat = {
     /** 'open' resolves the file to its project for the Files view; 'reveal' shows it in the file manager. */
     fileAction: (agentId: string, filePath: string, action: 'open' | 'reveal'): Promise<ResolvedProtocolAction | null> =>
       ipcRenderer.invoke(IPC.CHAT.FILE_ACTION, agentId, filePath, action),
+    /** A Markdown link in the agent's text: a file to show here, or a folder (or unshowable file) main revealed. */
+    openLink: (agentId: string, href: string): Promise<{ kind: 'file'; path: string } | { kind: 'revealed' }> =>
+      ipcRenderer.invoke(IPC.CHAT.FILE_ACTION, agentId, href, 'link'),
     /** A local image from agent markdown: main checks the path and stores it, answering with a media reference or why not. */
     importLocalImage: (agentId: string, src: string): Promise<ChatLocalImageResult> =>
       ipcRenderer.invoke(IPC.CHAT.IMPORT_LOCAL_IMAGE, agentId, src),

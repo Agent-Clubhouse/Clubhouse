@@ -1,4 +1,4 @@
-import { absoluteViewPath, isFileScopeDenied, openLocalFileLink } from './file-preview';
+import { absoluteViewPath, chatLinkPath, isFileScopeDenied, openLocalFileLink } from './file-preview';
 import { useFilePreviewStore } from '../stores/filePreviewStore';
 
 it('recognizes scope denial wrapped by Electron without confusing OS failures', () => {
@@ -22,4 +22,15 @@ it('does not turn web, network, relative, anchor or executable URLs into local p
     expect(openLocalFileLink(href)).toBe(false);
   }
   expect(useFilePreviewStore.getState().target).toBeNull();
+});
+
+it('treats relative, absolute and Windows-style chat links as paths, and nothing else (#3189)', () => {
+  for (const href of ['Some/Folder/', 'Some/Folder/00_Summary.md', './notes.md', '../up.md', 'Some\\Folder\\00_Summary.md', 'README.md',
+    '/abs/notes.md', '~/notes.md', 'C:\\Users\\me\\notes.md', 'c:/Users/me/Folder/', 'file:///tmp/notes.md', 'Some%20Folder/a.md#intro']) {
+    expect(chatLinkPath(href)).toBe(href);
+  }
+  for (const href of ['', '   ', '#section', '?q=1', 'https://example.test/a', 'mailto:a@b.test', 'javascript:alert(1)', 'data:text/html,x',
+    'vscode://file/x', '//host/share/a', '\\\\host\\share\\a', 'a\nb']) {
+    expect(chatLinkPath(href)).toBeNull();
+  }
 });

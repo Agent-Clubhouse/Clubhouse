@@ -19,7 +19,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg, type ArgValidator } from './validation';
 import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
 import { fetchRemoteImage, mediaFilePath, readMedia } from '../services/agent-runtime/chat-media';
-import { importChatImage, MAX_STAT_PATHS, readChatFilePreview, resolveChatFile, statChatPaths } from '../services/agent-runtime/chat-files';
+import { importChatImage, MAX_STAT_PATHS, readChatFilePreview, resolveChatFile, resolveChatLink, statChatPaths } from '../services/agent-runtime/chat-files';
 import { isGraduatedFeatureOn } from '../services/experimental-settings';
 
 /** An effort: a level, omitted to keep the current one, or null for the provider's default. */
@@ -278,6 +278,15 @@ export function registerChatHandlers(): void {
     [stringArg(), stringArg({ maxLength: 1024 }), stringArg()],
     async (event, agentId, filePath, action) => {
       assertRichMedia(event);
+      // A Markdown link the agent wrote (#3189): a file chat can show goes back to
+      // the renderer's viewer; a folder, or a file it can't show, is revealed.
+      // Revealed rather than opened: the default app for a script runs it.
+      if (action === 'link') {
+        const target = await resolveChatLink(agentId, filePath);
+        if (target.kind === 'file') return { kind: 'file', path: target.path };
+        shell.showItemInFolder(target.path);
+        return { kind: 'revealed' };
+      }
       const real = await resolveChatFile(agentId, filePath);
       if (action === 'reveal') { shell.showItemInFolder(real); return null; }
       // The renderer opens it the way a clubhouse:// link would.
