@@ -81,7 +81,7 @@ vi.mock('./mobile-agents', () => ({
   buildAgentDetails: vi.fn(async () => ({ branch: 'agent/standby', worktreePath: null, worktree: null, mcpIds: [], changes: null })),
   createMobileAgent: vi.fn(async () => ({ agentId: 'durable_new', state: 'creating' })),
   updateMobileAgent: vi.fn(async () => ({ agentId: 'a', settings: { name: { value: 'calm-otter' }, color: { value: 'rose' }, emoji: { value: null },
-    model: { value: 'default' }, orchestrator: { value: 'codex-cli' }, freeAgentMode: { value: true } } })),
+    model: { value: 'default' }, orchestrator: { value: 'codex-cli' }, freeAgentMode: { value: true }, access: { value: 'auto' } } })),
   mobileOrchestration: vi.fn(({ orchestrate, access, control, maxHelpers }: Record<string, unknown>) => ({ orchestrate, access, control, maxHelpers })),
 }));
 
@@ -1444,7 +1444,7 @@ describe('annex-server', () => {
     expect(mobileAgents.updateMobileAgent).toHaveBeenCalledWith({ id: 'p', path: '/test/project' }, expect.objectContaining({ id: 'a' }), update,
       { live: 'running', assertAuthorized: allow });
     expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('annex:agent-updated',
-      { agentId: 'a', name: 'calm-otter', color: 'rose', emoji: null, model: null, orchestrator: 'codex-cli', freeAgentMode: true });
+      { agentId: 'a', name: 'calm-otter', color: 'rose', emoji: null, model: null, orchestrator: 'codex-cli', freeAgentMode: true, access: 'auto' });
   });
 
   it('serves neither mobile control nor reads to a connection without a paired certificate, bearer or not', async () => {
@@ -2934,6 +2934,8 @@ describe('annex-server', () => {
         model: null,
         orchestrator: null,
         freeAgentMode: false,
+        // The saved Access level (#3207): an agent saved before it, with Free Agent Mode off, reads as Ask first.
+        access: 'ask',
         icon: null,
         status: 'sleeping',
         detailedStatus: null,
