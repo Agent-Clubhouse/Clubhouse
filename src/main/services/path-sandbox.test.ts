@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 vi.mock('electron', () => ({
@@ -159,5 +161,57 @@ describe('path-sandbox', () => {
         path.resolve('/Users/testuser/.ssh/id_rsa'),
       );
     });
+  });
+});
+
+describe('a write can\'t escape through a symlink (#3177)', () => {
+  // Real folders: a project, and a place outside every root.
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'path-sandbox-')));
+  const project = path.join(tmp, 'project');
+  const outside = path.join(tmp, 'outside');
+  fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+  fs.mkdirSync(outside, { recursive: true });
+  /** A link, or false where this platform won't make one without privileges. */
+  const link = (target: string, at: string, type?: 'junction') => { try { fs.symlinkSync(target, at, type); return true; } catch { return false; } };
+  const dangling = link(path.join(outside, 'planted.txt'), path.join(project, 'innocent.txt'));
+  const danglingDeep = link(path.join(outside, 'not', 'yet', 'here.txt'), path.join(project, 'deep.txt'));
+  const chain = link(path.join(project, 'innocent.txt'), path.join(project, 'chain.txt'));
+  const dirLink = link(outside, path.join(project, 'docs'), 'junction');
+  const inward = link(path.join(project, 'src', 'later.ts'), path.join(project, 'inward.ts'));
+  const projectLink = path.join(tmp, 'project-link');
+  const linkedProject = link(project, projectLink, 'junction');
+
+  afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+
+  beforeEach(() => {
+    vi.mocked(projectStore.list).mockResolvedValue([{ id: 'p', name: 'project', path: project }] as Awaited<ReturnType<typeof projectStore.list>>);
+    vi.mocked(app.getPath).mockReturnValue(path.join(tmp, 'home'));
+  });
+
+  it('refuses a dangling link inside the project that points outside it', async () => {
+    if (!dangling) return;
+    await expect(assertAllowedPath(path.join(project, 'innocent.txt'))).rejects.toThrow(/outside allowed project directories/);
+  });
+
+  it('refuses one pointing into folders outside that don\'t exist yet, and a chain of links ending outside', async () => {
+    if (danglingDeep) await expect(assertAllowedPath(path.join(project, 'deep.txt'))).rejects.toThrow(/outside allowed/);
+    if (chain) await expect(assertAllowedPath(path.join(project, 'chain.txt'))).rejects.toThrow(/outside allowed/);
+  });
+
+  it('refuses a new file under a folder that links outside the project', async () => {
+    if (!dirLink) return;
+    await expect(assertAllowedPath(path.join(project, 'docs', 'new-file.txt'))).rejects.toThrow(/outside allowed/);
+    await expect(assertAllowedPath(path.join(project, 'docs', 'a', 'b', 'c.txt'))).rejects.toThrow(/outside allowed/);
+  });
+
+  it('allows new files in the project, a dangling link that points inside it, and a project registered through a link', async () => {
+    await expect(assertAllowedPath(path.join(project, 'src', 'new.ts'))).resolves.toBeUndefined();
+    await expect(assertAllowedPath(path.join(project, 'new-dir', 'x', 'y.ts'))).resolves.toBeUndefined();
+    if (inward) await expect(assertAllowedPath(path.join(project, 'inward.ts'))).resolves.toBeUndefined();
+    if (linkedProject) {
+      vi.mocked(projectStore.list).mockResolvedValue([{ id: 'p', name: 'project', path: projectLink }] as Awaited<ReturnType<typeof projectStore.list>>);
+      await expect(assertAllowedPath(path.join(projectLink, 'src', 'new.ts'))).resolves.toBeUndefined();
+      await expect(assertAllowedPath(path.join(project, 'src', 'new.ts'))).resolves.toBeUndefined();
+    }
   });
 });

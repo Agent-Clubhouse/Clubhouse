@@ -23,11 +23,11 @@
  * and Windows do.
  */
 
-import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { ACCESS_LEVELS, accessLabel, type AccessLevel } from '../../../shared/agent-access';
 import * as projectStore from '../project-store';
 import { agentRegistry } from '../agent-registry';
+import { resolveRealPath } from '../path-sandbox';
 import { callerRunningAccess } from './access-ceiling';
 import { agentOfPluginCall } from './plugin-tool-registry';
 import { CALL_OVER, checkPluginCaller } from './plugin-caller-check';
@@ -52,34 +52,7 @@ const fold = (segment: string) => segment.normalize('NFC').toUpperCase().toLower
  */
 const disguised = (segment: string) => segment.includes(':') || (process.platform === 'win32' && /~\d+(\.|$)/.test(segment));
 
-/**
- * Where a path really leads: symlinks followed, a dangling one too (a write creates its target), and
- * for a file that doesn't exist yet, through its nearest existing folder.
- */
-async function realPath(p: string, depth = 0): Promise<string> {
-  let current = path.resolve(p);
-  const rest: string[] = [];
-  for (;;) {
-    try {
-      return path.join(await fsp.realpath(current), ...[...rest].reverse());
-    } catch {
-      // telemetry-exempt: a path that doesn't resolve (yet) is expected; it is followed by hand below
-      try {
-        const st = await fsp.lstat(current);
-        if (st.isSymbolicLink() && depth < 40) {
-          const link = await fsp.readlink(current);
-          return realPath(path.join(path.resolve(path.dirname(current), link), ...[...rest].reverse()), depth + 1);
-        }
-      } catch {
-        // telemetry-exempt: nothing here yet, so go up a folder
-      }
-      const parent = path.dirname(current);
-      if (parent === current) return path.resolve(p);
-      rest.push(path.basename(current));
-      current = parent;
-    }
-  }
-}
+const realPath = resolveRealPath;
 
 /** Where a path sits: its folder followed to where it really is, its own name as given (a link itself, not its target). */
 async function location(p: string): Promise<string> {
