@@ -1,6 +1,7 @@
 import { memo, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
-import type { ChatViewState } from '../../../stores/chatStore';
+import type { ChatItem, ChatViewState } from '../../../stores/chatStore';
+import type { GroupChatDebugMark } from '../../dispatcher/group-chat';
 import { stripTaskMarker } from '../../../../shared/chat';
 import { useAgentStore } from '../../../stores/agentStore';
 import { agentMessagesToName, buildStreamBlocks, commandOutputIds, isNavigationStop, toolErrorText, type StreamBlock } from './view-model';
@@ -107,6 +108,29 @@ function blockSubagentId(block: StreamBlock): string | undefined {
   return undefined;
 }
 
+/** The items a block draws, for the debug marks. */
+function blockItems(block: StreamBlock): ChatItem[] {
+  if (block.type === 'item') return block.tool ? [block.item, block.tool] : [block.item];
+  if (block.type === 'subagent') return block.tool ? [block.tool, ...block.children] : block.children;
+  return block.items;
+}
+
+/** A block's debug mark (#3188): hidden if anything in it is, else raw if anything is. */
+function blockDebugMark(block: StreamBlock, marks: ReadonlyMap<string, GroupChatDebugMark>): GroupChatDebugMark | undefined {
+  let mark: GroupChatDebugMark | undefined;
+  for (const item of blockItems(block)) {
+    const m = marks.get(item.id);
+    if (m === 'hidden') return m;
+    if (m) mark = m;
+  }
+  return mark;
+}
+
+const DEBUG_MARK_TEXT: Record<GroupChatDebugMark, string> = {
+  hidden: 'Debug · hidden from the chat',
+  raw: 'Debug · raw, the chat shows it cleaned',
+};
+
 function SubagentJump({ subagentId, onOpen }: { subagentId: string; onOpen: (id: string) => void }) {
   return (
     <button
@@ -209,6 +233,8 @@ export interface ChatStreamProps {
   agentName?: string;
   /** The Dispatcher's group chat (#3043): agents' interjections stay separate rows. */
   groupChat?: boolean;
+  /** The Dispatcher debug view (#3188): items the group chat would hide or clean, by id, each block marked. */
+  debugMarks?: ReadonlyMap<string, GroupChatDebugMark>;
 }
 
 function sameTranscriptShape(a: ChatViewState, b: ChatViewState): boolean {
@@ -273,6 +299,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   onShowEarlier,
   agentName,
   groupChat = false,
+  debugMarks,
 }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -761,6 +788,10 @@ const ChatStreamInner = memo(function ChatStreamInner({
           <FileChipProvider agentId={rich ? state.agentId : null}>
             {visibleBlocks.map((b, index) => (
               <div key={b.key} data-testid="chat-stream-block" data-block-index={start + index} data-block-key={b.key}>
+                {debugMarks && (() => {
+                  const mark = blockDebugMark(b, debugMarks);
+                  return mark ? <p className="mb-1 text-[11px] text-ctp-overlay1" data-testid="chat-debug-mark" data-mark={mark}>{DEBUG_MARK_TEXT[mark]}</p> : null;
+                })()}
                 <Block
                   block={b}
                   turnNumber={b.type === 'item' ? turnNumbers.get(b.item.id) ?? 0 : 0}

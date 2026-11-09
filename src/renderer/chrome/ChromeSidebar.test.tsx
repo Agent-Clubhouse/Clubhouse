@@ -29,6 +29,7 @@ import { useChromeFlagStore } from './chromeFlag';
 import { useHelperStartRequestStore } from '../stores/helperStartRequestStore';
 import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { useDispatcherDebugStore } from '../features/dispatcher/dispatcherDebug';
 import { useGrantRequestStore } from '../stores/grantRequestStore';
 import { useDispatcherSync } from '../features/dispatcher/useDispatcherSync';
 import { DispatcherView } from '../features/dispatcher/DispatcherView';
@@ -787,6 +788,39 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     expect(following(screen.getByTestId('needs-you'))).toBe(true);
     expect(following(screen.getByTestId('agent-list'))).toBe(true);
     expect(within(screen.getByTestId('agent-list')).queryByTestId('agent-item-disp')).toBeNull();
+  });
+
+  describe('debug view (#3188)', () => {
+    afterEach(() => useDispatcherDebugStore.setState({ on: false, workOpen: false }));
+
+    it('shows no work row while the debug view is off', () => {
+      turnOn();
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId('dispatcher-row')).toBeTruthy();
+      expect(screen.queryByTestId('dispatcher-work-row')).toBeNull();
+    });
+
+    it('shows the work row under the Dispatcher\'s, which opens its chat in the Dispatcher\'s view', () => {
+      turnOn();
+      useDispatcherDebugStore.setState({ on: true });
+      render(<ChromeSidebar />);
+      const work = screen.getByTestId('dispatcher-work-row');
+      expect(!!(screen.getByTestId('dispatcher-row').compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      expect(work.textContent).toContain('Dispatcher work');
+      const item = within(work).getByRole('treeitem', { name: 'Dispatcher work' });
+      expect(within(item).getByRole('img', { name: 'Sleeping' })).toBeTruthy();
+      fireEvent.click(item);
+      expect(useUIStore.getState().dispatcherOpen).toBe(true);
+      expect(useDispatcherDebugStore.getState().workOpen).toBe(true);
+      expect(item.getAttribute('aria-selected')).toBe('true');
+      const chat = within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp');
+      expect(chat.getAttribute('data-active')).toBe('false');
+      // The Dispatcher's own row goes back to its chat.
+      fireEvent.click(chat);
+      expect(useDispatcherDebugStore.getState().workOpen).toBe(false);
+      expect(chat.getAttribute('data-active')).toBe('true');
+      expect(item.getAttribute('aria-selected')).toBe('false');
+    });
   });
 
   it('takes the selection while its view is open, and a project click closes it', () => {

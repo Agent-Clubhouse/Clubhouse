@@ -45,7 +45,8 @@ import { FeedbackButton } from '../features/feedback/FeedbackButton';
 import { AppNotices } from '../features/app/AppNotices';
 import { TruncatedLabel } from '../components/TruncatedLabel';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
-import { DispatcherRow } from './sidebar/DispatcherRow';
+import { DispatcherRow, DispatcherWorkRow } from './sidebar/DispatcherRow';
+import { useDispatcherDebug, useDispatcherWorkOpen } from '../features/dispatcher/dispatcherDebug';
 import { dispatcherWiresAgentId, isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { requestCloseProject } from '../features/projects/close-project';
 import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
@@ -340,6 +341,11 @@ export function ChromeSidebar() {
   const dispatcherLoadError = useDispatcherStore((s) => s.loadError);
   // Shown from its state, so a failed agent load still opens the view with its error (#2572).
   const dispatcherShown = useUIStore((s) => s.dispatcherOpen) && !!dispatcherAgentId;
+  // The debug view (#3188): a row for its work agent, whose chat the Dispatcher's view shows instead.
+  const dispatcherDebug = useDispatcherDebug();
+  const dispatcherWorkOpen = useDispatcherWorkOpen();
+  const dispatcherWorkId = useDispatcherStore((s) => s.state?.agentId ?? null);
+  const dispatcherWorkRunning = useDispatcherStore((s) => !!s.state?.running);
 
   // The filter narrows the tree in place (#2031); it applies only while the tree is shown.
   const [filter, setFilter] = useState('');
@@ -636,6 +642,7 @@ export function ChromeSidebar() {
     openDispatcher();
     reportChromeFeature('dispatcher_open');
   }, []);
+  const openDispatcherWorkRow = useCallback(() => openDispatcher({ work: true }), []);
 
   const onShow = useCallback((next: string) => {
     useNetworkSidebarStore.getState().setShow(next);
@@ -802,10 +809,18 @@ export function ChromeSidebar() {
         <DispatcherRow
           agent={dispatcherAgent}
           detailed={detailed[dispatcherAgentId]}
-          active={dispatcherShown}
+          active={dispatcherShown && !dispatcherWorkOpen}
           projectPath={dispatcherPath}
           loadError={dispatcherLoadError}
           onSelect={openDispatcherRow}
+        />
+      )}
+      {dispatcherAgentId && dispatcherDebug && dispatcherWorkId && (
+        <DispatcherWorkRow
+          agentId={dispatcherWorkId}
+          running={dispatcherWorkRunning}
+          active={dispatcherShown && dispatcherWorkOpen}
+          onSelect={openDispatcherWorkRow}
         />
       )}
 

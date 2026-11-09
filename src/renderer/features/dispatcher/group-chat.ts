@@ -54,6 +54,24 @@ export function groupChatState(state: ChatViewState, ctx: GroupChatContext): Cha
   return same ? state : { ...state, items };
 }
 
+/** Why the debug view (#3188) marks an item: the chat hides it, or shows it cleaned. */
+export type GroupChatDebugMark = 'hidden' | 'raw';
+
+/**
+ * With the Dispatcher debug view on, the chat shows every item as it is and
+ * marks the ones the group chat would hide or change: these marks, by item id.
+ * Off, nothing reads them.
+ */
+export function groupChatDebugMarks(items: readonly ChatItem[], ctx: GroupChatContext): ReadonlyMap<string, GroupChatDebugMark> {
+  const marks = new Map<string, GroupChatDebugMark>();
+  for (const item of items) {
+    const shown = groupChatItem(item, ctx);
+    if (shown === item) continue;
+    marks.set(item.id, shown ? 'raw' : 'hidden');
+  }
+  return marks;
+}
+
 /** The group chat's context when this agent is the Dispatcher, else null: any other agent's chat shows everything. */
 export function useGroupChatContext(agent: Pick<Agent, 'id' | 'projectId'>): GroupChatContext | null {
   const chatId = useDispatcherStore((s) => s.state?.chatAgentId ?? null);

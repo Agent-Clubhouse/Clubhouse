@@ -8,6 +8,8 @@ import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FEWER_CAPABILITIES, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { useProjectStore } from '../../../stores/projectStore';
+import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
+import { useDispatcherDebugStore } from '../../dispatcher/dispatcherDebug';
 
 const agent: Agent = {
   id: FIXTURE_AGENT_ID,
@@ -735,6 +737,50 @@ describe('ChatView (store-bound)', () => {
     await waitFor(() => expect(read).toHaveBeenCalledWith(FIXTURE_AGENT_ID, undefined));
     await screen.findByTestId('chat-turn-footer');
     expect(useChatStore.getState().agents[FIXTURE_AGENT_ID].items.length).toBe(foldChatEvents(undefined, FIXTURE_AGENT_ID, events).items.length);
+  });
+
+  describe('the Dispatcher debug view (#3188)', () => {
+    const dispatcher: Agent = { ...agent, projectId: DISPATCHER_PROJECT_ID, name: 'Dispatcher' };
+    const transcript = () => extend(chatFixture('claude', 'conversation'), {
+      type: 'user_message',
+      data: { messageId: 'u-news', content: [{ type: 'text', text: '[Clubhouse] webapp-lead needs_user: which date?' }], source: 'system', delivery: 'prompt' },
+    });
+    afterEach(() => useDispatcherDebugStore.setState({ on: false }));
+
+    it('off, shows the chat as it always has: nothing hidden comes through, nothing is marked', async () => {
+      vi.mocked(window.clubhouse.chat).readTranscript = vi.fn(async () => transcript());
+      render(<ChatView agent={dispatcher} />);
+      await screen.findByTestId('chat-user-message');
+      expect(screen.queryByTestId('chat-explore-group')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat-group-toggle')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat-turn-footer')).not.toBeInTheDocument();
+      expect(screen.queryByText(/which date/)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat-debug-mark')).not.toBeInTheDocument();
+    });
+
+    it('on, shows tool calls, footers and Clubhouse updates, each marked as debug', async () => {
+      useDispatcherDebugStore.setState({ on: true });
+      vi.mocked(window.clubhouse.chat).readTranscript = vi.fn(async () => transcript());
+      render(<ChatView agent={dispatcher} />);
+      await screen.findByTestId('chat-explore-group');
+      expect(screen.getByTestId('chat-group-toggle')).toHaveTextContent('Made 3 tool calls');
+      expect(screen.getByTestId('chat-turn-footer')).toBeInTheDocument();
+      expect(screen.getByText(/webapp-lead needs_user: which date\?/)).toBeInTheDocument();
+      const marks = screen.getAllByTestId('chat-debug-mark');
+      expect(marks.length).toBeGreaterThanOrEqual(4);
+      expect(marks[0]).toHaveTextContent('Debug · hidden from the chat');
+      // The person's own message isn't marked.
+      const own = screen.getAllByTestId('chat-user-message')[0].closest('[data-testid="chat-stream-block"]')!;
+      expect(within(own as HTMLElement).queryByTestId('chat-debug-mark')).not.toBeInTheDocument();
+    });
+
+    it('marks nothing in any other agent\'s chat', async () => {
+      useDispatcherDebugStore.setState({ on: true });
+      vi.mocked(window.clubhouse.chat).readTranscript = vi.fn(async () => transcript());
+      render(<ChatView agent={agent} />);
+      await screen.findByTestId('chat-explore-group');
+      expect(screen.queryByTestId('chat-debug-mark')).not.toBeInTheDocument();
+    });
   });
 
   it('marks the view context, and keeps canvas cards out of the screen-reader live region', async () => {

@@ -1051,6 +1051,7 @@ export const COPILOT_ACP_REMOVED_NOTICE_KEY = 'copilotLegacyAcpRemovedNotice';
  */
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'goobers',
+  'dispatcherDebug',
   'copilotSdk', // Legacy preference retained for downgrade compatibility only.
 ];
 

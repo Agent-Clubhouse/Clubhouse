@@ -60,6 +60,15 @@ The rewrite step that put agents' news into their own voice under their own name
 
 A separate thread per agent was considered instead. It would keep the clutter out of the main chat but leave the user two places to watch, put questions that need them out of sight, and need new UI on desktop and phone. The fix in place keeps one conversation.
 
+## Debug view (#3188)
+
+**Settings > Experimental > Dispatcher debug view** (flag `dispatcherDebug`, preview-only) changes only what is shown, never what the Dispatcher does. Off is exactly the normal view.
+
+- **Work agent row.** A row named "Dispatcher work" under the Dispatcher's opens the work agent's chat (`state.agentId`) in the Dispatcher's view, read-only: its transcript and live events, everything shown, no composer or controls (`DispatcherWorkView.tsx`). The agent isn't loaded into the agent store, so nothing else (canvas, palette, Needs you) sees it.
+- **Hidden content.** The Dispatcher's chat shows every item as it is, and marks each block the group chat would hide ("Debug · hidden from the chat": tool calls, thoughts, normal turn footers, subagent work, Clubhouse updates including agents' raw news) or clean ("Debug · raw, the chat shows it cleaned"). The marks come from `groupChatDebugMarks` in `features/dispatcher/group-chat.ts`, so they follow the same rules. Desktop only: a phone still gets the filtered chat.
+
+The switch is read at startup and updated by the Experimental page as it saves, so no restart is needed. Its copy calls the agent the work agent, which `dispatcher-copy.test.ts` allows, so the test needs no exception.
+
 ## Its name
 
 The saved name, cleaned, or `DEFAULT_DISPATCHER_NAME` when it's blank, comes from `dispatcherDisplayName()` in `dispatcher-service.ts`. Its wires to connected agents carry it (`dispatcher-wire-source.ts`), so agents see the name the user chose, and so do hand-offs and the agent-card requests. A rename changes the wires' signature; the state broadcast makes the wire watcher rebuild, and the bindings are relabelled in place, so no wire drops. Its agent is still created under the working name until setup or Settings renames it.
