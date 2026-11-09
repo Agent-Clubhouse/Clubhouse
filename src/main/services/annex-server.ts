@@ -3871,7 +3871,7 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
 /** Settings > Dispatcher (#3206): Behavior, models, identity, personality, usage and the confirmations. 404 while it is off. */
 async function handleMobileDispatcherSettingsRoute(ctx: AnnexRouteContext): Promise<void> {
   try {
-    const settings = buildDispatcherSettings(ctx.mobilePrincipal);
+    const settings = await buildDispatcherSettings(ctx.mobilePrincipal);
     if (!settings) { sendJson(ctx.res, 404, { error: 'dispatcher_off' }); return; }
     sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings });
   } catch (err) {

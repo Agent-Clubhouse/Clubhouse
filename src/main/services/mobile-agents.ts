@@ -76,6 +76,15 @@ function accessChoices(orchestrator: string, runtime?: AccessRuntime): readonly 
   return permissionsSupported(orchestrator) ? accessLevelsFor(orchestrator, runtime) : ['ask'];
 }
 
+/**
+ * The runtime the Access picker narrows to, as agent settings do on the
+ * desktop: the saved one while Chat is on, else none, which offers the levels
+ * either runtime has.
+ */
+function pickerRuntime(runtimeMode: DurableAgentConfig['runtimeMode']): AccessRuntime | undefined {
+  return isChatEnabled() && runtimeMode ? runtimeMode : undefined;
+}
+
 /** The runtime an asleep agent's next wake uses, as the Settings card reads it. */
 function nextRuntime(orchestrator: string, runtimeMode: DurableAgentConfig['runtimeMode']): AccessRuntime {
   const mode = resolveRuntimeMode(orchestrator, runtimeMode);
@@ -89,13 +98,13 @@ function assertAccess(level: AccessLevel, orchestrator: string, runtime: AccessR
   throw new MobileControlError('access_unavailable', 409, 'rejected', `${accessLabel(level)} isn't a level ${cli} can start at.`);
 }
 
-/** `settings.access` (#3207): the saved level, what it can be set to, and what it really starts at. */
+/** `settings.access` (#3207): the saved level, what it can be set to, and what it really starts at in `runtime`. */
 export function mobileAccess(config: DurableAgentConfig, projectPath: string, orchestrator: string, runtime: AccessRuntime, editable: MobileSettingEditable): MobileAccess {
   const value = agentAccess(config, projectPath);
   return {
     value,
     editable: permissionsSupported(orchestrator) ? editable : 'never',
-    choices: accessChoices(orchestrator, runtime).map(accessLevel),
+    choices: accessChoices(orchestrator, pickerRuntime(config.runtimeMode)).map(accessLevel),
     startsAt: permissionsSupported(orchestrator) ? startableAccess(value, orchestrator, runtime) : 'ask',
     default: getDefaultAccess(),
     applies: 'next_start',
@@ -513,7 +522,7 @@ function applyAccess(command: MobileAgentUpdate, config: DurableAgentConfig, pro
     const runtimeMode = command.runtime === undefined ? config.runtimeMode : command.runtime === 'default' ? undefined : command.runtime;
     // A new CLI can't keep a level it doesn't have, so only the same CLI keeps the saved one.
     const saved = command.orchestrator === undefined || command.orchestrator === config.orchestrator ? agentAccess(config, projectPath) : undefined;
-    assertAccess(command.access, orchestrator, nextRuntime(orchestrator, runtimeMode), saved);
+    assertAccess(command.access, orchestrator, pickerRuntime(runtimeMode), saved);
     updates.access = command.access;
     return;
   }

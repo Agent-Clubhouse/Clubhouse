@@ -16,7 +16,7 @@ vi.mock('./dispatcher-service', () => ({
 }));
 
 import * as agentConfig from '../agent-config';
-import { clearDispatcherChat } from './dispatcher-clear-chat';
+import { clearDispatcherChat, getClearChatGeneration } from './dispatcher-clear-chat';
 import { getDispatcherChatPath, getDispatcherMemoryPath } from './dispatcher-paths';
 
 h.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-clear-chat-test-'));
@@ -79,6 +79,12 @@ describe('Clear chat', () => {
     await expect(clearDispatcherChat({ isRunning: () => true, prepareStart: async () => undefined })).rejects.toThrow(/can't be cleared/);
   });
 
+  it('counts every clear, running or sleeping, so a confirmation read before one goes stale (#3206)', async () => {
+    const before = getClearChatGeneration();
+    await clearDispatcherChat({ isRunning: () => false, forgetSession: async () => {} });
+    await clearDispatcherChat({ isRunning: () => true, prepareStart: async () => {}, clearContext: async () => {} });
+    expect(getClearChatGeneration()).toBe(before + 2);
+  });
   it('refuses before the Dispatcher is set up', async () => {
     await expect(clearDispatcherChat({ chatAgentId: () => null })).rejects.toThrow(/not set up/);
   });

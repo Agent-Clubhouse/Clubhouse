@@ -65,6 +65,7 @@ const W = vi.hoisted(() => ({
   canvases: null as unknown[] | null,
 }));
 const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
+const NOW_FOR_MOCKS = vi.hoisted(() => 1_800_000_000_000);
 
 vi.mock('./dispatcher/dispatcher-service', () => {
   const config = () => (W.durables[DISPATCHER_PATH] ?? [])[0] ?? null;
@@ -94,6 +95,7 @@ vi.mock('./dispatcher/dispatcher-service', () => {
       return state();
     },
     // dispatcher-service's own rules are its tests'; these keep what they were given.
+    getDispatcherSwitchGeneration: () => 0,
     setDispatcherBehavior: async (level: string) => { W.dispatcherSettings!.level = level; changed(); return state(); },
     setDispatcherPersonality: async (personality: { preset: string; text: string }) => { W.dispatcherSettings!.personality = personality; changed(); return state(); },
     setDispatcherModels: async (update: Record<string, unknown>) => {
@@ -111,8 +113,19 @@ vi.mock('./dispatcher/dispatcher-service', () => {
     },
   };
 });
-vi.mock('./dispatcher/dispatcher-clear-chat', () => ({ clearDispatcherChat: async () => ({ cleared: 'next_start' }) }));
-vi.mock('./dispatcher/dispatcher-forget', () => ({ forgetEverything: async () => ({ removed: 1, heldNews: 0 }) }));
+// The services count clears and forgets, which a confirmation is bound to, with the memory as it is (#3206).
+vi.mock('./dispatcher/dispatcher-clear-chat', () => {
+  let clears = 0;
+  return { clearDispatcherChat: async () => { clears++; return { cleared: 'next_start' }; }, getClearChatGeneration: () => clears };
+});
+vi.mock('./dispatcher/dispatcher-forget', () => {
+  let forgets = 0;
+  return {
+    forgetEverything: async () => { forgets++; return { removed: 1, heldNews: 0 }; },
+    getForgetGeneration: () => forgets,
+    memoryFingerprint: async () => ({ files: forgets ? 1 : 6, bytes: forgets ? 120 : 4800, newestMs: NOW_FOR_MOCKS }),
+  };
+});
 vi.mock('./dispatcher/dispatcher-usage', () => ({
   getDispatcherUsageSplit: () => ({
     day: '2027-01-15',

@@ -8,8 +8,10 @@
  * Clear chat and Forget everything need the `expectedState` the settings
  * route gave this phone for that action, the precondition pattern
  * agent.providerChange uses: an opaque hash of what the confirmation showed,
- * bound to the phone. A token for one never confirms the other, and either
- * goes stale once its action runs.
+ * bound to the phone. A token for one never confirms the other. Either goes
+ * stale once its action runs from any surface (the services count them), when
+ * the switch turns the Dispatcher off or on, and Forget everything's once the
+ * memory has changed since it was read.
  */
 
 import { createHash, randomUUID } from 'crypto';
@@ -17,8 +19,8 @@ import * as agentConfig from './agent-config';
 import { isAgentRunning } from './agent-system';
 import { getProvider } from '../orchestrators';
 import * as dispatcher from './dispatcher/dispatcher-service';
-import { clearDispatcherChat } from './dispatcher/dispatcher-clear-chat';
-import { forgetEverything } from './dispatcher/dispatcher-forget';
+import { clearDispatcherChat, getClearChatGeneration } from './dispatcher/dispatcher-clear-chat';
+import { forgetEverything, getForgetGeneration, memoryFingerprint } from './dispatcher/dispatcher-forget';
 import { getDispatcherUsageSplit } from './dispatcher/dispatcher-usage';
 import { MobileControlError } from './mobile-control';
 import { dispatcherProject } from './mobile-dispatcher';
@@ -29,7 +31,7 @@ import {
 import { DISPATCHER_MODELS_APPLY_NOTE, DISPATCHER_ROLE_LABELS, cleanModelsUpdate } from '../../shared/dispatcher-models';
 import {
   DISPATCHER_NAME_MAX, DISPATCHER_PERSONALITY_PRESETS, PERSONALITY_PRESET_LABELS, PERSONALITY_PRESET_TEXT, PERSONALITY_TEXT_MAX,
-  cleanDispatcherName, isPersonalityPreset, normalizeDispatcherPersonality, presetForText, presetText, type DispatcherPersonality,
+  cleanDispatcherName, cleanPersonalityText, isPersonalityPreset, normalizeDispatcherPersonality, presetForText, presetText, type DispatcherPersonality,
 } from '../../shared/dispatcher-personality';
 import { dispatcherNotHonored, type MobileCommand, type MobileDispatcherUpdate } from '../../shared/mobile-control';
 
@@ -37,11 +39,9 @@ type ConfirmedAction = 'clearChat' | 'forgetEverything';
 
 /** Makes every token opaque to the phone, and unusable after the app restarts. */
 let tokenSalt: string = randomUUID();
-/** Bumped by each confirmed action from a phone, so its token can't confirm it again. */
-const generations: Record<ConfirmedAction, number> = { clearChat: 0, forgetEverything: 0 };
 
 function token(action: ConfirmedAction, principal: string, parts: unknown[]): string {
-  return createHash('sha256').update(JSON.stringify([tokenSalt, action, principal, generations[action], ...parts])).digest('hex');
+  return createHash('sha256').update(JSON.stringify([tokenSalt, action, principal, ...parts])).digest('hex');
 }
 
 /** The Dispatcher's chat, the agent a phone knows it by, while it is on. Otherwise 409 dispatcher_off. */
@@ -52,11 +52,19 @@ function activeChat() {
   return { state, chat };
 }
 
-/** What each confirmation is bound to: Clear chat to the conversation it ends, Forget everything to the memory it clears. */
-function confirmationParts(action: ConfirmedAction): unknown[] {
+/**
+ * What each confirmation is bound to: Clear chat to the conversation it ends
+ * and every clear so far, Forget everything to the memory as it is now and
+ * every forget so far. Both to each time its switch turned it off or on.
+ */
+function confirmationParts(action: ConfirmedAction, memory: Awaited<ReturnType<typeof memoryFingerprint>> | null): unknown[] {
+  // Synchronous on purpose: the memory is read before, so the counters are read with nothing awaited
+  // between them and the action, which bumps its counter before it awaits anything. Two commands
+  // with one token can't both run.
   const { state, chat } = activeChat();
-  if (action === 'clearChat') return [chat.id, chat.lastSessionId ?? null, isAgentRunning(chat.id)];
-  return [state.agentId];
+  const switched = dispatcher.getDispatcherSwitchGeneration();
+  if (action === 'clearChat') return [switched, getClearChatGeneration(), chat.id, chat.lastSessionId ?? null, isAgentRunning(chat.id)];
+  return [switched, getForgetGeneration(), state.agentId, memory];
 }
 
 const displayName = (provider: string): string => getProvider(provider)?.displayName ?? provider;
@@ -67,14 +75,18 @@ const displayName = (provider: string): string => getProvider(provider)?.display
  * created yet. Without a pinned client certificate there are no confirmation
  * tokens, since such a client can't send commands.
  */
-export function buildDispatcherSettings(principal: string | undefined) {
+export async function buildDispatcherSettings(principal: string | undefined) {
   const state = dispatcher.getDispatcherState();
   const chat = dispatcher.getDispatcherChatConfig();
   if (!state.enabled || !chat) return null;
   const { behavior, models, personality } = state;
   const byHand = models.byHand;
   const running = isAgentRunning(chat.id);
-  const expected = (action: ConfirmedAction) => (principal ? token(action, principal, confirmationParts(action)) : null);
+  const memory = principal ? await memoryFingerprint() : null;
+  // Read after the await: the Dispatcher may have changed while the memory was read.
+  const expected = (action: ConfirmedAction) => (principal && memory ? token(action, principal, confirmationParts(action, memory)) : null);
+  const clearToken = expected('clearChat');
+  const forgetToken = expected('forgetEverything');
   return {
     agentId: chat.id,
     behavior: {
@@ -114,11 +126,11 @@ export function buildDispatcherSettings(principal: string | undefined) {
     },
     usage: getDispatcherUsageSplit(),
     notHonored: dispatcherNotHonored(byHand),
-    clearChat: { expectedState: expected('clearChat'), applies: running ? 'now' as const : 'next_start' as const },
-    forgetEverything: { expectedState: expected('forgetEverything') },
+    clearChat: { expectedState: clearToken, applies: running ? 'now' as const : 'next_start' as const },
+    forgetEverything: { expectedState: forgetToken },
   };
 }
-export type MobileDispatcherSettings = NonNullable<ReturnType<typeof buildDispatcherSettings>>;
+export type MobileDispatcherSettings = NonNullable<Awaited<ReturnType<typeof buildDispatcherSettings>>>;
 
 function invalid(code: string, detail?: string): MobileControlError {
   return new MobileControlError(code, 400, 'rejected', detail);
@@ -135,8 +147,10 @@ function nextPersonality(change: NonNullable<MobileDispatcherUpdate['personality
     if (preset === undefined) throw invalid('invalid_personality', 'Send a preset or text.');
     return normalizeDispatcherPersonality({ preset, text: presetText(preset, current.text) });
   }
+  // Text that isn't the named preset's own is the person's own: Custom, so the desktop never shows a preset beside other text.
+  const named = preset === undefined ? presetForText(text) : preset !== 'custom' && PERSONALITY_PRESET_TEXT[preset] === cleanPersonalityText(text) ? preset : 'custom';
   // Empty text reads as the default, as on the desktop.
-  return normalizeDispatcherPersonality({ preset: preset ?? presetForText(text), text });
+  return normalizeDispatcherPersonality({ preset: named, text });
 }
 
 /**
@@ -192,9 +206,13 @@ export async function setDispatcherModelsFromPhone(command: Extract<MobileComman
   return buildDispatcherSettings(principal);
 }
 
-/** The token this phone was given for the action, checked now; a different one is 409 stale_state and nothing happens. */
-function assertConfirmed(action: ConfirmedAction, principal: string, expectedState: string): void {
-  if (token(action, principal, confirmationParts(action)) !== expectedState) {
+/**
+ * The token this phone was given for the action, checked against the parts
+ * just read; a different one is 409 stale_state and nothing happens. Callers
+ * run the action with nothing awaited after this, so its counter moves first.
+ */
+function assertConfirmed(action: ConfirmedAction, principal: string, expectedState: string, parts: unknown[]): void {
+  if (token(action, principal, parts) !== expectedState) {
     throw new MobileControlError('stale_state', 409, 'rejected', 'This changed since you were asked. Check again and confirm.');
   }
 }
@@ -205,9 +223,8 @@ function assertConfirmed(action: ConfirmedAction, principal: string, expectedSta
  * `now` for a running chat and `next_start` for a sleeping one.
  */
 export async function clearDispatcherChatFromPhone(expectedState: string, principal: string, assertAuthorized: () => void) {
-  assertConfirmed('clearChat', principal, expectedState);
+  assertConfirmed('clearChat', principal, expectedState, confirmationParts('clearChat', null));
   assertAuthorized();
-  generations.clearChat++;
   try {
     return await clearDispatcherChat();
   } catch (err) {
@@ -222,9 +239,9 @@ export async function clearDispatcherChatFromPhone(expectedState: string, princi
  * connections and Actions stay.
  */
 export async function forgetDispatcherFromPhone(expectedState: string, principal: string, assertAuthorized: () => void) {
-  assertConfirmed('forgetEverything', principal, expectedState);
+  const memory = await memoryFingerprint();
+  assertConfirmed('forgetEverything', principal, expectedState, confirmationParts('forgetEverything', memory));
   assertAuthorized();
-  generations.forgetEverything++;
   return forgetEverything();
 }
 

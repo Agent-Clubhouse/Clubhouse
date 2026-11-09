@@ -256,6 +256,23 @@ describe('saved Access from a phone (#3207)', () => {
     expect(levels(terminal)).toEqual(['ask', 'full_access']);
     expect(terminal).toMatchObject({ value: 'auto', startsAt: 'ask' });
   });
+  it('offers the levels either runtime has when no runtime is saved, or Chat is off, as the desktop\'s agent settings do', async () => {
+    // Copilot: chat has Plan, Ask first, Auto-accept edits and Full access; its terminal only Ask first and Full access.
+    const unsaved = (await buildAgentSettings(project, agent({ orchestrator: 'copilot-cli', access: 'auto_edit' }), undefined)).settings.access;
+    expect(levels(unsaved)).toEqual(['plan', 'ask', 'auto_edit', 'full_access']);
+    // Where it really starts follows the runtime it starts in (a terminal here: Copilot has no chat driver in these tests).
+    expect(unsaved.startsAt).toBe('ask');
+    vi.mocked(isChatEnabled).mockReturnValue(false);
+    try {
+      const chatOff = (await buildAgentSettings(project, agent({ orchestrator: 'copilot-cli', runtimeMode: 'terminal' }), undefined)).settings.access;
+      expect(levels(chatOff)).toEqual(['plan', 'ask', 'auto_edit', 'full_access']);
+      // And agent.update takes what is offered.
+      await updateMobileAgent(project, agent({ orchestrator: 'copilot-cli', runtimeMode: 'terminal' }), { agentId: 'durable_1', access: 'plan' }, live);
+      expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(project.path, 'durable_1', { access: 'plan' });
+    } finally {
+      vi.mocked(isChatEnabled).mockReturnValue(true);
+    }
+  });
   it('reads as never editable, with only Ask first, on a CLI that sets access itself', async () => {
     const access = (await buildAgentSettings(project, agent({ orchestrator: 'codex-cli' }), undefined)).settings.access;
     expect(access).toMatchObject({ value: 'ask', editable: 'never', startsAt: 'ask' });

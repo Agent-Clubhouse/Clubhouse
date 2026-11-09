@@ -9,6 +9,9 @@ const S = vi.hoisted(() => ({
   auto: { ready: true } as Record<string, unknown>,
   models: { byHand: false, chat: null, work: null } as Record<string, unknown>,
   personality: { preset: 'concise', text: 'Be short and direct.' } as { preset: string; text: string },
+  // What the services count and read (#3206): clears, forgets, switch flips and the memory folder.
+  clears: 0, forgets: 0, switches: 0,
+  memory: { files: 3, bytes: 900, newestMs: 1_000 },
 }));
 
 vi.mock('./dispatcher/dispatcher-service', () => ({
@@ -22,13 +25,21 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   setDispatcherBehavior: vi.fn(async (level: string) => { S.level = level; }),
   setDispatcherModels: vi.fn(async () => ({})),
   setDispatcherPersonality: vi.fn(async (p: { preset: string; text: string }) => { S.personality = p; }),
+  getDispatcherSwitchGeneration: () => S.switches,
 }));
 vi.mock('../window-chrome', () => ({ newChromeEnabled: () => true }));
 vi.mock('./agent-config', () => ({ updateDurable: vi.fn(async () => undefined) }));
 vi.mock('./agent-system', () => ({ isAgentRunning: vi.fn(() => S.running) }));
 vi.mock('../orchestrators', () => ({ getProvider: (id: string) => (id === 'claude-code' ? { displayName: 'Claude Code' } : undefined) }));
-vi.mock('./dispatcher/dispatcher-clear-chat', () => ({ clearDispatcherChat: vi.fn(async () => ({ cleared: 'next_start' })) }));
-vi.mock('./dispatcher/dispatcher-forget', () => ({ forgetEverything: vi.fn(async () => ({ removed: 1, heldNews: 2 })) }));
+vi.mock('./dispatcher/dispatcher-clear-chat', () => ({
+  clearDispatcherChat: vi.fn(async () => { S.clears++; return { cleared: 'next_start' }; }),
+  getClearChatGeneration: () => S.clears,
+}));
+vi.mock('./dispatcher/dispatcher-forget', () => ({
+  forgetEverything: vi.fn(() => { S.forgets++; return Promise.resolve({ removed: 1, heldNews: 2 }); }),
+  getForgetGeneration: () => S.forgets,
+  memoryFingerprint: async () => ({ ...S.memory }),
+}));
 const USAGE = vi.hoisted(() => ({ day: '2027-01-15', conversations: { turns: 3 }, background: { turns: 1 } }));
 vi.mock('./dispatcher/dispatcher-usage', () => ({ getDispatcherUsageSplit: () => USAGE }));
 
@@ -45,7 +56,7 @@ import type { MobileCommand } from '../../shared/mobile-control';
 
 const PHONE = 'phone-fingerprint';
 const allow = () => {};
-const settings = (principal: string | undefined = PHONE) => buildDispatcherSettings(principal)!;
+const settings = async (principal: string | undefined = PHONE) => (await buildDispatcherSettings(principal))!;
 async function refusal(promise: Promise<unknown>) {
   try { await promise; } catch (e) { return e as { code: string; statusCode: number; detail?: string }; }
   throw new Error('expected a refusal');
@@ -60,20 +71,21 @@ beforeEach(() => {
     chat: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01', lastSessionId: 'sess_1' },
     models: { byHand: false, chat: null, work: null },
     personality: { preset: 'concise', text: PERSONALITY_PRESET_TEXT.concise },
+    clears: 0, forgets: 0, switches: 0, memory: { files: 3, bytes: 900, newestMs: 1_000 },
   });
 });
 
 describe('the Dispatcher settings route (#3206)', () => {
-  it('is null while the Dispatcher is off or not created', () => {
+  it('is null while the Dispatcher is off or not created', async () => {
     S.enabled = false;
-    expect(buildDispatcherSettings(PHONE)).toBeNull();
+    expect(await buildDispatcherSettings(PHONE)).toBeNull();
     S.enabled = true;
     S.chat = null;
-    expect(buildDispatcherSettings(PHONE)).toBeNull();
+    expect(await buildDispatcherSettings(PHONE)).toBeNull();
   });
 
-  it('reads Behavior, models, identity, personality, usage and what it no longer honors', () => {
-    const read = settings();
+  it('reads Behavior, models, identity, personality, usage and what it no longer honors', async () => {
+    const read = (await settings());
     expect(read.agentId).toBe('durable_d');
     expect(read.behavior).toEqual({
       value: 'standard', editable: 'always', applies: 'now', setsModels: true, auto: { ready: true }, note: null,
@@ -104,34 +116,34 @@ describe('the Dispatcher settings route (#3206)', () => {
     ]);
   });
 
-  it('says where Auto can\'t give a level its models', () => {
+  it('says where Auto can\'t give a level its models', async () => {
     S.auto = { ready: false, code: 'auto_not_supported' };
-    expect(settings().behavior).toMatchObject({ auto: { ready: false, code: 'auto_not_supported' }, note: expect.stringContaining('Auto doesn’t support Claude Code yet') });
+    expect((await settings()).behavior).toMatchObject({ auto: { ready: false, code: 'auto_not_supported' }, note: expect.stringContaining('Auto doesn’t support Claude Code yet') });
   });
 
-  it('with the models chosen by hand: Behavior sets only how often it checks in, and CLI, model and context are honored (#3191)', () => {
+  it('with the models chosen by hand: Behavior sets only how often it checks in, and CLI, model and context are honored (#3191)', async () => {
     const pick = { provider: 'claude-code', model: 'opus', effort: 'high', contextWindow: null };
     S.models = { byHand: true, chat: pick, work: { ...pick, model: 'sonnet' } };
-    const read = settings();
+    const read = (await settings());
     expect(read.behavior).toMatchObject({ setsModels: false, note: MODELS_BY_HAND_NOTE });
     expect(read.behavior.choices[0].description).toBe('Doesn’t check in on its own. Keeps usage low.');
     expect(read.models.roles.map((r) => r.pick?.model)).toEqual(['opus', 'sonnet']);
     expect(read.notHonored.map((n) => n.setting)).toEqual(['runtime', 'freeAgentMode', 'access']);
   });
 
-  it('gives each phone its own confirmation for each reset, and none without a client certificate', () => {
-    const mine = settings();
+  it('gives each phone its own confirmation for each reset, and none without a client certificate', async () => {
+    const mine = (await settings());
     expect(mine.clearChat.expectedState).toMatch(/^[0-9a-f]{64}$/);
     expect(mine.forgetEverything.expectedState).toMatch(/^[0-9a-f]{64}$/);
     expect(mine.clearChat.expectedState).not.toBe(mine.forgetEverything.expectedState);
-    expect(settings('other-phone').clearChat.expectedState).not.toBe(mine.clearChat.expectedState);
-    expect(buildDispatcherSettings(undefined)).toMatchObject({ clearChat: { expectedState: null }, forgetEverything: { expectedState: null } });
+    expect((await settings('other-phone')).clearChat.expectedState).not.toBe(mine.clearChat.expectedState);
+    expect(await buildDispatcherSettings(undefined)).toMatchObject({ clearChat: { expectedState: null }, forgetEverything: { expectedState: null } });
   });
 
-  it('says whether Clear chat starts over now or at the next start', () => {
-    expect(settings().clearChat.applies).toBe('next_start');
+  it('says whether Clear chat starts over now or at the next start', async () => {
+    expect((await settings()).clearChat.applies).toBe('next_start');
     S.running = true;
-    expect(settings().clearChat.applies).toBe('now');
+    expect((await settings()).clearChat.applies).toBe('now');
   });
 });
 
@@ -142,6 +154,16 @@ describe('dispatcher.update (#3206)', () => {
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/base/dispatcher-chat', 'durable_d', { name: 'Robin', color: 'rose', emoji: '🦊' });
     expect(dispatcher.setDispatcherPersonality).toHaveBeenCalledWith({ preset: 'friendly', text: PERSONALITY_PRESET_TEXT.friendly });
     expect(result).toMatchObject({ behavior: { value: 'thorough' }, personality: { value: { preset: 'friendly' } } });
+  });
+  it('saves a preset sent with text other than its own as Custom, so the desktop never shows a preset beside other text', async () => {
+    await updateDispatcherFromPhone({ personality: { preset: 'friendly', text: 'Talk like a pirate.' } }, PHONE, allow);
+    await updateDispatcherFromPhone({ personality: { preset: 'detailed', text: `  ${PERSONALITY_PRESET_TEXT.detailed}\n` } }, PHONE, allow);
+    await updateDispatcherFromPhone({ personality: { preset: 'custom', text: PERSONALITY_PRESET_TEXT.concise } }, PHONE, allow);
+    expect(vi.mocked(dispatcher.setDispatcherPersonality).mock.calls.map((c) => c[0])).toEqual([
+      { preset: 'custom', text: 'Talk like a pirate.' },
+      { preset: 'detailed', text: PERSONALITY_PRESET_TEXT.detailed },
+      { preset: 'custom', text: PERSONALITY_PRESET_TEXT.concise },
+    ]);
   });
   it('makes edited text Custom, keeps a preset\'s own text on that preset, and reads empty text as Concise', async () => {
     await updateDispatcherFromPhone({ personality: { text: 'Talk like a pirate.' } }, PHONE, allow);
@@ -199,7 +221,7 @@ describe('dispatcher.setModels (#3191, #3206)', () => {
 
 describe('Clear chat and Forget everything, each confirmed (#3206)', () => {
   it('clears the chat with this phone\'s Clear chat confirmation, once', async () => {
-    const { expectedState } = settings().clearChat;
+    const { expectedState } = (await settings()).clearChat;
     expect(await clearDispatcherChatFromPhone(expectedState!, PHONE, allow)).toEqual({ cleared: 'next_start' });
     expect(clearDispatcherChat).toHaveBeenCalledTimes(1);
     // Used: a second command with the same confirmation is stale (an identical retry gets the receipt instead).
@@ -207,27 +229,61 @@ describe('Clear chat and Forget everything, each confirmed (#3206)', () => {
     expect(clearDispatcherChat).toHaveBeenCalledTimes(1);
   });
   it('refuses another phone\'s confirmation, Forget everything\'s, or anything made up', async () => {
-    const mine = settings();
+    const mine = (await settings());
     for (const [principal, token] of [['other-phone', mine.clearChat.expectedState], [PHONE, mine.forgetEverything.expectedState], [PHONE, 'yes']] as const) {
       expect(await refusal(clearDispatcherChatFromPhone(token!, principal, allow))).toMatchObject({ code: 'stale_state' });
     }
     expect(clearDispatcherChat).not.toHaveBeenCalled();
   });
   it('goes stale when the conversation it would end changed, or it woke or slept', async () => {
-    const asleep = settings().clearChat.expectedState!;
+    const asleep = (await settings()).clearChat.expectedState!;
     S.running = true;
     expect(await refusal(clearDispatcherChatFromPhone(asleep, PHONE, allow))).toMatchObject({ code: 'stale_state' });
-    const awake = settings().clearChat.expectedState!;
+    const awake = (await settings()).clearChat.expectedState!;
     S.chat = { ...S.chat, lastSessionId: 'sess_2' };
     expect(await refusal(clearDispatcherChatFromPhone(awake, PHONE, allow))).toMatchObject({ code: 'stale_state' });
     expect(clearDispatcherChat).not.toHaveBeenCalled();
   });
+  it('runs one of two Clear chat commands sent at once with the same confirmation', async () => {
+    const { expectedState } = (await settings()).clearChat;
+    const results = await Promise.allSettled([clearDispatcherChatFromPhone(expectedState!, PHONE, allow), clearDispatcherChatFromPhone(expectedState!, PHONE, allow)]);
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(clearDispatcherChat).toHaveBeenCalledTimes(1);
+  });
+  it('runs one of two Forget everything commands sent at once with the same confirmation', async () => {
+    const { expectedState } = (await settings()).forgetEverything;
+    const results = await Promise.allSettled([forgetDispatcherFromPhone(expectedState!, PHONE, allow), forgetDispatcherFromPhone(expectedState!, PHONE, allow)]);
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(forgetEverything).toHaveBeenCalledTimes(1);
+  });
+  it('goes stale after a clear or forget from the desktop, or once its switch turned it off and on', async () => {
+    const before = await settings();
+    S.clears++;
+    expect(await refusal(clearDispatcherChatFromPhone(before.clearChat.expectedState!, PHONE, allow))).toMatchObject({ code: 'stale_state' });
+    S.forgets++;
+    expect(await refusal(forgetDispatcherFromPhone(before.forgetEverything.expectedState!, PHONE, allow))).toMatchObject({ code: 'stale_state' });
+    const fresh = await settings();
+    S.switches += 2;
+    expect(await refusal(clearDispatcherChatFromPhone(fresh.clearChat.expectedState!, PHONE, allow))).toMatchObject({ code: 'stale_state' });
+    expect(await refusal(forgetDispatcherFromPhone(fresh.forgetEverything.expectedState!, PHONE, allow))).toMatchObject({ code: 'stale_state' });
+    expect(clearDispatcherChat).not.toHaveBeenCalled();
+    expect(forgetEverything).not.toHaveBeenCalled();
+  });
+  it('binds Forget everything to the memory as read: one that grew or changed since goes stale, and Clear chat doesn\'t care', async () => {
+    const read = await settings();
+    S.memory = { ...S.memory, files: 4, bytes: 1_400, newestMs: 2_000 };
+    expect(await refusal(forgetDispatcherFromPhone(read.forgetEverything.expectedState!, PHONE, allow))).toMatchObject({ code: 'stale_state' });
+    S.memory = { ...S.memory, files: 3, bytes: 900, newestMs: 3_000 };
+    expect(await refusal(forgetDispatcherFromPhone(read.forgetEverything.expectedState!, PHONE, allow))).toMatchObject({ code: 'stale_state' });
+    expect(forgetEverything).not.toHaveBeenCalled();
+    expect(await clearDispatcherChatFromPhone(read.clearChat.expectedState!, PHONE, allow)).toEqual({ cleared: 'next_start' });
+  });
   it('reports a clear that fails as 409 clear_failed with the reason', async () => {
     vi.mocked(clearDispatcherChat).mockRejectedValueOnce(new Error('The Dispatcher\'s conversation can\'t be cleared right now.'));
-    expect(await refusal(clearDispatcherChatFromPhone(settings().clearChat.expectedState!, PHONE, allow))).toMatchObject({ code: 'clear_failed', statusCode: 409 });
+    expect(await refusal(clearDispatcherChatFromPhone((await settings()).clearChat.expectedState!, PHONE, allow))).toMatchObject({ code: 'clear_failed', statusCode: 409 });
   });
   it('forgets everything with this phone\'s Forget everything confirmation, once, and never with Clear chat\'s', async () => {
-    const read = settings();
+    const read = (await settings());
     expect(await refusal(forgetDispatcherFromPhone(read.clearChat.expectedState!, PHONE, allow))).toMatchObject({ code: 'stale_state' });
     expect(forgetEverything).not.toHaveBeenCalled();
     expect(await forgetDispatcherFromPhone(read.forgetEverything.expectedState!, PHONE, allow)).toEqual({ removed: 1, heldNews: 2 });
@@ -235,7 +291,7 @@ describe('Clear chat and Forget everything, each confirmed (#3206)', () => {
     expect(forgetEverything).toHaveBeenCalledTimes(1);
   });
   it('rechecks authorization before acting, and is 409 dispatcher_off while it is off', async () => {
-    const { forgetEverything: confirm } = settings();
+    const { forgetEverything: confirm } = (await settings());
     const revoked = () => { throw new Error('authorization_revoked'); };
     await expect(forgetDispatcherFromPhone(confirm.expectedState!, PHONE, revoked)).rejects.toThrow('authorization_revoked');
     expect(forgetEverything).not.toHaveBeenCalled();

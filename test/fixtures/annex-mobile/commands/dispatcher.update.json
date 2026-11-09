@@ -73,10 +73,10 @@
             },
             "clearChat": {
               "applies": "next_start",
-              "expectedState": "2fb06052e0921d4ba7b61ae05f60d1afdf3e4e39dba77535464b8f3ace222b7d"
+              "expectedState": "f41e1dbc27db5d45aafe3397da046d09889992ba0e064abda41ad74b37ad6d9a"
             },
             "forgetEverything": {
-              "expectedState": "f9ebae884fbce7f66ee9228d3a0166637b3660f067071ba623d16cbb186e3616"
+              "expectedState": "89f144116c43a618b0709a266cab485d90fe3ab89a2c2283009ffe87f22569f9"
             },
             "identity": {
               "color": {
@@ -254,10 +254,10 @@
             },
             "clearChat": {
               "applies": "next_start",
-              "expectedState": "2fb06052e0921d4ba7b61ae05f60d1afdf3e4e39dba77535464b8f3ace222b7d"
+              "expectedState": "f41e1dbc27db5d45aafe3397da046d09889992ba0e064abda41ad74b37ad6d9a"
             },
             "forgetEverything": {
-              "expectedState": "f9ebae884fbce7f66ee9228d3a0166637b3660f067071ba623d16cbb186e3616"
+              "expectedState": "89f144116c43a618b0709a266cab485d90fe3ab89a2c2283009ffe87f22569f9"
             },
             "identity": {
               "color": {

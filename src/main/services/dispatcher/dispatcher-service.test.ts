@@ -286,6 +286,16 @@ describe('gating', () => {
     expect(getSettings().enabled).toBe(false);
   });
 
+  it('counts each time its switch turns it off or on, and not a switch to what it already is (#3206)', async () => {
+    await svc.initDispatcher();
+    const before = svc.getDispatcherSwitchGeneration();
+    await svc.setDispatcherEnabled(true); // On by default in the new layout: no change.
+    expect(svc.getDispatcherSwitchGeneration()).toBe(before);
+    await svc.setDispatcherEnabled(false);
+    await svc.setDispatcherEnabled(true);
+    expect(svc.getDispatcherSwitchGeneration()).toBe(before + 2);
+  });
+
   it('refuses turning it on from missing on the classic layout, and saves nothing', async () => {
     h.newLayout = false;
     await expect(svc.setDispatcherEnabled(true)).rejects.toThrow(DISPATCHER_CLASSIC_MESSAGE);
