@@ -2,7 +2,7 @@
  * Durable agents from a phone (#2451, #2452): what the New agent page and the
  * Details → Settings card offer, and the agent.create / agent.update mobile
  * commands. Validation and writes go through the same services the desktop
- * uses. A paired phone has full control, Free Agent Mode included (#2462):
+ * uses. A paired phone has full control, Access included (#2462, #3207):
  * it can already approve every request one by one.
  */
 
@@ -10,7 +10,11 @@ import { mobileHelperRoutingDetail } from './mobile-helper-routing';
 import { CONTEXT_WINDOW_APPLIES, type ContextWindowOptions } from '../../shared/context-window';
 import { contextWindowCheck, contextWindowOptionsFor } from './context-window';
 import type { DurableAgentConfig, DurableConfigUpdates, McpCatalogEntry, StartDurableCreationParams } from '../../shared/types';
-import type { MobileAgentCreate, MobileAgentUpdate, MobileContextWindow, MobileSettingEditable } from '../../shared/mobile-control';
+import { dispatcherNotHonored, type MobileAccess, type MobileAccessLevel, type MobileAgentCreate, type MobileAgentUpdate, type MobileContextWindow, type MobileSettingEditable } from '../../shared/mobile-control';
+import {
+  ACCESS_DESCRIPTIONS, ACCESS_LEVELS as AGENT_ACCESS_LEVELS, accessLabel, accessLevelsFor, startableAccess, type AccessLevel, type AccessRuntime,
+} from '../../shared/agent-access';
+import { agentAccess, getDefaultAccess } from './free-agent-settings';
 import { AGENT_IDLE_SLEEP_MINUTES, normalizeIdleSleep, resolveIdleSleep } from '../../shared/idle-sleep';
 import { AGENT_COLORS, generateDurableName } from '../../shared/name-generator';
 import { validateAgentGitName } from '../../shared/agent-name';
@@ -41,7 +45,7 @@ export type MobileAgentState = 'creating' | 'failed' | 'starting' | 'running' | 
 
 const DEFAULT_ORCHESTRATOR = 'claude-code';
 /** agent.update settings read at spawn: everything but auto-sleep. */
-const SPAWN_SETTINGS = ['name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'contextWindow'] as const satisfies ReadonlyArray<keyof MobileAgentUpdate>;
+const SPAWN_SETTINGS = ['name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'access', 'contextWindow'] as const satisfies ReadonlyArray<keyof MobileAgentUpdate>;
 /** Shown when a spawn setting changes on an awake agent, as on the Settings card. */
 const LOCKED_DETAIL = 'Sleep the agent to change these';
 
@@ -57,6 +61,55 @@ const chatAvailable = (orchestrator: string): boolean => isChatEnabled() && !!re
 /** Free Agent Mode needs a CLI with permission support, as the New agent page and Settings card require. */
 const permissionsSupported = (orchestrator: string): boolean =>
   getAvailableOrchestrators().find((o) => o.id === orchestrator)?.capabilities?.permissions ?? false;
+
+/** One level as the desktop's Access picker names it (#3207). */
+const accessLevel = (id: AccessLevel): MobileAccessLevel => ({ id, label: accessLabel(id), description: ACCESS_DESCRIPTIONS[id] });
+/** Every level, in ladder order, for a phone's picker. */
+export const MOBILE_ACCESS_LEVELS: readonly MobileAccessLevel[] = AGENT_ACCESS_LEVELS.map(accessLevel);
+
+/**
+ * The levels the Access picker offers for this CLI (#3207): with a runtime,
+ * the ones it can start at there; without, the ones either runtime has, as
+ * the New agent page offers. A CLI that sets access itself offers Ask first only.
+ */
+function accessChoices(orchestrator: string, runtime?: AccessRuntime): readonly AccessLevel[] {
+  return permissionsSupported(orchestrator) ? accessLevelsFor(orchestrator, runtime) : ['ask'];
+}
+
+/**
+ * The runtime the Access picker narrows to, as agent settings do on the
+ * desktop: the saved one while Chat is on, else none, which offers the levels
+ * either runtime has.
+ */
+function pickerRuntime(runtimeMode: DurableAgentConfig['runtimeMode']): AccessRuntime | undefined {
+  return isChatEnabled() && runtimeMode ? runtimeMode : undefined;
+}
+
+/** The runtime an asleep agent's next wake uses, as the Settings card reads it. */
+function nextRuntime(orchestrator: string, runtimeMode: DurableAgentConfig['runtimeMode']): AccessRuntime {
+  const mode = resolveRuntimeMode(orchestrator, runtimeMode);
+  return mode.mode === 'chat' && resolveChatDriver(orchestrator, mode.driver) ? 'chat' : 'terminal';
+}
+
+/** A level the picker wouldn't offer is 409 access_unavailable. Keeping the saved one is always allowed. */
+function assertAccess(level: AccessLevel, orchestrator: string, runtime: AccessRuntime | undefined, saved?: AccessLevel): void {
+  if (level === saved || accessChoices(orchestrator, runtime).includes(level)) return;
+  const cli = getAvailableOrchestrators().find((o) => o.id === orchestrator)?.displayName ?? orchestrator;
+  throw new MobileControlError('access_unavailable', 409, 'rejected', `${accessLabel(level)} isn't a level ${cli} can start at.`);
+}
+
+/** `settings.access` (#3207): the saved level, what it can be set to, and what it really starts at in `runtime`. */
+export function mobileAccess(config: DurableAgentConfig, projectPath: string, orchestrator: string, runtime: AccessRuntime, editable: MobileSettingEditable): MobileAccess {
+  const value = agentAccess(config, projectPath);
+  return {
+    value,
+    editable: permissionsSupported(orchestrator) ? editable : 'never',
+    choices: accessChoices(orchestrator, pickerRuntime(config.runtimeMode)).map(accessLevel),
+    startsAt: permissionsSupported(orchestrator) ? startableAccess(value, orchestrator, runtime) : 'ask',
+    default: getDefaultAccess(),
+    applies: 'next_start',
+  };
+}
 
 async function modelOptions(projectPath: string, orchestrator: string): Promise<Array<{ id: string; label: string }>> {
   try {
@@ -85,12 +138,14 @@ export async function buildAgentOptions(projectPath: string) {
       available: availability.available, ...(availability.error ? { unavailableReason: availability.error } : {}),
       // Without permission support the CLI sets access itself; the phone shows "Set by the CLI".
       permissions: o.capabilities?.permissions ?? false,
+      // The Access levels a new agent on this CLI can be given (#3207), as the New agent page offers them.
+      accessLevels: [...accessChoices(o.id)],
       chat: chatAvailable(o.id),
       models,
     };
   }));
   const personas: Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }> = [];
-  return { orchestrators: rows, personas, colors: MOBILE_AGENT_COLORS };
+  return { orchestrators: rows, personas, colors: MOBILE_AGENT_COLORS, accessLevels: [...MOBILE_ACCESS_LEVELS] };
 }
 
 /** The New agent page's form for one project (#2451). */
@@ -112,6 +167,8 @@ export async function buildCreateOptions(project: MobileAgentProject) {
       color: AGENT_COLORS[0].id,
       model: 'default',
       useWorktree: isGitRepo,
+      // What a new agent starts at when `access` is left out (#3207).
+      access: getDefaultAccess(),
     },
     // Offered for orchestrators with `permissions`, as on the desktop page.
     freeAgentMode: { allowed: true },
@@ -239,8 +296,8 @@ async function assertContextWindow(project: MobileAgentProject, orchestrator: st
 /**
  * One agent's settings as the Settings card shows them, each with when it can
  * change (#2452). The Dispatcher's are Settings > Dispatcher's: CLI, model,
- * runtime, Free agent mode and auto-sleep, at any time (they apply the next
- * time it starts); its name, colour, emoji and orchestration never.
+ * runtime, Access and auto-sleep, at any time (they apply the next time it
+ * starts); its name, colour, emoji and orchestration never.
  */
 export async function buildAgentSettings(
   project: MobileAgentProject,
@@ -255,10 +312,8 @@ export async function buildAgentSettings(
   const spawn: MobileSettingEditable = dispatcher ? 'always' : 'sleeping';
   const identity: MobileSettingEditable = dispatcher ? 'never' : 'sleeping';
   const runtimeEditable: MobileSettingEditable = chatAvailable(orchestrator) ? spawn : 'never';
-  const mode = resolveRuntimeMode(orchestrator, config.runtimeMode);
   // Awake, the runtime it runs in; asleep, the one the next wake starts in.
-  const runtime = live ? (isChatAgent(config.id) ? 'chat' : 'terminal')
-    : mode.mode === 'chat' && resolveChatDriver(orchestrator, mode.driver) ? 'chat' : 'terminal';
+  const runtime: AccessRuntime = live ? (isChatAgent(config.id) ? 'chat' : 'terminal') : nextRuntime(orchestrator, config.runtimeMode);
   const appMinutes = chatIdleSettings.getSettings().idleTimeoutMinutes;
   const idle = normalizeIdleSleep(config.idleSleep);
   const resolved = resolveIdleSleep(idle, appMinutes);
@@ -272,6 +327,8 @@ export async function buildAgentSettings(
     agentId: config.id,
     projectId: project.id,
     ...(dispatcher && { isDispatcher: true as const }),
+    /** The Dispatcher's settings here that Settings > Dispatcher no longer offers, so a phone hides them (#3206). */
+    ...(dispatcher && { notHonored: dispatcherNotHonored(modelsChosenByHand()) }),
     /** The agent that started it, so a controller can tell a helper. Absent on a top-level agent. */
     ...(config.parentAgentId && { parentAgentId: config.parentAgentId }),
     state,
@@ -288,7 +345,9 @@ export async function buildAgentSettings(
       runtime: { ...field(config.runtimeMode ?? 'default', runtimeEditable), resolved: runtime },
       persona: field(null, 'never'),
       clubhouseMode: { ...field(null, 'never'), projectEnabled: false },
+      // The legacy on/off for older phones: true at Auto or Full access. `access` is the level (#3207).
       freeAgentMode: field(!!config.freeAgentMode, permissionsSupported(orchestrator) ? spawn : 'never'),
+      access: mobileAccess(config, project.path, orchestrator, runtime, spawn),
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
       contextWindow: mobileContextWindow(config, await contextWindowOptionsFor(project.path, orchestrator, config.model), spawn),
@@ -412,7 +471,9 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   if (branchName !== undefined) assertGitName(branchName, 'branch', 'invalid_branch_name');
   const orchestrator = command.orchestrator ?? effectiveOrchestrators()[0]?.id ?? DEFAULT_ORCHESTRATOR;
   assertOrchestrator(orchestrator);
-  if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
+  // A level wins over the legacy on/off beside it (#3207), as callerAccess does on the desktop.
+  if (command.access !== undefined) assertAccess(command.access, orchestrator, undefined);
+  else if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
   if (command.persona != null) refusePersona(name);
   const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'create') : undefined;
   if (command.mcpIds?.length) {
@@ -422,10 +483,12 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   let params: StartDurableCreationParams;
   try {
     params = parseStartCreationParams({
-      name, color: command.color, model: command.model, useWorktree, orchestrator, freeAgentMode: command.freeAgentMode,
+      name, color: command.color, model: command.model, useWorktree, orchestrator,
+      freeAgentMode: command.access === undefined ? command.freeAgentMode : undefined,
       mcpIds: command.mcpIds?.length ? command.mcpIds : undefined,
       folderName, branchName, branchFrom,
     });
+    if (command.access !== undefined) params = { ...params, access: command.access };
   } catch (err) {
     throw invalid('invalid_command', err instanceof Error ? err.message : undefined);
   }
@@ -445,6 +508,28 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
     branch: config.branch ?? null, worktreePath: config.worktreePath ?? null,
     state: config.creation?.state === 'creating' ? 'creating' as const : 'sleeping' as const,
   };
+}
+
+/**
+ * agent.update's Access (#3207): a level, checked against what the picker
+ * offers for the CLI and runtime the agent will start on, wins over a legacy
+ * `freeAgentMode` beside it. The legacy on/off alone keeps the desktop's
+ * rules: off always, on only with permission support, and agent-config moves
+ * it to the nearest level.
+ */
+function applyAccess(command: MobileAgentUpdate, config: DurableAgentConfig, projectPath: string, orchestrator: string, updates: DurableConfigUpdates): void {
+  if (command.access !== undefined) {
+    const runtimeMode = command.runtime === undefined ? config.runtimeMode : command.runtime === 'default' ? undefined : command.runtime;
+    // A new CLI can't keep a level it doesn't have, so only the same CLI keeps the saved one.
+    const saved = command.orchestrator === undefined || command.orchestrator === config.orchestrator ? agentAccess(config, projectPath) : undefined;
+    assertAccess(command.access, orchestrator, pickerRuntime(runtimeMode), saved);
+    updates.access = command.access;
+    return;
+  }
+  if (command.freeAgentMode === undefined) return;
+  // Turning it off is always allowed; on needs a CLI with permission support.
+  if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
+  updates.freeAgentMode = command.freeAgentMode;
 }
 
 /**
@@ -490,11 +575,7 @@ export async function updateMobileAgent(
     if (command.runtime !== 'default' && !chatAvailable(orchestrator)) throw new MobileControlError('runtime_unavailable');
     updates.runtimeMode = command.runtime === 'default' ? null : command.runtime;
   }
-  if (command.freeAgentMode !== undefined) {
-    // Turning it off is always allowed; on needs a CLI with permission support.
-    if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
-    updates.freeAgentMode = command.freeAgentMode;
-  }
+  applyAccess(command, config, project.path, orchestrator, updates);
   if (idleSleep !== undefined) updates.idleSleep = idleSleep === 'inherit' ? null : idleSleep;
   if (command.contextWindow !== undefined) {
     await assertContextWindow(project, orchestrator, command.model ?? (command.orchestrator !== undefined ? undefined : config.model), command.contextWindow);
@@ -523,7 +604,7 @@ const DISPATCHER_LOCKED = ['name', 'color', 'emoji', 'persona', 'clubhouseMode',
 
 /**
  * agent.update for the Dispatcher: Settings > Dispatcher's rules. CLI, model,
- * runtime, Free agent mode and auto-sleep change at any time and apply the
+ * runtime, Access and auto-sleep change at any time and apply the
  * next time it starts. A new CLI resets the model to its default, and a model
  * must be one the CLI lists. Everything else is `dispatcher_locked`.
  *
@@ -562,10 +643,7 @@ export async function updateMobileDispatcher(
     if (command.runtime !== 'default' && !chatAvailable(orchestrator)) throw new MobileControlError('runtime_unavailable');
     updates.runtimeMode = command.runtime === 'default' ? null : command.runtime;
   }
-  if (command.freeAgentMode !== undefined) {
-    if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
-    updates.freeAgentMode = command.freeAgentMode;
-  }
+  applyAccess(command, config, project.path, orchestrator, updates);
   if (command.idleSleep !== undefined) updates.idleSleep = command.idleSleep === 'inherit' ? null : command.idleSleep;
   if (command.contextWindow !== undefined) {
     const model = updates.model ?? config.model;

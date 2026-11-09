@@ -18,6 +18,7 @@
  * card sync asks it again (#3041).
  */
 import * as fsp from 'fs/promises';
+import * as path from 'path';
 import { appLog } from '../log-service';
 import { getDispatcherMemoryPath, getDispatcherNotesPath } from './dispatcher-paths';
 import { ensureMemoryLayout } from './dispatcher-memory';
@@ -45,8 +46,51 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+/** Bumped by every Forget everything, from any surface, so a confirmation read before it goes stale (#3206). */
+let forgetGeneration = 0;
+
+/** How many times memory was forgotten in this run. A phone's Forget everything confirmation is bound to it. */
+export function getForgetGeneration(): number {
+  return forgetGeneration;
+}
+
+/**
+ * What the memory folder holds now: its file count, total size and newest
+ * change. A phone's Forget everything confirmation is bound to it, so one read
+ * before the memory grew no longer confirms forgetting it. Never throws: a
+ * missing folder is empty.
+ */
+export async function memoryFingerprint(root: string = getDispatcherMemoryPath()): Promise<{ files: number; bytes: number; newestMs: number }> {
+  const out = { files: 0, bytes: 0, newestMs: 0 };
+  const walk = async (dir: string): Promise<void> => {
+    let entries: import('fs').Dirent[];
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      // telemetry-exempt: a missing or unreadable folder counts as empty.
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { await walk(full); continue; }
+      try {
+        const stat = await fsp.stat(full);
+        out.files++;
+        out.bytes += stat.size;
+        out.newestMs = Math.max(out.newestMs, stat.mtimeMs);
+      } catch {
+        // telemetry-exempt: a file removed while it was read no longer counts.
+      }
+    }
+  };
+  await walk(root);
+  return out;
+}
+
 /** Remove the Dispatcher's memory and held news. Agents, connections and Actions are not touched. */
 export async function forgetEverything(deps: ForgetDeps = {}): Promise<ForgetEverythingResult> {
+  // Before anything goes, so a second request confirmed for the same memory can't run it again.
+  forgetGeneration++;
   const memory = (deps.memoryPath ?? getDispatcherMemoryPath)();
   const targets = [memory, (deps.notesPath ?? getDispatcherNotesPath)(), ...(await (deps.listArchives ?? listNotesArchives)())];
 

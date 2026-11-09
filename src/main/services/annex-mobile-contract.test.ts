@@ -57,6 +57,8 @@ const W = vi.hoisted(() => ({
   finishedReady: true,
   // The app-wide Dispatcher (#2533): off unless a test turns it on.
   dispatcher: { enabled: false, newLayout: true, running: false, classicUnsaved: false },
+  // Settings > Dispatcher's own values (#3206): Behavior, Choose models yourself and the personality.
+  dispatcherSettings: null as null | { level: string; models: Record<string, unknown>; personality: { preset: string; text: string } },
   dispatcherListeners: new Set<(state: any) => void>(),
   // What the CLI offers for the model (#2660); a case sets it, else Claude's.
   contextOptions: null as null | Record<string, unknown>,
@@ -66,6 +68,7 @@ const W = vi.hoisted(() => ({
   grantSaveFails: false,
 }));
 const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
+const NOW_FOR_MOCKS = vi.hoisted(() => 1_800_000_000_000);
 
 vi.mock('./dispatcher/dispatcher-service', () => {
   const config = () => (W.durables[DISPATCHER_PATH] ?? [])[0] ?? null;
@@ -73,7 +76,10 @@ vi.mock('./dispatcher/dispatcher-service', () => {
   const state = () => ({ enabled: enabled(), flagOn: true, savedOn: W.dispatcher.enabled, classic: !W.dispatcher.newLayout, offReason: enabled() ? null : W.dispatcher.classicUnsaved ? 'classic_layout' : 'switch_off', running: W.dispatcher.running, agentId: config()?.id ?? null,
     path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null,
     // Phones see the Dispatcher's chat (#3036); here the one record stands for it, so the contract is unchanged.
-    chatAgentId: config()?.id ?? null, chatPath: config() ? DISPATCHER_PATH : null, chatRunning: W.dispatcher.running });
+    chatAgentId: config()?.id ?? null, chatPath: config() ? DISPATCHER_PATH : null, chatRunning: W.dispatcher.running,
+    behavior: { level: W.dispatcherSettings!.level, provider: config()?.orchestrator ?? null, auto: { ready: true } },
+    models: W.dispatcherSettings!.models, personality: W.dispatcherSettings!.personality });
+  const changed = () => { for (const l of W.dispatcherListeners) l(state()); };
   return {
     DISPATCHER_NAME: 'Dispatcher',
     getDispatcherPath: () => DISPATCHER_PATH,
@@ -91,8 +97,45 @@ vi.mock('./dispatcher/dispatcher-service', () => {
       for (const l of W.dispatcherListeners) l(state());
       return state();
     },
+    // dispatcher-service's own rules are its tests'; these keep what they were given.
+    getDispatcherSwitchGeneration: () => 0,
+    setDispatcherBehavior: async (level: string) => { W.dispatcherSettings!.level = level; changed(); return state(); },
+    setDispatcherPersonality: async (personality: { preset: string; text: string }) => { W.dispatcherSettings!.personality = personality; changed(); return state(); },
+    setDispatcherModels: async (update: Record<string, unknown>) => {
+      const models = W.dispatcherSettings!.models;
+      if ('byHand' in update) {
+        const pick = { provider: config()?.orchestrator ?? 'claude-code', model: config()?.model ?? 'default', effort: null, contextWindow: null };
+        W.dispatcherSettings!.models = { byHand: update.byHand, chat: models.chat ?? pick, work: models.work ?? pick };
+      } else {
+        if (!models.byHand) throw new Error('Turn on Choose models yourself first.');
+        const { role, ...fields } = update as { role: 'chat' | 'work' };
+        W.dispatcherSettings!.models = { ...models, [role]: { ...(models[role] as object), ...fields } };
+      }
+      changed();
+      return state();
+    },
   };
 });
+// The services count clears and forgets, which a confirmation is bound to, with the memory as it is (#3206).
+vi.mock('./dispatcher/dispatcher-clear-chat', () => {
+  let clears = 0;
+  return { clearDispatcherChat: async () => { clears++; return { cleared: 'next_start' }; }, getClearChatGeneration: () => clears };
+});
+vi.mock('./dispatcher/dispatcher-forget', () => {
+  let forgets = 0;
+  return {
+    forgetEverything: async () => { forgets++; return { removed: 1, heldNews: 0 }; },
+    getForgetGeneration: () => forgets,
+    memoryFingerprint: async () => ({ files: forgets ? 1 : 6, bytes: forgets ? 120 : 4800, newestMs: NOW_FOR_MOCKS }),
+  };
+});
+vi.mock('./dispatcher/dispatcher-usage', () => ({
+  getDispatcherUsageSplit: () => ({
+    day: '2027-01-15',
+    conversations: { turns: 4, turnsWithoutUsage: 0, input: 182000, cachedInput: 120000, cacheWrite: 9000, output: 6400, reasoning: 0, costUsd: 0.42, costIsEstimate: true },
+    background: { turns: 2, turnsWithoutUsage: 1, input: 21000, cachedInput: 0, cacheWrite: 0, output: 900, reasoning: 0, costUsd: 0.03, costIsEstimate: true },
+  }),
+}));
 vi.mock('./dispatcher/dispatcher-settings', () => ({
   // Nothing saved: Behavior gives the models, so Choose models yourself (#3191) is off.
   getSettings: () => ({}),
@@ -264,8 +307,9 @@ vi.mock('./project-store', () => ({
   onProjectsChanged: () => () => {},
   iconFilePath: async (icon: string) => (icon ? `iVBORw0KGgo=|${icon}` : null),
 }));
-vi.mock('./agent-config', () => {
+vi.mock('./agent-config', async () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
+  const access = await import('../../shared/agent-access');
   return {
     flushAgentConfig: async () => {},
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
@@ -275,7 +319,15 @@ vi.mock('./agent-config', () => {
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => {
       const agent = find(projectPath, id) ?? {};
       if (updates.orchestrator && updates.orchestrator !== agent.orchestrator) { delete agent.lastSessionId; delete agent.model; delete agent.effort; delete agent.routing; delete agent.contextWindow; }
-      Object.assign(agent, updates);
+      // agent-config's Access rule (#2761, its tests cover it): the level is saved with the legacy flag beside it; a legacy on/off moves to the nearest level.
+      const { access: level, freeAgentMode, ...rest } = updates;
+      if (level !== undefined || freeAgentMode !== undefined) {
+        const current = access.savedAccess(agent, 'skip-all');
+        agent.access = access.isAccessLevel(level) ? level : access.accessForLegacyToggle(current, freeAgentMode === true, 'skip-all');
+        if (access.legacyFreeAgentMode(agent.access)) agent.freeAgentMode = true;
+        else delete agent.freeAgentMode;
+      }
+      Object.assign(agent, rest);
       // agent-config's own rule (its tests cover it): null clears; a choice the new model lacks clears with a notice.
       if (agent.contextWindow === null) { delete agent.contextWindow; delete agent.contextWindowNotice; }
       if (updates.contextWindow) delete agent.contextWindowNotice;
@@ -535,6 +587,7 @@ import { findSenderAgent, messageDisplay, MINIMAL_CHAT_CAPABILITIES, sentPartNam
 import { agentAvatarSpec, agentInitials, initialsTextColor } from '../../shared/agent-avatar';
 import { AGENT_COLORS } from '../../shared/name-generator';
 import { MOBILE_COMMAND_FIELDS, MobileCommandService, NULLABLE_ON_UPDATE, isOptionalCommandField } from './mobile-control';
+import { _setConfirmationSaltForTesting } from './mobile-dispatcher-settings';
 import { MOBILE_COMMAND_TYPES } from '../../shared/mobile-control';
 import { CHAT_EVENT_TYPES, type ChatEvent } from '../../shared/chat';
 import { annexPtyHost } from '../../shared/annex-pty';
@@ -686,6 +739,7 @@ function resetWorld() {
     ],
   };
   W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
+  W.dispatcherSettings = { level: 'standard', models: { byHand: false, chat: null, work: null }, personality: { preset: 'concise', text: 'Be short and direct. Lead with the answer, use as few words as it takes, and skip pleasantries. Add detail only when asked.' } };
   W.running = new Set(['durable_term']);
   W.revert = new Set();
   W.transcripts = {
@@ -856,6 +910,8 @@ function renumberFrames(list: any[], before: number) {
 describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   beforeAll(async () => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    // Clear chat and Forget everything tokens are salted per app run; fixed here so the files don't change.
+    _setConfirmationSaltForTesting('fixture-salt');
     const server = certificate('clubhouse-fixture-desktop');
     client = certificate('mobile-fixture-identity');
     W.tls = { ...server, requestCert: true, rejectUnauthorized: false };
@@ -1228,6 +1284,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('invalid_branch_name', { ...create, branchName: 'bad..branch' });
     await command('orchestrator_unavailable', { ...create, orchestrator: 'copilot-cli' });
     await command('free_agent_mode_unavailable', { ...create, orchestrator: 'codex-cli', freeAgentMode: true });
+    // Saved Access (#3207): a level wins over freeAgentMode beside it; one the CLI can't start at is refused.
+    await command('accepted with access', { ...create, name: 'careful-otter', access: 'auto_edit' });
+    await command('access_unavailable', { ...create, orchestrator: 'codex-cli', access: 'auto' });
+    await command('invalid_command (unknown access level)', { ...create, access: 'yolo' });
     // Personas were retired (#2901): any persona is refused, the existing 409.
     await command('managed_agent (persona)', { ...create, persona: 'qa' });
     await command('unknown_mcp', { ...create, mcpIds: ['jira'] });
@@ -1250,6 +1310,13 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('orchestrator_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'copilot-cli' });
     await command('runtime_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', runtime: 'chat' });
     await command('free_agent_mode_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', freeAgentMode: true });
+    // Saved Access (#3207): Auto and Full access both read freeAgentMode true; `access` tells them apart.
+    const auto = await command('accepted access', { type: 'agent.update', agentId: 'durable_sleepy', access: 'auto' });
+    expect(auto.body.result.settings).toMatchObject({ freeAgentMode: { value: true }, access: { value: 'auto', applies: 'next_start' } });
+    await command('accepted access below Auto (freeAgentMode false)', { type: 'agent.update', agentId: 'durable_sleepy', access: 'plan' });
+    await command('access_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', access: 'full_access' });
+    await command('agent_running (access)', { type: 'agent.update', agentId: 'durable_chat', access: 'plan' });
+    await command('invalid_command (unknown access level)', { type: 'agent.update', agentId: 'durable_sleepy', access: 'yolo' });
     await command('managed_agent (clubhouseMode)', { type: 'agent.update', agentId: 'durable_sleepy', clubhouseMode: true });
     await command('managed_agent (persona)', { type: 'agent.update', agentId: 'durable_sleepy', persona: 'qa' });
     // Clearing a persona is a no-op: there is none to clear.
@@ -1607,6 +1674,58 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     fixtures.set('dispatcher-routes.json', routes);
     W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
+  });
+
+  it('Settings > Dispatcher from a phone (#3206)', async () => {
+    const route = '/api/v1/mobile/dispatcher/settings';
+    const cases: Record<string, unknown> = { off: await exchange('GET', route) };
+    await command('dispatcher_off', { type: 'dispatcher.update', behavior: 'light' });
+    await command('dispatcher_off', { type: 'dispatcher.setModels', byHand: true });
+    await command('dispatcher_off', { type: 'dispatcher.clearChat', expectedState: 'from-an-earlier-read' });
+    await command('dispatcher_off', { type: 'dispatcher.forgetEverything', expectedState: 'from-an-earlier-read' });
+    W.dispatcher.enabled = true;
+    const read = await exchange('GET', route);
+    expect(read.response.status).toBe(200);
+    expect(read.response.body).toMatchObject({ agentId: 'durable_dispatcher', behavior: { value: 'standard', setsModels: true }, models: { byHand: false }, clearChat: { applies: 'next_start' } });
+    cases.on = read;
+    // The Dispatcher's own agent settings say which raw settings it no longer honors.
+    const agentSettings = await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/settings');
+    cases.agentSettingsNotHonored = agentSettings.response.body.notHonored;
+
+    await command('accepted', { type: 'dispatcher.update', behavior: 'thorough', name: 'Robin', color: 'rose', emoji: '🦉', personality: { preset: 'friendly' } });
+    await command('accepted personality text (Custom)', { type: 'dispatcher.update', personality: { text: 'Talk like a ship\'s captain.' } });
+    await command('invalid_behavior', { type: 'dispatcher.update', behavior: 'turbo' });
+    await command('invalid_name', { type: 'dispatcher.update', name: '   ' });
+    await command('invalid_color', { type: 'dispatcher.update', color: 'chartreuse' });
+    await command('invalid_personality', { type: 'dispatcher.update', personality: { preset: 'pirate' } });
+    await command('invalid_command (no settings)', { type: 'dispatcher.update' });
+    await command('invalid_command (unknown field)', { type: 'dispatcher.update', model: 'opus' });
+
+    await command('models_refused', { type: 'dispatcher.setModels', role: 'work', model: 'opus' });
+    await command('accepted on', { type: 'dispatcher.setModels', byHand: true });
+    const pick = await command('accepted pick', { type: 'dispatcher.setModels', role: 'work', model: 'opus', effort: 'high' });
+    expect(pick.body.result).toMatchObject({ models: { byHand: true }, behavior: { setsModels: false }, notHonored: [{ setting: 'runtime' }, { setting: 'freeAgentMode' }, { setting: 'access' }] });
+    cases.byHand = await exchange('GET', route);
+    cases.byHandAgentSettingsNotHonored = (await exchange('GET', '/api/v1/mobile/agents/durable_dispatcher/settings')).response.body.notHonored;
+    await command('invalid_models', { type: 'dispatcher.setModels', role: 'boss', model: 'opus' });
+    await command('invalid_command (no fields)', { type: 'dispatcher.setModels' });
+    await command('accepted off', { type: 'dispatcher.setModels', byHand: false });
+
+    const tokens = (await send('GET', route)).body;
+    await command('stale_state (Forget everything\'s confirmation)', { type: 'dispatcher.clearChat', expectedState: tokens.forgetEverything.expectedState });
+    await command('accepted', { type: 'dispatcher.clearChat', expectedState: tokens.clearChat.expectedState });
+    await command('stale_state (already used)', { type: 'dispatcher.clearChat', expectedState: tokens.clearChat.expectedState });
+    await command('invalid_command (no confirmation)', { type: 'dispatcher.clearChat' });
+    await command('stale_state (Clear chat\'s confirmation)', { type: 'dispatcher.forgetEverything', expectedState: tokens.clearChat.expectedState });
+    await command('accepted', { type: 'dispatcher.forgetEverything', expectedState: tokens.forgetEverything.expectedState });
+    await command('stale_state (already used)', { type: 'dispatcher.forgetEverything', expectedState: tokens.forgetEverything.expectedState });
+    await command('invalid_command (no confirmation)', { type: 'dispatcher.forgetEverything' });
+
+    fixtures.set('dispatcher-settings.json', cases);
+    W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
+    W.dispatcherSettings = { level: 'standard', models: { byHand: false, chat: null, work: null }, personality: { preset: 'concise', text: 'Be short and direct.' } };
+    Object.assign(W.durables[DISPATCHER_PATH][0], { name: 'Dispatcher', color: 'indigo' });
+    delete W.durables[DISPATCHER_PATH][0].emoji;
   });
 
   it('serves the Dispatcher\'s image, which is in no project, only while it is on (#2645)', async () => {

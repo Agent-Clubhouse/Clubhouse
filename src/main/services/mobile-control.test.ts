@@ -157,6 +157,29 @@ describe('mobile validation and chat dispatch', () => {
       { type: 'quick.clear', projectId: 'p', agentId: 'quick_1' },
     ]) expect(() => parseMobileCommand({ ...head, ...bad })).toThrow(MobileControlError);
   });
+  it('parses the Dispatcher settings commands, with at least one field and confirmations required (#3206)', () => {
+    const head = { version: 1, epoch: 'e', commandId: 'c' };
+    expect(parseMobileCommand({ ...head, type: 'dispatcher.update', behavior: 'light', emoji: null, personality: { preset: 'friendly' } })).toMatchObject({ emoji: null });
+    expect(parseMobileCommand({ ...head, type: 'dispatcher.setModels', byHand: true })).toMatchObject({ byHand: true });
+    expect(parseMobileCommand({ ...head, type: 'dispatcher.setModels', role: 'chat', effort: null, contextWindow: null })).toMatchObject({ contextWindow: null });
+    expect(parseMobileCommand({ ...head, type: 'dispatcher.clearChat', expectedState: 'abc' })).toMatchObject({ expectedState: 'abc' });
+    expect(parseMobileCommand({ ...head, type: 'dispatcher.forgetEverything', expectedState: 'abc' })).toMatchObject({ expectedState: 'abc' });
+    for (const bad of [
+      { type: 'dispatcher.update' },
+      { type: 'dispatcher.update', personality: {} },
+      { type: 'dispatcher.update', personality: { text: 'x', voice: 'loud' } },
+      { type: 'dispatcher.update', personality: 'friendly' },
+      { type: 'dispatcher.update', name: 'x', model: 'opus' },
+      { type: 'dispatcher.setModels' },
+      { type: 'dispatcher.setModels', byHand: 'yes' },
+      { type: 'dispatcher.clearChat' },
+      { type: 'dispatcher.clearChat', expectedState: '' },
+      { type: 'dispatcher.forgetEverything', expectedState: 'abc', all: true },
+      { type: 'agent.update', agentId: 'a', access: 'root' },
+      { type: 'agent.create', projectId: 'p', name: 'n', color: 'indigo', access: 7 },
+    ]) expect(() => parseMobileCommand({ ...head, ...bad })).toThrow(MobileControlError);
+    expect(parseMobileCommand({ ...head, type: 'agent.update', agentId: 'a', access: 'auto_edit' })).toMatchObject({ access: 'auto_edit' });
+  });
   it('parses helper.approve and helper.decline (#159)', () => {
     const service = new MobileCommandService();
     const base = { version: 1, epoch: service.epoch, commandId: 'h-1' };

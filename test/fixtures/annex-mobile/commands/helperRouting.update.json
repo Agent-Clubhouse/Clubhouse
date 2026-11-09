@@ -11,7 +11,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_138",
+        "commandId": "cmd_172",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r1.3",
         "scope": "app",
@@ -20,7 +20,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_138",
+          "commandId": "cmd_172",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -514,7 +514,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_139",
+        "commandId": "cmd_173",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r1.3",
         "scope": "app",
@@ -523,7 +523,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_139",
+          "commandId": "cmd_173",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_routing_stale",
@@ -1022,7 +1022,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_140",
+        "commandId": "cmd_174",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -1031,7 +1031,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_140",
+          "commandId": "cmd_174",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "model_unavailable",
@@ -1054,7 +1054,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_141",
+        "commandId": "cmd_175",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -1063,7 +1063,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_141",
+          "commandId": "cmd_175",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "effort_unavailable",
@@ -1086,7 +1086,7 @@
             "provider": "other-cli"
           }
         ],
-        "commandId": "cmd_142",
+        "commandId": "cmd_176",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -1095,7 +1095,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_142",
+          "commandId": "cmd_176",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -1118,7 +1118,7 @@
             "provider": "copilot-cli"
           }
         ],
-        "commandId": "cmd_143",
+        "commandId": "cmd_177",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -1127,7 +1127,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_143",
+          "commandId": "cmd_177",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "effort_unavailable",
@@ -1142,7 +1142,7 @@
     {
       "name": "invalid_helper_routing (project scope)",
       "request": {
-        "commandId": "cmd_144",
+        "commandId": "cmd_178",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {},
         "revision": "r2.3",
@@ -1152,7 +1152,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_144",
+          "commandId": "cmd_178",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -1167,7 +1167,7 @@
     {
       "name": "invalid_command (nothing to do)",
       "request": {
-        "commandId": "cmd_145",
+        "commandId": "cmd_179",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -1190,7 +1190,7 @@
     {
       "name": "accepted reset one cell",
       "request": {
-        "commandId": "cmd_146",
+        "commandId": "cmd_180",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {
           "difficulty": "easy",
@@ -1203,7 +1203,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_146",
+          "commandId": "cmd_180",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -1700,7 +1700,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_147",
+        "commandId": "cmd_181",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r3.3",
         "scope": "app",
@@ -1709,7 +1709,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_147",
+          "commandId": "cmd_181",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -2198,7 +2198,7 @@
     {
       "name": "accepted reset one provider",
       "request": {
-        "commandId": "cmd_148",
+        "commandId": "cmd_182",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {
           "provider": "claude-code"
@@ -2210,7 +2210,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_148",
+          "commandId": "cmd_182",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -2696,7 +2696,7 @@
     {
       "name": "accepted reset all",
       "request": {
-        "commandId": "cmd_149",
+        "commandId": "cmd_183",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {},
         "revision": "r5.3",
@@ -2706,7 +2706,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_149",
+          "commandId": "cmd_183",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -3190,7 +3190,7 @@
       "name": "accepted auto off app-wide",
       "request": {
         "auto": false,
-        "commandId": "cmd_150",
+        "commandId": "cmd_184",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r6.3",
         "scope": "app",
@@ -3199,7 +3199,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_150",
+          "commandId": "cmd_184",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -3683,7 +3683,7 @@
       "name": "accepted auto off for a project",
       "request": {
         "auto": "off",
-        "commandId": "cmd_151",
+        "commandId": "cmd_185",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r7.3",
@@ -3693,7 +3693,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_151",
+          "commandId": "cmd_185",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -4185,7 +4185,7 @@
       "name": "accepted project override removed (null, which never enables)",
       "request": {
         "auto": null,
-        "commandId": "cmd_152",
+        "commandId": "cmd_186",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r8.3",
@@ -4195,7 +4195,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_152",
+          "commandId": "cmd_186",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -4687,7 +4687,7 @@
       "name": "invalid_helper_routing (project can't turn it on)",
       "request": {
         "auto": true,
-        "commandId": "cmd_153",
+        "commandId": "cmd_187",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r9.3",
@@ -4697,7 +4697,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_153",
+          "commandId": "cmd_187",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -4713,7 +4713,7 @@
       "name": "invalid_helper_routing (app-wide off value)",
       "request": {
         "auto": "off",
-        "commandId": "cmd_154",
+        "commandId": "cmd_188",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r9.3",
         "scope": "app",
@@ -4722,7 +4722,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_154",
+          "commandId": "cmd_188",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -4738,7 +4738,7 @@
       "name": "project_not_found",
       "request": {
         "auto": "off",
-        "commandId": "cmd_155",
+        "commandId": "cmd_189",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "missing",
         "revision": "r9.3",
@@ -4748,7 +4748,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_155",
+          "commandId": "cmd_189",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_not_found",
@@ -4764,7 +4764,7 @@
       "name": "helper_routing_stale (a desktop project change)",
       "request": {
         "auto": true,
-        "commandId": "cmd_156",
+        "commandId": "cmd_190",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r9.3",
         "scope": "app",
@@ -4773,7 +4773,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_156",
+          "commandId": "cmd_190",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_routing_stale",
@@ -5262,7 +5262,7 @@
       "name": "helper_routing_stale (project scope, fresh values for that project)",
       "request": {
         "auto": null,
-        "commandId": "cmd_157",
+        "commandId": "cmd_191",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r10.3",
@@ -5272,7 +5272,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_157",
+          "commandId": "cmd_191",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_routing_stale",

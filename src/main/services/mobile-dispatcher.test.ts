@@ -152,7 +152,10 @@ describe('capability and change event', () => {
     S.enabled = true;
     expect(dispatcherCapability()).toEqual({
       version: 1, enabled: true, flagOn: true, newLayout: true, projectId: '__dispatcher__',
-      snapshotField: 'dispatcher', event: 'dispatcher:changed', commands: ['dispatcher.setEnabled'],
+      snapshotField: 'dispatcher', event: 'dispatcher:changed',
+      // Settings > Dispatcher from a phone (#3206): its route and commands.
+      commands: ['dispatcher.setEnabled', 'dispatcher.update', 'dispatcher.setModels', 'dispatcher.clearChat', 'dispatcher.forgetEverything'],
+      settings: { version: 1, path: '/api/v1/mobile/dispatcher/settings' },
     });
   });
 

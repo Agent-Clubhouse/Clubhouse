@@ -5,7 +5,7 @@
       "request": {
         "agentId": "durable_sleepy",
         "color": "rose",
-        "commandId": "cmd_061",
+        "commandId": "cmd_064",
         "emoji": "🦦",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "freeAgentMode": true,
@@ -18,7 +18,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_061",
+          "commandId": "cmd_064",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -56,6 +56,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "full_access",
+                "value": "full_access"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -169,7 +203,7 @@
       "name": "accepted clear",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_062",
+        "commandId": "cmd_065",
         "emoji": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": "inherit",
@@ -179,7 +213,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_062",
+          "commandId": "cmd_065",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -217,6 +251,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "full_access",
+                "value": "full_access"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -330,7 +398,7 @@
       "name": "accepted orchestrator",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_063",
+        "commandId": "cmd_066",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "claude-code",
         "type": "agent.update",
@@ -338,7 +406,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_063",
+          "commandId": "cmd_066",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -377,6 +445,40 @@
             "projectId": "proj_app",
             "sessionReset": true,
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "full_access",
+                "value": "full_access"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -490,7 +592,7 @@
       "name": "accepted while running (idleSleep)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_064",
+        "commandId": "cmd_067",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": "never",
         "type": "agent.update",
@@ -498,7 +600,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_064",
+          "commandId": "cmd_067",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -536,6 +638,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -649,7 +785,7 @@
       "name": "agent_not_found",
       "request": {
         "agentId": "missing",
-        "commandId": "cmd_065",
+        "commandId": "cmd_068",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": 30,
         "type": "agent.update",
@@ -657,7 +793,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_065",
+          "commandId": "cmd_068",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_not_found",
@@ -673,7 +809,7 @@
       "name": "agent_running",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_066",
+        "commandId": "cmd_069",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "renamed",
         "type": "agent.update",
@@ -681,7 +817,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_066",
+          "commandId": "cmd_069",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_running",
@@ -697,7 +833,7 @@
       "name": "agent_creating",
       "request": {
         "agentId": "durable_fresh",
-        "commandId": "cmd_067",
+        "commandId": "cmd_070",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "renamed",
         "type": "agent.update",
@@ -705,7 +841,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_067",
+          "commandId": "cmd_070",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_creating",
@@ -721,7 +857,7 @@
       "name": "invalid_name",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_068",
+        "commandId": "cmd_071",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "bad..name",
         "type": "agent.update",
@@ -729,7 +865,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_068",
+          "commandId": "cmd_071",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_name",
@@ -745,7 +881,7 @@
       "name": "orchestrator_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_069",
+        "commandId": "cmd_072",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "copilot-cli",
         "type": "agent.update",
@@ -753,7 +889,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_069",
+          "commandId": "cmd_072",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "orchestrator_unavailable",
@@ -769,7 +905,7 @@
       "name": "runtime_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_070",
+        "commandId": "cmd_073",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "codex-cli",
         "runtime": "chat",
@@ -778,7 +914,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_070",
+          "commandId": "cmd_073",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "runtime_unavailable",
@@ -794,7 +930,7 @@
       "name": "free_agent_mode_unavailable",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_071",
+        "commandId": "cmd_074",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "freeAgentMode": true,
         "orchestrator": "codex-cli",
@@ -803,7 +939,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_071",
+          "commandId": "cmd_074",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "free_agent_mode_unavailable",
@@ -816,66 +952,18 @@
       }
     },
     {
-      "name": "managed_agent (clubhouseMode)",
+      "name": "accepted access",
       "request": {
+        "access": "auto",
         "agentId": "durable_sleepy",
-        "clubhouseMode": true,
-        "commandId": "cmd_072",
+        "commandId": "cmd_075",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_072",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "managed_agent",
-            "message": "Clubhouse Mode was retired, so bright-otter can't use it. Clubhouse-managed agents get their instructions, skills and MCP servers from their setup."
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 409
-      }
-    },
-    {
-      "name": "managed_agent (persona)",
-      "request": {
-        "agentId": "durable_sleepy",
-        "commandId": "cmd_073",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "persona": "qa",
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_073",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "managed_agent",
-            "message": "Personas were retired, so bright-otter can't take one. Clubhouse-managed agents get their instructions from their setup."
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 409
-      }
-    },
-    {
-      "name": "accepted persona clear (no-op)",
-      "request": {
-        "agentId": "durable_sleepy",
-        "commandId": "cmd_074",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "persona": null,
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_074",
+          "commandId": "cmd_075",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -913,6 +1001,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "auto",
+                "value": "auto"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -1023,18 +1145,524 @@
       }
     },
     {
-      "name": "invalid_color",
+      "name": "accepted access below Auto (freeAgentMode false)",
       "request": {
+        "access": "plan",
         "agentId": "durable_sleepy",
-        "color": "chartreuse",
-        "commandId": "cmd_075",
+        "commandId": "cmd_076",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_075",
+          "commandId": "cmd_076",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
+              "connectToDispatcher": false,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "autoHelpers": "default",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "plan",
+                "value": "plan"
+              },
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "rose"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "app",
+                "value": "inherit"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "default"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "bright-otter"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": false,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "never",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "access_unavailable",
+      "request": {
+        "access": "full_access",
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_077",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestrator": "codex-cli",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_077",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "access_unavailable",
+            "message": "Full access isn't a level Codex can start at."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "agent_running (access)",
+      "request": {
+        "access": "plan",
+        "agentId": "durable_chat",
+        "commandId": "cmd_078",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_078",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "agent_running",
+            "message": "Sleep the agent to change these"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_command (unknown access level)",
+      "request": {
+        "access": "yolo",
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_079",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "managed_agent (clubhouseMode)",
+      "request": {
+        "agentId": "durable_sleepy",
+        "clubhouseMode": true,
+        "commandId": "cmd_080",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_080",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "managed_agent",
+            "message": "Clubhouse Mode was retired, so bright-otter can't use it. Clubhouse-managed agents get their instructions, skills and MCP servers from their setup."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "managed_agent (persona)",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_081",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "persona": "qa",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_081",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "managed_agent",
+            "message": "Personas were retired, so bright-otter can't take one. Clubhouse-managed agents get their instructions from their setup."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted persona clear (no-op)",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_082",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "persona": null,
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_082",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
+              "connectToDispatcher": false,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "autoHelpers": "default",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "plan",
+                "value": "plan"
+              },
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "rose"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "app",
+                "value": "inherit"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "default"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "bright-otter"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": false,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "never",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_color",
+      "request": {
+        "agentId": "durable_sleepy",
+        "color": "chartreuse",
+        "commandId": "cmd_083",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_083",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_color",
@@ -1050,7 +1678,7 @@
       "name": "invalid_command (no settings)",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_076",
+        "commandId": "cmd_084",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
         "version": 1
@@ -1072,7 +1700,7 @@
       "name": "invalid_command (unknown field)",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_077",
+        "commandId": "cmd_085",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "instructions": "be nice",
         "type": "agent.update",
@@ -1095,7 +1723,7 @@
       "name": "accepted orchestration",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_078",
+        "commandId": "cmd_086",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "access": "auto",
@@ -1107,7 +1735,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_078",
+          "commandId": "cmd_086",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -1145,6 +1773,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -1258,7 +1920,7 @@
       "name": "accepted orchestration clear field",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_079",
+        "commandId": "cmd_087",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "maxHelpers": null
@@ -1268,7 +1930,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_079",
+          "commandId": "cmd_087",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -1306,6 +1968,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -1419,7 +2115,7 @@
       "name": "accepted orchestration clear all",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_080",
+        "commandId": "cmd_088",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": null,
         "type": "agent.update",
@@ -1427,7 +2123,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_080",
+          "commandId": "cmd_088",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -1465,6 +2161,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "plan",
+                "value": "plan"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -1531,7 +2261,7 @@
               },
               "freeAgentMode": {
                 "editable": "sleeping",
-                "value": true
+                "value": false
               },
               "hasImageIcon": false,
               "idleSleep": {
@@ -1578,7 +2308,7 @@
       "name": "invalid_orchestration (maxHelpers above the cap)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_081",
+        "commandId": "cmd_089",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "maxHelpers": 21
@@ -1588,7 +2318,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_081",
+          "commandId": "cmd_089",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -1604,7 +2334,7 @@
       "name": "invalid_orchestration (control)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_082",
+        "commandId": "cmd_090",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "control": "yolo"
@@ -1614,7 +2344,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_082",
+          "commandId": "cmd_090",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -1630,7 +2360,7 @@
       "name": "invalid_orchestration (unknown field)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_083",
+        "commandId": "cmd_091",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "helpers": 2
@@ -1640,7 +2370,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_083",
+          "commandId": "cmd_091",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -1656,7 +2386,7 @@
       "name": "orchestration_has_helpers",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_084",
+        "commandId": "cmd_092",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "orchestrate": false
@@ -1666,7 +2396,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_084",
+          "commandId": "cmd_092",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "orchestration_has_helpers",
@@ -1682,7 +2412,7 @@
       "name": "invalid_command (orchestration not an object)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_085",
+        "commandId": "cmd_093",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": "on",
         "type": "agent.update",
@@ -1705,7 +2435,7 @@
       "name": "dispatcher_off",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_122",
+        "commandId": "cmd_130",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "model": "sonnet",
         "type": "agent.update",
@@ -1713,7 +2443,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_122",
+          "commandId": "cmd_130",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_off",
@@ -1729,7 +2459,7 @@
       "name": "dispatcher_off (connectToDispatcher)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_123",
+        "commandId": "cmd_131",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "connectToDispatcher": true
@@ -1739,7 +2469,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_123",
+          "commandId": "cmd_131",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_off",
@@ -1755,7 +2485,7 @@
       "name": "accepted (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_126",
+        "commandId": "cmd_134",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "freeAgentMode": false,
         "idleSleep": 30,
@@ -1765,14 +2495,70 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_126",
+          "commandId": "cmd_134",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
             "orchestration": null,
             "projectId": "__dispatcher__",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "always",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -1886,7 +2672,7 @@
       "name": "accepted orchestrator (Dispatcher, model back to default)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_127",
+        "commandId": "cmd_135",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestrator": "codex-cli",
         "type": "agent.update",
@@ -1894,15 +2680,51 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_127",
+          "commandId": "cmd_135",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
             "orchestration": null,
             "projectId": "__dispatcher__",
             "sessionReset": true,
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  }
+                ],
+                "default": "ask",
+                "editable": "never",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -2016,7 +2838,7 @@
       "name": "invalid_model (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_128",
+        "commandId": "cmd_136",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "model": "opus",
         "type": "agent.update",
@@ -2024,7 +2846,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_128",
+          "commandId": "cmd_136",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_model",
@@ -2040,7 +2862,7 @@
       "name": "dispatcher_locked (name)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_129",
+        "commandId": "cmd_137",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "Boss",
         "type": "agent.update",
@@ -2048,7 +2870,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_129",
+          "commandId": "cmd_137",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",
@@ -2064,7 +2886,7 @@
       "name": "dispatcher_locked (persona)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_130",
+        "commandId": "cmd_138",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "persona": "qa",
         "type": "agent.update",
@@ -2072,7 +2894,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_130",
+          "commandId": "cmd_138",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",
@@ -2088,7 +2910,7 @@
       "name": "dispatcher_locked (orchestration)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_131",
+        "commandId": "cmd_139",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "orchestrate": true
@@ -2098,7 +2920,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_131",
+          "commandId": "cmd_139",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",
@@ -2114,7 +2936,7 @@
       "name": "accepted cross-project and Dispatcher",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_136",
+        "commandId": "cmd_144",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "connectToDispatcher": true,
@@ -2125,7 +2947,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_136",
+          "commandId": "cmd_144",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -2163,6 +2985,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -2276,7 +3132,7 @@
       "name": "accepted autoHelpers on",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_158",
+        "commandId": "cmd_192",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": true
@@ -2286,7 +3142,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_158",
+          "commandId": "cmd_192",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -2324,6 +3180,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -2437,7 +3327,7 @@
       "name": "accepted autoHelpers off",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_159",
+        "commandId": "cmd_193",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": false
@@ -2447,7 +3337,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_159",
+          "commandId": "cmd_193",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -2485,6 +3375,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -2598,7 +3522,7 @@
       "name": "accepted autoHelpers cleared (inherits)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_160",
+        "commandId": "cmd_194",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": null
@@ -2608,7 +3532,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_160",
+          "commandId": "cmd_194",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -2646,6 +3570,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -2759,7 +3717,7 @@
       "name": "invalid_orchestration (autoHelpers)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_161",
+        "commandId": "cmd_195",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": "yes"
@@ -2769,7 +3727,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_161",
+          "commandId": "cmd_195",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -2785,7 +3743,7 @@
       "name": "accepted contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_165",
+        "commandId": "cmd_199",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2793,7 +3751,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_165",
+          "commandId": "cmd_199",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2831,6 +3789,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -2944,7 +3936,7 @@
       "name": "accepted contextWindow null reset",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_166",
+        "commandId": "cmd_200",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2952,7 +3944,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_166",
+          "commandId": "cmd_200",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2990,6 +3982,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -3103,7 +4129,7 @@
       "name": "invalid_context_window",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_167",
+        "commandId": "cmd_201",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3111,7 +4137,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_167",
+          "commandId": "cmd_201",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -3127,7 +4153,7 @@
       "name": "agent_running (contextWindow)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_168",
+        "commandId": "cmd_202",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3135,7 +4161,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_168",
+          "commandId": "cmd_202",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_running",
@@ -3151,7 +4177,7 @@
       "name": "accepted model change resets contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_169",
+        "commandId": "cmd_203",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "model": "sonnet",
         "type": "agent.update",
@@ -3159,7 +4185,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_169",
+          "commandId": "cmd_203",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -3201,6 +4227,40 @@
             },
             "projectId": "proj_app",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "sleeping",
+                "startsAt": "ask",
+                "value": "ask"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -3294,7 +4354,7 @@
       "name": "accepted contextWindow (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_170",
+        "commandId": "cmd_204",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3302,14 +4362,70 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_170",
+          "commandId": "cmd_204",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
             "orchestration": null,
             "projectId": "__dispatcher__",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "always",
+                "startsAt": "full_access",
+                "value": "full_access"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -3423,7 +4539,7 @@
       "name": "accepted contextWindow null reset (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_171",
+        "commandId": "cmd_205",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3431,14 +4547,70 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_171",
+          "commandId": "cmd_205",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
             "orchestration": null,
             "projectId": "__dispatcher__",
             "settings": {
+              "access": {
+                "applies": "next_start",
+                "choices": [
+                  {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
+                    "description": "Asks before edits and commands.",
+                    "id": "ask",
+                    "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
+                  }
+                ],
+                "default": "ask",
+                "editable": "always",
+                "startsAt": "full_access",
+                "value": "full_access"
+              },
               "clubhouseMode": {
                 "editable": "never",
                 "projectEnabled": false,
@@ -3552,7 +4724,7 @@
       "name": "invalid_context_window (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_172",
+        "commandId": "cmd_206",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3560,7 +4732,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_172",
+          "commandId": "cmd_206",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -3576,7 +4748,7 @@
       "name": "dispatcher_locked (name, with contextWindow)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_173",
+        "commandId": "cmd_207",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "Boss",
@@ -3585,7 +4757,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_173",
+          "commandId": "cmd_207",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",

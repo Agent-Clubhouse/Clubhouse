@@ -999,9 +999,18 @@ export async function setDispatcherEnabled(on: boolean): Promise<DispatcherState
   if (on && getDispatcherSettings().enabled !== true) {
     if (!newChromeEnabled()) throw new Error(DISPATCHER_CLASSIC_MESSAGE);
   }
+  if (on !== isDispatcherEnabled()) switchGeneration++;
   await updateSettings((current) => ({ ...current, enabled: on }));
   await enqueue(reconcile);
   return getDispatcherState();
+}
+
+/** Bumped each time its switch turns it on or off, so a phone's confirmation read before goes stale (#3206). */
+let switchGeneration = 0;
+
+/** How many times its switch turned it on or off in this run. */
+export function getDispatcherSwitchGeneration(): number {
+  return switchGeneration;
 }
 
 /** The experimental flags changed; a saved `dispatcher` may have flipped. */

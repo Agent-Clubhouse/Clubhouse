@@ -1,0 +1,650 @@
+{
+  "cases": [
+    {
+      "name": "dispatcher_off",
+      "request": {
+        "byHand": true,
+        "commandId": "cmd_147",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "dispatcher.setModels",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_147",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_off",
+            "message": "The Dispatcher is turned off."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "models_refused",
+      "request": {
+        "commandId": "cmd_158",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "role": "work",
+        "type": "dispatcher.setModels",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_158",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "models_refused",
+            "message": "Turn on Choose models yourself first."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted on",
+      "request": {
+        "byHand": true,
+        "commandId": "cmd_159",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "dispatcher.setModels",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_159",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "behavior": {
+              "applies": "now",
+              "auto": {
+                "ready": true
+              },
+              "choices": [
+                {
+                  "description": "Doesn’t check in on its own. Keeps usage low.",
+                  "id": "light",
+                  "label": "Light"
+                },
+                {
+                  "description": "Checks in on your agents occasionally.",
+                  "id": "standard",
+                  "label": "Standard"
+                },
+                {
+                  "description": "Checks in on your agents frequently.",
+                  "id": "thorough",
+                  "label": "Thorough"
+                }
+              ],
+              "editable": "always",
+              "note": "You choose its models in Settings > Dispatcher. Behavior sets how often it checks in.",
+              "setsModels": false,
+              "value": "thorough"
+            },
+            "clearChat": {
+              "applies": "next_start",
+              "expectedState": "f41e1dbc27db5d45aafe3397da046d09889992ba0e064abda41ad74b37ad6d9a"
+            },
+            "forgetEverything": {
+              "expectedState": "89f144116c43a618b0709a266cab485d90fe3ab89a2c2283009ffe87f22569f9"
+            },
+            "identity": {
+              "color": {
+                "editable": "always",
+                "value": "rose"
+              },
+              "emoji": {
+                "editable": "always",
+                "value": "🦉"
+              },
+              "hasImageIcon": false,
+              "name": {
+                "editable": "always",
+                "maxLength": 40,
+                "value": "Robin"
+              }
+            },
+            "models": {
+              "applies": {
+                "contextWindow": "next_start",
+                "effort": "now_or_next_start",
+                "model": "now_or_next_start",
+                "provider": "next_start"
+              },
+              "byHand": true,
+              "editable": "always",
+              "note": "A new model or effort applies at once where the CLI allows, otherwise at its next start. A new provider or context applies at its next start.",
+              "roles": [
+                {
+                  "help": "Its replies to you in its chat.",
+                  "id": "chat",
+                  "label": "Talking with you",
+                  "pick": {
+                    "contextWindow": null,
+                    "effort": null,
+                    "model": "default",
+                    "provider": "claude-code"
+                  }
+                },
+                {
+                  "help": "The work you hand it, its check-ins and memory upkeep.",
+                  "id": "work",
+                  "label": "Working in the background",
+                  "pick": {
+                    "contextWindow": null,
+                    "effort": null,
+                    "model": "default",
+                    "provider": "claude-code"
+                  }
+                }
+              ]
+            },
+            "notHonored": [
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
+            "personality": {
+              "applies": "next_start",
+              "editable": "always",
+              "maxLength": 2000,
+              "presets": [
+                {
+                  "description": "Warm and upbeat",
+                  "id": "friendly",
+                  "label": "Friendly",
+                  "text": "Be warm and upbeat, like a teammate who enjoys the work. Keep a light touch and notice progress. Stay brief, and never let friendliness get in the way of the facts."
+                },
+                {
+                  "description": "Short and direct",
+                  "id": "concise",
+                  "label": "Concise",
+                  "text": "Be short and direct. Lead with the answer, use as few words as it takes, and skip pleasantries. Add detail only when asked."
+                },
+                {
+                  "description": "Context and reasons",
+                  "id": "detailed",
+                  "label": "Detailed",
+                  "text": "Give context and reasons. Say what happened, why it matters and what you suggest next, so a decision needs no follow-up questions. Use short paragraphs or lists when they help."
+                },
+                {
+                  "description": "Write your own",
+                  "id": "custom",
+                  "label": "Custom",
+                  "text": null
+                }
+              ],
+              "value": {
+                "preset": "custom",
+                "text": "Talk like a ship's captain."
+              }
+            },
+            "usage": {
+              "background": {
+                "cacheWrite": 0,
+                "cachedInput": 0,
+                "costIsEstimate": true,
+                "costUsd": 0.03,
+                "input": 21000,
+                "output": 900,
+                "reasoning": 0,
+                "turns": 2,
+                "turnsWithoutUsage": 1
+              },
+              "conversations": {
+                "cacheWrite": 9000,
+                "cachedInput": 120000,
+                "costIsEstimate": true,
+                "costUsd": 0.42,
+                "input": 182000,
+                "output": 6400,
+                "reasoning": 0,
+                "turns": 4,
+                "turnsWithoutUsage": 0
+              },
+              "day": "2027-01-15"
+            }
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted pick",
+      "request": {
+        "commandId": "cmd_160",
+        "effort": "high",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "role": "work",
+        "type": "dispatcher.setModels",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_160",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "behavior": {
+              "applies": "now",
+              "auto": {
+                "ready": true
+              },
+              "choices": [
+                {
+                  "description": "Doesn’t check in on its own. Keeps usage low.",
+                  "id": "light",
+                  "label": "Light"
+                },
+                {
+                  "description": "Checks in on your agents occasionally.",
+                  "id": "standard",
+                  "label": "Standard"
+                },
+                {
+                  "description": "Checks in on your agents frequently.",
+                  "id": "thorough",
+                  "label": "Thorough"
+                }
+              ],
+              "editable": "always",
+              "note": "You choose its models in Settings > Dispatcher. Behavior sets how often it checks in.",
+              "setsModels": false,
+              "value": "thorough"
+            },
+            "clearChat": {
+              "applies": "next_start",
+              "expectedState": "f41e1dbc27db5d45aafe3397da046d09889992ba0e064abda41ad74b37ad6d9a"
+            },
+            "forgetEverything": {
+              "expectedState": "89f144116c43a618b0709a266cab485d90fe3ab89a2c2283009ffe87f22569f9"
+            },
+            "identity": {
+              "color": {
+                "editable": "always",
+                "value": "rose"
+              },
+              "emoji": {
+                "editable": "always",
+                "value": "🦉"
+              },
+              "hasImageIcon": false,
+              "name": {
+                "editable": "always",
+                "maxLength": 40,
+                "value": "Robin"
+              }
+            },
+            "models": {
+              "applies": {
+                "contextWindow": "next_start",
+                "effort": "now_or_next_start",
+                "model": "now_or_next_start",
+                "provider": "next_start"
+              },
+              "byHand": true,
+              "editable": "always",
+              "note": "A new model or effort applies at once where the CLI allows, otherwise at its next start. A new provider or context applies at its next start.",
+              "roles": [
+                {
+                  "help": "Its replies to you in its chat.",
+                  "id": "chat",
+                  "label": "Talking with you",
+                  "pick": {
+                    "contextWindow": null,
+                    "effort": null,
+                    "model": "default",
+                    "provider": "claude-code"
+                  }
+                },
+                {
+                  "help": "The work you hand it, its check-ins and memory upkeep.",
+                  "id": "work",
+                  "label": "Working in the background",
+                  "pick": {
+                    "contextWindow": null,
+                    "effort": "high",
+                    "model": "opus",
+                    "provider": "claude-code"
+                  }
+                }
+              ]
+            },
+            "notHonored": [
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
+            "personality": {
+              "applies": "next_start",
+              "editable": "always",
+              "maxLength": 2000,
+              "presets": [
+                {
+                  "description": "Warm and upbeat",
+                  "id": "friendly",
+                  "label": "Friendly",
+                  "text": "Be warm and upbeat, like a teammate who enjoys the work. Keep a light touch and notice progress. Stay brief, and never let friendliness get in the way of the facts."
+                },
+                {
+                  "description": "Short and direct",
+                  "id": "concise",
+                  "label": "Concise",
+                  "text": "Be short and direct. Lead with the answer, use as few words as it takes, and skip pleasantries. Add detail only when asked."
+                },
+                {
+                  "description": "Context and reasons",
+                  "id": "detailed",
+                  "label": "Detailed",
+                  "text": "Give context and reasons. Say what happened, why it matters and what you suggest next, so a decision needs no follow-up questions. Use short paragraphs or lists when they help."
+                },
+                {
+                  "description": "Write your own",
+                  "id": "custom",
+                  "label": "Custom",
+                  "text": null
+                }
+              ],
+              "value": {
+                "preset": "custom",
+                "text": "Talk like a ship's captain."
+              }
+            },
+            "usage": {
+              "background": {
+                "cacheWrite": 0,
+                "cachedInput": 0,
+                "costIsEstimate": true,
+                "costUsd": 0.03,
+                "input": 21000,
+                "output": 900,
+                "reasoning": 0,
+                "turns": 2,
+                "turnsWithoutUsage": 1
+              },
+              "conversations": {
+                "cacheWrite": 9000,
+                "cachedInput": 120000,
+                "costIsEstimate": true,
+                "costUsd": 0.42,
+                "input": 182000,
+                "output": 6400,
+                "reasoning": 0,
+                "turns": 4,
+                "turnsWithoutUsage": 0
+              },
+              "day": "2027-01-15"
+            }
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_models",
+      "request": {
+        "commandId": "cmd_161",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "role": "boss",
+        "type": "dispatcher.setModels",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_161",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_models",
+            "message": "role must be chat or work."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (no fields)",
+      "request": {
+        "commandId": "cmd_162",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "dispatcher.setModels",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "accepted off",
+      "request": {
+        "byHand": false,
+        "commandId": "cmd_163",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "dispatcher.setModels",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_163",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "behavior": {
+              "applies": "now",
+              "auto": {
+                "ready": true
+              },
+              "choices": [
+                {
+                  "description": "Fast models, and it doesn’t check in on its own. Keeps usage low.",
+                  "id": "light",
+                  "label": "Light"
+                },
+                {
+                  "description": "Balanced models. Checks in on your agents occasionally.",
+                  "id": "standard",
+                  "label": "Standard"
+                },
+                {
+                  "description": "The strongest models for the work. Checks in frequently.",
+                  "id": "thorough",
+                  "label": "Thorough"
+                }
+              ],
+              "editable": "always",
+              "note": null,
+              "setsModels": true,
+              "value": "thorough"
+            },
+            "clearChat": {
+              "applies": "next_start",
+              "expectedState": "f41e1dbc27db5d45aafe3397da046d09889992ba0e064abda41ad74b37ad6d9a"
+            },
+            "forgetEverything": {
+              "expectedState": "89f144116c43a618b0709a266cab485d90fe3ab89a2c2283009ffe87f22569f9"
+            },
+            "identity": {
+              "color": {
+                "editable": "always",
+                "value": "rose"
+              },
+              "emoji": {
+                "editable": "always",
+                "value": "🦉"
+              },
+              "hasImageIcon": false,
+              "name": {
+                "editable": "always",
+                "maxLength": 40,
+                "value": "Robin"
+              }
+            },
+            "models": {
+              "applies": {
+                "contextWindow": "next_start",
+                "effort": "now_or_next_start",
+                "model": "now_or_next_start",
+                "provider": "next_start"
+              },
+              "byHand": false,
+              "editable": "always",
+              "note": "A new model or effort applies at once where the CLI allows, otherwise at its next start. A new provider or context applies at its next start.",
+              "roles": [
+                {
+                  "help": "Its replies to you in its chat.",
+                  "id": "chat",
+                  "label": "Talking with you",
+                  "pick": {
+                    "contextWindow": null,
+                    "effort": null,
+                    "model": "default",
+                    "provider": "claude-code"
+                  }
+                },
+                {
+                  "help": "The work you hand it, its check-ins and memory upkeep.",
+                  "id": "work",
+                  "label": "Working in the background",
+                  "pick": {
+                    "contextWindow": null,
+                    "effort": "high",
+                    "model": "opus",
+                    "provider": "claude-code"
+                  }
+                }
+              ]
+            },
+            "notHonored": [
+              {
+                "reason": "behavior",
+                "setting": "model"
+              },
+              {
+                "reason": "behavior",
+                "setting": "contextWindow"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "runtime"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "freeAgentMode"
+              },
+              {
+                "reason": "not_offered",
+                "setting": "access"
+              }
+            ],
+            "personality": {
+              "applies": "next_start",
+              "editable": "always",
+              "maxLength": 2000,
+              "presets": [
+                {
+                  "description": "Warm and upbeat",
+                  "id": "friendly",
+                  "label": "Friendly",
+                  "text": "Be warm and upbeat, like a teammate who enjoys the work. Keep a light touch and notice progress. Stay brief, and never let friendliness get in the way of the facts."
+                },
+                {
+                  "description": "Short and direct",
+                  "id": "concise",
+                  "label": "Concise",
+                  "text": "Be short and direct. Lead with the answer, use as few words as it takes, and skip pleasantries. Add detail only when asked."
+                },
+                {
+                  "description": "Context and reasons",
+                  "id": "detailed",
+                  "label": "Detailed",
+                  "text": "Give context and reasons. Say what happened, why it matters and what you suggest next, so a decision needs no follow-up questions. Use short paragraphs or lists when they help."
+                },
+                {
+                  "description": "Write your own",
+                  "id": "custom",
+                  "label": "Custom",
+                  "text": null
+                }
+              ],
+              "value": {
+                "preset": "custom",
+                "text": "Talk like a ship's captain."
+              }
+            },
+            "usage": {
+              "background": {
+                "cacheWrite": 0,
+                "cachedInput": 0,
+                "costIsEstimate": true,
+                "costUsd": 0.03,
+                "input": 21000,
+                "output": 900,
+                "reasoning": 0,
+                "turns": 2,
+                "turnsWithoutUsage": 1
+              },
+              "conversations": {
+                "cacheWrite": 9000,
+                "cachedInput": 120000,
+                "costIsEstimate": true,
+                "costUsd": 0.42,
+                "input": 182000,
+                "output": 6400,
+                "reasoning": 0,
+                "turns": 4,
+                "turnsWithoutUsage": 0
+              },
+              "day": "2027-01-15"
+            }
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    }
+  ],
+  "type": "dispatcher.setModels"
+}

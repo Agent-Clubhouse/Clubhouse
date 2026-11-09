@@ -21,7 +21,7 @@ vi.mock('./dispatcher-channel', () => ({
   onHandOff: () => () => {},
 }));
 
-import { forgetEverything } from './dispatcher-forget';
+import { forgetEverything, getForgetGeneration, memoryFingerprint } from './dispatcher-forget';
 import { refreshDispatcherInstructions } from './dispatcher-service';
 import { _resetDispatcherNewsForTesting, _whenNewsSavedForTesting, heldNews } from './dispatcher-news';
 import { DEFAULT_INDEX } from './dispatcher-memory';
@@ -123,5 +123,26 @@ describe('Forget everything (#3046)', () => {
     const result = await forgetEverything();
     expect(result.removed).toBe(4);
     expect(fs.existsSync(path.join(memory(), 'topics', 'release.md'))).toBe(false);
+  });
+});
+
+describe('what a phone\'s confirmation is bound to (#3206)', () => {
+  it('counts every Forget everything', async () => {
+    const before = getForgetGeneration();
+    await forgetEverything();
+    expect(getForgetGeneration()).toBe(before + 1);
+  });
+  it('fingerprints the memory folder by its files, total size and newest change, and reads a missing one as empty', async () => {
+    const root = inBase('fingerprint', 'memory');
+    expect(await memoryFingerprint(root)).toEqual({ files: 0, bytes: 0, newestMs: 0 });
+    write(path.join(root, 'index.md'), 'abc');
+    write(path.join(root, 'agents', 'a.md'), 'hello');
+    const first = await memoryFingerprint(root);
+    expect(first).toMatchObject({ files: 2, bytes: 8 });
+    expect(first.newestMs).toBeGreaterThan(0);
+    write(path.join(root, 'agents', 'a.md'), 'hello there');
+    expect(await memoryFingerprint(root)).toMatchObject({ files: 2, bytes: 14 });
+    fs.utimesSync(path.join(root, 'index.md'), new Date(first.newestMs + 60_000), new Date(first.newestMs + 60_000));
+    expect((await memoryFingerprint(root)).newestMs).toBeGreaterThan(first.newestMs);
   });
 });

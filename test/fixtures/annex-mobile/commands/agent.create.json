@@ -332,10 +332,92 @@
       }
     },
     {
+      "name": "accepted with access",
+      "request": {
+        "access": "auto_edit",
+        "color": "emerald",
+        "commandId": "cmd_053",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "careful-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_053",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_created",
+            "branch": "careful-otter/standby",
+            "name": "careful-otter",
+            "projectId": "proj_app",
+            "state": "creating",
+            "worktreePath": "/work/app/.clubhouse/agents/careful-otter"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "access_unavailable",
+      "request": {
+        "access": "auto",
+        "color": "emerald",
+        "commandId": "cmd_054",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "orchestrator": "codex-cli",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_054",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "access_unavailable",
+            "message": "Auto isn't a level Codex can start at."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_command (unknown access level)",
+      "request": {
+        "access": "yolo",
+        "color": "emerald",
+        "commandId": "cmd_055",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "name": "calm-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
       "name": "managed_agent (persona)",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_053",
+        "commandId": "cmd_056",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "persona": "qa",
@@ -345,7 +427,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_053",
+          "commandId": "cmd_056",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "managed_agent",
@@ -361,7 +443,7 @@
       "name": "unknown_mcp",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_054",
+        "commandId": "cmd_057",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "mcpIds": [
           "jira"
@@ -373,7 +455,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_054",
+          "commandId": "cmd_057",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "unknown_mcp",
@@ -389,7 +471,7 @@
       "name": "create_refused",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_055",
+        "commandId": "cmd_058",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "taken",
         "projectId": "proj_app",
@@ -398,7 +480,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_055",
+          "commandId": "cmd_058",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "create_refused",
@@ -414,7 +496,7 @@
       "name": "invalid_command (unknown field)",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_056",
+        "commandId": "cmd_059",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "instructions": "be nice",
         "name": "calm-otter",
@@ -439,7 +521,7 @@
       "name": "accepted with orchestration",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_057",
+        "commandId": "cmd_060",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "lead-otter",
         "orchestration": {
@@ -453,7 +535,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_057",
+          "commandId": "cmd_060",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_created",
@@ -473,7 +555,7 @@
       "name": "invalid_orchestration (maxHelpers above the cap)",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_058",
+        "commandId": "cmd_061",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "orchestration": {
@@ -485,7 +567,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_058",
+          "commandId": "cmd_061",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -501,7 +583,7 @@
       "name": "invalid_orchestration (clear on create)",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_059",
+        "commandId": "cmd_062",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "orchestration": {
@@ -513,7 +595,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_059",
+          "commandId": "cmd_062",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -529,7 +611,7 @@
       "name": "invalid_command (orchestration null)",
       "request": {
         "color": "emerald",
-        "commandId": "cmd_060",
+        "commandId": "cmd_063",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
         "orchestration": null,
@@ -554,7 +636,7 @@
       "name": "dispatcher_locked",
       "request": {
         "color": "indigo",
-        "commandId": "cmd_134",
+        "commandId": "cmd_142",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "second",
         "projectId": "__dispatcher__",
@@ -563,7 +645,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_134",
+          "commandId": "cmd_142",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",

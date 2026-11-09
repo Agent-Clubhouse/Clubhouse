@@ -916,6 +916,7 @@ export const ATTR = {
     'GET /api/v1/mobile/projects/:id/create-options',
     'GET /api/v1/mobile/agents/:id/settings',
     'GET /api/v1/mobile/helper-routing',
+    'GET /api/v1/mobile/dispatcher/settings',
     'GET /api/v1/identity',
     'GET /api/v1/status',
     'GET /api/v1/projects',

@@ -3,8 +3,9 @@ import type { ChatCapabilities, ChatModelOption, ChatQuestionAnswers, Permission
 import type { AgentIdleSleep } from './idle-sleep';
 import type { ContextWindowApplies, ContextWindowChoice, ContextWindowKind } from './context-window';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch } from './orchestration-policy';
+import type { AccessLevel } from './agent-access';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange', 'grant.answer'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange', 'grant.answer', 'dispatcher.update', 'dispatcher.setModels', 'dispatcher.clearChat', 'dispatcher.forgetEverything'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -36,6 +37,13 @@ export type MobileCommand = CommandBase & (
   | { type: 'quick.clear'; projectId: string }
   // Settings > Dispatcher's switch (#2533).
   | { type: 'dispatcher.setEnabled'; enabled: boolean }
+  // Settings > Dispatcher from a phone (#3206): Behavior, name and look, personality; at least one.
+  | ({ type: 'dispatcher.update' } & MobileDispatcherUpdate)
+  // Choose models yourself (#3191): the switch, or one job's fields.
+  | { type: 'dispatcher.setModels'; byHand?: boolean; role?: string; provider?: string; model?: string; effort?: string | null; contextWindow?: string | null }
+  // Confirmed with the `expectedState` the Dispatcher settings route gave for each (#3206).
+  | { type: 'dispatcher.clearChat'; expectedState: string }
+  | { type: 'dispatcher.forgetEverything'; expectedState: string }
   // App-wide helper presets (#2671). `revision` is what the change was made from; 409 helper_routing_stale changes nothing.
   | ({ type: 'helperRouting.update'; scope: string; projectId?: string } & import('./helper-routing').HelperRoutingUpdate)
 );
@@ -43,6 +51,8 @@ export type MobileCommand = CommandBase & (
 export interface MobileAgentCreate {
   projectId: string; name: string; color: string; orchestrator?: string; model?: string; persona?: string;
   freeAgentMode?: boolean; useWorktree?: boolean; mcpIds?: string[]; branchName?: string; branchFrom?: string; folderName?: string;
+  /** Access (#3207): the level it starts at. Wins over `freeAgentMode`; neither gives the desktop's Default access. */
+  access?: AccessLevel;
   /** The agent's orchestration policy fields to set (#2228); unset ones follow the defaults. `persona` is refused (409 managed_agent): personas were retired (#2901). */
   orchestration?: Partial<OrchestrationPolicy>;
 }
@@ -50,15 +60,54 @@ export interface MobileAgentCreate {
 export interface MobileAgentUpdate {
   agentId: string; name?: string; color?: string; emoji?: string | null; orchestrator?: string; model?: string;
   runtime?: 'default' | 'chat' | 'terminal'; persona?: string | null; clubhouseMode?: boolean; freeAgentMode?: boolean; idleSleep?: AgentIdleSleep;
+  /** Access (#3207): the saved level it starts at. Wins over `freeAgentMode` in the same command. */
+  access?: AccessLevel;
   /** A `settings.contextWindow.choices[].id`, or null to clear it. */
   contextWindow?: string | null;
   /** Orchestration policy fields; a field set to null, or the whole object null, goes back to the default. A `persona` value is refused (409 managed_agent) and `null` is a no-op: personas were retired (#2901). */
   orchestration?: OrchestrationPolicyPatch | null;
 }
+/** dispatcher.update (#3206): what Settings > Dispatcher's Identity and Behavior sections change. */
+export interface MobileDispatcherUpdate {
+  behavior?: string;
+  name?: string;
+  color?: string;
+  emoji?: string | null;
+  /** A preset fills the text; text alone becomes Custom unless it is a preset's own. */
+  personality?: { preset?: string; text?: string };
+}
+
+/**
+ * Why the Dispatcher's settings route lists one of its raw agent settings as
+ * not honored (#3206). `behavior`: Behavior gives it before each start, so a
+ * saved change doesn't last. `not_offered`: Settings > Dispatcher no longer
+ * offers it, and it stays as it is.
+ */
+export type MobileDispatcherNotHonoredReason = 'behavior' | 'not_offered';
+export interface MobileDispatcherNotHonored { setting: 'model' | 'contextWindow' | 'runtime' | 'freeAgentMode' | 'access'; reason: MobileDispatcherNotHonoredReason }
+
+/**
+ * The Dispatcher's raw agent settings (`GET /mobile/agents/:id/settings`)
+ * that Settings > Dispatcher no longer offers, so a phone hides them (#3206).
+ * With Choose models yourself on (#3191), CLI, model and context are the pick
+ * for talking with you and are honored; off, Behavior gives the model, and a
+ * new model clears the context.
+ */
+export function dispatcherNotHonored(modelsByHand: boolean): MobileDispatcherNotHonored[] {
+  return [
+    ...(modelsByHand ? [] : [{ setting: 'model', reason: 'behavior' }, { setting: 'contextWindow', reason: 'behavior' }] as const),
+    { setting: 'runtime', reason: 'not_offered' },
+    { setting: 'freeAgentMode', reason: 'not_offered' },
+    { setting: 'access', reason: 'not_offered' },
+  ];
+}
+
 /** What the desktop windows patch into their agent list after a phone's agent.update. */
 export interface AnnexAgentUpdate {
   agentId: string; name: string; color: string; emoji: string | null; model: string | null; orchestrator: string | null;
   freeAgentMode: boolean;
+  /** The saved Access level (#3207). */
+  access: AccessLevel;
 }
 /**
  * The chat snapshot's `chatControls`: what the composer's level, model and
@@ -91,6 +140,24 @@ export interface MobileChatControls {
 }
 /** When a setting can change: at any time, only while the agent sleeps, or not from a phone. */
 export type MobileSettingEditable = 'always' | 'sleeping' | 'never';
+/** One Access level as the desktop's picker names it (#3207). */
+export interface MobileAccessLevel { id: AccessLevel; label: string; description: string }
+/**
+ * `settings.access` (#3207): the saved level the agent starts at, on the
+ * five-level ladder. `choices` are the levels its CLI and runtime can start
+ * at, `startsAt` the level it really starts at (the nearest lower one its
+ * runtime has, when the saved one isn't), `default` the desktop's Default
+ * access for new agents. A change always applies at the next start: a running
+ * session's level is `chatControls.level`, which chat.setLevel changes.
+ */
+export interface MobileAccess {
+  value: AccessLevel;
+  editable: MobileSettingEditable;
+  choices: MobileAccessLevel[];
+  startsAt: AccessLevel;
+  default: AccessLevel;
+  applies: 'next_start';
+}
 /**
  * `settings.contextWindow` (#2660): the saved next-start choice and what the CLI
  * offers for this model. `configurable` is whether the CLI offers it, `editable`

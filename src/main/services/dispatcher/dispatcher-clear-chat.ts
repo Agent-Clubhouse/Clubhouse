@@ -29,6 +29,14 @@ export interface ClearChatDeps {
   prepareStart?: (dir: string, agentId: string) => Promise<void>;
 }
 
+/** Bumped by every clear, from any surface, so a confirmation read before it goes stale (#3206). */
+let clearGeneration = 0;
+
+/** How many times the chat was cleared in this run. A phone's Clear chat confirmation is bound to it. */
+export function getClearChatGeneration(): number {
+  return clearGeneration;
+}
+
 async function clearRunning(agentId: string): Promise<void> {
   const runtime = getAgentRuntime(agentId);
   if (!runtime) throw new Error('The Dispatcher\'s conversation can\'t be cleared right now.');
@@ -39,6 +47,8 @@ export async function clearDispatcherChat(deps: ClearChatDeps = {}): Promise<Cle
   const chatId = (deps.chatAgentId ?? getDispatcherChatAgentId)();
   if (!chatId) throw new Error('The Dispatcher is not set up yet.');
   const dir = getDispatcherChatPath();
+  // Before the clear, so a second request confirmed for the same conversation can't run it again.
+  clearGeneration++;
   if ((deps.isRunning ?? agentSystem.isAgentRunning)(chatId)) {
     // The new conversation reads its instructions and memory index as a fresh start does.
     await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, chatId);

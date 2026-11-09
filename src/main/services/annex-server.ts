@@ -1,6 +1,6 @@
 import { hasSessionCaptureFailure } from './session-capture-barrier';
 import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
-import { getPermissionMode, quickAgentAccess } from './free-agent-settings';
+import { agentAccess, getPermissionMode, quickAgentAccess } from './free-agent-settings';
 import { waitForAgentStopped } from './agent-system';
 import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture } from './agent-provider-control';
 import { withAgentTransition } from './agent-transition';
@@ -30,10 +30,13 @@ import { MOBILE_LINK_MAX_ENTRIES, MobileLinkQueryError, readMobileChatLink } fro
 import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
 import {
-  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject,
+  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject, dispatcherProject,
   dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
   phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
+import {
+  buildDispatcherSettings, clearDispatcherChatFromPhone, forgetDispatcherFromPhone, setDispatcherModelsFromPhone, updateDispatcherFromPhone,
+} from './mobile-dispatcher-settings';
 import { getDispatcherChatPath, getDispatcherPath, getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
 import { HELPER_ROUTING_CHANGED_EVENT, helperRoutingCapability, mobileHelperRouting, runHelperRoutingUpdate } from './mobile-helper-routing';
@@ -962,10 +965,10 @@ function isDispatcherOffForStart(agentId: string): boolean {
 
 /** The Dispatcher as the snapshot, dispatcher:changed and the capabilities carry it: the same shape in all three. */
 function dispatcherAgentView(config: DurableConfigs[number]) {
-  return { ...mapDurableAgent(config, DISPATCHER_PROJECT_ID), isDispatcher: true as const };
+  return { ...mapDurableAgent(config, DISPATCHER_PROJECT_ID, undefined, dispatcherProject().path), isDispatcher: true as const };
 }
 
-function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?: Awaited<ReturnType<typeof catalogOrchestration>>) {
+function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?: Awaited<ReturnType<typeof catalogOrchestration>>, projectPath?: string) {
   const agentId = d.id;
   const isRunning = isAgentRunning(agentId);
   const status = isRunning ? 'running' : 'sleeping';
@@ -982,6 +985,8 @@ function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?
     model: d.model || null,
     orchestrator: d.orchestrator || null,
     freeAgentMode: d.freeAgentMode ?? false,
+    /** The saved Access level it starts at (#3207); `freeAgentMode` is its legacy on/off. */
+    access: agentAccess(d, projectPath),
     icon: d.icon || null,
     status,
     detailedStatus: isRunning ? getDetailedStatus(agentId) : null,
@@ -1203,7 +1208,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
   for (const proj of projects) {
-    agents[proj.id] = durablesByProject[proj.id].map((d) => mapDurableAgent(d, proj.id, policiesByProject[proj.id]));
+    agents[proj.id] = durablesByProject[proj.id].map((d) => mapDurableAgent(d, proj.id, policiesByProject[proj.id], proj.path));
     quickAgents[proj.id] = [];
   }
 
@@ -2663,7 +2668,7 @@ async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMat
   }
   const durables = (await agentConfig.listDurable(project.path)).filter((d) => !isDisposedAgent(d));
   const policies = await catalogOrchestration(project.path, durables);
-  sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId, policies)));
+  sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId, policies, project.path)));
 }
 
 async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
@@ -3599,6 +3604,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     slashCommands: { version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: MOBILE_SLASH_COMMANDS_MAX },
     // A paired phone has full control (#2462): persistent approvals and Free Agent Mode, as on the desktop.
     permissions: { version: 1, persistentApprovals: MOBILE_PERSISTENT_APPROVALS, freeAgentMode: true },
+    // Saved Access (#3207): `access` on agent rows and settings, and in agent.create and agent.update.
+    access: { version: 1 },
     // Durable agents' `orchestration` in the catalog and settings; agent.create and agent.update take it (#2228).
     orchestration: { version: 1 },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
@@ -3907,6 +3914,19 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
   }
 }
 
+/** Settings > Dispatcher (#3206): Behavior, models, identity, personality, usage and the confirmations. 404 while it is off. */
+async function handleMobileDispatcherSettingsRoute(ctx: AnnexRouteContext): Promise<void> {
+  try {
+    const settings = await buildDispatcherSettings(ctx.mobilePrincipal);
+    if (!settings) { sendJson(ctx.res, 404, { error: 'dispatcher_off' }); return; }
+    sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings });
+  } catch (err) {
+    // telemetry-exempt: read errors are bounded in the API response, and logged here.
+    appLog('core:annex', 'warn', 'Dispatcher settings read failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    sendJson(ctx.res, 500, { error: 'dispatcher_settings_failed' });
+  }
+}
+
 /** Helper presets, app-wide or for an agent's or project's Auto setting (#2671). No filter returns every label family too. */
 async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<void> {
   try {
@@ -3972,6 +3992,11 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     // onDispatcherChanged broadcasts dispatcher:changed and refreshes the snapshot.
     return setDispatcherEnabledFromPhone(command.enabled, assertAuthorized);
   }
+  // Settings > Dispatcher (#3206). Its state broadcasts refresh the snapshot and the desktop's page.
+  if (command.type === 'dispatcher.update') return updateDispatcherFromPhone(command, principal, assertAuthorized);
+  if (command.type === 'dispatcher.setModels') return setDispatcherModelsFromPhone(command, principal, assertAuthorized);
+  if (command.type === 'dispatcher.clearChat') return clearDispatcherChatFromPhone(command.expectedState, principal, assertAuthorized);
+  if (command.type === 'dispatcher.forgetEverything') return forgetDispatcherFromPhone(command.expectedState, principal, assertAuthorized);
   // The Dispatcher is in no project (#2533): nothing is created, pinned or listed under its id.
   if ('projectId' in command && isDispatcherProjectId(command.projectId)) {
     throw new MobileControlError('dispatcher_locked', 409, 'rejected', 'The Dispatcher is in no project.');
@@ -4087,7 +4112,7 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     const { settings } = updated;
     const update: AnnexAgentUpdate = { agentId: updated.agentId, name: settings.name.value, color: settings.color.value, emoji: settings.emoji.value,
       model: settings.model.value === 'default' ? null : settings.model.value, orchestrator: settings.orchestrator.value,
-      freeAgentMode: settings.freeAgentMode.value };
+      freeAgentMode: settings.freeAgentMode.value, access: settings.access.value };
     broadcastToAllWindows(IPC.ANNEX.AGENT_UPDATED, update);
     broadcastSnapshotRefresh();
     return updated;
@@ -4287,6 +4312,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/projects\/([^/]+)\/create-options$/, handler: handleMobileCreateOptionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/settings$/, handler: handleMobileAgentSettingsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/helper-routing(\?.*)?$/, handler: handleMobileHelperRoutingRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/dispatcher\/settings$/, handler: handleMobileDispatcherSettingsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/identity$/, handler: handleIdentityRoute },
   { method: 'GET', pattern: /^\/api\/v1\/status$/, handler: handleStatusRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
