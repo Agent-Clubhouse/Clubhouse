@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ATTR } from '../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import { errorTypeOf, type Classification, type TelemetryRuntime } from '../telemetry/types';
 
@@ -111,6 +110,11 @@ vi.mock('../services/finished-quick-agents-store', () => ({
   onFinishedQuickAgentsChange: vi.fn(),
 }));
 
+vi.mock('../services/agent-delete', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/agent-delete')>()),
+  deleteAgent: vi.fn(async () => ({ ok: true, message: 'Force deleted', deleted: true })),
+}));
+
 vi.mock('../services/dispatcher/dispatcher-service', () => ({
   isDispatcherPath: (p: string) => p === 'dispatcher-folder',
   isDispatcherAgentId: (id: string) => id === 'disp',
@@ -123,6 +127,7 @@ import { CONFIG_CHANGE_DEBOUNCE_MS, registerAgentHandlers } from './agent-handle
 import { recordStartRequest, _resetStartRequestsForTesting } from '../services/helper-start-requests';
 import * as agentConfig from '../services/agent-config';
 import * as agentCreation from '../services/agent-creation';
+import * as agentDelete from '../services/agent-delete';
 import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
@@ -159,8 +164,7 @@ describe('agent-handlers', () => {
       IPC.AGENT.PICK_ICON, IPC.AGENT.SAVE_ICON, IPC.AGENT.READ_ICON, IPC.AGENT.REMOVE_ICON,
       IPC.AGENT.GET_DURABLE_CONFIG, IPC.AGENT.UPDATE_DURABLE_CONFIG,
       IPC.AGENT.REORDER_DURABLE, IPC.AGENT.GET_WORKTREE_STATUS,
-      IPC.AGENT.DELETE_COMMIT_PUSH, IPC.AGENT.DELETE_CLEANUP_BRANCH,
-      IPC.AGENT.DELETE_SAVE_PATCH, IPC.AGENT.DELETE_FORCE, IPC.AGENT.DELETE_UNREGISTER,
+      IPC.AGENT.DELETE_AGENT,
       IPC.AGENT.SPAWN_AGENT, IPC.AGENT.KILL_AGENT,
       IPC.AGENT.READ_QUICK_SUMMARY, IPC.AGENT.GET_MODEL_OPTIONS,
       IPC.AGENT.CHECK_ORCHESTRATOR, IPC.AGENT.GET_ORCHESTRATORS,
@@ -263,15 +267,16 @@ describe('agent-handlers', () => {
   });
 
   describe('Dispatcher singleton guards (#2535)', () => {
-    const deletes = [
-      IPC.AGENT.DELETE_DURABLE, IPC.AGENT.DELETE_COMMIT_PUSH, IPC.AGENT.DELETE_CLEANUP_BRANCH,
-      IPC.AGENT.DELETE_SAVE_PATCH, IPC.AGENT.DELETE_FORCE, IPC.AGENT.DELETE_UNREGISTER,
-    ];
-
-    it.each(deletes)('%s refuses the Dispatcher by id or by folder', async (channel) => {
-      await expect(handlers.get(channel)!({}, 'dispatcher-folder', 'any')).rejects.toThrow("The Dispatcher can't be deleted.");
-      await expect(handlers.get(channel)!({}, 'project', 'disp')).rejects.toThrow("The Dispatcher can't be deleted.");
+    it('DELETE_DURABLE refuses the Dispatcher by id or by folder', async () => {
+      await expect(handlers.get(IPC.AGENT.DELETE_DURABLE)!({}, 'dispatcher-folder', 'any')).rejects.toThrow("The Dispatcher can't be deleted.");
+      await expect(handlers.get(IPC.AGENT.DELETE_DURABLE)!({}, 'project', 'disp')).rejects.toThrow("The Dispatcher can't be deleted.");
       expect(agentConfig.deleteDurable).not.toHaveBeenCalled();
+    });
+
+    it('DELETE_AGENT refuses the Dispatcher by id or by folder', async () => {
+      await expect(handlers.get(IPC.AGENT.DELETE_AGENT)!({}, 'dispatcher-folder', 'any', 'force')).rejects.toThrow("The Dispatcher can't be deleted.");
+      await expect(handlers.get(IPC.AGENT.DELETE_AGENT)!({}, 'project', 'disp', 'force')).rejects.toThrow("The Dispatcher can't be deleted.");
+      expect(agentDelete.deleteAgent).not.toHaveBeenCalled();
     });
 
     it('refuses orchestration changes', async () => {
@@ -325,14 +330,9 @@ describe('agent-handlers', () => {
     });
     afterEach(() => setProducingRuntime(null));
 
-    it('classifies deletes by result and mode', async () => {
-      vi.mocked(agentConfig.deleteForce).mockResolvedValueOnce({ ok: false, message: 'dirty worktree' });
-      await handlers.get(IPC.AGENT.DELETE_FORCE)!({}, '/project', 'agent-1');
-      await handlers.get(IPC.AGENT.DELETE_UNREGISTER)!({}, '/project', 'agent-1');
-      expect(flows).toEqual([
-        { name: 'clubhouse.agent.delete', attrs: [ATTR.deleteMode('force')], outcome: { error: 'delete_failed' } },
-        { name: 'clubhouse.agent.delete', attrs: [ATTR.deleteMode('unregister')], outcome: 'ok' },
-      ]);
+    it('leaves the DELETE_AGENT flow to the delete service, which records MCP deletes too (#3182)', async () => {
+      await handlers.get(IPC.AGENT.DELETE_AGENT)!({}, '/project', 'agent-1', 'force');
+      expect(flows).toEqual([]);
     });
 
     it('rethrows the identical error from create and delete, typed for telemetry', async () => {
@@ -703,55 +703,50 @@ describe('agent-handlers', () => {
     expect(result).toEqual({ clean: true, branch: 'main' });
   });
 
-  it('DELETE_COMMIT_PUSH delegates to agentConfig.deleteCommitAndPush', async () => {
-    const handler = handlers.get(IPC.AGENT.DELETE_COMMIT_PUSH)!;
-    const result = await handler({}, '/project', 'agent-1');
-    expect(agentConfig.deleteCommitAndPush).toHaveBeenCalledWith('/project', 'agent-1');
-    expect(result).toEqual({ ok: true });
+  it.each(['commit-push', 'cleanup-branch', 'force', 'unregister'] as const)('DELETE_AGENT %s goes to the delete service with the helper choice', async (mode) => {
+    const handler = handlers.get(IPC.AGENT.DELETE_AGENT)!;
+    const result = await handler({}, '/project', 'agent-1', mode, 'dispose');
+    expect(agentDelete.deleteAgent).toHaveBeenCalledWith('/project', 'agent-1', { mode, savePath: undefined, helpers: 'dispose' });
+    expect(result).toEqual({ ok: true, message: 'Force deleted', deleted: true });
   });
 
-  it('DELETE_CLEANUP_BRANCH delegates to agentConfig.deleteWithCleanupBranch', async () => {
-    const handler = handlers.get(IPC.AGENT.DELETE_CLEANUP_BRANCH)!;
-    const result = await handler({}, '/project', 'agent-1');
-    expect(agentConfig.deleteWithCleanupBranch).toHaveBeenCalledWith('/project', 'agent-1');
-    expect(result).toEqual({ ok: true });
+  it('DELETE_AGENT refuses an unknown mode or helper choice', async () => {
+    const handler = handlers.get(IPC.AGENT.DELETE_AGENT)!;
+    await expect(handler({}, '/project', 'agent-1', 'shred')).rejects.toThrow(/Unknown delete mode/);
+    await expect(handler({}, '/project', 'agent-1', 'force', 'abandon')).rejects.toThrow(/Unknown helper choice/);
+    expect(agentDelete.deleteAgent).not.toHaveBeenCalled();
   });
 
-  it('DELETE_SAVE_PATCH returns cancelled when no focused window', async () => {
+  it('DELETE_AGENT refreshes windows when helpers were disposed though the agent stayed', async () => {
+    vi.mocked(agentDelete.deleteAgent).mockResolvedValueOnce({
+      ok: false, message: 'locked', helpers: { ok: true, message: 'Disposed 1 helper(s)', helperIds: ['h1'] },
+    });
+    await handlers.get(IPC.AGENT.DELETE_AGENT)!({}, '/project', 'agent-1', 'force', 'dispose');
+    expect(broadcastSnapshotRefresh).toHaveBeenCalled();
+  });
+
+  it('DELETE_AGENT save-patch returns cancelled when no focused window, before anything changes', async () => {
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValueOnce(null);
-    const handler = handlers.get(IPC.AGENT.DELETE_SAVE_PATCH)!;
-    const result = await handler({}, '/project', 'agent-1');
+    const handler = handlers.get(IPC.AGENT.DELETE_AGENT)!;
+    const result = await handler({}, '/project', 'agent-1', 'save-patch', 'dispose');
     expect(result).toEqual({ ok: false, message: 'cancelled' });
     expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+    expect(agentDelete.deleteAgent).not.toHaveBeenCalled();
   });
 
-  it('DELETE_SAVE_PATCH returns cancelled when dialog is canceled', async () => {
+  it('DELETE_AGENT save-patch returns cancelled when the dialog is canceled, before anything changes', async () => {
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: true, filePath: undefined } as any);
-    const handler = handlers.get(IPC.AGENT.DELETE_SAVE_PATCH)!;
-    const result = await handler({}, '/project', 'agent-1');
+    const handler = handlers.get(IPC.AGENT.DELETE_AGENT)!;
+    const result = await handler({}, '/project', 'agent-1', 'save-patch', 'dispose');
     expect(result).toEqual({ ok: false, message: 'cancelled' });
+    expect(agentDelete.deleteAgent).not.toHaveBeenCalled();
   });
 
-  it('DELETE_SAVE_PATCH calls deleteSaveAsPatch when dialog succeeds', async () => {
+  it('DELETE_AGENT save-patch deletes with the chosen file', async () => {
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: '/tmp/agent.patch' } as any);
-    const handler = handlers.get(IPC.AGENT.DELETE_SAVE_PATCH)!;
-    const result = await handler({}, '/project', 'agent-1');
-    expect(agentConfig.deleteSaveAsPatch).toHaveBeenCalledWith('/project', 'agent-1', '/tmp/agent.patch');
-    expect(result).toEqual({ ok: true, filePath: '/tmp/agent.patch' });
-  });
-
-  it('DELETE_FORCE delegates to agentConfig.deleteForce', async () => {
-    const handler = handlers.get(IPC.AGENT.DELETE_FORCE)!;
-    const result = await handler({}, '/project', 'agent-1');
-    expect(agentConfig.deleteForce).toHaveBeenCalledWith('/project', 'agent-1');
-    expect(result).toEqual({ ok: true });
-  });
-
-  it('DELETE_UNREGISTER delegates to agentConfig.deleteUnregister', async () => {
-    const handler = handlers.get(IPC.AGENT.DELETE_UNREGISTER)!;
-    const result = await handler({}, '/project', 'agent-1');
-    expect(agentConfig.deleteUnregister).toHaveBeenCalledWith('/project', 'agent-1');
-    expect(result).toEqual({ ok: true });
+    const handler = handlers.get(IPC.AGENT.DELETE_AGENT)!;
+    await handler({}, '/project', 'agent-1', 'save-patch');
+    expect(agentDelete.deleteAgent).toHaveBeenCalledWith('/project', 'agent-1', { mode: 'save-patch', savePath: '/tmp/agent.patch', helpers: undefined });
   });
 
   // --- Orchestrator-based ---

@@ -93,6 +93,8 @@ export function DeleteAgentDialog() {
   const [loading, setLoading] = useState(true);
   // Helpers (#2224): an orchestrator's helpers are disposed or kept before it goes.
   const [helperCount, setHelperCount] = useState(0);
+  // Every live helper below it, helpers of helpers too: main asks for a choice when there are any (#3182).
+  const [allHelperCount, setAllHelperCount] = useState(0);
   const [helperChoice, setHelperChoice] = useState<HelperDeleteChoice | null>(null);
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,13 +111,15 @@ export function DeleteAgentDialog() {
         );
         setStatus(s as WorktreeStatus);
       } else if (activeProject) {
-        const [s, helpers] = await Promise.all([
+        const [s, helpers, allHelpers] = await Promise.all([
           window.clubhouse.agent.getWorktreeStatus(activeProject.path, deleteDialogAgent),
           // Direct helpers: Keep releases these; their own helpers stay with them.
           listLiveHelpers(activeProject.path, deleteDialogAgent, false),
+          listLiveHelpers(activeProject.path, deleteDialogAgent),
         ]);
         setStatus(s);
         setHelperCount(helpers.length);
+        setAllHelperCount(allHelpers.length);
       }
     } catch (err) {
       // telemetry-exempt: the failure blocks deleting and reaches the user in the dialog.
@@ -166,11 +170,10 @@ export function DeleteAgentDialog() {
           : await executeDelete(mode, activeProject.path);
         if (!result.ok && result.message !== 'cancelled') {
           setError(result.message);
-          // Helpers that blocked the delete are still there; ask again.
-          if (helperChoice) {
-            setHelperChoice(null);
-            await fetchStatus();
-          }
+          // Read again what is there now: helpers that blocked the delete, or
+          // ones that appeared since it opened, get the choice; none left, none asked.
+          setHelperChoice(null);
+          await fetchStatus();
         }
       }
     } catch (err: any) {
@@ -179,7 +182,8 @@ export function DeleteAgentDialog() {
     setExecuting(false);
   };
 
-  if (!loading && !isRemote && helperCount > 0 && !helperChoice) {
+  const shownHelperCount = helperCount || allHelperCount;
+  if (!loading && !isRemote && shownHelperCount > 0 && !helperChoice) {
     return createPortal(
       // eslint-disable-next-line no-restricted-syntax
       <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
@@ -192,7 +196,7 @@ export function DeleteAgentDialog() {
             Delete {agent.name}?
           </h2>
           <p className="text-sm text-ctp-subtext0 mb-3">
-            {agent.name} has {helperCount === 1 ? '1 helper' : `${helperCount} helpers`}. Choose what happens to {helperCount === 1 ? 'it' : 'them'} first.
+            {agent.name} has {shownHelperCount === 1 ? '1 helper' : `${shownHelperCount} helpers`}. Choose what happens to {shownHelperCount === 1 ? 'it' : 'them'} first.
           </p>
           {error && (
             <div className="mb-3 px-3 py-2 rounded bg-ctp-error/10 border border-ctp-error/30 text-ctp-error text-xs">

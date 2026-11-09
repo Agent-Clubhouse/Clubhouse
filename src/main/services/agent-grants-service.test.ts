@@ -59,7 +59,7 @@ describe('start and dispose rows follow the approval setting (#2970)', () => {
 
   it('refuses Allow on starting while removing asks, which has no setting, rather than doing nothing', async () => {
     mocks.config = { ...mocks.config, orchestration: { orchestrate: true, control: 'ask-everything' } };
-    await expect(setAgentGrant('/p', 'o1', { action: 'agent.create', target: { kind: 'project', project: 'own' }, mode: 'allow' })).rejects.toThrow(/Set Remove helpers to Allow first/);
+    await expect(setAgentGrant('/p', 'o1', { action: 'agent.create', target: { kind: 'project', project: 'own' }, mode: 'allow' })).rejects.toThrow(/Set Delete agents and remove helpers to Allow first/);
     expect(mocks.setOrchestrationPolicy).not.toHaveBeenCalled();
   });
 

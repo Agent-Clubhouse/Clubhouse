@@ -71,6 +71,19 @@ describe('the Dispatcher\'s defaults (#3050, #3034)', () => {
     expect(mode(dispatcher, 'settings.app.write', { kind: 'app' })).toBe('ask');
   });
 
+  it('asks first to delete any agent; no other agent deletes one outside its helpers (#3182)', () => {
+    expect(mode(dispatcher, 'agent.dispose', { kind: 'any' })).toBe('ask');
+    for (const facts of [
+      { dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: true, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: false, orchestrates: true, crossProject: true },
+      { dispatcherChat: true, dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+    ]) {
+      const disposes = defaultGrants(facts).filter((g) => g.action === 'agent.dispose');
+      expect(disposes.every((g) => g.target.kind === 'my_helpers'), JSON.stringify(facts)).toBe(true);
+    }
+  });
+
   it('creates, changes and runs Actions', () => {
     for (const action of ['action.read', 'action.write', 'action.run'] as const) expect(mode(dispatcher, action, { kind: 'any' }), action).toBe('allow');
   });

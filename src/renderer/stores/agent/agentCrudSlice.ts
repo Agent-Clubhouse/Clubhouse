@@ -234,6 +234,12 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           // A 'creating' row may be a placeholder under a temporary id; its creation flow removes it.
           .filter((agent) => before.has(agent.id) && !live.has(agent.id) && agent.status !== 'creating')
           .map((agent) => agent.id);
+        // A deleted agent's quick agents go with it, as the delete dialog removes them;
+        // main stops them when it deletes (delete_agent, #3182).
+        const deleted = new Set(removed);
+        removed = [...removed, ...Object.values(s.agents)
+          .filter((agent) => agent.kind === 'quick' && !!agent.parentAgentId && deleted.has(agent.parentAgentId))
+          .map((agent) => agent.id)];
         const base = removeAgentsFromState(s, removed);
         let agents = base.agents ?? s.agents;
         for (const config of live.values()) {

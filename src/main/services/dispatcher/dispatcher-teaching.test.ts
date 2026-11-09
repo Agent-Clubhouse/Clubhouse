@@ -82,16 +82,19 @@ describe('readDispatcherAbilities follows the Dispatcher\'s live grants', () => 
   it('changes when a grant is changed on its permissions page', async () => {
     const before = await readDispatcherAbilities();
     expect(line(before, 'agents', 'wake')).toMatch(/wake/);
+    // Deleting agents asks first by default (#3182).
+    expect(line(before, 'agents', 'Delete')).toBe('Delete any agent, after asking you');
 
     await setAgentGrant(DISPATCHER, 'disp', { action: 'agent.wake', target: { kind: 'connected' }, mode: 'off' });
     await setAgentGrant(DISPATCHER, 'disp', { action: 'settings.app.write', target: { kind: 'app' }, mode: 'allow' });
-    await setAgentGrant(DISPATCHER, 'disp', { action: 'agent.dispose', target: { kind: 'any' }, mode: 'ask' });
+    await setAgentGrant(DISPATCHER, 'disp', { action: 'agent.dispose', target: { kind: 'any' }, mode: 'allow' });
 
     const after = await readDispatcherAbilities();
     expect(capabilitiesText(after)).not.toBe(capabilitiesText(before));
     expect(after.flatMap((g) => g.lines).some((l) => l.actions.includes('agent.wake'))).toBe(false);
     expect(line(after, 'projects', 'Change app settings')).toBe('Change app settings');
-    expect(line(after, 'agents', 'Remove')).toBe('Remove any agent, after asking you');
+    // Allowed now, it joins the other things it does to any agent, and no longer asks.
+    expect(line(after, 'agents', 'delete any agent')).toBe('Restart, rename, change the setup and permissions of or delete any agent');
   });
 });
 

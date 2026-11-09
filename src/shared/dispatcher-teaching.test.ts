@@ -48,6 +48,9 @@ describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
     const projects = dispatcherCapabilities(DISPATCHER).find((g) => g.id === 'projects')!;
     expect(projects.lines.find((l) => l.actions.includes('project.add'))).toMatchObject({ text: 'Add or open projects, after asking you', asks: true });
     expect(projects.lines.find((l) => l.actions.includes('settings.app.read'))).toMatchObject({ text: 'See app settings', asks: false });
+    // Deleting agents (#3182) asks first by default.
+    const agents = dispatcherCapabilities(DISPATCHER).find((g) => g.id === 'agents')!;
+    expect(agents.lines.find((l) => l.actions.includes('agent.dispose'))).toMatchObject({ text: 'Delete any agent, after asking you', asks: true });
   });
 
   it('changes with the grants: turning one off, allowing one that asked, and adding one', () => {
@@ -66,7 +69,7 @@ describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
     // Now allowed, it joins the other things it does to any project, and no longer asks.
     expect(lines(groups)).toContain('See the settings of, rename or change the defaults of any project');
     expect(lines(groups).some((l) => l.includes('defaults') && l.includes('asking'))).toBe(false);
-    expect(lines(groups).find((l) => l.includes('agents connected to me'))).toMatch(/\bor remove agents connected to me$/);
+    expect(lines(groups).find((l) => l.includes('agents connected to me'))).toMatch(/\bor delete agents connected to me$/);
   });
 
   it('leaves out a narrower grant a wider one already covers, unless the narrower allows more', () => {

@@ -6,8 +6,11 @@
  * person. They call the same service the UI does. Shared edits, deleting a
  * part in use and template pushes are preview-then-commit: the first call
  * returns who it reaches and a confirm token, the second commits with it.
+ * delete_agent (#3182) deletes an agent with its helpers: every choice is an
+ * argument and nothing opens a dialog; its grant asks first by default.
  */
 import { createHash, randomBytes } from 'crypto';
+import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import type { ToolGrant } from '../tool-grants';
@@ -30,6 +33,11 @@ import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type Managed
 import type { Project } from '../../../../shared/types';
 import { agentRegistry } from '../../agent-registry';
 import { capToHolder } from '../grant-check';
+import { describeCallsForAsk } from '../ask-first';
+import { resolveArgTargets } from '../arg-targets';
+import { isDisposedAgent } from '../../../../shared/agent-helpers';
+import { deleteAgent } from '../../agent-delete';
+import type { AgentDeleteResult, HelperDeleteChoice } from '../../../../shared/types';
 
 const ACTOR = 'Dispatcher';
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
@@ -115,7 +123,8 @@ async function resolveProject(ref: string): Promise<Project> {
 async function resolveAgent(args: Record<string, unknown>): Promise<{ project: Project; agentId: string; agentName: string }> {
   const project = await resolveProject(requireString(args, 'project'));
   const ref = requireString(args, 'agent');
-  const agents = await agentConfig.listDurable(project.path);
+  // As the grant check resolves it (arg-targets.ts): a disposed helper's row is no agent to act on.
+  const agents = (await agentConfig.listDurable(project.path)).filter((a) => !isDisposedAgent(a));
   const agent = agents.find((a) => a.id === ref) ?? agents.find((a) => a.name === ref);
   if (!agent) throw new ArgError(`No agent "${ref}" in ${project.name}.`);
   return { project, agentId: agent.id, agentName: agent.name };
@@ -208,6 +217,69 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
       return fail(err instanceof Error ? err.message : String(err));
     }
   }, { group: ORCHESTRATOR_READS.has(name) ? ['dispatcher', 'orchestration'] : 'dispatcher', grant });
+}
+
+const DELETE_GRANT: ToolGrant = { actions: ['agent.dispose'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } };
+const HELPER_CHOICES = ['dispose', 'keep'] as const;
+const WORKTREE_CHOICES = ['delete', 'keep'] as const;
+
+/** The line above a delete_agent call's arguments in Needs you: the agent and what happens to its helpers and worktree. */
+export function describeDeleteCall(args: Record<string, unknown>): string {
+  const agent = typeof args.agent === 'string' ? args.agent : 'an agent';
+  const project = typeof args.project === 'string' ? ` in ${args.project}` : '';
+  const force = args.force === true;
+  const worktree = args.worktree === 'keep'
+    ? 'Its files stay on disk.'
+    : `Its worktree and branch are removed${force ? ', even with uncommitted or unpushed work' : ', unless it has uncommitted or unpushed work'}.`;
+  const helpers = args.helpers === 'dispose'
+    ? `Its helpers, and theirs, are disposed with their worktrees and branches${force ? ', even with uncommitted or unpushed work' : ', unless any has uncommitted or unpushed work'}.`
+    : args.helpers === 'keep' ? 'Its helpers stay as ordinary agents.' : 'If it has helpers, nothing is deleted.';
+  return `Delete ${agent}${project}. It is stopped if it is running, and so are quick agents running in its worktree. ${worktree} ${helpers}`;
+}
+
+function deletedFacts(name: string, worktree: string, result: AgentDeleteResult): Record<string, unknown> {
+  return {
+    status: 'deleted',
+    agent: name,
+    worktree: worktree === 'keep' ? 'kept on disk' : 'removed',
+    ...(result.helpers && { helpers: { message: result.helpers.message, ids: result.helpers.helperIds ?? [] } }),
+    ...(result.stoppedQuickAgents && { stoppedQuickAgents: result.stoppedQuickAgents }),
+    message: result.message,
+  };
+}
+
+/** A refusal with what stopped it, for the caller to act on or take to the user. */
+function refusalFacts(name: string, result: AgentDeleteResult): Record<string, unknown> {
+  const facts: Record<string, unknown> = { status: 'refused', agent: name, message: result.message };
+  if (result.needsHelperChoice) {
+    facts.helpers = result.needsHelperChoice.helpers;
+    facts.next = 'Call again with helpers: dispose or keep.';
+  }
+  if (result.helpers) {
+    if (result.helpers.blocked?.length) {
+      facts.blockedHelpers = result.helpers.blocked.map((b) => ({ id: b.agentId, name: b.name, ...b.checks }));
+      facts.next = result.helpers.blocked.some((b) => b.checks.error)
+        ? 'A helper couldn\'t be checked, which force doesn\'t override. Ask the user, or keep the helpers.'
+        : 'Ask the user, save the helpers\' work, keep the helpers, or call again with force: true.';
+    }
+    if (result.helpers.failed?.length) {
+      facts.disposedHelpers = result.helpers.helperIds ?? [];
+      facts.failedHelpers = result.helpers.failed;
+    }
+  }
+  if (result.worktree) {
+    const w = result.worktree;
+    facts.worktree = {
+      branch: w.branch,
+      uncommittedFiles: w.uncommittedFiles.length,
+      unpushedCommits: w.unpushedCommits.length,
+      ...(w.checkError && { checkError: w.checkError }),
+    };
+    facts.next = w.checkError
+      ? 'Its worktree couldn\'t be checked, which force doesn\'t override. Call again with worktree: keep to leave its files on disk, or ask the user.'
+      : 'Ask the user, call again with worktree: keep to leave its files on disk, or with force: true to lose the work.';
+  }
+  return facts;
 }
 
 const S = { type: 'string' } as const;
@@ -536,6 +608,48 @@ export function registerManagedTools(): void {
         appLog('core:mcp', 'warn', 'restart_agent: restart after the turn failed', { meta: { callerId, agentId: t.agentId, error: err instanceof Error ? err.message : String(err) } });
       });
       return json({ status: 'waiting_for_turn_end', note: `${t.agentName} is mid-turn. It restarts when the turn ends, or not at all if it is still working after 30 minutes. Check with get_agent_setup.` });
+    });
+
+  describeCallsForAsk('delete_agent', describeDeleteCall);
+
+  tool('delete_agent', DELETE_GRANT,
+    'Delete a durable agent. Nothing is shown to the user to confirm: the call says what happens, and a refusal changes nothing and says why. '
+      + 'helpers (needed when it has any, in any project): dispose removes their worktrees and branches, helpers of helpers too, and stops if any has uncommitted or unpushed work; keep makes them ordinary agents. '
+      + 'worktree: delete removes its worktree and branch, and stops if it has uncommitted or unpushed work; keep only removes it from Clubhouse and leaves its files on disk. '
+      + 'force: true goes ahead despite uncommitted or unpushed work in its worktree and its helpers\' worktrees; a check that couldn\'t run still stops it. Quick agents running in its worktree are stopped. Never yourself or the Dispatcher.',
+    {
+      project: PROJECT,
+      agent: AGENT,
+      helpers: { type: 'string', enum: [...HELPER_CHOICES], description: 'What happens to its helpers: dispose or keep. Needed when it has any.' },
+      worktree: { type: 'string', enum: [...WORKTREE_CHOICES], description: 'delete: remove its worktree and branch. keep: leave its files on disk.' },
+      force: { type: 'boolean', description: 'Delete despite uncommitted or unpushed work. Default false.' },
+    },
+    ['project', 'agent', 'worktree'],
+    async (callerId, args) => {
+      const helpers = optionalString(args, 'helpers');
+      if (helpers !== undefined && !(HELPER_CHOICES as readonly string[]).includes(helpers)) throw new ArgError(`helpers must be one of ${HELPER_CHOICES.join(', ')}`);
+      const worktree = requireString(args, 'worktree');
+      if (!(WORKTREE_CHOICES as readonly string[]).includes(worktree)) throw new ArgError(`worktree must be one of ${WORKTREE_CHOICES.join(', ')}`);
+      const force = optionalBoolean(args, 'force') === true;
+      const t = await resolveAgent(args);
+      if (t.agentId === callerId) throw new ArgError('You can\'t delete yourself.');
+      // Only an agent the grant check saw: it resolves the same arguments, and a name it couldn't place got no check.
+      const [checked] = [...(await resolveArgTargets(callerId, DELETE_GRANT, args)).values()];
+      if (!checked?.some((target) => !!target.projectPath && path.resolve(target.projectPath) === path.resolve(t.project.path))) {
+        throw new ArgError(`No agent "${requireString(args, 'agent')}" in ${t.project.name}.`);
+      }
+      // Windows drop the deleted agent and disposed helpers on the agents.json change (syncDurableMembership).
+      const result = await deleteAgent(t.project.path, t.agentId, {
+        mode: worktree === 'keep' ? 'unregister' : 'force',
+        helpers: helpers as HelperDeleteChoice | undefined,
+        forceHelpers: force,
+        checkWorktree: true,
+        forceWorktree: force,
+      });
+      appLog('core:mcp', 'info', result.ok ? 'delete_agent deleted an agent' : 'delete_agent refused', {
+        meta: { callerId, agentId: t.agentId, worktree, helpers, force, ok: result.ok },
+      });
+      return result.ok ? json(deletedFacts(t.agentName, worktree, result)) : { ...json(refusalFacts(t.agentName, result)), isError: true };
     });
 }
 

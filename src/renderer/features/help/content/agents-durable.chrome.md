@@ -77,7 +77,7 @@ An agent can also ask for a permission it doesn't have, with its reason. Allowin
 
 Your templates can set permissions too, under **Clubhouse permissions** in the template's settings. Agents made from the template get them, marked "From its template", and saving a change offers to push it to the agents made from it. Your own changes on an agent stay on top, and **Reset to defaults** clears only yours. A helper template's permissions never give a helper more than its orchestrator has. In **New agent**, each template says in one line what agents made from it can do through Clubhouse, and **Copy another agent** brings its permissions with it.
 
-For an orchestrator, **Create agents** and **Remove helpers** follow its approval setting on the Helpers page, and changing either here changes that setting.
+For an orchestrator, **Create agents** and **Delete agents and remove helpers** follow its approval setting on the Helpers page, and changing either here changes that setting.
 
 A connection between two agents goes each way on its own: in each direction, the agent that sends is limited to the tools that direction allows. Open a connection with **Manage** on the agent's **Connections** card to see both directions side by side, turn tools on or off for each, and use **Make two-way** when it only goes one way. A canvas wire's tool permissions change the same settings, for that wire's direction. A new connection lets the sender read the other agent and message it; **Clear** and **Compact** start off. Connections from before this, and the wires between an orchestrator and its helpers, keep what they had.
 

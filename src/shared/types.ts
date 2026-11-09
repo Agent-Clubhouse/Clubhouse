@@ -1780,6 +1780,23 @@ export interface DeleteResult {
   message: string;
 }
 
+/** How a durable agent is deleted: what happens to its worktree and branch. */
+export type AgentDeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
+
+/** The result of deleting a durable agent with its helpers (#3182). */
+export interface AgentDeleteResult extends DeleteResult {
+  /** The agent was deleted (or removed from the list, for unregister). */
+  deleted?: boolean;
+  /** It has live helpers and no choice was given. Nothing changed. */
+  needsHelperChoice?: { helpers: Array<{ id: string; name: string }> };
+  /** What settling the helpers did, when it ran. */
+  helpers?: HelperCascadeResult;
+  /** The worktree check that refused the delete. Nothing changed. */
+  worktree?: WorktreeStatus;
+  /** Quick agents that were running in its worktree and were stopped. */
+  stoppedQuickAgents?: string[];
+}
+
 // ── Canvas state sync (main window ↔ pop-out windows) ─────────────────
 
 export type CanvasMutation =
