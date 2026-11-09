@@ -4,6 +4,9 @@ import type { DispatcherState } from '../../shared/dispatcher-types';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import { clearDispatcherChat, type ClearChatResult } from '../services/dispatcher/dispatcher-clear-chat';
 import { installGroupChat } from '../services/dispatcher/dispatcher-news';
+import { forgetEverything } from '../services/dispatcher/dispatcher-forget';
+import { listConnectableAgents } from '../services/dispatcher/dispatcher-connected-agents';
+import type { ConnectableAgent, ForgetEverythingResult } from '../../shared/dispatcher-settings-page';
 import { getDispatcherUsageSplit } from '../services/dispatcher/dispatcher-usage';
 import type { DispatcherUsageSplit } from '../../shared/dispatcher-usage';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -39,6 +42,9 @@ export function registerDispatcherHandlers(): void {
   // What it used today, conversations apart from background work (#3040).
   ipcMain.handle(IPC.DISPATCHER.GET_USAGE, (): DispatcherUsageSplit => getDispatcherUsageSplit());
 
+  // Settings > Dispatcher (#3046).
+  ipcMain.handle(IPC.DISPATCHER.FORGET_EVERYTHING, (): Promise<ForgetEverythingResult> => forgetEverything());
+  ipcMain.handle(IPC.DISPATCHER.LIST_CONNECTABLE_AGENTS, (): Promise<ConnectableAgent[]> => listConnectableAgents());
   // Personality and first-run setup (#3047).
   ipcMain.handle(IPC.DISPATCHER.SET_PERSONALITY, withValidatedArgs(
     [objectArg()],

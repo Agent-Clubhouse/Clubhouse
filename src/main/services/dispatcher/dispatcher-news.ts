@@ -17,8 +17,8 @@
  *
  * The triage state (open requests, news held for a check-in, what was shown)
  * is kept in `dispatcher-news.json` beside the Dispatcher's folders, not in
- * memory: Clear chat and Forget everything leave it alone, and it survives a
- * restart.
+ * memory, and survives a restart. Clear chat leaves it alone; Forget
+ * everything drops the held news (clearHeldNews).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -122,6 +122,18 @@ export function noteUserRequest(now = Date.now()): void {
 /** News waiting for the next check-in, for the check-in itself and for tests. */
 export function heldNews(): readonly HeldNews[] {
   return readState().held;
+}
+
+/**
+ * Forget everything (#3046): drop the news held for the next check-in, so a
+ * later check-in doesn't bring back what was forgotten. Open requests and what
+ * was shown stay. Returns how many were dropped.
+ */
+export function clearHeldNews(): number {
+  const current = readState();
+  const dropped = current.held.length;
+  if (dropped > 0) writeState({ ...current, held: [] });
+  return dropped;
 }
 
 // ── The delivery step ─────────────────────────────────────────────────────

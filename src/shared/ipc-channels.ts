@@ -682,6 +682,10 @@ export const IPC = {
     SET_BEHAVIOR: 'dispatcher:set-behavior',
     /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
     CLEAR_CHAT: 'dispatcher:clear-chat',
+    /** Forget everything (#3046): clears its memory and held news only. Resolves with a ForgetEverythingResult. */
+    FORGET_EVERYTHING: 'dispatcher:forget-everything',
+    /** Every agent that can connect to it, across projects (#3046). Resolves with ConnectableAgent[]. */
+    LIST_CONNECTABLE_AGENTS: 'dispatcher:list-connectable-agents',
     /** Personality (#3047): `{ preset, text }`. Resolves with the DispatcherState. */
     SET_PERSONALITY: 'dispatcher:set-personality',
     /** First-run setup (#3047): saves name, look, provider, Behavior and personality. Resolves with the DispatcherState. */
