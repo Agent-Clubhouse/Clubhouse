@@ -62,6 +62,7 @@ describe('readMobileChatLink (#3208)', () => {
   it('tells a missing path from one it refuses', async () => {
     expect(await link('Some/Missing/')).toEqual({ version: 1, type: 'missing' });
     expect(await link('src/main.ts', 'nobody')).toEqual({ version: 1, type: 'missing' });
+    expect(await link('   ')).toEqual({ version: 1, type: 'missing' });
     // A network share is never looked up.
     expect(await link('//fileserver/share/notes.md')).toEqual({ version: 1, type: 'not_allowed' });
     expect(await link('file://fileserver/share/notes.md')).toEqual({ version: 1, type: 'not_allowed' });
@@ -91,6 +92,14 @@ describe('readMobileChatLink (#3208)', () => {
   it('decodes a percent-encoded href and drops a #heading', async () => {
     expect(await link('Some%20Folder/00_Summary.md#next-steps')).toMatchObject({ type: 'file', path: real(worktree, 'Some Folder', '00_Summary.md') });
     expect(await link('Some%20Folder/')).toMatchObject({ type: 'directory', name: 'Some Folder', entries: [{ name: '00_Summary.md', kind: 'file', size: 10 }] });
+  });
+
+  it('keeps a + in a name as it is: it is not a space', async () => {
+    fs.writeFileSync(path.join(worktree, 'C++ notes.md'), '# C++\n');
+    expect(await link('C++ notes.md')).toMatchObject({ type: 'file', name: 'C++ notes.md' });
+    expect(await link('C++%20notes.md')).toMatchObject({ type: 'file', name: 'C++ notes.md' });
+    // Sent as the query string itself, %2B is the +.
+    expect(await readMobileChatLink(new URLSearchParams('href=C%2B%2B%20notes.md'), 'a1', on)).toMatchObject({ type: 'file', name: 'C++ notes.md' });
   });
 
   it('takes the platform separator, so a Windows agent\'s backslashes resolve there', async () => {

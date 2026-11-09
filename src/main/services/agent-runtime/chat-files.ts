@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import type { ChatFileInfo, ChatFileKind, ChatFilePreview, ChatFileUnavailable, ChatLocalImageResult } from '../../../shared/chat';
 import { CHAT_FILE_PREVIEW_MEDIA_MAX_BYTES, CHAT_FILE_PREVIEW_PDF_MAX_BYTES, CHAT_FILE_PREVIEW_TEXT_MAX_BYTES, CHAT_MEDIA_MAX_BYTES, CHAT_MEDIA_MAX_PIXELS, mediaDimensions, sniffMediaType } from '../../../shared/chat';
 import { agentRegistry } from '../agent-registry';
-import { isNetworkOrDevicePath, resolveLocalPath, storeMedia } from './chat-media';
+import { lookUpLocalPath, resolveLocalPath, storeMedia } from './chat-media';
 import { agentMediaDir } from './chat-transcript';
 import { agentSessionOutputRoots } from './session-output';
 
@@ -295,14 +295,17 @@ export async function inspectChatLink(agentId: string, href: string): Promise<Ch
   for (const candidate of candidates) {
     if (!candidate) continue;
     const cleaned = cleanCandidate(candidate);
-    // A file: URL naming another host, or one that won't parse.
-    if (!cleaned) { refused = true; continue; }
-    const base = path.isAbsolute(cleaned) ? undefined : await agentBase(agentId);
-    const real = await resolveLocalPath(cleaned, base);
-    if (!real) {
-      if (await refusedPath(cleaned, base)) refused = true;
+    if (!cleaned) {
+      // A file: URL naming another host, or one that won't parse; blank is just nothing.
+      if (/^\s*file:/i.test(candidate)) refused = true;
       continue;
     }
+    const found = await lookUpLocalPath(cleaned, path.isAbsolute(cleaned) ? undefined : await agentBase(agentId));
+    if (!('real' in found)) {
+      if (found.refused) refused = true;
+      continue;
+    }
+    const real = found.real;
     const st = await fsp.stat(real).catch((): null => null);
     if (st?.isDirectory()) return { type: 'directory', path: real };
     if (!st?.isFile()) {
@@ -323,21 +326,6 @@ export async function inspectChatLink(agentId: string, href: string): Promise<Ch
     }
   }
   return refused ? { type: 'not_allowed' } : { type: 'missing' };
-}
-
-/**
- * Why `resolveLocalPath` found nothing: true when it refused the path (a NUL
- * byte, a network or device path) or the path is there but can't be looked
- * up, false when it just isn't there.
- */
-async function refusedPath(cleaned: string, base: string | undefined): Promise<boolean> {
-  if (cleaned.includes('\0') || isNetworkOrDevicePath(cleaned)) return true;
-  if (!path.isAbsolute(cleaned) && !base) return false;
-  if (base && isNetworkOrDevicePath(base)) return true;
-  const absolute = base ? path.resolve(base, cleaned) : path.resolve(cleaned);
-  if (isNetworkOrDevicePath(absolute)) return true;
-  const code = await fsp.realpath(absolute).then((): undefined => undefined, (err: NodeJS.ErrnoException) => err.code);
-  return code === 'EACCES' || code === 'EPERM' || code === 'ELOOP';
 }
 
 /** `%20` and the like decoded, or undefined when there's nothing to decode (or it won't). */

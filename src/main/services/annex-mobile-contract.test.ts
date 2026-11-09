@@ -109,6 +109,7 @@ vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
   // Chat links (#3208): what desktop resolution answers for each href the phone sends.
   inspectChatLink: async (_agentId: string, href: string) => (({
     'docs/guide.md#setup': { type: 'file', path: '/work/app/docs/guide.md', kind: 'text', size: 1234 },
+    'docs/C++ notes.md': { type: 'file', path: '/work/app/docs/C++ notes.md', kind: 'text', size: 88 },
     'docs/screenshot.png': { type: 'file', path: '/work/app/docs/screenshot.png', kind: 'image', size: 48213 },
     'docs': { type: 'directory', path: '/work/app/docs' },
     'docs/': { type: 'directory', path: '/work/app/docs' },
@@ -2157,9 +2158,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(folder.response.body.entries.map((e: { name: string }) => e.name)).toEqual(['guide.md', 'images', 'latest.md', 'screenshot.png']);
     expect((await exchange('GET', route('docs'))).response).toEqual(folder.response);
     fixtures.set('chat-links.json', {
-      note: 'href is the link as the agent wrote it, URL-encoded once more for the query. Resolved like desktop chat links: relative against the agent\'s worktree, absolute as is, percent-decoded, #heading dropped. A folder with or without its trailing slash answers the same. A listing is sorted by name and capped at capabilities.chatLinks.maxEntries, with truncated: true when cut. Symlinks are not followed.',
+      note: 'href is the link as the agent wrote it, encoded once more for the query as encodeURIComponent does: a + is %2B (a bare + would be read as a space), a space %20. Resolved like desktop chat links: relative against the agent\'s worktree, absolute as is, percent-decoded, #heading dropped. A folder with or without its trailing slash answers the same. A listing is sorted by name and capped at capabilities.chatLinks.maxEntries, with truncated: true when cut. Symlinks are not followed.',
       file: await exchange('GET', route('docs/guide.md#setup')),
       image: await exchange('GET', route('docs/screenshot.png')),
+      plusInName: await exchange('GET', route('docs/C++ notes.md')),
       directory: folder,
       directoryEncoded: await exchange('GET', route('Release%20Notes/')),
       missing: await exchange('GET', route('docs/old.md')),

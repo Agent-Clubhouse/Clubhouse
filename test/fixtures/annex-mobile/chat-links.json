@@ -136,5 +136,22 @@
       "status": 200
     }
   },
-  "note": "href is the link as the agent wrote it, URL-encoded once more for the query. Resolved like desktop chat links: relative against the agent's worktree, absolute as is, percent-decoded, #heading dropped. A folder with or without its trailing slash answers the same. A listing is sorted by name and capped at capabilities.chatLinks.maxEntries, with truncated: true when cut. Symlinks are not followed."
+  "note": "href is the link as the agent wrote it, encoded once more for the query as encodeURIComponent does: a + is %2B (a bare + would be read as a space), a space %20. Resolved like desktop chat links: relative against the agent's worktree, absolute as is, percent-decoded, #heading dropped. A folder with or without its trailing slash answers the same. A listing is sorted by name and capped at capabilities.chatLinks.maxEntries, with truncated: true when cut. Symlinks are not followed.",
+  "plusInName": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/link?href=docs%2FC%2B%2B%20notes.md"
+    },
+    "response": {
+      "body": {
+        "kind": "text",
+        "name": "C++ notes.md",
+        "path": "/work/app/docs/C++ notes.md",
+        "size": 88,
+        "type": "file",
+        "version": 1
+      },
+      "status": 200
+    }
+  }
 }

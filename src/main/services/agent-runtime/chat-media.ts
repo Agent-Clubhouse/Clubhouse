@@ -57,14 +57,35 @@ export function decodeBase64Image(value: string): Uint8Array | undefined {
  * regular file before reading.
  */
 export async function resolveLocalPath(filePath: string, base?: string): Promise<string | undefined> {
-  if (!filePath || filePath.includes('\0')) return undefined;
+  const found = await lookUpLocalPath(filePath, base);
+  return 'real' in found ? found.real : undefined;
+}
+
+/**
+ * `resolveLocalPath`, saying why nothing resolved: `refused` when the path was
+ * never looked up (a NUL byte, a network or device path) or is there but can't
+ * be (EACCES, EPERM, ELOOP); not when it just isn't there or a relative path
+ * has no base.
+ */
+export async function lookUpLocalPath(filePath: string, base?: string): Promise<{ real: string } | { refused: boolean }> {
+  if (!filePath) return { refused: false };
+  if (filePath.includes('\0')) return { refused: true };
   // UNC and device paths (\\host\share, //host/share, \\?\, \\.\) would reach the network
   // or a device before any check (a stalled share blocks the lookup): never touch them.
-  if (isNetworkOrDevicePath(filePath)) return undefined;
-  if (!path.isAbsolute(filePath) && !(base && path.isAbsolute(base) && !isNetworkOrDevicePath(base))) return undefined;
+  if (isNetworkOrDevicePath(filePath)) return { refused: true };
+  if (!path.isAbsolute(filePath)) {
+    if (!base || !path.isAbsolute(base)) return { refused: false };
+    if (isNetworkOrDevicePath(base)) return { refused: true };
+  }
   const absolute = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(base!, filePath);
-  if (isNetworkOrDevicePath(absolute)) return undefined;
-  return (await fsp.realpath(absolute).catch((): null => null)) ?? undefined;
+  if (isNetworkOrDevicePath(absolute)) return { refused: true };
+  try {
+    return { real: await fsp.realpath(absolute) };
+  } catch (err) {
+    // telemetry-exempt: the caller answers missing or refused.
+    const code = (err as NodeJS.ErrnoException).code;
+    return { refused: code === 'EACCES' || code === 'EPERM' || code === 'ELOOP' };
+  }
 }
 
 /**
