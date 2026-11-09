@@ -95,30 +95,3 @@ export function cleanChatText(text: string): string {
 export function cleanAgentNews(text: string): string {
   return strip(text, true);
 }
-
-/** At most this many characters for one interjection, after the sentence cut. */
-export const INTERJECTION_MAX_CHARS = 320;
-
-/** Where one sentence ends: closing punctuation (and a closing quote or bracket), then space. */
-const SENTENCE_BREAK = /(?<=[.!?]["')\]]*)\s+/;
-
-/**
- * The first `max` sentences of a text, on one line, cut to `maxChars` at a
- * word boundary. An interjection is one or two sentences.
- */
-export function clampSentences(text: string, max = 2, maxChars = INTERJECTION_MAX_CHARS): string {
-  const flat = text.replace(/\s*\n+\s*/g, ' ').replace(/^[-*•]\s+/, '').trim();
-  const sentences = flat.split(SENTENCE_BREAK).map((s) => s.trim()).filter(Boolean);
-  let out = sentences.slice(0, Math.max(1, max)).join(' ');
-  if (out.length > maxChars) {
-    const cut = out.slice(0, maxChars - 1);
-    const space = cut.lastIndexOf(' ');
-    out = `${(space > maxChars / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:]+$/, '')}…`;
-  }
-  return out;
-}
-
-/** An agent's news as one brief interjection: cleaned, then one or two sentences. Empty when nothing is left. */
-export function toInterjection(text: string): string {
-  return clampSentences(cleanAgentNews(text));
-}
