@@ -281,20 +281,19 @@ const pairLabel = (a: OrchestratorEntry, b: OrchestratorEntry) => `${a.agent.nam
 const local = (agentId: string) => ({ agentId });
 
 /**
- * Whether the tools on a direction are the Dispatcher's to set (#3215): its
- * own link, which nothing else binds (a canvas wire, the user's link), with
- * no tools the user set. A direction with no tools saved yet counts as its own.
+ * Whether the tools on one of the Dispatcher's links are its to set (#3215):
+ * nothing else binds the pair (a canvas wire, the user's link), and the user
+ * set no tools on it. A direction with no tools saved yet counts as its own.
  */
-function toolsAreOurs(pair: Pair, isOurs: boolean): boolean {
-  if (!isOurs) return false;
+function toolsAreOurs(pair: Pair): boolean {
   const entry = getConnectionDirection(local(pair.agentId), local(pair.targetId));
   if (entry?.link || (entry && entry.setBy !== 'dispatcher')) return false;
   return !isBound(pair) || listSoleOwnedPairs(DISPATCHER_CONNECTION_SOURCE_ID).some((p) => p.agentId === pair.agentId && p.targetId === pair.targetId);
 }
 
 /** One direction read back: what its sender may use, and whether the tools are still the Dispatcher's to change. */
-function directionReadback(pair: Pair, isOurs: boolean): { tools: DirectionTools; tools_yours: boolean } {
-  return { tools: readLocalDirectionTools(pair.agentId, pair.targetId), tools_yours: toolsAreOurs(pair, isOurs) };
+function directionReadback(pair: Pair): { tools: DirectionTools; tools_yours: boolean } {
+  return { tools: readLocalDirectionTools(pair.agentId, pair.targetId), tools_yours: toolsAreOurs(pair) };
 }
 
 /** Save the Dispatcher's tools on one direction: the ones it named, else what a new connection starts with. */
@@ -334,7 +333,7 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
       const label = pairLabel(ends.get(pair.agentId)!, ends.get(pair.targetId)!);
       const entry = getConnectionDirection(local(pair.agentId), local(pair.targetId));
       const usersTools = !!entry && (entry.setBy !== 'dispatcher' || !!entry.link);
-      if (isOurs(pair) ? !toolsAreOurs(pair, true) : usersTools) {
+      if (isOurs(pair) ? !toolsAreOurs(pair) : usersTools) {
         if (allow[i]) throw userToolsRefusal(label);
         continue;
       }
@@ -381,7 +380,7 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
       result: {
         links: pairs.map((p, i) => ({
           from: p.agentId, to: p.targetId, label: pairLabel(ends.get(p.agentId)!, ends.get(p.targetId)!), outcome: outcomes[i],
-          ...directionReadback(p, true),
+          ...directionReadback(p),
         })),
       },
     };
@@ -428,11 +427,11 @@ export async function setConnectionToolsForLink(actorId: string, args: Record<st
       if (!isOurs) {
         throw new DispatcherControlError('not_dispatcher_owned', `You didn't make the link from "${auditString(pair.agentId)}" to "${auditString(pair.targetId)}", so its tools can't be changed here. Nothing changed.`);
       }
-      if (!toolsAreOurs(pair, true)) throw userToolsRefusal(`${nameOf(pair.agentId)} → ${nameOf(pair.targetId)}`);
+      if (!toolsAreOurs(pair)) throw userToolsRefusal(`${nameOf(pair.agentId)} → ${nameOf(pair.targetId)}`);
     }
     const before = Object.fromEntries(pairs.map((p) => [`${auditString(p.agentId)}>${auditString(p.targetId)}`, readLocalDirectionTools(p.agentId, p.targetId).allowed.join(',')]));
     for (const [i, pair] of pairs.entries()) await writeDirectionTools(pair, allow[i]);
-    const links = pairs.map((p) => ({ from: p.agentId, to: p.targetId, label: `${nameOf(p.agentId)} → ${nameOf(p.targetId)}`, ...directionReadback(p, true) }));
+    const links = pairs.map((p) => ({ from: p.agentId, to: p.targetId, label: `${nameOf(p.agentId)} → ${nameOf(p.targetId)}`, ...directionReadback(p) }));
     return {
       before,
       after: Object.fromEntries(links.map((l) => [`${auditString(l.from)}>${auditString(l.to)}`, l.tools.allowed.join(',')])),
@@ -502,7 +501,7 @@ export async function listOrchestratorControls(actorId: string, args: Record<str
         // The user drew this pair too: their wire stays whatever happens to this link.
         ...(isBound(c) && !owned.some((p) => p.agentId === c.agentId && p.targetId === c.targetId) && { also_user_wire: true }),
         // What its sender may use now, and whether set_connection_tools can change it (#3215).
-        ...directionReadback(c, true),
+        ...directionReadback(c),
         created_at: c.createdAt,
       };
     });

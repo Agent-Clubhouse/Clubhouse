@@ -679,7 +679,8 @@ export async function callTool(
 
   if (isAgentWake(binding, parsed.suffix) && !wakeOffered(agentId, binding)) {
     recordGrantDecision({ agentId, toolName, decision: 'refused', reason: 'no_grant', actions: ['agent.wake'], targetKind: 'connection' });
-    return refuse('tool_denied', WAKE_OFF_MESSAGE);
+    // Across machines wake stays the Dispatcher's (D232): no switch here opens it.
+    return refuse('tool_denied', remoteMachineOf(binding.targetId) ? 'Only the Dispatcher can wake an agent on another computer.' : WAKE_OFF_MESSAGE);
   }
 
   // Checked at call time too: the listing drops these, but a client may have a stale list or know the name.
