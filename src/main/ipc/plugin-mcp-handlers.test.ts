@@ -7,7 +7,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
-vi.mock('../services/clubhouse-mcp/plugin-caller-check', () => ({ checkPluginCaller: vi.fn(async () => null) }));
+vi.mock('../services/clubhouse-mcp/plugin-caller-check', () => ({ checkPluginCaller: vi.fn(async () => null), CALL_OVER: 'over' }));
 
 vi.mock('../services/clubhouse-mcp/plugin-tool-registry', () => ({
   registerPluginTools: vi.fn(),
