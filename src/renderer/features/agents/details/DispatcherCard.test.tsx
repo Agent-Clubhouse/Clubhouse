@@ -163,8 +163,16 @@ describe('the Dispatcher card (#3049)', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     render(<Harness initial={false} />);
     fireEvent.click(screen.getByTestId('dispatcher-card-switch'));
-    expect(await screen.findByTestId('dispatcher-card-asking')).toBeInTheDocument();
-    await act(async () => { vi.advanceTimersByTime(TURNING_ON_MS + 10); });
+    // "Asking" shows while the card loads too, before the switch's save returns and the
+    // turning-on wait starts. Advancing time then fires nothing (#3163). The wait has
+    // started once its card-changed listener joins the card read's: two listeners.
+    await waitFor(() => expect(cardListeners).toHaveLength(2));
+    await waitFor(() => expect(window.clubhouse.dispatcher.getAgentCard).toHaveBeenCalledTimes(1));
+    // Well inside the wait, with the card read back empty: still asking.
+    await act(async () => { vi.advanceTimersByTime(TURNING_ON_MS / 2); });
+    expect(screen.getByTestId('dispatcher-card-asking')).toBeInTheDocument();
+    // Past it: no description yet.
+    await act(async () => { vi.advanceTimersByTime(TURNING_ON_MS / 2 + 10); });
     expect(await screen.findByTestId('dispatcher-card-none')).toHaveTextContent('No description yet.');
   });
 
