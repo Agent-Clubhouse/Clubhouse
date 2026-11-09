@@ -13,7 +13,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { getProvider } from '../orchestrators/registry';
 import { isHeadlessCapable, type HeadlessCommandResult, type OrchestratorProvider } from '../orchestrators/types';
-import { resolveStructuredSpawn } from '../orchestrators/adapters/structured-spawn';
+import { killStructuredChild, resolveStructuredSpawn } from '../orchestrators/adapters/structured-spawn';
 import { cleanSpawnEnv, getShellEnvironment } from '../util/shell';
 import type { StreamJsonEvent } from './jsonl-parser';
 
@@ -143,7 +143,10 @@ export async function runHeadlessPrompt(req: HeadlessPromptRequest, deps: Headle
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (proc.exitCode === null && !proc.killed) proc.kill();
+      // The whole tree: a `.cmd` shim runs under cmd.exe, and proc.kill() would
+      // stop only cmd.exe and leave the CLI running (#3151).
+      // It does nothing for a child that has already exited.
+      void killStructuredChild(proc);
       resolve(result);
     };
     const timer = setTimeout(() => finish({ ok: false, error: 'It took too long.' }), req.timeoutMs ?? HEADLESS_PROMPT_TIMEOUT_MS);

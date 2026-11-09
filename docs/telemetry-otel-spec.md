@@ -1383,7 +1383,13 @@ The `tel.*` signals are also written to local files, so flow timings and classif
   So turning a destination on again offers only what was recorded while it was off, and nothing is sent twice.
 - **Stopping.** A failure stops the backfill, and it never retries on its own. An exporter that doesn't answer within its export timeout counts as a failure. Cancelling stops between slices. Either way the offer stays, and starting it again by hand resumes after the progress marks: nothing repeated, nothing skipped. A second start while one runs is refused.
 - **Turning the destination off ends the offer.** It stops any backfill and marks everything up to that moment as sent, so history that wasn't backfilled then is never offered.
-- **Known limit, Azure Monitor.** Its exporter keeps batches it can't send (offline, throttled, server errors) in its own disk queue and reports success. A backfill to Azure while it can't reach the service fills that queue, under the queue's own limits, instead of stopping.
+- **Azure Monitor's disk queue.** Its exporter keeps batches it can't send (offline, throttled, server errors) in its own disk queue and reports success. That queue is bounded:
+  - the exporter (beta.46) won't write past 50 MB and cleans up after 48 hours, neither configurable;
+  - Clubhouse prunes the folder to 20 MB and 48 hours, oldest first, every 15 minutes (`offline.ts`, §6.7).
+
+  A backfill still never leans on it:
+  - **Before starting:** a backfill to Azure starts only if Azure is reachable. That means a live export succeeded in the last ten minutes, none has failed since, and the offline queue is empty. Otherwise it's refused (`not_reachable`) and the offer stays.
+  - **While sending:** if the queue grows after a slice, Azure is queuing rather than sending, so the backfill stops (`not_reachable`). That slice counts as sent, because the exporter delivers it when Azure is back, and the rest waits for the user to send it again.
 - **Where the code lives.** The runtime method and converter are in the lazily loaded SDK chunk. `backfill.ts` is in the main bundle and imports no OpenTelemetry. The Settings offer comes in a later part.
 
 **Diagnostic lines** ([#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299), part of [#2295](https://github.com/Agent-Clubhouse/Clubhouse/issues/2295)). A local-only tier for the text that signals can't carry: error messages, paths, raw ids, stderr. `t:"diag"` lines share the file, chunking, rolling eviction and retention with the signals, but are not telemetry.
