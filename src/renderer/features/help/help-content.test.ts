@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { HELP_SECTIONS, CHROME_HELP_SECTIONS, getHelpSections } from './help-content';
+import { HELP_SECTIONS, CHROME_HELP_SECTIONS, DISPATCHER_TOPIC, getHelpSections } from './help-content';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 describe('help-content', () => {
@@ -149,7 +149,7 @@ describe('help-content in the new shell', () => {
 
   const topics = () => CHROME_HELP_SECTIONS.flatMap((s) => s.topics);
   // Personas are prompts, not descriptions of the app.
-  const articles = () => CHROME_HELP_SECTIONS.filter((s) => !['personas'].includes(s.id)).flatMap((s) => s.topics);
+  const articles = () => [...CHROME_HELP_SECTIONS.filter((s) => !['personas'].includes(s.id)).flatMap((s) => s.topics), DISPATCHER_TOPIC];
   // Articles written for the classic layout that the new shell replaces.
   const RETIRED = /Project Rail|Explorer Rail|Accessory Panel|Dashboard|Home icon|Cmd\+Shift\+H|ghost card/i;
 
@@ -189,7 +189,7 @@ describe('help-content in the new shell', () => {
   });
 
   it('points only at settings pages that exist', () => {
-    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Actions', 'Display & UI', 'External editor', 'Keyboard shortcuts',
+    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Actions', 'Dispatcher', 'Display & UI', 'External editor', 'Keyboard shortcuts',
       'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {
@@ -197,6 +197,28 @@ describe('help-content in the new shell', () => {
         expect(pages.map((p) => p.toLowerCase()), `${t.id}: ${m[1]}`).toContain(page.toLowerCase());
       }
     }
+  });
+
+  it('lists the Dispatcher after Orchestrated helpers in the new shell only (#3053)', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    const agentIds = (sections: typeof HELP_SECTIONS) => sections.find((s) => s.id === 'agents')!.topics.map((t) => t.id);
+    const ids = agentIds(getHelpSections());
+    expect(ids.indexOf('agents-dispatcher')).toBe(ids.indexOf('agents-orchestrated-helpers') + 1);
+    expect(agentIds(HELP_SECTIONS)).not.toContain('agents-dispatcher');
+    expect(DISPATCHER_TOPIC.title).toBe('Dispatcher');
+  });
+
+  it('describes what the Dispatcher does today, in plain words (#3053)', () => {
+    const content = DISPATCHER_TOPIC.content;
+    for (const part of [
+      'on by default', 'Set up later', 'Try it out', 'What else can you do?', 'group chat', 'Check-ins', 'Clear chat',
+      'wakes it', '| Light | Standard | Thorough |', '~/.clubhouse/dispatcher/memory/', 'Forget everything', 'Dispatcher card',
+      'Asking what it does…', 'tell me when main is pushed', 'adds or opens a project', 'Needs you', 'Runs on',
+      'conversations and background work', 'On your phone',
+    ]) expect(content, part).toContain(part);
+    // One identity: no text names a second session or how the work is split.
+    expect(content).not.toMatch(/\bcoordinators?\b|\b(?:second|hidden|background|two|other) (?:agent )?sessions?\b|\bphone ?book\b/i);
+    expect(content).not.toMatch(/\u2014/);
   });
 
   it('lists Annex under Settings on every build, since Annex is stable (#2811)', () => {

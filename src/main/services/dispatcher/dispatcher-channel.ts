@@ -30,7 +30,7 @@ import type { ChatDecision, ChatHold, ChatReport } from './dispatcher-news';
 import { getDispatcherChatPath } from './dispatcher-paths';
 import { isDispatcherEnabled } from './dispatcher-settings';
 import {
-  DISPATCHER_NAME,
+  dispatcherDisplayName,
   getDispatcherAgentId,
   getDispatcherChatAgentId,
   isDispatcherAgentId,
@@ -180,7 +180,7 @@ export async function handOffToDispatcher(callerId: string, request: string): Pr
     senderId: callerId,
     // The coordinator takes every message to the Dispatcher, never the chat.
     targetId: dispatcherInboxId(coordinatorId),
-    targetName: DISPATCHER_NAME,
+    targetName: dispatcherDisplayName(),
     text,
     routed: [{ sender: { agentId: callerId, name: 'Conversation' }, text: request }],
     taskId: `handoff_${Date.now().toString(36)}`,

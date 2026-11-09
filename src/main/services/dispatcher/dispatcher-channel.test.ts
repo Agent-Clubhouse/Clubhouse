@@ -20,7 +20,7 @@ vi.mock('../clubhouse-mcp/tools/dispatcher-delivery', () => ({
   deliverToDispatcher: vi.fn(async (): Promise<unknown> => ({ delivered: true, woke: false })),
 }));
 vi.mock('./dispatcher-service', () => ({
-  DISPATCHER_NAME: 'Dispatcher',
+  dispatcherDisplayName: () => 'Dispatcher',
   getDispatcherAgentId: () => 'coordinator',
   getDispatcherChatAgentId: () => 'chat',
   isDispatcherAgentId: (id: string) => id === 'coordinator',

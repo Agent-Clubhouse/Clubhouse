@@ -211,6 +211,42 @@ describe('gating', () => {
     expect(getSettings().enabled).toBeUndefined();
   });
 
+  it('1.0 default (#3053): a fresh install reaches a working Dispatcher at startup and saves no settings', async () => {
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, offReason: null, agentId: 'durable_1', chatAgentId: 'durable_2' });
+    expect(svc.getDispatcherState().setup).toEqual({ status: 'pending', upgrade: false });
+    // Nothing in dispatcher-settings.json: first-run setup relies on a new install having written nothing.
+    expect(getSettings()).toEqual({});
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('1.0 default (#3053): an upgrade reaches a working Dispatcher at startup, keeps its agent and saves no settings', async () => {
+    // A 0.42 user: other experimental flags saved, nothing for the Dispatcher, and its agent already there.
+    h.experimental = { chat: true, richChatContent: true };
+    fs.mkdirSync(dispatcherDir(), { recursive: true });
+    h.agents.set(dispatcherDir(), [{ id: 'durable_old', name: 'Rosie', color: 'rose', createdAt: 'then', orchestrator: 'codex-cli' }]);
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, offReason: null, agentId: 'durable_old' });
+    expect(svc.getDispatcherState().config).toMatchObject({ name: 'Rosie' });
+    expect(svc.getDispatcherState().setup).toEqual({ status: 'pending', upgrade: true });
+    expect(getSettings()).toEqual({});
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('1.0 default (#3053): an upgrade that turned it off, on its switch or its old flag, stays off and creates nothing', async () => {
+    for (const saved of [{ switchOff: true, flag: {} }, { switchOff: false, flag: { dispatcher: false } }]) {
+      svc._resetDispatcherForTesting();
+      vi.mocked(agentConfig.createDurable).mockClear();
+      await updateSettings(() => (saved.switchOff ? { enabled: false } : {}));
+      h.experimental = saved.flag;
+      await svc.initDispatcher();
+      expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: saved.switchOff ? 'switch_off' : 'experimental_off' });
+      expect(agentConfig.createDurable).not.toHaveBeenCalled();
+      // The saved off is kept as it was.
+      expect(getSettings()).toEqual(saved.switchOff ? { enabled: false } : {});
+    }
+  });
+
   it('waits for first-run CLI detection before creating, so a Codex-only install isn\'t pinned to Claude', async () => {
     let finish!: () => void;
     h.detection = new Promise((resolve) => { finish = resolve; });
@@ -583,6 +619,19 @@ describe('two agents, one identity (#3036)', () => {
     expect(h.agents.get(dispatcherDir())).toHaveLength(1);
     expect(fs.readFileSync(path.join(chatDir(), 'AGENTS.md'), 'utf-8')).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
     expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
+  });
+
+  it('is called by the name the user gave it, cleaned, or "Dispatcher" (#3053)', async () => {
+    expect(svc.dispatcherDisplayName()).toBe('Dispatcher');
+    await svc.setDispatcherEnabled(true);
+    await settle();
+    expect(svc.dispatcherDisplayName()).toBe('Dispatcher');
+    await agentConfig.updateDurable(dispatcherDir(), 'durable_1', { name: '  Rosie\n the  Second ' });
+    await settle();
+    expect(svc.dispatcherDisplayName()).toBe('Rosie the Second');
+    await agentConfig.updateDurable(dispatcherDir(), 'durable_1', { name: '   ' });
+    await settle();
+    expect(svc.dispatcherDisplayName()).toBe('Dispatcher');
   });
 
   it('copies a change from either record onto the other, once', async () => {

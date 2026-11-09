@@ -19,6 +19,7 @@ const { configs, projects, configListeners, dispatcher, unreadablePolicies } = v
     enabled: true,
     id: 'durable_dispatcher' as string | null,
     path: '',
+    name: 'Dispatcher',
     listeners: new Set<() => void>(),
   },
   unreadablePolicies: new Set<string>(),
@@ -57,7 +58,7 @@ vi.mock('./orchestration-policy', async () => {
   };
 });
 vi.mock('./dispatcher/dispatcher-service', () => ({
-  DISPATCHER_NAME: 'Dispatcher',
+  dispatcherDisplayName: () => dispatcher.name,
   getDispatcherAgentId: () => dispatcher.id,
   isDispatcherEnabled: () => dispatcher.enabled,
   isDispatcherPath: (p: string) => p === dispatcher.path,
@@ -129,6 +130,7 @@ beforeEach(() => {
   configListeners.clear();
   unreadablePolicies.clear();
   dispatcher.enabled = true;
+  dispatcher.name = 'Dispatcher';
   dispatcher.id = DISPATCHER;
   dispatcher.path = path.join(os.tmpdir(), 'clubhouse-dispatcher-wires', 'dispatcher');
   dispatcher.listeners.clear();
@@ -213,6 +215,36 @@ describe('Dispatcher wire rebuild', () => {
     expect(toLead()).toBe(before);
     expect(toLead().projectName).toBe('Wardfall Two');
     expect(fromLead().projectName).toBe('Wardfall Two');
+  });
+
+  it('carries the name the user gave the Dispatcher, and relabels the live wires when it is renamed (#3053)', async () => {
+    await rebuild();
+    const toLead = () => bindingManager.getBindingsForAgent(DISPATCHER).find((b) => b.targetId === 'durable_lead')!;
+    const fromLead = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)!;
+    expect(fromLead()).toMatchObject({ label: 'Dispatcher', targetName: 'Dispatcher' });
+    const before = fromLead();
+
+    dispatcher.name = 'Rosie';
+    const result = await rebuild();
+    expect(result.sources.find((s) => s.id === 'dispatcher-wires')).toMatchObject({ created: 0, existing: 2, pruned: 0 });
+    // The same binding, relabelled: the agent's wire to it never dropped.
+    expect(fromLead()).toBe(before);
+    expect(fromLead()).toMatchObject({ label: 'Rosie', agentName: 'lead', targetName: 'Rosie' });
+    expect(toLead()).toMatchObject({ agentName: 'Rosie' });
+  });
+
+  it('a rename alone makes the watcher rebuild the wires (#3053)', async () => {
+    const onWiresChanged = vi.fn(async () => { await rebuild(); });
+    await rebuild();
+    const stop = watchDispatcherWires(onWiresChanged);
+    try {
+      dispatcher.name = 'Rosie';
+      for (const listener of dispatcher.listeners) listener();
+      await vi.waitFor(() => expect(onWiresChanged).toHaveBeenCalledTimes(1));
+      expect(bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)?.label).toBe('Rosie');
+    } finally {
+      stop();
+    }
   });
 
   it('binds nothing while the Dispatcher is off, and removes its wires when it turns off', async () => {

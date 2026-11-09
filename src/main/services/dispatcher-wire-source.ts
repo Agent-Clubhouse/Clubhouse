@@ -26,7 +26,7 @@ import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { resolveOrchestrationPolicies, setOrchestrationPolicy } from './orchestration-policy';
 import {
-  DISPATCHER_NAME,
+  dispatcherDisplayName,
   getDispatcherAgentId,
   isDispatcherEnabled,
   isDispatcherPath,
@@ -42,22 +42,24 @@ export const DISPATCHER_WIRE_SOURCE_ID = 'dispatcher-wires';
 type Pair = { agentId: string; targetId: string };
 
 /**
- * Both directions of one Dispatcher ↔ agent pair. The Dispatcher end is named
- * "Dispatcher" and both carry the agent's project, so the Dispatcher's tool
- * names read `<project>_<agent>` and a message from the agent shows which
- * project it came from. The Dispatcher's own messages are labelled just
- * "Dispatcher" (agent-tools' buildSenderLabel).
+ * Both directions of one Dispatcher ↔ agent pair. The Dispatcher end carries
+ * the name the user gave it, or "Dispatcher" (#3053), and both carry the
+ * agent's project, so the Dispatcher's tool names read `<project>_<agent>` and
+ * a message from the agent shows which project it came from. The Dispatcher's
+ * own messages are labelled with just its name (agent-tools' buildSenderLabel).
+ * A rename changes the signature, so the watcher below relabels the wires.
  */
 function pairBindings(dispatcherId: string, agent: DurableAgentConfig, projectName?: string): PersistedBinding[] {
   const project = projectName ? { projectName } : {};
+  const name = dispatcherDisplayName();
   return [
     {
       agentId: dispatcherId, targetId: agent.id, targetKind: 'agent',
-      label: agent.name, agentName: DISPATCHER_NAME, targetName: agent.name, ...project,
+      label: agent.name, agentName: name, targetName: agent.name, ...project,
     },
     {
       agentId: agent.id, targetId: dispatcherId, targetKind: 'agent',
-      label: DISPATCHER_NAME, agentName: agent.name, targetName: DISPATCHER_NAME, ...project,
+      label: name, agentName: agent.name, targetName: name, ...project,
     },
   ];
 }
