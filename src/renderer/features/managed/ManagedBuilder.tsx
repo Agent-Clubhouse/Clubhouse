@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import {
   CLUBHOUSE_MCP_PART_ID,
   findSkillFolderClash,
@@ -252,6 +252,7 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
   const [preview, setPreview] = useState<ManagedPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showWildcards, setShowWildcards] = useState(false);
+  const preRef = useRef<HTMLPreElement>(null);
   const key = JSON.stringify(draft ?? setup ?? null);
   useEffect(() => {
     let cancelled = false;
@@ -285,17 +286,10 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
           </label>
         </div>
         <div className={`grid ${running ? 'grid-cols-[168px_minmax(0,1fr)_minmax(0,1fr)]' : 'grid-cols-[168px_minmax(0,1fr)]'} border border-surface-0 rounded-md overflow-hidden`}>
-          <ol className="bg-ctp-mantle border-r border-surface-0 text-[11.5px] text-ctp-overlay1">
-            {preview.blocks.map((b, i) => (
-              <li key={`${b.id}-${i}`} className="px-2.5 py-2 border-b border-surface-0">
-                <span className="block text-ctp-subtext1 font-medium">{i + 1} {b.name}</span>
-                {b.builtin ? 'Built-in' : 'Custom'} · lines {b.startLine} to {b.endLine}
-              </li>
-            ))}
-          </ol>
+          <BlockRail blocks={preview.blocks} text={text} preRef={preRef} headed={!!running} />
           <div className="min-w-0">
             {running && <div className="px-3 pt-2 text-xs font-medium text-ctp-subtext1">Next start</div>}
-            <pre className="px-3 py-2 font-mono text-[11.5px] leading-[1.6] text-ctp-text whitespace-pre-wrap break-words min-w-0" data-testid="managed-preview-text">{text || 'No instructions.'}</pre>
+            <pre ref={preRef} className="px-3 py-2 font-mono text-[11.5px] leading-[1.6] text-ctp-text whitespace-pre-wrap break-words min-w-0" data-testid="managed-preview-text">{text ? <PreviewLines text={text} /> : 'No instructions.'}</pre>
           </div>
           {running && (
             <div className="min-w-0 border-l border-surface-0" data-testid="managed-preview-running">
@@ -350,6 +344,87 @@ export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; set
       </div>
       {preview.missing.length > 0 && <p className="text-xs text-ctp-warning">{preview.missing.length} part{preview.missing.length === 1 ? '' : 's'} in this setup no longer exist and are skipped.</p>}
       <OutsideTheSetup preview={preview} />
+    </div>
+  );
+}
+
+/** The preview text, one span per line, so the block rail can find where each line lands after wrapping. */
+function PreviewLines({ text }: { text: string }) {
+  const lines = text.split('\n');
+  return <>{lines.map((line, i) => <span key={i} data-preview-line={i + 1}>{i < lines.length - 1 ? `${line}\n` : line}</span>)}</>;
+}
+
+type BlockSpan = { top: number; height: number } | null;
+
+/**
+ * The blocks beside the preview (#3187): each block's name and line range,
+ * and a thin line per block drawn against the preview lines it covers.
+ * Measured from the rendered lines, so wrapping moves the lines with the
+ * text. The rail and the preview share one scroll, so they scroll together.
+ * Wildcards fill in single-line values, so the ranges hold with them shown.
+ */
+function BlockRail({ blocks, text, preRef, headed }: {
+  blocks: ManagedPreview['blocks'];
+  text: string;
+  preRef: RefObject<HTMLPreElement | null>;
+  /** "Next start" sits above the text, which moves it down without resizing it. */
+  headed: boolean;
+}) {
+  const railRef = useRef<HTMLDivElement>(null);
+  const [spans, setSpans] = useState<BlockSpan[]>([]);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const ranges = blocks.map((b) => `${b.startLine}-${b.endLine}`).join(',');
+  // After commit, not in a layout effect: the preview's ref is set after this rail's layout effects run.
+  useEffect(() => {
+    const rail = railRef.current;
+    const pre = preRef.current;
+    if (!rail || !pre) return;
+    const measure = () => {
+      const base = rail.getBoundingClientRect().top;
+      const rects = (line: number) => pre.querySelector(`[data-preview-line="${line}"]`)?.getClientRects();
+      const next = blocks.map((b): BlockSpan => {
+        const first = rects(b.startLine);
+        const last = rects(b.endLine);
+        if (!first?.length || !last?.length) return null;
+        const top = first[0].top - base;
+        return { top, height: Math.max(last[last.length - 1].bottom - base - top, 1) };
+      });
+      setSpans((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(pre);
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, [text, ranges, headed]);
+  return (
+    <div ref={railRef} className="relative bg-ctp-mantle border-r border-surface-0" data-testid="managed-preview-rail">
+      <ol className="text-[11.5px] text-ctp-overlay1">
+        {blocks.map((b, i) => (
+          <li
+            key={`${b.id}-${i}`}
+            className="pl-2.5 pr-5 py-2 border-b border-surface-0"
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
+          >
+            <span className="block text-ctp-subtext1 font-medium">{i + 1} {b.name}</span>
+            {b.builtin ? 'Built-in' : 'Custom'} · lines {b.startLine} to {b.endLine}
+          </li>
+        ))}
+      </ol>
+      {spans.map((s, i) => s && (
+        <div
+          key={`${blocks[i]?.id}-${i}`}
+          aria-hidden
+          title={blocks[i] ? `${blocks[i].name}, lines ${blocks[i].startLine} to ${blocks[i].endLine}` : undefined}
+          data-testid="managed-preview-rail-line"
+          data-start-line={blocks[i]?.startLine}
+          data-end-line={blocks[i]?.endLine}
+          className={`absolute right-2 w-0.5 rounded-full ${hovered === i ? 'bg-ctp-subtext0' : 'bg-surface-2'}`}
+          style={{ top: s.top, height: s.height }}
+        />
+      ))}
     </div>
   );
 }

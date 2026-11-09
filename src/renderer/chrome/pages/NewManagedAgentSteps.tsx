@@ -27,7 +27,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
-import { IS_MAC, Row, Rule, Segmented, footerLinkClass, inputClass, selectClass, tabPanelProps } from './newAgentUi';
+import { IS_MAC, Segmented, SettingRow, footerLinkClass, inputClass, selectClass, tabPanelProps } from './newAgentUi';
 import { templateGrantSummary } from '../../../shared/grant-summary';
 import type { GrantChange } from '../../../shared/agent-grant-changes';
 
@@ -477,7 +477,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
         )}
         {tab === 'settings' && (
           <div data-testid="new-agent-builder-settings" className="w-[600px] max-w-full">
-            <Row
+            <SettingRow
               label="Runs on"
               htmlFor="new-agent-builder-orchestrator"
               help={avail && !avail.available
@@ -498,8 +498,8 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
               <select aria-label="Model" value={model} disabled={modelsLoading} onChange={(e) => change({ model: e.target.value, effort: '' })} className={`${selectClass} w-[120px]`}>
                 {modelsLoading ? <option value={model}>Loading…</option> : modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
-            </Row>
-            <Row label="Effort" htmlFor="new-agent-builder-effort" help={effortHelp(effortLevels, effortsLoading)}>
+            </SettingRow>
+            <SettingRow label="Effort" htmlFor="new-agent-builder-effort" help={effortHelp(effortLevels, effortsLoading)}>
               <EffortSelect
                 id="new-agent-builder-effort"
                 value={effort}
@@ -508,11 +508,11 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
                 onChange={(next) => change({ effort: next })}
                 className={`${selectClass} w-40`}
               />
-            </Row>
-            <Row label="Workspace" help="Clubhouse managed agents always get their own worktree and branch, or their own folder outside git.">
+            </SettingRow>
+            <SettingRow label="Workspace" help="Clubhouse managed agents always get their own worktree and branch, or their own folder outside git.">
               <span className="text-[13px] text-ctp-text">Its own worktree and branch</span>
-            </Row>
-            <Row
+            </SettingRow>
+            <SettingRow
               label="Access"
               htmlFor="new-agent-builder-agent-access"
               help={supportsPermissions
@@ -528,14 +528,14 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
                 className={`${selectClass} w-48 disabled:opacity-60 disabled:cursor-not-allowed`}
                 data-testid="new-agent-builder-agent-access"
               />
-            </Row>
-            <Rule />
-            <Row label="Orchestration" help={orchestrating ? 'It can start helpers and give them work.' : 'It works alone.'}>
+            </SettingRow>
+            <div className="h-5" />
+            <SettingRow label="Orchestration" help={orchestrating ? 'It can start helpers and give them work.' : 'It works alone.'}>
               <Toggle checked={orchestrating} onChange={(on) => change({ orchestrate: on })} aria-label="Can start helpers" />
               <span className="text-[13px] text-ctp-text">Can start helpers</span>
-            </Row>
+            </SettingRow>
             {orchestrating && (
-              <Row
+              <SettingRow
                 label="Helper limit"
                 htmlFor="new-agent-builder-helper-limit"
                 help={limitProblem
@@ -553,35 +553,35 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
                   aria-describedby={limitProblem ? 'new-agent-builder-helper-limit-error' : undefined}
                   className={`${inputClass} w-20`}
                 />
-              </Row>
+              </SettingRow>
             )}
             {orchestrating && (
               <>
-                <Row label="Helper selection" htmlFor="new-agent-builder-helper-selection" help={HELPER_SELECTION_HELP}>
+                <SettingRow label="Helper selection" htmlFor="new-agent-builder-helper-selection" help={HELPER_SELECTION_HELP}>
                   <HelperSelectionSelect
                     id="new-agent-builder-helper-selection"
                     value={draft.autoHelpers}
                     onChange={(next) => change({ autoHelpers: next })}
                     className={`${selectClass} w-40`}
                   />
-                </Row>
-                <Row label="Helper template" htmlFor="new-agent-builder-helper-template" help={HELPER_TEMPLATE_HELP}>
+                </SettingRow>
+                <SettingRow label="Helper template" htmlFor="new-agent-builder-helper-template" help={HELPER_TEMPLATE_HELP}>
                   <HelperTemplateSelect
                     id="new-agent-builder-helper-template"
                     value={draft.helperTemplateId}
                     onChange={(next) => change({ helperTemplateId: next })}
                     className={`${selectClass} w-56`}
                   />
-                </Row>
-                <Row label="Approvals" htmlFor="new-agent-builder-control" help={controlHelp(draft.control ?? ORCHESTRATION_DEFAULTS.control, name)}>
+                </SettingRow>
+                <SettingRow label="Approvals" htmlFor="new-agent-builder-control" help={controlHelp(draft.control ?? ORCHESTRATION_DEFAULTS.control, name)}>
                   <ControlSelect
                     id="new-agent-builder-control"
                     value={draft.control ?? ORCHESTRATION_DEFAULTS.control}
                     onChange={(next) => change({ control: next })}
                     className={`${selectClass} w-48`}
                   />
-                </Row>
-                <Row label="Helper access" htmlFor="new-agent-builder-access" help={`Never more than ${name} has when a helper starts.`}>
+                </SettingRow>
+                <SettingRow label="Helper access" htmlFor="new-agent-builder-access" help={`Never more than ${name} has when a helper starts.`}>
                   <AccessSelect
                     id="new-agent-builder-access"
                     value={draft.access ?? ORCHESTRATION_DEFAULTS.access}
@@ -591,12 +591,12 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
                     onChange={(next) => change({ access: next })}
                     className={`${selectClass} w-48`}
                   />
-                </Row>
+                </SettingRow>
               </>
             )}
-            <Rule />
+            <div className="h-5" />
             {showDispatcher && (
-              <Row label="Dispatcher" help={DISPATCHER_HELP}>
+              <SettingRow label="Dispatcher" help={DISPATCHER_HELP}>
                 <Toggle
                   checked={draft.connectToDispatcher ?? orchestrating}
                   onChange={(on) => change({ connectToDispatcher: on })}
@@ -604,17 +604,17 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
                   data-testid="new-agent-builder-dispatcher"
                 />
                 <span className="text-[13px] text-ctp-text">Connect to Dispatcher</span>
-              </Row>
+              </SettingRow>
             )}
-            <Row label="Auto-sleep" htmlFor="new-agent-builder-idle-sleep" help={IDLE_SLEEP_HELP}>
+            <SettingRow label="Auto-sleep" htmlFor="new-agent-builder-idle-sleep" help={IDLE_SLEEP_HELP}>
               <IdleSleepSelect
                 id="new-agent-builder-idle-sleep"
                 value={draft.idleSleep}
                 onChange={(next) => change({ idleSleep: next })}
                 className={`${selectClass} w-48`}
               />
-            </Row>
-            <p className="mt-2 pl-32 text-xs leading-normal text-ctp-overlay1">Instructions don't grant access. These settings do.</p>
+            </SettingRow>
+            <p className="mt-3 text-xs leading-normal text-ctp-overlay1">Instructions don't grant access. These settings do.</p>
           </div>
         )}
       </div>

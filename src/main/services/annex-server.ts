@@ -26,6 +26,7 @@ import { readChatTranscript, listChatSessions } from './agent-runtime/chat-trans
 import { isGraduatedFeatureOn } from './experimental-settings';
 import { RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
 import { readMobileChatContent } from './annex-chat-content';
+import { MOBILE_LINK_MAX_ENTRIES, MobileLinkQueryError, readMobileChatLink } from './annex-chat-links';
 import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
 import {
@@ -3546,6 +3547,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     controlAvailable: !!ctx.mobilePrincipal, commands: MOBILE_COMMAND_TYPES,
     pairing: { sessionRevokePath: '/api/v1/mobile/pairing' },
     richContent: { version: 1, enabled: isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG), maximumBytes: 8 * 1024 * 1024 },
+    // Where a chat link points, and a folder's listing (#3208). Behind richContent.enabled like /content.
+    chatLinks: { version: 1, path: '/api/v1/mobile/agents/{agentId}/link?href={href}', maxEntries: MOBILE_LINK_MAX_ENTRIES },
     attachments: MOBILE_ATTACHMENTS_CAPABILITY,
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
@@ -3740,33 +3743,39 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
 }
 
 /** Rich content stays behind the desktop setting (on unless saved off or unreadable) and pinned mobile mTLS.
- * Recheck authorization after filesystem IO; revocation may race a preview read. */
-async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
-  const principal = ctx.mobilePrincipal;
-  if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
-  const epoch = mobileCommands.epoch;
-  const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
-  const authorized = () => {
-    const peer = findPairedPeer(principal);
-    return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-      && actsAsPhoneController(peer);
-  };
-  try {
-    const agentId = decodeURIComponent(match[1]);
-    const info = await findMobileAgent(agentId);
-    if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) {
-      sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
+ * Recheck authorization after filesystem IO; revocation may race a preview read.
+ * `/content` reads a file or stored image; `/link` resolves a chat link (#3208). */
+function mobileRichContentRoute(read: (query: URLSearchParams, agentId: string, enabled: () => boolean) => Promise<unknown>) {
+  return async (ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> => {
+    const principal = ctx.mobilePrincipal;
+    if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+    const epoch = mobileCommands.epoch;
+    const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
+    const authorized = () => {
+      const peer = findPairedPeer(principal);
+      return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
+        && actsAsPhoneController(peer);
+    };
+    try {
+      const agentId = decodeURIComponent(match[1]);
+      const info = await findMobileAgent(agentId);
+      if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) {
+        sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
+      }
+      const query = new URL(ctx.url, 'http://localhost').searchParams;
+      const result = await read(query, agentId, () => isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG));
+      if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+      ctx.res.setHeader('Cache-Control', 'no-store');
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      // telemetry-exempt: paths, bytes and credentials must never enter telemetry.
+      if (err instanceof MobileLinkQueryError) { sendJson(ctx.res, 400, { error: 'invalid_query' }); return; }
+      sendJson(ctx.res, 404, { error: 'content_unavailable' });
     }
-    const query = new URL(ctx.url, 'http://localhost').searchParams;
-    const result = await readMobileChatContent(query, agentId, () => isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG));
-    if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
-    ctx.res.setHeader('Cache-Control', 'no-store');
-    sendJson(ctx.res, 200, result);
-  } catch {
-    // telemetry-exempt: paths, bytes and credentials must never enter telemetry.
-    sendJson(ctx.res, 404, { error: 'content_unavailable' });
-  }
+  };
 }
+const handleMobileContentRoute = mobileRichContentRoute(readMobileChatContent);
+const handleMobileLinkRoute = mobileRichContentRoute(readMobileChatLink);
 
 /**
  * The whole of one chat event, from the transcript (#2731), for an event a phone
@@ -4231,6 +4240,7 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
 const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/attachments$/, handler: handleMobileAttachmentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/content(\?.*)?$/, handler: handleMobileContentRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/link(\?.*)?$/, handler: handleMobileLinkRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/network$/, handler: handleMobileNetworkRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
