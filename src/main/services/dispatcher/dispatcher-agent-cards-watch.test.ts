@@ -31,7 +31,7 @@ vi.mock('../clubhouse-mcp/binding-manager', () => ({
   },
 }));
 vi.mock('./dispatcher-service', () => ({
-  DISPATCHER_NAME: 'Dispatcher',
+  dispatcherDisplayName: () => 'Dispatcher',
   getDispatcherAgentId: () => 'dispatcher',
   isDispatcherEnabled: () => true,
   isDispatcherPath: (p: string) => p === '/dispatcher',
