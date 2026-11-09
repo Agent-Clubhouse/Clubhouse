@@ -101,6 +101,10 @@ describe('SettingsNav', () => {
     expect(order).toEqual(['about', 'orchestrators', 'settings-nav-group-managed', 'managed-blocks', 'managed-skills', 'managed-mcp', 'managed-templates', 'managed-orchestration', 'helpers']);
     expect(screen.getByText('Agent parts')).toBeTruthy();
     expect(screen.getAllByTestId('settings-nav-app-helpers')).toHaveLength(1);
+    // Smart selection (#3186) is its own App page, after the group and before Dispatcher.
+    const appPages = [...screen.getByTestId('settings-nav').querySelectorAll<HTMLElement>('[data-testid^="settings-nav-app-"]')].map((el) => el.dataset.testid!.replace('settings-nav-app-', ''));
+    expect(appPages.indexOf('smart-selection')).toBe(appPages.indexOf('managed-switch') + 1);
+    expect(appPages[appPages.indexOf('smart-selection') + 1]).toBe('dispatcher');
     fireEvent.click(screen.getByTestId('settings-nav-app-managed-skills'));
     expect(useUIStore.getState()).toMatchObject({ settingsContext: 'app', settingsSubPage: 'managed-skills' });
   });

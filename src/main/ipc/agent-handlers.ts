@@ -28,7 +28,8 @@ import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanAr
 import { isAccessLevel, type AccessLevel } from '../../shared/agent-access';
 import { withSavedAccess } from '../services/free-agent-settings';
 import { ATTR } from '../../shared/telemetry/attributes';
-import type { AgentDeleteResult, DeleteResult, HelperDeleteChoice, HelperDisposeChecks, HelperInProject, Project } from '../../shared/types';
+import type { AgentDeleteResult, DeleteResult, HelperDeleteChoice, HelperDisposeChecks, HelperInProject, Project, RemoveDisposedManyResult } from '../../shared/types';
+import { removeDisposedHelpersOf } from '../services/disposed-helper-cleanup';
 import { deleteAgent, isAgentDeleteMode } from '../services/agent-delete';
 import { disposeHelperForUser, reportDisposeDecision } from '../services/helper-dispose-decisions';
 import { listStartRequests } from '../services/helper-start-requests';
@@ -491,8 +492,35 @@ export function registerAgentHandlers(): void {
       if (!config) return { ok: true, message: 'Already removed' };
       if (!isDisposedAgent(config)) return { ok: false, message: `${config.name} isn't disposed` };
       const result = await agentConfig.deleteUnregister(projectPath, agentId);
+      // Its own disposed helpers (a helper that orchestrated) have no card left either (#3186).
+      if (result.ok) await removeDisposedHelpersOf(projectPath, agentId);
       if (result.ok) broadcastSnapshotRefresh();
       return result;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.REMOVE_DISPOSED_MANY, withValidatedArgs(
+    [arrayArg(objectArg<{ projectPath: string; agentId: string }>({
+      validate: (v, name) => {
+        if (typeof v.projectPath !== 'string' || typeof v.agentId !== 'string' || !v.projectPath || !v.agentId) {
+          throw new Error(`${name} needs a projectPath and an agentId`);
+        }
+      },
+    }), { maxLength: 5000 })],
+    async (_event, entries): Promise<RemoveDisposedManyResult> => {
+      let removed = 0;
+      const failed: RemoveDisposedManyResult['failed'] = [];
+      for (const { projectPath, agentId } of entries) {
+        const config = await agentConfig.getDurableConfig(projectPath, agentId);
+        if (!config) continue;
+        if (!isDisposedAgent(config)) { failed.push({ agentId, message: `${config.name} isn't disposed` }); continue; }
+        const result = await agentConfig.deleteUnregister(projectPath, agentId);
+        if (!result.ok) { failed.push({ agentId, message: result.message }); continue; }
+        removed++;
+        await removeDisposedHelpersOf(projectPath, agentId);
+      }
+      if (removed > 0) broadcastSnapshotRefresh();
+      return { removed, failed };
     },
   ));
 

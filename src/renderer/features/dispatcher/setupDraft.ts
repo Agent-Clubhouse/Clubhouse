@@ -7,7 +7,7 @@ import type { DispatcherSetupInput, TryItOutResult } from '../../../shared/dispa
 
 /**
  * The Dispatcher's setup (#3047) as the user fills it in. Kept in a store, not
- * the component, so "Set up Auto" can open Settings > Helpers and coming back
+ * the component, so "Set up Auto" can open Settings > Smart selection and coming back
  * carries on where the user was. Nothing is saved until Finish.
  */
 

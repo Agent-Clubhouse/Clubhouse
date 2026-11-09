@@ -1012,7 +1012,7 @@ describe('start_helper difficulty (#2671)', () => {
     const decision = await approveHelperStart(PROJECT, request.requestId);
     expect(decision).toMatchObject({ ok: false, code: 'no_valid_mapping' });
     // What a person reads names no agent tool. The orchestrator is told the details.
-    expect(decision.message).toBe('Couldn’t start h because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.');
+    expect(decision.message).toBe('Couldn’t start h because no hard preset for codex-cli is offered now. Change it in Settings > Smart selection.');
     expect(sent.get('orch')?.at(-1)).toContain('Name a model with list_models');
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
     expect(listStartRequests()).toEqual([]);

@@ -29,6 +29,7 @@ import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
 import { GoobersSettingsView } from '../features/settings/GoobersSettingsView';
 import { HelpersSettingsView } from '../features/settings/HelpersSettingsView';
+import { SmartSelectionSettingsView } from '../features/settings/SmartSelectionSettingsView';
 import { ActionsSettingsView } from '../features/actions/ActionsSettingsView';
 import { DispatcherSettingsView } from '../features/settings/DispatcherSettingsView';
 import { PartLibraryView } from '../features/managed/PartLibraryView';
@@ -281,6 +282,7 @@ export function MainContentView() {
     if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
     if (settingsSubPage === 'goobers') return <GoobersSettingsView />;
     if (settingsSubPage === 'helpers') return <HelpersSettingsView />;
+    if (settingsSubPage === 'smart-selection') return <SmartSelectionSettingsView />;
     if (settingsSubPage === 'dispatcher') return <DispatcherSettingsView />;
     if (settingsSubPage === 'actions') return <ActionsSettingsView />;
     if (settingsSubPage === 'managed-blocks') return <PartLibraryView key="block" kind="block" />;

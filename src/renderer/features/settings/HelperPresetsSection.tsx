@@ -1,5 +1,5 @@
 /**
- * Settings > Helpers: the model and effort a difficulty picks on each CLI
+ * Settings > Smart selection (#3186): the model and effort a difficulty picks on each CLI
  * (#2671). A choice is checked against the CLI's list when it's saved and each
  * time it's used. One no longer offered stays saved and shows what is used
  * instead, with Reset. These are starting choices, not measured best ones.
@@ -13,6 +13,7 @@ import {
   AUTO_LEVEL_FOLLOWS,
   AUTO_LEVELS,
   isAutoBoundLevel,
+  PRESET_PROVIDERS,
   quotaRefetchDelaySeconds,
   type AutoLevel,
   type HelperRoutingSettings,
@@ -29,6 +30,12 @@ const PROVIDER_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', '
 const LEVEL_NAMES: Record<AutoLevel, string> = { minimum: 'Minimum', easy: 'Easy', medium: 'Medium', hard: 'Hard', maximum: 'Maximum' };
 /** The model select's value for a minimum or maximum with no choice of its own. */
 const FOLLOW = '';
+
+/** Preset CLIs first in PRESET_PROVIDERS order, then any others by id. */
+export function orderedProviders<T>(providers: Readonly<Record<string, T>>): [string, T][] {
+  const rank = (id: string) => { const i = (PRESET_PROVIDERS as readonly string[]).indexOf(id); return i < 0 ? PRESET_PROVIDERS.length : i; };
+  return Object.entries(providers).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
+}
 
 type Eligible = Extract<ProviderRoutingView, { autoEligible: true }>;
 
@@ -139,8 +146,8 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
 }
 
 /**
- * `title`, `autoLabel` and `footer` let the managed-agents Helpers page (#2899)
- * call this Smart helper selection. Unset, it reads as it always has.
+ * `title`, `autoLabel` and `footer` let the Smart selection page (#2899, #3186)
+ * name it. Unset, it reads as it always has.
  */
 export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabel = 'Auto provider', toggleText, footer }: {
   title?: string;
@@ -211,7 +218,8 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
     }
   }, []);
 
-  const providers = settings ? Object.entries(settings.providers) : [];
+  // A fixed order (#3186): picking a model must not move the section being edited.
+  const providers = settings ? orderedProviders(settings.providers) : [];
   return (
     <SettingsSection title={title}>
       <SettingsBlock>

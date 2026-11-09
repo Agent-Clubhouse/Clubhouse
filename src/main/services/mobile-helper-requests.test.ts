@@ -142,7 +142,7 @@ describe('runHelperCommand: starts', () => {
 
   it('no_valid_mapping reaches the phone with the sentence in error.message, and the request is used up (#2671)', async () => {
     const id = startRequest();
-    const sentence = 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Helpers.';
+    const sentence = 'Couldn’t start impl-ipc because no hard preset for codex-cli is offered now. Change it in Settings > Smart selection.';
     vi.mocked(approveHelperStart).mockImplementation(async (p, r) => { takeStartRequest(p, r); return { ok: false, code: 'no_valid_mapping', message: sentence }; });
     const service = new MobileCommandService();
     const response = await service.execute('peer', { version: 1, commandId: 'c1', epoch: service.epoch, type: 'helper.approve', requestId: id },

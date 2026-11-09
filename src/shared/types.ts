@@ -970,7 +970,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher' | 'actions'
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'smart-selection' | 'dispatcher' | 'actions'
   // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 
@@ -1777,6 +1777,12 @@ export interface WorktreeStatus {
    * project instead, so `unpushedCommits` are the ones deleting it would lose.
    */
   worktreeMissing?: boolean;
+}
+
+/** Settings' Clear all for disposed helpers (#3186): rows already gone count as neither. */
+export interface RemoveDisposedManyResult {
+  removed: number;
+  failed: Array<{ agentId: string; message: string }>;
 }
 
 export interface DeleteResult {

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HELPER_ROUTING_LABELS, type HelperRoutingSettings, type PresetCellView, type QuotaView } from '../../../shared/helper-routing';
-import { HelperPresetsSection } from './HelperPresetsSection';
+import { HelperPresetsSection, orderedProviders } from './HelperPresetsSection';
 
 const cell = (fields: Partial<PresetCellView> = {}): PresetCellView => ({
   effective: { model: 'opus', effort: 'high' }, source: 'builtin', state: 'valid', custom: null, builtin: { model: 'opus', effort: 'high' }, editable: true, ...fields,
@@ -72,6 +72,29 @@ describe('HelperPresetsSection (#2671)', () => {
     fireEvent.click(await screen.findByTestId('helper-presets-auto'));
     await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', auto: true }));
     expect(screen.getByText(/balances counts, not cost/)).toBeTruthy();
+  });
+
+  it('keeps the providers in a fixed order however main lists them, before and after a save (#3186)', async () => {
+    const reorder = (shown: HelperRoutingSettings): HelperRoutingSettings => {
+      const { 'claude-code': claude, ...rest } = shown.providers;
+      // Main once added keys in the order its reads finished, so a save could put Claude last.
+      return { ...shown, providers: { ...rest, 'codex-cli': { ...claude, autoCandidate: true }, 'claude-code': claude } };
+    };
+    window.clubhouse.app.getHelperRouting = vi.fn(async () => reorder(settings()));
+    window.clubhouse.app.updateHelperRouting = vi.fn(async () => ({ ok: true as const, settings: reorder(settings({ source: 'custom', custom: { model: 'sonnet', effort: null } }, 'r2.0')) }));
+    const order = () => [...document.querySelectorAll<HTMLElement>('[data-testid^="helper-presets-"][data-testid$="-cli"], [data-testid="helper-presets-claude-code"]')].map((el) => el.dataset.testid);
+    render(<HelperPresetsSection />);
+    await screen.findByTestId('helper-presets-claude-code');
+    expect(order()).toEqual(['helper-presets-claude-code', 'helper-presets-codex-cli', 'helper-presets-copilot-cli']);
+    fireEvent.change(screen.getByTestId('helper-preset-claude-code-hard-model'), { target: { value: 'sonnet' } });
+    await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalled());
+    await waitFor(() => expect((screen.getByTestId('helper-preset-claude-code-hard-model') as HTMLSelectElement).value).toBe('sonnet'));
+    expect(order()).toEqual(['helper-presets-claude-code', 'helper-presets-codex-cli', 'helper-presets-copilot-cli']);
+  });
+
+  it('orders preset CLIs first, then any other by id', () => {
+    expect(orderedProviders({ zed: 1, 'copilot-cli': 2, alpha: 3, 'claude-code': 4, 'codex-cli': 5 }).map(([id]) => id))
+      .toEqual(['claude-code', 'codex-cli', 'copilot-cli', 'alpha', 'zed']);
   });
 
   it('lists Claude\'s presets and leaves out a provider with no mapping', async () => {

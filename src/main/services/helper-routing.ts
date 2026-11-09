@@ -356,8 +356,8 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
           ok: false,
           code: 'no_valid_mapping',
           message: `No ${validDifficulty} preset for ${provider} is offered now: ${problems.join('; ')} ` +
-            'Name a model with list_models, or ask the user to update Settings > Helpers.',
-          userReason: `no ${validDifficulty} preset for ${provider} is offered now. Change it in Settings > Helpers.`,
+            'Name a model with list_models, or ask the user to update Settings > Smart selection.',
+          userReason: `no ${validDifficulty} preset for ${provider} is offered now. Change it in Settings > Smart selection.`,
         };
       }
       resolvedModel = resolved.cell.model;
@@ -888,8 +888,10 @@ async function viewProvider(provider: PresetProvider, refresh: boolean): Promise
  * its limits, for someone who just signed in. A project's own list isn't forced.
  */
 export async function readHelperRouting(options: { projectPath?: string; autoContext?: Parameters<typeof readHelperAuto>[0]; refresh?: boolean } = {}): Promise<HelperRoutingSettings> {
+  // Keys go in in PRESET_PROVIDERS order, not the order the reads finish, so the page's sections don't move (#3186).
+  const views = await Promise.all(PRESET_PROVIDERS.map((p) => viewProvider(p, options.refresh === true)));
   const providers: Record<string, ProviderRoutingView> = {};
-  await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.refresh === true); }));
+  PRESET_PROVIDERS.forEach((p, i) => { providers[p] = views[i]; });
   for (const other of getAllProviders()) {
     if (!isPresetProvider(other.id)) {
       providers[other.id] = { autoEligible: false, reason: 'auto_not_supported', quota: await readProviderQuota(other.id), cells: null };
