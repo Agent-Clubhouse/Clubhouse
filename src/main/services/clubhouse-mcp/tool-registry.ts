@@ -690,7 +690,8 @@ export async function callTool(
   }
 
   // Defense in depth: for group-project targets, verify the caller is authorized
-  // to invoke this tool at call time, not just at listing time.
+  // to invoke this tool at call time, not just at listing time. A tool switched
+  // off on this wire was refused above already, so only the admin rule is left (#3176).
   if (binding.targetKind === 'group-project') {
     const project = await groupProjectRegistry.getSync(binding.targetId);
     if (deniedGroupProjectTools(project?.metadata, agentId).has(parsed.suffix)) {
