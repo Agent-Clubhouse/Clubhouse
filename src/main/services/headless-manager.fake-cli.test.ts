@@ -182,7 +182,6 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     });
   });
 
-  // The children below hold an inherited pipe open; Windows handle inheritance differs.
   // Real processes, Windows only: a `.cmd` shim that isn't an npm node shim runs
   // under cmd.exe, and stopping the run must stop the CLI under it too (#3160).
   describe.runIf(process.platform === 'win32')('a CLI behind a .cmd shim', () => {
@@ -200,6 +199,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
       const shimCliPid = () => { try { return Number(fs.readFileSync(pidFile, 'utf-8')) || 0; } catch { return 0; } };
       await until(() => shimCliPid() > 0, 'the CLI under cmd.exe');
       const pid = shimCliPid();
+      // Cleaned up even if the stop below fails, so the run can end.
       spawnedPids.push(pid);
       expect(pid).not.toBe(cliPid()); // the CLI is cmd.exe's child, not ours
 
@@ -210,6 +210,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     });
   });
 
+  // The children below hold an inherited pipe open; Windows handle inheritance differs.
   describe.skipIf(process.platform === 'win32')('a child holds stdout open', () => {
     // Case (b).
     it('an exit is missed by close and recovered by the next sweep, once', async () => {

@@ -613,6 +613,22 @@ describe('headless-manager', () => {
       }
     });
 
+    it('on Windows, a run that had already exited with code 1 when stopped is still a failure', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      try {
+        const onExit = vi.fn();
+        await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+        // It failed, but a child still holds stdout, so close hasn't come (#2813).
+        mockProcess.exitCode = 1;
+        kill('test-agent');
+        mockProcess.emit('close', 1, null);
+        expect(onExit).toHaveBeenCalledWith('test-agent', 1);
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
     it('on Windows, a run that exits with code 1 without being stopped is still a failure', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'win32' });

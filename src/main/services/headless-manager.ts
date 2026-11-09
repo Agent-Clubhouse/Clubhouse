@@ -773,7 +773,9 @@ export function kill(agentId: string): void {
   agentKillRequested(agentId, 'other'); // no-op when the caller already named a trigger
   agentKillStage(agentId, 'sigterm');
 
-  session.stopRequested = true;
+  // Only a live process: one that already exited (a child holding its stdout,
+  // #2813) keeps the exit it had.
+  if (!hasExited(proc)) session.stopRequested = true;
   try {
     // The whole tree: on Windows a `.cmd` shim runs under cmd.exe, and
     // proc.kill() would stop only cmd.exe and leave the CLI running (#3160).
