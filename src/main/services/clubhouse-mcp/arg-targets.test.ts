@@ -1,6 +1,16 @@
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
+
+// The stores it writes (connections, grants) go to a userData folder of each test's own,
+// not the one test files share, so files running in parallel can't race on them.
+const userData = vi.hoisted(() => ({ dir: '' }));
+vi.mock('electron', async (original) => {
+  const actual = await original<typeof import('electron')>();
+  return { ...actual, app: { ...actual.app, getPath: (name: string) => (name === 'userData' && userData.dir ? userData.dir : actual.app.getPath(name)) } };
+});
 
 const state = vi.hoisted(() => ({
   agents: new Map<string, DurableAgentConfig[]>(),
@@ -37,6 +47,14 @@ import type { ToolGrant } from './tool-grants';
 import { checkPluginCaller } from './plugin-caller-check';
 import { bindingManager } from './binding-manager';
 import { removeConnectionDirections, setConnectionTools } from '../connection-grants-store';
+
+beforeEach(() => {
+  userData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arg-targets-'));
+});
+afterEach(() => {
+  fs.rmSync(userData.dir, { recursive: true, force: true });
+  userData.dir = '';
+});
 
 const agent = (id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig => ({ id, name: id, color: 'blue', createdAt: '', ...extra });
 
