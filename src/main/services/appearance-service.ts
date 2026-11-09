@@ -11,10 +11,13 @@
  *   No other agent can change the Dispatcher: `own` only reaches itself.
  *
  * All of it is display only, so it changes at any time, awake or asleep. The
- * Settings card and agent.update still lock an agent's while it is awake. An
- * agent's name isn't here: it has one name field, and a rename leaves the
- * worktree and branch behind, so the name and path drift apart. The Dispatcher's
- * name stays too, and a phone's agent.update still can't change its look.
+ * Settings card and agent.update still lock an agent's while it is awake. A
+ * phone's agent.update still can't change its look.
+ *
+ * Names (#3185) are narrower: only the Dispatcher renames, and only another
+ * agent, as the user does in the app. A rename leaves the worktree and branch
+ * behind, so an agent doesn't rename itself, and the Dispatcher's own name is
+ * set in Settings > Dispatcher.
  */
 
 import * as fs from 'fs';
@@ -280,6 +283,28 @@ async function resolveAgent(actor: AppearanceActor, agentId: string | undefined)
     if (config && !isDisposedAgent(config)) return { projectPath, config };
   }
   throw new AppearanceError('not_found', actor.scope === 'own' ? 'Only durable agents have a saved appearance.' : `No agent has the id "${id}".`);
+}
+
+/**
+ * Rename another agent for the Dispatcher (#3185). It writes the name as the
+ * app's rename does, so windows and the Dispatcher's memory follow the same way.
+ */
+export async function renameAgent(actor: AppearanceActor, agentId: string | undefined, name: string): Promise<AgentAppearance> {
+  if (actor.scope !== 'all' || !actor.agentId) throw new AppearanceError('out_of_scope', 'Only the Dispatcher can rename agents. Rename yourself in the app.');
+  if (!agentId || agentId === actor.agentId || isDispatcherAgentId(agentId) || isDispatcherChatAgentId(agentId)) {
+    throw new AppearanceError('out_of_scope', 'The Dispatcher\'s own name is set in Settings > Dispatcher. Say which agent to rename.');
+  }
+  const trimmed = name.trim();
+  if (!trimmed) throw new AppearanceError('invalid_name', 'Give the agent a name.');
+  if (trimmed.length > NAME_MAX_LENGTH) throw new AppearanceError('invalid_name', `Keep the name to ${NAME_MAX_LENGTH} characters or fewer.`);
+  const { projectPath, config } = await resolveAgent(actor, agentId);
+  if (config.creation?.state === 'creating') throw new AppearanceError('agent_creating', 'The agent is still being created.');
+  if (trimmed === config.name) return describeAgent(config);
+  const taken = (await agentConfig.listDurable(projectPath))
+    .some((other) => other.id !== config.id && !isDisposedAgent(other) && other.name.toLowerCase() === trimmed.toLowerCase());
+  if (taken) throw new AppearanceError('invalid_name', `Another agent in that project is already called ${trimmed}.`);
+  await agentConfig.updateDurable(projectPath, config.id, { name: trimmed });
+  return describeAgent((await agentConfig.getDurableConfig(projectPath, config.id)) ?? { ...config, name: trimmed });
 }
 
 export async function updateAgentAppearance(

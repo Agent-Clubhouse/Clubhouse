@@ -395,6 +395,18 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     return { available: true };
   }
 
+  /**
+   * Computer use and the browser come from plugins the user turns on for Codex
+   * (`unified-computer-use`, `browser`, `chrome`), which every session inherits
+   * from config.toml. `features.computer_use=false` leaves their `cua_repl`
+   * server running; turning plugins off removes it (probed on 0.163 with
+   * mcpServerStatus/list on a fresh thread, #3185). Skills in the working
+   * folder and MCP servers Clubhouse passes are unaffected.
+   */
+  desktopControlOffArgs(): string[] {
+    return ['--disable', 'plugins'];
+  }
+
   async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
     const binary = this.findBinary();
     const args: string[] = [];
@@ -415,6 +427,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     }
     if (opts.contextWindow) args.push('-c', `model_context_window=${opts.contextWindow}`);
     if (opts.effort) args.push('-c', `model_reasoning_effort=${opts.effort}`);
+    if (opts.noDesktopControl) args.push(...this.desktopControlOffArgs());
 
     // The mission/prompt is a bare positional argument for Codex (unlike
     // Claude Code's -p flag), so it must stay last even after buildMcpArgs()

@@ -98,6 +98,12 @@ vi.mock('./agent-config', () => ({
 }));
 const mockUpdateDurableConfig = vi.fn(async () => {});
 
+// One folder stands for the Dispatcher's (#3185).
+vi.mock('./dispatcher/dispatcher-paths', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./dispatcher/dispatcher-paths')>(),
+  isDispatcherPath: (p: string | undefined | null) => p === '/dispatcher-folder',
+}));
+
 // Chat start runs for real unless a test stands in for it (to fail a chat resume).
 const { mockTryStartChatAgent } = vi.hoisted(() => ({ mockTryStartChatAgent: vi.fn() }));
 vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
@@ -724,6 +730,21 @@ describe('agent-system', () => {
     it('asks for an interactive session for a quick agent someone follows (#3002)', async () => {
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'Go', interactive: true });
       expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive: true }));
+    });
+
+    it('starts the Dispatcher without the CLI\'s desktop control, in chat and the terminal (#3185)', async () => {
+      const off = vi.fn(() => ['--disable', 'plugins']);
+      Object.assign(mockProvider, { desktopControlOffArgs: off });
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'Go' });
+        expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).not.toHaveProperty('extraArgs');
+        expect(mockProvider.buildSpawnCommand.mock.calls.at(-1)![0]).not.toHaveProperty('noDesktopControl');
+        await spawnAgent({ agentId: 'agent-2', projectPath: '/dispatcher-folder', cwd: '/dispatcher-folder', kind: 'quick', mission: 'Go' });
+        expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).toMatchObject({ extraArgs: ['--disable', 'plugins'] });
+        expect(mockProvider.buildSpawnCommand).toHaveBeenLastCalledWith(expect.objectContaining({ noDesktopControl: true }));
+      } finally {
+        delete (mockProvider as { desktopControlOffArgs?: unknown }).desktopControlOffArgs;
+      }
     });
 
     it('throws with descriptive error when pre-flight check fails', async () => {

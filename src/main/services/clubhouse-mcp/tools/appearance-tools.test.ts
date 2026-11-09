@@ -6,6 +6,7 @@ vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof impo
 const mocks = vi.hoisted(() => ({
   updateProjectAppearance: vi.fn(async () => ({ id: 'p1' })),
   updateAgentAppearance: vi.fn(async () => ({ id: 'a1' })),
+  renameAgent: vi.fn(async () => ({ id: 'a2', name: 'renamed' })),
 }));
 
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
@@ -39,11 +40,11 @@ beforeEach(() => {
 });
 
 describe('appearance tools', () => {
-  it('lists both tools for any agent, with no name on update_agent', () => {
+  it('lists both tools for any agent', () => {
     const tools = getScopedToolList('a1');
     expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['update_project', 'update_agent']));
     const updateAgent = tools.find((t) => t.name === 'update_agent')!;
-    expect(Object.keys(updateAgent.inputSchema.properties as object)).toEqual(['agent_id', 'color', 'emoji', 'image_path']);
+    expect(Object.keys(updateAgent.inputSchema.properties as object)).toEqual(['agent_id', 'name', 'color', 'emoji', 'image_path']);
   });
 
   it('asks as an agent in its own scope, with its working directory', async () => {
@@ -83,8 +84,24 @@ describe('appearance tools', () => {
     expect(JSON.parse(text(await callTool('a1', 'update_agent', { color: 'rose' })))).toEqual({ agent: { id: 'a1' } });
   });
 
+  it('renames through the rename rules, and changes the look too when asked (#3185)', async () => {
+    const renamed = await callTool('dispatcher', 'update_agent', { agent_id: 'a2', name: 'renamed' });
+    expect(mocks.renameAgent).toHaveBeenLastCalledWith({ scope: 'all', agentId: 'dispatcher', cwd: '/dispatcher' }, 'a2', 'renamed');
+    expect(mocks.updateAgentAppearance).not.toHaveBeenCalled();
+    expect(JSON.parse(text(renamed))).toEqual({ agent: { id: 'a2', name: 'renamed' } });
+    await callTool('dispatcher', 'update_agent', { agent_id: 'a2', name: 'renamed', color: 'teal' });
+    expect(mocks.updateAgentAppearance).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'all' }), 'a2', { color: 'teal' });
+  });
+
+  it('stops before the look when the rename is refused', async () => {
+    mocks.renameAgent.mockRejectedValueOnce(new AppearanceError('out_of_scope', 'Only the Dispatcher can rename agents.'));
+    const result = await callTool('a1', 'update_agent', { name: 'renamed', color: 'teal' });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe('Only the Dispatcher can rename agents.');
+    expect(mocks.updateAgentAppearance).not.toHaveBeenCalled();
+  });
+
   it.each([
-    ['update_agent', { name: 'renamed' }, 'name'],
     ['update_agent', { model: 'opus', color: 'rose' }, 'model'],
     ['update_project', { name: 'folder' }, 'name'],
     ['update_project', { orchestrator: 'codex-cli' }, 'orchestrator'],
