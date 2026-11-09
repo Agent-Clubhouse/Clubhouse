@@ -343,6 +343,7 @@ import {
   expandHome,
   listSessions,
   spawnAccess,
+  withDispatcherStartModel,
 } from './agent-system';
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
@@ -3784,4 +3785,22 @@ describe('managed instructions in the real terminal launch seam', () => {
     } finally { reopenLaunches(); }
   });
 
+});
+
+describe('withDispatcherStartModel (#3045, #3191)', () => {
+  const base = { agentId: 'd', projectPath: '/dispatcher-folder', cwd: '/dispatcher-folder', kind: 'durable' as const, model: 'old', orchestrator: 'claude-code' as const, resume: true, sessionId: 's1' };
+
+  it('leaves a start alone with no model, and takes Behavior\'s model over the caller\'s', () => {
+    expect(withDispatcherStartModel(base, null)).toBe(base);
+    expect(withDispatcherStartModel(base, { model: 'sonnet' })).toEqual({ ...base, model: 'sonnet' });
+  });
+
+  it('starts a pick on its own provider, dropping a session the caller saw on another CLI', () => {
+    expect(withDispatcherStartModel(base, { model: 'opus', orchestrator: 'claude-code' })).toEqual({ ...base, model: 'opus' });
+    expect(withDispatcherStartModel(base, { model: 'terra', orchestrator: 'codex-cli' }))
+      .toEqual({ ...base, model: 'terra', orchestrator: 'codex-cli', resume: false, sessionId: undefined });
+    // A caller that named no CLI had no session from another one.
+    expect(withDispatcherStartModel({ ...base, orchestrator: undefined }, { model: 'terra', orchestrator: 'codex-cli' }))
+      .toEqual({ ...base, model: 'terra', orchestrator: 'codex-cli' });
+  });
 });

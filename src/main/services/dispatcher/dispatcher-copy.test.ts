@@ -72,6 +72,8 @@ describe('the Dispatcher\'s hidden agent is never named (#3036)', () => {
     expect(seen).toContain('Only the Dispatcher can use this tool.');
     expect(seen).toContain('Loading the Dispatcher');
     expect(seen).toContain('Retry');
+    // Choose models yourself's job label (#3191) is read too, and passes.
+    expect(seen).toContain('Working in the background');
   }, 60_000); // It parses every source file, which is slow on a loaded machine.
 
   it('no help page, and nothing either agent is told, mentions one either', () => {
@@ -90,7 +92,8 @@ describe('the Dispatcher\'s hidden agent is never named (#3036)', () => {
     for (const text of ['Asking the coordinator…', 'The Coordinators', 'a hidden session', 'its second session', 'the phone book', 'two agent sessions']) {
       expect(FORBIDDEN.test(text), text).toBe(true);
     }
-    for (const text of ['Asking what it does…', 'Coordinate, don\'t implement', 'one session', 'a new session']) {
+    // "Working in the background" is the maintainer-approved label for Choose models yourself (#3191): it names a job, not a session.
+    for (const text of ['Asking what it does…', 'Coordinate, don\'t implement', 'one session', 'a new session', 'Working in the background']) {
       expect(FORBIDDEN.test(text), text).toBe(false);
     }
   });

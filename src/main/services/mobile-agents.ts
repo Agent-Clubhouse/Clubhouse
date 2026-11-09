@@ -28,6 +28,7 @@ import { MobileControlError } from './mobile-control';
 import * as orchestrationPolicy from './orchestration-policy';
 import * as orchestrationSettings from './orchestration-settings';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
+import { modelsChosenByHand } from './dispatcher/dispatcher-models';
 import {
   ACCESS_LEVELS, MAX_HELPER_LIMIT, ORCHESTRATION_CONTROLS, validateOrchestrationPatch,
   type OrchestrationAccess, type OrchestrationPolicyPatch, type ResolvedOrchestrationPolicy,
@@ -525,6 +526,11 @@ const DISPATCHER_LOCKED = ['name', 'color', 'emoji', 'persona', 'clubhouseMode',
  * runtime, Free agent mode and auto-sleep change at any time and apply the
  * next time it starts. A new CLI resets the model to its default, and a model
  * must be one the CLI lists. Everything else is `dispatcher_locked`.
+ *
+ * With Choose models yourself on (#3191), a phone's CLI, model and context
+ * are the pick for talking with you, the job a phone talks to, so they're
+ * saved as that pick: the same as the row in Settings > Dispatcher, and
+ * never overwritten at its next start.
  */
 export async function updateMobileDispatcher(
   project: MobileAgentProject,
@@ -570,7 +576,21 @@ export async function updateMobileDispatcher(
   assertAuthorized();
   const hadSession = !!config.lastSessionId;
   const previousChoice = config.contextWindow;
+  const pick: { provider?: string; model?: string; contextWindow?: string | null } = {};
+  if (modelsChosenByHand()) {
+    if (updates.orchestrator !== undefined) pick.provider = updates.orchestrator;
+    if (command.model !== undefined) pick.model = command.model;
+    if (command.contextWindow !== undefined) pick.contextWindow = command.contextWindow;
+    delete updates.orchestrator;
+    delete updates.model;
+    delete updates.contextWindow;
+  }
   if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
+  if (Object.keys(pick).length > 0) {
+    // Loaded here: dispatcher-service is heavy, and imports what imports this module.
+    const { setDispatcherModels } = await import('./dispatcher/dispatcher-service');
+    await setDispatcherModels({ role: 'chat', ...pick });
+  }
   const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;
   return { ...await buildAgentSettings(project, saved, live, { dispatcher: true }), ...sessionReset(command, hadSession, saved), ...contextWindowReset(previousChoice, saved, command) };
 }

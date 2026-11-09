@@ -20,6 +20,11 @@ vi.mock('./agent-system', () => ({
   })),
 }));
 vi.mock('./dispatcher/dispatcher-settings', () => ({ dispatcherEnablement: vi.fn(() => ({ savedOn: false, enabled: false, reason: 'switch_off' })) }));
+// Choose models yourself (#3191): off unless a test turns it on.
+const modelsByHand = vi.hoisted(() => ({ on: false }));
+vi.mock('./dispatcher/dispatcher-models', () => ({ modelsChosenByHand: () => modelsByHand.on }));
+const setDispatcherModels = vi.hoisted(() => vi.fn(async () => ({})));
+vi.mock('./dispatcher/dispatcher-service', () => ({ setDispatcherModels }));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: vi.fn(async () => ({})),
   readMcpCatalog: vi.fn(async () => [{ id: 'ado', name: 'Azure DevOps', description: 'Work items', args: [{ name: 'org' }] }]),
@@ -527,7 +532,11 @@ describe('the Dispatcher from a phone (#2533)', () => {
   const update = (command: Record<string, unknown>, live: 'running' | undefined = undefined, config = dispatcherAgent()) =>
     updateMobileDispatcher(folder, config, { agentId: 'durable_d', ...command }, { live, assertAuthorized: allow });
 
-  beforeEach(() => { vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(null); });
+  beforeEach(() => {
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(null);
+    modelsByHand.on = false;
+    setDispatcherModels.mockClear();
+  });
 
   it('reads Settings > Dispatcher: CLI, model, runtime and Free agent mode at any time, the rest never, no orchestration', async () => {
     const settings = await buildAgentSettings(folder, dispatcherAgent(), 'running', { dispatcher: true });
@@ -572,6 +581,21 @@ describe('the Dispatcher from a phone (#2533)', () => {
     expect(await refusal(update({ orchestrator: 'unknown-cli' }))).toMatchObject({ code: 'orchestrator_unavailable' });
     expect(await refusal(update({ orchestrator: 'codex-cli', freeAgentMode: true }))).toMatchObject({ code: 'free_agent_mode_unavailable' });
     expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+  });
+
+  it('saves a CLI, model or context change as the pick for talking with you while the models are chosen by hand (#3191)', async () => {
+    modelsByHand.on = true;
+    await update({ orchestrator: 'codex-cli', idleSleep: 30 });
+    expect(setDispatcherModels).toHaveBeenLastCalledWith({ role: 'chat', provider: 'codex-cli' });
+    // What isn't a pick is saved on the record as before.
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith(folder.path, 'durable_d', { idleSleep: 30 });
+    vi.mocked(agentConfig.updateDurableConfig).mockClear();
+    await update({ model: 'opus' }, 'running');
+    expect(setDispatcherModels).toHaveBeenLastCalledWith({ role: 'chat', model: 'opus' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    // Still checked against the CLI's list first.
+    expect(await refusal(update({ model: 'gpt-9' }))).toMatchObject({ code: 'invalid_model' });
+    expect(setDispatcherModels).toHaveBeenCalledTimes(2);
   });
 
   it('keeps its current CLI choosable after it was turned off for new agents', async () => {

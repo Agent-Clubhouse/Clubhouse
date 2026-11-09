@@ -51,11 +51,16 @@ vi.mock('../settings-store', () => ({
   },
 }));
 
+const MODEL_LISTS: Record<string, string[]> = { 'claude-code': ['haiku', 'sonnet', 'opus'], 'codex-cli': ['luna', 'terra', 'sol'] };
+
 // Each CLI writes its own instructions file, and reads skills from its own folder, as the real providers do.
 function fakeProvider(id: string, file: string, conventions?: { configDir: string; skillsDir: string; skillsRoot?: string; previousSkillsRoots?: string[] }) {
   return {
     id,
+    displayName: id,
     conventions,
+    // What each CLI lists, for Choose models yourself (#3191).
+    getModelOptions: vi.fn(async () => (MODEL_LISTS[id] ?? []).map((m) => ({ id: m, label: m }))),
     writeInstructions: vi.fn(async (dir: string, content: string) => {
       await fs.promises.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.promises.writeFile(path.join(dir, file), content);
@@ -981,5 +986,185 @@ describe('personality and first-run setup (#3047)', () => {
     await expect(svc.completeDispatcherSetup({
       name: 'Rosie', color: 'rose', provider: 'claude-code', behavior: 'standard', personality: DEFAULT_DISPATCHER_PERSONALITY,
     })).rejects.toThrow('Turn on the Dispatcher first');
+  });
+});
+
+describe('Choose models yourself (#3191)', () => {
+  const coordinator = () => h.agents.get(dispatcherDir())?.[0];
+  const chat = () => h.agents.get(chatDir())?.[0];
+  const runningChat = (orchestrator = 'claude-code') => {
+    const setModel = vi.fn(async () => undefined);
+    h.runtimes.set('durable_2', { kind: 'chat', setModel });
+    agentRegistry.register('durable_2', { projectPath: chatDir(), cwd: chatDir(), orchestrator: orchestrator as never, runtime: 'pty' });
+    return setModel;
+  };
+
+  it('is off by default, and Behavior gives the models as before', async () => {
+    const state = await svc.setDispatcherEnabled(true);
+    expect(state.models).toEqual({ byHand: false, chat: null, work: null });
+    expect(getSettings().models).toBeUndefined();
+    await svc.setDispatcherBehavior('thorough');
+    await settle();
+    expect(coordinator()).toMatchObject({ model: 'opus', effort: 'xhigh' });
+    expect(chat()).toMatchObject({ model: 'sonnet', effort: 'medium' });
+  });
+
+  it('turning it on keeps what each agent runs now as its pick, saved in dispatcher-settings.json', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherBehavior('thorough');
+    await settle();
+    vi.mocked(agentConfig.updateDurableConfig).mockClear();
+    const state = await svc.setDispatcherModels({ byHand: true });
+    await settle();
+    const expected = {
+      byHand: true,
+      chat: { provider: 'claude-code', model: 'sonnet', effort: 'medium', contextWindow: null },
+      work: { provider: 'claude-code', model: 'opus', effort: 'xhigh', contextWindow: null },
+    };
+    expect(state.models).toEqual(expected);
+    expect(getSettings().models).toEqual(expected);
+    // Nothing on either record changes by turning it on.
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    // It survives a restart.
+    svc._resetDispatcherForTesting();
+    await svc.initDispatcher();
+    expect(svc.getDispatcherState().models).toEqual(expected);
+  });
+
+  it('Behavior never overwrites a pick: not on a level change, an Auto change or a start, and still sets the frequencies', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'work', model: 'haiku', effort: 'low' });
+    await svc.setDispatcherModels({ role: 'chat', model: 'opus' });
+    await svc.setDispatcherBehavior('thorough');
+    for (const l of h.routingListeners) l();
+    await settle();
+    expect(coordinator()).toMatchObject({ model: 'haiku', effort: 'low' });
+    expect(chat()).toMatchObject({ model: 'opus', effort: null });
+    expect(await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1')).toEqual({ model: 'haiku', effort: 'low', orchestrator: 'claude-code' });
+    expect(await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2')).toEqual({ model: 'opus', effort: null, orchestrator: 'claude-code' });
+    expect(coordinator()).toMatchObject({ model: 'haiku', effort: 'low' });
+    expect(getDispatcherBehaviorPlan()).toMatchObject({ checkIns: 'frequently', upkeep: 'nightly_and_each_idle' });
+  });
+
+  it('puts a record edited elsewhere back to its pick at the next start', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'chat', model: 'haiku' });
+    await agentConfig.updateDurableConfig(chatDir(), 'durable_2', { model: 'sonnet' });
+    await settle();
+    await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2');
+    expect(chat()?.model).toBe('haiku');
+  });
+
+  it('runs the two jobs on different providers, each with its own instructions file, and keeps them apart', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    const state = await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await svc.setDispatcherModels({ role: 'chat', model: 'terra', effort: 'medium' });
+    await settle();
+    expect(state.models.chat).toEqual({ provider: 'codex-cli', model: 'default', effort: null, contextWindow: null });
+    expect(chat()).toMatchObject({ orchestrator: 'codex-cli', model: 'terra', effort: 'medium' });
+    expect(coordinator()).toMatchObject({ orchestrator: 'claude-code' });
+    // Each folder has its own CLI's instructions file.
+    expect(fs.existsSync(path.join(chatDir(), 'AGENTS.md'))).toBe(true);
+    expect(fs.existsSync(path.join(dispatcherDir(), 'CLAUDE.md'))).toBe(true);
+    // A change to the record Settings edits doesn't drag the chat back to its CLI.
+    await agentConfig.updateDurable(dispatcherDir(), 'durable_1', { name: 'Rosie' });
+    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { idleSleep: 30 });
+    await settle();
+    expect(chat()).toMatchObject({ name: 'Rosie', idleSleep: 30, orchestrator: 'codex-cli', model: 'terra' });
+    expect(coordinator()).toMatchObject({ orchestrator: 'claude-code' });
+    // Each start names its own provider.
+    expect(await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2')).toMatchObject({ orchestrator: 'codex-cli', model: 'terra' });
+    expect(await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1')).toMatchObject({ orchestrator: 'claude-code' });
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('turning it off brings the chat back to the provider Settings shows, and Behavior gives the models again', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await svc.setDispatcherModels({ role: 'work', model: 'haiku' });
+    const state = await svc.setDispatcherModels({ byHand: false });
+    await settle();
+    expect(state.models.byHand).toBe(false);
+    expect(chat()).toMatchObject({ orchestrator: 'claude-code', model: 'sonnet', effort: 'medium' });
+    expect(coordinator()).toMatchObject({ orchestrator: 'claude-code', model: 'sonnet', effort: 'medium' });
+    // The picks are kept for next time.
+    expect(getSettings().models).toMatchObject({ byHand: false, chat: { provider: 'codex-cli' }, work: { model: 'haiku' } });
+    await svc.setDispatcherModels({ byHand: true });
+    await settle();
+    expect(chat()).toMatchObject({ orchestrator: 'codex-cli' });
+    expect(coordinator()).toMatchObject({ model: 'haiku' });
+  });
+
+  it('switches a running session\'s model at once on the same provider, and waits for the next start on another', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    const setModel = runningChat();
+    await svc.setDispatcherModels({ role: 'chat', model: 'opus', effort: 'high' });
+    await settle();
+    expect(setModel).toHaveBeenCalledWith('opus', 'high');
+    setModel.mockClear();
+    await svc.setDispatcherModels({ role: 'chat', contextWindow: null });
+    await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await settle();
+    expect(setModel).not.toHaveBeenCalled();
+    expect(chat()).toMatchObject({ orchestrator: 'codex-cli' });
+  });
+
+  it('refuses a provider Clubhouse doesn\'t know, a model its CLI doesn\'t list, and a pick while it\'s off, saving nothing', async () => {
+    await svc.setDispatcherEnabled(true);
+    await expect(svc.setDispatcherModels({ role: 'chat', model: 'opus' })).rejects.toThrow('Turn on Choose models yourself first');
+    await svc.setDispatcherModels({ byHand: true });
+    const before = getSettings().models;
+    await expect(svc.setDispatcherModels({ role: 'chat', provider: 'nope-cli' })).rejects.toThrow('nope-cli');
+    await expect(svc.setDispatcherModels({ role: 'chat', model: 'gpt-9' })).rejects.toThrow('gpt-9 isn’t a model claude-code lists');
+    await expect(svc.setDispatcherModels({ role: 'chat', effort: 'high; rm' })).rejects.toThrow();
+    expect(getSettings().models).toEqual(before);
+    await svc.setDispatcherEnabled(false);
+    await expect(svc.setDispatcherModels({ byHand: false })).rejects.toThrow('Turn on the Dispatcher first');
+  });
+
+  it('keeps the old pick when its record refuses the new one', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    const before = getSettings().models;
+    vi.mocked(agentConfig.updateDurableConfig).mockRejectedValueOnce(new Error('300K isn’t offered for this model.'));
+    await expect(svc.setDispatcherModels({ role: 'work', contextWindow: '300000' })).rejects.toThrow('300K');
+    expect(getSettings().models).toEqual(before);
+  });
+
+  it('finishing setup turns it off, since setup picks one provider and a Behavior', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await svc.completeDispatcherSetup({ name: 'Rosie', color: 'rose', provider: 'claude-code', behavior: 'light', personality: DEFAULT_DISPATCHER_PERSONALITY });
+    await settle();
+    expect(svc.getDispatcherState().models.byHand).toBe(false);
+    expect(chat()).toMatchObject({ orchestrator: 'claude-code', model: 'haiku', effort: 'low' });
+    expect(coordinator()).toMatchObject({ orchestrator: 'claude-code', model: 'haiku', effort: 'low' });
+  });
+});
+
+describe('chosenModelUpdates (#3191)', () => {
+  const record: DurableAgentConfig = { id: 'a', name: 'D', color: 'indigo', createdAt: 'now', orchestrator: 'claude-code', model: 'opus', effort: 'high' };
+
+  it('writes nothing when the record already runs the pick, a missing model reading as the default', () => {
+    expect(svc.chosenModelUpdates(record, { provider: 'claude-code', model: 'opus', effort: 'high', contextWindow: null }, 'claude-code')).toEqual({});
+    expect(svc.chosenModelUpdates({ ...record, model: undefined, effort: undefined, orchestrator: undefined }, { provider: 'claude-code', model: 'default', effort: null, contextWindow: null }, 'claude-code')).toEqual({});
+  });
+
+  it('sends the effort and context again with a new model or provider, which clear them', () => {
+    expect(svc.chosenModelUpdates(record, { provider: 'claude-code', model: 'sonnet', effort: 'high', contextWindow: null }, undefined))
+      .toEqual({ model: 'sonnet', effort: 'high', contextWindow: null });
+    expect(svc.chosenModelUpdates(record, { provider: 'codex-cli', model: 'default', effort: null, contextWindow: null }, undefined))
+      .toEqual({ orchestrator: 'codex-cli', model: 'default', effort: null, contextWindow: null });
+    expect(svc.chosenModelUpdates(record, { provider: 'claude-code', model: 'opus', effort: 'low', contextWindow: null }, undefined)).toEqual({ effort: 'low' });
   });
 });

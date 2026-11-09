@@ -116,6 +116,11 @@ export function useDispatcherBehavior(): DispatcherBehaviorState | null {
   return useDispatcherStore((s) => s.state?.behavior ?? null);
 }
 
+/** Whether the user chooses the Dispatcher's models (#3191), so Behavior sets only its frequencies. */
+export function useDispatcherModelsByHand(): boolean {
+  return useDispatcherStore((s) => s.state?.models?.byHand ?? false);
+}
+
 /** The current Behavior level, for code outside React (the group chat, #3043). Standard until the state lands. */
 export function dispatcherBehaviorLevel(): DispatcherBehavior {
   return useDispatcherStore.getState().state?.behavior?.level ?? DEFAULT_DISPATCHER_BEHAVIOR;

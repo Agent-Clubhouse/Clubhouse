@@ -78,6 +78,24 @@ export const DISPATCHER_BEHAVIOR_LABELS: Readonly<Record<DispatcherBehavior, { l
 };
 
 /**
+ * The words for each level while the user chooses the models (#3191): what
+ * Behavior still covers, how often it works on its own. Never a time.
+ */
+export const DISPATCHER_BEHAVIOR_FREQUENCY_LABELS: Readonly<Record<DispatcherBehavior, string>> = {
+  light: 'Doesn’t check in on its own. Keeps usage low.',
+  standard: 'Checks in on your agents occasionally.',
+  thorough: 'Checks in on your agents frequently.',
+};
+
+/** A level's description: its models and frequency, or only the frequency when the models are chosen by hand. */
+export function behaviorDescription(level: DispatcherBehavior, modelsByHand: boolean): string {
+  return modelsByHand ? DISPATCHER_BEHAVIOR_FREQUENCY_LABELS[level] : DISPATCHER_BEHAVIOR_LABELS[level].description;
+}
+
+/** The line the Behavior chip and field show while the models are chosen by hand. */
+export const MODELS_BY_HAND_NOTE = 'You choose its models in Settings > Dispatcher. Behavior sets how often it checks in.';
+
+/**
  * Whether the provider's Auto mapping can give this level its models.
  * `auto_not_supported`: the provider has no mapping at all (no presets).
  * `no_valid_mapping`: it has one, but nothing it maps for this level is offered now.
