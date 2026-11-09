@@ -63,6 +63,7 @@ async function realPath(p: string, depth = 0): Promise<string> {
     try {
       return path.join(await fsp.realpath(current), ...[...rest].reverse());
     } catch {
+      // telemetry-exempt: a path that doesn't resolve (yet) is expected; it is followed by hand below
       try {
         const st = await fsp.lstat(current);
         if (st.isSymbolicLink() && depth < 40) {
@@ -70,7 +71,7 @@ async function realPath(p: string, depth = 0): Promise<string> {
           return realPath(path.join(path.resolve(path.dirname(current), link), ...[...rest].reverse()), depth + 1);
         }
       } catch {
-        // Nothing here yet: go up a folder.
+        // telemetry-exempt: nothing here yet, so go up a folder
       }
       const parent = path.dirname(current);
       if (parent === current) return path.resolve(p);
