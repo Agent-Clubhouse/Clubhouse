@@ -60,7 +60,8 @@
         "dispatcher.setEnabled",
         "helperRouting.update",
         "agent.providerPreview",
-        "agent.providerChange"
+        "agent.providerChange",
+        "grant.answer"
       ],
       "contextWindow": {
         "version": 1
@@ -96,6 +97,22 @@
         "approvalField": "reviewedDigest",
         "maximumBytes": 33554432,
         "path": "/api/v1/mobile/agents/{agentId}/chat/events/{seq}?sessionId={sessionId}",
+        "version": 1
+      },
+      "grantRequests": {
+        "answers": [
+          "allow_once",
+          "allow_lasting",
+          "decline"
+        ],
+        "commands": [
+          "grant.answer"
+        ],
+        "events": {
+          "opened": "grant_request:opened",
+          "resolved": "grant_request:resolved"
+        },
+        "snapshotField": "grantRequests",
         "version": 1
       },
       "helperRequests": {

@@ -1,0 +1,46 @@
+{
+  "direction": "desktop-to-phone",
+  "frames": [
+    {
+      "payload": {
+        "agentId": "durable_dispatcher",
+        "kind": "call",
+        "projectId": "__dispatcher__",
+        "requestId": "grant_00000000-0000-4000-8000-000000000006"
+      },
+      "seq": 1000,
+      "type": "grant_request:opened"
+    },
+    {
+      "payload": {
+        "outcome": "answered",
+        "requestIds": [
+          "grant_00000000-0000-4000-8000-000000000006"
+        ]
+      },
+      "seq": 1000,
+      "type": "grant_request:resolved"
+    },
+    {
+      "payload": {
+        "outcome": "expired",
+        "requestIds": [
+          "grant_00000000-0000-4000-8000-000000000012"
+        ]
+      },
+      "seq": 1000,
+      "type": "grant_request:resolved"
+    },
+    {
+      "payload": {
+        "outcome": "withdrawn",
+        "requestIds": [
+          "grant_00000000-0000-4000-8000-000000000028"
+        ]
+      },
+      "seq": 1000,
+      "type": "grant_request:resolved"
+    }
+  ],
+  "note": "seq is the replay sequence; a snapshot follows each, with the row. opened never carries the arguments. outcome: answered (from any device), expired, or withdrawn (its agent was deleted)."
+}

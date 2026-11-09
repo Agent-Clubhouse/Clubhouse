@@ -13,7 +13,7 @@ import * as os from 'os';
 import { createPublicKey, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
-import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
+import { MOBILE_COMMAND_TYPES, MOBILE_GRANT_ANSWERS, type AnnexAgentUpdate, type MobileCommand, type MobileGrantRequest, type MobileResponse } from '../../shared/mobile-control';
 import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
 import { isProjectIdle } from '../../shared/project-state';
 import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
@@ -34,7 +34,7 @@ import {
   dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
   phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
-import { getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { getDispatcherChatPath, getDispatcherPath, getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
 import { HELPER_ROUTING_CHANGED_EVENT, helperRoutingCapability, mobileHelperRouting, runHelperRoutingUpdate } from './mobile-helper-routing';
 import { minimalRouting } from '../../shared/helper-routing';
@@ -42,6 +42,11 @@ import { resolveOrchestrationPolicies } from './orchestration-policy';
 import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from './annex-chat-echo';
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
+import {
+  GRANT_REQUEST_OPENED_EVENT, GRANT_REQUEST_RESOLVED_EVENT, buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, runGrantCommand, toMobileGrantRequest,
+  type GrantRequestPlaces,
+} from './mobile-grant-requests';
+import { onGrantRequestsChanged } from './grant-requests';
 import { onDisposeRequestsChanged } from './helper-dispose-requests';
 import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
 import { sniffImage } from './agent-runtime/chat-attachments';
@@ -1276,6 +1281,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     pendingPermissions: permissionQueue.listPending().map((pending) => ({ ...pending, ...boundToolInput(pending.toolInput) })),
     // Helper starts and disposes waiting on the user (#159); gated by capabilities.helperRequests.
     helperRequests: buildMobileHelperRequests(projects, durablesByProject),
+    // Clubhouse permission requests waiting on the user (#3205); gated by capabilities.grantRequests.
+    grantRequests: buildMobileGrantRequests(grantRequestPlaces(projects)),
     // Moves when presets or a cell's state change, so an open or cached page knows to refetch (#2671).
     helperRoutingRevision: helperRoutingRevision(),
     lastSeq: eventReplay.getLastSeq(),
@@ -1479,7 +1486,9 @@ const SNAPSHOT_REFS_TRUNCATION_STEPS: typeof SNAPSHOT_TRUNCATION_STEPS = [
  * gets it there. `snapshotTruncated` says what was, and that the absence doesn't
  * mean it's gone. The fields left can't be given up, so past that it's reported.
  */
-function snapshotFrame({ payload, icons, iconRefs }: BuiltSnapshot, trigger: SnapshotTrigger, form: SnapshotForm = 'inline'): string {
+function snapshotFrame({ payload: built, icons, iconRefs }: BuiltSnapshot, trigger: SnapshotTrigger, form: SnapshotForm = 'inline', viewer?: string): string {
+  // A device's copy leaves out the Manage devices calls that name it (#3205).
+  const payload = viewer ? { ...built, grantRequests: snapshotGrantRows(built).filter((row) => grantRowVisibleTo(row, viewer)) } : built;
   const items = payload.projects.length + Object.values(payload.agents).reduce((sum, list) => sum + list.length, 0);
   // A phone that fetches images has both legacy maps empty, because it clears its inline icons on seeing either.
   const formPayload: Record<string, unknown> = form === 'refs' ? { ...payload, projectIcons: {}, agentIcons: {}, ...(iconRefs && { iconRefs }) } : payload;
@@ -1508,6 +1517,16 @@ function snapshotFrame({ payload, icons, iconRefs }: BuiltSnapshot, trigger: Sna
     ? { iconCount: 0, iconBytes: 0, iconsLeftOut: sentIcons.iconCount + sentIcons.iconsLeftOut }
     : sentIcons);
   return frame;
+}
+
+function snapshotGrantRows(payload: BuiltSnapshot['payload']): MobileGrantRequest[] {
+  return (payload.grantRequests as MobileGrantRequest[] | undefined) ?? [];
+}
+
+/** The device a socket's snapshot is filtered for: itself, when a Manage devices call names it (#3205); else none. */
+function grantViewerOf(built: BuiltSnapshot, ws: WebSocket): string | undefined {
+  const fingerprint = wsPeerFingerprints.get(ws)?.toLowerCase();
+  return fingerprint && snapshotGrantRows(built.payload).some((row) => !grantRowVisibleTo(row, fingerprint)) ? fingerprint : undefined;
 }
 
 /** Most frames held for one socket: as many as the replay buffer keeps. */
@@ -1649,7 +1668,7 @@ function firstSnapshotFailed(ws: WebSocket): void {
 
 /** Send a built snapshot as this socket's first, and what was held after it. False if it's too large to send. */
 function deliverFirstSnapshot(ws: WebSocket, held: HeldFrames, built: BuiltSnapshot, trigger: SnapshotTrigger): boolean {
-  const frame = snapshotFrame({ ...built, payload: { ...built.payload, lastSeq: held.cursor } }, trigger, snapshotFormOf(ws));
+  const frame = snapshotFrame({ ...built, payload: { ...built.payload, lastSeq: held.cursor } }, trigger, snapshotFormOf(ws), grantViewerOf(built, ws));
   if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) return false;
   noteFrameSize(frame, 'snapshot');
   ws.send(frame);
@@ -1676,13 +1695,13 @@ function broadcastWs(message: object): void {
   broadcastFrame((message as { type?: string }).type ?? 'other', JSON.stringify(message));
 }
 
-function broadcastFrame(type: string, frame: string, form?: SnapshotForm): number {
+function broadcastFrame(type: string, frame: string, form?: SnapshotForm, only?: (client: WebSocket) => boolean): number {
   if (!wss) return 0;
   const data = enforceFrameLimit(frame, type);
   noteFrameSize(data, type);
   let sendFailures = 0;
   for (const client of wss.clients) {
-    if (client.readyState === WebSocket.OPEN && (!form || snapshotFormOf(client) === form)) {
+    if (client.readyState === WebSocket.OPEN && (!form || snapshotFormOf(client) === form) && (!only || only(client))) {
       try {
         const held = heldFrames.get(client);
         // A socket waiting on its first snapshot gets it from the same build, with its own cursor.
@@ -2375,9 +2394,23 @@ function actsAsPhoneController(peer: AnnexPeer): boolean {
   return !peer.role || annexPeers.controlsThisMachine(peer);
 }
 
+/** A phone or tablet's icon, as phones send at pairing. */
+const PHONE_ICON = /phone|pad|tablet|mobile/i;
+
 /** Phones send `pairingMode`, and older ones a phone or tablet icon; Clubhouse desktops send neither. */
 function sentByPhone(body: Record<string, unknown>): boolean {
-  return body.pairingMode !== undefined || (typeof body.icon === 'string' && /phone|pad|tablet|mobile/i.test(body.icon));
+  return body.pairingMode !== undefined || (typeof body.icon === 'string' && PHONE_ICON.test(body.icon));
+}
+
+/**
+ * The kind of device a controller is, as the audit names its commands (#3205):
+ * a network member said when it joined; a session pairing is a phone's; a
+ * one-to-one pairing goes by the icon it paired with, as pairing does.
+ */
+function controllerSurface(peer: AnnexPeer): 'mobile' | 'annex_desktop' {
+  if (peer.kind) return peer.kind === 'phone' ? 'mobile' : 'annex_desktop';
+  if (mobileSessionPeers.has(peer.fingerprint)) return 'mobile';
+  return PHONE_ICON.test(peer.icon) ? 'mobile' : 'annex_desktop';
 }
 
 /**
@@ -3557,6 +3590,10 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     // Annex Network (#3062): the machines in this phone's network, and joining through the phone.
     ...(annexSettings.networkEnabled() && { network: NETWORK_CAPABILITY }),
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
+    // Ask-first calls and request_grant asks waiting on the user (#3205): any device that controls this computer (a paired
+    // phone, or a desktop or phone in its Annex Network) sees and answers them as Needs you does.
+    grantRequests: { version: 1, snapshotField: 'grantRequests', events: { opened: GRANT_REQUEST_OPENED_EVENT, resolved: GRANT_REQUEST_RESOLVED_EVENT },
+      commands: ['grant.answer'], answers: MOBILE_GRANT_ANSWERS },
     chatControls: { version: 1 },
     // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
     slashCommands: { version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: MOBILE_SLASH_COMMANDS_MAX },
@@ -3891,6 +3928,19 @@ async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<v
   }
 }
 
+/**
+ * Where a device's grant requests can come from (#3205): the registered projects, and the Dispatcher's folders when
+ * desktop Needs you shows it (on, or still running), on the agent you talk to, as the sidebar shows them.
+ */
+function grantRequestPlaces(projects: ReadonlyArray<{ id: string; path: string }>): GrantRequestPlaces {
+  const state = getDispatcherState();
+  const shown = (state.enabled || state.running) && !!state.chatAgentId;
+  return { projects, dispatcher: shown ? {
+    projectId: DISPATCHER_PROJECT_ID, paths: [getDispatcherPath(), getDispatcherChatPath()], agentId: state.chatAgentId!,
+    askingIds: [state.agentId, state.chatAgentId].filter((id): id is string => !!id),
+  } : null };
+}
+
 /** This machine, as snapshots and addresses name it (#3063). */
 function thisMachine(): { machine?: { fingerprint: string; name: string } } {
   const identity = annexIdentity.getIdentity();
@@ -4042,6 +4092,10 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     broadcastSnapshotRefresh();
     return updated;
   }
+  if (command.type === 'grant.answer') {
+    // The request's events and a fresh snapshot follow from the store.
+    return runGrantCommand(command, grantRequestPlaces(await projectStore.list()), { assertAuthorized, viewer: principal });
+  }
   if (command.type === 'helper.approve' || command.type === 'helper.decline') {
     const result = await runHelperCommand(command, { assertAuthorized, reloadProject: (projectPath) => {
       // The desktop's rail drops the disposed helper, as after its own dispose dialog.
@@ -4141,7 +4195,8 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
       if (mobileCommands.epoch !== epoch || !current || current.tlsCertificateFingerprint !== pin
         || !actsAsPhoneController(current)) throw new MobileControlError('authorization_revoked', 403);
     };
-    const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized, principal!));
+    const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized, principal!),
+      peer ? controllerSurface(peer) : 'mobile');
     logRefusedMobileCommand(response, input);
     sendJson(ctx.res, response.statusCode, response.body);
   } catch (err) {
@@ -5133,6 +5188,22 @@ export function start(): void {
 
   // Helper starts and disposes waiting on the user (#159) are in the snapshot.
   const offStarts = onStartRequestsChanged(() => broadcastSnapshotRefresh());
+  // Clubhouse permission requests (#3205) too, each opened or resolved also as an event, in the order they happened.
+  let grantEvents: Promise<void> = Promise.resolve();
+  const offGrants = onGrantRequestsChanged((change) => {
+    grantEvents = grantEvents.then(async () => {
+      if (change.kind === 'added') {
+        const request = toMobileGrantRequest(change.request, grantRequestPlaces(await projectStore.list()));
+        if (request) broadcastAndBuffer(GRANT_REQUEST_OPENED_EVENT, grantOpenedPayload(request));
+      } else {
+        broadcastAndBuffer(GRANT_REQUEST_RESOLVED_EVENT, { requestIds: change.requestIds, outcome: change.reason });
+      }
+    }).catch((err: unknown) => {
+      // telemetry-exempt: logged; the snapshot below still carries the change
+      appLog('core:annex', 'warn', 'Grant request event failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    });
+    broadcastSnapshotRefresh();
+  });
   const offDisposes = onDisposeRequestsChanged(() => broadcastSnapshotRefresh());
   // A project's name, color or image, wherever it changed, or one added or removed. A burst is one snapshot.
   let projectsChangedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -5146,6 +5217,7 @@ export function start(): void {
   });
   unsubHelperRequests = () => {
     offStarts();
+    offGrants();
     offDisposes();
     offProjects();
     if (projectsChangedTimer) clearTimeout(projectsChangedTimer);
@@ -5592,13 +5664,18 @@ function startSnapshotBuild(): void {
     // Built once and encoded per form, so a phone that fetches images never gets one here.
     let oversize = false;
     if (broadcast) {
-      const forms = new Set<SnapshotForm>();
-      for (const client of wss?.clients ?? []) forms.add(snapshotFormOf(client));
-      for (const form of forms) {
-        const frame = snapshotFrame(built, 'refresh', form);
+      // One copy per form, and per device a Manage devices call names (#3205).
+      const copies = new Map<string, { form: SnapshotForm; viewer?: string }>();
+      for (const client of wss?.clients ?? []) {
+        const form = snapshotFormOf(client);
+        const viewer = grantViewerOf(built, client);
+        copies.set(`${form}\0${viewer ?? ''}`, { form, viewer });
+      }
+      for (const { form, viewer } of copies.values()) {
+        const frame = snapshotFrame(built, 'refresh', form, viewer);
         // Never send a phone a frame it would close on. It keeps what it has, and the next change tries again.
         if (Buffer.byteLength(frame) > MOBILE_WS_FRAME_MAX_BYTES) oversize = true;
-        else if (broadcastFrame('snapshot', frame, form) > 0) recordSnapshotFailure('send_failed');
+        else if (broadcastFrame('snapshot', frame, form, (client) => grantViewerOf(built, client) === viewer) > 0) recordSnapshotFailure('send_failed');
       }
     }
     for (const ws of [...firstSnapshotWaiters]) {
@@ -6058,6 +6135,7 @@ export function getWsAuthType(ws: WebSocket): WsAuthType {
 
 /** @internal Exposed for testing only. */
 export const _testing = {
+  controllerSurface,
   mobileEpoch: () => mobileCommands.epoch,
   PROJECTS_CHANGED_DEBOUNCE_MS,
   HELD_FRAMES_MAX,

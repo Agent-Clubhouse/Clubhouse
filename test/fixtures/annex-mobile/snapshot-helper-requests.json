@@ -10,7 +10,7 @@
       },
       "kind": "start",
       "projectId": "proj_app",
-      "requestId": "hstart_00000000-0000-4000-8000-000000000027",
+      "requestId": "hstart_00000000-0000-4000-8000-000000000035",
       "requestedAt": "2027-01-15T07:50:00.000Z",
       "requestedRouting": {
         "difficulty": null,
@@ -48,7 +48,7 @@
       },
       "kind": "dispose",
       "projectId": "proj_app",
-      "requestId": "hdispose_00000000-0000-4000-8000-000000000028",
+      "requestId": "hdispose_00000000-0000-4000-8000-000000000036",
       "requestedAt": "2027-01-15T07:55:00.000Z",
       "requester": {
         "agentId": "durable_chat",

@@ -1,10 +1,10 @@
 import { AgentResumeError, AgentTransitionError } from './agent-transition';
-import { withSettingsSurface } from './settings-audit';
+import { withSettingsSurface, type SettingsAuditSurface } from './settings-audit';
 import { INPUT_WINDOW_NOTE, type ContextLimits } from '../../shared/context-window';
 import { createHash, randomUUID } from 'crypto';
 import type { AgentRuntime, ChatCapabilities, ChatEvent, ContentBlock, PermissionLevel } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, switchNote } from '../../shared/chat';
-import { MOBILE_COMMAND_TYPES, type MobileChatControls, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
+import { MOBILE_COMMAND_TYPES, MOBILE_GRANT_ANSWERS, type MobileChatControls, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 import { AGENT_IDLE_SLEEP_MINUTES } from '../../shared/idle-sleep';
 import { boundPendingPermissions, hasSupportedDeny, isIncompletePermission } from './annex-chat-bounds';
 
@@ -44,6 +44,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
   'helper.decline': ['requestId'],
+  'grant.answer': ['requestId', 'answer'],
   'quick.dismiss': ['projectId', 'agentId'],
   'quick.clear': ['projectId'],
   'dispatcher.setEnabled': ['enabled'],
@@ -98,6 +99,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
     } else if (key === 'idleSleep') { if (!idleSleep(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'effort') { if (v !== null && !text(v, 64)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'level') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
+    else if (key === 'answer') { if (!(MOBILE_GRANT_ANSWERS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'runtime') { if (!['default', 'chat', 'terminal'].includes(v as string)) throw new MobileControlError('invalid_command', 400); }
     else if (!text(v, ['text', 'message', 'prompt'].includes(key) ? 65536 : key === 'emoji' ? 16 : 256)) throw new MobileControlError('invalid_command', 400);
   }
@@ -126,7 +128,8 @@ export class MobileCommandService {
   reject(code: string, statusCode: number, commandId?: string): MobileResponse {
     return { statusCode, body: { version: 1, epoch: this.epoch, commandId, status: 'rejected', error: { code, message: code } } };
   }
-  async execute(principal: string | undefined, input: unknown, run: (command: MobileCommand) => Promise<unknown>): Promise<MobileResponse> {
+  /** `surface` is the controlling device's kind for the audit: `mobile` for a phone, `annex_desktop` for another computer. */
+  async execute(principal: string | undefined, input: unknown, run: (command: MobileCommand) => Promise<unknown>, surface: SettingsAuditSurface = 'mobile'): Promise<MobileResponse> {
     // Enforced again here even if a new transport forgets its gate.
     if (!principal) return this.reject('client_certificate_required', 403);
     let command: MobileCommand;
@@ -144,7 +147,7 @@ export class MobileCommandService {
     // Reserve synchronously before executing, including while the first request is in flight.
     const entry: Entry = { fingerprint, expires: Infinity, settled: false, response: Promise.resolve().then(async () => {
       try {
-        const result = await withSettingsSurface('mobile', principal, () => run(command));
+        const result = await withSettingsSurface(surface, principal, () => run(command));
         return { statusCode: 200, body: { version: 1 as const, commandId: command.commandId, epoch, status: 'completed' as const, result } };
       } catch (err) {
         // telemetry-exempt: the receipt reports failure; runtime operations own detailed error telemetry.
