@@ -4,7 +4,7 @@ import { newChromeEnabled } from '../../window-chrome';
 import { resolveDispatcherEnablement, type DispatcherEnablement } from '../../../shared/dispatcher-types';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import type { DispatcherBehavior } from '../../../shared/dispatcher-behavior';
-import type { SavedDispatcherModels } from '../../../shared/dispatcher-models';
+import type { DispatcherModelsBefore, SavedDispatcherModels } from '../../../shared/dispatcher-models';
 import type { DispatcherPersonality } from '../../../shared/dispatcher-personality';
 import type { DispatcherSetupState } from '../../../shared/dispatcher-setup';
 
@@ -21,6 +21,8 @@ export interface DispatcherSettings {
    * or off means Behavior gives the models. The picks stay when it goes off.
    */
   models?: SavedDispatcherModels;
+  /** The provider and context its agents ran on when Choose models yourself went on, put back when it goes off. */
+  modelsBefore?: DispatcherModelsBefore;
   /** Personality (#3047): the text for its chat's instructions and its preset. Missing reads as Concise. */
   personality?: DispatcherPersonality;
   /**

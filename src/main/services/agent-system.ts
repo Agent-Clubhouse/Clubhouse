@@ -336,17 +336,18 @@ async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunc
 /**
  * A Dispatcher start with the model prepareDispatcherSessionStart gave it:
  * Behavior's (#3045), or the user's pick (#3191), which names its provider
- * too. A start on another CLI than its caller saw drops the session it would
- * resume, which that CLI can't read (#2593); the record already dropped it.
+ * too. A start on another CLI than its record or its caller had drops the
+ * session it would resume, which that CLI can't read (#2593); the record
+ * already dropped it.
  */
 export function withDispatcherStartModel(
   params: SpawnAgentParams,
-  applied: { model: string; orchestrator?: OrchestratorId } | null,
+  applied: { model: string; orchestrator?: OrchestratorId; providerChanged?: boolean } | null,
 ): SpawnAgentParams {
   if (!applied) return params;
   const next = { ...params, model: applied.model };
-  if (!applied.orchestrator || applied.orchestrator === params.orchestrator) return next;
-  const otherCli = params.orchestrator !== undefined;
+  if (!applied.orchestrator) return next;
+  const otherCli = applied.providerChanged === true || (params.orchestrator !== undefined && params.orchestrator !== applied.orchestrator);
   return { ...next, orchestrator: applied.orchestrator, ...(otherCli && { resume: false, sessionId: undefined }) };
 }
 

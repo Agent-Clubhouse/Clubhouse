@@ -28,6 +28,23 @@ export interface SavedDispatcherModels {
   work?: DispatcherRoleModel;
 }
 
+/**
+ * What its agents ran on as the switch went on: one provider and context,
+ * which the identity shared then. Put back when it goes off.
+ */
+export interface DispatcherModelsBefore {
+  provider: string;
+  contextWindow: string | null;
+}
+
+/** A saved value, or null for anything that isn't one. Never throws. */
+export function normalizeModelsBefore(value: unknown): DispatcherModelsBefore | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.provider !== 'string' || !v.provider) return null;
+  return { provider: v.provider, contextWindow: typeof v.contextWindow === 'string' && v.contextWindow ? v.contextWindow : null };
+}
+
 /** What main reports on DispatcherState. Both picks are set while `byHand` is on. */
 export interface DispatcherModelsState {
   byHand: boolean;

@@ -45,7 +45,7 @@ Clubhouse turns each level into models for your provider through the Auto mappin
 
 To pick the models instead, turn on **Choose models yourself** in **Settings > Dispatcher**, under Behavior. It shows two rows, **Talking with you** and **Working in the background**, each with a provider, model, effort and, where the provider offers it, context. The two can use different providers. Behavior then sets only how often it checks in and keeps up its memory, and the chip says the models are yours.
 
-A new model or effort applies at once where the provider allows it, otherwise at its next start. A new provider or context applies at its next start. Turn the switch off to let Behavior choose again; your picks are kept for next time. Going through setup again turns it off, since setup picks one provider.
+A new model or effort applies at once where the provider allows it, otherwise at its next start. A new provider or context applies at its next start. Turn the switch off to let Behavior choose again: it goes back to the provider and context it had before, and your picks are kept for next time. While the switch is on, change its provider here rather than from your phone's provider change. Going through setup again turns it off, since setup picks one provider.
 
 ## Memory
 

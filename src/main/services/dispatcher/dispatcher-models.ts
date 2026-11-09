@@ -4,7 +4,12 @@
  * the picks to its two agents and keeps Behavior from overwriting them.
  */
 
-import { normalizeDispatcherModels, type DispatcherModelsState } from '../../../shared/dispatcher-models';
+import {
+  normalizeDispatcherModels,
+  normalizeModelsBefore,
+  type DispatcherModelsBefore,
+  type DispatcherModelsState,
+} from '../../../shared/dispatcher-models';
 import { getSettings, updateSettings } from './dispatcher-settings';
 
 /** The switch and the picks as saved. Off until a person turns it on. */
@@ -30,4 +35,17 @@ export async function saveDispatcherModels(next: DispatcherModelsState): Promise
     },
   }));
   return true;
+}
+
+/** The provider and context its agents ran on as the switch went on, or null when none was saved. */
+export function getModelsBefore(): DispatcherModelsBefore | null {
+  return normalizeModelsBefore(getSettings().modelsBefore);
+}
+
+/** Save what its agents run on as the switch goes on, or clear it with null as it goes off. */
+export async function saveModelsBefore(before: DispatcherModelsBefore | null): Promise<void> {
+  await updateSettings((settings) => {
+    const { modelsBefore: _dropped, ...rest } = settings;
+    return before ? { ...rest, modelsBefore: before } : rest;
+  });
 }

@@ -585,12 +585,19 @@ export async function updateMobileDispatcher(
     delete updates.model;
     delete updates.contextWindow;
   }
-  if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
+  // The pick first: main checks it against the record, and a refusal leaves everything unwritten.
   if (Object.keys(pick).length > 0) {
     // Loaded here: dispatcher-service is heavy, and imports what imports this module.
     const { setDispatcherModels } = await import('./dispatcher/dispatcher-service');
-    await setDispatcherModels({ role: 'chat', ...pick });
+    try {
+      await setDispatcherModels({ role: 'chat', ...pick });
+    } catch (err) {
+      if (err instanceof MobileControlError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw pick.contextWindow ? invalid('invalid_context_window', message) : invalid('invalid_model', message);
+    }
   }
+  if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(project.path, config.id, updates);
   const saved = (await agentConfig.getDurableConfig(project.path, config.id)) ?? config;
   return { ...await buildAgentSettings(project, saved, live, { dispatcher: true }), ...sessionReset(command, hadSession, saved), ...contextWindowReset(previousChoice, saved, command) };
 }

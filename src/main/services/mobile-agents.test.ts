@@ -598,6 +598,15 @@ describe('the Dispatcher from a phone (#2533)', () => {
     expect(setDispatcherModels).toHaveBeenCalledTimes(2);
   });
 
+  it('writes nothing when the pick is refused, and answers with the phone\'s codes (QA L8)', async () => {
+    modelsByHand.on = true;
+    setDispatcherModels.mockRejectedValueOnce(new Error('Its record refused the pick.'));
+    expect(await refusal(update({ model: 'opus', idleSleep: 30, runtime: 'terminal' }))).toMatchObject({ code: 'invalid_model', statusCode: 400, detail: 'Its record refused the pick.' });
+    setDispatcherModels.mockRejectedValueOnce(new Error('300K isn’t offered for this model.'));
+    expect(await refusal(update({ contextWindow: '300000', idleSleep: 30 }))).toMatchObject({ code: 'invalid_context_window', statusCode: 400 });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+  });
+
   it('keeps its current CLI choosable after it was turned off for new agents', async () => {
     vi.mocked(getAvailableOrchestrators).mockReturnValue([orchestrator('codex-cli', false)] as never);
     await update({ orchestrator: 'claude-code' }, undefined, dispatcherAgent({ orchestrator: undefined }));

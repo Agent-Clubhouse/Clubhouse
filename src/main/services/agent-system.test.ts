@@ -3799,8 +3799,12 @@ describe('withDispatcherStartModel (#3045, #3191)', () => {
     expect(withDispatcherStartModel(base, { model: 'opus', orchestrator: 'claude-code' })).toEqual({ ...base, model: 'opus' });
     expect(withDispatcherStartModel(base, { model: 'terra', orchestrator: 'codex-cli' }))
       .toEqual({ ...base, model: 'terra', orchestrator: 'codex-cli', resume: false, sessionId: undefined });
-    // A caller that named no CLI had no session from another one.
+    // A caller that named no CLI keeps its session, unless the record itself just moved to another CLI (QA L7).
     expect(withDispatcherStartModel({ ...base, orchestrator: undefined }, { model: 'terra', orchestrator: 'codex-cli' }))
       .toEqual({ ...base, model: 'terra', orchestrator: 'codex-cli' });
+    expect(withDispatcherStartModel({ ...base, orchestrator: undefined }, { model: 'terra', orchestrator: 'codex-cli', providerChanged: true }))
+      .toEqual({ ...base, model: 'terra', orchestrator: 'codex-cli', resume: false, sessionId: undefined });
+    expect(withDispatcherStartModel({ ...base, orchestrator: 'codex-cli' }, { model: 'terra', orchestrator: 'codex-cli', providerChanged: true }))
+      .toEqual({ ...base, model: 'terra', orchestrator: 'codex-cli', resume: false, sessionId: undefined });
   });
 });

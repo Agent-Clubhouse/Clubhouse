@@ -1146,6 +1146,108 @@ describe('Choose models yourself (#3191)', () => {
     expect(chat()?.model).toBe('haiku');
   });
 
+  it('never switches a session still on another provider when Behavior applies (QA M1)', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await settle();
+    const setModel = runningChat('codex-cli');
+    await svc.setDispatcherModels({ byHand: false });
+    await settle();
+    expect(chat()).toMatchObject({ orchestrator: 'claude-code', model: 'sonnet' });
+    expect(setModel).not.toHaveBeenCalled();
+  });
+
+  it('two changes in a row to one job both land, and the running session ends on both (QA M2)', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    const setModel = runningChat();
+    await Promise.all([
+      svc.setDispatcherModels({ role: 'chat', model: 'opus' }),
+      svc.setDispatcherModels({ role: 'chat', effort: 'high' }),
+    ]);
+    await settle();
+    expect(getSettings().models?.chat).toMatchObject({ model: 'opus', effort: 'high' });
+    expect(chat()).toMatchObject({ model: 'opus', effort: 'high' });
+    expect(setModel).toHaveBeenLastCalledWith('opus', 'high');
+  });
+
+  it('turning it off puts back the provider and context from before it went on, leaving no context from a pick (QA L2, L3)', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { contextWindow: '400000' });
+    await settle();
+    expect(chat()?.contextWindow).toBe('400000');
+    await svc.setDispatcherModels({ byHand: true });
+    expect(getSettings().modelsBefore).toEqual({ provider: 'claude-code', contextWindow: '400000' });
+    // The work moves to Codex with a context of its own; the chat changes its context.
+    await svc.setDispatcherModels({ role: 'work', provider: 'codex-cli' });
+    await svc.setDispatcherModels({ role: 'work', contextWindow: '272000' });
+    await svc.setDispatcherModels({ role: 'chat', contextWindow: '1000000' });
+    await settle();
+    await svc.setDispatcherModels({ byHand: false });
+    await settle();
+    for (const agent of [coordinator(), chat()]) expect(agent).toMatchObject({ orchestrator: 'claude-code', contextWindow: '400000' });
+    expect(getSettings().modelsBefore).toBeUndefined();
+  });
+
+  it('without what it ran on before, turning off goes to the provider Runs on shows and clears the context', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await svc.setDispatcherModels({ role: 'chat', contextWindow: '272000' });
+    await updateSettings(({ modelsBefore: _gone, ...rest }) => rest);
+    await svc.setDispatcherModels({ byHand: false });
+    await settle();
+    expect(chat()).toMatchObject({ orchestrator: 'claude-code', contextWindow: null });
+  });
+
+  it('writes the instructions for the CLI the pick starts on (QA L4)', async () => {
+    h.enabledProviders = ['claude-code', 'codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'chat', provider: 'codex-cli' });
+    await settle();
+    // Moved back to Claude Code somewhere else.
+    await agentConfig.updateDurableConfig(chatDir(), 'durable_2', { orchestrator: 'claude-code' });
+    await settle();
+    const codex = providers.list.find((p) => p.id === 'codex-cli')!;
+    const claude = providers.list.find((p) => p.id === 'claude-code')!;
+    codex.writeInstructions.mockClear();
+    claude.writeInstructions.mockClear();
+    expect(await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2')).toMatchObject({ orchestrator: 'codex-cli', providerChanged: true });
+    expect(codex.writeInstructions).toHaveBeenCalledWith(chatDir(), expect.any(String));
+    expect(claude.writeInstructions).not.toHaveBeenCalled();
+  });
+
+  it('turning it back on switches a running session on the same provider to its pick (QA L5)', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'chat', model: 'haiku', effort: 'low' });
+    await svc.setDispatcherModels({ byHand: false });
+    await settle();
+    expect(chat()).toMatchObject({ model: 'sonnet' });
+    const setModel = runningChat();
+    await svc.setDispatcherModels({ byHand: true });
+    await settle();
+    expect(chat()).toMatchObject({ model: 'haiku', effort: 'low' });
+    expect(setModel).toHaveBeenCalledWith('haiku', 'low');
+  });
+
+  it('a saved context no longer offered is dropped at the start, and the rest of the pick applies (QA L6)', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    await svc.setDispatcherModels({ role: 'work', model: 'opus', contextWindow: '1000000' });
+    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { model: 'sonnet', contextWindow: null });
+    await settle();
+    vi.mocked(agentConfig.updateDurableConfig).mockImplementationOnce(async () => { throw new Error('1M isn’t offered for this model.'); });
+    expect(await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1')).toMatchObject({ model: 'opus' });
+    expect(coordinator()).toMatchObject({ model: 'opus', contextWindow: null });
+    expect(getSettings().models?.work).toMatchObject({ model: 'opus', contextWindow: null });
+  });
+
   it('keeps the old pick when its record refuses the new one', async () => {
     await svc.setDispatcherEnabled(true);
     await svc.setDispatcherModels({ byHand: true });
