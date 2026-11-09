@@ -442,6 +442,42 @@ describe('initAppEventBridge', () => {
     expect(updateAgentStatus).toHaveBeenCalledWith('agent-7', 'running');
   });
 
+  // #3183: an agent created or deleted in main (an MCP tool, an Action) joins
+  // or leaves the sidebar without reopening the window.
+  describe('agent config changes (#3183)', () => {
+    const configsChanged = () => vi.mocked(window.clubhouse.agent.onConfigsChanged).mock.calls[0][0] as (projectPath: string) => void;
+    const mockStore = () => {
+      const store = {
+        syncDurableDisplay: vi.fn(async () => undefined),
+        syncDurableMembership: vi.fn(async () => undefined),
+      };
+      vi.mocked(useAgentStore.getState).mockReturnValue(store as never);
+      vi.mocked(useProjectStore.getState).mockReturnValue({ projects: [{ id: 'proj-1', path: '/p' }] } as never);
+      return store;
+    };
+
+    it("syncs which agents a loaded project has", () => {
+      const store = mockStore();
+      configsChanged()('/p');
+      expect(store.syncDurableDisplay).toHaveBeenCalledWith('/p');
+      expect(store.syncDurableMembership).toHaveBeenCalledWith('proj-1', '/p');
+    });
+
+    it('only updates how agents look for a folder that is no loaded project, such as the Dispatcher', () => {
+      const store = mockStore();
+      configsChanged()('/base/dispatcher');
+      expect(store.syncDurableDisplay).toHaveBeenCalledWith('/base/dispatcher');
+      expect(store.syncDurableMembership).not.toHaveBeenCalled();
+    });
+
+    it('leaves membership to the main window in a pop-out', () => {
+      const store = mockStore();
+      vi.mocked(window.clubhouse.window.isPopout).mockReturnValueOnce(true);
+      configsChanged()('/p');
+      expect(store.syncDurableMembership).not.toHaveBeenCalled();
+    });
+  });
+
   describe('quick agent completion (#2033)', () => {
     let lastSelectCompleted: ReturnType<typeof vi.fn> = vi.fn();
     async function exitQuickAgent(agent: Record<string, unknown>, transcript: string | null, exitCode: number, lastOutput?: string, activeAgentId: string | null = null) {
