@@ -36,6 +36,7 @@ import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 import { forgetDelivery } from './managed-agents/delivery-records';
 import { removeAgentChatMedia } from './agent-runtime/chat-media-retention';
 import { legacyClubhouseModeEnabled } from './managed-agents/legacy-migration';
+import { trackOperation } from './main-stall-monitor';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -722,10 +723,10 @@ async function writeAgentsToDiskWithOptions(
   // files if the process crashes mid-write. We update the backup only after the
   // main file rename succeeds so a crash can never leave both files corrupt.
   const tmpPath = configPath + '.tmp.' + randomUUID().slice(0, 8);
-  await persist.timed('agents', async () => {
+  await trackOperation('agents.json write', () => persist.timed('agents', async () => {
     await fsp.writeFile(tmpPath, JSON.stringify(agents, null, 2), 'utf-8');
     await fsp.rename(tmpPath, configPath);
-  });
+  }));
   // The watcher reports this write, so the backstop check needn't report it again.
   const watched = configWatchers.get(projectPath);
   if (watched) void refreshAgentsFileSignature(watched, projectPath);
@@ -2385,7 +2386,7 @@ async function runDurableCreation(
         checkCancelled();
         try {
           // Only spanned under an active agent create flow (Phase 4), never orphaned.
-          await stepUnderFlow('clubhouse.git.worktree_add', () => execGitFileAsync(['worktree', 'add', '--', wtPath, branch], projectPath, undefined, signal));
+          await stepUnderFlow('clubhouse.git.worktree_add', () => trackOperation('git worktree add', () => execGitFileAsync(['worktree', 'add', '--', wtPath, branch], projectPath, undefined, signal)));
         } catch (err) {
           checkCancelled();
           const errMsg = errorMessage(err);

@@ -13,6 +13,7 @@ import { getSettings as getThemeSettings } from './services/theme-service';
 import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
+import { startMainStallMonitor } from './services/main-stall-monitor';
 import { isFailedCopilotWrite } from './chat/copilot/failed-writes';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
@@ -489,6 +490,8 @@ app.on('ready', () => {
     });
 
   // Start stale session sweeps (safety net for leaked sessions)
+  // Logs main-process stalls of a second or more with what was running (#3230).
+  startMainStallMonitor();
   startPtyStaleSweep();
   startHeadlessStaleSweep();
 

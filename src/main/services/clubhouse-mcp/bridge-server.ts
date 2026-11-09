@@ -17,6 +17,7 @@ import type { JsonRpcRequest, JsonRpcResponse } from './types';
 import type { AgentMcpConnection } from '../../../shared/types';
 import { recordMcpToolCall } from '../../telemetry/agent-signals';
 import { recordToolsList } from '../../telemetry/feature-events';
+import { trackOperation } from '../main-stall-monitor';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 const MCP_PROTOCOL_VERSION = '2024-11-05';
@@ -201,7 +202,7 @@ async function handleToolsCall(
   const callStartMs = Date.now();
   const isGlobal = isGlobalTool(toolName);
   try {
-    const result = await callTool(agentId, toolName, args);
+    const result = await trackOperation(`mcp ${toolName}`, () => callTool(agentId, toolName, args));
     recordMcpToolCall(toolName, callStartMs, result.isError ? 'tool_error' : 'ok', isGlobal, {
       agentId,
       refusal: refusalReasonOf(result),
