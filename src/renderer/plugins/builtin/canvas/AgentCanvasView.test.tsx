@@ -596,8 +596,16 @@ describe('AgentCanvasView and the Dispatcher (#3184)', () => {
 
   it('a card that names the Dispatcher shows where it lives, not its chat', () => {
     render(<AgentCanvasView view={makeView({ agentId: 'disp-chat', displayName: 'Navi' })} api={stubApi({ agents })} onUpdate={noop} />);
-    expect(screen.getByTestId('canvas-dispatcher-card')).toHaveTextContent('The Dispatcher has its own pane and can’t be on a canvas.');
+    expect(screen.getByTestId('canvas-dispatcher-card')).toHaveTextContent('Dispatcher has its own pane and can’t be on a canvas.');
+    expect(screen.getByRole('button', { name: 'Open Dispatcher' })).toBeTruthy();
     expect(screen.queryByTestId('agent-view')).toBeNull();
     expect(screen.queryByText('Connecting...')).toBeNull();
+  });
+
+  it('names the Dispatcher by its display name', () => {
+    useDispatcherStore.setState({ state: { agentId: 'disp', chatAgentId: 'disp-chat', config: { name: 'Navi' } } } as never);
+    render(<AgentCanvasView view={makeView({ agentId: 'disp' })} api={stubApi({ agents })} onUpdate={noop} />);
+    expect(screen.getByTestId('canvas-dispatcher-card')).toHaveTextContent('Navi has its own pane and can’t be on a canvas.');
+    expect(screen.getByRole('button', { name: 'Open Navi' })).toBeTruthy();
   });
 });

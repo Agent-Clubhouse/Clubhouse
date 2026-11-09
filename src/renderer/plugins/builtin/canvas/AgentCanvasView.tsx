@@ -9,7 +9,7 @@ import { cardDot } from './canvas-card-status';
 import { AgentView } from '../../../features/agents/chat/AgentView';
 import { openNewAgentPage } from '../../../chrome/startPage';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
-import { isDispatcherAgent } from '../../../features/dispatcher/dispatcherStore';
+import { isDispatcherAgent, useDispatcherStore } from '../../../features/dispatcher/dispatcherStore';
 import { openDispatcher } from '../../../features/dispatcher/dispatcherNav';
 
 interface AgentCanvasViewProps {
@@ -41,6 +41,8 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // The Dispatcher by the name the user gave it, else its working name.
+  const dispatcherName = useDispatcherStore((s) => s.state?.config?.name?.trim() || 'Dispatcher');
 
   useEffect(() => {
     const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
@@ -200,8 +202,8 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   if (view.agentId && isDispatcherAgent({ id: view.agentId, projectId: view.projectId ?? '' })) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 p-4 text-center" data-testid="canvas-dispatcher-card">
-        <span className="text-xs text-ctp-subtext0">The Dispatcher has its own pane and can’t be on a canvas.</span>
-        <button type="button" onClick={openDispatcher} className="text-xs text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Open the Dispatcher</button>
+        <span className="text-xs text-ctp-subtext0">{dispatcherName} has its own pane and can’t be on a canvas.</span>
+        <button type="button" onClick={openDispatcher} className="text-xs text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Open {dispatcherName}</button>
       </div>
     );
   }
