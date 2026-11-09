@@ -17,7 +17,7 @@
             "kind": "desktop",
             "name": "Studio",
             "online": true,
-            "pairingId": "00000000-0000-4000-8000-000000000021",
+            "pairingId": "00000000-0000-4000-8000-000000000028",
             "port": 7432,
             "publicKey": "<base64 Ed25519 SPKI DER>",
             "self": true
@@ -36,7 +36,7 @@
             "kind": "desktop",
             "name": "Travel laptop",
             "online": false,
-            "pairingId": "00000000-0000-4000-8000-000000000022",
+            "pairingId": "00000000-0000-4000-8000-000000000029",
             "port": 7432,
             "publicKey": "<base64 Ed25519 SPKI DER>"
           },
@@ -50,7 +50,7 @@
             "kind": "phone",
             "name": "Mason’s iPhone",
             "online": false,
-            "pairingId": "00000000-0000-4000-8000-000000000023",
+            "pairingId": "00000000-0000-4000-8000-000000000030",
             "publicKey": "<base64 Ed25519 SPKI DER>"
           }
         ]
@@ -91,7 +91,7 @@
             "joinedAt": "2026-11-08T10:00:00.000Z",
             "kind": "desktop",
             "name": "Travel laptop",
-            "pairingId": "00000000-0000-4000-8000-000000000022",
+            "pairingId": "00000000-0000-4000-8000-000000000029",
             "port": 7432,
             "publicKey": "<base64 Ed25519 SPKI DER>"
           }
@@ -124,7 +124,7 @@
             "joinedAt": "2026-11-08T10:00:00.000Z",
             "kind": "desktop",
             "name": "Travel laptop",
-            "pairingId": "00000000-0000-4000-8000-000000000022",
+            "pairingId": "00000000-0000-4000-8000-000000000029",
             "port": 7432,
             "publicKey": "<base64 Ed25519 SPKI DER>"
           }

@@ -5,7 +5,7 @@
       "request": {
         "commandId": "cmd_101",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000006",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000012",
         "type": "helper.approve",
         "version": 1
       },
@@ -17,7 +17,7 @@
             "approved": true,
             "helperId": "durable_helper_new",
             "kind": "start",
-            "requestId": "hstart_00000000-0000-4000-8000-000000000006"
+            "requestId": "hstart_00000000-0000-4000-8000-000000000012"
           },
           "status": "completed",
           "version": 1
@@ -30,7 +30,7 @@
       "request": {
         "commandId": "cmd_102",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000007",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000013",
         "type": "helper.approve",
         "version": 1
       },
@@ -53,7 +53,7 @@
       "request": {
         "commandId": "cmd_103",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000008",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000014",
         "type": "helper.approve",
         "version": 1
       },
@@ -76,7 +76,7 @@
       "request": {
         "commandId": "cmd_no_mapping",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000009",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000015",
         "type": "helper.approve",
         "version": 1
       },
@@ -99,7 +99,7 @@
       "request": {
         "commandId": "cmd_no_mapping",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000009",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000015",
         "type": "helper.approve",
         "version": 1
       },
@@ -122,7 +122,7 @@
       "request": {
         "commandId": "cmd_no_mapping_again",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000009",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000015",
         "type": "helper.approve",
         "version": 1
       },
@@ -146,7 +146,7 @@
         "commandId": "cmd_104",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000010",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000016",
         "type": "helper.approve",
         "version": 1
       },
@@ -157,7 +157,7 @@
           "result": {
             "approved": true,
             "kind": "dispose",
-            "requestId": "hdispose_00000000-0000-4000-8000-000000000010",
+            "requestId": "hdispose_00000000-0000-4000-8000-000000000016",
             "stopped": true
           },
           "status": "completed",
@@ -171,7 +171,7 @@
       "request": {
         "commandId": "cmd_105",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000011",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000017",
         "type": "helper.approve",
         "version": 1
       },
@@ -182,7 +182,7 @@
           "result": {
             "approved": true,
             "kind": "dispose",
-            "requestId": "hdispose_00000000-0000-4000-8000-000000000011",
+            "requestId": "hdispose_00000000-0000-4000-8000-000000000017",
             "stopped": true
           },
           "status": "completed",
@@ -196,7 +196,7 @@
       "request": {
         "commandId": "cmd_106",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000012",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000018",
         "type": "helper.approve",
         "version": 1
       },
@@ -219,7 +219,7 @@
       "request": {
         "commandId": "cmd_107",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000013",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000019",
         "type": "helper.approve",
         "version": 1
       },
@@ -243,7 +243,7 @@
         "commandId": "cmd_108",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000014",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000020",
         "type": "helper.approve",
         "version": 1
       },
@@ -267,7 +267,7 @@
         "commandId": "cmd_109",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "force": true,
-        "requestId": "hdispose_00000000-0000-4000-8000-000000000015",
+        "requestId": "hdispose_00000000-0000-4000-8000-000000000021",
         "type": "helper.approve",
         "version": 1
       },
@@ -313,7 +313,7 @@
       "request": {
         "commandId": "cmd_162",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000016",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000022",
         "type": "helper.approve",
         "version": 1
       },
@@ -336,7 +336,7 @@
       "request": {
         "commandId": "cmd_163",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000017",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000023",
         "type": "helper.approve",
         "version": 1
       },
@@ -348,7 +348,7 @@
             "approved": true,
             "helperId": "durable_helper_new",
             "kind": "start",
-            "requestId": "hstart_00000000-0000-4000-8000-000000000017",
+            "requestId": "hstart_00000000-0000-4000-8000-000000000023",
             "warning": {
               "asOf": "2027-01-15T08:00:00.000Z",
               "code": "quota_near_limit",
@@ -366,7 +366,7 @@
       "request": {
         "commandId": "cmd_164",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "hstart_00000000-0000-4000-8000-000000000018",
+        "requestId": "hstart_00000000-0000-4000-8000-000000000024",
         "type": "helper.approve",
         "version": 1
       },

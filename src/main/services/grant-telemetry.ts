@@ -53,7 +53,7 @@ export function recordGrantDecision(input: {
   }
 }
 
-/** The user answered a request, or it expired. */
+/** The user answered a request, or it expired. An answer names the surface it came from (the desktop's `ui`, a phone's `mobile`, #3205). */
 export function recordGrantRequest(input: {
   agentId: string;
   kind: 'call' | 'grant';
@@ -62,6 +62,7 @@ export function recordGrantRequest(input: {
 }): void {
   try {
     tel.event('clubhouse.audit.grant_request', [
+      ...(input.outcome === 'expired' ? [] : [ATTR.auditSurface(surface())]),
       ATTR.grantRequestKind(input.kind),
       ATTR.grantRequestOutcome(input.outcome),
       ...(input.actions[0] ? [ATTR.grantAction(input.actions[0])] : []),

@@ -221,6 +221,16 @@
         "enabled"
       ]
     },
+    "grant.answer": {
+      "fields": [
+        "requestId",
+        "answer"
+      ],
+      "required": [
+        "requestId",
+        "answer"
+      ]
+    },
     "helper.approve": {
       "fields": [
         "requestId",

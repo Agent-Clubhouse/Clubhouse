@@ -4,7 +4,7 @@ import type { AgentIdleSleep } from './idle-sleep';
 import type { ContextWindowApplies, ContextWindowChoice, ContextWindowKind } from './context-window';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch } from './orchestration-policy';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange', 'grant.answer'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -29,6 +29,8 @@ export type MobileCommand = CommandBase & (
   // A helper start or dispose waiting on the user (#159). `force` approves a dispose that would lose work ("Dispose anyway").
   | { type: 'helper.approve'; requestId: string; force?: boolean }
   | { type: 'helper.decline'; requestId: string }
+  // A Clubhouse permission request waiting on the user (#3205): an Ask-first call or a request_grant ask.
+  | { type: 'grant.answer'; requestId: string; answer: MobileGrantAnswer }
   // The start page's "Finished, waiting on you" list (#2467).
   | { type: 'quick.dismiss'; projectId: string; agentId: string }
   | { type: 'quick.clear'; projectId: string }
@@ -153,4 +155,53 @@ export interface MobileHelperRequest {
    */
   dispose?: { uncommittedFiles: number; unpushedCommits: number; unmergedCommits: number | null; checkError: string | null;
     forceRequested: boolean; workAtRisk: boolean; canDispose: boolean };
+}
+
+/**
+ * How a phone answers a Clubhouse permission request (#3205), as Needs you
+ * does. `allow_once` lets one call through, with exactly the arguments shown,
+ * and changes no permission; it is only for a `call` request. `allow_lasting`
+ * adds the permission to the agent's saved permissions; it is only for a
+ * `grant` request. Each request lists the answers it takes.
+ */
+export const MOBILE_GRANT_ANSWERS = ['allow_once', 'allow_lasting', 'decline'] as const;
+export type MobileGrantAnswer = typeof MOBILE_GRANT_ANSWERS[number];
+
+/**
+ * A Clubhouse permission request waiting on the user (#3205), as the Annex
+ * snapshot's `grantRequests` lists it: an agent's call that a permission set
+ * to Ask first held (#2970, Manage devices included, #3068), or an agent's
+ * `request_grant` ask (#3021). Not a CLI `permission_request`, and not a
+ * helper start or dispose (`helperRequests`).
+ */
+export interface MobileGrantRequest {
+  requestId: string;
+  kind: 'call' | 'grant';
+  /** The asking agent's project; `__dispatcher__` for the Dispatcher. */
+  projectId: string;
+  agent: { agentId: string; name: string };
+  /** The permissions it needs (a call can need more than one), and their labels. */
+  actions: string[];
+  actionLabels: string[];
+  /** Where, in the user's terms ("your helpers", "the app"). */
+  where: string;
+  /** `call`: the tool it called. */
+  toolName: string | null;
+  /** `grant`: the target the permission would be on. */
+  target: import('./agent-grants').GrantTarget | null;
+  /** The desktop's Needs you line. */
+  summary: string;
+  /** `call`: the host's plain-words line for the call, such as which device it removes. */
+  detail: string | null;
+  /** `call`: the call's arguments in full, as JSON. Allow once covers exactly these. */
+  arguments: string | null;
+  /** The agent's reason, in its words. */
+  reason: string | null;
+  /** What allowing does, as the desktop says it under the request. */
+  allowEffect: string;
+  /** ISO times. A request expires at `expiresAt` (24 hours). */
+  requestedAt: string;
+  expiresAt: string;
+  /** The answers this request takes: `allow_once` and `decline` for a call, `allow_lasting` and `decline` for a grant. */
+  answers: MobileGrantAnswer[];
 }

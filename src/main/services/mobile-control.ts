@@ -4,7 +4,7 @@ import { INPUT_WINDOW_NOTE, type ContextLimits } from '../../shared/context-wind
 import { createHash, randomUUID } from 'crypto';
 import type { AgentRuntime, ChatCapabilities, ChatEvent, ContentBlock, PermissionLevel } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, switchNote } from '../../shared/chat';
-import { MOBILE_COMMAND_TYPES, type MobileChatControls, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
+import { MOBILE_COMMAND_TYPES, MOBILE_GRANT_ANSWERS, type MobileChatControls, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 import { AGENT_IDLE_SLEEP_MINUTES } from '../../shared/idle-sleep';
 import { boundPendingPermissions, hasSupportedDeny, isIncompletePermission } from './annex-chat-bounds';
 
@@ -44,6 +44,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
   'helper.decline': ['requestId'],
+  'grant.answer': ['requestId', 'answer'],
   'quick.dismiss': ['projectId', 'agentId'],
   'quick.clear': ['projectId'],
   'dispatcher.setEnabled': ['enabled'],
@@ -98,6 +99,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
     } else if (key === 'idleSleep') { if (!idleSleep(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'effort') { if (v !== null && !text(v, 64)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'level') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
+    else if (key === 'answer') { if (!(MOBILE_GRANT_ANSWERS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'runtime') { if (!['default', 'chat', 'terminal'].includes(v as string)) throw new MobileControlError('invalid_command', 400); }
     else if (!text(v, ['text', 'message', 'prompt'].includes(key) ? 65536 : key === 'emoji' ? 16 : 256)) throw new MobileControlError('invalid_command', 400);
   }

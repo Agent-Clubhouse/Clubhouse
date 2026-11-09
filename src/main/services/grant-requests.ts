@@ -21,7 +21,8 @@ import {
 
 export type GrantRequestChange =
   | { kind: 'added'; request: GrantRequest }
-  | { kind: 'closed'; requestIds: string[] };
+  /** `answered`: someone took it to answer (it comes back as `added` if a lasting allow fails to save). `withdrawn`: its agent was deleted. */
+  | { kind: 'closed'; requestIds: string[]; reason: 'answered' | 'expired' | 'withdrawn' };
 
 type Listener = (change: GrantRequestChange) => void;
 
@@ -66,7 +67,7 @@ function sweep(now: number): void {
   for (const id of expired) pending.delete(id);
   for (const e of gone) recordRequestEvent({ agentId: e.request.agentId, kind: e.request.kind, outcome: 'expired', actions: e.request.actions });
   for (const [key, until] of approvals) if (until <= now) approvals.delete(key);
-  emit({ kind: 'closed', requestIds: expired });
+  emit({ kind: 'closed', requestIds: expired, reason: 'expired' });
 }
 
 /** One timer for the soonest expiry, so a request leaves Needs you on time. */
@@ -142,7 +143,7 @@ export function takeGrantRequest(requestId: string, allowed: boolean, now = Date
   pending.delete(requestId);
   if (allowed && entry.request.kind === 'call') approvals.set(entry.key, Date.parse(entry.request.expiresAt));
   schedule();
-  emit({ kind: 'closed', requestIds: [requestId] });
+  emit({ kind: 'closed', requestIds: [requestId], reason: 'answered' });
   return entry.request;
 }
 
@@ -171,7 +172,7 @@ export function dropGrantRequestsFor(agentId: string): string[] {
   for (const id of ids) pending.delete(id);
   dropCallApprovalsFor(agentId);
   schedule();
-  emit({ kind: 'closed', requestIds: ids });
+  emit({ kind: 'closed', requestIds: ids, reason: 'withdrawn' });
   return ids;
 }
 
@@ -181,10 +182,10 @@ export function onGrantRequestsChanged(listener: Listener): () => void {
   return () => { listeners.delete(listener); };
 }
 
-export function _resetGrantRequestsForTesting(): void {
+export function _resetGrantRequestsForTesting(opts: { keepListeners?: boolean } = {}): void {
   if (timer) clearTimeout(timer);
   timer = null;
   pending.clear();
   approvals.clear();
-  listeners.clear();
+  if (!opts.keepListeners) listeners.clear();
 }

@@ -13,7 +13,7 @@ import * as os from 'os';
 import { createPublicKey, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
-import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
+import { MOBILE_COMMAND_TYPES, MOBILE_GRANT_ANSWERS, type AnnexAgentUpdate, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
 import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
 import { isProjectIdle } from '../../shared/project-state';
 import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
@@ -33,7 +33,7 @@ import {
   dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
   phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
-import { getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { getDispatcherChatPath, getDispatcherPath, getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
 import { HELPER_ROUTING_CHANGED_EVENT, helperRoutingCapability, mobileHelperRouting, runHelperRoutingUpdate } from './mobile-helper-routing';
 import { minimalRouting } from '../../shared/helper-routing';
@@ -41,6 +41,8 @@ import { resolveOrchestrationPolicies } from './orchestration-policy';
 import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from './annex-chat-echo';
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
+import { GRANT_REQUEST_OPENED_EVENT, GRANT_REQUEST_RESOLVED_EVENT, buildMobileGrantRequests, runGrantCommand, toMobileGrantRequest, type GrantRequestPlaces } from './mobile-grant-requests';
+import { onGrantRequestsChanged } from './grant-requests';
 import { onDisposeRequestsChanged } from './helper-dispose-requests';
 import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
 import { sniffImage } from './agent-runtime/chat-attachments';
@@ -1275,6 +1277,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     pendingPermissions: permissionQueue.listPending().map((pending) => ({ ...pending, ...boundToolInput(pending.toolInput) })),
     // Helper starts and disposes waiting on the user (#159); gated by capabilities.helperRequests.
     helperRequests: buildMobileHelperRequests(projects, durablesByProject),
+    // Clubhouse permission requests waiting on the user (#3205); gated by capabilities.grantRequests.
+    grantRequests: buildMobileGrantRequests(grantRequestPlaces(projects)),
     // Moves when presets or a cell's state change, so an open or cached page knows to refetch (#2671).
     helperRoutingRevision: helperRoutingRevision(),
     lastSeq: eventReplay.getLastSeq(),
@@ -3554,6 +3558,9 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     // Annex Network (#3062): the machines in this phone's network, and joining through the phone.
     ...(annexSettings.networkEnabled() && { network: NETWORK_CAPABILITY }),
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
+    // Ask-first calls and request_grant asks waiting on the user (#3205), answered as Needs you answers them.
+    grantRequests: { version: 1, snapshotField: 'grantRequests', events: { opened: GRANT_REQUEST_OPENED_EVENT, resolved: GRANT_REQUEST_RESOLVED_EVENT },
+      commands: ['grant.answer'], answers: MOBILE_GRANT_ANSWERS },
     chatControls: { version: 1 },
     // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
     slashCommands: { version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: MOBILE_SLASH_COMMANDS_MAX },
@@ -3882,6 +3889,11 @@ async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<v
   }
 }
 
+/** Where a phone's grant requests can come from: the registered projects and the Dispatcher's folders (#3205). */
+function grantRequestPlaces(projects: ReadonlyArray<{ id: string; path: string }>): GrantRequestPlaces {
+  return { projects, dispatcher: { projectId: DISPATCHER_PROJECT_ID, paths: [getDispatcherPath(), getDispatcherChatPath()] } };
+}
+
 /** This machine, as snapshots and addresses name it (#3063). */
 function thisMachine(): { machine?: { fingerprint: string; name: string } } {
   const identity = annexIdentity.getIdentity();
@@ -4032,6 +4044,10 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     broadcastToAllWindows(IPC.ANNEX.AGENT_UPDATED, update);
     broadcastSnapshotRefresh();
     return updated;
+  }
+  if (command.type === 'grant.answer') {
+    // The request's events and a fresh snapshot follow from the store.
+    return runGrantCommand(command, grantRequestPlaces(await projectStore.list()), { assertAuthorized });
   }
   if (command.type === 'helper.approve' || command.type === 'helper.decline') {
     const result = await runHelperCommand(command, { assertAuthorized, reloadProject: (projectPath) => {
@@ -5123,6 +5139,22 @@ export function start(): void {
 
   // Helper starts and disposes waiting on the user (#159) are in the snapshot.
   const offStarts = onStartRequestsChanged(() => broadcastSnapshotRefresh());
+  // Clubhouse permission requests (#3205) too, each opened or resolved also as an event, in the order they happened.
+  let grantEvents: Promise<void> = Promise.resolve();
+  const offGrants = onGrantRequestsChanged((change) => {
+    grantEvents = grantEvents.then(async () => {
+      if (change.kind === 'added') {
+        const request = toMobileGrantRequest(change.request, grantRequestPlaces(await projectStore.list()));
+        if (request) broadcastAndBuffer(GRANT_REQUEST_OPENED_EVENT, { request });
+      } else {
+        broadcastAndBuffer(GRANT_REQUEST_RESOLVED_EVENT, { requestIds: change.requestIds, outcome: change.reason });
+      }
+    }).catch((err: unknown) => {
+      // telemetry-exempt: logged; the snapshot below still carries the change
+      appLog('core:annex', 'warn', 'Grant request event failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    });
+    broadcastSnapshotRefresh();
+  });
   const offDisposes = onDisposeRequestsChanged(() => broadcastSnapshotRefresh());
   // A project's name, color or image, wherever it changed, or one added or removed. A burst is one snapshot.
   let projectsChangedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -5136,6 +5168,7 @@ export function start(): void {
   });
   unsubHelperRequests = () => {
     offStarts();
+    offGrants();
     offDisposes();
     offProjects();
     if (projectsChangedTimer) clearTimeout(projectsChangedTimer);

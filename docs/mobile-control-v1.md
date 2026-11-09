@@ -23,7 +23,7 @@ Authenticated `GET /api/v1/mobile/capabilities` returns:
 {"version":1,"epoch":"uuid","controlAuth":"mtls-pinned-client","controlAvailable":true,"commands":["chat.send","chat.interrupt","chat.permission","chat.question","chat.queue.remove","agent.start","agent.stop","agent.spawn","agent.create","agent.update","project.setPinned","project.setInactive","helper.approve","helper.decline","chat.setModel","chat.setLevel","quick.dismiss","quick.clear","dispatcher.setEnabled"],"pairing":{"sessionRevokePath":"/api/v1/mobile/pairing"},"attachments":{"version":1,"imageTypes":["image/png","image/jpeg","image/gif","image/webp"],"maxImageBytes":3932160,"maxCount":10},"events":{"transport":"annex-websocket","replayRequest":"mobile:replay","queueState":"queue_state"},"createOptions":{"version":1,"path":"/api/v1/mobile/projects/{projectId}/create-options"},"agentSettings":{"version":1,"path":"/api/v1/mobile/agents/{agentId}/settings"},"contextWindow":{"version":1},"helperRequests":{"version":1,"snapshotField":"helperRequests","commands":["helper.approve","helper.decline"]},"chatControls":{"version":1},"slashCommands":{"version":1,"snapshotField":"slashCommands","event":"commands_available","maxCommands":200},"permissions":{"version":1,"persistentApprovals":true,"freeAgentMode":true},"orchestration":{"version":1},"idempotency":{"scope":"peer-and-epoch","maxEntries":2048,"ttlMs":3600000},"projectState":{"version":1},"finishedQuickAgents":{"version":1},"terminal":{"version":1,"projectShell":true,"agentShell":true,"agentAttach":true,"maxShellsPerConnection":8,"maxInputLength":65536},"dispatcher":{"version":1,"enabled":true,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__","snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled"]}}
 ```
 
-A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, and helper requests on `helperRequests.version >= 1`; older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). Gate the Dispatcher on `dispatcher.version >= 1` ([Dispatcher](#dispatcher)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
+A 404 means unsupported: do not send mobile commands. Gate durable-agent creation on `commands` including `agent.create` and `createOptions.version >= 1`, settings on `agent.update` and `agentSettings.version >= 1`, helper requests on `helperRequests.version >= 1`, and Clubhouse permission requests on `grantRequests.version >= 1` ([Grant requests](#grant-requests)); older desktops offer quick agents (`agent.spawn`) only. Gate project pins and inactive marks on `projectState.version >= 1` (`projectState:{version:1}`); without it, keep them on the phone. See [Project state](#project-state). Gate the finished quick agents list ("Finished, waiting on you") on `finishedQuickAgents.version >= 1`; without it, keep the phone's own list of quick agents it saw exit. See [Finished quick agents](#finished-quick-agents). Gate the composer's model, effort and level controls on `chat.setModel` / `chat.setLevel` and `chatControls.version >= 1` ([Chat controls](#chat-controls)). Gate terminals on `terminal.version >= 1` ([Terminals](#terminals)). Gate the composer's `/` menu on `slashCommands.version >= 1` ([Slash commands](#slash-commands)). Gate an agent's orchestration policy on `orchestration.version >= 1` ([Orchestration](#orchestration)). Gate the Dispatcher on `dispatcher.version >= 1` ([Dispatcher](#dispatcher)). A new epoch invalidates command retries and replay cursors. A paired phone is a full controller, so it may open a shell on the desktop; there are still no arbitrary filesystem paths (a shell's directory comes from a registered project or agent), credentials, or gateway provisioning commands.
 
 ## Commands
 
@@ -52,6 +52,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 
 - `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
 - `helper.decline`: `{requestId}`; decline it. The orchestrator is told, as from the desktop.
+- `grant.answer`: `{requestId, answer}`; answer a Clubhouse permission request (an Ask-first call or a `request_grant` ask) as Needs you does. `answer` is `allow_once`, `allow_lasting` or `decline`. See [Grant requests](#grant-requests).
 
 For `chat.send`, `result` is `{delivery:"prompt"|"steer"|"queued",messageId:"authoritative runtime ID"}`. The matching `user_message.data` additionally echoes `clientCommandId` equal to the request commandId, including queued/steered sends. The event may arrive before the receipt: reconcile by clientCommandId immediately, then by messageId; never guess by text or timestamps. Local/legacy sends omit the optional field.
 
@@ -101,6 +102,70 @@ When a dispose finds new facts the request is reissued under a **new `requestId`
 Errors (`message` is the desktop's sentence for all but `helper_request_not_found`): 404 `helper_request_not_found` (answered, expired, dropped or reissued); 409 `helper_start_blocked`, `helper_check_failed`, `helper_work_at_risk`, `helper_work_changed` (`status:"rejected"`, the request still waits); 409 `no_valid_mapping`, `no_candidate`, `auto_off` (`status:"rejected"`, nothing was created and the request is gone); 409 `helper_start_refused`, `helper_dispose_failed` (`status:"failed"`; a refused start was used up; a failed dispose may have stopped the helper).
 
 `no_valid_mapping` means nothing valid is offered for the start's difficulty, its presets. Show `error.message`, a sentence for a person, and offer no retry. `rejected` here says nothing was done, and only the next snapshot says whether a request still waits: a snapshot without the row is sent when the request is used up, and it can arrive before or after the receipt. Sending the same `commandId` again replays the receipt. A new one gets 404 `helper_request_not_found`.
+
+## Grant requests
+
+Additive (#3205). An agent's Clubhouse MCP call that one of its permissions holds for Ask first (#2970), including Manage devices (#3068), and an agent's own `request_grant` ask (#3021) go to the desktop's Needs you. Desktops that advertise `grantRequests` also list them in the Annex snapshot as `grantRequests`, announce each one opening and resolving, and accept `grant.answer`. Without the capability, don't show them and don't send the command; older phones ignore the field and the events.
+
+```json
+"grantRequests":{"version":1,"snapshotField":"grantRequests","events":{"opened":"grant_request:opened","resolved":"grant_request:resolved"},
+ "commands":["grant.answer"],"answers":["allow_once","allow_lasting","decline"]}
+```
+
+These are not CLI permission requests (`permission_request` chat events, answered with `chat.permission`) and not helper starts or disposes (`helperRequests`, answered with `helper.approve` / `helper.decline`). A request id starts `grant_`.
+
+### Snapshot
+
+`grantRequests` is every waiting request from an agent in a registered project or the Dispatcher, oldest first. Replace the whole list from each snapshot.
+
+```json
+{"requestId":"grant_…","kind":"call","projectId":"__dispatcher__","agent":{"agentId":"durable_dispatcher","name":"Dispatcher"},
+ "actions":["device.manage"],"actionLabels":["Manage devices"],"where":"the app","toolName":"remove_device","target":null,
+ "summary":"Wants to run remove_device, which needs: Manage devices on the app.",
+ "detail":"Remove Phone (phone, in this network)","arguments":"{\n  \"device_id\": \"dev_phone\"\n}","reason":"You said the phone was lost.",
+ "allowEffect":"Allow runs this one call when it tries again. Its permissions stay as they are.",
+ "requestedAt":"2027-01-15T07:58:00.000Z","expiresAt":"2027-01-16T07:58:00.000Z","answers":["allow_once","decline"]}
+{"requestId":"grant_…","kind":"grant","projectId":"proj_app","agent":{"agentId":"durable_chat","name":"planner"},
+ "actions":["settings.app.write"],"actionLabels":["Change app settings"],"where":"the app","toolName":null,"target":{"kind":"app"},
+ "summary":"Asks for Change app settings on the app.","detail":null,"arguments":null,"reason":"To set the cheap model for easy tasks.",
+ "allowEffect":"Allow adds this to its Clubhouse permissions, where you can remove it later.",
+ "requestedAt":"2027-01-15T07:59:00.000Z","expiresAt":"2027-01-16T07:59:00.000Z","answers":["allow_lasting","decline"]}
+```
+
+- `kind`: `call` is a call held for Ask first; `grant` is the agent asking for a permission for itself.
+- `projectId`: the asking agent's project, or `__dispatcher__` for the Dispatcher.
+- `summary` and `allowEffect` are the lines the desktop shows above and below the request. `detail` is the host's plain-words line for the call, such as which device it removes, or null. `arguments` is the call's arguments in full, as JSON, or null when it had none. Allow once covers exactly these arguments, so show them whole: they are never cut short (a call whose arguments are over 20,000 characters isn't asked about). `reason` is the agent's reason in its words, or null.
+- `target`: for a `grant`, the target the permission would be on (as the desktop's permissions page names it); null for a `call`.
+- `expiresAt`: 24 hours after `requestedAt`. It leaves the list then.
+- `answers`: what this request takes. Offer exactly these. A `call` takes `allow_once` and `decline`; a `grant` takes `allow_lasting` and `decline`.
+
+### Events
+
+Each is broadcast and buffered for `mobile:replay`, and a fresh `snapshot` follows it.
+
+- `{"type":"grant_request:opened","payload":{"request":{…the row above…}},"seq":n}`
+- `{"type":"grant_request:resolved","payload":{"requestIds":["grant_…"],"outcome":"answered"|"expired"|"withdrawn"},"seq":n}`. `answered` is any answer from any surface (the desktop or a phone); `withdrawn` is its agent being deleted. Tolerate other outcomes.
+
+A request whose lasting Allow couldn't be saved comes back: `resolved` (`answered`), then `opened` with the same `requestId`.
+
+### grant.answer
+
+`{requestId, answer}`. The answer goes through the same code as the desktop's Allow and Decline, with the same effects:
+
+- **`allow_once`** (a `call`): that one call, with exactly those arguments, goes through when the agent makes it again, before the request would have expired. The agent's permissions don't change. The agent is told to call again.
+- **`allow_lasting`** (a `grant`): the permission is added to the agent's saved permissions, as on its permissions page, where the user can remove it later. The agent is told it has it.
+- **`decline`**: nothing changes. The agent is told not to ask again for the same thing.
+
+Result `{requestId, kind, answer}`. The request is used up as the answer starts, so a phone and the desktop (or two phones) answering at once resolve it exactly once: the other answer is refused with `grant_request_not_found`. Every answer is recorded in the telemetry record's `clubhouse.audit.grant_request`, as a desktop answer is, with `clubhouse.audit.surface` `mobile` (the desktop's is `ui`).
+
+Errors (`message` is a sentence to show):
+
+- 404 `grant_request_not_found`: expired, already answered (from anywhere), withdrawn, or never shown to a phone. Drop the row.
+- 409 `grant_answer_not_offered`: an `answer` the request's `answers` don't list (`allow_lasting` for a call, `allow_once` for a grant). Nothing changed; the request still waits.
+- 409 `grant_answer_failed`: a lasting Allow couldn't be saved. Nothing changed; the request still waits, so the user can try again or decline.
+- 400 `invalid_command`: any other `answer` value.
+
+All three refusals are `status:"rejected"`. Refetch the snapshot after any of them.
 
 ## Image attachments
 
@@ -1129,9 +1194,9 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 ## Contract fixtures
 
-`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, frames over the limit, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, frames over the limit, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, `grantRequests`, theme), the grant request events, the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
 
-`src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
+`src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests, and the saving of a lasting grant and the message to the agent for grant requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
 
 - `npm run fixtures:annex-mobile` rewrites the files. Commit them with the change that caused them.
 - `npm run fixtures:annex-mobile -- --check` (and the suite itself, in `npm test`) fails when a file is stale or extra.
@@ -1141,6 +1206,8 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 A helper is `durable_docs` in `snapshot.json` and `agent-settings-helper.json`; the other agents there are top-level.
 
 `sender-identity.json` is for [Who sent a message](#who-sent-a-message). `catalog` is the snapshot's agent rows and `agentIcons`, `frames` are the live `chat:event`s, and `expected` is, for each event, what the desktop's code draws given only `catalog` and that event: `{from:"you", text}` or `{from:"others", parts:[{name, agentId, text, avatar}]}`, where `agentId` is the row it found or null. `avatar` is null, `{type:"quick"}`, `{type:"emoji", emoji, background}`, `{type:"image", image}` or `{type:"initials", initials, background}`, with `background` a CSS hex color. `history` and `replay` carry the same messages through the chat route and `mobile:replay`. `colors` (with `initialsText`, the [text color](#initials-text-color) for each) and `initials` are the tables to check against. `queued-bursts.json` is for [Queued messages](#queued-messages): events from the real chat runtime for a burst, the same burst missing its first event, a failed send, a provider-held queue and a system turn over a held row, with `rowId` and the combined `routed` to expect.
+
+Grant requests (#3205) are in `snapshot-grant-requests.json` (a held call from the Dispatcher and a `request_grant` ask), `grant-request-events.json` (opened, and resolved with each outcome) and `commands/grant.answer.json`.
 
 The Dispatcher has its own files: `snapshot-dispatcher.json` (the snapshot's `dispatcher` and its `agent-state` row while it is on), `dispatcher-changed.json` (the event), `agent-settings-dispatcher.json` `dispatcher-routes.json` (its chat and sessions while on, its GET routes while off, git, and a shell in its folder), and `dispatcher-group-chat.json` (one conversation as the Dispatcher's group chat and as an ordinary agent's, history and live).
 
