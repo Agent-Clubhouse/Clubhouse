@@ -747,6 +747,44 @@ describe('Preview: wildcards, settings and what is running now (#2895)', () => {
     expect(screen.getByTestId('managed-preview-running-text').textContent).toBe('Old rules for @@AgentName.');
   });
 
+  it('draws a rail line per block against the preview lines it covers, with wildcards shown or not (#3187)', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'You are release-lead.\nBe kind.\n\nWork on release-lead/standby.',
+      rawInstructions: 'You are @@AgentName.\nBe kind.\n\nWork on @@StandbyBranch.',
+      blocks: [
+        { id: 'identity', name: 'Identity', builtin: true, usedBy: 1, startLine: 1, endLine: 2 },
+        { id: 'git', name: 'Git', builtin: false, usedBy: 1, startLine: 4, endLine: 4 },
+      ],
+      skills: [], mcps: [], missing: [],
+    } } as never);
+    // jsdom has no layout: line n sits at 20n px from the top, and line 1 wraps onto two lines.
+    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.dataset.testid === 'managed-preview-rail' ? rect(10, 500) : rect(0, 0);
+    });
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (this: HTMLElement) {
+      const n = Number(this.dataset.previewLine);
+      if (!n) return [] as unknown as DOMRectList;
+      const rects = n === 1 ? [rect(20, 40), rect(40, 60)] : [rect(20 * (n + 1), 20 * (n + 2))];
+      return rects as unknown as DOMRectList;
+    });
+    render(<PreviewPane agent={agent} />);
+    const text = await screen.findByTestId('managed-preview-text');
+    expect(text.textContent).toBe('You are release-lead.\nBe kind.\n\nWork on release-lead/standby.');
+    const check = () => waitFor(() => {
+      const lines = screen.getAllByTestId('managed-preview-rail-line');
+      expect(lines.map((l) => [l.dataset.startLine, l.dataset.endLine])).toEqual([['1', '2'], ['4', '4']]);
+      // Identity: from line 1's first wrapped line (20) to line 2's bottom (80), against the rail's top (10).
+      expect([lines[0].style.top, lines[0].style.height]).toEqual(['10px', '60px']);
+      expect([lines[1].style.top, lines[1].style.height]).toEqual(['90px', '20px']);
+      expect(screen.getByTestId('managed-preview-rail').textContent).toContain('lines 1 to 2');
+    });
+    await check();
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(text.textContent).toBe('You are @@AgentName.\nBe kind.\n\nWork on @@StandbyBranch.');
+    await check();
+  });
+
   it('renders a New agent draft through previewDraft, never an agent preview', async () => {
     const agentPreview = vi.spyOn(m(), 'preview');
     const draftPreview = vi.spyOn(m(), 'previewDraft').mockResolvedValue({ ok: true, value: { instructions: 'You are keen-heron.', blocks: [], skills: [], mcps: [], missing: [] } } as never);

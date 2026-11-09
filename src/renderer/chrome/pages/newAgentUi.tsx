@@ -23,6 +23,24 @@ export function Row({ label, htmlFor, help, top, children }: { label: string; ht
   );
 }
 
+/**
+ * A settings row (#3187): the label and its control on one line, and the
+ * description under both as the row's footer. The control drops under the
+ * label when the row is too narrow for both.
+ */
+export function SettingRow({ label, htmlFor, help, children }: { label: string; htmlFor?: string; help?: React.ReactNode; children: React.ReactNode }) {
+  const Label = htmlFor ? 'label' : 'div';
+  return (
+    <div className="py-2.5 border-b border-surface-0" data-testid="setting-row">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+        <Label {...(htmlFor ? { htmlFor } : {})} className="min-w-0 text-[13px] text-ctp-text" data-testid="setting-row-label">{label}</Label>
+        <div className="flex flex-wrap items-center gap-2 min-w-0" data-testid="setting-row-control">{children}</div>
+      </div>
+      {help && <div className="mt-1 text-xs leading-normal text-ctp-overlay1" data-testid="setting-row-help">{help}</div>}
+    </div>
+  );
+}
+
 export const Rule = () => <div className="h-px bg-surface-0 my-2" />;
 
 /**
