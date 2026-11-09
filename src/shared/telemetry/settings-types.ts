@@ -241,6 +241,8 @@ export interface BackfillOffer {
   days: number;
   /** Bytes of record files holding that history (an upper bound on what's read). */
   bytes: number;
+  /** A send already started and stopped: sending again resumes in the window chosen then. */
+  resuming?: boolean;
 }
 
 export type BackfillState = 'running' | 'done' | 'failed' | 'cancelled';
