@@ -222,6 +222,31 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     })));
   });
 
+  it('each Settings row puts its control beside the label and the description under both (#3187)', async () => {
+    vi.spyOn(m(), 'modelEfforts').mockResolvedValue({ ok: true, value: { default: ['low', 'high'] } } as never);
+    openWith();
+    await managedSwitch();
+    fireEvent.click(screen.getByTestId('new-agent-scratch'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
+    const effort = screen.getByLabelText('Effort') as HTMLSelectElement;
+    await waitFor(() => expect(effort.disabled).toBe(false));
+    const row = effort.closest('[data-testid="setting-row"]') as HTMLElement;
+    const label = within(row).getByTestId('setting-row-label');
+    const control = within(row).getByTestId('setting-row-control');
+    const help = within(row).getByTestId('setting-row-help');
+    expect(label.textContent).toBe('Effort');
+    expect(control.contains(effort)).toBe(true);
+    // Label and control share the first line; the description is the row's last child.
+    expect(label.parentElement).toBe(control.parentElement);
+    expect(row.lastElementChild).toBe(help);
+    expect(help.textContent).toBe('How hard the model thinks. A new model or CLI goes back to the CLI default.');
+    const labels = screen.getAllByTestId('setting-row-label').map((l) => l.textContent);
+    expect(labels).toEqual(expect.arrayContaining(['Runs on', 'Effort', 'Workspace', 'Access', 'Orchestration', 'Auto-sleep']));
+    for (const r of screen.getAllByTestId('setting-row')) {
+      expect(within(r).getAllByTestId('setting-row-control')).toHaveLength(1);
+    }
+  });
+
   it('a new model goes back to the CLI default effort', async () => {
     vi.spyOn(m(), 'modelEfforts').mockResolvedValue({ ok: true, value: { default: ['low', 'high'], opus: ['high'] } } as never);
     openWith();

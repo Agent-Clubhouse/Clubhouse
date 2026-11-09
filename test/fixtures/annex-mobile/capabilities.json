@@ -33,6 +33,11 @@
       "chatControls": {
         "version": 1
       },
+      "chatLinks": {
+        "maxEntries": 500,
+        "path": "/api/v1/mobile/agents/{agentId}/link?href={href}",
+        "version": 1
+      },
       "commands": [
         "chat.send",
         "chat.interrupt",
