@@ -64,7 +64,7 @@ Any unlisted command is blocked.
 
 The `agents.free-agent-mode` permission lets a plugin start agents at Auto or Full access. The plugin passes `freeAgentMode: true` to `api.agents.runQuick()`. Without this permission declared, the call throws an error.
 
-While a plugin is answering an agent's call to one of its MCP tools, it can't start an agent above the level that agent runs at, as no agent can on its own. The call throws an error that names both levels. This applies to everything the plugin starts until it has answered, including a start you make from its view in that time. Otherwise it starts agents for you with what its manifest allows.
+While a plugin is answering an agent's call to one of its MCP tools, it can't start an agent above the level that agent runs at, as no agent can on its own. The call throws an error that names both levels. It also can't change a project's agent defaults or resume an agent unless the agent it's answering has the Clubhouse permission to do that itself. This applies to everything the plugin does until it has answered, including what you do from its view in that time. Otherwise it starts agents for you with what its manifest allows.
 
 ```json
 {

@@ -642,6 +642,8 @@ export const IPC = {
     /** Main→renderer push: delivers tool call to plugin handler. Not an ipcMain.handle channel. */
     TOOL_CALL: 'plugin-mcp:tool-call',
     TOOL_RESULT: 'plugin-mcp:tool-result',
+    /** Plugin host only: may the agent behind a call the plugin is answering do this (D126, #3168)? */
+    CHECK_CALLER: 'plugin-mcp:check-caller',
   },
   BLUEPRINT: {
     LIST: 'blueprint:list',

@@ -33,6 +33,8 @@ const pluginTools = new Map<string, PluginToolEntry[]>();
 /** Pending tool call resolvers — keyed by callId */
 const pendingCalls = new Map<string, {
   pluginId: string;
+  /** The agent that made the call (D126, #3168). */
+  agentId: string;
   resolve: (result: McpToolResult) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -162,7 +164,7 @@ async function invokePluginToolHandler(
       });
     }, TOOL_CALL_TIMEOUT_MS);
 
-    pendingCalls.set(callId, { pluginId, resolve, reject, timer });
+    pendingCalls.set(callId, { pluginId, agentId, resolve, reject, timer });
 
     const hostId = webContentsIdForPlugin(pluginId);
     const host = hostId === undefined ? undefined : webContents.fromId(hostId);
@@ -184,6 +186,12 @@ async function invokePluginToolHandler(
       });
     }
   });
+}
+
+/** The agent behind a call `pluginId` is answering now, or undefined once it's settled or for another plugin's call. */
+export function agentOfPluginCall(callId: string, pluginId: string): string | undefined {
+  const pending = pendingCalls.get(callId);
+  return pending && pending.pluginId === pluginId ? pending.agentId : undefined;
 }
 
 /**

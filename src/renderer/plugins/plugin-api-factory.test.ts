@@ -4153,7 +4153,7 @@ describe('plugin-api-factory', () => {
     let listeners: Array<(data: ToolCall) => void>;
     let issued: number;
     let pluginMcp: Record<
-      'claimIssuer' | 'issueToken' | 'revokeToken' | 'contributeTools' | 'removeTools' | 'listTools' | 'onToolCall' | 'sendToolResult',
+      'claimIssuer' | 'issueToken' | 'revokeToken' | 'contributeTools' | 'removeTools' | 'listTools' | 'onToolCall' | 'sendToolResult' | 'checkCaller',
       ReturnType<typeof vi.fn>
     >;
 
@@ -4174,6 +4174,7 @@ describe('plugin-api-factory', () => {
           return () => { listeners = listeners.filter((l) => l !== listener); };
         }),
         sendToolResult: vi.fn(),
+        checkCaller: vi.fn(async () => ({ ok: true })),
       };
       bridge.pluginMcp = pluginMcp;
     });
@@ -4336,6 +4337,52 @@ describe('plugin-api-factory', () => {
         await expect(fullApi.agents.createDurable({ name: 'l', color: 'blue', freeAgentMode: true })).resolves.toBe('made');
         expect(mockAgent.createDurable.mock.calls[0][6]).toBe(true);
         dispose(full);
+      });
+
+      it('resuming an agent needs the calling agent\'s agent.wake on it; outside a call nothing is asked (#3168)', async () => {
+        const ctx = makeCtx({ pluginId: 'waking-plugin' });
+        const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+        const release: Array<() => void> = [];
+        api.mcp.onToolCall(() => new Promise((resolve) => { release.push(() => resolve({ content: [{ type: 'text' as const, text: 'ok' }] })); }));
+        await settle();
+        await deliver({ callId: 'w1', pluginId: 'waking-plugin', toolName: 't', args: {}, callerAccess: 'full_access' });
+        const spawn = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('x');
+        pluginMcp.checkCaller.mockResolvedValueOnce({ ok: false, message: 'A plugin can\'t do for an agent what the agent can\'t: no agent.wake.' });
+        await expect(api.agents.resume('agent-9')).rejects.toThrow('A plugin can\'t do for an agent what the agent can\'t: no agent.wake.');
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-waking-plugin-1', 'w1', { kind: 'wake', agentId: 'agent-9' });
+        expect(spawn).not.toHaveBeenCalled();
+        // Answered: the plugin acts for the person again, and main isn't asked.
+        release[0]();
+        await settle();
+        pluginMcp.checkCaller.mockClear();
+        await expect(api.agents.resume('agent-9')).rejects.toThrow('Can only resume durable agents');
+        expect(pluginMcp.checkCaller).not.toHaveBeenCalled();
+      });
+
+      it('changing a project\'s agent defaults needs the calling agent\'s permission to, for every call open (#3168)', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({});
+        mockAgentSettings.writeProjectAgentDefaults.mockClear();
+        const ctx = makeCtx({ pluginId: 'config-plugin' });
+        const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+        api.mcp.onToolCall(() => new Promise(() => {}));
+        await settle();
+        await deliver({ callId: 'd1', pluginId: 'config-plugin', toolName: 't', args: {}, callerAccess: 'full_access' });
+        await deliver({ callId: 'd2', pluginId: 'config-plugin', toolName: 't', args: {}, callerAccess: 'full_access' });
+        // The first caller may, the second may not: refused.
+        pluginMcp.checkCaller.mockImplementation(async (_t: string, callId: string) => (callId === 'd2' ? { ok: false, message: 'Not that one.' } : { ok: true }));
+        await expect(api.agentConfig.addPermissionAllowRules(['Bash(**)'])).rejects.toThrow('Not that one.');
+        await expect(api.agentConfig.injectMcpServers({ evil: { command: 'x' } })).rejects.toThrow('Not that one.');
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-config-plugin-1', 'd1', { kind: 'project_defaults', projectPath: '/projects/my-project' });
+        expect(mockAgentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
+        // Both may: it writes.
+        pluginMcp.checkCaller.mockImplementation(async () => ({ ok: true }));
+        await api.agentConfig.addPermissionAllowRules(['Bash(**)']);
+        expect(mockAgentSettings.writeProjectAgentDefaults).toHaveBeenCalledTimes(1);
+        // Reads are never checked.
+        pluginMcp.checkCaller.mockClear();
+        await api.agentConfig.getPermissionRules();
+        expect(pluginMcp.checkCaller).not.toHaveBeenCalled();
+        dispose(ctx);
       });
 
       it('outside a call, the plugin acts from its own view for the person, with what its manifest allows', async () => {

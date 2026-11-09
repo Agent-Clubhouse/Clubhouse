@@ -11,7 +11,7 @@ import type {
 } from '../../shared/plugin-types';
 import { ACCESS_LEVELS, accessLabel, isAccessLevel, isLegacyFreeAgent, type AccessLevel } from '../../shared/agent-access';
 import { hasPermission } from './plugin-api-shared';
-import { pluginAnsweringLevel } from './plugin-mcp-host';
+import { checkAnsweringCallers, pluginAnsweringLevel } from './plugin-mcp-host';
 import { useAgentStore } from '../stores/agentStore';
 import { getAgentStatus, onChatStatusChange } from '../features/agents/agent-status-store';
 import { useProjectStore } from '../stores/projectStore';
@@ -191,6 +191,10 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     async resume(agentId: string, options?: { mission?: string }): Promise<void> {
+      // While the plugin answers an agent's tool call, it wakes only an agent that agent may wake
+      // (D126, #3168). One on another desktop can't be checked here, so it is refused then.
+      const refused = await checkAnsweringCallers(ctx.pluginId, { kind: 'wake', agentId });
+      if (refused) throw new Error(refused);
       // Check remote agents first
       const remoteParts = parseNamespacedId(agentId);
       if (remoteParts) {
