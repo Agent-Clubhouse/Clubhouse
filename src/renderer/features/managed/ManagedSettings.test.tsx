@@ -4,6 +4,8 @@ import type { ManagedPartConsumer, ManagedPartSummary, ManagedTemplate } from '.
 import { HELPER_ROUTING_LABELS } from '../../../shared/helper-routing';
 import { HelpersSettingsView } from '../settings/HelpersSettingsView';
 import { SmartSelectionSettingsView } from '../settings/SmartSelectionSettingsView';
+import { OrchestrationSettingsView } from './OrchestrationSettingsView';
+import { useUIStore } from '../../stores/uiStore';
 import { PartLibraryView } from './PartLibraryView';
 import { TemplatesSettingsView } from './TemplatesSettingsView';
 import { changeText, noteText } from './TemplatePushDialog';
@@ -286,6 +288,7 @@ describe('Templates page', () => {
 
   it('names an Access change by its levels (#2761)', () => {
     expect(changeText({ kind: 'setting', key: 'access', from: 'Ask first', to: 'Auto' })).toBe('~ Access Ask first → Auto');
+    expect(changeText({ kind: 'setting', key: 'orchestration.autoHelpers', from: 'Fixed', to: 'Smart' })).toBe('~ Smart selection Fixed → Smart');
     expect(noteText('access already Auto, orchestration.access already same, already has access-review'))
       .toBe('Access already Auto, Helper access already same, already has access-review');
   });
@@ -358,6 +361,14 @@ describe('Helpers page with managed agents', () => {
     expect(select.value).toBe('qa');
     expect(screen.queryByTestId('helper-presets-auto')).toBeNull();
     expect(screen.queryByTestId('helper-presets-footer')).toBeNull();
+  });
+
+  it('opens Helpers or Smart selection from the Orchestration page (#3186)', () => {
+    render(<OrchestrationSettingsView />);
+    fireEvent.click(screen.getByTestId('managed-orchestration-open-smart-selection'));
+    expect(useUIStore.getState().settingsSubPage).toBe('smart-selection');
+    fireEvent.click(screen.getByTestId('managed-orchestration-open-helpers'));
+    expect(useUIStore.getState().settingsSubPage).toBe('helpers');
   });
 
   it('shows Auto and the difficulty presets on Smart selection (#3186)', async () => {

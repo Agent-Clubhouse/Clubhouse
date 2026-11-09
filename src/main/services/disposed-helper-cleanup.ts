@@ -31,11 +31,17 @@ interface ProjectRows {
   agents: readonly DurableAgentConfig[];
 }
 
-async function readProjects(extra: string[] = []): Promise<ProjectRows[]> {
+/** At most this many passes over every project, in case a removal keeps reporting success without the row going. */
+const MAX_ORPHAN_PASSES = 20;
+
+/** `listFailed`: the project list couldn't be read, so only `extra` was. */
+async function readProjects(extra: string[] = []): Promise<{ rows: ProjectRows[]; listFailed: boolean }> {
   let registered: string[] = [];
+  let listFailed = false;
   try {
     registered = (await projectStore.list()).map((p) => p.path);
   } catch (err) {
+    listFailed = true;
     // telemetry-exempt: logged; only the projects already named are read.
     appLog('core:agent-config', 'warn', 'Disposed helper cleanup could not list projects', {
       meta: { error: err instanceof Error ? err.message : String(err) },
@@ -50,7 +56,7 @@ async function readProjects(extra: string[] = []): Promise<ProjectRows[]> {
     const { agents, readable } = await agentConfig.peekDurableConfigsChecked(projectPath);
     rows.push({ projectPath, key, readable, agents });
   }
-  return rows;
+  return { rows, listFailed };
 }
 
 /** The key of the project a helper's parent is in. */
@@ -99,7 +105,7 @@ async function removeDisposedHelpersOfInner(projectPath: string, orchestratorId:
     const tag = `${parent.key}\0${parent.id}`;
     if (seen.has(tag)) continue;
     seen.add(tag);
-    for (const row of await readProjects([projectPath])) {
+    for (const row of (await readProjects([projectPath])).rows) {
       if (!row.readable) continue;
       for (const config of row.agents) {
         if (!isDisposedAgent(config) || config.parentAgentId !== parent.id) continue;
@@ -119,14 +125,14 @@ async function removeDisposedHelpersOfInner(projectPath: string, orchestratorId:
  * Remove every disposed helper whose orchestrator is gone, as far as can be
  * told: no parent at all, or a parent missing from its registered, readable
  * project. Repeats until none is left, for helpers of a removed helper.
- * `complete` is false when a project couldn't be read.
+ * `complete` is false when the project list or a project couldn't be read, or the passes ran out.
  */
 export async function removeOrphanedDisposedHelpers(): Promise<{ removed: number; complete: boolean }> {
   let removed = 0;
-  let complete = true;
-  for (;;) {
-    const rows = await readProjects();
-    complete = rows.every((r) => r.readable);
+  for (let pass = 0; pass < MAX_ORPHAN_PASSES; pass++) {
+    const { rows, listFailed } = await readProjects();
+    // No project list is no projects seen, not a clean install.
+    const complete = !listFailed && rows.every((r) => r.readable);
     const byKey = new Map(rows.map((r) => [r.key, r]));
     let removedThisPass = 0;
     for (const row of rows) {
@@ -144,6 +150,8 @@ export async function removeOrphanedDisposedHelpers(): Promise<{ removed: number
     removed += removedThisPass;
     if (removedThisPass === 0) return { removed, complete };
   }
+  appLog('core:agent-config', 'warn', 'Disposed helper cleanup stopped after its last pass', { meta: { removed, passes: MAX_ORPHAN_PASSES } });
+  return { removed, complete: false };
 }
 
 /** Once per install: the pass above, recorded only when every project could be read. */

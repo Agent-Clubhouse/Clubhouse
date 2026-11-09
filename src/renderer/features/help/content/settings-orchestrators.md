@@ -26,7 +26,7 @@ You cannot disable the last remaining agent provider.
 
 ## Smart selection
 
-**Settings > Smart selection** holds the model and effort each difficulty (Minimum, Easy, Medium, Hard, Maximum) picks on Claude Code, Codex and Copilot, and the switch that lets orchestrators use Auto to pick a CLI for each helper. Any start that names a difficulty uses these presets. Press **Check again** after signing in to a CLI to update its models and limits. See **Orchestrated helpers** for how Auto chooses.
+**Settings > Smart selection** holds the model and effort each difficulty (Minimum, Easy, Medium, Hard, Maximum) picks on Claude Code, Codex and Copilot, and the switch that lets orchestrators use Auto to pick Claude Code or Codex for each helper. Any start that names a difficulty uses these presets. Press **Check again** after signing in to a CLI to update its models and limits. See **Orchestrated helpers** for how Auto chooses.
 
 ## Chat and the CLI view
 

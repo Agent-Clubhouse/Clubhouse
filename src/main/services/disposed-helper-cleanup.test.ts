@@ -8,6 +8,9 @@ const W = vi.hoisted(() => ({
   agents: new Map<string, DurableAgentConfig[]>(),
   unreadable: new Set<string>(),
   registered: [] as string[],
+  listFails: false,
+  /** deleteUnregister says ok but leaves the row, as for an id it doesn't find. */
+  removeNoop: false,
   removed: [] as Array<[string, string]>,
   listener: null as null | ((event: { type: string; agentId?: string; projectPath?: string }) => void),
   userData: '',
@@ -15,7 +18,9 @@ const W = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({ app: { getPath: () => W.userData } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./project-store', () => ({ list: async () => W.registered.map((p) => ({ path: p })) }));
+vi.mock('./project-store', () => ({
+  list: async () => { if (W.listFails) throw new Error('projects.json unreadable'); return W.registered.map((p) => ({ path: p })); },
+}));
 vi.mock('./app-event-bus', () => ({
   onAppEvent: (l: typeof W.listener) => { W.listener = l; return () => { W.listener = null; }; },
 }));
@@ -25,6 +30,7 @@ vi.mock('./agent-config', () => ({
     ? { agents: [], readable: false }
     : { agents: W.agents.get(p.replace(/[\\/]+$/, '')) ?? [], readable: true }),
   deleteUnregister: async (p: string, id: string) => {
+    if (W.removeNoop) return { ok: true, message: 'Removed' };
     W.agents.set(p, (W.agents.get(p) ?? []).filter((a) => a.id !== id));
     W.removed.push([p, id]);
     return { ok: true, message: 'Removed' };
@@ -49,6 +55,8 @@ beforeEach(() => {
   W.unreadable.clear();
   W.registered = [A, B];
   W.removed = [];
+  W.listFails = false;
+  W.removeNoop = false;
   W.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'disposed-cleanup-'));
 });
 
@@ -126,6 +134,25 @@ describe('removeOrphanedDisposedHelpers (#3186)', () => {
     W.agents.set(B, [row('x', { parentAgentId: 'lead', parentProjectPath: A, disposedAt: DISPOSED })]);
     W.unreadable.add(A);
     expect(await removeOrphanedDisposedHelpers()).toEqual({ removed: 0, complete: false });
+  });
+
+  it('isn\'t complete when the project list can\'t be read, so the one-time pass runs again', async () => {
+    W.agents.set(A, [row('a', { disposedAt: DISPOSED })]);
+    W.listFails = true;
+    expect(await removeOrphanedDisposedHelpers()).toEqual({ removed: 0, complete: false });
+    await removeOrphanedDisposedHelpersOnce();
+    expect(fs.existsSync(path.join(W.userData, 'disposed-helpers-cleaned.json'))).toBe(false);
+    W.listFails = false;
+    await removeOrphanedDisposedHelpersOnce();
+    expect(ids(A)).toEqual([]);
+    expect(fs.existsSync(path.join(W.userData, 'disposed-helpers-cleaned.json'))).toBe(true);
+  });
+
+  it('stops after its last pass when a removal says ok but the row stays', async () => {
+    W.agents.set(A, [row('stuck', { disposedAt: DISPOSED })]);
+    W.removeNoop = true;
+    expect(await removeOrphanedDisposedHelpers()).toEqual({ removed: 20, complete: false });
+    expect(W.removed).toEqual([]);
   });
 
   it('runs once, and again only while a project couldn\'t be read', async () => {
