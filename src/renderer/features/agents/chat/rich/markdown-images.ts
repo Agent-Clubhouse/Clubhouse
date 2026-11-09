@@ -208,7 +208,8 @@ const LOCAL_MISS_TTL_MS = 10_000;
 const LOCAL_HIT_TTL_MS = 60_000;
 const localCache = new Map<string, Promise<ChatLocalImageResult>>();
 
-function importLocal(agentId: string, src: string): Promise<ChatLocalImageResult> {
+/** A local image stored as media by main, cached briefly per agent and path. */
+export function importLocal(agentId: string, src: string): Promise<ChatLocalImageResult> {
   const key = `${agentId}\0${src}`;
   const hit = localCache.get(key);
   if (hit) return hit;

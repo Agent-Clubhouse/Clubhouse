@@ -1,0 +1,248 @@
+{
+  "cases": [
+    {
+      "name": "accepted allow_once",
+      "request": {
+        "answer": "allow_once",
+        "commandId": "cmd_219",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000006",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_219",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answer": "allow_once",
+            "kind": "call",
+            "requestId": "grant_00000000-0000-4000-8000-000000000006"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted allow_lasting",
+      "request": {
+        "answer": "allow_lasting",
+        "commandId": "cmd_220",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000007",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_220",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answer": "allow_lasting",
+            "kind": "grant",
+            "requestId": "grant_00000000-0000-4000-8000-000000000007"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted decline",
+      "request": {
+        "answer": "decline",
+        "commandId": "cmd_221",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000008",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_221",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answer": "decline",
+            "kind": "call",
+            "requestId": "grant_00000000-0000-4000-8000-000000000008"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "grant_answer_not_offered (allow_lasting on a call)",
+      "request": {
+        "answer": "allow_lasting",
+        "commandId": "cmd_222",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000009",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_222",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "grant_answer_not_offered",
+            "message": "This request is for one call. Allow it once, or decline it."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "grant_answer_not_offered (allow_once on a grant)",
+      "request": {
+        "answer": "allow_once",
+        "commandId": "cmd_223",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000010",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_223",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "grant_answer_not_offered",
+            "message": "This request adds a lasting permission. Allow or decline it."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "grant_request_not_found (already answered)",
+      "request": {
+        "answer": "allow_lasting",
+        "commandId": "cmd_224",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000007",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_224",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "grant_request_not_found",
+            "message": "This request has expired or was already answered."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "grant_answer_failed (the request still waits)",
+      "request": {
+        "answer": "allow_lasting",
+        "commandId": "cmd_225",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000010",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_225",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "grant_answer_failed",
+            "message": "Couldn’t save the permissions. Try again."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "grant_request_not_found (names this device)",
+      "request": {
+        "answer": "decline",
+        "commandId": "cmd_226",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000011",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_226",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "grant_request_not_found",
+            "message": "This request has expired or was already answered."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "grant_request_not_found (the Dispatcher is off, as Needs you hides it)",
+      "request": {
+        "answer": "decline",
+        "commandId": "cmd_227",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000011",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_227",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "grant_request_not_found",
+            "message": "This request has expired or was already answered."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "grant_request_not_found (expired)",
+      "request": {
+        "answer": "allow_once",
+        "commandId": "cmd_228",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000012",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_228",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "grant_request_not_found",
+            "message": "This request has expired or was already answered."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    }
+  ],
+  "type": "grant.answer"
+}

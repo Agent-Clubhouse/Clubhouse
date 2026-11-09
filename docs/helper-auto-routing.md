@@ -335,7 +335,7 @@ One `clubhouse.audit.setting` event per change or refusal, in the local telemetr
 
 **Values.** Only through a per-key format. `value` keeps a boolean, a whole number, or a short word or id. Anything longer or odder, even on a `value` key, is only `changed: true`. `changed` keys never keep a value: names, commands, env, MCP config, instructions, permissions. In a settings store, a boolean is kept, other keys need the store to name them, and the rest are `changed: true`.
 
-**Who asked** comes from `withSettingsSurface` at each entry point: `ui` from `withValidatedArgs`, `mcp` with the agent's id from the tool registry, `mobile` from the command service, `cli` from the CLI endpoint, `persona` around applying one. An explicit `dispatcher` comes from its controls. Nothing set means `system`, which is Clubhouse itself. An IPC handler not using `withValidatedArgs` also reads `system`.
+**Who asked** comes from `withSettingsSurface` at each entry point: `ui` from `withValidatedArgs`, `mcp` with the agent's id from the tool registry, `mobile` (a phone) or `annex_desktop` (another computer controlling this one, #3205) from the command service, `cli` from the CLI endpoint, `persona` around applying one. An explicit `dispatcher` comes from its controls. Nothing set means `system`, which is Clubhouse itself. An IPC handler not using `withValidatedArgs` also reads `system`.
 
 **What it covers,** hooked where settings are written, so a new way to reach a writer is covered:
 

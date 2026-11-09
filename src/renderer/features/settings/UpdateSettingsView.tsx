@@ -69,7 +69,10 @@ export function UpdateSettingsView() {
         </SettingsField>
 
         {settings.lastCheck && (
-          <SettingsField label="Last checked">
+          <SettingsField
+            label="Last checked"
+            help={settings.lastCheckError ? <span className="text-ctp-error">Couldn't check: {settings.lastCheckError}</span> : undefined}
+          >
             <span className="text-xs text-ctp-subtext1">{new Date(settings.lastCheck).toLocaleString()}</span>
           </SettingsField>
         )}

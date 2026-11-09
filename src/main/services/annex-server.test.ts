@@ -1467,6 +1467,18 @@ describe('annex-server', () => {
     expect((await request(port, 'GET', '/api/v1/mobile/agents/missing/chat', undefined, authHeaders(token))).status).toBe(404);
   });
 
+  it('audits a controlling device\'s commands by its kind: a phone, or another computer (#3205)', () => {
+    const peer = (extra: Partial<import('../../shared/types').AnnexPeer>) => ({
+      fingerprint: 'aa:bb', publicKey: 'k', alias: 'x', icon: 'computer', color: 'indigo', pairedAt: '', lastSeen: '', ...extra,
+    }) as import('../../shared/types').AnnexPeer;
+    const { controllerSurface } = annexServer._testing;
+    expect(controllerSurface(peer({ role: 'member', kind: 'phone' }))).toBe('mobile');
+    expect(controllerSurface(peer({ role: 'member', kind: 'desktop', icon: 'iphone' }))).toBe('annex_desktop');
+    expect(controllerSurface(peer({ role: 'controller', icon: 'iphone' }))).toBe('mobile');
+    expect(controllerSurface(peer({ role: 'controller', icon: 'ipad' }))).toBe('mobile');
+    expect(controllerSurface(peer({ role: 'controller', icon: 'computer' }))).toBe('annex_desktop');
+  });
+
   describe('mobile transport contract', () => {
     it('paginates rich chat while preserving pending interactions outside the visible page', async () => {
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
@@ -1703,7 +1715,7 @@ describe('annex-server', () => {
         const chatSend = { version: 1, epoch: capability.body.epoch, commandId: 'photo-1', type: 'chat.send', agentId: 'a', sessionId: 's', text: '', attachmentIds: [uploaded.body.attachmentId] };
         const sent = await send('POST', '/api/v1/mobile/commands', chatSend);
         expect(sent.body).toMatchObject({ status: 'completed', result: { messageId: 'm1' } });
-        expect(sendMessage).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments') }],
+        expect(sendMessage).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments'), name: 'phone-image' }],
           { source: 'annex', delivery: 'auto', clientCommandId: 'photo-1' });
         // Retries are idempotent; an id this phone never uploaded is refused.
         expect(await send('POST', '/api/v1/mobile/commands', chatSend)).toMatchObject({ status: sent.status, body: sent.body });

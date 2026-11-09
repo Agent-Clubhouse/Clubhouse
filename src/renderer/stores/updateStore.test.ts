@@ -186,6 +186,45 @@ describe('updateStore', () => {
       expect(state.dismissed).toBe(false);
     });
 
+    it('shows checking right away, then the saved last check time', async () => {
+      useUpdateStore.setState({ settings: { ...useUpdateStore.getState().settings, lastCheck: '2026-01-01T00:00:00Z' } });
+      let resolveCheck: (s: unknown) => void = () => {};
+      mockCheckForUpdates.mockReturnValue(new Promise((r) => { resolveCheck = r; }));
+      mockGetUpdateSettings.mockResolvedValue({
+        autoUpdate: true, previewChannel: false, lastCheck: '2026-11-09T12:00:00Z', lastCheckError: null,
+        dismissedVersion: null, lastSeenVersion: null,
+      });
+
+      const pending = useUpdateStore.getState().checkForUpdates();
+      expect(useUpdateStore.getState().status.state).toBe('checking');
+      expect(useUpdateStore.getState().settings.lastCheck).toBe('2026-01-01T00:00:00Z');
+
+      resolveCheck({ state: 'idle', availableVersion: null, error: null });
+      await pending;
+      expect(useUpdateStore.getState().status.state).toBe('idle');
+      expect(useUpdateStore.getState().settings.lastCheck).toBe('2026-11-09T12:00:00Z');
+    });
+
+    it('keeps the failure reason main saved', async () => {
+      mockCheckForUpdates.mockResolvedValue({ state: 'error', availableVersion: null, error: 'HTTP 503' });
+      mockGetUpdateSettings.mockResolvedValue({
+        autoUpdate: true, previewChannel: false, lastCheck: '2026-11-09T12:00:00Z', lastCheckError: 'HTTP 503',
+        dismissedVersion: null, lastSeenVersion: null,
+      });
+
+      await useUpdateStore.getState().checkForUpdates();
+      expect(useUpdateStore.getState().settings.lastCheckError).toBe('HTTP 503');
+    });
+
+    it('shows an error when the check call itself rejects', async () => {
+      mockCheckForUpdates.mockRejectedValue(new Error('IPC gone'));
+      mockGetUpdateSettings.mockResolvedValue(undefined);
+
+      await useUpdateStore.getState().checkForUpdates();
+      expect(useUpdateStore.getState().status.state).toBe('error');
+      expect(useUpdateStore.getState().status.error).toBe('IPC gone');
+    });
+
     it('resets dismissed flag on check', async () => {
       useUpdateStore.setState({ dismissed: true });
       mockCheckForUpdates.mockResolvedValue({
@@ -398,6 +437,22 @@ describe('updateStore', () => {
 
       expect(mockOnUpdateStatusChanged).toHaveBeenCalledWith(expect.any(Function));
       expect(typeof cleanup).toBe('function');
+    });
+
+    it('reloads the saved check time when a background check finishes', async () => {
+      let callback: ((status: any) => void) | null = null;
+      mockOnUpdateStatusChanged.mockImplementation((cb: any) => { callback = cb; return vi.fn(); });
+      mockGetUpdateSettings.mockResolvedValue({
+        autoUpdate: true, previewChannel: false, lastCheck: '2026-11-09T13:00:00Z', lastCheckError: null,
+        dismissedVersion: null, lastSeenVersion: null,
+      });
+      initUpdateListener();
+
+      callback!({ state: 'checking', error: null });
+      expect(mockGetUpdateSettings).not.toHaveBeenCalled();
+
+      callback!({ state: 'idle', error: null });
+      await vi.waitFor(() => expect(useUpdateStore.getState().settings.lastCheck).toBe('2026-11-09T13:00:00Z'));
     });
 
     it('updates store when status event fires', () => {

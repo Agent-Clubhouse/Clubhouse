@@ -117,9 +117,17 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
         </p>
       )}
       {(message || agent.errorMessage) && (
-        <p className={`leading-snug ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-subtext0'}`}>
-          {message || agent.errorMessage}
-        </p>
+        // A long command stays at three lines so the details and actions below stay on screen;
+        // the full text is in the tooltip. The card's width is fixed, so a token with no spaces
+        // has to break rather than push past the edge (#3212).
+        <Tooltip content={<span className="block max-h-48 overflow-hidden whitespace-pre-wrap [overflow-wrap:anywhere]">{message || agent.errorMessage}</span>}>
+          <p
+            data-testid="agent-hover-message"
+            className={`leading-snug line-clamp-3 [overflow-wrap:anywhere] ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-subtext0'}`}
+          >
+            {message || agent.errorMessage}
+          </p>
+        </Tooltip>
       )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
         <Row label="Runs on">

@@ -40,6 +40,15 @@ describe('Clubhouse permissions in the telemetry record (#2973)', () => {
     recordGrantRequest({ agentId: 'a', kind: 'grant', outcome: 'expired', actions: ['settings.app.write'] });
     expect(events[0].name).toBe('clubhouse.audit.grant_request');
     expect(attrsOf()).toMatchObject({ 'clubhouse.grant.request.kind': 'grant', 'clubhouse.grant.request.outcome': 'expired' });
+    // An expiry comes from no surface, whatever is running when the sweep finds it.
+    expect(attrsOf()).not.toHaveProperty('clubhouse.audit.surface');
+  });
+
+  it('an answer names its surface: the desktop\'s or a phone\'s (#3205)', async () => {
+    await withSettingsSurface('ui', undefined, async () => recordGrantRequest({ agentId: 'a', kind: 'call', outcome: 'allowed', actions: ['device.manage'] }));
+    await withSettingsSurface('mobile', 'peer-1', async () => recordGrantRequest({ agentId: 'a', kind: 'call', outcome: 'declined', actions: ['device.manage'] }));
+    expect(attrsOf(0)).toMatchObject({ 'clubhouse.audit.surface': 'ui', 'clubhouse.grant.request.outcome': 'allowed' });
+    expect(attrsOf(1)).toMatchObject({ 'clubhouse.audit.surface': 'mobile', 'clubhouse.grant.request.outcome': 'declined' });
   });
 
   it('a change says who, from which surface, on which layer', async () => {

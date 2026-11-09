@@ -1,3 +1,4 @@
+import { GRANT_ACTION_LABELS } from './agent-grant-changes';
 import type { GrantAction, GrantTarget } from './agent-grants';
 
 /**
@@ -27,8 +28,12 @@ export interface GrantRequest {
   target?: GrantTarget;
   /** `call`: the tool it called. */
   toolName?: string;
-  /** `call`: the call's arguments, in full: Allow covers exactly these. */
+  /** `call`: the call's arguments, in full: Allow covers exactly these. The plain-words line, then the arguments. */
   details?: string;
+  /** `call`: the plain-words line a tool gives for the call (#3068), also at the top of `details`. */
+  detail?: string;
+  /** `call`: the arguments alone, as JSON, also in `details`. */
+  argumentsText?: string;
   /** The agent's reason, in its words. */
   reason?: string;
   createdAt: string;
@@ -46,3 +51,23 @@ export const GRANT_REQUEST_REASON_MAX = 500;
 export const GRANT_REQUEST_DETAILS_MAX = 20_000;
 
 export type GrantRequestAnswer = { ok: true } | { ok: false; error: string };
+
+/** The labels of the permissions a request needs. */
+export function grantRequestActionLabels(request: Pick<GrantRequest, 'actions'>): string[] {
+  return request.actions.map((a) => GRANT_ACTION_LABELS[a] ?? a);
+}
+
+/** The request's line in Needs you, on the desktop and on a phone (#3205). */
+export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actions' | 'toolName' | 'where'>): string {
+  const needs = grantRequestActionLabels(request).join(', ');
+  return request.kind === 'call'
+    ? `Wants to run ${request.toolName ?? 'a tool'}, which needs: ${needs} on ${request.where}.`
+    : `Asks for ${needs} on ${request.where}.`;
+}
+
+/** What Allow does, shown under the request. */
+export function grantRequestAllowEffect(request: Pick<GrantRequest, 'kind'>): string {
+  return request.kind === 'call'
+    ? 'Allow runs this one call when it tries again. Its permissions stay as they are.'
+    : 'Allow adds this to its Clubhouse permissions, where you can remove it later.';
+}

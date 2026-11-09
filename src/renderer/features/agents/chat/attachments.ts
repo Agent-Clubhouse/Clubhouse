@@ -71,8 +71,9 @@ export async function attachmentFromFile(agentId: string, file: File, imagesAllo
   return { id: staged.id, name: staged.name, kind, ...(preview ? { preview } : {}) };
 }
 
-/** File name for an attachment block in a sent message. */
+/** File name for an attachment block in a sent message: the one it was attached under, when the block kept it. */
 export function attachmentName(block: ContentBlock): string | null {
+  if ((block.type === 'image' || block.type === 'file') && block.name) return block.name;
   const target = block.type === 'file' ? block.path : block.type === 'image' ? block.path ?? block.uri ?? '' : null;
   if (target === null) return null;
   return target.split(/[\\/]/).pop() || (block.type === 'image' ? 'image' : target);

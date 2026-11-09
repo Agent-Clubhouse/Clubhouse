@@ -1,0 +1,66 @@
+{
+  "direction": "desktop-to-phone",
+  "field": "grantRequests",
+  "value": [
+    {
+      "actionLabels": [
+        "Manage devices"
+      ],
+      "actions": [
+        "device.manage"
+      ],
+      "agent": {
+        "agentId": "durable_dispatcher",
+        "name": "Dispatcher"
+      },
+      "allowEffect": "Allow runs this one call when it tries again. Its permissions stay as they are.",
+      "answers": [
+        "allow_once",
+        "decline"
+      ],
+      "arguments": "{\n  \"id\": \"aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99\"\n}",
+      "detail": "Remove Phone (phone, in this network). A device in the network goes from every device in it, and comes back only when a person pairs it again.",
+      "expiresAt": "2027-01-16T07:58:00.000Z",
+      "kind": "call",
+      "projectId": "__dispatcher__",
+      "reason": "You said the phone was lost.",
+      "requestId": "grant_00000000-0000-4000-8000-000000000006",
+      "requestedAt": "2027-01-15T07:58:00.000Z",
+      "summary": "Wants to run remove_device, which needs: Manage devices on the app.",
+      "target": null,
+      "toolName": "remove_device",
+      "where": "the app"
+    },
+    {
+      "actionLabels": [
+        "Change app settings"
+      ],
+      "actions": [
+        "settings.app.write"
+      ],
+      "agent": {
+        "agentId": "durable_chat",
+        "name": "planner"
+      },
+      "allowEffect": "Allow adds this to its Clubhouse permissions, where you can remove it later.",
+      "answers": [
+        "allow_lasting",
+        "decline"
+      ],
+      "arguments": null,
+      "detail": null,
+      "expiresAt": "2027-01-16T07:59:00.000Z",
+      "kind": "grant",
+      "projectId": "proj_app",
+      "reason": "To set the cheap model for easy tasks.",
+      "requestId": "grant_00000000-0000-4000-8000-000000000007",
+      "requestedAt": "2027-01-15T07:59:00.000Z",
+      "summary": "Asks for Change app settings on the app.",
+      "target": {
+        "kind": "app"
+      },
+      "toolName": null,
+      "where": "the app"
+    }
+  ]
+}

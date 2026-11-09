@@ -597,7 +597,7 @@ export const ATTR = {
   helperAutoCooldown: enumAttr('clubhouse.helper_auto.cooldown', ['auth', 'quota', 'availability']),
   helperQuotaState: enumAttr('clubhouse.helper_quota.state', ['known', 'low', 'near_limit', 'exhausted', 'unknown']),
   helperPresetsAction: enumAttr('clubhouse.helper_presets.action', ['set', 'toggle', 'reset_cell', 'reset_provider', 'reset_all']),
-  helperPresetsSurface: enumAttr('clubhouse.helper_presets.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'cli', 'system']),
+  helperPresetsSurface: enumAttr('clubhouse.helper_presets.surface', ['ui', 'mcp', 'mobile', 'annex_desktop', 'dispatcher', 'persona', 'cli', 'system']),
 
   // Helper decisions, outcomes and usage (#2747). Local recording only (EventOptions.localOnly): ids are hashed, models are hashes plus a family,
   // percentages are basis points, times are epoch ms. An absent attribute is unavailable; 0 is a reported zero.
@@ -775,7 +775,7 @@ export const ATTR = {
   updatesIncompatible: intAttr('clubhouse.updates.incompatible.count'),
   settingsKey: enumAttr('clubhouse.settings.key', SETTINGS_KEYS),
   // Audit events (#2920): who changed what. The key and values go in the local record's detail only.
-  auditSurface: enumAttr('clubhouse.audit.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'cli', 'system']),
+  auditSurface: enumAttr('clubhouse.audit.surface', ['ui', 'mcp', 'mobile', 'annex_desktop', 'dispatcher', 'persona', 'cli', 'system']),
   auditScope: enumAttr('clubhouse.audit.scope', ['app', 'project', 'agent']),
   auditOutcome: enumAttr('clubhouse.audit.outcome', ['ok', 'refused', 'error']),
   auditTool: enumAttr('clubhouse.audit.tool', ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'set_connection_tools', 'change_provider', 'preview_provider']),

@@ -10,9 +10,10 @@ const settingsStore = createSettingsStore<UpdateSettings>('update-settings.json'
   autoUpdate: true,
   previewChannel: false,
   lastCheck: null,
+  lastCheckError: null,
   dismissedVersion: null,
   lastSeenVersion: null,
-}, undefined, { audit: { key: 'update', ignore: ['lastCheck', 'dismissedVersion', 'lastSeenVersion'] } });
+}, undefined, { audit: { key: 'update', ignore: ['lastCheck', 'lastCheckError', 'dismissedVersion', 'lastSeenVersion'] } });
 
 export const getSettings = settingsStore.get;
 export const saveSettings = settingsStore.save;

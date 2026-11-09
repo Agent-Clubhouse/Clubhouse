@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { spawn, execFileSync } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
-import { UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
+import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
 import { getSettings, saveSettings } from './update-settings';
 import { appLog, flush as flushLogs, flushSync as flushLogsSync } from './log-service';
 import { applyRemoteCliDenylist } from './agent-runtime/chat-version-policy';
@@ -580,6 +580,12 @@ async function fetchBestManifest(previewChannel: boolean): Promise<ManifestResul
   return { manifest: stable, sourceUrl: UPDATE_URL };
 }
 
+/** A failure message short enough for a Settings line: no URL, one line, capped. */
+function shortReason(msg: string): string {
+  const oneLine = msg.replace(/ fetching \S+/, '').replace(/\s+/g, ' ').trim();
+  return oneLine.length > 120 ? `${oneLine.slice(0, 119)}…` : oneLine;
+}
+
 export async function checkForUpdates(
   manual = false,
   trigger: 'startup' | 'periodic' | 'manual' = manual ? 'manual' : 'periodic',
@@ -594,6 +600,18 @@ export async function checkForUpdates(
   if (!manual && !settings.autoUpdate) {
     return status;
   }
+  // Every finished check stamps the time and its failure reason (or clears the last one), so the
+  // Settings page never keeps an old time after a check ran (#3231). Read fresh: a toggle
+  // flipped while the manifest was in flight must survive.
+  const stampCheck = async (error: string | null, patch: Partial<UpdateSettings> = {}): Promise<void> => {
+    try {
+      await saveSettings({ ...getSettings(), ...patch, lastCheck: new Date().toISOString(), lastCheckError: error });
+    } catch (saveErr) {
+      appLog('update:check', 'warn', 'Saving the last check time failed', {
+        meta: { error: saveErr instanceof Error ? saveErr.message : String(saveErr) },
+      });
+    }
+  };
   const recordCheck = (result: Parameters<typeof recordUpdateCheck>[0]['result'], error?: unknown): void =>
     recordUpdateCheck({ startMs: checkStartMs, trigger, preview: settings.previewChannel, result, error });
 
@@ -632,12 +650,13 @@ export async function checkForUpdates(
       appLog('update:check', 'info', 'App is up to date', {
         meta: { currentVersion, latestVersion: manifest.version },
       });
+      // Stamped before the status broadcast, so a renderer that reloads settings on it sees the new time.
+      await stampCheck(null);
       if (readyBefore) {
         // The ready one was pulled (or the channel moved back): don't install it at quit or on relaunch.
         await clearPendingUpdateInfo();
         setState('idle', { availableVersion: null, downloadPath: null, artifactUrl: null, downloadProgress: 0 });
       } else setState('idle');
-      await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
       recordCheck('up_to_date');
       return status;
     }
@@ -647,8 +666,8 @@ export async function checkForUpdates(
       appLog('update:check', 'info', 'Update dismissed by user', {
         meta: { version: manifest.version },
       });
+      await stampCheck(null);
       setState('idle');
-      await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
       recordCheck('dismissed');
       return status;
     }
@@ -659,6 +678,7 @@ export async function checkForUpdates(
       appLog('update:check', 'warn', `No artifact for platform ${key}`, {
         meta: { version: manifest.version, availableKeys: Object.keys(manifest.artifacts) },
       });
+      await stampCheck(null);
       // An update already downloaded stays ready (#3104).
       if (readyBefore) setState('ready', readyBefore);
       else setState('idle');
@@ -672,6 +692,7 @@ export async function checkForUpdates(
       appLog('update:check', 'warn', `Update ${manifest.version} needs a newer OS; staying on ${currentVersion}`, {
         meta: { version: manifest.version, platform: key, systemVersion, minSystemVersion: artifact.minSystemVersion },
       });
+      await stampCheck(null);
       if (readyBefore && readyBefore.availableVersion !== manifest.version) {
         // An earlier update already downloaded for this OS stays ready.
         setState('ready', readyBefore);
@@ -680,7 +701,6 @@ export async function checkForUpdates(
         if (readyBefore) await clearPendingUpdateInfo();
         setState('idle', readyBefore ? { availableVersion: null, downloadPath: null, artifactUrl: null, downloadProgress: 0 } : undefined);
       }
-      await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
       recordCheck('os_too_old');
       return status;
     }
@@ -689,7 +709,7 @@ export async function checkForUpdates(
       meta: { currentVersion, newVersion: manifest.version },
     });
 
-    await saveSettings({ ...settings, lastCheck: new Date().toISOString(), dismissedVersion: null });
+    await stampCheck(null, { dismissedVersion: null });
 
     // On Windows, use Squirrel native update — skip our own download.
     // Update.exe will download the nupkg when we apply.
@@ -723,6 +743,7 @@ export async function checkForUpdates(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:check', 'error', `Update check failed: ${msg}`);
+    await stampCheck(shortReason(msg));
     // A failed check (offline after sleep, a 5xx) leaves the update already downloaded
     // ready, so the banner and install-on-quit keep it (#3104).
     if (readyBefore) setState('ready', readyBefore);

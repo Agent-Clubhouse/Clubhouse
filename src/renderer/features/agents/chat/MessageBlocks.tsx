@@ -12,19 +12,20 @@ import type {
   TurnEndItem,
   UserMessageItem,
 } from '../../../stores/chatStore';
-import { findSenderAgent, messageDisplay, sentPartName, stripTaskMarker, type ChatCapabilities, type ContentBlock, type MessageSender, type RoutedMessagePart } from '../../../../shared/chat';
+import { messageDisplay, sentPartName, stripTaskMarker, type ChatCapabilities, type MessageSender, type RoutedMessagePart } from '../../../../shared/chat';
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
+import { findChatSenderAgent, useDispatcherStore } from '../../dispatcher/dispatcherStore';
 import { AgentAvatar } from '../AgentAvatar';
 import { useOpenState } from './transcript-expansion';
-import { attachmentName } from './attachments';
+import { MessageAttachments } from './MessageAttachments';
 import { enrichMarkdownLinks, useRichLinks, useTokenHandlers } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
 import { handleRemoteImageClick, hydrateLocalImages, mediaTargetOf, renderChatMarkdown } from './rich/markdown-images';
 import { ChatMediaContext, ImageLightbox } from './rich/ChatImages';
 import { fileMatcher, hydrateFileChips, markCodePaths, useFileChips } from './rich/FileChips';
 import { useMediaCards } from './rich/MediaCards';
-import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon, QuestionIcon } from './icons';
+import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens, shortName } from './view-model';
 import { rendererLog } from '../../../plugins/renderer-logger';
 
@@ -149,34 +150,15 @@ function metaLabels(item: UserMessageItem): string[] {
   return [label, item.delivery === 'steer' ? 'Steered into the running turn' : null, item.sendState === 'not_delivered' ? 'Not delivered' : null].filter((l): l is string => !!l);
 }
 
-function Attachments({ item, align }: { item: UserMessageItem; align: 'start' | 'end' }) {
-  const attached = item.content
-    .map((block) => ({ block, name: attachmentName(block) }))
-    .filter((a): a is { block: ContentBlock; name: string } => a.name !== null);
-  if (attached.length === 0) return null;
-  return (
-    <div className={`flex flex-wrap gap-1.5 ${align === 'end' ? 'justify-end' : 'justify-start'}`} data-testid="chat-user-attachments">
-      {attached.map(({ block, name }, i) => (
-        <span
-          key={i}
-          className="h-7 max-w-[220px] flex items-center gap-1.5 px-2 rounded-md bg-surface-0 text-[12px] text-ctp-subtext1"
-          title={block.type === 'file' ? block.path : block.type === 'image' ? block.path ?? name : name}
-        >
-          {block.type === 'image' ? <ImageIcon size={13} className="text-ctp-overlay1 flex-shrink-0" /> : <FileIcon size={13} className="text-ctp-overlay1 flex-shrink-0" />}
-          <span className="truncate min-w-0">{name}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 /**
  * The sender's agent record: by id, or for an old message that only has a
  * name, by a name just one agent has. Its name, color and picture stay current
  * after a rename. Absent for an agent that is gone or in a project not loaded.
+ * Either Dispatcher agent shows as the Dispatcher (its chat agent).
  */
 function useSenderAgent(sender: MessageSender | undefined): Agent | undefined {
-  return useAgentStore((s) => findSenderAgent(sender, s.agents));
+  const dispatcher = useDispatcherStore((s) => s.state);
+  return useAgentStore((s) => findChatSenderAgent(sender, s.agents, dispatcher));
 }
 
 /** One message from another agent or from Clubhouse, on the left. */
@@ -231,14 +213,14 @@ export function UserMessage({ item, expansionKey }: { item: UserMessageItem; exp
         {display.parts.map((part, i) => (
           <SentPart key={i} part={part} item={item} expansionKey={expansionKey && `${expansionKey}:sent:${i}`} />
         ))}
-        <Attachments item={item} align="start" />
+        <MessageAttachments content={item.content} align="start" />
       </div>
     );
   }
   return (
     <div className="ml-auto max-w-[82%] min-w-0 flex flex-col items-end gap-1" data-testid="chat-user-message" data-source={item.source} data-delivery={item.delivery} data-send-state={item.sendState} data-from="you">
       <span className="text-[11px] text-ctp-overlay0" data-testid="chat-you-label">{['You', ...metaLabels(item)].join(' · ')}</span>
-      <Attachments item={item} align="end" />
+      <MessageAttachments content={item.content} align="end" />
       {display.text && (
         <div className="max-w-full bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap wrap-anywhere" data-testid="chat-you-body">
           {display.text}

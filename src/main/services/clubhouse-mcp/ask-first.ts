@@ -24,7 +24,8 @@ export function describeCallsForAsk(toolName: string, describe: (args: Record<st
   describers.set(toolName, describe);
 }
 
-function describedArgs(toolName: string, args: Record<string, unknown>): string | undefined {
+/** The plain-words line and the arguments, each undefined when there's none. */
+function describedArgs(toolName: string, args: Record<string, unknown>): { detail?: string; argumentsText?: string } {
   let line: string | undefined;
   try {
     line = describers.get(toolName)?.(args);
@@ -33,7 +34,7 @@ function describedArgs(toolName: string, args: Record<string, unknown>): string 
     line = undefined;
   }
   const raw = argsText(args);
-  return [line, raw].filter(Boolean).join('\n\n') || undefined;
+  return { ...(line && { detail: line }), ...(raw && { argumentsText: raw }) };
 }
 
 /** Every argument, for the user to see exactly what Allow would run. */
@@ -68,7 +69,8 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
   if (!projectPath) {
     return { kind: 'asked', text: 'This call needs the user\'s approval, and Clubhouse couldn\'t place your request. Ask the user directly.' };
   }
-  const details = describedArgs(toolName, args);
+  const described = describedArgs(toolName, args);
+  const details = [described.detail, described.argumentsText].filter(Boolean).join('\n\n') || undefined;
   if (details && details.length > GRANT_REQUEST_DETAILS_MAX) {
     return { kind: 'asked', text: 'This call needs the user\'s approval, and its arguments are too long for them to review. Make smaller calls, or ask the user directly.' };
   }
@@ -81,7 +83,7 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
     actions: [...new Set(asks.map((a) => a.action))],
     where: [...new Set(asks.map((a) => a.where))].join(', '),
     toolName,
-    ...(details && { details }),
+    ...(details && { details, ...described }),
     ...(reason && { reason }),
   });
   if (recorded.ok === false) {

@@ -63,6 +63,9 @@ const W = vi.hoisted(() => ({
   // What the CLI offers for the model (#2660); a case sets it, else Claude's.
   contextOptions: null as null | Record<string, unknown>,
   canvases: null as unknown[] | null,
+  // Lasting grants a phone's Allow saved (#3205), and whether saving one fails.
+  grantSaves: [] as unknown[],
+  grantSaveFails: false,
 }));
 const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
 const NOW_FOR_MOCKS = vi.hoisted(() => 1_800_000_000_000);
@@ -545,6 +548,14 @@ vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
     declineHelperStart: async (projectPath: string, requestId: string) => ({ ok: !!starts.takeStartRequest(projectPath, requestId), message: '' }),
   };
 });
+vi.mock('./agent-grants-service', () => ({
+  setAgentGrant: async (...args: unknown[]) => {
+    if (W.grantSaveFails) throw new Error('Couldn’t save the permissions. Try again.');
+    W.grantSaves.push(args);
+    return { rows: [] };
+  },
+}));
+vi.mock('./clubhouse-mcp/tools/helper-delivery', () => ({ deliverHelperUpdate: async () => 'delivered' }));
 vi.mock('./helper-dispose-decisions', async (importOriginal) => {
   const disposals = await import('./helper-dispose-requests');
   return {
@@ -565,6 +576,8 @@ import * as finishedQuickStore from './finished-quick-agents-store';
 import * as eventReplay from './annex-event-replay';
 import { recordStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
 import { listDisposeRequests, recordDisposeRequest, _resetDisposeRequestsForTesting } from './helper-dispose-requests';
+import { callKey, dropGrantRequestsFor, recordGrantRequest, _resetGrantRequestsForTesting } from './grant-requests';
+import { GRANT_REQUEST_TTL_MS } from '../../shared/grant-requests';
 import { getAgentRuntime, registerChatRuntime, unregisterChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 import { getDispatcherState } from './dispatcher/dispatcher-service';
 import { ChatAgentRuntime } from './agent-runtime/chat-runtime';
@@ -770,6 +783,9 @@ function resetWorld() {
   });
   _resetStartRequestsForTesting({ keepListeners: true });
   _resetDisposeRequestsForTesting();
+  _resetGrantRequestsForTesting({ keepListeners: true });
+  W.grantSaves = [];
+  W.grantSaveFails = false;
 }
 
 function helperStart(args: Record<string, string> = { model: 'opus' }, warning?: HelperStartWarning): string {
@@ -780,6 +796,28 @@ function helperStart(args: Record<string, string> = { model: 'opus' }, warning?:
 function helperDispose(checks: Record<string, unknown> = { dirty: 2, unpushed: 1, unmerged: 0 }, forceRequested = true): string {
   recordDisposeRequest(APP, 'durable_docs', 'durable_chat', { projectPath: APP, orchestratorId: 'durable_chat', helperId: 'durable_docs', helperName: 'Docs', checks, forceRequested } as never, NOW - 300_000);
   return listDisposeRequests().find((r) => r.request.helperId === 'durable_docs')!.requestId;
+}
+
+/** The Dispatcher's Remove device call held by Ask first (#3068), as ask-first.ts records it. `id` is the device's fingerprint. */
+function grantCall(at = NOW - 120_000, id = 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99'): string {
+  const args = { id };
+  const detail = 'Remove Phone (phone, in this network). A device in the network goes from every device in it, and comes back only when a person pairs it again.';
+  const argumentsText = JSON.stringify(args, null, 2);
+  const result = recordGrantRequest(callKey('durable_dispatcher', 'remove_device', args), {
+    kind: 'call', agentId: 'durable_dispatcher', agentName: 'Dispatcher', projectPath: DISPATCHER_PATH, actions: ['device.manage'], where: 'the app',
+    toolName: 'remove_device', details: `${detail}\n\n${argumentsText}`, detail, argumentsText, reason: 'You said the phone was lost.',
+  }, at);
+  if (!result.ok) throw new Error('grant request not recorded');
+  return result.request.requestId;
+}
+/** planner's request_grant ask (#3021). */
+function grantAsk(at = NOW - 60_000): string {
+  const result = recordGrantRequest('grant\0durable_chat\0settings.app.write', {
+    kind: 'grant', agentId: 'durable_chat', agentName: 'planner', projectPath: APP, actions: ['settings.app.write'], where: 'the app',
+    target: { kind: 'app' }, reason: 'To set the cheap model for easy tasks.',
+  }, at);
+  if (!result.ok) throw new Error('grant request not recorded');
+  return result.request.requestId;
 }
 
 // ── Clients ──────────────────────────────────────────────────────────────────
@@ -3069,6 +3107,78 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       agent: { history: agentHistory, frames: renumberFrames(live.filter((f) => f.payload.agentId === 'durable_sleepy'), before) },
     });
     resetWorld();
+  });
+
+  it('Clubhouse permission requests: snapshot, events and grant.answer (#3205)', async () => {
+    resetWorld();
+    // Desktop Needs you shows the Dispatcher's requests while it is on (or still running).
+    W.dispatcher.enabled = true;
+    const ws = await connect();
+    ws.send.mockClear();
+    const call = grantCall();
+    const ask = grantAsk();
+    const opened = () => frames(ws).filter((f) => f.type === 'grant_request:opened');
+    const resolved = () => frames(ws).filter((f) => f.type === 'grant_request:resolved');
+    await eventually(() => expect(opened()).toHaveLength(2));
+    const listed = frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests;
+    expect(listed.map((r: { requestId: string }) => r.requestId)).toEqual([call, ask]);
+    // Apart from CLI permission requests and helper requests.
+    expect(listed.every((r: { requestId: string }) => r.requestId.startsWith('grant_'))).toBe(true);
+    fixtures.set('snapshot-grant-requests.json', { direction: 'desktop-to-phone', field: 'grantRequests', value: listed });
+    const seq = (f: any) => ({ ...f, seq: 1000 });
+    const events: unknown[] = [seq(opened()[0])];
+
+    ws.send.mockClear();
+    await command('accepted allow_once', { type: 'grant.answer', requestId: call, answer: 'allow_once' });
+    // One call, once: nothing is saved.
+    expect(W.grantSaves).toEqual([]);
+    await eventually(() => expect(resolved()).toHaveLength(1));
+    events.push(seq(resolved()[0]));
+    await command('accepted allow_lasting', { type: 'grant.answer', requestId: ask, answer: 'allow_lasting' });
+    expect(W.grantSaves).toEqual([[APP, 'durable_chat', { action: 'settings.app.write', target: { kind: 'app' }, mode: 'allow' }]]);
+    await command('accepted decline', { type: 'grant.answer', requestId: grantCall(), answer: 'decline' });
+    await command('grant_answer_not_offered (allow_lasting on a call)', { type: 'grant.answer', requestId: grantCall(), answer: 'allow_lasting' });
+    await command('grant_answer_not_offered (allow_once on a grant)', { type: 'grant.answer', requestId: grantAsk(), answer: 'allow_once' });
+    await command('grant_request_not_found (already answered)', { type: 'grant.answer', requestId: ask, answer: 'allow_lasting' });
+    W.grantSaveFails = true;
+    const failing = grantAsk();
+    await command('grant_answer_failed (the request still waits)', { type: 'grant.answer', requestId: failing, answer: 'allow_lasting' });
+    W.grantSaveFails = false;
+    _resetGrantRequestsForTesting({ keepListeners: true });
+
+    // A Manage devices call that names this device is the desktop's to answer: left out of its snapshot, and not answerable from it.
+    const aboutMe = grantCall(NOW - 30_000, 'mobile-fixture-identity');
+    // The refresh this device is sent, and the one it gets on connecting, both leave it out.
+    await eventually(() => {
+      const all = frames(ws);
+      const openedAt = all.findIndex((f) => f.type === 'grant_request:opened' && f.payload.requestId === aboutMe);
+      expect(openedAt).toBeGreaterThanOrEqual(0);
+      const refreshed = all.slice(openedAt).filter((f) => f.type === 'snapshot').at(-1);
+      expect(refreshed?.payload.grantRequests).toEqual([]);
+    });
+    const mine = frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests;
+    expect(mine).toEqual([]);
+    await command('grant_request_not_found (names this device)', { type: 'grant.answer', requestId: aboutMe, answer: 'decline' });
+    W.dispatcher.enabled = false;
+    await command('grant_request_not_found (the Dispatcher is off, as Needs you hides it)', { type: 'grant.answer', requestId: aboutMe, answer: 'decline' });
+    expect(frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests).toEqual([]);
+    W.dispatcher.enabled = true;
+    _resetGrantRequestsForTesting({ keepListeners: true });
+
+    ws.send.mockClear();
+    // Expires as it is answered.
+    const expiring = grantCall(NOW - GRANT_REQUEST_TTL_MS);
+    await command('grant_request_not_found (expired)', { type: 'grant.answer', requestId: expiring, answer: 'allow_once' });
+    await eventually(() => expect(resolved().some((f) => f.payload.outcome === 'expired')).toBe(true));
+    events.push(seq(resolved().find((f) => f.payload.outcome === 'expired')));
+    ws.send.mockClear();
+    grantAsk();
+    dropGrantRequestsFor('durable_chat');
+    await eventually(() => expect(resolved().some((f) => f.payload.outcome === 'withdrawn')).toBe(true));
+    events.push(seq(resolved().find((f) => f.payload.outcome === 'withdrawn')));
+    fixtures.set('grant-request-events.json', { direction: 'desktop-to-phone',
+      note: 'seq is the replay sequence; a snapshot follows each, with the row. opened never carries the arguments. outcome: answered (from any device), expired, or withdrawn (its agent was deleted).', frames: events });
+    W.dispatcher.enabled = false;
   });
 
   it('every command type has an accepted request and receipt', () => {

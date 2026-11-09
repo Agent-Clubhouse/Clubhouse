@@ -6,24 +6,10 @@
  */
 
 import { useMemo, useState } from 'react';
-import { GRANT_ACTION_LABELS } from '../../../shared/agent-grant-changes';
-import type { GrantRequest } from '../../../shared/grant-requests';
+import { describeGrantRequest, grantRequestAllowEffect, type GrantRequest } from '../../../shared/grant-requests';
 import { Button } from '../../components/Button';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { grantRequestsFor, useGrantRequestStore } from '../../stores/grantRequestStore';
-
-function summary(request: GrantRequest): string {
-  const needs = request.actions.map((a) => GRANT_ACTION_LABELS[a] ?? a).join(', ');
-  return request.kind === 'call'
-    ? `Wants to run ${request.toolName ?? 'a tool'}, which needs: ${needs} on ${request.where}.`
-    : `Asks for ${needs} on ${request.where}.`;
-}
-
-function outcome(request: GrantRequest): string {
-  return request.kind === 'call'
-    ? 'Allow runs this one call when it tries again. Its permissions stay as they are.'
-    : `Allow adds this to its Clubhouse permissions, where you can remove it later.`;
-}
 
 export function GrantRequestList({ agentId, agentName, onAnswered }: {
   agentId: string;
@@ -59,12 +45,12 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
     <ul className="flex flex-col gap-3" data-testid="grant-request-list" aria-label={`${agentName}'s permission requests`}>
       {requests.map((r) => (
         <li key={r.requestId} className="flex flex-col gap-1.5 text-[13px]" data-testid={`grant-request-${r.requestId}`}>
-          <p className="text-ctp-text">{summary(r)}</p>
+          <p className="text-ctp-text">{describeGrantRequest(r)}</p>
           {r.reason && <p className="text-ctp-subtext1">Its reason: {r.reason}</p>}
           {r.details && (
             <pre className="max-h-40 overflow-auto rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words">{r.details}</pre>
           )}
-          <p className="text-xs text-ctp-overlay1">{outcome(r)}</p>
+          <p className="text-xs text-ctp-overlay1">{grantRequestAllowEffect(r)}</p>
           <div className="flex items-center gap-2">
             <Button kind="primary" onClick={() => void answer(r, true)} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>
             <Button onClick={() => void answer(r, false)} disabled={busy !== null} data-testid="grant-request-decline">Decline</Button>

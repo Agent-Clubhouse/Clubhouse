@@ -11,8 +11,9 @@
  * goes as a file path instead.
  *
  * Saved pasted images are deleted after SAVED_ATTACHMENT_TTL_MS. Transcripts
- * keep their paths, which then dangle; that's fine because history only
- * shows the file name and the CLIs keep their own copy of what was sent.
+ * keep their paths, which then dangle; that's fine because the sent image
+ * also has a stored copy (chat-media's withUserImages) that history shows,
+ * and the CLIs keep their own copy of what was sent.
  */
 
 import { app } from 'electron';
@@ -134,10 +135,10 @@ export async function resolveAttachments(agentId: string, ids: string[], caps: C
     if (real !== s.path) throw new Error(`Can't attach ${s.name}: it moved or was deleted`);
     const now = await inspect(real);
     if (now.kind === 'image' && now.mimeType) {
-      if (caps?.images === true) { out.push({ type: 'image', mimeType: now.mimeType, path: real }); continue; }
+      if (caps?.images === true) { out.push({ type: 'image', mimeType: now.mimeType, path: real, name: s.name }); continue; }
       if (s.pasted) throw new Error("This agent's chat can't take images");
     }
-    out.push({ type: 'file', path: real });
+    out.push({ type: 'file', path: real, name: s.name });
   }
   return out;
 }
