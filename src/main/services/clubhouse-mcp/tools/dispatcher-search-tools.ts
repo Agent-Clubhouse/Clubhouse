@@ -29,9 +29,9 @@ export function registerDispatcherSearchTools(): void {
     'search_memory',
     {
       description:
-        'Search your memory and your past conversations for words or "a phrase". Every word must appear in a ' +
-        'hit. Memory hits name the page and line (a page is what read_memory takes); conversation hits name ' +
-        'the transcript file and line, newest first, so you can point back to where something was said.',
+        'Search your memory and past conversations for words or a "quoted phrase"; every word must appear. ' +
+        'Memory hits give the page (what read_memory takes) and line. Conversation hits give the transcript ' +
+        'file and line, newest first, to link back to where something was said.',
       inputSchema: {
         type: 'object',
         properties: {

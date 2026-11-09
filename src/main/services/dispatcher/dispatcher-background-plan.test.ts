@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { nextCronTime, parseCron, validateActionInput, validateTrigger } from '../../../shared/actions';
+import { triageNews } from './dispatcher-triage';
 import { DISPATCHER_BEHAVIORS, DISPATCHER_BEHAVIOR_PLANS, dispatcherBehaviorPlan } from '../../../shared/dispatcher-behavior';
 import {
   CHECK_IN_ACTION,
   CHECK_IN_CRON,
+  CHECK_IN_TEXT,
   IDLE_UPKEEP_MINUTES,
   NIGHTLY_UPKEEP_CRON,
   UPKEEP_IDLE_ACTION,
@@ -103,5 +105,15 @@ describe('backgroundActionSpecs: each Behavior level yields its triggers', () =>
     expect(backgroundWorkOf(UPKEEP_IDLE_ACTION)).toBe('upkeep');
     expect(backgroundWorkOf(CHECK_IN_ACTION)).toBe('check_in');
     expect(backgroundWorkOf('Weekdays at 9:00 AM, notify you')).toBeUndefined();
+  });
+});
+
+describe('the check-in message (#3051)', () => {
+  it('has what a check-in finds go in as routine news first, since a check_in summary shows only with news held for it', () => {
+    const empty = { openRequests: [], held: [], shown: [] };
+    expect(triageNews({ text: 'pm finished the plan.', kind: 'check_in', at: 1 }, empty, 1)).toEqual({ show: 'never', reason: 'nothing_changed' });
+    expect(CHECK_IN_TEXT.indexOf('kind routine')).toBeGreaterThan(-1);
+    expect(CHECK_IN_TEXT.indexOf('kind routine')).toBeLessThan(CHECK_IN_TEXT.indexOf('kind check_in'));
+    expect(CHECK_IN_TEXT).toContain('check-ins skill');
   });
 });

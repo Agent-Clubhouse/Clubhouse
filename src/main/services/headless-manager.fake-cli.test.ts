@@ -182,6 +182,34 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     });
   });
 
+  // Real processes, Windows only: a `.cmd` shim that isn't an npm node shim runs
+  // under cmd.exe, and stopping the run must stop the CLI under it too (#3160).
+  describe.runIf(process.platform === 'win32')('a CLI behind a .cmd shim', () => {
+    it('a stop ends the CLI under cmd.exe, not just cmd.exe, and reports a stop', async () => {
+      const dir = hoisted.userData.dir;
+      const pidFile = path.join(dir, 'shim-cli.pid');
+      const cli = path.join(dir, 'shim-cli.js');
+      fs.writeFileSync(cli, `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`);
+      // An absolute node path and no %*: resolveNodeShim can't read it, so it runs through cmd.exe.
+      const shim = path.join(dir, 'shim-cli.cmd');
+      fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "${cli}"\r\n`);
+
+      await spawnHeadless(AGENT, dir, shim, [], undefined, 'stream-json', onExit);
+      // The file exists a moment before the pid is in it.
+      const shimCliPid = () => { try { return Number(fs.readFileSync(pidFile, 'utf-8')) || 0; } catch { return 0; } };
+      await until(() => shimCliPid() > 0, 'the CLI under cmd.exe');
+      const pid = shimCliPid();
+      // Cleaned up even if the stop below fails, so the run can end.
+      spawnedPids.push(pid);
+      expect(pid).not.toBe(cliPid()); // the CLI is cmd.exe's child, not ours
+
+      kill(AGENT);
+      await until(() => !isAlive(pid), 'the CLI under cmd.exe to die');
+      await until(() => exits().length === 1, 'the exit broadcast');
+      expect(exits()[0][1]).toBe(128 + os.constants.signals.SIGTERM);
+    });
+  });
+
   // The children below hold an inherited pipe open; Windows handle inheritance differs.
   describe.skipIf(process.platform === 'win32')('a child holds stdout open', () => {
     // Case (b).

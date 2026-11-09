@@ -51,10 +51,11 @@ vi.mock('../settings-store', () => ({
   },
 }));
 
-// Each CLI writes its own instructions file, as the real providers do.
-function fakeProvider(id: string, file: string) {
+// Each CLI writes its own instructions file, and reads skills from its own folder, as the real providers do.
+function fakeProvider(id: string, file: string, conventions?: { configDir: string; skillsDir: string; skillsRoot?: string; previousSkillsRoots?: string[] }) {
   return {
     id,
+    conventions,
     writeInstructions: vi.fn(async (dir: string, content: string) => {
       await fs.promises.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.promises.writeFile(path.join(dir, file), content);
@@ -123,6 +124,7 @@ vi.mock('../agent-system', () => ({
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import * as svc from './dispatcher-service';
+import { dispatcherSkills } from './dispatcher-skills';
 import { getSettings, updateSettings } from './dispatcher-settings';
 import { _resetDispatcherBehaviorForTesting, getDispatcherBehaviorPlan } from './dispatcher-behavior';
 import { agentRegistry } from '../agent-registry';
@@ -166,10 +168,10 @@ beforeEach(async () => {
     },
   };
   providers.list = [
-    fakeProvider('claude-code', 'CLAUDE.md'),
-    fakeProvider('copilot-cli', path.join('.github', 'copilot-instructions.md')),
-    fakeProvider('codex-cli', 'AGENTS.md'),
-    // A provider with no Auto presets, for the missing-mapping path.
+    fakeProvider('claude-code', 'CLAUDE.md', { configDir: '.claude', skillsDir: 'skills' }),
+    fakeProvider('copilot-cli', path.join('.github', 'copilot-instructions.md'), { configDir: '.github', skillsDir: 'skills' }),
+    fakeProvider('codex-cli', 'AGENTS.md', { configDir: '.codex', skillsDir: 'skills', skillsRoot: '.agents/skills', previousSkillsRoots: ['.codex/skills'] }),
+    // A provider with no Auto presets, for the missing-mapping path, and no skills folder.
     fakeProvider('future-cli', 'FUTURE.md'),
   ];
   svc._resetDispatcherForTesting();
@@ -446,6 +448,77 @@ describe('turning it on', () => {
     const file = path.join(dispatcherDir(), '.github', 'copilot-instructions.md');
     expect(fs.readFileSync(file, 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
     expect(changed).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ orchestrator: 'copilot-cli' }) }));
+  });
+});
+
+describe('built-in skills (#3051)', () => {
+  const skillText = (dir: string, rel: string, name: string) => fs.readFileSync(path.join(dir, rel, name, 'SKILL.md'), 'utf-8');
+
+  it('writes each agent its own skills beside its instructions, and lists them there', async () => {
+    await svc.setDispatcherEnabled(true);
+    for (const skill of dispatcherSkills('work')) expect(skillText(dispatcherDir(), '.claude/skills', skill.name)).toBe(skill.text);
+    for (const skill of dispatcherSkills('chat')) expect(skillText(chatDir(), '.claude/skills', skill.name)).toBe(skill.text);
+    // Neither gets the other's.
+    expect(fs.existsSync(path.join(chatDir(), '.claude/skills', 'delegating-work'))).toBe(false);
+    expect(fs.existsSync(path.join(dispatcherDir(), '.claude/skills', 'what-else-can-you-do'))).toBe(false);
+    const work = fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8');
+    expect(work.startsWith(svc.DISPATCHER_INSTRUCTIONS)).toBe(true);
+    expect(work).toContain('`.claude/skills/delegating-work/SKILL.md`');
+    expect(fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf-8')).toContain('`.claude/skills/what-else-can-you-do/SKILL.md`');
+  });
+
+  it('brings an existing Dispatcher up to this version\'s skills at start-up, removing retired ones', async () => {
+    await svc.setDispatcherEnabled(true);
+    const root = path.join(dispatcherDir(), '.claude/skills');
+    // What an older version left: an older text, a skill this version no longer ships, and the manifest naming them.
+    fs.writeFileSync(path.join(root, 'check-ins', 'SKILL.md'), 'old check-ins');
+    fs.mkdirSync(path.join(root, 'old-skill'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'old-skill', 'SKILL.md'), 'retired');
+    const manifest = path.join(root, '.clubhouse-managed-skills.json');
+    fs.writeFileSync(manifest, JSON.stringify({ skills: [...dispatcherSkills('work').map((s) => s.name), 'old-skill'] }));
+    // Something Clubhouse didn't write stays.
+    fs.mkdirSync(path.join(root, 'not-ours'), { recursive: true });
+    svc._resetDispatcherForTesting();
+    await svc.initDispatcher();
+    expect(skillText(dispatcherDir(), '.claude/skills', 'check-ins')).toBe(dispatcherSkills('work').find((s) => s.name === 'check-ins')!.text);
+    expect(fs.existsSync(path.join(root, 'old-skill'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'not-ours'))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(manifest, 'utf-8')).skills).toEqual(dispatcherSkills('work').map((s) => s.name));
+  });
+
+  it('refreshes the skills before each session starts, as it does the instructions', async () => {
+    await svc.setDispatcherEnabled(true);
+    fs.writeFileSync(path.join(chatDir(), '.claude/skills', 'catching-up', 'SKILL.md'), 'edited');
+    await svc.prepareDispatcherSessionStart(chatDir(), svc.getDispatcherChatAgentId()!);
+    expect(skillText(chatDir(), '.claude/skills', 'catching-up')).toBe(dispatcherSkills('chat').find((s) => s.name === 'catching-up')!.text);
+  });
+
+  it('moves the skills to a new CLI\'s folder and takes them out of the old one', async () => {
+    h.enabledProviders = ['codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    expect(fs.existsSync(path.join(dispatcherDir(), '.agents/skills', 'delegating-work', 'SKILL.md'))).toBe(true);
+    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { orchestrator: 'copilot-cli' });
+    await settle();
+    // Copilot reads Codex's folder too, so nothing is left there to load twice.
+    expect(fs.existsSync(path.join(dispatcherDir(), '.agents/skills', 'delegating-work'))).toBe(false);
+    expect(fs.existsSync(path.join(dispatcherDir(), '.github/skills', 'delegating-work', 'SKILL.md'))).toBe(true);
+    expect(fs.readFileSync(path.join(dispatcherDir(), '.github', 'copilot-instructions.md'), 'utf-8')).toContain('`.github/skills/delegating-work/SKILL.md`');
+  });
+
+  it('lists the chat\'s skills after its instructions and before its personality (#3047)', async () => {
+    await svc.setDispatcherEnabled(true);
+    const chat = fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf-8');
+    expect(chat.startsWith(svc.DISPATCHER_CHAT_INSTRUCTIONS)).toBe(true);
+    expect(chat.indexOf('## Skills')).toBeGreaterThan(-1);
+    expect(chat.indexOf('## Skills')).toBeLessThan(chat.indexOf('## Your name and personality'));
+  });
+
+  it('writes plain instructions, with no skills list, for a CLI with no skills folder', async () => {
+    h.enabledProviders = ['future-cli'];
+    await svc.setDispatcherEnabled(true);
+    const written = fs.readFileSync(path.join(dispatcherDir(), 'FUTURE.md'), 'utf-8');
+    expect(written.startsWith(svc.DISPATCHER_INSTRUCTIONS)).toBe(true);
+    expect(written).not.toContain('## Skills');
   });
 });
 
