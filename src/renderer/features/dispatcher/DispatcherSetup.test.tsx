@@ -119,12 +119,12 @@ describe('DispatcherSetup: Behavior and Runs on', () => {
     expect(options).toEqual(['Claude Code', 'Codex CLI']);
   });
 
-  it('offers Set up Auto when the provider has a mapping with nothing for the level, which opens Settings > Helpers', async () => {
+  it('offers Set up Auto when the provider has a mapping with nothing for the level, which opens Settings > Smart selection', async () => {
     d.checkBehavior = vi.fn(async () => ({ ready: false as const, code: 'no_valid_mapping' as const }));
     renderSetup();
     next();
     fireEvent.click(await screen.findByTestId('dispatcher-setup-auto-button'));
-    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsSubPage: 'helpers', dispatcherOpen: false });
+    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsSubPage: 'smart-selection', dispatcherOpen: false });
     // Coming back carries on where the user was.
     expect(useSetupDraftStore.getState().step).toBe('behavior');
   });

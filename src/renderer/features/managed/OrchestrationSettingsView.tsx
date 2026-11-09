@@ -20,8 +20,9 @@ export function OrchestrationSettingsView() {
       </SettingsSection>
       <SettingsSection title="Helpers">
         <SettingsBlock className="flex items-center gap-3">
-          <p className={`${settingsHelp} flex-1 min-w-0`}>The limit across every orchestrator, the default helper template and Smart helper selection are on the Helpers page.</p>
+          <p className={`${settingsHelp} flex-1 min-w-0`}>The limit across every orchestrator and the default helper template are on the Helpers page. Auto and the difficulty presets are on Smart selection.</p>
           <Button onClick={() => setSettingsSubPage('helpers')} data-testid="managed-orchestration-open-helpers">Open Helpers</Button>
+          <Button onClick={() => setSettingsSubPage('smart-selection')} data-testid="managed-orchestration-open-smart-selection">Open Smart selection</Button>
         </SettingsBlock>
       </SettingsSection>
     </SettingsPage>

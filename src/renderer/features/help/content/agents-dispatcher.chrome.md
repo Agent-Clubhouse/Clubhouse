@@ -72,6 +72,8 @@ An agent can ask to be told when something happens, for example "tell me when ma
 
 By default it can read, message, wake, put to sleep, reset, rename and set up the agents connected to it, create agents in any project, make and remove connections, and create and run Actions. It asks you first before it adds or opens a project, changes project defaults or changes app settings. Its Clubhouse permissions, under **Permissions** on any agent's Dispatcher card, set each of these to Off, Ask first or Allow. It never sets an agent's access above its own.
 
+When it links two of your orchestrators, you can say what each may do to the other, for example "let them see each other's status, message and wake each other, nothing else". It sets those switches on the link and reads them back to check. A new link it makes can read and message, with **Clear**, **Compact** and **Wake it** off. It never changes switches you set yourself, and never lets one agent put another to sleep. The link's switches are on each agent's **Connections** card under **Manage**.
+
 Permission prompts stay with the agent that asked, and an agent's message never counts as your approval. Requests that ask first wait in **Needs you**.
 
 ## Settings

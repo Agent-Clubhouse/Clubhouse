@@ -40,7 +40,7 @@ export interface ReachRow {
 const RANK: Record<GrantChangeMode, number> = { off: 0, ask: 1, allow: 2 };
 
 function isPlainConnected(t: GrantTarget): boolean {
-  return t.kind === 'connected' && !t.onlyDispatcher && !t.excludeDispatcher;
+  return t.kind === 'connected' && !t.onlyDispatcher && !t.excludeDispatcher && !t.wakeOn;
 }
 
 /**

@@ -107,6 +107,40 @@ describe('Helpers settings page (#2232)', () => {
     await waitFor(() => expect(screen.getAllByTestId('helpers-orphan-row')).toHaveLength(1));
   });
 
+  it('clears every listed disposed helper at once after a confirm (#3186)', async () => {
+    window.clubhouse.agent.removeDisposedMany = vi.fn(async (entries: Array<{ projectPath: string; agentId: string }>) => {
+      for (const e of entries) byProject[e.projectPath] = byProject[e.projectPath].filter((c) => c.id !== e.agentId);
+      return { removed: entries.length, failed: [] };
+    });
+    render(<HelpersSettingsView />);
+    await screen.findByTestId('helpers-orphans');
+    fireEvent.click(screen.getByTestId('helpers-orphans-clear-all'));
+    expect(screen.getByText('Remove all 2 disposed helpers for good?')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+    await waitFor(() => expect(window.clubhouse.agent.removeDisposedMany).toHaveBeenCalledWith([
+      { projectPath: ALPHA, agentId: 'd2' }, { projectPath: BETA, agentId: 'd3' },
+    ]));
+    expect(await screen.findByTestId('helpers-orphans-empty')).toBeInTheDocument();
+    // The orchestrator's own disposed helper was never listed, so it stays.
+    expect(byProject[ALPHA].map((c) => c.id)).toEqual(['lead', 'd1']);
+  });
+
+  it('says how many Clear all couldn’t remove', async () => {
+    window.clubhouse.agent.removeDisposedMany = vi.fn(async () => ({ removed: 1, failed: [{ agentId: 'd3', message: 'agents.json is locked' }] }));
+    render(<HelpersSettingsView />);
+    await screen.findByTestId('helpers-orphans');
+    fireEvent.click(screen.getByTestId('helpers-orphans-clear-all'));
+    fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t remove 1 of 2. agents.json is locked');
+  });
+
+  it('no longer shows Auto or the difficulty presets (#3186)', async () => {
+    render(<HelpersSettingsView />);
+    await screen.findByTestId('helpers-orphans');
+    expect(screen.queryByTestId('helper-presets-auto')).toBeNull();
+    expect(window.clubhouse.app.getHelperRouting).not.toHaveBeenCalled();
+  });
+
   it('says there are none', async () => {
     byProject[ALPHA] = byProject[ALPHA].filter((c) => c.id !== 'd2');
     byProject[BETA] = [];

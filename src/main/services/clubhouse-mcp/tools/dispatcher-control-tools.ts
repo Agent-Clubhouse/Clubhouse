@@ -12,9 +12,11 @@ import {
   DEFAULT_CONTROLS_PAGE,
   DispatcherControlError,
   MAX_CONTROLS_PAGE,
+  CONNECTION_SWITCH_NAMES,
   connectOrchestrators,
   disconnectOrchestrators,
   listOrchestratorControls,
+  setConnectionToolsForLink,
   setOrchestratorHelpers,
 } from '../../dispatcher-controls';
 
@@ -40,6 +42,14 @@ const LINK_PROPERTIES = {
   from: { type: 'string', description: 'The orchestrator that gets the tools, by id from list_agents.' },
   to: { type: 'string', description: 'The orchestrator it reaches, by id from list_agents.' },
   two_way: { type: 'boolean', description: 'Both directions, all or nothing. Default false.' },
+};
+
+const ALLOW_DESCRIPTION = `Tool names from: ${CONNECTION_SWITCH_NAMES.join(', ')}.`;
+
+/** The tools to allow on each direction (#3215). */
+const ALLOW_PROPERTIES = {
+  allow: { type: 'array', items: { type: 'string', enum: [...CONNECTION_SWITCH_NAMES] }, description: `What \`from\` may use on \`to\`; every other tool is off. ${ALLOW_DESCRIPTION}` },
+  allow_back: { type: 'array', items: { type: 'string', enum: [...CONNECTION_SWITCH_NAMES] }, description: `With two_way: what \`to\` may use on \`from\`. Default: the same as allow. ${ALLOW_DESCRIPTION}` },
 };
 
 export function registerDispatcherControlTools(): void {
@@ -71,8 +81,11 @@ export function registerDispatcherControlTools(): void {
     {
       description:
         'Connect two connected orchestrators directly, so `from` gets tools to message and check on `to`. The link is ' +
-        'saved as yours. It is refused if they are already connected some other way, or if the user removed the link.',
-      inputSchema: { type: 'object', properties: LINK_PROPERTIES, required: ['from', 'to'] },
+        'saved as yours. It is refused if they are already connected some other way, or if the user removed the link. ' +
+        'A new link can read status and output and send messages and files; clear_agent, compact_agent and wake_agent stay off ' +
+        'unless you name them in allow. Tools the user already set on a direction are kept, and naming tools for it is refused. ' +
+        'Each link in the result reads back its tools: allowed, disabled, and tools_yours (whether set_connection_tools can change them).',
+      inputSchema: { type: 'object', properties: { ...LINK_PROPERTIES, ...ALLOW_PROPERTIES }, required: ['from', 'to'] },
     },
     guarded('connect_orchestrators', connectOrchestrators),
     { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'] } } },
@@ -90,10 +103,23 @@ export function registerDispatcherControlTools(): void {
   );
 
   registerGlobalTool(
+    'set_connection_tools',
+    {
+      description:
+        'Set the tools on a link you made with connect_orchestrators: each direction gets exactly the tools in allow. ' +
+        'Refused for a link you didn\'t make, and for a direction the user set tools on or also connects another way; ' +
+        'nothing changes then. Sleep is never a connection tool. Returns each direction read back.',
+      inputSchema: { type: 'object', properties: { ...LINK_PROPERTIES, ...ALLOW_PROPERTIES }, required: ['from', 'to', 'allow'] },
+    },
+    guarded('set_connection_tools', setConnectionToolsForLink),
+    { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'] } } },
+  );
+
+  registerGlobalTool(
     'list_orchestrator_controls',
     {
       description:
-        'Read connected orchestrators\' helper settings, the links you made with their status, and optionally your recent ' +
+        'Read connected orchestrators\' helper settings, the links you made with their status and tools, and optionally your recent ' +
         'audit rows. A suspended link has an end that stopped being a connected orchestrator, and returns when it qualifies again.',
       inputSchema: {
         type: 'object',

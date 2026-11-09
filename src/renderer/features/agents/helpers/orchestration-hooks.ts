@@ -167,7 +167,7 @@ export interface OrchestrationState {
   setPolicy: (patch: OrchestrationPolicyPatch) => Promise<boolean>;
   setOrchestrate: (on: boolean) => Promise<void>;
   setCrossProjectHelpers: (on: boolean) => Promise<void>;
-  /** Null clears this agent's own switch, so it follows Settings > Helpers. */
+  /** Null clears this agent's own switch, so it follows Settings > Smart selection. */
   setAutoHelpers: (on: boolean | null) => Promise<void>;
   /** "Connect to Dispatcher" (#2534). */
   setConnectToDispatcher: (on: boolean) => Promise<void>;

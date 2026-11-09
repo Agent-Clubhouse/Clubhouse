@@ -29,6 +29,7 @@ import { bindingManager } from './binding-manager';
 import { isDispatcherAgent, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
 import { getAgentGrantChanges } from '../agent-grants-store';
+import { localConnectionWakeOn } from '../connection-grants-store';
 import { applyGrantChanges } from '../../../shared/agent-grant-changes';
 import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from './orchestration-gate';
 import { toolGrantDeclarations, type ToolGrant, type ToolGrantDeclaration, type ToolGrantTarget } from './tool-grants';
@@ -66,7 +67,7 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
       const isDispatcher = isTrackedDispatcher(binding.targetId);
       if (binding.targetId === agentId) return { kind: 'agent', relations: ['self'], isDispatcher };
       if (mcpCallerParent(agentId) === binding.targetId) return { kind: 'agent', relations: ['parent'], isDispatcher };
-      return { kind: 'agent', relations: ['connected'], isDispatcher };
+      return { kind: 'agent', relations: ['connected'], isDispatcher, ...(localConnectionWakeOn(agentId, binding.targetId) && { wakeOn: true }) };
     }
     case 'browser':
       return { kind: 'browser', relations: ['connected'] };

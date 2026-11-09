@@ -9,6 +9,7 @@ vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof impor
 
 import { getScopedToolList, setDispatcherConnectionCheck, _resetForTesting } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
+import { CONNECTION_SWITCHES } from '../../../shared/connection-grants';
 import { registerClubhouseMcpTools } from './tools/register-all';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { _resetDispatcherGateForTesting, setDispatcherAgent, setDispatcherChatAgent } from './dispatcher-gate';
@@ -145,7 +146,8 @@ describe('all of the Dispatcher\'s built-in text', () => {
   it('names only tools the agent it is for is offered', () => {
     const offered = { chat: new Set(tools('chat').map((t) => t.name)), work: new Set(tools('dispatcher').map((t) => t.name)) };
     // Tools on each wire to a connected agent, which this test registers none of.
-    const wireTools = ['send_message', 'wake_agent', 'sleep_agent', 'get_status', 'read_output', 'preview_provider', 'change_provider'];
+    // The connection switches are wire tools too, and what connect_orchestrators' allow names (#3215).
+    const wireTools = ['sleep_agent', 'preview_provider', 'change_provider', ...CONNECTION_SWITCHES.map((t) => t.tool)];
     const known = (role: 'chat' | 'work', name: string) => offered[role].has(name) || (role === 'work' && wireTools.includes(name));
     const check = (role: 'chat' | 'work', label: string, text: string) => {
       for (const [, name] of text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)) {

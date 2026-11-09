@@ -78,7 +78,8 @@ describe('grant check parity (#2968)', () => {
       for (const [relation, targetId] of Object.entries(targets)) {
         if (targetId === caller) continue;
         for (const tool of tools) {
-          const before = oldGroupAllows(tool.group, caller);
+          // wake_agent was in the dispatcher group; its gate is now Wake it on the connection (#3215), checked beside the grant.
+          const before = tool.name === 'wake_agent' ? isDispatcherAgent(caller) : oldGroupAllows(tool.group, caller);
           const after = before && checkToolGrant(caller, tool.grant, allArgs(tool.grant), { binding: { targetKind: 'agent', targetId } }).ok;
           if (before !== after) diffs.push(`${caller} -> ${relation}: ${tool.name}`);
         }

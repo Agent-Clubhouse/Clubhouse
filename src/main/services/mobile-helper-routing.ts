@@ -1,6 +1,6 @@
 /**
  * Helper presets from a phone (#2671): the page's data and `helperRouting.update`,
- * through the same service as Settings > Helpers. App-wide preset editing is a
+ * through the same service as Settings > Smart selection. App-wide preset editing is a
  * person's action. See docs/mobile-control-v1.md#helper-presets.
  *
  * The capability lists only what works now, so a phone can't offer Auto early.
