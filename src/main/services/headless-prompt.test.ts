@@ -1,9 +1,16 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { defaultSpawn, headlessAnswer, runHeadlessPrompt } from './headless-prompt';
+import { killStructuredChild } from '../orchestrators/adapters/structured-spawn';
+
+// The real tree kill, watched: a run that stops its CLI must use it (#3151).
+vi.mock('../orchestrators/adapters/structured-spawn', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../orchestrators/adapters/structured-spawn')>();
+  return { ...actual, killStructuredChild: vi.fn(actual.killStructuredChild) };
+});
 import type { HeadlessOpts, OrchestratorProvider } from '../orchestrators/types';
 import type { StreamJsonEvent } from './jsonl-parser';
 
@@ -98,9 +105,11 @@ describe('runHeadlessPrompt with a fake CLI', () => {
     expect(result).toEqual({ ok: false, error: 'It exited with code 3.' });
   });
 
-  it('stops a run that takes too long', async () => {
+  it('stops a run that takes too long, with its whole process tree', async () => {
+    vi.mocked(killStructuredChild).mockClear();
     const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x', timeoutMs: 200 }, { provider: () => fakeProvider('hang'), workDir, spawn });
     expect(result).toEqual({ ok: false, error: 'It took too long.' });
+    expect(killStructuredChild).toHaveBeenCalledWith(children[children.length - 1]);
   });
 
   it('fails for a provider that has no headless runs', async () => {
@@ -118,6 +127,53 @@ describe('runHeadlessPrompt with a fake CLI', () => {
     const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x' }, { provider: () => provider, workDir, spawn });
     expect(result.ok).toBe(false);
   });
+});
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// Real processes, Windows only: a `.cmd` shim that isn't an npm node shim runs
+// under cmd.exe, and the CLI it starts must die with it when the run stops.
+describe.runIf(process.platform === 'win32')('runHeadlessPrompt through a .cmd shim', () => {
+  it('stops the CLI under cmd.exe on a timeout, not just cmd.exe (#3151)', async () => {
+    const pidFile = path.join(dir, 'shim-cli.pid');
+    const cli = path.join(dir, 'shim-cli.js');
+    fs.writeFileSync(cli, `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`);
+    // An absolute node path and no %*: resolveNodeShim can't read it, so it runs through cmd.exe.
+    const shim = path.join(dir, 'shim-cli.cmd');
+    fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "${cli}"\r\n`);
+    const provider = {
+      id: 'fake',
+      getCapabilities: () => ({ headless: true }),
+      buildHeadlessCommand: async () => ({ binary: shim, args: [] }),
+    } as unknown as OrchestratorProvider;
+
+    let pid: number | undefined;
+    try {
+      const run = runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x', timeoutMs: 8_000 }, { provider: () => provider, workDir, spawn });
+      // The file exists a moment before the pid is in it.
+      const readPid = (): number => {
+        try {
+          return Number(fs.readFileSync(pidFile, 'utf8')) || 0;
+        } catch {
+          return 0;
+        }
+      };
+      await expect.poll(readPid, { timeout: 7_000, interval: 50 }).toBeGreaterThan(0);
+      pid = readPid();
+      expect(pid).not.toBe(children[children.length - 1].pid); // the CLI is cmd.exe's child, not ours
+      expect(await run).toEqual({ ok: false, error: 'It took too long.' });
+      await expect.poll(() => alive(pid!), { timeout: 10_000, interval: 100 }).toBe(false);
+    } finally {
+      if (pid && alive(pid)) process.kill(pid);
+    }
+  }, 30_000);
 });
 
 describe('headlessAnswer', () => {
