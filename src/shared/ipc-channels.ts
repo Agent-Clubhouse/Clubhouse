@@ -128,6 +128,7 @@ export const IPC = {
     GET_DISPOSE_CHECKS: 'agent:get-dispose-checks',
     DISPOSE_HELPER: 'agent:dispose-helper',
     REMOVE_DISPOSED: 'agent:remove-disposed',
+    REMOVE_DISPOSED_MANY: 'agent:remove-disposed-many',
     REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
     /** Main → renderer: a project's agents.json changed (parent links, creation, disposal, handoff). Payload: the project path. */
     CONFIGS_CHANGED: 'agent:configs-changed',

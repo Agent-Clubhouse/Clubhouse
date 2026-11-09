@@ -75,7 +75,7 @@ export function DispatcherSetup({ state, reopened = false, onClose }: Dispatcher
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => { void loadOrchestrators(); }, [loadOrchestrators]);
-  // Prefilled once per opening; coming back from Settings > Helpers keeps what was filled in.
+  // Prefilled once per opening; coming back from Settings > Smart selection keeps what was filled in.
   useEffect(() => {
     if (!useSetupDraftStore.getState().draft) start(draftFromState(state, enabledIds[0] ?? ''));
   }, [state, enabledIds, start]);

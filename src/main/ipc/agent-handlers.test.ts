@@ -19,6 +19,7 @@ vi.mock('electron', () => ({
 const configChange = vi.hoisted(() => ({ listener: null as ((projectPath: string) => void) | null }));
 
 vi.mock('../services/free-agent-settings');
+vi.mock('../services/disposed-helper-cleanup', () => ({ removeDisposedHelpersOf: vi.fn(async () => 0) }));
 vi.mock('../services/agent-config', () => ({
   onAgentConfigChanged: (listener: (projectPath: string) => void) => { configChange.listener = listener; return () => {}; },
   listDurable: vi.fn(() => [{ id: 'a1', name: 'Bot' }]),
@@ -121,6 +122,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { CONFIG_CHANGE_DEBOUNCE_MS, registerAgentHandlers } from './agent-handlers';
 import { recordStartRequest, _resetStartRequestsForTesting } from '../services/helper-start-requests';
+import { removeDisposedHelpersOf } from '../services/disposed-helper-cleanup';
 import * as agentConfig from '../services/agent-config';
 import * as agentCreation from '../services/agent-creation';
 import * as agentSystem from '../services/agent-system';
@@ -514,6 +516,29 @@ describe('agent-handlers', () => {
       const refused = await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
       expect(refused).toEqual({ ok: false, message: 'impl-ipc isn\'t disposed' });
       expect(agentConfig.deleteUnregister).not.toHaveBeenCalled();
+    });
+
+    it('removes a disposed row\'s own disposed helpers too (#3186)', async () => {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ ...helper, disposedAt: '2026-10-18T10:00:00Z' } as never);
+      vi.mocked(removeDisposedHelpersOf).mockClear();
+      await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
+      expect(removeDisposedHelpersOf).toHaveBeenCalledWith('/project', 'h1');
+    });
+
+    it('clears many disposed rows, skipping gone ones and refusing live ones (#3186)', async () => {
+      const disposed = { ...helper, disposedAt: '2026-10-18T10:00:00Z' };
+      vi.mocked(agentConfig.getDurableConfig).mockImplementation(async (_p: string, id: string) => (
+        id === 'live' ? helper : id === 'gone' ? undefined : { ...disposed, id }
+      ) as never);
+      vi.mocked(agentConfig.deleteUnregister).mockClear();
+      vi.mocked(removeDisposedHelpersOf).mockClear();
+      const result = await handlers.get(IPC.AGENT.REMOVE_DISPOSED_MANY)!({}, [
+        { projectPath: '/a', agentId: 'd1' }, { projectPath: '/b', agentId: 'gone' }, { projectPath: '/b', agentId: 'live' }, { projectPath: '/b', agentId: 'd2' },
+      ]);
+      expect(result).toEqual({ removed: 2, failed: [{ agentId: 'live', message: 'impl-ipc isn\'t disposed' }] });
+      expect(vi.mocked(agentConfig.deleteUnregister).mock.calls).toEqual([['/a', 'd1'], ['/b', 'd2']]);
+      expect(vi.mocked(removeDisposedHelpersOf).mock.calls).toEqual([['/a', 'd1'], ['/b', 'd2']]);
+      await expect(Promise.resolve().then(() => handlers.get(IPC.AGENT.REMOVE_DISPOSED_MANY)!({}, [{ projectPath: '/a' }]))).rejects.toThrow('needs a projectPath and an agentId');
     });
 
     describe('answering a held helper start (#2234)', () => {

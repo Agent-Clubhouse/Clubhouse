@@ -1,7 +1,7 @@
 /**
  * What each CLI says about its plan limits (#2671, docs/helper-auto-routing.md).
  * Read-only: a token-free handshake and one question, never a prompt, and only
- * on demand, when Settings > Helpers or a phone's page asks. There is no polling.
+ * on demand, when Settings > Smart selection or a phone's page asks. There is no polling.
  *
  * Per provider, for the one login each CLI has in the local environment: one shared
  * read at a time, kept for {@link QUOTA_CACHE_MS}, with {@link QUOTA_FAILURE_BACKOFF_MS}

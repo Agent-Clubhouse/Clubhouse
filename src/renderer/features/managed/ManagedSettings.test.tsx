@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ManagedPartConsumer, ManagedPartSummary, ManagedTemplate } from '../../../shared/managed-agents-types';
 import { HELPER_ROUTING_LABELS } from '../../../shared/helper-routing';
 import { HelpersSettingsView } from '../settings/HelpersSettingsView';
+import { SmartSelectionSettingsView } from '../settings/SmartSelectionSettingsView';
 import { PartLibraryView } from './PartLibraryView';
 import { TemplatesSettingsView } from './TemplatesSettingsView';
 import { changeText, noteText } from './TemplatePushDialog';
@@ -344,7 +345,7 @@ describe('Helpers page with managed agents', () => {
     window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ revision: 'r0.0', serverTime: '2026-11-01T00:00:00.000Z', labels: HELPER_ROUTING_LABELS, providers: {}, auto: { effective: false, source: 'default', scopes: { app: { value: false, editable: true } } } })) as never;
   });
 
-  it('saves the default helper template and names Smart helper selection', async () => {
+  it('saves the default helper template, with Smart selection moved to its own page (#3186)', async () => {
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('builtin-template-helper', { name: 'Helper', builtin: true }), template('qa', { name: 'Quality Assurance', builtin: true })] });
     const set = vi.spyOn(m(), 'setDefaultHelperTemplate').mockResolvedValue({ ok: true, value: undefined });
     render(<HelpersSettingsView />);
@@ -355,8 +356,16 @@ describe('Helpers page with managed agents', () => {
     fireEvent.change(select, { target: { value: 'qa' } });
     await waitFor(() => expect(set).toHaveBeenCalledWith('qa'));
     expect(select.value).toBe('qa');
-    expect(screen.getByRole('heading', { name: 'Smart helper selection' })).toBeTruthy();
-    expect(screen.getByTestId('helper-presets-footer').textContent).toBe('Smart helper selection balances load across your providers. Built-in templates ask orchestrators to use it.');
+    expect(screen.queryByTestId('helper-presets-auto')).toBeNull();
+    expect(screen.queryByTestId('helper-presets-footer')).toBeNull();
+  });
+
+  it('shows Auto and the difficulty presets on Smart selection (#3186)', async () => {
+    render(<SmartSelectionSettingsView />);
+    expect(screen.getByRole('heading', { name: 'Smart selection' })).toBeTruthy();
+    expect(await screen.findByTestId('helper-presets-auto')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Auto and presets' })).toBeTruthy();
+    expect(screen.getByTestId('helper-presets-footer').textContent).toBe('Smart selection balances load across your providers. Built-in templates ask orchestrators to use it.');
   });
 
   it('offers no retired template for the default, but keeps one already chosen (D71)', async () => {

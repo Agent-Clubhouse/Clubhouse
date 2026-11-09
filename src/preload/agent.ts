@@ -1,7 +1,7 @@
 import type { ContextWindowOptions } from '../shared/context-window';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, RemoveDisposedManyResult, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, HelperSummary, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { AccessLevel } from '../shared/agent-access';
 import type { AgentGrantsView, GrantChange } from '../shared/agent-grant-changes';
@@ -152,6 +152,9 @@ export const agent = {
   /** Remove a disposed helper's row for good. Refuses an agent that isn't disposed. */
   removeDisposed: (projectPath: string, agentId: string): Promise<DeleteResult> =>
     ipcRenderer.invoke(IPC.AGENT.REMOVE_DISPOSED, projectPath, agentId),
+  /** Remove many disposed helpers' rows, for Settings' Clear all (#3186). Each is checked like removeDisposed. */
+  removeDisposedMany: (entries: Array<{ projectPath: string; agentId: string }>): Promise<RemoveDisposedManyResult> =>
+    ipcRenderer.invoke(IPC.AGENT.REMOVE_DISPOSED_MANY, entries),
   /** An agent's resolved orchestration policy (#2228), or null for an unknown agent. */
   getOrchestrationPolicy: (projectPath: string, agentId: string): Promise<ResolvedOrchestrationPolicy | null> =>
     ipcRenderer.invoke(IPC.AGENT.GET_ORCHESTRATION_POLICY, projectPath, agentId),

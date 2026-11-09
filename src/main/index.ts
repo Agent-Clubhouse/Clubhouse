@@ -300,6 +300,16 @@ app.on('ready', () => {
   // The app event bus (#2950): fed from here on, then "Clubhouse started" once subscribers listen.
   void import('./services/app-event-sources').then(async ({ startAppEventSources, publishAppStarted }) => {
     await startAppEventSources();
+    // A deleted orchestrator's disposed helpers go with it, and once, those left from before (#3186).
+    try {
+      const { startDisposedHelperCleanup, removeOrphanedDisposedHelpersOnce } = await import('./services/disposed-helper-cleanup');
+      startDisposedHelperCleanup();
+      void removeOrphanedDisposedHelpersOnce().catch((err) => {
+        appLog('core:agent-config', 'warn', 'The disposed helper cleanup stopped', { meta: { code: codeOf(err) } });
+      });
+    } catch (err) {
+      appLog('core:agent-config', 'warn', 'The disposed helper cleanup did not start', { meta: { code: codeOf(err) } });
+    }
     // Actions (#2918) subscribe before "Clubhouse started" goes out.
     try {
       const { startActions, observeActions } = await import('./services/actions');

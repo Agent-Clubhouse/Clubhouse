@@ -119,13 +119,13 @@ describe('DispatcherBehaviorChip: in step with main', () => {
     await waitFor(() => expect(chip().getAttribute('data-level')).toBe('thorough'));
   });
 
-  it('Set up Auto opens Settings > Helpers', () => {
+  it('Set up Auto opens Settings > Smart selection', () => {
     useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: true });
     useDispatcherStore.getState().setState({ ...ON, behavior: { level: 'thorough', provider: 'claude-code', auto: { ready: false, code: 'no_valid_mapping' } } });
     render(<DispatcherBehaviorChip />);
     fireEvent.click(screen.getByTestId('dispatcher-behavior-chip'));
     fireEvent.click(screen.getByTestId('dispatcher-behavior-setup-auto'));
-    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'helpers', dispatcherOpen: false });
+    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'smart-selection', dispatcherOpen: false });
   });
 
   it('renders nothing until main\'s state lands, and the level reads Standard meanwhile', () => {
