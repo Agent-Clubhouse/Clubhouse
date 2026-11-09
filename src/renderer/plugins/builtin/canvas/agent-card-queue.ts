@@ -1,6 +1,5 @@
 import type { CanvasInstance, CanvasView, Position, Size } from './canvas-types';
 import { computeAdjacentPosition } from './canvas-operations';
-import { isDispatcherAgent } from '../../../features/dispatcher/dispatcherStore';
 
 /**
  * Sibling agent cards waiting to be placed (LB-M68, #2020).
@@ -29,10 +28,15 @@ export interface PendingAgentCard {
 /**
  * Whether a queued card may be placed: never for the Dispatcher, which has
  * its own pane (#3184). An agent not in `agents` yet is still placed.
+ * `isDispatcher` is passed in, since this module can't import host internals.
  */
-export function canPlaceAgentCard(agentId: string, agents: ReadonlyArray<{ id: string; projectId?: string }>): boolean {
+export function canPlaceAgentCard(
+  agentId: string,
+  agents: ReadonlyArray<{ id: string; projectId?: string }>,
+  isDispatcher: (agent: { id: string; projectId: string }) => boolean,
+): boolean {
   const agent = agents.find((a) => a.id === agentId);
-  return !isDispatcherAgent({ id: agentId, projectId: agent?.projectId ?? '' });
+  return !isDispatcher({ id: agentId, projectId: agent?.projectId ?? '' });
 }
 
 const queues = new WeakMap<object, PendingAgentCard[]>();

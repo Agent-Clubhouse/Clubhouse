@@ -5,6 +5,7 @@ import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types
 import { createCanvasStore } from './canvas-store';
 import { canPlaceAgentCard, queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
 import { findAgentCard } from './canvas-operations';
+import { isDispatcherAgent } from '../../../features/dispatcher/dispatcherStore';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
@@ -569,7 +570,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const placeQueuedAgentCard = useCallback((card: PendingAgentCard) => {
     // The Dispatcher has its own pane and is never a canvas card (#3184).
-    if (!canPlaceAgentCard(card.agentId, api.agents.list())) return;
+    if (!canPlaceAgentCard(card.agentId, api.agents.list(), isDispatcherAgent)) return;
     // The agent already has a card here: focus it rather than add another (#2415).
     const existing = findAgentCard(store.getState().views, card.agentId);
     if (existing) {
