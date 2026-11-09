@@ -48,7 +48,7 @@ Each direction of a link has the switches of any connection (`CONNECTION_SWITCHE
 - **Tools the user saved** on a direction (an earlier wire's, or a switch they turned) are kept. Naming tools for that direction is refused (`user_tools`), and nothing changes.
 - **The Dispatcher's own tools** are marked `setBy: "dispatcher"` on the direction in `connection-grants.json`. Any other write (the Connections card, a canvas popover, Make two-way) drops the mark, and the tools are the user's from then on.
 - **Disconnecting** drops the tools the Dispatcher set once nothing else binds the pair, so a wire the user draws later starts fresh. So does the user removing the link on the Connections card. A pair the user also drew keeps them.
-- Links made before #3215 have no saved tools and keep every tool on, as before; connecting them again gives them the new defaults.
+- Links made before #3215 had no saved tools, so every tool was on. Once, at startup after a rebuild has read every source, each one still only the Dispatcher's (in its store, no other source lists the pair, nothing saved for the direction) gets the new-link defaults, marked `setBy: "dispatcher"` (`migrateDispatcherLinkTools`). The done marker `dispatcher-link-defaults-3215` is kept in `connection-grants.json` under `migrations`, written with the entries, and the change is logged. A direction with saved tools, or a pair the user connects too, is never touched. While a source can't be read, it waits for a later rebuild.
 
 The maintainer's link between two orchestrators (status and output, messages, wake, and nothing else) is:
 

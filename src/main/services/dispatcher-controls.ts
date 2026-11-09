@@ -43,14 +43,17 @@ import { getHelperSummary, setOrchestrationPolicy } from './orchestration-policy
 import * as orchestrationSettings from './orchestration-settings';
 import {
   claimSourceBinding,
+  collectSourcesByPair,
   isBindingRemovedByUser,
+  persistedPairKey,
   listSoleOwnedPairs,
   rebuildPersistedBindings,
   releaseSourceBinding,
 } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { appLog } from './log-service';
 import { CONNECTION_SWITCHES, NEW_CONNECTION_DISABLED_TOOLS, localToolsFromAllow, type DirectionTools } from '../../shared/connection-grants';
-import { getConnectionDirection, setConnectionTools } from './connection-grants-store';
+import { connectionMigrationDone, getConnectionDirection, runConnectionMigration, setConnectionTools } from './connection-grants-store';
 import { forgetDispatcherDirection, readLocalDirectionTools } from './connection-grants';
 import { maxHelpersCeiling } from '../../shared/orchestration-policy';
 
@@ -438,6 +441,48 @@ export async function setConnectionToolsForLink(actorId: string, args: Record<st
       result: { links },
     };
   });
+}
+
+// ── Links made before #3215 ──────────────────────────────────────────────
+
+/** The done marker of the one-time change below, in connection-grants.json. */
+export const DISPATCHER_LINK_DEFAULTS_MIGRATION = 'dispatcher-link-defaults-3215';
+
+let deferralLogged = false;
+
+/**
+ * Once, at startup: links the Dispatcher made before #3215 have no saved
+ * tools, so every tool was on. Each one that is still only the Dispatcher's
+ * (in its store, no other source lists the pair, nothing saved for the
+ * direction) gets what a new link starts with: clear, compact and wake off,
+ * marked as the Dispatcher's. A direction with saved tools and any pair the
+ * user connects too are never touched. Waits for a later rebuild while a
+ * source can't be read, since it might list the pair.
+ */
+export async function migrateDispatcherLinkTools(): Promise<'done' | 'already' | 'deferred'> {
+  if (connectionMigrationDone(DISPATCHER_LINK_DEFAULTS_MIGRATION)) return 'already';
+  const { bySource, failed } = await collectSourcesByPair();
+  if (failed.length > 0) {
+    if (!deferralLogged) {
+      deferralLogged = true;
+      appLog('core:mcp', 'info', 'Dispatcher link defaults wait: a connection source could not be read', { meta: { failed } });
+    }
+    return 'deferred';
+  }
+  const listedElsewhere = (p: Pair) => [...bySource].some(([id, keys]) => id !== DISPATCHER_CONNECTION_SOURCE_ID && keys.has(persistedPairKey(p.agentId, p.targetId)));
+  const now = new Date().toISOString();
+  const directions = (await readDispatcherConnections())
+    .filter((c) => !getConnectionDirection(local(c.agentId), local(c.targetId)) && !listedElsewhere(c) && !isBindingRemovedByUser(c.agentId, c.targetId))
+    .map((c) => ({
+      from: local(c.agentId), to: local(c.targetId),
+      disabledTools: [...NEW_CONNECTION_DISABLED_TOOLS], setBy: 'dispatcher' as const, updatedAt: now,
+    }));
+  const written = await runConnectionMigration(DISPATCHER_LINK_DEFAULTS_MIGRATION, directions);
+  if (written === null) return 'already';
+  appLog('core:mcp', 'info', 'Dispatcher links made before #3215 now start like new links: clear, compact and wake off', {
+    meta: { links: written.length, pairs: written.map((d) => `${d.from.agentId}>${d.to.agentId}`) },
+  });
+  return 'done';
 }
 
 // ── Readback ─────────────────────────────────────────────────────────────

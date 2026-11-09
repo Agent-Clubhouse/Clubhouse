@@ -37,6 +37,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from './validation';
 import { listConnectionSources, removeConnectionSource } from '../services/connection-sources';
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
+import { migrateDispatcherLinkTools } from '../services/dispatcher-controls';
 import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, setLocalWake, setToolsAcrossMachines, startConnectionGrants } from '../services/connection-grants';
 import { listConnectionDirections } from '../services/connection-grants-store';
 import { startAgentCalls } from '../services/annex-agent-calls';
@@ -412,7 +413,15 @@ export function restorePersistedBindings(): Promise<void> {
       describeLocalAgent: describeAgentHere,
     });
   }
-  return rebuildPersistedBindings().then((): void => undefined, (err): void => {
+  return rebuildPersistedBindings().then(async (): Promise<void> => {
+    // Once, after a rebuild has read every source: Dispatcher links from before #3215 get the new defaults.
+    await migrateDispatcherLinkTools().catch((err) => {
+      // telemetry-exempt: logged; it runs again after the next rebuild until it's done
+      appLog('core:mcp', 'warn', 'Could not give older Dispatcher links the new connection defaults', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+  }, (err): void => {
     appLog('core:mcp', 'error', 'Persisted binding rebuild failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });

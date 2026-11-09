@@ -158,7 +158,8 @@ import {
   _resetDispatcherConnectionsForTesting,
 } from './dispatcher-connections';
 import { setOrchestratorHelpers as actualSetOrchestratorHelpers } from './dispatcher-controls';
-import { getConnectionDirection, removeConnectionDirections, setConnectionTools } from './connection-grants-store';
+import { getConnectionDirection, removeConnectionDirections, setConnectionTools, connectionMigrationDone, _forgetConnectionMigrationForTesting } from './connection-grants-store';
+import { DISPATCHER_LINK_DEFAULTS_MIGRATION, migrateDispatcherLinkTools } from './dispatcher-controls';
 import {
   clearBindingRemovedByUser,
   markBindingRemovedByUser,
@@ -341,6 +342,7 @@ beforeEach(async () => {
   agentRegistry.register('dispatcher', { projectPath: state.base, orchestrator: 'claude-code', runtime: 'chat' });
   // The connection store keeps its entries in memory between cases: start each with none.
   for (const id of ['a', 'b', 'c']) await removeConnectionDirections(id);
+  await _forgetConnectionMigrationForTesting(DISPATCHER_LINK_DEFAULTS_MIGRATION);
   await restart();
 });
 
@@ -750,6 +752,47 @@ describe('tools on its links (#3215)', () => {
     await call('disconnect_orchestrators', { from: 'a', to: 'b' });
     expect(isBound('a', 'b')).toBe(true);
     expect(entry('a', 'b')).toMatchObject({ enabledTools: ['wake_agent'] });
+  });
+});
+
+describe('links made before #3215 get the new defaults once', () => {
+  const entry = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
+  /** Links saved by a build before #3215: in the Dispatcher's store, with no tools saved. */
+  async function olderLinks(pairs: Array<[string, string]>): Promise<void> {
+    const connections = pairs.map(([agentId, targetId]) => ({
+      agentId, targetId, agentProjectPath: agentId === 'c' ? P2 : P1, targetProjectPath: targetId === 'c' ? P2 : P1, createdAt: '', createdBy: 'dispatcher',
+    }));
+    fs.writeFileSync(dispatcherConnectionsPath(), JSON.stringify({ version: 1, connections, removedByUser: [] }));
+    await restart();
+  }
+
+  it('a link only the Dispatcher holds, with nothing saved, gets clear, compact and wake off, marked as its own', async () => {
+    await olderLinks([['a', 'b'], ['b', 'a']]);
+    expect(isBound('a', 'b')).toBe(true);
+    expect(entry('a', 'b')).toBeUndefined();
+    expect(await migrateDispatcherLinkTools()).toBe('done');
+    for (const [from, to] of [['a', 'b'], ['b', 'a']]) {
+      expect(entry(from, to)).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], setBy: 'dispatcher' });
+      expect(entry(from, to)?.enabledTools).toBeUndefined();
+    }
+    expect(connectionMigrationDone(DISPATCHER_LINK_DEFAULTS_MIGRATION)).toBe(true);
+    expect(await linkRow('a', 'b')).toMatchObject({ tools: { disabled: ['clear_agent', 'compact_agent', 'wake_agent'] }, tools_yours: true });
+  });
+
+  it('never touches a direction with saved tools or a pair the user connects too, and runs only once', async () => {
+    await olderLinks([['a', 'b'], ['a', 'c'], ['b', 'a']]);
+    await setConnectionTools({ agentId: 'a' }, { agentId: 'b' }, ['send_file']);
+    userDraws('a', 'c');
+    await rebuildPersistedBindings();
+    expect(await migrateDispatcherLinkTools()).toBe('done');
+    expect(entry('a', 'b')).toEqual(expect.objectContaining({ disabledTools: ['send_file'] }));
+    expect(entry('a', 'b')?.setBy).toBeUndefined();
+    expect(entry('a', 'c')).toBeUndefined();
+    expect(entry('b', 'a')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], setBy: 'dispatcher' });
+    // Done: a link that lost its tools since isn't given them again.
+    await removeConnectionDirections('b');
+    expect(await migrateDispatcherLinkTools()).toBe('already');
+    expect(entry('b', 'a')).toBeUndefined();
   });
 });
 

@@ -21,6 +21,7 @@
  * - listAllConnectionDirections(): every entry (Stage 7 sends another machine its share);
  * - putConnectionDirection(direction): write one entry as given, keeping its
  *   `updatedAt` (Stage 7: another machine's newer copy of a direction with it);
+ * - runConnectionMigration(name, directions) / connectionMigrationDone(name): a one-time change with its done marker;
  * - onConnectionGrantsChanged(listener): told after each write.
  * A write updates the live binding's disabled tools, so calls are checked
  * against the store with the existing call path.
@@ -36,6 +37,8 @@ export const CONNECTION_GRANTS_VERSION = 1;
 interface ConnectionGrantsFile {
   version?: number;
   directions: unknown[];
+  /** One-time changes already made to the file, by name (#3215). */
+  migrations?: string[];
 }
 
 // Atomic, and a failed save rolls back, so the store and the live bindings never disagree.
@@ -112,7 +115,7 @@ async function updateDirection(from: AgentAddress, to: AgentAddress, fn: (curren
     }
     next = result;
     const rest = list.filter((d) => directionKey(d.from, d.to) !== key);
-    return { version: CONNECTION_GRANTS_VERSION, directions: next ? [...rest, next] : rest };
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: next ? [...rest, next] : rest };
   });
   if (!changed) return next;
   for (const listener of [...listeners]) {
@@ -189,10 +192,51 @@ export async function removeConnectionDirections(agentId: string, options: { kee
   await store.update((file) => {
     const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
     return {
+      ...file,
       version: CONNECTION_GRANTS_VERSION,
       directions: list.filter((d) => (d.from.agentId !== agentId && d.to.agentId !== agentId) || (options.keepOtherMachines && (!!d.from.machineId || !!d.to.machineId))),
     };
   });
+}
+
+/** Whether a one-time change named `name` was already made to the store (#3215). */
+export function connectionMigrationDone(name: string): boolean {
+  const done = store.get()?.migrations;
+  return Array.isArray(done) && done.includes(name);
+}
+
+/**
+ * Make a one-time change, in one write with its done marker: each direction
+ * given is written only where the store has no entry for it yet, and the
+ * marker is kept so it never runs again (#3215). Returns the directions it
+ * wrote, or null when the change was already made (decided under the store's lock).
+ */
+export async function runConnectionMigration(name: string, directions: readonly ConnectionDirection[]): Promise<ConnectionDirection[] | null> {
+  if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
+  let written = null as ConnectionDirection[] | null;
+  await store.update((file) => {
+    const done = Array.isArray(file.migrations) ? file.migrations.filter((m): m is string => typeof m === 'string') : [];
+    if (done.includes(name)) return file;
+    const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
+    const keys = new Set(list.map((d) => directionKey(d.from, d.to)));
+    written = directions.filter((d) => !keys.has(directionKey(d.from, d.to)));
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: [...list, ...written], migrations: [...done, name] };
+  });
+  for (const d of written ?? []) {
+    for (const listener of [...listeners]) {
+      try {
+        listener(d.from, d.to);
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+  return written;
+}
+
+/** For tests: forget a one-time change was made. */
+export async function _forgetConnectionMigrationForTesting(name: string): Promise<void> {
+  await store.update((file) => ({ ...file, migrations: (file.migrations ?? []).filter((m) => m !== name) }));
 }
 
 export function onConnectionGrantsChanged(listener: Listener): () => void {
