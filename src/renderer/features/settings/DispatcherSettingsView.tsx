@@ -7,16 +7,20 @@
  * - Identity: setup again, name, color, icon and personality (#3047's field).
  * - Behavior (#3045): the level, the provider it runs on, auto-sleep and
  *   today's usage, conversations apart from background work (#3040).
+ *   Choose models yourself (#3191) swaps the provider row for one row per
+ *   job, talking with you and working in the background, each with its own
+ *   provider, model, effort and context; Behavior then sets only how often
+ *   it checks in.
  * - Connected agents: one list across projects (DispatcherConnectedAgents).
  * - Reset, at the bottom: Forget everything, behind a confirmation. It clears
  *   memory only.
  *
- * Model, context, access and "runs in" are gone for the Dispatcher: Behavior
- * and the provider cover them. Its instructions, orchestration settings and
+ * Access and "runs in" are gone for the Dispatcher. Model and context are
+ * Behavior's unless Choose models yourself is on. Its instructions, orchestration settings and
  * folder can't change here or anywhere else.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { DISPATCHER_CLASSIC_MESSAGE, DISPATCHER_PROJECT_ID, type DispatcherState } from '../../../shared/dispatcher-types';
 import type { Agent, DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
@@ -29,6 +33,10 @@ import { EmojiPicker } from '../../components/EmojiPicker';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { Toggle } from '../../components/Toggle';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useModelOptions } from '../../hooks/useModelOptions';
+import { useContextWindowOptions } from '../../hooks/useContextWindowOptions';
+import { ContextWindowSelect, contextWindowHelp } from '../agents/ContextWindowField';
+import { EffortSelect, effortHelp, useModelEfforts } from '../managed/settings-fields';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { AgentAvatar } from '../agents/AgentAvatar';
 import { useAppIdleMinutes, SELECT_CLASS } from '../agents/details/AutoSleepRow';
@@ -50,13 +58,17 @@ import {
 import {
   DISPATCHER_BEHAVIORS,
   DISPATCHER_BEHAVIOR_LABELS,
+  DISPATCHER_ROLES,
   behaviorAutoNote,
+  behaviorDescription,
   canSetUpAuto,
   isDispatcherBehavior,
   type DispatcherBehaviorState,
+  type DispatcherRole,
 } from '../../../shared/dispatcher-behavior';
+import { DEFAULT_DISPATCHER_MODELS_STATE, DISPATCHER_MODELS_APPLY_NOTE, DISPATCHER_ROLE_LABELS, type DispatcherModelsState, type DispatcherModelsUpdate, type DispatcherRoleModel } from '../../../shared/dispatcher-models';
 import { ConnectedAgentsSection } from './DispatcherConnectedAgents';
-import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp, settingsInput, settingsTextArea } from './SettingsLayout';
+import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea } from './SettingsLayout';
 
 const TITLE = 'Dispatcher';
 const DESCRIPTION = 'One agent for the whole app. It remembers what you decided, checks in on your agents and gets work going across projects.';
@@ -310,13 +322,14 @@ function IdentitySection({ state, config }: { state: DispatcherState; config: Du
 
 /**
  * Behavior (#3045), the same setting as the composer chip: both show main's
- * state, so they stay in step.
+ * state, so they stay in step. With the models chosen by hand (#3191) it
+ * covers only how often it checks in, and Auto's note doesn't apply.
  */
-export function BehaviorField({ behavior }: { behavior: DispatcherBehaviorState }) {
+export function BehaviorField({ behavior, modelsByHand = false }: { behavior: DispatcherBehaviorState; modelsByHand?: boolean }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const providerName = useProviderName(behavior.provider);
-  const note = behaviorAutoNote(behavior.auto, providerName);
+  const note = modelsByHand ? null : behaviorAutoNote(behavior.auto, providerName);
 
   const change = async (value: string) => {
     if (!isDispatcherBehavior(value) || value === behavior.level) return;
@@ -338,9 +351,12 @@ export function BehaviorField({ behavior }: { behavior: DispatcherBehaviorState 
       htmlFor="dispatcher-behavior"
       help={(
         <span className="flex flex-col gap-1.5">
-          <span>Covers which models it uses and how often it checks in. {DISPATCHER_BEHAVIOR_LABELS[behavior.level].description}</span>
+          <span>
+            {modelsByHand ? 'Covers how often it checks in. You choose its models below.' : 'Covers which models it uses and how often it checks in.'}
+            {' '}{behaviorDescription(behavior.level, modelsByHand)}
+          </span>
           {note && <span data-testid="dispatcher-behavior-auto-note">{note}</span>}
-          {canSetUpAuto(behavior.auto) && (
+          {!modelsByHand && canSetUpAuto(behavior.auto) && (
             <span><Button onClick={openAutoSettings} data-testid="dispatcher-behavior-setup-auto">Set up Auto</Button></span>
           )}
           {error && <span className={settingsError} role="alert" data-testid="dispatcher-behavior-error">{error}</span>}
@@ -358,6 +374,153 @@ export function BehaviorField({ behavior }: { behavior: DispatcherBehaviorState 
         {DISPATCHER_BEHAVIORS.map((level) => <option key={level} value={level}>{DISPATCHER_BEHAVIOR_LABELS[level].label}</option>)}
       </select>
     </SettingsField>
+  );
+}
+
+/** Sends a Choose models yourself change to main, which broadcasts the new state. */
+function useModelsSave() {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (update: DispatcherModelsUpdate) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await window.clubhouse.dispatcher.setModels(update);
+    } catch (err) {
+      // telemetry-exempt: shown under the row, which keeps the saved pick.
+      setError(`Couldn’t save. ${ipcErrorMessage(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return { saving, error, save };
+}
+
+type CliChoice = { id: string; displayName: string };
+
+/**
+ * One job's pick (#3191): provider, model, effort and context, each from what
+ * that CLI lists for the folder its agent runs in. A choice a CLI doesn't
+ * offer shows why in place of its control.
+ */
+export function RoleModelRow({ role, pick, path, cliChoices }: {
+  role: DispatcherRole;
+  pick: DispatcherRoleModel;
+  path: string;
+  cliChoices: CliChoice[];
+}) {
+  const { saving, error, save } = useModelsSave();
+  const id = useId();
+  const { options: models, loading: modelsLoading } = useModelOptions(pick.provider, path);
+  const { levelsFor, loading: effortsLoading } = useModelEfforts(pick.provider, path);
+  const levels = levelsFor(pick.model);
+  const contextOptions = useContextWindowOptions(true, path, pick.provider, pick.model);
+  // A saved pick the list doesn't have (yet) still shows as itself.
+  const modelChoices = models.some((o) => o.id === pick.model) ? models : [...models, { id: pick.model, label: pick.model }];
+  const providers = cliChoices.some((o) => o.id === pick.provider) ? cliChoices : [...cliChoices, { id: pick.provider, displayName: pick.provider }];
+  const { label, help } = DISPATCHER_ROLE_LABELS[role];
+  const send = (fields: Omit<Extract<DispatcherModelsUpdate, { role: DispatcherRole }>, 'role'>): void => { void save({ role, ...fields }); };
+
+  return (
+    <SettingsBlock>
+      <div data-testid={`dispatcher-models-${role}`}>
+        <div className="text-[13px] text-ctp-text">{label}</div>
+        <p className={`${settingsHelp} mt-px mb-2`}>{help}</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <div>
+            <label htmlFor={`${id}-provider`} className={settingsLabel}>Provider</label>
+            <select
+              id={`${id}-provider`}
+              className={`${SELECT_CLASS} w-full`}
+              value={pick.provider}
+              disabled={saving}
+              onChange={(e) => { if (e.target.value !== pick.provider) send({ provider: e.target.value }); }}
+              data-testid={`dispatcher-models-${role}-provider`}
+            >
+              {providers.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`${id}-model`} className={settingsLabel}>Model</label>
+            <select
+              id={`${id}-model`}
+              className={`${SELECT_CLASS} w-full`}
+              value={pick.model}
+              disabled={saving || modelsLoading}
+              onChange={(e) => { if (e.target.value !== pick.model) send({ model: e.target.value }); }}
+              data-testid={`dispatcher-models-${role}-model`}
+            >
+              {modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`${id}-effort`} className={settingsLabel}>Effort</label>
+            <EffortSelect
+              id={`${id}-effort`}
+              value={pick.effort ?? ''}
+              levels={levels}
+              disabled={saving || effortsLoading || (levels.length === 0 && !pick.effort)}
+              className={`${SELECT_CLASS} w-full`}
+              onChange={(next) => send({ effort: next || null })}
+              testId={`dispatcher-models-${role}-effort`}
+            />
+          </div>
+          <div data-testid={`dispatcher-models-${role}-context`}>
+            <label htmlFor={`${id}-context`} className={settingsLabel}>{contextOptions?.label ?? 'Context'}</label>
+            <span className="text-xs" title={contextWindowHelp(contextOptions)}>
+              <ContextWindowSelect
+                id={`${id}-context`}
+                options={contextOptions}
+                value={pick.contextWindow ?? undefined}
+                disabled={saving}
+                className={`${SELECT_CLASS} w-full`}
+                onChange={(next) => send({ contextWindow: next })}
+              />
+            </span>
+          </div>
+        </div>
+        {!effortsLoading && levels.length === 0 && <p className={`${settingsHelp} mt-2`}>{effortHelp(levels, false)}</p>}
+        {error && <p className={`${settingsError} mt-1.5`} role="alert" data-testid={`dispatcher-models-${role}-error`}>{error}</p>}
+      </div>
+    </SettingsBlock>
+  );
+}
+
+/**
+ * Choose models yourself (#3191): the switch, and one row per job while it's
+ * on. Off, Behavior gives the models, as before.
+ */
+export function ChooseModelsField({ models, chatPath, workPath, cliChoices }: {
+  models: DispatcherModelsState;
+  chatPath: string | null;
+  workPath: string | null;
+  cliChoices: CliChoice[];
+}) {
+  const { saving, error, save } = useModelsSave();
+  const paths: Record<DispatcherRole, string | null> = { chat: chatPath, work: workPath };
+  return (
+    <>
+      <SettingsField
+        label="Choose models yourself"
+        help={models.byHand
+          ? `You pick the model for each part of its work. ${DISPATCHER_MODELS_APPLY_NOTE}`
+          : 'Pick the provider, model and effort for each part of its work, in place of Behavior’s.'}
+      >
+        <Toggle
+          aria-label="Choose models yourself"
+          checked={models.byHand}
+          disabled={saving}
+          onChange={(on) => void save({ byHand: on })}
+          data-testid="dispatcher-models-by-hand"
+        />
+      </SettingsField>
+      {error && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-models-error">{error}</p>}
+      {models.byHand && DISPATCHER_ROLES.map((role) => {
+        const pick = models[role];
+        const path = paths[role];
+        return pick && path ? <RoleModelRow key={role} role={role} pick={pick} path={path} cliChoices={cliChoices} /> : null;
+      })}
+    </>
   );
 }
 
@@ -413,10 +576,15 @@ function BehaviorSection({ state, config }: { state: DispatcherState; config: Du
   if (typeof idle === 'number' && !minutes.includes(idle)) minutes.push(idle);
   minutes.sort((a, b) => a - b);
 
+  // A state from before #3191 has no models: Behavior's, as before.
+  const models = state.models ?? DEFAULT_DISPATCHER_MODELS_STATE;
+  const byHand = models.byHand;
+
   return (
     <SettingsSection title="Behavior">
-      <BehaviorField behavior={state.behavior} />
-      <SettingsField label="Runs on" htmlFor="dispatcher-runs-on" help="Switching starts a fresh conversation. Its memory stays, so it picks up from what it remembers.">
+      <BehaviorField behavior={state.behavior} modelsByHand={byHand} />
+      <ChooseModelsField models={models} chatPath={state.chatPath} workPath={state.path} cliChoices={cliChoices} />
+      {!byHand && <SettingsField label="Runs on" htmlFor="dispatcher-runs-on" help="Switching starts a fresh conversation. Its memory stays, so it picks up from what it remembers.">
         <select
           id="dispatcher-runs-on"
           className={SELECT_CLASS}
@@ -428,7 +596,7 @@ function BehaviorSection({ state, config }: { state: DispatcherState; config: Du
           {!orchestrator && <option value="">App default</option>}
           {cliChoices.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
         </select>
-      </SettingsField>
+      </SettingsField>}
       <SettingsField label="Auto-sleep" htmlFor="dispatcher-auto-sleep" help="A message to it wakes it again.">
         <select
           id="dispatcher-auto-sleep"

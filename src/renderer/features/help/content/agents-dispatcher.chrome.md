@@ -41,6 +41,12 @@ One setting covers which models it uses and how often it works on its own:
 
 Clubhouse turns each level into models for your provider through the Auto mapping, and keeps tuning what each level means. Change it from the chip or in **Settings > Dispatcher**; both show the same setting.
 
+### Choose models yourself
+
+To pick the models instead, turn on **Choose models yourself** in **Settings > Dispatcher**, under Behavior. It shows two rows, **Talking with you** and **Working in the background**, each with a provider, model, effort and, where the provider offers it, context. The two can use different providers. Behavior then sets only how often it checks in and keeps up its memory, and the chip says the models are yours.
+
+A new model or effort applies at once where the provider allows it, otherwise at its next start. A new provider or context applies at its next start. Turn the switch off to let Behavior choose again: it goes back to the provider and context it had before, and your picks are kept for next time. While the switch is on, change its provider here rather than from your phone's provider change. Going through setup again turns it off, since setup picks one provider.
+
 ## Memory
 
 It keeps memory as plain markdown files in `~/.clubhouse/dispatcher/memory/`, so any provider can read it and it survives a provider switch:
@@ -76,7 +82,7 @@ Permission prompts stay with the agent that asked, and an agent's message never 
 
 - **Turn on Dispatcher.** On by default. Turning it off stops it and keeps its folder and memory. It needs the new layout: on the Classic layout it can be turned off, not on.
 - **Identity:** **Set up…** to go through setup again, its name, color, icon and personality.
-- **Behavior:** the level, **Runs on**, auto-sleep, and what it used today, split into conversations and background work. Switching **Runs on** starts a fresh conversation on the new provider; its memory stays, so it picks up from what it remembers.
+- **Behavior:** the level, **Choose models yourself**, **Runs on**, auto-sleep, and what it used today, split into conversations and background work. Switching **Runs on** starts a fresh conversation on the new provider; its memory stays, so it picks up from what it remembers. With **Choose models yourself** on, each row has its own provider in place of **Runs on**.
 - **Connected agents.**
 - **Reset:** **Forget everything**.
 

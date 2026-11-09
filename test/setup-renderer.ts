@@ -572,6 +572,7 @@ vi.stubGlobal('clubhouse', {
     getUsage: async () => ({ day: '2026-11-08', conversations: emptyUsageTotals(), background: emptyUsageTotals() }),
     listConnectableAgents: async () => [],
     setBehavior: async () => DISPATCHER_OFF,
+    setModels: async () => DISPATCHER_OFF,
     setPersonality: async () => DISPATCHER_OFF,
     completeSetup: async () => DISPATCHER_OFF,
     setSetupStatus: async () => DISPATCHER_OFF,

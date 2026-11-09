@@ -15,6 +15,8 @@ import { useOrchestrationCards } from '../agents/helpers/OrchestrationCards';
 import { DispatcherView } from './DispatcherView';
 import { useDispatcherStore } from './dispatcherStore';
 import { ClearChatHost } from './ClearChat';
+import { useDispatcherDebugStore } from './dispatcherDebug';
+import { useChatStore } from '../../stores/chatStore';
 
 const dispatcher = (over: Partial<Agent> = {}): Agent =>
   ({ id: 'disp', projectId: DISPATCHER_PROJECT_ID, name: 'Dispatcher', kind: 'durable', status: 'sleeping', color: 'indigo', ...over }) as Agent;
@@ -27,6 +29,38 @@ beforeEach(() => {
 afterEach(() => {
   useDispatcherStore.getState().setState(DISPATCHER_OFF);
   useDispatcherStore.setState({ loadError: null });
+});
+
+describe('DispatcherView debug view (#3188)', () => {
+  afterEach(() => useDispatcherDebugStore.setState({ on: false, workOpen: false }));
+
+  it('shows its work agent\'s chat, read-only, while the debug view is on and its row chose it', async () => {
+    const read = vi.fn(async () => [
+      { agentId: 'disp-work', sessionId: 's', seq: 1, ts: 1, type: 'agent_message', data: { messageId: 'a1', text: 'Checking the agents.' } },
+    ]);
+    const original = window.clubhouse.chat.readTranscript;
+    window.clubhouse.chat.readTranscript = read as unknown as typeof original;
+    useChatStore.setState({ agents: {}, loading: {}, partial: {}, loaded: {} });
+    useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
+    useDispatcherDebugStore.setState({ on: true, workOpen: true });
+    render(<DispatcherView />);
+    const view = screen.getByTestId('dispatcher-work-view');
+    expect(view.getAttribute('data-agent-id')).toBe('disp-work');
+    expect(screen.getByTestId('dispatcher-work-note').textContent).toContain('Read only');
+    expect(await screen.findByText('Checking the agents.')).toBeTruthy();
+    expect(read).toHaveBeenCalledWith('disp-work', undefined);
+    expect(screen.queryByTestId('runtime-pane')).toBeNull();
+    expect(screen.queryByLabelText('Message')).toBeNull();
+    window.clubhouse.chat.readTranscript = original;
+  });
+
+  it('shows the Dispatcher\'s own chat when the debug view is off, whatever its row last chose', () => {
+    useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
+    useDispatcherDebugStore.setState({ on: false, workOpen: true });
+    render(<DispatcherView />);
+    expect(screen.queryByTestId('dispatcher-work-view')).toBeNull();
+    expect(screen.getByTestId('runtime-pane').textContent).toBe('disp');
+  });
 });
 
 describe('DispatcherView', () => {

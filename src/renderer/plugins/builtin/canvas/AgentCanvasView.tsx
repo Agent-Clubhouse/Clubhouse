@@ -203,7 +203,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 p-4 text-center" data-testid="canvas-dispatcher-card">
         <span className="text-xs text-ctp-subtext0">{dispatcherName} has its own pane and can’t be on a canvas.</span>
-        <button type="button" onClick={openDispatcher} className="text-xs text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Open {dispatcherName}</button>
+        <button type="button" onClick={() => openDispatcher()} className="text-xs text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Open {dispatcherName}</button>
       </div>
     );
   }

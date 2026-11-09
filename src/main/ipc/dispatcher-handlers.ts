@@ -38,6 +38,11 @@ export function registerDispatcherHandlers(): void {
       return dispatcher.setDispatcherBehavior(level);
     },
   ));
+  // Choose models yourself (#3191): main checks the shape (cleanModelsUpdate), the provider and the model.
+  ipcMain.handle(IPC.DISPATCHER.SET_MODELS, withValidatedArgs(
+    [objectArg()],
+    async (_event, update): Promise<DispatcherState> => dispatcher.setDispatcherModels(update),
+  ));
   ipcMain.handle(IPC.DISPATCHER.CLEAR_CHAT, (): Promise<ClearChatResult> => clearDispatcherChat());
   // What it used today, conversations apart from background work (#3040).
   ipcMain.handle(IPC.DISPATCHER.GET_USAGE, (): DispatcherUsageSplit => getDispatcherUsageSplit());

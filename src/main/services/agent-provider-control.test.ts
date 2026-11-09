@@ -21,6 +21,10 @@ vi.mock('./chat-runtime-settings', () => ({ isChatEnabled: () => true, resolveRu
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: vi.fn(() => undefined) } }));
 vi.mock('./session-capture-barrier', () => ({ sessionCaptureFor: () => undefined, hasSessionCaptureFailure: () => w.captureFailed, noteSessionCaptureFailure: () => { w.captureFailed = true; } }));
+// Choose models yourself (#3191): the Dispatcher's folder, and whether its models are chosen by hand.
+const dispatcherModels = vi.hoisted(() => ({ byHand: false }));
+vi.mock('./dispatcher/dispatcher-paths', () => ({ isDispatcherPath: (p: string) => p === '/dispatcher' }));
+vi.mock('./dispatcher/dispatcher-models', () => ({ modelsChosenByHand: () => dispatcherModels.byHand }));
 import { updateDurableConfig } from './agent-config';
 const actor = { key: 'phone:paired', assertAuthorized: () => {} };
 const preview = () => previewAgentProvider('/fixture', 'a', 'codex-cli', actor);
@@ -28,6 +32,7 @@ beforeEach(() => {
   w.config = { id: 'a', name: 'Agent', orchestrator: 'claude-code', lastSessionId: 'claude-native', sessionHistory: [{ sessionId: 'claude-native', orchestrator: 'claude-code' }], worktreePath: '/fixture/work', orchestration: { control: 'hands-off' }, mcpIds: ['workiq'] };
   w.beforeCommit = undefined; w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
   vi.mocked(updateDurableConfig).mockClear(); vi.mocked(agentRegistry.get).mockReturnValue(undefined);
+  dispatcherModels.byHand = false;
 });
 describe('guided provider control', () => {
   it('preserves identity/history/policy and writes only provider; never starts', async () => {
@@ -94,5 +99,19 @@ describe('transition reservation', () => {
     const active = withAgentActivity('c', () => new Promise<void>((r) => { release = r; }));
     await expect(withAgentTransition('c', async () => {})).rejects.toMatchObject({ code: 'agent_transition_busy' });
     release(); await active;
+  });
+  it('refuses the Dispatcher while its models are chosen by hand, pointing to Settings, and writes nothing (QA L1)', async () => {
+    dispatcherModels.byHand = true;
+    for (const call of [
+      () => previewAgentProvider('/dispatcher', 'a', 'codex-cli', actor),
+      () => changeAgentProvider('/dispatcher', 'a', 'codex-cli', 'any', actor),
+    ]) {
+      await expect(call()).rejects.toMatchObject({ code: 'dispatcher_models_by_hand', detail: expect.stringContaining('Settings > Dispatcher') });
+    }
+    expect(updateDurableConfig).not.toHaveBeenCalled();
+    // Any other agent, or the Dispatcher with the switch off, previews as before.
+    expect(await preview()).toMatchObject({ canSave: true });
+    dispatcherModels.byHand = false;
+    expect(await previewAgentProvider('/dispatcher', 'a', 'codex-cli', actor)).toMatchObject({ canSave: true });
   });
 });

@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels';
 import type { DispatcherState } from '../shared/dispatcher-types';
 import type { AgentCardFields, AgentCardView } from '../shared/dispatcher-agent-card';
 import type { DispatcherBehavior, DispatcherBehaviorAuto } from '../shared/dispatcher-behavior';
+import type { DispatcherModelsUpdate } from '../shared/dispatcher-models';
 import type { DispatcherPersonality } from '../shared/dispatcher-personality';
 import type { DispatcherSetupInput, TryItOutRequest, TryItOutResult } from '../shared/dispatcher-setup';
 import type { ConnectableAgent, ForgetEverythingResult } from '../shared/dispatcher-settings-page';
@@ -16,6 +17,8 @@ export const dispatcher = {
     setEnabled: (on: boolean): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_ENABLED, on),
     /** Sets its Behavior (#3045); resolves with the state afterwards. */
     setBehavior: (level: DispatcherBehavior): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_BEHAVIOR, level),
+    /** Choose models yourself (#3191): the switch, or one job's provider, model, effort or context. Resolves with the state afterwards. */
+    setModels: (update: DispatcherModelsUpdate): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_MODELS, update),
     /** Starts its conversation over (#3043): now if it's running, else at its next start. Memory stays. */
     clearChat: (): Promise<{ cleared: 'now' | 'next_start' }> => ipcRenderer.invoke(IPC.DISPATCHER.CLEAR_CHAT),
     /** Forget everything (#3046): clears its memory and held news. Agents, connections and Actions stay. */

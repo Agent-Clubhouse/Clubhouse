@@ -1,5 +1,6 @@
 import type { DurableAgentConfig } from './types';
 import { DEFAULT_DISPATCHER_BEHAVIOR_STATE, type DispatcherBehaviorState } from './dispatcher-behavior';
+import { DEFAULT_DISPATCHER_MODELS_STATE, type DispatcherModelsState } from './dispatcher-models';
 import { DEFAULT_DISPATCHER_PERSONALITY, type DispatcherPersonality } from './dispatcher-personality';
 import { NO_DISPATCHER_SETUP, type DispatcherSetupState } from './dispatcher-setup';
 
@@ -92,6 +93,11 @@ export interface DispatcherState {
    */
   behavior: DispatcherBehaviorState;
   /**
+   * Choose models yourself (#3191): whether the user picks the models, and
+   * the pick for each job. While it's on, Behavior sets only the frequencies.
+   */
+  models: DispatcherModelsState;
+  /**
    * Its personality (#3047): the text added to its chat's instructions as
    * written, and the preset it came from. Concise until a person picks.
    */
@@ -108,6 +114,6 @@ export const DISPATCHER_PROJECT_ID = '__dispatcher__';
 
 export const DISPATCHER_OFF: DispatcherState = {
   enabled: false, flagOn: true, savedOn: false, offReason: 'switch_off', classic: false, running: false, agentId: null, path: null, config: null,
-  chatAgentId: null, chatPath: null, chatRunning: false, behavior: DEFAULT_DISPATCHER_BEHAVIOR_STATE,
+  chatAgentId: null, chatPath: null, chatRunning: false, behavior: DEFAULT_DISPATCHER_BEHAVIOR_STATE, models: DEFAULT_DISPATCHER_MODELS_STATE,
   personality: DEFAULT_DISPATCHER_PERSONALITY, setup: NO_DISPATCHER_SETUP,
 };

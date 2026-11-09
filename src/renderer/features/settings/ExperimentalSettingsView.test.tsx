@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { EXPERIMENTAL_FEATURES, ExperimentalSettingsView } from './ExperimentalSettingsView';
 import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS } from '../../../shared/types';
 import { SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
+import { useDispatcherDebugStore } from '../dispatcher/dispatcherDebug';
 
 const mockGetExperimentalSettings = vi.fn();
 const mockSaveExperimentalSettings = vi.fn();
@@ -28,6 +29,17 @@ describe('ExperimentalSettingsView', () => {
   it('lists only preview-only flags, so a new one has to join the gate or say why not', () => {
     const offered = EXPERIMENTAL_FEATURES.map((f) => f.id);
     expect([...offered].sort()).toEqual(PREVIEW_ONLY_EXPERIMENTAL_FLAGS.filter((id) => id !== 'copilotSdk').sort());
+  });
+
+  it('turns the Dispatcher debug view on and off at once, no restart (#3188)', async () => {
+    useDispatcherDebugStore.setState({ on: false });
+    render(<ExperimentalSettingsView />);
+    const toggle = await screen.findByLabelText('Dispatcher debug view');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(useDispatcherDebugStore.getState().on).toBe(true));
+    expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ dispatcherDebug: true });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(useDispatcherDebugStore.getState().on).toBe(false));
   });
 
   it('renders the heading and disclaimer', async () => {

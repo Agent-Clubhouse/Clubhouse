@@ -48,4 +48,12 @@ describe('one identity over two records (#3036)', () => {
     expect(mirrorUpdates({ ...base, freeAgentMode: true }, base).config).toEqual({ freeAgentMode: true });
     expect(mirrorUpdates({ ...base, access: 'ask', freeAgentMode: false }, { ...base, freeAgentMode: true }).config).toEqual({ access: 'ask' });
   });
+
+  it('leaves each record its own CLI and context while the models are chosen by hand (#3191)', () => {
+    const from: DurableAgentConfig = { ...base, name: 'Rosie', orchestrator: 'codex-cli', contextWindow: '400000', idleSleep: 'never' };
+    const to: DurableAgentConfig = { ...base, id: 'b', orchestrator: 'claude-code', model: 'opus', contextWindow: '1000000' };
+    expect(mirrorUpdates(from, to, { modelsByHand: true })).toEqual({ identity: { name: 'Rosie' }, config: { idleSleep: 'never' } });
+    // Off, as before: the CLI and context are shared.
+    expect(mirrorUpdates(from, to).config).toMatchObject({ orchestrator: 'codex-cli', model: 'default', contextWindow: '400000' });
+  });
 });

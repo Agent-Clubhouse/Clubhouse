@@ -334,6 +334,24 @@ async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunc
 }
 
 /**
+ * A Dispatcher start with the model prepareDispatcherSessionStart gave it:
+ * Behavior's (#3045), or the user's pick (#3191), which names its provider
+ * too. A start on another CLI than its record or its caller had drops the
+ * session it would resume, which that CLI can't read (#2593); the record
+ * already dropped it.
+ */
+export function withDispatcherStartModel(
+  params: SpawnAgentParams,
+  applied: { model: string; orchestrator?: OrchestratorId; providerChanged?: boolean } | null,
+): SpawnAgentParams {
+  if (!applied) return params;
+  const next = { ...params, model: applied.model };
+  if (!applied.orchestrator) return next;
+  const otherCli = applied.providerChanged === true || (params.orchestrator !== undefined && params.orchestrator !== applied.orchestrator);
+  return { ...next, orchestrator: applied.orchestrator, ...(otherCli && { resume: false, sessionId: undefined }) };
+}
+
+/**
  * The Dispatcher starts only while it is on. Every way of starting one comes
  * through here, so a wake from a view, a phone, a tool or an update resume is
  * refused alike.
@@ -352,9 +370,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // Loaded here: dispatcher-service imports this module.
     try {
       const { prepareDispatcherSessionStart } = await import('./dispatcher/dispatcher-service');
-      // Its Behavior's model (#3045) wins over whatever model the caller last saw.
+      // Its Behavior's model (#3045), or the model and provider chosen for it (#3191), win over what the caller last saw.
       const behaviorModel = await prepareDispatcherSessionStart(params.projectPath, params.agentId);
-      if (behaviorModel) params = { ...params, model: behaviorModel.model };
+      params = withDispatcherStartModel(params, behaviorModel);
     } catch (err) {
       // telemetry-exempt: logged; it starts with the instructions file it already has
       appLog('core:agent', 'warn', 'Could not refresh the Dispatcher\'s instructions before its start', {
