@@ -191,9 +191,10 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     async resume(agentId: string, options?: { mission?: string }): Promise<void> {
-      // While the plugin answers an agent's tool call, it wakes only an agent that agent may wake
-      // (D126, #3168). One on another desktop can't be checked here, so it is refused then.
-      const refused = await checkAnsweringCallers(ctx.pluginId, { kind: 'wake', agentId });
+      // While the plugin answers an agent's tool call, it wakes only an agent that agent may wake,
+      // and with a mission only one it may message (D126, #3168). One on another desktop can't be
+      // checked here, so it is refused then.
+      const refused = await checkAnsweringCallers(ctx.pluginId, { kind: 'wake', agentId, withMessage: !!options?.mission });
       if (refused) throw new Error(refused);
       // Check remote agents first
       const remoteParts = parseNamespacedId(agentId);

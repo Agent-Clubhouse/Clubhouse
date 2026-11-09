@@ -15,10 +15,15 @@ import { checkToolGrant } from './grant-check';
 import { agentOfPluginCall } from './plugin-tool-registry';
 
 export type PluginCallerCheck =
-  | { kind: 'wake'; agentId: string }
+  /** `withMessage`: the wake delivers a mission, so it needs agent.message too, as wake_agent's message does. */
+  | { kind: 'wake'; agentId: string; withMessage?: boolean }
   | { kind: 'project_defaults'; projectPath: string };
 
+/** Main settled the call (answered, timed out, tools removed): what the plugin does now isn't for that agent. */
+export const CALL_OVER = 'The agent\'s tool call this plugin was answering is over, so this can\'t run for it.';
+
 const WAKE: ToolGrantDeclaration = { actions: ['agent.wake'], target: 'agent_arg', from: { args: ['agent'] } };
+const WAKE_WITH_MESSAGE: ToolGrantDeclaration = { actions: ['agent.wake', 'agent.message'], target: 'agent_arg', from: { args: ['agent'] } };
 const DEFAULTS: ToolGrantDeclaration = { actions: ['project.configure'], target: 'project_arg', from: { args: ['project'] } };
 
 /** Null when the agent behind `callId` may, else why not, for the plugin to throw. */
@@ -26,8 +31,8 @@ export async function checkPluginCaller(pluginId: string, callId: string, check:
   const agentId = agentOfPluginCall(callId, pluginId);
   // The call was answered or timed out: what the plugin does now isn't for that agent, but the
   // plugin still treats it as open, so it fails closed rather than act with no one to check.
-  if (!agentId) return 'The agent\'s tool call this plugin was answering is over, so this can\'t run for it.';
-  const declaration = check.kind === 'wake' ? WAKE : DEFAULTS;
+  if (!agentId) return CALL_OVER;
+  const declaration = check.kind === 'wake' ? (check.withMessage ? WAKE_WITH_MESSAGE : WAKE) : DEFAULTS;
   const args = check.kind === 'wake' ? { agent: check.agentId } : { project: check.projectPath };
   const targets = await resolveArgTargets(agentId, declaration, args);
   // Something the agent can't name is something it can't reach.

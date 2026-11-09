@@ -644,6 +644,8 @@ export const IPC = {
     TOOL_RESULT: 'plugin-mcp:tool-result',
     /** Plugin host only: may the agent behind a call the plugin is answering do this (D126, #3168)? */
     CHECK_CALLER: 'plugin-mcp:check-caller',
+    /** Main→renderer push: main settled a call without the plugin's answer (timeout, tools removed). */
+    CALL_ENDED: 'plugin-mcp:call-ended',
   },
   BLUEPRINT: {
     LIST: 'blueprint:list',

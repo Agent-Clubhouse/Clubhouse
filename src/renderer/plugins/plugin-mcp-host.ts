@@ -167,6 +167,8 @@ export function claimPluginMcpIssuer(): void {
   issuer = slot;
   try {
     bridge = { ...window.clubhouse.pluginMcp };
+    // A call main settled without the plugin's answer (timeout, tools removed) is over here too (#3168).
+    bridge.onCallEnded?.((data) => endAnswering(data.pluginId, data.callId));
     fill(slot, bridge.claimIssuer(), (err) => {
       rendererLog('core:plugins', 'warn', 'Could not claim the plugin MCP issuer; plugin MCP tools are unavailable', {
         meta: { error: err instanceof Error ? err.message : String(err) },
@@ -306,7 +308,7 @@ export function createMcpAPI(ctx: PluginContext): McpAPI {
   };
 }
 
-export type PluginCallerCheck = { kind: 'wake'; agentId: string } | { kind: 'project_defaults'; projectPath: string };
+export type PluginCallerCheck = { kind: 'wake'; agentId: string; withMessage?: boolean } | { kind: 'project_defaults'; projectPath: string };
 
 /**
  * While the plugin answers agents' tool calls, whether each of those agents may do this (D126,
@@ -324,6 +326,8 @@ export function checkAnsweringCallers(pluginId: string, check: PluginCallerCheck
   return withToken(entry.slot, async (token) => {
     for (let i = 0; i < callIds.length; i++) {
       const answer = await b.checkCaller(token, callIds[i], check);
+      // Main settled that call meanwhile: it is over, and what the plugin does isn't for that agent.
+      if (!answer.ok && answer.over) { endAnswering(pluginId, callIds[i]); continue; }
       if (!answer.ok) return answer.message ?? 'The calling agent can\'t do this.';
     }
     return null;

@@ -29,9 +29,11 @@ describe('what a plugin may do for the agent whose call it answers (D126, #3168)
   it('waking checks the calling agent\'s agent.wake on the target, and changing defaults its project.configure', async () => {
     expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'other' })).toBeNull();
     expect(await checkPluginCaller('p', 'c', { kind: 'project_defaults', projectPath: '/proj' })).toBeNull();
+    expect(await checkPluginCaller('p', 'c', { kind: 'wake', agentId: 'other', withMessage: true })).toBeNull();
     expect(h.resolved).toEqual([
       { callerId: 'agent-1', actions: ['agent.wake'], args: { agent: 'other' } },
       { callerId: 'agent-1', actions: ['project.configure'], args: { project: '/proj' } },
+      { callerId: 'agent-1', actions: ['agent.wake', 'agent.message'], args: { agent: 'other' } },
     ]);
   });
 

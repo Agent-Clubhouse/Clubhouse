@@ -4151,9 +4151,10 @@ describe('plugin-api-factory', () => {
     const bridge = window.clubhouse as unknown as { pluginMcp?: unknown };
     let original: unknown;
     let listeners: Array<(data: ToolCall) => void>;
+    let callEnded: ((data: { pluginId: string; callId: string }) => void) | undefined;
     let issued: number;
     let pluginMcp: Record<
-      'claimIssuer' | 'issueToken' | 'revokeToken' | 'contributeTools' | 'removeTools' | 'listTools' | 'onToolCall' | 'sendToolResult' | 'checkCaller',
+      'claimIssuer' | 'issueToken' | 'revokeToken' | 'contributeTools' | 'removeTools' | 'listTools' | 'onToolCall' | 'sendToolResult' | 'checkCaller' | 'onCallEnded',
       ReturnType<typeof vi.fn>
     >;
 
@@ -4175,6 +4176,7 @@ describe('plugin-api-factory', () => {
         }),
         sendToolResult: vi.fn(),
         checkCaller: vi.fn(async () => ({ ok: true })),
+        onCallEnded: vi.fn((listener: (data: { pluginId: string; callId: string }) => void) => { callEnded = listener; return () => {}; }),
       };
       bridge.pluginMcp = pluginMcp;
     });
@@ -4349,7 +4351,7 @@ describe('plugin-api-factory', () => {
         const spawn = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('x');
         pluginMcp.checkCaller.mockResolvedValueOnce({ ok: false, message: 'A plugin can\'t do for an agent what the agent can\'t: no agent.wake.' });
         await expect(api.agents.resume('agent-9')).rejects.toThrow('A plugin can\'t do for an agent what the agent can\'t: no agent.wake.');
-        expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-waking-plugin-1', 'w1', { kind: 'wake', agentId: 'agent-9' });
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-waking-plugin-1', 'w1', { kind: 'wake', agentId: 'agent-9', withMessage: false });
         expect(spawn).not.toHaveBeenCalled();
         // Answered: the plugin acts for the person again, and main isn't asked.
         release[0]();
@@ -4381,6 +4383,56 @@ describe('plugin-api-factory', () => {
         // Reads are never checked.
         pluginMcp.checkCaller.mockClear();
         await api.agentConfig.getPermissionRules();
+        expect(pluginMcp.checkCaller).not.toHaveBeenCalled();
+        dispose(ctx);
+      });
+
+      it.each([
+        ['injectSkill', (a: PluginAPI) => a.agentConfig.injectSkill('s', 'c')],
+        ['removeSkill', (a: PluginAPI) => a.agentConfig.removeSkill('s')],
+        ['injectAgentTemplate', (a: PluginAPI) => a.agentConfig.injectAgentTemplate('t', 'c')],
+        ['removeAgentTemplate', (a: PluginAPI) => a.agentConfig.removeAgentTemplate('t')],
+        ['appendInstructions', (a: PluginAPI) => a.agentConfig.appendInstructions('x')],
+        ['removeInstructionAppend', (a: PluginAPI) => a.agentConfig.removeInstructionAppend()],
+        ['addPermissionAllowRules', (a: PluginAPI) => a.agentConfig.addPermissionAllowRules(['a'])],
+        ['addPermissionDenyRules', (a: PluginAPI) => a.agentConfig.addPermissionDenyRules(['a'])],
+        ['removePermissionRules', (a: PluginAPI) => a.agentConfig.removePermissionRules()],
+        ['injectMcpServers', (a: PluginAPI) => a.agentConfig.injectMcpServers({ s: { command: 'x' } })],
+        ['removeMcpServers', (a: PluginAPI) => a.agentConfig.removeMcpServers()],
+        ['contributeWrapperPreset', (a: PluginAPI) => a.agentConfig.contributeWrapperPreset({ binary: 'b', separator: '--', orchestratorMap: {}, mcpCatalog: [] })],
+        ['removeWrapperPreset', (a: PluginAPI) => a.agentConfig.removeWrapperPreset()],
+      ])('%s is checked against the calling agent during its call (#3168)', async (_name, write) => {
+        const ctx = makeCtx({ pluginId: 'writer-plugin' });
+        const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+        api.mcp.onToolCall(() => new Promise(() => {}));
+        await settle();
+        await deliver({ callId: 'w', pluginId: 'writer-plugin', toolName: 't', args: {}, callerAccess: 'full_access' });
+        pluginMcp.checkCaller.mockResolvedValue({ ok: false, message: 'Refused for the agent.' });
+        await expect(write(api)).rejects.toThrow('Refused for the agent.');
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith(expect.any(String), 'w', { kind: 'project_defaults', projectPath: '/projects/my-project' });
+        dispose(ctx);
+      });
+
+      it('resuming with a mission asks for agent.message too; a call main ended no longer counts (#3168)', async () => {
+        const ctx = makeCtx({ pluginId: 'mission-plugin' });
+        const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+        api.mcp.onToolCall(() => new Promise(() => {}));
+        await settle();
+        await deliver({ callId: 'm1', pluginId: 'mission-plugin', toolName: 't', args: {}, callerAccess: 'auto' });
+        pluginMcp.checkCaller.mockResolvedValue({ ok: false, message: 'No message.' });
+        await expect(api.agents.resume('agent-9', { mission: 'Go' })).rejects.toThrow('No message.');
+        expect(pluginMcp.checkCaller).toHaveBeenCalledWith(expect.any(String), 'm1', { kind: 'wake', agentId: 'agent-9', withMessage: true });
+        // Main timed the call out: the page is told, and the plugin acts for the person again.
+        callEnded!({ pluginId: 'mission-plugin', callId: 'm1' });
+        pluginMcp.checkCaller.mockClear();
+        await expect(api.agents.resume('agent-9')).rejects.toThrow('Can only resume durable agents');
+        expect(pluginMcp.checkCaller).not.toHaveBeenCalled();
+        // A call main says is over while the page still had it open is dropped, not refused.
+        await deliver({ callId: 'm2', pluginId: 'mission-plugin', toolName: 't', args: {}, callerAccess: 'auto' });
+        pluginMcp.checkCaller.mockResolvedValue({ ok: false, over: true, message: 'over' });
+        await expect(api.agents.resume('agent-9')).rejects.toThrow('Can only resume durable agents');
+        pluginMcp.checkCaller.mockClear();
+        await expect(api.agents.resume('agent-9')).rejects.toThrow('Can only resume durable agents');
         expect(pluginMcp.checkCaller).not.toHaveBeenCalled();
         dispose(ctx);
       });
