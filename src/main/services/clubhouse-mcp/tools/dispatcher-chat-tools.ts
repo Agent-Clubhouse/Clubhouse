@@ -56,9 +56,9 @@ export function registerDispatcherChatTools(): void {
     {
       description:
         'Get something done for the user: wake, message, create or connect agents, make or change Actions, ' +
-        'or change settings. You don\'t do these from this conversation. Describe what the user wants, with ' +
-        'any detail they gave, and it is done in the background. The outcome comes back here as a message ' +
-        'from Clubhouse. Tell the user in a few words that it is under way.',
+        'or change settings. Describe what they want, with the agents, projects and details they named and ' +
+        'what done looks like. The outcome comes back here as a message from Clubhouse. Tell the user in a ' +
+        'few words that it\'s under way.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -86,9 +86,9 @@ export function registerDispatcherChatTools(): void {
     'read_memory',
     {
       description:
-        'Read your memory: what you know about the user\'s agents, what happened when, and each piece of work. ' +
-        'With no page, returns the index and the list of pages. With a page, such as agents/webapp-lead.md, ' +
-        'returns that page. Read only; it is kept up to date in the background.',
+        'Read your memory: notes on the user\'s agents, what happened when, and each piece of work. ' +
+        'With no page, returns the index and the list of pages; with a page such as agents/webapp-lead.md, ' +
+        'that page. Read only.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -114,9 +114,8 @@ export function registerDispatcherChatTools(): void {
     'list_abilities',
     {
       description:
-        'What you can do for the user, from the Clubhouse permissions you hold now, grouped under short headings. ' +
-        'Call it when they ask what you can do, and answer with its list: keep the groups and leave nothing out, ' +
-        'and don\'t offer anything it doesn\'t list. It changes when the user changes your permissions.',
+        'What you are allowed to do for the user right now, from your Clubhouse permissions, in groups. ' +
+        'Use it to answer "What can you do?": keep its groups, leave nothing out, and offer nothing it doesn\'t list.',
       inputSchema: { type: 'object', properties: {} },
     },
     async (agentId) => {
@@ -135,23 +134,22 @@ export function registerDispatcherChatTools(): void {
     'tell_user',
     {
       description:
-        'Tell the user something, in their conversation with you. Say what kind of news it is, and Clubhouse ' +
-        'decides when it shows: news that needs them, and the answer to something they asked, show right away; ' +
-        'routine news waits for the next check-in summary; a check-in shows only when news is waiting for it. ' +
-        'To pass on an agent\'s news, name the agent in `from`: it shows under that agent\'s name, rewritten ' +
-        'from what the agent sent you, and `message` is your one or two sentence version in its voice. Write ' +
-        'plain sentences, with no tool output, JSON or task ids, and leave out what isn\'t worth telling.',
+        'Tell the user something in their conversation with you: one or two plain sentences, no tool output, ' +
+        'JSON or task ids. `kind` decides when it shows: needs_user now, answer now while their request is open, ' +
+        'routine at the next check-in, check_in only when news is waiting for it. For an agent\'s news, set ' +
+        '`from`: it shows under that agent\'s name, rewritten from what it sent you, with `message` as your ' +
+        'version in its voice. Skip news not worth telling.',
       inputSchema: {
         type: 'object',
         properties: {
-          message: { type: 'string', description: 'What the user should know, in one or two plain sentences. With `from`, in that agent\'s voice. For a check-in, your summary of what changed.' },
+          message: { type: 'string', description: 'One or two plain sentences. With `from`, in that agent\'s voice. For a check-in, what changed overall.' },
           kind: {
             type: 'string',
             enum: [...NEWS_KINDS],
-            description: 'needs_user: a question or decision that is theirs, or a problem that needs them. answer: the outcome of something they asked for. ' +
-              'routine: progress worth knowing, but not now. check_in: your summary at a check-in. Leave it out for needs_user.',
+            description: 'needs_user: theirs to answer or decide, or a problem that needs them. answer: the outcome of their request. ' +
+              'routine: can wait for a check-in. check_in: your check-in summary. Default needs_user.',
           },
-          from: { type: 'string', description: 'The agent whose news this is, by id or name. Leave it out for your own words and for check-ins.' },
+          from: { type: 'string', description: 'The agent whose news this is, by id or name. Leave it out for your own words and check-ins.' },
         },
         required: ['message'],
       },

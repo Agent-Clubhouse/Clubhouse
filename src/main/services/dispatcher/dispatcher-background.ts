@@ -171,7 +171,7 @@ export function upkeepReviewText(changed: MemoryPage[], report: UpkeepReport): s
     parts.push(['These pages changed since the last upkeep. Check them against the transcripts they cite, using search_memory:', ...capped(order, (p) => (p.status ? `${p.page} (${p.status})` : p.page))].join('\n'));
   }
   if (problems.length) parts.push(['Clubhouse couldn’t fix these:', ...capped(problems, (p) => p)].join('\n'));
-  parts.push('Mark a topic confirmed when a transcript backs it, fix or remove what a transcript contradicts, and fix the links. Keep index.md short. This is for you, so don’t call tell_user for it.');
+  parts.push('Mark a topic confirmed when a transcript backs it, fix or remove what a transcript contradicts, and fix the links. Keep index.md short. This is for you, so don’t call tell_user for it. Your memory-upkeep skill has the steps.');
   return parts.join('\n\n');
 }
 

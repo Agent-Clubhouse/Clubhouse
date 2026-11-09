@@ -49,9 +49,8 @@ export function registerAgentCardTools(): void {
     'update_my_card',
     {
       description:
-        'Update your card for the Dispatcher: a short description it reads to know what you do and when to come to you. ' +
-        'Call it when Clubhouse asks, and again whenever your work changes. Each field is a sentence or two. ' +
-        'Fields you leave out keep what your card said.',
+        'Update your card for the Dispatcher: what you do and when to come to you, a sentence or two per field. ' +
+        'Call it when Clubhouse asks and whenever your work changes. Fields you leave out keep their text.',
       inputSchema: {
         type: 'object',
         properties: {
