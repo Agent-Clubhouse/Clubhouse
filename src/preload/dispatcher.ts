@@ -5,6 +5,7 @@ import type { AgentCardFields, AgentCardView } from '../shared/dispatcher-agent-
 import type { DispatcherBehavior, DispatcherBehaviorAuto } from '../shared/dispatcher-behavior';
 import type { DispatcherPersonality } from '../shared/dispatcher-personality';
 import type { DispatcherSetupInput, TryItOutRequest, TryItOutResult } from '../shared/dispatcher-setup';
+import type { DispatcherTeaching } from '../shared/dispatcher-teaching';
 import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
 
 export const dispatcher = {
@@ -41,6 +42,8 @@ export const dispatcher = {
     /** The user's edit of an agent's card. Fields left out keep what the card said. */
     saveAgentCard: (agentId: string, fields: Partial<AgentCardFields>): Promise<AgentCardView> =>
       ipcRenderer.invoke(IPC.DISPATCHER.SAVE_AGENT_CARD, agentId, fields),
+    /** What its chat shows before the first message (#3048): the agents connected to it. */
+    getTeaching: (): Promise<DispatcherTeaching> => ipcRenderer.invoke(IPC.DISPATCHER.GET_TEACHING),
     onAgentCardChanged: (callback: (agentId: string) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string) => callback(agentId);
       ipcRenderer.on(IPC.DISPATCHER.AGENT_CARD_CHANGED, listener);

@@ -27,6 +27,7 @@ import type {
   TelemetryTestReport,
 } from '../../../shared/telemetry/settings-types';
 import { Button } from '../../components/Button';
+import { TelemetryBackfillOffer } from './TelemetryBackfillOffer';
 
 const LEVELS: Array<{ id: TelemetryLevel; label: string; desc: string }> = [
   { id: 'errors', label: 'Errors only', desc: 'Crashes and failed operations' },
@@ -309,6 +310,7 @@ export function TelemetrySettingsSection() {
             onChange={(v) => void handleResult('azure', 'azure', (ack) => api().setEnabled('azure', v, ack))}
           />
         </SettingsField>
+        <TelemetryBackfillOffer destinationId="azure" label={azure?.label ?? 'Azure Application Insights'} on={azureOn} />
         <div>
           <label className="block text-xs text-ctp-overlay1 mb-1" htmlFor="telemetry-cs">Connection string</label>
           {status.azure.configured && !replacingCs ? (
@@ -381,6 +383,7 @@ export function TelemetrySettingsSection() {
             onChange={(v) => void handleResult('otlp', 'otlp', (ack) => api().setEnabled('otlp', v, ack))}
           />
         </SettingsField>
+        <TelemetryBackfillOffer destinationId="otlp" label={otlp?.label ?? 'OTLP'} on={otlpOn} />
         <div>
           <label className="block text-xs text-ctp-overlay1 mb-1" htmlFor="telemetry-otlp-endpoint">Endpoint</label>
           <input

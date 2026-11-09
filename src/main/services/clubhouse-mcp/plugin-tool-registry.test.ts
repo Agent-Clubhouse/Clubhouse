@@ -206,6 +206,25 @@ describe('plugin-tool-registry', () => {
       expect(send).toHaveBeenCalledTimes(1);
     });
 
+    it('each call carries the calling agent\'s running level, so agents the plugin starts stay at or below it (D126, #3161)', async () => {
+      const { agentRegistry } = await import('../agent-registry');
+      issueToken(PAGE, secret, 'plugin-a');
+      bindingManager.bind('agent-1', { targetId: 'plugin-a', targetKind: 'plugin', label: 'A' });
+      agentRegistry.register('agent-1', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' });
+      agentRegistry.setLaunchCap('agent-1', { freeAgentMode: true, permissionMode: 'auto' });
+      try {
+        void callTool('agent-1', 'plugin__plugin_a__lookup', {});
+        await vi.waitFor(() => expect(send).toHaveBeenCalled());
+        expect(send.mock.calls[0][1]).toMatchObject({ callerAccess: 'auto' });
+      } finally {
+        agentRegistry.untrack('agent-1');
+      }
+      // One not running reads as Ask first.
+      void callTool('agent-1', 'plugin__plugin_a__lookup', {});
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      expect(send.mock.calls[1][1]).toMatchObject({ callerAccess: 'ask' });
+    });
+
     it("calls go only to the issuer's page: once that page is gone, they fail at once", async () => {
       issueToken(PAGE, secret, 'plugin-a');
       bindingManager.bind('agent-1', { targetId: 'plugin-a', targetKind: 'plugin', label: 'A' });

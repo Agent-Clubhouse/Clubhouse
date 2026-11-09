@@ -19,6 +19,7 @@ import { webContentsIdForPlugin } from './plugin-mcp-tokens';
 import { appLog } from '../log-service';
 import { getManifest } from '../plugin-manifest-registry';
 import { IPC } from '../../../shared/ipc-channels';
+import { callerRunningAccess } from './access-ceiling';
 
 interface PluginToolEntry {
   pluginId: string;
@@ -93,7 +94,7 @@ export function registerPluginTools(
     templates.push({
       nameSuffix: tool.name,
       definition: entry.definition,
-      handler: async (_targetId, _agentId, args) => invokePluginToolHandler(pluginId, tool.name, args),
+      handler: async (_targetId, agentId, args) => invokePluginToolHandler(pluginId, tool.name, args, agentId),
       // Plugins get no new access (#2921): marked, not mapped to an action.
       grant: 'plugin',
     });
@@ -148,6 +149,7 @@ async function invokePluginToolHandler(
   pluginId: string,
   toolName: string,
   args: Record<string, unknown>,
+  agentId: string,
 ): Promise<McpToolResult> {
   const callId = randomUUID();
 
@@ -170,6 +172,8 @@ async function invokePluginToolHandler(
         pluginId,
         toolName,
         args,
+        // While the plugin answers, agents it starts stay at or below the caller's level (D126, #3161).
+        callerAccess: callerRunningAccess(agentId),
       });
     } else {
       pendingCalls.delete(callId);

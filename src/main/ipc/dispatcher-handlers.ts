@@ -14,6 +14,8 @@ import { onAgentCardChanged, readAgentCardView, saveAgentCardEdit } from '../ser
 import { isDispatcherBehavior, type DispatcherBehaviorAuto } from '../../shared/dispatcher-behavior';
 import { cleanSetupInput, cleanTryItOutRequest, type TryItOutResult } from '../../shared/dispatcher-setup';
 import { checkDispatcherBehavior, tryDispatcherPersonality } from '../services/dispatcher/dispatcher-setup';
+import type { DispatcherTeaching } from '../../shared/dispatcher-teaching';
+import { readDispatcherTeaching } from '../services/dispatcher/dispatcher-teaching';
 
 let registered = false;
 
@@ -79,6 +81,9 @@ export function registerDispatcherHandlers(): void {
     async (_event, agentId, fields): Promise<AgentCardView> => saveAgentCardEdit(agentId, cleanCardEdit(fields)),
   ));
   onAgentCardChanged((agentId) => broadcastToAllWindows(IPC.DISPATCHER.AGENT_CARD_CHANGED, agentId));
+
+  // What its chat shows before the first message: the intro and suggestions (#3048).
+  ipcMain.handle(IPC.DISPATCHER.GET_TEACHING, (): Promise<DispatcherTeaching> => readDispatcherTeaching());
 
   let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {

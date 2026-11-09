@@ -25,6 +25,7 @@
  */
 
 import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
+import { ACCESS_LEVELS, type AccessLevel } from '../../shared/agent-access';
 import { rendererLog } from './renderer-logger';
 
 type McpAPI = PluginAPI['mcp'];
@@ -45,6 +46,47 @@ const mapDelete = uncurryThis(Map.prototype.delete) as (map: Map<string, unknown
 const setHas = uncurryThis(Set.prototype.has) as <T>(set: Set<T>, value: T) => boolean;
 const setAdd = uncurryThis(Set.prototype.add) as <T>(set: Set<T>, value: T) => void;
 const setDelete = uncurryThis(Set.prototype.delete) as <T>(set: Set<T>, value: T) => boolean;
+const arrayIndexOf = uncurryThis(Array.prototype.indexOf) as <T>(array: readonly T[], value: T) => number;
+const arraySplice = uncurryThis(Array.prototype.splice) as <T>(array: T[], start: number, count: number) => T[];
+const arrayPush = uncurryThis(Array.prototype.push) as <T>(array: T[], value: T) => number;
+
+// ── Agent calls a plugin is answering (D126, #3161) ────────────────────
+// While a plugin answers an agent's tool call, agents it starts through the
+// plugin API stay at or below that agent's running level, as the agent's own
+// calls do. Main sends the level with each call. Outside a call, a plugin
+// acts from its own UI, for the person.
+
+interface Answering { callId: string; level: AccessLevel }
+const answering = new Map<string, Answering[]>();
+
+function beginAnswering(pluginId: string, callId: string, level: AccessLevel | undefined): void {
+  let open = mapGet(answering, pluginId);
+  if (!open) { open = []; mapSet(answering, pluginId, open); }
+  // A level main didn't send reads as Ask first, as an unknown caller does.
+  arrayPush(open, { callId, level: level && arrayIndexOf(ACCESS_LEVELS, level) >= 0 ? level : 'ask' });
+}
+
+function endAnswering(pluginId: string, callId: string): void {
+  const open = mapGet(answering, pluginId);
+  if (!open) return;
+  for (let i = 0; i < open.length; i++) {
+    if (open[i].callId !== callId) continue;
+    arraySplice(open, i, 1);
+    break;
+  }
+  if (open.length === 0) mapDelete(answering, pluginId);
+}
+
+/** The lowest running level among the agent calls this plugin is answering now, or undefined outside one. */
+export function pluginAnsweringLevel(pluginId: string): AccessLevel | undefined {
+  const open = mapGet(answering, pluginId);
+  if (!open || open.length === 0) return undefined;
+  let lowest = open[0].level;
+  for (let i = 1; i < open.length; i++) {
+    if (arrayIndexOf(ACCESS_LEVELS, open[i].level) < arrayIndexOf(ACCESS_LEVELS, lowest)) lowest = open[i].level;
+  }
+  return lowest;
+}
 
 // ── A secret that arrives later ────────────────────────────────────────
 // Promises would hand the value to whatever `then` is current when they are
@@ -162,6 +204,8 @@ function acquireToken(ctx: PluginContext): Slot {
         released.add(ctx);
         if (!setDelete(held.contexts, ctx) || held.contexts.size > 0) return;
         if (mapGet(tokens, ctx.pluginId) === held) mapDelete(tokens, ctx.pluginId);
+        // Main settled its open calls with the token; a handler that never answered caps it no longer.
+        mapDelete(answering, ctx.pluginId);
         whenReady(held.slot, (token) => {
           if (token && bridge) promiseThen(bridge.revokeToken(token), ignore, ignore);
         });
@@ -227,9 +271,14 @@ export function createMcpAPI(ctx: PluginContext): McpAPI {
       handlerCounts.set(ctx.pluginId, (handlerCounts.get(ctx.pluginId) ?? 0) + 1);
       const cleanup = b.onToolCall((data) => {
         if (data.pluginId !== ctx.pluginId) return;
-        const reply = (result: Awaited<ReturnType<typeof handler>>) => whenReady(slot, (token) => {
-          if (token) b.sendToolResult(token, data.callId, result);
-        });
+        beginAnswering(ctx.pluginId, data.callId, data.callerAccess);
+        let answered = false;
+        const reply = (result: Awaited<ReturnType<typeof handler>>) => {
+          if (!answered) { answered = true; endAnswering(ctx.pluginId, data.callId); }
+          whenReady(slot, (token) => {
+            if (token) b.sendToolResult(token, data.callId, result);
+          });
+        };
         const fail = (err: unknown) => reply({
           content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
           isError: true,
@@ -263,5 +312,6 @@ export function _resetPluginMcpStateForTests(): void {
   bridge = null;
   tokens.clear();
   handlerCounts.clear();
+  answering.clear();
   fallbackInstalled = false;
 }

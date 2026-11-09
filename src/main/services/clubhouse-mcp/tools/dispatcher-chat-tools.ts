@@ -7,6 +7,8 @@
  *   `agent.message` on itself: one identity, two agents.
  * - read_memory, in the `dispatcherChat` group: the chat reads the
  *   Dispatcher's memory, read-only (dispatcher-memory-reader).
+ * - list_abilities, in the `dispatcherChat` group: what the Dispatcher can do,
+ *   built from its live grants (#3048), for "What else can you do?".
  * - tell_user, in the `dispatcher` group: the Dispatcher's report to the user.
  *   It says what kind of news it is and whose, and the group chat
  *   (dispatcher-news) decides when it shows and how it reads.
@@ -22,6 +24,8 @@ import { deliverToChat, handOffToDispatcher, type ChannelResult } from '../../di
 import { MemoryReadError, readDispatcherMemory } from '../../dispatcher/dispatcher-memory-reader';
 import { optionalString, requireString } from './validation';
 import { NEWS_KINDS, isNewsKind, type NewsKind } from '../../dispatcher/dispatcher-triage';
+import { readDispatcherAbilities } from '../../dispatcher/dispatcher-teaching';
+import { capabilitiesText } from '../../../../shared/dispatcher-teaching';
 
 /** One request or report: long enough for a plan, short enough to stay a message. */
 export const MAX_CHANNEL_TEXT = 8_000;
@@ -101,6 +105,27 @@ export function registerDispatcherChatTools(): void {
         // telemetry-exempt: logged, and the error reaches the agent as the tool result
         appLog('core:mcp', 'warn', 'read_memory failed', { meta: { agentId, error: errorText(err) } });
         return text(`Memory could not be read: ${errorText(err)}`, true);
+      }
+    },
+    { group: 'dispatcherChat', grant: { actions: ['agent.read'], target: 'self' } },
+  );
+
+  registerGlobalTool(
+    'list_abilities',
+    {
+      description:
+        'What you can do for the user, from the Clubhouse permissions you hold now, grouped under short headings. ' +
+        'Call it when they ask what you can do, and answer with its list: keep the groups and leave nothing out, ' +
+        'and don\'t offer anything it doesn\'t list. It changes when the user changes your permissions.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    async (agentId) => {
+      try {
+        return text(capabilitiesText(await readDispatcherAbilities()));
+      } catch (err) {
+        // telemetry-exempt: logged, and the error reaches the agent as the tool result
+        appLog('core:mcp', 'warn', 'list_abilities failed', { meta: { agentId, error: errorText(err) } });
+        return text(`Your permissions could not be read: ${errorText(err)}`, true);
       }
     },
     { group: 'dispatcherChat', grant: { actions: ['agent.read'], target: 'self' } },

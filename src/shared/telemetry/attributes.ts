@@ -548,6 +548,8 @@ export const ATTR = {
     'list_agents', 'inspect_helper',
     // the Dispatcher's two agents (#3036)
     'start_work', 'read_memory', 'tell_user',
+    // what the Dispatcher can do, from its grants (#3048)
+    'list_abilities',
     // search over the Dispatcher's memory and transcripts (#3039)
     'search_memory',
     // agent cards for the Dispatcher (#3041)

@@ -250,6 +250,19 @@ describe('DispatcherView and setup', () => {
     expect(screen.queryByTestId('sleeping-agent')).toBeNull();
   });
 
+  it('shows setup before the running chat, where the intro (#3048) lives, and the chat once setup is done', () => {
+    useAgentStore.setState({ agents: { disp: chatAgent({ status: 'running' }) } });
+    useDispatcherStore.getState().setState(makeState());
+    const { unmount } = render(<DispatcherView />);
+    expect(screen.getByTestId('dispatcher-setup')).toBeTruthy();
+    expect(screen.queryByTestId('runtime-pane')).toBeNull();
+    unmount();
+    useDispatcherStore.getState().setState(makeState({ setup: { status: 'done', upgrade: false } }));
+    render(<DispatcherView />);
+    expect(screen.queryByTestId('dispatcher-setup')).toBeNull();
+    expect(screen.getByTestId('runtime-pane').textContent).toBe('disp');
+  });
+
   it('shows an upgrading user setup once, prefilled with their provider and name, with the note that it remembers', async () => {
     const upgrade = makeState({
       config: { id: 'disp-work', name: 'Rosie', color: 'rose', createdAt: 'then', orchestrator: 'codex-cli' },

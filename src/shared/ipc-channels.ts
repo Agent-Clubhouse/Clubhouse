@@ -702,6 +702,8 @@ export const IPC = {
     SAVE_AGENT_CARD: 'dispatcher:save-agent-card',
     /** Main → renderer: an agent's card changed (agent id). */
     AGENT_CARD_CHANGED: 'dispatcher:agent-card-changed',
+    /** What its chat shows before the first message (#3048): the agents connected to it. */
+    GET_TEACHING: 'dispatcher:get-teaching',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */
