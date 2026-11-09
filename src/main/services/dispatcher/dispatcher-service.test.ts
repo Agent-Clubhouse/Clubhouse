@@ -585,6 +585,20 @@ describe('two agents, one identity (#3036)', () => {
     expect(fs.readFileSync(index, 'utf-8')).toBe('- webapp-lead owns checkout\n');
   });
 
+  it('writes both instructions files again on request, with the index as it is now, and nothing while off (#3046)', async () => {
+    await svc.setDispatcherEnabled(true);
+    const index = path.join(dispatcherDir(), 'memory', 'index.md');
+    const files = [path.join(chatDir(), 'CLAUDE.md'), path.join(dispatcherDir(), 'CLAUDE.md')];
+    fs.writeFileSync(index, '- forgotten now\n');
+    await svc.refreshDispatcherInstructions();
+    for (const file of files) expect(fs.readFileSync(file, 'utf-8')).toContain('- forgotten now');
+
+    await svc.setDispatcherEnabled(false);
+    for (const file of files) fs.writeFileSync(file, 'stale');
+    await svc.refreshDispatcherInstructions();
+    for (const file of files) expect(fs.readFileSync(file, 'utf-8')).toBe('stale');
+  });
+
   it('takes agents\' messages at the Dispatcher\'s own agent, never the chat (#3037)', async () => {
     const { dispatcherInboxId, isDispatcherTarget } = await import('../clubhouse-mcp/tools/dispatcher-delivery');
     await svc.setDispatcherEnabled(true);

@@ -5,6 +5,7 @@ import type { AgentCardFields, AgentCardView } from '../shared/dispatcher-agent-
 import type { DispatcherBehavior, DispatcherBehaviorAuto } from '../shared/dispatcher-behavior';
 import type { DispatcherPersonality } from '../shared/dispatcher-personality';
 import type { DispatcherSetupInput, TryItOutRequest, TryItOutResult } from '../shared/dispatcher-setup';
+import type { ConnectableAgent, ForgetEverythingResult } from '../shared/dispatcher-settings-page';
 import type { DispatcherTeaching } from '../shared/dispatcher-teaching';
 import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
 
@@ -17,6 +18,10 @@ export const dispatcher = {
     setBehavior: (level: DispatcherBehavior): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_BEHAVIOR, level),
     /** Starts its conversation over (#3043): now if it's running, else at its next start. Memory stays. */
     clearChat: (): Promise<{ cleared: 'now' | 'next_start' }> => ipcRenderer.invoke(IPC.DISPATCHER.CLEAR_CHAT),
+    /** Forget everything (#3046): clears its memory and held news. Agents, connections and Actions stay. */
+    forgetEverything: (): Promise<ForgetEverythingResult> => ipcRenderer.invoke(IPC.DISPATCHER.FORGET_EVERYTHING),
+    /** Every agent that can connect to it, across projects, with its Connect switch (#3046). */
+    listConnectableAgents: (): Promise<ConnectableAgent[]> => ipcRenderer.invoke(IPC.DISPATCHER.LIST_CONNECTABLE_AGENTS),
     /** Sets its personality (#3047); its chat reads it at its next start. Resolves with the state afterwards. */
     setPersonality: (personality: DispatcherPersonality): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_PERSONALITY, personality),
     /** Finishes first-run setup (#3047). Resolves with the state afterwards. */

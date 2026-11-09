@@ -22,6 +22,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import {
   AGENT_NOTES_HEADING,
+  MEMORY_INDEX_CAP_BYTES,
   memoryPaths,
   memorySlug,
   parseTopicPage,
@@ -30,6 +31,7 @@ import {
   type TopicStatus,
 } from './dispatcher-memory';
 import { isoWeekOf, linkTargets, rollUpTimeline, type RollupResult } from './dispatcher-memory-timeline';
+import type { DispatcherMemoryHealth } from '../../telemetry/dispatcher-telemetry';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAY_FILE = /^(\d{4}-\d{2}-\d{2})\.md$/;
@@ -395,4 +397,48 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
     }
   }
   return report;
+}
+
+/**
+ * Memory health for telemetry (#3052), as upkeep left it: counts and sizes
+ * only. Broken links and missing sources are the ones `report` couldn't fix.
+ * A topic is unlinked when no other page, the index included, links to or
+ * names it, and stale when nobody touched it for `staleDays`.
+ */
+export async function measureMemoryHealth(
+  now: Date,
+  report: Pick<UpkeepReport, 'brokenLinks' | 'missingSources'>,
+  options: Pick<UpkeepOptions, 'root' | 'staleDays'> = {},
+): Promise<DispatcherMemoryHealth> {
+  const root = memoryPaths(options.root).root;
+  const staleMs = (options.staleDays ?? DEFAULT_STALE_DAYS) * DAY_MS;
+  const pages = await listMemoryPages(root);
+  const texts = new Map<string, string>();
+  let bytes = 0;
+  for (const { page } of pages) {
+    const text = (await readIfExists(path.join(root, page))) ?? '';
+    texts.set(page, text);
+    bytes += Buffer.byteLength(text, 'utf8');
+  }
+  const topics = pages.filter((p) => p.page.startsWith('topics/'));
+  let unlinkedTopics = 0;
+  for (const topic of topics) {
+    const file = path.normalize(path.join(root, topic.page));
+    const linked = pages.some((other) => other.page !== topic.page && refersTo(root, other.page, texts.get(other.page) ?? '', file));
+    if (!linked) unlinkedTopics++;
+  }
+  return {
+    pages: pages.length,
+    bytes,
+    topics: topics.length,
+    agentPages: pages.filter((p) => p.page.startsWith('agents/')).length,
+    timelinePages: pages.filter((p) => p.page.startsWith('timeline/')).length,
+    indexBytes: Buffer.byteLength(texts.get('index.md') ?? '', 'utf8'),
+    indexCapBytes: MEMORY_INDEX_CAP_BYTES,
+    unlinkedTopics,
+    staleTopics: topics.filter((p) => now.getTime() - p.mtimeMs >= staleMs).length,
+    unconfirmedTopics: topics.filter((p) => p.status === 'unconfirmed').length,
+    brokenLinks: report.brokenLinks.length,
+    missingSources: report.missingSources.length,
+  };
 }

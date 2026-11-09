@@ -344,6 +344,8 @@ function addMetric(
     return true;
   }
   if (def.kind === 'gauge') {
+    // One point per line (#3125): gauges are recorded on change plus a 15-minute heartbeat,
+    // and the last value holds until the next line. No minutes are filled in; no repeat is merged.
     if (typeof line.value !== 'number' || !Number.isFinite(line.value)) return false;
     const point = { startTime: start, endTime: end, attributes, value: line.value };
     if (existing) (existing.dataPoints as unknown[]).push(point);

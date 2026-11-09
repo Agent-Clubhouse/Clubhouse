@@ -17,13 +17,14 @@
  *
  * The triage state (open requests, news held for a check-in, what was shown)
  * is kept in `dispatcher-news.json` beside the Dispatcher's folders, not in
- * memory: Clear chat and Forget everything leave it alone, and it survives a
- * restart.
+ * memory, and survives a restart. Clear chat leaves it alone; Forget
+ * everything drops the held news (clearHeldNews).
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { getBaseDirPath } from '../base-dir';
 import { appLog } from '../log-service';
+import { recordNewsTriage } from '../../telemetry/dispatcher-telemetry';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
 import * as agentConfig from '../agent-config';
 import type { MessageSender } from '../../../shared/chat';
@@ -121,6 +122,18 @@ export function noteUserRequest(now = Date.now()): void {
 /** News waiting for the next check-in, for the check-in itself and for tests. */
 export function heldNews(): readonly HeldNews[] {
   return readState().held;
+}
+
+/**
+ * Forget everything (#3046): drop the news held for the next check-in, so a
+ * later check-in doesn't bring back what was forgotten. Open requests and what
+ * was shown stay. Returns how many were dropped.
+ */
+export function clearHeldNews(): number {
+  const current = readState();
+  const dropped = current.held.length;
+  if (dropped > 0) writeState({ ...current, held: [] });
+  return dropped;
 }
 
 // ── The delivery step ─────────────────────────────────────────────────────
@@ -223,23 +236,33 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
     const before = readState();
     const decision = triageNews(item, before, at);
     appLog(NS, 'info', 'Dispatcher news triage', { meta: { kind, show: decision.show, reason: 'reason' in decision ? decision.reason : undefined, fromAgent: !!sender } });
+    const outcome = {
+      kind,
+      show: decision.show,
+      ...('reason' in decision && { reason: decision.reason }),
+      fromAgent: !!sender,
+    };
 
     if (decision.show === 'never') {
       writeState(applyTriage(before, item, decision, at));
+      recordNewsTriage(outcome);
       return { hold: 'never', reason: NEVER_REASONS[decision.reason] };
     }
     if (decision.show === 'later') {
       writeState(applyTriage(before, item, decision, at));
       // Passed on: the raw message isn't the next one to rewrite.
       if (sender?.agentId) takeAgentMessages(sender.agentId, at);
+      recordNewsTriage(outcome);
       return { hold: 'later', reason: LATER_REASONS[decision.reason] };
     }
     if (decision.show === 'check_in') {
       writeState(applyTriage(before, item, decision, at));
+      recordNewsTriage({ ...outcome, held: decision.held.length });
       return checkInMessage(cleaned, decision.held);
     }
     if (!sender?.agentId) {
       writeState(applyTriage(before, item, decision, at));
+      recordNewsTriage(outcome);
       return ownWords(cleaned);
     }
     const raw = takeAgentMessages(sender.agentId, at);
@@ -250,6 +273,7 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
     // Remembered as the Dispatcher wrote it, since that is what it would send again. Read
     // fresh: a hand-off may have opened a request while the rewrite ran.
     writeState(applyTriage(readState(), item, decision, at));
+    recordNewsTriage({ ...outcome, rewrite: { by: rewritten.by, ...(rewritten.reason && { reason: rewritten.reason }) } });
     return interjection(sender, text, decision.reason);
   };
 

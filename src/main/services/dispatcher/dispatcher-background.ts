@@ -38,7 +38,8 @@ import {
 import { getDispatcherBehaviorPlan, onDispatcherBehaviorChanged } from './dispatcher-behavior';
 import { readIfExists, writeFileAtomic } from './dispatcher-memory';
 import { getDispatcherAgentId, getDispatcherState, onDispatcherChanged } from './dispatcher-service';
-import { listMemoryPages, runMemoryUpkeep, type MemoryPage, type UpkeepReport } from './dispatcher-upkeep';
+import { listMemoryPages, measureMemoryHealth, runMemoryUpkeep, type MemoryPage, type UpkeepReport } from './dispatcher-upkeep';
+import { dispatcherTelemetryActive, recordMemoryHealth, recordMemoryUpkeep } from '../../telemetry/dispatcher-telemetry';
 import { startDispatcherUsage } from './dispatcher-usage';
 
 const NS = 'core:dispatcher';
@@ -174,6 +175,26 @@ export function upkeepReviewText(changed: MemoryPage[], report: UpkeepReport): s
   return parts.join('\n\n');
 }
 
+/** The upkeep run and memory health as telemetry (#3052). Measured only while telemetry records; never fails the upkeep. */
+async function recordUpkeepTelemetry(root: string, now: number, report: UpkeepReport, toCheck: number, review: boolean): Promise<void> {
+  if (!dispatcherTelemetryActive()) return;
+  recordMemoryUpkeep({
+    outcome: 'ok',
+    rolledDays: report.rolledUp.days.length,
+    rolledWeeks: report.rolledUp.weeks.length,
+    linksFixed: report.linksFixed.length,
+    pruned: report.archived.length,
+    toCheck,
+    review,
+  });
+  try {
+    recordMemoryHealth(await measureMemoryHealth(new Date(now), report, { root }));
+  } catch (err) {
+    // telemetry-exempt: memory health is telemetry; an unreadable page only costs this one reading
+    appLog(NS, 'warn', 'Could not measure Dispatcher memory health', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
+}
+
 let upkeepChain: Promise<unknown> = Promise.resolve();
 
 /**
@@ -186,11 +207,18 @@ export function runDispatcherUpkeep(): Promise<{ send: string } | { skip: string
     const now = deps.now();
     const state = await readState();
     const since = state.lastCheckedAt ?? 0;
-    const before = await listMemoryPages(root);
-    const report = await runMemoryUpkeep(new Date(now), { root });
-    const after = new Set((await listMemoryPages(root)).map((p) => p.page));
-    const changed = before.filter((p) => p.mtimeMs > since && reviewable(p) && after.has(p.page));
-    await writeFileAtomic(deps.stateFile(), `${JSON.stringify({ lastCheckedAt: now } satisfies UpkeepState)}\n`);
+    let report: UpkeepReport;
+    let changed: MemoryPage[];
+    try {
+      const before = await listMemoryPages(root);
+      report = await runMemoryUpkeep(new Date(now), { root });
+      const after = new Set((await listMemoryPages(root)).map((p) => p.page));
+      changed = before.filter((p) => p.mtimeMs > since && reviewable(p) && after.has(p.page));
+      await writeFileAtomic(deps.stateFile(), `${JSON.stringify({ lastCheckedAt: now } satisfies UpkeepState)}\n`);
+    } catch (err) {
+      recordMemoryUpkeep({ outcome: 'error' });
+      throw err;
+    }
     appLog(NS, 'info', 'Dispatcher memory upkeep', {
       meta: {
         rolledDays: report.rolledUp.days.length,
@@ -203,6 +231,7 @@ export function runDispatcherUpkeep(): Promise<{ send: string } | { skip: string
       },
     });
     const text = upkeepReviewText(changed, report);
+    await recordUpkeepTelemetry(root, now, report, changed.length, text !== null);
     return text ? { send: text } : { skip: 'Memory is up to date; nothing needed checking.' };
   });
   upkeepChain = run.catch((): void => undefined);

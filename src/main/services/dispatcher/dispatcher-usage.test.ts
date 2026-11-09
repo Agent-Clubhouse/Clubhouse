@@ -8,6 +8,7 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./dispatcher-service', () => ({ isDispatcherIdentityAgentId: () => false }));
 
 import type { ChatEvent } from '../../../shared/chat';
+import { captureEvents, type EventCapture } from '../../telemetry/__test-utils__/event-capture';
 import { publishChatEvent, removeAllChatEventListeners } from '../agent-runtime/chat-event-bus';
 import {
   BACKGROUND_MARK_MS,
@@ -121,5 +122,45 @@ describe('Dispatcher usage is split into conversations and background work', () 
     turn(CHAT, 't1', { input: 5 });
     getDispatcherUsageSplit().conversations.input = 1_000;
     expect(getDispatcherUsageSplit().conversations.input).toBe(5);
+  });
+});
+
+describe('Dispatcher usage telemetry (#3052)', () => {
+  let capture: EventCapture | null = null;
+  afterEach(() => { capture?.stop(); capture = null; });
+
+  it('records each turn with its side of the split while telemetry is on', () => {
+    capture = captureEvents();
+    turn(CHAT, 't1', { input: 100, output: 10 }, 0.01);
+    noteDispatcherBackgroundWork(WORK);
+    turn(WORK, 't2', { input: 500, output: 50 });
+    turn(WORK, 't3');
+    turn('someone-else', 'x', { input: 999 });
+    expect(capture.named('clubhouse.dispatcher.turn').map((e) => e.attrs)).toEqual([
+      {
+        'clubhouse.dispatcher.work': 'conversations',
+        'clubhouse.dispatcher.turn.usage_reported': true,
+        'clubhouse.dispatcher.turn.input_tokens': 100,
+        'clubhouse.dispatcher.turn.output_tokens': 10,
+        'clubhouse.dispatcher.turn.cost_micro_usd': 10_000,
+        'clubhouse.cost.estimate': false,
+      },
+      {
+        'clubhouse.dispatcher.work': 'background',
+        'clubhouse.dispatcher.turn.usage_reported': true,
+        'clubhouse.dispatcher.turn.input_tokens': 500,
+        'clubhouse.dispatcher.turn.output_tokens': 50,
+      },
+      { 'clubhouse.dispatcher.work': 'conversations', 'clubhouse.dispatcher.turn.usage_reported': false },
+    ]);
+    // No agent ids: the split never says which of the Dispatcher's agents did the work.
+    expect(JSON.stringify(capture.events)).not.toMatch(/disp-(work|chat)/);
+  });
+
+  it('records nothing while telemetry is off, and still counts', () => {
+    turn(CHAT, 't1', { input: 100 });
+    capture = captureEvents();
+    expect(capture.events).toEqual([]);
+    expect(getDispatcherUsageSplit().conversations.turns).toBe(1);
   });
 });

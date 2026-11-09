@@ -23,6 +23,8 @@ vi.mock('../services/dispatcher/dispatcher-service', () => ({
 }));
 vi.mock('../services/dispatcher/dispatcher-clear-chat', () => ({ clearDispatcherChat: vi.fn(async () => ({ cleared: 'now' })) }));
 vi.mock('../services/dispatcher/dispatcher-news', () => ({ installGroupChat: vi.fn() }));
+vi.mock('../services/dispatcher/dispatcher-forget', () => ({ forgetEverything: vi.fn(async () => ({ removed: 1, heldNews: 2 })) }));
+vi.mock('../services/dispatcher/dispatcher-connected-agents', () => ({ listConnectableAgents: vi.fn(async () => [{ agentId: 'a1', connected: true }]) }));
 vi.mock('../services/dispatcher/dispatcher-setup', () => ({
   tryDispatcherPersonality: vi.fn(async () => ({ ok: true, text: 'Hello.' })),
   checkDispatcherBehavior: vi.fn(async () => ({ ready: true })),
@@ -36,6 +38,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { restorePersistedBindings } from './mcp-binding-handlers';
 import { clearDispatcherChat } from '../services/dispatcher/dispatcher-clear-chat';
 import { installGroupChat } from '../services/dispatcher/dispatcher-news';
+import { forgetEverything } from '../services/dispatcher/dispatcher-forget';
 import { registerDispatcherHandlers, _resetDispatcherHandlersForTesting } from './dispatcher-handlers';
 import { checkDispatcherBehavior, tryDispatcherPersonality } from '../services/dispatcher/dispatcher-setup';
 import { AGENT_CARDS_UNAVAILABLE, setAgentCardSource } from '../services/dispatcher/dispatcher-agent-card-source';
@@ -58,6 +61,13 @@ describe('dispatcher handlers', () => {
     expect(installGroupChat).toHaveBeenCalledTimes(1);
     expect(await h.handlers.get(IPC.DISPATCHER.CLEAR_CHAT)!({})).toEqual({ cleared: 'now' });
     expect(clearDispatcherChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('Settings > Dispatcher: Forget everything and the agents it can reach (#3046)', async () => {
+    expect(await h.handlers.get(IPC.DISPATCHER.FORGET_EVERYTHING)!({})).toEqual({ removed: 1, heldNews: 2 });
+    expect(forgetEverything).toHaveBeenCalledTimes(1);
+    expect(clearDispatcherChat).not.toHaveBeenCalled();
+    expect(await h.handlers.get(IPC.DISPATCHER.LIST_CONNECTABLE_AGENTS)!({})).toEqual([{ agentId: 'a1', connected: true }]);
   });
 
   it('setEnabled takes a boolean only', async () => {
