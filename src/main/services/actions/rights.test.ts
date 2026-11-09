@@ -9,12 +9,15 @@ import { MAX_ACTIONS, createGrantRights } from './rights';
 let dispatcherId: string | undefined = 'disp';
 let leadAccess: AccessLevel = 'full_access';
 const saved = new Map<string, AgentGrantChanges>();
+/** Connections with Wake it on, as "from>to" (#3215). */
+const wakeOn = new Set<string>();
 const projectPaths: Record<string, string> = { p1: '/p1', p2: '/p2' };
 const agentProject = (id: string) => (id === 'other' ? 'p2' : 'p1');
 const rights = createGrantRights({
   agentName: (id) => ({ lead: 'release-lead', h1: 'helper-1', qa: 'qa', pm: 'pm' } as Record<string, string>)[id],
   parentOf: (id) => (id === 'h1' ? 'lead' : undefined),
   isConnected: (from, to) => (from === 'lead' && (to === 'pm' || to === 'other')) || (from === 'disp' && (to === 'lead' || to === 'pm')),
+  wakeOn: (from, to) => wakeOn.has(`${from}>${to}`),
   agentProjectId: agentProject,
   dispatcherAgentId: () => dispatcherId,
   // Only release-lead may start helpers.
@@ -34,6 +37,7 @@ beforeEach(() => {
   leadAccess = 'full_access';
   dispatcherId = 'disp';
   saved.clear();
+  wakeOn.clear();
 });
 const lead = { kind: 'agent', agentId: 'lead' } as const;
 const pm = { kind: 'agent', agentId: 'pm' } as const;
@@ -66,6 +70,18 @@ describe('an action does what its owner may (#2960, D131): steps', () => {
     expect(rights.checkStep(lead, { kind: 'wake', agentId: 'pm' })).toBe('release-lead doesn’t have the Clubhouse permission agent.wake on that agent. Change it on its Clubhouse permissions page.');
     saved.set('lead', { changes: [{ action: 'agent.wake', target: { kind: 'connected' }, mode: 'allow' }] });
     expect(rights.checkStep(lead, { kind: 'wake', agentId: 'pm' })).toBeNull();
+  });
+
+  it('waking a connected agent follows its Wake it switch, and the switch never opens sleep (#3215)', () => {
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'pm' })).toMatch(/agent\.wake on that agent/);
+    wakeOn.add('lead>pm');
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'pm' })).toBeNull();
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'pm', prompt: 'Go' })).toBeNull();
+    expect(rights.checkStep(lead, { kind: 'sleep', agentId: 'pm' })).toMatch(/agent\.sleep on that agent/);
+    // Per direction, and only where connected.
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'qa' })).toMatch(/agent\.wake/);
+    saved.set('lead', { changes: [{ action: 'agent.wake', target: { kind: 'connected', wakeOn: true }, mode: 'ask' }] });
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'pm' })).toMatch(/set to Ask first/);
   });
 
   it('a wake with a prompt also needs to message the agent', () => {

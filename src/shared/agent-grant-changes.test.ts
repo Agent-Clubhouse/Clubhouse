@@ -124,6 +124,24 @@ describe('a template\'s layer (#2971)', () => {
   });
 });
 
+describe('the Wake it target (#3215)', () => {
+  const target = { kind: 'connected' as const, wakeOn: true };
+
+  it('has its own key and label, and survives a save and read back', () => {
+    expect(grantKey({ action: 'agent.wake', target })).toBe('agent.wake@connected:wake_on');
+    expect(grantTargetLabel(target)).toBe('Connected agents with Wake it on');
+    const saved = normalizeGrantChanges({ changes: [{ action: 'agent.wake', target, mode: 'ask' }] });
+    expect(saved?.changes[0].target).toEqual(target);
+  });
+
+  it('is a default row Off can turn off and Ask first can set', () => {
+    expect(has(helperDefaults, 'agent.wake@connected:wake_on')).toBe(true);
+    expect(has(applyGrantChanges(helperDefaults, { changes: [{ action: 'agent.wake', target, mode: 'off' }] }), 'agent.wake@connected:wake_on')).toBe(false);
+    const asked = applyGrantChanges(helperDefaults, { changes: [{ action: 'agent.wake', target, mode: 'ask' }] });
+    expect(asked.find((g) => grantKey(g) === 'agent.wake@connected:wake_on')?.mode).toBe('ask');
+  });
+});
+
 describe('the Dispatcher-only target (#3037)', () => {
   const target = { kind: 'connected' as const, onlyDispatcher: true };
 

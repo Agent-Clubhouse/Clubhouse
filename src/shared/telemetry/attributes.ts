@@ -561,7 +561,7 @@ export const ATTR = {
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
     'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
     // Dispatcher controls over connected orchestrators (#2661)
-    'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls',
+    'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'set_connection_tools',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     // actions (#2952), the permission model's action.* (#2921)
@@ -778,7 +778,7 @@ export const ATTR = {
   auditSurface: enumAttr('clubhouse.audit.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'cli', 'system']),
   auditScope: enumAttr('clubhouse.audit.scope', ['app', 'project', 'agent']),
   auditOutcome: enumAttr('clubhouse.audit.outcome', ['ok', 'refused', 'error']),
-  auditTool: enumAttr('clubhouse.audit.tool', ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'change_provider', 'preview_provider']),
+  auditTool: enumAttr('clubhouse.audit.tool', ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'set_connection_tools', 'change_provider', 'preview_provider']),
   auditActorIdHash: hashAttr('clubhouse.audit.actor.id_hash'),
   // Clubhouse permissions (#2973, part of #2921): decisions, requests and changes. Enums only; ids hashed.
   grantAction: enumAttr('clubhouse.grant.action', GRANT_ACTIONS),

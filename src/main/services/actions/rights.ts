@@ -37,6 +37,8 @@ export interface RightsFacts {
   parentOf(agentId: string): string | undefined;
   /** A wire from `from` to `to` (Canvas wire, saved link, Dispatcher or helper link). */
   isConnected(from: string, to: string): boolean;
+  /** That wire's Wake it switch is on, on this computer (#3215). Left out, it reads as off. */
+  wakeOn?(from: string, to: string): boolean;
   agentProjectId(agentId: string): string | undefined;
   /** The Dispatcher's agent id, for its wires to the agents connected to it. */
   dispatcherAgentId(): string | undefined;
@@ -72,9 +74,11 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
     if (agentId === owner) relations.push('self');
     if (facts.parentOf(owner) === agentId) relations.push('parent');
     if (facts.parentOf(agentId) === owner) relations.push('my_helper');
-    if (facts.isConnected(owner, agentId)) relations.push('connected');
+    const connected = facts.isConnected(owner, agentId);
+    if (connected) relations.push('connected');
+    const wakeOn = connected && !!facts.wakeOn?.(owner, agentId);
     const projectPath = facts.agentProjectPath(agentId);
-    return { kind: 'agent', relations, isDispatcher: agentId === facts.dispatcherAgentId(), ...(projectPath && { projectPath }) };
+    return { kind: 'agent', relations, isDispatcher: agentId === facts.dispatcherAgentId(), ...(wakeOn && { wakeOn: true }), ...(projectPath && { projectPath }) };
   };
 
   /** Null when the owner holds the action with Allow on the target, else the refusal. */

@@ -27,7 +27,9 @@ const { configs, projects, configListeners, ptyWrite, postMessage, getBoard, gro
   };
 });
 
-vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
+// The connection store (#3215) writes here, not in the shared temp folder.
+const userData = vi.hoisted(() => ({ dir: '' }));
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => userData.dir || os.tmpdir() } }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 // Lets a test act between saving a connection and binding it.
 vi.mock('../../orchestrator-connections', async (importOriginal) => {
@@ -119,6 +121,7 @@ import {
 } from '../../orchestrator-connections';
 import { initGroupProjectLifecycle, _resetLifecycleForTesting } from '../../group-project-lifecycle';
 import { registerConnectionTools, GROUP_PROJECT_CREATOR_KEY } from './connection-tools';
+import { getConnectionDirection, removeConnectionDirections, setConnectionTools } from '../../connection-grants-store';
 
 let root: string;
 let projectPath: string;
@@ -175,8 +178,10 @@ function restart(): void {
   registerPersistedBindingSource(orchestratorConnectionSource);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-orch-conn-'));
+  userData.dir = root;
+  for (const id of ['durable_lead', 'durable_h1', 'durable_h2']) await removeConnectionDirections(id);
   projectPath = path.join(root, 'wardfall');
   fs.mkdirSync(projectPath, { recursive: true });
   configs.clear();
@@ -297,6 +302,21 @@ describe('connecting and persistence', () => {
     expect(postMessage).toHaveBeenCalledWith('system', 'system', expect.stringContaining('joined project "Raid"'));
     // Polling stays off: it starts only from the user's toggle.
     expect(ptyWrite).not.toHaveBeenCalled();
+  });
+
+  it('a new link starts with clear and compact off and no wake; a pair already connected or with tools saved keeps them (#3215)', async () => {
+    const direction = (from: string, to: string) => getConnectionDirection({ agentId: from }, { agentId: to });
+    await setConnectionTools({ agentId: 'durable_h2' }, { agentId: 'durable_h1' }, ['send_file']);
+    bindingManager.bind('durable_h1', { targetId: 'durable_lead', targetKind: 'agent', label: 'lead' });
+    await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
+    await call('connect_agents', { from: 'h1', to: 'h2', twoWay: true });
+    expect(direction('durable_lead', 'durable_h1')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'] });
+    expect(direction('durable_lead', 'durable_h1')?.enabledTools).toBeUndefined();
+    expect(direction('durable_h1', 'durable_h2')).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'] });
+    // Already bound (a canvas wire, a helper link): nothing written.
+    expect(direction('durable_h1', 'durable_lead')).toBeUndefined();
+    // Tools the user saved stay.
+    expect(direction('durable_h2', 'durable_h1')?.disabledTools).toEqual(['send_file']);
   });
 
   it('saves connections in the project store and rebuilds them at startup', async () => {

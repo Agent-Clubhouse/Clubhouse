@@ -45,6 +45,9 @@ export const mcpBinding = {
   /** Set the tools turned off on one direction with an agent on another machine: `outgoing` from this agent (#3064). */
   setToolsAcrossMachines: (agentId: string, address: string, outgoing: boolean, disabledTools: string[]): Promise<void> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_TOOLS_ACROSS_MACHINES, agentId, address, outgoing, disabledTools),
+  /** Turn Wake it on or off for one direction between two agents on this computer (#3215). */
+  setLocalWake: (fromAgentId: string, toAgentId: string, on: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.SET_LOCAL_WAKE, fromAgentId, toAgentId, on),
   /** Wires the orchestrator connection tools made and alone own; the user may remove these (#2232). */
   getToolConnections: (): Promise<Array<{ agentId: string; targetId: string }>> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS),

@@ -36,6 +36,7 @@ import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './or
 import type { ToolGrant } from './tool-grants';
 import { checkPluginCaller } from './plugin-caller-check';
 import { bindingManager } from './binding-manager';
+import { removeConnectionDirections, setConnectionTools } from '../connection-grants-store';
 
 const agent = (id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig => ({ id, name: id, color: 'blue', createdAt: '', ...extra });
 
@@ -213,6 +214,24 @@ describe('what a plugin may do for the agent whose call it answers, with real gr
       await updateAgentGrantChanges('orch', () => undefined);
     }
     expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'no-such-agent' })).toBe('The calling agent can\'t reach that agent.');
+  });
+
+  it('waking a connected agent follows the connection\'s Wake it switch; sleeping it never does (#3215)', async () => {
+    bindingManager.bind('plain', { targetId: 'peer', targetKind: 'agent', label: 'peer' });
+    asCaller('plain');
+    try {
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).toMatch(/agent\.wake/);
+      await setConnectionTools({ agentId: 'plain' }, { agentId: 'peer' }, [], ['wake_agent']);
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).toBeNull();
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.sleep', agentId: 'peer' })).toMatch(/agent\.sleep/);
+      // Off on the permissions page wins over the switch.
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.wake', target: { kind: 'connected', wakeOn: true }, mode: 'off' }] }));
+      expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).toMatch(/agent\.wake/);
+    } finally {
+      bindingManager.unbind('plain', 'peer');
+      await removeConnectionDirections('plain');
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
   });
 
   it('stopping an agent needs agent.sleep, and creating one agent.create in that project (#3174)', async () => {

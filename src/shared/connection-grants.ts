@@ -26,6 +26,17 @@ export interface ConnectionDirection {
   /** The wire tools `from` may not use on `to`. Everything else its grants allow is allowed. */
   disabledTools: string[];
   /**
+   * Tools that stay off unless turned on here. On this computer that's wake
+   * ({@link WAKE_TOOL}, #3215), so a direction saved before the switch existed
+   * reads as off. Across machines wake is on unless it's in `disabledTools` (D232).
+   */
+  enabledTools?: string[];
+  /**
+   * The Dispatcher set these tools, on a link it made (#3215), so it may change
+   * them again. Any other write clears it: then they're the user's.
+   */
+  setBy?: 'dispatcher';
+  /**
    * The user made this direction here (Make two-way on the Connections card),
    * so the store keeps it connected itself, with no other source needed.
    */
@@ -44,9 +55,61 @@ export const CONNECTION_TOOLS: ReadonlyArray<{ tool: string; action: GrantAction
   { tool: 'compact_agent', action: 'agent.reset', label: 'Compact its context' },
 ];
 
+/** Wake: a switch of its own on each direction, beside the connection tools (D232 across machines, #3215 here). */
+export const WAKE_TOOL = 'wake_agent';
+
+/** The wake switch, as the connection tools are described. */
+export const WAKE_SWITCH: { tool: string; action: GrantAction; label: string } = { tool: WAKE_TOOL, action: 'agent.wake', label: 'Wake it' };
+
+/** Every switch a direction has: the connection tools, then wake. */
+export const CONNECTION_SWITCHES: ReadonlyArray<{ tool: string; action: GrantAction; label: string }> = [...CONNECTION_TOOLS, WAKE_SWITCH];
+
+/**
+ * Whether a direction between two agents on this computer lets its sender
+ * wake the receiver (#3215): only when turned on, so a direction with no entry,
+ * or one saved before the switch, can't.
+ */
+export function localWakeOn(direction: Pick<ConnectionDirection, 'disabledTools' | 'enabledTools'> | undefined): boolean {
+  return !!direction?.enabledTools?.includes(WAKE_TOOL) && !direction.disabledTools.includes(WAKE_TOOL);
+}
+
+/** One direction's switches read back: the tools its sender may use, and the ones turned off. */
+export interface DirectionTools {
+  allowed: string[];
+  disabled: string[];
+}
+
+/**
+ * The switches of a direction between two agents on this computer, in
+ * {@link CONNECTION_SWITCHES} order. No entry reads as its source's tools
+ * (`sourceDisabled`, the live binding's list) with wake off.
+ */
+export function localDirectionTools(direction: Pick<ConnectionDirection, 'disabledTools' | 'enabledTools'> | undefined, sourceDisabled: readonly string[] = []): DirectionTools {
+  const disabledTools = direction?.disabledTools ?? sourceDisabled;
+  const wake = localWakeOn(direction);
+  const out: DirectionTools = { allowed: [], disabled: [] };
+  for (const { tool } of CONNECTION_SWITCHES) {
+    const on = tool === WAKE_TOOL ? wake : !disabledTools.includes(tool);
+    (on ? out.allowed : out.disabled).push(tool);
+  }
+  return out;
+}
+
+/**
+ * A direction's lists from the tools to allow on it, on this computer: every
+ * connection tool left out is turned off, and wake is on only when named.
+ */
+export function localToolsFromAllow(allow: readonly string[]): { disabledTools: string[]; enabledTools: string[] } {
+  return {
+    disabledTools: CONNECTION_TOOLS.map((t) => t.tool).filter((t) => !allow.includes(t)),
+    enabledTools: allow.includes(WAKE_TOOL) ? [WAKE_TOOL] : [],
+  };
+}
+
 /**
  * What a new connection between two agents lets its sender do: read the other
- * agent and message it. Clearing or compacting it needs turning on (#2969).
+ * agent and message it. Clearing or compacting it needs turning on (#2969),
+ * and so does waking it on this computer (#3215).
  */
 export const NEW_CONNECTION_DISABLED_TOOLS: readonly string[] = ['clear_agent', 'compact_agent'];
 
@@ -68,11 +131,19 @@ export function normalizeConnectionDirection(raw: unknown): ConnectionDirection 
   const from = address(r.from);
   const to = address(r.to);
   if (!from || !to) return null;
-  const disabledTools = Array.isArray(r.disabledTools)
-    ? [...new Set(r.disabledTools.filter((t): t is string => typeof t === 'string' && t.length > 0 && t.length <= 100))]
-    : [];
+  const toolList = (v: unknown): string[] => (Array.isArray(v)
+    ? [...new Set(v.filter((t): t is string => typeof t === 'string' && t.length > 0 && t.length <= 100))]
+    : []);
+  const disabledTools = toolList(r.disabledTools);
+  const enabledTools = toolList(r.enabledTools);
   const link = r.link && typeof r.link === 'object' && typeof (r.link as { createdAt?: unknown }).createdAt === 'string'
     ? { createdAt: (r.link as { createdAt: string }).createdAt }
     : undefined;
-  return { from, to, disabledTools, ...(link && { link }), updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : new Date(0).toISOString() };
+  return {
+    from, to, disabledTools,
+    ...(enabledTools.length > 0 && { enabledTools }),
+    ...(r.setBy === 'dispatcher' && { setBy: 'dispatcher' as const }),
+    ...(link && { link }),
+    updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : new Date(0).toISOString(),
+  };
 }

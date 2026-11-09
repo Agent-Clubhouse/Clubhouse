@@ -24,7 +24,7 @@ import { getDispatcherAgentId } from './dispatcher/dispatcher-service';
 import { isRemovalUnsaved, listDispatcherLinksForUser, recordUserRemoval } from './dispatcher-connections';
 import { saveWireRemoval } from './dispatcher-wire-source';
 import { appLog } from './log-service';
-import { removeUserLink } from './connection-grants';
+import { forgetDispatcherDirection, removeUserLink } from './connection-grants';
 import type { DispatcherLink } from '../../shared/types';
 import { removeStoredPair } from './orchestrator-connections';
 import { collectSourcesByPair, markBindingRemovedByUser, markSourceRemovedByUser, persistedPairKey, rebuildPersistedBindings, releaseSourceBinding } from './persisted-bindings';
@@ -144,6 +144,13 @@ export async function removeConnectionSource(agentId: string, targetId: string, 
   } else if (kind === 'tool_link') {
     // Another source holds it: the orchestrator just can't add its link back this session.
     markSourceRemovedByUser(ORCHESTRATOR_CONNECTION_SOURCE_ID, agentId, targetId);
+  }
+  // The tools the Dispatcher set on its link go with it, once nothing binds the pair (#3215).
+  if (kind === 'dispatcher_link') {
+    await forgetDispatcherDirection(agentId, targetId).catch((err) => {
+      // telemetry-exempt: logged; the link is removed either way, and its entry holds only what the Dispatcher set
+      appLog('core:mcp', 'warn', 'Could not drop the tools the Dispatcher set on a removed link', { meta: { agentId, targetId, error: err instanceof Error ? err.message : String(err) } });
+    });
   }
   return {
     ok: true,

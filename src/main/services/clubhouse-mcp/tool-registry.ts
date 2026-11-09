@@ -19,7 +19,8 @@ import { checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from
 import { askFirst } from './ask-first';
 import { resolveArgTargets } from './arg-targets';
 import { recordGrantDecision } from '../grant-telemetry';
-import { CONNECTION_TOOLS } from '../../../shared/connection-grants';
+import { CONNECTION_TOOLS, WAKE_TOOL } from '../../../shared/connection-grants';
+import { localConnectionWakeOn } from '../connection-grants-store';
 import { localizeAgentArgs } from './agent-addresses';
 import { forwardAgentCall, remoteMachineOf } from '../annex-agent-calls';
 import { getProvider } from '../../orchestrators';
@@ -222,6 +223,37 @@ export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId
  * in the wrong state (#2603).
  */
 const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_agent', 'preview_provider', 'change_provider']);
+
+/**
+ * Whether an agent wire offers its sender wake_agent (#3215): the Dispatcher
+ * as before, and any other agent only on a connection on this computer whose
+ * Wake it switch is on (off by default). Across machines it stays the
+ * Dispatcher's (D232). The call's grant, agent.wake on that agent, is checked
+ * after this, so Ask first and Off on the permissions page still apply.
+ */
+function wakeOffered(agentId: string, binding: McpBinding): boolean {
+  if (isDispatcherAgent(agentId)) return true;
+  return !remoteMachineOf(binding.targetId) && localConnectionWakeOn(agentId, binding.targetId);
+}
+
+/**
+ * Whether `agentId` can call wake_agent on its wire to `targetId` now: the
+ * wire offers it and a grant covers it (or it can ask). For hints that point
+ * at wake_agent.
+ */
+export function canCallWake(agentId: string, targetId: string): boolean {
+  const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetKind === 'agent' && b.targetId === targetId);
+  const template = toolTemplates.get('agent')?.find((t) => t.nameSuffix === WAKE_TOOL);
+  if (!binding || !template || binding.disabledTools?.includes(WAKE_TOOL) || !wakeOffered(agentId, binding)) return false;
+  return isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding)));
+}
+
+/** wake_agent on an agent wire, which only some senders are offered. */
+function isAgentWake(binding: McpBinding, suffix: string): boolean {
+  return binding.targetKind === 'agent' && suffix === WAKE_TOOL;
+}
+
+const WAKE_OFF_MESSAGE = 'wake_agent isn\u2019t turned on for this connection. The user can turn on Wake it in the Connections card.';
 
 /**
  * Global tools — available to ALL agents regardless of bindings.
@@ -507,6 +539,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       }
 
       if (!groupAllows(template.group, agentId)) continue;
+      if (isAgentWake(binding, template.nameSuffix) && !wakeOffered(agentId, binding)) continue;
 
       // Skip tools disabled by role gating and/or at the wire level
       if (deniedTools.has(template.nameSuffix)) {
@@ -654,6 +687,12 @@ export async function callTool(
       meta: { agentId, toolName, group: template.group },
     });
     return groupRefusal(template.group);
+  }
+
+  if (isAgentWake(binding, parsed.suffix) && !wakeOffered(agentId, binding)) {
+    recordGrantDecision({ agentId, toolName, decision: 'refused', reason: 'no_grant', actions: ['agent.wake'], targetKind: 'connection' });
+    // Across machines wake stays the Dispatcher's (D232): no switch here opens it.
+    return refuse('tool_denied', remoteMachineOf(binding.targetId) ? 'Only the Dispatcher can wake an agent on another computer.' : WAKE_OFF_MESSAGE);
   }
 
   // Checked at call time too: the listing drops these, but a client may have a stale list or know the name.

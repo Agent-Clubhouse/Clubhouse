@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
-import { CONNECTION_TOOLS, type ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
+import { CONNECTION_SWITCHES, type ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
 import { addressFromNamespacedId, formatAgentAddress, namespacedIdFromAddress } from '../../../../shared/agent-address';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
@@ -45,11 +45,8 @@ export function remoteConnections(grants: readonly SavedDirection[], agentId: st
 
 const META: Record<RemoteConnection['direction'], string> = { 'two-way': 'two-way', to: 'sends to it', from: 'sends to this agent' };
 
-/** What a direction with an agent on another computer can let its sender do, each a switch (D232). */
-export const REMOTE_TOOLS: ReadonlyArray<{ tool: string; label: string }> = [
-  ...CONNECTION_TOOLS.map(({ tool, label }) => ({ tool, label })),
-  { tool: 'wake_agent', label: 'Wake it' },
-];
+/** What a direction with an agent on another computer can let its sender do, each a switch (D232): the same switches as here. */
+export const REMOTE_TOOLS: ReadonlyArray<{ tool: string; label: string }> = CONNECTION_SWITCHES;
 
 /**
  * The switches for each direction of one connection: what the sender may do

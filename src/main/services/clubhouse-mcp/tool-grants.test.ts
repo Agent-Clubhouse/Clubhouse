@@ -127,6 +127,7 @@ describe('tool grant declarations (#2967)', () => {
       set_orchestrator_helpers: agent.configure on agent_arg
       connect_orchestrators: connection.manage on agent_arg
       disconnect_orchestrators: connection.manage on agent_arg
+      set_connection_tools: connection.manage on agent_arg
       list_orchestrator_controls: agent.read on connected
       list_agent_parts: library.read on library
       get_agent_part: library.read on library
