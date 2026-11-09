@@ -312,6 +312,15 @@ describe('CodexCliProvider', () => {
     });
   });
 
+  describe('buildSpawnCommand — no desktop control (#3185)', () => {
+    it('turns plugins off, so computer use and the browser are gone, with the mission still last', async () => {
+      const { args, trailingArgs } = await provider.buildSpawnCommand({ cwd: '/p', noDesktopControl: true, mission: 'Go' });
+      expect(args).toEqual(['--disable', 'plugins']);
+      expect(trailingArgs).toEqual(['Go']);
+      expect(provider.desktopControlOffArgs()).toEqual(['--disable', 'plugins']);
+    });
+  });
+
   describe('buildSpawnCommand — session resume', () => {
     it('resumes the most recent session with `resume --last` when no id is given', async () => {
       const { args } = await provider.buildSpawnCommand({ cwd: '/p', resume: true });

@@ -19,7 +19,7 @@ import { CopilotCliProvider } from '../../orchestrators/copilot-cli-provider';
 import { DISPATCHER_CHAT_INSTRUCTIONS, DISPATCHER_INSTRUCTIONS } from '../dispatcher/dispatcher-service';
 import { dispatcherSkills, skillsSection } from '../dispatcher/dispatcher-skills';
 import { defaultChatDelivery } from '../dispatcher/dispatcher-channel';
-import { buildRewritePrompt } from '../dispatcher/dispatcher-rewrite';
+import { agentNews } from '../dispatcher/dispatcher-news';
 import { cardRequestText } from '../dispatcher/dispatcher-agent-cards';
 import { PERSONALITY_PRESET_TEXT, personalityInstructions } from '../../../shared/dispatcher-personality';
 
@@ -92,8 +92,9 @@ function chatFacingText(): Array<[string, string]> {
     // First run's personality section (#3047), with each preset.
     ...Object.entries(PERSONALITY_PRESET_TEXT).map(([preset, text]): [string, string] => [`personality ${preset}`, personalityInstructions('Rosie', { preset: preset as 'concise', text })]),
     ['a Clubhouse update', defaultChatDelivery({ message: 'Checkout is fixed.' })!.text],
-    // The rewrite step's words show in the chat under an agent's name.
-    ['rewrite prompt', buildRewritePrompt('webapp-lead', 'Fixed it.')],
+    // An agent's news, which the chat says in its own words (#3193).
+    ['an agent\'s question', agentNews({ agentId: 'a1', name: 'webapp-lead' }, 'Can I merge #412?', 'needs_user').text],
+    ['an agent\'s answer', agentNews({ agentId: 'a1', name: 'webapp-lead' }, 'Checkout is fixed.', 'answer').text],
   ];
 }
 
@@ -205,5 +206,31 @@ describe('the Dispatcher\'s tool descriptions', () => {
       expect(text, name).not.toMatch(/Connect to Dispatcher/);
       expect(text, name).not.toMatch(/\bthe Dispatcher's chat\b/i);
     }
+  });
+});
+
+describe('how the Dispatcher speaks and acts (#3185)', () => {
+  const instructions: Array<[string, string]> = [['chat instructions', DISPATCHER_CHAT_INSTRUCTIONS], ['instructions', DISPATCHER_INSTRUCTIONS]];
+
+  it.each(instructions)('%s: first person about outcomes, never how Clubhouse carried it out', (_label, text) => {
+    expect(text).toContain('I\'ve scheduled an action. You can manage it in Settings > Actions.');
+    expect(text).toMatch(/Never describe how it(?:'s| was) (?:carried out|done): not "I(?:'ve)? asked Clubhouse to", not "Clubhouse opened"/);
+  });
+
+  it.each(instructions)('%s: only through Clubhouse tools, and says what it can\'t do instead of working around it', (_label, text) => {
+    expect(text).toMatch(/Never drive an app's windows \(computer use, browser control, screenshots or clicks\)/);
+    expect(text).toMatch(/never ask the user to click through/);
+    expect(text).toContain('change your permissions in Clubhouse');
+  });
+
+  it('no tool description or update casts Clubhouse as the one doing the work', () => {
+    const NARRATES = /\bask(?:ed)? Clubhouse\b|\bClubhouse (?:opened|carries|did)\b|\bmessage from Clubhouse\b/i;
+    const texts: Array<[string, string]> = [
+      ...tools('chat').flatMap((t) => descriptions(t).map((d): [string, string] => [`tool ${t.name}`, d])),
+      ['tell_user', descriptions(tools('dispatcher').find((t) => t.name === 'tell_user')!).join('\n')],
+      ['a Clubhouse update', defaultChatDelivery({ message: 'Checkout is fixed.' })!.text],
+    ];
+    for (const [label, text] of texts) expect(text, label).not.toMatch(NARRATES);
+    expect(NARRATES.test('The outcome comes back here as a message from Clubhouse.')).toBe(true);
   });
 });

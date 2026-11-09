@@ -35,7 +35,7 @@ import {
 import type { DispatcherBehavior, DispatcherBehaviorAuto, DispatcherBehaviorModels } from '../../../shared/dispatcher-behavior';
 
 const NS = 'core:dispatcher';
-/** A first reply can include a CLI's cold start, so it gets longer than the rewrite step. */
+/** A first reply can include a CLI's cold start, so it gets longer than a headless prompt's default. */
 export const TRY_IT_OUT_TIMEOUT_MS = 60_000;
 
 /** Its personality. Concise until a person picks. */

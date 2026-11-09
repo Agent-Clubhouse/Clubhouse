@@ -31,7 +31,7 @@ function recordOneOfEach(): void {
   recordDispatcherTurn('background', { tokens: { input: 1200, cachedInput: 800, cacheWrite: 100, output: 300, reasoning: 50 }, costUsd: 0.0123, costIsEstimate: true });
   recordMemoryHealth(HEALTH);
   recordMemoryUpkeep({ outcome: 'ok', rolledDays: 2, rolledWeeks: 1, linksFixed: 4, pruned: 1, toCheck: 3, review: true });
-  recordNewsTriage({ kind: 'answer', show: 'now', reason: 'answer', fromAgent: true, rewrite: { by: 'fallback', reason: 'auto_not_supported' } });
+  recordNewsTriage({ kind: 'answer', show: 'now', reason: 'answer', fromAgent: true });
 }
 
 let capture: EventCapture | null = null;
@@ -129,9 +129,9 @@ describe('Dispatcher telemetry with telemetry on', () => {
     ]);
   });
 
-  it('records triage outcomes, with held items only on a check-in and the rewrite only when one ran', () => {
+  it('records triage outcomes, with held items only on a check-in and the rewrite always none (#3193)', () => {
     capture = captureEvents();
-    recordNewsTriage({ kind: 'answer', show: 'now', reason: 'answer', fromAgent: true, rewrite: { by: 'fallback', reason: 'auto_not_supported' } });
+    recordNewsTriage({ kind: 'answer', show: 'now', reason: 'answer', fromAgent: true });
     recordNewsTriage({ kind: 'check_in', show: 'check_in', fromAgent: false, held: 3 });
     recordNewsTriage({ kind: 'routine', show: 'later', reason: 'routine', fromAgent: true, held: 9 });
     expect(capture.events.map((e) => e.attrs)).toEqual([
@@ -140,8 +140,8 @@ describe('Dispatcher telemetry with telemetry on', () => {
         'clubhouse.dispatcher.news.show': 'now',
         'clubhouse.dispatcher.news.reason': 'answer',
         'clubhouse.dispatcher.news.from_agent': true,
-        'clubhouse.dispatcher.news.rewrite': 'fallback',
-        'clubhouse.dispatcher.news.rewrite_reason': 'auto_not_supported',
+        'clubhouse.dispatcher.news.rewrite': 'none',
+        'clubhouse.dispatcher.news.rewrite_reason': 'none',
       },
       {
         'clubhouse.dispatcher.news.kind': 'check_in',

@@ -223,9 +223,19 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   }
   if (changes.length === 0 && now.order.join('|') !== record.order.join('|')) changes.push('The block order changed');
   const cliChanged = (record.orchestrator ?? '') !== (agent.orchestrator ?? '');
-  if (changes.length === 0) changes.push(cliChanged ? 'The CLI changed' : 'Its settings changed');
+  if (changes.length === 0 && cliChanged) changes.push('The CLI changed');
+  if (changes.length === 0 && record.launch && now.launch) {
+    const was = record.launch, is = now.launch;
+    if (was.model !== is.model) changes.push('The model changed');
+    if (was.effort !== is.effort) changes.push('The effort changed');
+    if (was.access !== is.access || was.freeAgentMode !== is.freeAgentMode) changes.push('Access changed');
+  }
+  if (changes.length === 0) changes.push('Its settings changed');
   return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };
 }
+
+/** Preview's settings rows a running session picks up without a restart. */
+const LIVE_SETTINGS_ROWS = new Set(['orchestration', 'helpers', 'helperTemplate', 'dispatcher']);
 
 /**
  * What a running agent's session started with, for Preview's "Running now",
@@ -236,10 +246,13 @@ export async function runningSnapshotFor(projectPath: string, agentId: string): 
   const status = await statusFor(projectPath, agentId);
   const snapshot = delivered.get(agentId)?.snapshot;
   if (!status.running || !status.waiting || !snapshot) return null;
-  // The helper template reaches a running agent at once (D83), so it is never waiting: show it as it is now.
+  // Orchestration and the helper template reach a running agent at once (D83, #3197), so they are
+  // never waiting: show them as they are now. The rest is what the session started with.
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-  const now = agent ? (await managedSettingsRows(managedAgents(), agent, undefined)).find((r) => r.key === 'helperTemplate') : undefined;
-  const settings = snapshot.settings.map((r) => (r.key === 'helperTemplate' && now ? now : r));
+  const now = agent ? await managedSettingsRows(managedAgents(), agent, undefined) : undefined;
+  const settings = now
+    ? now.map((r) => (LIVE_SETTINGS_ROWS.has(r.key) ? r : snapshot.settings.find((s) => s.key === r.key) ?? r))
+    : snapshot.settings;
   return { ...snapshot, settings, changes: status.changes };
 }
 

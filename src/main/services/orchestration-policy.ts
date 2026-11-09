@@ -344,7 +344,7 @@ export async function setOrchestrationPolicy(
     // Copied now: the write can change this agent's own record.
     const storedBefore = agent.orchestration && { ...agent.orchestration };
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
-    // A managed agent's setup-changed bar compares the policy with what its session started on.
+    // Preview's settings rows show the policy. A running session takes it live, so no setup-changed bar (#3197).
     if (agent.managed) noteManagedSettingsChanged();
     applyGate(projectPath, agent, next);
     await auditPolicyChange(audit, storedBefore, stored);
@@ -373,9 +373,10 @@ export async function setOrchestrationPolicy(
 
 /**
  * Settle an agent's helpers in every project with `choice`, stopping running
- * ones (each in its own project) before a dispose.
+ * ones (each in its own project) before a dispose. Turning orchestration off
+ * and deleting an agent (agent-delete.ts) both settle helpers this way.
  */
-async function settleHelpers(
+export async function settleHelpers(
   projectPath: string,
   agentId: string,
   choice: 'keep' | 'dispose',

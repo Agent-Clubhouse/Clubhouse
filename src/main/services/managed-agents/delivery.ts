@@ -724,22 +724,35 @@ export interface DeliveryRecord {
   orchestrator?: string;
   parts: Record<string, { name: string; revision: number }>;
   order: string[];
+  /** The launch settings the session started with, to name which one changed. */
+  launch?: LaunchSettings;
 }
 
-/** A stable fingerprint of what the agent gets: parts, revisions, order and launch settings. */
+/** Settings only a start delivers: launch flags, or the chat session's options. */
+interface LaunchSettings {
+  model: string | null;
+  effort: string | null;
+  access: string | null;
+  freeAgentMode: boolean | null;
+}
+
+/**
+ * A stable fingerprint of what a session gets only when it starts: parts,
+ * revisions, order, the CLI and the launch settings. Orchestration is left
+ * out: the gate and the helper tools read it live (#3197).
+ */
 export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved): DeliveryRecord {
   const parts: DeliveryRecord['parts'] = {};
   for (const p of [...resolved.blocks, ...resolved.skills, ...resolved.mcps]) parts[p.id] = { name: p.name, revision: p.revision };
   const order = [...resolved.blocks.map((b) => b.id), '|', ...resolved.skills.map((s) => s.id), '|', ...resolved.mcps.map((m) => m.id)];
-  const fingerprint = canonicalHash({
-    parts, order,
-    orchestrator: agent.orchestrator ?? null, model: agent.model ?? null, effort: agent.effort ?? null,
-    freeAgentMode: agent.freeAgentMode ?? null, orchestration: agent.orchestration ?? null,
-    // Access (#2761). Left out at Ask first, and for an agent saved before it,
-    // so a fingerprint from before the upgrade still matches.
-    ...(agent.access !== undefined && agent.access !== 'ask' && { access: agent.access }),
-  });
-  return { fingerprint, deliveredAt: new Date().toISOString(), ...(agent.orchestrator && { orchestrator: agent.orchestrator }), parts, order };
+  const launch: LaunchSettings = {
+    model: agent.model ?? null, effort: agent.effort ?? null,
+    // Access (#2761). Ask first and unset start the same way.
+    access: agent.access !== undefined && agent.access !== 'ask' ? agent.access : null,
+    freeAgentMode: agent.freeAgentMode ?? null,
+  };
+  const fingerprint = canonicalHash({ parts, order, orchestrator: agent.orchestrator ?? null, ...launch });
+  return { fingerprint, deliveredAt: new Date().toISOString(), ...(agent.orchestrator && { orchestrator: agent.orchestrator }), parts, order, launch };
 }
 
 /**

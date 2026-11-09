@@ -217,7 +217,7 @@ export type AutoLevelResolution =
 /**
  * The model and effort a provider runs an Auto level on (#3044), checked
  * against its CLI's list like a helper start. For callers that pick a model
- * themselves, such as the Dispatcher's rewrite step at the minimum level. It
+ * themselves at a fixed level, such as the minimum. It
  * doesn't depend on the Auto provider switch, which only governs choosing
  * between providers, and it never falls back to a CLI's default model.
  *

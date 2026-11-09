@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as os from 'os';
 import * as path from 'path';
 
 const mockPlaySound = vi.fn();
@@ -16,11 +15,7 @@ vi.stubGlobal('window', {
       renameDurable: vi.fn().mockResolvedValue(undefined),
       updateDurable: vi.fn().mockResolvedValue(undefined),
       deleteDurable: vi.fn().mockResolvedValue(undefined),
-      deleteCommitPush: vi.fn().mockResolvedValue({ ok: true, message: '' }),
-      deleteCleanupBranch: vi.fn().mockResolvedValue({ ok: true, message: '' }),
-      deleteSavePatch: vi.fn().mockResolvedValue({ ok: true, message: '' }),
-      deleteForce: vi.fn().mockResolvedValue({ ok: true, message: '' }),
-      deleteUnregister: vi.fn().mockResolvedValue({ ok: true, message: '' }),
+      deleteAgent: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       listHelpers: vi.fn().mockResolvedValue([]),
       resolveHelpersForDelete: vi.fn().mockResolvedValue({ ok: true, message: '', helperIds: [] }),
       reorderDurable: vi.fn().mockResolvedValue(undefined),
@@ -1348,6 +1343,82 @@ describe('agentStore', () => {
     });
   });
 
+  describe('syncDurableMembership (#3183)', () => {
+    const config = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, color: 'indigo', createdAt: '2024-01-01', ...extra });
+
+    it('adds an agent created in main (e.g. by the Dispatcher over MCP), with its icon and live status', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'existing', name: 'existing', projectId: 'proj_1', status: 'running', kind: 'durable' });
+      mockAgent.listDurable.mockResolvedValue([config('existing'), config('created', { icon: 'created.png', worktreePath: '/p/created', branch: 'created/standby' })]);
+      mockAgent.getRunningStatuses.mockResolvedValue(['created']);
+      mockAgent.readIcon.mockResolvedValue('data:icon');
+
+      await getState().syncDurableMembership('proj_1', '/project');
+
+      expect(mockAgent.listDurable).toHaveBeenCalledWith('/project');
+      expect(mockAgent.getRunningStatuses).toHaveBeenCalledWith(['created']);
+      expect(getState().agents['created']).toMatchObject({
+        projectId: 'proj_1', kind: 'durable', name: 'created', status: 'running', worktreePath: '/p/created', branch: 'created/standby',
+      });
+      expect(getState().agentIcons['created']).toBe('data:icon');
+      expect(getState().agents['existing']).toMatchObject({ status: 'running' });
+    });
+
+    it('drops a durable agent of the project whose config is gone or disposed', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'kept', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'deleted', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'disposed', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'other_project', projectId: 'proj_2', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'quick', projectId: 'proj_1', status: 'running', kind: 'quick' });
+      mockAgent.listDurable.mockResolvedValue([config('kept'), config('disposed', { disposedAt: '2024-01-02' })]);
+
+      await getState().syncDurableMembership('proj_1', '/project');
+
+      expect(Object.keys(getState().agents).sort()).toEqual(['kept', 'other_project', 'quick']);
+    });
+
+    it('drops a deleted agent\'s quick agents with it, and keeps other quick agents (#3182)', async () => {
+      seedAgent({ id: 'kept', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'deleted', projectId: 'proj_1', status: 'running', kind: 'durable' });
+      seedAgent({ id: 'quick_of_deleted', projectId: 'proj_1', status: 'running', kind: 'quick', parentAgentId: 'deleted' });
+      seedAgent({ id: 'quick_of_kept', projectId: 'proj_1', status: 'running', kind: 'quick', parentAgentId: 'kept' });
+      seedAgent({ id: 'quick_alone', projectId: 'proj_1', status: 'running', kind: 'quick' });
+      useAgentStore.setState({ activeAgentId: 'quick_of_deleted' });
+      vi.mocked(window.clubhouse.agent.listDurable).mockResolvedValue([config('kept')]);
+
+      await getState().syncDurableMembership('proj_1', '/project');
+
+      expect(Object.keys(getState().agents).sort()).toEqual(['kept', 'quick_alone', 'quick_of_kept']);
+      expect(getState().activeAgentId).toBeNull();
+    });
+
+    it("keeps a creating placeholder and an agent added while the list was read", async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'temp_1', projectId: 'proj_1', status: 'creating', kind: 'durable' });
+      let resolveList: (configs: unknown[]) => void = () => {};
+      mockAgent.listDurable.mockReturnValue(new Promise((resolve) => { resolveList = resolve; }));
+
+      const sync = getState().syncDurableMembership('proj_1', '/project');
+      seedAgent({ id: 'just_made', projectId: 'proj_1', status: 'running', kind: 'durable' });
+      resolveList([]);
+      await sync;
+
+      expect(getState().agents['temp_1']).toBeDefined();
+      expect(getState().agents['just_made']).toBeDefined();
+    });
+
+    it('leaves the state alone when nothing changed', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'same', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      const before = getState().agents;
+      mockAgent.listDurable.mockResolvedValue([config('same')]);
+      await getState().syncDurableMembership('proj_1', '/project');
+      expect(getState().agents).toBe(before);
+      expect(mockAgent.getRunningStatuses).not.toHaveBeenCalled();
+    });
+  });
+
   describe('loadDurableAgents', () => {
     it('loads the emoji from durable config', async () => {
       const mockAgent = window.clubhouse.agent as any;
@@ -1545,11 +1616,7 @@ describe('agentStore', () => {
 
     beforeEach(() => {
       // Re-set delete IPC mocks (cleared by vi.clearAllMocks in outer beforeEach)
-      vi.mocked(window.clubhouse.agent.deleteCommitPush).mockResolvedValue({ ok: true, message: '' });
-      vi.mocked(window.clubhouse.agent.deleteCleanupBranch).mockResolvedValue({ ok: true, message: '' });
-      vi.mocked(window.clubhouse.agent.deleteSavePatch).mockResolvedValue({ ok: true, message: '' });
-      vi.mocked(window.clubhouse.agent.deleteForce).mockResolvedValue({ ok: true, message: '' });
-      vi.mocked(window.clubhouse.agent.deleteUnregister).mockResolvedValue({ ok: true, message: '' });
+      vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValue({ ok: true, message: '', deleted: true });
       vi.mocked(window.clubhouse.agent.killAgent).mockResolvedValue(undefined);
       seedAgent({ id: 'target', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
       useAgentStore.setState({ deleteDialogAgent: 'target' });
@@ -1562,40 +1629,30 @@ describe('agentStore', () => {
       expect(result.message).toBe('No agent selected');
     });
 
-    describe.each([
-      ['commit-push', 'deleteCommitPush'],
-      ['cleanup-branch', 'deleteCleanupBranch'],
-      ['save-patch', 'deleteSavePatch'],
-      ['force', 'deleteForce'],
-      ['unregister', 'deleteUnregister'],
-    ] as const)('mode: %s', (mode, ipcMethod) => {
-      it('calls correct IPC method and removes agent on success', async () => {
+    describe.each(['commit-push', 'cleanup-branch', 'save-patch', 'force', 'unregister'] as const)('mode: %s', (mode) => {
+      it('deletes in main with that mode and removes agent on success', async () => {
         const result = await getState().executeDelete(mode, projectPath);
-        expect((window.clubhouse.agent as any)[ipcMethod]).toHaveBeenCalledWith(projectPath, 'target');
+        expect(window.clubhouse.agent.deleteAgent).toHaveBeenCalledWith(projectPath, 'target', mode, undefined);
         expect(result.ok).toBe(true);
         expect(getState().agents['target']).toBeUndefined();
         expect(getState().deleteDialogAgent).toBeNull();
       });
 
-      it('keeps agent in store when IPC returns failure', async () => {
-        vi.mocked((window.clubhouse.agent as any)[ipcMethod]).mockResolvedValueOnce({ ok: false, message: 'git error' });
+      it('keeps agent in store when the delete fails', async () => {
+        vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValueOnce({ ok: false, message: 'git error' });
         const result = await getState().executeDelete(mode, projectPath);
-        expect(result.ok).toBe(false);
+        expect(result).toEqual({ ok: false, message: 'git error' });
         expect(getState().agents['target']).toBeDefined();
       });
     });
 
-    it('kills running agent before any deletion mode', async () => {
+    it('leaves stopping the agent itself to main', async () => {
       useAgentStore.setState({
         agents: { target: { ...getState().agents['target'], status: 'running' } as Agent },
       });
       await getState().executeDelete('force', projectPath);
-      expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('target', projectPath);
-    });
-
-    it('does not kill sleeping agent', async () => {
-      await getState().executeDelete('force', projectPath);
       expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
+      expect(window.clubhouse.agent.deleteAgent).toHaveBeenCalledWith(projectPath, 'target', 'force', undefined);
     });
 
     it('kills and removes child quick agents before deleting durable parent', async () => {
@@ -1610,26 +1667,20 @@ describe('agentStore', () => {
     });
 
     it('save-patch returns cancelled without removing agent', async () => {
-      vi.mocked(window.clubhouse.agent.deleteSavePatch).mockResolvedValueOnce({ ok: false, message: 'cancelled' });
+      vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValueOnce({ ok: false, message: 'cancelled' });
       const result = await getState().executeDelete('save-patch', projectPath);
       expect(result.ok).toBe(false);
       expect(result.message).toBe('cancelled');
       expect(getState().agents['target']).toBeDefined();
     });
 
-    it('clears deleteDialogAgent on successful deletion', async () => {
-      expect(getState().deleteDialogAgent).toBe('target');
-      await getState().executeDelete('force', projectPath);
-      expect(getState().deleteDialogAgent).toBeNull();
-    });
-
     it('preserves deleteDialogAgent on failed deletion', async () => {
-      vi.mocked(window.clubhouse.agent.deleteForce).mockResolvedValueOnce({ ok: false, message: 'error' });
+      vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValueOnce({ ok: false, message: 'error' });
       await getState().executeDelete('force', projectPath);
       expect(getState().deleteDialogAgent).toBe('target');
     });
 
-    describe('helpers (#2224)', () => {
+    describe('helpers (#2224, #3182)', () => {
       const helperConfigs = [
         { id: 'helper_1', name: 'scout', color: 'blue', createdAt: 'x', parentAgentId: 'target' },
         { id: 'helper_2', name: 'fixer', color: 'red', createdAt: 'x', parentAgentId: 'target' },
@@ -1637,9 +1688,10 @@ describe('agentStore', () => {
 
       beforeEach(() => {
         vi.mocked(window.clubhouse.agent.listHelpers).mockResolvedValue(helperConfigs.map((config) => ({ projectId: 'proj_1', projectPath, config })));
-        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockImplementation(async (_p, _id, choice) => ({
-          ok: true, message: '', helperIds: choice === 'dispose' ? ['helper_1', 'helper_2'] : ['helper_1', 'helper_2'],
-        }));
+        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockResolvedValue({ ok: true, message: '', helperIds: ['helper_1', 'helper_2'] });
+        vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValue({
+          ok: true, message: 'Force deleted', deleted: true, helpers: { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['helper_1', 'helper_2'] },
+        });
         seedAgent({ id: 'helper_1', projectId: 'proj_1', status: 'running', kind: 'durable' });
         seedAgent({ id: 'helper_2', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
       });
@@ -1647,28 +1699,27 @@ describe('agentStore', () => {
       it('refuses to delete an orchestrator until a helper choice is made', async () => {
         const result = await getState().executeDelete('force', projectPath);
         expect(result.ok).toBe(false);
-        expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
+        expect(window.clubhouse.agent.deleteAgent).not.toHaveBeenCalled();
         expect(window.clubhouse.agent.resolveHelpersForDelete).not.toHaveBeenCalled();
         expect(getState().agents['target']).toBeDefined();
       });
 
-      it('dispose: checks first, stops running helpers, disposes them, then deletes', async () => {
+      it('dispose: checks first, then main disposes the helpers and deletes the orchestrator in one call', async () => {
         const result = await getState().executeDelete('force', projectPath, 'dispose');
 
         expect(result.ok).toBe(true);
-        const resolve = vi.mocked(window.clubhouse.agent.resolveHelpersForDelete);
-        expect(resolve.mock.calls).toEqual([
-          [projectPath, 'target', 'dispose', true],
-          [projectPath, 'target', 'dispose'],
-        ]);
-        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('helper_1', projectPath, true);
-        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mock.calls).toEqual([[projectPath, 'target', 'dispose', true]]);
+        expect(window.clubhouse.agent.deleteAgent).toHaveBeenCalledWith(projectPath, 'target', 'force', 'dispose');
+        // Main stops running helpers, in whatever project they are in.
+        expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
         expect(getState().agents['helper_1']).toBeUndefined();
         expect(getState().agents['helper_2']).toBeUndefined();
-        expect(window.clubhouse.agent.deleteForce).toHaveBeenCalledWith(projectPath, 'target');
+        expect(getState().agents['target']).toBeUndefined();
+        expect(getState().deleteDialogAgent).toBeNull();
       });
 
       it('dispose: dirty, unpushed or unchecked helpers block the whole delete before anything stops', async () => {
+        seedAgent({ id: 'child_1', projectId: 'proj_1', status: 'running', kind: 'quick', parentAgentId: 'target' });
         vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockResolvedValueOnce({
           ok: false,
           message: 'blocked',
@@ -1686,22 +1737,24 @@ describe('agentStore', () => {
         expect(result.message).toBe(
           "Nothing was deleted. Disposing would lose work in scout (2 uncommitted files), fixer (1 unpushed commit), mover (more than 99 unpushed commits) and mapper (couldn't check, fatal: bad object). Keep the helpers, or commit and push their work first.",
         );
-        expect(window.clubhouse.agent.resolveHelpersForDelete).toHaveBeenCalledTimes(1);
         expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
-        expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
+        expect(window.clubhouse.agent.deleteAgent).not.toHaveBeenCalled();
         expect(getState().agents['target']).toBeDefined();
         expect(getState().agents['helper_1']).toBeDefined();
+        expect(getState().agents['child_1']).toBeDefined();
       });
 
       it('dispose: a helper that fails part way keeps the orchestrator, and the disposed ones leave the rail', async () => {
-        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete)
-          .mockResolvedValueOnce({ ok: true, message: '', helperIds: ['helper_1', 'helper_2'] })
-          .mockResolvedValueOnce({
+        vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValueOnce({
+          ok: false,
+          message: 'Disposed 1 of 2 helpers',
+          helpers: {
             ok: false,
             message: 'Disposed 1 of 2 helpers',
             helperIds: ['helper_2'],
             failed: [{ agentId: 'helper_1', name: 'scout', reason: 'EBUSY: resource busy or locked' }],
-          });
+          },
+        });
 
         const result = await getState().executeDelete('force', projectPath, 'dispose');
 
@@ -1712,32 +1765,34 @@ describe('agentStore', () => {
         expect(getState().agents['helper_2']).toBeUndefined();
         expect(getState().agents['helper_1']).toBeDefined();
         expect(getState().agents['target']).toBeDefined();
-        expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
+        expect(getState().deleteDialogAgent).toBe('target');
       });
 
-      it('dispose: stops a running helper in another project under that project (#2514)', async () => {
-        const otherPath = path.join(os.tmpdir(), 'other-project');
-        vi.mocked(window.clubhouse.agent.listHelpers).mockResolvedValue([
-          { projectId: 'proj_1', projectPath, config: helperConfigs[0] },
-          { projectId: 'proj_2', projectPath: otherPath, config: { id: 'helper_x', name: 'annex-ui', color: 'teal', createdAt: 'x', parentAgentId: 'target', parentProjectPath: projectPath } },
-        ]);
-        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockResolvedValue({ ok: true, message: '', helperIds: ['helper_1', 'helper_x'] });
-        seedAgent({ id: 'helper_x', projectId: 'proj_2', status: 'running', kind: 'durable' });
+      it('dispose: helpers disposed before the orchestrator\'s own delete failed still leave the rail', async () => {
+        vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValueOnce({
+          ok: false,
+          message: 'The agent is changing state. Refresh before trying again.',
+          helpers: { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['helper_1', 'helper_2'] },
+        });
 
         const result = await getState().executeDelete('force', projectPath, 'dispose');
 
-        expect(result.ok).toBe(true);
-        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('helper_1', projectPath, true);
-        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('helper_x', otherPath, true);
-        expect(getState().agents['helper_x']).toBeUndefined();
+        expect(result).toEqual({ ok: false, message: 'The agent is changing state. Refresh before trying again.' });
+        expect(getState().agents['helper_1']).toBeUndefined();
+        expect(getState().agents['helper_2']).toBeUndefined();
+        expect(getState().agents['target']).toBeDefined();
       });
 
-      it('keep: releases helpers without stopping them, then deletes', async () => {
+      it('keep: main releases the helpers without stopping them, then deletes', async () => {
+        vi.mocked(window.clubhouse.agent.deleteAgent).mockResolvedValueOnce({
+          ok: true, message: 'Force deleted', deleted: true, helpers: { ok: true, message: 'Kept 2 helper(s)', helperIds: ['helper_1', 'helper_2'] },
+        });
+
         const result = await getState().executeDelete('force', projectPath, 'keep');
 
         expect(result.ok).toBe(true);
-        expect(window.clubhouse.agent.resolveHelpersForDelete).toHaveBeenCalledWith(projectPath, 'target', 'keep');
-        expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
+        expect(window.clubhouse.agent.resolveHelpersForDelete).not.toHaveBeenCalled();
+        expect(window.clubhouse.agent.deleteAgent).toHaveBeenCalledWith(projectPath, 'target', 'force', 'keep');
         expect(getState().agents['helper_1']).toBeDefined();
         expect(getState().agents['helper_2']).toBeDefined();
         expect(getState().agents['target']).toBeUndefined();

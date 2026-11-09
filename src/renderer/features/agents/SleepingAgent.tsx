@@ -9,6 +9,7 @@ import { PopupMenu, type MenuEntry } from '../../components/PopupMenu';
 import { Button } from '../../components/Button';
 import { Tooltip } from '../../components/Tooltip';
 import { SleepingMascot } from './SleepingMascots';
+import { AgentAvatar } from './AgentAvatar';
 import { SessionPickerDialog } from './SessionPickerDialog';
 import { SessionNamePromptDialog } from './SessionNamePromptDialog';
 import { AgentContextMenu, OverflowIcon, useAgentRowActions } from './useAgentRowActions';
@@ -66,6 +67,9 @@ function cliName(orchestrator?: string): string {
  * In the main pane it has the same Agent details toggle and column as a
  * running agent (#2281), in the same place and sharing the open state, so the
  * column stays put as the agent sleeps and wakes.
+ *
+ * The Dispatcher gets its own wake page (#3184): its avatar instead of a
+ * provider mascot, its own words, and none of an agent's branch or files.
  */
 export function SleepingAgent({ agent, details = false }: {
   agent: Agent;
@@ -181,7 +185,7 @@ export function SleepingAgent({ agent, details = false }: {
   const mascotSize = compact ? 56 : 88;
   const shortcut = window.clubhouse?.platform === 'darwin' ? '⌘↵' : 'Ctrl+Enter';
 
-  const headline = failed ? `${agent.name} couldn't start` : isDurable ? greeting : 'Session ended';
+  const headline = failed ? `${agent.name} couldn't start` : isDispatcher ? `${agent.name} is asleep` : isDurable ? greeting : 'Session ended';
   const subline = failed ? (
     <>
       <span className="font-mono text-xs text-ctp-subtext1" data-testid="launch-error">
@@ -189,6 +193,8 @@ export function SleepingAgent({ agent, details = false }: {
       </span>{' '}
       Check that the CLI is installed and signed in, then retry.
     </>
+  ) : isDispatcher ? (
+    `Ask ${agent.name} something to wake it, or press Wake to carry on where you left off.`
   ) : isDurable ? (
     `${agent.name} is sleeping. Give it a task to wake up with, or press Wake to pick up where it left off.`
   ) : (
@@ -244,7 +250,7 @@ export function SleepingAgent({ agent, details = false }: {
           </>
         )}
       />
-      {isDurable && <HelperHeader agent={agent} />}
+      {isDurable && !isDispatcher && <HelperHeader agent={agent} />}
 
       <div className="flex-1 min-h-0 flex">
         <div ref={contentRef} className="flex-1 min-w-0 overflow-y-auto">
@@ -252,7 +258,9 @@ export function SleepingAgent({ agent, details = false }: {
             className="mx-auto w-full max-w-[652px] px-4 pb-8 flex flex-col items-center text-center"
             style={{ paddingTop: compact ? 24 : 'clamp(32px, 11vh, 92px)' }}
           >
-            {hasOwnIcon ? (
+            {isDispatcher ? (
+              <span data-testid="dispatcher-wake-avatar"><AgentAvatar agent={agent} size="lg" iconUrl={storeIconUrl} /></span>
+            ) : hasOwnIcon ? (
               <AgentIconTile agent={agent} iconUrl={storeIconUrl} size={compact ? 40 : 56} />
             ) : (
               <SleepingMascot orchestrator={cli} size={mascotSize} error={failed} />
@@ -263,10 +271,10 @@ export function SleepingAgent({ agent, details = false }: {
 
             {isDurable && (
               <div
-                className={`relative w-full ${hasOwnIcon && !compact ? 'mt-[46px]' : 'mt-[22px]'} rounded-lg border border-surface-1 bg-ctp-mantle text-left focus-within:border-surface-2`}
+                className={`relative w-full ${hasOwnIcon && !compact && !isDispatcher ? 'mt-[46px]' : 'mt-[22px]'} rounded-lg border border-surface-1 bg-ctp-mantle text-left focus-within:border-surface-2`}
                 data-testid="wake-composer"
               >
-                {hasOwnIcon && !compact && (
+                {hasOwnIcon && !compact && !isDispatcher && (
                   <span className="absolute right-4 -top-[41px] pointer-events-none">
                     <SleepingMascot orchestrator={cli} size={48} error={failed} />
                   </span>
@@ -277,7 +285,7 @@ export function SleepingAgent({ agent, details = false }: {
                   onKeyDown={onComposerKey}
                   rows={2}
                   aria-label={`Task for ${agent.name}`}
-                  placeholder={failed ? 'Retry with a task, or leave this empty to retry the last session' : `Describe a task for ${agent.name}`}
+                  placeholder={failed ? 'Retry with a task, or leave this empty to retry the last session' : isDispatcher ? `Ask ${agent.name} something` : `Describe a task for ${agent.name}`}
                   data-testid="wake-task-input"
                   className="block w-full min-h-[58px] max-h-48 resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-normal text-ctp-text placeholder:text-ctp-overlay0 outline-none"
                 />
@@ -329,10 +337,11 @@ export function SleepingAgent({ agent, details = false }: {
             {/* An orchestrator's cards sit here while asleep (#2232), unless the details column shows them. */}
             {!compact && !detailsOpen && isDurable && !isRemote && agentProject && <SleepingOrchestration agent={agent} projectPath={agentProject.path} />}
 
-            {!compact && last && ((last.loading && last.sessionId) || last.summary || last.filesModified.length > 0 || agent.branch) && (
+            {/* The Dispatcher's last session is its conversation: no branch or files. */}
+            {!compact && last && ((last.loading && last.sessionId) || last.summary || (!isDispatcher && (last.filesModified.length > 0 || agent.branch))) && (
               <LastSession
-                info={last}
-                branch={agent.branch}
+                info={isDispatcher ? { ...last, filesModified: [] } : last}
+                branch={isDispatcher ? undefined : agent.branch}
                 baseDir={agent.worktreePath || agentProject?.path}
                 onBrowse={agentProject ? () => setSessionPickerOpen(true) : undefined}
               />

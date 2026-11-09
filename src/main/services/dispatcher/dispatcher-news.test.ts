@@ -12,10 +12,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.base }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [] } }));
-vi.mock('../agent-config', () => ({ getDurableConfig: vi.fn(async () => null) }));
 vi.mock('./dispatcher-service', () => ({
-  defaultDispatcherOrchestrator: () => 'claude-code',
-  getDispatcherAgentId: () => 'coordinator',
   isDispatcherIdentityAgentId: (id: string) => id === 'coordinator' || id === 'chat',
 }));
 vi.mock('./dispatcher-channel', () => ({
@@ -29,7 +26,7 @@ import {
   type ChatDecision, type ChatMessage, type GroupChatDeps,
 } from './dispatcher-news';
 import { recordAgentMessage } from './dispatcher-news-inbox';
-import type { RewriteRequest, RewriteResult } from './dispatcher-rewrite';
+import { groupChatMessage } from '../../../shared/dispatcher-group-chat';
 import { captureEvents, type EventCapture } from '../../telemetry/__test-utils__/event-capture';
 
 const T0 = 1_700_000_000_000;
@@ -39,17 +36,18 @@ h.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-news-test-'));
 afterAll(() => fs.rmSync(h.base, { recursive: true, force: true }));
 
 function deps(overrides: Partial<GroupChatDeps> = {}) {
-  const rewrite = vi.fn(async (req: RewriteRequest): Promise<RewriteResult> => ({ text: `Rewritten: ${req.raw ?? req.fallback}`.slice(0, 80), by: 'rewrite' }));
   return {
-    rewrite,
     deps: {
       now: () => now,
-      provider: async () => 'claude-code',
       findAgent: (from: string) => (from === 'api-lead' ? { agentId: 'a2', name: 'api-lead' } : null),
-      rewrite,
       ...overrides,
     } satisfies GroupChatDeps,
   };
+}
+
+/** What the user sees of a message the chat receives, before the chat's own reply: nothing, for news (#3193). */
+function seenInChat(message: ChatMessage) {
+  return groupChatMessage({ source: 'mcp', text: message.text, routed: message.routed }, { ownAgentIds: new Set(['coordinator', 'chat']) });
 }
 
 function shown(decision: ChatDecision): ChatMessage {
@@ -63,76 +61,154 @@ beforeEach(async () => {
   now = T0;
 });
 
-describe('agent news shown now', () => {
-  it('shows under the agent\'s name, rewritten from what it sent, on the Dispatcher\'s provider', async () => {
-    recordAgentMessage('a1', 'webapp-lead', 'TASK_RESULT:t_1abcdef: Fixed Safari checkout in #412, 41 tests pass.', now);
-    const { deps: d, rewrite } = deps();
-    const deliver = createGroupChatDelivery(d);
-    const message = shown(await deliver({ message: 'Checkout is fixed.', from: 'webapp-lead', kind: 'needs_user' }));
-    expect(rewrite).toHaveBeenCalledWith({
-      provider: 'claude-code', agentName: 'webapp-lead', raw: 'TASK_RESULT:t_1abcdef: Fixed Safari checkout in #412, 41 tests pass.', fallback: 'Checkout is fixed.',
-    });
-    expect(message.routed).toEqual([{ sender: { agentId: 'a1', name: 'webapp-lead' }, text: expect.stringMatching(/^Rewritten: /) }]);
-    // The chat is told the person has read it, so it doesn't repeat it.
+describe('agent news shown now (#3193)', () => {
+  it('reaches the chat to say in its own voice, naming the agent, and shows no row of its own', async () => {
+    recordAgentMessage('a1', 'webapp-lead', now);
+    const deliver = createGroupChatDelivery(deps().deps);
+    const message = shown(await deliver({ message: 'Can I merge #412 now, or wait for the release?', from: 'webapp-lead', kind: 'needs_user' }));
     expect(message.text.startsWith('[FROM:Clubhouse]')).toBe(true);
-    expect(message.text).toContain('has already read it');
+    expect(message.text).toContain('webapp-lead needs the user');
+    expect(message.text).toContain('Can I merge #412 now, or wait for the release?');
+    // The user answers in the chat, never by replying to the agent.
+    expect(message.text).toContain('They answer here');
+    expect(message.text).toContain('start_work');
+    // Nothing shows until the chat says it, so its reply is the only time the user reads it.
+    expect(message.routed).toEqual([{ fromClubhouse: true, text: 'Can I merge #412 now, or wait for the release?' }]);
+    expect(seenInChat(message)).toBeNull();
   });
 
-  it('takes the raw message once: the next news from that agent has none of it', async () => {
-    recordAgentMessage('a1', 'webapp-lead', 'First report.', now);
-    const { deps: d, rewrite } = deps();
-    const deliver = createGroupChatDelivery(d);
-    await deliver({ message: 'First.', from: 'a1', kind: 'needs_user' });
-    await deliver({ message: 'Second thing needs you.', from: 'webapp-lead', kind: 'needs_user' });
-    // Not in the inbox any more, so the name is found among the wired agents, or not at all.
-    expect(rewrite).toHaveBeenCalledTimes(1);
+  it('asks for no acknowledgment turn: the chat\'s reply is the news', async () => {
+    const deliver = createGroupChatDelivery(deps().deps);
+    h.handOff = null;
+    installGroupChat(deps().deps);
+    h.handOff!();
+    const answer = shown(await (h.delivery as (r: unknown) => Promise<ChatDecision>)({ message: 'Checkout is fixed in #412.', from: 'api-lead', kind: 'answer' }));
+    const question = shown(await deliver({ message: 'Which branch should I release from?', from: 'api-lead', kind: 'needs_user' }));
+    for (const message of [answer, question]) {
+      expect(message.text).toContain('no acknowledgment');
+      expect(message.text).not.toContain('already read');
+      expect(seenInChat(message)).toBeNull();
+    }
+    expect(answer.text).toContain('News from api-lead that answers what the user asked');
+  });
+
+  it('keeps the whole question, cleaned of tool noise but not cut to two sentences', async () => {
+    const message = 'For Dispatcher model settings (#3191), should I add (A) separate choices, (B) rows on the presets page, or (C) one choice? '
+      + 'The device issue is narrowed down. A phone check is pending (task_id=t_1abcdef).';
+    const decision = shown(await createGroupChatDelivery(deps().deps)({ message, from: 'api-lead', kind: 'needs_user' }));
+    expect(decision.routed[0].text).toContain('A phone check is pending.');
+    expect(decision.text).not.toContain('task_id');
+  });
+
+  it('shows a question that needs the user once', async () => {
+    const deliver = createGroupChatDelivery(deps().deps);
+    shown(await deliver({ message: 'Should deletion be on by default?', from: 'api-lead', kind: 'needs_user' }));
+    expect(await deliver({ message: 'should deletion be on by default', from: 'api-lead', kind: 'needs_user' }))
+      .toEqual({ hold: 'never', reason: 'The user was already told this.' });
   });
 
   it('finds an agent that hasn\'t messaged lately among the agents wired to the Dispatcher', async () => {
-    const { deps: d, rewrite } = deps();
-    const message = shown(await createGroupChatDelivery(d)({ message: 'Deploy is blocked on a key.', from: 'api-lead', kind: 'needs_user' }));
-    expect(rewrite.mock.calls[0][0]).toMatchObject({ agentName: 'api-lead', raw: undefined, fallback: 'Deploy is blocked on a key.' });
-    expect(message.routed[0].sender).toEqual({ agentId: 'a2', name: 'api-lead' });
+    const message = shown(await createGroupChatDelivery(deps().deps)({ message: 'Deploy is blocked on a key.', from: 'api-lead', kind: 'needs_user' }));
+    expect(message.text).toContain('api-lead needs the user');
   });
 
-  it('uses the Dispatcher\'s version when the rewrite fails outright', async () => {
-    recordAgentMessage('a1', 'webapp-lead', 'raw', now);
-    const { deps: d } = deps({ rewrite: async () => { throw new Error('boom'); } });
-    const message = shown(await createGroupChatDelivery(d)({ message: 'Checkout is fixed (task_id=t_1abcdef).', from: 'a1', kind: 'needs_user' }));
-    expect(message.routed[0].text).toBe('Checkout is fixed.');
-  });
-
-  it('keeps reports in the order they were made, even when a rewrite is slow', async () => {
-    recordAgentMessage('a1', 'webapp-lead', 'slow one', now);
-    let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
+  it('keeps reports in the order they were made', async () => {
     const order: string[] = [];
-    const { deps: d } = deps({
-      rewrite: async (req) => { if (req.raw === 'slow one') await gate; return { text: req.fallback, by: 'fallback' }; },
-    });
-    const deliver = createGroupChatDelivery(d);
-    const first = deliver({ message: 'First.', from: 'a1', kind: 'needs_user' }).then(() => order.push('first'));
+    const deliver = createGroupChatDelivery(deps().deps);
+    const first = deliver({ message: 'First.', from: 'api-lead', kind: 'needs_user' }).then(() => order.push('first'));
     const second = deliver({ message: 'Second.', kind: 'needs_user' }).then(() => order.push('second'));
-    release();
     await Promise.all([first, second]);
     expect(order).toEqual(['first', 'second']);
   });
 });
 
+describe('news that names an agent Clubhouse can\'t find (#3193)', () => {
+  it('is still that agent\'s news, under the name given, and doesn\'t answer the user\'s request', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    h.handOff!();
+    const message = shown(await deliver({ message: 'Should I tag from main?', from: 'release-lead', kind: 'needs_user' }));
+    expect(message.text).toContain('release-lead needs the user');
+    // The request is still open, so the Dispatcher's own answer to it shows.
+    expect(isChatHold(await deliver({ message: 'Tagged 1.0.', kind: 'answer' }))).toBe(false);
+  });
+});
+
+describe('news that never reached the chat (#3193)', () => {
+  it('can be sent again, and reopens the request it answered', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    h.handOff!();
+    const first = shown(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }));
+    first.notDelivered!();
+    // Not a repeat, and the request is open again.
+    const again = shown(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }));
+    // Delivered this time: now it is a repeat, and the request is closed.
+    expect(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' })).toEqual({ hold: 'never', reason: 'The user was already told this.' });
+    expect(again.text).toContain('Tagged 1.0.');
+    expect(isChatHold(await deliver({ message: 'Tagged 1.0.1.', from: 'api-lead', kind: 'answer' }))).toBe(true);
+  });
+
+  it('holds again what a check-in took', async () => {
+    const deliver = createGroupChatDelivery(deps().deps);
+    await deliver({ message: 'Lint is green.', from: 'api-lead', kind: 'routine' });
+    const checkIn = shown(await deliver({ message: 'One thing changed.', kind: 'check_in' }));
+    expect(heldNews()).toEqual([]);
+    checkIn.notDelivered!();
+    expect(heldNews().map((n) => n.text)).toEqual(['Lint is green.']);
+  });
+});
+
+describe('an agent\'s routine traffic stays out of the chat (#3193)', () => {
+  it('holds routine progress for the check-in', async () => {
+    const deliver = createGroupChatDelivery(deps().deps);
+    expect(await deliver({ message: 'Five helpers are running.', from: 'api-lead', kind: 'routine' }))
+      .toEqual({ hold: 'later', reason: 'Held for the next check-in summary.' });
+  });
+
+  it('holds an agent\'s later "answer" once the Dispatcher has replied to each request', async () => {
+    // As on 2026-11-08: the user's requests got replies that weren't answers (questions back, problems),
+    // so they stayed open, and an orchestrator's progress, called an answer, showed in the chat.
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    h.handOff!();
+    shown(await deliver({ message: 'Which project should that go in?', kind: 'needs_user' }));
+    h.handOff!();
+    shown(await deliver({ message: 'Scheduled for 8:24 PM.', kind: 'answer' }));
+    expect(await deliver({ message: 'I confirmed why the tool was missing.', from: 'api-lead', kind: 'answer' }))
+      .toEqual({ hold: 'later', reason: expect.stringContaining('no open request') });
+  });
+
+  it('still shows an agent\'s answer to a request the Dispatcher passed on', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    h.handOff!();
+    expect(isChatHold(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }))).toBe(false);
+  });
+
+  it('an agent\'s question doesn\'t answer the user\'s request', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    h.handOff!();
+    shown(await deliver({ message: 'Should I tag from main?', from: 'api-lead', kind: 'needs_user' }));
+    expect(isChatHold(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }))).toBe(false);
+  });
+});
+
 describe('the Dispatcher\'s own words', () => {
   it('reach the chat as a Clubhouse update, which the group chat doesn\'t show by name', async () => {
-    const { deps: d, rewrite } = deps();
+    const { deps: d } = deps();
     const message = shown(await createGroupChatDelivery(d)({ message: 'release-lead is asleep. Want me to wake it?' }));
     expect(message.routed).toEqual([{ fromClubhouse: true, text: 'release-lead is asleep. Want me to wake it?' }]);
-    expect(rewrite).not.toHaveBeenCalled();
+    expect(message.text).toContain('News for the user.');
   });
 
   it('are its own even when it names one of its own agents', async () => {
-    recordAgentMessage('chat', 'Conversation', 'x', now);
-    const { deps: d, rewrite } = deps({ findAgent: () => ({ agentId: 'coordinator', name: 'Dispatcher' }) });
+    recordAgentMessage('chat', 'Conversation', now);
+    const { deps: d } = deps({ findAgent: () => ({ agentId: 'coordinator', name: 'Dispatcher' }) });
     const message = shown(await createGroupChatDelivery(d)({ message: 'All done.', from: 'Dispatcher', kind: 'needs_user' }));
     expect(message.routed[0].fromClubhouse).toBe(true);
-    expect(rewrite).not.toHaveBeenCalled();
+    expect(message.text).toContain('News for the user.');
   });
 
   it('never shows tool noise', async () => {
@@ -145,13 +221,12 @@ describe('the Dispatcher\'s own words', () => {
 
 describe('news held for a check-in', () => {
   it('holds routine news, then shows it with the next check-in, and only then', async () => {
-    const { deps: d, rewrite } = deps();
+    const { deps: d } = deps();
     const deliver = createGroupChatDelivery(d);
     expect(await deliver({ message: 'Nothing new.', kind: 'check_in' })).toEqual({ hold: 'never', reason: expect.stringContaining('Nothing changed') });
 
-    recordAgentMessage('a1', 'webapp-lead', 'lint fixed', now);
+    recordAgentMessage('a1', 'webapp-lead', now);
     expect(await deliver({ message: 'Lint is green again.', from: 'a1', kind: 'routine' })).toEqual({ hold: 'later', reason: 'Held for the next check-in summary.' });
-    expect(rewrite).not.toHaveBeenCalled();
     expect(heldNews()).toEqual([{ text: 'Lint is green again.', fromAgentId: 'a1', fromName: 'webapp-lead', at: T0 }]);
 
     const checkIn = shown(await deliver({ message: 'webapp-lead fixed lint.', kind: 'check_in' }));
@@ -177,10 +252,9 @@ describe('news held for a check-in', () => {
     const deliver = createGroupChatDelivery(d);
     shown(await deliver({ message: 'Can I merge #412?', kind: 'needs_user' }));
     expect(await deliver({ message: 'can I merge #412', kind: 'needs_user' })).toEqual({ hold: 'never', reason: 'The user was already told this.' });
-    // An agent's news is a repeat by what the Dispatcher wrote, whatever the rewrite made of it.
-    recordAgentMessage('a1', 'webapp-lead', 'raw words', now);
+    // An agent's news is a repeat whether the Dispatcher names it by id or by name.
+    recordAgentMessage('a1', 'webapp-lead', now);
     shown(await deliver({ message: 'Checkout is fixed.', from: 'a1', kind: 'needs_user' }));
-    recordAgentMessage('a1', 'webapp-lead', 'raw again', now);
     expect(await deliver({ message: 'Checkout is fixed', from: 'webapp-lead', kind: 'needs_user' })).toEqual({ hold: 'never', reason: 'The user was already told this.' });
   });
 });
@@ -219,8 +293,8 @@ describe('triage telemetry (#3052)', () => {
 
   it('records each outcome while telemetry is on, with no names or text', async () => {
     capture = captureEvents();
-    recordAgentMessage('a1', 'acme-webapp-lead', 'Fixed the Acme checkout for alice@example.com in /Users/alice/acme', now);
-    const { deps: d } = deps({ rewrite: async () => ({ text: '', by: 'fallback', reason: 'no_valid_mapping' }) });
+    recordAgentMessage('a1', 'acme-webapp-lead', now);
+    const { deps: d } = deps();
     const deliver = createGroupChatDelivery(d);
     await deliver({ message: 'Acme checkout is fixed.', from: 'a1', kind: 'needs_user' });
     await deliver({ message: 'Acme nightly build passed.', from: 'api-lead', kind: 'routine' });
@@ -234,8 +308,7 @@ describe('triage telemetry (#3052)', () => {
     expect(outcomes()).toEqual([
       {
         'clubhouse.dispatcher.news.kind': 'needs_user', 'clubhouse.dispatcher.news.show': 'now', 'clubhouse.dispatcher.news.reason': 'needs_user',
-        'clubhouse.dispatcher.news.from_agent': true,
-        'clubhouse.dispatcher.news.rewrite': 'fallback', 'clubhouse.dispatcher.news.rewrite_reason': 'no_valid_mapping',
+        'clubhouse.dispatcher.news.from_agent': true, ...base,
       },
       { 'clubhouse.dispatcher.news.kind': 'routine', 'clubhouse.dispatcher.news.show': 'later', 'clubhouse.dispatcher.news.reason': 'routine', 'clubhouse.dispatcher.news.from_agent': true, ...base },
       { 'clubhouse.dispatcher.news.kind': 'routine', 'clubhouse.dispatcher.news.show': 'never', 'clubhouse.dispatcher.news.reason': 'duplicate', 'clubhouse.dispatcher.news.from_agent': true, ...base },

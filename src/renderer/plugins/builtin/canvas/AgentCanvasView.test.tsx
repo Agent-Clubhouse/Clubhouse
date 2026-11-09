@@ -4,7 +4,7 @@
  * store yet (timing issue during remote canvas hydration), and the create-
  * from-card flow (LB-M68).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
@@ -59,6 +59,8 @@ vi.mock('../../../features/agents/AddAgentDialog', () => ({
 import { AgentCanvasView } from './AgentCanvasView';
 import type { AgentCanvasView as AgentCanvasViewType } from './canvas-types';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
+import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
+import { useDispatcherStore } from '../../../features/dispatcher/dispatcherStore';
 
 const noop = () => {};
 
@@ -568,5 +570,42 @@ describe('AgentCanvasView — one card per agent (#2415)', () => {
     render(<AgentCanvasView view={view} api={stubApi({ agents })} onUpdate={onUpdate} onFocusAgentCard={() => false} />);
     fireEvent.click(screen.getByTestId('canvas-agent-pick-agent-7'));
     expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent-7' }));
+  });
+});
+
+describe('AgentCanvasView and the Dispatcher (#3184)', () => {
+  const agents = [
+    { id: 'agent-1', name: 'Alpha', status: 'running', kind: 'durable', projectId: 'proj-1' },
+    { id: 'disp', name: 'Navi', status: 'running', kind: 'durable', projectId: DISPATCHER_PROJECT_ID },
+    // Recognised by its id even with the wrong projectId (#2552).
+    { id: 'disp-chat', name: 'Navi', status: 'running', kind: 'durable', projectId: 'proj-1' },
+  ];
+  beforeEach(() => {
+    useDispatcherStore.setState({ state: { agentId: 'disp', chatAgentId: 'disp-chat' } } as never);
+  });
+  afterEach(() => {
+    useDispatcherStore.setState({ state: null } as never);
+  });
+
+  it('leaves the Dispatcher out of the agent picker', () => {
+    render(<AgentCanvasView view={makeView({ agentId: null })} api={stubApi({ agents })} onUpdate={noop} />);
+    expect(screen.getByTestId('canvas-agent-pick-agent-1')).toBeTruthy();
+    expect(screen.queryByTestId('canvas-agent-pick-disp')).toBeNull();
+    expect(screen.queryByTestId('canvas-agent-pick-disp-chat')).toBeNull();
+  });
+
+  it('a card that names the Dispatcher shows where it lives, not its chat', () => {
+    render(<AgentCanvasView view={makeView({ agentId: 'disp-chat', displayName: 'Navi' })} api={stubApi({ agents })} onUpdate={noop} />);
+    expect(screen.getByTestId('canvas-dispatcher-card')).toHaveTextContent('Dispatcher has its own pane and can’t be on a canvas.');
+    expect(screen.getByRole('button', { name: 'Open Dispatcher' })).toBeTruthy();
+    expect(screen.queryByTestId('agent-view')).toBeNull();
+    expect(screen.queryByText('Connecting...')).toBeNull();
+  });
+
+  it('names the Dispatcher by its display name', () => {
+    useDispatcherStore.setState({ state: { agentId: 'disp', chatAgentId: 'disp-chat', config: { name: 'Navi' } } } as never);
+    render(<AgentCanvasView view={makeView({ agentId: 'disp' })} api={stubApi({ agents })} onUpdate={noop} />);
+    expect(screen.getByTestId('canvas-dispatcher-card')).toHaveTextContent('Navi has its own pane and can’t be on a canvas.');
+    expect(screen.getByRole('button', { name: 'Open Navi' })).toBeTruthy();
   });
 });

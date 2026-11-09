@@ -1,6 +1,7 @@
 import { localMarkdownTarget } from '../../../../utils/local-markdown-links';
 import { isRemoteProjectId } from '../../../../stores/remoteProjectStore';
-import { openLocalFileLink } from '../../../../utils/file-preview';
+import { chatLinkPath, openLocalFileLink } from '../../../../utils/file-preview';
+import { useFilePreviewStore } from '../../../../stores/filePreviewStore';
 import {
   createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react';
@@ -17,7 +18,7 @@ import { findLinkTokens, githubLabel, parseGithubUrl, type GithubRef, type LinkT
 import { useRichChatContent } from './rich-flag';
 import { enrichTextNodes, type TextMatcher } from './text-enrich';
 import { fileMatcher, hydrateFileChips, useFileChips } from './FileChips';
-import { findFilePaths } from './file-paths';
+import { findFilePaths, wholeFilePath } from './file-paths';
 
 /** Tool output longer than this gets links but no file chips. */
 const FILE_CHIP_TEXT_MAX = 200_000;
@@ -35,6 +36,7 @@ const GITHUB_ISSUES_PLUGIN = 'github-issues';
 const HOVER_DELAY_MS = 350;
 
 interface RichLinkContextValue {
+  agentId: string;
   projectId: string | null;
   /** The project's GitHub repo ("owner/repo"), once resolved. */
   repo: string | null;
@@ -207,9 +209,29 @@ export function useTokenHandlers(rich: RichLinkContextValue | null) {
   }, [rich, onClick]);
 }
 
-/** Open a link: the project's own issues in the Issues view when it's installed there, else the browser. */
-export function openLink(href: string, rich: Pick<RichLinkContextValue, 'projectId' | 'repo'> | null, ambiguous = false): void {
-  if (!isRemoteProjectId(rich?.projectId || '') && openLocalFileLink(href)) return;
+/**
+ * A link to a file or folder (#3189), relative ones against the agent's
+ * worktree: a file opens in the viewer, a folder main reveals. One main can't
+ * find falls back to the viewer for an absolute path, which says so.
+ */
+async function openChatLink(agentId: string, href: string): Promise<void> {
+  try {
+    const result = await window.clubhouse.chat.openLink(agentId, href);
+    if (result.kind !== 'file') return;
+    const location = wholeFilePath(href);
+    useFilePreviewStore.getState().open(result.path, location?.line, location?.col);
+  } catch {
+    // telemetry-exempt: a link to nothing stays a link to nothing.
+    openLocalFileLink(href);
+  }
+}
+
+/** Open a link: a local path in the app, the project's own issues in the Issues view when it's installed there, else the browser. */
+export function openLink(href: string, rich: (Pick<RichLinkContextValue, 'projectId' | 'repo'> & { agentId?: string }) | null, ambiguous = false): void {
+  const local = !isRemoteProjectId(rich?.projectId || '');
+  const linkPath = local && rich?.agentId ? chatLinkPath(href) : null;
+  if (linkPath) { void openChatLink(rich!.agentId!, linkPath); return; }
+  if (local && openLocalFileLink(href)) return;
   if (!/^https?:\/\//i.test(href) && !href.startsWith('mailto:')) return;
   const ref = parseGithubUrl(href);
   if (ref && rich?.projectId && rich.repo && ref.repo.toLowerCase() === rich.repo.toLowerCase() && !window.clubhouse.window?.isPopout?.()) {
@@ -368,8 +390,8 @@ export function RichLinkProvider({ agentId, children }: { agentId: string; child
   useEffect(() => clear, []);
 
   const value = useMemo<RichLinkContextValue | null>(
-    () => (enabled ? { projectId, repo, showCard, hideCard } : null),
-    [enabled, projectId, repo, showCard, hideCard],
+    () => (enabled ? { agentId, projectId, repo, showCard, hideCard } : null),
+    [enabled, agentId, projectId, repo, showCard, hideCard],
   );
 
   return (

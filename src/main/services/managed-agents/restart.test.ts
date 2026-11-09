@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 
 const state = vi.hoisted(() => ({ agents: new Map<string, DurableAgentConfig>(), running: new Set<string>() }));
@@ -221,5 +221,100 @@ describe('MCP start problems in the status (#2896, D95)', () => {
     recordMcpStartProblems('mcp-user', [{ server: 'jira', missingEnv: ['JIRA_URL'] }]);
     forgetDelivery('mcp-user');
     expect((await statusFor('/p', 'mcp-user')).mcpProblems).toBeUndefined();
+  });
+});
+
+describe('the setup-changed bar shows only for what a restart delivers (#3197)', () => {
+  const provider = { id: 'claude-code', conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', localSettingsFile: 'settings.local.json' }, writeInstructions: async () => {} } as unknown as OrchestratorProvider;
+  let root: string;
+  let svc: import('./service').ManagedAgentsService;
+  let rules: { id: string; revision: number };
+  const user = async <T>(fn: () => Promise<T>): Promise<T> => (await import('../settings-audit')).withSettingsSurface('ui', undefined, fn);
+
+  beforeEach(async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { createAssetCatalogStore } = await import('../asset-catalog/store');
+    const { createManagedStateStore } = await import('./state-store');
+    const { createManagedAgentsService } = await import('./service');
+    const { _setManagedAgentsForTesting } = await import('./index');
+    const { _resetSettingsAuditForTesting } = await import('../settings-audit');
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-bar-'));
+    _resetSettingsAuditForTesting(false);
+    svc = createManagedAgentsService({
+      catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+      state: createManagedStateStore(path.join(root, 'managed')),
+      listProjects: async () => [],
+      listAgents: async () => [],
+      getAgent: async (_p, id) => state.agents.get(id) ?? null,
+      setManagedSetup: async () => undefined,
+      isRunning: (id) => state.running.has(id),
+    });
+    _setManagedAgentsForTesting(svc);
+    rules = await user(() => svc.createPart({ name: 'Rules', content: { kind: 'block', content: 'Work on @@StandbyBranch.' } }));
+    const worktreePath = path.join(root, 'wt');
+    fs.mkdirSync(worktreePath);
+    state.agents.set('orch', {
+      id: 'orch', name: 'orch', color: 'indigo', createdAt: '', worktreePath, orchestrator: 'claude-code', model: 'opus',
+      orchestration: { orchestrate: true, maxHelpers: 3 },
+      managed: { version: 1, blocks: [rules.id], skills: [], mcps: [] },
+    });
+    state.running.add('orch');
+    const actual = await vi.importActual<typeof import('./delivery')>('./delivery');
+    deliver.mockImplementationOnce(actual.deliverManagedSetup as never);
+    await deliverForSpawn('/p', state.agents.get('orch')!, provider);
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: false, changes: [] });
+  });
+
+  afterEach(async () => {
+    const fs = await import('node:fs');
+    (await import('./index'))._setManagedAgentsForTesting(null);
+    forgetDelivery('orch');
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const orch = () => state.agents.get('orch')!;
+
+  it('shows nothing for orchestration changes: the session reads them live', async () => {
+    orch().orchestration = { orchestrate: true, maxHelpers: 8, control: 'ask-everything', access: 'standard', crossProjectHelpers: true, connectToDispatcher: true, autoHelpers: false };
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: false, changes: [] });
+    orch().orchestration = { orchestrate: false };
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: false, changes: [] });
+  });
+
+  it('shows an instruction block edit', async () => {
+    await user(() => svc.updatePart({ id: rules.id, expectedRevision: rules.revision, content: { kind: 'block', content: 'Work carefully.' } }));
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: true, changes: ['Rules was edited'] });
+  });
+
+  it('shows a CLI change', async () => {
+    orch().orchestrator = 'codex-cli';
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: true, cliChanged: true, changes: ['The CLI changed'] });
+  });
+
+  it('names the launch setting that changed', async () => {
+    orch().model = 'sonnet';
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: true, changes: ['The model changed'] });
+    orch().model = 'opus';
+    orch().effort = 'high';
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: true, changes: ['The effort changed'] });
+    delete orch().effort;
+    orch().access = 'full_access';
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: true, changes: ['Access changed'] });
+    // Ask first and unset start the same way.
+    orch().access = 'ask';
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: false });
+    orch().freeAgentMode = true;
+    expect(await statusFor('/p', 'orch')).toMatchObject({ waiting: true, changes: ['Access changed'] });
+  });
+
+  it('shows orchestration as it is now in "Running now", and the launch settings as started', async () => {
+    const { runningSnapshotFor } = await import('./index');
+    orch().model = 'sonnet';
+    orch().orchestration = { orchestrate: true, maxHelpers: 8 };
+    const snapshot = await runningSnapshotFor('/p', 'orch');
+    expect(snapshot?.settings.find((r) => r.key === 'model')?.value).toBe('opus');
+    expect(snapshot?.settings.find((r) => r.key === 'helpers')?.value).toMatch(/^Up to 8 at once/);
   });
 });

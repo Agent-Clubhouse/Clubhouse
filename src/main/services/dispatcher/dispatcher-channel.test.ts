@@ -45,6 +45,7 @@ vi.mock('../clubhouse-mcp/tools/helper-delivery', () => ({
 import * as agentSystem from '../agent-system';
 import { deliverToDispatcher } from '../clubhouse-mcp/tools/dispatcher-delivery';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { IPC } from '../../../shared/ipc-channels';
 import {
   CHAT_UPDATE_TAG, HAND_OFF_TAG, _resetDispatcherChannelForTesting, deliverToChat, handOffToDispatcher, onHandOff, setChatDelivery,
 } from './dispatcher-channel';
@@ -166,6 +167,38 @@ describe('telling the user, through the chat (#3036)', () => {
       .toEqual({ outcome: 'delivered', held: 'later', reason: 'Held for the next check-in summary.' });
     expect(seen).toEqual([{ message: 'Lint is green.', from: 'webapp-lead', kind: 'routine' }]);
     expect(h.delivered).toEqual([]);
+  });
+
+  it('tells the delivery step when a report didn\'t reach the chat, and notifies the user of a question (#3193)', async () => {
+    h.running.add('chat');
+    h.delivery = 'stopping';
+    const notDelivered = vi.fn();
+    setChatDelivery(() => ({ text: 'ask it', routed: [{ fromClubhouse: true, text: 'Should deletion be on by default?' }], notDelivered }));
+    expect((await deliverToChat('coordinator', { message: 'x', from: 'api-lead', kind: 'needs_user' })).outcome).toBe('stopping');
+    expect(notDelivered).toHaveBeenCalledTimes(1);
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'chat', { title: 'Dispatcher needs you', message: 'Should deletion be on by default?' });
+
+    // An answer that didn't arrive is forgotten as shown too, but isn't worth a notification.
+    vi.mocked(broadcastToAllWindows).mockClear();
+    expect((await deliverToChat('coordinator', { message: 'x', kind: 'answer' })).outcome).toBe('stopping');
+    expect(notDelivered).toHaveBeenCalledTimes(2);
+    expect(broadcastToAllWindows).not.toHaveBeenCalled();
+  });
+
+  it('tells the delivery step when starting the chat throws, and passes the error on', async () => {
+    vi.mocked(agentSystem.spawnAgent).mockRejectedValueOnce(new Error('no CLI'));
+    const notDelivered = vi.fn();
+    setChatDelivery(() => ({ text: 'ask it', routed: [{ fromClubhouse: true, text: 'Which branch?' }], notDelivered }));
+    await expect(deliverToChat('coordinator', { message: 'Which branch?' })).rejects.toThrow('no CLI');
+    expect(notDelivered).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a delivered report alone', async () => {
+    h.running.add('chat');
+    const notDelivered = vi.fn();
+    setChatDelivery(() => ({ text: 'ask it', routed: [{ fromClubhouse: true, text: 'Which branch?' }], notDelivered }));
+    expect((await deliverToChat('coordinator', { message: 'Which branch?' })).outcome).toBe('delivered');
+    expect(notDelivered).not.toHaveBeenCalled();
   });
 
   it('refuses any caller but the Dispatcher, and does nothing while it is off', async () => {

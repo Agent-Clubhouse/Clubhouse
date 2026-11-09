@@ -77,6 +77,8 @@ export const OVERLAP_LABELS: Record<OverlapRule, string> = {
 export interface ActionNames {
   agent(agentId: string): string | undefined;
   project(projectId: string): string | undefined;
+  /** The Dispatcher's display name, when it has one ("Navi"). */
+  dispatcher?(): string | undefined;
 }
 
 const NO_NAMES: ActionNames = { agent: () => undefined, project: () => undefined };
@@ -206,7 +208,7 @@ export function describeSteps(steps: ActionStep[], names: ActionNames = NO_NAMES
 export function describeAction(a: { trigger: ActionTrigger; steps: ActionStep[]; subscription?: true; owner?: ActionOwner }, names: ActionNames = NO_NAMES): string {
   const step = a.steps[0];
   if (a.subscription && a.steps.length === 1 && step?.kind === 'message') {
-    const who = names.agent(step.agentId) ?? (a.owner?.kind === 'dispatcher' || a.owner?.kind === 'app' ? 'the Dispatcher' : 'an agent');
+    const who = names.agent(step.agentId) ?? (a.owner?.kind === 'dispatcher' || a.owner?.kind === 'app' ? names.dispatcher?.() || 'the Dispatcher' : 'an agent');
     return `${describeTrigger(a.trigger, names)} → Tell ${who}`;
   }
   return `${describeTrigger(a.trigger, names)} → ${describeSteps(a.steps, names)}`;

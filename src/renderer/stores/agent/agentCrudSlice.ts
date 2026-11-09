@@ -12,6 +12,29 @@ function creationStatus(config: DurableAgentConfig): Pick<Agent, 'status' | 'err
   return { status: 'sleeping', creationFailed: undefined };
 }
 
+/** A durable agent as loaded from its config, asleep unless its creation is unfinished. */
+function durableAgentFromConfig(projectId: string, config: DurableAgentConfig): Agent {
+  return {
+    id: config.id,
+    projectId,
+    name: config.name,
+    kind: 'durable',
+    ...creationStatus(config),
+    color: config.color,
+    icon: config.icon,
+    emoji: config.emoji,
+    worktreePath: config.worktreePath,
+    branch: config.branch,
+    model: config.model,
+    orchestrator: config.orchestrator,
+    freeAgentMode: config.freeAgentMode,
+    access: config.access,
+    mcpIds: config.mcpIds,
+    lastSleep: config.lastSleep,
+    ...parentLinkFields(config),
+  };
+}
+
 export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCrudSlice {
   return {
     agents: {},
@@ -79,25 +102,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
 
       for (const config of configs) {
         if (!agents[config.id]) {
-          agents[config.id] = {
-            id: config.id,
-            projectId,
-            name: config.name,
-            kind: 'durable',
-            ...creationStatus(config),
-            color: config.color,
-            icon: config.icon,
-            emoji: config.emoji,
-            worktreePath: config.worktreePath,
-            branch: config.branch,
-            model: config.model,
-            orchestrator: config.orchestrator,
-            freeAgentMode: config.freeAgentMode,
-            access: config.access,
-            mcpIds: config.mcpIds,
-            lastSleep: config.lastSleep,
-            ...parentLinkFields(config),
-          };
+          agents[config.id] = durableAgentFromConfig(projectId, config);
         } else {
           // Always update projectId — the same agents.json may be loaded
           // under a different project store ID when a project is re-added
@@ -213,6 +218,57 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
         return agents === s.agents ? s : { agents, agentIcons };
       });
       await Promise.all(iconChanged.map((agent) => get().loadAgentIcon(agent)));
+    },
+
+    syncDurableMembership: async (projectId, projectPath) => {
+      // Only agents already shown before the read can be dropped: one added while
+      // it was in flight (an in-app create) may be missing from a stale listing.
+      const before = new Set(Object.keys(get().agents));
+      const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
+      const live = new Map(configs.filter((config) => !isDisposedAgent(config)).map((config) => [config.id, config]));
+      const added: Agent[] = [];
+      let removed: string[] = [];
+      set((s) => {
+        removed = Object.values(s.agents)
+          .filter((agent) => agent.kind === 'durable' && agent.projectId === projectId)
+          // A 'creating' row may be a placeholder under a temporary id; its creation flow removes it.
+          .filter((agent) => before.has(agent.id) && !live.has(agent.id) && agent.status !== 'creating')
+          .map((agent) => agent.id);
+        // A deleted agent's quick agents go with it, as the delete dialog removes them;
+        // main stops them when it deletes (delete_agent, #3182).
+        const deleted = new Set(removed);
+        removed = [...removed, ...Object.values(s.agents)
+          .filter((agent) => agent.kind === 'quick' && !!agent.parentAgentId && deleted.has(agent.parentAgentId))
+          .map((agent) => agent.id)];
+        const base = removeAgentsFromState(s, removed);
+        let agents = base.agents ?? s.agents;
+        for (const config of live.values()) {
+          if (agents[config.id]) continue;
+          const agent = durableAgentFromConfig(projectId, config);
+          added.push(agent);
+          agents = { ...agents, [config.id]: agent };
+        }
+        if (removed.length === 0 && added.length === 0) return s;
+        return { ...base, agents };
+      });
+      for (const id of removed) clearPendingActivityTimer(id);
+      if (added.length === 0) return;
+      // One started right after it was created (e.g. by the Dispatcher) shows as running.
+      try {
+        const runningIds: string[] = await window.clubhouse.agent.getRunningStatuses(added.map((agent) => agent.id));
+        if (runningIds.length > 0) {
+          set((s) => {
+            const next = { ...s.agents };
+            for (const id of runningIds) {
+              if (next[id]?.status === 'sleeping') next[id] = { ...next[id], status: 'running' };
+            }
+            return { agents: next };
+          });
+        }
+      } catch {
+        // Non-fatal: status self-corrects on the next poll tick or hook event.
+      }
+      await Promise.all(added.filter((agent) => agent.icon).map((agent) => get().loadAgentIcon(agent)));
     },
 
     restoreFromBackup: async (projectId, projectPath) => {

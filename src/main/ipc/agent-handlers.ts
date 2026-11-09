@@ -28,8 +28,9 @@ import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanAr
 import { isAccessLevel, type AccessLevel } from '../../shared/agent-access';
 import { withSavedAccess } from '../services/free-agent-settings';
 import { ATTR } from '../../shared/telemetry/attributes';
-import type { DeleteResult, HelperDisposeChecks, HelperInProject, Project, RemoveDisposedManyResult } from '../../shared/types';
+import type { AgentDeleteResult, DeleteResult, HelperDeleteChoice, HelperDisposeChecks, HelperInProject, Project, RemoveDisposedManyResult } from '../../shared/types';
 import { removeDisposedHelpersOf } from '../services/disposed-helper-cleanup';
+import { deleteAgent, isAgentDeleteMode } from '../services/agent-delete';
 import { disposeHelperForUser, reportDisposeDecision } from '../services/helper-dispose-decisions';
 import { listStartRequests } from '../services/helper-start-requests';
 import { approveHelperStart, declineHelperStart } from '../services/clubhouse-mcp/tools/helper-tools';
@@ -375,65 +376,33 @@ export function registerAgentHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.AGENT.DELETE_COMMIT_PUSH, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
+  // One delete for every mode (#3182): main settles the helpers, stops the
+  // agent and deletes it, so a dispose choice can't be lost between steps.
+  ipcMain.handle(IPC.AGENT.DELETE_AGENT, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, projectPath, agentId, mode, helperChoice): Promise<AgentDeleteResult> => {
       assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('commit_push', () => agentConfig.deleteCommitAndPush(projectPath, agentId));
-      if (result.ok) broadcastSnapshotRefresh();
-      return result;
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.DELETE_CLEANUP_BRANCH, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('cleanup_branch', () => agentConfig.deleteWithCleanupBranch(projectPath, agentId));
-      if (result.ok) broadcastSnapshotRefresh();
-      return result;
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.DELETE_SAVE_PATCH, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      assertNotDispatcher(projectPath, agentId, 'deleted');
-      const win = BrowserWindow.getFocusedWindow();
-      if (!win) return { ok: false, message: 'cancelled' };
-      const result = await dialog.showSaveDialog(win, {
-        title: 'Save patch file',
-        defaultPath: `agent-${agentId}.patch`,
-        filters: [{ name: 'Patch files', extensions: ['patch'] }],
-      });
-
-      if (result.canceled || !result.filePath) {
-        return { ok: false, message: 'cancelled' };
+      if (!isAgentDeleteMode(mode)) throw tagError(new Error(`Unknown delete mode: ${mode}`), 'validation');
+      if (helperChoice !== undefined && helperChoice !== 'dispose' && helperChoice !== 'keep') {
+        throw tagError(new Error(`Unknown helper choice: ${helperChoice}`), 'validation');
       }
-
-      const filePath = result.filePath;
-      const deleteResult = await deleteFlow('save_patch', () => agentConfig.deleteSaveAsPatch(projectPath, agentId, filePath));
-      if (deleteResult.ok) broadcastSnapshotRefresh();
-      return deleteResult;
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.DELETE_FORCE, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('force', () => agentConfig.deleteForce(projectPath, agentId));
-      if (result.ok) broadcastSnapshotRefresh();
-      return result;
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.DELETE_UNREGISTER, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('unregister', () => agentConfig.deleteUnregister(projectPath, agentId));
-      if (result.ok) broadcastSnapshotRefresh();
+      let savePath: string | undefined;
+      if (mode === 'save-patch') {
+        // Asked before anything changes, so a cancel leaves the helpers too.
+        const win = BrowserWindow.getFocusedWindow();
+        if (!win) return { ok: false, message: 'cancelled' };
+        const picked = await dialog.showSaveDialog(win, {
+          title: 'Save patch file',
+          defaultPath: `agent-${agentId}.patch`,
+          filters: [{ name: 'Patch files', extensions: ['patch'] }],
+        });
+        if (picked.canceled || !picked.filePath) return { ok: false, message: 'cancelled' };
+        savePath = picked.filePath;
+      }
+      // The service records the clubhouse.agent.delete flow, as for a delete over MCP.
+      const result = await deleteAgent(projectPath, agentId, { mode, savePath, helpers: helperChoice as HelperDeleteChoice | undefined });
+      // Disposed helpers leave every window even when the agent itself stayed.
+      if (result.ok || (result.helpers?.helperIds?.length ?? 0) > 0) broadcastSnapshotRefresh();
       return result;
     },
   ));

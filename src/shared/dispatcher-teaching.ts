@@ -59,7 +59,7 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   'agent.display': { group: 'agents', verb: 'rename', noun: 'agent' },
   'agent.configure': { group: 'agents', verb: 'change the model of', noun: 'agent' },
   'agent.grant': { group: 'agents', verb: 'change the setup and permissions of', noun: 'agent' },
-  'agent.dispose': { group: 'agents', verb: 'remove', noun: 'agent' },
+  'agent.dispose': { group: 'agents', verb: 'delete', noun: 'agent' },
   'agent.create': { group: 'new', verb: 'create agents in', noun: 'project' },
   'connection.manage': { group: 'new', verb: 'make and remove connections for', noun: 'agent' },
   'library.read': { group: 'new', verb: 'see', noun: 'library' },

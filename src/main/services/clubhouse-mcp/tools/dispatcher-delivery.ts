@@ -123,15 +123,15 @@ export function deliverToDispatcher(req: DispatcherDeliveryRequest): Promise<Dis
 }
 
 /**
- * Keep an agent's own words for the group chat's rewrite step (#3043). The
- * Dispatcher's chat handing work over isn't news from an agent.
+ * Note the agent for the group chat (#3043), so the Dispatcher's news can name
+ * it. The Dispatcher's chat handing work over isn't news from an agent.
  */
 function recordForGroupChat(req: DispatcherDeliveryRequest): void {
   if (isDispatcherIdentityAgentId(req.senderId)) return;
-  const own = req.routed.filter((p) => p.sender?.agentId === req.senderId);
-  const text = own.length ? own.map((p) => p.text).join('\n\n') : req.text;
-  const name = own[0]?.sender?.name ?? req.routed.find((p) => p.sender)?.sender?.name ?? req.senderId;
-  recordAgentMessage(req.senderId, name, text);
+  const name = req.routed.find((p) => p.sender?.agentId === req.senderId)?.sender?.name
+    ?? req.routed.find((p) => p.sender)?.sender?.name
+    ?? req.senderId;
+  recordAgentMessage(req.senderId, name);
 }
 
 async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise<DispatcherDelivery> {

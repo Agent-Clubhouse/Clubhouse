@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampSentences, cleanAgentNews, cleanChatText, toInterjection } from './dispatcher-chat-noise';
+import { cleanAgentNews, cleanChatText } from './dispatcher-chat-noise';
 
 describe('cleanChatText', () => {
   it('drops routing tags and reply markers', () => {
@@ -51,39 +51,14 @@ describe('cleanAgentNews', () => {
   it('drops every code block, not only JSON', () => {
     expect(cleanAgentNews('Fixed it.\n```ts\nconst a = 1;\n```')).toBe('Fixed it.');
   });
-});
 
-describe('clampSentences', () => {
-  it('keeps the first two sentences on one line', () => {
-    expect(clampSentences('One. Two!\nThree? Four.')).toBe('One. Two!');
-    expect(clampSentences('One sentence without a stop')).toBe('One sentence without a stop');
-  });
-
-  it('does not split version numbers or PR refs', () => {
-    expect(clampSentences('Tagged 1.0.2 in #412. Release notes are up. Anything else?')).toBe('Tagged 1.0.2 in #412. Release notes are up.');
-  });
-
-  it('cuts a long sentence at a word boundary', () => {
-    const long = `${'word '.repeat(100)}end.`;
-    const out = clampSentences(long, 2, 60);
-    expect(out.length).toBeLessThanOrEqual(60);
-    expect(out.endsWith('…')).toBe(true);
-    expect(out).not.toMatch(/wor…$/);
-  });
-
-  it('drops a leading bullet', () => {
-    expect(clampSentences('- Done. More.')).toBe('Done. More.');
-  });
-});
-
-describe('toInterjection', () => {
-  it('turns a raw agent report into one or two clean sentences', () => {
+  it('keeps every sentence of a raw agent report, without its noise (#3193)', () => {
     const raw = 'TASK_RESULT:t_lw3k2j9: Safari checkout is fixed in #412. All 41 tests pass now. I also refactored the cart module.\n'
       + '```json\n{"tests": 41}\n```\n---\nReply to Dispatcher via tool "send_message" with task_id="t_lw3k2j9".';
-    expect(toInterjection(raw)).toBe('Safari checkout is fixed in #412. All 41 tests pass now.');
+    expect(cleanAgentNews(raw)).toBe('Safari checkout is fixed in #412. All 41 tests pass now. I also refactored the cart module.');
   });
 
   it('is empty when only noise is left', () => {
-    expect(toInterjection('```json\n{"ok":true}\n```\ntask_id=t_abc123')).toBe('');
+    expect(cleanAgentNews('```json\n{"ok":true}\n```\ntask_id=t_abc123')).toBe('');
   });
 });

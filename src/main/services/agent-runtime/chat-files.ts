@@ -258,6 +258,37 @@ export async function resolveChatFile(agentId: string, candidate: string): Promi
   return real;
 }
 
+/**
+ * Where a Markdown link an agent wrote points (#3189): a file chat can show,
+ * a folder, or a file it can't (binary or the like). Relative links resolve
+ * against the agent's worktree, absolute ones stay as they are; like chips,
+ * any readable path counts wherever it is. A link's href may be
+ * percent-encoded (`Some%20Folder/`) or carry a `#heading`.
+ */
+export async function resolveChatLink(agentId: string, href: string): Promise<{ kind: 'file' | 'folder' | 'unviewable'; path: string }> {
+  if (!href || href.length > MAX_PATH_LENGTH) throw new Error('Not a file path');
+  const hash = href.indexOf('#');
+  const candidates = [href, percentDecoded(href), ...(hash > 0 ? [href.slice(0, hash), percentDecoded(href.slice(0, hash))] : [])];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const cleaned = cleanCandidate(candidate);
+    const real = cleaned ? await resolveLocalPath(cleaned, path.isAbsolute(cleaned) ? undefined : await agentBase(agentId)) : undefined;
+    if (!real) continue;
+    const st = await fsp.stat(real).catch((): null => null);
+    if (st?.isDirectory()) return { kind: 'folder', path: real };
+    if (!st?.isFile()) continue;
+    const opened = await openFile(real);
+    if ('reason' in opened) continue;
+    try {
+      const { kind } = kindOf(real, await readHead(opened.handle, opened.size));
+      return { kind: kind === 'other' ? 'unviewable' : 'file', path: real };
+    } finally {
+      await opened.handle.close();
+    }
+  }
+  throw new Error('That file is not available');
+}
+
 /** `%20` and the like decoded, or undefined when there's nothing to decode (or it won't). */
 function percentDecoded(p: string): string | undefined {
   if (!/%[0-9A-Fa-f]{2}/.test(p)) return undefined;

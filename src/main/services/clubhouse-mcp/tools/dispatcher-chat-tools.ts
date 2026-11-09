@@ -57,8 +57,8 @@ export function registerDispatcherChatTools(): void {
       description:
         'Get something done for the user: wake, message, create or connect agents, make or change Actions, ' +
         'or change settings. Describe what they want, with the agents, projects and details they named and ' +
-        'what done looks like. The outcome comes back here as a message from Clubhouse. Tell the user in a ' +
-        'few words that it\'s under way.',
+        'what done looks like. The outcome comes back here as an update. Tell the user in a few words, in the ' +
+        'first person, what you\'re doing, such as "I\'ll set that up."',
       inputSchema: {
         type: 'object',
         properties: {
@@ -137,12 +137,12 @@ export function registerDispatcherChatTools(): void {
         'Tell the user something in their conversation with you: one or two plain sentences, no tool output, ' +
         'JSON or task ids. `kind` decides when it shows: needs_user now, answer now while their request is open, ' +
         'routine at the next check-in, check_in only when news is waiting for it. For an agent\'s news, set ' +
-        '`from`: it shows under that agent\'s name, rewritten from what it sent you, with `message` as your ' +
-        'version in its voice. Skip news not worth telling.',
+        '`from`: the user hears it in your voice with the agent named. Skip news not worth telling, and keep ' +
+        'what passes between you and an agent between you.',
       inputSchema: {
         type: 'object',
         properties: {
-          message: { type: 'string', description: 'One or two plain sentences. With `from`, in that agent\'s voice. For a check-in, what changed overall.' },
+          message: { type: 'string', description: 'One or two plain sentences. With `from`, the facts from that agent the user needs. For a check-in, what changed overall.' },
           kind: {
             type: 'string',
             enum: [...NEWS_KINDS],

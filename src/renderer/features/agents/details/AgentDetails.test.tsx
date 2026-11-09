@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
+import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
 import { useProjectStore } from '../../../stores/projectStore';
 import { createChatViewState } from '../../../stores/chatStore';
 import { AgentDetails, BRANCH_REFRESH_MS, relativeFolder, useBranchChanges } from './AgentDetails';
@@ -79,6 +80,35 @@ describe('AgentDetails in the terminal', () => {
     expect(screen.getByTestId('details-card-mcp')).not.toHaveAttribute('data-open');
     act(() => { useAgentDetailsStore.getState().reveal({ agentId: 'a1', card: 'mcp' }); });
     expect(screen.getByTestId('details-card-mcp')).toHaveAttribute('data-open', 'true');
+  });
+});
+
+describe('AgentDetails for the Dispatcher', () => {
+  const dispatcher: Agent = { id: 'disp', projectId: DISPATCHER_PROJECT_ID, name: 'Navi', kind: 'durable', status: 'running', color: 'indigo', orchestrator: 'claude-code' };
+
+  it('shows Settings and Actions but none of an agent\'s internals (#3184)', () => {
+    const chat = {
+      ...createChatViewState(dispatcher.id), sessionId: 's1', provider: 'claude-code', driver: 'claude_agent_sdk' as const,
+      capabilities: { usage: 'session', subagents: 'native', limits: false } as never,
+      usage: { ...createChatViewState(dispatcher.id).usage, context: { used: 10, size: 100, window: 'total' } } as never,
+      providerSkills: {
+        provider: 'claude-code' as const, driver: 'claude_agent_sdk' as const, source: 'system/init' as const,
+        nativeSessionId: 'n', sessionId: 's1', reportedAt: 1000, names: ['review'],
+      },
+    };
+    render(<AgentDetails agent={dispatcher} chat={chat} />);
+    expect(screen.getByTestId('details-card-actions')).toBeInTheDocument();
+    for (const card of ['changes', 'subagents', 'canvases', 'context', 'mcp', 'provider-skills', 'session']) {
+      expect(screen.queryByTestId(`details-card-${card}`)).not.toBeInTheDocument();
+    }
+    // No Changes card, so its folder isn't read for one.
+    expect(window.clubhouse.git.branchChanges).not.toHaveBeenCalled();
+  });
+
+  it('leaves out Last session while it sleeps', () => {
+    render(<AgentDetails agent={{ ...dispatcher, status: 'sleeping' }} lastSession={null} />);
+    expect(screen.queryByTestId('details-card-session')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('details-card-canvases')).not.toBeInTheDocument();
   });
 });
 

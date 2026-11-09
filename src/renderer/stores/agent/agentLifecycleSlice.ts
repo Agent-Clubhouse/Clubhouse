@@ -1,4 +1,4 @@
-import { Agent, DeleteResult, HelperCascadeResult, HelperDisposeBlock, HelperInProject } from '../../../shared/types';
+import { Agent, AgentDeleteResult, HelperCascadeResult, HelperDisposeBlock, HelperInProject } from '../../../shared/types';
 import { isLegacyFreeAgent, type AccessLevel } from '../../../shared/agent-access';
 import { generateQuickAgentId } from '../../../shared/agent-id';
 import { generateQuickName } from '../../../shared/name-generator';
@@ -353,41 +353,19 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
 
       const agent = get().agents[agentId];
 
-      // Settle helpers first so none is left pointing at a deleted parent (#2224).
       if (agent?.kind === 'durable') {
+        // Settle helpers first so none is left pointing at a deleted parent (#2224).
         const helpers = await listLiveHelpers(projectPath, agentId);
-        if (helpers.length > 0) {
-          if (!helperChoice) {
-            return { ok: false, message: `Choose what happens to ${agent.name}'s helpers` };
-          }
-          // Run the checks right before stopping anything: a helper that
-          // would block the dispose keeps running.
+        if (helpers.length > 0 && !helperChoice) {
+          return { ok: false, message: `Choose what happens to ${agent.name}'s helpers` };
+        }
+        if (helpers.length > 0 && helperChoice === 'dispose') {
+          // Checked before its quick agents stop. Main checks again before it removes anything.
           const preview: HelperCascadeResult = await window.clubhouse.agent.resolveHelpersForDelete(projectPath, agentId, helperChoice, true);
           if (!preview.ok) return { ok: false, message: describeHelperBlock(preview) };
-          if (helperChoice === 'dispose') {
-            for (const helper of helpers) {
-              if (get().agents[helper.config.id]?.status === 'running') {
-                // Wait for the process to exit so it no longer holds the
-                // worktree folder open (EBUSY on Windows). A helper can be in
-                // another project (#2514), so it stops under its own.
-                await window.clubhouse.agent.killAgent(helper.config.id, helper.projectPath, true);
-              }
-            }
-          }
-          // Main checks again before it removes anything.
-          const resolved: HelperCascadeResult = await window.clubhouse.agent.resolveHelpersForDelete(projectPath, agentId, helperChoice);
-          // A disposed helper keeps its config row but leaves the rail, even
-          // when another helper's disposal failed.
-          if (helperChoice === 'dispose') {
-            for (const helperId of resolved.helperIds ?? []) get().removeAgent(helperId);
-          }
-          // The orchestrator stays unless every helper was settled.
-          if (!resolved.ok) return { ok: false, message: describeHelperBlock(resolved) };
         }
-      }
 
-      // Kill and remove any child quick agents before deleting a durable parent
-      if (agent?.kind === 'durable') {
+        // Kill and remove any child quick agents before deleting a durable parent
         const children = Object.values(get().agents).filter(
           (a) => a.kind === 'quick' && a.parentAgentId === agentId,
         );
@@ -399,40 +377,23 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         }
       }
 
-      if (agent?.status === 'running') {
-        await window.clubhouse.agent.killAgent(agentId, projectPath);
+      // Main disposes or keeps the helpers (stopping running ones in every
+      // project), stops the agent and deletes it, in one call (#3182).
+      const result: AgentDeleteResult = await window.clubhouse.agent.deleteAgent(projectPath, agentId, mode, helperChoice);
+      // A disposed helper keeps its config row but leaves the rail, even
+      // when another helper's disposal failed.
+      if (helperChoice === 'dispose') {
+        for (const helperId of result.helpers?.helperIds ?? []) get().removeAgent(helperId);
       }
 
-      let result: DeleteResult;
-      switch (mode) {
-        case 'commit-push':
-          result = await window.clubhouse.agent.deleteCommitPush(projectPath, agentId);
-          break;
-        case 'cleanup-branch':
-          result = await window.clubhouse.agent.deleteCleanupBranch(projectPath, agentId);
-          break;
-        case 'save-patch':
-          result = await window.clubhouse.agent.deleteSavePatch(projectPath, agentId);
-          if (!result.ok && result.message === 'cancelled') {
-            return { ok: false, message: 'cancelled' };
-          }
-          break;
-        case 'force':
-          result = await window.clubhouse.agent.deleteForce(projectPath, agentId);
-          break;
-        case 'unregister':
-          result = await window.clubhouse.agent.deleteUnregister(projectPath, agentId);
-          break;
-        default:
-          return { ok: false, message: 'Unknown delete mode' };
+      if (!result.ok) {
+        // The orchestrator stays unless every helper was settled.
+        if (result.helpers && !result.helpers.ok) return { ok: false, message: describeHelperBlock(result.helpers) };
+        return { ok: false, message: result.message };
       }
-
-      if (result.ok) {
-        get().removeAgent(agentId);
-        set({ deleteDialogAgent: null });
-      }
-
-      return result;
+      get().removeAgent(agentId);
+      set({ deleteDialogAgent: null });
+      return { ok: true, message: result.message };
     },
   };
 }

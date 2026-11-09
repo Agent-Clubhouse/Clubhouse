@@ -11,6 +11,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { closeDispatcher } from '../dispatcher/dispatcherNav';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 
 export function useActionsList(): { actions: ActionView[] | null; error: string | null; reload: () => void } {
   const [actions, setActions] = useState<ActionView[] | null>(null);
@@ -48,6 +49,8 @@ export interface ProjectOption {
 export function useActionNames(): { names: ActionNames; agents: AgentOption[]; projects: ProjectOption[] } {
   const agentMap = useAgentStore((s) => s.agents);
   const projectList = useProjectStore((s) => s.projects);
+  // The Dispatcher by the name the user gave it (#3184).
+  const dispatcherName = useDispatcherStore((s) => s.state?.config?.name?.trim() || undefined);
   return useMemo(() => {
     const projects: ProjectOption[] = projectList.map((p) => ({ id: p.id, name: p.displayName || p.name }));
     const agents: AgentOption[] = Object.values(agentMap)
@@ -61,17 +64,17 @@ export function useActionNames(): { names: ActionNames; agents: AgentOption[]; p
     const projectNames = new Map(projects.map((p) => [p.id, p.name]));
     const agentNames = new Map(agents.map((a) => [a.id, a.name]));
     return {
-      names: { agent: (id) => agentNames.get(id), project: (id) => projectNames.get(id) },
+      names: { agent: (id) => agentNames.get(id), project: (id) => projectNames.get(id), dispatcher: () => dispatcherName },
       agents,
       projects,
     };
-  }, [agentMap, projectList]);
+  }, [agentMap, projectList, dispatcherName]);
 }
 
-/** "You", "Dispatcher", or the agent's name. */
+/** "You", the Dispatcher's name, or the agent's name. */
 export function ownerLabel(owner: ActionOwner, names: ActionNames): string {
   if (owner.kind === 'user') return 'You';
-  if (owner.kind === 'dispatcher') return 'Dispatcher';
+  if (owner.kind === 'dispatcher') return names.dispatcher?.() || 'Dispatcher';
   if (owner.kind === 'agent') return names.agent(owner.agentId) ?? 'An agent';
   return 'Clubhouse';
 }

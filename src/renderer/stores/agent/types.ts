@@ -1,6 +1,7 @@
 import type { AccessLevel } from '../../../shared/agent-access';
 import {
   Agent,
+  AgentDeleteMode,
   AgentSleepInfo,
   AgentStatus,
   AgentDetailedStatus,
@@ -18,7 +19,7 @@ export interface QuickSpawnOptions {
   removeParts?: string[];
 }
 
-export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
+export type DeleteMode = AgentDeleteMode;
 
 export interface AgentUISlice {
   activeAgentId: string | null;
@@ -65,6 +66,12 @@ export interface AgentCrudSlice {
   loadDurableAgents: (projectId: string, projectPath: string) => Promise<void>;
   /** Re-read how a project's loaded agents look: name, color, emoji and icon (#2597). */
   syncDurableDisplay: (projectPath: string) => Promise<void>;
+  /**
+   * Add a project's durable agents that are missing from the store and drop
+   * ones whose config is gone, after a change made elsewhere (an MCP tool,
+   * an Action, another window) (#3183).
+   */
+  syncDurableMembership: (projectId: string, projectPath: string) => Promise<void>;
   restoreFromBackup: (projectId: string, projectPath: string) => Promise<number>;
   dismissRecovery: () => void;
 }

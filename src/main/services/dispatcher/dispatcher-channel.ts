@@ -13,8 +13,8 @@
  * wakeAndDeliver here, since nothing else messages the chat.
  *
  * The group chat (#3043) sits in setChatDelivery: dispatcher-news installs
- * the triage that decides what shows now, later or never, and the rewrite of
- * an agent's news. It hears of each hand-off through onHandOff, so an answer
+ * the triage that decides what shows now, later or never, and what the chat
+ * is told to say. It hears of each hand-off through onHandOff, so an answer
  * to what the person asked shows right away.
  */
 import * as agentConfig from '../agent-config';
@@ -22,11 +22,12 @@ import * as agentSystem from '../agent-system';
 import { appLog } from '../log-service';
 import { deliverNow } from '../clubhouse-mcp/tools/helper-delivery';
 import { deliverToDispatcher, dispatcherInboxId } from '../clubhouse-mcp/tools/dispatcher-delivery';
+import { NOTIFY_MESSAGE_MAX_LENGTH, type AgentAttentionPayload } from '../clubhouse-mcp/tools/notify-tools';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import type { RoutedMessagePart } from '../../../shared/chat';
 import type { DurableAgentConfig } from '../../../shared/types';
-import type { ChatDecision, ChatHold, ChatReport } from './dispatcher-news';
+import type { ChatDecision, ChatHold, ChatMessage, ChatReport } from './dispatcher-news';
 import { getDispatcherChatPath } from './dispatcher-paths';
 import { isDispatcherEnabled } from './dispatcher-settings';
 import {
@@ -69,7 +70,7 @@ export interface ChannelMessage {
 /**
  * Turns the coordinator's report into what reaches the chat. The default
  * passes it on as a Clubhouse notice; the group chat (dispatcher-news)
- * installs the triage and rewrite here. A hold, or null, keeps it back:
+ * installs the triage here. A hold, or null, keeps it back:
  * nothing reaches the chat now.
  */
 export type ChatDelivery = (report: ChatReport) => Promise<ChatDecision | null> | ChatDecision | null;
@@ -222,9 +223,29 @@ export async function deliverToChat(callerId: string, report: string | ChatRepor
     appLog(NS, 'info', 'Dispatcher update held back', { meta: { held, length: full.message.length } });
     return { outcome: 'delivered', held, ...(hold?.reason && { reason: hold.reason }) };
   }
-  const result = await wakeAndDeliver(chatId, getDispatcherChatPath(), decision, true);
+  let result: ChannelResult;
+  try {
+    result = await wakeAndDeliver(chatId, getDispatcherChatPath(), decision, true);
+  } catch (err) {
+    notDelivered(chatId, full, decision);
+    throw err;
+  }
+  if (result.outcome !== 'delivered' && result.outcome !== 'started') notDelivered(chatId, full, decision);
   appLog(NS, 'info', 'Dispatcher update', { meta: { outcome: result.outcome, length: full.message.length } });
   return result;
+}
+
+/**
+ * A report that didn't reach the chat (#3193): the group chat forgets it was
+ * shown, so the Dispatcher can send it again, and a question for the user
+ * still reaches them as a notification that opens the chat.
+ */
+function notDelivered(chatId: string, report: ChatReport, message: ChatMessage): void {
+  message.notDelivered?.();
+  if ((report.kind ?? 'needs_user') !== 'needs_user') return;
+  const text = message.routed.find((p) => p.text)?.text ?? report.message;
+  const payload: AgentAttentionPayload = { title: `${dispatcherDisplayName()} needs you`, message: text.slice(0, NOTIFY_MESSAGE_MAX_LENGTH) };
+  broadcastToAllWindows(IPC.APP.AGENT_ATTENTION, chatId, payload);
 }
 
 /** For tests. */

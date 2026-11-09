@@ -1,7 +1,7 @@
 import type { ContextWindowOptions } from '../shared/context-window';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, RemoveDisposedManyResult, StartDurableCreationParams } from '../shared/types';
+import type { AgentDeleteMode, AgentDeleteResult, AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, RemoveDisposedManyResult, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, HelperSummary, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { AccessLevel } from '../shared/agent-access';
 import type { AgentGrantsView, GrantChange } from '../shared/agent-grant-changes';
@@ -71,16 +71,13 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.REORDER_DURABLE, projectPath, orderedIds),
   getWorktreeStatus: (projectPath: string, agentId: string) =>
     ipcRenderer.invoke(IPC.AGENT.GET_WORKTREE_STATUS, projectPath, agentId),
-  deleteCommitPush: (projectPath: string, agentId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.DELETE_COMMIT_PUSH, projectPath, agentId),
-  deleteCleanupBranch: (projectPath: string, agentId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.DELETE_CLEANUP_BRANCH, projectPath, agentId),
-  deleteSavePatch: (projectPath: string, agentId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.DELETE_SAVE_PATCH, projectPath, agentId),
-  deleteForce: (projectPath: string, agentId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.DELETE_FORCE, projectPath, agentId),
-  deleteUnregister: (projectPath: string, agentId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.DELETE_UNREGISTER, projectPath, agentId),
+  /**
+   * Delete a durable agent (#3182). An orchestrator's helpers are disposed or
+   * kept first, by `helperChoice`; one left over stops the delete. save-patch
+   * asks where to save before anything changes.
+   */
+  deleteAgent: (projectPath: string, agentId: string, mode: AgentDeleteMode, helperChoice?: HelperDeleteChoice): Promise<AgentDeleteResult> =>
+    ipcRenderer.invoke(IPC.AGENT.DELETE_AGENT, projectPath, agentId, mode, helperChoice),
   /**
    * Live helpers of a durable agent, or every one below it with `recursive`
    * (#2224), in every project, each with its own project (#2514). Disposed

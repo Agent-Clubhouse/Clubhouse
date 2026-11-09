@@ -266,6 +266,25 @@ describe('Connections card (#2232)', () => {
     });
   });
 
+  it('gives every name the same fixed column, so the meta lines up whether or not a name is cut (#3184)', () => {
+    useMcpBindingStore.setState({ bindings: [
+      wire('lead', 'x', ['epic-lead', 'ab']), wire('x', 'lead', ['ab', 'epic-lead']),
+      wire('lead', 'y', ['epic-lead', 'a-very-long-agent-name-that-truncates']), wire('y', 'lead', ['a-very-long-agent-name-that-truncates', 'epic-lead']),
+    ] });
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    const names = screen.getAllByTestId('connection-name');
+    expect(names).toHaveLength(2);
+    for (const name of names) {
+      expect(name).toHaveClass('w-[96px]', 'flex-shrink-0', 'truncate');
+      expect(name).toHaveAttribute('title', name.textContent);
+    }
+    for (const row of screen.getAllByTestId('connection-row')) {
+      expect(within(row).getByTestId('connection-meta')).toHaveTextContent('two-way');
+      expect(within(row).getByTestId('connection-meta')).toHaveClass('truncate');
+      expect(within(row).getByTestId('connection-meta').nextElementSibling).toHaveClass('ml-auto', 'flex-shrink-0');
+    }
+  });
+
   it('says where wires come from when there are none', () => {
     useMcpBindingStore.setState({ bindings: [] });
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} />);
