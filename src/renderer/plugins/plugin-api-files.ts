@@ -92,9 +92,12 @@ export function computeWorkspaceRoot(pluginId: string): string {
   return joinHostPath(root, '.clubhouse', 'plugin-data', pluginId, 'workspace');
 }
 
+/** On a files API from forRoot: the folder it is rooted at, so the plugin API guard can check its writes (#3174). */
+export const FILES_BASE = Symbol('plugin-files-base');
+
 /** Creates a FilesAPI scoped to an arbitrary base path (for external roots). forRoot() throws (no nesting). */
 export function createFilesAPIForRoot(basePath: string): FilesAPI {
-  return {
+  const api: FilesAPI = {
     get dataDir(): string {
       throw new Error('dataDir is not available on external root FilesAPI');
     },
@@ -158,6 +161,8 @@ export function createFilesAPIForRoot(basePath: string): FilesAPI {
       throw new Error('watch() is not available on external root FilesAPI');
     },
   };
+  Object.defineProperty(api, FILES_BASE, { value: basePath });
+  return api;
 }
 
 export function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): FilesAPI {
