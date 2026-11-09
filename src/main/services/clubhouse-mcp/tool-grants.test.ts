@@ -143,6 +143,7 @@ describe('tool grant declarations (#2967)', () => {
       delete_agent_template: template.write on library
       create_managed_agent: agent.create on project_arg; agent.grant on project_arg if settings or templateId
       restart_agent: agent.restart on agent_arg
+      delete_agent: agent.dispose on agent_arg
       answer_helper_question: agent.message on my_helpers
       create_group_project: connection.manage on agent_arg
       add_to_group_project: connection.manage on agent_arg

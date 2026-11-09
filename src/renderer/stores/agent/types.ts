@@ -1,6 +1,7 @@
 import type { AccessLevel } from '../../../shared/agent-access';
 import {
   Agent,
+  AgentDeleteMode,
   AgentSleepInfo,
   AgentStatus,
   AgentDetailedStatus,
@@ -18,7 +19,7 @@ export interface QuickSpawnOptions {
   removeParts?: string[];
 }
 
-export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
+export type DeleteMode = AgentDeleteMode;
 
 export interface AgentUISlice {
   activeAgentId: string | null;

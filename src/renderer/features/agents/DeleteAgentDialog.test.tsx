@@ -289,6 +289,30 @@ describe('DeleteAgentDialog', () => {
     });
   });
 
+  describe('an orchestrator whose helpers were disposed (#3182)', () => {
+    afterEach(() => {
+      window.clubhouse.agent.listHelpers = vi.fn().mockResolvedValue([]);
+    });
+
+    it('does not ask about helpers again once they are gone, and keeps the error on the delete step', async () => {
+      // Helpers at first; none once the dispose ran, though the orchestrator's own delete failed.
+      window.clubhouse.agent.listHelpers = vi.fn()
+        .mockResolvedValueOnce([{ id: 'h1', name: 'scout', color: 'blue', createdAt: 'x', parentAgentId: 'agent-1' }])
+        .mockResolvedValue([]);
+      mockExecuteDelete.mockResolvedValueOnce({ ok: false, message: 'The agent is changing state. Refresh before trying again.' });
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByTestId('delete-agent-helpers-step'));
+      fireEvent.click(screen.getByTestId('delete-agent-helpers-dispose'));
+      await waitFor(() => screen.getByText(/No uncommitted changes detected/));
+      fireEvent.click(screen.getByText('Delete'));
+      await waitFor(() => screen.getByText(/The agent is changing state/));
+      expect(screen.queryByTestId('delete-agent-helpers-step')).not.toBeInTheDocument();
+      // Deleting again needs no helper choice.
+      fireEvent.click(screen.getByText('Delete'));
+      await waitFor(() => expect(mockExecuteDelete).toHaveBeenLastCalledWith('force', '/home/user/project'));
+    });
+  });
+
   describe('agents outside the active project (the new chrome tree)', () => {
     it('reads and deletes the worktree in the agent’s own project', async () => {
       resetStores();

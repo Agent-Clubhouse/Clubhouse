@@ -114,11 +114,8 @@ export const IPC = {
     LIST_SKILLS: 'agent:list-skills',
     HOOK_EVENT: 'agent:hook-event',
     GET_WORKTREE_STATUS: 'agent:get-worktree-status',
-    DELETE_COMMIT_PUSH: 'agent:delete-commit-push',
-    DELETE_CLEANUP_BRANCH: 'agent:delete-cleanup-branch',
-    DELETE_SAVE_PATCH: 'agent:delete-save-patch',
-    DELETE_FORCE: 'agent:delete-force',
-    DELETE_UNREGISTER: 'agent:delete-unregister',
+    /** Delete a durable agent in a mode, settling its helpers first (#3182). */
+    DELETE_AGENT: 'agent:delete-agent',
     LIST_HELPERS: 'agent:list-helpers',
     RESOLVE_HELPERS_FOR_DELETE: 'agent:resolve-helpers-for-delete',
     /** Main → renderer (#2229): a helper dispose the user has to decide (control "ask-everything"). */

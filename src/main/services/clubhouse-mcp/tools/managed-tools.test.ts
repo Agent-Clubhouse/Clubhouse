@@ -21,6 +21,7 @@ vi.mock('../dispatcher-gate', async (importOriginal) => ({
 vi.mock('../../project-store', () => ({ peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }] }));
 vi.mock('../../agent-config', () => ({
   listDurable: async () => [...state.agents.values()],
+  peekDurableConfigs: async () => [...state.agents.values()],
   getDurableConfig: async (_p: string, id: string) => state.agents.get(id) ?? null,
   createDurable: async (_p: string, name: string, color: string, model?: string, _worktree?: boolean, orchestrator?: string) => {
     const a: DurableAgentConfig = { id: `new-${name}`, name, color, createdAt: '', worktreePath: `/w/${name}`, ...(model && { model }), ...(orchestrator && { orchestrator: orchestrator as never }) };
@@ -29,6 +30,14 @@ vi.mock('../../agent-config', () => ({
   },
   deleteUnregister: async (_p: string, id: string) => { state.agents.delete(id); },
 }));
+vi.mock('../../agent-delete', () => ({ deleteAgent: vi.fn(async () => ({ ok: true, message: 'Force deleted', deleted: true })) }));
+vi.mock('../../helper-index', () => ({ listHelpersEverywhere: vi.fn(async () => []) }));
+const grantMock = vi.hoisted(() => ({ granted: false }));
+vi.mock('../grant-check', async (original) => {
+  const real = await original<typeof import('../grant-check')>();
+  // On: stands in for a person allowing every call, so a test can reach the tool's own refusals.
+  return { ...real, checkToolGrant: (...args: Parameters<typeof real.checkToolGrant>) => (grantMock.granted ? { ok: true } : real.checkToolGrant(...args)) };
+});
 vi.mock('../../managed-agents', async () => {
   const { createManagedAgentsService } = await import('../../managed-agents/service');
   const { createAssetCatalogStore } = await import('../../asset-catalog/store');
@@ -64,6 +73,10 @@ import { _resetSettingsAuditForTesting } from '../../settings-audit';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON } from '../../../../shared/managed-agents-types';
 import { BUILTIN_BLOCK_IDS } from '../../managed-agents/builtins';
 import { getAgentGrantChanges } from '../../agent-grants-store';
+import { deleteAgent } from '../../agent-delete';
+import { agentRegistry } from '../../agent-registry';
+import { listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
+import { describeDeleteCall } from './managed-tools';
 
 const call = async (name: string, args: Record<string, unknown>, caller = 'dispatcher') => {
   const r = await callTool(caller, name, args);
@@ -76,6 +89,8 @@ beforeEach(async () => {
   state.running = new Set();
   state.restartOrigins = [];
   vi.mocked(restartManagedAgent).mockClear();
+  vi.mocked(deleteAgent).mockClear();
+  grantMock.granted = false;
   _resetSettingsAuditForTesting(false);
   _resetForTesting();
   _resetConfirmTokensForTesting();
@@ -661,5 +676,127 @@ describe('no agent sets Access above its own (D126)', () => {
     } finally {
       await setDefaultAccess('ask');
     }
+  });
+});
+
+describe('delete_agent (#3182)', () => {
+  const lead = (): DurableAgentConfig => {
+    const a: DurableAgentConfig = { id: 'lead', name: 'Lead', color: 'indigo', createdAt: '', worktreePath: '/w/lead' };
+    state.agents.set(a.id, a);
+    return a;
+  };
+
+  beforeEach(() => {
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'chat' });
+  });
+  afterEach(() => { agentRegistry.untrack('dispatcher'); });
+
+  it('is the Dispatcher\'s only', async () => {
+    expect(getScopedToolList('dispatcher').map((t) => t.name)).toContain('delete_agent');
+    lead();
+    const r = await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', worktree: 'delete' }, 'some-agent');
+    expect(r.isError).toBe(true);
+    expect(deleteAgent).not.toHaveBeenCalled();
+  });
+
+  it('waits for the user in Needs you, naming the agent and what happens to its helpers and worktree, then the same call goes through once', async () => {
+    lead();
+    const args = { project: 'Clubhouse', agent: 'Lead', helpers: 'dispose', worktree: 'delete' };
+    const asked = await call('delete_agent', args);
+    expect(asked.isError).toBe(true);
+    expect(asked.content[0].text).toContain('needs the user\'s approval');
+    expect(deleteAgent).not.toHaveBeenCalled();
+    const [request] = listGrantRequests();
+    expect(request).toMatchObject({ kind: 'call', agentId: 'dispatcher', toolName: 'delete_agent', actions: ['agent.dispose'] });
+    expect(request.details).toContain(
+      'Delete Lead in Clubhouse. Its worktree and branch are removed, unless it has uncommitted or unpushed work. '
+      + 'Its helpers, and theirs, are disposed with their worktrees and branches, unless any has uncommitted or unpushed work.',
+    );
+
+    takeGrantRequest(request.requestId, true);
+    const done = await call('delete_agent', args);
+    expect(done.isError).toBeFalsy();
+    expect(done.json).toMatchObject({ status: 'deleted', agent: 'Lead', worktree: 'removed' });
+    expect(deleteAgent).toHaveBeenCalledTimes(1);
+    expect(deleteAgent).toHaveBeenCalledWith('/proj', 'lead', { mode: 'force', helpers: 'dispose', forceHelpers: false, checkWorktree: true, forceWorktree: false });
+    // Once: the next call asks again.
+    expect((await call('delete_agent', args)).isError).toBe(true);
+    expect(deleteAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('describes keeping files and helpers, and a forced delete, for the person asked', () => {
+    expect(describeDeleteCall({ agent: 'Lead', project: 'Clubhouse', worktree: 'keep', helpers: 'keep' }))
+      .toBe('Delete Lead in Clubhouse. Its files stay on disk. Its helpers stay as ordinary agents.');
+    expect(describeDeleteCall({ agent: 'Lead', worktree: 'delete', helpers: 'dispose', force: true }))
+      .toBe('Delete Lead. Its worktree and branch are removed, even with uncommitted or unpushed work. '
+        + 'Its helpers, and theirs, are disposed with their worktrees and branches, even with uncommitted or unpushed work.');
+    expect(describeDeleteCall({ agent: 'Lead', worktree: 'delete' })).toMatch(/If it has helpers, nothing is deleted\.$/);
+  });
+
+  describe('with the user\'s permission', () => {
+    beforeEach(() => { grantMock.granted = true; lead(); });
+
+    it('maps the choices to the delete: keep files, keep helpers, force', async () => {
+      await call('delete_agent', { project: 'Clubhouse', agent: 'lead', helpers: 'keep', worktree: 'keep', force: true });
+      expect(deleteAgent).toHaveBeenCalledWith('/proj', 'lead', { mode: 'unregister', helpers: 'keep', forceHelpers: true, checkWorktree: true, forceWorktree: true });
+    });
+
+    it('returns a missing helper choice as a result with the helpers, and opens nothing', async () => {
+      vi.mocked(deleteAgent).mockResolvedValueOnce({
+        ok: false, message: 'Lead has 1 helper. Choose whether to dispose or keep it.', needsHelperChoice: { helpers: [{ id: 'h1', name: 'scout' }] },
+      });
+      const r = await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', worktree: 'delete' });
+      expect(r.isError).toBe(true);
+      expect(r.json).toEqual({
+        status: 'refused', agent: 'Lead', message: 'Lead has 1 helper. Choose whether to dispose or keep it.',
+        helpers: [{ id: 'h1', name: 'scout' }], next: 'Call again with helpers: dispose or keep.',
+      });
+    });
+
+    it('returns helpers with work at risk as facts', async () => {
+      vi.mocked(deleteAgent).mockResolvedValueOnce({
+        ok: false, message: 'scout has work that disposing would lose, or couldn\'t be checked',
+        helpers: { ok: false, message: 'x', blocked: [{ agentId: 'h1', name: 'scout', checks: { dirty: 2, unpushed: 1, unmerged: 1 } }] },
+      });
+      const r = await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', helpers: 'dispose', worktree: 'delete' });
+      expect(r.isError).toBe(true);
+      expect(r.json.blockedHelpers).toEqual([{ id: 'h1', name: 'scout', dirty: 2, unpushed: 1, unmerged: 1 }]);
+      expect(r.json.next).toMatch(/force: true/);
+    });
+
+    it('returns a helper that failed part way, with the ones that were disposed', async () => {
+      vi.mocked(deleteAgent).mockResolvedValueOnce({
+        ok: false, message: 'Disposed 1 of 2 helpers',
+        helpers: { ok: false, message: 'Disposed 1 of 2 helpers', helperIds: ['h2'], failed: [{ agentId: 'h1', name: 'scout', reason: 'EBUSY' }] },
+      });
+      const r = await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', helpers: 'dispose', worktree: 'delete' });
+      expect(r.json).toMatchObject({ disposedHelpers: ['h2'], failedHelpers: [{ agentId: 'h1', name: 'scout', reason: 'EBUSY' }] });
+    });
+
+    it('returns unsaved work in its worktree as facts', async () => {
+      vi.mocked(deleteAgent).mockResolvedValueOnce({
+        ok: false, message: 'Lead\'s worktree has unsaved work that deleting it would lose. Nothing was changed.',
+        worktree: {
+          isValid: true, branch: 'lead/standby', hasRemote: true,
+          uncommittedFiles: [{ path: 'a.ts', status: 'M', staged: false }],
+          unpushedCommits: [],
+        },
+      });
+      const r = await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', worktree: 'delete' });
+      expect(r.isError).toBe(true);
+      expect(r.json.worktree).toEqual({ branch: 'lead/standby', uncommittedFiles: 1, unpushedCommits: 0 });
+      expect(r.json.next).toMatch(/worktree: keep/);
+    });
+
+    it('refuses bad arguments and deleting itself before anything runs', async () => {
+      state.agents.set('dispatcher', { id: 'dispatcher', name: 'Dispatcher', color: 'indigo', createdAt: '' });
+      expect((await call('delete_agent', { project: 'Clubhouse', agent: 'Lead' })).isError).toBe(true);
+      expect((await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', worktree: 'shred' })).content[0].text).toMatch(/worktree must be one of delete, keep/);
+      expect((await call('delete_agent', { project: 'Clubhouse', agent: 'Lead', worktree: 'delete', helpers: 'abandon' })).content[0].text).toMatch(/helpers must be one of dispose, keep/);
+      expect((await call('delete_agent', { project: 'Clubhouse', agent: 'Nobody', worktree: 'delete' })).content[0].text).toMatch(/No agent "Nobody"/);
+      expect((await call('delete_agent', { project: 'Clubhouse', agent: 'dispatcher', worktree: 'delete' })).content[0].text).toMatch(/can't delete yourself/);
+      expect(deleteAgent).not.toHaveBeenCalled();
+    });
   });
 });
