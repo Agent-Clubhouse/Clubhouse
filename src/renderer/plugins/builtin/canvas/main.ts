@@ -25,6 +25,7 @@ import { bindWireDefinition } from './wire-binding';
 import { createWireReconciler } from './wire-reconcile';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { syncWireTools } from './connection-grants-sync';
+import { isDispatcherAgent } from '../../../features/dispatcher/dispatcherStore';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -568,6 +569,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store]);
 
   const placeQueuedAgentCard = useCallback((card: PendingAgentCard) => {
+    // The Dispatcher has its own pane and is never a canvas card (#3184).
+    const queued = api.agents.list().find((a) => a.id === card.agentId);
+    if (queued && isDispatcherAgent(queued)) return;
     // The agent already has a card here: focus it rather than add another (#2415).
     const existing = findAgentCard(store.getState().views, card.agentId);
     if (existing) {

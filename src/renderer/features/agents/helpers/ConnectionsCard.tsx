@@ -197,9 +197,10 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
             return (
               <li key={c.id}>
                 <div className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md hover:bg-surface-0" data-testid="connection-row">
-                  <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
-                  <span className="text-xs text-ctp-overlay1 whitespace-nowrap" title={sourcesNote(pairSources(c)) ?? suspendedNote(c)} data-testid="connection-meta">{connectionMeta(c)}</span>
-                  <span className="ml-auto flex items-center gap-2.5">
+                  {/* A fixed name column, so the meta lines up whether or not the name is cut (#3184). */}
+                  <span className="w-[96px] flex-shrink-0 text-[12.5px] text-ctp-text truncate" title={c.name} data-testid="connection-name">{c.name}</span>
+                  <span className="min-w-0 text-xs text-ctp-overlay1 whitespace-nowrap truncate" title={sourcesNote(pairSources(c)) ?? suspendedNote(c)} data-testid="connection-meta">{connectionMeta(c)}</span>
+                  <span className="ml-auto flex-shrink-0 flex items-center gap-2.5">
                     {onDisconnect && c.kind === 'agent' && pairSources(c).length > 0 && (
                       <button type="button" onClick={() => setManagingId(c.id)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-sources">
                         Manage

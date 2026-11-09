@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ActionView } from '../../../shared/actions';
 import { ActionsSettingsView, filterActions } from './ActionsSettingsView';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 
 function action(over: Partial<ActionView>): ActionView {
   return {
@@ -61,6 +62,23 @@ describe('Settings > Actions', () => {
     render(<ActionsSettingsView />);
     const rows = await screen.findAllByTestId('action-row');
     expect(within(rows[0]).getByText('When an agent goes to sleep → Tell the Dispatcher')).toBeTruthy();
+  });
+
+  it('names the Dispatcher by its display name as the creator (#3184)', async () => {
+    useDispatcherStore.setState({ state: { config: { name: 'Navi' } } } as never);
+    try {
+      list = [
+        action({ id: 'a2', name: 'Tidy', owner: { kind: 'dispatcher' } }),
+        action({ id: 's1', name: 'Tell', owner: { kind: 'dispatcher' }, subscription: true, trigger: { kind: 'event', event: 'agent.slept', source: { kind: 'agent', agentId: 'nobody' } }, steps: [{ kind: 'message', agentId: 'disp', text: 'hi' }] }),
+      ];
+      render(<ActionsSettingsView />);
+      const rows = await screen.findAllByTestId('action-row');
+      expect(within(rows[0]).getAllByText('Navi').length).toBeGreaterThan(0);
+      expect(within(rows[0]).queryByText('Dispatcher')).toBeNull();
+      expect(within(rows[1]).getByText('When an agent goes to sleep → Tell Navi')).toBeTruthy();
+    } finally {
+      useDispatcherStore.setState({ state: null } as never);
+    }
   });
 
   it('turns an action off from its row', async () => {

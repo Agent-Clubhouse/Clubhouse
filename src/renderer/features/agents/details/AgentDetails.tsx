@@ -14,6 +14,9 @@
  * agent reports how full it is. The orchestration cards (#2232) are for local durable agents:
  * Orchestrate for any that isn't itself a helper, Helpers once it
  * orchestrates or has helpers, Connections once it orchestrates or has wires.
+ *
+ * The Dispatcher is an experience, not an agent to inspect (#3184): it shows
+ * Settings, Actions and Connections, none of the agent internals.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -206,11 +209,13 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const agentCli = useEffectiveOrchestrator(agent);
+  const dispatcher = isDispatcherAgent(agent);
 
   // Chat refreshes when a turn starts or ends, or the agent commits, pushes
   // or rebases mid-turn; the terminal when its hook status moves on.
   const refreshKey = chat ? `${chat.turnId ?? 'idle'}:${chat.state ?? ''}:${chat.workspaceRevision ?? 0}` : `${hook?.state ?? ''}:${hook?.toolName ?? ''}:${agent.status}`;
-  const ownBranch = useBranchChanges(givenBranch === undefined ? cwd : undefined, refreshKey);
+  // The Dispatcher has no Changes card, so its folder isn't read.
+  const ownBranch = useBranchChanges(givenBranch === undefined && !dispatcher ? cwd : undefined, refreshKey);
   const branch = givenBranch === undefined ? ownBranch : givenBranch;
 
   const { items, subagents, capabilities, state: runState } = chat ?? {};
@@ -234,7 +239,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const wiresAgent = useMemo(() => (wiresId === agent.id ? agent : { ...agent, id: wiresId }), [agent, wiresId]);
   const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === wiresId || (b.targetKind === 'agent' && b.targetId === wiresId)));
   // The Dispatcher has no orchestration of its own, but its wires to orchestrators show (#2538).
-  const showConnections = (!!orchestrationPath && (orchestrating || hasWires)) || (isDispatcherAgent(agent) && hasWires);
+  const showConnections = (!!orchestrationPath && (orchestrating || hasWires)) || (dispatcher && hasWires);
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
   const disconnectToolWire = useCallback(async (c: Connection) => {
     const unbind = useMcpBindingStore.getState().unbind;
@@ -247,10 +252,10 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const provider = getOrchestratorLabel(providerId, orchestrators);
 
   // Subagents: only when the agent reports them.
-  const showSubagents = !!map && map.mode !== 'none';
+  const showSubagents = !dispatcher && !!map && map.mode !== 'none';
 
   // Context window: only once the agent has reported how full it is.
-  const ctx = chat && chat.capabilities && chat.capabilities.usage !== 'none' ? chat.usage.context : null;
+  const ctx = !dispatcher && chat && chat.capabilities && chat.capabilities.usage !== 'none' ? chat.usage.context : null;
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
 
   // Session: live stats only; the settings are in the Settings card.
@@ -301,7 +306,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
       <SettingsCard agent={agent} chat={chat} projectPath={projectPath} provider={provider} />
 
-      <ChangesCard
+      {!dispatcher && <ChangesCard
         open={open('changes')}
         onToggle={() => toggleCard('changes')}
         cwd={cwd}
@@ -312,7 +317,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         scope={chat && !isRemoteProjectId(agent.projectId) ? scope : 'branch'}
         onScope={setScope}
         onReviewAll={onReviewAll}
-      />
+      />}
 
       {showSubagents && chat && map && (
         <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
@@ -328,7 +333,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         </DetailsCard>
       )}
 
-      <DetailsCard
+      {!dispatcher && <DetailsCard
         id="canvases"
         title="Canvases"
         summary={canvases.length === 0 ? 'not on a canvas' : `on ${canvases.length} ${canvases.length === 1 ? 'board' : 'boards'}`}
@@ -355,7 +360,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
             ))}
           </ul>
         )}
-      </DetailsCard>
+      </DetailsCard>}
 
       {showDispatcherCard && (
         <DispatcherCard agent={agent} orch={orchestration.orch} open={open('dispatcher')} onToggle={() => toggleCard('dispatcher')} />
@@ -363,7 +368,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
       <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
 
-      {isDispatcherAgent(agent) && <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />}
+      {dispatcher && <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />}
 
       {showConnections && (
         <ConnectionsCard
@@ -396,7 +401,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         </DetailsCard>
       )}
 
-      {!asleep && <McpCard
+      {!asleep && !dispatcher && <McpCard
         agent={agent}
         projectPath={projectPath}
         live={chat?.mcpServers ?? null}
@@ -406,9 +411,9 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         onToggle={() => toggleCard('mcp')}
       />}
 
-      {chat && <ProviderSkillsCard agent={agent} chat={chat} open={open('provider-skills')} onToggle={() => toggleCard('provider-skills')} />}
+      {chat && !dispatcher && <ProviderSkillsCard agent={agent} chat={chat} open={open('provider-skills')} onToggle={() => toggleCard('provider-skills')} />}
 
-      {asleep && (
+      {asleep && !dispatcher && (
         <DetailsCard id="session" title="Last session" summary={lastSummary} open={open('session')} onToggle={() => toggleCard('session')}>
           <CardRow label="Runs on">{provider}</CardRow>
           {ended !== null && Number.isFinite(ended) && <CardRow label="Ended">{formatAgo(ended)}</CardRow>}
@@ -422,7 +427,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         </DetailsCard>
       )}
 
-      {!asleep && <DetailsCard id="session" title="Session" summary={sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
+      {!asleep && !dispatcher && <DetailsCard id="session" title="Session" summary={sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
         <CardRow label="Runs on">
           {provider}
           {chat?.driver ? <span className="text-ctp-overlay1"> · {DRIVER_LABELS[chat.driver] ?? chat.driver}{chat.cliVersion ? ` ${chat.cliVersion}` : ''}</span> : !chat ? <span className="text-ctp-overlay1"> · CLI</span> : null}
