@@ -681,6 +681,8 @@ export const IPC = {
     SET_ENABLED: 'dispatcher:set-enabled',
     /** Behavior (#3045): light, standard or thorough. Resolves with the DispatcherState. */
     SET_BEHAVIOR: 'dispatcher:set-behavior',
+    /** Choose models yourself (#3191): `{ byHand }`, or one job's `{ role, provider?, model?, effort?, contextWindow? }`. Resolves with the DispatcherState. */
+    SET_MODELS: 'dispatcher:set-models',
     /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
     CLEAR_CHAT: 'dispatcher:clear-chat',
     /** Forget everything (#3046): clears its memory and held news only. Resolves with a ForgetEverythingResult. */

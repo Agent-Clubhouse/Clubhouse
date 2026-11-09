@@ -31,6 +31,7 @@ const ON: DispatcherState = {
   chatPath: 'dispatcher-chat-folder',
   chatRunning: false,
   behavior: { level: 'standard', provider: 'codex-cli', auto: { ready: true } },
+  models: { byHand: false, chat: null, work: null },
   personality: DEFAULT_DISPATCHER_PERSONALITY,
   setup: NO_DISPATCHER_SETUP,
 };
@@ -397,6 +398,122 @@ describe('DispatcherSettingsView', () => {
       window.clubhouse.dispatcher.getUsage = vi.fn().mockRejectedValue(new Error('x'));
       await renderOn();
       await waitFor(() => expect(screen.getByTestId('dispatcher-usage-conversations-value').textContent).toBe('Couldn’t read it.'));
+    });
+  });
+
+  describe('Choose models yourself (#3191)', () => {
+    const BY_HAND: DispatcherState = {
+      ...ON,
+      behavior: { level: 'thorough', provider: 'codex-cli', auto: { ready: false, code: 'no_valid_mapping' } },
+      models: {
+        byHand: true,
+        chat: { provider: 'claude-code', model: 'opus', effort: 'high', contextWindow: null },
+        work: { provider: 'codex-cli', model: 'sol', effort: null, contextWindow: '400000' },
+      },
+    };
+    const MODELS: Record<string, string[]> = { 'claude-code': ['default', 'sonnet', 'opus'], 'codex-cli': ['default', 'terra', 'sol'] };
+
+    beforeEach(() => {
+      window.clubhouse.agent.getModelOptions = vi.fn(async (_path: string, cli?: string) => (MODELS[cli ?? ''] ?? []).map((id) => ({ id, label: id === 'default' ? 'Default' : id.toUpperCase() }))) as never;
+      window.clubhouse.managed.modelEfforts = vi.fn(async (cli: string) => ({
+        ok: true as const,
+        value: cli === 'claude-code' ? { opus: ['low', 'medium', 'high'], sonnet: ['low', 'high'] } : {},
+      })) as never;
+      window.clubhouse.agent.getContextWindowOptions = vi.fn(async (_path: string, cli?: string) => (cli === 'codex-cli'
+        ? {
+          configurable: true, kind: 'context_window', label: 'Context', description: 'How much it reads.', defaultLabel: 'CLI default',
+          choices: [{ id: '400000', label: '400K' }, { id: '1000000', label: '1M' }], defaultTokens: null, maxTokens: null, costNote: 'More costs more.', applies: ['launch'],
+        }
+        : { configurable: false, state: 'unsupported', label: 'Context', reason: 'This CLI has no context setting.' })) as never;
+      window.clubhouse.dispatcher.setModels = vi.fn(async (update) => {
+        if ('byHand' in update) {
+          const picks = update.byHand ? BY_HAND.models : { ...state.models, byHand: false };
+          state = { ...state, models: { ...picks, byHand: update.byHand } };
+        }
+        emit?.(state);
+        return state;
+      });
+    });
+
+    it('off: the switch, Runs on, and no rows; turning it on asks main', async () => {
+      await renderOn();
+      const toggle = screen.getByRole('switch', { name: 'Choose models yourself' });
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(screen.queryByTestId('dispatcher-models-chat')).toBeNull();
+      expect(screen.getByLabelText('Runs on')).toBeInTheDocument();
+      expect(screen.getByText(/Covers which models it uses and how often it checks in/)).toBeInTheDocument();
+      await act(async () => { fireEvent.click(toggle); });
+      expect(window.clubhouse.dispatcher.setModels).toHaveBeenCalledWith({ byHand: true });
+      expect(await screen.findByTestId('dispatcher-models-chat')).toBeInTheDocument();
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    });
+
+    it('on: a row per job with its own provider, model, effort and context, in place of Runs on', async () => {
+      await renderOn(BY_HAND);
+      expect(screen.queryByLabelText('Runs on')).toBeNull();
+      const chat = within(screen.getByTestId('dispatcher-models-chat'));
+      const work = within(screen.getByTestId('dispatcher-models-work'));
+      expect(chat.getByText('Talking with you')).toBeInTheDocument();
+      expect(work.getByText('Working in the background')).toBeInTheDocument();
+      await waitFor(() => expect((chat.getByLabelText('Model') as HTMLSelectElement).disabled).toBe(false));
+      expect((chat.getByLabelText('Provider') as HTMLSelectElement).value).toBe('claude-code');
+      expect([...(chat.getByLabelText('Provider') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['claude-code', 'codex-cli']);
+      expect((chat.getByLabelText('Model') as HTMLSelectElement).value).toBe('opus');
+      expect([...(chat.getByLabelText('Model') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['default', 'sonnet', 'opus']);
+      await waitFor(() => expect([...(chat.getByLabelText('Effort') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['', 'low', 'medium', 'high']));
+      expect((chat.getByLabelText('Effort') as HTMLSelectElement).value).toBe('high');
+      // Each list is read for the job's own CLI and folder.
+      expect(window.clubhouse.agent.getModelOptions).toHaveBeenCalledWith('dispatcher-chat-folder', 'claude-code');
+      expect(window.clubhouse.agent.getModelOptions).toHaveBeenCalledWith(FOLDER, 'codex-cli');
+      // Context where the CLI offers it, and why not where it doesn't.
+      expect(await chat.findByTestId('context-window-unavailable')).toHaveTextContent('This CLI has no context setting.');
+      await waitFor(() => expect((work.getByLabelText('Context') as HTMLSelectElement).value).toBe('400000'));
+      expect((work.getByLabelText('Model') as HTMLSelectElement).value).toBe('sol');
+      // A model with no levels says the CLI decides.
+      expect(work.getByText('This model has no effort levels to choose, so the CLI decides.')).toBeInTheDocument();
+    });
+
+    it('on: Behavior covers only how often it checks in, without Auto\'s note', async () => {
+      await renderOn(BY_HAND);
+      expect(screen.getByText(/Covers how often it checks in\. You choose its models below\./)).toBeInTheDocument();
+      expect(screen.getByText(/Checks in on your agents frequently\./)).toBeInTheDocument();
+      expect(screen.queryByTestId('dispatcher-behavior-auto-note')).toBeNull();
+      expect(screen.queryByTestId('dispatcher-behavior-setup-auto')).toBeNull();
+    });
+
+    it('sends each change for its job only, through main', async () => {
+      await renderOn(BY_HAND);
+      const chat = within(screen.getByTestId('dispatcher-models-chat'));
+      const work = within(screen.getByTestId('dispatcher-models-work'));
+      await waitFor(() => expect((chat.getByLabelText('Model') as HTMLSelectElement).disabled).toBe(false));
+      await act(async () => { fireEvent.change(chat.getByLabelText('Model'), { target: { value: 'sonnet' } }); });
+      expect(window.clubhouse.dispatcher.setModels).toHaveBeenLastCalledWith({ role: 'chat', model: 'sonnet' });
+      await waitFor(() => expect((chat.getByLabelText('Effort') as HTMLSelectElement).disabled).toBe(false));
+      await act(async () => { fireEvent.change(chat.getByLabelText('Effort'), { target: { value: '' } }); });
+      expect(window.clubhouse.dispatcher.setModels).toHaveBeenLastCalledWith({ role: 'chat', effort: null });
+      await act(async () => { fireEvent.change(work.getByLabelText('Provider'), { target: { value: 'claude-code' } }); });
+      expect(window.clubhouse.dispatcher.setModels).toHaveBeenLastCalledWith({ role: 'work', provider: 'claude-code' });
+      await waitFor(() => expect(work.getByLabelText('Context')).toBeInTheDocument());
+      await act(async () => { fireEvent.change(work.getByLabelText('Context'), { target: { value: '' } }); });
+      expect(window.clubhouse.dispatcher.setModels).toHaveBeenLastCalledWith({ role: 'work', contextWindow: null });
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    });
+
+    it('shows a refused pick as an alert on its row', async () => {
+      window.clubhouse.dispatcher.setModels = vi.fn().mockRejectedValue(new Error('gpt-9 isn’t a model Codex CLI lists.'));
+      await renderOn(BY_HAND);
+      const work = within(screen.getByTestId('dispatcher-models-work'));
+      await act(async () => { fireEvent.change(work.getByLabelText('Provider'), { target: { value: 'claude-code' } }); });
+      expect((await work.findByTestId('dispatcher-models-work-error')).textContent).toBe('Couldn’t save. gpt-9 isn’t a model Codex CLI lists.');
+      expect(screen.queryByTestId('dispatcher-models-chat-error')).toBeNull();
+    });
+
+    it('turning it off asks main, and Runs on comes back', async () => {
+      await renderOn(BY_HAND);
+      await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Choose models yourself' })); });
+      expect(window.clubhouse.dispatcher.setModels).toHaveBeenCalledWith({ byHand: false });
+      await waitFor(() => expect(screen.getByLabelText('Runs on')).toBeInTheDocument());
+      expect(screen.queryByTestId('dispatcher-models-chat')).toBeNull();
     });
   });
 

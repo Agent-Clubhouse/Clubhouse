@@ -37,6 +37,7 @@ Tests: `dispatcher-service.test.ts` ("1.0 default"), `e2e/layout-default.spec.ts
 | Subscriptions: agent-owned Actions that message the agent | #3042 | `shared/actions/subscription.ts`, `actions/engine.ts` |
 | Auto minimum and maximum levels | #3044 | Auto mapping |
 | Behavior: Light, Standard, Thorough; composer chip | #3045 | `shared/dispatcher-behavior.ts`, `features/dispatcher/BehaviorChip.tsx` |
+| Choose models yourself: a provider, model, effort and context per job | #3191 | `shared/dispatcher-models.ts`, `dispatcher-models.ts`, `features/settings/DispatcherSettingsView.tsx` |
 | Settings page with Connected agents and Forget everything | #3046 | `features/settings/DispatcherSettingsView.tsx`, `dispatcher-forget.ts`, `dispatcher-connected-agents.ts` |
 | First-run setup, personality and presets, Try it out | #3047 | `dispatcher-setup.ts`, `shared/dispatcher-personality.ts`, `features/dispatcher/DispatcherSetup.tsx` |
 | Teaching: intro, suggestions, "What else can you do?" from real grants | #3048 | `shared/dispatcher-teaching.ts` |
@@ -73,6 +74,17 @@ The switch is read at startup and updated by the Experimental page as it saves, 
 
 The saved name, cleaned, or `DEFAULT_DISPATCHER_NAME` when it's blank, comes from `dispatcherDisplayName()` in `dispatcher-service.ts`. Its wires to connected agents carry it (`dispatcher-wire-source.ts`), so agents see the name the user chose, and so do hand-offs and the agent-card requests. A rename changes the wires' signature; the state broadcast makes the wire watcher rebuild, and the bindings are relabelled in place, so no wire drops. Its agent is still created under the working name until setup or Settings renames it.
 
+## Choose models yourself (#3191)
+
+A switch under Behavior in Settings > Dispatcher. Off, Behavior gives both agents their models from the Auto mapping, as before. On, each agent runs the user's pick, saved in `dispatcher-settings.json` under `models` (`byHand`, `chat`, `work`; each pick is `provider`, `model`, `effort`, `contextWindow`). The UI calls the jobs "Talking with you" (`chat`) and "Working in the background" (`work`); the copy test allows that label because it names no session.
+
+- **Where it applies.** `applyBehavior` hands off to `applyChosenModels` while the switch is on, so every moment that gave Behavior's models (before each start, a level change, an Auto mapping change) gives the picks instead, and Behavior never overwrites them. Behavior still sets the check-in and upkeep frequencies.
+- **Records follow the picks.** A pick is written to its agent's record (`updateDurableConfig`, which checks a context choice and drops a session from another CLI). Settings is the source of truth: an edit to a record from elsewhere is put back at the next start, which writes the instructions for the CLI it starts on. A saved context the model no longer offers is dropped from the record and the pick, and logged; the rest of the pick applies. A phone's CLI, model or context edit for the Dispatcher is saved as the `chat` pick instead, checked before anything else is written. A guided provider change (the phone's `agent.providerChange`, the `change_provider` tool) is refused with `dispatcher_models_by_hand` while the switch is on.
+- **Order.** Every change reads and merges the saved picks inside the service's queue, so two changes in a row both land.
+- **When.** A model or effort change on the same provider switches a running session where its CLI allows (`switchRunningModel`), queued after the save and reading the pick as saved then; a provider or context change, or the CLI's default model, applies at the next start. Behavior's models switch a running session only on the provider they're for too. The start path takes the pick's provider from `prepareDispatcherSessionStart`, and drops the session it would resume whenever applying the pick moved its record to another CLI.
+- **Different providers.** While it's on, the identity mirror doesn't copy `orchestrator` or `contextWindow` between the records, so each runs on its own CLI.
+- **Turning on** saves the provider and context the agents run on (`modelsBefore` in `dispatcher-settings.json`) and seeds each pick from what its agent runs now, so it changes nothing by itself; turning it back on with earlier picks switches a running session on the same provider. **Turning off** (`leaveModelsByHand`) puts both records back on that saved provider and context, so no context from a pick stays hidden, then Behavior applies. Without a saved one, both go to the provider "Runs on" shows with no context. The picks are kept for next time. **Setup** turns it off the same way, since setup picks one provider and a Behavior.
+
 ## Forget everything
 
 Clears `memory/` (including upkeep's `memory/archive/`), an unsorted `notes/`, every `notes-archive*`, and news held for the next check-in, then makes a fresh index and rewrites its instructions. It never touches its agents, connections, links, permissions, Actions, Behavior, personality, usage history or its chat. Clear chat is the separate way to start the chat over.
@@ -89,4 +101,4 @@ All under the Clubhouse base folder (`~/.clubhouse`, or `.clubhouse-dev` in deve
 | `dispatcher-agent-cards.json` | when each agent was asked for its card | no (a missing page asks again) |
 | `dispatcher-usage.json` | 31 days of usage, conversations and background work | no |
 | `dispatcher-upkeep.json` | when upkeep last ran | no |
-| `dispatcher-settings.json` (app settings folder) | switch, Behavior, personality, setup state | no |
+| `dispatcher-settings.json` (app settings folder) | switch, Behavior, chosen models and what they replaced, personality, setup state | no |

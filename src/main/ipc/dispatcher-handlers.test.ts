@@ -15,6 +15,7 @@ vi.mock('../services/dispatcher/dispatcher-service', () => ({
   getDispatcherState: vi.fn(() => ON),
   setDispatcherEnabled: vi.fn(async (on: boolean) => ({ ...ON, enabled: on })),
   setDispatcherBehavior: vi.fn(async (level: string) => ({ ...ON, behavior: { ...ON.behavior, level } })),
+  setDispatcherModels: vi.fn(async () => ON),
   setDispatcherPersonality: vi.fn(async (personality: unknown) => ({ ...ON, personality })),
   setDispatcherSetupStatus: vi.fn(async (status: string) => ({ ...ON, setup: { status, upgrade: false } })),
   completeDispatcherSetup: vi.fn(async () => ({ ...ON, setup: { status: 'done', upgrade: false } })),
@@ -83,6 +84,13 @@ describe('dispatcher handlers', () => {
     await expect(Promise.resolve().then(() => h.handlers.get(IPC.DISPATCHER.SET_BEHAVIOR)!({}, 'extreme'))).rejects.toThrow(/Unknown Behavior/);
     await expect(Promise.resolve().then(() => h.handlers.get(IPC.DISPATCHER.SET_BEHAVIOR)!({}, 2))).rejects.toThrow();
     expect(dispatcher.setDispatcherBehavior).toHaveBeenCalledTimes(1);
+  });
+
+  it('setModels passes an object to main, which checks it (#3191)', async () => {
+    expect(await h.handlers.get(IPC.DISPATCHER.SET_MODELS)!({}, { role: 'chat', model: 'opus' })).toEqual(ON);
+    expect(dispatcher.setDispatcherModels).toHaveBeenCalledWith({ role: 'chat', model: 'opus' });
+    await expect(Promise.resolve().then(() => h.handlers.get(IPC.DISPATCHER.SET_MODELS)!({}, 'on'))).rejects.toThrow();
+    expect(dispatcher.setDispatcherModels).toHaveBeenCalledTimes(1);
   });
 
   it('a Behavior change alone doesn\'t rebuild its wires', () => {
