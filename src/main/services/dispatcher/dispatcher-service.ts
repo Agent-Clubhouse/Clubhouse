@@ -341,13 +341,10 @@ export function chosenModelUpdates(current: DurableAgentConfig, pick: Dispatcher
 
 /**
  * Give each agent the user's pick for its job (#3191). Saved to its record,
- * so the next start uses it. With `live`, a running session on the same
- * provider also switches model and effort now where its CLI allows; a new
- * provider or context always waits for the next start, as does the CLI's
- * default model, which a running session can't be told by name. With
- * `throwOnError` a record that can't take the pick (a context the model
- * doesn't offer) rejects; otherwise it is logged and the agent keeps what
- * it had.
+ * so the next start uses it. With `live`, a running session also switches
+ * now where it can (switchToPick). With `throwOnError` a record that can't
+ * take the pick (a context the model doesn't offer) rejects; otherwise it is
+ * logged and the agent keeps what it had.
  */
 async function applyChosenModels(
   targets: BehaviorTarget[],
@@ -363,11 +360,7 @@ async function applyChosenModels(
       const updates = chosenModelUpdates(current, pick, defaultDispatcherOrchestrator());
       if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(dir, agent.id, updates);
       applied.set(agent.id, { model: pick.model, effort: pick.effort, orchestrator: pick.provider as OrchestratorId });
-      const switchable = updates.model !== undefined || updates.effort !== undefined;
-      const sameProvider = agentRegistry.get(agent.id)?.orchestrator === pick.provider;
-      if (live && switchable && sameProvider && updates.orchestrator === undefined && pick.model !== 'default') {
-        await switchRunningModel(agent.id, pick.model, pick.effort);
-      }
+      if (live && (updates.model !== undefined || updates.effort !== undefined)) await switchToPick(agent.id, pick);
     } catch (err) {
       if (throwOnError) throw err;
       // telemetry-exempt: logged; the agent keeps the model it had, and the next start tries again
@@ -404,6 +397,24 @@ export async function setDispatcherBehavior(level: DispatcherBehavior): Promise<
     });
   }
   return getDispatcherState();
+}
+
+/**
+ * Switch a running session to a pick's model and effort where its CLI allows
+ * (#3191). Only on the provider it runs on: a new provider waits for the next
+ * start, as does the CLI's default model, which a running session can't be
+ * told by name. Never throws; one that can't switch picks it up at its next start.
+ */
+async function switchToPick(agentId: string, pick: DispatcherRoleModel): Promise<void> {
+  if (pick.model === 'default' || agentRegistry.get(agentId)?.orchestrator !== pick.provider) return;
+  try {
+    await switchRunningModel(agentId, pick.model, pick.effort);
+  } catch (err) {
+    // telemetry-exempt: logged; the record has the pick, so its next start uses it
+    appLog(NS, 'warn', 'Could not switch the Dispatcher\'s running session to the model chosen for it', {
+      meta: { agentId, provider: pick.provider, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
 }
 
 /** The picks to save as the switch goes on: a job with no pick gets what its agent runs now, so turning it on changes nothing by itself. */
@@ -476,23 +487,31 @@ export async function setDispatcherModels(input: unknown): Promise<DispatcherSta
   if (!base) throw new Error('The Dispatcher isn’t set up on disk yet. Try again in a moment.');
   const pick = mergeRoleModel(base, fields);
   await assertPick(pick);
-  await enqueue(async () => {
+  const target = await enqueue(async () => {
     const before = getDispatcherModels();
     await saveDispatcherModels({ ...before, [role]: pick });
-    const target = behaviorTargets().find((t) => t.role === role);
-    if (!target) return;
+    const found = behaviorTargets().find((t) => t.role === role);
+    if (!found) return null;
     try {
-      await applyChosenModels([target], { live: true, throwOnError: true });
+      await applyChosenModels([found], { live: false, throwOnError: true });
     } catch (err) {
       // telemetry-exempt: the caller shows it; the saved pick goes back to what the record still runs
       await saveDispatcherModels(before);
       throw err;
     }
+    return found;
   });
   appLog(NS, 'info', 'Dispatcher model chosen', {
     meta: { role, provider: pick.provider, model: pick.model, effort: pick.effort, contextWindow: pick.contextWindow },
   });
   emitChanged();
+  // Queued after, so the caller never waits on a CLI switching models.
+  if (target && (pick.model !== base.model || pick.effort !== base.effort)) {
+    const queuedIn = generation;
+    void enqueue(async () => {
+      if (queuedIn === generation) await switchToPick(target.agent.id, pick);
+    });
+  }
   return getDispatcherState();
 }
 

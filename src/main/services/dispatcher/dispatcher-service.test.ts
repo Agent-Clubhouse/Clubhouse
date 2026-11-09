@@ -1130,6 +1130,22 @@ describe('Choose models yourself (#3191)', () => {
     await expect(svc.setDispatcherModels({ byHand: false })).rejects.toThrow('Turn on the Dispatcher first');
   });
 
+  it('answers without waiting for a running session to switch, and keeps the pick when the switch fails', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherModels({ byHand: true });
+    let fail!: (err: Error) => void;
+    const setModel = vi.fn(() => new Promise<void>((_resolve, reject) => { fail = reject; }));
+    h.runtimes.set('durable_2', { kind: 'chat', setModel });
+    agentRegistry.register('durable_2', { projectPath: chatDir(), cwd: chatDir(), orchestrator: 'claude-code', runtime: 'pty' });
+    const state = await svc.setDispatcherModels({ role: 'chat', model: 'haiku' });
+    expect(state.models.chat?.model).toBe('haiku');
+    await vi.waitFor(() => expect(setModel).toHaveBeenCalledWith('haiku', null));
+    fail(new Error('This CLI can\'t switch models mid-session.'));
+    await settle();
+    expect(getSettings().models?.chat?.model).toBe('haiku');
+    expect(chat()?.model).toBe('haiku');
+  });
+
   it('keeps the old pick when its record refuses the new one', async () => {
     await svc.setDispatcherEnabled(true);
     await svc.setDispatcherModels({ byHand: true });
