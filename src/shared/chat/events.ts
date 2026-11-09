@@ -110,10 +110,13 @@ export type ContentBlock =
    * `mediaRef`, `width` and `height` are added when a user's image is
    * echoed: the runtime stores a copy in the agent's media folder so remote
    * clients can read it by reference (Annex never sends them `path` or `data`).
+   * `name` on an attached image or file is the name the user attached it
+   * under (a pasted image's file is saved under a random one); older
+   * transcripts don't have it.
    */
-  | { type: 'image'; mimeType: string; data?: string; path?: string; uri?: string; mediaRef?: string; width?: number; height?: number }
+  | { type: 'image'; mimeType: string; data?: string; path?: string; uri?: string; mediaRef?: string; width?: number; height?: number; name?: string }
   | { type: 'resource'; uri: string; mimeType?: string; text?: string }
-  | { type: 'file'; path: string };
+  | { type: 'file'; path: string; name?: string };
 
 /** ACP tool kinds. Drivers map native tool names onto these for icons and grouping. */
 export type ToolKind =

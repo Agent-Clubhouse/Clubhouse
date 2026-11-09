@@ -170,8 +170,8 @@ describe('chat handlers: attachments', () => {
     await call(IPC.CHAT.SEND_MESSAGE, 'agent-1', 'look', 'auto', [shot.id, pasted.id]);
     expect(runtime.sendMessage).toHaveBeenCalledWith([
       { type: 'text', text: 'look' },
-      { type: 'image', mimeType: 'image/png', path: fs.realpathSync.native(shotPath) },
-      { type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments') },
+      { type: 'image', mimeType: 'image/png', path: fs.realpathSync.native(shotPath), name: 'shot.png' },
+      { type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments'), name: 'image.png' },
     ], { source: 'user', delivery: 'auto' });
   });
 
@@ -180,7 +180,7 @@ describe('chat handlers: attachments', () => {
     fs.writeFileSync(notes, '# notes');
     const staged = await call(IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { path: notes }) as { id: string };
     await call(IPC.CHAT.SEND_MESSAGE, 'agent-1', '', 'auto', [staged.id]);
-    expect(runtime.sendMessage).toHaveBeenCalledWith([{ type: 'file', path: fs.realpathSync.native(notes) }], expect.anything());
+    expect(runtime.sendMessage).toHaveBeenCalledWith([{ type: 'file', path: fs.realpathSync.native(notes), name: 'notes.md' }], expect.anything());
     await expect(call(IPC.CHAT.SEND_MESSAGE, 'agent-1', '  ', 'auto')).rejects.toThrow(/Nothing to send/);
   });
 

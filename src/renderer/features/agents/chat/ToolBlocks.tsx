@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useAgentStore } from '../../../stores/agentStore';
-import { findSenderAgent, messageDisplay, sentPartName, type ChatMcpServer, type ToolCallContent, type ToolKind } from '../../../../shared/chat';
+import { findChatSenderAgent, useDispatcherStore } from '../../dispatcher/dispatcherStore';
+import { messageDisplay, sentPartName, type ChatMcpServer, type ToolCallContent, type ToolKind } from '../../../../shared/chat';
 import type { ChatItem, ToolCallItem } from '../../../stores/chatStore';
 import type { GroupBlock, SubagentBlock } from './view-model';
 import {
@@ -165,11 +166,12 @@ export function ExploreGroup({ tools, items = tools, expansionKey }: { tools: To
 export function ChatterGroup({ block, expansionKey, renderItem }: { block: GroupBlock; expansionKey?: string; renderItem: (item: ChatItem) => ReactNode }) {
   const [open, toggle] = useOpenState(false, expansionKey);
   const running = useAnyRunning(block.tools);
+  const dispatcher = useDispatcherStore((s) => s.state);
   // A string, so a change to some other agent doesn't re-render this row.
   const senders = useAgentStore((s) => {
     const names = block.messages.flatMap((m) => {
       const display = messageDisplay(m);
-      return display.from === 'others' ? display.parts.map((p) => sentPartName(p, m.source, findSenderAgent(p.sender, s.agents))) : [];
+      return display.from === 'others' ? display.parts.map((p) => sentPartName(p, m.source, findChatSenderAgent(p.sender, s.agents, dispatcher))) : [];
     });
     return [...new Set(names)].join('\n');
   });

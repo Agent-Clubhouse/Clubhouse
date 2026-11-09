@@ -1703,7 +1703,7 @@ describe('annex-server', () => {
         const chatSend = { version: 1, epoch: capability.body.epoch, commandId: 'photo-1', type: 'chat.send', agentId: 'a', sessionId: 's', text: '', attachmentIds: [uploaded.body.attachmentId] };
         const sent = await send('POST', '/api/v1/mobile/commands', chatSend);
         expect(sent.body).toMatchObject({ status: 'completed', result: { messageId: 'm1' } });
-        expect(sendMessage).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments') }],
+        expect(sendMessage).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments'), name: 'phone-image' }],
           { source: 'annex', delivery: 'auto', clientCommandId: 'photo-1' });
         // Retries are idempotent; an id this phone never uploaded is refused.
         expect(await send('POST', '/api/v1/mobile/commands', chatSend)).toMatchObject({ status: sent.status, body: sent.body });

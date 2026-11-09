@@ -32,7 +32,7 @@ function revealLabel(): string {
 }
 
 /** True once the element is near the viewport (at once without IntersectionObserver). */
-function useNearViewport(): [React.RefObject<HTMLButtonElement | null>, boolean] {
+export function useNearViewport(): [React.RefObject<HTMLButtonElement | null>, boolean] {
   const ref = useRef<HTMLButtonElement>(null);
   const [near, setNear] = useState(false);
   useEffect(() => {
@@ -147,7 +147,7 @@ function RemoteThumb({ image, onOpen }: { image: ChatImage & { uri: string }; on
   );
 }
 
-type ViewerTarget = { kind: 'stored'; mediaRef: string; mimeType: string } | { kind: 'remote'; bytes: MediaBytes };
+export type ViewerTarget = { kind: 'stored'; mediaRef: string; mimeType: string } | { kind: 'remote'; bytes: MediaBytes };
 
 /** The image viewer: fit or actual size, copy, and reveal the stored file. */
 export function ImageLightbox({ agentId, target, onClose }: { agentId: string; target: ViewerTarget; onClose: () => void }) {
