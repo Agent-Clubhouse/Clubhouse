@@ -38,6 +38,8 @@ If the desktop agrees, the answer carries `"network": 1` beside the usual fields
 
 A member phone still shows "Controlled by" on a desktop it connects to, like any phone.
 
+Before the first pairing, `GET /api/v1/mobile/capabilities` needs the paired phone's pinned client certificate, so an unpaired phone gets 401 `peer_not_paired` and can't read `capabilities.network` first. For a pairing the person asked for with `pairingMode: "persistent"`, send `network: 1`, plus the kept `selfPairing` when the phone is already a member. The reply's `network: 1` confirms membership; a desktop with Annex Network off leaves it out. Read capabilities once paired to find the network routes and event. Never add `network` or `selfPairing` to a session pairing.
+
 ## Listing machines
 
 `GET /api/v1/mobile/network` (pinned mTLS, like every mobile route):
@@ -141,7 +143,7 @@ Fixture: `agent-address.json`.
 
 ## Order of work for the app
 
-1. Read `capabilities.network`; send `network: 1` when pairing a desktop that offers it.
+1. For persistent pairings, send `network: 1` and the kept `selfPairing` when there is one. Use the reply's `network: 1` to establish membership, then read `capabilities.network` once paired.
 2. List machines from `GET /api/v1/mobile/network`; keep offline ones, dimmed.
 3. Handle `network:changed`: connect to new members, forget removed ones.
 4. Joining through the phone (the three steps above).
