@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { RoutedMessagePart } from '../../../../shared/chat';
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
 import { reduceChatEvent, type AgentMessageItem, type UserMessageItem } from '../../../stores/chatStore';
 import { AgentMessage, isLongMessage, LONG_MESSAGE_CHARS, UserMessage } from './MessageBlocks';
 import { createTranscriptExpansionStore, TranscriptExpansionProvider } from './transcript-expansion';
@@ -25,6 +26,7 @@ const routed = (text: string, id = 'durable_1', name = 'typecheck-leak'): Routed
 
 beforeEach(() => {
   useAgentStore.setState({ agents: {}, agentIcons: {} });
+  useDispatcherStore.setState({ state: null, project: null });
 });
 
 describe('UserMessage', () => {
@@ -86,6 +88,25 @@ describe('UserMessage', () => {
     useAgentStore.setState({ agents: { durable_1: agent({ icon: 'a.png' }) }, agentIcons: { durable_1: 'data:image/png;base64,AAAA' } });
     render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed('Short') })} />);
     expect(screen.getByTestId('chat-sent-avatar').querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
+  });
+
+  it('shows the Dispatcher\'s work agent, or its chat, as the Dispatcher', () => {
+    useDispatcherStore.setState({ state: { agentId: 'dispatcher_work', chatAgentId: 'dispatcher_chat' } as never });
+    useAgentStore.setState({
+      agents: {
+        dispatcher_chat: agent({ id: 'dispatcher_chat', name: 'Dispatcher', icon: 'd.png' }),
+        // In the debug view (#3188) the work agent is loaded too, with no picture of its own.
+        dispatcher_work: agent({ id: 'dispatcher_work', name: 'Navi' }),
+      },
+      agentIcons: { dispatcher_chat: 'data:image/png;base64,DDDD' },
+    });
+    for (const id of ['dispatcher_work', 'dispatcher_chat']) {
+      const { unmount } = render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed('Short', id, 'Navi') })} />);
+      expect(screen.getByTestId('chat-sent-name').textContent).toBe('Dispatcher');
+      expect(screen.getByTestId('chat-sent-avatar').querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,DDDD');
+      expect(screen.getByTestId('chat-sent-avatar').textContent).not.toBe('N');
+      unmount();
+    }
   });
 
   it('shows the current name after a rename', () => {

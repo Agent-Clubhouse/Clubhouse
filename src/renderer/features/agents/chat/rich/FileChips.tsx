@@ -101,6 +101,11 @@ function statPaths(agentId: string, paths: string[]): Map<string, Promise<ChatFi
   return out;
 }
 
+/** What main says about one path, through the same cache as the chips. */
+export function statChatFile(agentId: string, path: string): Promise<ChatFileInfo> {
+  return statPaths(agentId, [path]).get(path) ?? Promise.resolve({ path, exists: false });
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;

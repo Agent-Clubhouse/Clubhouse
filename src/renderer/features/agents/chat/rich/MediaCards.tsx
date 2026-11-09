@@ -40,7 +40,7 @@ type Playback =
   | { state: 'error' };
 
 /** Metadata once the card is near the viewport. Without IntersectionObserver it waits for Play. */
-function useLazyMeta(card: MediaCardHost, agentId: string, el: React.RefObject<HTMLElement | null>): MediaMeta | undefined {
+function useLazyMeta(card: Pick<MediaCardHost, 'path' | 'kind' | 'size'>, agentId: string, el: React.RefObject<HTMLElement | null>): MediaMeta | undefined {
   const [meta, setMeta] = useState<MediaMeta | undefined>(undefined);
   useEffect(() => {
     const node = el.current;
@@ -69,7 +69,7 @@ function Status({ playback, meta, onPreview }: { playback: Playback; meta?: Medi
   );
 }
 
-export function MediaCard({ card, agentId }: { card: MediaCardHost; agentId: string }) {
+export function MediaCard({ card, agentId }: { card: Pick<MediaCardHost, 'path' | 'kind' | 'name' | 'size'>; agentId: string }) {
   const root = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLMediaElement | null>(null);
   const meta = useLazyMeta(card, agentId, root);

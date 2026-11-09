@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Agent } from '../../../shared/types';
+import { findSenderAgent, type MessageSender } from '../../../shared/chat';
 import { DISPATCHER_PROJECT_ID, type DispatcherState } from '../../../shared/dispatcher-types';
 import { DEFAULT_DISPATCHER_BEHAVIOR, type DispatcherBehavior, type DispatcherBehaviorState } from '../../../shared/dispatcher-behavior';
 import { useProjectStore } from '../../stores/projectStore';
@@ -71,6 +72,23 @@ export function isDispatcherAgent(agent: Pick<Agent, 'id' | 'projectId'> | null 
   if (agent.projectId === DISPATCHER_PROJECT_ID) return true;
   const state = useDispatcherStore.getState().state;
   return !!state && (agent.id === state.chatAgentId || agent.id === state.agentId);
+}
+
+/**
+ * A chat message sender's agent record (findSenderAgent), except that either
+ * Dispatcher agent is the Dispatcher's chat agent: its work agent has no
+ * picture of its own and isn't the name the user knows it by.
+ */
+export function findChatSenderAgent<T extends { name: string }>(
+  sender: MessageSender | undefined,
+  agents: Record<string, T>,
+  state: Pick<DispatcherState, 'agentId' | 'chatAgentId'> | null = useDispatcherStore.getState().state,
+): T | undefined {
+  const id = sender?.agentId;
+  if (id && state?.chatAgentId && (id === state.chatAgentId || id === state.agentId)) {
+    return agents[state.chatAgentId] ?? findSenderAgent(sender, agents);
+  }
+  return findSenderAgent(sender, agents);
 }
 
 /** The id of the agent shown as the Dispatcher (its chat), whatever state it is in. */

@@ -56,14 +56,14 @@ describe('staging', () => {
     const staged = await stageAttachmentPath('agent-1', shot, 'shot.png');
     expect(staged).toEqual({ id: expect.any(String), name: 'shot.png', kind: 'image', mimeType: 'image/png', size: PNG.length, pasted: false });
     expect(JSON.stringify(staged)).not.toContain(dir);
-    expect(await resolveAttachments('agent-1', [staged.id], withImages)).toEqual([{ type: 'image', mimeType: 'image/png', path: shot }]);
+    expect(await resolveAttachments('agent-1', [staged.id], withImages)).toEqual([{ type: 'image', mimeType: 'image/png', path: shot, name: 'shot.png' }]);
   });
 
   it('treats a mislabelled image as the file it really is', async () => {
     const fake = file('secret.png', '-----BEGIN OPENSSH PRIVATE KEY-----\n');
     const staged = await stageAttachmentPath('agent-1', fake);
     expect(staged.kind).toBe('file');
-    expect(await resolveAttachments('agent-1', [staged.id], withImages)).toEqual([{ type: 'file', path: fake }]);
+    expect(await resolveAttachments('agent-1', [staged.id], withImages)).toEqual([{ type: 'file', path: fake, name: 'secret.png' }]);
   });
 
   it('rejects directories, relative paths and missing files', async () => {
@@ -76,7 +76,7 @@ describe('staging', () => {
     const real = file('real.md', '# real\n');
     fs.symlinkSync(real, path.join(dir, 'link.md'));
     const staged = await stageAttachmentPath('agent-1', path.join(dir, 'link.md'));
-    expect(await resolveAttachments('agent-1', [staged.id], withImages)).toEqual([{ type: 'file', path: real }]);
+    expect(await resolveAttachments('agent-1', [staged.id], withImages)).toEqual([{ type: 'file', path: real, name: 'link.md' }]);
     fs.symlinkSync(os.homedir(), path.join(dir, 'home'));
     await expect(stageAttachmentPath('agent-1', path.join(dir, 'home'))).rejects.toThrow(/only files/);
   });
@@ -106,6 +106,9 @@ describe('staging', () => {
     const saved = (block as { path: string }).path;
     expect(saved.startsWith(fs.realpathSync.native(attachmentsDir('agent-1')))).toBe(true);
     expect(fs.readFileSync(saved).equals(PNG)).toBe(true);
+    // Saved under a random name; the block keeps the one it was pasted as.
+    expect(path.basename(saved)).not.toBe('image.png');
+    expect(block).toMatchObject({ type: 'image', name: 'image.png' });
   });
 
   it('refuses pasted bytes that are not an image, and images over the base64-safe cap', async () => {
@@ -132,7 +135,7 @@ describe('resolveAttachments', () => {
     const shot = await stageAttachmentPath('agent-1', file('shot.png', PNG));
     const pasted = await stageAttachmentData('agent-1', PNG);
     for (const caps of [noImages, undefined]) {
-      expect(await resolveAttachments('agent-1', [shot.id], caps)).toEqual([{ type: 'file', path: expect.stringContaining('shot.png') }]);
+      expect(await resolveAttachments('agent-1', [shot.id], caps)).toEqual([{ type: 'file', path: expect.stringContaining('shot.png'), name: 'shot.png' }]);
       await expect(resolveAttachments('agent-1', [pasted.id], caps)).rejects.toThrow(/can't take images/);
     }
   });
