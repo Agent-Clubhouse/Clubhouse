@@ -337,7 +337,12 @@ test('Preview off: the Dispatcher wakes in chat', async () => {
   fakes = await installFakeClis({ claude: 'session-info' });
   profile = createDisposableProfile({ label: 'stable-dispatcher-chat' });
   // Stream-json, which the fixtures speak.
-  const userDataFiles = { ...stableFiles(), 'chat-runtime-settings.json': { [ORCHESTRATOR]: { mode: 'chat', driver: 'claude_stream_json' } } };
+  // Set up already (#3047), so its view opens on the chat.
+  const userDataFiles = {
+    ...stableFiles(),
+    'chat-runtime-settings.json': { [ORCHESTRATOR]: { mode: 'chat', driver: 'claude_stream_json' } },
+    'dispatcher-settings.json': { setup: { status: 'done', upgrade: false } },
+  };
   app = await launchApp({ preserveFirstLoad: true, profile, userDataFiles, env: { ...STABLE_BUILD, ...fakes.env } });
   const w = app.window;
 

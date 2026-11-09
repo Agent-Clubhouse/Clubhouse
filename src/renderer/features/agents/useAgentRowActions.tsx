@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
-import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
+import { openDispatcherSettings, openDispatcherSetup } from '../dispatcher/dispatcherNav';
 import { requestClearChat } from '../dispatcher/ClearChat';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
@@ -183,6 +183,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   }, [agent.id, openAgentSettings, isDispatcher]);
 
   const handleClearChat = useCallback(() => requestClearChat(agent.name), [agent.name]);
+  const handleSetUp = useCallback(() => openDispatcherSetup(), []);
 
   const restartManaged = useCallback((fresh: boolean) => {
     if (!activeProject) return;
@@ -280,6 +281,23 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
+    // Its setup (#3047): name, look, Behavior and personality, opened again in its view.
+    if (isDispatcher && !isRemote) {
+      list.push({
+        id: 'dispatcher-setup',
+        label: 'Set up…',
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+          </svg>
+        ),
+        hoverColor: 'hover:text-ctp-accent',
+        visible: true,
+        handler: handleSetUp,
+      });
+    }
+
     // Priority 4: Clear chat (#3043). The Dispatcher's conversation starts over; its memory stays.
     if (isDispatcher && !isRemote) {
       list.push({
@@ -347,7 +365,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleClearChat, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleClearChat, handleSetUp, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
 
   return actions;
 }
