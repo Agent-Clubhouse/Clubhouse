@@ -19,7 +19,7 @@ import { CopilotCliProvider } from '../../orchestrators/copilot-cli-provider';
 import { DISPATCHER_CHAT_INSTRUCTIONS, DISPATCHER_INSTRUCTIONS } from '../dispatcher/dispatcher-service';
 import { dispatcherSkills, skillsSection } from '../dispatcher/dispatcher-skills';
 import { defaultChatDelivery } from '../dispatcher/dispatcher-channel';
-import { buildRewritePrompt } from '../dispatcher/dispatcher-rewrite';
+import { agentNews } from '../dispatcher/dispatcher-news';
 import { cardRequestText } from '../dispatcher/dispatcher-agent-cards';
 import { PERSONALITY_PRESET_TEXT, personalityInstructions } from '../../../shared/dispatcher-personality';
 
@@ -92,8 +92,9 @@ function chatFacingText(): Array<[string, string]> {
     // First run's personality section (#3047), with each preset.
     ...Object.entries(PERSONALITY_PRESET_TEXT).map(([preset, text]): [string, string] => [`personality ${preset}`, personalityInstructions('Rosie', { preset: preset as 'concise', text })]),
     ['a Clubhouse update', defaultChatDelivery({ message: 'Checkout is fixed.' })!.text],
-    // The rewrite step's words show in the chat under an agent's name.
-    ['rewrite prompt', buildRewritePrompt('webapp-lead', 'Fixed it.')],
+    // An agent's news, which the chat says in its own words (#3193).
+    ['an agent\'s question', agentNews({ agentId: 'a1', name: 'webapp-lead' }, 'Can I merge #412?', 'needs_user').text],
+    ['an agent\'s answer', agentNews({ agentId: 'a1', name: 'webapp-lead' }, 'Checkout is fixed.', 'answer').text],
   ];
 }
 

@@ -92,10 +92,21 @@ describe('applyTriage', () => {
     expect(triageNews(news('answer', 'Third?'), state, T0).show).toBe('later');
   });
 
-  it('leaves open requests alone for news that needs the person', () => {
+  it('leaves open requests alone for an agent\'s news that needs the person', () => {
     let state = noteRequest(emptyTriageState(), T0 - 1000);
-    ({ state } = step(state, news('needs_user', 'Which branch?')));
+    ({ state } = step(state, news('needs_user', 'Which branch?', { fromAgentId: 'a1' })));
     expect(state.openRequests).toEqual([T0 - 1000]);
+  });
+
+  it('closes the oldest open request with the Dispatcher\'s own reply that needs the person (#3193)', () => {
+    // A question back to the user is the reply to their request: their answer is a new request.
+    let state = noteRequest(noteRequest(emptyTriageState(), T0 - 2000), T0 - 1000);
+    ({ state } = step(state, news('needs_user', 'Which branch should it go on?')));
+    expect(state.openRequests).toEqual([T0 - 1000]);
+    ({ state } = step(state, news('needs_user', 'release-lead is stuck on a missing key.')));
+    expect(state.openRequests).toEqual([]);
+    // So an agent's later progress, called an answer, waits for the check-in.
+    expect(triageNews(news('answer', 'I confirmed the cause.', { fromAgentId: 'a1' }), state, T0).show).toBe('later');
   });
 
   it('empties the held news into a check-in', () => {

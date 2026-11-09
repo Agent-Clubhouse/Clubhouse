@@ -137,12 +137,12 @@ export function registerDispatcherChatTools(): void {
         'Tell the user something in their conversation with you: one or two plain sentences, no tool output, ' +
         'JSON or task ids. `kind` decides when it shows: needs_user now, answer now while their request is open, ' +
         'routine at the next check-in, check_in only when news is waiting for it. For an agent\'s news, set ' +
-        '`from`: it shows under that agent\'s name, rewritten from what it sent you, with `message` as your ' +
-        'version in its voice. Skip news not worth telling.',
+        '`from`: the user hears it in your voice with the agent named. Skip news not worth telling, and keep ' +
+        'what passes between you and an agent between you.',
       inputSchema: {
         type: 'object',
         properties: {
-          message: { type: 'string', description: 'One or two plain sentences. With `from`, in that agent\'s voice. For a check-in, what changed overall.' },
+          message: { type: 'string', description: 'One or two plain sentences. With `from`, the facts from that agent the user needs. For a check-in, what changed overall.' },
           kind: {
             type: 'string',
             enum: [...NEWS_KINDS],

@@ -13,8 +13,8 @@
  * wakeAndDeliver here, since nothing else messages the chat.
  *
  * The group chat (#3043) sits in setChatDelivery: dispatcher-news installs
- * the triage that decides what shows now, later or never, and the rewrite of
- * an agent's news. It hears of each hand-off through onHandOff, so an answer
+ * the triage that decides what shows now, later or never, and what the chat
+ * is told to say. It hears of each hand-off through onHandOff, so an answer
  * to what the person asked shows right away.
  */
 import * as agentConfig from '../agent-config';
@@ -69,7 +69,7 @@ export interface ChannelMessage {
 /**
  * Turns the coordinator's report into what reaches the chat. The default
  * passes it on as a Clubhouse notice; the group chat (dispatcher-news)
- * installs the triage and rewrite here. A hold, or null, keeps it back:
+ * installs the triage here. A hold, or null, keeps it back:
  * nothing reaches the chat now.
  */
 export type ChatDelivery = (report: ChatReport) => Promise<ChatDecision | null> | ChatDecision | null;

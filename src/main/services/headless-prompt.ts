@@ -2,7 +2,7 @@
  * One prompt, one answer: runs a provider's headless command for a short
  * piece of text and returns what the model said. No agent, no session kept,
  * no Clubhouse MCP, no transcript. For small background steps such as the
- * Dispatcher's rewrite of an agent's message (#3043).
+ * Dispatcher's Try it out (#3047).
  *
  * It spends tokens, so tests run it against a fake CLI (a script that prints
  * the provider's output format) and never a real model.

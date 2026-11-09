@@ -7,6 +7,11 @@
  *
  * - Right away: news that needs the person, and an answer to something they
  *   asked while that request is still open.
+ * - Each request the person makes is answered once: by an answer, or by the
+ *   Dispatcher's own reply that needs them, such as a question back (#3193).
+ *   An agent's question doesn't answer it. Otherwise a reply that wasn't
+ *   called an answer left the request open, and an agent's later progress,
+ *   called an answer, showed as if the person had asked for it.
  * - Later: routine news waits for the next check-in summary, and so does an
  *   "answer" when nothing was asked.
  * - A check-in summary shows only when news is waiting for it, which is to
@@ -119,8 +124,8 @@ export function applyTriage(state: TriageState, item: NewsItem, decision: Triage
     case 'now':
       return {
         ...state,
-        // An answer closes the oldest open request.
-        openRequests: decision.reason === 'answer' ? requests.slice(1) : requests,
+        // An answer, or the Dispatcher's own reply that needs the person, closes the oldest open request.
+        openRequests: decision.reason === 'answer' || !item.fromAgentId ? requests.slice(1) : requests,
         shown: remember(state.shown, item, now),
       };
     case 'later': {

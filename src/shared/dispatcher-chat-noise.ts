@@ -89,8 +89,8 @@ export function cleanChatText(text: string): string {
 }
 
 /**
- * An agent's news, before it is rewritten or shown: as cleanChatText, and
- * every code block goes too. A brief interjection never needs one.
+ * News on its way to the Dispatcher's chat: as cleanChatText, and every code
+ * block goes too. A brief piece of news never needs one.
  */
 export function cleanAgentNews(text: string): string {
   return strip(text, true);

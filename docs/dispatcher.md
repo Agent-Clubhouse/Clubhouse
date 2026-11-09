@@ -28,7 +28,7 @@ Tests: `dispatcher-service.test.ts` ("1.0 default"), `e2e/layout-default.spec.ts
 
 | Area | Issue | Where |
 |---|---|---|
-| Chat with zero tool noise, agents' news rewritten into short interjections, triage (now, next check-in, never), check-ins only when something changed, Clear chat | #3043 | `dispatcher-news.ts`, `dispatcher-triage.ts`, `dispatcher-rewrite.ts`, `dispatcher-clear-chat.ts`, `features/dispatcher/group-chat.ts` |
+| Chat with zero tool noise, agents' news said once in the Dispatcher's voice (#3193), triage (now, next check-in, never), check-ins only when something changed, Clear chat | #3043 | `dispatcher-news.ts`, `dispatcher-triage.ts`, `dispatcher-clear-chat.ts`, `features/dispatcher/group-chat.ts` |
 | Wake on message | #3037 | `clubhouse-mcp/tools/dispatcher-delivery.ts` |
 | Memory: plain markdown index, agent pages, timeline, topics; old `notes/` sorted in once | #3038 | `dispatcher-memory*.ts` |
 | Search over memory and transcripts | #3039 | `dispatcher-search.ts` |
@@ -44,6 +44,19 @@ Tests: `dispatcher-service.test.ts` ("1.0 default"), `e2e/layout-default.spec.ts
 | `project.add` (ask first) and the Dispatcher's default grants | #3050 | `shared/agent-grants.ts`, `shared/default-grants.ts` |
 | Telemetry: usage split, memory health, triage outcomes | #3052 | `src/main/telemetry/dispatcher-telemetry.ts` |
 | Phone: the same group chat | #3043 | `mobile-dispatcher.ts` |
+
+## Agents' news in the chat (#3193)
+
+What passes between the Dispatcher and an agent (progress, acknowledgements, an agent's questions to it) stays out of the chat. The agent's own chat keeps all of it. The chat shows only what is for the user:
+
+- **A question or decision for the user** (`needs_user`) reaches the chat as a Clubhouse update, which the chat view doesn't show. The chat asks it in its own words, naming the agent, and that reply is the only time the user reads it. The user answers in the chat, which passes the answer on with `start_work`. Nothing tells them to reply to the agent.
+- **A result they asked for** (`answer`) shows the same way while their request is open. Each request is answered once: by an answer, or by the Dispatcher's own reply that needs them, such as a question back. Before, a question back left the request open, and an agent's later progress, called an answer, showed in the chat.
+- **Routine progress** waits for the next check-in.
+- No turn follows to react to news: the chat is never told that the user already read something.
+
+The rewrite step that put agents' news into their own voice under their own name (#3043) is gone; the `clubhouse.dispatcher.news.rewrite` attributes stay on the triage event, always `none`.
+
+A separate thread per agent was considered instead. It would keep the clutter out of the main chat but leave the user two places to watch, put questions that need them out of sight, and need new UI on desktop and phone. The fix in place keeps one conversation.
 
 ## Its name
 

@@ -9,11 +9,13 @@
  * 1. Tool noise is cleaned out (shared/dispatcher-chat-noise).
  * 2. The triage rules (dispatcher-triage) decide: now, at the next check-in,
  *    or never.
- * 3. News shown now from an agent is rewritten into one or two sentences in
- *    its voice (dispatcher-rewrite), and shows under the agent's name and
- *    avatar. The Dispatcher's own words and check-in summaries reach the chat
- *    as a Clubhouse update, which the chat puts in its own words and the
- *    group chat view doesn't show.
+ * 3. What shows now reaches the chat as a Clubhouse update, which the group
+ *    chat view doesn't show: the chat says it in its own words, naming the
+ *    agent when it is an agent's news. So the user reads each piece of news
+ *    once, in the Dispatcher's voice, and answers a question in the chat
+ *    (#3193). The chat's reply is the news itself, with no turn after it to
+ *    react to a row the user already read. The agent's own messages stay in
+ *    its own chat and the Dispatcher's transcript.
  *
  * The triage state (open requests, news held for a check-in, what was shown)
  * is kept in `dispatcher-news.json` beside the Dispatcher's folders, not in
@@ -26,9 +28,8 @@ import { getBaseDirPath } from '../base-dir';
 import { appLog } from '../log-service';
 import { recordNewsTriage } from '../../telemetry/dispatcher-telemetry';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
-import * as agentConfig from '../agent-config';
 import type { MessageSender } from '../../../shared/chat';
-import { cleanAgentNews, toInterjection } from '../../../shared/dispatcher-chat-noise';
+import { cleanAgentNews } from '../../../shared/dispatcher-chat-noise';
 import {
   applyTriage,
   emptyTriageState,
@@ -40,11 +41,9 @@ import {
   type TriageDecision,
   type TriageState,
 } from './dispatcher-triage';
-import { rewriteAgentNews, type RewriteRequest, type RewriteResult } from './dispatcher-rewrite';
-import { getDispatcherPath } from './dispatcher-paths';
-import { clearAgentMessages, findInInbox, takeAgentMessages } from './dispatcher-news-inbox';
+import { clearAgentMessages, findInInbox } from './dispatcher-news-inbox';
 import { CHAT_UPDATE_TAG, onHandOff, setChatDelivery, type ChannelMessage } from './dispatcher-channel';
-import { defaultDispatcherOrchestrator, getDispatcherAgentId, isDispatcherIdentityAgentId } from './dispatcher-service';
+import { isDispatcherIdentityAgentId } from './dispatcher-service';
 
 const NS = 'core:dispatcher';
 
@@ -140,13 +139,10 @@ export function clearHeldNews(): number {
 
 export interface GroupChatDeps {
   now?: () => number;
-  /** The Dispatcher's provider, for the rewrite step's Auto minimum. */
-  provider?: () => Promise<string | undefined>;
   /** An agent the Dispatcher named that hasn't messaged it lately: by id or name, among agents wired to it. */
   findAgent?: (from: string) => MessageSender | null;
   /** Whether this is one of the Dispatcher's own agents, whose words are its own. */
   isOwnAgent?: (agentId: string) => boolean;
-  rewrite?: (req: RewriteRequest) => Promise<RewriteResult>;
 }
 
 const NEVER_REASONS: Record<Extract<TriageDecision, { show: 'never' }>['reason'], string> = {
@@ -178,20 +174,19 @@ function checkInMessage(summary: string, held: readonly HeldNews[]): ChatMessage
   return { text, routed: [{ fromClubhouse: true, text: summary }] };
 }
 
-/** The chat's message for an agent's news: it shows under the agent's name, and the chat may add a word. */
-function interjection(sender: MessageSender, text: string, reason: 'needs_user' | 'answer'): ChatMessage {
-  const why = reason === 'needs_user' ? 'It needs the user.' : 'It answers what the user asked.';
+/**
+ * The chat's message for an agent's news: the chat tells the user in its own words, naming the
+ * agent, and that reply is the only thing the user sees of it (#3193).
+ */
+export function agentNews(sender: MessageSender, text: string, reason: 'needs_user' | 'answer'): ChatMessage {
+  const what = reason === 'needs_user'
+    ? `${sender.name} needs the user for this. Ask them in your own words, briefly, and say it comes from ${sender.name}. `
+      + 'They answer here, in this conversation; pass their answer on with start_work.'
+    : `News from ${sender.name} that answers what the user asked. Tell them in your own words, briefly, and say it comes from ${sender.name}.`;
   return {
-    text: `${CHAT_UPDATE_TAG} ${sender.name} told the user, in the conversation: "${text}" ${why} `
-      + 'The user has already read it. Add a short reply only if it helps, such as what it means or what you suggest next. Don\'t repeat it.',
-    routed: [{ sender, text }],
+    text: `${CHAT_UPDATE_TAG} ${what} Your reply is the whole message: no acknowledgment before or after it.\n\n${text}`,
+    routed: [{ fromClubhouse: true, text }],
   };
-}
-
-async function defaultProvider(): Promise<string | undefined> {
-  const id = getDispatcherAgentId();
-  const config = id ? await agentConfig.getDurableConfig(getDispatcherPath(), id).catch((): null => null) : null;
-  return config?.orchestrator ?? defaultDispatcherOrchestrator();
 }
 
 function defaultFindAgent(from: string): MessageSender | null {
@@ -208,24 +203,21 @@ function defaultFindAgent(from: string): MessageSender | null {
 }
 
 /**
- * The step between the Dispatcher's report and its chat: triage, then the
- * rewrite for an agent's news shown now. Serialized, so reports reach the chat
- * in the order they were made.
+ * The step between the Dispatcher's report and its chat: triage, then what the
+ * chat is told. Serialized, so reports reach the chat in the order they were made.
  */
 export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: ChatReport) => Promise<ChatDecision> {
   const now = deps.now ?? Date.now;
   const findAgent = deps.findAgent ?? defaultFindAgent;
-  const rewrite = deps.rewrite ?? rewriteAgentNews;
-  const provider = deps.provider ?? defaultProvider;
   const isOwnAgent = deps.isOwnAgent ?? isDispatcherIdentityAgentId;
   let chain: Promise<unknown> = Promise.resolve();
 
   const decide = async (report: ChatReport): Promise<ChatDecision> => {
     const at = now();
     const kind = report.kind ?? 'needs_user';
-    let sender = report.from ? findInInbox(report.from) ?? findAgent(report.from) : null;
+    let sender = report.from ? findInInbox(report.from, at) ?? findAgent(report.from) : null;
     if (sender?.agentId && isOwnAgent(sender.agentId)) sender = null;
-    const cleaned = sender ? toInterjection(report.message) : cleanAgentNews(report.message);
+    const cleaned = cleanAgentNews(report.message);
     const item: NewsItem = {
       kind,
       text: cleaned,
@@ -250,8 +242,6 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
     }
     if (decision.show === 'later') {
       writeState(applyTriage(before, item, decision, at));
-      // Passed on: the raw message isn't the next one to rewrite.
-      if (sender?.agentId) takeAgentMessages(sender.agentId, at);
       recordNewsTriage(outcome);
       return { hold: 'later', reason: LATER_REASONS[decision.reason] };
     }
@@ -260,21 +250,9 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
       recordNewsTriage({ ...outcome, held: decision.held.length });
       return checkInMessage(cleaned, decision.held);
     }
-    if (!sender?.agentId) {
-      writeState(applyTriage(before, item, decision, at));
-      recordNewsTriage(outcome);
-      return ownWords(cleaned);
-    }
-    const raw = takeAgentMessages(sender.agentId, at);
-    const rewritten = await rewrite({ provider: (await provider().catch((): undefined => undefined)) ?? '', agentName: sender.name, raw, fallback: report.message })
-      .catch((): RewriteResult => ({ text: cleaned, by: 'fallback', reason: 'run_failed' }));
-    const text = rewritten.text || cleaned;
-    appLog(NS, 'info', 'Dispatcher news rewrite', { meta: { by: rewritten.by, reason: rewritten.reason } });
-    // Remembered as the Dispatcher wrote it, since that is what it would send again. Read
-    // fresh: a hand-off may have opened a request while the rewrite ran.
-    writeState(applyTriage(readState(), item, decision, at));
-    recordNewsTriage({ ...outcome, rewrite: { by: rewritten.by, ...(rewritten.reason && { reason: rewritten.reason }) } });
-    return interjection(sender, text, decision.reason);
+    writeState(applyTriage(before, item, decision, at));
+    recordNewsTriage(outcome);
+    return sender ? agentNews(sender, cleaned, decision.reason) : ownWords(cleaned);
   };
 
   return (report) => {
@@ -286,7 +264,7 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
 
 let uninstall: (() => void) | null = null;
 
-/** Make the Dispatcher's chat a group chat: install the triage and rewrite, and count hand-offs as requests. */
+/** Make the Dispatcher's chat a group chat: install the triage, and count hand-offs as requests. */
 export function installGroupChat(deps: GroupChatDeps = {}): void {
   uninstall?.();
   setChatDelivery(createGroupChatDelivery(deps));
