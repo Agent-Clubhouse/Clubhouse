@@ -7,6 +7,8 @@ import {
   emptyTriageState,
   isNewsKind,
   noteRequest,
+  requestClosedBy,
+  revertShown,
   sameNewsKey,
   triageNews,
   type NewsItem,
@@ -98,6 +100,12 @@ describe('applyTriage', () => {
     expect(state.openRequests).toEqual([T0 - 1000]);
   });
 
+  it('leaves open requests alone for news that names an agent nobody found (#3193)', () => {
+    let state = noteRequest(emptyTriageState(), T0 - 1000);
+    ({ state } = step(state, news('needs_user', 'Which branch?', { fromName: 'release-lead' })));
+    expect(state.openRequests).toEqual([T0 - 1000]);
+  });
+
   it('closes the oldest open request with the Dispatcher\'s own reply that needs the person (#3193)', () => {
     // A question back to the user is the reply to their request: their answer is a new request.
     let state = noteRequest(noteRequest(emptyTriageState(), T0 - 2000), T0 - 1000);
@@ -143,5 +151,32 @@ describe('helpers', () => {
     expect(isNewsKind('routine')).toBe(true);
     expect(isNewsKind('urgent')).toBe(false);
     expect(isNewsKind(undefined)).toBe(false);
+  });
+});
+
+describe('revertShown (#3193)', () => {
+  it('forgets news that never reached the chat and reopens the request it closed', () => {
+    const before = noteRequest(emptyTriageState(), T0 - 1000);
+    const item = news('answer', 'Tagged 1.0.', { fromAgentId: 'a1' });
+    const decision = triageNews(item, before, T0);
+    const closed = requestClosedBy(before, item, decision, T0);
+    expect(closed).toBe(T0 - 1000);
+    const after = applyTriage(before, item, decision, T0);
+    expect(after.openRequests).toEqual([]);
+    const reverted = revertShown(after, item, decision, closed);
+    expect(reverted.openRequests).toEqual([T0 - 1000]);
+    expect(reverted.shown).toEqual([]);
+    expect(triageNews(item, reverted, T0)).toEqual({ show: 'now', reason: 'answer' });
+  });
+
+  it('holds again what a check-in took, and changes nothing for news that was held', () => {
+    let { state } = step(emptyTriageState(), news('routine', 'A.'));
+    const held = step(state, news('routine', 'B.'));
+    expect(revertShown(held.state, news('routine', 'B.'), held.decision, undefined)).toBe(held.state);
+    state = held.state;
+    const checkIn = news('check_in', 'Two things.');
+    const { decision, state: after } = step(state, checkIn);
+    expect(after.held).toEqual([]);
+    expect(revertShown(after, checkIn, decision, undefined).held.map((h) => h.text)).toEqual(['A.', 'B.']);
   });
 });

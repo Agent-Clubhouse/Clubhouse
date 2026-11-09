@@ -18,9 +18,9 @@ In its first conversation it introduces itself: how many agents it can reach, wh
 
 ## Talking with it
 
-Its chat works like a group chat with you, the Dispatcher, and short notes from your agents in their own name and picture. You never see tool calls, task ids or reply instructions there.
+Its chat is your conversation with the Dispatcher. You never see tool calls, task ids or reply instructions there.
 
-- **Agents' news** is put into a sentence or two in the agent's voice. The full message stays in that agent's own transcript.
+- **Agents' news** reaches you once, in the Dispatcher's words, with the agent named. When an agent has a question for you, answer it right there in the chat. What the Dispatcher and your agents say to each other along the way stays in each agent's own chat.
 - **What shows right away:** news that needs you, or that answers something you asked. Routine news waits for the next check-in, and some is never shown.
 - **Check-ins** sum up what changed since the last one, and appear only when something did.
 - **One long conversation.** It keeps one chat going and compacts it as it grows. **Clear chat** in its menu starts the conversation over, after asking. Clearing the chat never touches its memory.
@@ -80,4 +80,4 @@ Permission prompts stay with the agent that asked, and an agent's message never 
 
 ## On your phone
 
-With Annex paired, the Dispatcher shows on your phone under its name, with the same group chat: your messages, its replies and your agents' short notes, without tool rows.
+With Annex paired, the Dispatcher shows on your phone under its name, with the same chat: your messages and its replies, without tool rows.

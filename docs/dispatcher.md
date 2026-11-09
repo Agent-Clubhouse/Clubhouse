@@ -53,6 +53,8 @@ What passes between the Dispatcher and an agent (progress, acknowledgements, an 
 - **A result they asked for** (`answer`) shows the same way while their request is open. Each request is answered once: by an answer, or by the Dispatcher's own reply that needs them, such as a question back. Before, a question back left the request open, and an agent's later progress, called an answer, showed in the chat.
 - **Routine progress** waits for the next check-in.
 - No turn follows to react to news: the chat is never told that the user already read something.
+- News that names an agent Clubhouse can't find (a name two projects share, a typo) is still that agent's news, under the name given, and doesn't answer a request.
+- News is remembered as shown when it is sent. If it never reaches the chat (a wake that asks first, a chat shutting down, a start that fails), that is undone: it can be sent again, and the request it answered opens again. A question for the user also goes out as a notification that opens the chat. A chat turn that fails after the message arrived isn't detected.
 
 The rewrite step that put agents' news into their own voice under their own name (#3043) is gone; the `clubhouse.dispatcher.news.rewrite` attributes stay on the triage event, always `none`.
 

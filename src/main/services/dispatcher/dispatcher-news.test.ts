@@ -122,6 +122,43 @@ describe('agent news shown now (#3193)', () => {
   });
 });
 
+describe('news that names an agent Clubhouse can\'t find (#3193)', () => {
+  it('is still that agent\'s news, under the name given, and doesn\'t answer the user\'s request', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    h.handOff!();
+    const message = shown(await deliver({ message: 'Should I tag from main?', from: 'release-lead', kind: 'needs_user' }));
+    expect(message.text).toContain('release-lead needs the user');
+    // The request is still open, so the Dispatcher's own answer to it shows.
+    expect(isChatHold(await deliver({ message: 'Tagged 1.0.', kind: 'answer' }))).toBe(false);
+  });
+});
+
+describe('news that never reached the chat (#3193)', () => {
+  it('can be sent again, and reopens the request it answered', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    h.handOff!();
+    const first = shown(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }));
+    first.notDelivered!();
+    // Not a repeat, and the request is open again.
+    const again = shown(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }));
+    // Delivered this time: now it is a repeat, and the request is closed.
+    expect(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' })).toEqual({ hold: 'never', reason: 'The user was already told this.' });
+    expect(again.text).toContain('Tagged 1.0.');
+    expect(isChatHold(await deliver({ message: 'Tagged 1.0.1.', from: 'api-lead', kind: 'answer' }))).toBe(true);
+  });
+
+  it('holds again what a check-in took', async () => {
+    const deliver = createGroupChatDelivery(deps().deps);
+    await deliver({ message: 'Lint is green.', from: 'api-lead', kind: 'routine' });
+    const checkIn = shown(await deliver({ message: 'One thing changed.', kind: 'check_in' }));
+    expect(heldNews()).toEqual([]);
+    checkIn.notDelivered!();
+    expect(heldNews().map((n) => n.text)).toEqual(['Lint is green.']);
+  });
+});
+
 describe('an agent\'s routine traffic stays out of the chat (#3193)', () => {
   it('holds routine progress for the check-in', async () => {
     const deliver = createGroupChatDelivery(deps().deps);

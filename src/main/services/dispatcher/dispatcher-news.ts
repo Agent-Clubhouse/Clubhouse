@@ -34,6 +34,8 @@ import {
   applyTriage,
   emptyTriageState,
   noteRequest,
+  requestClosedBy,
+  revertShown,
   triageNews,
   type HeldNews,
   type NewsItem,
@@ -57,7 +59,13 @@ export interface ChatReport {
 }
 
 /** What reaches the chat agent, and how the chat shows it. */
-export type ChatMessage = ChannelMessage;
+export interface ChatMessage extends ChannelMessage {
+  /**
+   * Call when it didn't reach the chat: it is forgotten as shown, so the
+   * Dispatcher can send it again, and the request it answered opens again.
+   */
+  notDelivered?: () => void;
+}
 
 /** A report that isn't shown now: held for the next check-in, or never shown. */
 export interface ChatHold {
@@ -181,8 +189,9 @@ function checkInMessage(summary: string, held: readonly HeldNews[]): ChatMessage
 export function agentNews(sender: MessageSender, text: string, reason: 'needs_user' | 'answer'): ChatMessage {
   const what = reason === 'needs_user'
     ? `${sender.name} needs the user for this. Ask them in your own words, briefly, and say it comes from ${sender.name}. `
-      + 'They answer here, in this conversation; pass their answer on with start_work.'
-    : `News from ${sender.name} that answers what the user asked. Tell them in your own words, briefly, and say it comes from ${sender.name}.`;
+      + 'Keep every option, number and name. They answer here, in this conversation; pass their answer on with start_work.'
+    : `News from ${sender.name} that answers what the user asked. Tell them in your own words, briefly, and say it comes from ${sender.name}. `
+      + 'Keep every number and name.';
   return {
     text: `${CHAT_UPDATE_TAG} ${what} Your reply is the whole message: no acknowledgment before or after it.\n\n${text}`,
     routed: [{ fromClubhouse: true, text }],
@@ -215,8 +224,10 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
   const decide = async (report: ChatReport): Promise<ChatDecision> => {
     const at = now();
     const kind = report.kind ?? 'needs_user';
-    let sender = report.from ? findInInbox(report.from, at) ?? findAgent(report.from) : null;
+    let sender: MessageSender | null = report.from ? findInInbox(report.from, at) ?? findAgent(report.from) : null;
     if (sender?.agentId && isOwnAgent(sender.agentId)) sender = null;
+    // An agent Clubhouse can't find, such as a name two projects share, is still that agent's news, under the name given.
+    else if (!sender && report.from) sender = { name: report.from };
     const cleaned = cleanAgentNews(report.message);
     const item: NewsItem = {
       kind,
@@ -245,14 +256,16 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
       recordNewsTriage(outcome);
       return { hold: 'later', reason: LATER_REASONS[decision.reason] };
     }
-    if (decision.show === 'check_in') {
-      writeState(applyTriage(before, item, decision, at));
-      recordNewsTriage({ ...outcome, held: decision.held.length });
-      return checkInMessage(cleaned, decision.held);
-    }
+    // Remembered as shown now, so a repeat sent meanwhile is caught, and undone if it never reaches the chat.
+    const closed = requestClosedBy(before, item, decision, at);
     writeState(applyTriage(before, item, decision, at));
+    const notDelivered = () => writeState(revertShown(readState(), item, decision, closed));
+    if (decision.show === 'check_in') {
+      recordNewsTriage({ ...outcome, held: decision.held.length });
+      return { ...checkInMessage(cleaned, decision.held), notDelivered };
+    }
     recordNewsTriage(outcome);
-    return sender ? agentNews(sender, cleaned, decision.reason) : ownWords(cleaned);
+    return { ...(sender ? agentNews(sender, cleaned, decision.reason) : ownWords(cleaned)), notDelivered };
   };
 
   return (report) => {

@@ -83,7 +83,7 @@ Copilot is still excluded from `auto`, with reason `auto_not_supported`: whether
 
 ## Minimum and maximum (#3044)
 
-Auto has two more levels, `minimum` and `maximum`, mapped per provider like the difficulties and edited in the same table. The order is `minimum`, `easy`, `medium`, `hard`, `maximum` (`AUTO_LEVELS`). Minimum is the cheapest choice, for Clubhouse's own small background steps (the Dispatcher's rewrite step uses it). Maximum is the strongest.
+Auto has two more levels, `minimum` and `maximum`, mapped per provider like the difficulties and edited in the same table. The order is `minimum`, `easy`, `medium`, `hard`, `maximum` (`AUTO_LEVELS`). Minimum is the cheapest choice, for Clubhouse's own small background steps. Maximum is the strongest.
 
 They are mapping levels only. `start_helper`'s `difficulty` still takes `easy`, `medium` and `hard`, so the helper contract, decision records and telemetry are unchanged.
 

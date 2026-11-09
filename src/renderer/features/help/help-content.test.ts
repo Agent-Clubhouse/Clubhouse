@@ -211,7 +211,7 @@ describe('help-content in the new shell', () => {
   it('describes what the Dispatcher does today, in plain words (#3053)', () => {
     const content = DISPATCHER_TOPIC.content;
     for (const part of [
-      'on by default', 'Set up later', 'Try it out', 'What else can you do?', 'group chat', 'Check-ins', 'Clear chat',
+      'on by default', 'Set up later', 'Try it out', 'What else can you do?', 'in the Dispatcher\'s words', 'Check-ins', 'Clear chat',
       'wakes it', '| Light | Standard | Thorough |', '~/.clubhouse/dispatcher/memory/', 'Forget everything', 'Dispatcher card',
       'Asking what it does…', 'tell me when main is pushed', 'adds or opens a project', 'Needs you', 'Runs on',
       'conversations and background work', 'On your phone',

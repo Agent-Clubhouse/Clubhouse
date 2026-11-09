@@ -9,7 +9,7 @@
  *   asked while that request is still open.
  * - Each request the person makes is answered once: by an answer, or by the
  *   Dispatcher's own reply that needs them, such as a question back (#3193).
- *   An agent's question doesn't answer it. Otherwise a reply that wasn't
+ *   News that names an agent doesn't, even one Clubhouse couldn't find. Otherwise a reply that wasn't
  *   called an answer left the request open, and an agent's later progress,
  *   called an answer, showed as if the person had asked for it.
  * - Later: routine news waits for the next check-in summary, and so does an
@@ -117,17 +117,29 @@ function remember(shown: ShownNews[], item: NewsItem, now: number): ShownNews[] 
   return [...shown.filter((n) => now - n.at < DUPLICATE_WINDOW_MS), { text: item.text, fromAgentId: item.fromAgentId, at: item.at }].slice(-SHOWN_MAX);
 }
 
+/**
+ * The open request a decision closes, if any: the oldest, closed by an answer
+ * or by the Dispatcher's own reply that needs the person. News that names an
+ * agent, found or not, is never the Dispatcher's own reply.
+ */
+export function requestClosedBy(state: TriageState, item: NewsItem, decision: TriageDecision, now: number): number | undefined {
+  if (decision.show !== 'now') return undefined;
+  const ownWords = !item.fromAgentId && !item.fromName;
+  return decision.reason === 'answer' || ownWords ? openRequests(state, now)[0] : undefined;
+}
+
 /** The state after a decision. Expired requests and old repeats are pruned on the way. */
 export function applyTriage(state: TriageState, item: NewsItem, decision: TriageDecision, now: number): TriageState {
   const requests = openRequests(state, now);
   switch (decision.show) {
-    case 'now':
+    case 'now': {
+      const closed = requestClosedBy(state, item, decision, now);
       return {
         ...state,
-        // An answer, or the Dispatcher's own reply that needs the person, closes the oldest open request.
-        openRequests: decision.reason === 'answer' || !item.fromAgentId ? requests.slice(1) : requests,
+        openRequests: closed === undefined ? requests : requests.slice(1),
         shown: remember(state.shown, item, now),
       };
+    }
     case 'later': {
       const held: HeldNews = { text: item.text, at: item.at, ...(item.fromAgentId && { fromAgentId: item.fromAgentId }), ...(item.fromName && { fromName: item.fromName }) };
       return { ...state, openRequests: requests, held: [...state.held, held].slice(-HELD_MAX) };
@@ -137,6 +149,19 @@ export function applyTriage(state: TriageState, item: NewsItem, decision: Triage
     case 'never':
       return { ...state, openRequests: requests };
   }
+}
+
+/**
+ * Undo a decision to show news whose message never reached the chat (#3193):
+ * forget it was shown, so it can be sent again, reopen the request it closed,
+ * and hold again what a check-in took.
+ */
+export function revertShown(state: TriageState, item: NewsItem, decision: TriageDecision, closedRequest: number | undefined): TriageState {
+  if (decision.show !== 'now' && decision.show !== 'check_in') return state;
+  const shown = state.shown.filter((n) => !(n.at === item.at && n.text === item.text && n.fromAgentId === item.fromAgentId));
+  const openRequests = closedRequest === undefined ? state.openRequests : [...state.openRequests, closedRequest].sort((a, b) => a - b);
+  const held = decision.show === 'check_in' ? [...decision.held, ...state.held].slice(-HELD_MAX) : state.held;
+  return { ...state, shown, openRequests, held };
 }
 
 /** The person handed something off: an answer to it shows right away. */
