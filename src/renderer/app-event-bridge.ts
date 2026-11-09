@@ -193,11 +193,18 @@ function initWindowListeners(): (() => void)[] {
 
 // ─── Agent Lifecycle Listeners ──────────────────────────────────────────────
 
-/** A change made outside this window (an agent, the CLI, a hand edit) shows at once (#2597). */
+/** A change made outside this window (an agent, the CLI, a hand edit) shows at once (#2597, #3183). */
 function initDisplaySyncListeners(): (() => void)[] {
   return [
     window.clubhouse.agent.onConfigsChanged((projectPath: string) => {
       useAgentStore.getState().syncDurableDisplay(projectPath).catch(() => { /* best-effort: the next change or load catches up */ });
+      // An agent created or deleted in main (an MCP tool, an Action) joins or
+      // leaves the sidebar too (#3183). A pop-out takes its agents from the main window.
+      if (window.clubhouse.window.isPopout()) return;
+      const project = useProjectStore.getState().projects.find((p) => p.path === projectPath);
+      if (project) {
+        useAgentStore.getState().syncDurableMembership(project.id, project.path).catch(() => { /* best-effort: the next change or load catches up */ });
+      }
     }),
     window.clubhouse.project.onChanged(() => {
       useProjectStore.getState().syncProjectDisplay().catch(() => { /* best-effort: the next change or load catches up */ });

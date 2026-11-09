@@ -1348,6 +1348,67 @@ describe('agentStore', () => {
     });
   });
 
+  describe('syncDurableMembership (#3183)', () => {
+    const config = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, color: 'indigo', createdAt: '2024-01-01', ...extra });
+
+    it('adds an agent created in main (e.g. by the Dispatcher over MCP), with its icon and live status', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'existing', name: 'existing', projectId: 'proj_1', status: 'running', kind: 'durable' });
+      mockAgent.listDurable.mockResolvedValue([config('existing'), config('created', { icon: 'created.png', worktreePath: '/p/created', branch: 'created/standby' })]);
+      mockAgent.getRunningStatuses.mockResolvedValue(['created']);
+      mockAgent.readIcon.mockResolvedValue('data:icon');
+
+      await getState().syncDurableMembership('proj_1', '/project');
+
+      expect(mockAgent.listDurable).toHaveBeenCalledWith('/project');
+      expect(mockAgent.getRunningStatuses).toHaveBeenCalledWith(['created']);
+      expect(getState().agents['created']).toMatchObject({
+        projectId: 'proj_1', kind: 'durable', name: 'created', status: 'running', worktreePath: '/p/created', branch: 'created/standby',
+      });
+      expect(getState().agentIcons['created']).toBe('data:icon');
+      expect(getState().agents['existing']).toMatchObject({ status: 'running' });
+    });
+
+    it('drops a durable agent of the project whose config is gone or disposed', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'kept', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'deleted', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'disposed', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'other_project', projectId: 'proj_2', status: 'sleeping', kind: 'durable' });
+      seedAgent({ id: 'quick', projectId: 'proj_1', status: 'running', kind: 'quick' });
+      mockAgent.listDurable.mockResolvedValue([config('kept'), config('disposed', { disposedAt: '2024-01-02' })]);
+
+      await getState().syncDurableMembership('proj_1', '/project');
+
+      expect(Object.keys(getState().agents).sort()).toEqual(['kept', 'other_project', 'quick']);
+    });
+
+    it("keeps a creating placeholder and an agent added while the list was read", async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'temp_1', projectId: 'proj_1', status: 'creating', kind: 'durable' });
+      let resolveList: (configs: unknown[]) => void = () => {};
+      mockAgent.listDurable.mockReturnValue(new Promise((resolve) => { resolveList = resolve; }));
+
+      const sync = getState().syncDurableMembership('proj_1', '/project');
+      seedAgent({ id: 'just_made', projectId: 'proj_1', status: 'running', kind: 'durable' });
+      resolveList([]);
+      await sync;
+
+      expect(getState().agents['temp_1']).toBeDefined();
+      expect(getState().agents['just_made']).toBeDefined();
+    });
+
+    it('leaves the state alone when nothing changed', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'same', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      const before = getState().agents;
+      mockAgent.listDurable.mockResolvedValue([config('same')]);
+      await getState().syncDurableMembership('proj_1', '/project');
+      expect(getState().agents).toBe(before);
+      expect(mockAgent.getRunningStatuses).not.toHaveBeenCalled();
+    });
+  });
+
   describe('loadDurableAgents', () => {
     it('loads the emoji from durable config', async () => {
       const mockAgent = window.clubhouse.agent as any;
