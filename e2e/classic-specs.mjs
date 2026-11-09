@@ -4,8 +4,7 @@
  * Specs launch on the default (new) layout. The Classic layout E2E job sets
  * CLUBHOUSE_E2E_LAYOUT=classic, which makes launchApp seed `newChrome: false`
  * unless a spec chose a layout itself, and runs CLASSIC_SHARDS, one list per
- * shard. Those are specs moved to the new layout that keep classic coverage
- * until their new-layout runs are stable, and CLASSIC_ONLY_SPECS.
+ * shard: CLASSIC_ONLY_SPECS, and a few journeys that keep classic coverage.
  *
  * CLASSIC_ONLY_SPECS test UI only classic has (its agent list, rail, flyout,
  * onboarding modal). They pin classic themselves and run only in the Classic
@@ -19,60 +18,28 @@
 export const CLASSIC_LAYOUT_ENV = 'CLUBHOUSE_E2E_LAYOUT';
 
 /**
- * Run by the Classic layout E2E job, on classic, one list per shard. The lists
- * are balanced by hand from measured Windows times (#3143's run: a test-count
- * split put every app-launching Annex, canvas and chat spec in one shard).
- * A new spec goes in the list with the most room.
+ * Run by the Classic layout E2E job, on classic, one list per shard: the
+ * classic-only specs, and a few short journeys whose navigation differs on
+ * classic (the project's tabs, the terminal, a file preview), while classic
+ * ships. Together they take about as long as one E2E shard, so one shard is
+ * enough. A spec that needs classic coverage goes in the list with the most room.
  *
- * A spec leaves once its new-layout runs have been stable on main for a while;
- * the first moved specs (smoke, navigation, projects, agent start) left after
- * 10 to 15 green main runs. Their classic branches stay in the specs until
- * classic itself goes. Annex specs that only use the protocol don't depend on
- * the layout and never run here.
+ * Specs moved to the new layout ran here too until their new-layout runs were
+ * stable on main; the last of them left in #2843's rebalance, after 7 to 15
+ * green main runs each. Their classic branches stay in the specs until classic
+ * itself goes. Annex specs that only use the protocol don't depend on the
+ * layout and never run here.
  */
 export const CLASSIC_SHARDS = {
   1: [
     'agent-list-ui.spec.ts',
-    'telemetry-export.spec.ts',
+    'onboarding.spec.ts',
+    'rail-hover-flyout.spec.ts',
+    'rail-pin.spec.ts',
+    'canvas-create.spec.ts',
+    'mermaid-preview.spec.ts',
     'terminal.spec.ts',
     'terminal-e2e.spec.ts',
-    'annex-v2/remote-control.spec.ts',
-  ],
-  2: [
-    'rail-pin.spec.ts',
-    'rail-hover-flyout.spec.ts',
-    'plugin-system.spec.ts',
-    'popout-window.spec.ts',
-    'mermaid-preview.spec.ts',
-    'command-palette.spec.ts',
-  ],
-  3: [
-    'onboarding.spec.ts',
-    'chat-rich/queue-merging.spec.ts',
-    'chat-rich/question-dock.spec.ts',
-    'chat-rich/reading.spec.ts',
-    'chat-rich/annex.spec.ts',
-    'chat-rich/flag-off.spec.ts',
-  ],
-  4: [
-    'find-replace.spec.ts',
-    'chat-fake-cli.spec.ts',
-    'chat-rich/file-chips.spec.ts',
-    'chat-rich/context-menu.spec.ts',
-    'annex-v2/settings-page.spec.ts',
-  ],
-  5: [
-    'chat-rich/providers.spec.ts',
-    'chat-rich/media-images.spec.ts',
-    'chat-rich/media-cards.spec.ts',
-    'chat-rich/link-tokens.spec.ts',
-    'annex-v2/full-demo.spec.ts',
-    'annex-v2/chat-across-desktops.spec.ts',
-    'canvas-card-wheel.spec.ts',
-    'canvas-create.spec.ts',
-    'canvas-golden-path.spec.ts',
-    'canvas-group-project-create.spec.ts',
-    'canvas-startup-bindings.spec.ts',
   ],
 };
 

@@ -352,8 +352,11 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
+        # One explicit list per shard (e2e/e2e-shards.mjs), balanced by hand
+        # from measured times. Playwright's own sharding splits by test count.
         shard: [1, 2, 3]
     env:
+      PLAYWRIGHT_E2E_SHARD: ${{ matrix.shard }}
       PLAYWRIGHT_IGNORE_ANNEX: '1'
       # e2e/chat-rich runs in the e2e-chat job (Linux and Windows only).
       PLAYWRIGHT_IGNORE_CHAT_RICH: '1'
@@ -384,10 +387,10 @@ jobs:
           path: .webpack/
       - name: Run E2E tests (shard ${{ matrix.shard }}/3)
         if: runner.os != 'Linux'
-        run: npx playwright test --config=playwright.config.ts --shard=${{ matrix.shard }}/3 --reporter=line,junit
+        run: npx playwright test --config=playwright.config.ts --reporter=line,junit
       - name: Run E2E tests (shard ${{ matrix.shard }}/3, Linux — requires virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test --config=playwright.config.ts --shard=${{ matrix.shard }}/3 --reporter=line,junit
+        run: xvfb-run --auto-servernum npx playwright test --config=playwright.config.ts --reporter=line,junit
         env:
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'
@@ -400,13 +403,17 @@ jobs:
   e2e-annex:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Annex E2E Tests (${{ matrix.os }})
+    name: Annex E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/2)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
+        # Every Annex spec launches two apps, so one job was the run's long
+        # pole. One explicit list per shard, in e2e/e2e-shards.mjs.
+        shard: [1, 2]
     env:
+      PLAYWRIGHT_ANNEX_SHARD: ${{ matrix.shard }}
       PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
     steps:
       - uses: actions/checkout@v7
@@ -434,17 +441,17 @@ jobs:
           path: .webpack/
       - name: Run Annex E2E tests
         if: runner.os != 'Linux'
-        run: npx playwright test e2e/annex-v2/ --reporter=line,junit
+        run: npx playwright test --reporter=line,junit
       - name: Run Annex E2E tests (Linux — requires virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test e2e/annex-v2/ --reporter=line,junit
+        run: xvfb-run --auto-servernum npx playwright test --reporter=line,junit
         env:
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: annex-traces-${{ matrix.os }}
+          name: annex-traces-${{ matrix.os }}-${{ matrix.shard }}
           path: test-results/
 
   # Rich chat content and chat UX specs (e2e/chat-rich, #2480), plus the
@@ -564,15 +571,15 @@ jobs:
           name: stable-e2e-traces-${{ matrix.os }}
           path: test-results/
 
-  # The classic layout (#2843): the specs for classic-only UI, and specs moved
-  # to the new layout that run here on classic too until their new-layout runs
-  # are stable on CI. CLUBHOUSE_E2E_LAYOUT=classic makes the config run one of
-  # e2e/classic-specs.mjs's lists and launches default to classic. Linux and
-  # Windows only, in a job of its own so it never lengthens the E2E shards.
+  # The classic layout (#2843): the specs for classic-only UI, and a few short
+  # journeys whose navigation differs on classic. CLUBHOUSE_E2E_LAYOUT=classic
+  # makes the config run one of e2e/classic-specs.mjs's lists and launches
+  # default to classic. Linux and Windows only, in a job of its own so it never
+  # lengthens the E2E shards.
   e2e-classic:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Classic layout E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/5)
+    name: Classic layout E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/1)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -580,7 +587,7 @@ jobs:
         os: [ubuntu-latest, windows-2022]
         # One explicit list per shard (e2e/classic-specs.mjs), balanced by hand
         # from measured times so no shard outlasts the E2E shards.
-        shard: [1, 2, 3, 4, 5]
+        shard: [1]
     env:
       PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
       CLUBHOUSE_E2E_LAYOUT: classic

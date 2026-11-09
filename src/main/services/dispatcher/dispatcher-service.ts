@@ -72,7 +72,7 @@ import { onHelperRoutingChanged } from '../helper-routing';
 import type { DispatcherBehavior, DispatcherRole } from '../../../shared/dispatcher-behavior';
 import { setDispatcherIdLookup } from '../clubhouse-mcp/dispatcher-gate';
 import { DEFAULT_DISPATCHER_NAME } from '../../../shared/dispatcher-name';
-import { personalityInstructions } from '../../../shared/dispatcher-personality';
+import { cleanDispatcherName, personalityInstructions } from '../../../shared/dispatcher-personality';
 import type { DispatcherSetupInput, DispatcherSetupStatus } from '../../../shared/dispatcher-setup';
 import {
   noteDispatcherOrigin,
@@ -108,6 +108,15 @@ export const DISPATCHER_INTERNAL_TOOLS: ReadonlySet<string> = new Set(['start_wo
 let config: DurableAgentConfig | null = null;
 /** The chat's config as last read from disk; null before it was first created. */
 let chatConfig: DurableAgentConfig | null = null;
+
+/**
+ * The name the user gave it (#3053), cleaned, or the working name: what its
+ * wires, agents' cards and hand-offs call it. A rename reaches the wires
+ * through the state broadcast, which rebuilds them (dispatcher-handlers).
+ */
+export function dispatcherDisplayName(): string {
+  return cleanDispatcherName(config?.name ?? '') || DEFAULT_DISPATCHER_NAME;
+}
 /**
  * What each folder's instructions file was last written for (instructionsKey),
  * so a CLI change rewrites it, and for the chat a new name too.

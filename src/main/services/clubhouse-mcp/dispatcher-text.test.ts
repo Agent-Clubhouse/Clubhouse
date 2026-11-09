@@ -20,6 +20,7 @@ import { DISPATCHER_CHAT_INSTRUCTIONS, DISPATCHER_INSTRUCTIONS } from '../dispat
 import { dispatcherSkills, skillsSection } from '../dispatcher/dispatcher-skills';
 import { defaultChatDelivery } from '../dispatcher/dispatcher-channel';
 import { buildRewritePrompt } from '../dispatcher/dispatcher-rewrite';
+import { cardRequestText } from '../dispatcher/dispatcher-agent-cards';
 import { PERSONALITY_PRESET_TEXT, personalityInstructions } from '../../../shared/dispatcher-personality';
 
 /**
@@ -156,6 +157,22 @@ describe('all of the Dispatcher\'s built-in text', () => {
     check('work', 'instructions', DISPATCHER_INSTRUCTIONS);
     for (const s of dispatcherSkills('chat')) check('chat', `skill ${s.name}`, s.text);
     for (const s of dispatcherSkills('work')) check('work', `skill ${s.name}`, s.text);
+  });
+});
+
+describe('what connected agents are told, under the name the user gave it (#3053)', () => {
+  it('asks for a card by its own name, names only the card tool, and never describes how it works inside', () => {
+    const offered = new Set(tools('agent').map((t) => t.name));
+    for (const name of ['Dispatcher', 'Rosie']) {
+      for (const reason of ['connect', 'setup'] as const) {
+        const text = cardRequestText(reason, name);
+        if (reason === 'connect') expect(text).toContain(`You're connected to ${name},`);
+        expect(text, `${reason} as ${name}`).not.toMatch(NAMES_A_SECOND_SESSION);
+        for (const pattern of DESCRIBES_THE_SPLIT) expect(text, `${reason} as ${name}`).not.toMatch(pattern);
+        expect(text).not.toMatch(/\u2014/);
+        for (const [tool] of text.matchAll(/\b[a-z]+(?:_[a-z]+)+\b/g)) expect(offered.has(tool), tool).toBe(true);
+      }
+    }
   });
 });
 

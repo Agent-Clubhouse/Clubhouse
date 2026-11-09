@@ -22,7 +22,7 @@ import { bindingManager } from '../clubhouse-mcp/binding-manager';
 import { onAppEvent } from '../app-event-bus';
 import { appLog } from '../log-service';
 import {
-  DISPATCHER_NAME,
+  dispatcherDisplayName,
   getDispatcherAgentId,
   isDispatcherEnabled,
   isDispatcherPath,
@@ -80,7 +80,7 @@ async function send(agentId: string, text: string, routed: RoutedMessagePart[]):
 export const liveAgentCardDeps: AgentCardDeps = {
   storePath: () => getAgentCardStorePath(),
   activeDispatcherId: () => activeDispatcherId(),
-  dispatcherName: () => DISPATCHER_NAME,
+  dispatcherName: () => dispatcherDisplayName(),
   isDispatcherPath: (projectPath) => isDispatcherPath(projectPath),
   listProjects: async () => (await projectStore.list()).map((p) => ({ path: p.path, name: p.displayName || p.name })),
   listAgents: (projectPath) => listDurable(projectPath),

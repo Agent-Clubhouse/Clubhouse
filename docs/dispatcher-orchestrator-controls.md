@@ -1,6 +1,6 @@
 # Dispatcher controls over orchestrators
 
-The Dispatcher can change two helper settings on a connected orchestrator, and link connected orchestrators directly (#2661). The rules live in `src/main/services/dispatcher-controls.ts`, and the links in `dispatcher-connections.ts`. This is the Dispatcher's first write authority beyond appearance, so it is narrow on purpose.
+The Dispatcher can change two helper settings on a connected orchestrator, and link connected orchestrators directly (#2661). The rules live in `src/main/services/dispatcher-controls.ts`, and the links in `dispatcher-connections.ts`. This is the Dispatcher's first write authority beyond appearance, so it is narrow on purpose. Since 1.0 the Dispatcher's wider reach comes from its grants (#2921, #3050); see `docs/dispatcher.md` for what shipped.
 
 ## Who and what
 

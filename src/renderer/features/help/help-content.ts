@@ -12,6 +12,7 @@ import agentsQuick from './content/agents-quick.md';
 import agentsTerminal from './content/agents-terminal.md';
 import agentsOrchestratedHelpers from './content/agents-orchestrated-helpers.md';
 import agentsActions from './content/agents-actions.md';
+import agentsDispatcherChrome from './content/agents-dispatcher.chrome.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
 import pluginsOverview from './content/plugins-overview.md';
 import pluginsPermissions from './content/plugins-permissions.md';
@@ -190,9 +191,16 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
 
 /** Annex has no classic article, so the new shell adds it to Settings. Annex is stable, so every build lists it (#2811). */
 const ANNEX_TOPIC: HelpTopic = { id: 'settings-annex', title: 'Annex', content: settingsAnnexChrome };
-const CHROME_SECTIONS_WITH_ANNEX: HelpSection[] = CHROME_HELP_SECTIONS.map((s) => (s.id === 'settings'
-  ? { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] }
-  : s));
+/** The Dispatcher is in the new layout only (#3053), so only the new shell lists it, after Orchestrated helpers. */
+export const DISPATCHER_TOPIC: HelpTopic = { id: 'agents-dispatcher', title: 'Dispatcher', content: agentsDispatcherChrome };
+const CHROME_SECTIONS_WITH_ANNEX: HelpSection[] = CHROME_HELP_SECTIONS.map((s) => {
+  if (s.id === 'settings') return { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] };
+  if (s.id === 'agents') {
+    const at = s.topics.findIndex((t) => t.id === 'agents-orchestrated-helpers') + 1;
+    return { ...s, topics: [...s.topics.slice(0, at), DISPATCHER_TOPIC, ...s.topics.slice(at)] };
+  }
+  return s;
+});
 
 /** The active shell's built-in sections. */
 export function getHelpSections(): HelpSection[] {

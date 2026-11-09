@@ -124,6 +124,12 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   await expect.poll(async () => (await recordOf(dispatcherDir())).name).toBe('Rosie');
   await expect.poll(async () => (await recordOf(path.join(baseDir(), 'dispatcher-chat'))).name, { timeout: 10_000 }).toBe('Rosie');
   await expect(w.locator('[data-testid="dispatcher-row"]')).toContainText('Rosie');
+  // Agents see the new name too: the wire to it is relabelled in place (#3053).
+  await expect.poll(async () => {
+    const bindings = await w.evaluate(() => window.clubhouse.mcpBinding.getBindings()) as Array<{ agentId: string; targetId: string; label: string }>;
+    return bindings.find((b) => b.agentId === ORCHESTRATOR_ID && b.targetId === coordinator.id)?.label;
+  }, { timeout: 15_000 }).toBe('Rosie');
+  expect(await hasWire(w, coordinator.id)).toBe(true);
 
   // Personality (#3047): a preset fills the text; Save writes it and the chat is told it as written.
   const preset = w.locator('[data-testid="dispatcher-personality-preset"]');
