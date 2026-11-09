@@ -89,10 +89,17 @@ beforeEach(() => {
   });
 });
 
+/**
+ * Mounts the page and lets its first read land inside act, so the read's render and its effects
+ * have all run before a test edits a field (#3180). Waiting with findBy only waits for the DOM:
+ * when that render takes longer than the scheduler's 5ms slice, the fields' effects that copy the
+ * saved name and personality into their drafts can run after the test's edit and undo it.
+ */
 async function renderOn(s: DispatcherState = ON) {
   state = s;
-  const view = render(<DispatcherSettingsView />);
-  await screen.findByRole('heading', { name: 'Identity' });
+  let view!: ReturnType<typeof render>;
+  await act(async () => { view = render(<DispatcherSettingsView />); });
+  expect(screen.getByRole('heading', { name: 'Identity' })).toBeInTheDocument();
   return view;
 }
 
