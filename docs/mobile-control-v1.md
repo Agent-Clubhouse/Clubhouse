@@ -354,6 +354,30 @@ It's an HTTP response, not a frame, so it isn't held to the socket's 16 MiB. A p
 
 Events over 16 MiB that carry a fact that can't be left out (a `user_message`, `question` or `plan_document`, for example) still close the socket. That part of #2731 waits for `clubhouse.annex.frames.over_limit` to show it happens.
 
+## Chat links
+
+Capabilities `chatLinks: {version:1, path, maxEntries:500}` (#3208). A link in an agent's message can name a file, a folder, or nothing. `/content` only reads files, so a folder and a missing file both come back `content_unavailable` there. This route says which it is, and lists a folder:
+
+`GET /api/v1/mobile/agents/{agentId}/link?href={href}`, with pinned mTLS like `/content`.
+
+`href` is the link as the agent wrote it, percent-encoded once more for the query the way `encodeURIComponent` does it: `Some%20Folder/` is sent as `href=Some%2520Folder%2F`, and `C++ notes.md` as `href=C%2B%2B%20notes.md`. Encode `+` as `%2B`: the desktop reads the query as form data, so a bare `+` becomes a space. In Swift, `URLComponents.queryItems` leaves `+` as it is, so build the string yourself and set `percentEncodedQuery`. The desktop resolves it as it does a chat link on the desktop (`resolveChatLink` in `chat-files.ts`): relative links against the agent's worktree, absolute paths and `file:` URLs as they are, percent-decoding tried too, a `#heading` dropped, symlinks resolved. A folder with or without its trailing slash answers the same. Like `/content` there is no folder allowlist ([mobile-phone-content.md](mobile-phone-content.md#absolute-paths-contentroots-and-contentanypath)): any path the desktop user can read counts.
+
+It answers 200 with one of:
+
+- `{"version":1,"type":"file","path","name","kind","size"}`: `kind` is a [preview kind](mobile-phone-content.md) (`text`, `image`, `video`, `audio`, `pdf` or `other`). Read it through `/content?path=` with `path`.
+- `{"version":1,"type":"directory","path","name","entries":[{"name","kind","size?"}],"truncated"}`: `kind` is `file`, `directory`, `symlink` or `other`, and `size` is on files only. Symlinks are listed as themselves, not followed: send `path` plus the name back here to find where one goes. Entries are sorted by name, at most `maxEntries` of them; `truncated: true` says the folder has more (which ones were left out is arbitrary).
+- `{"version":1,"type":"missing"}`: nothing is there.
+- `{"version":1,"type":"not_allowed"}`: the desktop won't look or can't read it: a network or device path (`\\host\share`, `//host/share`, `\\?\`, `/net/…`), a `file:` URL for another host, an `href` over 1024 characters, a path the desktop user can't read, a folder whose listing can't be read, or something that is neither a file nor a folder.
+
+`path` is the desktop's real path, in the host's form (backslashes on Windows).
+
+Errors:
+- 400 `invalid_query`: no `href`, an empty one, more than one, or another parameter.
+- 404 `agent_not_found`, or `content_unavailable` while `richContent.enabled` is false.
+- 403 `client_certificate_required` or `authorization_revoked`.
+
+The same rules as `/content` apply: the pinned client certificate of a paired phone controller, a known agent that isn't disposed, the rich content setting, and authorization and the setting rechecked after the read. `Cache-Control` is `no-store`. Paths are never logged or sent to telemetry. Older desktops have no `chatLinks` capability and answer this route 404 `not_found`; fall back to `/content` there.
+
 ## Who sent a message
 
 How a phone shows `user_message`, so it matches the desktop's chat (`messageDisplay` and `findSenderAgent` in `src/shared/chat/message-routing.ts`, `agentAvatarSpec` in `src/shared/agent-avatar.ts`). `sender-identity.json` has a case for each row here, with what the desktop's code draws for it.
@@ -1129,7 +1153,7 @@ Errors use the existing envelope with correlation fields: `error {message, op, s
 
 ## Contract fixtures
 
-`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, frames over the limit, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
+`test/fixtures/annex-mobile/` holds a canonical example of every message in this document: capabilities, icon refs and their routes, a snapshot over its limit and the canvas routes, [chat links](#chat-links) in `chat-links.json`, frames over the limit, large tool output, the WebSocket snapshot (agents, quick agents, `projectState`, `finishedQuickAgents`, `helperRequests`, theme), the chat snapshot with `chatControls`, `slashCommands` and `contentRoots`, create options and agent settings, a request and receipt for every `MOBILE_COMMAND_TYPES` command with each refusal its code path can reach, one `chat:event` of every chat event type followed by `user_message` with each form of `routed` (one sender, a burst, `fromClubhouse`, no `sender`), every kind of sender and how to draw it, queued bursts, every `pty:*` message and error, `mobile:replay`, the attachment upload's answers, and the [oversized command](#oversized-commands) refusal in `command-too-large.json`, with its exact response bytes. The phone (Clubhouse Go) vendors these files and decodes each one in its contract tests, and checks that the commands it builds match the requests here. Neither side tests only against its own fakes.
 
 `src/main/services/annex-mobile-contract.test.ts` writes them. It runs the real annex-server, mobile-control, mobile-agents, mobile-helper-requests, mobile-attachments and chat echo code over pinned mTLS and the WebSocket handler. Only the leaves are faked (disk, git, CLIs, PTYs, the orchestrator side of helper requests). The output is deterministic: fixed ids and clock, sorted keys, and random UUIDs (epochs, tokens, attachment and helper request ids) renumbered `00000000-0000-4000-8000-<n>` in order of first appearance.
 
