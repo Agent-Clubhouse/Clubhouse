@@ -66,11 +66,16 @@ export const CONNECTION_SWITCHES: ReadonlyArray<{ tool: string; action: GrantAct
 
 /**
  * Whether a direction between two agents on this computer lets its sender
- * wake the receiver (#3215): only when turned on, so a direction with no entry,
- * or one saved before the switch, can't.
+ * wake the receiver (#3215): a saved direction only when turned on there, so
+ * one saved before the switch can't. With nothing saved, its source's starting
+ * switches decide (`sourceEnabled`, the live binding's, #3214); none: off.
  */
-export function localWakeOn(direction: Pick<ConnectionDirection, 'disabledTools' | 'enabledTools'> | undefined): boolean {
-  return !!direction?.enabledTools?.includes(WAKE_TOOL) && !direction.disabledTools.includes(WAKE_TOOL);
+export function localWakeOn(
+  direction: Pick<ConnectionDirection, 'disabledTools' | 'enabledTools'> | undefined,
+  sourceEnabled: readonly string[] = [],
+): boolean {
+  if (!direction) return sourceEnabled.includes(WAKE_TOOL);
+  return !!direction.enabledTools?.includes(WAKE_TOOL) && !direction.disabledTools.includes(WAKE_TOOL);
 }
 
 /** One direction's switches read back: the tools its sender may use, and the ones turned off. */
@@ -82,11 +87,15 @@ export interface DirectionTools {
 /**
  * The switches of a direction between two agents on this computer, in
  * {@link CONNECTION_SWITCHES} order. No entry reads as its source's tools
- * (`sourceDisabled`, the live binding's list) with wake off.
+ * (`sourceDisabled` and `sourceEnabled`, the live binding's lists).
  */
-export function localDirectionTools(direction: Pick<ConnectionDirection, 'disabledTools' | 'enabledTools'> | undefined, sourceDisabled: readonly string[] = []): DirectionTools {
+export function localDirectionTools(
+  direction: Pick<ConnectionDirection, 'disabledTools' | 'enabledTools'> | undefined,
+  sourceDisabled: readonly string[] = [],
+  sourceEnabled: readonly string[] = [],
+): DirectionTools {
   const disabledTools = direction?.disabledTools ?? sourceDisabled;
-  const wake = localWakeOn(direction);
+  const wake = localWakeOn(direction, sourceEnabled);
   const out: DirectionTools = { allowed: [], disabled: [] };
   for (const { tool } of CONNECTION_SWITCHES) {
     const on = tool === WAKE_TOOL ? wake : !disabledTools.includes(tool);
@@ -107,11 +116,47 @@ export function localToolsFromAllow(allow: readonly string[]): { disabledTools: 
 }
 
 /**
- * What a new connection between two agents lets its sender do: read the other
- * agent and message it. Clearing or compacting it needs turning on (#2969),
- * and so does waking it on this computer (#3215).
+ * What a new connection between two agents leaves off: clearing or compacting
+ * the other agent needs turning on (#2969). The only things it does to the
+ * other agent are send to it and wake it (the maintainer, 2026-11-09).
  */
 export const NEW_CONNECTION_DISABLED_TOOLS: readonly string[] = ['clear_agent', 'compact_agent'];
+
+/** The switches a new connection on this computer turns on: wake, off unless named (#3215). */
+export const NEW_CONNECTION_ENABLED_TOOLS: readonly string[] = [WAKE_TOOL];
+
+/** One direction's starting switches: the connection tools off, and the switches on (wake). */
+export interface StartingSwitches {
+  readonly disabledTools: readonly string[];
+  readonly enabledTools: readonly string[];
+}
+
+/** A new connection: read, message and wake; clear and compact off. */
+export const NEW_CONNECTION_SWITCHES: StartingSwitches = { disabledTools: NEW_CONNECTION_DISABLED_TOOLS, enabledTools: NEW_CONNECTION_ENABLED_TOOLS };
+
+/** Every switch on, wake included. */
+export const EVERY_SWITCH_ON: StartingSwitches = { disabledTools: [], enabledTools: [WAKE_TOOL] };
+
+/**
+ * What each direction of a connection Clubhouse makes itself starts with
+ * (#3214; the maintainer's defaults, 2026-11-09). An orchestrator has every
+ * tool on its own helper, and the Dispatcher every tool on any agent (its wake
+ * and sleep don't use the switch). Every other direction starts like a new
+ * connection: send and wake, with clear and compact off.
+ */
+export const AUTOMATIC_CONNECTION_SWITCHES: {
+  readonly parentToHelper: StartingSwitches;
+  readonly helperToParent: StartingSwitches;
+  readonly dispatcherToAgent: StartingSwitches;
+  readonly agentToDispatcher: StartingSwitches;
+  readonly orchestratorLink: StartingSwitches;
+} = {
+  parentToHelper: EVERY_SWITCH_ON,
+  helperToParent: NEW_CONNECTION_SWITCHES,
+  dispatcherToAgent: EVERY_SWITCH_ON,
+  agentToDispatcher: NEW_CONNECTION_SWITCHES,
+  orchestratorLink: NEW_CONNECTION_SWITCHES,
+};
 
 /** The key one direction is stored under. */
 export function directionKey(from: AgentAddress, to: AgentAddress): string {

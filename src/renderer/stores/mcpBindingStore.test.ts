@@ -14,6 +14,7 @@ function installMocks() {
     registerWebview: vi.fn(origMcp.registerWebview),
     unregisterWebview: vi.fn(origMcp.unregisterWebview),
     onBindingsChanged: vi.fn(origMcp.onBindingsChanged),
+    setDisabledTools: vi.fn(async () => {}),
   };
   (window.clubhouse as any).mcpBinding = mocks;
   return mocks;
@@ -29,6 +30,15 @@ describe('mcpBindingStore', () => {
 
   it('starts with empty bindings', () => {
     expect(useMcpBindingStore.getState().bindings).toEqual([]);
+  });
+
+  describe('setDisabledTools', () => {
+    it('passes start on for a wire just drawn, so main turns wake on too (#3214), and nothing extra for an edit', async () => {
+      await useMcpBindingStore.getState().setDisabledTools('a1', 'a2', ['clear_agent', 'compact_agent'], { start: true });
+      expect(mocks.setDisabledTools).toHaveBeenLastCalledWith('a1', 'a2', ['clear_agent', 'compact_agent'], { start: true });
+      await useMcpBindingStore.getState().setDisabledTools('a1', 'a2', ['send_file']);
+      expect(mocks.setDisabledTools).toHaveBeenLastCalledWith('a1', 'a2', ['send_file']);
+    });
   });
 
   describe('loadBindings', () => {

@@ -85,9 +85,9 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
         targetName: target.displayName || target.title,
         projectName,
       });
-      // A new agent wire lets its sender read and message; reset needs turning on (#2969).
+      // A new agent wire lets its sender read, message and wake; reset needs turning on (#2969).
       if (targetKind(target) === 'agent') {
-        await setDisabledTools(agentId, resolveTargetId(target), [...NEW_AGENT_WIRE_DISABLED_TOOLS]).catch(() => {
+        await setDisabledTools(agentId, resolveTargetId(target), [...NEW_AGENT_WIRE_DISABLED_TOOLS], { start: true }).catch(() => {
           // telemetry-exempt: the wire is drawn; its defaults are set the next time it's bound
         });
       }

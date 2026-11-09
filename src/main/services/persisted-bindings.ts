@@ -41,6 +41,7 @@
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
+import type { StartingSwitches } from '../../shared/connection-grants';
 import { appLog } from './log-service';
 
 /** 'plugin' is left out (#2082): no source persists plugin wires, and one that does is skipped. */
@@ -59,6 +60,17 @@ export interface PersistedBinding {
   projectName?: string;
   instructions?: Record<string, string>;
   disabledTools?: string[];
+  /** With `startingTools`: the switches the connection starts with on (wake, #3215). */
+  enabledTools?: string[];
+  /**
+   * `disabledTools` (none: everything on) and `enabledTools` are what the
+   * source starts a connection it makes with (a helper or Dispatcher link,
+   * #3214), not lists someone saved. They apply whichever source bound the
+   * pair first, unless a direction is saved; the first source in a rebuild to
+   * give a direction a starting list decides. They're kept only once the
+   * one-time pass for older connections has run.
+   */
+  startingTools?: true;
 }
 
 /** Something that persists bindings and can list them at startup. */
@@ -142,6 +154,19 @@ const heldBySource = new Map<string, Set<string>>();
  * claims and releases; null when that collect failed (#2744).
  */
 const lastListedBySource = new Map<string, Set<string> | null>();
+/** One direction's starting list, as a source gave it (#3214). */
+export interface StartingTools {
+  agentId: string;
+  targetId: string;
+  disabledTools: string[];
+  enabledTools: string[];
+}
+/** Source id → the starting lists it decided at its last collect, by pair (#3214). */
+const startingBySource = new Map<string, Map<string, StartingTools>>();
+/** Source id → the agent pairs it listed at its last collect with no list at all: an older canvas wire's (#3214). */
+const listlessBySource = new Map<string, Map<string, { agentId: string; targetId: string }>>();
+/** Pairs whose starting list a source earlier in the running rebuild already gave. */
+const startingThisRun = new Set<string>();
 /**
  * Pruning source id → pairs claimed ({@link claimSourceBinding}) since the
  * running rebuild started. That run's collect may predate the claim, so it
@@ -315,6 +340,23 @@ export function persistedPairKey(agentId: string, targetId: string): string {
 }
 
 /**
+ * The starting lists a source gave at its last collect (#3214), each the one
+ * that decided its direction; none before its first collect.
+ */
+export function listStartingTools(sourceId: string): StartingTools[] {
+  return [...(startingBySource.get(sourceId)?.values() ?? [])].map((t) => ({ ...t, disabledTools: [...t.disabledTools], enabledTools: [...t.enabledTools] }));
+}
+
+/**
+ * The agent-to-agent pairs a source listed at its last collect with no tool
+ * list and no starting list (#3214): a canvas wire drawn before wires kept
+ * one, or drawn over a pair another source had bound.
+ */
+export function listPairsWithoutTools(sourceId: string): Array<{ agentId: string; targetId: string }> {
+  return [...(listlessBySource.get(sourceId)?.values() ?? [])].map((p) => ({ ...p }));
+}
+
+/**
  * The pairs `sourceId` created and still owns, that no other pruning source
  * lists (#2232). A pair a canvas, a zone, the user or another source made, or
  * also lists, is not here: removing it is not only that source's business.
@@ -375,6 +417,15 @@ function relabelBinding(binding: PersistedBinding): void {
   });
 }
 
+/** A binding's fields for a starting list (#3214): what a source gives a connection it makes. */
+export function startingTools(start: StartingSwitches): Pick<PersistedBinding, 'disabledTools' | 'enabledTools' | 'startingTools'> {
+  return { disabledTools: [...start.disabledTools], ...(start.enabledTools.length > 0 && { enabledTools: [...start.enabledTools] }), startingTools: true };
+}
+
+function restoreStarting(binding: PersistedBinding): void {
+  bindingManager.restoreDisabledTools(binding.agentId, binding.targetId, binding.disabledTools ?? [], { starting: true, enabledTools: binding.enabledTools ?? [] });
+}
+
 /**
  * Create one persisted binding if it does not exist yet, with its
  * instructions and disabled tools. An existing binding keeps its instructions
@@ -400,12 +451,17 @@ export function applyPersistedBinding(binding: PersistedBinding, options: { rela
   if (!created) {
     if (!alreadyRestored) restoredPairs.delete(key);
     if (options.relabel) relabelBinding(binding);
+    // Another source bound it first (a canvas wire with no list): the starting list still applies where nothing is saved.
+    if (binding.startingTools) restoreStarting(binding);
     return 'existing';
   }
   if (binding.instructions && Object.keys(binding.instructions).length > 0) {
     bindingManager.setInstructions(binding.agentId, binding.targetId, binding.instructions);
   }
-  if (binding.disabledTools && binding.disabledTools.length > 0) {
+  if (binding.startingTools) {
+    // A starting list applies where nothing is saved, everything on and wake included (#3214).
+    restoreStarting(binding);
+  } else if (binding.disabledTools && binding.disabledTools.length > 0) {
     // The connection store's list wins; one it doesn't have yet moves into it (D129).
     bindingManager.restoreDisabledTools(binding.agentId, binding.targetId, binding.disabledTools);
   }
@@ -477,6 +533,8 @@ export function releaseSourceBinding(sourceId: string, agentId: string, targetId
   const key = pairKey(agentId, targetId);
   heldBySource.get(sourceId)?.delete(key);
   lastListedBySource.get(sourceId)?.delete(key);
+  startingBySource.get(sourceId)?.delete(key);
+  listlessBySource.get(sourceId)?.delete(key);
   claimedDuringRun.get(sourceId)?.delete(key);
   const bound = bindingManager.getBindingsForAgent(agentId).some((b) => b.targetId === targetId);
   const owned = ownedBySource.get(sourceId);
@@ -532,19 +590,35 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
     owned = new Map();
     ownedBySource.set(source.id, owned);
   }
-  for (const binding of bindings) {
+  const starting = new Map<string, StartingTools>();
+  const listless = new Map<string, { agentId: string; targetId: string }>();
+  for (const listedBinding of bindings) {
+    let binding = listedBinding;
+    if (binding.startingTools) {
+      // A source earlier in this rebuild gave this direction its starting list: that one stands (#3214).
+      const startingKey = pairKey(binding.agentId, binding.targetId);
+      if (startingThisRun.has(startingKey)) binding = { ...binding, disabledTools: undefined, enabledTools: undefined, startingTools: undefined };
+    }
     // Pruning sources derive labels from live state: theirs are current.
     const outcome = applyPersistedBinding(binding, { relabel: source.prune });
     result[outcome]++;
     if (outcome === 'invalid') continue;
     const key = pairKey(binding.agentId, binding.targetId);
     listed.add(key);
+    if (binding.startingTools && outcome !== 'removed') {
+      startingThisRun.add(key);
+      starting.set(key, { agentId: binding.agentId, targetId: binding.targetId, disabledTools: [...(binding.disabledTools ?? [])], enabledTools: [...(binding.enabledTools ?? [])] });
+    } else if (listedBinding.targetKind === 'agent' && !listedBinding.startingTools && !Array.isArray(listedBinding.disabledTools) && outcome !== 'removed') {
+      listless.set(key, { agentId: binding.agentId, targetId: binding.targetId });
+    }
     if (outcome === 'created' && owned) owned.set(key, { agentId: binding.agentId, targetId: binding.targetId });
   }
   if (source.prune) {
     heldBySource.set(source.id, new Set([...listed, ...unverified, ...(claimedDuringRun.get(source.id) ?? [])]));
   }
   lastListedBySource.set(source.id, new Set([...listed, ...unverified, ...(claimedDuringRun.get(source.id) ?? [])]));
+  startingBySource.set(source.id, starting);
+  listlessBySource.set(source.id, listless);
   return { source, result, listed, unverified };
 }
 
@@ -591,6 +665,7 @@ function pruneRuns(runs: SourceRun[]): void {
 async function runRebuild(): Promise<RebuildResult> {
   // Claims made before this run are in the stores it is about to read.
   claimedDuringRun.clear();
+  startingThisRun.clear();
   const runs: SourceRun[] = [];
   for (const source of [...sources.values()]) {
     runs.push(await rebuildSource(source));
@@ -647,4 +722,7 @@ export function _resetPersistedBindingSourcesForTesting(): void {
   removedFromSource.clear();
   claimedDuringRun.clear();
   removedByUser.clear();
+  startingBySource.clear();
+  listlessBySource.clear();
+  startingThisRun.clear();
 }

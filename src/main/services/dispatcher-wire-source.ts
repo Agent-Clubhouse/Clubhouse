@@ -32,9 +32,10 @@ import {
   isDispatcherPath,
   onDispatcherChanged,
 } from './dispatcher/dispatcher-service';
-import { bindingSignature, onBindingRemovedByUser, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
+import { bindingSignature, onBindingRemovedByUser, startingTools, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
+import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
 import { appLog } from './log-service';
 
 export const DISPATCHER_WIRE_SOURCE_ID = 'dispatcher-wires';
@@ -52,14 +53,15 @@ type Pair = { agentId: string; targetId: string };
 function pairBindings(dispatcherId: string, agent: DurableAgentConfig, projectName?: string): PersistedBinding[] {
   const project = projectName ? { projectName } : {};
   const name = dispatcherDisplayName();
+  // The Dispatcher starts with every tool on the agent; the agent starts like a new connection over it (#3214).
   return [
     {
       agentId: dispatcherId, targetId: agent.id, targetKind: 'agent',
-      label: agent.name, agentName: name, targetName: agent.name, ...project,
+      label: agent.name, agentName: name, targetName: agent.name, ...project, ...startingTools(AUTOMATIC_CONNECTION_SWITCHES.dispatcherToAgent),
     },
     {
       agentId: agent.id, targetId: dispatcherId, targetKind: 'agent',
-      label: name, agentName: agent.name, targetName: name, ...project,
+      label: name, agentName: agent.name, targetName: name, ...project, ...startingTools(AUTOMATIC_CONNECTION_SWITCHES.agentToDispatcher),
     },
   ];
 }

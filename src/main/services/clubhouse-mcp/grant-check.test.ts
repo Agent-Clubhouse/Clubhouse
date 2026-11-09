@@ -1,4 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The stores it writes (connections, grants) go to a userData folder of each test's own,
+// not the one test files share, so files running in parallel can't race on them.
+const userData = vi.hoisted(() => ({ dir: '' }));
+vi.mock('electron', async (original) => {
+  const actual = await original<typeof import('electron')>();
+  return { ...actual, app: { ...actual.app, getPath: (name: string) => (name === 'userData' && userData.dir ? userData.dir : actual.app.getPath(name)) } };
+});
 
 vi.mock('../plugin-manifest-registry', () => ({ getManifest: vi.fn(() => ({ permissions: ['mcp.tools'] })) }));
 vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
@@ -24,6 +35,14 @@ import type { ToolGroups } from './tool-registry';
  * (tool groups, wires, group admin) and after it. Only the epic's two gap
  * fixes may differ.
  */
+
+beforeEach(() => {
+  userData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grant-check-'));
+});
+afterEach(() => {
+  fs.rmSync(userData.dir, { recursive: true, force: true });
+  userData.dir = '';
+});
 
 const PROJECT = '/p';
 type Caller = 'plain' | 'orchestrator' | 'helper' | 'dispatcher';

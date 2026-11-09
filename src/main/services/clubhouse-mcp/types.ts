@@ -27,6 +27,12 @@ export interface McpBinding {
    * Tools in this list are excluded from the scoped tool list.
    */
   disabledTools?: string[];
+  /**
+   * Switches turned on by the connection's starting list (wake, #3214), for
+   * an agent wire with nothing saved in the connection store. A saved
+   * direction's own list wins (localConnectionWakeOn).
+   */
+  enabledTools?: string[];
 }
 
 /** MCP JSON-RPC request envelope. */

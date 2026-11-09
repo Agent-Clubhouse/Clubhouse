@@ -43,7 +43,7 @@ import {
 } from '../../orchestrator-connections';
 import { appLog } from '../../log-service';
 import { getConnectionDirection, setConnectionTools } from '../../connection-grants-store';
-import { NEW_CONNECTION_DISABLED_TOOLS } from '../../../../shared/connection-grants';
+import { NEW_CONNECTION_DISABLED_TOOLS, NEW_CONNECTION_ENABLED_TOOLS } from '../../../../shared/connection-grants';
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { GroupProject } from '../../../../shared/group-project-types';
 
@@ -178,12 +178,12 @@ async function connect(callerId: string, scope: CallerScope, bindings: Persisted
     throw new ConnectionScopeError(`The user removed this connection. ${refused.agentName} → ${refused.targetName} stays disconnected until the user connects it again.`);
   }
   await addConnections(scope.projectPath, bindings.map((b) => entryFor(callerId, scope, b)));
-  // A new link between two agents starts like any new connection: no clear, compact or wake (#3215).
+  // A new link between two agents starts like any new connection: send and wake, no clear or compact (#3215, #3214).
   // A pair already bound (a canvas wire, a helper link) or with tools saved keeps what it has.
   for (const b of bindings) {
     if (b.targetKind !== 'agent' || bindingManager.getBindingsForAgent(b.agentId).some((x) => x.targetId === b.targetId)) continue;
     if (getConnectionDirection({ agentId: b.agentId }, { agentId: b.targetId })) continue;
-    await setConnectionTools({ agentId: b.agentId }, { agentId: b.targetId }, [...NEW_CONNECTION_DISABLED_TOOLS]);
+    await setConnectionTools({ agentId: b.agentId }, { agentId: b.targetId }, [...NEW_CONNECTION_DISABLED_TOOLS], [...NEW_CONNECTION_ENABLED_TOOLS]);
   }
   const outcomes = bindings.map((b) => {
     const outcome = claimSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, b);

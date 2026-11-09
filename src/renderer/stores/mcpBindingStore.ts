@@ -22,6 +22,8 @@ export interface McpBindingEntry {
    * Tool suffixes disabled on this wire (e.g. ["read_output", "broadcast"]).
    */
   disabledTools?: string[];
+  /** Switches its source started it with on (wake, #3214), while nothing is saved for it. */
+  enabledTools?: string[];
   /** SVG path string from ELK layout. Used instead of direct bezier when present. */
   routedPath?: string;
 }
@@ -37,7 +39,8 @@ interface McpBindingStoreState {
    */
   unbind: (agentId: string, targetId: string, cause?: McpUnbindCause) => Promise<void>;
   setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) => Promise<void>;
-  setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) => Promise<void>;
+  /** `start`: a wire just drawn, which starts with wake on too (the connection store decides). */
+  setDisabledTools: (agentId: string, targetId: string, disabledTools: string[], options?: { start?: boolean }) => Promise<void>;
   registerWebview: (widgetId: string, webContentsId: number) => Promise<void>;
   unregisterWebview: (widgetId: string) => Promise<void>;
 }
@@ -94,8 +97,8 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
     }));
   },
 
-  setDisabledTools: async (agentId, targetId, disabledTools) => {
-    await window.clubhouse.mcpBinding.setDisabledTools(agentId, targetId, disabledTools);
+  setDisabledTools: async (agentId, targetId, disabledTools, options) => {
+    await window.clubhouse.mcpBinding.setDisabledTools(agentId, targetId, disabledTools, ...(options?.start ? [{ start: true }] : []));
     // Optimistic update
     set((state) => ({
       bindings: state.bindings.map((b) =>

@@ -100,15 +100,19 @@ test('the connection view: both directions with their own tools, saved in the st
   // Both directions side by side: conductor to partner has its tools, Clear starting off.
   const out = dialog.locator(`[data-testid="connection-direction-${CONDUCTOR}-${PARTNER}"]`);
   await expect(out.getByRole('switch', { name: 'Clear its context (conductor to partner)' })).toHaveAttribute('aria-checked', 'false');
+  // Saved before Wake it existed: it stays off, the user's (2026-11-09 defaults leave saved directions alone).
+  await expect(out.getByRole('switch', { name: 'Wake it (conductor to partner)' })).toHaveAttribute('aria-checked', 'false');
   await out.getByRole('switch', { name: 'Send files (conductor to partner)' }).click();
-  await expect.poll(async () => (await savedDirections()).find((d) => d.from.agentId === CONDUCTOR)?.disabledTools.sort())
+  // By both ends: conductor's link with the Dispatcher is saved here too (#3214).
+  await expect.poll(async () => (await savedDirections()).find((d) => d.from.agentId === CONDUCTOR && d.to.agentId === PARTNER)?.disabledTools.sort())
     .toEqual(['clear_agent', 'compact_agent', 'send_file']);
 
-  // partner to conductor isn't connected: Make two-way adds the user's link for it, starting like a new connection.
+  // partner to conductor isn't connected: Make two-way adds the user's link for it, starting like a new connection, wake on.
   const back = dialog.locator(`[data-testid="connection-direction-${PARTNER}-${CONDUCTOR}"]`);
   await expect(back).toContainText('Not connected this way.');
   await back.locator(`[data-testid="connection-make-two-way-${PARTNER}-${CONDUCTOR}"]`).click();
   await expect.poll(async () => (await savedDirections()).find((d) => d.from.agentId === PARTNER && d.to.agentId === CONDUCTOR))
-    .toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], link: expect.anything() });
+    .toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], link: expect.anything() });
   await expect(back.getByRole('switch', { name: 'Send messages (partner to conductor)' })).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 });
+  await expect(back.getByRole('switch', { name: 'Wake it (partner to conductor)' })).toHaveAttribute('aria-checked', 'true');
 });

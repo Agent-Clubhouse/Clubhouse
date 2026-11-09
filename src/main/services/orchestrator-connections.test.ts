@@ -98,9 +98,11 @@ describe('connectionStatus across projects', () => {
     expect(connections.map((c) => connectionStatus(c, scope))).toEqual(['in', 'in']);
     const { bindings, unknown } = bindingsFromConnections(connections, scope, null);
     expect(unknown).toEqual([]);
+    // Each starts like a new connection: send and wake, no clear or compact (#3214).
+    const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true };
     expect(bindings).toEqual([
-      { agentId: 'durable_h1', targetId: 'durable_far', targetKind: 'agent', label: 'far', agentName: 'h1', targetName: 'far', projectName: 'Far' },
-      { agentId: 'durable_far', targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'far', targetName: 'lead', projectName: 'Home' },
+      { agentId: 'durable_h1', targetId: 'durable_far', targetKind: 'agent', label: 'far', agentName: 'h1', targetName: 'far', projectName: 'Far', ...starting },
+      { agentId: 'durable_far', targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'far', targetName: 'lead', projectName: 'Home', ...starting },
     ]);
   });
 

@@ -203,6 +203,49 @@ describe('Connections card (#2232)', () => {
     expect(within(outgoing).queryByRole('switch', { name: /Wake it/ })).not.toBeInTheDocument();
   });
 
+  it('shows a fresh connection with the Dispatcher as it starts: every tool for the Dispatcher, no clear or compact over it (#3214)', async () => {
+    // As main binds it: each direction with its starting lists, nothing saved yet.
+    useMcpBindingStore.setState({ bindings: [
+      wire('lead', 'disp', ['epic-lead', 'Dispatcher'], 'agent', { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] }),
+      wire('disp', 'lead', ['Dispatcher', 'epic-lead'], 'agent', { enabledTools: ['wake_agent'] }),
+    ] });
+    useAgentStore.setState({ agents: { lead, disp: { id: 'disp', projectId: '__dispatcher__', name: 'Dispatcher', kind: 'durable', status: 'running', color: 'teal' } } } as never);
+    const auto = [{ kind: 'dispatcher_auto' as const, sourceId: 'dispatcher-wires' }];
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'lead', targetId: 'disp', bound: true, sources: auto }, { agentId: 'disp', targetId: 'lead', bound: true, sources: auto }],
+      unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('connection-sources'));
+    for (const [id, from, to, reset] of [['connection-direction-lead-disp', 'epic-lead', 'Dispatcher', 'false'], ['connection-direction-disp-lead', 'Dispatcher', 'epic-lead', 'true']]) {
+      const direction = await screen.findByTestId(id);
+      expect(within(direction).getByRole('switch', { name: `Clear its context (${from} to ${to})` })).toHaveAttribute('aria-checked', reset);
+      expect(within(direction).getByRole('switch', { name: `Compact its context (${from} to ${to})` })).toHaveAttribute('aria-checked', reset);
+      expect(within(direction).getByRole('switch', { name: `Send messages (${from} to ${to})` })).toHaveAttribute('aria-checked', 'true');
+    }
+  });
+
+  it('shows Wake it on for a connection whose source started it on, with nothing saved (2026-11-09 defaults)', async () => {
+    const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] };
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer'], 'agent', starting), wire('rev', 'lead', ['reviewer', 'epic-lead'])] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [
+        { agentId: 'lead', targetId: 'rev', bound: true, sources: [{ kind: 'orchestrator' as const, sourceId: 'orchestrator-connections' }] },
+        { agentId: 'rev', targetId: 'lead', bound: true, sources: [{ kind: 'canvas' as const, sourceId: 'canvas-wires' }] },
+      ],
+      unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('connection-sources'));
+    const outgoing = await screen.findByTestId('connection-direction-lead-rev');
+    expect(within(outgoing).getByRole('switch', { name: 'Wake it (epic-lead to reviewer)' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(outgoing).getByRole('switch', { name: 'Clear its context (epic-lead to reviewer)' })).toHaveAttribute('aria-checked', 'false');
+    // A wire with no starting switches (an older one) reads wake off.
+    expect(within(screen.getByTestId('connection-direction-rev-lead')).getByRole('switch', { name: 'Wake it (reviewer to epic-lead)' })).toHaveAttribute('aria-checked', 'false');
+  });
+
   it('has no Wake it switch on a helper\'s link with its orchestrator, where it can\'t take effect (#3215)', async () => {
     useMcpBindingStore.setState({ bindings: [wire('lead', 'h1', ['epic-lead', 'impl-ipc']), wire('h1', 'lead', ['impl-ipc', 'epic-lead'])] });
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({

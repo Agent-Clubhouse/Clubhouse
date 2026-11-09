@@ -182,12 +182,12 @@ export function useWiring(
               targetName: targetLabel,
               projectName,
             };
-            // A new agent wire lets its sender read and message; reset needs turning on (#2969).
+            // A new agent wire lets its sender read, message and wake; reset needs turning on (#2969).
             // A pair that already has a binding (a helper or Dispatcher wire) keeps its own list.
             const existing = bindingsRef.current ?? [];
             const disabledTools = newWireDisabledTools(existing, sourceAgentId, resolvedTargetId, kind);
             void Promise.resolve(bind(sourceAgentId, fwdTarget)).then(() => {
-              if (disabledTools) return setDisabledTools(sourceAgentId, resolvedTargetId, disabledTools);
+              if (disabledTools) return setDisabledTools(sourceAgentId, resolvedTargetId, disabledTools, { start: true });
             }).catch(() => {
               // telemetry-exempt: the wire definition keeps the list, and the reconcile loop binds it again
             });
@@ -205,7 +205,7 @@ export function useWiring(
               };
               const revDisabled = newWireDisabledTools(existing, resolvedTargetId, sourceAgentId, 'agent');
               void Promise.resolve(bind(resolvedTargetId, revTarget)).then(() => {
-                if (revDisabled) return setDisabledTools(resolvedTargetId, sourceAgentId, revDisabled);
+                if (revDisabled) return setDisabledTools(resolvedTargetId, sourceAgentId, revDisabled, { start: true });
               }).catch(() => {
                 // telemetry-exempt: as above
               });

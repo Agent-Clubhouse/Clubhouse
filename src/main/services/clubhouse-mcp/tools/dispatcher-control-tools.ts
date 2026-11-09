@@ -82,7 +82,7 @@ export function registerDispatcherControlTools(): void {
       description:
         'Connect two connected orchestrators directly, so `from` gets tools to message and check on `to`. The link is ' +
         'saved as yours. It is refused if they are already connected some other way, or if the user removed the link. ' +
-        'A new link can read status and output and send messages and files; clear_agent, compact_agent and wake_agent stay off ' +
+        'A new link can read status and output, send messages and files, and wake; clear_agent and compact_agent stay off ' +
         'unless you name them in allow. Tools the user already set on a direction are kept, and naming tools for it is refused. ' +
         'Each link in the result reads back its tools: allowed, disabled, and tools_yours (whether set_connection_tools can change them).',
       inputSchema: { type: 'object', properties: { ...LINK_PROPERTIES, ...ALLOW_PROPERTIES }, required: ['from', 'to'] },

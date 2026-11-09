@@ -38,7 +38,9 @@ import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from '.
 import { listConnectionSources, removeConnectionSource } from '../services/connection-sources';
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
 import { migrateDispatcherLinkTools } from '../services/dispatcher-controls';
-import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, setLocalWake, setToolsAcrossMachines, startConnectionGrants } from '../services/connection-grants';
+import {
+  applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
+} from '../services/connection-grants';
 import { listConnectionDirections } from '../services/connection-grants-store';
 import { startAgentCalls } from '../services/annex-agent-calls';
 import * as annexClient from '../services/annex-client';
@@ -288,7 +290,7 @@ export function registerMcpBindingHandlers(): void {
   ));
 
   ipcMain.handle(IPC.MCP_BINDING.SET_DISABLED_TOOLS, withValidatedArgs(
-    [stringArg(), stringArg(), arrayArg(stringArg()), objectArg<{ restore?: boolean }>({ optional: true })],
+    [stringArg(), stringArg(), arrayArg(stringArg()), objectArg<{ restore?: boolean; start?: boolean }>({ optional: true })],
     (event, agentId, targetId, disabledTools, options) => {
       assertCallerIsAppWindow(event);
       assertNotPluginBinding(agentId as string, targetId as string);
@@ -299,8 +301,9 @@ export function registerMcpBindingHandlers(): void {
         appLog('core:mcp', 'debug', 'Setting disabled tools for sleeping agent binding', { meta: { agentId, targetId } });
       }
       // An agent-to-agent direction's tools live in the connection store (D129); a canvas wire
-      // bound again only fills a store that has none (`restore`).
-      return applyConnectionTools(agentId as string, targetId as string, disabledTools as string[], { restore: (options as { restore?: boolean } | undefined)?.restore === true })
+      // bound again only fills a store that has none (`restore`); a wire just drawn starts with wake on (`start`).
+      const opts = options as { restore?: boolean; start?: boolean } | undefined;
+      return applyConnectionTools(agentId as string, targetId as string, disabledTools as string[], { restore: opts?.restore === true, start: opts?.start === true })
         .then(() => { appLog('core:mcp', 'info', 'Binding disabled tools updated', { meta: { agentId, targetId, disabledTools } }); });
     },
   ));
@@ -418,6 +421,16 @@ export function restorePersistedBindings(): Promise<void> {
     await migrateDispatcherLinkTools().catch((err) => {
       // telemetry-exempt: logged; it runs again after the next rebuild until it's done
       appLog('core:mcp', 'warn', 'Could not give older Dispatcher links the new connection defaults', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+    // And connections from before the 2026-11-09 defaults keep the tools they now start with (#3214).
+    await migrateAutomaticConnectionTools(
+      [helperWireBindingSource.id, dispatcherWireBindingSource.id, orchestratorConnectionSource.id],
+      [canvasWireBindingSource.id],
+    ).catch((err) => {
+      // telemetry-exempt: logged; it runs again after the next rebuild until it's done
+      appLog('core:mcp', 'warn', 'Could not save the starting tools of older helper and Dispatcher links', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
     });
