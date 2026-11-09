@@ -18,6 +18,7 @@ interface UpdateStoreState {
   loadSettings: () => Promise<void>;
   saveSettings: (settings: UpdateSettings) => Promise<void>;
   checkForUpdates: () => Promise<void>;
+  refreshCheckSettings: () => Promise<void>;
   applyUpdate: () => Promise<void>;
   openUpdateDownload: () => void;
   dismiss: () => void;
@@ -42,6 +43,7 @@ const DEFAULT_SETTINGS: UpdateSettings = {
   autoUpdate: true,
   previewChannel: false,
   lastCheck: null,
+  lastCheckError: null,
   dismissedVersion: null,
   lastSeenVersion: null,
 };
@@ -82,11 +84,29 @@ export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
   },
 
   checkForUpdates: async () => {
+    // Show "Checking…" right away; main broadcasts the same state a moment later.
+    set((s) => ({ status: { ...s.status, state: 'checking' } }));
     try {
       const status = await window.clubhouse.app.checkForUpdates();
       set({ status, dismissed: false });
+    } catch (err) {
+      // Main records its own failures; this is the IPC call itself failing.
+      set((s) => ({
+        status: { ...s.status, state: 'error', error: err instanceof Error ? err.message : String(err) },
+      }));
+    }
+    // Main saves the check time and any failure reason; pick them up.
+    await get().refreshCheckSettings();
+  },
+
+  refreshCheckSettings: async () => {
+    try {
+      const saved = await window.clubhouse.app.getUpdateSettings();
+      if (saved) {
+        set((s) => ({ settings: { ...s.settings, lastCheck: saved.lastCheck, lastCheckError: saved.lastCheckError ?? null } }));
+      }
     } catch {
-      // Error handled in main process
+      // Keep what is shown
     }
   },
 
@@ -180,6 +200,10 @@ export function resetDismissTimer(): void {
 export function initUpdateListener(): () => void {
   return window.clubhouse.app.onUpdateStatusChanged((status) => {
     useUpdateStore.setState({ status: status as UpdateStatus });
+    // A finished check (background ones too) saved its time and any failure reason first.
+    if (status.state !== 'checking' && status.state !== 'downloading') {
+      void useUpdateStore.getState().refreshCheckSettings();
+    }
     // If a new version becomes ready, un-dismiss so the banner shows
     if (status.state === 'ready') {
       useUpdateStore.setState({ dismissed: false });
