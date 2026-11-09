@@ -100,7 +100,14 @@ vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mockCpSpawn(...args),
 }));
 
+// The real tree kill, watched: stopping a run must use it (#3160).
+vi.mock('../orchestrators/adapters/structured-spawn', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../orchestrators/adapters/structured-spawn')>();
+  return { ...actual, killStructuredChild: vi.fn(actual.killStructuredChild) };
+});
+
 import { IPC } from '../../shared/ipc-channels';
+import { killStructuredChild } from '../orchestrators/adapters/structured-spawn';
 import { appLog } from './log-service';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../util/__fixtures__/host-session-env';
 import {
@@ -580,6 +587,43 @@ describe('headless-manager', () => {
       await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'text');
       kill('test-agent');
       expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    it('kill() stops the whole process tree, leaving stdin to its owner (#3160)', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'text');
+      vi.mocked(killStructuredChild).mockClear();
+      kill('test-agent');
+      expect(killStructuredChild).toHaveBeenCalledWith(mockProcess, { endStdin: false });
+    });
+
+    it('on Windows, a stopped run that the tree kill ends with code 1 is reported as stopped (#3160)', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      try {
+        const onExit = vi.fn();
+        await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+        kill('test-agent');
+        // taskkill /F ends it with code 1 and no signal.
+        mockProcess.emit('close', 1, null);
+        const stopped = 128 + os.constants.signals.SIGTERM;
+        expect(onExit).toHaveBeenCalledWith('test-agent', stopped);
+        expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', stopped);
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
+    it('on Windows, a run that exits with code 1 without being stopped is still a failure', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      try {
+        const onExit = vi.fn();
+        await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+        mockProcess.emit('close', 1, null);
+        expect(onExit).toHaveBeenCalledWith('test-agent', 1);
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
     });
 
     it('kill() is a no-op for unknown agentId', async () => {

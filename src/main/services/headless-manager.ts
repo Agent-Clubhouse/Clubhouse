@@ -15,7 +15,7 @@ import * as annexEventBus from './annex-event-bus';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
-import { resolveStructuredSpawn } from '../orchestrators/adapters/structured-spawn';
+import { killStructuredChild, resolveStructuredSpawn } from '../orchestrators/adapters/structured-spawn';
 import { validateSpawnCwd } from './pty-manager';
 import { readTranscriptChunk, type TranscriptChunk } from './transcript-cursor';
 import { agentKillRequested, agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
@@ -61,6 +61,8 @@ interface HeadlessSession {
   textBuffer?: string;
   /** Timer for force-kill escalation in kill(). */
   killTimer?: ReturnType<typeof setTimeout>;
+  /** kill() was called: an exit from here on is a stop. */
+  stopRequested?: boolean;
   /** Registry callback, invoked by the session finalizer. */
   onExitCallback?: (agentId: string, exitCode: number) => void;
   /** Exit event time, or first observation of an exited process if that event was missed. */
@@ -566,6 +568,17 @@ export function resolveExitCode(code: number | null, signal: NodeJS.Signals | nu
   return signum ? 128 + signum : 1;
 }
 
+/**
+ * A run's exit code. On Windows the tree kill (taskkill /F) ends a process
+ * with code 1 and no signal, where child.kill() gave SIGTERM; a stopped run
+ * that ends that way is still reported as stopped (128 + SIGTERM), not as a
+ * failure (#3160).
+ */
+function runExitCode(session: HeadlessSession, code: number | null, signal: NodeJS.Signals | null): number {
+  const treeKilled = !signal && code === 1 && session.stopRequested && process.platform === 'win32';
+  return treeKilled ? resolveExitCode(null, 'SIGTERM') : resolveExitCode(code, signal);
+}
+
 /** Bytes of stderr kept on the exit broadcast, so a failed run can show why. */
 const STDERR_TAIL_BYTES = 4 * 1024;
 
@@ -614,7 +627,7 @@ function setupExitHandlers(
     // flushing decoders/parser and ending the transcript, including on error.
     runFinalizationStep(agentId, 'stdout finish', finishStdout);
     runFinalizationStep(agentId, 'stderr finish', finishStderr);
-    const exitCode = error ? 1 : resolveExitCode(code, signal);
+    const exitCode = error ? 1 : runExitCode(session, code, signal);
 
     runFinalizationStep(agentId, 'parser flush', () => { session.parser?.flush(); });
     runFinalizationStep(agentId, 'parser detach', detachParser);
@@ -760,8 +773,12 @@ export function kill(agentId: string): void {
   agentKillRequested(agentId, 'other'); // no-op when the caller already named a trigger
   agentKillStage(agentId, 'sigterm');
 
+  session.stopRequested = true;
   try {
-    proc.kill('SIGTERM');
+    // The whole tree: on Windows a `.cmd` shim runs under cmd.exe, and
+    // proc.kill() would stop only cmd.exe and leave the CLI running (#3160).
+    // SIGTERM elsewhere, as before.
+    void killStructuredChild(proc, { endStdin: false });
   } catch { /* already dead */ }
 
   // Force kill after 5 seconds, guarded by process identity so a
