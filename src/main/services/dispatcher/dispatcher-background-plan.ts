@@ -56,9 +56,13 @@ export const IDLE_UPKEEP_MINUTES: Readonly<Record<UpkeepFrequency, number | null
  * upkeep gate (dispatcher-background.ts) replaces it with the pages to check,
  * or sends nothing when there are none.
  */
-export const UPKEEP_FALLBACK_TEXT = 'Memory upkeep: check the notes in memory/ that changed lately against the transcripts they cite, using search_memory. Mark a topic confirmed when a transcript backs it, fix what a transcript contradicts, and fix broken links. Keep index.md short. This is for you, so don’t call tell_user for it.';
+export const UPKEEP_FALLBACK_TEXT = 'Memory upkeep: check the notes in memory/ that changed lately against the transcripts they cite, using search_memory. Mark a topic confirmed when a transcript backs it, fix what a transcript contradicts, and fix broken links. Keep index.md short. This is for you, so don’t call tell_user for it. Your memory-upkeep skill has the steps.';
 
-export const CHECK_IN_TEXT = 'Check-in: look at what your connected agents have done since the last check-in: their status, their recent output and any news you are holding. If something changed that the user would want to know, call tell_user once with kind check_in and a short summary. If nothing changed, don’t call tell_user. Note anything worth keeping in memory.';
+/**
+ * A check-in summary shows only when routine news is held for it (dispatcher-triage), so what the
+ * check-in finds goes in as routine news first.
+ */
+export const CHECK_IN_TEXT = 'Check-in: look at what your connected agents have done since the last check-in, without waking anyone. Report each change the user would want to know with tell_user, kind routine. Then call tell_user once with kind check_in and a one-sentence summary; it shows only when news is waiting for it. Note anything worth keeping in memory. Your check-ins skill has the steps.';
 
 /** A hidden Action that should exist: a scheduled one, or an event subscription that tells the Dispatcher. */
 export type BackgroundActionSpec =

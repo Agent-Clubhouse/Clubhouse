@@ -80,7 +80,7 @@ export const CHAT_UPDATE_TAG = '[FROM:Clubhouse]';
 export const HAND_OFF_TAG = '[HAND-OFF]';
 
 export const defaultChatDelivery: ChatDelivery = ({ message }) => ({
-  text: `${CHAT_UPDATE_TAG} Update on work you handed off. Tell the user in your own words what matters to them:\n\n${message}`,
+  text: `${CHAT_UPDATE_TAG} Update on work you started. Tell the user in your own words what matters to them:\n\n${message}`,
   // Shown in the chat as a Clubhouse notice: nothing names where it came from.
   routed: [{ fromClubhouse: true, text: message }],
 });

@@ -6,7 +6,9 @@
  *
  * Instructions are a file: Clubhouse's own Dispatcher text
  * (`dispatcher-instructions.md`) is written to the provider's instructions
- * file in the folder at create, on app start and whenever its CLI changes.
+ * file in the folder at create, on app start and whenever its CLI changes,
+ * with its built-in skills (dispatcher-skills, #3051) beside it in the CLI's
+ * skills folder.
  * There is no systemPrompt path. The Dispatcher is known by its folder and
  * its agent id (isDispatcherPath, isDispatcherAgentId), never by a persona:
  * one created before #2901 still has `persona: 'dispatcher'` in its config,
@@ -44,11 +46,12 @@ import { withSavedAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
-import { getAllProviders, getProvider, type OrchestratorId } from '../../orchestrators';
+import { getAllProviders, getProvider, type OrchestratorId, type OrchestratorProvider } from '../../orchestrators';
 import { getSettings as getOrchestratorSettings, whenDefaultsDetected } from '../orchestrator-settings';
 import dispatcherInstructions from './dispatcher-instructions.md';
 import dispatcherChatInstructions from './dispatcher-chat-instructions.md';
 import { withMemoryIndex } from './dispatcher-memory-migration';
+import { instructionsWithSkills, writeDispatcherSkills, type SkillsConventions } from './dispatcher-skills';
 import { appLog } from '../log-service';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
@@ -426,8 +429,32 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
     appLog(NS, 'warn', 'No provider to write Dispatcher instructions for', { meta: { orchestrator: providerId } });
     return;
   }
-  await provider.writeInstructions(dir, await withDispatcherMemory(isDispatcherChatPath(dir) ? DISPATCHER_CHAT_INSTRUCTIONS : DISPATCHER_INSTRUCTIONS));
+  const role: DispatcherRole = isDispatcherChatPath(dir) ? 'chat' : 'work';
+  const skills = await writeSkills(dir, role, provider);
+  const base = role === 'chat' ? DISPATCHER_CHAT_INSTRUCTIONS : DISPATCHER_INSTRUCTIONS;
+  await provider.writeInstructions(dir, await withDispatcherMemory(instructionsWithSkills(base, role, skills ?? undefined)));
   instructionsWrittenFor.set(dir, provider.id);
+}
+
+/**
+ * Write the role's built-in skills (#3051) into the CLI's skills folder, so a
+ * new app version's skills reach the agent with its instructions. Resolves
+ * with the conventions they were written for, or null when they weren't:
+ * then the instructions don't list them, and the agent keeps working.
+ */
+async function writeSkills(dir: string, role: DispatcherRole, provider: OrchestratorProvider): Promise<SkillsConventions | null> {
+  const conventions = provider.conventions as SkillsConventions | undefined;
+  if (!conventions) return null;
+  try {
+    await writeDispatcherSkills(dir, role, conventions, getAllProviders().map((p) => p.conventions as SkillsConventions).filter(Boolean));
+    return conventions;
+  } catch (err) {
+    // telemetry-exempt: logged; the agent works from its instructions alone until the next write
+    appLog(NS, 'warn', 'Could not write the Dispatcher\'s skills', {
+      meta: { role, provider: provider.id, error: err instanceof Error ? err.message : String(err) },
+    });
+    return null;
+  }
 }
 
 async function stopAgent(agent: DurableAgentConfig, dir: string = getDispatcherPath()): Promise<void> {

@@ -85,6 +85,13 @@ describe('buildRewritePrompt', () => {
     expect(prompt).toContain('<<<Fixed it.>>>');
   });
 
+  it('fills in the agent and the message once, so a message can\'t expand a placeholder', () => {
+    const prompt = buildRewritePrompt('webapp-lead', 'Say {agent} and {message}.');
+    expect(prompt).toContain('<<<Say {agent} and {message}.>>>');
+    expect(prompt).not.toMatch(/\{agent\}.*<<</);
+    expect(prompt).not.toContain('\n');
+  });
+
   it('caps a long message', () => {
     const prompt = buildRewritePrompt('a', 'x'.repeat(REWRITE_INPUT_MAX * 2));
     expect(prompt.length).toBeLessThan(REWRITE_INPUT_MAX + 1000);

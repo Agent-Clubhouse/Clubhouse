@@ -596,10 +596,9 @@ export function registerActionTools(): void {
     'subscribe',
     {
       description:
-        'Ask to be told when something happens, e.g. when main is pushed or when an agent finishes a turn. ' +
-        'Clubhouse sends you a message each time it happens, saying what happened, with your note; it wakes you first if you are asleep. ' +
-        'The subscription is an action you own: it shows in Settings > Actions, counts toward your actions, and follows the same rights ' +
-        'as any action\'s trigger. Stop it with delete_action, or pause it with update_action and enabled false. ' + RESULT_NOTE,
+        'Ask to be told when something happens, such as main being pushed or an agent finishing a turn. ' +
+        'Each time, Clubhouse messages you what happened with your note, waking you first if needed. ' +
+        'It is an action you own, in Settings > Actions: stop it with delete_action, or pause it with update_action and enabled false. ' + RESULT_NOTE,
       inputSchema: schema({
         event: TRIGGER_SCHEMA.properties.event,
         source: {
