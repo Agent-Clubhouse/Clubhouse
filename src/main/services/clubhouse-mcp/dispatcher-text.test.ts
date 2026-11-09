@@ -20,6 +20,7 @@ import { DISPATCHER_CHAT_INSTRUCTIONS, DISPATCHER_INSTRUCTIONS } from '../dispat
 import { dispatcherSkills, skillsSection } from '../dispatcher/dispatcher-skills';
 import { defaultChatDelivery } from '../dispatcher/dispatcher-channel';
 import { buildRewritePrompt } from '../dispatcher/dispatcher-rewrite';
+import { PERSONALITY_PRESET_TEXT, personalityInstructions } from '../../../shared/dispatcher-personality';
 
 /**
  * What the Dispatcher's two agents are told, and the tools they read (#3051).
@@ -87,6 +88,8 @@ function chatFacingText(): Array<[string, string]> {
     ...dispatcherSkills('chat').map((s): [string, string] => [`skill ${s.name}`, s.text]),
     ...PROVIDERS.map((p): [string, string] => [`skills list on ${p.id}`, skillsSection('chat', p.conventions)]),
     ...tools('chat').flatMap((t) => descriptions(t).map((d): [string, string] => [`tool ${t.name}`, d])),
+    // First run's personality section (#3047), with each preset.
+    ...Object.entries(PERSONALITY_PRESET_TEXT).map(([preset, text]): [string, string] => [`personality ${preset}`, personalityInstructions('Rosie', { preset: preset as 'concise', text })]),
     ['a Clubhouse update', defaultChatDelivery({ message: 'Checkout is fixed.' })!.text],
     // The rewrite step's words show in the chat under an agent's name.
     ['rewrite prompt', buildRewritePrompt('webapp-lead', 'Fixed it.')],

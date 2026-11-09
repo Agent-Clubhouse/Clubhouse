@@ -27,6 +27,12 @@ export function closeDispatcher(): void {
   useUIStore.getState().setDispatcherOpen(false);
 }
 
+/** Its setup (#3047), opened again from the chat or its menu: in its own view. */
+export function openDispatcherSetup(): void {
+  useDispatcherStore.getState().setSetupOpen(true);
+  openDispatcher();
+}
+
 /** Settings > Dispatcher (#2535), where its CLI, Behavior and runtime are set. */
 export function openDispatcherSettings(): void {
   closeDispatcher();

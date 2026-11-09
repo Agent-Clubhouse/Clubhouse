@@ -90,9 +90,10 @@ export function skillsSection(role: DispatcherRole, conventions: SkillsConventio
   ].join('\n');
 }
 
-/** `base` as it is, then `section` after a blank line. */
-export function appendSection(base: string, section: string): string {
-  return `${base}${base.endsWith('\n') ? '' : '\n'}\n${section.trim()}\n`;
+/** `text` kept whole (a Windows checkout gives the shipped file CRLF line ends), a blank line, then `section`. */
+export function appendSection(text: string, section: string): string {
+  const base = /\n$/.test(text) ? text : `${text}\n`;
+  return `${base}\n${section}\n`;
 }
 
 /** A plain folder name from a manifest: never the folder itself or anything outside it. */

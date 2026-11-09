@@ -39,6 +39,8 @@ const USER_DATA_FILES = {
   // The provider is installed (the fake), so no first-run CLI probe.
   'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },
   'chat-runtime-settings.json': { 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } },
+  // Set up already, so its view opens on the chat (first-run setup is dispatcher-setup.spec.ts).
+  'dispatcher-settings.json': { setup: { status: 'done', upgrade: false } },
 };
 const ORCHESTRATOR_ID = 'orch_dispatcher_e2e';
 
