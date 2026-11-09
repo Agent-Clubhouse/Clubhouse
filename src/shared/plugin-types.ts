@@ -665,6 +665,8 @@ export interface AgentsAPI {
     /**
      * The agent's Access level: 'plan' | 'ask' | 'auto_edit' | 'auto' | 'full_access'.
      * Wins over `freeAgentMode`. Levels above Ask first need `agents.free-agent-mode`. @since 0.9
+     * While the plugin answers an agent's MCP tool call, the level can't be above that agent's own:
+     * the call throws, naming both. Name `access` then, since a Default or `freeAgentMode` may be higher.
      */
     access?: 'plan' | 'ask' | 'auto_edit' | 'auto' | 'full_access';
     mcpIds?: string[];
