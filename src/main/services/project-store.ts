@@ -231,8 +231,8 @@ async function folderIdentity(dirPath: string): Promise<{ dev: bigint; ino: bigi
 /**
  * The registered project for a folder (#3236): the same path, the same real
  * path (links resolved), or the same folder on disk (device and inode), which
- * covers another case on a volume that ignores case. Only when either folder
- * can't be read does it fall back to comparing without case, on platforms
+ * covers another case on a volume that ignores case. Only when neither folder
+ * can be read does it fall back to comparing without case, on platforms
  * whose volumes usually ignore it.
  */
 async function findByCanonicalPath(projects: readonly Project[], dirPath: string): Promise<Project | undefined> {
@@ -246,7 +246,9 @@ async function findByCanonicalPath(projects: readonly Project[], dirPath: string
     const other = await folderIdentity(p.path);
     if (identity && other) {
       if (identity.dev === other.dev && identity.ino === other.ino) return p;
-    } else if (CASE_INSENSITIVE_FS && projectPathKey(p.path).toLowerCase() === plain.toLowerCase()) {
+    } else if (!identity && !other && CASE_INSENSITIVE_FS && projectPathKey(p.path).toLowerCase() === plain.toLowerCase()) {
+      // Only when neither can be read: where case is ignored, a folder readable under one
+      // spelling is readable under every other, so one readable and one not are two folders.
       return p;
     }
   }

@@ -297,6 +297,17 @@ describe('add', () => {
     expect(store.projects()).toHaveLength(1);
   });
 
+  it('keeps a readable folder apart from a stale record that differs only in case', async () => {
+    const store = memoryStore();
+    const gone = path.join(os.tmpdir(), 'dupe-check', 'Old');
+    const first = await add(gone);
+    // Only the new spelling is on disk: on a volume that ignored case, the old one would be readable too.
+    inodes({ [gone.toUpperCase()]: 9 });
+    const second = await add(gone.toUpperCase());
+    expect(second.id).not.toBe(first.id);
+    expect(store.projects()).toHaveLength(2);
+  });
+
   it('makes one project when the same folder is added twice at once', async () => {
     const store = memoryStore();
     const dir = path.join(os.tmpdir(), 'dupe-check', 'race');
