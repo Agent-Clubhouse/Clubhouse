@@ -6,7 +6,6 @@ import * as path from 'path';
 const h = vi.hoisted(() => ({
   base: '',
   delivery: null as null | ((report: unknown) => unknown),
-  handOff: null as null | (() => void),
 }));
 
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.base }));
@@ -18,7 +17,6 @@ vi.mock('./dispatcher-service', () => ({
 vi.mock('./dispatcher-channel', () => ({
   CHAT_UPDATE_TAG: '[FROM:Clubhouse]',
   setChatDelivery: (d: ((report: unknown) => unknown) | null) => { h.delivery = d; },
-  onHandOff: (listener: () => void) => { h.handOff = listener; return () => { h.handOff = null; }; },
 }));
 
 import {
@@ -26,6 +24,10 @@ import {
   type ChatDecision, type ChatMessage, type GroupChatDeps,
 } from './dispatcher-news';
 import { recordAgentMessage } from './dispatcher-news-inbox';
+import {
+  _resetDispatcherRequestsForTesting, beginRequest, getRequest, getRequests, getRequestsPath, noteAgentReached, noteHandedOff, noteWorkEvent, workTurnMark,
+} from './dispatcher-requests';
+import type { ChatEvent } from '../../../shared/chat';
 import { groupChatMessage } from '../../../shared/dispatcher-group-chat';
 import { captureEvents, type EventCapture } from '../../telemetry/__test-utils__/event-capture';
 
@@ -50,6 +52,21 @@ function seenInChat(message: ChatMessage) {
   return groupChatMessage({ source: 'mcp', text: message.text, routed: message.routed }, { ownAgentIds: new Set(['coordinator', 'chat']) });
 }
 
+/** One of the Dispatcher's turns starting or ending. */
+function turn(type: 'turn_started' | 'turn_ended'): void {
+  const data = type === 'turn_started' ? { trigger: 'prompt' } : { stopReason: 'end_turn' };
+  noteWorkEvent({ v: 1, agentId: 'coordinator', sessionId: 's', seq: 1, ts: now, type, data } as unknown as ChatEvent, now);
+}
+
+/** The user hands a request off, and the Dispatcher's turn reading it starts. Returns its id. */
+function handOff(text = `request ${Math.random()}`): string {
+  const begun = beginRequest(text, now);
+  if (begun.kind !== 'new' && begun.kind !== 'again') throw new Error(`not handed off: ${begun.kind}`);
+  noteHandedOff(begun.request.id, 'prompt', workTurnMark(), now);
+  turn('turn_started');
+  return begun.request.id;
+}
+
 function shown(decision: ChatDecision): ChatMessage {
   if (isChatHold(decision)) throw new Error(`held: ${decision.reason}`);
   return decision;
@@ -57,7 +74,9 @@ function shown(decision: ChatDecision): ChatMessage {
 
 beforeEach(async () => {
   await _resetDispatcherNewsForTesting();
+  await _resetDispatcherRequestsForTesting();
   fs.rmSync(getNewsStatePath(), { force: true });
+  fs.rmSync(getRequestsPath(), { force: true });
   now = T0;
 });
 
@@ -79,9 +98,8 @@ describe('agent news shown now (#3193)', () => {
 
   it('asks for no acknowledgment turn: the chat\'s reply is the news', async () => {
     const deliver = createGroupChatDelivery(deps().deps);
-    h.handOff = null;
     installGroupChat(deps().deps);
-    h.handOff!();
+    handOff();
     const answer = shown(await (h.delivery as (r: unknown) => Promise<ChatDecision>)({ message: 'Checkout is fixed in #412.', from: 'api-lead', kind: 'answer' }));
     const question = shown(await deliver({ message: 'Which branch should I release from?', from: 'api-lead', kind: 'needs_user' }));
     for (const message of [answer, question]) {
@@ -126,7 +144,7 @@ describe('news that names an agent Clubhouse can\'t find (#3193)', () => {
   it('is still that agent\'s news, under the name given, and doesn\'t answer the user\'s request', async () => {
     installGroupChat(deps().deps);
     const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
-    h.handOff!();
+    handOff();
     const message = shown(await deliver({ message: 'Should I tag from main?', from: 'release-lead', kind: 'needs_user' }));
     expect(message.text).toContain('release-lead needs the user');
     // The request is still open, so the Dispatcher's own answer to it shows.
@@ -138,9 +156,11 @@ describe('news that never reached the chat (#3193)', () => {
   it('can be sent again, and reopens the request it answered', async () => {
     installGroupChat(deps().deps);
     const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
-    h.handOff!();
+    handOff();
     const first = shown(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }));
+    expect(getRequests()[0].status).toBe('done');
     first.notDelivered!();
+    expect(getRequests()[0].status).toBe('under_way');
     // Not a repeat, and the request is open again.
     const again = shown(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }));
     // Delivered this time: now it is a repeat, and the request is closed.
@@ -171,27 +191,92 @@ describe('an agent\'s routine traffic stays out of the chat (#3193)', () => {
     // so they stayed open, and an orchestrator's progress, called an answer, showed in the chat.
     installGroupChat(deps().deps);
     const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
-    h.handOff!();
+    const first = handOff();
     shown(await deliver({ message: 'Which project should that go in?', kind: 'needs_user' }));
-    h.handOff!();
+    expect(getRequest(first)?.status).toBe('waiting_user');
+    turn('turn_ended');
+    const second = handOff();
     shown(await deliver({ message: 'Scheduled for 8:24 PM.', kind: 'answer' }));
+    expect(getRequest(second)?.status).toBe('done');
+    turn('turn_ended');
     expect(await deliver({ message: 'I confirmed why the tool was missing.', from: 'api-lead', kind: 'answer' }))
-      .toEqual({ hold: 'later', reason: expect.stringContaining('no open request') });
+      .toEqual({ hold: 'later', reason: expect.stringContaining('answers no request') });
   });
 
   it('still shows an agent\'s answer to a request the Dispatcher passed on', async () => {
     installGroupChat(deps().deps);
     const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
-    h.handOff!();
+    const id = handOff();
+    noteAgentReached('a2', now);
+    turn('turn_ended');
     expect(isChatHold(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }))).toBe(false);
+    expect(getRequest(id)?.status).toBe('done');
   });
 
   it('an agent\'s question doesn\'t answer the user\'s request', async () => {
     installGroupChat(deps().deps);
     const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
-    h.handOff!();
+    const id = handOff();
+    noteAgentReached('a2', now);
     shown(await deliver({ message: 'Should I tag from main?', from: 'api-lead', kind: 'needs_user' }));
+    expect(getRequest(id)?.status).toBe('waiting_user');
     expect(isChatHold(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }))).toBe(false);
+    expect(getRequest(id)?.status).toBe('done');
+  });
+});
+
+describe('requests keyed to their id and the agents reached for them (#3204)', () => {
+  it('an unrelated question from the Dispatcher, such as a failed Action, doesn\'t close a request passed to an agent', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    const id = handOff('have api-lead tag 1.0');
+    noteAgentReached('a2', now);
+    turn('turn_ended');
+    // A later turn of the Dispatcher's own, for a nightly Action that failed.
+    turn('turn_started');
+    shown(await deliver({ message: 'The nightly Action failed: a permission is missing.', kind: 'needs_user' }));
+    turn('turn_ended');
+    expect(getRequest(id)?.status).toBe('under_way');
+    // The agent's real answer still shows right away, and closes it.
+    const answer = shown(await deliver({ message: 'Tagged 1.0.', from: 'api-lead', kind: 'answer' }));
+    expect(answer.text).toContain(`request ${id}`);
+    expect(getRequest(id)?.status).toBe('done');
+  });
+
+  it('an agent reached for no request doesn\'t take another\'s answer', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    const id = handOff('have webapp-lead fix checkout');
+    noteAgentReached('a1', now);
+    turn('turn_ended');
+    expect(await deliver({ message: 'Lint is fixed.', from: 'api-lead', kind: 'answer' })).toMatchObject({ hold: 'later' });
+    expect(getRequest(id)?.status).toBe('under_way');
+  });
+
+  it('sends the user\'s answer to a passed-on question back under the same request', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    const id = handOff('have api-lead release');
+    noteAgentReached('a2', now);
+    turn('turn_ended');
+    const question = shown(await deliver({ message: 'Release from main or from the release branch?', from: 'api-lead', kind: 'needs_user' }));
+    expect(question.text).toContain(`start_work and request_id ${id}`);
+    expect(getRequest(id)?.status).toBe('waiting_user');
+    expect(beginRequest('From main.', now, id)).toMatchObject({ kind: 'again', request: { id, status: 'under_way' } });
+  });
+
+  it('takes the id the Dispatcher gives over any guess', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    const first = handOff('one');
+    turn('turn_ended');
+    const second = handOff('two');
+    turn('turn_ended');
+    // Two under way and no turn reading either: an answer without an id is for neither.
+    expect(isChatHold(await deliver({ message: 'One is done.', kind: 'answer' }))).toBe(true);
+    shown(await deliver({ message: 'The first one is done.', kind: 'answer', request: first }));
+    expect(getRequest(first)?.status).toBe('done');
+    expect(getRequest(second)?.status).toBe('under_way');
   });
 });
 
@@ -241,7 +326,7 @@ describe('news held for a check-in', () => {
     installGroupChat(deps().deps);
     const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
     expect(isChatHold(await deliver({ message: 'Tagged 1.0.', kind: 'answer' }))).toBe(true);
-    h.handOff!();
+    handOff();
     expect(isChatHold(await deliver({ message: 'Tagged 1.0.1.', kind: 'answer' }))).toBe(false);
     // That answer closed the request.
     expect(isChatHold(await deliver({ message: 'Tagged 1.0.2.', kind: 'answer' }))).toBe(true);
@@ -278,10 +363,8 @@ describe('state', () => {
   it('installs and uninstalls the group chat step', async () => {
     installGroupChat(deps().deps);
     expect(h.delivery).toBeTypeOf('function');
-    expect(h.handOff).toBeTypeOf('function');
     await _resetDispatcherNewsForTesting();
     expect(h.delivery).toBeNull();
-    expect(h.handOff).toBeNull();
   });
 });
 

@@ -18,7 +18,6 @@ vi.mock('./dispatcher-service', () => ({
 vi.mock('./dispatcher-channel', () => ({
   CHAT_UPDATE_TAG: '[FROM:Clubhouse]',
   setChatDelivery: () => {},
-  onHandOff: () => () => {},
 }));
 
 import { forgetEverything, getForgetGeneration, memoryFingerprint } from './dispatcher-forget';
@@ -70,7 +69,7 @@ beforeEach(async () => {
   write(inBase('dispatcher', 'notes-archive', 'old.md'), 'old notes\n');
   write(inBase('dispatcher', 'notes-archive-2', 'older.md'), 'older notes\n');
   write(inBase('dispatcher', 'notes', 'unsorted.md'), 'never sorted\n');
-  write(newsFile(), JSON.stringify({ openRequests: [5], held: [{ text: 'Lint is green.', at: 1 }, { text: 'Docs merged.', at: 2 }], shown: [{ text: 'Shown.', at: 3 }] }));
+  write(newsFile(), JSON.stringify({ held: [{ text: 'Lint is green.', at: 1 }, { text: 'Docs merged.', at: 2 }], shown: [{ text: 'Shown.', at: 3 }] }));
 
   // What must stay: both agents and their instructions, connections and links, Actions, cards' state.
   write(inBase('dispatcher', '.clubhouse', 'agents.json'), '[{"id":"coordinator","name":"Rosie"}]');
@@ -102,7 +101,7 @@ describe('Forget everything (#3046)', () => {
     // Held news goes; open requests and what was shown stay.
     expect(heldNews()).toEqual([]);
     await _whenNewsSavedForTesting();
-    expect(JSON.parse(fs.readFileSync(newsFile(), 'utf8'))).toMatchObject({ openRequests: [5], held: [], shown: [{ text: 'Shown.' }] });
+    expect(JSON.parse(fs.readFileSync(newsFile(), 'utf8'))).toMatchObject({ held: [], shown: [{ text: 'Shown.' }] });
 
     // Nothing else changed.
     expect(everythingElse()).toEqual(kept);

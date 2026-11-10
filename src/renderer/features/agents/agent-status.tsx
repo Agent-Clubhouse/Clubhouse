@@ -38,6 +38,21 @@ export function chatDot(state: ChatSessionState | null): AgentDot {
   }
 }
 
+/**
+ * The Dispatcher's dot (#3220). The user sees one Dispatcher, but its chat
+ * ends its turn once a request is handed off while the work goes on, so it
+ * shows working while any request is under way: between the chat's turns and
+ * while the chat sleeps. Needs you, Error and Starting are the chat's own.
+ */
+export function dispatcherDot(chat: AgentDot, requestsUnderWay: number): AgentDot {
+  return requestsUnderWay > 0 && (chat === 'idle' || chat === 'sleeping') ? 'working' : chat;
+}
+
+/** The activity line while only a request under way makes the Dispatcher working. */
+export function dispatcherWorkingText(requestsUnderWay: number): string {
+  return requestsUnderWay > 1 ? 'Working on your requests' : 'Working on your request';
+}
+
 /** `detailed` with chat agents' status taken from their chat sessions (chatDetailedStatus). */
 export function withChatStatus(
   agents: Record<string, Pick<Agent, 'id' | 'status'>>,

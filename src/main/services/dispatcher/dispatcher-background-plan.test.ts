@@ -110,7 +110,7 @@ describe('backgroundActionSpecs: each Behavior level yields its triggers', () =>
 
 describe('the check-in message (#3051)', () => {
   it('has what a check-in finds go in as routine news first, since a check_in summary shows only with news held for it', () => {
-    const empty = { openRequests: [], held: [], shown: [] };
+    const empty = { held: [], shown: [] };
     expect(triageNews({ text: 'pm finished the plan.', kind: 'check_in', at: 1 }, empty, 1)).toEqual({ show: 'never', reason: 'nothing_changed' });
     expect(CHECK_IN_TEXT.indexOf('kind routine')).toBeGreaterThan(-1);
     expect(CHECK_IN_TEXT.indexOf('kind routine')).toBeLessThan(CHECK_IN_TEXT.indexOf('kind check_in'));
