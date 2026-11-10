@@ -28,6 +28,7 @@ vi.mock('../services/agent-settings-service', () => ({
   writeMcpRawJson: vi.fn(async () => undefined),
   readProjectAgentDefaults: vi.fn(async () => ({ model: 'default' })),
   writeProjectAgentDefaults: vi.fn(async () => undefined),
+  updateProjectAgentDefaults: vi.fn(async () => ({})),
   readSourceSkillContent: vi.fn(async () => 'src skill content'),
   writeSourceSkillContent: vi.fn(async () => undefined),
   deleteSourceSkill: vi.fn(async () => undefined),
@@ -333,6 +334,13 @@ describe('agent-settings-handlers', () => {
     const handler = handlers.get(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS)!;
     await handler({}, '/project', { model: 'opus' });
     expect(agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', { model: 'opus' });
+  });
+
+  it('SAVE_PROJECT_USER_DEFAULTS updates the saved defaults in place (#3244)', async () => {
+    const handler = handlers.get(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS)!;
+    await handler({}, '/project', { buildCommand: 'make' });
+    expect(agentSettings.updateProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.any(Function));
+    expect(agentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
   });
 
   // --- Conventions ---

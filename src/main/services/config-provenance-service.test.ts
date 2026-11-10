@@ -46,7 +46,9 @@ import {
   getProjectConfigBreakdown,
   removePluginInjectionItem,
   parsePluginPrefix,
+  saveProjectUserDefaults,
 } from './config-provenance-service';
+import { updateProjectAgentDefaults } from './agent-settings-service';
 
 const PROJECT_PATH = '/project';
 
@@ -326,6 +328,73 @@ describe('config-provenance-service', () => {
 
       const result = await removePluginInjectionItem(PROJECT_PATH, 'allow-rule:5');
       expect(result).toBe(false);
+    });
+  });
+
+  describe('saveProjectUserDefaults (#3244)', () => {
+    let file: Record<string, unknown>;
+    function useSettingsFile(agentDefaults: Record<string, unknown>): void {
+      file = { defaults: {}, quickOverrides: {}, agentDefaults };
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        if (String(p).endsWith('settings.json')) return JSON.stringify(file);
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: unknown, data: unknown) => {
+        if (String(p).endsWith('settings.json')) file = JSON.parse(String(data));
+      });
+    }
+    const saved = () => file.agentDefaults as Record<string, unknown>;
+
+    it('keeps plugin permission rules exactly once, however often it saves', async () => {
+      const tagged = 'Bash(test) /* plugin:foo */';
+      useSettingsFile({ permissions: { allow: ['Read(**)', tagged], deny: ['WebFetch'] } });
+      await saveProjectUserDefaults(PROJECT_PATH, { permissions: { allow: ['Read(**)', 'Edit(**)'], deny: ['WebFetch'] } });
+      await saveProjectUserDefaults(PROJECT_PATH, { permissions: { allow: ['Read(**)', 'Edit(**)', tagged], deny: ['WebFetch'] } });
+      expect(saved().permissions).toEqual({ allow: ['Read(**)', 'Edit(**)', tagged], deny: ['WebFetch'] });
+    });
+
+    it('keeps plugin MCP servers when the user edits theirs', async () => {
+      useSettingsFile({ mcpJson: JSON.stringify({ mcpServers: { mine: { command: 'a' }, 'plugin-foo-srv': { command: 'p' } } }) });
+      await saveProjectUserDefaults(PROJECT_PATH, { mcpJson: JSON.stringify({ mcpServers: { mine: { command: 'b' } } }) });
+      expect(JSON.parse(saved().mcpJson as string).mcpServers).toEqual({ mine: { command: 'b' }, 'plugin-foo-srv': { command: 'p' } });
+      await saveProjectUserDefaults(PROJECT_PATH, { mcpJson: null });
+      expect(JSON.parse(saved().mcpJson as string).mcpServers).toEqual({ 'plugin-foo-srv': { command: 'p' } });
+    });
+
+    it('keeps the user\'s MCP text as typed when no plugin has servers', async () => {
+      useSettingsFile({});
+      const text = '{"mcpServers": {"mine": {"command": "a"}}}';
+      await saveProjectUserDefaults(PROJECT_PATH, { mcpJson: text });
+      expect(saved().mcpJson).toBe(text);
+    });
+
+    it('rejects MCP JSON that doesn\'t parse, and writes nothing', async () => {
+      useSettingsFile({ mcpJson: '{"mcpServers": {}}' });
+      await expect(saveProjectUserDefaults(PROJECT_PATH, { mcpJson: '{ nope' })).rejects.toThrow(/isn't valid JSON/);
+      expect(saved().mcpJson).toBe('{"mcpServers": {}}');
+    });
+
+    it('keeps plugin instruction blocks once after the user\'s text', async () => {
+      const block = '<!-- plugin:foo:start -->\nPlugin text\n<!-- plugin:foo:end -->';
+      useSettingsFile({ instructions: `Old\n\n${block}` });
+      await saveProjectUserDefaults(PROJECT_PATH, { instructions: 'New' });
+      await saveProjectUserDefaults(PROJECT_PATH, { instructions: `New\n\n${block}` });
+      expect(saved().instructions).toBe(`New\n\n${block}`);
+    });
+
+    it('changes only the fields in the patch, and null removes one', async () => {
+      useSettingsFile({ helperAuto: 'off', persona: 'qa', buildCommand: 'make', testCommand: 'old' });
+      await saveProjectUserDefaults(PROJECT_PATH, { buildCommand: 'npm run build', testCommand: null });
+      expect(saved()).toEqual({ helperAuto: 'off', persona: 'qa', buildCommand: 'npm run build' });
+    });
+
+    it('doesn\'t lose a concurrent update to another field', async () => {
+      useSettingsFile({});
+      await Promise.all([
+        updateProjectAgentDefaults(PROJECT_PATH, (d) => ({ ...d, helperAuto: 'off' })),
+        saveProjectUserDefaults(PROJECT_PATH, { buildCommand: 'make' }),
+      ]);
+      expect(saved()).toEqual({ helperAuto: 'off', buildCommand: 'make' });
     });
   });
 });
