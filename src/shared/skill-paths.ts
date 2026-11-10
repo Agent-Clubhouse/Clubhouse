@@ -51,14 +51,17 @@ export function skillPathError(path: string, existing: readonly string[], replac
  * chosen (`sample-skill/SKILL.md`, `assets/note.md`, `run.sh`). A top folder
  * that holds SKILL.md directly is a whole skill: its name is stripped and
  * offered as the skill name. Any other folder is a supporting folder and
- * keeps its name. `skillName` is set only when exactly one skill folder came in.
+ * keeps its name. Only one skill comes in at a time: with two or more skill
+ * folders, none is stripped and `skillFolders` names them so the caller can say so.
  * Names are made NFC, as macOS can hand them over decomposed.
  */
-export function planSkillImport(paths: readonly string[]): { paths: string[]; skillName: string | null } {
+export function planSkillImport(paths: readonly string[]): { paths: string[]; skillName: string | null; skillFolders: string[] } {
   const parts = paths.map((p) => p.normalize('NFC').replace(/\\/g, '/').split('/').filter(Boolean));
-  const skillRoots = new Set(parts.filter((p) => p.length === 2 && p[1] === SKILL_ENTRYPOINT).map((p) => p[0]));
+  const skillFolders = [...new Set(parts.filter((p) => p.length === 2 && p[1] === SKILL_ENTRYPOINT).map((p) => p[0]))];
+  const skillName = skillFolders.length === 1 ? skillFolders[0] : null;
   return {
-    paths: parts.map((p) => (p.length > 1 && skillRoots.has(p[0]) ? p.slice(1) : p).join('/')),
-    skillName: skillRoots.size === 1 ? [...skillRoots][0] : null,
+    paths: parts.map((p) => (p.length > 1 && p[0] === skillName ? p.slice(1) : p).join('/')),
+    skillName,
+    skillFolders,
   };
 }

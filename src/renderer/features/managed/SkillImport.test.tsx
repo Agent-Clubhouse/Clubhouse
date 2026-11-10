@@ -131,6 +131,26 @@ describe('supporting folders and whole skills (#3247)', () => {
     expect(screen.getByTestId('managed-part-skill-name')).toHaveValue('sample-skill');
   });
 
+  it('imports one skill at a time: two skill folders keep their names, name nothing, and say why', async () => {
+    render(<PartDialog open kind="skill" onClose={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('managed-part-skill-md'), { target: { value: '# Mine' } });
+    drop({ one: { 'SKILL.md': '# One' }, two: { 'SKILL.md': '# Two', 'run.sh': 'echo' } });
+    await waitFor(() => expect(listed()).toEqual(['one/SKILL.md', 'two/SKILL.md', 'two/run.sh']));
+    expect(screen.getByTestId('managed-skill-file-error').textContent).toBe('A skill can only be imported one at a time, so one, two kept their folder names.');
+    expect(screen.getByTestId('managed-part-skill-md')).toHaveValue('# Mine');
+    expect(screen.getByTestId('managed-part-skill-name')).toHaveValue('');
+    expect(screen.getByTestId('managed-part-name')).toHaveValue('');
+  });
+
+  it('never overwrites a written SKILL.md with an imported one', async () => {
+    render(<PartDialog open kind="skill" onClose={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('managed-part-skill-md'), { target: { value: '# Mine' } });
+    drop({ 'sample-skill': { 'SKILL.md': '# Theirs', 'run.sh': 'echo' } });
+    await waitFor(() => expect(listed()).toEqual(['run.sh']));
+    expect(screen.getByTestId('managed-part-skill-md')).toHaveValue('# Mine');
+    expect(screen.getByTestId('managed-skill-file-error').textContent).toMatch(/Not added\. SKILL\.md: That path conflicts with SKILL\.md/);
+  });
+
   it('shows a clash instead of overwriting the file already there', async () => {
     const create = vi.spyOn(m(), 'createPart').mockResolvedValue({ ok: true, value: { id: 's1' } } as never);
     const { container } = render(<PartDialog open kind="skill" onClose={vi.fn()} />);

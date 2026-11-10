@@ -159,7 +159,11 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
       if (issue) { refused.push(`${rel || item.path}: ${issue}`); continue; }
       files.push(await readFileAsSkillFile(item.file, rel, bits[index]));
     }
-    setFileError(refused.length > 0 ? `Not added. ${refused.join(' ')}` : null);
+    const notes = [
+      ...(plan.skillFolders.length > 1 ? [`A skill can only be imported one at a time, so ${plan.skillFolders.join(', ')} kept their folder names.`] : []),
+      ...(refused.length > 0 ? [`Not added. ${refused.join(' ')}`] : []),
+    ];
+    setFileError(notes.length > 0 ? notes.join(' ') : null);
     setContent({ ...content, files, skillName: content.skillName || (plan.skillName ?? '') });
     if (!name && plan.skillName) setName(plan.skillName);
   };

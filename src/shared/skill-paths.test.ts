@@ -3,24 +3,26 @@ import { planSkillImport, skillPathError } from './skill-paths';
 
 describe('planSkillImport (#3247)', () => {
   it('keeps a supporting folder\'s name and names no skill', () => {
-    expect(planSkillImport(['assets/note.md', 'assets/deep/more.md'])).toEqual({ paths: ['assets/note.md', 'assets/deep/more.md'], skillName: null });
+    expect(planSkillImport(['assets/note.md', 'assets/deep/more.md'])).toEqual({ paths: ['assets/note.md', 'assets/deep/more.md'], skillName: null, skillFolders: [] });
   });
 
   it('strips only the outer folder of a whole skill and names the skill after it', () => {
-    expect(planSkillImport(['sample-skill/SKILL.md', 'sample-skill/assets/note.md'])).toEqual({ paths: ['SKILL.md', 'assets/note.md'], skillName: 'sample-skill' });
+    expect(planSkillImport(['sample-skill/SKILL.md', 'sample-skill/assets/note.md'])).toEqual({ paths: ['SKILL.md', 'assets/note.md'], skillName: 'sample-skill', skillFolders: ['sample-skill'] });
   });
 
   it('treats each folder in a mixed drop by what it holds', () => {
     expect(planSkillImport(['sample-skill/SKILL.md', 'sample-skill/run.sh', 'assets/note.md', 'loose.md']))
-      .toEqual({ paths: ['SKILL.md', 'run.sh', 'assets/note.md', 'loose.md'], skillName: 'sample-skill' });
+      .toEqual({ paths: ['SKILL.md', 'run.sh', 'assets/note.md', 'loose.md'], skillName: 'sample-skill', skillFolders: ['sample-skill'] });
   });
 
   it('a SKILL.md deeper down doesn\'t make a skill folder, and loose files stay as they are', () => {
-    expect(planSkillImport(['refs/inner/SKILL.md', 'SKILL.md'])).toEqual({ paths: ['refs/inner/SKILL.md', 'SKILL.md'], skillName: null });
+    expect(planSkillImport(['refs/inner/SKILL.md', 'SKILL.md'])).toEqual({ paths: ['refs/inner/SKILL.md', 'SKILL.md'], skillName: null, skillFolders: [] });
   });
 
-  it('names no skill when two skill folders come in together', () => {
-    expect(planSkillImport(['a/SKILL.md', 'b/SKILL.md']).skillName).toBeNull();
+  it('strips nothing and names no skill when two skill folders come in together, and says which', () => {
+    expect(planSkillImport(['a/SKILL.md', 'a/run.sh', 'b/SKILL.md', 'assets/note.md'])).toEqual({
+      paths: ['a/SKILL.md', 'a/run.sh', 'b/SKILL.md', 'assets/note.md'], skillName: null, skillFolders: ['a', 'b'],
+    });
   });
 
   it('reads either separator', () => {

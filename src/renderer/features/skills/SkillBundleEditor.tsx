@@ -38,6 +38,9 @@ export function SkillBundleEditor({ value, onChange, readOnly = false, disabled 
   const [newBinary, setNewBinary] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selected = value.files.find((file) => file.path === selectedPath) ?? value.files[0];
+  // The rename field follows the member shown, even when the one chosen was removed or renamed elsewhere.
+  const [renameFor, setRenameFor] = useState<string | undefined>(undefined);
+  if (selected?.path !== renameFor) { setRenameFor(selected?.path); setRenamePath(selected?.path ?? ''); }
   const locked = readOnly || disabled;
   const edit = (update: Partial<SkillFile>) => {
     if (locked || !selected) return;
