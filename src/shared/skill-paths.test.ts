@@ -26,6 +26,14 @@ describe('planSkillImport (#3247)', () => {
   it('reads either separator', () => {
     expect(planSkillImport(['assets\\note.md']).paths).toEqual(['assets/note.md']);
   });
+
+  it('makes a decomposed name, as macOS can give it, one the path check accepts', () => {
+    const decomposed = 'assets/cafe\u0301.md';
+    const { paths } = planSkillImport([decomposed]);
+    expect(paths).toEqual(['assets/caf\u00e9.md']);
+    expect(skillPathError(paths[0], ['SKILL.md'])).toBeNull();
+    expect(skillPathError(decomposed, ['SKILL.md'])).toMatch(/portable path/);
+  });
 });
 
 describe('skillPathError (#3247)', () => {
