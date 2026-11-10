@@ -8,7 +8,7 @@
  *
  * Only turns count. A turn that ends well resets the count; one cancelled
  * leaves it; errors a fresh session would hit too (login, billing, rate
- * limits, timeouts) never count. Counts live for this run of Clubhouse; a
+ * limits, timeouts, provider outages) never count. Counts live for this run of Clubhouse; a
  * quarantine is saved.
  */
 import type { ChatEvent } from '../../../shared/chat';

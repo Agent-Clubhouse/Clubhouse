@@ -1397,7 +1397,10 @@ describe('claudeTurnErrorCode', () => {
     expect(claudeTurnErrorCode('billing_error')).toBe('account_issue');
     expect(claudeTurnErrorCode('account_on_hold')).toBe('account_issue');
     expect(claudeTurnErrorCode('authentication_failed')).toBe('auth_required');
-    expect(claudeTurnErrorCode('overloaded')).toBe('unknown');
+    // An outage is the service's, never the session's (#3240); a bad request still counts against the session.
+    expect(claudeTurnErrorCode('overloaded')).toBe('service_unavailable');
+    expect(claudeTurnErrorCode('server_error')).toBe('service_unavailable');
+    expect(claudeTurnErrorCode('invalid_request')).toBe('unknown');
     expect(claudeTurnErrorCode(undefined, 'blocking_limit')).toBe('rate_limited');
     expect(claudeTurnErrorCode(undefined, 'api_error', 'refusal')).toBe('refusal');
     expect(claudeTurnErrorCode(undefined, undefined, 'max_tokens')).toBe('max_tokens');

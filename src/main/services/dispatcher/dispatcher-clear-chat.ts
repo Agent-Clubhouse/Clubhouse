@@ -91,12 +91,12 @@ const WORK_NOTICE: Record<StartFreshReason, string> = {
 };
 
 const CHAT_NOTICE: Record<StartFreshReason, string> = {
-  user: 'Dispatcher work started fresh. Memory, agents, connections, Actions and settings are unchanged.',
+  user: 'Dispatcher work started fresh. Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.',
   repeated_failures: 'Dispatcher work kept failing in its conversation, so it started a fresh one. '
     + 'Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.',
 };
 
-const BOTH_NOTICE = 'Both Dispatcher conversations started fresh. Memory, agents, connections, Actions and settings are unchanged.';
+const BOTH_NOTICE = 'Both Dispatcher conversations started fresh. Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.';
 
 async function currentWorkSession(dir: string, agentId: string): Promise<string | null> {
   const live = getAgentRuntime(agentId)?.getNativeSessionId();

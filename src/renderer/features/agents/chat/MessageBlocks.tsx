@@ -324,6 +324,7 @@ const ERROR_HINTS: Partial<Record<string, string>> = {
   auth_required: 'Sign in from the CLI view, then send your message again.',
   account_issue: 'Check your account or billing with the provider; signing in again won\'t fix this.',
   rate_limited: 'The provider rate-limited this session.',
+  service_unavailable: 'The provider is down or unreachable. Try again in a moment.',
   context_overflow: 'The conversation no longer fits in the context window.',
   max_tokens: 'The reply hit the output token limit.',
 };

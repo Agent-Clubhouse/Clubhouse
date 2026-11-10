@@ -276,6 +276,8 @@ const API_ERROR_CODES: Record<string, ChatErrorCode> = {
   billing_error: 'account_issue',
   cloud_credential_error: 'auth_required',
   rate_limit: 'rate_limited',
+  server_error: 'service_unavailable',
+  overloaded: 'service_unavailable',
   max_output_tokens: 'max_tokens',
 };
 

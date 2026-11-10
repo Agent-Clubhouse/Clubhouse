@@ -741,6 +741,16 @@ export function codexErrorCode(info: CodexErrorInfo | null): ChatErrorCode {
       return 'protocol_error';
     case 'sandboxError':
       return 'tool_failed';
+    // The service, not the thread: an outage or a dropped connection.
+    case 'httpConnectionFailed':
+    case 'responseStreamConnectionFailed':
+    case 'responseStreamDisconnected':
+    case 'responseTooManyFailedAttempts':
+    case 'internalServerError':
+    case 'serverOverloaded':
+    case 'flexUnavailable':
+    case 'policyCapacityUnavailable':
+      return 'service_unavailable';
     default:
       return 'unknown';
   }

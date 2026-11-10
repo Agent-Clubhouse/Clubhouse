@@ -89,10 +89,11 @@ export const REPEATED_TURN_FAILURES = 3;
 
 /**
  * Turn errors that say nothing about the session's history: a fresh session
- * would hit them too (login, billing, rate limits, a slow reply), so they
+ * would hit them too (login, billing, rate limits, a slow reply, a provider
+ * outage or no network), so they
  * never count toward quarantine.
  */
-const NOT_THE_SESSION: ReadonlySet<string> = new Set(['auth_required', 'account_issue', 'rate_limited', 'rpc_timeout']);
+const NOT_THE_SESSION: ReadonlySet<string> = new Set(['auth_required', 'account_issue', 'rate_limited', 'rpc_timeout', 'service_unavailable']);
 
 /** True when a turn error counts toward quarantining its session. */
 export function countsTowardQuarantine(code: string | undefined, willRetry?: boolean): boolean {
