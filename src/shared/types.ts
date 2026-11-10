@@ -269,6 +269,12 @@ export interface ProjectAgentDefaults {
   persona?: string;
 }
 
+/**
+ * Changed fields of a project's defaults. A key that's missing stays as it is;
+ * `null` removes it (#3244).
+ */
+export type ProjectAgentDefaultsPatch = { [K in keyof ProjectAgentDefaults]?: ProjectAgentDefaults[K] | null };
+
 /** A recorded CLI session for a durable agent */
 export interface SessionInfo {
   /** CLI session ID (provider-specific format, e.g. UUID for Claude Code) */
@@ -997,7 +1003,7 @@ export interface DispatcherLink {
   targetName: string;
   /** `active` is bound now. `suspended` is saved but not bound; `reason` says why. */
   status: 'active' | 'suspended';
-  reason?: 'dispatcher_off' | 'store_unwritable' | 'orchestration_off' | 'not_connected_to_dispatcher';
+  reason?: 'dispatcher_off' | 'store_unwritable' | 'not_connected_to_dispatcher';
 }
 
 // --- Editor settings ---

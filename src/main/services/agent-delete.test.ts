@@ -43,7 +43,7 @@ import * as agentConfig from './agent-config';
 import { isAgentRunning, killAgent } from './agent-system';
 import { listHelpersEverywhere } from './helper-index';
 import { settleHelpers } from './orchestration-policy';
-import { deleteAgent, isDeleteRefusal } from './agent-delete';
+import { AGENT_DELETE_MODES, deleteAgent, isDeleteRefusal } from './agent-delete';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { Classification, TelemetryRuntime } from '../telemetry/types';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -178,13 +178,18 @@ describe('deleteAgent (#3182)', () => {
     expect(agentConfig.deleteSaveAsPatch).toHaveBeenCalledWith(PROJECT, 'orch', '/tmp/lead.patch');
   });
 
-  it('refuses save-patch with no file, an unknown mode, the Dispatcher, and a missing agent without changing anything', async () => {
+  it('refuses save-patch with no file, an unknown mode and the Dispatcher without changing anything', async () => {
     expect(await deleteAgent(PROJECT, 'orch', { mode: 'save-patch' })).toEqual({ ok: false, message: 'save-patch needs a file to save to' });
     expect((await deleteAgent(PROJECT, 'orch', { mode: 'shred' as never })).message).toMatch(/Unknown delete mode/);
     expect(await deleteAgent('/dispatcher', 'x', { mode: 'force' })).toEqual({ ok: false, message: 'The Dispatcher can\'t be deleted.' });
     expect(await deleteAgent(PROJECT, 'disp', { mode: 'force' })).toEqual({ ok: false, message: 'The Dispatcher can\'t be deleted.' });
-    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(undefined as never);
-    expect(await deleteAgent(PROJECT, 'gone', { mode: 'force' })).toEqual({ ok: false, message: 'Agent not found' });
+    expect(calls.filter((c) => !c.startsWith('lock:'))).toEqual([]);
+  });
+
+  it.each(AGENT_DELETE_MODES)('succeeds in %s mode for an agent whose record is already gone, changing nothing (#3246)', async (mode) => {
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(null);
+    const result = await deleteAgent(PROJECT, 'gone', { mode, savePath: '/tmp/gone.patch' });
+    expect(result).toMatchObject({ ok: true, deleted: true });
     expect(calls.filter((c) => !c.startsWith('lock:'))).toEqual([]);
   });
 

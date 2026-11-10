@@ -1395,7 +1395,7 @@ describe('agentStore', () => {
 
     it("keeps a creating placeholder and an agent added while the list was read", async () => {
       const mockAgent = window.clubhouse.agent as any;
-      seedAgent({ id: 'temp_1', projectId: 'proj_1', status: 'creating', kind: 'durable' });
+      seedAgent({ id: 'creating_1_ab12', projectId: 'proj_1', status: 'creating', kind: 'durable' });
       let resolveList: (configs: unknown[]) => void = () => {};
       mockAgent.listDurable.mockReturnValue(new Promise((resolve) => { resolveList = resolve; }));
 
@@ -1404,8 +1404,21 @@ describe('agentStore', () => {
       resolveList([]);
       await sync;
 
-      expect(getState().agents['temp_1']).toBeDefined();
+      expect(getState().agents['creating_1_ab12']).toBeDefined();
       expect(getState().agents['just_made']).toBeDefined();
+    });
+
+    it('drops a real id shown as creating once main no longer lists it, as after a failed creation rolled back (#3246)', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      // The config change for the new record arrived mid-create: the row came in as creating.
+      mockAgent.listDurable.mockResolvedValue([{ ...config('durable_new'), creation: { state: 'creating', startedAt: '2026-11-09T00:00:00Z' } }]);
+      mockAgent.getRunningStatuses.mockResolvedValue([]);
+      await getState().syncDurableMembership('proj_1', '/project');
+      expect(getState().agents['durable_new']?.status).toBe('creating');
+      // The creation failed and main removed the record; the next change lists it no more.
+      mockAgent.listDurable.mockResolvedValue([]);
+      await getState().syncDurableMembership('proj_1', '/project');
+      expect(getState().agents['durable_new']).toBeUndefined();
     });
 
     it('leaves the state alone when nothing changed', async () => {
@@ -1608,6 +1621,23 @@ describe('agentStore', () => {
       expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
       expect(window.clubhouse.agent.deleteDurable).toHaveBeenCalledWith('/tmp/project', 'del_2');
       expect(getState().agents['del_2']).toBeUndefined();
+    });
+  });
+
+  describe('killAgent (#3246)', () => {
+    it('does not bring back as sleeping an agent removed while main stopped it', async () => {
+      seedAgent({ id: 'ghost', projectId: 'proj_1', status: 'creating', kind: 'durable' });
+      // The failed creation's rollback reaches the store while the kill is in flight.
+      vi.mocked(window.clubhouse.agent.killAgent).mockImplementationOnce(async () => { getState().removeAgent('ghost'); });
+      await getState().killAgent('ghost', '/tmp/project');
+      expect(getState().agents['ghost']).toBeUndefined();
+    });
+
+    it('still marks a present agent asleep', async () => {
+      seedAgent({ id: 'awake', projectId: 'proj_1', status: 'running', kind: 'durable' });
+      vi.mocked(window.clubhouse.agent.killAgent).mockResolvedValueOnce(undefined);
+      await getState().killAgent('awake', '/tmp/project');
+      expect(getState().agents['awake']?.status).toBe('sleeping');
     });
   });
 

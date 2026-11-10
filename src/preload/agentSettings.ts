@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { ProjectAgentDefaultsPatch } from '../shared/types';
 
 export const agentSettings = {
   agentSettings: {
@@ -80,6 +81,9 @@ export const agentSettings = {
     commandPrefix?: string;
   }) =>
     ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
+  /** The Default agent settings page's save: changed fields only, user parts merged with plugin parts (#3244). */
+  saveProjectUserDefaults: (projectPath: string, patch: ProjectAgentDefaultsPatch): Promise<void> =>
+    ipcRenderer.invoke(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS, projectPath, patch),
   getProjectConfigBreakdown: (projectPath: string, knownPluginIds: string[]) =>
     ipcRenderer.invoke(IPC.AGENT.GET_PROJECT_CONFIG_BREAKDOWN, projectPath, knownPluginIds),
   removePluginInjectionItem: (projectPath: string, itemId: string): Promise<boolean> =>

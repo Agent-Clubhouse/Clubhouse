@@ -6,7 +6,7 @@ import { expandTemplate, AgentContext } from '../../../shared/template-engine';
 import { useHeadlessStore } from '../headlessStore';
 import { findLocalProject, isDispatcherAgent } from '../../features/dispatcher/dispatcherStore';
 import { AgentLifecycleSlice, GetAgentState, SetAgentState } from './types';
-import { omitRecordKey } from './agentUtils';
+import { creatingPlaceholderId, omitRecordKey } from './agentUtils';
 import { parentLinkFields } from './parentLink';
 
 export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): AgentLifecycleSlice {
@@ -296,6 +296,9 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
 
       const newStatus = 'sleeping' as const;
       set((s) => {
+        // Removed while main stopped it (deleted, or a failed creation rolled
+        // back): it stays gone rather than come back as a sleeping row (#3246).
+        if (!s.agents[id]) return s;
         const { [id]: _, ...restStatus } = s.agentDetailedStatus;
         const agentTerminalAt =
           agent.kind === 'quick' && !(id in s.agentTerminalAt)
@@ -320,7 +323,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
     },
 
     registerCreatingAgent: (projectId, name, color, orchestrator, access) => {
-      const tempId = `creating_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const tempId = creatingPlaceholderId();
       const agent: Agent = {
         id: tempId,
         projectId,

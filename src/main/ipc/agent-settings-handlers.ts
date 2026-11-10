@@ -1,13 +1,14 @@
 import { auditChanged, projectAuditTarget } from '../services/settings-audit';
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
+import type { ProjectAgentDefaultsPatch } from '../../shared/types';
 import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import * as path from 'path';
 import { withAgentTransition } from '../services/agent-transition';
 import { peekDurableConfigs, getDurableConfig } from '../services/agent-config';
-import { getProjectConfigBreakdown, removePluginInjectionItem } from '../services/config-provenance-service';
+import { getProjectConfigBreakdown, removePluginInjectionItem, saveProjectUserDefaults } from '../services/config-provenance-service';
 import { appLog } from '../services/log-service';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from './validation';
 
@@ -236,6 +237,13 @@ export function registerAgentSettingsHandlers(): void {
     [stringArg(), objectArg()],
     async (_event, projectPath, defaults) => {
       await agentSettings.writeProjectAgentDefaults(projectPath, defaults);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS, withValidatedArgs(
+    [stringArg(), objectArg<ProjectAgentDefaultsPatch>()],
+    async (_event, projectPath, patch) => {
+      await saveProjectUserDefaults(projectPath, patch);
     },
   ));
 

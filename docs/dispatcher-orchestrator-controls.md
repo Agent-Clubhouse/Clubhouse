@@ -1,12 +1,14 @@
-# Dispatcher controls over orchestrators
+# Dispatcher controls: helper settings and links
 
-The Dispatcher can change two helper settings on a connected orchestrator, and link connected orchestrators directly (#2661). The rules live in `src/main/services/dispatcher-controls.ts`, and the links in `dispatcher-connections.ts`. This is the Dispatcher's first write authority beyond appearance, so it is narrow on purpose. Since 1.0 the Dispatcher's wider reach comes from its grants (#2921, #3050); see `docs/dispatcher.md` for what shipped.
+The Dispatcher can change two helper settings on a connected orchestrator, and link two agents directly (#2661, #3248). The rules live in `src/main/services/dispatcher-controls.ts`, and the links in `dispatcher-connections.ts`. This is the Dispatcher's first write authority beyond appearance, so it is narrow on purpose. Since 1.0 the Dispatcher's wider reach comes from its grants (#2921, #3050); see `docs/dispatcher.md` for what shipped.
 
 ## Who and what
 
 The tools are in the `dispatcher` tool group: only the running Dispatcher sees or can call them, even with a stale tool list. The rules check the caller again. Nothing here is exposed over IPC, Annex or the CLI.
 
-A target must be a connected orchestrator now: not disposed, not a helper, not the Dispatcher, with `orchestrate` and `connectToDispatcher` both resolving true. Clubhouse MCP being off resolves both false.
+A link end must be a local durable agent now: not disposed, not a helper, not the Dispatcher, with `connectToDispatcher` resolving true. Whether it orchestrates doesn't matter (#3248), and turning orchestration on or off never creates, suspends or removes a link. What a link can do is the tools on each direction, not the agent's orchestration authority. The Dispatcher also needs its `connection.manage` grant on both ends.
+
+A `set_orchestrator_helpers` target must also be a connected orchestrator: `orchestrate` resolving true as well.
 
 ## Tools
 
@@ -30,13 +32,13 @@ The ceiling is enforced in this tool only. `setOrchestrationPolicy` itself still
 
 | Argument | Meaning |
 | --- | --- |
-| `from` | Required. The orchestrator that gets the tools. |
-| `to` | Required. The orchestrator it reaches. |
+| `from` | Required. The agent that gets the tools. |
+| `to` | Required. The agent it reaches. |
 | `two_way` | Both directions, all or nothing. Default false. |
 | `allow` | `connect_orchestrators` only. The tools `from` may use on `to` (#3215). |
 | `allow_back` | `connect_orchestrators` only, with `two_way`. The tools `to` may use on `from`. Default: the same as `allow`. |
 
-Limits: 50 links in total and 10 outgoing per orchestrator, since each wire adds tools to an agent's list.
+Limits: 50 links in total and 10 outgoing per agent, since each wire adds tools to an agent's list.
 
 Connecting a pair already bound some other way is refused, so the Dispatcher never claims a wire it didn't make. Connecting a pair it already made is a successful no-op, unless the call names tools for it. Disconnecting only acts on pairs in its store.
 
@@ -51,7 +53,7 @@ Each direction of a link has the switches of any connection (`CONNECTION_SWITCHE
 - **Ownership is checked again under the store's lock.** The Dispatcher's writes go through `setConnectionDirections`, which refuses (`user_tools`) and writes nothing if any direction got a user link or user tools since the call looked. For `connect_orchestrators` the link isn't made either.
 - Links made before #3215 had no saved tools, so every tool was on. Once, at startup after a rebuild has read every source, each one still only the Dispatcher's (in its store, no other source lists the pair, nothing saved for the direction) gets the new-link defaults, wake on, marked `setBy: "dispatcher"` (`migrateDispatcherLinkTools`). A link an earlier build of this pass, or `connect_orchestrators`, saved with wake off gets wake on once from #3214's pass, if it's still exactly that shape (see `docs/dispatcher.md`). The done marker `dispatcher-link-defaults-3215` is kept in `connection-grants.json` under `migrations`, written with the entries, and the change is logged. A direction with saved tools, or a pair the user connects too, is never touched. While a source can't be read, it waits for a later rebuild.
 
-The maintainer's link between two orchestrators (status and output, messages, wake, and nothing else) is:
+The maintainer's link between two agents (status and output, messages, wake, and nothing else) is:
 
 ```json
 { "from": "<a>", "to": "<b>", "two_way": true, "allow": ["get_status", "read_output", "send_message", "send_file", "wake_agent"] }
@@ -81,7 +83,7 @@ Changes only links in the Dispatcher's store whose tools are still its own: not 
 
 | Argument | Meaning |
 | --- | --- |
-| `agent_id` | Just this orchestrator and its links. |
+| `agent_id` | Just this agent and its links. Any link end; `orchestrators` lists it only if it orchestrates. |
 | `limit` | Orchestrators per page, 1 to 25. Default 10. |
 | `cursor` | `next_cursor` from the last page. |
 | `audit` | Newest audit rows to add, 0 to 50. Default 0. |
@@ -98,7 +100,9 @@ Changes only links in the Dispatcher's store whose tools are still its own: not 
 | `orchestrate`, `connectToDispatcher`, `access`, `control` or any other extra argument | `unknown_field` |
 | The Dispatcher as an end or a target, which covers disconnecting a target from it | `dispatcher_wire` |
 | A helper | `helper` |
-| A disposed or unknown agent, or one that isn't a connected orchestrator | `not_connected_orchestrator` |
+| A disposed or unknown agent | `unknown_agent` |
+| Connect to Dispatcher off | `not_connected_to_dispatcher` |
+| `set_orchestrator_helpers` on an agent that doesn't orchestrate | `not_connected_orchestrator` |
 | Disconnecting, or setting the tools of, a link the Dispatcher didn't make | `not_dispatcher_owned` |
 | Naming tools for a direction whose tools are the user's | `user_tools` |
 | Connecting a pair already bound some other way | `already_linked` |
@@ -118,12 +122,12 @@ A restart rebuilds stored pairs through a pruning binding source, registered aft
 
 | Status | Meaning | Binding | Entry |
 | --- | --- | --- | --- |
-| `active` | Both ends are connected orchestrators. | Up | Kept |
-| `suspended` | An end stopped qualifying, the Dispatcher is off, or the store's folder takes no writes. | Removed | Kept |
+| `active` | Both ends can be link ends. | Up | Kept |
+| `suspended` | An end's Connect to Dispatcher is off, the Dispatcher is off, or the store's folder takes no writes. | Removed | Kept |
 | `unverified` | An end's project can't be read. | Left as it is | Kept |
 | `gone` | An end was disposed or deleted, became a helper, or its project was unregistered. | Removed | Dropped for good |
 
-A suspended link has a `reason`: `dispatcher_off`, `store_unwritable`, `orchestration_off` or `not_connected_to_dispatcher`. `mcp_off` is gone: the Clubhouse MCP always runs (managed-agents D69). It comes back by itself when the reason ends. So that this is never unseen, readback and the Connections card both show suspended links, and the user can remove one from the card.
+A suspended link has a `reason`: `dispatcher_off`, `store_unwritable` or `not_connected_to_dispatcher`. `orchestration_off` is gone with #3248: orchestration no longer suspends a link. `mcp_off` is gone: the Clubhouse MCP always runs (managed-agents D69). It comes back by itself when the reason ends. So that this is never unseen, readback and the Connections card both show suspended links, and the user can remove one from the card.
 
 ## User removal
 

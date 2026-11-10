@@ -20,7 +20,7 @@ describe('ProjectAgentDefaultsSection', () => {
       mcpJson: '{"mcpServers": {}}',
       freeAgentMode: false,
     });
-    window.clubhouse.agentSettings.writeProjectAgentDefaults = vi.fn().mockResolvedValue(undefined);
+    window.clubhouse.agentSettings.saveProjectUserDefaults = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
       userInstructions: 'Default instructions',
       pluginInstructionBlocks: [],
@@ -97,7 +97,7 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(screen.getByText('Save defaults')).not.toBeDisabled();
     });
 
-    it('saves all fields on Save click', async () => {
+    it('saves only the changed field (#3244)', async () => {
       renderSection();
       await screen.findByRole('heading', { name: 'Default instructions' });
 
@@ -107,12 +107,9 @@ describe('ProjectAgentDefaultsSection', () => {
       fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
-        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledWith(
           '/project',
-          expect.objectContaining({
-            instructions: 'Updated instructions',
-            permissions: { allow: ['Read(**)', 'Edit(**)'], deny: ['WebFetch'] },
-          }),
+          { instructions: 'Updated instructions', freeAgentMode: null },
         );
       });
     });
@@ -127,9 +124,9 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(screen.queryByRole('switch', { name: /free agent/i })).not.toBeInTheDocument();
       fireEvent.change(screen.getByDisplayValue('Default instructions'), { target: { value: 'Updated instructions' } });
       fireEvent.click(screen.getByText('Save defaults'));
-      await waitFor(() => expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalled());
-      const written = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0][1] as Record<string, unknown>;
-      expect(written).not.toHaveProperty('freeAgentMode');
+      await waitFor(() => expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalled());
+      const written = vi.mocked(window.clubhouse.agentSettings.saveProjectUserDefaults).mock.calls[0][1] as Record<string, unknown>;
+      expect(written).toHaveProperty('freeAgentMode', null);
     });
   });
 
@@ -210,7 +207,7 @@ describe('ProjectAgentDefaultsSection', () => {
       fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
-        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledWith(
           '/project',
           expect.objectContaining({
             sourceControlProvider: 'azure-devops',
@@ -225,18 +222,17 @@ describe('ProjectAgentDefaultsSection', () => {
       fireEvent.change(screen.getByDisplayValue('Use app setting'), { target: { value: 'github' } });
       fireEvent.click(screen.getByText('Save defaults'));
       await waitFor(() => {
-        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ sourceControlProvider: 'github' }));
+        expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ sourceControlProvider: 'github' }));
       });
     });
 
-    it('keeps a saved GitHub value on an unrelated save', async () => {
+    it('leaves a saved GitHub value alone on an unrelated save', async () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', sourceControlProvider: 'github' });
       renderSection();
       fireEvent.change(await screen.findByDisplayValue('Default instructions'), { target: { value: 'Changed' } });
       fireEvent.click(screen.getByText('Save defaults'));
-      await waitFor(() => {
-        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ sourceControlProvider: 'github' }));
-      });
+      await waitFor(() => expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalled());
+      expect(vi.mocked(window.clubhouse.agentSettings.saveProjectUserDefaults).mock.calls[0][1]).not.toHaveProperty('sourceControlProvider');
     });
 
     it('omits sourceControlProvider when left on Use app setting', async () => {
@@ -249,7 +245,7 @@ describe('ProjectAgentDefaultsSection', () => {
       fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
-        const call = (window.clubhouse.agentSettings.writeProjectAgentDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
+        const call = (window.clubhouse.agentSettings.saveProjectUserDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
         expect(call[1].sourceControlProvider).toBeUndefined();
       });
     });
@@ -260,8 +256,8 @@ describe('ProjectAgentDefaultsSection', () => {
       fireEvent.change(await screen.findByDisplayValue('Azure DevOps (az CLI)'), { target: { value: '' } });
       fireEvent.click(screen.getByText('Save defaults'));
       await waitFor(() => {
-        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
-        expect(call[1].sourceControlProvider).toBeUndefined();
+        const call = vi.mocked(window.clubhouse.agentSettings.saveProjectUserDefaults).mock.calls[0];
+        expect(call[1].sourceControlProvider).toBeNull();
       });
     });
   });
@@ -311,7 +307,7 @@ describe('ProjectAgentDefaultsSection', () => {
       fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
-        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledWith(
           '/project',
           expect.objectContaining({
             commandPrefix: '. ./setup.sh',
@@ -330,14 +326,14 @@ describe('ProjectAgentDefaultsSection', () => {
       fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
-        const call = (window.clubhouse.agentSettings.writeProjectAgentDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
+        const call = (window.clubhouse.agentSettings.saveProjectUserDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
         expect(call[1].commandPrefix).toBeUndefined();
       });
     });
   });
 
   describe('without personas and conditional blocks (#2901)', () => {
-    it('offers no default persona or conditional blocks, and keeps a saved persona and mission on save', async () => {
+    it('offers no default persona or conditional blocks, and leaves a saved persona and mission alone on save', async () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', persona: 'qa', mission: 'ship' });
       renderSection();
       expect(await screen.findByText('Source control provider')).toBeInTheDocument();
@@ -346,7 +342,112 @@ describe('ProjectAgentDefaultsSection', () => {
 
       fireEvent.change(screen.getByDisplayValue('Default instructions'), { target: { value: 'Updated' } });
       fireEvent.click(screen.getByText('Save defaults'));
-      await waitFor(() => expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ persona: 'qa', mission: 'ship' })));
+      await waitFor(() => expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledWith('/project', { instructions: 'Updated' }));
+    });
+  });
+
+  describe('provenance, failures and project switches (#3244)', () => {
+    const tagged = 'Bash(plugin-cmd) /* plugin:foo */';
+    const mcpWithPlugin = JSON.stringify({ mcpServers: { mine: { command: 'a' }, 'plugin-foo-srv': { command: 'p' } } });
+    function withPluginParts(): void {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({
+        instructions: 'Default instructions',
+        permissions: { allow: ['Read(**)', tagged], deny: [] },
+        mcpJson: mcpWithPlugin,
+      });
+      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
+        userInstructions: 'Default instructions',
+        pluginInstructionBlocks: [],
+        allowRules: [
+          { id: 'allow-rule:0', label: 'Read(**)', value: 'Read(**)', provenance: { source: 'user' } },
+          { id: 'allow-rule:1', label: 'Bash(plugin-cmd)', value: tagged, provenance: { source: 'plugin', pluginId: 'foo' } },
+        ],
+        denyRules: [],
+        skills: [],
+        agentTemplates: [],
+        mcpServers: [
+          { id: 'mcp:mine', label: 'mine', value: '{}', provenance: { source: 'user' } },
+          { id: 'mcp:plugin-foo-srv', label: 'plugin-foo-srv', value: '{}', provenance: { source: 'plugin', pluginId: 'foo' } },
+        ],
+        orphanedPluginIds: [],
+      });
+    }
+    const allowBox = () => screen.getByLabelText('Allowed tools, one per line') as HTMLTextAreaElement;
+    const lastPatch = () => vi.mocked(window.clubhouse.agentSettings.saveProjectUserDefaults).mock.calls.at(-1)![1];
+
+    it('keeps what you type in the permission fields once plugin attribution has loaded', async () => {
+      withPluginParts();
+      renderSection();
+      await waitFor(() => expect(allowBox().value).toBe('Read(**)'));
+      fireEvent.change(allowBox(), { target: { value: 'Read(**)\nEdit(**)' } });
+      expect(allowBox().value).toBe('Read(**)\nEdit(**)');
+      fireEvent.change(screen.getByLabelText('Auto-deny tools, one per line'), { target: { value: 'WebFetch' } });
+      expect((screen.getByLabelText('Auto-deny tools, one per line') as HTMLTextAreaElement).value).toBe('WebFetch');
+    });
+
+    it('sends only your permission rules, so plugin rules are never added again', async () => {
+      withPluginParts();
+      renderSection();
+      await waitFor(() => expect(allowBox().value).toBe('Read(**)'));
+      fireEvent.change(allowBox(), { target: { value: 'Read(**)\nEdit(**)' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledTimes(1));
+      expect(lastPatch()).toEqual({ permissions: { allow: ['Read(**)', 'Edit(**)'], deny: [] } });
+    });
+
+    it('shows only your MCP servers and sends only them, leaving plugin servers to the save', async () => {
+      withPluginParts();
+      renderSection();
+      const mcpBox = await screen.findByLabelText('Default .mcp.json') as HTMLTextAreaElement;
+      await waitFor(() => expect(JSON.parse(mcpBox.value).mcpServers).toEqual({ mine: { command: 'a' } }));
+      const edited = JSON.stringify({ mcpServers: { mine: { command: 'b' } } });
+      fireEvent.change(mcpBox, { target: { value: edited } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledTimes(1));
+      expect(lastPatch()).toEqual({ mcpJson: edited });
+    });
+
+    it('shows why a save failed and enables Save again', async () => {
+      window.clubhouse.agentSettings.saveProjectUserDefaults = vi.fn().mockRejectedValue(
+        new Error("Error invoking remote method 'agent:save-project-user-defaults': Error: Command prefix can't contain a newline"),
+      );
+      renderSection();
+      fireEvent.change(await screen.findByPlaceholderText('. ./init.sh'), { target: { value: 'bad' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save defaults. Command prefix can't contain a newline");
+      expect(screen.getByText('Save defaults')).not.toBeDisabled();
+      expect(screen.getByPlaceholderText('. ./init.sh')).toHaveValue('bad');
+    });
+
+    it('drops the previous project\'s edits on a project switch, and offers no Save when the new one fails to load', async () => {
+      const { rerender } = renderSection();
+      fireEvent.change(await screen.findByDisplayValue('Default instructions'), { target: { value: 'Typed for project A' } });
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockRejectedValue(new Error('disk on fire'));
+      rerender(<ProjectAgentDefaultsSection projectPath="/project-b" />);
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load this project's default agent settings. disk on fire");
+      expect(screen.queryByDisplayValue('Typed for project A')).not.toBeInTheDocument();
+      expect(screen.queryByText('Save defaults')).not.toBeInTheDocument();
+      expect(window.clubhouse.agentSettings.saveProjectUserDefaults).not.toHaveBeenCalled();
+    });
+
+    it('shows the new project\'s values after a switch', async () => {
+      const { rerender } = renderSection();
+      fireEvent.change(await screen.findByDisplayValue('Default instructions'), { target: { value: 'Typed for project A' } });
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ buildCommand: 'make b' });
+      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockRejectedValue(new Error('no breakdown'));
+      rerender(<ProjectAgentDefaultsSection projectPath="/project-b" />);
+      expect(await screen.findByDisplayValue('make b')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('Typed for project A')).not.toBeInTheDocument();
+      expect(screen.getByText('Save defaults')).toBeDisabled();
+    });
+
+    it('saves only changed fields, so a newer helper routing change survives', async () => {
+      renderSection();
+      fireEvent.change(await screen.findByPlaceholderText('npm run build'), { target: { value: 'make' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => expect(window.clubhouse.agentSettings.saveProjectUserDefaults).toHaveBeenCalledTimes(1));
+      expect(lastPatch()).toEqual({ buildCommand: 'make', freeAgentMode: null });
+      expect(lastPatch()).not.toHaveProperty('helperAuto');
     });
   });
 });

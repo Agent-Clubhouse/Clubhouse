@@ -1,6 +1,7 @@
-import { useEffect, useId, useState, useCallback, useMemo, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, useCallback, useMemo, type ReactNode } from 'react';
 
-import type { SourceControlProvider, ProjectConfigBreakdown, ProvenancedConfigItem } from '../../../shared/types';
+import type { SourceControlProvider, ProjectAgentDefaults, ProjectAgentDefaultsPatch, ProjectConfigBreakdown, ProvenancedConfigItem } from '../../../shared/types';
+import { ipcErrorMessage } from '../../utils/ipc-error';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
@@ -16,20 +17,6 @@ const TEXT_INPUT_CLASS = `${settingsInput} w-[220px] font-mono`;
 
 function Code({ children }: { children: ReactNode }) {
   return <code className={CODE_CLASS}>{children}</code>;
-}
-
-interface ProjectAgentDefaults {
-  instructions?: string;
-  permissions?: { allow?: string[]; deny?: string[] };
-  mcpJson?: string;
-  helperAuto?: 'off';
-  sourceControlProvider?: SourceControlProvider;
-  buildCommand?: string;
-  testCommand?: string;
-  lintCommand?: string;
-  mission?: string;
-  persona?: string;
-  commandPrefix?: string;
 }
 
 interface Props {
@@ -214,24 +201,110 @@ function ConfigItemList({
   );
 }
 
+// ── Editor values ────────────────────────────────────────────────────────
+
+/** What the page edits: the user's part only, never plugin-attributed values (#3244). */
+interface EditorValues {
+  instructions: string;
+  permAllow: string;
+  permDeny: string;
+  mcpJson: string;
+  helperAutoOff: boolean;
+  /** Empty: the project uses the app setting. */
+  sourceControlProvider: SourceControlProvider | '';
+  buildCommand: string;
+  testCommand: string;
+  lintCommand: string;
+  commandPrefix: string;
+}
+
+const EMPTY_VALUES: EditorValues = {
+  instructions: '', permAllow: '', permDeny: '', mcpJson: '', helperAutoOff: false,
+  sourceControlProvider: '', buildCommand: '', testCommand: '', lintCommand: '', commandPrefix: '',
+};
+
+function userRules(rules: ProvenancedConfigItem[]): string {
+  return rules.filter((r) => r.provenance.source === 'user').map((r) => r.value).join('\n');
+}
+
+/** The saved .mcp.json without the servers plugins put there. */
+function userMcpJson(mcpJson: string, breakdown: ProjectConfigBreakdown | null): string {
+  if (!breakdown || !mcpJson) return mcpJson;
+  const pluginNames = new Set(breakdown.mcpServers.filter((s) => s.provenance.source === 'plugin').map((s) => s.label));
+  if (pluginNames.size === 0) return mcpJson;
+  try {
+    const parsed = JSON.parse(mcpJson);
+    const servers: Record<string, unknown> = parsed.mcpServers || {};
+    const userServers = Object.fromEntries(Object.entries(servers).filter(([name]) => !pluginNames.has(name)));
+    const { mcpServers: _servers, ...rest } = parsed;
+    if (Object.keys(userServers).length === 0 && Object.keys(rest).length === 0) return '';
+    return JSON.stringify({ ...rest, mcpServers: userServers }, null, 2);
+  } catch {
+    return mcpJson;
+  }
+}
+
+function editorValuesFrom(d: ProjectAgentDefaults, breakdown: ProjectConfigBreakdown | null): EditorValues {
+  return {
+    instructions: breakdown ? breakdown.userInstructions : d.instructions || '',
+    permAllow: breakdown ? userRules(breakdown.allowRules) : (d.permissions?.allow || []).join('\n'),
+    permDeny: breakdown ? userRules(breakdown.denyRules) : (d.permissions?.deny || []).join('\n'),
+    mcpJson: userMcpJson(d.mcpJson || '', breakdown),
+    helperAutoOff: d.helperAuto === 'off',
+    sourceControlProvider: d.sourceControlProvider ?? '',
+    buildCommand: d.buildCommand || '',
+    testCommand: d.testCommand || '',
+    lintCommand: d.lintCommand || '',
+    commandPrefix: d.commandPrefix || '',
+  };
+}
+
+function lines(text: string): string[] {
+  return text.split('\n').map((l) => l.trim()).filter(Boolean);
+}
+
+/**
+ * Only the fields that changed since load, so a save can't undo anyone else's newer change (#3244).
+ * A saved persona or mission (#2901) isn't offered, so it's never in the patch and stays for the switch to managed.
+ */
+function patchFrom(values: EditorValues, baseline: EditorValues, hadFreeAgentMode: boolean): ProjectAgentDefaultsPatch {
+  const patch: ProjectAgentDefaultsPatch = {};
+  const changed = (key: keyof EditorValues) => values[key] !== baseline[key];
+  const text = (v: string) => v.trim() || null;
+  if (changed('instructions')) patch.instructions = text(values.instructions) && values.instructions;
+  if (changed('permAllow') || changed('permDeny')) {
+    const allow = lines(values.permAllow);
+    const deny = lines(values.permDeny);
+    patch.permissions = allow.length || deny.length ? { allow, deny } : null;
+  }
+  if (changed('mcpJson')) patch.mcpJson = text(values.mcpJson) && values.mcpJson;
+  if (changed('helperAutoOff')) patch.helperAuto = values.helperAutoOff ? 'off' : null;
+  if (changed('sourceControlProvider')) patch.sourceControlProvider = values.sourceControlProvider || null;
+  if (changed('buildCommand')) patch.buildCommand = text(values.buildCommand);
+  if (changed('testCommand')) patch.testCommand = text(values.testCommand);
+  if (changed('lintCommand')) patch.lintCommand = text(values.lintCommand);
+  if (changed('commandPrefix')) patch.commandPrefix = text(values.commandPrefix);
+  // The project's "Free agent mode by default" is retired (#2761): new agents start at the app's Default access.
+  if (hadFreeAgentMode) patch.freeAgentMode = null;
+  return patch;
+}
+
 // ── Main component ───────────────────────────────────────────────────────
 
+/** Keyed by project, so nothing typed or loaded for one project can reach another's save (#3244). */
 export function ProjectAgentDefaultsSection({ projectPath }: Props) {
-  const [defaults, setDefaults] = useState<ProjectAgentDefaults>({});
-  const [instructions, setInstructions] = useState('');
-  const [permAllow, setPermAllow] = useState('');
-  const [permDeny, setPermDeny] = useState('');
-  const [mcpJson, setMcpJson] = useState('');
-  const [helperAutoOff, setHelperAutoOff] = useState(false);
-  // Empty: the project uses the app setting.
-  const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider | ''>('');
-  const [buildCommand, setBuildCommand] = useState('');
-  const [testCommand, setTestCommand] = useState('');
-  const [lintCommand, setLintCommand] = useState('');
-  const [commandPrefix, setCommandPrefix] = useState('');
-  const [dirty, setDirty] = useState(false);
+  return <ProjectAgentDefaultsEditor key={projectPath} projectPath={projectPath} />;
+}
+
+function ProjectAgentDefaultsEditor({ projectPath }: Props) {
+  const [values, setValues] = useState<EditorValues>(EMPTY_VALUES);
+  const [baseline, setBaseline] = useState<EditorValues>(EMPTY_VALUES);
+  const [hadFreeAgentMode, setHadFreeAgentMode] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadSeq = useRef(0);
   const idBase = useId();
 
   // Provenance breakdown state
@@ -245,103 +318,71 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
   const pluginsMap = usePluginStore((s) => s.plugins);
   const pluginIds = useMemo(() => Object.keys(pluginsMap), [pluginsMap]);
   const pluginIdsSerialized = useMemo(() => JSON.stringify(pluginIds.slice().sort()), [pluginIds]);
+  const pluginIdsRef = useRef(pluginIds);
+  pluginIdsRef.current = pluginIds;
 
-  const loadDefaults = useCallback(async () => {
+  /** Reads the saved defaults into the editor, replacing what's there. */
+  const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const d = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
-      setDefaults(d);
-      setInstructions(d.instructions || '');
-      setPermAllow((d.permissions?.allow || []).join('\n'));
-      setPermDeny((d.permissions?.deny || []).join('\n'));
-      setMcpJson(d.mcpJson || '');
-      setHelperAutoOff(d.helperAuto === 'off');
-      setSourceControlProvider(d.sourceControlProvider ?? '');
-      setBuildCommand(d.buildCommand || '');
-      setTestCommand(d.testCommand || '');
-      setLintCommand(d.lintCommand || '');
-      setCommandPrefix(d.commandPrefix || '');
+      let bd: ProjectConfigBreakdown | null = null;
+      try {
+        bd = await window.clubhouse.agentSettings.getProjectConfigBreakdown(projectPath, pluginIdsRef.current);
+      } catch {
+        // Without a breakdown the editor shows the raw values; the save still keeps plugin parts.
+      }
+      if (seq !== loadSeq.current) return;
+      const next = editorValuesFrom(d, bd);
+      setBreakdown(bd);
+      setValues(next);
+      setBaseline(next);
+      setHadFreeAgentMode(d.freeAgentMode !== undefined);
+      setLoadError(null);
       setLoaded(true);
-      setDirty(false);
-    } catch {
-      setLoaded(true);
+    } catch (err) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(ipcErrorMessage(err));
     }
   }, [projectPath]);
 
-  const loadBreakdown = useCallback(async () => {
+  /** Refreshes only the plugin attribution, leaving unsaved edits alone. */
+  const refreshBreakdown = useCallback(async () => {
     try {
-      const bd = await window.clubhouse.agentSettings.getProjectConfigBreakdown(projectPath, pluginIds);
-      setBreakdown(bd);
-      // Use the parsed user instructions (without plugin blocks) for the editor
-      setInstructions(bd.userInstructions);
+      setBreakdown(await window.clubhouse.agentSettings.getProjectConfigBreakdown(projectPath, pluginIdsRef.current));
     } catch {
       // Fallback — breakdown not available
     }
-  }, [projectPath, pluginIdsSerialized]);
+  }, [projectPath]);
 
   useEffect(() => {
-    loadDefaults();
-  }, [loadDefaults]);
+    load();
+  }, [load]);
 
+  const pluginIdsSeen = useRef(pluginIdsSerialized);
   useEffect(() => {
-    if (loaded) {
-      loadBreakdown();
-    }
-  }, [loaded, loadBreakdown]);
+    if (pluginIdsSeen.current === pluginIdsSerialized) return;
+    pluginIdsSeen.current = pluginIdsSerialized;
+    if (loaded) refreshBreakdown();
+  }, [loaded, pluginIdsSerialized, refreshBreakdown]);
+
+  const dirty = (Object.keys(values) as (keyof EditorValues)[]).some((k) => values[k] !== baseline[k]);
 
   const handleSave = async () => {
+    const saved = values;
     setSaving(true);
-
-    // Reconstruct full instructions: user content + preserved plugin blocks
-    let fullInstructions = instructions;
-    if (breakdown) {
-      for (const block of breakdown.pluginInstructionBlocks) {
-        if (block.provenance.source === 'plugin') {
-          fullInstructions += `\n\n<!-- plugin:${block.provenance.pluginId}:start -->\n${block.value}\n<!-- plugin:${block.provenance.pluginId}:end -->`;
-        }
-      }
+    setSaveError(null);
+    try {
+      await window.clubhouse.agentSettings.saveProjectUserDefaults(projectPath, patchFrom(saved, baseline, hadFreeAgentMode));
+    } catch (err) {
+      setSaveError(ipcErrorMessage(err));
+      setSaving(false);
+      return;
     }
-
-    // Reconstruct permissions: user-edited rules + preserved plugin rules
-    const userAllow = permAllow.split('\n').map((l) => l.trim()).filter(Boolean);
-    const userDeny = permDeny.split('\n').map((l) => l.trim()).filter(Boolean);
-
-    // Preserve plugin-tagged rules that the user didn't edit
-    if (breakdown) {
-      for (const rule of breakdown.allowRules) {
-        if (rule.provenance.source === 'plugin') {
-          userAllow.push(rule.value);
-        }
-      }
-      for (const rule of breakdown.denyRules) {
-        if (rule.provenance.source === 'plugin') {
-          userDeny.push(rule.value);
-        }
-      }
-    }
-
-    const newDefaults: ProjectAgentDefaults = {};
-    if (fullInstructions.trim()) newDefaults.instructions = fullInstructions;
-    if (userAllow.length > 0 || userDeny.length > 0) {
-      newDefaults.permissions = {};
-      if (userAllow.length > 0) newDefaults.permissions.allow = userAllow;
-      if (userDeny.length > 0) newDefaults.permissions.deny = userDeny;
-    }
-    if (mcpJson.trim()) newDefaults.mcpJson = mcpJson;
-    // The project's "Free agent mode by default" is retired (#2761): new agents start at the app's Default access.
-    if (helperAutoOff) newDefaults.helperAuto = 'off';
-    if (sourceControlProvider) newDefaults.sourceControlProvider = sourceControlProvider;
-    if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
-    if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
-    if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
-    // Personas and missions aren't offered (#2901); a saved default stays for the switch to managed to read.
-    if (defaults.mission) newDefaults.mission = defaults.mission;
-    if (defaults.persona) newDefaults.persona = defaults.persona;
-    if (commandPrefix.trim()) newDefaults.commandPrefix = commandPrefix.trim();
-
-    await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
-    setDirty(false);
+    setBaseline(saved);
+    setHadFreeAgentMode(false);
     setSaving(false);
-    await loadBreakdown();
+    await load();
   };
 
   const handleRemoveItem = async () => {
@@ -349,54 +390,22 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
     setRemoving(removeTarget.id);
     try {
       await window.clubhouse.agentSettings.removePluginInjectionItem(projectPath, removeTarget.id);
-      await loadDefaults();
-      await loadBreakdown();
+      await refreshBreakdown();
     } catch { /* ignore */ }
     setRemoving(null);
     setRemoveTarget(null);
   };
 
-  // Filter user-only permission rules for the editable textareas
-  const userAllowRules = useMemo(() => {
-    if (!breakdown) return permAllow;
-    return breakdown.allowRules
-      .filter((r) => r.provenance.source === 'user')
-      .map((r) => r.value)
-      .join('\n');
-  }, [breakdown, permAllow]);
-
-  const userDenyRules = useMemo(() => {
-    if (!breakdown) return permDeny;
-    return breakdown.denyRules
-      .filter((r) => r.provenance.source === 'user')
-      .map((r) => r.value)
-      .join('\n');
-  }, [breakdown, permDeny]);
-
-  // User-only MCP servers for the editable textarea
-  const userMcpJson = useMemo(() => {
-    if (!breakdown || !mcpJson) return mcpJson;
-    try {
-      const parsed = JSON.parse(mcpJson);
-      const servers = parsed.mcpServers || {};
-      const userServers: Record<string, unknown> = {};
-      for (const [name, config] of Object.entries(servers)) {
-        const isPlugin = breakdown.mcpServers.some(
-          (s) => s.label === name && s.provenance.source === 'plugin'
-        );
-        if (!isPlugin) {
-          userServers[name] = config;
-        }
-      }
-      if (Object.keys(userServers).length === 0 && Object.keys(servers).length > 0) {
-        // All servers are plugin-managed — show empty
-        return '';
-      }
-      return JSON.stringify({ ...parsed, mcpServers: userServers }, null, 2);
-    } catch {
-      return mcpJson;
-    }
-  }, [breakdown, mcpJson]);
+  if (loadError && !loaded) {
+    return (
+      <div data-testid="project-agent-defaults-section">
+        <SettingsSection title="Default agent settings">
+          <p role="alert" className="text-xs text-ctp-error mb-2">Couldn&apos;t load this project&apos;s default agent settings. {loadError}</p>
+          <Button onClick={load} kind="ghost">Try again</Button>
+        </SettingsSection>
+      </div>
+    );
+  }
 
   if (!loaded) return null;
 
@@ -407,7 +416,9 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
   const hasPluginPerms = pluginAllowRules.length > 0 || pluginDenyRules.length > 0;
   const hasPluginMcp = pluginMcpServers.length > 0;
 
-  const markDirty = () => setDirty(true);
+  const setValue = <K extends keyof EditorValues>(key: K, value: EditorValues[K]) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+  };
 
   return (
     <div data-testid="project-agent-defaults-section">
@@ -424,12 +435,18 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         <p className={`${settingsHelp} mb-2`}>
           These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.
         </p>
+        {saveError && (
+          <p role="alert" className="text-xs text-ctp-error mb-2">Couldn&apos;t save defaults. {saveError}</p>
+        )}
+        {loadError && (
+          <p role="alert" className="text-xs text-ctp-error mb-2">Couldn&apos;t reload this project&apos;s default agent settings. {loadError}</p>
+        )}
 
         {orphanedPluginIds.length > 0 && (
           <OrphanBanner
             orphanedPluginIds={orphanedPluginIds}
             projectPath={projectPath}
-            onCleaned={() => { loadDefaults(); loadBreakdown(); }}
+            onCleaned={refreshBreakdown}
           />
         )}
 
@@ -440,8 +457,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         >
           <select
             id={`${idBase}-scp`}
-            value={sourceControlProvider}
-            onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider | ''); markDirty(); }}
+            value={values.sourceControlProvider}
+            onChange={(e) => setValue('sourceControlProvider', e.target.value as SourceControlProvider | '')}
             className={SELECT_CLASS}
           >
             <option value="">Use app setting</option>
@@ -457,8 +474,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         >
           <input
             id={`${idBase}-prefix`}
-            value={commandPrefix}
-            onChange={(e) => { setCommandPrefix(e.target.value); markDirty(); }}
+            value={values.commandPrefix}
+            onChange={(e) => setValue('commandPrefix', e.target.value)}
             placeholder=". ./init.sh"
             className={TEXT_INPUT_CLASS}
             spellCheck={false}
@@ -471,8 +488,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         >
           <Toggle
             aria-label="Turn off Auto provider in this project"
-            checked={helperAutoOff}
-            onChange={(v) => { setHelperAutoOff(v); markDirty(); }}
+            checked={values.helperAutoOff}
+            onChange={(v) => setValue('helperAutoOff', v)}
             data-testid="project-helper-auto-off"
           />
         </SettingsField>
@@ -486,8 +503,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         <SettingsField label="Build" htmlFor={`${idBase}-build`}>
           <input
             id={`${idBase}-build`}
-            value={buildCommand}
-            onChange={(e) => { setBuildCommand(e.target.value); markDirty(); }}
+            value={values.buildCommand}
+            onChange={(e) => setValue('buildCommand', e.target.value)}
             placeholder="npm run build"
             className={TEXT_INPUT_CLASS}
             spellCheck={false}
@@ -496,8 +513,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         <SettingsField label="Test" htmlFor={`${idBase}-test`}>
           <input
             id={`${idBase}-test`}
-            value={testCommand}
-            onChange={(e) => { setTestCommand(e.target.value); markDirty(); }}
+            value={values.testCommand}
+            onChange={(e) => setValue('testCommand', e.target.value)}
             placeholder="npm test"
             className={TEXT_INPUT_CLASS}
             spellCheck={false}
@@ -506,8 +523,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         <SettingsField label="Lint" htmlFor={`${idBase}-lint`}>
           <input
             id={`${idBase}-lint`}
-            value={lintCommand}
-            onChange={(e) => { setLintCommand(e.target.value); markDirty(); }}
+            value={values.lintCommand}
+            onChange={(e) => setValue('lintCommand', e.target.value)}
             placeholder="npm run lint"
             className={TEXT_INPUT_CLASS}
             spellCheck={false}
@@ -519,14 +536,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         <SettingsBlock>
           <textarea
             aria-label="Default instructions"
-            value={breakdown ? breakdown.userInstructions : instructions}
-            onChange={(e) => {
-              if (breakdown) {
-                setBreakdown({ ...breakdown, userInstructions: e.target.value });
-              }
-              setInstructions(e.target.value);
-              markDirty();
-            }}
+            value={values.instructions}
+            onChange={(e) => setValue('instructions', e.target.value)}
             placeholder="Default CLAUDE.md content for new agents…"
             className={`${settingsTextArea} h-28`}
             spellCheck={false}
@@ -565,8 +576,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
             <label htmlFor={`${idBase}-allow`} className={settingsLabel}>Allowed tools, one per line</label>
             <textarea
               id={`${idBase}-allow`}
-              value={userAllowRules}
-              onChange={(e) => { setPermAllow(e.target.value); markDirty(); }}
+              value={values.permAllow}
+              onChange={(e) => setValue('permAllow', e.target.value)}
               placeholder={"Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)"}
               className={`${settingsTextArea} h-16`}
               spellCheck={false}
@@ -576,8 +587,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
             <label htmlFor={`${idBase}-deny`} className={settingsLabel}>Auto-deny tools, one per line</label>
             <textarea
               id={`${idBase}-deny`}
-              value={userDenyRules}
-              onChange={(e) => { setPermDeny(e.target.value); markDirty(); }}
+              value={values.permDeny}
+              onChange={(e) => setValue('permDeny', e.target.value)}
               placeholder={"WebFetch\nBash(curl *)"}
               className={`${settingsTextArea} h-16`}
               spellCheck={false}
@@ -618,8 +629,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         <SettingsBlock>
           <textarea
             aria-label="Default .mcp.json"
-            value={userMcpJson}
-            onChange={(e) => { setMcpJson(e.target.value); markDirty(); }}
+            value={values.mcpJson}
+            onChange={(e) => setValue('mcpJson', e.target.value)}
             placeholder='{\n  "mcpServers": {}\n}'
             className={`${settingsTextArea} h-20`}
             spellCheck={false}
