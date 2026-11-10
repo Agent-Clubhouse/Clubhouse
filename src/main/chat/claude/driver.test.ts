@@ -1224,6 +1224,17 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect(drafts.of('session_ended')[0].data.reason).toBe('error');
   });
 
+  it('names a finished subagent from its start after dropping the name it kept (#3250)', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'subagent', phase: 'started', taskId: 't1', raw: { tool_use_id: 'tu-1', subagent_type: 'Explore', description: 'Find it' } });
+    transport.emit({ kind: 'subagent', phase: 'notification', taskId: 't1', raw: { tool_use_id: 'tu-1', status: 'completed' } });
+    await drafts.waitFor('subagent', (d) => d.data.status === 'completed');
+    expect(drafts.of('subagent').map((d) => [d.data.subagentId, d.data.name, d.data.status])).toEqual([
+      ['tu-1', 'Explore', 'running'],
+      ['tu-1', 'Explore', 'completed'],
+    ]);
+  });
+
   it('ends a running turn when the CLI dies mid-turn', async () => {
     const { session, transport, drafts } = await scripted();
     await session.send([{ type: 'text', text: 'go' }], 'prompt');
