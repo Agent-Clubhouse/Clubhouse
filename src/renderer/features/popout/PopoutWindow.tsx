@@ -11,6 +11,9 @@ import { FilePreviewHost } from '../../components/FilePreviewHost';
 import { ToastContainer } from '../../components/ToastContainer';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { PopoutTitleBar } from '../../chrome/titlebar/PopoutTitleBar';
+import { useDispatcherStateMirror } from '../dispatcher/useDispatcherSync';
+import { ClearChatHost } from '../dispatcher/ClearChat';
+import { isDispatcherProjectId } from '../dispatcher/dispatcherStore';
 import type { Agent, AgentHookEvent } from '../../../shared/types';
 
 /**
@@ -151,6 +154,7 @@ function useAgentStateSync() {
 export function PopoutWindow() {
   const loadTheme = useThemeStore((s) => s.loadTheme);
   const ready = useAgentStateSync();
+  useDispatcherStateMirror();
   const agentName = useAgentStore((s) => {
     const id = window.clubhouse.window?.getPopoutParams()?.agentId;
     return id ? s.agents[id]?.name : undefined;
@@ -213,6 +217,8 @@ export function PopoutWindow() {
         )}
       </div>
       <FilePreviewHost />
+      {/* The Dispatcher's menu offers Clear chat, which confirms first. */}
+      {isAgent && isDispatcherProjectId(params.projectId) && <ClearChatHost />}
       <ToastContainer />
     </div>
   );

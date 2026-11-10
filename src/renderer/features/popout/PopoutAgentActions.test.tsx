@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { useToastStore } from '../../stores/toastStore';
 import { PopoutAgentActions } from './PopoutAgentActions';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
+import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 
 const mockAgents: Record<string, any> = {};
 
@@ -74,7 +76,31 @@ describe('PopoutAgentActions', () => {
     fireEvent.click(screen.getByTestId('popout-view-button'));
     expect(window.clubhouse.window.focusMain).toHaveBeenCalledWith('agent-1');
     fireEvent.click(screen.getByTestId('popout-stop-button'));
-    expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('agent-1', 'proj-1');
+    // The call takes the project's folder.
+    expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('agent-1', '/proj');
+  });
+
+  describe('the Dispatcher (#3235)', () => {
+    beforeEach(() => {
+      useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null });
+    });
+    afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
+
+    it('wakes it in its folder, which is no registered project', async () => {
+      mockAgents.disp = agent({ id: 'disp', name: 'Dispatcher', status: 'sleeping', projectId: DISPATCHER_PROJECT_ID });
+      render(<PopoutAgentActions agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
+      fireEvent.click(screen.getByTestId('popout-wake-button'));
+      await waitFor(() => expect(mockWake).toHaveBeenCalledWith(DISPATCHER_PROJECT_ID, 'dispatcher-dir', 'disp', 'resume'));
+    });
+
+    it('stops it with its folder and shows its view in the main window', () => {
+      mockAgents.disp = agent({ id: 'disp', name: 'Dispatcher', projectId: DISPATCHER_PROJECT_ID });
+      render(<PopoutAgentActions agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
+      fireEvent.click(screen.getByTestId('popout-stop-button'));
+      expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('disp', 'dispatcher-dir');
+      fireEvent.click(screen.getByTestId('popout-view-button'));
+      expect(window.clubhouse.window.focusMain).toHaveBeenCalledWith('disp');
+    });
   });
 
   it('toasts when Stop fails', async () => {

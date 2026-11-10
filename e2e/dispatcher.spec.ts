@@ -5,8 +5,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { createDisposableProfile, type DisposableProfile } from './app-profile';
 import { chatFixturePath } from '../src/main/orchestrators/adapters/testing/fake-cli';
+import { buildChatScript, writeChatScript } from '../src/main/orchestrators/adapters/testing/chat-script';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
-import { launchApp, type LaunchedApp } from './launch';
+import { launchApp, type ElectronApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
 
 /**
@@ -30,6 +31,10 @@ import { addProject } from './smoke-helpers';
  * - an Ask-first call (#2970): the Dispatcher's change to helper presets waits
  *   in Needs you, the user allows it there, and the same call then goes through
  *   once.
+ * - Pop Out (#3235) opens its chat, the same conversation, in its own window;
+ *   a message sent there is answered there, asking again opens no second
+ *   window, and Pop back in shows the chat with that exchange in the main
+ *   window.
  *
  * Runs in the Chat E2E job (Linux and Windows), not the sharded E2E run:
  * nothing here differs on macOS, and it would lengthen the E2E long pole.
@@ -487,6 +492,84 @@ test('an Ask-first call waits in Needs you, and goes through once the user allow
     expect(done.isError).toBe(false);
     expect(done.body).toMatchObject({ ok: true });
     expect((await mcp.callText('set_helper_presets', { revision: done.body.revision, reset: {} })).text).toContain('needs the user\'s approval');
+  } finally {
+    await fs.promises.rm(fixtureDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+/**
+ * The popout window the next createPopout opens. Unpackaged builds may open
+ * DevTools first, so a window without the popout's root is skipped.
+ */
+async function nextPopout(electronApp: ElectronApp, open: () => Promise<void>): Promise<Page> {
+  const seen = new Set(electronApp.windows());
+  const first = electronApp.waitForEvent('window', { predicate: (p) => !seen.has(p), timeout: 15_000 });
+  await open();
+  let page = await first;
+  await page.waitForLoadState('load');
+  if (!(await page.locator('[data-testid="popout-window"]').isVisible({ timeout: 5_000 }).catch(() => false))) {
+    seen.add(page);
+    page = await electronApp.waitForEvent('window', { predicate: (p) => !seen.has(p), timeout: 10_000 });
+    await page.waitForLoadState('load');
+  }
+  return page;
+}
+
+test('Pop Out shows its chat in its own window, where the user keeps talking to it (#3235)', async () => {
+  const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-e2e-fixture-'));
+  try {
+    const REPLY = 'Hello back from the popped out Dispatcher.';
+    const { fixture } = await writeChatScript(fixtureDir, 'popout', buildChatScript('claude', {
+      description: 'one exchange with the Dispatcher in its popout',
+      turns: [{ prompt: 'Hello from the popout', steps: [{ type: 'text', text: REPLY }] }],
+    }));
+    fakes = await installFakeClis({ claude: fixture });
+    profile = createDisposableProfile({ label: 'dispatcher-popout' });
+    const { electronApp, window: w } = await launch();
+
+    await expect(row(w)).toBeVisible({ timeout: 15_000 });
+    await expect.poll(async () => (await chatConfigs()).length).toBe(1);
+    const chatId = (await chatConfigs())[0].id;
+    await rowItem(w).click();
+    await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+    await expect.poll(startedAs, { timeout: 20_000 }).toBe(chatId);
+    await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
+
+    // Pop Out from its row's menu opens the same agent, under no project.
+    const popout = await nextPopout(electronApp, async () => {
+      await rowItem(w).click({ button: 'right' });
+      await w.locator('[data-testid="agent-context-menu"] [data-testid="ctx-popout"]').click();
+    });
+    await expect(popout.locator('[data-testid="popout-title"]')).toContainText('Dispatcher');
+    const popoutChat = popout.locator(`[data-testid="chat-view"][data-agent-pane="${chatId}"][data-view-context="popout"]`);
+    await expect(popoutChat).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
+    // The main window says where it went.
+    await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="popped-out-placeholder"]')).toBeVisible();
+
+    // A message from the popout is answered there, by the one running chat.
+    const box = popout.getByRole('textbox', { name: 'Message' });
+    await box.fill('Hello from the popout');
+    await box.press('Enter');
+    await expect(popoutChat).toContainText(REPLY, { timeout: 20_000 });
+    await expect.poll(async () => {
+      const r = await fakes!.report('claude').catch((): undefined => undefined);
+      return r && { mismatch: r.mismatch, complete: r.complete, unexpected: r.unexpected };
+    }, { timeout: 20_000 }).toEqual({ mismatch: null, complete: true, unexpected: [] });
+    expect(await startedAs()).toBe(chatId);
+
+    // Asking again brings that window forward rather than opening another.
+    await rowItem(w).click({ button: 'right' });
+    await w.locator('[data-testid="agent-context-menu"] [data-testid="ctx-popout"]').click();
+    const popouts = await w.evaluate(() => window.clubhouse.window.listPopouts()) as Array<{ params: { agentId?: string } }>;
+    expect(popouts.map((p) => p.params.agentId)).toEqual([chatId]);
+
+    // Pop back in closes the window; the main window shows the chat with the exchange, still running.
+    await w.locator('[data-testid="popped-out-close-window"]').click();
+    await expect(w.locator('[data-testid="popped-out-placeholder"]')).toHaveCount(0, { timeout: 10_000 });
+    const mainChat = w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]');
+    await expect(mainChat).toContainText(REPLY, { timeout: 15_000 });
+    await expect(mainChat).toHaveAttribute('data-state', 'idle');
+    expect((await chatConfigs()).map((c) => c.id)).toEqual([chatId]);
   } finally {
     await fs.promises.rm(fixtureDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
