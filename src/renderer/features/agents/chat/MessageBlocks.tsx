@@ -28,6 +28,7 @@ import { useMediaCards } from './rich/MediaCards';
 import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens, shortName } from './view-model';
 import { rendererLog } from '../../../plugins/renderer-logger';
+import { formatAgo } from '../states/format';
 
 /** Markdown re-renders at most this often while a message streams. */
 const STREAMING_RENDER_MS = 80;
@@ -327,15 +328,39 @@ const ERROR_HINTS: Partial<Record<string, string>> = {
   max_tokens: 'The reply hit the output token limit.',
 };
 
-export function ErrorRow({ item }: { item: ErrorItem }) {
+/** "14:05", or "Nov 8, 14:05" when it isn't today. */
+export function formatWhen(at: number, now: number = Date.now()): string {
+  const d = new Date(at);
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date(now).toDateString() ? time : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${time}`;
+}
+
+/**
+ * `timing` (the Dispatcher work view, #3242): when the error happened, and
+ * whether it belongs to a run that has ended. An ended run's error is history,
+ * not a current failure, so it isn't announced as an alert.
+ */
+export function ErrorRow({ item, timing }: { item: ErrorItem; timing?: { activeSince: number | null } }) {
   const hint = ERROR_HINTS[item.code];
+  const earlier = !!timing && (timing.activeSince === null || item.ts < timing.activeSince);
   return (
-    <div className="flex items-start gap-2 text-[12.5px] text-ctp-error" role="alert" data-testid="chat-error" data-code={item.code}>
+    <div
+      className={`flex items-start gap-2 text-[12.5px] ${earlier ? 'text-ctp-subtext0' : 'text-ctp-error'}`}
+      role={earlier ? undefined : 'alert'}
+      data-testid="chat-error"
+      data-code={item.code}
+      data-earlier={timing ? earlier : undefined}
+    >
       <AlertIcon size={14} className="mt-0.5" />
       <div className="flex flex-col gap-0.5 min-w-0">
         <span className="break-words">{item.message}</span>
         {(hint || item.willRetry) && (
           <span className="text-ctp-subtext0">{item.willRetry ? 'Retrying…' : hint}</span>
+        )}
+        {timing && (
+          <span className="text-[11.5px] text-ctp-overlay1" data-testid="chat-error-time">
+            {formatWhen(item.ts)}, {formatAgo(item.ts)}{earlier ? '. From a run that has ended.' : ''}
+          </span>
         )}
       </div>
     </div>

@@ -688,6 +688,8 @@ export const IPC = {
     SET_MODELS: 'dispatcher:set-models',
     /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
     CLEAR_CHAT: 'dispatcher:clear-chat',
+    /** Start fresh (#3240): `'work'` or `'both'` conversations. Memory, agents, connections, Actions and settings stay. Resolves with a StartFreshResult. */
+    START_FRESH: 'dispatcher:start-fresh',
     /** Forget everything (#3046): clears its memory and held news only. Resolves with a ForgetEverythingResult. */
     FORGET_EVERYTHING: 'dispatcher:forget-everything',
     /** Every agent that can connect to it, across projects (#3046). Resolves with ConnectableAgent[]. */

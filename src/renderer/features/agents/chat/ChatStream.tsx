@@ -1,6 +1,6 @@
 import { memo, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
-import type { ChatItem, ChatViewState } from '../../../stores/chatStore';
+import type { ChatItem, ChatRun, ChatViewState } from '../../../stores/chatStore';
 import type { GroupChatDebugMark } from '../../dispatcher/group-chat';
 import { stripTaskMarker } from '../../../../shared/chat';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -18,6 +18,7 @@ import { fnv1a } from '../../../../shared/telemetry/diag';
 import {
   AgentMessage,
   ErrorRow,
+  formatWhen,
   NoticeRow,
   PlanDocumentCard,
   QuestionRow,
@@ -96,6 +97,8 @@ interface BlockProps {
   preformatted?: boolean;
   /** The name to show on an agent message that starts a run of them. */
   agentName?: string;
+  /** Errors say when they happened and whether their run has ended (#3242). */
+  errorTiming?: { activeSince: number | null };
 }
 
 /** The subagent a top-level block belongs to, when its work shows inline (ids_only, or nesting off). */
@@ -156,6 +159,7 @@ function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
 function sameBlock(prev: BlockProps, next: BlockProps): boolean {
   if (prev.turnNumber !== next.turnNumber || prev.capabilities !== next.capabilities || prev.mcpServers !== next.mcpServers) return false;
   if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent || prev.preformatted !== next.preformatted || prev.agentName !== next.agentName) return false;
+  if (prev.errorTiming !== next.errorTiming) return false;
   const a = prev.block;
   const b = next.block;
   if (a.type === 'item' && b.type === 'item') return a.item === b.item && a.tool === b.tool;
@@ -181,7 +185,7 @@ const Block = memo(function Block(props: BlockProps) {
 }, sameBlock);
 
 function BlockBody(props: BlockProps) {
-  const { block, turnNumber, capabilities, mcpServers, preformatted, agentName } = props;
+  const { block, turnNumber, capabilities, mcpServers, preformatted, agentName, errorTiming } = props;
   if (block.type === 'explore') return <ExploreGroup tools={block.tools} items={block.items} expansionKey={`${block.key}:run`} />;
   if (block.type === 'group') {
     // A row keeps its key inside the group, so its open state survives the group forming or splitting.
@@ -197,7 +201,7 @@ function BlockBody(props: BlockProps) {
     case 'plan_document': return <PlanDocumentCard item={item} error={block.tool && toolErrorText(block.tool)} />;
     case 'question': return <QuestionRow item={item} error={block.tool && toolErrorText(block.tool)} />;
     case 'notice': return <NoticeRow item={item} />;
-    case 'error': return <ErrorRow item={item} />;
+    case 'error': return <ErrorRow item={item} timing={errorTiming} />;
     case 'turn_end': return <TurnFooter item={item} turnNumber={turnNumber} capabilities={capabilities} />;
     default: return null;
   }
@@ -235,6 +239,32 @@ export interface ChatStreamProps {
   groupChat?: boolean;
   /** The Dispatcher debug view (#3188): items the group chat would hide or clean, by id, each block marked. */
   debugMarks?: ReadonlyMap<string, GroupChatDebugMark>;
+  /**
+   * The Dispatcher work view (#3242): a boundary at the start of each CLI run,
+   * saying whether it is active or ended, and errors with their time. `activeSince`
+   * is when the active run started, or null when none is.
+   */
+  runs?: { list: readonly ChatRun[]; activeSince: number | null };
+}
+
+/** The run a timestamp falls in: the last one started by then, or -1 before the first. */
+function runIndexAt(runs: readonly ChatRun[], ts: number): number {
+  for (let i = runs.length - 1; i >= 0; i--) {
+    if (runs[i].startedAt <= ts) return i;
+  }
+  return -1;
+}
+
+function RunBoundary({ run, active }: { run: ChatRun; active: boolean }) {
+  const started = `${run.resumed ? 'Resumed' : 'Started'} ${formatWhen(run.startedAt)}`;
+  const state = active ? 'active' : run.endedAt !== null ? `ended ${formatWhen(run.endedAt)}` : 'ended';
+  return (
+    <div className="mb-2 flex items-center gap-2 text-[11.5px] text-ctp-overlay1" data-testid="chat-run-boundary" data-active={active}>
+      <span className="flex-1 border-t border-surface-0" aria-hidden="true" />
+      <span>{started}, {state}</span>
+      <span className="flex-1 border-t border-surface-0" aria-hidden="true" />
+    </div>
+  );
 }
 
 function sameTranscriptShape(a: ChatViewState, b: ChatViewState): boolean {
@@ -300,6 +330,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   agentName,
   groupChat = false,
   debugMarks,
+  runs,
 }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -345,6 +376,17 @@ const ChatStreamInner = memo(function ChatStreamInner({
   atTailRef.current = atTail;
   const viewRef = useRef({ blocks, start, end, followTail });
   viewRef.current = { blocks, start, end, followTail };
+  const runOfBlock = useMemo(() => {
+    if (!runs) return null;
+    const m = new Map<string, number>();
+    for (const b of blocks) {
+      const ts = blockItems(b)[0]?.ts;
+      if (ts !== undefined) m.set(b.key, runIndexAt(runs.list, ts));
+    }
+    return m;
+  }, [blocks, runs]);
+  const activeSince = runs?.activeSince;
+  const errorTiming = useMemo(() => (activeSince === undefined ? undefined : { activeSince }), [activeSince]);
   const turnNumbers = useMemo(() => {
     const m = new Map<string, number>();
     let n = 0;
@@ -788,6 +830,13 @@ const ChatStreamInner = memo(function ChatStreamInner({
           <FileChipProvider agentId={rich ? state.agentId : null}>
             {visibleBlocks.map((b, index) => (
               <div key={b.key} data-testid="chat-stream-block" data-block-index={start + index} data-block-key={b.key}>
+                {runs && runOfBlock && (() => {
+                  const at = runOfBlock.get(b.key) ?? -1;
+                  const before = start + index > 0 ? runOfBlock.get(blocks[start + index - 1].key) ?? -1 : -1;
+                  if (at < 0 || at === before) return null;
+                  const run = runs.list[at];
+                  return <RunBoundary run={run} active={run.endedAt === null && run.startedAt === runs.activeSince} />;
+                })()}
                 {debugMarks && (() => {
                   const mark = blockDebugMark(b, debugMarks);
                   return mark ? <p className="mb-1 text-[11px] text-ctp-overlay1" data-testid="chat-debug-mark" data-mark={mark}>{DEBUG_MARK_TEXT[mark]}</p> : null;
@@ -801,6 +850,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
                   onOpenSubagent={onOpenSubagent}
                   preformatted={b.type === 'item' && commandOutput.has(b.item.id)}
                   agentName={b.type === 'item' && named.has(b.item.id) ? shownName : undefined}
+                  errorTiming={errorTiming}
                 />
               </div>
             ))}

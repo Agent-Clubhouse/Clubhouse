@@ -315,6 +315,12 @@ export interface DurableAgentConfig {
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
+  /**
+   * Native sessions that kept failing every turn (#3240), newest last. They
+   * are never resumed again, and a session's late end never makes one the
+   * resume id again.
+   */
+  quarantinedSessionIds?: string[];
   /** Why the agent last went to sleep (#2104). */
   lastSleep?: AgentSleepInfo;
   /**

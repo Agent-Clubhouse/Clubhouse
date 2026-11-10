@@ -606,6 +606,11 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (params.kind === 'durable' && !params.resume && durableConfig?.lastSessionId) {
       recordResumeOutcome(provider.id, params.agentId, 'fresh_user');
     }
+    // A session that kept failing every turn (#3240) is never resumed, whichever wake path asked.
+    if (params.kind === 'durable' && params.resume && params.sessionId && durableConfig?.quarantinedSessionIds?.includes(params.sessionId)) {
+      appLog('core:agent', 'warn', 'Not resuming a quarantined session; starting fresh', { meta: { agentId: params.agentId, sessionId: params.sessionId } });
+      params = { ...params, resume: false, sessionId: undefined };
+    }
     // A saved id the CLI's own store doesn't have (Codex agents saved made-up
     // ids before #2113, #2132), or another CLI's session (#2593; Claude Code has
     // no store check, so it would be asked and quit): start fresh instead of

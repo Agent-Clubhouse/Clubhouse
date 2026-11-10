@@ -39,7 +39,7 @@ import { listChatRuntimes, registerChatRuntime, unregisterChatRuntime } from './
 import { trackSessionCapture, noteSessionCaptureFailure } from '../session-capture-barrier';
 import { listChatSessions } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
-import { noteChatStartFailure } from './stale-session';
+import { noteChatStartFailure, takeNextStartNotices } from './stale-session';
 import { chatResumeResult, recordResumeOutcome, recordSessionCapture } from '../../telemetry/session-telemetry';
 import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
 import { waitsOnPollingGroupProject } from './idle-policy';
@@ -443,7 +443,7 @@ async function runChatStart(
       binaryPath,
     },
   });
-  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; mcpNotices: ChatRuntimeNotice[]; continued?: { sessionId: string; lastSeq: number } } | undefined;
+  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; mcpNotices: ChatRuntimeNotice[]; nextStartNotices: ChatRuntimeNotice[]; continued?: { sessionId: string; lastSeq: number } } | undefined;
 
   // Probe lazily, in order, and stop at the first usable driver: the
   // preferred driver working means no other driver is probed or reported.
@@ -485,7 +485,7 @@ async function runChatStart(
       ? { level: 'warn', code: 'fallback', message: `Using ${driverLabel(driver)}: ${skipped.join('; ')}` }
       : undefined;
     const sessionStartedAt = Date.now();
-    const outcome = await startChatRuntime(driver, [...(fallbackNotice ? [fallbackNotice] : []), ...check.notices, ...prepared.mcpNotices, ...(params.contextWindowNotice ? [params.contextWindowNotice] : [])], prepared);
+    const outcome = await startChatRuntime(driver, [...(fallbackNotice ? [fallbackNotice] : []), ...check.notices, ...prepared.mcpNotices, ...prepared.nextStartNotices, ...(params.contextWindowNotice ? [params.contextWindowNotice] : [])], prepared);
     attempt.sessionStartMs = Date.now() - sessionStartedAt;
     // Covers a start whose driver timed out after the cancel: it never counts
     // as a driver failure, tries the next driver or falls back.
@@ -592,7 +592,9 @@ async function runChatStart(
     for (const problem of envProblems) mcpNotices.push({ level: 'warn', code: 'mcp_server_env_missing', message: missingEnvNotice(problem) });
     if (durableConfig?.managed) await noteMcpStartProblems(params.agentId, envProblems);
     const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
-    return { env, mcpServers, mcpHttpEndpoints, mcpNotices, continued };
+    // Such as "started fresh" (#3240): said once, in whichever session starts.
+    const nextStartNotices = takeNextStartNotices(params.agentId);
+    return { env, mcpServers, mcpHttpEndpoints, mcpNotices, nextStartNotices, continued };
   }
 
   /**

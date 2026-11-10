@@ -1848,6 +1848,15 @@ describe('agent-system', () => {
       expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
     });
 
+    it('never resumes a quarantined session, whichever wake asked (#3240)', async () => {
+      config.quarantinedSessionIds = [DEAD];
+      const { resumedWith } = await wake('codex-cli');
+      expect(resumedWith).toBe(DEAD);
+      const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+      expect(spawnArgs.resume).toBe(false);
+      expect(spawnArgs.sessionId).toBeUndefined();
+    });
+
     describe('Codex runs that print no id (#2132)', () => {
       beforeEach(() => sessionCapable(mockCodexProvider));
 
