@@ -1035,14 +1035,16 @@ describe('plugin-api-factory', () => {
         await api.agentConfig.removePermissionRules();
         await api.agentConfig.injectMcpServers({ srv: { command: 'p' } });
         await api.agentConfig.removeMcpServers();
-        expect(mockAgentSettings.updatePluginAgentDefaults.mock.calls.map((c) => c.slice(1))).toEqual([
+        // Instructions and MCP servers are this plugin's Managed Agent parts (#3245); adding rules does nothing.
+        expect(mockAgentSettings.setPluginManagedParts.mock.calls.map((c) => c.slice(1))).toEqual([
           ['test-plugin', { instructions: 'Extra' }],
           ['test-plugin', { instructions: null }],
-          ['test-plugin', { allow: ['A'] }],
-          ['test-plugin', { deny: ['D'] }],
-          ['test-plugin', { allow: null, deny: null }],
           ['test-plugin', { mcpServers: { srv: { command: 'p' } } }],
           ['test-plugin', { mcpServers: null }],
+        ]);
+        // Only removing rules saved before still patches the legacy defaults.
+        expect(mockAgentSettings.updatePluginAgentDefaults.mock.calls.map((c) => c.slice(1))).toEqual([
+          ['test-plugin', { allow: null, deny: null }],
         ]);
         // The read happens in main, where the write is (the mock forwards there), never before the call.
         expect(mockAgentSettings.updatePluginAgentDefaults.mock.invocationCallOrder[0])
@@ -1051,54 +1053,26 @@ describe('plugin-api-factory', () => {
     });
 
     describe('instructions', () => {
-      it('appendInstructions adds plugin block with markers', async () => {
-        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
-          instructions: 'Base instructions',
-        });
-
+      it('appendInstructions sets this plugin\'s instruction part, and writes no project defaults (#3245)', async () => {
         await api.agentConfig.appendInstructions('Plugin extra content');
-
-        expect(mockAgentSettings.writtenDefaults).toHaveBeenCalledWith(
-          '/projects/my-project',
-          expect.objectContaining({
-            instructions: expect.stringContaining('Plugin extra content'),
-          }),
-        );
-        // Check markers
-        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
-        const instructions = call[1].instructions;
-        expect(instructions).toContain('<!-- plugin:test-plugin:start -->');
-        expect(instructions).toContain('<!-- plugin:test-plugin:end -->');
-        expect(instructions).toContain('Base instructions');
+        expect(mockAgentSettings.setPluginManagedParts).toHaveBeenCalledWith('/projects/my-project', 'test-plugin', { instructions: 'Plugin extra content' });
+        expect(mockAgentSettings.writtenDefaults).not.toHaveBeenCalled();
       });
 
-      it('appendInstructions replaces existing plugin block', async () => {
-        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
-          instructions: 'Base\n\n<!-- plugin:test-plugin:start -->\nOld content\n<!-- plugin:test-plugin:end -->',
-        });
-
-        await api.agentConfig.appendInstructions('New content');
-
-        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
-        const instructions = call[1].instructions;
-        expect(instructions).not.toContain('Old content');
-        expect(instructions).toContain('New content');
-      });
-
-      it('removeInstructionAppend removes the plugin block', async () => {
-        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
-          instructions: 'Base\n\n<!-- plugin:test-plugin:start -->\nContent\n<!-- plugin:test-plugin:end -->',
-        });
-
+      it('removeInstructionAppend removes the part', async () => {
         await api.agentConfig.removeInstructionAppend();
-
-        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
-        const instructions = call[1].instructions;
-        expect(instructions).not.toContain('<!-- plugin:test-plugin:start -->');
-        expect(instructions).toBe('Base');
+        expect(mockAgentSettings.setPluginManagedParts).toHaveBeenCalledWith('/projects/my-project', 'test-plugin', { instructions: null });
       });
 
-      it('getInstructionAppend returns the appended content', async () => {
+      it('getInstructionAppend reads the part first', async () => {
+        mockAgentSettings.readPluginManagedParts.mockResolvedValueOnce({ instructions: 'From the part', mcpServers: [] });
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          instructions: 'Base\n\n<!-- plugin:test-plugin:start -->\nSaved before\n<!-- plugin:test-plugin:end -->',
+        });
+        expect(await api.agentConfig.getInstructionAppend()).toBe('From the part');
+      });
+
+      it('getInstructionAppend falls back to what the plugin saved before #3245', async () => {
         mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
           instructions: 'Base\n\n<!-- plugin:test-plugin:start -->\nExtra\n<!-- plugin:test-plugin:end -->',
         });
@@ -1118,26 +1092,12 @@ describe('plugin-api-factory', () => {
     });
 
     describe('permissions (elevated)', () => {
-      it('addPermissionAllowRules tags rules with plugin id', async () => {
-        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
-          permissions: { allow: ['Read(**)'], deny: [] },
-        });
-
+      it('adding permission rules does nothing and writes nothing (#3245)', async () => {
         await api.agentConfig.addPermissionAllowRules(['Write(**)', 'Edit(**)']);
-
-        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
-        const perms = call[1].permissions;
-        expect(perms.allow).toContain('Read(**)');
-        expect(perms.allow).toContain('Write(**) /* plugin:test-plugin */');
-        expect(perms.allow).toContain('Edit(**) /* plugin:test-plugin */');
-      });
-
-      it('addPermissionDenyRules tags rules with plugin id', async () => {
         await api.agentConfig.addPermissionDenyRules(['Bash(rm:*)']);
-
-        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
-        const perms = call[1].permissions;
-        expect(perms.deny).toContain('Bash(rm:*) /* plugin:test-plugin */');
+        expect(mockAgentSettings.updatePluginAgentDefaults).not.toHaveBeenCalled();
+        expect(mockAgentSettings.setPluginManagedParts).not.toHaveBeenCalled();
+        expect(mockAgentSettings.writtenDefaults).not.toHaveBeenCalled();
       });
 
       it('removePermissionRules removes only tagged rules', async () => {
@@ -1179,35 +1139,18 @@ describe('plugin-api-factory', () => {
     });
 
     describe('MCP (elevated)', () => {
-      it('injectMcpServers merges into project defaults mcpJson', async () => {
-        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
-          mcpJson: '{"mcpServers":{"existing":{"command":"node"}}}',
+      it('injectMcpServers sets this plugin\'s MCP server parts, and writes no project defaults (#3245)', async () => {
+        await api.agentConfig.injectMcpServers({ 'my-server': { command: 'python', args: ['server.py'] } });
+        expect(mockAgentSettings.setPluginManagedParts).toHaveBeenCalledWith('/projects/my-project', 'test-plugin', {
+          mcpServers: { 'my-server': { command: 'python', args: ['server.py'] } },
         });
-
-        await api.agentConfig.injectMcpServers({
-          'my-server': { command: 'python', args: ['server.py'] },
-        });
-
-        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
-        const mcpConfig = JSON.parse(call[1].mcpJson);
-        expect(mcpConfig.mcpServers['existing']).toBeDefined();
-        expect(mcpConfig.mcpServers['plugin-test-plugin-my-server']).toEqual({
-          command: 'python',
-          args: ['server.py'],
-        });
+        expect(mockPlugin.storageWrite).toHaveBeenCalledWith(expect.objectContaining({ key: 'injected-mcp', value: { 'my-server': { command: 'python', args: ['server.py'] } } }));
+        expect(mockAgentSettings.writtenDefaults).not.toHaveBeenCalled();
       });
 
-      it('removeMcpServers removes only plugin-prefixed servers', async () => {
-        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
-          mcpJson: '{"mcpServers":{"existing":{"command":"node"},"plugin-test-plugin-my-server":{"command":"python"}}}',
-        });
-
+      it('removeMcpServers removes the parts', async () => {
         await api.agentConfig.removeMcpServers();
-
-        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
-        const mcpConfig = JSON.parse(call[1].mcpJson);
-        expect(mcpConfig.mcpServers['existing']).toBeDefined();
-        expect(mcpConfig.mcpServers['plugin-test-plugin-my-server']).toBeUndefined();
+        expect(mockAgentSettings.setPluginManagedParts).toHaveBeenCalledWith('/projects/my-project', 'test-plugin', { mcpServers: null });
       });
 
       it('getInjectedMcpServers returns stored data', async () => {
@@ -1309,13 +1252,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
         await api.agentConfig.appendInstructions('Cross-project content', { projectId: 'proj-2' });
 
-        expect(mockAgentSettings.readProjectAgentDefaults).toHaveBeenCalledWith('/projects/project-b');
-        expect(mockAgentSettings.writtenDefaults).toHaveBeenCalledWith(
-          '/projects/project-b',
-          expect.objectContaining({
-            instructions: expect.stringContaining('Cross-project content'),
-          }),
-        );
+        expect(mockAgentSettings.setPluginManagedParts).toHaveBeenCalledWith('/projects/project-b', 'test-plugin', { instructions: 'Cross-project content' });
       });
 
       it('removeSkill targets another project', async () => {
@@ -1328,23 +1265,11 @@ describe('plugin-api-factory', () => {
         );
       });
 
-      it('addPermissionAllowRules targets another project', async () => {
+      it('addPermissionAllowRules still checks the target project, and writes nothing', async () => {
         const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
-        await api.agentConfig.addPermissionAllowRules(
-          ['Read(~/.clubhouse/buddy-system/**)'],
-          { projectId: 'proj-2' },
-        );
-
-        expect(mockAgentSettings.writtenDefaults).toHaveBeenCalledWith(
-          '/projects/project-b',
-          expect.objectContaining({
-            permissions: expect.objectContaining({
-              allow: expect.arrayContaining([
-                'Read(~/.clubhouse/buddy-system/**) /* plugin:test-plugin */',
-              ]),
-            }),
-          }),
-        );
+        await api.agentConfig.addPermissionAllowRules(['Read(~/.clubhouse/buddy-system/**)'], { projectId: 'proj-2' });
+        await expect(api.agentConfig.addPermissionAllowRules(['x'], { projectId: 'nope' })).rejects.toThrow(/Target project not found/);
+        expect(mockAgentSettings.writtenDefaults).not.toHaveBeenCalled();
       });
 
       it('rejects cross-project without agent-config.cross-project permission', async () => {
@@ -4401,10 +4326,11 @@ describe('plugin-api-factory', () => {
         await expect(api.agentConfig.injectMcpServers({ evil: { command: 'x' } })).rejects.toThrow('Not that one.');
         expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-config-plugin-1', 'd1', { action: 'project.configure', projectPath: '/projects/my-project' });
         expect(mockAgentSettings.writtenDefaults).not.toHaveBeenCalled();
-        // Both may: it writes.
+        expect(mockAgentSettings.setPluginManagedParts).not.toHaveBeenCalled();
+        // Both may: it writes the plugin's parts (#3245).
         pluginMcp.checkCaller.mockImplementation(async () => ({ ok: true }));
-        await api.agentConfig.addPermissionAllowRules(['Bash(**)']);
-        expect(mockAgentSettings.writtenDefaults).toHaveBeenCalledTimes(1);
+        await api.agentConfig.injectMcpServers({ evil: { command: 'x' } });
+        expect(mockAgentSettings.setPluginManagedParts).toHaveBeenCalledTimes(1);
         // Reads are never checked.
         pluginMcp.checkCaller.mockClear();
         await api.agentConfig.getPermissionRules();

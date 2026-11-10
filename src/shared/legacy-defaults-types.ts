@@ -59,13 +59,17 @@ export interface LegacyCopyPreview {
 }
 
 export interface LegacyImportPreview {
-  parts: Array<{ kind: 'block' | 'mcp'; name: string; status: 'new' | 'in_library' }>;
+  /** `pluginId`: the part is the plugin's (it keeps it up to date), from what it had saved here. */
+  parts: Array<{ kind: 'block' | 'mcp'; name: string; status: 'new' | 'in_library'; pluginId?: string }>;
   /** What isn't imported, and why. */
   notes: string[];
 }
 
 export interface LegacyImportResult {
+  /** The person's parts made from the defaults. A plugin's are listed under `pluginParts`. */
   created: Array<{ id: string; kind: 'block' | 'mcp'; name: string }>;
+  /** Parts made for plugins from what they had saved here, by name. */
+  pluginParts?: string[];
   /** Parts already in the library with the same content, which weren't made again. */
   existing: Array<{ id: string; kind: 'block' | 'mcp'; name: string }>;
   notes: string[];

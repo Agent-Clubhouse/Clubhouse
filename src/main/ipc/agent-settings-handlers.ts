@@ -4,6 +4,7 @@ import { IPC } from '../../shared/ipc-channels';
 import type { ProjectAgentDefaultsPatch } from '../../shared/types';
 import { assertPluginAgentDefaultsParts, withPluginParts, type PluginAgentDefaultsParts } from '../../shared/plugin-agent-defaults';
 import { isValidPluginId } from '../../shared/manifest-validator';
+import type { PluginManagedPartsUpdate } from '../services/plugin-parts';
 import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
@@ -252,6 +253,27 @@ export function registerAgentSettingsHandlers(): void {
       if (!isValidPluginId(pluginId)) throw new Error('Not a plugin id.');
       assertPluginAgentDefaultsParts(parts);
       await agentSettings.updateProjectAgentDefaults(projectPath, (current) => withPluginParts(current, pluginId, parts));
+    },
+  ));
+
+  // The plugin agentConfig API's instructions and MCP servers, as attributed parts (#3245).
+  ipcMain.handle(IPC.AGENT.SET_PLUGIN_MANAGED_PARTS, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 128 }), objectArg<PluginManagedPartsUpdate>()],
+    async (_event, projectPath, pluginId, update) => {
+      if (!isValidPluginId(pluginId)) throw new Error('Not a plugin id.');
+      assertPluginAgentDefaultsParts(update);
+      if ('allow' in update || 'deny' in update) throw new Error('Permission rules aren\'t parts.');
+      const { setPluginManagedParts } = await import('../services/plugin-parts');
+      return setPluginManagedParts(projectPath, pluginId, update);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.READ_PLUGIN_MANAGED_PARTS, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 128 })],
+    async (_event, projectPath, pluginId) => {
+      if (!isValidPluginId(pluginId)) throw new Error('Not a plugin id.');
+      const { readPluginManagedParts } = await import('../services/plugin-parts');
+      return readPluginManagedParts(projectPath, pluginId);
     },
   ));
 

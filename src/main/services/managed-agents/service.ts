@@ -615,7 +615,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return { ...(await summarize(entry)), content: await contentOf(entry) };
     },
 
-    async createPart(input: { name: string; description?: string; content: ManagedPartContent; actor?: string; source?: Extract<AssetSource, { kind: 'import' }> }): Promise<ManagedPartSummary> {
+    async createPart(input: { name: string; description?: string; content: ManagedPartContent; actor?: string; source?: Extract<AssetSource, { kind: 'import' | 'plugin' }> }): Promise<ManagedPartSummary> {
       const kind = input.content.kind;
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');

@@ -8,6 +8,8 @@ import type {
 import { hasPermission, handlePermissionViolation } from './plugin-api-shared';
 import { usePluginStore } from './plugin-store';
 import { useProjectStore } from '../stores/projectStore';
+import { rendererLog } from './renderer-logger';
+import { pluginDiagNamespace } from '../../shared/telemetry/diag';
 
 /**
  * Resolves the target project path for a cross-project agentConfig operation.
@@ -94,6 +96,15 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
     };
   }
 
+  /** Adding permission rules is deprecated (#3245): said once per method, never applied. */
+  const warned = new Set<string>();
+  function warnPermissionRulesIgnored(method: string, count: number): void {
+    if (warned.has(method)) return;
+    warned.add(method);
+    rendererLog(pluginDiagNamespace(pluginId), 'warn',
+      `agentConfig.${method} is deprecated and does nothing: permission rules are each CLI's own, not project defaults. ${count} rule(s) ignored.`);
+  }
+
   /** Check if plugin has elevated permission for sub-scope */
   function requirePermission(perm: PluginPermission): void {
     if (!hasPermission(manifest, perm)) {
@@ -162,19 +173,23 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
     },
 
     // ── Instructions ──────────────────────────────────────────────────
-    // Writes send only this plugin's parts; main changes them in the defaults queue (#3262).
+    // A Managed Agent part attributed to this plugin (#3245), no longer the project's
+    // legacy defaults. Main also clears what this plugin had saved there.
     async appendInstructions(content: string, opts?: AgentConfigTargetOptions): Promise<void> {
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { instructions: content });
+      await window.clubhouse.agentSettings.setPluginManagedParts(projectPath, pluginId, { instructions: content });
     },
 
     async removeInstructionAppend(opts?: AgentConfigTargetOptions): Promise<void> {
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { instructions: null });
+      await window.clubhouse.agentSettings.setPluginManagedParts(projectPath, pluginId, { instructions: null });
     },
 
     async getInstructionAppend(opts?: AgentConfigTargetOptions): Promise<string | null> {
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const parts = await window.clubhouse.agentSettings.readPluginManagedParts(projectPath, pluginId);
+      if (parts?.instructions != null) return parts.instructions;
+      // A block saved before #3245, until the plugin writes again or someone imports it.
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
       const existing = defaults.instructions || '';
       const regex = new RegExp(
@@ -185,16 +200,19 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
     },
 
     // ── Permissions (elevated) ────────────────────────────────────────
+    // Deprecated (#3245): permission rules are each CLI's own syntax, not something a
+    // project hands every agent. Adding them does nothing and says so; removing and
+    // reading still work on rules saved before.
     async addPermissionAllowRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.permissions');
-      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { allow: rules });
+      resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      warnPermissionRulesIgnored('addPermissionAllowRules', rules.length);
     },
 
     async addPermissionDenyRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.permissions');
-      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { deny: rules });
+      resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      warnPermissionRulesIgnored('addPermissionDenyRules', rules.length);
     },
 
     async removePermissionRules(opts?: AgentConfigTargetOptions): Promise<void> {
@@ -222,8 +240,9 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
       const storage = storageFor(projectPath);
       // Store plugin's MCP config separately for tracking
       await storage.write('injected-mcp', servers);
-
-      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { mcpServers: servers });
+      // Each server becomes a Managed Agent part attributed to this plugin (#3245).
+      const result = await window.clubhouse.agentSettings.setPluginManagedParts(projectPath, pluginId, { mcpServers: servers });
+      for (const note of result?.notes ?? []) rendererLog(pluginDiagNamespace(pluginId), 'warn', note);
     },
 
     async removeMcpServers(opts?: AgentConfigTargetOptions): Promise<void> {
@@ -231,7 +250,7 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const storage = storageFor(projectPath);
       await storage.delete('injected-mcp');
-      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { mcpServers: null });
+      await window.clubhouse.agentSettings.setPluginManagedParts(projectPath, pluginId, { mcpServers: null });
     },
 
     async getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>> {

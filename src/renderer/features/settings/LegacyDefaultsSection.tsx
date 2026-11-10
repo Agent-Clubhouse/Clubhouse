@@ -202,7 +202,11 @@ function ImportDialog({ projectPath, onClose }: { projectPath: string; onClose: 
               : (
                 <ul className="space-y-0.5">
                   {preview.parts.map((p) => (
-                    <li key={`${p.kind}:${p.name}`}>{kindName(p.kind)} <span className="font-mono text-ctp-subtext1">{p.name}</span>{p.status === 'in_library' ? ': already in your library, not made again' : ''}</li>
+                    <li key={`${p.kind}:${p.name}`}>
+                      {kindName(p.kind)} <span className="font-mono text-ctp-subtext1">{p.name}</span>
+                      {p.pluginId && <>, kept up to date by the {p.pluginId} plugin</>}
+                      {p.status === 'in_library' ? (p.pluginId ? ': the plugin already has it, not made again' : ': already in your library, not made again') : ''}
+                    </li>
                   ))}
                 </ul>
               )}
@@ -217,8 +221,14 @@ function ImportDialog({ projectPath, onClose }: { projectPath: string; onClose: 
           <>
             {result.created.length > 0
               ? <p>Imported {joinNames(result.created.map((p) => p.name))}. Add them to an agent or template from its setup.</p>
-              : <p>Nothing new was imported.</p>}
+              : !result.pluginParts?.length && <p>Nothing new was imported.</p>}
             {result.existing.length > 0 && <p>Already in your library: {joinNames(result.existing.map((p) => p.name))}.</p>}
+            {result.pluginParts && result.pluginParts.length > 0 && <p>Made for their plugins: {joinNames(result.pluginParts)}. Each plugin keeps its parts up to date.</p>}
+            {result.notes.length > 0 && (
+              <ul className="space-y-0.5">
+                {result.notes.map((n) => <li key={n}>{n}</li>)}
+              </ul>
+            )}
           </>
         )}
       </div>

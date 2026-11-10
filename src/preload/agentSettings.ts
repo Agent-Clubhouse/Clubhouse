@@ -73,6 +73,11 @@ export const agentSettings = {
   /** A plugin's parts of the project's defaults, changed in main's queue (#3262). */
   updatePluginAgentDefaults: (projectPath: string, pluginId: string, parts: PluginAgentDefaultsParts): Promise<void> =>
     ipcRenderer.invoke(IPC.AGENT.UPDATE_PLUGIN_AGENT_DEFAULTS, projectPath, pluginId, parts),
+  /** A plugin's instructions and MCP servers as attributed Managed Agent parts (#3245): `null` removes, a missing key leaves alone. */
+  setPluginManagedParts: (projectPath: string, pluginId: string, update: { instructions?: string | null; mcpServers?: Record<string, unknown> | null }): Promise<{ notes: string[] }> =>
+    ipcRenderer.invoke(IPC.AGENT.SET_PLUGIN_MANAGED_PARTS, projectPath, pluginId, update),
+  readPluginManagedParts: (projectPath: string, pluginId: string): Promise<{ instructions: string | null; mcpServers: string[] }> =>
+    ipcRenderer.invoke(IPC.AGENT.READ_PLUGIN_MANAGED_PARTS, projectPath, pluginId),
   getProjectConfigBreakdown: (projectPath: string, knownPluginIds: string[]) =>
     ipcRenderer.invoke(IPC.AGENT.GET_PROJECT_CONFIG_BREAKDOWN, projectPath, knownPluginIds),
   removePluginInjectionItem: (projectPath: string, itemId: string): Promise<boolean> =>

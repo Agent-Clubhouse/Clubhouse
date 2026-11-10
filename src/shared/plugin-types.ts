@@ -988,12 +988,18 @@ export interface AgentConfigTargetOptions {
 }
 
 /**
- * Since Clubhouse Mode was retired (#2901), these methods still read and write
- * the project's files (`.clubhouse/skills`, `.clubhouse/agent-templates` and
- * the project's default agent settings), so a plugin's remove and list calls
- * keep working. No agent reads those files when it starts any more, apart from
- * project MCP servers, which reach an unmanaged agent without an MCP file of
- * its own. A Clubhouse-managed agent gets only its setup.
+ * Since Clubhouse Mode was retired (#2901), the skill and agent template
+ * methods still read and write the project's files (`.clubhouse/skills`,
+ * `.clubhouse/agent-templates`), so a plugin's remove and list calls keep
+ * working; no agent reads them when it starts.
+ *
+ * Since #3245, instructions and MCP servers become Clubhouse-managed parts in
+ * the library, attributed to the plugin and the project it wrote them for. A
+ * person adds them to an agent or template. The plugin's next write updates
+ * the same parts, and uninstalling it removes them (agents that use one keep
+ * their own copy). Nothing is written to the project's legacy agent defaults
+ * any more; a write clears what the plugin had saved there before. Adding
+ * permission rules does nothing: each CLI has its own syntax.
  */
 export interface AgentConfigAPI {
   /**
@@ -1015,40 +1021,37 @@ export interface AgentConfigAPI {
   /** List agent templates injected by this plugin. */
   listInjectedAgentTemplates(opts?: AgentConfigTargetOptions): Promise<string[]>;
   /**
-   * Append content to the project's default instructions.
-   * Content is added at the end with a plugin attribution comment.
+   * Set this plugin's instructions for the project: an instruction block part,
+   * "<project>: <plugin> instructions", that this call creates or updates (#3245).
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   appendInstructions(content: string, opts?: AgentConfigTargetOptions): Promise<void>;
-  /** Remove previously appended instruction content from this plugin. */
+  /** Remove this plugin's instruction part for the project. Agents that use it keep their own copy. */
   removeInstructionAppend(opts?: AgentConfigTargetOptions): Promise<void>;
-  /** Get the content currently appended by this plugin (null if none). */
+  /** This plugin's instructions for the project (its part, else what it saved before #3245), or null. */
   getInstructionAppend(opts?: AgentConfigTargetOptions): Promise<string | null>;
   /**
-   * Add permission allow rules for project agents.
-   * Requires the elevated 'agent-config.permissions' permission.
-   * Rules are namespaced per plugin and saved in the project's default permissions.
-   * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
+   * @deprecated Does nothing since #3245, and logs a warning once: permission
+   * rules are each CLI's own syntax, not project defaults. Still requires the
+   * elevated 'agent-config.permissions' permission, so a call refused before is refused now.
    */
   addPermissionAllowRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void>;
-  /**
-   * Add permission deny rules for project agents.
-   * Requires the elevated 'agent-config.permissions' permission.
-   * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
-   */
+  /** @deprecated Does nothing since #3245; see addPermissionAllowRules. */
   addPermissionDenyRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void>;
-  /** Remove all permission rules injected by this plugin. */
+  /** Remove the permission rules this plugin saved before #3245. */
   removePermissionRules(opts?: AgentConfigTargetOptions): Promise<void>;
-  /** Get the permission rules currently injected by this plugin. */
+  /** The permission rules this plugin saved before #3245. */
   getPermissionRules(opts?: AgentConfigTargetOptions): Promise<{ allow: string[]; deny: string[] }>;
   /**
-   * Inject MCP server configuration for project agents.
+   * Set this plugin's MCP servers for the project: one MCP server part each,
+   * "<project>: <plugin> <server>", created, updated or (for a server left out)
+   * removed by this call (#3245). Environment values become variable names; a
+   * server the catalog refuses is skipped with a warning in the plugin's log.
    * Requires the elevated 'agent-config.mcp' permission.
-   * Saved in the project's default MCP servers.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   injectMcpServers(servers: Record<string, unknown>, opts?: AgentConfigTargetOptions): Promise<void>;
-  /** Remove MCP server configurations injected by this plugin. */
+  /** Remove this plugin's MCP server parts for the project. Agents that use one keep their own copy. */
   removeMcpServers(opts?: AgentConfigTargetOptions): Promise<void>;
   /** Get the MCP server configurations currently injected by this plugin. */
   getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>>;

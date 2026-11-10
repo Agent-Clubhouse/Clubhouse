@@ -66,6 +66,9 @@ export const mockAgentSettings = {
     const next = withPluginParts(await mockAgentSettings.readProjectAgentDefaults(projectPath), pluginId, parts);
     if (next) await mockAgentSettings.writtenDefaults(projectPath, next);
   }),
+  // Main makes or updates the plugin's Managed Agent parts (#3245).
+  setPluginManagedParts: vi.fn().mockResolvedValue({ notes: [] }),
+  readPluginManagedParts: vi.fn().mockResolvedValue({ instructions: null, mcpServers: [] }),
   writeSourceSkillContent: vi.fn().mockResolvedValue(undefined),
   deleteSourceSkill: vi.fn().mockResolvedValue(undefined),
   writeSourceAgentTemplateContent: vi.fn().mockResolvedValue(undefined),
