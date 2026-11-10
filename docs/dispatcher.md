@@ -62,7 +62,7 @@ What passes between the Dispatcher and an agent (progress, acknowledgements, an 
 Who does a piece of work, from the instructions and the `delegating-work` skill:
 
 - **Project work** goes to the agent that owns the project, by card and project. Being awake, free, an orchestrator or recently busy doesn't make an agent the owner.
-- **Machine setup** that no project owns yet is the Dispatcher's, done with its own command line at its own access level, and limited to: read-only checks (a tool and its version, a folder, a git remote), making a folder the user named, and cloning a repository the user gave into a new or empty folder, then adding it as a project when it has a tool for that. Never: project code, installs, sudo, global settings or credentials, deleting, running anything from a cloned repository, submodules unless asked, or cloning into Clubhouse's folders, a worktree or a non-empty folder.
+- **Machine setup** that no project owns yet is the Dispatcher's, done with its own command line at its own access level, and limited to: read-only checks (a tool and its version, a folder, a git remote), making a folder the user named, and cloning a repository the user gave into a new or empty folder, then adding it as a project with `add_project`. Never: project code, installs, sudo, global settings or credentials, deleting, running anything from a cloned repository, submodules unless asked, or cloning into Clubhouse's folders, a worktree or a non-empty folder.
 - **Unsupported**: anything with no owner and no tool. The Dispatcher checks each part before it splits or promises the work, and says so with `needs_user` before starting.
 
 ## Requests (#3237, #3204, #3220)

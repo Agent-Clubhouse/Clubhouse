@@ -9,10 +9,11 @@ import * as projectStore from '../project-store';
 import { listDurable } from '../agent-config';
 import { resolveOrchestrationPolicies } from '../orchestration-policy';
 import * as agentSystem from '../agent-system';
-import { effectiveAgentGrants } from '../agent-grants-service';
+import { effectiveAgentGrants, readAgentGrants } from '../agent-grants-service';
+import { dispatcherToolActions } from '../clubhouse-mcp/tool-registry';
 import { appLog } from '../log-service';
 import { isDisposedAgent } from '../../../shared/agent-helpers';
-import { dispatcherCapabilities, type CapabilityGroup, type DispatcherTeaching, type TeachingAgent } from '../../../shared/dispatcher-teaching';
+import { dispatcherCapabilities, turnedOffCapabilities, type CapabilityGroup, type DispatcherTeaching, type TeachingAgent } from '../../../shared/dispatcher-teaching';
 import { getDispatcherPath } from './dispatcher-paths';
 import { getDispatcherAgentId } from './dispatcher-service';
 import { isDispatcherEnabled } from './dispatcher-settings';
@@ -61,11 +62,21 @@ export async function readTeachingAgents(): Promise<TeachingAgent[]> {
   return out;
 }
 
-/** What the Dispatcher can do now, from the grants it holds (its defaults and every change to them). */
+/**
+ * What the Dispatcher can do now: the grants it holds (its defaults and every
+ * change to them) that a registered tool lets it use (#3238). A grant with no
+ * tool isn't offered, whatever its mode. Last, what has a tool but is turned
+ * off, so it can tell that apart from what Clubhouse can't do at all.
+ */
 export async function readDispatcherAbilities(): Promise<CapabilityGroup[]> {
   const agentId = getDispatcherAgentId();
   if (!agentId) return dispatcherCapabilities([]);
-  return dispatcherCapabilities(await effectiveAgentGrants(getDispatcherPath(), agentId));
+  const callable = dispatcherToolActions();
+  const grants = (await effectiveAgentGrants(getDispatcherPath(), agentId)).filter((g) => callable.has(g.action));
+  const groups = dispatcherCapabilities(grants);
+  const { rows } = await readAgentGrants(getDispatcherPath(), agentId);
+  const off = turnedOffCapabilities(rows.filter((r) => callable.has(r.action)), grants);
+  return off ? [...groups, off] : groups;
 }
 
 /** What the Dispatcher's chat shows before its first message. */

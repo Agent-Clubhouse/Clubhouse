@@ -91,7 +91,8 @@ const GITIGNORE_BLOCK = `# Clubhouse agent manager
 .clubhouse/agents.json
 .clubhouse/settings.local.json`;
 
-export async function ensureGitignore(projectPath: string): Promise<void> {
+/** Add Clubhouse's lines to the project's .gitignore. True when the file was written. */
+export async function ensureGitignore(projectPath: string): Promise<boolean> {
   const gitignorePath = path.join(projectPath, '.gitignore');
 
   const requiredLines = [
@@ -107,7 +108,7 @@ export async function ensureGitignore(projectPath: string): Promise<void> {
 
     // Check which lines are missing
     const missing = requiredLines.filter((line) => !content.includes(line));
-    if (missing.length === 0) return;
+    if (missing.length === 0) return false;
 
     // Append only the missing lines under a header (if header isn't there yet)
     const parts: string[] = [];
@@ -120,6 +121,7 @@ export async function ensureGitignore(projectPath: string): Promise<void> {
   } else {
     await fsp.writeFile(gitignorePath, `${GITIGNORE_BLOCK}\n`);
   }
+  return true;
 }
 
 // --- Write-back cache with dirty tracking and debounced flush ---

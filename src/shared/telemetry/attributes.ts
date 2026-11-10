@@ -557,6 +557,8 @@ export const ATTR = {
     'update_my_card',
     // appearance (#2597)
     'update_project', 'update_agent',
+    // adding a project folder (#3239)
+    'add_project',
     // settings reads (#2653)
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
     'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',

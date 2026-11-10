@@ -5,7 +5,8 @@
 
 import { withSettingsSurface } from '../settings-audit';
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
-import type { ToolGrant } from './tool-grants';
+import { isToolGrantPassThrough, toolGrantDeclarations, type ToolGrant } from './tool-grants';
+import type { GrantAction } from '../../../shared/agent-grants';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
@@ -391,6 +392,26 @@ export function listToolGrants(): RegisteredToolGrant[] {
     }
   }
   for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant, ...(tool.group && { group: tool.group }) });
+  return out;
+}
+
+/** The groups whose tools the Dispatcher can call, through its work agent or its chat, as toolGroupGates opens them. */
+const DISPATCHER_TOOL_GROUPS: ReadonlySet<ToolGroup> = new Set(['dispatcher', 'dispatcherChat', 'actions']);
+
+/**
+ * The grant actions a registered tool lets the running Dispatcher use (#3238):
+ * global tools in no group or in one of its groups, and the tools on its wires
+ * to agents. A grant no tool uses does nothing, so it isn't offered as an ability.
+ */
+export function dispatcherToolActions(): Set<GrantAction> {
+  const out = new Set<GrantAction>();
+  const add = (grant: ToolGrant | undefined, group: ToolGroups | undefined) => {
+    if (!grant || isToolGrantPassThrough(grant)) return;
+    if (group && !groupList(group).some((g) => DISPATCHER_TOOL_GROUPS.has(g))) return;
+    for (const d of toolGrantDeclarations(grant)) for (const action of d.actions) out.add(action);
+  };
+  for (const t of toolTemplates.get('agent') ?? []) add(t.grant, t.group);
+  for (const [, tool] of globalTools) add(tool.grant, tool.group);
   return out;
 }
 

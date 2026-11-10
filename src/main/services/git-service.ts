@@ -186,6 +186,37 @@ export async function getDefaultBranch(dirPath: string): Promise<string | null> 
 }
 
 /**
+ * The repository's origin URL, with any user name or token taken out, or null
+ * when there is no origin (or no repository).
+ */
+export async function getOriginUrl(dirPath: string): Promise<string | null> {
+  const url = await tryGitExec(['config', '--get', 'remote.origin.url'], dirPath, 'other');
+  return url ? stripUrlCredentials(url) : null;
+}
+
+/**
+ * A remote URL without the secrets some carry: a URL's password, query and
+ * fragment (where tokens go), and its user name except over ssh, where the
+ * user (usually `git`) is no secret. An scp-style `user@host:path` or a local
+ * path has none of these and is kept as it is.
+ */
+export function stripUrlCredentials(url: string): string {
+  const trimmed = url.trim();
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(trimmed);
+  if (!scheme) return trimmed;
+  const keepsUser = /(^|\+)ssh(\+|$)/i.test(scheme[1]);
+  // Everything before the last @ of the authority is user info, even with an unencoded @ in a token.
+  const rest = trimmed.slice(scheme[0].length);
+  const authorityEnd = rest.search(/[/?#]/);
+  const authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd);
+  const pathPart = (authorityEnd === -1 ? '' : rest.slice(authorityEnd)).replace(/[?#].*$/s, '');
+  const at = authority.lastIndexOf('@');
+  const host = at === -1 ? authority : authority.slice(at + 1);
+  const user = at === -1 ? '' : authority.slice(0, at).split(':')[0];
+  return `${scheme[0]}${keepsUser && user ? `${user}@` : ''}${host}${pathPart}`;
+}
+
+/**
  * Polled every few seconds per git widget. Never a span (spec §4.8): a
  * duration histogram bucketed by changed-file count, a poll counter, and a
  * Detailed-level exemplar span only when one poll takes over 2 s.

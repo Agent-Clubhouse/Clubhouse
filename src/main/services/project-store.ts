@@ -11,6 +11,7 @@ import { persist } from '../telemetry/persist';
 import { publishAppEvent } from './app-event-bus';
 import { getBaseDirPath } from './base-dir';
 import { auditChanges, type AuditKeyFormat } from './settings-audit';
+import { moveFinishedQuickAgents } from './finished-quick-agents-store';
 
 const CURRENT_VERSION = 1;
 
@@ -117,12 +118,12 @@ async function restorePreservedSettings(project: Project): Promise<PreservedSett
  * Re-key project overrides in external settings files (badge-settings,
  * sound-settings) from the old project ID to the new one.
  */
-async function migrateProjectOverrides(oldId: string, newId: string): Promise<void> {
+async function migrateProjectOverrides(oldId: string, newId: string, opts: { keepExisting?: boolean } = {}): Promise<void> {
   try {
     // Badge settings — await the write so the next read sees the migrated state
     const badge = getBadgeSettings();
     if (badge.projectOverrides?.[oldId]) {
-      badge.projectOverrides[newId] = badge.projectOverrides[oldId];
+      if (!opts.keepExisting || !badge.projectOverrides[newId]) badge.projectOverrides[newId] = badge.projectOverrides[oldId];
       delete badge.projectOverrides[oldId];
       await saveBadgeSettings(badge);
     }
@@ -134,7 +135,7 @@ async function migrateProjectOverrides(oldId: string, newId: string): Promise<vo
     // Sound settings — await the write so the next read sees the migrated state
     const sound = getSoundSettings();
     if (sound.projectOverrides?.[oldId]) {
-      sound.projectOverrides[newId] = sound.projectOverrides[oldId];
+      if (!opts.keepExisting || !sound.projectOverrides[newId]) sound.projectOverrides[newId] = sound.projectOverrides[oldId];
       delete sound.projectOverrides[oldId];
       await saveSoundSettings(sound);
     }
@@ -184,6 +185,108 @@ interface MigrateResult {
   store: ProjectStoreV1;
   /** Number of malformed entries dropped from the projects array. */
   dropped: number;
+  /** Records for a folder already in the list, folded into the first one (#3236). */
+  merged: MergedDuplicate[];
+}
+
+interface MergedDuplicate {
+  keptId: string;
+  mergedId: string;
+  path: string;
+}
+
+/** Whether this platform's filesystems usually compare names without case (APFS, HFS+, NTFS). Only a guess for one volume. */
+const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
+
+/**
+ * How the registry compares two stored paths without touching the disk: the
+ * same absolute path, exactly. Case is never folded here: on a case-sensitive
+ * volume /x/Foo and /x/foo are two folders (#3236).
+ */
+export function projectPathKey(dirPath: string): string {
+  return path.resolve(dirPath);
+}
+
+/** The folder's real path, links resolved, or the plain absolute path when it can't be read. */
+export async function canonicalProjectPath(dirPath: string): Promise<string> {
+  try {
+    return await fsp.realpath(dirPath);
+  } catch {
+    // telemetry-exempt: a missing or unreadable folder is compared by its plain path
+    return path.resolve(dirPath);
+  }
+}
+
+/** The folder's device and inode, or null when it can't be read (or the filesystem gives no inode). */
+async function folderIdentity(dirPath: string): Promise<{ dev: bigint; ino: bigint } | null> {
+  try {
+    const s = await fsp.stat(dirPath, { bigint: true });
+    return s.ino === 0n ? null : { dev: s.dev, ino: s.ino };
+  } catch {
+    // telemetry-exempt: an unreadable folder is compared by path
+    return null;
+  }
+}
+
+/**
+ * The registered project for a folder (#3236): the same path, the same real
+ * path (links resolved), or the same folder on disk (device and inode), which
+ * covers another case on a volume that ignores case. Only when neither folder
+ * can be read does it fall back to comparing without case, on platforms
+ * whose volumes usually ignore it.
+ */
+async function findByCanonicalPath(projects: readonly Project[], dirPath: string): Promise<Project | undefined> {
+  const plain = projectPathKey(dirPath);
+  const exact = projects.find((p) => projectPathKey(p.path) === plain);
+  if (exact) return exact;
+  const real = await canonicalProjectPath(dirPath);
+  const identity = await folderIdentity(dirPath);
+  for (const p of projects) {
+    if (await canonicalProjectPath(p.path) === real) return p;
+    const other = await folderIdentity(p.path);
+    if (identity && other) {
+      if (identity.dev === other.dev && identity.ino === other.ino) return p;
+    } else if (!identity && !other && CASE_INSENSITIVE_FS && projectPathKey(p.path).toLowerCase() === plain.toLowerCase()) {
+      // Only when neither can be read: where case is ignored, a folder readable under one
+      // spelling is readable under every other, so one readable and one not are two folders.
+      return p;
+    }
+  }
+  return undefined;
+}
+
+/** Fields a merged duplicate can fill in on the record that's kept, when the kept one has none. */
+const MERGED_FIELDS = ['displayName', 'color', 'orchestrator'] as const;
+
+/**
+ * Fold records for the same folder into the first one (#3236). Agents live in
+ * the folder, so both records already share them; the kept record takes any
+ * name, color, orchestrator or picture only the other one had.
+ */
+function mergeDuplicates(projects: Project[]): { projects: Project[]; merged: MergedDuplicate[] } {
+  const byKey = new Map<string, number>();
+  const out: Project[] = [];
+  const merged: MergedDuplicate[] = [];
+  for (const p of projects) {
+    const key = projectPathKey(p.path);
+    const at = byKey.get(key);
+    if (at === undefined) {
+      byKey.set(key, out.length);
+      out.push(p);
+      continue;
+    }
+    const kept = { ...out[at] };
+    for (const field of MERGED_FIELDS) {
+      if (!kept[field] && p[field]) (kept as Record<string, unknown>)[field] = p[field];
+    }
+    if (!kept.icon && !kept.emoji) {
+      if (p.icon) kept.icon = p.icon;
+      else if (p.emoji) kept.emoji = p.emoji;
+    }
+    out[at] = kept;
+    merged.push({ keptId: kept.id, mergedId: p.id, path: p.path });
+  }
+  return { projects: out, merged };
 }
 
 /**
@@ -206,13 +309,14 @@ function migrate(raw: unknown): MigrateResult {
     throw new InvalidStoreError('Unrecognised project store shape');
   }
 
-  const projects = entries.filter(isValidProject);
-  const dropped = entries.length - projects.length;
-  if (dropped > 0 && projects.length === 0) {
+  const valid = entries.filter(isValidProject);
+  const dropped = entries.length - valid.length;
+  if (dropped > 0 && valid.length === 0) {
     // Every entry is malformed — don't let that become a "successful" empty registry.
     throw new InvalidStoreError(`All ${dropped} project entries are malformed`);
   }
-  return { store: { version: CURRENT_VERSION, projects }, dropped };
+  const { projects, merged } = mergeDuplicates(valid);
+  return { store: { version: CURRENT_VERSION, projects }, dropped, merged };
 }
 
 /**
@@ -264,6 +368,28 @@ async function registryMutation<T>(run: () => Promise<T>): Promise<T> {
 let chatTipProjectReadUncertain = false;
 export function isChatTipProjectReadUncertain(): boolean { return chatTipProjectReadUncertain; }
 
+/**
+ * What else follows a merged duplicate to the record that's kept (#3236): its
+ * badge and sound overrides and its finished quick agents. Logged, so a merge
+ * is never silent. Writing the merged list is the caller's.
+ */
+async function settleMergedDuplicates(merged: readonly MergedDuplicate[], file: string): Promise<void> {
+  appLog('core:project-store', 'warn', `Merged ${merged.length} duplicate project record(s) for a folder already registered`, {
+    meta: { file, merged: merged.map((m) => ({ keptId: m.keptId, mergedId: m.mergedId })) },
+  });
+  for (const m of merged) {
+    await migrateProjectOverrides(m.mergedId, m.keptId, { keepExisting: true });
+    try {
+      moveFinishedQuickAgents(m.mergedId, m.keptId);
+    } catch (err) {
+      // telemetry-exempt: logged; the merge stands, and the quick agents stay listed under the old id
+      appLog('core:project-store', 'warn', 'Could not move finished quick agents to the kept project', {
+        meta: { keptId: m.keptId, mergedId: m.mergedId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+}
+
 async function readStore(): Promise<ProjectStoreV1> {
   const storePath = await getStorePath();
   const backupPath = await getBackupPath();
@@ -275,7 +401,7 @@ async function readStore(): Promise<ProjectStoreV1> {
   if (await pathExists(storePath)) {
   try {
       const raw = JSON.parse(await fsp.readFile(storePath, 'utf-8'));
-      const { store: loaded, dropped } = migrate(raw);
+      const { store: loaded, dropped, merged } = migrate(raw);
       store = loaded;
       uncertain = dropped > 0;
       if (dropped > 0) {
@@ -284,8 +410,18 @@ async function readStore(): Promise<ProjectStoreV1> {
         });
       }
       logLoadedIfChanged(storePath, store);
-      // Re-write if we migrated from an older format
-      if (raw.version == null || raw.version !== CURRENT_VERSION) {
+      if (merged.length > 0) {
+        await settleMergedDuplicates(merged, storePath);
+        try {
+          await writeStore(store);
+        } catch (writeErr) {
+          // telemetry-exempt: logged; the merged list is still served, and the next read merges again
+          appLog('core:project-store', 'warn', 'Could not write the merged project list', {
+            meta: { storePath, error: writeErr instanceof Error ? writeErr.message : String(writeErr) },
+          });
+        }
+      } else if (raw.version == null || raw.version !== CURRENT_VERSION) {
+        // Re-write if we migrated from an older format
         appLog('core:project-store', 'info', 'Migrated project store from older format', {
           meta: { fromVersion: (raw as Record<string, unknown>).version, toVersion: CURRENT_VERSION },
         });
@@ -329,6 +465,7 @@ async function readStore(): Promise<ProjectStoreV1> {
       const recovered = migrate(raw);
       store = recovered.store;
       uncertain = recovered.dropped > 0;
+      if (recovered.merged.length > 0) await settleMergedDuplicates(recovered.merged, backupPath);
       if (store.projects.length > 0) {
         persist.recovery('projects', 'restored_from_backup');
         appLog('core:project-store', 'warn', `Recovered ${store.projects.length} project(s) from backup`, {
@@ -450,6 +587,8 @@ async function updateProjects(fn: (projects: Project[]) => Project[] | Promise<P
   const run = async (): Promise<Project[]> => {
     const projects = await readProjects();
     const updated = await fn(projects);
+    // The same list back means nothing changed (an add of a folder already registered).
+    if (updated === projects) return updated;
     await writeProjects(updated);
     notifyProjectsChanged();
     return updated;
@@ -509,7 +648,52 @@ export async function peekProjectsChecked(): Promise<{ projects: Project[]; read
   return { projects: [], readable: !present };
 }
 
+/** What {@link addProject} did: the project, and whether this call created it. */
+export interface AddProjectResult {
+  project: Project;
+  /** False when the folder was already registered and its project is returned. */
+  created: boolean;
+}
+
+/** The registered project for a folder, by canonical path (#3236), or undefined. */
+export async function findByPath(dirPath: string): Promise<Project | undefined> {
+  return findByCanonicalPath(await readProjects(), dirPath);
+}
+
+/**
+ * Register a folder as a project, or return the project it already is (#3236).
+ * The check and the write share the registry's queue, so two adds of one
+ * folder at once make one project.
+ */
+export async function addProject(dirPath: string): Promise<AddProjectResult> {
+  let result: AddProjectResult | undefined;
+  await updateProjects(async (projects) => {
+    const existing = await findByCanonicalPath(projects, dirPath);
+    if (existing) {
+      result = { project: existing, created: false };
+      return projects;
+    }
+    const project = await newProject(dirPath);
+    result = { project, created: true };
+    return [...projects, project];
+  });
+  const { project, created } = result!;
+  if (created) {
+    publishAppEvent({ type: 'project.added', projectId: project.id, projectPath: project.path });
+  } else {
+    appLog('core:project-store', 'info', 'Folder is already a project; returning it', {
+      meta: { projectId: project.id },
+    });
+  }
+  return result!;
+}
+
+/** Register a folder as a project, or return the project it already is. */
 export async function add(dirPath: string): Promise<Project> {
+  return (await addProject(dirPath)).project;
+}
+
+async function newProject(dirPath: string): Promise<Project> {
   const name = path.basename(dirPath);
   const id = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const project: Project = { id, name, path: dirPath };
@@ -530,9 +714,6 @@ export async function add(dirPath: string): Promise<Project> {
   if (restoredIcon) {
     project.icon = restoredIcon;
   }
-
-  await updateProjects((projects) => [...projects, project]);
-  publishAppEvent({ type: 'project.added', projectId: project.id, projectPath: project.path });
   return project;
 }
 

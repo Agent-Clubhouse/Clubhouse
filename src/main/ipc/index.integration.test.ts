@@ -188,6 +188,7 @@ vi.mock('../services/project-store', () => ({
     { id: 'p2', name: 'ProjectB', path: '/projects/b' },
   ]),
   add: vi.fn((dirPath: string) => ({ id: 'p3', name: 'New', path: dirPath })),
+  addProject: vi.fn((dirPath: string) => ({ project: { id: 'p3', name: 'New', path: dirPath }, created: true })),
   remove: vi.fn(),
   update: vi.fn(),
   reorder: vi.fn(),
@@ -461,7 +462,7 @@ describe('registerAllHandlers — integration', () => {
   it('PROJECT.ADD handler adds and returns the new project', async () => {
     const handler = handleHandlers.get(IPC.PROJECT.ADD)!;
     const result = await handler({}, '/home/user/my-project');
-    expect(projectStore.add).toHaveBeenCalledWith('/home/user/my-project');
+    expect(projectStore.addProject).toHaveBeenCalledWith('/home/user/my-project');
     expect(result).toEqual({ id: 'p3', name: 'New', path: '/home/user/my-project' });
   });
 

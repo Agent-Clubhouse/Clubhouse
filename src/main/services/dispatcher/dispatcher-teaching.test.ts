@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   cards: new Map<string, { state: 'ready' | 'asking' | 'none'; card: { purpose?: string } | null }>(),
   enabled: true,
   projects: [] as Array<{ path: string; name: string }>,
+  /** The grant actions a registered tool lets the Dispatcher use; null for every action. */
+  callable: null as Set<string> | null,
 }));
 
 vi.mock('../agent-config', () => ({
@@ -39,6 +41,10 @@ vi.mock('../grant-requests', () => ({ dropCallApprovalsFor: () => {} }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../project-store', () => ({ list: vi.fn(async () => mocks.projects) }));
 vi.mock('../agent-system', () => ({ isAgentRunning: (id: string) => mocks.running.has(id) }));
+vi.mock('../clubhouse-mcp/tool-registry', async () => {
+  const { GRANT_ACTIONS } = await import('../../../shared/agent-grants');
+  return { dispatcherToolActions: () => mocks.callable ?? new Set(GRANT_ACTIONS) };
+});
 vi.mock('./dispatcher-paths', () => ({ getDispatcherPath: () => '/home/.clubhouse/dispatcher' }));
 vi.mock('./dispatcher-settings', () => ({ isDispatcherEnabled: () => mocks.enabled }));
 vi.mock('./dispatcher-service', () => ({
@@ -68,6 +74,7 @@ beforeEach(() => {
   mocks.cards.clear();
   mocks.enabled = true;
   mocks.projects = [];
+  mocks.callable = null;
 });
 
 describe('readDispatcherAbilities follows the Dispatcher\'s live grants', () => {
@@ -91,10 +98,37 @@ describe('readDispatcherAbilities follows the Dispatcher\'s live grants', () => 
 
     const after = await readDispatcherAbilities();
     expect(capabilitiesText(after)).not.toBe(capabilitiesText(before));
-    expect(after.flatMap((g) => g.lines).some((l) => l.actions.includes('agent.wake'))).toBe(false);
+    const on = after.filter((g) => g.id !== 'off');
+    expect(on.flatMap((g) => g.lines).some((l) => l.actions.includes('agent.wake'))).toBe(false);
+    // Turned off, it's listed last as off, so the Dispatcher can say a permission would bring it back (#3238).
+    expect(after[after.length - 1]).toMatchObject({ id: 'off', title: 'Turned off in your settings' });
+    expect(line(after, 'off', 'Wake')).toBe('Wake agents connected to me');
     expect(line(after, 'projects', 'Change app settings')).toBe('Change app settings');
     // Allowed now, it joins the other things it does to any agent, and no longer asks.
     expect(line(after, 'agents', 'delete any agent')).toBe('Restart, rename, change the setup and permissions of or delete any agent');
+  });
+});
+
+describe('readDispatcherAbilities offers only what a tool can do (#3238)', () => {
+  it('leaves out a grant no registered tool uses, whatever its mode', async () => {
+    mocks.callable = new Set(['agent.read', 'agent.message', 'project.read']);
+    await setAgentGrant(DISPATCHER, 'disp', { action: 'settings.app.write', target: { kind: 'app' }, mode: 'allow' });
+    const groups = await readDispatcherAbilities();
+    const actions = groups.flatMap((g) => g.lines).flatMap((l) => l.actions);
+    expect(new Set(actions)).toEqual(new Set(['agent.read', 'agent.message', 'project.read']));
+    expect(capabilitiesText(groups)).not.toMatch(/add or open projects|app settings/i);
+  });
+
+  it('offers adding projects, after asking, when add_project is registered', async () => {
+    const groups = await readDispatcherAbilities();
+    expect(line(groups, 'projects', 'projects')).toMatch(/^Add or open projects.*after asking you$/);
+  });
+
+  it('lists nothing as turned off that no tool could do', async () => {
+    mocks.callable = new Set(['agent.read']);
+    await setAgentGrant(DISPATCHER, 'disp', { action: 'agent.wake', target: { kind: 'connected' }, mode: 'off' });
+    const groups = await readDispatcherAbilities();
+    expect(groups.find((g) => g.id === 'off')).toBeUndefined();
   });
 });
 
