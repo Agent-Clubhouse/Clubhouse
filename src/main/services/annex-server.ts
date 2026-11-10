@@ -1,4 +1,5 @@
 import { hasSessionCaptureFailure } from './session-capture-barrier';
+import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { agentAccess, getPermissionMode, quickAgentAccess } from './free-agent-settings';
 import { waitForAgentStopped } from './agent-system';
@@ -3093,7 +3094,9 @@ async function handleDurableCreationRoute(ctx: AnnexRouteContext, match: RegExpM
         body.mcpIds as string[] | undefined,
       );
       broadcastSnapshotRefresh();
-      sendJson(ctx.res, 201, config);
+      // Another computer's create never copies this project's legacy agent defaults (#3245); say when it has some.
+      const legacy = await legacyDefaultsNotCopied(project.path);
+      sendJson(ctx.res, 201, legacy ? { ...config, legacyDefaults: legacy } : config);
     } catch (err) {
       sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'create_failed' });
     }

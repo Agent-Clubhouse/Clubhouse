@@ -126,6 +126,13 @@ describe('agent.create', () => {
     expect(params.model).toBeUndefined();
     expect(result).toEqual({ agentId: 'durable_new', projectId: 'p1', name: 'brave-otter', branch: 'brave-otter/standby', worktreePath: '/work/app/.clubhouse/agents/brave-otter', state: 'creating' });
   });
+  it('copies no legacy agent defaults, and says when the project has some (#3245)', async () => {
+    const { readProjectAgentDefaults } = await import('./agent-settings-service');
+    vi.mocked(readProjectAgentDefaults).mockResolvedValueOnce({ instructions: 'Use pnpm.' });
+    const result = await createMobileAgent(project, create(), allow);
+    expect(result).toMatchObject({ agentId: 'durable_new', legacyDefaults: 'not_copied' });
+    expect(vi.mocked(startDurableCreation).mock.calls[0][2]).toBeUndefined();
+  });
   it('passes the model, MCP servers and branch through, with no persona and nothing injected', async () => {
     await createMobileAgent(project, create({ model: 'opus', mcpIds: ['ado'], branchName: 'feat/otter', branchFrom: 'main' }), allow);
     const call = vi.mocked(startDurableCreation).mock.calls[0];

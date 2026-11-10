@@ -9,6 +9,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
+import { effectiveOrchestratorOf } from '../agents/effective-orchestrator';
 import { ManagedGitExcludesSection } from '../managed/ManagedGitExcludesSection';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import type { SourceControlProvider } from '../../../shared/types';
@@ -486,7 +487,8 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   if (!project) return null;
 
   const projectPath = project.path;
-  const currentOrchestrator = project.orchestrator || 'claude-code';
+  // The same rule main and every CLI label use (#2975).
+  const currentOrchestrator = effectiveOrchestratorOf({}, project, allOrchestrators);
 
   // Headless mode
   const hasHeadlessOverride = projectPath in headlessOverrides;
@@ -508,7 +510,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <SettingsSection title="Project defaults">
+      <SettingsSection title="Project environment">
         {enabledOrchestrators.length > 1 && (
           <SettingsField label="Agents run on" help="The CLI new agents in this project run on." htmlFor={`${idBase}-orch`}>
             <select

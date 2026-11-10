@@ -55,10 +55,12 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
     : isAgentRunning(agentId) ? 'running' : activeProvider ? 'starting'
       : config.creation?.state === 'creating' ? 'creating' : 'sleeping';
   const mode = resolveRuntimeMode(providerId, config.runtimeMode);
+  // The project's legacy permission rules can't be carried to another CLI, but they never reach a managed agent (#3243, #3245).
+  const legacyRules = !config.managed && ((defaults?.permissions?.deny?.length ?? 0) > 0 || (defaults?.permissions?.allow?.length ?? 0) > 0);
   const blocked = state !== 'sleeping' ? `agent_${state}`
     : hasSessionCaptureFailure(agentId) ? 'session_capture_failed'
     : !availability.available ? 'orchestrator_unavailable'
-      : ((providerId !== current.id && ((defaults?.permissions?.deny?.length ?? 0) > 0 || (defaults?.permissions?.allow?.length ?? 0) > 0)) || !provider.getCapabilities().permissions || !accessLevelsFor(providerId, mode.mode === 'chat' ? 'chat' : 'terminal').includes(agentAccess(config, projectPath))) ? 'incompatible_permissions'
+      : ((providerId !== current.id && legacyRules) || !provider.getCapabilities().permissions || !accessLevelsFor(providerId, mode.mode === 'chat' ? 'chat' : 'terminal').includes(agentAccess(config, projectPath))) ? 'incompatible_permissions'
         : mode.mode === 'chat' && (!isChatEnabled() || !resolveChatDriver(providerId, mode.driver)) ? 'incompatible_runtime'
           : instructions !== 'equivalent' ? 'instructions_not_equivalent' : null;
   await actor.assertAuthorized();

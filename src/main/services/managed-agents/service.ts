@@ -15,7 +15,7 @@ import { canonicalHash } from '../asset-catalog/planner';
 import { AssetCatalogError, installBuiltinAsset, removeBuiltinAsset, type AssetCatalogStore } from '../asset-catalog/store';
 import { auditChanged, auditChanges, currentSettingsOrigin, withSettingsSurface } from '../settings-audit';
 import { appLog } from '../log-service';
-import type { AssetPayload, BlockAssetPayload, CatalogEntry, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
+import type { AssetPayload, AssetSource, BlockAssetPayload, CatalogEntry, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { isEffortValue } from '../../../shared/agent-helpers';
 import { normalizeIdleSleep } from '../../../shared/idle-sleep';
@@ -615,7 +615,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return { ...(await summarize(entry)), content: await contentOf(entry) };
     },
 
-    async createPart(input: { name: string; description?: string; content: ManagedPartContent; actor?: string }): Promise<ManagedPartSummary> {
+    async createPart(input: { name: string; description?: string; content: ManagedPartContent; actor?: string; source?: Extract<AssetSource, { kind: 'import' }> }): Promise<ManagedPartSummary> {
       const kind = input.content.kind;
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
@@ -626,7 +626,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       }
       let entry: CatalogEntry;
       try {
-        entry = await catalog.createAsset({ kind, name, payload: contentToPayload(input.content) });
+        entry = await catalog.createAsset({ kind, name, payload: contentToPayload(input.content), ...(input.source && { source: input.source }) });
       } catch (err) {
         // telemetry-exempt: rethrown as a ManagedError with a code the caller shows.
         mapCatalogError(err);

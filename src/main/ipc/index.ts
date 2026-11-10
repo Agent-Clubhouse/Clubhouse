@@ -7,6 +7,7 @@ import { registerGitHandlers } from './git-handlers';
 import { registerAgentHandlers } from './agent-handlers';
 import { registerChatHandlers } from './chat-handlers';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';
+import { registerLegacyDefaultsHandlers } from './legacy-defaults-handlers';
 import { registerSkillBundleHandlers } from './skill-bundle-handlers';
 import { registerManagedAgentsHandlers } from './managed-agents-handlers';
 import { registerAppHandlers } from './app-handlers';
@@ -71,6 +72,7 @@ export function registerAllHandlers(): void {
   registerAgentHandlers();
   registerChatHandlers();
   registerAgentSettingsHandlers();
+  registerLegacyDefaultsHandlers();
   registerSkillBundleHandlers();
   registerManagedAgentsHandlers();
   registerAppHandlers();

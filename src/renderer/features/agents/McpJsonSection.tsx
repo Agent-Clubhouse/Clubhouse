@@ -159,7 +159,7 @@ export function McpJsonSection({ worktreePath, projectPath, agentId, disabled, r
 
       <p className="text-xs text-ctp-overlay1 mb-2">
         Saved entries configure the next start; they do not prove delivery or connection.
-        A missing local file inherits project defaults. Save an empty mcpServers object to use no local servers.
+        A missing local file gets the project's legacy MCP servers (shown read-only in the project's settings). Save an empty mcpServers object to use no local servers.
         The live Clubhouse bridge follows its separate MCP setting.
       </p>
       <SettingsMonacoEditor

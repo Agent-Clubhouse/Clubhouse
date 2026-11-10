@@ -389,12 +389,12 @@ function AgentListInner() {
 
   const sendAgentReorder = useAnnexClientStore((s) => s.sendAgentReorder);
 
-  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, access?: AccessLevel, mcpIds?: string[]) => {
+  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, access?: AccessLevel, mcpIds?: string[], copyLegacyDefaults?: boolean) => {
     if (!activeProject) return;
     setShowDialog(false);
     await createDurableAgent(
       { id: activeProject.id, path: activeProject.path },
-      { name, color, model, useWorktree, orchestrator, access, mcpIds },
+      { name, color, model, useWorktree, orchestrator, access, mcpIds, copyLegacyDefaults },
     );
   };
 

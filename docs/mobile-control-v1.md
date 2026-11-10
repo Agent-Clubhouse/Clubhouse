@@ -706,7 +706,7 @@ Create (#2451) and settings (#2452) follow the desktop New agent page and the De
 
 **Helpers** are durable agents another agent started. They carry `parentAgentId`, the id of that agent, in the snapshot's `agents[projectId][]`, `GET /api/v1/projects/:id/agents` and the [settings route](#settings). Top-level agents leave it out, so its presence is what marks a helper. The parent can be in another project (#2511), so it may not be in the same `agents[projectId]` list. A helper handed off as a normal agent loses the field. Additive: older desktops never send it, and older phones ignore it.
 
-**Free Agent Mode** (skip all permission prompts) is settable from a phone when capabilities have `permissions.freeAgentMode` ([Permissions from a phone](#permissions-from-a-phone)). As on the desktop, it needs an orchestrator with `permissions:true`: turning it on for one without is 409 `free_agent_mode_unavailable`; turning it off is always allowed. Omitted on create, the agent follows the project's agent defaults, as on the desktop. Older desktops refuse the field with 403 `free_agent_mode_not_allowed`.
+**Free Agent Mode** (skip all permission prompts) is settable from a phone when capabilities have `permissions.freeAgentMode` ([Permissions from a phone](#permissions-from-a-phone)). As on the desktop, it needs an orchestrator with `permissions:true`: turning it on for one without is 409 `free_agent_mode_unavailable`; turning it off is always allowed. Omitted on create, the agent starts at the desktop's Default access (see Access below). Older desktops refuse the field with 403 `free_agent_mode_not_allowed`.
 
 **Access (#2761).** The desktop now stores one Access level per agent (Plan, Ask first, Auto-accept edits, Auto, Full access) instead of Free Agent Mode. The phone contract keeps `freeAgentMode` unchanged. It reads `true` when the agent is at Auto or Full access, and `false` at the other levels. Setting it from a phone moves the agent to the nearest level: `true` keeps a level that is already Auto or Full access, or takes the level the desktop's old free agent permission mode gives (Full access, or Auto when that mode was Auto); `false` keeps a level that is already below Auto, or becomes Ask first. Omitted on create, the agent starts at the desktop's Default access, which replaces the project's agent defaults for this. A phone that knows `access.version >= 1` reads and sets the level itself instead: see [Access](#access).
 
@@ -759,7 +759,7 @@ Validation matches the desktop. All of it runs before anything is created:
 - **color**: one of the `colors` ids (400 `invalid_color`).
 - **orchestrator**: one of `orchestrators` (409 `orchestrator_unavailable`). The default is `defaults.orchestrator`.
 - **model**: `"default"` or omitted means the provider default.
-- **freeAgentMode**: `true` skips all permission prompts. Needs an orchestrator with `permissions:true` (409 `free_agent_mode_unavailable`). Omitted follows the project defaults.
+- **freeAgentMode**: `true` skips all permission prompts. Needs an orchestrator with `permissions:true` (409 `free_agent_mode_unavailable`). Omitted starts at the desktop's Default access.
 - **access**: the level it starts at, one of the orchestrator's `accessLevels` (409 `access_unavailable`). Wins over `freeAgentMode`. See [Access](#access).
 - **persona**: a value is refused with 409 `managed_agent` and a sentence in the receipt's message, and nothing is created. Personas were retired (#2901), so `personas` is always `[]`; the key stays for phones that read it.
 - **mcpIds**: unique catalog ids (400 `unknown_mcp`). Omitted means the project defaults when the agent starts.
@@ -771,7 +771,9 @@ A conflict found at creation, such as a folder or branch already in use or a mis
 
 The receipt returns as soon as the agent's record exists. Its worktree is made in the background, as on the desktop:
 
-`result: {agentId, projectId, name, branch, worktreePath, state:"creating"|"sleeping"}`
+`result: {agentId, projectId, name, branch, worktreePath, state:"creating"|"sleeping", legacyDefaults?:"not_copied"}`
+
+A phone's create never copies the project's legacy agent defaults (instructions, permission rules, MCP servers and commands saved before Clubhouse-managed agents, #3245). `legacyDefaults: "not_copied"` is present when the project has some, so the phone can say that the user can copy them from the project's settings on the desktop. It is absent otherwise; older desktops never send it.
 
 The snapshot (via `snapshot:refresh`) shows the agent, then its creation ending as ready (sleeping) or failed. To give it a first prompt, wait for it to leave `creating`, then send `agent.start {agentId, message}`.
 

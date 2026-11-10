@@ -525,6 +525,17 @@ vi.stubGlobal('clubhouse', {
   hookServer: {
     onAgentsNeedRestart: () => noop,
   },
+  legacyDefaults: {
+    describe: async () => ({
+      hasValues: false, instructions: '', pluginInstructions: [], permissions: { allow: [], deny: [] },
+      mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [],
+    }),
+    previewImport: async () => ({ parts: [], notes: [] }),
+    importAsParts: async () => ({ created: [], existing: [], notes: [] }),
+    previewCopy: async () => ({ agentName: '', cli: '', changes: [], blocked: null }),
+    copyIntoAgent: async () => ({ agentName: '', cli: '', changes: [], blocked: null }),
+    previewCopyNew: async () => ({ agentName: '', cli: '', changes: [], blocked: null }),
+  },
   managed: {
     listParts: async () => ({ ok: true, value: [] }),
     getPart: async () => ({ ok: false, code: 'not_found' }),

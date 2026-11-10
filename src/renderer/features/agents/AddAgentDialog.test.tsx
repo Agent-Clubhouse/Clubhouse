@@ -147,6 +147,23 @@ describe('AddAgentDialog', () => {
     );
   });
 
+  it('offers the project\'s legacy defaults with a worktree, on by default, and passes the choice (#3245)', async () => {
+    window.clubhouse.legacyDefaults.describe = vi.fn().mockResolvedValue({
+      hasValues: true, instructions: 'x', pluginInstructions: [], permissions: { allow: [], deny: [] },
+      mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [],
+    });
+    render(<AddAgentDialog {...defaultProps} projectPath="/p" />);
+    expect(screen.queryByTestId('add-agent-copy-legacy')).toBeNull();
+    fireEvent.click(screen.getByRole('checkbox', { name: /worktree/i }));
+    const copy = await screen.findByTestId('add-agent-copy-legacy');
+    expect(copy).toBeChecked();
+    fireEvent.click(screen.getByText('Create Agent'));
+    expect(defaultProps.onCreate).toHaveBeenLastCalledWith('test-agent', 'indigo', 'default', true, 'claude-code', 'ask', undefined, true);
+    fireEvent.click(copy);
+    fireEvent.click(screen.getByText('Create Agent'));
+    expect(defaultProps.onCreate).toHaveBeenLastCalledWith('test-agent', 'indigo', 'default', true, 'claude-code', 'ask', undefined, false);
+  });
+
   it('blocks a worktree agent whose name is not a valid folder and branch name (#2221)', () => {
     render(<AddAgentDialog {...defaultProps} />);
     fireEvent.click(screen.getByRole('checkbox', { name: /worktree/i }));

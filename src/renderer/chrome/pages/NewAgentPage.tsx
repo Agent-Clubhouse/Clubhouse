@@ -29,6 +29,7 @@ import { openCreatedAgent } from '../startPage';
 import { ProjectPicker } from './ProjectPicker';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 import { IS_MAC, Row, Rule, footerLinkClass, inputClass, mono, selectClass } from './newAgentUi';
+import { LegacyCopyPreviewList, useHasLegacyDefaults } from '../../features/agents/LegacyDefaultsCopy';
 import { NO_QUICK_CHANGES, QuickRunParts } from './QuickRunParts';
 import { BuilderStep, CopyStep, SCRATCH_SEED, TemplateStep, draftFromSeed, templateSeed, type BuilderDraft, type BuilderSeed } from './NewManagedAgentSteps';
 
@@ -159,6 +160,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [model, setModel] = useState('default');
   const [customModel, setCustomModel] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
+  // The project's legacy agent defaults (#3245): copied into a new plain agent only while this is on.
+  const [copyLegacy, setCopyLegacy] = useState(true);
   const [isGit, setIsGit] = useState<boolean | null>(null);
   const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
   // The level the current quick template filled in, so another template (or None) takes it back
@@ -176,6 +179,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const remote = isRemoteProjectId(projectId);
   const [managedPref, setManagedPref] = useState(readManagedPref);
   const isManaged = durable && !remote && managedPref;
+  const hasLegacyDefaults = useHasLegacyDefaults(durable && !remote ? project?.path : undefined);
   // A quick agent can start from a template (D25). It stays a quick agent: the
   // runtime rows stay, and the template only fills them in.
   const quickTemplates = !durable && !remote;
@@ -279,6 +283,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   // With its own worktree a durable agent's name becomes a folder and a git
   // branch, so it is checked here as strictly as the main process will (#2221).
   // A managed agent always gets its own folder.
+  // Only into a plain agent's own new worktree: legacy defaults never reached the project folder.
+  const offersLegacyCopy = durable && !isManaged && !remote && !!isGit && useWorktree && hasLegacyDefaults === true;
   const nameProblem = durable && (isManaged || (!!isGit && useWorktree)) && name.trim()
     ? validateAgentGitName(name.trim(), 'folder')
     : null;
@@ -362,6 +368,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           access,
           mcpIds: selectedMcps.length > 0 ? selectedMcps : undefined,
           clubhouseFeatures: !remote && !clubhouseFeatures ? false : undefined,
+          copyLegacyDefaults: offersLegacyCopy && copyLegacy,
         },
         { onError: (message) => failed(`Couldn't create the agent: ${message}`) },
       ).then(async (id) => {
@@ -673,6 +680,19 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           >
             <Toggle checked={useWorktree} onChange={setUseWorktree} aria-label="Own worktree and branch" />
             <span className="text-[13px] text-ctp-text">Own worktree and branch</span>
+          </Row>
+        )}
+
+        {offersLegacyCopy && project && (
+          <Row
+            label="Legacy defaults"
+            top
+            help={copyLegacy
+              ? <LegacyCopyPreviewList projectPath={project.path} name={worktreeName} orchestrator={runOrchestrator} />
+              : 'Nothing from them is copied. You can copy them later from the project\'s settings.'}
+          >
+            <Toggle checked={copyLegacy} onChange={setCopyLegacy} disabled={busy} aria-label="Copy this project's legacy defaults" data-testid="new-agent-copy-legacy" />
+            <span className="text-[13px] text-ctp-text">Copy this project&apos;s legacy defaults</span>
           </Row>
         )}
 

@@ -140,7 +140,7 @@ export type AssetSource =
   | { kind: 'user' }
   | { kind: 'builtin'; builtinId: string }
   /** Ids and names, never a path. */
-  | { kind: 'import'; from: 'native-mcp' | 'project-skill' | 'persona' | 'native-subagent'; projectId?: string; nativeName?: string }
+  | { kind: 'import'; from: 'native-mcp' | 'project-skill' | 'persona' | 'native-subagent' | 'project-defaults'; projectId?: string; nativeName?: string }
   /** A user's copy: the origin revision it started from. Never merged, rebased or synced. */
   | { kind: 'copy'; originAssetId: string; originRevision: number };
 
