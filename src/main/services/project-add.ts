@@ -98,6 +98,12 @@ export async function checkProjectFolder(input: string): Promise<FolderCheck> {
     if (isInside(candidate, baseDir) || isInside(candidate, getBaseDirPath()) || parts.some((s) => INTERNAL_DIR_NAMES.has(s))) {
       return { ok: false, reason: 'clubhouse_internal', message: 'That folder is one of Clubhouse\'s own and can\'t be a project.' };
     }
+    // A project keeps its files in its own `.clubhouse`, which for the home folder of the
+    // installed app is Clubhouse's data folder: the two would share one folder.
+    const dataDir = projectStore.projectPathKey(path.join(candidate, '.clubhouse'));
+    if (dataDir === projectStore.projectPathKey(baseDir) || dataDir === projectStore.projectPathKey(getBaseDirPath())) {
+      return { ok: false, reason: 'clubhouse_internal', message: 'That folder holds Clubhouse\'s own data folder, so it can\'t be a project.' };
+    }
   }
   return { ok: true, path: resolved, canonicalPath };
 }

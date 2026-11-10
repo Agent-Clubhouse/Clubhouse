@@ -156,6 +156,20 @@ describe('add_project (#3239)', () => {
     expect(await projectStore.list()).toEqual([]);
   });
 
+  it('refuses the folder whose .clubhouse is Clubhouse\'s own data folder, as home is for the installed app', async () => {
+    const home = path.join(tmp.root, 'installed-home');
+    fs.mkdirSync(home, { recursive: true });
+    const devBase = tmp.base;
+    tmp.base = path.join(home, '.clubhouse');
+    try {
+      const r = await call({ path: home });
+      expect(r.body).toMatchObject({ status: 'refused', reason: 'clubhouse_internal' });
+    } finally {
+      tmp.base = devBase;
+    }
+    expect(await projectStore.list()).toEqual([]);
+  });
+
   it('keeps an existing project\'s name when one is given', async () => {
     const dir = folder();
     await call({ path: dir });

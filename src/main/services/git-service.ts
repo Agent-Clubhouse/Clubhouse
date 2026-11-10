@@ -194,9 +194,26 @@ export async function getOriginUrl(dirPath: string): Promise<string | null> {
   return url ? stripUrlCredentials(url) : null;
 }
 
-/** A remote URL without the user name or token some http(s) remotes carry. SSH user names stay. */
+/**
+ * A remote URL without the secrets some carry: a URL's password, query and
+ * fragment (where tokens go), and its user name except over ssh, where the
+ * user (usually `git`) is no secret. An scp-style `user@host:path` or a local
+ * path has none of these and is kept as it is.
+ */
 export function stripUrlCredentials(url: string): string {
-  return url.replace(/^(https?:\/\/)[^/@]*@/i, '$1');
+  const trimmed = url.trim();
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(trimmed);
+  if (!scheme) return trimmed;
+  const keepsUser = /(^|\+)ssh(\+|$)/i.test(scheme[1]);
+  // Everything before the last @ of the authority is user info, even with an unencoded @ in a token.
+  const rest = trimmed.slice(scheme[0].length);
+  const authorityEnd = rest.search(/[/?#]/);
+  const authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd);
+  const pathPart = (authorityEnd === -1 ? '' : rest.slice(authorityEnd)).replace(/[?#].*$/s, '');
+  const at = authority.lastIndexOf('@');
+  const host = at === -1 ? authority : authority.slice(at + 1);
+  const user = at === -1 ? '' : authority.slice(0, at).split(':')[0];
+  return `${scheme[0]}${keepsUser && user ? `${user}@` : ''}${host}${pathPart}`;
 }
 
 /**
