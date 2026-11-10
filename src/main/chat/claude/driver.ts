@@ -1372,11 +1372,14 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       }, true);
     } else if (ev.phase === 'notification') {
       const s = str(raw.status);
+      const name = str(raw.subagent_type) ?? this.subagentNames.get(subagentId) ?? 'subagent';
+      // Finished, so its name isn't needed again: a long run doesn't keep every one (#3250).
+      this.subagentNames.delete(subagentId);
       this.push({
         type: 'subagent',
         data: {
           subagentId,
-          name: str(raw.subagent_type) ?? this.subagentNames.get(subagentId) ?? 'subagent',
+          name,
           status: s === 'failed' ? 'failed' : s === 'stopped' || s === 'killed' ? 'cancelled' : 'completed',
           parentToolCallId: str(raw.tool_use_id),
         },
