@@ -1813,6 +1813,8 @@ export interface AgentDeleteResult extends DeleteResult {
   worktree?: WorktreeStatus;
   /** Quick agents that were running in its worktree and were stopped. */
   stoppedQuickAgents?: string[];
+  /** The agent couldn't be stopped, so nothing of it was deleted. Helpers may have been settled. */
+  stopFailed?: 'stop_failed' | 'agent_still_running';
 }
 
 // ── Canvas state sync (main window ↔ pop-out windows) ─────────────────

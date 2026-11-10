@@ -17,7 +17,7 @@ import { MOBILE_COMMAND_TYPES, MOBILE_GRANT_ANSWERS, type AnnexAgentUpdate, type
 import { applyProjectStateChange, getProjectState, isProjectStateReady, onProjectStateChange } from './project-state-store';
 import { isProjectIdle } from '../../shared/project-state';
 import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
-import type { CompletedQuickAgent, Project } from '../../shared/types';
+import type { CompletedQuickAgent, HelperDeleteChoice, Project } from '../../shared/types';
 import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { FULL_EVENT_MAX_BYTES, findFullEvent, forgetReviewedBy, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
@@ -74,6 +74,7 @@ import * as annexPeers from './annex-peers';
 import { devicesChanged } from './annex-device-signal';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
+import { deleteAgent, isAgentDeleteMode } from './agent-delete';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import * as ptyManager from './pty-manager';
 import * as themeService from './theme-service';
@@ -3106,21 +3107,19 @@ async function handleDurableDeleteRoute(ctx: AnnexRouteContext, match: RegExpMat
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
   readJsonBody(ctx.req, ctx.res, async (body) => {
-    const mode = (body.mode as string) || 'force';
+    const mode = body.mode ?? 'force';
+    if (!isAgentDeleteMode(mode)) { sendJson(ctx.res, 400, { error: 'invalid_mode' }); return; }
+    // A patch is written to a file chosen on this machine, which a remote can't do.
+    if (mode === 'save-patch') { sendJson(ctx.res, 400, { error: 'save_patch_needs_file' }); return; }
+    const helpers = body.helpers;
+    if (helpers !== undefined && helpers !== 'dispose' && helpers !== 'keep') { sendJson(ctx.res, 400, { error: 'invalid_helpers' }); return; }
+    const choice = helpers as HelperDeleteChoice | undefined;
     try {
-      if (isAgentRunning(agentId)) {
-        const config = (await agentConfig.listDurable(project.path)).find(agent => agent.id === agentId);
-        await stopAgentForAnnex(agentId, project.path, config?.orchestrator);
-      }
-      let result: { ok: boolean; message: string };
-      switch (mode) {
-        case 'commit-push': result = await agentConfig.deleteCommitAndPush(project.path, agentId); break;
-        case 'cleanup-branch': result = await agentConfig.deleteWithCleanupBranch(project.path, agentId); break;
-        case 'force': result = await agentConfig.deleteForce(project.path, agentId); break;
-        case 'unregister': result = await agentConfig.deleteUnregister(project.path, agentId); break;
-        default: result = await agentConfig.deleteForce(project.path, agentId);
-      }
-      broadcastSnapshotRefresh();
+      // The same service as the local delete (#3199): an orchestrator's helpers
+      // are settled first, and it refuses the same way (a choice to make, the Dispatcher).
+      const result = await deleteAgent(project.path, agentId, { mode, helpers: choice });
+      // Disposed helpers leave every window even when the agent itself stayed.
+      if (result.ok || (result.helpers?.helperIds?.length ?? 0) > 0) broadcastSnapshotRefresh();
       sendJson(ctx.res, 200, result);
     } catch (err) {
       sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });

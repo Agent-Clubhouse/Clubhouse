@@ -92,6 +92,14 @@ describe('annex-client-handlers', () => {
     expect(annexClient.getDiscoveredServices).toHaveBeenCalled();
   });
 
+  it('AGENT_DELETE_DURABLE passes the helper choice to the satellite (#3199)', async () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE)!;
+    await handler({}, 'sat-1', 'proj', 'lead', 'force', 'dispose');
+    expect(annexClient.requestDeleteDurable).toHaveBeenCalledWith('sat-1', 'proj', 'lead', 'force', 'dispose');
+    await handler({}, 'sat-1', 'proj', 'lead', 'unregister');
+    expect(annexClient.requestDeleteDurable).toHaveBeenLastCalledWith('sat-1', 'proj', 'lead', 'unregister', undefined);
+  });
+
   it('PAIR_WITH delegates to annexClient.pairWithService', async () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH)!;
     await handler({}, 'fp:aa:bb', '123456');
