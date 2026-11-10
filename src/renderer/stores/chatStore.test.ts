@@ -1498,3 +1498,19 @@ describe('reduceChatEvent: context compaction', () => {
     expect(s.compactionItemId).toBeNull();
   });
 });
+
+describe('subagent updates (#3250)', () => {
+  it('keeps the known name when an update carries only the generic one', () => {
+    const ev = makeEmitter();
+    const state = fold([
+      sessionStarted(ev),
+      ev('subagent', { subagentId: 't1', name: 'Explore', status: 'running', description: 'Find callers' }),
+      ev('subagent', { subagentId: 't1', name: 'subagent', status: 'completed' }),
+      ev('subagent', { subagentId: 't2', name: 'subagent', status: 'running' }),
+      ev('subagent', { subagentId: 't2', name: 'code-reviewer', status: 'completed' }),
+    ]);
+    expect(state.subagents.t1).toMatchObject({ name: 'Explore', status: 'completed', description: 'Find callers' });
+    // A real name later still replaces the generic one.
+    expect(state.subagents.t2).toMatchObject({ name: 'code-reviewer', status: 'completed' });
+  });
+});

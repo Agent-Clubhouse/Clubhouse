@@ -300,6 +300,7 @@ describe('the card\'s words', () => {
     expect(cardStatus(true, null, false)).toBe('none');
     expect(cardSummary('ready', 'Navi')).toBe('Navi, your dispatcher');
     expect(cardSummary('ready', 'Dispatcher')).toBe('connected');
+    expect(cardSummary('ready', 'dispatcher')).toBe('connected');
     expect(cardSummary('off', 'Navi')).toBe('not connected');
   });
 

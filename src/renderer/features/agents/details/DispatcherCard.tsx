@@ -47,7 +47,7 @@ export function dispatcherName(state: Pick<DispatcherState, 'config'> | null | u
  * agent's own card text. The role word comes from the one shared name.
  */
 export function connectedSummary(name: string): string {
-  return name === DEFAULT_DISPATCHER_NAME ? 'connected' : `${name}, your ${DEFAULT_DISPATCHER_NAME.toLowerCase()}`;
+  return name.toLowerCase() === DEFAULT_DISPATCHER_NAME.toLowerCase() ? 'connected' : `${name}, your ${DEFAULT_DISPATCHER_NAME.toLowerCase()}`;
 }
 
 export const ASKING_TEXT = 'Asking what it does…';
