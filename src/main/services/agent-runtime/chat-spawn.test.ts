@@ -566,6 +566,17 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       });
     });
 
+    it('writes notices left for the next start into the new session, once (#3240)', async () => {
+      drivers();
+      const { noteNextStartNotice } = await import('./stale-session');
+      noteNextStartNotice(params.agentId, { level: 'warn', code: 'resume_blocked', message: 'Not resumed.' });
+      expect(await tryStartChatAgent(params, provider, undefined, null)).toBe('chat');
+      expect(notices()).toContainEqual({ level: 'warn', code: 'resume_blocked', message: 'Not resumed.' });
+      vi.mocked(appendChatEvent).mockClear();
+      expect(await tryStartChatAgent(params, provider, undefined, null)).toBe('chat');
+      expect(notices().filter((n) => n.code === 'resume_blocked')).toEqual([]);
+    });
+
     it('drops from the Agent SDK to stream-json when the SDK handshake fails, and says why', async () => {
       const { sdk, stream } = drivers();
       sdk.probe = async () => ({ handshakeOk: false, capabilities: sdk.capabilities, error: 'initialize timed out' });

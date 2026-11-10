@@ -21,6 +21,7 @@ import { appLog } from '../log-service';
 import { noteNextStartNotice } from '../agent-runtime/stale-session';
 import { getDispatcherChatPath, getDispatcherPath } from './dispatcher-paths';
 import { getDispatcherAgentId, getDispatcherChatAgentId, prepareDispatcherSessionStart } from './dispatcher-service';
+import { endWaitingRequests } from './dispatcher-requests';
 import type { ChatEventDataMap } from '../../../shared/chat';
 import type { StartFreshResult, StartFreshScope } from '../../../shared/dispatcher-types';
 
@@ -83,6 +84,8 @@ export interface StartFreshDeps extends ClearChatDeps {
   /** Write a notice into a sleeping agent's next conversation. */
   noteNextStart?: (agentId: string, notice: ChatEventDataMap['notice']) => void;
   clearChat?: () => Promise<ClearChatResult>;
+  /** End the requests the old work conversation would have read (#3260), telling the chat. */
+  endWaiting?: () => void;
 }
 
 const WORK_NOTICE: Record<StartFreshReason, string> = {
@@ -131,6 +134,8 @@ export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: S
   if ((deps.isRunning ?? agentSystem.isAgentRunning)(workId)) {
     await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, workId);
     await (deps.clearContext ?? clearRunning)(workId);
+    // Its queue and any open turn went with the old conversation: those requests are told as stopped.
+    (deps.endWaiting ?? (() => { endWaitingRequests('cancelled'); }))();
     await (deps.addNotice ?? addRunningNotice)(workId, notice);
     result = 'now';
   } else {

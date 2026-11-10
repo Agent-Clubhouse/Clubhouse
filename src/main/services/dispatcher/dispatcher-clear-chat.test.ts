@@ -107,16 +107,21 @@ describe('Start fresh (#3240)', () => {
       quarantine: async (dir, id, sid) => { order.push(`quarantine:${dir === getDispatcherPath()}:${id}:${sid}`); },
       prepareStart: async (dir, id) => { order.push(`prepare:${dir === getDispatcherPath()}:${id}`); },
       clearContext: async (id) => { order.push(`clear:${id}`); },
+      endWaiting: () => { order.push('end-waiting'); },
       addNotice: async (id, notice) => { notices.push([id, notice.code]); },
     });
     expect(result).toEqual({ work: 'now' });
-    // Quarantined before the new conversation starts, so its end can't restore the old id.
-    expect(order).toEqual(['quarantine:true:work:bad-native', 'prepare:true:work', 'clear:work']);
+    // Quarantined before the new conversation starts, so its end can't restore the old id;
+    // the requests the old conversation would have read end once it is gone.
+    expect(order).toEqual(['quarantine:true:work:bad-native', 'prepare:true:work', 'clear:work', 'end-waiting']);
     expect(notices).toEqual([['work', 'started_fresh'], ['chat', 'dispatcher_work_started_fresh']]);
   });
 
   it('quarantines a sleeping work agent\'s saved session and tells its next start and the chat\'s', async () => {
-    const result = await startDispatcherWorkFresh('repeated_failures', { isRunning: () => false });
+    const endWaiting = vi.fn();
+    const result = await startDispatcherWorkFresh('repeated_failures', { isRunning: () => false, endWaiting });
+    // Nothing was running, so nothing was cut short.
+    expect(endWaiting).not.toHaveBeenCalled();
     expect(result).toBe('next_start');
     expect(agentConfig.quarantineSession).toHaveBeenCalledWith(getDispatcherPath(), 'work', 'saved-native');
     expect(staleSession.noteNextStartNotice).toHaveBeenCalledWith('work', expect.objectContaining({ code: 'started_fresh', level: 'warn' }));

@@ -24,6 +24,7 @@ import {
   noteAgentReached,
   noteHandedOff,
   noteWorkEvent,
+  endWaitingRequests,
   onRequestsChanged,
   requestsUnderWay,
   setRequestEndedHandler,
@@ -351,5 +352,34 @@ describe('saved state', () => {
   it('starts empty from a file it can\'t read', () => {
     fs.writeFileSync(getRequestsPath(), '{not json');
     expect(getRequests()).toEqual([]);
+  });
+});
+
+describe('endWaitingRequests: Start fresh (#3240)', () => {
+  it('ends requests waiting for a turn or read by the cut-short turn, and leaves the rest', () => {
+    const reading = handOff('reading');
+    started();
+    const queued = handOff('queued', 'queued');
+    const answered = handOff('answered', 'queued');
+    settleRequest(answered, 'answer', now);
+    expect(getRequest(reading)?.turn).toBe('in_turn');
+    expect(getRequest(queued)?.turn).toBe('awaiting');
+
+    expect(endWaitingRequests('cancelled', now)).toBe(2);
+
+    expect(getRequest(reading)?.status).toBe('cancelled');
+    expect(getRequest(queued)?.status).toBe('cancelled');
+    expect(getRequest(answered)?.status).toBe('done');
+    // The chat is told each one stopped.
+    expect(ended$.mock.calls.map((c) => [c[0].id, c[1]]).sort()).toEqual([[queued, 'cancelled'], [reading, 'cancelled']].sort());
+  });
+
+  it('a request handed off after the fresh start reads the new conversation\'s first turn', () => {
+    handOff('before');
+    started();
+    endWaitingRequests('cancelled', now);
+    const after = handOff('after');
+    started();
+    expect(getRequest(after)).toMatchObject({ status: 'under_way', turn: 'in_turn' });
   });
 });

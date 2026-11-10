@@ -436,6 +436,22 @@ export function noteWorkEvent(event: ChatEvent, now = Date.now()): void {
   }
 }
 
+/**
+ * The work conversation was replaced by Start fresh (#3240): a request waiting
+ * for a turn of it, or read by a turn it cut short, never gets an outcome
+ * there. Each ends as `ending`, and the chat is told. Returns how many ended.
+ */
+export function endWaitingRequests(ending: RequestEnding, now = Date.now()): number {
+  const all = load(now);
+  // The old conversation's open turn, if any, ends with it.
+  turns.open = false;
+  turns.error = undefined;
+  const waiting = all.filter((r) => r.status === 'under_way' && (r.turn === 'awaiting' || r.turn === 'in_turn'));
+  for (const r of waiting) end(r, ending, now, 'The work conversation started fresh before this request had an outcome.');
+  if (waiting.length) changed(now);
+  return waiting.length;
+}
+
 /** The Dispatcher messaged or woke an agent: that agent's news is for the requests its turn is reading. */
 export function noteAgentReached(agentId: string, now = Date.now()): void {
   const reading = load(now).filter((r) => r.status === 'under_way' && r.turn === 'in_turn' && !r.agents.includes(agentId));

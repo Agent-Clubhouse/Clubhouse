@@ -58,7 +58,7 @@ import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
 import { cancelChatStart, tryStartChatAgent, type ChatRuntimeNotice, type ChatStartFacts, type ChatStartResult } from './agent-runtime/chat-spawn';
-import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
+import { clearStaleResume, isSessionNotFound, noteNextStartNotice, takeChatStartFailure, takeNextStartNotices, type StaleResumeReason } from './agent-runtime/stale-session';
 import { removedProfileStateDirs } from './provider-profiles-removed';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
@@ -291,6 +291,9 @@ function announceAwake(agentId: string): void {
   broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, agentId);
   publishAppEvent({ type: 'agent.awake', agentId });
 }
+
+/** Shown when a wake asks to resume a quarantined session (#3240). */
+export const RESUME_BLOCKED_NOTICE = "That session kept failing every turn, so it isn't resumed. A new session started instead.";
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
@@ -609,6 +612,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // A session that kept failing every turn (#3240) is never resumed, whichever wake path asked.
     if (params.kind === 'durable' && params.resume && params.sessionId && durableConfig?.quarantinedSessionIds?.includes(params.sessionId)) {
       appLog('core:agent', 'warn', 'Not resuming a quarantined session; starting fresh', { meta: { agentId: params.agentId, sessionId: params.sessionId } });
+      // Said in the new session's chat, or by the terminal's start below.
+      noteNextStartNotice(params.agentId, { level: 'warn', code: 'resume_blocked', message: RESUME_BLOCKED_NOTICE });
       params = { ...params, resume: false, sessionId: undefined };
     }
     // A saved id the CLI's own store doesn't have (Codex agents saved made-up
@@ -1059,6 +1064,8 @@ async function spawnPtyAgent(
 
   // A terminal has no chat to carry the notice; the desktop shows it as other runtime notices.
   if (params.contextWindowNotice) broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, params.agentId, params.contextWindowNotice);
+  // Notices a chat start would have written into its session, such as a blocked resume (#3240).
+  for (const notice of takeNextStartNotices(params.agentId)) broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, params.agentId, notice);
 
   const spawnEnv: Record<string, string> = {
     ...env,
@@ -1427,7 +1434,7 @@ export async function listSessions(
   projectPath: string,
   agentId: string,
   orchestratorId?: OrchestratorId,
-): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string; friendlyName?: string }>> {
+): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string; friendlyName?: string; blocked?: boolean }>> {
   const { getDurableConfig, getSessionHistory } = await import('./agent-config');
   const config = await getDurableConfig(projectPath, agentId);
   if (!config) return [];
@@ -1491,8 +1498,9 @@ export async function listSessions(
     });
   }
 
-  // Sort by most recently active
-  const result = Array.from(merged.values());
+  // Sort by most recently active. A quarantined session (#3240) is listed, marked: choosing it starts fresh.
+  const quarantined = new Set(config.quarantinedSessionIds ?? []);
+  const result = Array.from(merged.values(), (s) => (quarantined.has(s.sessionId) ? { ...s, blocked: true } : s));
   result.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
   return result;
 }
