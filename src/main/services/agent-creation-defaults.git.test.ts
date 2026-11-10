@@ -163,4 +163,32 @@ describe('legacy project defaults at creation (#3243, #3245)', () => {
     expect(mcp.mcpServers).toEqual({ repo: { command: 'repo-mcp' }, [MARKER]: { command: 'repo-owned' } });
     expect((await previewCopyIntoAgent(project, made.id)).changes.every((c) => c.action === 'unchanged')).toBe(true);
   });
+
+  it('previews from an existing <name>/standby branch, which creation reuses, not from HEAD', async () => {
+    h.provider = new ClaudeCodeProvider();
+    // The leftover branch already has the project's instructions; HEAD has none.
+    git(['checkout', '-q', '-b', 'stale/standby']);
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), `Old notes.\n\n${DEFAULTS.instructions.trim()}\n`);
+    git(['add', 'CLAUDE.md']);
+    git(['commit', '-q', '-m', 'left over']);
+    git(['checkout', '-q', 'main']);
+
+    const preview = await previewCopyIntoNewAgent(project, 'stale');
+    expect(preview.changes.find((c) => c.item === 'instructions')?.action).toBe('unchanged');
+    const made = await createDurable(project, 'stale', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, COPY);
+    expect(fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8')).toBe(`Old notes.\n\n${DEFAULTS.instructions.trim()}\n`);
+  });
+
+  it('previews from a detached HEAD, where creation starts the branch', async () => {
+    h.provider = new ClaudeCodeProvider();
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# Detached\n');
+    git(['add', 'CLAUDE.md']);
+    git(['commit', '-q', '-m', 'instructions']);
+    git(['checkout', '-q', '--detach', 'HEAD']);
+
+    const preview = await previewCopyIntoNewAgent(project, 'detached');
+    expect(preview.changes.find((c) => c.item === 'instructions')?.action).toBe('append');
+    const made = await createDurable(project, 'detached', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, COPY);
+    expect(fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8').startsWith('# Detached\n\n')).toBe(true);
+  });
 });
