@@ -777,14 +777,15 @@ export async function writeProjectAgentDefaults(projectPath: string, defaults: P
 /**
  * Read, change and write a project's defaults with no other defaults write in
  * between, so a change to one field can't undo a newer change to another (#3244).
+ * Every writer goes through here (#3262). `update` returns null to write nothing.
  */
 export async function updateProjectAgentDefaults(
   projectPath: string,
-  update: (current: ProjectAgentDefaults) => ProjectAgentDefaults,
-): Promise<ProjectAgentDefaults> {
+  update: (current: ProjectAgentDefaults) => ProjectAgentDefaults | null,
+): Promise<ProjectAgentDefaults | null> {
   return settingsMutation(projectPath, () => defaultsWriteQueue(projectPath, async () => {
     const next = update(await readProjectAgentDefaults(projectPath));
-    await writeProjectAgentDefaultsInner(projectPath, next);
+    if (next) await writeProjectAgentDefaultsInner(projectPath, next);
     return next;
   }));
 }

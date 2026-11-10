@@ -482,6 +482,16 @@ vi.mock('./agent-settings-service', () => ({
     W.projectDefaults = defaults;
     if (changed) note();
   },
+  updateProjectAgentDefaults: async (_path: string, update: (d: Record<string, unknown>) => Record<string, unknown> | null) => {
+    const { noteRoutingPolicyChanged: note } = await import('./helper-routing-changes');
+    const next = update(W.projectDefaults);
+    if (next) {
+      const changed = W.projectDefaults.helperAuto !== next.helperAuto;
+      W.projectDefaults = next;
+      if (changed) note();
+    }
+    return next;
+  },
   readMcpCatalog: async () => [
     { id: 'github', name: 'GitHub', description: 'Issues and pull requests', args: [] },
     { id: 'ado', name: 'Azure DevOps', description: 'Work items', args: [{ name: 'org' }] },

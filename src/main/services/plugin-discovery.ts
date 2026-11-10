@@ -9,6 +9,7 @@ import { pathExists } from './fs-utils';
 import { tel } from '../telemetry/facade';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { isRetiredPlugin } from '../../shared/retired-plugins';
+import { ALL_PLUGIN_PARTS_REMOVED, withPluginParts } from '../../shared/plugin-agent-defaults';
 
 function assertSafePluginId(pluginId: string): void {
   if (pluginId.includes('/') || pluginId.includes('\\') || pluginId.includes('..') || pluginId.includes('\0')) {
@@ -226,7 +227,6 @@ export async function listProjectPluginInjections(pluginId: string, projectPath:
 export async function cleanupProjectPluginInjections(pluginId: string, projectPath: string): Promise<void> {
   assertSafePluginId(pluginId);
   const prefix = `plugin-${pluginId}-`;
-  const tag = `/* plugin:${pluginId} */`;
 
   // 1. Delete injected source skills
   try {
@@ -248,54 +248,10 @@ export async function cleanupProjectPluginInjections(pluginId: string, projectPa
     }
   } catch { /* Best-effort */ }
 
-  // 3. Strip instructions / permissions / MCP servers from project agent defaults
+  // 3. Strip instructions / permissions / MCP servers from project agent defaults,
+  // as they are when this write's turn comes (#3262).
   try {
-    const defaults = await agentSettings.readProjectAgentDefaults(projectPath);
-    let dirty = false;
-    const updated = { ...defaults };
-
-    // Remove instruction block
-    if (defaults.instructions) {
-      const escaped = pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(
-        `\\n?\\n?<!-- plugin:${escaped}:start -->[\\s\\S]*?<!-- plugin:${escaped}:end -->`,
-      );
-      const cleaned = defaults.instructions.replace(regex, '');
-      if (cleaned !== defaults.instructions) {
-        updated.instructions = cleaned;
-        dirty = true;
-      }
-    }
-
-    // Remove tagged permission rules
-    if (defaults.permissions) {
-      const allow = (defaults.permissions.allow || []).filter((r) => !r.includes(tag));
-      const deny = (defaults.permissions.deny || []).filter((r) => !r.includes(tag));
-      if (allow.length !== (defaults.permissions.allow || []).length ||
-          deny.length !== (defaults.permissions.deny || []).length) {
-        updated.permissions = { allow, deny };
-        dirty = true;
-      }
-    }
-
-    // Remove MCP servers added by this plugin
-    if (defaults.mcpJson) {
-      try {
-        const mcpConfig = JSON.parse(defaults.mcpJson) as Record<string, unknown>;
-        const mcpServers = (mcpConfig.mcpServers as Record<string, unknown>) || {};
-        const cleaned = Object.fromEntries(
-          Object.entries(mcpServers).filter(([k]) => !k.startsWith(prefix)),
-        );
-        if (Object.keys(cleaned).length !== Object.keys(mcpServers).length) {
-          updated.mcpJson = JSON.stringify({ ...mcpConfig, mcpServers: cleaned }, null, 2);
-          dirty = true;
-        }
-      } catch { /* ignore invalid JSON */ }
-    }
-
-    if (dirty) {
-      await agentSettings.writeProjectAgentDefaults(projectPath, updated);
-    }
+    await agentSettings.updateProjectAgentDefaults(projectPath, (defaults) => withPluginParts(defaults, pluginId, ALL_PLUGIN_PARTS_REMOVED));
   } catch { /* Best-effort */ }
 
   // 4. Delete the _agentconfig storage directory for this plugin in the project

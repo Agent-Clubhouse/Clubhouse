@@ -2,6 +2,7 @@ import { auditChanged, projectAuditTarget } from '../services/settings-audit';
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ProjectAgentDefaultsPatch } from '../../shared/types';
+import { assertPluginAgentDefaultsParts, withPluginParts, type PluginAgentDefaultsParts } from '../../shared/plugin-agent-defaults';
 import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
@@ -244,6 +245,15 @@ export function registerAgentSettingsHandlers(): void {
     [stringArg(), objectArg<ProjectAgentDefaultsPatch>()],
     async (_event, projectPath, patch) => {
       await saveProjectUserDefaults(projectPath, patch);
+    },
+  ));
+
+  // The plugin agentConfig API's writes (#3262): only that plugin's parts, in the defaults queue.
+  ipcMain.handle(IPC.AGENT.UPDATE_PLUGIN_AGENT_DEFAULTS, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 128 }), objectArg<PluginAgentDefaultsParts>()],
+    async (_event, projectPath, pluginId, parts) => {
+      assertPluginAgentDefaultsParts(parts);
+      await agentSettings.updateProjectAgentDefaults(projectPath, (current) => withPluginParts(current, pluginId, parts));
     },
   ));
 

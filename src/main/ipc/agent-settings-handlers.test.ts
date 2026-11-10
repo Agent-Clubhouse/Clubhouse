@@ -336,6 +336,18 @@ describe('agent-settings-handlers', () => {
     expect(agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', { model: 'opus' });
   });
 
+  it('UPDATE_PLUGIN_AGENT_DEFAULTS changes only that plugin\'s parts, in the defaults queue (#3262)', async () => {
+    const handler = handlers.get(IPC.AGENT.UPDATE_PLUGIN_AGENT_DEFAULTS)!;
+    await handler({}, '/project', 'foo', { allow: ['Bash(x)'] });
+    const update = vi.mocked(agentSettings.updateProjectAgentDefaults).mock.calls.at(-1)![1];
+    expect(update({ permissions: { allow: ['Read(**)'] }, buildCommand: 'make' })).toEqual({
+      permissions: { allow: ['Read(**)', 'Bash(x) /* plugin:foo */'] },
+      buildCommand: 'make',
+    });
+    await expect(handler({}, '/project', 'foo', { buildCommand: 'evil' })).rejects.toThrow('Unknown plugin agent default');
+    expect(agentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
+  });
+
   it('SAVE_PROJECT_USER_DEFAULTS updates the saved defaults in place (#3244)', async () => {
     const handler = handlers.get(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS)!;
     await handler({}, '/project', { buildCommand: 'make' });

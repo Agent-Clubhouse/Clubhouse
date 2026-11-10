@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { withPluginParts, type PluginAgentDefaultsParts } from '../../shared/plugin-agent-defaults';
 import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
 
 export const mockPlugin = {
@@ -59,6 +60,11 @@ export const mockWindow = {
 export const mockAgentSettings = {
   readProjectAgentDefaults: vi.fn().mockResolvedValue({}),
   writeProjectAgentDefaults: vi.fn().mockResolvedValue(undefined),
+  // As main does (#3262): this plugin's parts changed on what's read, written when anything changes.
+  updatePluginAgentDefaults: vi.fn(async (projectPath: string, pluginId: string, parts: PluginAgentDefaultsParts) => {
+    const next = withPluginParts(await mockAgentSettings.readProjectAgentDefaults(projectPath), pluginId, parts);
+    if (next) await mockAgentSettings.writeProjectAgentDefaults(projectPath, next);
+  }),
   writeSourceSkillContent: vi.fn().mockResolvedValue(undefined),
   deleteSourceSkill: vi.fn().mockResolvedValue(undefined),
   writeSourceAgentTemplateContent: vi.fn().mockResolvedValue(undefined),

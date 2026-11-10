@@ -1025,6 +1025,31 @@ describe('plugin-api-factory', () => {
       });
     });
 
+    describe('writes are patches (#3262)', () => {
+      it('each write sends only this plugin\'s parts, with no read first', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockClear();
+        await api.agentConfig.appendInstructions('Extra');
+        await api.agentConfig.removeInstructionAppend();
+        await api.agentConfig.addPermissionAllowRules(['A']);
+        await api.agentConfig.addPermissionDenyRules(['D']);
+        await api.agentConfig.removePermissionRules();
+        await api.agentConfig.injectMcpServers({ srv: { command: 'p' } });
+        await api.agentConfig.removeMcpServers();
+        expect(mockAgentSettings.updatePluginAgentDefaults.mock.calls.map((c) => c.slice(1))).toEqual([
+          ['test-plugin', { instructions: 'Extra' }],
+          ['test-plugin', { instructions: null }],
+          ['test-plugin', { allow: ['A'] }],
+          ['test-plugin', { deny: ['D'] }],
+          ['test-plugin', { allow: null, deny: null }],
+          ['test-plugin', { mcpServers: { srv: { command: 'p' } } }],
+          ['test-plugin', { mcpServers: null }],
+        ]);
+        // The read happens in main, where the write is (the mock forwards there), never before the call.
+        expect(mockAgentSettings.updatePluginAgentDefaults.mock.invocationCallOrder[0])
+          .toBeLessThan(mockAgentSettings.readProjectAgentDefaults.mock.invocationCallOrder[0]);
+      });
+    });
+
     describe('instructions', () => {
       it('appendInstructions adds plugin block with markers', async () => {
         mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
