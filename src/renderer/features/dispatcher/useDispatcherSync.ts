@@ -59,3 +59,13 @@ export function useDispatcherSync(): void {
     return () => { current = false; };
   }, [state, loadAttempt]);
 }
+
+/**
+ * The Dispatcher's state from main, for a popout window (#3235): the store
+ * only, so isDispatcherAgent, its folder and its Behavior resolve there. The
+ * main window loads its agent, and the popout gets it with the other agents.
+ */
+export function useDispatcherStateMirror(): void {
+  const state = useDispatcherState();
+  useEffect(() => { useDispatcherStore.getState().setState(state); }, [state]);
+}

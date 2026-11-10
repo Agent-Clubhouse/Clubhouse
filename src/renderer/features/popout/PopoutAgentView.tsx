@@ -5,14 +5,18 @@ import { TerminalPaneToolbar } from '../agents/pane/AgentPaneToolbar';
 import { SleepingAgent } from '../agents/SleepingAgent';
 import { HeadlessAgentView } from '../agents/HeadlessAgentView';
 import { useAgentStore } from '../../stores/agentStore';
+import { Button } from '../../components/Button';
+import { isDispatcherProjectId, useDispatcherStore } from '../dispatcher/dispatcherStore';
 
 interface PopoutAgentViewProps {
   agentId?: string;
   projectId?: string;
 }
 
-export function PopoutAgentView({ agentId }: PopoutAgentViewProps) {
+export function PopoutAgentView({ agentId, projectId }: PopoutAgentViewProps) {
   const agent = useAgentStore((s) => agentId ? s.agents[agentId] : undefined);
+
+  if (agentId && isDispatcherProjectId(projectId)) return <PopoutDispatcherView agentId={agentId} />;
 
   if (!agentId) {
     return (
@@ -40,6 +44,45 @@ export function PopoutAgentView({ agentId }: PopoutAgentViewProps) {
     );
   }
 
+  return <PopoutAgentBody agent={agent} />;
+}
+
+function PopoutMessage({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 h-full text-ctp-subtext0 text-sm" data-testid="popout-dispatcher-message">
+      <p role="status" className="max-w-md text-center">{children}</p>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * The Dispatcher's chat in its own window (#3235): the same agent and
+ * conversation as its view in the main window, which loads it. Setup and
+ * settings stay in the main window.
+ */
+function PopoutDispatcherView({ agentId }: { agentId: string }) {
+  const agent = useAgentStore((s) => s.agents[agentId]);
+  const state = useDispatcherStore((s) => s.state);
+  const on = useDispatcherStore((s) => !!s.project);
+
+  if (!state) return <PopoutMessage>Loading the Dispatcher</PopoutMessage>;
+  if (!on && !agent) return <PopoutMessage>The Dispatcher is turned off.</PopoutMessage>;
+  if (state.config && state.setup?.status === 'pending') {
+    return (
+      <PopoutMessage action={<Button onClick={() => { void window.clubhouse.window.focusMain(agentId, 'dispatcher-setup'); }} data-testid="popout-dispatcher-setup">Open setup</Button>}>
+        Finish setting up the Dispatcher in the main window.
+      </PopoutMessage>
+    );
+  }
+  if (!agent) return <PopoutMessage>Loading the Dispatcher</PopoutMessage>;
+  if (agent.headless && (agent.status === 'running' || agent.status === 'creating')) {
+    return (
+      <div className="w-full h-full" data-testid="popout-agent-view">
+        <HeadlessAgentView agent={agent} stacked />
+      </div>
+    );
+  }
   return <PopoutAgentBody agent={agent} />;
 }
 

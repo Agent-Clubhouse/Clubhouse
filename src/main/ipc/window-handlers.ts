@@ -166,6 +166,15 @@ export function registerWindowHandlers(): void {
       },
     })],
     (_event, params) => {
+    // One window per agent: asking again brings the open one forward (#3235).
+    if (params.type === 'agent' && params.agentId) {
+      for (const [id, entry] of popoutWindows) {
+        if (entry.window.isDestroyed() || entry.params.type !== 'agent' || entry.params.agentId !== params.agentId) continue;
+        if (entry.window.isMinimized()) entry.window.restore();
+        entry.window.focus();
+        return id;
+      }
+    }
     popoutOpened(params.type);
     const themeColors = getThemeColors();
 
@@ -253,13 +262,17 @@ export function registerWindowHandlers(): void {
   });
 
   ipcMain.handle(IPC.WINDOW.FOCUS_MAIN, withValidatedArgs(
-    [stringArg({ optional: true })],
-    (_event, agentId) => {
+    [stringArg({ optional: true }), stringArg({ optional: true, maxLength: 64 })],
+    (_event, agentId, target) => {
     const mainWindow = findMainWindow();
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-      if (agentId) {
+      // A target is a page the main window opens for that agent: the Dispatcher's
+      // settings or setup, asked for from its popout (#3235).
+      if (agentId && target) {
+        mainWindow.webContents.send(IPC.WINDOW.NAVIGATE_TO_AGENT, agentId, target);
+      } else if (agentId) {
         mainWindow.webContents.send(IPC.WINDOW.NAVIGATE_TO_AGENT, agentId);
       }
     }
