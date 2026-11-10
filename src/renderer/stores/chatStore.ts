@@ -417,13 +417,13 @@ function settleCompaction(state: ChatViewState, replacement?: NoticeItem): ChatV
   return { ...state, items, compactionItemId: null };
 }
 
-/** A different session is a different conversation, never an extension of its predecessor. */
 /** The runs with the last one (the active or latest) changed. */
 function withLastRun(runs: ChatRun[], change: Partial<ChatRun>): ChatRun[] {
   const last = runs[runs.length - 1];
   return last ? [...runs.slice(0, -1), { ...last, ...change }] : runs;
 }
 
+/** A different session is a different conversation, never an extension of its predecessor. */
 function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
   return {
     ...createChatViewState(event.agentId),
