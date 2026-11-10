@@ -8,6 +8,8 @@ interface SessionEntry {
   startedAt: string;
   lastActiveAt: string;
   friendlyName?: string;
+  /** It kept failing every turn (#3240): choosing it starts a new session instead. */
+  blocked?: boolean;
 }
 
 interface SessionPickerDialogProps {
@@ -87,6 +89,12 @@ function SessionRow({
               {formatRelativeTime(session.lastActiveAt)}
               <span className="mx-1 opacity-50">·</span>
               <span className="font-mono opacity-60">{session.sessionId.slice(0, 12)}...</span>
+              {session.blocked && (
+                <>
+                  <span className="mx-1 opacity-50">·</span>
+                  <span data-testid={`session-blocked-${idx}`}>Kept failing, won't resume</span>
+                </>
+              )}
             </div>
           </>
         )}
@@ -106,9 +114,10 @@ function SessionRow({
           <button
             onClick={() => onResume(session.sessionId)}
             data-testid={`resume-session-${idx}`}
+            title={session.blocked ? 'This session kept failing, so a new session starts instead' : undefined}
             className="px-2.5 py-1 text-xs rounded bg-ctp-accent text-ctp-on-accent hover:bg-ctp-accent/80 cursor-pointer transition-colors font-medium"
           >
-            Resume
+            {session.blocked ? 'Start fresh' : 'Resume'}
           </button>
         </div>
       )}

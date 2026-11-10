@@ -4,6 +4,7 @@ import { AgentRow } from './AgentRow';
 import { agentDot } from './treeModel';
 import { StatusDot, dispatcherDot, dispatcherWorkingText, type AgentDot } from '../../features/agents/agent-status';
 import { useChatStore } from '../../stores/chatStore';
+import { activeRunFailing } from '../../features/dispatcher/work-conversation';
 
 /**
  * The Dispatcher's pinned row (#2538), above every project and shown with
@@ -105,7 +106,8 @@ function PendingRow({ failed, active, onSelect }: { failed: boolean; active: boo
  * The Dispatcher debug view's row (#3188), under the Dispatcher's: its work
  * agent, which opens that agent's chat read-only in the Dispatcher's view.
  * The agent isn't in the agent store, so the row has no menu or hover card;
- * its dot says whether it is running and in a turn.
+ * its dot says whether it is running and in a turn, and whether the active
+ * run's last turn failed.
  */
 export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
   agentId: string;
@@ -115,7 +117,9 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
 }) {
   const noteId = useId();
   const inTurn = useChatStore((s) => !!s.agents[agentId]?.turnStartedAt);
-  const dot: AgentDot = !running ? 'sleeping' : inTurn ? 'working' : 'idle';
+  // Only the active run's last turn counts (#3242): errors kept from ended runs are history.
+  const failing = useChatStore((s) => activeRunFailing(s.agents[agentId]));
+  const dot: AgentDot = !running ? 'sleeping' : inTurn ? 'working' : failing ? 'error' : 'idle';
   return (
     <div role="tree" aria-label="Dispatcher work (debug)" data-testid="dispatcher-work-row" className="flex-shrink-0 px-1.5 pb-1">
       <div

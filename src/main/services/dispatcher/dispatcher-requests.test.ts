@@ -28,6 +28,8 @@ import {
   noteHandedOff,
   noteRequestDone,
   noteWorkEvent,
+  endWaitingRequests,
+  waitingRequests,
   onRequestsChanged,
   reachedThisAttempt,
   requestsUnderWay,
@@ -402,5 +404,49 @@ describe('saved state', () => {
   it('starts empty from a file it can\'t read', () => {
     fs.writeFileSync(getRequestsPath(), '{not json');
     expect(getRequests()).toEqual([]);
+  });
+});
+
+describe('endWaitingRequests: Start fresh (#3240)', () => {
+  it('ends requests waiting for a turn or read by the cut-short turn, and leaves the rest', () => {
+    const reading = handOff('reading');
+    started();
+    const queued = handOff('queued', 'queued');
+    const answered = handOff('answered', 'queued');
+    settleRequest(answered, 'answer', now);
+    expect(getRequest(reading)?.turn).toBe('in_turn');
+    expect(getRequest(queued)?.turn).toBe('awaiting');
+
+    expect(endWaitingRequests('cancelled', waitingRequests(now), now)).toBe(2);
+
+    expect(getRequest(reading)?.status).toBe('cancelled');
+    expect(getRequest(queued)?.status).toBe('cancelled');
+    expect(getRequest(answered)?.status).toBe('done');
+    // The chat is told each one stopped.
+    expect(ended$.mock.calls.map((c) => [c[0].id, c[1]]).sort()).toEqual([[queued, 'cancelled'], [reading, 'cancelled']].sort());
+  });
+
+  it('a request handed off after the fresh start reads the new conversation\'s first turn', () => {
+    handOff('before');
+    started();
+    endWaitingRequests('cancelled', waitingRequests(now), now);
+    const after = handOff('after');
+    started();
+    expect(getRequest(after)).toMatchObject({ status: 'under_way', turn: 'in_turn' });
+  });
+
+  it('leaves a hand-off that landed after the snapshot to the new conversation', () => {
+    const before = handOff('before');
+    started();
+    const snapshot = waitingRequests(now);
+    // The clear is under way: a new hand-off arrives and the new conversation starts its turn.
+    const during = handOff('during', 'queued');
+    started();
+    expect(endWaitingRequests('cancelled', snapshot, now)).toBe(1);
+    expect(getRequest(before)?.status).toBe('cancelled');
+    expect(getRequest(during)).toMatchObject({ status: 'under_way', turn: 'in_turn' });
+    // The new conversation's open turn is still open: its end settles the request.
+    ended('error');
+    expect(getRequest(during)?.status).toBe('failed');
   });
 });

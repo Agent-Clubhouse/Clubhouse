@@ -175,4 +175,18 @@ describe('SessionPickerDialog', () => {
       expect(screen.queryByText('Older')).toBeNull();
     });
   });
+
+  it('marks a session that kept failing as blocked, and offers to start fresh from it (#3240)', async () => {
+    window.clubhouse.agent.listSessions = vi.fn().mockResolvedValue([
+      { ...mockSessions[0], blocked: true },
+      mockSessions[1],
+    ]);
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('session-blocked-0')).toHaveTextContent("Kept failing, won't resume"));
+    expect(screen.queryByTestId('session-blocked-1')).toBeNull();
+    expect(screen.getByTestId('resume-session-0')).toHaveTextContent('Start fresh');
+    expect(screen.getByTestId('resume-session-1')).toHaveTextContent('Resume');
+    fireEvent.click(screen.getByTestId('resume-session-0'));
+    expect(onResume).toHaveBeenCalledWith('aaa-bbb-ccc-111');
+  });
 });

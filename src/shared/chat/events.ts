@@ -265,6 +265,10 @@ export type ChatErrorCode =
   /** A billing or account problem (account on hold, payment): logging in again won't fix it. */
   | 'account_issue'
   | 'rate_limited'
+  /** The provider is down, overloaded or unreachable (a 5xx, a dropped connection): nothing about the session itself. */
+  | 'service_unavailable'
+  /** The chosen model isn't offered: a setting to change, nothing about the session itself. */
+  | 'model_not_found'
   | 'context_overflow'
   | 'tool_failed'
   | 'unknown';

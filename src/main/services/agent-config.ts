@@ -1542,7 +1542,8 @@ async function updateDurableConfigInner(
       delete agent.lastSleep;
     }
   }
-  if (updates.lastSessionId !== undefined) {
+  // A quarantined session (#3240) is never the resume id again.
+  if (updates.lastSessionId !== undefined && !(updates.lastSessionId && agent.quarantinedSessionIds?.includes(updates.lastSessionId))) {
     if (updates.lastSessionId) {
       agent.lastSessionId = updates.lastSessionId;
     } else {
@@ -1647,6 +1648,33 @@ export async function updateSessionId(projectPath: string, agentId: string, sess
   await updateDurableConfig(projectPath, agentId, { lastSessionId: sessionId });
 }
 
+/** How many quarantined session ids an agent keeps. Older ones are long gone from its resume id. */
+const MAX_QUARANTINED_SESSIONS = 20;
+
+/**
+ * Stop resuming a native session that fails every turn (#3240): it joins the
+ * agent's quarantined ids, and stops being its resume id when it is one. The
+ * session history entry stays, so it is still listed under Sessions. Returns
+ * whether the resume id was cleared.
+ */
+export async function quarantineSession(projectPath: string, agentId: string, sessionId: string): Promise<boolean> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return false;
+  const kept = (agent.quarantinedSessionIds ?? []).filter((id) => id !== sessionId);
+  agent.quarantinedSessionIds = [...kept, sessionId].slice(-MAX_QUARANTINED_SESSIONS);
+  const cleared = agent.lastSessionId === sessionId;
+  if (cleared) delete agent.lastSessionId;
+  await writeAgents(projectPath, agents);
+  return cleared;
+}
+
+/** True when the agent's native session was quarantined (#3240). */
+export async function isSessionQuarantined(projectPath: string, agentId: string, sessionId: string): Promise<boolean> {
+  const config = await getDurableConfig(projectPath, agentId);
+  return config?.quarantinedSessionIds?.includes(sessionId) ?? false;
+}
+
 /** Maximum number of sessions to keep in history per agent */
 const MAX_SESSION_HISTORY = 50;
 
@@ -1682,8 +1710,9 @@ export async function addSessionEntry(projectPath: string, agentId: string, entr
   }
 
   // Preserve late history, but never restore an old provider's resume pointer
-  // after a saved provider change.
-  if (!entry.orchestrator || !agent.orchestrator || entry.orchestrator === agent.orchestrator) {
+  // after a saved provider change, or a quarantined session's (#3240).
+  const quarantined = agent.quarantinedSessionIds?.includes(entry.sessionId) ?? false;
+  if (!quarantined && (!entry.orchestrator || !agent.orchestrator || entry.orchestrator === agent.orchestrator)) {
     agent.lastSessionId = entry.sessionId;
   }
 

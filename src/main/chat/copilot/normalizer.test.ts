@@ -40,6 +40,15 @@ describe('copilot normalizer', () => {
     expect(copilotErrorCode({ message: 'boom' })).toBe('unknown');
   });
 
+  it('classifies an outage or no network as the service, not the session (#3240)', () => {
+    expect(copilotErrorCode({ statusCode: 500 })).toBe('service_unavailable');
+    expect(copilotErrorCode({ statusCode: 503, message: 'upstream' })).toBe('service_unavailable');
+    expect(copilotErrorCode({ message: 'request to https://api.githubcopilot.com failed: getaddrinfo ENOTFOUND' })).toBe('service_unavailable');
+    expect(copilotErrorCode({ message: 'TypeError: fetch failed' })).toBe('service_unavailable');
+    expect(copilotErrorCode({ errorType: 'network', message: 'socket hang up' })).toBe('service_unavailable');
+    expect(copilotErrorCode({ statusCode: 400, message: 'bad request' })).toBe('unknown');
+  });
+
   it('maps every documented provider variable, and needs a base URL to turn one on', () => {
     expect(copilotProviderFromEnv({ COPILOT_PROVIDER_API_KEY: 'k', COPILOT_PROVIDER_TYPE: 'openai' })).toBeUndefined();
     expect(copilotProviderFromEnv({ COPILOT_PROVIDER_BASE_URL: '' })).toBeUndefined();

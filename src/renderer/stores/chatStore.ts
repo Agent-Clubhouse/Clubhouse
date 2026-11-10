@@ -289,7 +289,26 @@ export interface ChatViewState {
    * problem (unrecognized messages or a fatal error).
    */
   untestedCliNote: string | null;
+  /**
+   * Each CLI run of this conversation, oldest first (#3242): a wake that
+   * resumes it is a new run. The Dispatcher work view draws a boundary at
+   * each one and tells errors of an ended run from the active one's.
+   */
+  runs: ChatRun[];
 }
+
+/** One CLI run of a conversation: from session_started to session_ended. */
+export interface ChatRun {
+  startedAt: number;
+  /** Null while it runs, or when it ended without saying (the app quit). */
+  endedAt: number | null;
+  /** It continued an earlier native conversation. */
+  resumed: boolean;
+  nativeSessionId: string | null;
+}
+
+/** How many runs a view keeps. */
+const MAX_CHAT_RUNS = 100;
 
 export function createChatViewState(agentId: string): ChatViewState {
   return {
@@ -330,6 +349,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     workspaceRevision: 0,
     compactionItemId: null,
     untestedCliNote: null,
+    runs: [],
   };
 }
 
@@ -395,6 +415,12 @@ function settleCompaction(state: ChatViewState, replacement?: NoticeItem): ChatV
     items.push(replacement);
   }
   return { ...state, items, compactionItemId: null };
+}
+
+/** The runs with the last one (the active or latest) changed. */
+function withLastRun(runs: ChatRun[], change: Partial<ChatRun>): ChatRun[] {
+  const last = runs[runs.length - 1];
+  return last ? [...runs.slice(0, -1), { ...last, ...change }] : runs;
 }
 
 /** A different session is a different conversation, never an extension of its predecessor. */
@@ -596,6 +622,11 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         pendingQuestions: [],
         // Unrecognized messages are counted per CLI run, not over the whole history.
         protocolUnknown: {},
+        runs: [
+          // A run the app quit in the middle of ended no later than this one started.
+          ...state.runs.map((r) => (r.endedAt === null ? { ...r, endedAt: event.ts } : r)),
+          { startedAt: event.ts, endedAt: null, resumed: d.resumed, nativeSessionId: d.nativeSessionId ?? null },
+        ].slice(-MAX_CHAT_RUNS),
       };
     }
     case 'session_info': {
@@ -621,6 +652,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         capabilities: d.capabilities
           ? { ...(state.capabilities ?? MINIMAL_CHAT_CAPABILITIES), ...d.capabilities }
           : state.capabilities,
+        runs: d.nativeSessionId ? withLastRun(state.runs, { nativeSessionId: d.nativeSessionId }) : state.runs,
       };
     }
     case 'session_state':
@@ -632,6 +664,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         state: event.data.reason === 'error' ? 'error' : 'sleeping',
         turnId: null,
         turnStartedAt: null,
+        runs: withLastRun(state.runs, { endedAt: event.ts }),
         items: expireQuestions(stopStreaming(state.items, undefined), (q) => q.sessionId === sid),
         pendingQuestions: [],
       };

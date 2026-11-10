@@ -1,8 +1,9 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import type { DispatcherState } from '../../shared/dispatcher-types';
+import type { DispatcherState, StartFreshResult } from '../../shared/dispatcher-types';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
-import { clearDispatcherChat, type ClearChatResult } from '../services/dispatcher/dispatcher-clear-chat';
+import { clearDispatcherChat, startDispatcherFresh, type ClearChatResult } from '../services/dispatcher/dispatcher-clear-chat';
+import { installDispatcherWorkHealth } from '../services/dispatcher/dispatcher-work-health';
 import { installGroupChat } from '../services/dispatcher/dispatcher-news';
 import { installRequestTracking } from '../services/dispatcher/dispatcher-request-outcomes';
 import { forgetEverything } from '../services/dispatcher/dispatcher-forget';
@@ -45,6 +46,15 @@ export function registerDispatcherHandlers(): void {
     async (_event, update): Promise<DispatcherState> => dispatcher.setDispatcherModels(update),
   ));
   ipcMain.handle(IPC.DISPATCHER.CLEAR_CHAT, (): Promise<ClearChatResult> => clearDispatcherChat());
+  ipcMain.handle(IPC.DISPATCHER.START_FRESH, withValidatedArgs(
+    [stringArg()],
+    async (_event, scope): Promise<StartFreshResult> => {
+      if (scope !== 'work' && scope !== 'both') throw new Error(`Unknown scope: ${scope}. Use work or both.`);
+      return startDispatcherFresh(scope);
+    },
+  ));
+  // A work conversation that fails every turn starts fresh on its own (#3240).
+  installDispatcherWorkHealth();
   // What it used today, conversations apart from background work (#3040).
   ipcMain.handle(IPC.DISPATCHER.GET_USAGE, (): DispatcherUsageSplit => getDispatcherUsageSplit());
 

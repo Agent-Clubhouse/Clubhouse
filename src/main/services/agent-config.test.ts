@@ -105,6 +105,8 @@ import {
   updateSessionId,
   addSessionEntry,
   touchSessionEntry,
+  quarantineSession,
+  isSessionQuarantined,
   updateSessionName,
   getSessionHistory,
   removeSessionEntries,
@@ -2156,6 +2158,53 @@ describe('addSessionEntry', () => {
       expect(config!.sessionHistory!.find((s) => s.sessionId === 'chat-1')).toEqual({
         sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-03T00:00:00Z', orchestrator: 'claude-code', friendlyName: 'Refactor',
       });
+    });
+  });
+  describe('quarantineSession (#3240)', () => {
+    it('clears the resume id and keeps the session in history', async () => {
+      setupWritableAgents([{
+        id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01', lastSessionId: 'bad',
+        sessionHistory: [{ sessionId: 'bad', startedAt: '2024-06-01', lastActiveAt: '2024-06-01' }],
+      }]);
+
+      expect(await quarantineSession(PROJECT_PATH, 'durable_1', 'bad')).toBe(true);
+
+      const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
+      expect(config!.lastSessionId).toBeUndefined();
+      expect(config!.quarantinedSessionIds).toEqual(['bad']);
+      expect(config!.sessionHistory).toHaveLength(1);
+      expect(await isSessionQuarantined(PROJECT_PATH, 'durable_1', 'bad')).toBe(true);
+    });
+
+    it('a late session end never makes a quarantined session the resume id again', async () => {
+      setupWritableAgents([{ id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01', lastSessionId: 'bad' }]);
+      await quarantineSession(PROJECT_PATH, 'durable_1', 'bad');
+
+      // What a chat run's end and a terminal run's exit write.
+      await touchSessionEntry(PROJECT_PATH, 'durable_1', 'bad', 'claude-code', '2024-06-03T00:00:00Z');
+      await addSessionEntry(PROJECT_PATH, 'durable_1', { sessionId: 'bad', startedAt: '2024-06-01', lastActiveAt: '2024-06-04' });
+      await updateSessionId(PROJECT_PATH, 'durable_1', 'bad');
+
+      const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
+      expect(config!.lastSessionId).toBeUndefined();
+      expect(config!.sessionHistory!.map((s) => s.sessionId)).toEqual(['bad']);
+    });
+
+    it('a new session after the quarantine becomes the resume id as usual', async () => {
+      setupWritableAgents([{ id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01', lastSessionId: 'bad' }]);
+      await quarantineSession(PROJECT_PATH, 'durable_1', 'bad');
+      await touchSessionEntry(PROJECT_PATH, 'durable_1', 'fresh', 'claude-code');
+      expect((await getDurableConfig(PROJECT_PATH, 'durable_1'))!.lastSessionId).toBe('fresh');
+    });
+
+    it('leaves a newer resume id alone and keeps only the latest quarantined ids', async () => {
+      setupWritableAgents([{ id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01', lastSessionId: 'newer' }]);
+      for (let i = 0; i < 25; i++) await quarantineSession(PROJECT_PATH, 'durable_1', `old-${i}`);
+      expect(await quarantineSession(PROJECT_PATH, 'durable_1', 'old-24')).toBe(false);
+      const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
+      expect(config!.lastSessionId).toBe('newer');
+      expect(config!.quarantinedSessionIds).toHaveLength(20);
+      expect(config!.quarantinedSessionIds!.at(-1)).toBe('old-24');
     });
   });
 });

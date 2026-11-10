@@ -22,6 +22,7 @@ import type { ChatCapabilities, ChatDriverId, PermissionLevel } from './capabili
 import type {
   PermissionOption,
   ChatEvent,
+  ChatEventDataMap,
   ChatEventDraft,
   ChatQuestionAnswers,
   ChatSessionState,
@@ -113,6 +114,8 @@ export interface AgentRuntime {
   stop(opts?: { graceful?: boolean; throwOnFailure?: boolean }): Promise<void>;
   /** Start a fresh context (Claude /clear, a new Codex thread, a new ACP session). */
   clearContext(): Promise<void>;
+  /** Write a Clubhouse notice into the conversation (#3240). Chat runtimes only. */
+  addNotice?(notice: ChatEventDataMap['notice']): Promise<void>;
   /** Compact the context (Claude /compact, Codex thread/compact/start, ACP /compact). */
   compact(): Promise<void>;
 

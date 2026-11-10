@@ -115,7 +115,7 @@ describe('CodexChatEventMapper', () => {
   it('maps a retrying error with its stable code', () => {
     const events = mapAll(mapper, fx.completedTurnNotifications);
     expect(events.find((e) => e.type === 'error')?.data).toEqual({
-      code: 'unknown',
+      code: 'service_unavailable',
       message: 'stream disconnected',
       fatal: false,
       willRetry: true,
@@ -581,7 +581,18 @@ describe('codex chat helpers', () => {
     ['cyberPolicy', 'refusal'],
     ['sandboxError', 'tool_failed'],
     ['badRequest', 'protocol_error'],
-    ['serverOverloaded', 'unknown'],
+    ['serverOverloaded', 'service_unavailable'],
+    ['internalServerError', 'service_unavailable'],
+    [{ httpConnectionFailed: { httpStatusCode: 502 } }, 'service_unavailable'],
+    [{ responseStreamConnectionFailed: { httpStatusCode: null } }, 'service_unavailable'],
+    [{ responseStreamDisconnected: { httpStatusCode: null } }, 'service_unavailable'],
+    [{ responseTooManyFailedAttempts: { httpStatusCode: 503 } }, 'service_unavailable'],
+    // A status the service answered with: 429 is a rate limit, another 4xx is about the request.
+    [{ httpConnectionFailed: { httpStatusCode: 429 } }, 'rate_limited'],
+    [{ responseStreamConnectionFailed: { httpStatusCode: 400 } }, 'unknown'],
+    [{ responseTooManyFailedAttempts: { httpStatusCode: 404 } }, 'unknown'],
+    ['modelNotFound', 'model_not_found'],
+    ['threadRollbackFailed', 'unknown'],
   ] as const)('codexErrorCode maps %s to %s', (info, code) => {
     expect(codexErrorCode(info)).toBe(code);
   });

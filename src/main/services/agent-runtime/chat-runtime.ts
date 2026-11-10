@@ -770,6 +770,12 @@ export class ChatAgentRuntime implements AgentRuntime {
     await this.end('stopped', 0);
   }
 
+  /** Write a Clubhouse notice into the current conversation, such as a recovery (#3240). */
+  async addNotice(notice: ChatEventDataMap['notice']): Promise<void> {
+    if (this.ended) return;
+    await this.emit({ type: 'notice', data: notice });
+  }
+
   /** Starts a new conversation: new Clubhouse session id, fresh native session. */
   async clearContext(): Promise<void> {
     const old = this.session;

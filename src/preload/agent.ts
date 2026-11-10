@@ -328,6 +328,8 @@ export const agent = {
     startedAt: string;
     lastActiveAt: string;
     friendlyName?: string;
+    /** It kept failing every turn (#3240): choosing it starts a new session. */
+    blocked?: boolean;
   }>> =>
     ipcRenderer.invoke(IPC.AGENT.LIST_SESSIONS, projectPath, agentId, orchestrator),
 

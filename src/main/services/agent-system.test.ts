@@ -342,6 +342,7 @@ import {
   getRunningAgentIds,
   expandHome,
   listSessions,
+  RESUME_BLOCKED_NOTICE,
   spawnAccess,
   withDispatcherStartModel,
 } from './agent-system';
@@ -1846,6 +1847,21 @@ describe('agent-system', () => {
       expect(mockUpdateSessionId).not.toHaveBeenCalled();
       const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
       expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
+    });
+
+    it('never resumes a quarantined session, whichever wake asked, and says so (#3240)', async () => {
+      config.quarantinedSessionIds = [DEAD];
+      mockBroadcastToAllWindows.mockClear();
+      const { resumedWith } = await wake('codex-cli');
+      expect(resumedWith).toBe(DEAD);
+      const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+      expect(spawnArgs.resume).toBe(false);
+      expect(spawnArgs.sessionId).toBeUndefined();
+      // A terminal start says it where other runtime notices go, once.
+      const blocked = mockBroadcastToAllWindows.mock.calls.filter((c) => c[0] === IPC.CHAT.RUNTIME_NOTICE && (c[2] as { code?: string }).code === 'resume_blocked');
+      expect(blocked).toEqual([[IPC.CHAT.RUNTIME_NOTICE, 'agent-1', { level: 'warn', code: 'resume_blocked', message: RESUME_BLOCKED_NOTICE }]]);
+      const { takeNextStartNotices } = await import('./agent-runtime/stale-session');
+      expect(takeNextStartNotices('agent-1')).toEqual([]);
     });
 
     describe('Codex runs that print no id (#2132)', () => {
@@ -3363,6 +3379,14 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
   const entry = (id: string) => ({ sessionId: id, startedAt: '2026-10-17T00:00:00Z', lastActiveAt: '2026-10-17T01:00:00Z' });
 
   afterEach(() => notSessionCapable(mockCodexProvider));
+
+  it('lists a quarantined session marked blocked (#3240)', async () => {
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli', quarantinedSessionIds: ['bad-1'] });
+    mockGetSessionHistory.mockResolvedValue([entry('bad-1'), entry('good-1')]);
+    const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
+    expect(sessions.find((s) => s.sessionId === 'bad-1')).toMatchObject({ blocked: true });
+    expect(sessions.find((s) => s.sessionId === 'good-1')).not.toHaveProperty('blocked');
+  });
 
   it('hides history entries the store does not have and prunes them; keeps ones it has or can\'t check', async () => {
     sessionCapable(mockCodexProvider);

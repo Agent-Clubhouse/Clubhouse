@@ -15,7 +15,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestrationCards } from '../agents/helpers/OrchestrationCards';
 import { DispatcherView } from './DispatcherView';
 import { useDispatcherStore } from './dispatcherStore';
-import { ClearChatHost } from './ClearChat';
+import { ClearChatHost, StartFreshHost } from './ClearChat';
 import { useDispatcherDebugStore } from './dispatcherDebug';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -124,6 +124,26 @@ describe('DispatcherView', () => {
     await waitFor(() => expect(screen.queryByTestId('dispatcher-clear-chat-confirm')).toBeNull());
     expect(clearChat).toHaveBeenCalledTimes(1);
     clearChat.mockRestore();
+  });
+
+  it('offers Start fresh in its menu, for its work or both conversations, keeping everything else (#3240)', async () => {
+    const startFresh = vi.spyOn(window.clubhouse.dispatcher, 'startFresh').mockResolvedValue({ work: 'next_start' });
+    useAgentStore.setState({ agents: { disp: dispatcher() } });
+    render(<><DispatcherView /><StartFreshHost /></>);
+    fireEvent.click(screen.getByTestId('sleeping-more'));
+    fireEvent.click(within(screen.getByTestId('agent-context-menu')).getByTestId('ctx-start-fresh'));
+    const confirm = await waitFor(() => screen.getByTestId('dispatcher-start-fresh-confirm'));
+    expect(confirm.textContent).toContain('Memory, agents, connections, Actions and settings stay as they are.');
+    expect(startFresh).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('dispatcher-start-fresh-work'));
+    await waitFor(() => expect(screen.queryByTestId('dispatcher-start-fresh-confirm')).toBeNull());
+    expect(startFresh).toHaveBeenCalledWith('work');
+
+    fireEvent.click(screen.getByTestId('sleeping-more'));
+    fireEvent.click(within(screen.getByTestId('agent-context-menu')).getByTestId('ctx-start-fresh'));
+    fireEvent.click(await waitFor(() => screen.getByTestId('dispatcher-start-fresh-both')));
+    await waitFor(() => expect(startFresh).toHaveBeenCalledWith('both'));
+    startFresh.mockRestore();
   });
 
   it('sends a failed launch to Settings > Dispatcher, not the agent settings view', async () => {
