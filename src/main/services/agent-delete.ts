@@ -177,7 +177,8 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
     const quickAgents = runningQuickAgentsIn(agent.worktreePath);
     for (const quick of quickAgents) await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
 
-    if (isAgentRunning(agentId)) await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true });
+    // A stop that fails throws, so the worktree isn't removed under a running agent.
+    if (isAgentRunning(agentId)) await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true, throwOnFailure: true });
     const stopped = { ...(cascade && { helpers: cascade }), ...(quickAgents.length > 0 && { stoppedQuickAgents: quickAgents.map((q) => q.id) }) };
 
     // Again now nothing runs in it: work written while helpers settled and agents stopped isn't lost.

@@ -99,8 +99,17 @@ describe('deleteAgent (#3182)', () => {
     });
     expect(listHelpersEverywhere).toHaveBeenCalledWith(PROJECT, 'orch', { recursive: true });
     expect(settleHelpers).toHaveBeenCalledWith(PROJECT, 'orch', 'dispose', undefined);
-    expect(killAgent).toHaveBeenCalledWith('orch', PROJECT, undefined, 'user', { waitForExit: true });
+    expect(killAgent).toHaveBeenCalledWith('orch', PROJECT, undefined, 'user', { waitForExit: true, throwOnFailure: true });
     expect(calls).toEqual(['lock:orch', 'settle:dispose', 'kill:orch', 'delete:force']);
+  });
+
+  it('a stop that fails throws before anything is deleted, and the gate opens again (#3199)', async () => {
+    gate.open.set('orch', { crossProject: false });
+    vi.mocked(isAgentRunning).mockReturnValue(true);
+    vi.mocked(killAgent).mockRejectedValueOnce(new Error('Timed out waiting for agent exit'));
+    await expect(deleteAgent(PROJECT, 'orch', { mode: 'force' })).rejects.toThrow('Timed out waiting for agent exit');
+    expect(agentConfig.deleteForce).not.toHaveBeenCalled();
+    expect(gate.open.has('orch')).toBe(true);
   });
 
   it('dispose: helpers with work at risk stop it before the orchestrator is touched', async () => {

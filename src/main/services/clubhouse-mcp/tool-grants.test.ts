@@ -5,6 +5,7 @@ vi.mock('../plugin-manifest-registry', () => ({
 }));
 
 import { GRANT_ACTIONS } from '../../../shared/agent-grants';
+import { getAttributeSpec } from '../../../shared/telemetry/attributes';
 import { listToolGrants, _resetForTesting } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
@@ -45,6 +46,14 @@ describe('tool grant declarations (#2967)', () => {
         if (d.target === 'bound' || d.target === 'group_members') expect(tool.kind, tool.name).not.toBe('global');
       }
     }
+  });
+
+  it('every tool the app registers has its own telemetry name, and the list names no other tool (#3200)', () => {
+    // A name missing from clubhouse.mcp.tool reports its tool_call spans as `other`.
+    const names = new Set(registerAll().map((t) => t.name));
+    const allowed = getAttributeSpec('clubhouse.mcp.tool')?.values ?? [];
+    expect([...names].filter((n) => !allowed.includes(n))).toEqual([]);
+    expect(allowed.filter((v) => v !== 'other' && !names.has(v))).toEqual([]);
   });
 
   it('only call_wire_tool passes through to the tool it calls', () => {

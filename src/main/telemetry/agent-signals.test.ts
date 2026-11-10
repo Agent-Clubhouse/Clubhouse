@@ -1,7 +1,4 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAttributeSpec } from '../../shared/telemetry/attributes';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { _resetToolCallsForTests, MAX_PENDING_TOOL_CALLS, clearToolCalls, recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
 import { setProducingRuntime } from './__test-utils__/producing-runtime';
@@ -118,20 +115,6 @@ describe('agent signals', () => {
       [ATTR.mcpToolKind('plugin'), ATTR.mcpTool('other')],
       [ATTR.mcpToolKind('other'), ATTR.mcpTool('other')],
     ]);
-  });
-
-  it('lists every Clubhouse MCP tool suffix and global tool registered under clubhouse-mcp/tools', () => {
-    const dir = path.resolve(__dirname, '../services/clubhouse-mcp/tools');
-    const names = new Set<string>();
-    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))) {
-      const src = fs.readFileSync(path.join(dir, file), 'utf8');
-      for (const m of src.matchAll(/nameSuffix:\s*'([a-z_]+)'/g)) names.add(m[1]);
-      for (const m of src.matchAll(/registerGlobalTool\(\s*'([a-z_]+)'/g)) names.add(m[1]);
-    }
-    expect(names.size).toBeGreaterThan(20);
-    const allowed = getAttributeSpec('clubhouse.mcp.tool')?.values ?? [];
-    expect([...names].filter((n) => !allowed.includes(n))).toEqual([]);
-    expect(allowed.filter((v) => v !== 'other' && !names.has(v))).toEqual([]);
   });
 
   it('records binary lookup time by tier', () => {

@@ -521,8 +521,8 @@ export const ATTR = {
   mcpToolKind: enumAttr('clubhouse.mcp.tool_kind', ['clubhouse', 'browser', 'terminal', 'group', 'plugin', 'global', 'other']),
   /**
    * The Clubhouse tool suffix (or global tool name) from this fixed list;
-   * anything else, and every plugin tool, is `other`. A test keeps it in sync
-   * with the tools registered under clubhouse-mcp/tools.
+   * anything else, and every plugin tool, is `other`. A test registers every
+   * Clubhouse MCP tool as the app does and keeps this list in sync (#3200).
    */
   mcpTool: enumAttr('clubhouse.mcp.tool', [
     // agent
@@ -566,6 +566,15 @@ export const ATTR = {
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     // actions (#2952), the permission model's action.* (#2921)
     'create_action', 'list_actions', 'update_action', 'delete_action', 'run_action', 'action_history', 'subscribe',
+    // provider changes (#2845)
+    'preview_provider', 'change_provider',
+    // managed agents: parts, setup, templates and restart (#2900)
+    'list_agent_parts', 'get_agent_part', 'create_agent_part', 'update_agent_part', 'fork_agent_part', 'delete_agent_part',
+    'get_agent_setup', 'set_agent_setup', 'preview_agent_setup',
+    'list_agent_templates', 'save_agent_template', 'push_agent_template', 'delete_agent_template', 'create_managed_agent',
+    'restart_agent',
+    // deleting an agent with its helpers (#3182)
+    'delete_agent',
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
