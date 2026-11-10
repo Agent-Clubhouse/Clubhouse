@@ -246,7 +246,8 @@ function applyPluginParts(projectPath: string, pluginId: string, update: PluginM
       }
       if (!opts.onlyMissing) {
         for (const [key, entry] of existing) {
-          if (key.startsWith('mcp:') && !wanted.has(key)) await putPart(pluginId, proj, key, entry, entry.name, null);
+          // A server the catalog refused this time keeps its last good part, as it keeps its saved copy.
+          if (key.startsWith('mcp:') && !wanted.has(key) && !refused.has(key.slice('mcp:'.length))) await putPart(pluginId, proj, key, entry, entry.name, null);
         }
       }
     }

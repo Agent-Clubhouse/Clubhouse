@@ -176,6 +176,13 @@ describe('which saved servers are the plugin\'s (#3245 review)', () => {
     expect(Object.keys(JSON.parse((await readProjectAgentDefaults(h.projectPath)).mcpJson!).mcpServers)).toEqual(['plugin-buddy-bad']);
   });
 
+  it('keeps a server\'s part when its next definition is refused, instead of leaving it nowhere', async () => {
+    await user(() => setPluginManagedParts(h.projectPath, 'buddy', { mcpServers: { chat: { command: 'c' } } }));
+    const result = await user(() => setPluginManagedParts(h.projectPath, 'buddy', { mcpServers: { chat: { nonsense: true } } }));
+    expect(result.notes.join('\n')).toMatch(/The chat MCP server isn't made a part/);
+    expect((await readPluginManagedParts(h.projectPath, 'buddy')).mcpServers).toEqual(['chat']);
+  });
+
   it('renames the parts after a project rename, at the plugin\'s next write', async () => {
     await user(() => setPluginManagedParts(h.projectPath, 'buddy', { instructions: 'Hi', mcpServers: { chat: { command: 'c' } } }));
     h.projectName = 'shop';
