@@ -8,6 +8,19 @@ export const MAX_COMPLETED_QUICK_AGENTS = 20;
 export const ACTIVITY_UPDATE_THROTTLE_MS = 100;
 export const MAX_ACTIVITY_ENTRIES = 500;
 
+/** Prefix of the temporary id a row shown while an agent is created takes; the real id replaces it. */
+const CREATING_PLACEHOLDER_PREFIX = 'creating_';
+
+/** A temporary id for a row shown while an agent is created, before main has given it one. */
+export function creatingPlaceholderId(): string {
+  return `${CREATING_PLACEHOLDER_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** True for a row this window shows while it creates an agent; its creation flow removes it (#3246). */
+export function isCreatingPlaceholderId(id: string): boolean {
+  return id.startsWith(CREATING_PLACEHOLDER_PREFIX);
+}
+
 export function omitRecordKeys<T>(record: Record<string, T>, ids: Set<string>): Record<string, T> {
   if (ids.size === 0) return record;
 

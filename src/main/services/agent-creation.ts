@@ -31,6 +31,8 @@ export interface StartDurableCreationOptions {
   inject?: (config: DurableAgentConfig) => Promise<void>;
   /** An inject failure fails the creation instead of being logged (a managed helper's setup, #2899). */
   injectRequired?: boolean;
+  /** False for a managed agent: the project's legacy agent defaults are neither checked nor written (#3243). */
+  projectDefaults?: false;
 }
 
 export type DurableCreationOutcome = 'ready' | 'failed' | 'cancelled';
@@ -70,7 +72,7 @@ export function startDurableCreation(
     async () => {
       let handle: DurableCreationHandle;
       try {
-        handle = await beginDurableCreation(projectPath, params, { emitEvents: true, keepFailedRecord: true, inject: options.inject, injectRequired: options.injectRequired });
+        handle = await beginDurableCreation(projectPath, params, { emitEvents: true, keepFailedRecord: true, inject: options.inject, injectRequired: options.injectRequired, projectDefaults: options.projectDefaults });
       } catch (err) {
         refused(err);
         // validation is tagged at its throw site; anything else is a write failure.

@@ -31,6 +31,7 @@ vi.mock('../../agent-config', () => ({
     return a;
   },
   deleteUnregister: async (_p: string, id: string) => { state.agents.delete(id); },
+  deleteDurable: async (_p: string, id: string) => { state.agents.delete(id); },
 }));
 vi.mock('../../agent-delete', () => ({ deleteAgent: vi.fn(async () => ({ ok: true, message: 'Force deleted', deleted: true })) }));
 const grantMock = vi.hoisted(() => ({ granted: false }));

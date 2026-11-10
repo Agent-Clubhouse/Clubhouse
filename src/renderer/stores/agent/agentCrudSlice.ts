@@ -1,7 +1,7 @@
 import { Agent, DurableAgentConfig } from '../../../shared/types';
 import { isDisposedAgent } from '../../../shared/agent-helpers';
 import { AgentCrudSlice, GetAgentState, SetAgentState } from './types';
-import { removeAgentsFromState } from './agentUtils';
+import { isCreatingPlaceholderId, removeAgentsFromState } from './agentUtils';
 import { clearPendingActivityTimer } from './activityTimers';
 import { parentLinkFields } from './parentLink';
 
@@ -231,8 +231,10 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
       set((s) => {
         removed = Object.values(s.agents)
           .filter((agent) => agent.kind === 'durable' && agent.projectId === projectId)
-          // A 'creating' row may be a placeholder under a temporary id; its creation flow removes it.
-          .filter((agent) => before.has(agent.id) && !live.has(agent.id) && agent.status !== 'creating')
+          // Only this window's placeholder (under a temporary id) outlives a listing
+          // without it: its creation flow removes it. A real id main no longer lists
+          // is gone, even one still shown as creating: its creation rolled back (#3246).
+          .filter((agent) => before.has(agent.id) && !live.has(agent.id) && !isCreatingPlaceholderId(agent.id))
           .map((agent) => agent.id);
         // A deleted agent's quick agents go with it, as the delete dialog removes them;
         // main stops them when it deletes (delete_agent, #3182).

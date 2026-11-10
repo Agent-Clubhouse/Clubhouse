@@ -136,7 +136,9 @@ function closeGate(agentId: string): () => void {
 
 async function deleteLocked(projectPath: string, agentId: string, request: AgentDeleteRequest): Promise<AgentDeleteResult> {
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-  if (!agent) return { ok: false, message: 'Agent not found' };
+  // Already gone (a failed creation rolled back, or another window deleted it):
+  // there is nothing left to delete, so the row a window still shows can go (#3246).
+  if (!agent) return { ok: true, deleted: true, message: 'It was already removed.' };
 
   const helpers = await listHelpersEverywhere(projectPath, agentId, { recursive: true });
   if (helpers.length > 0 && !request.helpers) {
