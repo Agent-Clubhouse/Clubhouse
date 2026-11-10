@@ -6337,6 +6337,8 @@ describe('annex-server', () => {
     it.each([
       [{ mode: 'nuke' }, 'invalid_mode'],
       [{ mode: 'force', helpers: 'abandon' }, 'invalid_helpers'],
+      // A remote can't choose a file on this machine.
+      [{ mode: 'save-patch' }, 'save_patch_needs_file'],
     ])('POST /agents/:id/delete refuses %j without deleting', async (body, error) => {
       vi.mocked(projectStore.list).mockReturnValue([
         { id: 'proj_1', name: 'P', path: '/p', icon: '' } as any,

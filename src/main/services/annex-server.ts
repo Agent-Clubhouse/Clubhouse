@@ -3109,6 +3109,8 @@ async function handleDurableDeleteRoute(ctx: AnnexRouteContext, match: RegExpMat
   readJsonBody(ctx.req, ctx.res, async (body) => {
     const mode = body.mode ?? 'force';
     if (!isAgentDeleteMode(mode)) { sendJson(ctx.res, 400, { error: 'invalid_mode' }); return; }
+    // A patch is written to a file chosen on this machine, which a remote can't do.
+    if (mode === 'save-patch') { sendJson(ctx.res, 400, { error: 'save_patch_needs_file' }); return; }
     const helpers = body.helpers;
     if (helpers !== undefined && helpers !== 'dispose' && helpers !== 'keep') { sendJson(ctx.res, 400, { error: 'invalid_helpers' }); return; }
     const choice = helpers as HelperDeleteChoice | undefined;

@@ -66,6 +66,11 @@ beforeEach(() => {
   vi.mocked(agentConfig.getWorktreeStatus).mockResolvedValue(clean);
   vi.mocked(listHelpersEverywhere).mockResolvedValue([]);
   vi.mocked(isAgentRunning).mockReturnValue(false);
+  // Stopping the agent being deleted stops it; quick agents stopping first don't.
+  vi.mocked(killAgent).mockImplementation(async (id: string) => {
+    calls.push(`kill:${id}`);
+    if (id === 'orch') vi.mocked(isAgentRunning).mockReturnValue(false);
+  });
   vi.mocked(settleHelpers).mockImplementation(async (_p, _id, choice) => {
     calls.push(`settle:${choice}`);
     return { ok: true, message: choice === 'dispose' ? 'Disposed 2 helper(s)' : 'Kept 2 helper(s)', helperIds: ['h1', 'h2'] };
@@ -103,13 +108,29 @@ describe('deleteAgent (#3182)', () => {
     expect(calls).toEqual(['lock:orch', 'settle:dispose', 'kill:orch', 'delete:force']);
   });
 
-  it('a stop that fails throws before anything is deleted, and the gate opens again (#3199)', async () => {
+  it('a stop that fails refuses the delete, still reports settled helpers, and the gate opens again (#3199)', async () => {
     gate.open.set('orch', { crossProject: false });
+    vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
     vi.mocked(isAgentRunning).mockReturnValue(true);
     vi.mocked(killAgent).mockRejectedValueOnce(new Error('Timed out waiting for agent exit'));
-    await expect(deleteAgent(PROJECT, 'orch', { mode: 'force' })).rejects.toThrow('Timed out waiting for agent exit');
+    const result = await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose' });
+    expect(result).toMatchObject({
+      ok: false, stopFailed: 'stop_failed',
+      message: 'Lead couldn\'t be stopped (Timed out waiting for agent exit). Its helpers were settled, but it was not deleted.',
+      helpers: { ok: true, helperIds: ['h1', 'h2'] },
+    });
+    expect(isDeleteRefusal(result)).toBe(false);
     expect(agentConfig.deleteForce).not.toHaveBeenCalled();
     expect(gate.open.has('orch')).toBe(true);
+  });
+
+  it('an agent still running after its stop is not deleted: agent_still_running (#3199)', async () => {
+    vi.mocked(isAgentRunning).mockReturnValue(true);
+    vi.mocked(killAgent).mockImplementationOnce(async (id: string) => { calls.push(`kill:${id}`); });
+    const result = await deleteAgent(PROJECT, 'orch', { mode: 'force' });
+    expect(result).toMatchObject({ ok: false, stopFailed: 'agent_still_running', message: 'Lead couldn\'t be stopped. It was not deleted.' });
+    expect(calls).toEqual(['lock:orch', 'kill:orch']);
+    expect(agentConfig.deleteForce).not.toHaveBeenCalled();
   });
 
   it('dispose: helpers with work at risk stop it before the orchestrator is touched', async () => {
