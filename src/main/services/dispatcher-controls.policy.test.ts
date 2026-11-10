@@ -175,8 +175,8 @@ describe('authorization together with the update', () => {
   });
 
   it.each([
-    ['Connect to Dispatcher off', () => OFF, 'not_connected_orchestrator'],
-    ['orchestration off', () => PLAIN, 'not_connected_orchestrator'],
+    ['Connect to Dispatcher off', () => OFF, 'not_connected_to_dispatcher'],
+    ['both switches at their defaults (off)', () => PLAIN, 'not_connected_to_dispatcher'],
     ['a parent', () => KID, 'helper'],
   ])('refuses an agent with %s, from what its real config resolves to', async (_name, id, code) => {
     const before = fs.readFileSync(agentsFile(), 'utf-8');

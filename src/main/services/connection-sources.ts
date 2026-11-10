@@ -44,7 +44,6 @@ const KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> = {
 const SUSPENDED_WHY: Readonly<Record<string, string>> = {
   dispatcher_off: 'The Dispatcher is off.',
   store_unwritable: 'Clubhouse can’t save to its connections file.',
-  orchestration_off: 'Orchestration is off for one of these agents.',
   not_connected_to_dispatcher: 'One of these agents is not connected to the Dispatcher.',
 };
 

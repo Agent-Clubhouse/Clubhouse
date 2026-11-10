@@ -1,6 +1,8 @@
 /**
- * Direct orchestrator-to-orchestrator links the Dispatcher made (#2661), and
- * their provenance. Each entry is one direction of one pair.
+ * Direct agent-to-agent links the Dispatcher made (#2661), and their
+ * provenance. Each entry is one direction of one pair. An end is any local,
+ * durable, non-helper agent with Connect to Dispatcher on, whether or not it
+ * orchestrates (#3248).
  *
  * The store is `dispatcher-connections.json` under the Clubhouse base dir. Not
  * the Dispatcher's folder, which is its working directory, so its ordinary file
@@ -9,9 +11,9 @@
  * helpers, and the Dispatcher is in no project.
  *
  * What an entry is worth now ({@link statusOf}):
- * - `active`: both ends are connected orchestrators, so it is bound.
- * - `suspended`: an end stopped being one (orchestration or Connect to
- *   Dispatcher off), or the Dispatcher is off. The entry stays
+ * - `active`: both ends can be link ends, so it is bound.
+ * - `suspended`: an end's Connect to Dispatcher is off, or the Dispatcher is
+ *   off. Orchestration on or off changes nothing. The entry stays
  *   and the binding goes; it comes back when the end qualifies again. Readback
  *   and the Connections card show this state, so a return is never unseen.
  * - `unverified`: an end's project can't be read. Entry and binding stay as they are.
@@ -323,7 +325,7 @@ export function addDispatcherConnections(entries: DispatcherConnection[]): Promi
     }
     for (const { agentId } of added) {
       if (next.filter((c) => c.agentId === agentId).length > MAX_DISPATCHER_LINKS_PER_AGENT) {
-        throw new DispatcherLinkRefused('link_limit', `An orchestrator can have at most ${MAX_DISPATCHER_LINKS_PER_AGENT} outgoing links. Disconnect one first.`);
+        throw new DispatcherLinkRefused('link_limit', `An agent can have at most ${MAX_DISPATCHER_LINKS_PER_AGENT} outgoing links. Disconnect one first.`);
       }
     }
     if (added.length > 0) await saveStore({ ...state, connections: next });
@@ -526,20 +528,29 @@ export async function readAgentCensus(): Promise<AgentCensus> {
   return { registered, unreadable, agents };
 }
 
-/** Whether an entry can be the end of a Dispatcher link or setting change. */
+/**
+ * Whether an entry can be the end of a Dispatcher link (#3248): a durable agent,
+ * not disposed, not a helper, with Connect to Dispatcher on. Orchestration
+ * doesn't matter: the tools on each direction are what a link can do.
+ */
+export function isLinkableAgent(agent: DurableAgentConfig, policy: ResolvedOrchestrationPolicy): boolean {
+  return !isDisposedAgent(agent) && !agent.parentAgentId && policy.connectToDispatcher;
+}
+
+/** Whether an entry's helper settings are the Dispatcher's to change: a link end that also orchestrates. */
 export function isConnectedOrchestrator(agent: DurableAgentConfig, policy: ResolvedOrchestrationPolicy): boolean {
-  return !isDisposedAgent(agent) && !agent.parentAgentId && policy.orchestrate && policy.connectToDispatcher;
+  return isLinkableAgent(agent, policy) && policy.orchestrate;
 }
 
 export type LinkStatus = 'active' | 'suspended' | 'unverified' | 'gone';
-export type SuspensionReason = 'dispatcher_off' | 'store_unwritable' | 'orchestration_off' | 'not_connected_to_dispatcher';
+export type SuspensionReason = 'dispatcher_off' | 'store_unwritable' | 'not_connected_to_dispatcher';
 
 function endStatus(id: string, projectPath: string, census: AgentCensus): LinkStatus {
   if (!census.registered.has(projectPath)) return 'gone';
   if (census.unreadable.has(projectPath)) return 'unverified';
   const entry = census.agents.get(id);
   if (!entry || isDisposedAgent(entry.agent) || entry.agent.parentAgentId) return 'gone';
-  return isConnectedOrchestrator(entry.agent, entry.policy) ? 'active' : 'suspended';
+  return isLinkableAgent(entry.agent, entry.policy) ? 'active' : 'suspended';
 }
 
 /** The worse of the two ends. The Dispatcher being off, or a store that takes no writes, suspends anything not gone for good. */
@@ -551,10 +562,6 @@ export function statusOf(c: DispatcherConnection, census: AgentCensus, dispatche
   return ends.includes('suspended') ? 'suspended' : 'active';
 }
 
-function endReason({ policy }: OrchestratorEntry): SuspensionReason {
-  return policy.orchestrate ? 'not_connected_to_dispatcher' : 'orchestration_off';
-}
-
 /** Why a suspended link is suspended, and which end caused it, if an end did. */
 export function suspensionOf(
   c: DispatcherConnection,
@@ -564,8 +571,7 @@ export function suspensionOf(
   if (!dispatcherOn) return { reason: 'dispatcher_off' };
   if (writesBlocked) return { reason: 'store_unwritable' };
   for (const [id, projectPath] of [[c.agentId, c.agentProjectPath], [c.targetId, c.targetProjectPath]]) {
-    const entry = census.agents.get(id);
-    if (entry && endStatus(id, projectPath, census) === 'suspended') return { reason: endReason(entry), agentId: id };
+    if (census.agents.has(id) && endStatus(id, projectPath, census) === 'suspended') return { reason: 'not_connected_to_dispatcher', agentId: id };
   }
   return { reason: 'not_connected_to_dispatcher' };
 }
