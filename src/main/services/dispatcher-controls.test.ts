@@ -318,10 +318,15 @@ beforeEach(async () => {
   state.base = owner.base;
   state.projects = [{ id: 'p1', name: 'one', path: P1 }, { id: 'p2', name: 'two', path: P2 }];
   state.agents = new Map<string, unknown[]>([
-    [P1, [agent('a'), agent('b'), agent('plain'), agent('helper', { parentAgentId: 'a' }), agent('gone', { disposedAt: '2026-01-01' } as Partial<DurableAgentConfig>)]],
-    [P2, [agent('c')]],
+    [P1, [agent('a'), agent('b'), agent('plain'), agent('worker'), agent('helper', { parentAgentId: 'a' }), agent('gone', { disposedAt: '2026-01-01' } as Partial<DurableAgentConfig>)]],
+    [P2, [agent('c'), agent('worker2')]],
   ]);
-  state.policies = new Map([['plain', { orchestrate: false, connectToDispatcher: false }]]);
+  // plain: connected to nothing. worker, worker2: connected to the Dispatcher, but they don't orchestrate (#3248).
+  state.policies = new Map([
+    ['plain', { orchestrate: false, connectToDispatcher: false }],
+    ['worker', { orchestrate: false, connectToDispatcher: true }],
+    ['worker2', { orchestrate: false, connectToDispatcher: true }],
+  ]);
   state.dispatcherOn = true;
   state.globalCap = 20;
   state.helpers = new Map();
@@ -412,9 +417,10 @@ describe('set_orchestrator_helpers', () => {
 
   it.each([
     ['a helper', 'helper', 'helper'],
-    ['a disposed agent', 'gone', 'not_connected_orchestrator'],
-    ['an agent that is not an orchestrator', 'plain', 'not_connected_orchestrator'],
-    ['an unknown id', 'nobody', 'not_connected_orchestrator'],
+    ['a disposed agent', 'gone', 'unknown_agent'],
+    ['an agent not connected to the Dispatcher', 'plain', 'not_connected_to_dispatcher'],
+    ['a connected agent that doesn\'t orchestrate', 'worker', 'not_connected_orchestrator'],
+    ['an unknown id', 'nobody', 'unknown_agent'],
     ['itself', 'dispatcher', 'dispatcher_wire'],
   ])('refuses %s', async (_name, id, code) => {
     const result = await call('set_orchestrator_helpers', { agent_id: id, max_helpers: 3 });
@@ -494,8 +500,9 @@ describe('connect_orchestrators', () => {
 
   it.each([
     ['a helper', 'helper', 'helper'],
-    ['a disposed agent', 'gone', 'not_connected_orchestrator'],
-    ['a plain agent', 'plain', 'not_connected_orchestrator'],
+    ['a disposed agent', 'gone', 'unknown_agent'],
+    ['an unknown id', 'nobody', 'unknown_agent'],
+    ['an agent with Connect to Dispatcher off', 'plain', 'not_connected_to_dispatcher'],
     ['the Dispatcher', 'dispatcher', 'dispatcher_wire'],
   ])('refuses %s as an end, in either position', async (_name, id, code) => {
     for (const args of [{ from: 'a', to: id }, { from: id, to: 'a' }]) {
@@ -1393,14 +1400,97 @@ describe('a removal the store can\'t take', () => {
   });
 });
 
+describe('links between agents that don\'t orchestrate (#3248)', () => {
+  it('links two connected agents across projects, both ways, with a new link\'s tools', async () => {
+    const result = await call('connect_orchestrators', { from: 'worker', to: 'worker2', two_way: true });
+    expect(result.isError).toBeFalsy();
+    const { links } = JSON.parse(text(result));
+    expect(links.map((l: { from: string; to: string; outcome: string }) => `${l.from}>${l.to}:${l.outcome}`)).toEqual(['worker>worker2:created', 'worker2>worker:created']);
+    expect(links[0].tools.disabled).toEqual(expect.arrayContaining(['clear_agent', 'compact_agent']));
+    expect(links[0].tools.allowed).toEqual(expect.arrayContaining(['send_message', 'wake_agent']));
+    expect(isBound('worker', 'worker2') && isBound('worker2', 'worker')).toBe(true);
+    expect(await storedPairs()).toEqual(['worker>worker2', 'worker2>worker']);
+    expect(lastAudit()).toMatchObject({ tool: 'connect_orchestrators', outcome: 'ok', targets: ['worker', 'worker2'] });
+  });
+
+  it('links an orchestrator to an agent that doesn\'t orchestrate, and sets and removes it', async () => {
+    expect((await call('connect_orchestrators', { from: 'a', to: 'worker', allow: ['get_status'] })).isError).toBeFalsy();
+    expect(isBound('a', 'worker')).toBe(true);
+    expect((await call('set_connection_tools', { from: 'a', to: 'worker', allow: ['send_message'] })).isError).toBeFalsy();
+    expect(getConnectionDirection({ agentId: 'a' }, { agentId: 'worker' })).toMatchObject({ setBy: 'dispatcher' });
+    expect((await call('disconnect_orchestrators', { from: 'a', to: 'worker' })).isError).toBeFalsy();
+    expect(isBound('a', 'worker')).toBe(false);
+    expect(await storedPairs()).toEqual([]);
+  });
+
+  it('gives each kind of end a refusal of its own', async () => {
+    const refusal = async (to: string) => {
+      const result = await call('connect_orchestrators', { from: 'worker', to });
+      expect(result.isError).toBe(true);
+      return { code: lastAudit().code, message: text(result) };
+    };
+    const cases = [];
+    for (const id of ['plain', 'nobody', 'gone', 'helper', 'dispatcher']) cases.push(await refusal(id));
+    expect(cases.map((c) => c.code)).toEqual(['not_connected_to_dispatcher', 'unknown_agent', 'unknown_agent', 'helper', 'dispatcher_wire']);
+    expect(cases[0].message).toContain('Connect to Dispatcher');
+    expect(cases[1].message).toContain('list_agents');
+    expect(cases[3].message).toContain('is a helper');
+    expect(new Set([cases[0].message, cases[1].message, cases[3].message, cases[4].message]).size).toBe(4);
+    expect(await storedPairs()).toEqual([]);
+  });
+
+  it.each([
+    ['off for an end that orchestrated', 'a', { orchestrate: false }],
+    ['on for an end that didn\'t', 'worker', { orchestrate: true, connectToDispatcher: true }],
+  ])('orchestration turned %s leaves the link alone', async (_name, id, policy) => {
+    await call('connect_orchestrators', { from: 'a', to: 'worker', two_way: true });
+    state.policies.set(id, policy);
+    agentChanged();
+    await rebuildPersistedBindings();
+    expect(isBound('a', 'worker') && isBound('worker', 'a')).toBe(true);
+    expect(await storedPairs()).toEqual(['a>worker', 'worker>a']);
+    expect(await linkRow('a', 'worker')).toMatchObject({ status: 'active' });
+    expect((await linkRow('a', 'worker')).reason).toBeUndefined();
+    expect(await listDispatcherLinksForUser()).toEqual(expect.arrayContaining([expect.objectContaining({ agentId: 'a', targetId: 'worker', status: 'active' })]));
+    // Survives a restart the same way.
+    await restart();
+    expect(isBound('a', 'worker') && isBound('worker', 'a')).toBe(true);
+  });
+
+  it('turning orchestration on creates no link', async () => {
+    state.policies.set('worker', { orchestrate: true, connectToDispatcher: true });
+    state.policies.set('worker2', { orchestrate: true, connectToDispatcher: true });
+    agentChanged();
+    await rebuildPersistedBindings();
+    expect(await storedPairs()).toEqual([]);
+    expect(isBound('worker', 'worker2')).toBe(false);
+  });
+
+  it('lists the links of an agent that doesn\'t orchestrate, without helper settings for it', async () => {
+    await call('connect_orchestrators', { from: 'worker', to: 'c' });
+    await call('connect_orchestrators', { from: 'a', to: 'b' });
+    const result = await controls({ agent_id: 'worker' });
+    expect(result.orchestrators).toEqual([]);
+    expect(result.total).toBe(0);
+    expect(result.links).toEqual([expect.objectContaining({ from: 'worker', to: 'c', status: 'active', from_name: 'worker-name' })]);
+    expect((await controls()).orchestrators.map((o: { id: string }) => o.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('refuses list_orchestrator_controls for an agent not connected to the Dispatcher', async () => {
+    const result = await call('list_orchestrator_controls', { agent_id: 'plain' });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('Connect to Dispatcher');
+  });
+});
+
 describe('suspended links', () => {
   beforeEach(async () => {
     await call('connect_orchestrators', { from: 'a', to: 'b' });
   });
 
   it.each([
-    ['orchestration off', { orchestrate: false, connectToDispatcher: true }, 'orchestration_off'],
     ['Connect to Dispatcher off', { connectToDispatcher: false }, 'not_connected_to_dispatcher'],
+    ['both switches off', { orchestrate: false, connectToDispatcher: false }, 'not_connected_to_dispatcher'],
   ])('%s: the binding goes, the entry stays, readback says why, and it returns', async (_name, policy, reason) => {
     state.policies.set('b', policy);
     agentChanged();
@@ -1432,7 +1522,7 @@ describe('suspended links', () => {
     state.policies.set('b', { orchestrate: false, connectToDispatcher: false });
     await restart();
     expect(isBound('a', 'b')).toBe(false);
-    expect(await linkRow('a', 'b')).toMatchObject({ status: 'suspended', reason: 'orchestration_off' });
+    expect(await linkRow('a', 'b')).toMatchObject({ status: 'suspended', reason: 'not_connected_to_dispatcher' });
     expect((await call('disconnect_orchestrators', { from: 'a', to: 'b' })).isError).toBeFalsy();
     expect(await storedPairs()).toEqual([]);
   });

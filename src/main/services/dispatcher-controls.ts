@@ -1,10 +1,12 @@
 /**
- * The rules of the Dispatcher's controls over connected orchestrators (#2661):
- * their cross-project helper switch and helper cap, and direct links between
- * them. The MCP tools only turn arguments and refusals into results.
+ * The rules of the Dispatcher's controls (#2661): a connected orchestrator's
+ * cross-project helper switch and helper cap, and direct links between agents.
+ * The MCP tools only turn arguments and refusals into results.
  *
- * Only the running Dispatcher, and only for agents that are connected
- * orchestrators now. Nothing here can turn orchestration off, change Connect to
+ * Only the running Dispatcher. Helper settings need an agent that is a connected
+ * orchestrator now. A link end needs only to be a local, durable, non-helper
+ * agent with Connect to Dispatcher on (#3248): whether it orchestrates doesn't
+ * matter. Nothing here can turn orchestration off, change Connect to
  * Dispatcher, or touch a user-created link or the Dispatcher's own wires:
  * patches are built from two fields, and disconnect only acts on pairs in the
  * Dispatcher's store. Settings go through setOrchestrationPolicy, so its lock,
@@ -25,6 +27,7 @@ import {
   addDispatcherConnections,
   bindingFor,
   isConnectedOrchestrator,
+  isLinkableAgent,
   isTombstoned,
   listPendingRemovals,
   readAgentCensus,
@@ -63,6 +66,8 @@ export type ControlRefusal =
   | 'unknown_field'
   | 'dispatcher_wire'
   | 'helper'
+  | 'unknown_agent'
+  | 'not_connected_to_dispatcher'
   | 'not_connected_orchestrator'
   | 'not_dispatcher_owned'
   | 'already_linked'
@@ -121,20 +126,33 @@ function optionalFlag(args: Record<string, unknown>, key: string): boolean | und
   return value;
 }
 
-/** The connected orchestrator with this id, or the refusal that says why it isn't one. */
-function requireOrchestrator(census: AgentCensus, id: string): OrchestratorEntry {
+/**
+ * The agent with this id if it can be a link end (#3248), or the refusal that
+ * says why not: the Dispatcher itself, an unknown or disposed agent, a helper,
+ * or Connect to Dispatcher off. Whether it orchestrates isn't asked.
+ */
+function requireLinkEnd(census: AgentCensus, id: string): OrchestratorEntry {
   if (isDispatcherAgentId(id)) {
     throw new DispatcherControlError('dispatcher_wire', 'That is you. These tools can\'t change your own settings or wires.');
   }
   const entry = census.agents.get(id);
   if (!entry || isDisposedAgent(entry.agent)) {
-    throw new DispatcherControlError('not_connected_orchestrator', `"${auditString(id)}" is not a connected orchestrator. Call list_agents for the ids.`);
+    throw new DispatcherControlError('unknown_agent', `No agent has the id "${auditString(id)}", or it was removed. Call list_agents for the ids.`);
   }
   if (entry.agent.parentAgentId) {
     throw new DispatcherControlError('helper', `${entry.agent.name} is a helper. Helpers belong to their parent, so these tools can't target one.`);
   }
+  if (!isLinkableAgent(entry.agent, entry.policy)) {
+    throw new DispatcherControlError('not_connected_to_dispatcher', `${entry.agent.name} is not connected to you. Only the user can turn on Connect to Dispatcher.`);
+  }
+  return entry;
+}
+
+/** The connected orchestrator with this id, or the refusal that says why it isn't one. */
+function requireOrchestrator(census: AgentCensus, id: string): OrchestratorEntry {
+  const entry = requireLinkEnd(census, id);
   if (!isConnectedOrchestrator(entry.agent, entry.policy)) {
-    throw new DispatcherControlError('not_connected_orchestrator', `${entry.agent.name} is not a connected orchestrator. Only the user can turn that on.`);
+    throw new DispatcherControlError('not_connected_orchestrator', `${entry.agent.name} doesn't orchestrate, so it has no helper settings. Only the user can turn that on.`);
   }
   return entry;
 }
@@ -330,7 +348,7 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
   return audited(linkRow('connect_orchestrators', actorId, args), async () => {
     const { from, to, pairs, allow } = readLinkRequest(args, TOOL_LINK_FIELDS);
     const census = await readAgentCensus();
-    const ends = new Map([[from, requireOrchestrator(census, from)], [to, requireOrchestrator(census, to)]]);
+    const ends = new Map([[from, requireLinkEnd(census, from)], [to, requireLinkEnd(census, to)]]);
     const stored = await readDispatcherConnections();
     const isOurs = (p: { agentId: string; targetId: string }) => stored.some((c) => c.agentId === p.agentId && c.targetId === p.targetId);
 
@@ -537,8 +555,10 @@ export async function listOrchestratorControls(actorId: string, args: Record<str
   const agentId = args.agent_id === undefined ? undefined : requireId(args, 'agent_id');
 
   const census = await readAgentCensus();
-  const everyone = agentId
-    ? [requireOrchestrator(census, agentId)]
+  // With agent_id, any link end: its links are listed whether or not it orchestrates (#3248).
+  const focus = agentId ? requireLinkEnd(census, agentId) : undefined;
+  const everyone = focus
+    ? [focus].filter((e) => isConnectedOrchestrator(e.agent, e.policy))
     : [...census.agents.values()].filter((e) => isConnectedOrchestrator(e.agent, e.policy));
   const page = everyone.slice(cursor, cursor + limit);
   const globalCap = orchestrationSettings.getGlobalHelperCap();

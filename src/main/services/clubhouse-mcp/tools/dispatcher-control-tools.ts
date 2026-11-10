@@ -1,6 +1,6 @@
 /**
- * Dispatcher controls over connected orchestrators (#2661), in the `dispatcher`
- * tool group: listed and callable only by the running Dispatcher. The rules live
+ * Dispatcher controls (#2661): a connected orchestrator's helper settings, and
+ * direct links between agents (#3248), in the `dispatcher` tool group: listed and callable only by the running Dispatcher. The rules live
  * in dispatcher-controls; these only say who is asking and turn refusals into
  * tool results.
  */
@@ -39,8 +39,8 @@ function guarded(tool: string, run: Handler): (agentId: string, args: Record<str
 }
 
 const LINK_PROPERTIES = {
-  from: { type: 'string', description: 'The orchestrator that gets the tools, by id from list_agents.' },
-  to: { type: 'string', description: 'The orchestrator it reaches, by id from list_agents.' },
+  from: { type: 'string', description: 'The agent that gets the tools, by id from list_agents.' },
+  to: { type: 'string', description: 'The agent it reaches, by id from list_agents.' },
   two_way: { type: 'boolean', description: 'Both directions, all or nothing. Default false.' },
 };
 
@@ -80,7 +80,8 @@ export function registerDispatcherControlTools(): void {
     'connect_orchestrators',
     {
       description:
-        'Connect two connected orchestrators directly, so `from` gets tools to message and check on `to`. The link is ' +
+        'Link two agents directly, so `from` gets tools to message and check on `to`. Each end must be a durable agent ' +
+        'connected to you, not a helper; it doesn\'t need to orchestrate. The link is ' +
         'saved as yours. It is refused if they are already connected some other way, or if the user removed the link. ' +
         'A new link can read status and output, send messages and files, and wake; clear_agent and compact_agent stay off ' +
         'unless you name them in allow. Tools the user already set on a direction are kept, and naming tools for it is refused. ' +
@@ -120,11 +121,11 @@ export function registerDispatcherControlTools(): void {
     {
       description:
         'Read connected orchestrators\' helper settings, the links you made with their status and tools, and optionally your recent ' +
-        'audit rows. A suspended link has an end that stopped being a connected orchestrator, and returns when it qualifies again.',
+        'audit rows. A suspended link has an end that is no longer connected to you, and returns when it is connected again.',
       inputSchema: {
         type: 'object',
         properties: {
-          agent_id: { type: 'string', description: 'Just this orchestrator and its links.' },
+          agent_id: { type: 'string', description: 'Just this agent and its links. Any agent connected to you; its helper settings show only if it orchestrates.' },
           limit: { type: 'number', description: `Orchestrators per page: up to ${MAX_CONTROLS_PAGE}, default ${DEFAULT_CONTROLS_PAGE}.` },
           cursor: { type: 'string', description: 'next_cursor from the last page.' },
           audit: { type: 'number', description: 'Newest audit rows to add: 0 to 50, default 0.' },
