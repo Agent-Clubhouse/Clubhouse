@@ -1,7 +1,8 @@
 /**
  * Dispatcher controls (#2661): a connected orchestrator's helper settings, and
- * direct links between agents (#3248), in the `dispatcher` tool group: listed and callable only by the running Dispatcher. The rules live
- * in dispatcher-controls; these only say who is asking and turn refusals into
+ * direct links between agents (#3248), in the `dispatcher` tool group: listed
+ * and callable only by the running Dispatcher. The rules live in
+ * dispatcher-controls; these only say who is asking and turn refusals into
  * tool results.
  */
 
