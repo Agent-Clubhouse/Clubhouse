@@ -2602,6 +2602,14 @@ export async function createDurable(
   /** `copyLegacyDefaults` when the person asked for the project's legacy defaults (#3245). */
   copyOptions: DurableCreationCopyOptions = {},
 ): Promise<DurableAgentConfig> {
+  // The copy's preview reads the default folder and branch (legacy-defaults.ts), so it can't
+  // promise what another folder, branch or base would hold: refuse the pair up front (#3245).
+  if (copyOptions.copyLegacyDefaults && (worktreeOptions.folderName !== undefined || worktreeOptions.branchName !== undefined || worktreeOptions.branchFrom !== undefined)) {
+    throw tagError(new Error(
+      'Copying the project\'s legacy defaults can\'t be combined with a folder name, branch name or branch to start from. '
+      + 'Create the agent first, then copy them from the project\'s settings.',
+    ), 'validation');
+  }
   const handle = await beginDurableCreation(projectPath, {
     ...worktreeOptions,
     name, color, model, useWorktree, orchestrator, mcpIds, mcpConfigs,

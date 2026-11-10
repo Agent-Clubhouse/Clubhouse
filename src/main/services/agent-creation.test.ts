@@ -733,6 +733,23 @@ describe('the project\'s legacy defaults at creation (#3243, #3245)', () => {
     expect(config).not.toHaveProperty('creation');
   });
 
+  it.each([
+    ['a folder name', { folderName: 'elsewhere' }],
+    ['a branch name', { branchName: 'feat/other' }],
+    ['a branch to start from', { branchFrom: 'main' }],
+  ])('refuses the copy with %s, before anything is made', async (_label, worktreeOptions) => {
+    await expect(createDurable(PROJECT_PATH, 'picky', 'indigo', undefined, true, undefined, undefined, undefined, undefined, worktreeOptions, { copyLegacyDefaults: true }))
+      .rejects.toMatchObject({ message: expect.stringMatching(/can't be combined with a folder name, branch name or branch to start from/) });
+    expect(gitArgv()).toEqual([]);
+    expect(diskAgents()).toEqual([]);
+    expect(copyIntoNewAgent).not.toHaveBeenCalled();
+  });
+
+  it('still takes worktree options without the copy', async () => {
+    const config = await createDurable(PROJECT_PATH, 'picky', 'indigo', undefined, true, undefined, undefined, undefined, undefined, { folderName: 'elsewhere' });
+    expect(config.worktreePath).toBe(agentPath('elsewhere'));
+  });
+
   it('never copies into an agent without its own folder', async () => {
     await createDurable(PROJECT_PATH, 'root', 'indigo', undefined, false, undefined, undefined, undefined, undefined, {}, { copyLegacyDefaults: true });
     expect(copyIntoNewAgent).not.toHaveBeenCalled();
