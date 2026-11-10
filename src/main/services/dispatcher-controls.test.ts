@@ -1433,7 +1433,8 @@ describe('links between agents that don\'t orchestrate (#3248)', () => {
     for (const id of ['plain', 'nobody', 'gone', 'helper', 'dispatcher']) cases.push(await refusal(id));
     expect(cases.map((c) => c.code)).toEqual(['not_connected_to_dispatcher', 'unknown_agent', 'unknown_agent', 'helper', 'dispatcher_wire']);
     expect(cases[0].message).toContain('Connect to Dispatcher');
-    expect(cases[1].message).toContain('list_agents');
+    expect(cases[1].message).toContain('No agent on this computer has the id "nobody"');
+    expect(cases[1].message).toContain('Links can only join agents on this computer.');
     expect(cases[3].message).toContain('is a helper');
     expect(new Set([cases[0].message, cases[1].message, cases[3].message, cases[4].message]).size).toBe(4);
     expect(await storedPairs()).toEqual([]);

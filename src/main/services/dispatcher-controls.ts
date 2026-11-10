@@ -137,7 +137,7 @@ function requireLinkEnd(census: AgentCensus, id: string): OrchestratorEntry {
   }
   const entry = census.agents.get(id);
   if (!entry || isDisposedAgent(entry.agent)) {
-    throw new DispatcherControlError('unknown_agent', `No agent has the id "${auditString(id)}", or it was removed. Call list_agents for the ids.`);
+    throw new DispatcherControlError('unknown_agent', `No agent on this computer has the id "${auditString(id)}", or it was removed. Links can only join agents on this computer. Call list_agents for the ids.`);
   }
   if (entry.agent.parentAgentId) {
     throw new DispatcherControlError('helper', `${entry.agent.name} is a helper. Helpers belong to their parent, so these tools can't target one.`);
