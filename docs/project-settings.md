@@ -152,6 +152,7 @@ unchanged: every method keeps its signature.
 
 ## Later
 
-- At the end of the deprecation window, which the maintainer decides: remove
-  the read-only section, the MCP inheritance and the wildcard fill from
-  legacy commands.
+- Not scheduled. The deprecation window is longer than one beta. A later
+  change may remove the read-only section, the MCP inheritance and the
+  wildcard fill from legacy commands, but saved legacy values are never
+  deleted: they stay in the project's settings file.
