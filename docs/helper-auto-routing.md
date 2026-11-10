@@ -346,7 +346,7 @@ One `clubhouse.audit.setting` event per change or refusal, in the local telemetr
 | Agent | `setOrchestrationPolicy`, `turnOffOrchestration`, the persona layer carried at a switch | Each policy field, refusals too |
 | Agent | Instructions, permissions, MCP binding instructions and disabled tools | Changed only |
 | Project | `projectStore.update`, so appearance too | Color, CLI, name, emoji, icon |
-| Project | `writeProjectAgentDefaults`, including reset | Exhaustive by type |
+| Project | `writeProjectAgentDefaults` and `updateProjectAgentDefaults`, including reset | Exhaustive by type |
 | Project | Reset | Changed only |
 | App | Every `createSettingsStore` that holds a person's choices | Top-level keys |
 | App | Helper presets and Auto | Each cell and switch, refusals too |

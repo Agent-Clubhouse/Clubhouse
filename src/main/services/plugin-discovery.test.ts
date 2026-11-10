@@ -28,6 +28,13 @@ vi.mock('./agent-settings-service', () => ({
   deleteSourceAgentTemplate: vi.fn(async () => undefined),
   readProjectAgentDefaults: vi.fn(async () => ({})),
   writeProjectAgentDefaults: vi.fn(async () => undefined),
+  // Forwards to the read and write mocks, as the real queue reads then writes (#3262).
+  updateProjectAgentDefaults: vi.fn(async (projectPath: string, update: (d: Record<string, unknown>) => Record<string, unknown> | null) => {
+    const settings = await import('./agent-settings-service');
+    const next = update(await settings.readProjectAgentDefaults(projectPath));
+    if (next) await settings.writeProjectAgentDefaults(projectPath, next);
+    return next;
+  }),
 }));
 
 import * as fsp from 'fs/promises';

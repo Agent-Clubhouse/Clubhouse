@@ -65,7 +65,7 @@ import { AUTO_TIERS, decideAutoProvider, type AutoCandidate, type AutoDecision }
 import { _resetHelperAutoStateForTesting, reserveAutoDecision, rotationCursors } from './helper-auto-state';
 import type { DecisionCandidate, DecisionQuota, DecisionQuotaWindow, HelperDecisionRecord } from '../../shared/telemetry/helper-usage-contract';
 import { getSettings as getOrchestratorSettings } from './orchestrator-settings';
-import { readProjectAgentDefaults, writeProjectAgentDefaults } from './agent-settings-service';
+import { readProjectAgentDefaults, updateProjectAgentDefaults } from './agent-settings-service';
 import type { DurableAgentConfig } from '../../shared/types';
 import { decideHelperAuto, type ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
 
@@ -1043,13 +1043,16 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
 
   if (update.auto !== undefined) {
     if (projectPath) {
-      const defaults = await readProjectAgentDefaults(projectPath);
-      const before = defaults.helperAuto ?? null;
-      const { helperAuto: _old, ...rest } = defaults;
+      let before: 'off' | null = null;
       // This write moves the revision itself, so what it returns is current.
       ownProjectWrites++;
       try {
-        await writeProjectAgentDefaults(projectPath, { ...rest, ...(update.auto === 'off' && { helperAuto: 'off' as const }) });
+        // Only helperAuto changes, on the defaults as they are then (#3262).
+        await updateProjectAgentDefaults(projectPath, (defaults) => {
+          before = defaults.helperAuto ?? null;
+          const { helperAuto: _old, ...rest } = defaults;
+          return { ...rest, ...(update.auto === 'off' && { helperAuto: 'off' as const }) };
+        });
       } finally {
         ownProjectWrites--;
       }
