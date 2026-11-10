@@ -56,6 +56,8 @@ export interface DispatcherRequest {
   turnEndedAt?: number;
   /** Agents the Dispatcher messaged or woke while it worked on it: their news is for it. */
   agents: string[];
+  /** When the Dispatcher last messaged or woke each of `agents`, so credit goes only to this attempt's (#3241). */
+  reachedAt?: Record<string, number>;
   /** When it got its outcome. */
   endedAt?: number;
   /** Steps of it already done, oldest first, so a retry doesn't repeat them (#3241). */
@@ -169,6 +171,11 @@ function load(now = Date.now()): DispatcherRequest[] {
     const next: DispatcherRequest = { ...r, agents: r.agents.filter((a) => typeof a === 'string') };
     if (Array.isArray(r.done)) next.done = r.done.filter((d) => typeof d === 'string');
     else delete next.done;
+    if (r.reachedAt && typeof r.reachedAt === 'object') {
+      next.reachedAt = Object.fromEntries(Object.entries(r.reachedAt).filter(([a, at]) => next.agents.includes(a) && typeof at === 'number'));
+    } else {
+      delete next.reachedAt;
+    }
     if (next.turn !== 'past') {
       next.turn = 'past';
       next.turnEndedAt = now;
@@ -213,7 +220,7 @@ function changed(now = Date.now()): void {
 }
 
 function copy(r: DispatcherRequest): DispatcherRequest {
-  return { ...r, agents: [...r.agents], ...(r.done && { done: [...r.done] }) };
+  return { ...r, agents: [...r.agents], ...(r.done && { done: [...r.done] }), ...(r.reachedAt && { reachedAt: { ...r.reachedAt } }) };
 }
 
 function find(id: string): DispatcherRequest | undefined {
@@ -447,9 +454,19 @@ export function noteWorkEvent(event: ChatEvent, now = Date.now()): void {
 
 /** The Dispatcher messaged or woke an agent: that agent's news is for the requests its turn is reading. */
 export function noteAgentReached(agentId: string, now = Date.now()): void {
-  const reading = load(now).filter((r) => r.status === 'under_way' && r.turn === 'in_turn' && !r.agents.includes(agentId));
-  for (const r of reading) r.agents.push(agentId);
+  const reading = load(now).filter((r) => r.status === 'under_way' && r.turn === 'in_turn');
+  for (const r of reading) {
+    if (!r.agents.includes(agentId)) r.agents.push(agentId);
+    r.reachedAt = { ...r.reachedAt, [agentId]: now };
+  }
   if (reading.length) changed(now);
+}
+
+/** The agents reached for a request since it was last handed off: this attempt's, not an earlier one's. */
+export function reachedThisAttempt(r: Pick<DispatcherRequest, 'agents' | 'reachedAt' | 'handedOffAt'>): Array<{ agentId: string; at: number }> {
+  return r.agents
+    .map((agentId) => ({ agentId, at: r.reachedAt?.[agentId] }))
+    .filter((a): a is { agentId: string; at: number } => a.at !== undefined && a.at >= r.handedOffAt);
 }
 
 // ── Steps done ────────────────────────────────────────────────────────────

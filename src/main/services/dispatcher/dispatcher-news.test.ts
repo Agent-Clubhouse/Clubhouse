@@ -316,6 +316,36 @@ describe('who did the work is named (#3241)', () => {
     expect(second.text).toContain('News for the user');
   });
 
+  it('doesn\'t credit an agent reached in an earlier attempt of the request', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    const id = handOff('clone acme/web');
+    noteAgentReached('a1', now);
+    turn('turn_ended');
+    // Tried again: this attempt reaches nobody, and the old agent happens to message.
+    now += 1000;
+    const again = beginRequest('Try again.', now, id);
+    if (again.kind !== 'again') throw new Error(again.kind);
+    noteHandedOff(id, 'prompt', workTurnMark(), now);
+    turn('turn_started');
+    recordAgentMessage('a1', 'webapp-lead', now + 1);
+    const message = shown(await deliver({ message: 'Cloned acme/web.', kind: 'answer', request: id }));
+    expect(message.text).toContain('News for the user');
+    expect(message.note).toBe('If an agent did this work, set from to it, so the user knows who did it.');
+  });
+
+  it('doesn\'t credit an agent only pinged after it had already messaged', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    const id = handOff('check on the release');
+    // Its message comes first, then the Dispatcher pings it, and nothing comes back.
+    recordAgentMessage('a1', 'webapp-lead', now + 1);
+    noteAgentReached('a1', now + 2);
+    now += 3;
+    const message = shown(await deliver({ message: 'The release is out.', kind: 'answer', request: id }));
+    expect(message.text).toContain('News for the user');
+  });
+
   it('leaves the Dispatcher\'s own work its own, with nothing to remind', async () => {
     installGroupChat(deps().deps);
     const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;

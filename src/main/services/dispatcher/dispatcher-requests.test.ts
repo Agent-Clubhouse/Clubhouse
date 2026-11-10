@@ -29,6 +29,7 @@ import {
   noteRequestDone,
   noteWorkEvent,
   onRequestsChanged,
+  reachedThisAttempt,
   requestsUnderWay,
   setRequestEndedHandler,
   settleRequest,
@@ -260,6 +261,22 @@ describe('following the Dispatcher\'s turns (#3237)', () => {
     noteWorkEvent(event('session_ended', { reason: 'process_exit', message: 'exited with code 1' }), now);
     expect(getRequest(crashed)?.status).toBe('failed');
     expect(ended$).toHaveBeenLastCalledWith(expect.objectContaining({ id: crashed }), 'failed', 'exited with code 1');
+  });
+
+  it('knows which agents this attempt reached, and when (#3241)', () => {
+    const id = handOff('clone acme/web');
+    started();
+    noteAgentReached('a1', now);
+    ended('error');
+    now += 1000;
+    beginRequest('clone acme/web', now);
+    noteHandedOff(id, 'prompt', workTurnMark(), now);
+    started();
+    expect(reachedThisAttempt(getRequest(id)!)).toEqual([]);
+    noteAgentReached('a2', now + 5);
+    noteAgentReached('a1', now + 6);
+    expect(getRequest(id)?.agents).toEqual(['a1', 'a2']);
+    expect(reachedThisAttempt(getRequest(id)!)).toEqual([{ agentId: 'a1', at: now + 6 }, { agentId: 'a2', at: now + 5 }]);
   });
 
   it('notes the agents reached in the turn reading a request', () => {

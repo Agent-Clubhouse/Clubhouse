@@ -23,8 +23,8 @@
  * answer goes back under it.
  *
  * Whoever did the work is named (#3241). An answer in the Dispatcher's own
- * words for a request it passed to exactly one agent, which has messaged it
- * since, is that agent's news. Otherwise the Dispatcher is reminded to name
+ * words for a request it passed to exactly one agent in this attempt, which
+ * has messaged it since, is that agent's news. Otherwise the Dispatcher is reminded to name
  * the agent itself.
  *
  * The triage state (news held for a check-in, what was shown) is kept in
@@ -53,7 +53,7 @@ import {
 } from './dispatcher-triage';
 import { clearAgentMessages, findInInbox, lastAgentMessage } from './dispatcher-news-inbox';
 import { CHAT_UPDATE_TAG, setChatDelivery, type ChannelMessage } from './dispatcher-channel';
-import { findRequestFor, restoreRequest, settleRequest, type DispatcherRequest } from './dispatcher-requests';
+import { findRequestFor, reachedThisAttempt, restoreRequest, settleRequest, type DispatcherRequest } from './dispatcher-requests';
 import { isDispatcherIdentityAgentId } from './dispatcher-service';
 
 const NS = 'core:dispatcher';
@@ -215,13 +215,20 @@ export function agentNews(sender: MessageSender, text: string, reason: 'needs_us
 
 /**
  * The agent an answer in the Dispatcher's own words is from (#3241): the one
- * agent it reached for the request, when that agent has messaged it since
- * the hand-off. Anything less certain stays the Dispatcher's own words.
+ * agent it reached for the request since the last hand-off, when that agent
+ * has messaged it since it was reached. An agent from an earlier attempt, or
+ * one whose message came before it was reached, isn't credited: anything less
+ * certain stays the Dispatcher's own words.
  */
-export function creditedAgent(request: Pick<DispatcherRequest, 'agents' | 'handedOffAt'>, now: number, isOwnAgent: (id: string) => boolean): MessageSender | null {
-  if (request.agents.length !== 1 || isOwnAgent(request.agents[0])) return null;
-  const last = lastAgentMessage(request.agents[0], now);
-  return last && last.at >= request.handedOffAt ? { agentId: last.agentId, name: last.name } : null;
+export function creditedAgent(
+  request: Pick<DispatcherRequest, 'agents' | 'reachedAt' | 'handedOffAt'>,
+  now: number,
+  isOwnAgent: (id: string) => boolean,
+): MessageSender | null {
+  const reached = reachedThisAttempt(request);
+  if (reached.length !== 1 || isOwnAgent(reached[0].agentId)) return null;
+  const last = lastAgentMessage(reached[0].agentId, now);
+  return last && last.at >= reached[0].at ? { agentId: last.agentId, name: last.name } : null;
 }
 
 function defaultFindAgent(from: string): MessageSender | null {
