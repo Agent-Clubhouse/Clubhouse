@@ -195,7 +195,6 @@ vi.stubGlobal('clubhouse', {
     readMcpRawJson: async () => '{"mcpServers": {}}',
     writeMcpRawJson: async () => ({ ok: true }),
     readProjectAgentDefaults: async () => ({}),
-    writeProjectAgentDefaults: asyncNoop,
     saveProjectUserDefaults: asyncNoop,
     getProjectConfigBreakdown: async () => ({
       userInstructions: '',

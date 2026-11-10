@@ -235,12 +235,7 @@ export function registerAgentSettingsHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, withValidatedArgs(
-    [stringArg(), objectArg()],
-    async (_event, projectPath, defaults) => {
-      await agentSettings.writeProjectAgentDefaults(projectPath, defaults);
-    },
-  ));
+  // No whole-object write (#3262): the page saves changed fields, plugins their own parts.
 
   ipcMain.handle(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS, withValidatedArgs(
     [stringArg(), objectArg<ProjectAgentDefaultsPatch>()],

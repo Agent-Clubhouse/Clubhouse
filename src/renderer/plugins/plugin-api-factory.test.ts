@@ -963,7 +963,7 @@ describe('plugin-api-factory', () => {
     beforeEach(() => {
       api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({});
-      mockAgentSettings.writeProjectAgentDefaults.mockResolvedValue(undefined);
+      mockAgentSettings.writtenDefaults.mockResolvedValue(undefined);
       mockAgentSettings.writeSourceSkillContent.mockResolvedValue(undefined);
       mockAgentSettings.deleteSourceSkill.mockResolvedValue(undefined);
       mockPlugin.storageRead.mockResolvedValue(null);
@@ -1058,14 +1058,14 @@ describe('plugin-api-factory', () => {
 
         await api.agentConfig.appendInstructions('Plugin extra content');
 
-        expect(mockAgentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        expect(mockAgentSettings.writtenDefaults).toHaveBeenCalledWith(
           '/projects/my-project',
           expect.objectContaining({
             instructions: expect.stringContaining('Plugin extra content'),
           }),
         );
         // Check markers
-        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
         const instructions = call[1].instructions;
         expect(instructions).toContain('<!-- plugin:test-plugin:start -->');
         expect(instructions).toContain('<!-- plugin:test-plugin:end -->');
@@ -1079,7 +1079,7 @@ describe('plugin-api-factory', () => {
 
         await api.agentConfig.appendInstructions('New content');
 
-        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
         const instructions = call[1].instructions;
         expect(instructions).not.toContain('Old content');
         expect(instructions).toContain('New content');
@@ -1092,7 +1092,7 @@ describe('plugin-api-factory', () => {
 
         await api.agentConfig.removeInstructionAppend();
 
-        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
         const instructions = call[1].instructions;
         expect(instructions).not.toContain('<!-- plugin:test-plugin:start -->');
         expect(instructions).toBe('Base');
@@ -1125,7 +1125,7 @@ describe('plugin-api-factory', () => {
 
         await api.agentConfig.addPermissionAllowRules(['Write(**)', 'Edit(**)']);
 
-        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
         const perms = call[1].permissions;
         expect(perms.allow).toContain('Read(**)');
         expect(perms.allow).toContain('Write(**) /* plugin:test-plugin */');
@@ -1135,7 +1135,7 @@ describe('plugin-api-factory', () => {
       it('addPermissionDenyRules tags rules with plugin id', async () => {
         await api.agentConfig.addPermissionDenyRules(['Bash(rm:*)']);
 
-        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
         const perms = call[1].permissions;
         expect(perms.deny).toContain('Bash(rm:*) /* plugin:test-plugin */');
       });
@@ -1150,7 +1150,7 @@ describe('plugin-api-factory', () => {
 
         await api.agentConfig.removePermissionRules();
 
-        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
         const perms = call[1].permissions;
         expect(perms.allow).toEqual(['Read(**)']);
         expect(perms.deny).toEqual([]);
@@ -1188,7 +1188,7 @@ describe('plugin-api-factory', () => {
           'my-server': { command: 'python', args: ['server.py'] },
         });
 
-        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
         const mcpConfig = JSON.parse(call[1].mcpJson);
         expect(mcpConfig.mcpServers['existing']).toBeDefined();
         expect(mcpConfig.mcpServers['plugin-test-plugin-my-server']).toEqual({
@@ -1204,7 +1204,7 @@ describe('plugin-api-factory', () => {
 
         await api.agentConfig.removeMcpServers();
 
-        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const call = mockAgentSettings.writtenDefaults.mock.calls[0];
         const mcpConfig = JSON.parse(call[1].mcpJson);
         expect(mcpConfig.mcpServers['existing']).toBeDefined();
         expect(mcpConfig.mcpServers['plugin-test-plugin-my-server']).toBeUndefined();
@@ -1276,7 +1276,7 @@ describe('plugin-api-factory', () => {
           pluginSettings: {},
         });
         mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({});
-        mockAgentSettings.writeProjectAgentDefaults.mockResolvedValue(undefined);
+        mockAgentSettings.writtenDefaults.mockResolvedValue(undefined);
         mockAgentSettings.writeSourceSkillContent.mockResolvedValue(undefined);
         mockAgentSettings.deleteSourceSkill.mockResolvedValue(undefined);
         mockPlugin.storageRead.mockResolvedValue(null);
@@ -1310,7 +1310,7 @@ describe('plugin-api-factory', () => {
         await api.agentConfig.appendInstructions('Cross-project content', { projectId: 'proj-2' });
 
         expect(mockAgentSettings.readProjectAgentDefaults).toHaveBeenCalledWith('/projects/project-b');
-        expect(mockAgentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        expect(mockAgentSettings.writtenDefaults).toHaveBeenCalledWith(
           '/projects/project-b',
           expect.objectContaining({
             instructions: expect.stringContaining('Cross-project content'),
@@ -1335,7 +1335,7 @@ describe('plugin-api-factory', () => {
           { projectId: 'proj-2' },
         );
 
-        expect(mockAgentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        expect(mockAgentSettings.writtenDefaults).toHaveBeenCalledWith(
           '/projects/project-b',
           expect.objectContaining({
             permissions: expect.objectContaining({
@@ -4388,7 +4388,7 @@ describe('plugin-api-factory', () => {
 
       it('changing a project\'s agent defaults needs the calling agent\'s permission to, for every call open (#3168)', async () => {
         mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({});
-        mockAgentSettings.writeProjectAgentDefaults.mockClear();
+        mockAgentSettings.writtenDefaults.mockClear();
         const ctx = makeCtx({ pluginId: 'config-plugin' });
         const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
         api.mcp.onToolCall(() => new Promise(() => {}));
@@ -4400,11 +4400,11 @@ describe('plugin-api-factory', () => {
         await expect(api.agentConfig.addPermissionAllowRules(['Bash(**)'])).rejects.toThrow('Not that one.');
         await expect(api.agentConfig.injectMcpServers({ evil: { command: 'x' } })).rejects.toThrow('Not that one.');
         expect(pluginMcp.checkCaller).toHaveBeenCalledWith('token-config-plugin-1', 'd1', { action: 'project.configure', projectPath: '/projects/my-project' });
-        expect(mockAgentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
+        expect(mockAgentSettings.writtenDefaults).not.toHaveBeenCalled();
         // Both may: it writes.
         pluginMcp.checkCaller.mockImplementation(async () => ({ ok: true }));
         await api.agentConfig.addPermissionAllowRules(['Bash(**)']);
-        expect(mockAgentSettings.writeProjectAgentDefaults).toHaveBeenCalledTimes(1);
+        expect(mockAgentSettings.writtenDefaults).toHaveBeenCalledTimes(1);
         // Reads are never checked.
         pluginMcp.checkCaller.mockClear();
         await api.agentConfig.getPermissionRules();

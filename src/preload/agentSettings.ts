@@ -67,21 +67,6 @@ export const agentSettings = {
     commandPrefix?: string;
   }> =>
     ipcRenderer.invoke(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, projectPath),
-  writeProjectAgentDefaults: (projectPath: string, defaults: {
-    helperAuto?: 'off';
-    instructions?: string;
-    permissions?: { allow?: string[]; deny?: string[] };
-    mcpJson?: string;
-    freeAgentMode?: boolean;
-    sourceControlProvider?: 'github' | 'azure-devops';
-    buildCommand?: string;
-    testCommand?: string;
-    lintCommand?: string;
-    mission?: string;
-    persona?: string;
-    commandPrefix?: string;
-  }) =>
-    ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
   /** The Default agent settings page's save: changed fields only, user parts merged with plugin parts (#3244). */
   saveProjectUserDefaults: (projectPath: string, patch: ProjectAgentDefaultsPatch): Promise<void> =>
     ipcRenderer.invoke(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS, projectPath, patch),
