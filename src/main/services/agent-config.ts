@@ -11,7 +11,7 @@ import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, 
 import { isDisposedAgent, isEffortValue, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { forgetAutoHelper } from './helper-auto-state';
-import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
+import { applyAgentDefaults, assertPermissionRulesSupported, readProjectAgentDefaults } from './agent-settings-service';
 import type { WildcardContext } from '../../shared/wildcard-replacer';
 import type { ProjectAgentDefaults } from '../../shared/types';
 import { accessForNewAgent, agentAccess, getPermissionMode } from './free-agent-settings';
@@ -1911,7 +1911,16 @@ export interface DurableCreationRunOptions {
   inject?: (config: DurableAgentConfig) => Promise<void>;
   /** An inject failure fails the creation: the agent can't work without it (a managed helper's setup, #2899). */
   injectRequired?: boolean;
+  /**
+   * False: the project's legacy agent defaults (instructions, permissions and
+   * MCP) are neither checked nor written. A managed agent gets exactly its own
+   * setup at its first start, nothing else (#3243).
+   */
+  projectDefaults?: false;
 }
+
+/** The part of the run options that changes what a creation checks up front. */
+export type DurableCreationCheckOptions = Pick<DurableCreationRunOptions, 'projectDefaults'>;
 
 export interface DurableCreationHandle {
   /** The new agent's record, in the 'creating' state. */
@@ -2129,14 +2138,48 @@ async function foreignParentProject(projectPath: string, params: StartDurableCre
 }
 
 /**
+ * Why the project's legacy agent defaults can't be written into a new
+ * agent's folder for its CLI, or null (#3243). Checked before the branch,
+ * folder or worktree is made, so a CLI that can't take the Default
+ * permissions refuses the creation instead of failing part way. A CLI that
+ * can't be resolved is left to the creation, which logs it as before.
+ */
+async function projectDefaultsProblem(projectPath: string, orchestrator: OrchestratorId | undefined): Promise<Error | null> {
+  const { permissions } = await readProjectAgentDefaults(projectPath);
+  if (!permissions?.allow?.length && !permissions?.deny?.length) return null;
+  let provider: Awaited<ReturnType<typeof resolveOrchestrator>>;
+  try {
+    provider = await resolveOrchestrator(projectPath, orchestrator);
+  } catch {
+    // telemetry-exempt: the creation resolves it again and logs the failure.
+    return null;
+  }
+  try {
+    assertPermissionRulesSupported(permissions, provider.conventions);
+    return null;
+  } catch (err) {
+    // telemetry-exempt: returned as the creation's refusal, tagged for telemetry.
+    if (!(err instanceof UnsupportedPermissionRulesError)) throw err;
+    return tagError(new Error(
+      `${provider.displayName} can't use this project's Default permissions (allow and deny rules). ` +
+      'Remove them from the project\'s agent defaults, or choose another CLI. Nothing was created.',
+    ), 'validation');
+  }
+}
+
+/**
  * Run a creation's up-front checks without creating anything: the name,
  * folder, branch and base rules, and whether the parent,
  * folder or branch is free right now. Throws (tagged `validation`) with the
  * message the creation itself would refuse with. A later creation checks
  * everything again.
  */
-export async function checkDurableCreation(projectPath: string, params: StartDurableCreationParams): Promise<void> {
+export async function checkDurableCreation(projectPath: string, params: StartDurableCreationParams, options: DurableCreationCheckOptions = {}): Promise<void> {
   const plan = params.useWorktree !== false ? planDurableWorktree(projectPath, params.name, params) : undefined;
+  if (plan && options.projectDefaults !== false) {
+    const defaults = await projectDefaultsProblem(projectPath, params.orchestrator);
+    if (defaults) throw defaults;
+  }
   const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
   const agents = await readAgents(projectPath);
   const parentProject = await foreignParentProject(projectPath, params);
@@ -2162,6 +2205,11 @@ export async function beginDurableCreation(
   const plan = useWorktree ? planDurableWorktree(projectPath, name, params) : undefined;
   const parentProject = await foreignParentProject(projectPath, params);
   const parentAgents = parentProject ? await readAgents(parentProject) : undefined;
+  // Defaults the CLI can't take refuse the creation before anything is made (#3243).
+  if (plan && options.projectDefaults !== false) {
+    const defaults = await projectDefaultsProblem(projectPath, orchestrator);
+    if (defaults) throw defaults;
+  }
 
   await ensureDir(clubhouseDir(projectPath));
   // The Dispatcher's folder is no repo, so it gets no .gitignore (#2535).
@@ -2406,9 +2454,10 @@ async function runDurableCreation(
       emit('worktree_added', await reachStage('worktree_added'));
     }
 
-    // Apply project-level defaults as snapshots into the new worktree
+    // Apply project-level defaults as snapshots into the new worktree. A
+    // managed agent never gets them: its setup is delivered at start (#3243).
     checkCancelled();
-    if (initial.worktreePath) {
+    if (initial.worktreePath && options.projectDefaults !== false) {
       const worktreePath = initial.worktreePath;
       try {
         const provider = await resolveOrchestrator(projectPath, initial.orchestrator);
@@ -2451,10 +2500,13 @@ async function runDurableCreation(
     if (plan) {
       await cleanupPartialWorktree(projectPath, { id, wtPath: plan.wtPath, ownsFolder, branch: plan.branch, branchOwned, branchStartSha });
     }
+    // A record that is removed is always announced, even for a creation that
+    // sends no other stages: a window that saw it through a config change
+    // must drop it (#3246).
     if (cancelled) {
       await removeAgentRecord(projectPath, id);
       appLog('core:agent-config', 'info', 'Agent creation cancelled and cleaned up', { meta: { agentId: id } });
-      emit('cancelled');
+      emitCreationEvent(projectPath, id, 'cancelled', startMs);
       throw new DurableCreationCancelledError();
     }
     const reason = errorMessage(err);
@@ -2471,7 +2523,8 @@ async function runDurableCreation(
       emit('failed', failed ?? undefined, reason);
     } else {
       await removeAgentRecord(projectPath, id);
-      emit('failed', undefined, reason);
+      // No config: the record is gone.
+      emitCreationEvent(projectPath, id, 'failed', startMs, undefined, reason);
     }
     throw err;
   } finally {
@@ -2610,12 +2663,14 @@ export async function createDurable(
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
   worktreeOptions: DurableWorktreeOptions = {},
+  /** `projectDefaults: false` for a managed agent (#3243). */
+  checkOptions: DurableCreationCheckOptions = {},
 ): Promise<DurableAgentConfig> {
   const handle = await beginDurableCreation(projectPath, {
     ...worktreeOptions,
     name, color, model, useWorktree, orchestrator, mcpIds, mcpConfigs,
     ...(typeof access === 'boolean' ? { freeAgentMode: access } : access !== undefined ? { access } : {}),
-  }, { keepFailedRecord: false });
+  }, { keepFailedRecord: false, ...checkOptions });
   // The caller gets the error, so a failed agent leaves no record behind.
   return handle.done;
 }
