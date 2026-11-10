@@ -9,6 +9,7 @@ import { onChatEvent } from '../agent-runtime/chat-event-bus';
 import { appLog } from '../log-service';
 import { CHAT_UPDATE_TAG, deliverUpdateToChat, type ChannelMessage } from './dispatcher-channel';
 import {
+  doneList,
   noteWorkEvent,
   setRequestEndedHandler,
   type DispatcherRequest,
@@ -19,8 +20,10 @@ import { isDispatcherAgentId } from './dispatcher-service';
 const NS = 'core:dispatcher';
 
 /** What the chat is told when a request ends with no answer. */
-export function requestEndedMessage(request: Pick<DispatcherRequest, 'id'>, ending: RequestEnding, detail?: string): ChannelMessage {
+export function requestEndedMessage(request: Pick<DispatcherRequest, 'id' | 'done'>, ending: RequestEnding, detail?: string): ChannelMessage {
   const { id } = request;
+  // Part of it may be done (#3241): the user hears that, and a retry carries on from there.
+  const done = doneList(request);
   const retry = `Tell the user in a few words that it didn't get done, and offer to try again. To try again, call start_work with request_id ${id}.`;
   let what: string;
   let shown: string;
@@ -40,7 +43,8 @@ export function requestEndedMessage(request: Pick<DispatcherRequest, 'id'>, endi
       shown = 'The request has no outcome yet.';
       break;
   }
-  return { text: `${CHAT_UPDATE_TAG} ${what}`, routed: [{ fromClubhouse: true, text: shown }] };
+  const partly = done ? `\n\nThese parts are done, and a retry won't repeat them:\n${done}` : '';
+  return { text: `${CHAT_UPDATE_TAG} ${what}${partly}`, routed: [{ fromClubhouse: true, text: shown }] };
 }
 
 function tellChat(request: DispatcherRequest, ending: RequestEnding, detail?: string): void {

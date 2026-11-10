@@ -54,7 +54,7 @@ import { IPC } from '../../../shared/ipc-channels';
 import {
   CHAT_UPDATE_TAG, HAND_OFF_TAG, _resetDispatcherChannelForTesting, deliverToChat, deliverUpdateToChat, handOffToDispatcher, setChatDelivery,
 } from './dispatcher-channel';
-import { _resetDispatcherRequestsForTesting, getRequest, getRequests, getRequestsPath } from './dispatcher-requests';
+import { _resetDispatcherRequestsForTesting, getRequest, getRequests, getRequestsPath, noteRequestDone } from './dispatcher-requests';
 
 h.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-channel-test-'));
 afterAll(() => fs.rmSync(h.base, { recursive: true, force: true }));
@@ -140,6 +140,16 @@ describe('retrying a request (#3237)', () => {
     expect(getRequests()).toHaveLength(1);
   });
 
+  it('lists the steps already done when a request is handed off again, so they aren\'t repeated (#3241)', async () => {
+    const first = await handOffToDispatcher('chat', 'clone acme/web and add it');
+    noteRequestDone(first.requestId!, ['Cloned acme/web into ~/src/web'], Date.now());
+    await handOffToDispatcher('chat', 'Try again.', first.requestId);
+    const [firstReq] = vi.mocked(deliverToDispatcher).mock.calls[0] as unknown as [Record<string, unknown>];
+    const [againReq] = vi.mocked(deliverToDispatcher).mock.calls[1] as unknown as [Record<string, unknown>];
+    expect(firstReq.text).not.toContain('Already done');
+    expect(againReq.text).toContain('Already done for this request, so don\'t repeat it:\n- Cloned acme/web into ~/src/web');
+  });
+
   it('refuses an id that names no request', async () => {
     expect(await handOffToDispatcher('chat', 'tag 1.0', 'req_nope')).toEqual({
       outcome: 'undelivered', error: 'There is no request req_nope. Leave out request_id to start a new one.',
@@ -164,6 +174,12 @@ describe('Clubhouse\'s own updates to the chat (#3237)', () => {
 });
 
 describe('telling the user, through the chat (#3036)', () => {
+  it('passes the group chat\'s note back to the Dispatcher, such as who the news was credited to (#3241)', async () => {
+    h.running.add('chat');
+    setChatDelivery(() => ({ text: 'x', routed: [], note: 'Shown as webapp-lead\'s news.' }));
+    expect(await deliverToChat('coordinator', 'Cloned it.')).toEqual({ outcome: 'delivered', note: 'Shown as webapp-lead\'s news.' });
+  });
+
   it('reaches a running chat as a Clubhouse notice that names no one', async () => {
     h.running.add('chat');
     expect(await deliverToChat('coordinator', 'Checkout is fixed in #412.')).toEqual({ outcome: 'delivered' });

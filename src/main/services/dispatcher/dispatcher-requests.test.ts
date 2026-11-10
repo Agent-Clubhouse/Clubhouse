@@ -13,18 +13,23 @@ import {
   QUIET_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
   REQUEST_TTL_MS,
+  STEPS_MAX,
+  STEP_MAX,
   _resetDispatcherRequestsForTesting,
   _whenRequestsSavedForTesting,
   beginRequest,
   checkRequestTimeouts,
+  doneList,
   getRequest,
   getRequests,
   getRequestsPath,
   matchRequest,
   noteAgentReached,
   noteHandedOff,
+  noteRequestDone,
   noteWorkEvent,
   onRequestsChanged,
+  reachedThisAttempt,
   requestsUnderWay,
   setRequestEndedHandler,
   settleRequest,
@@ -258,6 +263,22 @@ describe('following the Dispatcher\'s turns (#3237)', () => {
     expect(ended$).toHaveBeenLastCalledWith(expect.objectContaining({ id: crashed }), 'failed', 'exited with code 1');
   });
 
+  it('knows which agents this attempt reached, and when (#3241)', () => {
+    const id = handOff('clone acme/web');
+    started();
+    noteAgentReached('a1', now);
+    ended('error');
+    now += 1000;
+    beginRequest('clone acme/web', now);
+    noteHandedOff(id, 'prompt', workTurnMark(), now);
+    started();
+    expect(reachedThisAttempt(getRequest(id)!)).toEqual([]);
+    noteAgentReached('a2', now + 5);
+    noteAgentReached('a1', now + 6);
+    expect(getRequest(id)?.agents).toEqual(['a1', 'a2']);
+    expect(reachedThisAttempt(getRequest(id)!)).toEqual([{ agentId: 'a1', at: now + 6 }, { agentId: 'a2', at: now + 5 }]);
+  });
+
   it('notes the agents reached in the turn reading a request', () => {
     const id = handOff('have api-lead fix lint');
     noteAgentReached('a1', now);
@@ -295,6 +316,35 @@ describe('outcomes', () => {
     checkRequestTimeouts(now + REQUEST_TIMEOUT_MS);
     expect(getRequest(delegated)?.status).toBe('timed_out');
     expect(ended$.mock.calls.map((c) => [c[0].id, c[1]])).toEqual([[quiet, 'timed_out'], [delegated, 'timed_out']]);
+  });
+});
+
+describe('steps done (#3241)', () => {
+  it('keeps each finished step once, as one line, for a retry to resume from', () => {
+    const id = handOff('clone acme/web and add it');
+    expect(noteRequestDone(id, ['Cloned acme/web into ~/src/web', '  Checked   git is installed '], now)).toBe(2);
+    expect(noteRequestDone(id, ['cloned acme/web into ~/src/web.', ''], now)).toBe(0);
+    expect(getRequest(id)?.done).toEqual(['Cloned acme/web into ~/src/web', 'Checked git is installed']);
+    expect(doneList(getRequest(id)!)).toBe('- Cloned acme/web into ~/src/web\n- Checked git is installed');
+    expect(doneList({})).toBeNull();
+  });
+
+  it('cuts a long step, keeps the latest STEPS_MAX, and knows no request it wasn\'t given', () => {
+    const id = handOff('many');
+    noteRequestDone(id, ['x'.repeat(STEP_MAX + 50)], now);
+    expect(getRequest(id)?.done?.[0]).toHaveLength(STEP_MAX);
+    noteRequestDone(id, Array.from({ length: STEPS_MAX + 3 }, (_, i) => `Step ${i}`), now);
+    expect(getRequest(id)?.done).toHaveLength(STEPS_MAX);
+    expect(getRequest(id)?.done?.at(-1)).toBe(`Step ${STEPS_MAX + 2}`);
+    expect(noteRequestDone('req_nope', ['x'], now)).toBeNull();
+  });
+
+  it('keeps the steps when a failed request is tried again', () => {
+    const id = handOff('clone acme/web');
+    noteRequestDone(id, ['Made ~/src/web'], now);
+    started();
+    ended('error');
+    expect(beginRequest('clone acme/web', now)).toMatchObject({ kind: 'again', request: { id, done: ['Made ~/src/web'] } });
   });
 });
 
@@ -337,6 +387,7 @@ describe('saved state', () => {
     await _resetDispatcherRequestsForTesting();
     setRequestEndedHandler(ended$);
     expect(getRequest(reading)).toMatchObject({ status: 'under_way', turn: 'past', agents: ['a1'] });
+    expect(getRequest(reading)?.done).toBeUndefined();
     expect(getRequest(stale)?.status).toBe('timed_out');
     expect(ended$).not.toHaveBeenCalled();
   });

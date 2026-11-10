@@ -57,7 +57,7 @@ import type { ChatEvent, ChatEventDataMap } from '../../../shared/chat';
 import { registerDispatcherChatTools } from '../clubhouse-mcp/tools/dispatcher-chat-tools';
 import { _resetDispatcherChannelForTesting, setChatDelivery } from './dispatcher-channel';
 import { installRequestTracking, requestEndedMessage } from './dispatcher-request-outcomes';
-import { _resetDispatcherRequestsForTesting, getRequest, getRequestsPath, requestsUnderWay } from './dispatcher-requests';
+import { _resetDispatcherRequestsForTesting, getRequest, getRequestsPath, noteRequestDone, requestsUnderWay } from './dispatcher-requests';
 
 h.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-outcomes-test-'));
 afterAll(() => fs.rmSync(h.base, { recursive: true, force: true }));
@@ -159,6 +159,36 @@ describe('tell_user (#3204)', () => {
     setChatDelivery(delivery);
     await h.handlers.get('tell_user')!('coordinator', { message: 'Tagged 1.0.', kind: 'answer', request_id: 'req_1' });
     expect(delivery).toHaveBeenCalledWith({ message: 'Tagged 1.0.', kind: 'answer', request: 'req_1' });
+  });
+});
+
+describe('steps done (#3241)', () => {
+  const tellUser = (args: Record<string, unknown>) =>
+    h.handlers.get('tell_user')!('coordinator', args) as Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+
+  it('notes the finished steps on the request, even when the news is held', async () => {
+    setChatDelivery(() => ({ hold: 'later' as const, reason: 'Held for the next check-in summary.' }));
+    const id = idIn(await startWork('Clone acme/web into ~/src/web and add it.'));
+    const result = await tellUser({ message: 'Cloned it.', kind: 'routine', request_id: id, done: ['Cloned acme/web into ~/src/web'] });
+    expect(result.content[0].text).toBe(`Not shown yet. Held for the next check-in summary. Noted 1 step done for request ${id}.`);
+    expect(getRequest(id)?.done).toEqual(['Cloned acme/web into ~/src/web']);
+  });
+
+  it('needs a request id that names a request, and a short list', async () => {
+    expect((await tellUser({ message: 'x', done: ['a'] })).content[0].text).toBe('done needs request_id: the steps belong to a request.');
+    expect((await tellUser({ message: 'x', request_id: 'req_nope', done: ['a'] })).isError).toBe(true);
+    const id = idIn(await startWork('one'));
+    expect((await tellUser({ message: 'x', request_id: id, done: [1] })).isError).toBe(true);
+    expect((await tellUser({ message: 'x', request_id: id, done: Array.from({ length: 11 }, (_, i) => `s${i}`) })).isError).toBe(true);
+  });
+
+  it('a failed request tells the chat what is done, and a retry won\'t repeat it', async () => {
+    const id = idIn(await startWork('Clone acme/web into ~/src/web and add it.'));
+    noteRequestDone(id, ['Cloned acme/web into ~/src/web']);
+    publish('coordinator', 'turn_started', { trigger: 'prompt' });
+    publish('coordinator', 'turn_ended', { stopReason: 'error' });
+    await settle();
+    expect(h.toChat[0].text).toContain('These parts are done, and a retry won\'t repeat them:\n- Cloned acme/web into ~/src/web');
   });
 });
 
