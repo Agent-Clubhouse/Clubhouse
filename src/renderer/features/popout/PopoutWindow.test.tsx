@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { PopoutWindow } from './PopoutWindow';
 
 const noop = () => {};
@@ -118,6 +118,27 @@ describe('PopoutWindow', () => {
     expect(getOrchestrators).toHaveBeenCalled();
     view.unmount();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the Dispatcher\'s state from main, so its chat agent resolves there (#3235)', async () => {
+    const { useDispatcherStore, isDispatcherAgent } = await import('../dispatcher/dispatcherStore');
+    const ON = { enabled: true, flagOn: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null };
+    let push: (state: unknown) => void = noop;
+    const get = vi.spyOn(window.clubhouse.dispatcher, 'get').mockResolvedValue(ON as never);
+    const onChanged = vi.spyOn(window.clubhouse.dispatcher, 'onChanged').mockImplementation(((cb: (state: unknown) => void) => { push = cb; return noop; }) as never);
+    window.clubhouse.window.getPopoutParams = vi.fn().mockReturnValue({ type: 'agent', agentId: 'disp', projectId: '__dispatcher__' });
+    try {
+      render(<PopoutWindow />);
+      expect((await screen.findByTestId('popout-agent-view')).textContent).toBe('disp');
+      await waitFor(() => expect(useDispatcherStore.getState().project?.path).toBe('dispatcher-dir'));
+      expect(isDispatcherAgent({ id: 'disp', projectId: 'some-folder' })).toBe(true);
+      act(() => push({ ...ON, enabled: false, running: false }));
+      await waitFor(() => expect(useDispatcherStore.getState().project).toBeNull());
+    } finally {
+      get.mockRestore();
+      onChanged.mockRestore();
+      useDispatcherStore.setState({ state: null, project: null });
+    }
   });
 
   it('shows syncing message while loading state', () => {

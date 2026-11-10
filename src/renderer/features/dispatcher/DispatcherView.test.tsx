@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, renderHook, screen, fireEvent, within, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, fireEvent, within, waitFor } from '@testing-library/react';
 
 vi.mock('../agents/chat/AgentRuntimePane', () => ({
   AgentRuntimePane: ({ agent }: { agent: { id: string } }) => <div data-testid="runtime-pane">{agent.id}</div>,
 }));
 vi.mock('../agents/AgentTerminal', () => ({ AgentTerminal: () => null }));
+vi.mock('./DispatcherSetup', () => ({ DispatcherSetup: () => <div data-testid="dispatcher-setup-stub" /> }));
 
 import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import type { Agent } from '../../../shared/types';
@@ -76,10 +77,38 @@ describe('DispatcherView', () => {
     expect(screen.getByTestId('sleeping-agent')).toBeTruthy();
     fireEvent.click(screen.getByTestId('sleeping-more'));
     const menu = screen.getByTestId('agent-context-menu');
-    for (const id of ['delete', 'apply-persona', 'extract-persona', 'popout']) {
+    for (const id of ['delete', 'apply-persona', 'extract-persona']) {
       expect(within(menu).queryByTestId(`ctx-${id}`)).toBeNull();
     }
     expect(within(menu).getByTestId('ctx-settings')).toBeTruthy();
+    expect(within(menu).getByTestId('ctx-popout')).toBeTruthy();
+  });
+
+  it('shows where its chat went while it is popped out, and the chat again once it comes back (#3235)', async () => {
+    let popouts = [{ windowId: 7, params: { type: 'agent', agentId: 'disp', projectId: DISPATCHER_PROJECT_ID } }];
+    let changed: () => void = () => {};
+    const list = vi.spyOn(window.clubhouse.window, 'listPopouts').mockImplementation(async () => popouts as never);
+    const onChanged = vi.spyOn(window.clubhouse.window, 'onPopoutsChanged').mockImplementation((cb: () => void) => { changed = cb; return () => {}; });
+    useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
+    render(<DispatcherView />);
+    expect(await screen.findByTestId('popped-out-placeholder')).toBeTruthy();
+    expect(screen.queryByTestId('runtime-pane')).toBeNull();
+    popouts = [];
+    act(() => changed());
+    expect(await screen.findByTestId('runtime-pane')).toBeTruthy();
+    list.mockRestore();
+    onChanged.mockRestore();
+  });
+
+  it('still shows setup while its chat is popped out', async () => {
+    const list = vi.spyOn(window.clubhouse.window, 'listPopouts').mockResolvedValue([{ windowId: 7, params: { type: 'agent', agentId: 'disp' } }] as never);
+    useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
+    useDispatcherStore.getState().setState({ ...useDispatcherStore.getState().state!, config: {} as never, setup: { status: 'pending' } as never });
+    render(<DispatcherView />);
+    await waitFor(() => expect(list).toHaveBeenCalled());
+    expect(screen.getByTestId('dispatcher-setup-stub')).toBeTruthy();
+    expect(screen.queryByTestId('popped-out-placeholder')).toBeNull();
+    list.mockRestore();
   });
 
   it('offers Clear chat in its menu, which asks first and then starts the conversation over (#3043)', async () => {

@@ -47,7 +47,7 @@ import { showRemovedPluginApiNotice } from './services/removed-plugin-api-notice
 import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
-import { closeDispatcher, openDispatcher } from './features/dispatcher/dispatcherNav';
+import { closeDispatcher, openDispatcher, openDispatcherNavTarget } from './features/dispatcher/dispatcherNav';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
@@ -149,10 +149,11 @@ function initWindowListeners(): (() => void)[] {
 
   // Navigate to agent when requested from a pop-out window
   removers.push(
-    window.clubhouse.window.onNavigateToAgent((agentId: string) => {
+    window.clubhouse.window.onNavigateToAgent((agentId: string, target?: string) => {
       const agent = useAgentStore.getState().agents[agentId];
       if (agent && isDispatcherAgent(agent)) {
-        openDispatcher();
+        if (target) openDispatcherNavTarget(target);
+        else openDispatcher();
       } else if (agent) {
         closeDispatcher();
         useProjectStore.getState().setActiveProject(agent.projectId);

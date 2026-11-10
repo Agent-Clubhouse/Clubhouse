@@ -7,6 +7,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { NARROW_PANE_PX } from '../agents/pane/useNarrow';
 import { wakeDurableAgent } from '../agents/wake-durable-agent';
+import { useLocalProject } from '../dispatcher/dispatcherStore';
 
 /**
  * Show in main window and Stop (Wake while sleeping) on the right of a popout
@@ -40,22 +41,24 @@ const WakeGlyph = () => (
 export function PopoutAgentActions({ agentId, projectId }: { agentId: string; projectId?: string }) {
   const agent = useAgentStore((s) => s.agents[agentId]);
   const projects = useProjectStore((s) => s.projects);
+  // The Dispatcher (#3235) has its folder, not a registered project.
+  const localProject = useLocalProject(agent?.projectId ?? projectId);
   const narrow = useWindowNarrow();
 
   const handleKill = useCallback(async () => {
     try {
-      if (projectId) await window.clubhouse.agent.killAgent(agentId, projectId);
+      if (projectId) await window.clubhouse.agent.killAgent(agentId, localProject?.path ?? projectId);
       else await window.clubhouse.pty.kill(agentId);
     } catch (err) {
       useToastStore.getState().addToast(`Couldn't stop the agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
       reportChromeActionFailed('agent_stop', err);
     }
-  }, [agentId, projectId]);
+  }, [agentId, projectId, localProject]);
 
   const handleWake = useCallback(async () => {
     if (!agent || agent.kind !== 'durable') return;
     try {
-      const agentProject = projects.find((p) => p.id === agent.projectId);
+      const agentProject = projects.find((p) => p.id === agent.projectId) ?? localProject;
       if (!agentProject) throw new Error('Project not found');
       // Resumes the last session when there is one, like every other Wake.
       await wakeDurableAgent(agentProject.id, agentProject.path, agent.id, 'resume');
@@ -63,7 +66,7 @@ export function PopoutAgentActions({ agentId, projectId }: { agentId: string; pr
       useToastStore.getState().addToast(`Couldn't wake the agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
       reportChromeActionFailed('agent_wake', err);
     }
-  }, [agent, projects]);
+  }, [agent, projects, localProject]);
 
   const handleView = useCallback(() => {
     window.clubhouse.window.focusMain(agentId);

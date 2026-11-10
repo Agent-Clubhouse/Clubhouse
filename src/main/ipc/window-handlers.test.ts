@@ -195,6 +195,35 @@ describe('window-handlers', () => {
     );
   });
 
+  it('FOCUS_MAIN passes a page target along for the main window to open (#3235)', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+    const focusHandler = handlers.get(IPC.WINDOW.FOCUS_MAIN)!;
+    await focusHandler({}, 'disp', 'dispatcher-settings');
+    expect(mainWin.webContents.send).toHaveBeenCalledWith(IPC.WINDOW.NAVIGATE_TO_AGENT, 'disp', 'dispatcher-settings');
+  });
+
+  it('CREATE_POPOUT brings an agent\'s open popout forward instead of opening another (#3235)', async () => {
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    const first = await createHandler({}, { type: 'agent', agentId: 'disp', projectId: '__dispatcher__' });
+    const popout = BrowserWindow.getAllWindows().find((w: any) => w.id === first) as any;
+    popout.minimized = true;
+    const again = await createHandler({}, { type: 'agent', agentId: 'disp', projectId: '__dispatcher__' });
+    expect(again).toBe(first);
+    expect(popout.minimized).toBe(false);
+    expect(popout.focused).toBe(true);
+    const list = await handlers.get(IPC.WINDOW.LIST_POPOUTS)!({});
+    expect(list).toHaveLength(1);
+    // Another agent still gets its own window.
+    expect(await createHandler({}, { type: 'agent', agentId: 'a2' })).not.toBe(first);
+  });
+
+  it('CREATE_POPOUT opens a new window once the earlier one is gone', async () => {
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    const first = await createHandler({}, { type: 'agent', agentId: 'disp' });
+    (BrowserWindow.getAllWindows().find((w: any) => w.id === first) as any).destroyed = true;
+    expect(await createHandler({}, { type: 'agent', agentId: 'disp' })).not.toBe(first);
+  });
+
   // ── Agent state: relay (cold cache) ─────────────────────────────────
 
   it('GET_AGENT_STATE relays via REQUEST_AGENT_STATE when cache is cold', async () => {

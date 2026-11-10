@@ -947,12 +947,22 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     });
   });
 
-  it('offers no delete, duplicate, persona or pop out in its menu, and Settings opens Settings > Dispatcher', () => {
+  it('offers Pop Out in its menu, which opens its chat in its own window (#3235)', () => {
+    turnOn();
+    const createPopout = vi.spyOn(window.clubhouse.window, 'createPopout').mockResolvedValue(1);
+    render(<ChromeSidebar />);
+    fireEvent.contextMenu(screen.getByTestId('agent-item-disp'));
+    fireEvent.click(within(screen.getByTestId('agent-context-menu')).getByTestId('ctx-popout'));
+    expect(createPopout).toHaveBeenCalledWith({ type: 'agent', agentId: 'disp', projectId: DISPATCHER_PROJECT_ID, title: 'Dispatcher' });
+    createPopout.mockRestore();
+  });
+
+  it('offers no delete, duplicate or persona in its menu, and Settings opens Settings > Dispatcher', () => {
     turnOn();
     render(<ChromeSidebar />);
     fireEvent.contextMenu(screen.getByTestId('agent-item-disp'));
     const menu = screen.getByTestId('agent-context-menu');
-    for (const id of ['delete', 'remove', 'apply-persona', 'extract-persona', 'popout', 'duplicate']) {
+    for (const id of ['delete', 'remove', 'apply-persona', 'extract-persona', 'duplicate']) {
       expect(within(menu).queryByTestId(`ctx-${id}`)).toBeNull();
     }
     expect(within(menu).getByTestId('ctx-wake')).toBeTruthy();

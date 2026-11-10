@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Agent } from '../../../shared/types';
+import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useAgentStore } from '../../stores/agentStore';
-import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
+import { isDispatcherAgent, useLocalProject, visibleDispatcherAgentId } from '../dispatcher/dispatcherStore';
 import { openDispatcherSettings, openDispatcherSetup } from '../dispatcher/dispatcherNav';
 import { requestClearChat, requestStartFresh } from '../dispatcher/ClearChat';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -168,13 +169,24 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   }, [agent.id, openDeleteDialog]);
 
   const handlePopOut = useCallback(async () => {
+    // The Dispatcher pops out its chat (#3235), the same conversation, under its
+    // synthetic project; the popout finds its folder through the Dispatcher's state.
+    if (isDispatcher) {
+      await window.clubhouse.window.createPopout({
+        type: 'agent',
+        agentId: visibleDispatcherAgentId() ?? agent.id,
+        projectId: DISPATCHER_PROJECT_ID,
+        title: agent.name,
+      });
+      return;
+    }
     await window.clubhouse.window.createPopout({
       type: 'agent',
       agentId: agent.id,
       projectId: agent.projectId,
       title: `Agent — ${agent.name}`,
     });
-  }, [agent.id, agent.projectId, agent.name]);
+  }, [agent.id, agent.projectId, agent.name, isDispatcher]);
 
   const handleSettings = useCallback(() => {
     // The Dispatcher's settings are a page of app Settings, not the agent settings view.
@@ -239,8 +251,8 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 2: Pop Out. Not for the Dispatcher: a popout finds its agent through a project.
-    if (!isDispatcher) list.push({
+    // Priority 2: Pop Out
+    list.push({
       id: 'popout',
       label: 'Pop Out',
       icon: <PopOutIcon />,

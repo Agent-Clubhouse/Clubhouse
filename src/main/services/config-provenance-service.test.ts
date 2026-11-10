@@ -49,6 +49,8 @@ import {
   saveProjectUserDefaults,
 } from './config-provenance-service';
 import { updateProjectAgentDefaults } from './agent-settings-service';
+import { cleanupProjectPluginInjections } from './plugin-discovery';
+import { withPluginParts } from '../../shared/plugin-agent-defaults';
 
 const PROJECT_PATH = '/project';
 
@@ -386,6 +388,50 @@ describe('config-provenance-service', () => {
       useSettingsFile({ helperAuto: 'off', persona: 'qa', buildCommand: 'make', testCommand: 'old' });
       await saveProjectUserDefaults(PROJECT_PATH, { buildCommand: 'npm run build', testCommand: null });
       expect(saved()).toEqual({ helperAuto: 'off', persona: 'qa', buildCommand: 'npm run build' });
+    });
+
+    it('refuses keys the page doesn\'t edit, and values of the wrong shape (#3262)', async () => {
+      useSettingsFile({ persona: 'qa' });
+      await expect(saveProjectUserDefaults(PROJECT_PATH, { persona: 'evil' } as never)).rejects.toThrow('Unknown default agent setting: persona');
+      await expect(saveProjectUserDefaults(PROJECT_PATH, { helperAuto: 'on' } as never)).rejects.toThrow(/helperAuto/);
+      await expect(saveProjectUserDefaults(PROJECT_PATH, { sourceControlProvider: 'gitlab' } as never)).rejects.toThrow(/sourceControlProvider/);
+      await expect(saveProjectUserDefaults(PROJECT_PATH, { freeAgentMode: true } as never)).rejects.toThrow(/freeAgentMode/);
+      await expect(saveProjectUserDefaults(PROJECT_PATH, { permissions: { allow: [1] } } as never)).rejects.toThrow(/permissions/);
+      await expect(saveProjectUserDefaults(PROJECT_PATH, { buildCommand: 5 } as never)).rejects.toThrow(/buildCommand/);
+      expect(saved()).toEqual({ persona: 'qa' });
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('a plugin\'s write and a user save racing both land (#3262)', async () => {
+      useSettingsFile({ permissions: { allow: ['Read(**)'] } });
+      await Promise.all([
+        // What the plugin API's IPC does for addPermissionAllowRules and injectMcpServers.
+        updateProjectAgentDefaults(PROJECT_PATH, (d) => withPluginParts(d, 'foo', { allow: ['Bash(x)'], mcpServers: { srv: { command: 'p' } } })),
+        saveProjectUserDefaults(PROJECT_PATH, { permissions: { allow: ['Read(**)', 'Edit(**)'] }, buildCommand: 'make' }),
+      ]);
+      expect(saved().permissions).toEqual({ allow: ['Read(**)', 'Edit(**)', 'Bash(x) /* plugin:foo */'] });
+      expect(JSON.parse(saved().mcpJson as string).mcpServers).toEqual({ 'plugin-foo-srv': { command: 'p' } });
+      expect(saved().buildCommand).toBe('make');
+    });
+
+    it('uninstall cleanup and a user save racing both land (#3262)', async () => {
+      useSettingsFile({ permissions: { allow: ['Read(**)', 'Bash(x) /* plugin:foo */'] } });
+      await Promise.all([
+        cleanupProjectPluginInjections('foo', PROJECT_PATH),
+        saveProjectUserDefaults(PROJECT_PATH, { buildCommand: 'make' }),
+      ]);
+      expect(saved()).toEqual({ permissions: { allow: ['Read(**)'] }, buildCommand: 'make' });
+    });
+
+    it('removing a plugin item and a user save racing both land (#3262)', async () => {
+      useSettingsFile({ mcpJson: JSON.stringify({ mcpServers: { 'plugin-foo-srv': { command: 'p' } } }) });
+      const [removed] = await Promise.all([
+        removePluginInjectionItem(PROJECT_PATH, 'mcp:plugin-foo-srv'),
+        saveProjectUserDefaults(PROJECT_PATH, { testCommand: 'npm test' }),
+      ]);
+      expect(removed).toBe(true);
+      expect(JSON.parse(saved().mcpJson as string).mcpServers).toEqual({});
+      expect(saved().testCommand).toBe('npm test');
     });
 
     it('doesn\'t lose a concurrent update to another field', async () => {

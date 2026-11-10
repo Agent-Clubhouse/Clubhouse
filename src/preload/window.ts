@@ -28,10 +28,10 @@ export const window = {
       title,
     };
   },
-  focusMain: (agentId?: string) =>
-    ipcRenderer.invoke(IPC.WINDOW.FOCUS_MAIN, agentId),
-  onNavigateToAgent: (callback: (agentId: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, agentId: string) => callback(agentId);
+  focusMain: (agentId?: string, target?: string) =>
+    target ? ipcRenderer.invoke(IPC.WINDOW.FOCUS_MAIN, agentId, target) : ipcRenderer.invoke(IPC.WINDOW.FOCUS_MAIN, agentId),
+  onNavigateToAgent: (callback: (agentId: string, target?: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, agentId: string, target?: string) => callback(agentId, target);
     ipcRenderer.on(IPC.WINDOW.NAVIGATE_TO_AGENT, listener);
     return () => { ipcRenderer.removeListener(IPC.WINDOW.NAVIGATE_TO_AGENT, listener); };
   },

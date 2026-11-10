@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -6,7 +6,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useToastStore } from '../../stores/toastStore';
 import { openAgent } from '../agents/helpers/orchestration-hooks';
 import { handleProtocolAction } from '../../app-event-bridge';
-import { closeDispatcher, openDispatcher, openDispatcherSettings } from './dispatcherNav';
+import { closeDispatcher, openAutoSettings, openDispatcher, openDispatcherNavTarget, openDispatcherSettings, openDispatcherSetup } from './dispatcherNav';
 import { useDispatcherStore } from './dispatcherStore';
 
 beforeEach(() => {
@@ -59,5 +59,44 @@ describe('dispatcherNav', () => {
     handleProtocolAction({ kind: 'open-file', projectId: DISPATCHER_PROJECT_ID, relativePath: 'notes.md' });
     expect(useProjectStore.getState().activeProjectId).toBe('p1');
     expect(useToastStore.getState().toasts.at(-1)?.message).toContain('notes.md');
+  });
+});
+
+describe('dispatcherNav from the Dispatcher\'s popout (#3235)', () => {
+  let isPopout: ReturnType<typeof vi.spyOn>;
+  let focusMain: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    isPopout = vi.spyOn(window.clubhouse.window, 'isPopout').mockReturnValue(true);
+    focusMain = vi.spyOn(window.clubhouse.window, 'focusMain').mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    isPopout.mockRestore();
+    focusMain.mockRestore();
+  });
+
+  it('asks the main window to open settings, setup and Auto, and changes nothing in the popout', () => {
+    openDispatcherSettings();
+    openDispatcherSetup();
+    openAutoSettings();
+    expect(focusMain.mock.calls).toEqual([['disp', 'dispatcher-settings'], ['disp', 'dispatcher-setup'], ['disp', 'auto-settings']]);
+    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'agents', dispatcherOpen: false });
+    expect(useDispatcherStore.getState().setupOpen).toBe(false);
+  });
+});
+
+describe('openDispatcherNavTarget, in the main window', () => {
+  afterEach(() => useDispatcherStore.getState().setSetupOpen(false));
+
+  it('opens the page a popout asked for', () => {
+    openDispatcherNavTarget('dispatcher-settings');
+    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsSubPage: 'dispatcher', dispatcherOpen: false });
+    openDispatcherNavTarget('dispatcher-setup');
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(useDispatcherStore.getState().setupOpen).toBe(true);
+  });
+
+  it('opens the view for a target it does not know', () => {
+    openDispatcherNavTarget('nonsense');
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
   });
 });
