@@ -47,7 +47,7 @@ beforeEach(() => {
   fs.writeFileSync(path.join(memory(), 'agents', 'webapp-lead.md'), '## Card\nOwns checkout.\n');
   fs.writeFileSync(path.join(memory(), 'timeline', '2026-11-08.md'), '- 09:00 checkout fixed\n');
   fs.writeFileSync(path.join(memory(), 'topics', 'release.md'), 'Status: confirmed\n');
-  fs.writeFileSync(newsFile(), JSON.stringify({ openRequests: [], held: [{ text: 'Lint is green.', at: 1 }], shown: [] }));
+  fs.writeFileSync(newsFile(), JSON.stringify({ held: [{ text: 'Lint is green.', at: 1 }], shown: [] }));
 });
 
 describe('Clear chat', () => {

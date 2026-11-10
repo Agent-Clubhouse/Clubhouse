@@ -50,12 +50,21 @@ Tests: `dispatcher-service.test.ts` ("1.0 default"), `e2e/layout-default.spec.ts
 
 What passes between the Dispatcher and an agent (progress, acknowledgements, an agent's questions to it) stays out of the chat. The agent's own chat keeps all of it. The chat shows only what is for the user:
 
-- **A question or decision for the user** (`needs_user`) reaches the chat as a Clubhouse update, which the chat view doesn't show. The chat asks it in its own words, naming the agent, and that reply is the only time the user reads it. The user answers in the chat, which passes the answer on with `start_work`. Nothing tells them to reply to the agent.
-- **A result they asked for** (`answer`) shows the same way while their request is open. Each request is answered once: by an answer, or by the Dispatcher's own reply that needs them, such as a question back. Before, a question back left the request open, and an agent's later progress, called an answer, showed in the chat.
+- **A question or decision for the user** (`needs_user`) reaches the chat as a Clubhouse update, which the chat view doesn't show. The chat asks it in its own words, naming the agent, and that reply is the only time the user reads it. The user answers in the chat, which passes the answer on with `start_work` under the same request id. Nothing tells them to reply to the agent.
+- **A result they asked for** (`answer`) shows the same way when it is for one of their requests (see Requests below). Anything else called an answer waits for the next check-in.
 - **Routine progress** waits for the next check-in.
 - No turn follows to react to news: the chat is never told that the user already read something.
-- News that names an agent Clubhouse can't find (a name two projects share, a typo) is still that agent's news, under the name given, and doesn't answer a request.
-- News is remembered as shown when it is sent. If it never reaches the chat (a wake that asks first, a chat shutting down, a start that fails), that is undone: it can be sent again, and the request it answered opens again. A question for the user also goes out as a notification that opens the chat. A chat turn that fails after the message arrived isn't detected.
+- News that names an agent Clubhouse can't find (a name two projects share, a typo) is still that agent's news, under the name given.
+- News is remembered as shown when it is sent. If it never reaches the chat (a wake that asks first, a chat shutting down, a start that fails), that is undone: it can be sent again, and the request it settled is put back. A question for the user also goes out as a notification that opens the chat. A chat turn that fails after the message arrived isn't detected.
+
+## Requests (#3237, #3204, #3220)
+
+Each `start_work` is a request with an id (`dispatcher-requests.ts`, kept in `dispatcher-requests.json`). The hand-off carries the id, and the Dispatcher reports under it with `tell_user`'s `request_id`.
+
+- **Outcomes.** An answer for a request closes it. A question about one leaves it waiting on the user, and their answer goes back with `start_work` and the same `request_id`. Clubhouse follows the Dispatcher's turns (`dispatcher-request-outcomes.ts`): when the turn reading a request fails, is stopped, or the session ends before it is read, the request ends and the chat is told, with a retry offered. A request with no outcome times out: after 10 minutes when its turn ended and no agent was reached for it, otherwise after 2 hours.
+- **Which request a report is for** (`matchRequest`): the id given; else, for an agent's news, the latest request that agent was messaged or woken for; else, for the Dispatcher's own words, the request its current turn is reading; else, for an answer, the one request under way when nothing else could be meant. A question from the Dispatcher in any other turn, such as a failed Action or a missing permission, answers no request.
+- **Retries.** `start_work` with a `request_id` hands that request off again under the same id. The same words as a request under way aren't handed off twice; the same words as one that failed, was stopped or timed out retry it.
+- **Status.** While any request is under way, the sidebar row and the pane header show Working, with "Working on your request", even when the chat is between turns or asleep (`dispatcherDot` in `agent-status.tsx`). The phone still shows the chat's own status.
 
 The rewrite step that put agents' news into their own voice under their own name (#3043) is gone; the `clubhouse.dispatcher.news.rewrite` attributes stay on the triage event, always `none`.
 
@@ -128,7 +137,8 @@ All under the Clubhouse base folder (`~/.clubhouse`, or `.clubhouse-dev` in deve
 |---|---|---|
 | `dispatcher/memory/` | memory | yes |
 | `dispatcher/notes-archive*/` | notes from before memory | yes |
-| `dispatcher-news.json` | open requests, held news, recently shown | held news only |
+| `dispatcher-news.json` | held news, recently shown | held news only |
+| `dispatcher-requests.json` | the user's requests from the last week and how each ended | no |
 | `dispatcher-agent-cards.json` | when each agent was asked for its card | no (a missing page asks again) |
 | `dispatcher-usage.json` | 31 days of usage, conversations and background work | no |
 | `dispatcher-upkeep.json` | when upkeep last ran | no |

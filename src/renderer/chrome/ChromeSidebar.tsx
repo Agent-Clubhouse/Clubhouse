@@ -345,7 +345,9 @@ export function ChromeSidebar() {
   const dispatcherDebug = useDispatcherDebug();
   const dispatcherWorkOpen = useDispatcherWorkOpen();
   const dispatcherWorkId = useDispatcherStore((s) => s.state?.agentId ?? null);
-  const dispatcherWorkRunning = useDispatcherStore((s) => !!s.state?.running);
+  // The work agent's own running state: `running` is true while either of its agents runs.
+  const dispatcherWorkRunning = useDispatcherStore((s) => !!s.state?.workRunning);
+  const dispatcherRequestsUnderWay = useDispatcherStore((s) => s.state?.requestsUnderWay ?? 0);
 
   // The filter narrows the tree in place (#2031); it applies only while the tree is shown.
   const [filter, setFilter] = useState('');
@@ -809,6 +811,7 @@ export function ChromeSidebar() {
         <DispatcherRow
           agent={dispatcherAgent}
           detailed={detailed[dispatcherAgentId]}
+          requestsUnderWay={dispatcherRequestsUnderWay}
           active={dispatcherShown && !dispatcherWorkOpen}
           projectPath={dispatcherPath}
           loadError={dispatcherLoadError}

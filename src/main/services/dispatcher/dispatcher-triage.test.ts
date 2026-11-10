@@ -2,12 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DUPLICATE_WINDOW_MS,
   HELD_MAX,
-  REQUEST_TTL_MS,
   applyTriage,
   emptyTriageState,
   isNewsKind,
-  noteRequest,
-  requestClosedBy,
   revertShown,
   sameNewsKey,
   triageNews,
@@ -32,18 +29,12 @@ describe('triageNews', () => {
     expect(triageNews(news('needs_user', 'Can I delete the old branch?'), emptyTriageState(), T0)).toEqual({ show: 'now', reason: 'needs_user' });
   });
 
-  it('shows an answer right away while a request is open', () => {
-    const state = noteRequest(emptyTriageState(), T0 - 1000);
-    expect(triageNews(news('answer', 'Checkout is fixed.'), state, T0)).toEqual({ show: 'now', reason: 'answer' });
+  it('shows an answer to one of the person\'s requests right away (#3204)', () => {
+    expect(triageNews(news('answer', 'Checkout is fixed.', { request: 'req_1' }), emptyTriageState(), T0)).toEqual({ show: 'now', reason: 'answer' });
   });
 
-  it('holds an answer when nothing was asked', () => {
+  it('holds an answer that is for no request', () => {
     expect(triageNews(news('answer', 'Checkout is fixed.'), emptyTriageState(), T0)).toEqual({ show: 'later', reason: 'nothing_asked' });
-  });
-
-  it('holds an answer once its request has expired', () => {
-    const state = noteRequest(emptyTriageState(), T0 - REQUEST_TTL_MS - 1);
-    expect(triageNews(news('answer', 'Done.'), state, T0)).toEqual({ show: 'later', reason: 'nothing_asked' });
   });
 
   it('holds routine news for the next check-in', () => {
@@ -85,36 +76,9 @@ describe('triageNews', () => {
 });
 
 describe('applyTriage', () => {
-  it('closes the oldest open request with an answer', () => {
-    let state = noteRequest(noteRequest(emptyTriageState(), T0 - 2000), T0 - 1000);
-    ({ state } = step(state, news('answer', 'First is done.')));
-    expect(state.openRequests).toEqual([T0 - 1000]);
-    ({ state } = step(state, news('answer', 'Second is done.')));
-    expect(state.openRequests).toEqual([]);
-    expect(triageNews(news('answer', 'Third?'), state, T0).show).toBe('later');
-  });
-
-  it('leaves open requests alone for an agent\'s news that needs the person', () => {
-    let state = noteRequest(emptyTriageState(), T0 - 1000);
-    ({ state } = step(state, news('needs_user', 'Which branch?', { fromAgentId: 'a1' })));
-    expect(state.openRequests).toEqual([T0 - 1000]);
-  });
-
-  it('leaves open requests alone for news that names an agent nobody found (#3193)', () => {
-    let state = noteRequest(emptyTriageState(), T0 - 1000);
-    ({ state } = step(state, news('needs_user', 'Which branch?', { fromName: 'release-lead' })));
-    expect(state.openRequests).toEqual([T0 - 1000]);
-  });
-
-  it('closes the oldest open request with the Dispatcher\'s own reply that needs the person (#3193)', () => {
-    // A question back to the user is the reply to their request: their answer is a new request.
-    let state = noteRequest(noteRequest(emptyTriageState(), T0 - 2000), T0 - 1000);
-    ({ state } = step(state, news('needs_user', 'Which branch should it go on?')));
-    expect(state.openRequests).toEqual([T0 - 1000]);
-    ({ state } = step(state, news('needs_user', 'release-lead is stuck on a missing key.')));
-    expect(state.openRequests).toEqual([]);
-    // So an agent's later progress, called an answer, waits for the check-in.
-    expect(triageNews(news('answer', 'I confirmed the cause.', { fromAgentId: 'a1' }), state, T0).show).toBe('later');
+  it('remembers what was shown, and leaves requests to dispatcher-requests', () => {
+    const { state } = step(emptyTriageState(), news('answer', 'First is done.', { request: 'req_1' }));
+    expect(state).toEqual({ held: [], shown: [{ text: 'First is done.', fromAgentId: undefined, at: T0 }] });
   });
 
   it('empties the held news into a check-in', () => {
@@ -135,10 +99,9 @@ describe('applyTriage', () => {
     expect(state.held[0].text).toBe('News 5.');
   });
 
-  it('changes nothing for news that is never shown, besides pruning', () => {
-    const state = noteRequest(emptyTriageState(), T0 - REQUEST_TTL_MS - 1);
-    const next = step(state, news('needs_user', '')).state;
-    expect(next).toEqual({ ...state, openRequests: [] });
+  it('changes nothing for news that is never shown', () => {
+    const state = emptyTriageState();
+    expect(step(state, news('needs_user', '')).state).toBe(state);
   });
 });
 
@@ -155,16 +118,13 @@ describe('helpers', () => {
 });
 
 describe('revertShown (#3193)', () => {
-  it('forgets news that never reached the chat and reopens the request it closed', () => {
-    const before = noteRequest(emptyTriageState(), T0 - 1000);
-    const item = news('answer', 'Tagged 1.0.', { fromAgentId: 'a1' });
+  it('forgets news that never reached the chat, so it can be sent again', () => {
+    const before = emptyTriageState();
+    const item = news('answer', 'Tagged 1.0.', { fromAgentId: 'a1', request: 'req_1' });
     const decision = triageNews(item, before, T0);
-    const closed = requestClosedBy(before, item, decision, T0);
-    expect(closed).toBe(T0 - 1000);
     const after = applyTriage(before, item, decision, T0);
-    expect(after.openRequests).toEqual([]);
-    const reverted = revertShown(after, item, decision, closed);
-    expect(reverted.openRequests).toEqual([T0 - 1000]);
+    expect(triageNews(item, after, T0).show).toBe('never');
+    const reverted = revertShown(after, item, decision);
     expect(reverted.shown).toEqual([]);
     expect(triageNews(item, reverted, T0)).toEqual({ show: 'now', reason: 'answer' });
   });
@@ -172,11 +132,11 @@ describe('revertShown (#3193)', () => {
   it('holds again what a check-in took, and changes nothing for news that was held', () => {
     let { state } = step(emptyTriageState(), news('routine', 'A.'));
     const held = step(state, news('routine', 'B.'));
-    expect(revertShown(held.state, news('routine', 'B.'), held.decision, undefined)).toBe(held.state);
+    expect(revertShown(held.state, news('routine', 'B.'), held.decision)).toBe(held.state);
     state = held.state;
     const checkIn = news('check_in', 'Two things.');
     const { decision, state: after } = step(state, checkIn);
     expect(after.held).toEqual([]);
-    expect(revertShown(after, checkIn, decision, undefined).held.map((h) => h.text)).toEqual(['A.', 'B.']);
+    expect(revertShown(after, checkIn, decision).held.map((h) => h.text)).toEqual(['A.', 'B.']);
   });
 });

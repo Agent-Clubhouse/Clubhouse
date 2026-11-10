@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { AgentPaneToolbar } from './AgentPaneToolbar';
-import { chatActivity, chatUsage } from '../chat/ChatHeader';
+import { ChatHeader, chatActivity, chatUsage } from '../chat/ChatHeader';
+import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
+import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
 import { createChatViewState } from '../../../stores/chatStore';
 import type { Agent } from '../../../../shared/types';
 
@@ -210,5 +212,32 @@ describe('chatActivity', () => {
   it('says what a waiting agent needs', () => {
     expect(chatActivity({ ...base, state: 'waiting_input' }, 0)).toBe('Has a question');
     expect(chatActivity({ ...base, state: 'idle' }, 0)).toBe('');
+  });
+});
+
+describe('the Dispatcher\'s pane header (#3220)', () => {
+  afterEach(() => useDispatcherStore.setState({ state: null }));
+
+  function dotOf(): string | null {
+    return document.querySelector('[data-dot]')?.getAttribute('data-dot') ?? null;
+  }
+
+  it('shows Working while a request is under way, though its chat is between turns', () => {
+    useDispatcherStore.setState({ state: { ...DISPATCHER_OFF, chatAgentId: 'a1', requestsUnderWay: 1 } });
+    render(<ChatHeader agent={agent} state={{ ...createChatViewState(), state: 'idle' }} />);
+    expect(dotOf()).toBe('working');
+    expect(screen.getByText('Working on your request')).toBeInTheDocument();
+  });
+
+  it('shows Done once nothing is under way', () => {
+    useDispatcherStore.setState({ state: { ...DISPATCHER_OFF, chatAgentId: 'a1', requestsUnderWay: 0 } });
+    render(<ChatHeader agent={agent} state={{ ...createChatViewState(), state: 'idle' }} />);
+    expect(dotOf()).toBe('idle');
+  });
+
+  it('leaves other agents\' headers alone', () => {
+    useDispatcherStore.setState({ state: { ...DISPATCHER_OFF, chatAgentId: 'someone-else', requestsUnderWay: 1 } });
+    render(<ChatHeader agent={agent} state={{ ...createChatViewState(), state: 'idle' }} />);
+    expect(dotOf()).toBe('idle');
   });
 });

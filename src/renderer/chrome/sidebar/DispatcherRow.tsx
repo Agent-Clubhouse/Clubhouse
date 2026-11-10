@@ -2,7 +2,7 @@ import { useId, useLayoutEffect, useRef } from 'react';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { AgentRow } from './AgentRow';
 import { agentDot } from './treeModel';
-import { StatusDot, type AgentDot } from '../../features/agents/agent-status';
+import { StatusDot, dispatcherDot, dispatcherWorkingText, type AgentDot } from '../../features/agents/agent-status';
 import { useChatStore } from '../../stores/chatStore';
 
 /**
@@ -13,10 +13,14 @@ import { useChatStore } from '../../stores/chatStore';
  * own, so it has its own tab stop rather than joining the project tree's.
  * Until its agent has loaded (or when loading it failed) the row still shows,
  * with a plain status, and opens the view that shows the error and Retry (#2572).
+ * Its status is the chat's, and working while a request the user made is
+ * under way (#3220).
  */
-export function DispatcherRow({ agent, detailed, active, projectPath, loadError, onSelect }: {
+export function DispatcherRow({ agent, detailed, requestsUnderWay = 0, active, projectPath, loadError, onSelect }: {
   agent?: Agent;
   detailed?: AgentDetailedStatus;
+  /** The user's requests it is still working on. */
+  requestsUnderWay?: number;
   active: boolean;
   projectPath?: string;
   loadError?: string | null;
@@ -35,12 +39,18 @@ export function DispatcherRow({ agent, detailed, active, projectPath, loadError,
       </div>
     );
   }
+  const chatDot = agentDot(agent, detailed);
+  const dot = dispatcherDot(chatDot, requestsUnderWay);
+  // Working only on a request: the hover card says so, never how the work is divided.
+  const shownDetailed = dot !== chatDot && detailed
+    ? { ...detailed, state: 'working' as const, message: dispatcherWorkingText(requestsUnderWay) }
+    : detailed;
   return (
     <div ref={ref} role="tree" aria-label="Dispatcher" data-testid="dispatcher-row" className="flex-shrink-0 px-1.5 pb-1">
       <AgentRow
         agent={agent}
-        dot={agentDot(agent, detailed)}
-        detailed={detailed}
+        dot={dot}
+        detailed={shownDetailed}
         active={active}
         indent={8}
         projectPath={projectPath}
