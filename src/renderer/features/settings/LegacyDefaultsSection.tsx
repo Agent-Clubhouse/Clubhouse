@@ -68,7 +68,15 @@ export function LegacyDefaultsSection({ projectPath, plugins, reloadKey }: { pro
   const pluginRules = [...(bd?.allowRules ?? []), ...(bd?.denyRules ?? [])].filter((r) => r.provenance.source === 'plugin');
   const pluginServers = (bd?.mcpServers ?? []).filter((s) => s.provenance.source === 'plugin');
   const hasPluginItems = pluginBlocks.length > 0 || pluginRules.length > 0 || pluginServers.length > 0;
-  if (!summary.hasValues && !hasPluginItems) return null;
+  // Said plainly, so a plugin's change of where its instructions and servers go doesn't go unseen (#3245).
+  const pluginNotices = (summary.pluginsWithParts ?? []).map((id) => (
+    <p key={id} className={`${settingsHelp} mb-1`} data-testid="legacy-plugin-parts-notice">
+      {id} now adds its instructions and servers as parts. Add them to an agent or template to use them.
+    </p>
+  ));
+  if (!summary.hasValues && !hasPluginItems) {
+    return pluginNotices.length > 0 ? <div data-testid="legacy-defaults-section"><SettingsSection title="Legacy defaults">{pluginNotices}</SettingsSection></div> : null;
+  }
 
   const isOrphan = (item: ProvenancedConfigItem) => item.provenance.source === 'plugin' && plugins.orphanedPluginIds.includes(item.provenance.pluginId);
   const userAllow = summary.permissions.allow.filter((r) => !/\/\* plugin:/.test(r));
@@ -92,6 +100,7 @@ export function LegacyDefaultsSection({ projectPath, plugins, reloadKey }: { pro
           New agents get them only when you choose to copy them in, and managed agents never do.
           Import them as parts to use them in managed agents, or copy them into a plain agent.
         </p>
+        {pluginNotices}
 
         <SettingsBlock>
           <div className={settingsLabel}>Instructions</div>

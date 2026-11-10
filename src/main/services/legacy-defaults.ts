@@ -10,6 +10,7 @@
  * servers are added to what it has; build, test and lint commands become its
  * own where it has none. A CLI that can't take a value skips it.
  */
+import { pluginOfMcpServer } from '../../shared/plugin-agent-defaults';
 import { execFile } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -124,6 +125,7 @@ export async function describeLegacyDefaults(projectPath: string): Promise<Legac
     commands: commandsOf(defaults),
     inheritingMcp,
     plainAgents,
+    pluginsWithParts: await (await import('./plugin-parts')).pluginsWithParts(projectPath),
   };
 }
 
@@ -438,9 +440,7 @@ interface ImportPlan {
  * (the longest that fits), else the shortest one.
  */
 function pluginOfServerAmong(key: string, known: Set<string>): string | undefined {
-  const fits = [...known].filter((id) => key.startsWith(`plugin-${id}-`) && key.length > `plugin-${id}-`.length);
-  if (fits.length > 0) return fits.sort((a, b) => b.length - a.length)[0];
-  return pluginOfServer(key);
+  return pluginOfMcpServer(key, known);
 }
 
 async function projectName(projectPath: string): Promise<string> {
@@ -486,6 +486,7 @@ async function planImport(projectPath: string): Promise<ImportPlan> {
     else notes.push(`The block marked for "${p.pluginId}" isn't imported, since that isn't a plugin id.`);
   }
   const knownPlugins = new Set([
+    ...await (await import('./plugin-parts')).knownPluginIds(),
     ...pluginBlocks.map((p) => p.pluginId),
     ...[...(defaults.permissions?.allow ?? []), ...(defaults.permissions?.deny ?? [])].map((r) => /\/\* plugin:([^ ]+) \*\//.exec(r)?.[1]).filter((id): id is string => !!id),
   ]);

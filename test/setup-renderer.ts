@@ -528,7 +528,7 @@ vi.stubGlobal('clubhouse', {
   legacyDefaults: {
     describe: async () => ({
       hasValues: false, instructions: '', pluginInstructions: [], permissions: { allow: [], deny: [] },
-      mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [],
+      mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [], pluginsWithParts: [],
     }),
     previewImport: async () => ({ parts: [], notes: [] }),
     importAsParts: async () => ({ created: [], existing: [], notes: [] }),

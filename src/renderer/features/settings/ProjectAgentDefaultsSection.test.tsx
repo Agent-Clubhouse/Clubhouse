@@ -14,7 +14,7 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof ProjectAge
 
 const NO_LEGACY: LegacyDefaultsSummary = {
   hasValues: false, instructions: '', pluginInstructions: [], permissions: { allow: [], deny: [] },
-  mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [],
+  mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [], pluginsWithParts: [],
 };
 
 const LEGACY: LegacyDefaultsSummary = {
@@ -28,6 +28,7 @@ const LEGACY: LegacyDefaultsSummary = {
   commands: { buildCommand: 'make' },
   inheritingMcp: [{ id: 'a1', name: 'scout' }],
   plainAgents: [{ id: 'a1', name: 'scout', cli: 'Claude Code' }, { id: 'a2', name: 'pilot', cli: 'Copilot CLI' }],
+  pluginsWithParts: [],
 };
 
 const breakdown = (over: Record<string, unknown> = {}) => ({
@@ -153,6 +154,13 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(within(section).getByText('make')).toBeInTheDocument();
       expect(within(section).getByTestId('legacy-mcp-reach')).toHaveTextContent('Still given at start to scout, plain agent without an MCP file of its own.');
       expect(within(section).queryAllByRole('textbox')).toHaveLength(0);
+    });
+
+    it('says plainly which plugins now add their instructions and servers as parts, even with nothing else saved', async () => {
+      window.clubhouse.legacyDefaults.describe = vi.fn().mockResolvedValue({ ...NO_LEGACY, pluginsWithParts: ['buddy'] });
+      renderSection();
+      expect(await screen.findByTestId('legacy-plugin-parts-notice')).toHaveTextContent('buddy now adds its instructions and servers as parts. Add them to an agent or template to use them.');
+      expect(screen.queryByText('Instructions')).not.toBeInTheDocument();
     });
 
     it('isn\'t shown when the project has no legacy values', async () => {

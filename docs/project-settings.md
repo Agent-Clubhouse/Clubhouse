@@ -131,7 +131,21 @@ plugin", and in the description), with the catalog source
 agent or template. A plain agent doesn't get them; it uses its own files.
 
 A plugin's write also clears what it had saved in the legacy defaults for the
-same thing, since the part replaces it. Until then, its saved items stay
+same thing, since the part replaces it. Only that plugin's: a saved server is
+matched to its plugin by the longest known plugin id (built-in, installed, or
+named in the saved defaults), so `foo` writing never clears `foo-bar`'s
+`plugin-foo-bar-*` servers. A server the catalog refuses keeps its saved copy,
+since no part replaces it.
+
+**Existing plain agents lose a plugin's MCP servers at their next start after
+the plugin writes them.** Until then they got them from the project's legacy
+MCP servers; afterwards those are the plugin's parts, which only agents that
+list them get. The same goes for a plugin's instructions in agents created
+with the legacy copy from then on. The settings page says which plugins now
+add parts ("<plugin> now adds its instructions and servers as parts"), and so
+does each part's description in the library.
+
+A part's name follows a renamed project at the plugin's next write. Until then, its saved items stay
 read-only like the rest, and Import as parts turns them into the plugin's
 parts without changing the saved values. The plugin API version is
 unchanged: every method keeps its signature.

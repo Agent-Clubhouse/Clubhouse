@@ -33,6 +33,8 @@ export interface LegacyDefaultsSummary {
    * that takes them as launch flags). Names, by agent id.
    */
   inheritingMcp: Array<{ id: string; name: string }>;
+  /** Plugins that now add their instructions and servers as parts for this project (#3245). */
+  pluginsWithParts: string[];
   /** Plain agents with their own folder, which a copy can go into. */
   plainAgents: Array<{ id: string; name: string; cli: string }>;
 }

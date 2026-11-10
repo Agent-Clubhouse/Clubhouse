@@ -12,7 +12,9 @@
  * own copy, so nothing they run with goes away unasked.
  */
 import * as path from 'path';
-import { withPluginParts, type PluginAgentDefaultsParts } from '../../shared/plugin-agent-defaults';
+import { pluginIdsIn, pluginMcpPrefix, pluginOfMcpServer, withPluginParts, type PluginAgentDefaultsParts } from '../../shared/plugin-agent-defaults';
+import { BUILTIN_PLUGIN_IDS } from '../../shared/telemetry/attributes';
+import type { ProjectAgentDefaults } from '../../shared/types';
 import type { ManagedMcpContent, ManagedPartContent } from '../../shared/managed-agents-types';
 import type { CatalogEntry } from '../../shared/asset-catalog-types';
 import { updateProjectAgentDefaults } from './agent-settings-service';
@@ -66,6 +68,36 @@ async function partsOf(pluginId: string, projectId: string): Promise<Map<string,
   return out;
 }
 
+/** Every plugin id Clubhouse knows: built-in and installed community plugins. */
+export async function knownPluginIds(): Promise<string[]> {
+  const ids: string[] = [...BUILTIN_PLUGIN_IDS];
+  try {
+    const { discoverCommunityPlugins } = await import('./plugin-discovery');
+    for (const p of await discoverCommunityPlugins()) ids.push(p.manifest.id);
+  } catch {
+    // telemetry-exempt: without the installed list, the ids the saved defaults name still decide
+  }
+  return ids;
+}
+
+/**
+ * `current` without the legacy MCP servers that are this plugin's (and not
+ * another plugin's whose id starts the same: `foo-bar`'s servers when `foo`
+ * writes), except `keep`, by their names under the plugin. Null when nothing changes.
+ */
+export function withoutLegacyServers(current: ProjectAgentDefaults, pluginId: string, knownIds: string[], keep: Set<string>): ProjectAgentDefaults | null {
+  if (!current.mcpJson) return null;
+  let config: Record<string, unknown>;
+  try { config = JSON.parse(current.mcpJson) as Record<string, unknown>; } catch { return null; } // telemetry-exempt: invalid JSON is left as it is
+  const servers = (config.mcpServers ?? {}) as Record<string, unknown>;
+  const ids = new Set([...knownIds, pluginId]);
+  const prefix = pluginMcpPrefix(pluginId);
+  const drop = Object.keys(servers).filter((key) => pluginOfMcpServer(key, ids) === pluginId && !keep.has(key.slice(prefix.length)));
+  if (drop.length === 0) return null;
+  const kept = Object.fromEntries(Object.entries(servers).filter(([key]) => !drop.includes(key)));
+  return { ...current, mcpJson: JSON.stringify({ ...config, mcpServers: kept }, null, 2) };
+}
+
 /** Plugin writes are queued per plugin and project, so two at once can't make two parts. */
 const queues = new Map<string, Promise<unknown>>();
 function queued<T>(pluginId: string, projectPath: string, fn: () => Promise<T>): Promise<T> {
@@ -110,11 +142,22 @@ async function putPart(
   }
   if (existing) {
     const head = await service.headContent(existing.id);
-    if (head && canonicalJson(head.content) === canonicalJson(content)) return;
-    await service.updatePart({ id: existing.id, expectedRevision: existing.headRevision, content, actor });
+    const sameContent = !!head && canonicalJson(head.content) === canonicalJson(content);
+    // The name follows a renamed project at the plugin's next write.
+    // A name numbered for a clash ("<name> 2") is already right.
+    const numbered = existing.name.startsWith(`${name} `) && /^\d+$/.test(existing.name.slice(name.length + 1));
+    const rename = existing.name !== name && !numbered ? name : undefined;
+    if (sameContent && !rename) return;
+    try {
+      await service.updatePart({ id: existing.id, expectedRevision: existing.headRevision, ...(!sameContent && { content }), ...(rename && { name: rename }), actor });
+    } catch (err) {
+      // telemetry-exempt: a name someone else took keeps the old one; the content still updates
+      if (!(rename && err instanceof ManagedError && err.code === 'name_taken')) throw err;
+      if (!sameContent) await service.updatePart({ id: existing.id, expectedRevision: existing.headRevision, content, actor });
+    }
     return;
   }
-  const description = `Contributed by the ${pluginId} plugin for ${proj.name}. The plugin keeps it up to date; make a copy to change it.`;
+  const description = pluginPartDescription(pluginId, proj.name);
   for (let n = 1; n < 100; n++) {
     try {
       await service.createPart({ name: n === 1 ? name : `${name} ${n}`, description, content, actor, source: { kind: 'plugin', pluginId, projectId: proj.id, key } });
@@ -150,6 +193,12 @@ export function importPluginLegacyParts(projectPath: string, pluginId: string, u
   return applyPluginParts(projectPath, pluginId, update, { clearLegacy: false, onlyMissing: true });
 }
 
+/** Said in each plugin part's description, so the library shows where it came from and what to do with it. */
+export function pluginPartDescription(pluginId: string, projectName: string): string {
+  return `${pluginId} now adds its instructions and servers as parts. Add this to an agent or template to use it. `
+    + `Contributed for ${projectName}; the plugin keeps it up to date, so make a copy to change it.`;
+}
+
 /** The name a plugin's part gets for a project. */
 export function pluginPartName(projectName: string, pluginId: string, what: string): string {
   return `${projectName}: ${pluginId} ${what}`;
@@ -181,12 +230,15 @@ function applyPluginParts(projectPath: string, pluginId: string, update: PluginM
       legacy.instructions = null;
     }
 
+    // Servers the catalog refused: their legacy copy stays, since no part replaces it.
+    const refused = new Set<string>();
     if (update.mcpServers !== undefined) {
       const wanted = new Map<string, ManagedMcpContent>();
       for (const [serverKey, raw] of Object.entries(update.mcpServers ?? {})) {
-        if (serverKey === 'clubhouse') { notes.push('The clubhouse server is Clubhouse\'s own, so it isn\'t made a part.'); continue; }
+        if (serverKey === 'clubhouse') { notes.push('The clubhouse server is Clubhouse\'s own, so it isn\'t made a part.'); refused.add(serverKey); continue; }
         const content = await mcpContent(serverKey, raw, notes);
         if (content) wanted.set(mcpKey(serverKey), content);
+        else refused.add(serverKey);
       }
       for (const [key, content] of wanted) {
         if (opts.onlyMissing && existing.has(key)) continue;
@@ -197,10 +249,17 @@ function applyPluginParts(projectPath: string, pluginId: string, update: PluginM
           if (key.startsWith('mcp:') && !wanted.has(key)) await putPart(pluginId, proj, key, entry, entry.name, null);
         }
       }
-      legacy.mcpServers = null;
     }
 
-    if (opts.clearLegacy) await updateProjectAgentDefaults(projectPath, (current) => withPluginParts(current, pluginId, legacy));
+    if (opts.clearLegacy) {
+      const known = update.mcpServers !== undefined ? await knownPluginIds() : [];
+      await updateProjectAgentDefaults(projectPath, (current) => {
+        const withInstructions = withPluginParts(current, pluginId, legacy);
+        const base = withInstructions ?? current;
+        const withServers = update.mcpServers !== undefined ? withoutLegacyServers(base, pluginId, [...known, ...pluginIdsIn(base)], refused) : null;
+        return withServers ?? withInstructions;
+      });
+    }
     appLog(LOG_NS, 'info', 'A plugin set its parts for a project', {
       meta: { pluginId, instructions: update.instructions === undefined ? 'unchanged' : update.instructions === null ? 'removed' : 'set', mcpServers: update.mcpServers === undefined ? 'unchanged' : Object.keys(update.mcpServers ?? {}).length },
     });
@@ -220,6 +279,22 @@ export async function readPluginManagedParts(projectPath: string, pluginId: stri
     if (key.startsWith('mcp:') && head?.content.kind === 'mcp') mcpServers.push(head.content.serverKey);
   }
   return { instructions, mcpServers };
+}
+
+/** The plugins that have parts for this project, for the settings page's notice. None when it can't tell. */
+export async function pluginsWithParts(projectPath: string): Promise<string[]> {
+  try {
+    const proj = await project(projectPath);
+    const ids = new Set<string>();
+    for (const entry of Object.values(await managedAgents().liveEntries())) {
+      const source = sourceOf(entry);
+      if (source && source.projectId === proj.id) ids.add(source.pluginId);
+    }
+    return [...ids].sort();
+  } catch {
+    // telemetry-exempt: the notice is left out
+    return [];
+  }
 }
 
 /** Remove every part a plugin contributed for a project, as uninstalling it does. Agents that use one keep their copy. */

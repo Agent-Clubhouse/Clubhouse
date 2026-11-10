@@ -32,6 +32,29 @@ export function pluginMcpPrefix(pluginId: string): string {
 }
 
 /**
+ * The plugin a saved `plugin-<id>-<name>` MCP server belongs to (#3245). A
+ * plugin id can hold dashes, so `plugin-foo-bar-x` could be `foo`'s or
+ * `foo-bar`'s: the longest of `knownIds` that fits wins, else the shortest
+ * reading of the key.
+ */
+export function pluginOfMcpServer(key: string, knownIds: Iterable<string>): string | undefined {
+  const fits = [...knownIds].filter((id) => key.startsWith(pluginMcpPrefix(id)) && key.length > pluginMcpPrefix(id).length);
+  if (fits.length > 0) return fits.sort((a, b) => b.length - a.length)[0];
+  return /^plugin-(.+?)-.+$/.exec(key)?.[1];
+}
+
+/** The plugin ids a project's saved defaults name: in instruction block markers and permission rule tags. */
+export function pluginIdsIn(defaults: ProjectAgentDefaults): string[] {
+  const ids = new Set<string>();
+  for (const m of (defaults.instructions ?? '').matchAll(/<!-- plugin:([^:]+):start -->/g)) ids.add(m[1]);
+  for (const rule of [...(defaults.permissions?.allow ?? []), ...(defaults.permissions?.deny ?? [])]) {
+    const m = /\/\* plugin:([^ ]+) \*\//.exec(rule);
+    if (m) ids.add(m[1]);
+  }
+  return [...ids];
+}
+
+/**
  * `current` with this plugin's parts replaced, or null when nothing changes.
  * Everything that isn't this plugin's is kept as it is.
  */

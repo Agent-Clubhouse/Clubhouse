@@ -8,11 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // settings file: only the project list and where the library keeps its state
 // are faked.
 
-const h = vi.hoisted(() => ({ service: null as unknown, stateDir: '', projectPath: '' }));
+const h = vi.hoisted(() => ({ service: null as unknown, stateDir: '', projectPath: '', projectName: 'app', installed: [] as string[] }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./project-store', () => ({ list: async () => [{ id: 'proj_app', name: 'app', path: h.projectPath }] }));
+vi.mock('./project-store', () => ({ list: async () => [{ id: 'proj_app', name: h.projectName, path: h.projectPath }] }));
+vi.mock('./plugin-discovery', () => ({ discoverCommunityPlugins: async () => h.installed.map((id) => ({ manifest: { id }, pluginPath: '', fromMarketplace: false })) }));
 vi.mock('./agent-config', () => ({ isSameProject: async (a: string, b: string) => path.resolve(a) === path.resolve(b) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => h.service }));
 vi.mock('./managed-agents/state-store', async (importOriginal) => ({
@@ -25,7 +26,7 @@ import { createManagedStateStore } from './managed-agents/state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './managed-agents/service';
 import { withSettingsSurface, _resetSettingsAuditForTesting } from './settings-audit';
 import { readProjectAgentDefaults } from './agent-settings-service';
-import { importPluginLegacyParts, readPluginManagedParts, removeAllPluginManagedParts, setPluginManagedParts } from './plugin-parts';
+import { importPluginLegacyParts, pluginsWithParts, readPluginManagedParts, removeAllPluginManagedParts, setPluginManagedParts, withoutLegacyServers } from './plugin-parts';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 
@@ -46,6 +47,8 @@ beforeEach(() => {
   h.projectPath = path.join(root, 'app');
   fs.mkdirSync(h.projectPath, { recursive: true });
   h.stateDir = path.join(root, 'managed');
+  h.projectName = 'app';
+  h.installed = [];
   _resetSettingsAuditForTesting(false);
   service = createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
@@ -67,7 +70,9 @@ describe('a plugin\'s instructions', () => {
     const [part] = await pluginEntries();
     expect(part).toMatchObject({ kind: 'block', name: 'app: buddy instructions', headRevision: 1, source: { kind: 'plugin', pluginId: 'buddy', projectId: 'proj_app', key: 'instructions' } });
     const [summary] = await service.listParts('block');
-    expect(summary).toMatchObject({ updatedBy: 'the buddy plugin', description: expect.stringContaining('Contributed by the buddy plugin for app') });
+    expect(summary).toMatchObject({ updatedBy: 'the buddy plugin', description: expect.stringContaining('buddy now adds its instructions and servers as parts. Add this to an agent or template to use it.') });
+    expect(summary.description).toContain('Contributed for app');
+    expect(await pluginsWithParts(h.projectPath)).toEqual(['buddy']);
     expect((await readProjectAgentDefaults(h.projectPath)).instructions).toBe('Mine.');
 
     // The same text again changes nothing; new text is a new revision of the same part.
@@ -138,5 +143,43 @@ describe('import of what a plugin saved before', () => {
     await user(() => importPluginLegacyParts(h.projectPath, 'buddy', { instructions: 'Saved.' }));
     expect((await readPluginManagedParts(h.projectPath, 'buddy')).instructions).toBe('Newer.');
     expect(await pluginEntries()).toHaveLength(2);
+  });
+});
+
+describe('which saved servers are the plugin\'s (#3245 review)', () => {
+  const saved = { mcpJson: JSON.stringify({ mcpServers: { mine: { command: 'm' }, 'plugin-foo-x': { command: 'x' }, 'plugin-foo-bar-y': { command: 'y' } } }) };
+
+  it('never takes a longer plugin id\'s servers for a shorter one\'s', () => {
+    const next = withoutLegacyServers(saved, 'foo', ['foo-bar'], new Set());
+    expect(Object.keys(JSON.parse(next!.mcpJson!).mcpServers)).toEqual(['mine', 'plugin-foo-bar-y']);
+    expect(withoutLegacyServers(saved, 'foo-bar', [], new Set())!.mcpJson).not.toContain('plugin-foo-bar-y');
+  });
+
+  it('clears only the writer\'s servers when another installed plugin\'s id starts the same', async () => {
+    h.installed = ['foo-bar'];
+    writeDefaults(saved);
+    await user(() => setPluginManagedParts(h.projectPath, 'foo', { mcpServers: { x: { command: 'x' } } }));
+    expect(Object.keys(JSON.parse((await readProjectAgentDefaults(h.projectPath)).mcpJson!).mcpServers)).toEqual(['mine', 'plugin-foo-bar-y']);
+  });
+
+  it('also knows a plugin id from its saved instruction block or rule tags', async () => {
+    writeDefaults({ ...saved, instructions: '<!-- plugin:foo-bar:start -->\nHi\n<!-- plugin:foo-bar:end -->', permissions: { allow: ['Read(**) /* plugin:other */'] } });
+    await user(() => setPluginManagedParts(h.projectPath, 'foo', { mcpServers: {} }));
+    expect(Object.keys(JSON.parse((await readProjectAgentDefaults(h.projectPath)).mcpJson!).mcpServers)).toEqual(['mine', 'plugin-foo-bar-y']);
+  });
+
+  it('keeps the saved copy of a server the catalog refuses, since no part replaces it', async () => {
+    writeDefaults({ mcpJson: JSON.stringify({ mcpServers: { 'plugin-buddy-good': { command: 'g' }, 'plugin-buddy-bad': { nonsense: true } } }) });
+    const result = await user(() => setPluginManagedParts(h.projectPath, 'buddy', { mcpServers: { good: { command: 'g' }, bad: { nonsense: true } } }));
+    expect(result.notes.join('\n')).toMatch(/The bad MCP server isn't made a part/);
+    expect((await pluginEntries()).map((e) => e.name)).toEqual(['app: buddy good']);
+    expect(Object.keys(JSON.parse((await readProjectAgentDefaults(h.projectPath)).mcpJson!).mcpServers)).toEqual(['plugin-buddy-bad']);
+  });
+
+  it('renames the parts after a project rename, at the plugin\'s next write', async () => {
+    await user(() => setPluginManagedParts(h.projectPath, 'buddy', { instructions: 'Hi', mcpServers: { chat: { command: 'c' } } }));
+    h.projectName = 'shop';
+    await user(() => setPluginManagedParts(h.projectPath, 'buddy', { instructions: 'Hi', mcpServers: { chat: { command: 'c' } } }));
+    expect((await pluginEntries()).map((e) => e.name)).toEqual(['shop: buddy chat', 'shop: buddy instructions']);
   });
 });
