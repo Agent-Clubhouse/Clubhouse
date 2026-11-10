@@ -65,6 +65,7 @@ export function installRequestTracking(): () => void {
   });
   stop = () => {
     unsubscribe();
+    // Also stops the timeout timer.
     setRequestEndedHandler(null);
     stop = null;
   };

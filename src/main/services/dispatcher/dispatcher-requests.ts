@@ -24,6 +24,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getBaseDirPath } from '../base-dir';
 import { appLog } from '../log-service';
+import { writeFileAtomic } from './dispatcher-memory';
 import type { ChatEvent, MessageDelivery, TurnStopReason } from '../../../shared/chat';
 import type { NewsKind } from './dispatcher-triage';
 
@@ -91,14 +92,15 @@ export interface RequestQuery {
   fromName?: string;
 }
 
-const isOpen = (r: DispatcherRequest) => r.status === 'under_way' || r.status === 'waiting_user' || r.status === 'timed_out';
+const isOpen = (r: DispatcherRequest) => r.status === 'under_way' || r.status === 'waiting_user';
 
 /**
  * The request a report is for, if any. Only answers and questions are for a
  * request. In order:
  * 1. The id the Dispatcher gave, when it names a request.
- * 2. An agent's news: the latest request that agent was reached for. News
- *    from an agent reached for none is for none (#3204).
+ * 2. An agent's news: the latest open request that agent was reached for.
+ *    News from an agent reached for none, or only for closed ones, is for
+ *    none (#3204): its later progress isn't an answer.
  * 3. The Dispatcher's own words in the turn reading a request: that request.
  *    Its own words in any other turn, such as a failed Action or a missing
  *    permission, are for none (#3204).
@@ -113,10 +115,8 @@ export function matchRequest(requests: readonly DispatcherRequest[], q: RequestQ
     if (named) return named;
   }
   if (q.fromAgentId) {
-    const reached = live.filter((r) => r.agents.includes(q.fromAgentId!));
-    if (reached.length) {
-      return [...reached].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)) || b.handedOffAt - a.handedOffAt)[0];
-    }
+    const reached = live.filter((r) => isOpen(r) && r.agents.includes(q.fromAgentId!));
+    if (reached.length) return [...reached].sort((a, b) => b.handedOffAt - a.handedOffAt)[0];
   }
   const underWay = live.filter((r) => r.status === 'under_way');
   const ownWords = !q.fromAgentId && !q.fromName;
@@ -180,8 +180,7 @@ function save(): void {
   const file = getRequestsPath();
   saving = saving.then(async () => {
     try {
-      await fs.promises.mkdir(path.dirname(file), { recursive: true });
-      await fs.promises.writeFile(file, body, 'utf8');
+      await writeFileAtomic(file, body);
     } catch (err) {
       // telemetry-exempt: the requests stay in memory for this run; logged
       appLog(NS, 'warn', 'Dispatcher requests not saved', { meta: { error: err instanceof Error ? err.message : String(err) } });
@@ -233,9 +232,13 @@ export function onRequestsChanged(listener: () => void): () => void {
   return () => { listeners.delete(listener); };
 }
 
-/** Who tells the chat that a request ended without an answer. Null stops telling. */
+/**
+ * Who tells the chat that a request ended without an answer. Timeouts run
+ * only while someone is: null stops telling, and stops the timer.
+ */
 export function setRequestEndedHandler(handler: RequestEndedHandler | null): void {
   endedHandler = handler;
+  schedule();
 }
 
 function end(r: DispatcherRequest, ending: RequestEnding, now: number, detail?: string): void {
@@ -493,6 +496,7 @@ export function checkRequestTimeouts(now = Date.now()): void {
 function schedule(): void {
   if (timer) clearTimeout(timer);
   timer = null;
+  if (!endedHandler) return;
   const deadlines = (requests ?? []).map(requestDeadline).filter((d): d is number => d !== null);
   if (!deadlines.length) return;
   const delay = Math.min(Math.max(0, Math.min(...deadlines) - Date.now()), 2 ** 31 - 1);

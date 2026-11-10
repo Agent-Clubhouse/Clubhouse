@@ -81,6 +81,14 @@ describe('matchRequest (#3204)', () => {
     expect(matchRequest([a, b], { kind: 'answer', fromAgentId: 'z', fromName: 'z-lead' }, T0 + 2)).toBeUndefined();
   });
 
+  it('keys an agent\'s news only to an open request, so its progress after one closed isn\'t an answer', () => {
+    for (const status of ['done', 'failed', 'cancelled', 'timed_out'] as const) {
+      expect(matchRequest([req({ id: 'a', agents: ['x'], status })], { kind: 'answer', fromAgentId: 'x', fromName: 'x-lead' }, T0)).toBeUndefined();
+    }
+    const waiting = req({ id: 'b', agents: ['x'], status: 'waiting_user' });
+    expect(matchRequest([req({ id: 'a', agents: ['x'], status: 'done', handedOffAt: T0 + 1 }), waiting], { kind: 'answer', fromAgentId: 'x', fromName: 'x-lead' }, T0 + 2)).toBe(waiting);
+  });
+
   it('keys the Dispatcher\'s own words to the request its turn is reading, and nothing in any other turn', () => {
     const reading = req({ id: 'a', turn: 'in_turn' });
     const waiting = req({ id: 'b', agents: ['x'] });
@@ -290,6 +298,29 @@ describe('outcomes', () => {
   });
 });
 
+describe('the timeout timer', () => {
+  it('runs only while someone tells the chat, and stops when tracking stops', () => {
+    vi.useFakeTimers({ now: T0 });
+    try {
+      now = T0;
+      const id = handOff('make an action');
+      started();
+      ended();
+      setRequestEndedHandler(null);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(QUIET_TIMEOUT_MS + 1);
+      expect(getRequest(id)?.status).toBe('under_way');
+      setRequestEndedHandler(ended$);
+      expect(vi.getTimerCount()).toBe(1);
+      vi.advanceTimersByTime(1);
+      expect(getRequest(id)?.status).toBe('timed_out');
+      expect(ended$).toHaveBeenCalledWith(expect.objectContaining({ id }), 'timed_out', undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('saved state', () => {
   it('survives a restart, with nothing left waiting on a turn from the last run', async () => {
     now = Date.now();
@@ -308,6 +339,13 @@ describe('saved state', () => {
     expect(getRequest(reading)).toMatchObject({ status: 'under_way', turn: 'past', agents: ['a1'] });
     expect(getRequest(stale)?.status).toBe('timed_out');
     expect(ended$).not.toHaveBeenCalled();
+  });
+
+  it('writes through a temporary file, leaving none behind', async () => {
+    now = Date.now();
+    handOff('one');
+    await _whenRequestsSavedForTesting();
+    expect(fs.readdirSync(h.base).filter((f) => f.startsWith('dispatcher-requests'))).toEqual(['dispatcher-requests.json']);
   });
 
   it('starts empty from a file it can\'t read', () => {
