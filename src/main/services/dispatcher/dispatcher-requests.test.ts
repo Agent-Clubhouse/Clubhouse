@@ -208,6 +208,36 @@ describe('following the Dispatcher\'s turns (#3237)', () => {
     expect(getRequest(begun.request.id)?.status).toBe('failed');
   });
 
+  it('ties a hand-off that waited behind another to the turn it started, not the other\'s (two at once)', () => {
+    // B's mark is taken before A's delivery; deliveries are one at a time, so A's turn runs and fails first.
+    const a = beginRequest('one', now);
+    const b = beginRequest('two', now);
+    if (a.kind !== 'new' || b.kind !== 'new') throw new Error('not new');
+    const markA = workTurnMark();
+    const markB = workTurnMark();
+    started();
+    ended('error');
+    noteHandedOff(a.request.id, 'prompt', markA, now);
+    // B's prompt starts the next turn, which is still running when its hand-off returns.
+    started();
+    noteHandedOff(b.request.id, 'prompt', markB, now);
+    expect(getRequest(a.request.id)?.status).toBe('failed');
+    expect(getRequest(b.request.id)).toMatchObject({ status: 'under_way', turn: 'in_turn' });
+    noteAgentReached('a1', now);
+    expect(getRequest(b.request.id)?.agents).toEqual(['a1']);
+  });
+
+  it('a steer into a turn that is still running reads in it, even after an earlier turn ended', () => {
+    const b = beginRequest('two', now);
+    if (b.kind !== 'new') throw new Error(b.kind);
+    const mark = workTurnMark();
+    started();
+    ended();
+    started();
+    noteHandedOff(b.request.id, 'steer', mark, now);
+    expect(getRequest(b.request.id)?.turn).toBe('in_turn');
+  });
+
   it('ends what was waiting on a session that stopped or failed', () => {
     started();
     const stopped = handOff('one', 'queued');

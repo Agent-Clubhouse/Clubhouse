@@ -363,15 +363,18 @@ function afterTurn(r: DispatcherRequest, ending: RequestEnding | null, now: numb
 export function noteHandedOff(id: string, delivery: MessageDelivery | 'woke', mark: TurnMark, now = Date.now()): void {
   const r = find(id);
   if (!r || r.turn !== 'sending') return;
+  // A turn still running wins over one that ended: a hand-off that waited behind another (deliveries go one at a
+  // time) can see that one's turn start and end before its own starts, or before the turn it steered into ends.
   const last = turns.last;
   if (delivery === 'steer') {
-    if (last && last.endSeq > mark.ended) afterTurn(r, last.ending, now, last.detail);
-    else r.turn = turns.open ? 'in_turn' : 'awaiting';
+    if (turns.open) r.turn = 'in_turn';
+    else if (last && last.endSeq > mark.ended) afterTurn(r, last.ending, now, last.detail);
+    else r.turn = 'awaiting';
+  } else if (delivery !== 'queued' && turns.open && turns.openSeq > mark.started) {
+    r.turn = 'in_turn';
   } else if (delivery !== 'queued' && last && last.startSeq > mark.started) {
     // Its turn started and ended while it was being handed off.
     afterTurn(r, last.ending, now, last.detail);
-  } else if (delivery !== 'queued' && turns.open && turns.openSeq > mark.started) {
-    r.turn = 'in_turn';
   } else {
     r.turn = 'awaiting';
   }
