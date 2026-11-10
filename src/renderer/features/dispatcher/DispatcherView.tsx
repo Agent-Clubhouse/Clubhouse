@@ -10,6 +10,8 @@ import { DispatcherSetup } from './DispatcherSetup';
 import { SetupOffer } from './SetupOffer';
 import { useDispatcherWorkOpen } from './dispatcherDebug';
 import { DispatcherWorkView } from './DispatcherWorkView';
+import { usePopouts } from '../../hooks/usePopouts';
+import { PoppedOutPlaceholder } from '../popout/PoppedOutPlaceholder';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -23,6 +25,9 @@ import { DispatcherWorkView } from './DispatcherWorkView';
  *
  * With the debug view on (#3188), its work agent's row shows that agent's chat
  * here instead, read-only.
+ *
+ * While its chat is popped out (#3235) the view shows where it went, as a
+ * project agent's pane does; setup still shows here.
  */
 export function DispatcherView() {
   const agentId = useDispatcherAgentId();
@@ -33,6 +38,7 @@ export function DispatcherView() {
   const setupOpen = useDispatcherStore((s) => s.setupOpen);
   const setSetupOpen = useDispatcherStore((s) => s.setSetupOpen);
   const workOpen = useDispatcherWorkOpen();
+  const { findAgentPopout } = usePopouts();
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
@@ -48,6 +54,15 @@ export function DispatcherView() {
     return (
       <div className="relative h-full bg-ctp-base" data-testid="dispatcher-view" data-agent-id={agentId ?? undefined}>
         <DispatcherSetup state={state} reopened={setupStatus !== 'pending'} onClose={() => setSetupOpen(false)} />
+      </div>
+    );
+  }
+
+  const popout = agentId ? findAgentPopout(agentId) : undefined;
+  if (agent && popout) {
+    return (
+      <div className="relative h-full bg-ctp-base" data-testid="dispatcher-view" data-agent-id={agent.id}>
+        <PoppedOutPlaceholder type="agent" name={agent.name} agentId={agent.id} windowId={popout.windowId} />
       </div>
     );
   }

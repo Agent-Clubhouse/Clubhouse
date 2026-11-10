@@ -5,6 +5,7 @@ vi.mock('../plugin-manifest-registry', () => ({
 }));
 
 import { GRANT_ACTIONS } from '../../../shared/agent-grants';
+import { getAttributeSpec } from '../../../shared/telemetry/attributes';
 import { dispatcherToolActions, listToolGrants, _resetForTesting } from './tool-registry';
 import { defaultGrants } from '../../../shared/default-grants';
 import { mcpAdapter } from './mcp-adapter';
@@ -52,7 +53,7 @@ describe('tool grant declarations (#2967)', () => {
     registerAll();
     const callable = dispatcherToolActions();
     expect(callable.has('project.add')).toBe(true);
-    // The chat's tools are the chat's, and a helper's or a connected agent's are theirs.
+    // Its own tools and its chat's count; a helper's or a connected agent's are theirs.
     const defaults = defaultGrants({ dispatcher: true, helper: false, orchestrates: false, crossProject: false });
     const withoutTool = [...new Set(defaults.map((g) => g.action))].filter((a) => !callable.has(a)).sort();
     // Canvas-only actions the Dispatcher has no canvas for, the model list, and project defaults,
@@ -60,6 +61,14 @@ describe('tool grant declarations (#2967)', () => {
     expect(withoutTool).toEqual([
       'browser.act', 'browser.read', 'group_project.admin', 'group_project.post', 'group_project.read', 'models.read', 'project.configure',
     ]);
+  });
+
+  it('every tool the app registers has its own telemetry name, and the list names no other tool (#3200)', () => {
+    // A name missing from clubhouse.mcp.tool reports its tool_call spans as `other`.
+    const names = new Set(registerAll().map((t) => t.name));
+    const allowed = getAttributeSpec('clubhouse.mcp.tool')?.values ?? [];
+    expect([...names].filter((n) => !allowed.includes(n))).toEqual([]);
+    expect(allowed.filter((v) => v !== 'other' && !names.has(v))).toEqual([]);
   });
 
   it('only call_wire_tool passes through to the tool it calls', () => {

@@ -337,10 +337,10 @@ describe('Connections card (#2232)', () => {
 
     it('shows a suspended link with no binding, says why, and re-reads after removing it', async () => {
       useMcpBindingStore.setState({ bindings: [] });
-      const getDispatcherLinks = vi.fn(async () => [link('lead', 'rev', { targetName: 'reviewer', status: 'suspended', reason: 'orchestration_off' })] as DispatcherLink[]);
+      const getDispatcherLinks = vi.fn(async () => [link('lead', 'rev', { targetName: 'reviewer', status: 'suspended', reason: 'not_connected_to_dispatcher' })] as DispatcherLink[]);
       window.clubhouse.mcpBinding.getDispatcherLinks = getDispatcherLinks;
       window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
-        pairs: [{ agentId: 'lead', targetId: 'rev', bound: false, sources: [{ kind: 'dispatcher_link' as const, sourceId: 'dispatcher-connections', suspended: 'Orchestration is off for one of these agents.' }] }],
+        pairs: [{ agentId: 'lead', targetId: 'rev', bound: false, sources: [{ kind: 'dispatcher_link' as const, sourceId: 'dispatcher-connections', suspended: 'One of these agents is not connected to the Dispatcher.' }] }],
         unreadable: [],
       }));
       window.clubhouse.mcpBinding.removeConnectionSource = vi.fn(async () => {
@@ -352,7 +352,7 @@ describe('Connections card (#2232)', () => {
       expect(meta).toHaveTextContent('Dispatcher, sends to it, suspended');
       expect(screen.getByText('reviewer')).toBeInTheDocument();
       fireEvent.click(await screen.findByTestId('connection-sources'));
-      expect(screen.getByTestId('connection-source-dispatcher_link')).toHaveTextContent('Not connected now: Orchestration is off');
+      expect(screen.getByTestId('connection-source-dispatcher_link')).toHaveTextContent('Not connected now: One of these agents is not connected');
       fireEvent.click(screen.getByTestId('connection-source-remove-dispatcher_link'));
       fireEvent.click(screen.getByTestId('connection-source-confirm-dispatcher_link'));
       await waitFor(() => expect(screen.queryByTestId('connection-meta')).not.toBeInTheDocument());

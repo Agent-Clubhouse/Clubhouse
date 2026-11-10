@@ -385,8 +385,48 @@ describe('DeleteAgentDialog', () => {
       await waitFor(() => screen.getByText(/Delete bold-owl/));
       expect(requestWorktreeStatus).toHaveBeenCalledWith('sat-1', 'site', 'bold-owl');
       fireEvent.click(screen.getByText('Leave files'));
-      await waitFor(() => expect(sendAgentDeleteDurable).toHaveBeenCalledWith('sat-1', 'site', 'bold-owl', 'unregister'));
+      await waitFor(() => expect(sendAgentDeleteDurable).toHaveBeenCalledWith('sat-1', 'site', 'bold-owl', 'unregister', undefined));
       expect(mockExecuteDelete).not.toHaveBeenCalled();
+    });
+
+    it('asks about a satellite agent’s helpers when its desktop needs a choice, then deletes with it (#3199)', async () => {
+      const { useRemoteProjectStore, namespacedAgentId, namespacedProjectId } = await import('../../stores/remoteProjectStore');
+      const { useAnnexClientStore } = await import('../../stores/annexClientStore');
+      const ra = namespacedAgentId('sat-1', 'bold-owl');
+      const requestWorktreeStatus = vi.fn().mockResolvedValue({ isValid: true, uncommittedFiles: [], unpushedCommits: [], hasRemote: true });
+      const sendAgentDeleteDurable = vi.fn()
+        .mockResolvedValueOnce({
+          ok: false, message: 'bold-owl has 2 helpers. Choose whether to dispose or keep them.',
+          needsHelperChoice: { helpers: [{ id: 'h1', name: 'scout' }, { id: 'h2', name: 'fixer' }] },
+        })
+        .mockResolvedValueOnce({ ok: true, message: 'Removed', deleted: true });
+      useAnnexClientStore.setState({ requestWorktreeStatus, sendAgentDeleteDurable } as never);
+      useRemoteProjectStore.setState({
+        remoteAgents: { [ra]: { id: ra, projectId: namespacedProjectId('sat-1', 'site'), name: 'bold-owl', kind: 'durable', status: 'sleeping', color: 'blue', worktreePath: '/srv/site/wt' } as never },
+      });
+      useProjectStore.setState({ activeProjectId: null });
+      useAgentStore.setState({ deleteDialogAgent: ra });
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByText(/Delete bold-owl/));
+      fireEvent.click(screen.getByText('Leave files'));
+      const step = await screen.findByTestId('delete-agent-helpers-step');
+      expect(step).toHaveTextContent('bold-owl has 2 helpers.');
+      fireEvent.click(screen.getByTestId('delete-agent-helpers-keep'));
+      await waitFor(() => expect(sendAgentDeleteDurable).toHaveBeenLastCalledWith('sat-1', 'site', 'bold-owl', 'unregister', 'keep'));
+      await waitFor(() => expect(mockCloseDeleteDialog).toHaveBeenCalled());
+    });
+
+    it('shows a thrown error without Electron’s IPC prefix', async () => {
+      mockExecuteDelete.mockRejectedValueOnce(new Error("Error invoking remote method 'agent:delete': Error: Lead couldn't be stopped."));
+      useAgentStore.setState({
+        deleteDialogAgent: 'agent-2',
+        agents: { 'agent-2': { id: 'agent-2', projectId: 'proj-2', name: 'calm-otter', kind: 'durable', status: 'sleeping', color: 'blue', worktreePath: '/home/user/other/.clubhouse/agents/calm-otter' } },
+      } as never);
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByText(/Delete calm-otter/));
+      fireEvent.click(screen.getByText('Leave files'));
+      expect(await screen.findByText("Lead couldn't be stopped.")).toBeInTheDocument();
+      expect(screen.queryByText(/Error invoking remote method/)).not.toBeInTheDocument();
     });
   });
 });

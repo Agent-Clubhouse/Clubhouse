@@ -40,8 +40,9 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>
     ipcRenderer.invoke(IPC.AGENT.GET_RUNNING_STATUSES, agentIds),
-  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, access?: boolean | AccessLevel, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, worktreeOptions?: DurableWorktreeOptions) =>
-    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds, mcpConfigs, worktreeOptions),
+  /** `creationOptions.copyLegacyDefaults`: copy the project's legacy agent defaults into it, as asked on the New agent page (#3245). */
+  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, access?: boolean | AccessLevel, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, worktreeOptions?: DurableWorktreeOptions, creationOptions?: { copyLegacyDefaults?: boolean }) =>
+    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds, mcpConfigs, worktreeOptions, creationOptions),
   /** Asynchronous create (#2226): resolves with the id while the worktree is still being made. */
   startDurableCreation: (projectPath: string, params: StartDurableCreationParams): Promise<{ agentId: string; config: DurableAgentConfig }> =>
     ipcRenderer.invoke(IPC.AGENT.START_DURABLE_CREATION, projectPath, params),
@@ -328,6 +329,8 @@ export const agent = {
     startedAt: string;
     lastActiveAt: string;
     friendlyName?: string;
+    /** It kept failing every turn (#3240): choosing it starts a new session. */
+    blocked?: boolean;
   }>> =>
     ipcRenderer.invoke(IPC.AGENT.LIST_SESSIONS, projectPath, agentId, orchestrator),
 

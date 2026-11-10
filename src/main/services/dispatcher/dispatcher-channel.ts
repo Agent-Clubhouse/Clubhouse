@@ -14,8 +14,11 @@
  *
  * The group chat (#3043) sits in setChatDelivery: dispatcher-news installs
  * the triage that decides what shows now, later or never, and what the chat
- * is told to say. It hears of each hand-off through onHandOff, so an answer
- * to what the person asked shows right away.
+ * is told to say.
+ *
+ * Each hand-off is a request with an id (dispatcher-requests, #3237), which
+ * the coordinator reports its outcome under. When it ends with no answer,
+ * Clubhouse tells the chat itself (deliverUpdateToChat).
  */
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
@@ -29,6 +32,7 @@ import type { RoutedMessagePart } from '../../../shared/chat';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ChatDecision, ChatHold, ChatMessage, ChatReport } from './dispatcher-news';
 import { getDispatcherChatPath } from './dispatcher-paths';
+import { beginRequest, doneList, noteHandedOff, withdrawRequest, workTurnMark } from './dispatcher-requests';
 import { isDispatcherEnabled } from './dispatcher-settings';
 import {
   dispatcherDisplayName,
@@ -61,6 +65,17 @@ export interface ChannelResult {
   error?: string;
 }
 
+/** A hand-off's result: the request it went as. */
+export interface HandOffResult extends ChannelResult {
+  /** The request's id, which its outcome comes back under. */
+  requestId?: string;
+  /**
+   * `again`: an earlier request handed off again, a follow-up or a retry.
+   * `already`: the same request is under way, so it wasn't handed off twice.
+   */
+  reuse?: 'again' | 'already';
+}
+
 /** The text an agent receives, and how its chat shows it. */
 export interface ChannelMessage {
   text: string;
@@ -91,14 +106,6 @@ let chatDelivery: ChatDelivery = defaultChatDelivery;
 /** Replace the step between the coordinator's report and the chat (#3043). Null restores the default. */
 export function setChatDelivery(delivery: ChatDelivery | null): void {
   chatDelivery = delivery ?? defaultChatDelivery;
-}
-
-const handOffListeners = new Set<() => void>();
-
-/** Hear of each request the chat hands off. Returns a function that stops listening. */
-export function onHandOff(listener: () => void): () => void {
-  handOffListeners.add(listener);
-  return () => { handOffListeners.delete(listener); };
 }
 
 /** Starts in progress, so a second message waits for the first start instead of spawning again. */
@@ -171,38 +178,68 @@ async function wakeAndDeliver(agentId: string, dir: string, message: ChannelMess
 /**
  * The chat hands a request to the coordinator. Only the chat may; the request
  * reaches the coordinator as agent text, never as the user's approval.
+ * `requestId` hands an earlier request off again, as a follow-up or a retry.
  */
-export async function handOffToDispatcher(callerId: string, request: string): Promise<ChannelResult> {
+export async function handOffToDispatcher(callerId: string, request: string, requestId?: string): Promise<HandOffResult> {
   if (!isDispatcherChatAgentId(callerId)) return { outcome: 'refused', error: 'Only the Dispatcher can hand off work.' };
   const coordinatorId = getDispatcherAgentId();
   if (!isDispatcherEnabled() || !coordinatorId) return { outcome: 'off', error: 'The Dispatcher is turned off.' };
-  const text = `${HAND_OFF_TAG} The user asked for this in your conversation with them. It is not their approval for anything that asks first.\n\n${request}`;
-  const delivery = await deliverToDispatcher({
-    senderId: callerId,
-    // The coordinator takes every message to the Dispatcher, never the chat.
-    targetId: dispatcherInboxId(coordinatorId),
-    targetName: dispatcherDisplayName(),
-    text,
-    routed: [{ sender: { agentId: callerId, name: 'Conversation' }, text: request }],
-    taskId: `handoff_${Date.now().toString(36)}`,
-    submit: true,
-    toolName: 'start_work',
-    args: { request },
-  });
-  const result: ChannelResult = 'text' in delivery
-    ? { outcome: 'undelivered', error: delivery.text }
-    : { outcome: delivery.woke ? 'started' : 'delivered' };
-  if (result.outcome === 'delivered' || result.outcome === 'started') {
-    for (const listener of handOffListeners) {
-      try {
-        listener();
-      } catch (err) {
-        // telemetry-exempt: a listener's bookkeeping; the hand-off itself went through
-        appLog(NS, 'warn', 'Hand-off listener failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
-      }
-    }
+  const begun = beginRequest(request, Date.now(), requestId);
+  if (begun.kind === 'unknown') {
+    return { outcome: 'undelivered', error: `There is no request ${requestId}. Leave out request_id to start a new one.` };
   }
-  appLog(NS, 'info', 'Dispatcher hand-off', { meta: { outcome: result.outcome, length: request.length } });
+  const id = begun.request.id;
+  if (begun.kind === 'already') {
+    appLog(NS, 'info', 'Dispatcher hand-off already under way', { meta: { request: id } });
+    return { outcome: 'delivered', requestId: id, reuse: 'already' };
+  }
+  const again = begun.kind === 'again';
+  // A retry resumes: what is done already isn't done twice (#3241).
+  const done = again ? doneList(begun.request) : null;
+  const text = `${HAND_OFF_TAG} Request ${id}${again ? ', handed off again as a follow-up or a retry' : ''}. `
+    + 'The user asked for this in your conversation with them. It is not their approval for anything that asks first. '
+    + `Report its outcome with tell_user and request_id ${id}.\n\n${request}`
+    + (done ? `\n\nAlready done for this request, so don't repeat it:\n${done}` : '');
+  const mark = workTurnMark();
+  let delivery: Awaited<ReturnType<typeof deliverToDispatcher>>;
+  try {
+    delivery = await deliverToDispatcher({
+      senderId: callerId,
+      // The coordinator takes every message to the Dispatcher, never the chat.
+      targetId: dispatcherInboxId(coordinatorId),
+      targetName: dispatcherDisplayName(),
+      text,
+      routed: [{ sender: { agentId: callerId, name: 'Conversation' }, text: request }],
+      taskId: id,
+      submit: true,
+      toolName: 'start_work',
+      args: { request, ...(requestId && { request_id: requestId }) },
+    });
+  } catch (err) {
+    withdrawRequest(begun);
+    throw err;
+  }
+  let result: HandOffResult;
+  if ('text' in delivery) {
+    withdrawRequest(begun);
+    result = { outcome: 'undelivered', error: delivery.text };
+  } else {
+    noteHandedOff(id, delivery.woke ? 'woke' : delivery.delivery ?? 'prompt', mark);
+    result = { outcome: delivery.woke ? 'started' : 'delivered', requestId: id, ...(again && { reuse: 'again' as const }) };
+  }
+  appLog(NS, 'info', 'Dispatcher hand-off', { meta: { outcome: result.outcome, request: id, again, length: request.length } });
+  return result;
+}
+
+/**
+ * Clubhouse's own update to the chat, such as a request that ended with no
+ * answer (#3237). Not triaged: it is the outcome of something the user asked.
+ */
+export async function deliverUpdateToChat(message: ChannelMessage): Promise<ChannelResult> {
+  const chatId = getDispatcherChatAgentId();
+  if (!isDispatcherEnabled() || !chatId) return { outcome: 'off', error: 'The Dispatcher is turned off.' };
+  const result = await wakeAndDeliver(chatId, getDispatcherChatPath(), message, true);
+  appLog(NS, 'info', 'Dispatcher request update', { meta: { outcome: result.outcome } });
   return result;
 }
 
@@ -211,7 +248,10 @@ export async function handOffToDispatcher(callerId: string, request: string): Pr
  * coordinator may. What reaches the chat is up to the delivery step; a
  * sleeping chat is started with it.
  */
-export async function deliverToChat(callerId: string, report: string | ChatReport): Promise<ChannelResult & { held?: ChatHold['hold']; reason?: string }> {
+export async function deliverToChat(
+  callerId: string,
+  report: string | ChatReport,
+): Promise<ChannelResult & { held?: ChatHold['hold']; reason?: string; note?: string }> {
   if (!isDispatcherAgentId(callerId)) return { outcome: 'refused', error: 'Only the Dispatcher can use this tool.' };
   const chatId = getDispatcherChatAgentId();
   if (!isDispatcherEnabled() || !chatId) return { outcome: 'off', error: 'The Dispatcher is turned off.' };
@@ -232,7 +272,7 @@ export async function deliverToChat(callerId: string, report: string | ChatRepor
   }
   if (result.outcome !== 'delivered' && result.outcome !== 'started') notDelivered(chatId, full, decision);
   appLog(NS, 'info', 'Dispatcher update', { meta: { outcome: result.outcome, length: full.message.length } });
-  return result;
+  return decision.note ? { ...result, note: decision.note } : result;
 }
 
 /**
@@ -252,5 +292,4 @@ function notDelivered(chatId: string, report: ChatReport, message: ChatMessage):
 export function _resetDispatcherChannelForTesting(): void {
   chatDelivery = defaultChatDelivery;
   starting.clear();
-  handOffListeners.clear();
 }

@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { PopoutAgentView } from './PopoutAgentView';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { chatFixture } from '../agents/chat/fixtures';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
+import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 
 vi.mock('../agents/AgentTerminal', () => ({
   AgentTerminal: ({ agentId, focused }: { agentId: string; focused?: boolean }) => (
@@ -210,5 +212,48 @@ describe('PopoutAgentView', () => {
     expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-stacked', 'true');
     expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
     expect(screen.queryByTestId('popout-action-bar')).not.toBeInTheDocument();
+  });
+
+  describe('the Dispatcher (#3235)', () => {
+    const ON = { enabled: true, flagOn: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null };
+    const dispatcher = (over: Record<string, unknown> = {}) => ({
+      id: 'disp', name: 'Dispatcher', status: 'sleeping', kind: 'durable', projectId: DISPATCHER_PROJECT_ID, color: 'indigo', ...over,
+    });
+    afterEach(() => useDispatcherStore.setState({ state: null, project: null }));
+
+    it('shows its chat agent, the one the main window shows, with no registered project', () => {
+      useDispatcherStore.getState().setState(ON as never);
+      mockAgents.disp = dispatcher();
+      render(<PopoutAgentView agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
+      expect(screen.getByTestId('sleeping-agent')).toHaveAttribute('data-agent-id', 'disp');
+    });
+
+    it('says it is loading until its state arrives', () => {
+      mockAgents.disp = dispatcher();
+      render(<PopoutAgentView agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
+      expect(screen.getByTestId('popout-dispatcher-message')).toHaveTextContent('Loading the Dispatcher');
+      expect(screen.queryByTestId('sleeping-agent')).not.toBeInTheDocument();
+    });
+
+    it('says it is turned off once it is off and its agent is gone', () => {
+      useDispatcherStore.getState().setState(DISPATCHER_OFF);
+      render(<PopoutAgentView agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
+      expect(screen.getByTestId('popout-dispatcher-message')).toHaveTextContent('The Dispatcher is turned off.');
+    });
+
+    it('sends first-run setup to the main window', () => {
+      useDispatcherStore.getState().setState({ ...ON, config: {}, setup: { status: 'pending' } } as never);
+      mockAgents.disp = dispatcher();
+      render(<PopoutAgentView agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
+      fireEvent.click(screen.getByTestId('popout-dispatcher-setup'));
+      expect(window.clubhouse.window.focusMain).toHaveBeenCalledWith('disp', 'dispatcher-setup');
+    });
+
+    it('shows a headless run in its monitor', () => {
+      useDispatcherStore.getState().setState(ON as never);
+      mockAgents.disp = dispatcher({ status: 'running', headless: true });
+      render(<PopoutAgentView agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
+      expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-agent-id', 'disp');
+    });
   });
 });

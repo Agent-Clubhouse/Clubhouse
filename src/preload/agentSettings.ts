@@ -1,5 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { ProjectAgentDefaultsPatch } from '../shared/types';
+import type { PluginAgentDefaultsParts } from '../shared/plugin-agent-defaults';
 
 export const agentSettings = {
   agentSettings: {
@@ -65,21 +67,12 @@ export const agentSettings = {
     commandPrefix?: string;
   }> =>
     ipcRenderer.invoke(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, projectPath),
-  writeProjectAgentDefaults: (projectPath: string, defaults: {
-    helperAuto?: 'off';
-    instructions?: string;
-    permissions?: { allow?: string[]; deny?: string[] };
-    mcpJson?: string;
-    freeAgentMode?: boolean;
-    sourceControlProvider?: 'github' | 'azure-devops';
-    buildCommand?: string;
-    testCommand?: string;
-    lintCommand?: string;
-    mission?: string;
-    persona?: string;
-    commandPrefix?: string;
-  }) =>
-    ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
+  /** The Default agent settings page's save: changed fields only, user parts merged with plugin parts (#3244). */
+  saveProjectUserDefaults: (projectPath: string, patch: ProjectAgentDefaultsPatch): Promise<void> =>
+    ipcRenderer.invoke(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS, projectPath, patch),
+  /** A plugin's parts of the project's defaults, changed in main's queue (#3262). */
+  updatePluginAgentDefaults: (projectPath: string, pluginId: string, parts: PluginAgentDefaultsParts): Promise<void> =>
+    ipcRenderer.invoke(IPC.AGENT.UPDATE_PLUGIN_AGENT_DEFAULTS, projectPath, pluginId, parts),
   getProjectConfigBreakdown: (projectPath: string, knownPluginIds: string[]) =>
     ipcRenderer.invoke(IPC.AGENT.GET_PROJECT_CONFIG_BREAKDOWN, projectPath, knownPluginIds),
   removePluginInjectionItem: (projectPath: string, itemId: string): Promise<boolean> =>

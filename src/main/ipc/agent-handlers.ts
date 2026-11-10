@@ -39,6 +39,7 @@ import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableWorktreeOptions } from '../../shared/types';
+import type { DurableCreationCopyOptions } from '../services/agent-config';
 import { cancelDurableCreation, onDurableCreationEvent, parseStartCreationParams, parseWorktreeOptions, startDurableCreation } from '../services/agent-creation';
 
 export { parseStartCreationParams };
@@ -92,6 +93,7 @@ async function createDurableAgent(
   mcpIds: string[] | undefined,
   mcpConfigs: Record<string, Record<string, string>> | undefined,
   worktreeOptions: DurableWorktreeOptions | undefined,
+  copyOptions: DurableCreationCopyOptions = {},
 ) {
   // The name becomes a folder and a git branch; refuse a bad one up front (#2221).
   if (useWorktree !== false && worktreeOptions?.folderName === undefined) {
@@ -104,7 +106,7 @@ async function createDurableAgent(
 
   let config: Awaited<ReturnType<typeof agentConfig.createDurable>>;
   try {
-    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, access, mcpIds, mcpConfigs, worktreeOptions);
+    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, access, mcpIds, mcpConfigs, worktreeOptions, copyOptions);
   } catch (err) {
     // worktree_failed and validation are tagged at their throw sites; anything else is a write failure.
     throw tagError(err, 'write_failed');
@@ -223,8 +225,8 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), accessRequestArg, arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds, mcpConfigs, worktreeOptions) => tel.flow(
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), accessRequestArg, arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds, mcpConfigs, worktreeOptions, creationOptions) => tel.flow(
         'clubhouse.agent.create',
         { attrs: [ATTR.usesWorktree(useWorktree !== false), ATTR.orchestrator(orchestratorAttr(orchestrator))] },
         () => {
@@ -233,6 +235,8 @@ export function registerAgentHandlers(): void {
             projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds,
             mcpConfigs as Record<string, Record<string, string>> | undefined,
             worktreeOptions ? parseWorktreeOptions(worktreeOptions) : undefined,
+            // Only the New agent page asks, and only with an explicit true (#3245).
+            creationOptions?.copyLegacyDefaults === true ? { copyLegacyDefaults: true } : {},
           );
         },
       ),

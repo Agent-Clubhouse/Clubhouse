@@ -269,6 +269,12 @@ export interface ProjectAgentDefaults {
   persona?: string;
 }
 
+/**
+ * Changed fields of a project's defaults. A key that's missing stays as it is;
+ * `null` removes it (#3244).
+ */
+export type ProjectAgentDefaultsPatch = { [K in keyof ProjectAgentDefaults]?: ProjectAgentDefaults[K] | null };
+
 /** A recorded CLI session for a durable agent */
 export interface SessionInfo {
   /** CLI session ID (provider-specific format, e.g. UUID for Claude Code) */
@@ -315,6 +321,12 @@ export interface DurableAgentConfig {
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
+  /**
+   * Native sessions that kept failing every turn (#3240), newest last. They
+   * are never resumed again, and a session's late end never makes one the
+   * resume id again.
+   */
+  quarantinedSessionIds?: string[];
   /** Why the agent last went to sleep (#2104). */
   lastSleep?: AgentSleepInfo;
   /**
@@ -997,7 +1009,7 @@ export interface DispatcherLink {
   targetName: string;
   /** `active` is bound now. `suspended` is saved but not bound; `reason` says why. */
   status: 'active' | 'suspended';
-  reason?: 'dispatcher_off' | 'store_unwritable' | 'orchestration_off' | 'not_connected_to_dispatcher';
+  reason?: 'dispatcher_off' | 'store_unwritable' | 'not_connected_to_dispatcher';
 }
 
 // --- Editor settings ---
@@ -1807,6 +1819,8 @@ export interface AgentDeleteResult extends DeleteResult {
   worktree?: WorktreeStatus;
   /** Quick agents that were running in its worktree and were stopped. */
   stoppedQuickAgents?: string[];
+  /** The agent couldn't be stopped, so nothing of it was deleted. Helpers may have been settled. */
+  stopFailed?: 'stop_failed' | 'agent_still_running';
 }
 
 // ── Canvas state sync (main window ↔ pop-out windows) ─────────────────

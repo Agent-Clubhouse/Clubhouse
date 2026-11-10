@@ -195,7 +195,7 @@ vi.stubGlobal('clubhouse', {
     readMcpRawJson: async () => '{"mcpServers": {}}',
     writeMcpRawJson: async () => ({ ok: true }),
     readProjectAgentDefaults: async () => ({}),
-    writeProjectAgentDefaults: asyncNoop,
+    saveProjectUserDefaults: asyncNoop,
     getProjectConfigBreakdown: async () => ({
       userInstructions: '',
       pluginInstructionBlocks: [],
@@ -525,6 +525,17 @@ vi.stubGlobal('clubhouse', {
   hookServer: {
     onAgentsNeedRestart: () => noop,
   },
+  legacyDefaults: {
+    describe: async () => ({
+      hasValues: false, instructions: '', pluginInstructions: [], permissions: { allow: [], deny: [] },
+      mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [],
+    }),
+    previewImport: async () => ({ parts: [], notes: [] }),
+    importAsParts: async () => ({ created: [], existing: [], notes: [] }),
+    previewCopy: async () => ({ agentName: '', cli: '', changes: [], blocked: null }),
+    copyIntoAgent: async () => ({ agentName: '', cli: '', changes: [], blocked: null }),
+    previewCopyNew: async () => ({ agentName: '', cli: '', changes: [], blocked: null }),
+  },
   managed: {
     listParts: async () => ({ ok: true, value: [] }),
     getPart: async () => ({ ok: false, code: 'not_found' }),
@@ -569,6 +580,7 @@ vi.stubGlobal('clubhouse', {
     get: async () => DISPATCHER_OFF,
     setEnabled: async () => DISPATCHER_OFF,
     clearChat: async () => ({ cleared: 'now' as const }),
+    startFresh: async () => ({ work: 'now' as const }),
     forgetEverything: async () => ({ removed: 1, heldNews: 0 }),
     getUsage: async () => ({ day: '2026-11-08', conversations: emptyUsageTotals(), background: emptyUsageTotals() }),
     listConnectableAgents: async () => [],

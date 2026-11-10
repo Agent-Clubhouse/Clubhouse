@@ -100,7 +100,7 @@ const MODE_ATTR: Record<AgentDeleteMode, Parameters<typeof ATTR.deleteMode>[0]> 
  * with unsaved work). A helper that failed part way is a failure.
  */
 export function isDeleteRefusal(result: AgentDeleteResult): boolean {
-  if (result.ok) return false;
+  if (result.ok || result.stopFailed) return false;
   if (result.needsHelperChoice || result.worktree) return true;
   return !!result.helpers && !result.helpers.ok && !result.helpers.failed?.length;
 }
@@ -136,7 +136,9 @@ function closeGate(agentId: string): () => void {
 
 async function deleteLocked(projectPath: string, agentId: string, request: AgentDeleteRequest): Promise<AgentDeleteResult> {
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-  if (!agent) return { ok: false, message: 'Agent not found' };
+  // Already gone (a failed creation rolled back, or another window deleted it):
+  // there is nothing left to delete, so the row a window still shows can go (#3246).
+  if (!agent) return { ok: true, deleted: true, message: 'It was already removed.' };
 
   const helpers = await listHelpersEverywhere(projectPath, agentId, { recursive: true });
   if (helpers.length > 0 && !request.helpers) {
@@ -177,8 +179,28 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
     const quickAgents = runningQuickAgentsIn(agent.worktreePath);
     for (const quick of quickAgents) await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
 
-    if (isAgentRunning(agentId)) await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true });
     const stopped = { ...(cascade && { helpers: cascade }), ...(quickAgents.length > 0 && { stoppedQuickAgents: quickAgents.map((q) => q.id) }) };
+    // A stop that fails, or leaves it running, refuses the delete: the worktree
+    // isn't removed under a running agent. Settled helpers are still reported (#3199).
+    if (isAgentRunning(agentId)) {
+      let stopError: string | undefined;
+      try {
+        await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true, throwOnFailure: true });
+      } catch (err) {
+        // telemetry-exempt: the result carries the failure; the delete flow records it as delete_failed.
+        stopError = err instanceof Error ? err.message : String(err);
+      }
+      if (stopError !== undefined || isAgentRunning(agentId)) {
+        const settled = cascade ? 'Its helpers were settled, but it' : 'It';
+        appLog('core:agent-config', 'warn', 'Agent delete stopped: the agent did not stop', { meta: { agentId, error: stopError ?? 'agent_still_running' } });
+        return {
+          ok: false,
+          message: `${agent.name} couldn't be stopped${stopError ? ` (${stopError})` : ''}. ${settled} was not deleted.`,
+          stopFailed: stopError !== undefined ? 'stop_failed' : 'agent_still_running',
+          ...stopped,
+        };
+      }
+    }
 
     // Again now nothing runs in it: work written while helpers settled and agents stopped isn't lost.
     if (checksWorktree) {

@@ -34,6 +34,7 @@ vi.mock('../agent-config', () => ({
   updateDurableConfig: vi.fn(),
   createDurable: vi.fn(),
   deleteUnregister: vi.fn(),
+  deleteDurable: vi.fn(async () => {}),
 }));
 /** A stand-in for the retired persona layer's carry; orchestration-policy.test and legacy-migration.test cover the real one. */
 vi.mock('../orchestration-policy', () => ({
@@ -740,6 +741,32 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     expect(agentConfig.createDurable).toHaveBeenCalledWith('/p', 'lead', 'indigo', 'opus', true, 'claude-code', undefined);
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'made', { effort: 'high', idleSleep: 'never', helperTemplateId: 'builtin-template-quality-assurance' });
     expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'made', { orchestrate: true, maxHelpers: 3 });
+  });
+
+  it('never asks to copy the project\'s legacy defaults, for a managed or a plain agent (#3243, #3245)', async () => {
+    vi.mocked(agentConfig.createDurable).mockImplementation(async (_p, name) => {
+      const made: DurableAgentConfig = { id: `made-${name}`, name, color: 'indigo', createdAt: '2026-11-09T00:00:00.000Z', worktreePath: wt };
+      h.agents.set(made.id, made);
+      return made;
+    });
+    await user(() => createManagedAgent('/p', { name: 'scratch', color: 'indigo', settings: { orchestrator: 'copilot-cli' } }));
+    expect(vi.mocked(agentConfig.createDurable).mock.lastCall).toHaveLength(7);
+    await user(() => createManagedAgent('/p', { name: 'plain', color: 'indigo', managed: false, settings: { orchestrator: 'copilot-cli' } }));
+    expect(vi.mocked(agentConfig.createDurable).mock.lastCall).toHaveLength(7);
+  });
+
+  it('removes a managed agent whose setup could not be saved, with the folder it was just given (#3243)', async () => {
+    vi.mocked(agentConfig.createDurable).mockImplementation(async (_p, name) => {
+      const made: DurableAgentConfig = { id: 'half', name, color: 'indigo', createdAt: '2026-11-09T00:00:00.000Z', worktreePath: wt };
+      h.agents.set(made.id, made);
+      return made;
+    });
+    vi.mocked(agentConfig.deleteDurable).mockClear();
+    const save = vi.spyOn(service, 'saveSetup').mockRejectedValueOnce(new Error('disk full'));
+    await expect(user(() => createManagedAgent('/p', { name: 'half', color: 'indigo' }))).rejects.toThrow('disk full');
+    expect(agentConfig.deleteDurable).toHaveBeenCalledWith('/p', 'half');
+    expect(agentConfig.deleteUnregister).not.toHaveBeenCalled();
+    save.mockRestore();
   });
 
   it('a caller\'s legacy off wins over a template\'s level (#2761)', async () => {

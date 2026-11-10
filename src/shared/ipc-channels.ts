@@ -44,6 +44,15 @@ export const IPC = {
     /** Main to renderer: parts, templates or setups changed; refetch what's shown. */
     CHANGED: 'managed:changed',
   },
+  /** The project's legacy agent defaults (#3245): read-only, imported as parts or copied into a plain agent when asked. */
+  LEGACY_DEFAULTS: {
+    DESCRIBE: 'legacy-defaults:describe',
+    PREVIEW_IMPORT: 'legacy-defaults:preview-import',
+    IMPORT: 'legacy-defaults:import',
+    PREVIEW_COPY: 'legacy-defaults:preview-copy',
+    COPY: 'legacy-defaults:copy',
+    PREVIEW_COPY_NEW: 'legacy-defaults:preview-copy-new',
+  },
   CATALOG_SKILL_BUNDLE: {
     LIST: 'catalog-skill-bundle:list',
     READ: 'catalog-skill-bundle:read',
@@ -206,7 +215,8 @@ export const IPC = {
     GET_MCP_SHADOW_WARNING: 'agent:get-mcp-shadow-warning',
     WRITE_MCP_RAW_JSON: 'agent:write-mcp-raw-json',
     READ_PROJECT_AGENT_DEFAULTS: 'agent:read-project-agent-defaults',
-    WRITE_PROJECT_AGENT_DEFAULTS: 'agent:write-project-agent-defaults',
+    SAVE_PROJECT_USER_DEFAULTS: 'agent:save-project-user-defaults',
+    UPDATE_PLUGIN_AGENT_DEFAULTS: 'agent:update-plugin-agent-defaults',
     GET_CONVENTIONS: 'agent:get-conventions',
     // Project source skills and agent templates: only the plugin agentConfig API's inject and remove (#2901).
     WRITE_SOURCE_SKILL_CONTENT: 'agent:write-source-skill-content',
@@ -688,6 +698,8 @@ export const IPC = {
     SET_MODELS: 'dispatcher:set-models',
     /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
     CLEAR_CHAT: 'dispatcher:clear-chat',
+    /** Start fresh (#3240): `'work'` or `'both'` conversations. Memory, agents, connections, Actions and settings stay. Resolves with a StartFreshResult. */
+    START_FRESH: 'dispatcher:start-fresh',
     /** Forget everything (#3046): clears its memory and held news only. Resolves with a ForgetEverythingResult. */
     FORGET_EVERYTHING: 'dispatcher:forget-everything',
     /** Every agent that can connect to it, across projects (#3046). Resolves with ConnectableAgent[]. */

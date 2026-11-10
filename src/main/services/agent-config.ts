@@ -1,4 +1,3 @@
-import { UnsupportedPermissionRulesError } from './permission-rules-error';
 import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
@@ -11,9 +10,6 @@ import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, 
 import { isDisposedAgent, isEffortValue, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { forgetAutoHelper } from './helper-auto-state';
-import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
-import type { WildcardContext } from '../../shared/wildcard-replacer';
-import type { ProjectAgentDefaults } from '../../shared/types';
 import { accessForNewAgent, agentAccess, getPermissionMode } from './free-agent-settings';
 import { accessForLegacyToggle, isAccessLevel, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { tagError } from '../telemetry/types';
@@ -1544,7 +1540,8 @@ async function updateDurableConfigInner(
       delete agent.lastSleep;
     }
   }
-  if (updates.lastSessionId !== undefined) {
+  // A quarantined session (#3240) is never the resume id again.
+  if (updates.lastSessionId !== undefined && !(updates.lastSessionId && agent.quarantinedSessionIds?.includes(updates.lastSessionId))) {
     if (updates.lastSessionId) {
       agent.lastSessionId = updates.lastSessionId;
     } else {
@@ -1649,6 +1646,33 @@ export async function updateSessionId(projectPath: string, agentId: string, sess
   await updateDurableConfig(projectPath, agentId, { lastSessionId: sessionId });
 }
 
+/** How many quarantined session ids an agent keeps. Older ones are long gone from its resume id. */
+const MAX_QUARANTINED_SESSIONS = 20;
+
+/**
+ * Stop resuming a native session that fails every turn (#3240): it joins the
+ * agent's quarantined ids, and stops being its resume id when it is one. The
+ * session history entry stays, so it is still listed under Sessions. Returns
+ * whether the resume id was cleared.
+ */
+export async function quarantineSession(projectPath: string, agentId: string, sessionId: string): Promise<boolean> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return false;
+  const kept = (agent.quarantinedSessionIds ?? []).filter((id) => id !== sessionId);
+  agent.quarantinedSessionIds = [...kept, sessionId].slice(-MAX_QUARANTINED_SESSIONS);
+  const cleared = agent.lastSessionId === sessionId;
+  if (cleared) delete agent.lastSessionId;
+  await writeAgents(projectPath, agents);
+  return cleared;
+}
+
+/** True when the agent's native session was quarantined (#3240). */
+export async function isSessionQuarantined(projectPath: string, agentId: string, sessionId: string): Promise<boolean> {
+  const config = await getDurableConfig(projectPath, agentId);
+  return config?.quarantinedSessionIds?.includes(sessionId) ?? false;
+}
+
 /** Maximum number of sessions to keep in history per agent */
 const MAX_SESSION_HISTORY = 50;
 
@@ -1684,8 +1708,9 @@ export async function addSessionEntry(projectPath: string, agentId: string, entr
   }
 
   // Preserve late history, but never restore an old provider's resume pointer
-  // after a saved provider change.
-  if (!entry.orchestrator || !agent.orchestrator || entry.orchestrator === agent.orchestrator) {
+  // after a saved provider change, or a quarantined session's (#3240).
+  const quarantined = agent.quarantinedSessionIds?.includes(entry.sessionId) ?? false;
+  if (!quarantined && (!entry.orchestrator || !agent.orchestrator || entry.orchestrator === agent.orchestrator)) {
     agent.lastSessionId = entry.sessionId;
   }
 
@@ -1913,7 +1938,18 @@ export interface DurableCreationRunOptions {
   inject?: (config: DurableAgentConfig) => Promise<void>;
   /** An inject failure fails the creation: the agent can't work without it (a managed helper's setup, #2899). */
   injectRequired?: boolean;
+  /**
+   * Copy the project's legacy agent defaults (instructions, permissions, MCP
+   * servers and commands) into the new worktree, as legacy-defaults.ts copies
+   * them (#3245). Only when the person asked: the New agent page's "Copy this
+   * project's legacy defaults". Without it nothing of them is written; a
+   * managed agent never gets them (#3243).
+   */
+  copyLegacyDefaults?: boolean;
 }
+
+/** The creation options a createDurable caller can set. */
+export type DurableCreationCopyOptions = Pick<DurableCreationRunOptions, 'copyLegacyDefaults'>;
 
 export interface DurableCreationHandle {
   /** The new agent's record, in the 'creating' state. */
@@ -1940,21 +1976,6 @@ async function mutateAgentRecord(
   await writeAgents(projectPath, agents);
   if (flush) await flushAgentConfig(projectPath);
   return cloneAgent(agent);
-}
-
-/**
- * A new agent's `@@` values for the project defaults written into its folder,
- * as the MCP servers get at start (#2439). Without a source control provider
- * if that can't be read; the defaults are still written.
- */
-async function newAgentWildcards(projectPath: string, agent: DurableAgentConfig): Promise<WildcardContext> {
-  const { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } = await import('./agent-wildcards');
-  const defaults = await readProjectAgentDefaults(projectPath).catch((): ProjectAgentDefaults => ({}));
-  const scp = await resolveSourceControlProvider(projectPath, agent).catch((err: unknown): undefined => {
-    appLog('core:agent-config', 'warn', 'Could not read the source control provider for a new agent\'s defaults', { meta: { agentName: agent.name, error: errorMessage(err) } });
-    return undefined;
-  });
-  return buildWildcardContext(agent, projectPath, scp, resolveAgentCommands(agent, defaults));
 }
 
 async function removeAgentRecord(projectPath: string, agentId: string): Promise<void> {
@@ -2408,23 +2429,16 @@ async function runDurableCreation(
       emit('worktree_added', await reachStage('worktree_added'));
     }
 
-    // Apply project-level defaults as snapshots into the new worktree
+    // The project's legacy defaults go in only when the person asked (#3245).
+    // A value the CLI can't take is skipped; a failed copy is logged, never fatal.
     checkCancelled();
-    if (initial.worktreePath) {
-      const worktreePath = initial.worktreePath;
+    if (initial.worktreePath && options.copyLegacyDefaults) {
       try {
-        const provider = await resolveOrchestrator(projectPath, initial.orchestrator);
-        const wildcards = await newAgentWildcards(projectPath, initial);
-        await applyAgentDefaults(
-          worktreePath,
-          projectPath,
-          (wt, content) => provider.writeInstructions(wt, content),
-          provider.conventions,
-          wildcards,
-        );
+        const { copyIntoNewAgent } = await import('./legacy-defaults');
+        await copyIntoNewAgent(projectPath, cloneAgent(initial), async (fields) => { await update((agent) => { Object.assign(agent, fields); }); });
       } catch (err) {
-        if (err instanceof UnsupportedPermissionRulesError) throw err;
-        appLog('core:agent-config', 'warn', 'Failed to apply project agent defaults', {
+        if (err instanceof DurableCreationCancelledError) throw err;
+        appLog('core:agent-config', 'warn', 'Failed to copy the project\'s legacy defaults into the new agent', {
           meta: { agentName: initial.name, error: errorMessage(err) },
         });
       }
@@ -2453,10 +2467,13 @@ async function runDurableCreation(
     if (plan) {
       await cleanupPartialWorktree(projectPath, { id, wtPath: plan.wtPath, ownsFolder, branch: plan.branch, branchOwned, branchStartSha });
     }
+    // A record that is removed is always announced, even for a creation that
+    // sends no other stages: a window that saw it through a config change
+    // must drop it (#3246).
     if (cancelled) {
       await removeAgentRecord(projectPath, id);
       appLog('core:agent-config', 'info', 'Agent creation cancelled and cleaned up', { meta: { agentId: id } });
-      emit('cancelled');
+      emitCreationEvent(projectPath, id, 'cancelled', startMs);
       throw new DurableCreationCancelledError();
     }
     const reason = errorMessage(err);
@@ -2473,7 +2490,8 @@ async function runDurableCreation(
       emit('failed', failed ?? undefined, reason);
     } else {
       await removeAgentRecord(projectPath, id);
-      emit('failed', undefined, reason);
+      // No config: the record is gone.
+      emitCreationEvent(projectPath, id, 'failed', startMs, undefined, reason);
     }
     throw err;
   } finally {
@@ -2612,12 +2630,22 @@ export async function createDurable(
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
   worktreeOptions: DurableWorktreeOptions = {},
+  /** `copyLegacyDefaults` when the person asked for the project's legacy defaults (#3245). */
+  copyOptions: DurableCreationCopyOptions = {},
 ): Promise<DurableAgentConfig> {
+  // The copy's preview reads the default folder and branch (legacy-defaults.ts), so it can't
+  // promise what another folder, branch or base would hold: refuse the pair up front (#3245).
+  if (copyOptions.copyLegacyDefaults && (worktreeOptions.folderName !== undefined || worktreeOptions.branchName !== undefined || worktreeOptions.branchFrom !== undefined)) {
+    throw tagError(new Error(
+      'Copying the project\'s legacy defaults can\'t be combined with a folder name, branch name or branch to start from. '
+      + 'Create the agent first, then copy them from the project\'s settings.',
+    ), 'validation');
+  }
   const handle = await beginDurableCreation(projectPath, {
     ...worktreeOptions,
     name, color, model, useWorktree, orchestrator, mcpIds, mcpConfigs,
     ...(typeof access === 'boolean' ? { freeAgentMode: access } : access !== undefined ? { access } : {}),
-  }, { keepFailedRecord: false });
+  }, { keepFailedRecord: false, ...copyOptions });
   // The caller gets the error, so a failed agent leaves no record behind.
   return handle.done;
 }

@@ -44,6 +44,7 @@ import { file } from './file';
 import { agentSettings } from './agentSettings';
 import { skillBundle } from './skillBundle';
 import { managedAgents } from './managedAgents';
+import { legacyDefaults } from './legacyDefaults';
 import { pty } from './pty';
 import { agent } from './agent';
 import { canvas } from './canvas';
@@ -67,6 +68,7 @@ describe('preload IPC bridge', () => {
       agentSettings,
       skillBundle,
       managedAgents,
+      legacyDefaults,
       file,
       blueprint,
       plugin,
@@ -226,6 +228,7 @@ describe('preload IPC bridge', () => {
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
         { folderName: 'builder', branchName: 'builder/work', branchFrom: 'main' },
+        { copyLegacyDefaults: true },
       )).resolves.toBe('bridge-result');
 
       expect(invoke).toHaveBeenCalledWith(
@@ -240,6 +243,7 @@ describe('preload IPC bridge', () => {
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
         { folderName: 'builder', branchName: 'builder/work', branchFrom: 'main' },
+        { copyLegacyDefaults: true },
       );
     });
 

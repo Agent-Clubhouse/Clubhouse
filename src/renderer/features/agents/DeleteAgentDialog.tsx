@@ -4,7 +4,8 @@ import { useAgentStore, DeleteMode } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId, isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
-import { HelperDeleteChoice, WorktreeStatus } from '../../../shared/types';
+import type { AgentDeleteResult, HelperDeleteChoice, WorktreeStatus } from '../../../shared/types';
+import { ipcErrorMessage } from '../../utils/ipc-error';
 import { Spinner } from '../../components/Spinner';
 import { listLiveHelpers } from '../../stores/agent/agentLifecycleSlice';
 
@@ -96,6 +97,9 @@ export function DeleteAgentDialog() {
   // Every live helper below it, helpers of helpers too: main asks for a choice when there are any (#3182).
   const [allHelperCount, setAllHelperCount] = useState(0);
   const [helperChoice, setHelperChoice] = useState<HelperDeleteChoice | null>(null);
+  // A remote agent's helpers are known when its desktop asks for a choice (#3199); the mode chosen waits for it.
+  const [remoteHelperCount, setRemoteHelperCount] = useState(0);
+  const [pendingRemoteMode, setPendingRemoteMode] = useState<DeleteMode | null>(null);
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,7 +150,7 @@ export function DeleteAgentDialog() {
 
   if (!agent || (!activeProject && !isRemote)) return null;
 
-  const handleExecute = async (mode: DeleteMode) => {
+  const handleExecute = async (mode: DeleteMode, choice: HelperDeleteChoice | null = helperChoice) => {
     setExecuting(true);
     setError(null);
     try {
@@ -156,13 +160,22 @@ export function DeleteAgentDialog() {
           remoteProjectParts.agentId, // original project ID
           remoteParts.agentId,         // original agent ID
           mode,
-        ) as { ok: boolean; message: string };
+          choice ?? undefined,
+        ) as AgentDeleteResult;
         if (result.ok) {
           // Remove from local remote agents store and close dialog
           useRemoteProjectStore.getState().removeRemoteAgent(remoteParts.satelliteId, remoteParts.agentId);
           closeDeleteDialog();
+        } else if (result.needsHelperChoice) {
+          // Its desktop found helpers: ask, then send the same mode with the choice.
+          setRemoteHelperCount(result.needsHelperChoice.helpers.length);
+          setPendingRemoteMode(mode);
+          setHelperChoice(null);
         } else if (result.message !== 'cancelled') {
           setError(result.message);
+          // Helpers that blocked it get the choice again, for the same mode.
+          if (choice) setPendingRemoteMode(mode);
+          setHelperChoice(null);
         }
       } else if (activeProject) {
         const result = helperChoice
@@ -176,14 +189,24 @@ export function DeleteAgentDialog() {
           await fetchStatus();
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred');
+    } catch (err) {
+      // telemetry-exempt: the delete flow in main records it; the dialog shows why.
+      setError(ipcErrorMessage(err) || 'An error occurred');
     }
     setExecuting(false);
   };
 
-  const shownHelperCount = helperCount || allHelperCount;
-  if (!loading && !isRemote && shownHelperCount > 0 && !helperChoice) {
+  const chooseHelpers = (choice: HelperDeleteChoice) => {
+    setHelperChoice(choice);
+    if (isRemote && pendingRemoteMode) {
+      const mode = pendingRemoteMode;
+      setPendingRemoteMode(null);
+      void handleExecute(mode, choice);
+    }
+  };
+
+  const shownHelperCount = isRemote ? remoteHelperCount : helperCount || allHelperCount;
+  if (!loading && shownHelperCount > 0 && !helperChoice) {
     return createPortal(
       // eslint-disable-next-line no-restricted-syntax
       <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
@@ -207,7 +230,8 @@ export function DeleteAgentDialog() {
             {HELPER_OPTIONS.map((opt) => (
               <button
                 key={opt.choice}
-                onClick={() => setHelperChoice(opt.choice)}
+                onClick={() => chooseHelpers(opt.choice)}
+                disabled={executing}
                 data-testid={`delete-agent-helpers-${opt.choice}`}
                 className="w-full text-left px-3 py-2.5 rounded-lg border border-surface-0 hover:border-surface-2 hover:bg-surface-0 transition-colors cursor-pointer"
               >

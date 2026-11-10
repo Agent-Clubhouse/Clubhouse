@@ -28,6 +28,7 @@ vi.mock('../services/agent-settings-service', () => ({
   writeMcpRawJson: vi.fn(async () => undefined),
   readProjectAgentDefaults: vi.fn(async () => ({ model: 'default' })),
   writeProjectAgentDefaults: vi.fn(async () => undefined),
+  updateProjectAgentDefaults: vi.fn(async () => ({})),
   readSourceSkillContent: vi.fn(async () => 'src skill content'),
   writeSourceSkillContent: vi.fn(async () => undefined),
   deleteSourceSkill: vi.fn(async () => undefined),
@@ -141,7 +142,7 @@ describe('agent-settings-handlers', () => {
       IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.DELETE_AGENT_TEMPLATE,
       IPC.AGENT.LIST_AGENT_TEMPLATE_FILES,
       IPC.AGENT.READ_MCP_RAW_JSON, IPC.AGENT.WRITE_MCP_RAW_JSON,
-      IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS,
+      IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS, IPC.AGENT.UPDATE_PLUGIN_AGENT_DEFAULTS,
       IPC.AGENT.GET_CONVENTIONS,
       IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, IPC.AGENT.DELETE_SOURCE_SKILL,
       IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE,
@@ -329,10 +330,30 @@ describe('agent-settings-handlers', () => {
     expect(result).toEqual({ model: 'default' });
   });
 
-  it('WRITE_PROJECT_AGENT_DEFAULTS delegates to agentSettings', async () => {
-    const handler = handlers.get(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS)!;
-    await handler({}, '/project', { model: 'opus' });
-    expect(agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', { model: 'opus' });
+  it('registers no whole-object defaults write (#3262)', () => {
+    expect(handlers.has('agent:write-project-agent-defaults')).toBe(false);
+  });
+
+  it('UPDATE_PLUGIN_AGENT_DEFAULTS changes only that plugin\'s parts, in the defaults queue (#3262)', async () => {
+    const handler = handlers.get(IPC.AGENT.UPDATE_PLUGIN_AGENT_DEFAULTS)!;
+    await handler({}, '/project', 'foo', { allow: ['Bash(x)'] });
+    const update = vi.mocked(agentSettings.updateProjectAgentDefaults).mock.calls.at(-1)![1];
+    expect(update({ permissions: { allow: ['Read(**)'] }, buildCommand: 'make' })).toEqual({
+      permissions: { allow: ['Read(**)', 'Bash(x) /* plugin:foo */'] },
+      buildCommand: 'make',
+    });
+    await expect(handler({}, '/project', 'foo', { buildCommand: 'evil' })).rejects.toThrow('Unknown plugin agent default');
+    for (const bad of ['Foo', 'a b', 'x */ y', '../x']) {
+      await expect(handler({}, '/project', bad, { allow: null })).rejects.toThrow('Not a plugin id');
+    }
+    expect(agentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
+  });
+
+  it('SAVE_PROJECT_USER_DEFAULTS updates the saved defaults in place (#3244)', async () => {
+    const handler = handlers.get(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS)!;
+    await handler({}, '/project', { buildCommand: 'make' });
+    expect(agentSettings.updateProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.any(Function));
+    expect(agentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
   });
 
   // --- Conventions ---
@@ -372,8 +393,8 @@ describe('agent-settings-handlers', () => {
     expect(() => handler({}, '/worktree', 'not-an-object')).toThrow('must be an object');
   });
 
-  it('rejects non-object defaults for WRITE_PROJECT_AGENT_DEFAULTS', () => {
-    const handler = handlers.get(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS)!;
+  it('rejects non-object defaults for SAVE_PROJECT_USER_DEFAULTS', () => {
+    const handler = handlers.get(IPC.AGENT.SAVE_PROJECT_USER_DEFAULTS)!;
     expect(() => handler({}, '/project', 'not-an-object')).toThrow('must be an object');
   });
 

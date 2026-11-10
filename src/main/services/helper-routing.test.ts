@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelInfo, ModelList } from '../orchestrators';
 
 const W = vi.hoisted(() => ({
+  /** A write the defaults queue runs just before the next update (#3262). */
+  aheadInQueue: null as null | (() => void),
   lists: new Map<string, unknown>(),
   /** What a provider's own cache holds. Only a forced read goes past it. */
   listCache: new Map<string, unknown>(),
@@ -61,15 +63,32 @@ vi.mock('./orchestration-settings', () => ({
   bumpPresetsRevision: async () => { W.revision++; },
 }));
 vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: W.enabled }) }));
-vi.mock('./agent-settings-service', () => ({
-  readProjectAgentDefaults: async (path: string) => W.projects.get(path) ?? {},
+vi.mock('./agent-settings-service', () => {
   // As the real one does, for a change that decides Auto.
-  writeProjectAgentDefaults: async (path: string, defaults: Record<string, unknown>) => {
+  const write = (path: string, defaults: Record<string, unknown>) => {
     const changed = W.projects.get(path)?.helperAuto !== defaults.helperAuto;
     W.projects.set(path, defaults);
     if (changed) noteRoutingPolicyChanged();
-  },
-}));
+  };
+  return {
+    readProjectAgentDefaults: async (path: string) => W.projects.get(path) ?? {},
+    writeProjectAgentDefaults: async (path: string, defaults: Record<string, unknown>) => {
+      const ahead = W.aheadInQueue;
+      W.aheadInQueue = null;
+      ahead?.();
+      write(path, defaults);
+    },
+    // Read and write with nothing in between, as the real queue does (#3262).
+    updateProjectAgentDefaults: async (path: string, update: (d: Record<string, unknown>) => Record<string, unknown> | null) => {
+      const ahead = W.aheadInQueue;
+      W.aheadInQueue = null;
+      ahead?.();
+      const next = update(W.projects.get(path) ?? {});
+      if (next) write(path, next);
+      return next;
+    },
+  };
+});
 vi.mock('./provider-quota', () => ({
   readProviderQuota: async (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
   forceProviderQuota: async (provider: string) => {
@@ -125,6 +144,7 @@ async function plan(request: Partial<Parameters<typeof planHelperStart>[0]>) {
 beforeEach(() => {
   W.lists = new Map<string, unknown>([['claude-code', live(CLAUDE)], ['codex-cli', live(CODEX)], ['copilot-cli', live(COPILOT)]]);
   W.listCache = new Map();
+  W.aheadInQueue = null;
   W.listCalls = [];
   W.forcedQuota = [];
   W.forcedOutcome = 'ok';
@@ -1012,6 +1032,14 @@ describe('Auto (#2671)', () => {
       expect(settings.auto.scopes.project?.value).toBeNull();
       expect(await refused(write({ auto: true }, { projectPath: '/p' }))).toMatchObject({ code: 'invalid_helper_routing' });
       expect(await refused(write({ reset: {} }, { projectPath: '/p' }))).toMatchObject({ code: 'invalid_helper_routing' });
+    });
+
+    it('keeps a user save that lands just before its write (#3262)', async () => {
+      W.projects.set('/p', { persona: 'qa' });
+      // The Default agent settings page saves a build command first in the queue.
+      W.aheadInQueue = () => W.projects.set('/p', { ...W.projects.get('/p'), buildCommand: 'make' });
+      await write({ auto: 'off' }, { projectPath: '/p' });
+      expect(W.projects.get('/p')).toEqual({ persona: 'qa', buildCommand: 'make', helperAuto: 'off' });
     });
 
     it('a change made elsewhere moves the revision, tells open pages once, and makes an older write stale with fresh values', async () => {

@@ -202,7 +202,7 @@ describe('agent-handlers', () => {
   it('CREATE_DURABLE delegates to agentConfig.createDurable', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
     const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined, {});
     expect(result).toEqual({ id: 'agent-1', name: 'Test' });
   });
 
@@ -217,7 +217,7 @@ describe('agent-handlers', () => {
   it('CREATE_DURABLE lets a non-worktree agent keep a free-form display name', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
     await handler({}, '/project', 'My Bot', '#ff0000', undefined, false);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'My Bot', '#ff0000', undefined, false, undefined, undefined, undefined, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'My Bot', '#ff0000', undefined, false, undefined, undefined, undefined, undefined, undefined, {});
   });
 
   it('CREATE_DURABLE passes folder, branch and branch-from options through (#2226)', async () => {
@@ -225,7 +225,15 @@ describe('agent-handlers', () => {
     await handler({}, '/project', 'Helper one', '#ff0000', undefined, true, undefined, undefined, undefined, undefined,
       { folderName: 'helper-1', branchName: 'helper-1/work', branchFrom: 'orch/standby', extra: 'ignored' });
     expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Helper one', '#ff0000', undefined, true, undefined, undefined, undefined, undefined,
-      { folderName: 'helper-1', branchName: 'helper-1/work', branchFrom: 'orch/standby' });
+      { folderName: 'helper-1', branchName: 'helper-1/work', branchFrom: 'orch/standby' }, {});
+  });
+
+  it('CREATE_DURABLE copies the project\'s legacy defaults only when asked with an explicit true (#3245)', async () => {
+    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+    await handler({}, '/project', 'copier', '#ff0000', undefined, true, undefined, undefined, undefined, undefined, undefined, { copyLegacyDefaults: true });
+    expect(vi.mocked(agentConfig.createDurable).mock.lastCall?.[10]).toEqual({ copyLegacyDefaults: true });
+    await handler({}, '/project', 'copier', '#ff0000', undefined, true, undefined, undefined, undefined, undefined, undefined, { copyLegacyDefaults: 'yes' });
+    expect(vi.mocked(agentConfig.createDurable).mock.lastCall?.[10]).toEqual({});
   });
 
   describe('START_DURABLE_CREATION (#2226)', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { agentDot, chatDetailedStatus, chatDot, DOT_LABEL, StatusDot, statusCounts, statusRingColor } from './agent-status';
+import { agentDot, chatDetailedStatus, chatDot, dispatcherDot, dispatcherWorkingText, DOT_LABEL, StatusDot, statusCounts, statusRingColor } from './agent-status';
 
 describe('agent status vocabulary', () => {
   it('uses the five words, with Done for an agent between turns', () => {
@@ -16,6 +16,19 @@ describe('agent status vocabulary', () => {
     expect(chatDot('sleeping')).toBe('sleeping');
     expect(chatDot('error')).toBe('error');
     expect(chatDot(null)).toBe('starting');
+  });
+
+  it('shows the Dispatcher working while a request is under way, its chat between turns or asleep (#3220)', () => {
+    expect(dispatcherDot('idle', 1)).toBe('working');
+    expect(dispatcherDot('sleeping', 1)).toBe('working');
+    expect(dispatcherDot('idle', 0)).toBe('idle');
+    expect(dispatcherDot('sleeping', 0)).toBe('sleeping');
+    // What the chat itself says first: a permission, an error, a start.
+    expect(dispatcherDot('needs', 1)).toBe('needs');
+    expect(dispatcherDot('error', 1)).toBe('error');
+    expect(dispatcherDot('starting', 1)).toBe('starting');
+    expect(dispatcherWorkingText(1)).toBe('Working on your request');
+    expect(dispatcherWorkingText(3)).toBe('Working on your requests');
   });
 
   it('colors avatar rings like the dot, so a done agent is not shown as working', () => {

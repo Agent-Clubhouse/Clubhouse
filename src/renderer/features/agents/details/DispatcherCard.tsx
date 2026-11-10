@@ -23,7 +23,7 @@ import { createPortal } from 'react-dom';
 import type { Agent } from '../../../../shared/types';
 import type { AgentGrantsView, GrantChangeMode } from '../../../../shared/agent-grant-changes';
 import { AGENT_CARD_FIELD_MAX, type AgentCardView } from '../../../../shared/dispatcher-agent-card';
-import type { DispatcherState } from '../../../../shared/dispatcher-types';
+import { DEFAULT_DISPATCHER_NAME, type DispatcherState } from '../../../../shared/dispatcher-types';
 import { Button } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
 import { Toggle } from '../../../components/Toggle';
@@ -39,7 +39,15 @@ import { CONNECTED_TARGET, reachRows, reachSummary, type ReachRow } from './disp
 
 /** The Dispatcher's name as the user set it, or its working name. */
 export function dispatcherName(state: Pick<DispatcherState, 'config'> | null | undefined): string {
-  return state?.config?.name?.trim() || 'Dispatcher';
+  return state?.config?.name?.trim() || DEFAULT_DISPATCHER_NAME;
+}
+
+/**
+ * The header's line once connected (#3249): the Dispatcher's name, never the
+ * agent's own card text. The role word comes from the one shared name.
+ */
+export function connectedSummary(name: string): string {
+  return name.toLowerCase() === DEFAULT_DISPATCHER_NAME.toLowerCase() ? 'connected' : `${name}, your ${DEFAULT_DISPATCHER_NAME.toLowerCase()}`;
 }
 
 export const ASKING_TEXT = 'Asking what it does…';
@@ -58,12 +66,12 @@ export function cardStatus(on: boolean, view: AgentCardView | null, turningOn: b
 }
 
 /** The header's one line for each state. */
-export function cardSummary(status: DispatcherCardStatus, view: AgentCardView | null): string {
+export function cardSummary(status: DispatcherCardStatus, name: string): string {
   switch (status) {
     case 'off': return 'not connected';
     case 'asking': return ASKING_TEXT;
     case 'none': return NO_DESCRIPTION_TEXT;
-    case 'ready': return view?.card?.purpose?.trim() || 'connected';
+    case 'ready': return connectedSummary(name);
   }
 }
 
@@ -153,7 +161,7 @@ export function DispatcherCard({ agent, orch, open, onToggle }: {
       <DetailsCard
         id="dispatcher"
         title={name}
-        summary={cardSummary(status, card.view)}
+        summary={cardSummary(status, name)}
         open={open}
         onToggle={onToggle}
         action={orch.policy ? (

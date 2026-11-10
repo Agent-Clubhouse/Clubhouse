@@ -2,7 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { ChatDriverId, UsageLimit } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
-import { chatDot } from '../agent-status';
+import { chatDot, dispatcherDot, dispatcherWorkingText } from '../agent-status';
+import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
 import { AgentPaneToolbar, type PaneUsage, type ReviewView } from '../pane/AgentPaneToolbar';
 import { formatElapsed, formatTokens, modelLabel } from './view-model';
 
@@ -161,12 +162,16 @@ interface ChatHeaderProps {
 /** The chat runtime's pane toolbar: AgentPaneToolbar fed from the chat session. */
 export function ChatHeader({ agent, state, onSwitchToTerminal, switching, detailsToggle, review, showMenu, showName }: ChatHeaderProps) {
   const now = useNow(state.state === 'running' && state.turnStartedAt !== null);
+  // The Dispatcher shows working while a request is under way, as its sidebar row does (#3220).
+  const requestsUnderWay = useDispatcherStore((s) => (s.state?.chatAgentId === agent.id ? s.state.requestsUnderWay : 0));
+  const ownDot = chatDot(state.state);
+  const dot = dispatcherDot(ownDot, requestsUnderWay);
   return (
     <AgentPaneToolbar
       agent={agent}
       orchestrator={state.provider}
-      dot={chatDot(state.state)}
-      activity={chatActivity(state, now)}
+      dot={dot}
+      activity={dot === ownDot ? chatActivity(state, now) : dispatcherWorkingText(requestsUnderWay)}
       model={headerModel(state.model ?? agent.model, state.models)}
       details={chatDetails(agent, state)}
       usage={chatUsage(state)}

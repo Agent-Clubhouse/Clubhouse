@@ -71,6 +71,14 @@ export interface DispatcherState {
   classic: boolean;
   /** Its agent is running. It can be while `enabled` is false, until it stops. */
   running: boolean;
+  /** The agent that does its work (`agentId`) is running, whatever the chat is doing. */
+  workRunning: boolean;
+  /**
+   * The user's requests it is still working on: handed off from the chat,
+   * with no outcome back yet (#3220). While there are any, it shows as
+   * working even when its chat is between turns.
+   */
+  requestsUnderWay: number;
   /**
    * The id that holds its connections, links and grants (#3036). Not the one
    * the user talks to: that is `chatAgentId`.
@@ -113,7 +121,17 @@ export interface DispatcherState {
 export const DISPATCHER_PROJECT_ID = '__dispatcher__';
 
 export const DISPATCHER_OFF: DispatcherState = {
-  enabled: false, flagOn: true, savedOn: false, offReason: 'switch_off', classic: false, running: false, agentId: null, path: null, config: null,
+  enabled: false, flagOn: true, savedOn: false, offReason: 'switch_off', classic: false, running: false, workRunning: false, requestsUnderWay: 0, agentId: null, path: null, config: null,
   chatAgentId: null, chatPath: null, chatRunning: false, behavior: DEFAULT_DISPATCHER_BEHAVIOR_STATE, models: DEFAULT_DISPATCHER_MODELS_STATE,
   personality: DEFAULT_DISPATCHER_PERSONALITY, setup: NO_DISPATCHER_SETUP,
 };
+
+/** What Start fresh (#3240) starts over: the Dispatcher's work conversation, or both of its conversations. */
+export type StartFreshScope = 'work' | 'both';
+
+/** When each conversation starts fresh: now (it was running) or at its next start. */
+export interface StartFreshResult {
+  work: 'now' | 'next_start';
+  /** Set when both conversations started fresh. */
+  chat?: 'now' | 'next_start';
+}

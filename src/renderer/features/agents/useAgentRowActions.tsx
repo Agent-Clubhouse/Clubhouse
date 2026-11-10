@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Agent } from '../../../shared/types';
+import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useAgentStore } from '../../stores/agentStore';
-import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
+import { isDispatcherAgent, useLocalProject, visibleDispatcherAgentId } from '../dispatcher/dispatcherStore';
 import { openDispatcherSettings, openDispatcherSetup } from '../dispatcher/dispatcherNav';
-import { requestClearChat } from '../dispatcher/ClearChat';
+import { requestClearChat, requestStartFresh } from '../dispatcher/ClearChat';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { wakeDurableAgent, type WakeMode } from './wake-durable-agent';
@@ -168,13 +169,24 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   }, [agent.id, openDeleteDialog]);
 
   const handlePopOut = useCallback(async () => {
+    // The Dispatcher pops out its chat (#3235), the same conversation, under its
+    // synthetic project; the popout finds its folder through the Dispatcher's state.
+    if (isDispatcher) {
+      await window.clubhouse.window.createPopout({
+        type: 'agent',
+        agentId: visibleDispatcherAgentId() ?? agent.id,
+        projectId: DISPATCHER_PROJECT_ID,
+        title: agent.name,
+      });
+      return;
+    }
     await window.clubhouse.window.createPopout({
       type: 'agent',
       agentId: agent.id,
       projectId: agent.projectId,
       title: `Agent — ${agent.name}`,
     });
-  }, [agent.id, agent.projectId, agent.name]);
+  }, [agent.id, agent.projectId, agent.name, isDispatcher]);
 
   const handleSettings = useCallback(() => {
     // The Dispatcher's settings are a page of app Settings, not the agent settings view.
@@ -183,6 +195,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   }, [agent.id, openAgentSettings, isDispatcher]);
 
   const handleClearChat = useCallback(() => requestClearChat(agent.name), [agent.name]);
+  const handleStartFresh = useCallback(() => requestStartFresh(agent.name), [agent.name]);
   const handleSetUp = useCallback(() => openDispatcherSetup(), []);
 
   const restartManaged = useCallback((fresh: boolean) => {
@@ -238,8 +251,8 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 2: Pop Out. Not for the Dispatcher: a popout finds its agent through a project.
-    if (!isDispatcher) list.push({
+    // Priority 2: Pop Out
+    list.push({
       id: 'popout',
       label: 'Pop Out',
       icon: <PopOutIcon />,
@@ -314,6 +327,20 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
         visible: true,
         handler: handleClearChat,
       });
+      // Start fresh (#3240): its work conversation, or both, when the work keeps failing.
+      list.push({
+        id: 'start-fresh',
+        label: 'Start fresh',
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 2.64-6.36" />
+            <polyline points="3 3 3 9 9 9" />
+          </svg>
+        ),
+        hoverColor: 'hover:text-ctp-accent',
+        visible: true,
+        handler: handleStartFresh,
+      });
     }
 
     // Priority 4a: Restart a running managed agent, resuming its conversation or starting a new one.
@@ -365,7 +392,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleClearChat, handleSetUp, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleClearChat, handleStartFresh, handleSetUp, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
 
   return actions;
 }

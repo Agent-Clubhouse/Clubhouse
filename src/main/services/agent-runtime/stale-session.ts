@@ -9,6 +9,7 @@ import { getDurableConfig, updateSessionId } from '../agent-config';
 import { appLog } from '../log-service';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
+import type { ChatRuntimeNotice } from './chat-spawn';
 
 /**
  * What each CLI prints when asked to resume a session it doesn't have.
@@ -77,4 +78,47 @@ export async function clearStaleResume(
     message: NOTICE[reason],
   });
   return true;
+}
+
+/**
+ * A session can also open fine and then fail every turn (#3240): resuming it
+ * works, so the checks above never see it. After this many turns in a row
+ * fail on one native session, the caller quarantines it.
+ */
+export const REPEATED_TURN_FAILURES = 3;
+
+/**
+ * Turn errors that say nothing about the session's history: a fresh session
+ * would hit them too (login, billing, rate limits, a slow reply, a provider
+ * outage or no network, a model that isn't offered), so they
+ * never count toward quarantine.
+ */
+const NOT_THE_SESSION: ReadonlySet<string> = new Set(['auth_required', 'account_issue', 'rate_limited', 'rpc_timeout', 'service_unavailable', 'model_not_found']);
+
+/** True when a turn error counts toward quarantining its session. */
+export function countsTowardQuarantine(code: string | undefined, willRetry?: boolean): boolean {
+  return !willRetry && !NOT_THE_SESSION.has(code ?? 'unknown');
+}
+
+/** Notices for an agent's next chat start, such as "started fresh" (#3240), written into its new session. */
+const nextStartNotices = new Map<string, ChatRuntimeNotice[]>();
+
+/** Write `notice` into the agent's chat when it next starts. */
+export function noteNextStartNotice(agentId: string, notice: ChatRuntimeNotice): void {
+  const list = nextStartNotices.get(agentId) ?? [];
+  if (!list.some((n) => n.code === notice.code && n.message === notice.message)) list.push(notice);
+  nextStartNotices.set(agentId, list);
+}
+
+/** Read and forget the notices for the agent's next start. */
+export function takeNextStartNotices(agentId: string): ChatRuntimeNotice[] {
+  const list = nextStartNotices.get(agentId) ?? [];
+  nextStartNotices.delete(agentId);
+  return list;
+}
+
+/** For tests. */
+export function _resetStaleSessionForTesting(): void {
+  chatStartFailures.clear();
+  nextStartNotices.clear();
 }

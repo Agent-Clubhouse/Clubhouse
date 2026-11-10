@@ -52,12 +52,15 @@ vi.mock('./fs-utils', () => ({
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true) }));
-vi.mock('./agent-settings-service', () => ({
+vi.mock('./agent-settings-service', async (importOriginal) => ({
   applyAgentDefaults: vi.fn(async () => undefined),
   readProjectAgentDefaults: vi.fn(async () => ({})),
+  // The real check, so a CLI without permission rules refuses them as it does in the app.
+  assertPermissionRulesSupported: (await importOriginal<typeof import('./agent-settings-service')>()).assertPermissionRulesSupported,
 }));
+vi.mock('./legacy-defaults', () => ({ copyIntoNewAgent: vi.fn(async () => undefined) }));
 vi.mock('./agent-system', () => ({
-  resolveOrchestrator: vi.fn(async () => ({ writeInstructions: vi.fn(), conventions: {} })),
+  resolveOrchestrator: vi.fn(async () => ({ displayName: 'Claude Code', writeInstructions: vi.fn(), conventions: {} })),
 }));
 
 import * as fsp from 'fs/promises';
@@ -81,8 +84,8 @@ import {
   getDurableConfig,
   updateDurableConfig,
 } from './agent-config';
-import { applyAgentDefaults } from './agent-settings-service';
-import { UnsupportedPermissionRulesError } from './permission-rules-error';
+import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
+import { copyIntoNewAgent } from './legacy-defaults';
 import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } from './agent-creation';
 
@@ -340,18 +343,6 @@ describe('startDurableCreation (#2226)', () => {
     expect(diskAgents().find((a) => a.id === started.agentId)).not.toHaveProperty('creation');
     expect(isDurableCreationActive(started.agentId)).toBe(false);
     expect(gitArgv()).toContainEqual(['branch', '--no-track', '--', 'helper/standby', SHA]);
-  });
-
-  it('fails creation visibly when permission defaults cannot be applied', async () => {
-    const reason = 'Copilot does not support these permission rules';
-    vi.mocked(applyAgentDefaults).mockRejectedValueOnce(new UnsupportedPermissionRulesError(reason));
-    const inject = vi.fn();
-    const started = await startDurableCreation(PROJECT_PATH, { name: 'unsupported', color: 'indigo' }, { inject });
-    expect(await started.done).toBe('failed');
-    expect(events.map((e) => e.stage)).toEqual(['config_created', 'worktree_added', 'failed']);
-    expect(events.at(-1)).toMatchObject({ reason, config: { creation: { state: 'failed', reason } } });
-    expect(inject).not.toHaveBeenCalled();
-    expect(diskAgents().find((agent) => agent.id === started.agentId)?.creation).toMatchObject({ state: 'failed', reason });
   });
 
   it('runs the injection hook before ready', async () => {
@@ -712,5 +703,94 @@ describe('interrupted creation recovery (#2226)', () => {
     expect(await recoverInterruptedCreations(PROJECT_PATH)).toEqual([]);
     slow.release();
     expect(await started.done).toBe('ready');
+  });
+});
+
+describe('the project\'s legacy defaults at creation (#3243, #3245)', () => {
+  beforeEach(() => {
+    vi.mocked(copyIntoNewAgent).mockReset();
+    vi.mocked(copyIntoNewAgent).mockResolvedValue(undefined);
+  });
+
+  it('copies nothing unless asked, for createDurable and the asynchronous API alike', async () => {
+    const config = await createDurable(PROJECT_PATH, 'plain', 'indigo');
+    expect(config.worktreePath).toBe(agentPath('plain'));
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'helper', color: 'indigo' }, { inject: async () => undefined, injectRequired: true });
+    expect(await started.done).toBe('ready');
+    expect(copyIntoNewAgent).not.toHaveBeenCalled();
+    expect(applyAgentDefaults).not.toHaveBeenCalled();
+  });
+
+  it('copies into the new worktree when asked, before ready, saving the commands on the agent', async () => {
+    vi.mocked(copyIntoNewAgent).mockImplementation(async (_projectPath, agent, saveCommands) => {
+      expect(agent.worktreePath).toBe(agentPath('copier'));
+      expect(dirs.has(agentPath('copier'))).toBe(true);
+      await saveCommands({ buildCommand: 'make' });
+    });
+    const config = await createDurable(PROJECT_PATH, 'copier', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, { copyLegacyDefaults: true });
+    expect(copyIntoNewAgent).toHaveBeenCalledTimes(1);
+    expect(config).toMatchObject({ buildCommand: 'make' });
+    expect(config).not.toHaveProperty('creation');
+  });
+
+  it.each([
+    ['a folder name', { folderName: 'elsewhere' }],
+    ['a branch name', { branchName: 'feat/other' }],
+    ['a branch to start from', { branchFrom: 'main' }],
+  ])('refuses the copy with %s, before anything is made', async (_label, worktreeOptions) => {
+    await expect(createDurable(PROJECT_PATH, 'picky', 'indigo', undefined, true, undefined, undefined, undefined, undefined, worktreeOptions, { copyLegacyDefaults: true }))
+      .rejects.toMatchObject({ message: expect.stringMatching(/can't be combined with a folder name, branch name or branch to start from/) });
+    expect(gitArgv()).toEqual([]);
+    expect(diskAgents()).toEqual([]);
+    expect(copyIntoNewAgent).not.toHaveBeenCalled();
+  });
+
+  it('still takes worktree options without the copy', async () => {
+    const config = await createDurable(PROJECT_PATH, 'picky', 'indigo', undefined, true, undefined, undefined, undefined, undefined, { folderName: 'elsewhere' });
+    expect(config.worktreePath).toBe(agentPath('elsewhere'));
+  });
+
+  it('never copies into an agent without its own folder', async () => {
+    await createDurable(PROJECT_PATH, 'root', 'indigo', undefined, false, undefined, undefined, undefined, undefined, {}, { copyLegacyDefaults: true });
+    expect(copyIntoNewAgent).not.toHaveBeenCalled();
+  });
+
+  it('logs a failed copy and still makes the agent', async () => {
+    vi.mocked(copyIntoNewAgent).mockRejectedValueOnce(new Error('disk full'));
+    const config = await createDurable(PROJECT_PATH, 'survivor', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, { copyLegacyDefaults: true });
+    expect(config).not.toHaveProperty('creation');
+    expect(diskAgents().map((a) => a.name)).toContain('survivor');
+  });
+
+  it('checks a creation without reading the legacy defaults', async () => {
+    vi.mocked(readProjectAgentDefaults).mockClear();
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'other', color: 'indigo' })).resolves.toBeUndefined();
+    expect(readProjectAgentDefaults).not.toHaveBeenCalled();
+  });
+});
+
+describe('a creation that removes its record tells every window (#3246)', () => {
+  it('sends failed, with no config, when createDurable rolls back, though it sends no other stage', async () => {
+    gitImpl = (args, opts, cb) => {
+      if (isWorktreeAdd(args)) return cb(new Error('fatal: worktree add failed'), '');
+      defaultGit(args, opts, cb);
+    };
+    await expect(createDurable(PROJECT_PATH, 'doomed', 'indigo')).rejects.toThrow(/Failed to create git worktree/);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ stage: 'failed', projectPath: PROJECT_PATH, reason: expect.stringMatching(/worktree/) });
+    expect(events[0].config).toBeUndefined();
+    expect(diskAgents()).toEqual([]);
+  });
+
+  it('sends cancelled when a createDurable is cancelled', async () => {
+    const slow = slowWorktreeAdd();
+    const creating = createDurable(PROJECT_PATH, 'stopped', 'indigo');
+    creating.catch(() => {});
+    await slow.reached;
+    const id = diskAgents()[0].id;
+    await deleteDurable(PROJECT_PATH, id);
+    await expect(creating).rejects.toThrow(/cancelled/);
+    expect(events.map((e) => e.stage)).toEqual(['cancelled']);
+    expect(events[0].agentId).toBe(id);
   });
 });

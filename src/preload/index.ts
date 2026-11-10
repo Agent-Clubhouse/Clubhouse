@@ -9,6 +9,7 @@ import { git } from './git';
 import { agentSettings } from './agentSettings';
 import { skillBundle } from './skillBundle';
 import { managedAgents } from './managedAgents';
+import { legacyDefaults } from './legacyDefaults';
 import { file } from './file';
 import { blueprint } from './blueprint';
 import { plugin } from './plugin';
@@ -63,6 +64,7 @@ export const api = {
   ...agentSettings,
   ...skillBundle,
   ...managedAgents,
+  ...legacyDefaults,
   ...file,
   ...blueprint,
   ...plugin,

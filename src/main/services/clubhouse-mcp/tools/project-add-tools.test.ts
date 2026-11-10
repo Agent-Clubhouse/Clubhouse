@@ -13,7 +13,8 @@ const tmp = vi.hoisted(() => {
   const nodeFs = require('fs') as typeof import('fs');
   const nodeOs = require('os') as typeof import('os');
   const nodePath = require('path') as typeof import('path');
-  const root = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'add-project-'));
+  // The long, real path: Windows runners' tmpdir is an 8.3 short path (RUNNER~1), and the tool reports real paths.
+  const root = nodeFs.realpathSync.native(nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'add-project-')));
   return { root, base: nodePath.join(root, 'home', '.clubhouse-dev') };
 });
 
@@ -52,9 +53,9 @@ function git(dir: string, ...args: string[]): void {
 }
 
 async function registeredFor(dir: string): Promise<number> {
-  const real = projectStore.projectPathKey(fs.realpathSync(dir));
+  const real = projectStore.projectPathKey(fs.realpathSync.native(dir));
   const list = await projectStore.list();
-  return list.filter((p) => projectStore.projectPathKey(fs.realpathSync(p.path)) === real).length;
+  return list.filter((p) => projectStore.projectPathKey(fs.realpathSync.native(p.path)) === real).length;
 }
 
 beforeEach(() => {
@@ -86,7 +87,7 @@ describe('add_project (#3239)', () => {
 
     expect(isError).toBe(false);
     expect(body).toMatchObject({
-      status: 'added', name: 'Shop', path: dir, canonicalPath: fs.realpathSync(dir),
+      status: 'added', name: 'Shop', path: dir, canonicalPath: fs.realpathSync.native(dir),
       git: true, defaultBranch: 'trunk', origin: 'https://example.com/org/repo.git', gitignore: 'updated',
     });
     expect(body.projectId).toMatch(/^proj_/);
@@ -126,7 +127,7 @@ describe('add_project (#3239)', () => {
   it('dryRun says what would happen and changes nothing', async () => {
     const dir = folder();
     const { body } = await call({ path: dir, dryRun: true });
-    expect(body).toMatchObject({ status: 'would_add', path: dir, canonicalPath: fs.realpathSync(dir), git: false });
+    expect(body).toMatchObject({ status: 'would_add', path: dir, canonicalPath: fs.realpathSync.native(dir), git: false });
     expect(await projectStore.list()).toEqual([]);
     expect(ensureGitignore).not.toHaveBeenCalled();
   });

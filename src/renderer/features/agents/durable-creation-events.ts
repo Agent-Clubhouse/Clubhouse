@@ -8,12 +8,13 @@ import { useProjectStore } from '../../stores/projectStore';
  * - a creation the store does not know yet loads its project's agents (it shows as creating);
  * - ready turns the agent asleep with the config's worktree and branch;
  * - failed shows the reason, and drops the worktree and branch the failure removed;
- * - cancelled removes the agent.
+ * - failed with no config, and cancelled, remove the agent: its record is gone (#3246).
+ *   Main sends these for every creation, so a row a config change brought in goes too.
  */
 export function applyDurableCreationEvent(event: DurableCreationEvent): void {
   const store = useAgentStore.getState();
   const agent = store.agents[event.agentId];
-  if (event.stage === 'cancelled') {
+  if (event.stage === 'cancelled' || (event.stage === 'failed' && !event.config)) {
     if (agent) store.removeAgent(event.agentId);
     return;
   }

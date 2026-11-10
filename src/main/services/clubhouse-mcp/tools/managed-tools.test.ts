@@ -31,7 +31,10 @@ vi.mock('../../agent-config', () => ({
     return a;
   },
   deleteUnregister: async (_p: string, id: string) => { state.agents.delete(id); },
+  deleteDurable: async (_p: string, id: string) => { state.agents.delete(id); },
 }));
+const legacy = vi.hoisted(() => ({ notice: undefined as 'not_copied' | undefined }));
+vi.mock('../../legacy-defaults', () => ({ legacyDefaultsNotCopied: async () => legacy.notice }));
 vi.mock('../../agent-delete', () => ({ deleteAgent: vi.fn(async () => ({ ok: true, message: 'Force deleted', deleted: true })) }));
 const grantMock = vi.hoisted(() => ({ granted: false }));
 vi.mock('../grant-check', async (original) => {
@@ -510,6 +513,14 @@ describe('builder tools: filters, template delete, plain agents, stale edits (#2
     expect(plain.json).toMatchObject({ name: 'plain-one', managed: false, status: 'sleeping' });
     expect(state.agents.get(plain.json.id)!.managed).toBeUndefined();
     expect(state.agents.get(plain.json.id)!.model).toBe('opus');
+    expect(plain.json).not.toHaveProperty('legacyDefaults');
+    // A plain agent made here never gets the project's legacy defaults (#3245): the result says so when there are some.
+    legacy.notice = 'not_copied';
+    const told = await call('create_managed_agent', { project: 'Clubhouse', name: 'plain-two', managed: false });
+    expect(told.json).toMatchObject({ legacyDefaults: 'not_copied', note: expect.stringContaining('weren\'t copied') });
+    const managedTold = await call('create_managed_agent', { project: 'Clubhouse', name: 'builder-two' });
+    expect(managedTold.json).not.toHaveProperty('legacyDefaults');
+    legacy.notice = undefined;
     const mixed = await call('create_managed_agent', { project: 'Clubhouse', name: 'mixed', managed: false, templateId: 'builtin-template-helper' });
     expect(mixed.isError).toBe(true);
     expect(state.agents.has('new-mixed')).toBe(false);

@@ -1224,6 +1224,17 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect(drafts.of('session_ended')[0].data.reason).toBe('error');
   });
 
+  it('names a finished subagent from its start after dropping the name it kept (#3250)', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'subagent', phase: 'started', taskId: 't1', raw: { tool_use_id: 'tu-1', subagent_type: 'Explore', description: 'Find it' } });
+    transport.emit({ kind: 'subagent', phase: 'notification', taskId: 't1', raw: { tool_use_id: 'tu-1', status: 'completed' } });
+    await drafts.waitFor('subagent', (d) => d.data.status === 'completed');
+    expect(drafts.of('subagent').map((d) => [d.data.subagentId, d.data.name, d.data.status])).toEqual([
+      ['tu-1', 'Explore', 'running'],
+      ['tu-1', 'Explore', 'completed'],
+    ]);
+  });
+
   it('ends a running turn when the CLI dies mid-turn', async () => {
     const { session, transport, drafts } = await scripted();
     await session.send([{ type: 'text', text: 'go' }], 'prompt');
@@ -1397,7 +1408,12 @@ describe('claudeTurnErrorCode', () => {
     expect(claudeTurnErrorCode('billing_error')).toBe('account_issue');
     expect(claudeTurnErrorCode('account_on_hold')).toBe('account_issue');
     expect(claudeTurnErrorCode('authentication_failed')).toBe('auth_required');
-    expect(claudeTurnErrorCode('overloaded')).toBe('unknown');
+    // An outage is the service's, never the session's (#3240); a bad request still counts against the session.
+    expect(claudeTurnErrorCode('overloaded')).toBe('service_unavailable');
+    expect(claudeTurnErrorCode('server_error')).toBe('service_unavailable');
+    expect(claudeTurnErrorCode('invalid_request')).toBe('unknown');
+    // A model setting, not the session.
+    expect(claudeTurnErrorCode('model_not_found')).toBe('model_not_found');
     expect(claudeTurnErrorCode(undefined, 'blocking_limit')).toBe('rate_limited');
     expect(claudeTurnErrorCode(undefined, 'api_error', 'refusal')).toBe('refusal');
     expect(claudeTurnErrorCode(undefined, undefined, 'max_tokens')).toBe('max_tokens');

@@ -9,10 +9,6 @@ import { hasPermission, handlePermissionViolation } from './plugin-api-shared';
 import { usePluginStore } from './plugin-store';
 import { useProjectStore } from '../stores/projectStore';
 
-// ── Plugin instruction markers ──────────────────────────────────────────
-const PLUGIN_INSTRUCTION_START = (pluginId: string) => `\n\n<!-- plugin:${pluginId}:start -->`;
-const PLUGIN_INSTRUCTION_END = (pluginId: string) => `<!-- plugin:${pluginId}:end -->`;
-
 /**
  * Resolves the target project path for a cross-project agentConfig operation.
  * When `opts.projectId` is provided, validates:
@@ -166,41 +162,15 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
     },
 
     // ── Instructions ──────────────────────────────────────────────────
+    // Writes send only this plugin's parts; main changes them in the defaults queue (#3262).
     async appendInstructions(content: string, opts?: AgentConfigTargetOptions): Promise<void> {
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
-      const existing = defaults.instructions || '';
-      const startMarker = PLUGIN_INSTRUCTION_START(pluginId);
-      const endMarker = PLUGIN_INSTRUCTION_END(pluginId);
-
-      // Remove any existing block from this plugin
-      const regex = new RegExp(
-        `\\n?\\n?<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:start -->[\\s\\S]*?<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:end -->`,
-      );
-      const cleaned = existing.replace(regex, '');
-
-      // Append new block
-      const updated = cleaned + startMarker + '\n' + content + '\n' + endMarker;
-      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
-        ...defaults,
-        instructions: updated,
-      });
+      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { instructions: content });
     },
 
     async removeInstructionAppend(opts?: AgentConfigTargetOptions): Promise<void> {
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
-      const existing = defaults.instructions || '';
-      const regex = new RegExp(
-        `\\n?\\n?<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:start -->[\\s\\S]*?<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:end -->`,
-      );
-      const cleaned = existing.replace(regex, '');
-      if (cleaned !== existing) {
-        await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
-          ...defaults,
-          instructions: cleaned,
-        });
-      }
+      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { instructions: null });
     },
 
     async getInstructionAppend(opts?: AgentConfigTargetOptions): Promise<string | null> {
@@ -218,44 +188,19 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
     async addPermissionAllowRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.permissions');
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
-      const existing = defaults.permissions || {};
-      const allow = existing.allow || [];
-      // Tag rules for tracking
-      const taggedRules = rules.map((r) => `${r} /* plugin:${pluginId} */`);
-      const merged = [...allow.filter((r) => !r.includes(`/* plugin:${pluginId} */`)), ...taggedRules];
-      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
-        ...defaults,
-        permissions: { ...existing, allow: merged },
-      });
+      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { allow: rules });
     },
 
     async addPermissionDenyRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.permissions');
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
-      const existing = defaults.permissions || {};
-      const deny = existing.deny || [];
-      const taggedRules = rules.map((r) => `${r} /* plugin:${pluginId} */`);
-      const merged = [...deny.filter((r) => !r.includes(`/* plugin:${pluginId} */`)), ...taggedRules];
-      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
-        ...defaults,
-        permissions: { ...existing, deny: merged },
-      });
+      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { deny: rules });
     },
 
     async removePermissionRules(opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.permissions');
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
-      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
-      const existing = defaults.permissions || {};
-      const tag = `/* plugin:${pluginId} */`;
-      const allow = (existing.allow || []).filter((r) => !r.includes(tag));
-      const deny = (existing.deny || []).filter((r) => !r.includes(tag));
-      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
-        ...defaults,
-        permissions: { allow, deny },
-      });
+      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { allow: null, deny: null });
     },
 
     async getPermissionRules(opts?: AgentConfigTargetOptions): Promise<{ allow: string[]; deny: string[] }> {
@@ -278,32 +223,7 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
       // Store plugin's MCP config separately for tracking
       await storage.write('injected-mcp', servers);
 
-      // Merge into project agent defaults mcpJson
-      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
-      let mcpConfig: Record<string, unknown> = {};
-      if (defaults.mcpJson) {
-        try { mcpConfig = JSON.parse(defaults.mcpJson); } catch { /* ignore */ }
-      }
-      const mcpServers = (mcpConfig.mcpServers as Record<string, unknown>) || {};
-
-      // Tag server entries for this plugin
-      const taggedServers: Record<string, unknown> = {};
-      for (const [name, config] of Object.entries(servers)) {
-        taggedServers[`plugin-${pluginId}-${name}`] = config;
-      }
-
-      const mergedServers = {
-        ...Object.fromEntries(
-          Object.entries(mcpServers).filter(([k]) => !k.startsWith(`plugin-${pluginId}-`)),
-        ),
-        ...taggedServers,
-      };
-
-      const updatedConfig = { ...mcpConfig, mcpServers: mergedServers };
-      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
-        ...defaults,
-        mcpJson: JSON.stringify(updatedConfig, null, 2),
-      });
+      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { mcpServers: servers });
     },
 
     async removeMcpServers(opts?: AgentConfigTargetOptions): Promise<void> {
@@ -311,22 +231,7 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
       const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const storage = storageFor(projectPath);
       await storage.delete('injected-mcp');
-
-      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
-      let mcpConfig: Record<string, unknown> = {};
-      if (defaults.mcpJson) {
-        try { mcpConfig = JSON.parse(defaults.mcpJson); } catch { /* ignore */ }
-      }
-      const mcpServers = (mcpConfig.mcpServers as Record<string, unknown>) || {};
-      const cleaned = Object.fromEntries(
-        Object.entries(mcpServers).filter(([k]) => !k.startsWith(`plugin-${pluginId}-`)),
-      );
-
-      const updatedConfig = { ...mcpConfig, mcpServers: cleaned };
-      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
-        ...defaults,
-        mcpJson: JSON.stringify(updatedConfig, null, 2),
-      });
+      await window.clubhouse.agentSettings.updatePluginAgentDefaults(projectPath, pluginId, { mcpServers: null });
     },
 
     async getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>> {

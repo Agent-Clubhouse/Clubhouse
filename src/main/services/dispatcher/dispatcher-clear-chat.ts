@@ -7,13 +7,23 @@
  * connections and Actions, and news held for the next check-in all stay. A
  * running chat starts a new conversation at once, with its instructions and
  * memory index written fresh; a sleeping one starts fresh at its next wake.
+ *
+ * Start fresh (#3240) does the same for the Dispatcher's work conversation,
+ * or for both. The work conversation's native session is quarantined, so no
+ * wake resumes it and no late session end makes it the resume id again.
+ * Clubhouse starts the work fresh on its own when its conversation fails
+ * every turn (dispatcher-work-health).
  */
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import { getAgentRuntime } from '../agent-runtime';
 import { appLog } from '../log-service';
-import { getDispatcherChatPath } from './dispatcher-paths';
-import { getDispatcherChatAgentId, prepareDispatcherSessionStart } from './dispatcher-service';
+import { noteNextStartNotice } from '../agent-runtime/stale-session';
+import { getDispatcherChatPath, getDispatcherPath } from './dispatcher-paths';
+import { getDispatcherAgentId, getDispatcherChatAgentId, prepareDispatcherSessionStart } from './dispatcher-service';
+import { endWaitingRequests, waitingRequests, type WaitingRequests } from './dispatcher-requests';
+import type { ChatEventDataMap } from '../../../shared/chat';
+import type { StartFreshResult, StartFreshScope } from '../../../shared/dispatcher-types';
 
 export type ClearChatResult =
   /** The running chat started a new conversation. */
@@ -59,4 +69,101 @@ export async function clearDispatcherChat(deps: ClearChatDeps = {}): Promise<Cle
   await (deps.forgetSession ?? ((d, id) => agentConfig.updateSessionId(d, id, null)))(dir, chatId);
   appLog('core:dispatcher', 'info', 'Dispatcher chat cleared', { meta: { running: false } });
   return { cleared: 'next_start' };
+}
+
+/** Why the work conversation starts fresh: the person asked, or it failed every turn. */
+export type StartFreshReason = 'user' | 'repeated_failures';
+
+export interface StartFreshDeps extends ClearChatDeps {
+  workAgentId?: () => string | null;
+  /** The work conversation's native session now, or its saved resume id when it's asleep. */
+  workSessionId?: (dir: string, agentId: string) => Promise<string | null>;
+  quarantine?: (dir: string, agentId: string, sessionId: string) => Promise<unknown>;
+  /** Write a notice into a running agent's conversation. */
+  addNotice?: (agentId: string, notice: ChatEventDataMap['notice']) => Promise<void>;
+  /** Write a notice into a sleeping agent's next conversation. */
+  noteNextStart?: (agentId: string, notice: ChatEventDataMap['notice']) => void;
+  clearChat?: () => Promise<ClearChatResult>;
+  /** The requests the old work conversation owes an outcome (#3260), taken before it is replaced. */
+  takeWaiting?: () => WaitingRequests;
+  /** End those requests, telling the chat. */
+  endWaiting?: (waiting: WaitingRequests) => void;
+}
+
+const WORK_NOTICE: Record<StartFreshReason, string> = {
+  user: 'Started fresh. The previous work conversation ended and is not resumed again.',
+  repeated_failures: 'Started fresh. The previous work conversation failed every turn, so Clubhouse stopped resuming it.',
+};
+
+const CHAT_NOTICE: Record<StartFreshReason, string> = {
+  user: 'Dispatcher work started fresh. Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.',
+  repeated_failures: 'Dispatcher work kept failing in its conversation, so it started a fresh one. '
+    + 'Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.',
+};
+
+const BOTH_NOTICE = 'Both Dispatcher conversations started fresh. Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.';
+
+async function currentWorkSession(dir: string, agentId: string): Promise<string | null> {
+  const live = getAgentRuntime(agentId)?.getNativeSessionId();
+  if (live) return live;
+  return (await agentConfig.getDurableConfig(dir, agentId))?.lastSessionId ?? null;
+}
+
+async function addRunningNotice(agentId: string, notice: ChatEventDataMap['notice']): Promise<void> {
+  await getAgentRuntime(agentId)?.addNotice?.(notice);
+}
+
+/** Say it in the agent's conversation: now when it runs, else when it next starts. */
+async function tell(agentId: string, notice: ChatEventDataMap['notice'], deps: StartFreshDeps): Promise<void> {
+  if ((deps.isRunning ?? agentSystem.isAgentRunning)(agentId)) await (deps.addNotice ?? addRunningNotice)(agentId, notice);
+  else (deps.noteNextStart ?? noteNextStartNotice)(agentId, notice);
+}
+
+/**
+ * Start the Dispatcher's work conversation fresh. Its native session is
+ * quarantined first, so the old one can't come back; a running work agent
+ * then starts a new conversation at once, a sleeping one at its next wake.
+ */
+export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: StartFreshDeps = {}): Promise<'now' | 'next_start'> {
+  const workId = (deps.workAgentId ?? getDispatcherAgentId)();
+  if (!workId) throw new Error('The Dispatcher is not set up yet.');
+  const dir = getDispatcherPath();
+  const sessionId = await (deps.workSessionId ?? currentWorkSession)(dir, workId);
+  if (sessionId) await (deps.quarantine ?? agentConfig.quarantineSession)(dir, workId, sessionId);
+  else await (deps.forgetSession ?? ((d, id) => agentConfig.updateSessionId(d, id, null)))(dir, workId);
+  const notice: ChatEventDataMap['notice'] = { level: reason === 'user' ? 'info' : 'warn', code: 'started_fresh', message: WORK_NOTICE[reason] };
+  let result: 'now' | 'next_start';
+  if ((deps.isRunning ?? agentSystem.isAgentRunning)(workId)) {
+    await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, workId);
+    // Taken first: a hand-off that lands during the clear goes to the new conversation and stays under way.
+    const waiting = (deps.takeWaiting ?? waitingRequests)();
+    await (deps.clearContext ?? clearRunning)(workId);
+    // Its queue and any open turn went with the old conversation: those requests are told as stopped.
+    (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))(waiting);
+    await (deps.addNotice ?? addRunningNotice)(workId, notice);
+    result = 'now';
+  } else {
+    (deps.noteNextStart ?? noteNextStartNotice)(workId, notice);
+    result = 'next_start';
+  }
+  appLog('core:dispatcher', reason === 'user' ? 'info' : 'warn', 'Dispatcher work started fresh', { meta: { reason, running: result === 'now', quarantined: !!sessionId } });
+  return result;
+}
+
+/**
+ * Start fresh from the Dispatcher's menu: its work conversation, or both of
+ * its conversations. Only conversations go; memory, agents, connections,
+ * Actions and settings stay. The visible chat says what happened.
+ */
+export async function startDispatcherFresh(scope: StartFreshScope, deps: StartFreshDeps = {}, reason: StartFreshReason = 'user'): Promise<StartFreshResult> {
+  const chatId = (deps.chatAgentId ?? getDispatcherChatAgentId)();
+  const work = await startDispatcherWorkFresh(reason, deps);
+  const level = reason === 'user' ? 'info' : 'warn';
+  if (scope === 'both') {
+    const chat = (await (deps.clearChat ?? (() => clearDispatcherChat(deps)))()).cleared;
+    if (chatId) await tell(chatId, { level, code: 'dispatcher_started_fresh', message: BOTH_NOTICE }, deps);
+    return { work, chat };
+  }
+  if (chatId) await tell(chatId, { level, code: 'dispatcher_work_started_fresh', message: CHAT_NOTICE[reason] }, deps);
+  return { work };
 }

@@ -50,12 +50,31 @@ Tests: `dispatcher-service.test.ts` ("1.0 default"), `e2e/layout-default.spec.ts
 
 What passes between the Dispatcher and an agent (progress, acknowledgements, an agent's questions to it) stays out of the chat. The agent's own chat keeps all of it. The chat shows only what is for the user:
 
-- **A question or decision for the user** (`needs_user`) reaches the chat as a Clubhouse update, which the chat view doesn't show. The chat asks it in its own words, naming the agent, and that reply is the only time the user reads it. The user answers in the chat, which passes the answer on with `start_work`. Nothing tells them to reply to the agent.
-- **A result they asked for** (`answer`) shows the same way while their request is open. Each request is answered once: by an answer, or by the Dispatcher's own reply that needs them, such as a question back. Before, a question back left the request open, and an agent's later progress, called an answer, showed in the chat.
+- **A question or decision for the user** (`needs_user`) reaches the chat as a Clubhouse update, which the chat view doesn't show. The chat asks it in its own words, naming the agent, and that reply is the only time the user reads it. The user answers in the chat, which passes the answer on with `start_work` under the same request id. Nothing tells them to reply to the agent.
+- **A result they asked for** (`answer`) shows the same way when it is for one of their requests (see Requests below). Anything else called an answer waits for the next check-in.
 - **Routine progress** waits for the next check-in.
 - No turn follows to react to news: the chat is never told that the user already read something.
-- News that names an agent Clubhouse can't find (a name two projects share, a typo) is still that agent's news, under the name given, and doesn't answer a request.
-- News is remembered as shown when it is sent. If it never reaches the chat (a wake that asks first, a chat shutting down, a start that fails), that is undone: it can be sent again, and the request it answered opens again. A question for the user also goes out as a notification that opens the chat. A chat turn that fails after the message arrived isn't detected.
+- News that names an agent Clubhouse can't find (a name two projects share, a typo) is still that agent's news, under the name given.
+- News is remembered as shown when it is sent. If it never reaches the chat (a wake that asks first, a chat shutting down, a start that fails), that is undone: it can be sent again, and the request it settled is put back. A question for the user also goes out as a notification that opens the chat. A chat turn that fails after the message arrived isn't detected.
+
+## Routing (#3241)
+
+Who does a piece of work, from the instructions and the `delegating-work` skill:
+
+- **Project work** goes to the agent that owns the project, by card and project. Being awake, free, an orchestrator or recently busy doesn't make an agent the owner.
+- **Machine setup** that no project owns yet is the Dispatcher's, done with its own command line at its own access level, and limited to: read-only checks (a tool and its version, a folder, a git remote), making a folder the user named, and cloning a repository the user gave into a new or empty folder, then adding it as a project with `add_project`. Never: project code, installs, sudo, global settings or credentials, deleting, running anything from a cloned repository, submodules unless asked, or cloning into Clubhouse's folders, a worktree or a non-empty folder.
+- **Unsupported**: anything with no owner and no tool. The Dispatcher checks each part before it splits or promises the work, and says so with `needs_user` before starting.
+
+## Requests (#3237, #3204, #3220)
+
+Each `start_work` is a request with an id (`dispatcher-requests.ts`, kept in `dispatcher-requests.json`). The hand-off carries the id, and the Dispatcher reports under it with `tell_user`'s `request_id`.
+
+- **Outcomes.** An answer for a request closes it. A question about one leaves it waiting on the user, and their answer goes back with `start_work` and the same `request_id`. Clubhouse follows the Dispatcher's turns (`dispatcher-request-outcomes.ts`): when the turn reading a request fails, is stopped, or the session ends before it is read, the request ends and the chat is told, with a retry offered. A request with no outcome times out: after 10 minutes when its turn ended and no agent was reached for it, otherwise after 2 hours.
+- **Which request a report is for** (`matchRequest`): the id given; else, for an agent's news, the latest open request (under way or waiting on the user) that agent was messaged or woken for, so its progress after the request closed isn't an answer; else, for the Dispatcher's own words, the request its current turn is reading; else, for an answer, the one request under way when nothing else could be meant. A question from the Dispatcher in any other turn, such as a failed Action or a missing permission, answers no request.
+- **Retries.** `start_work` with a `request_id` hands that request off again under the same id. The same words as a request under way aren't handed off twice; the same words as one that failed, was stopped or timed out retry it.
+- **Steps done (#3241).** `tell_user`'s `done` notes the finished steps of a request on its record. A retry's hand-off lists them as already done, and the chat's failure update says which parts are done.
+- **Attribution (#3241).** An answer in the Dispatcher's own words for a request it passed to exactly one agent since the last hand-off, which has messaged it since it was reached, is shown as that agent's news, and the tool result tells the Dispatcher so. When it can't be sure (several agents, an agent from an earlier attempt, or no message since it was reached), the words stay its own and the result reminds it to set `from`.
+- **Status.** While any request is under way, the sidebar row and the pane header show Working, with "Working on your request", even when the chat is between turns or asleep (`dispatcherDot` in `agent-status.tsx`). The phone still shows the chat's own status.
 
 The rewrite step that put agents' news into their own voice under their own name (#3043) is gone; the `clubhouse.dispatcher.news.rewrite` attributes stay on the triage event, always `none`.
 
@@ -71,7 +90,7 @@ The maintainer set these defaults on 2026-11-09: "the only edit actions are send
 | Dispatcher → any agent | every tool on: clear, compact, wake, and sleep (its own, as before) |
 | Helper → its orchestrator | send and wake; `clear_agent` and `compact_agent` off |
 | Any agent → Dispatcher | send and wake; `clear_agent` and `compact_agent` off |
-| Orchestrator ↔ orchestrator: an orchestrator's connections, `connect_agents`, and `connect_orchestrators` without `allow` | send and wake; `clear_agent` and `compact_agent` off |
+| Agent ↔ agent: an orchestrator's connections, `connect_agents`, and `connect_orchestrators` without `allow` | send and wake; `clear_agent` and `compact_agent` off |
 | A canvas wire the user draws, Make two-way | send and wake; `clear_agent` and `compact_agent` off |
 
 An explicit `allow` on `connect_orchestrators` or `set_connection_tools` still wins. Sleep isn't a connection switch: `sleep_agent` is offered only to the Dispatcher (its tool group), never to another agent, whatever a direction's switches say. Wake still needs the caller's `agent.wake` grant on top of the switch, so **Ask first** or **Off** on the permissions page holds it back (see Wake on a connection below). A helper's wire to its orchestrator offers no tool the helper's grants don't cover: a helper reaches its orchestrator with `message_parent`, so wake on that direction is a switch with nothing behind it.
@@ -86,9 +105,9 @@ Each source gives every direction it lists starting lists (`startingTools` on th
 
 It never touches any other saved direction: one with a different list, an explicit everything-on, something turned on, a Make two-way link, or an end on another computer. Those keep wake as saved. It waits while any source can't be read or the file is a newer build's. Until it has run, starting lists apply live only. After it, a direction's starting lists are saved the first time a rebuild finds nothing saved for it (`fillConnectionTools`, decided under the store's lock). When the file is a newer build's, nothing is saved and the warning is logged once per process. The marker was renamed from an earlier draft's `automatic-connection-defaults-3214`, so a build that ran that draft runs this pass too.
 
-## Links between orchestrators (#3215)
+## Links between agents (#3215, #3248)
 
-The Dispatcher can link two connected orchestrators so they reach each other directly, with only the tools the user wants on each direction. `connect_orchestrators` takes `allow` (and `allow_back` for the way back) from the connection switches: `get_status`, `read_output`, `check_connectivity`, `send_message`, `send_file`, `clear_agent`, `compact_agent`, `wake_agent`. With none named, a new link reads, messages and wakes, with clear and compact off. `set_connection_tools` changes the tools on a link it made, and refuses a direction whose tools are the user's. Both, and every link in `list_orchestrator_controls`, read each direction back (`tools.allowed`, `tools.disabled`, `tools_yours`), so it can check the link is what the user asked for. Sleep is never a connection tool. Details: `docs/dispatcher-orchestrator-controls.md`.
+The Dispatcher can link two agents connected to it so they reach each other directly, whether or not either orchestrates (#3248), with only the tools the user wants on each direction. `connect_orchestrators` takes `allow` (and `allow_back` for the way back) from the connection switches: `get_status`, `read_output`, `check_connectivity`, `send_message`, `send_file`, `clear_agent`, `compact_agent`, `wake_agent`. With none named, a new link reads, messages and wakes, with clear and compact off. `set_connection_tools` changes the tools on a link it made, and refuses a direction whose tools are the user's. Both, and every link in `list_orchestrator_controls`, read each direction back (`tools.allowed`, `tools.disabled`, `tools_yours`), so it can check the link is what the user asked for. Sleep is never a connection tool. Details: `docs/dispatcher-orchestrator-controls.md`.
 
 **Wake on a connection.** `wake_agent` used to be the Dispatcher's alone on this computer. It is now also a per-direction switch, **Wake it**, on every connection between two agents here. It's on for a new connection (the 2026-11-09 defaults above) and off for a direction saved before it existed (`enabledTools` on the direction, `localWakeOn` in `shared/connection-grants.ts`). With it on, the sender is offered `wake_agent` for that target while it sleeps, beside `get_status` (`wakeOffered` in `tool-registry.ts`), and a sleeping target's hints point at `wake_agent` only for a caller that can call it (`canCallWake`). The Connections card has no Wake it on a wire with the Dispatcher or a helper's link with its orchestrator. The call still needs the grant: every agent has `agent.wake` on `{ kind: 'connected', wakeOn: true }`, shown on the permissions page as "Connected agents with Wake it on", so Allow, Ask first and Off there apply on top of the switch. Off on either one stops it. The Dispatcher is unchanged: it is offered `wake_agent` on every connected agent whatever the switch says, as before, and keeps `agent.wake` on every connected agent. Across machines, wake keeps its own switch (D232) and stays the Dispatcher's.
 
@@ -128,7 +147,8 @@ All under the Clubhouse base folder (`~/.clubhouse`, or `.clubhouse-dev` in deve
 |---|---|---|
 | `dispatcher/memory/` | memory | yes |
 | `dispatcher/notes-archive*/` | notes from before memory | yes |
-| `dispatcher-news.json` | open requests, held news, recently shown | held news only |
+| `dispatcher-news.json` | held news, recently shown | held news only |
+| `dispatcher-requests.json` | the user's requests from the last week and how each ended | no |
 | `dispatcher-agent-cards.json` | when each agent was asked for its card | no (a missing page asks again) |
 | `dispatcher-usage.json` | 31 days of usage, conversations and background work | no |
 | `dispatcher-upkeep.json` | when upkeep last ran | no |

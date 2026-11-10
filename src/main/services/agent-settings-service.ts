@@ -771,7 +771,34 @@ const PROJECT_DEFAULTS_AUDIT_CATALOG: Readonly<Record<keyof ProjectAgentDefaults
  * Write project-level agent defaults to .clubhouse/settings.json.
  */
 export async function writeProjectAgentDefaults(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
-  return settingsMutation(projectPath, () => writeProjectAgentDefaultsInner(projectPath, defaults));
+  return settingsMutation(projectPath, () => defaultsWriteQueue(projectPath, () => writeProjectAgentDefaultsInner(projectPath, defaults)));
+}
+
+/**
+ * Read, change and write a project's defaults with no other defaults write in
+ * between, so a change to one field can't undo a newer change to another (#3244).
+ * Every writer goes through here (#3262). `update` returns null to write nothing.
+ */
+export async function updateProjectAgentDefaults(
+  projectPath: string,
+  update: (current: ProjectAgentDefaults) => ProjectAgentDefaults | null,
+): Promise<ProjectAgentDefaults | null> {
+  return settingsMutation(projectPath, () => defaultsWriteQueue(projectPath, async () => {
+    const next = update(await readProjectAgentDefaults(projectPath));
+    if (next) await writeProjectAgentDefaultsInner(projectPath, next);
+    return next;
+  }));
+}
+
+const defaultsWrites = new Map<string, Promise<void>>();
+function defaultsWriteQueue<T>(projectPath: string, run: () => Promise<T>): Promise<T> {
+  const key = path.resolve(projectPath);
+  const previous = defaultsWrites.get(key);
+  const result = previous ? previous.then(run) : run();
+  const settled: Promise<void> = result.then((): void => undefined, (): void => undefined);
+  defaultsWrites.set(key, settled);
+  void settled.then((): void => { if (defaultsWrites.get(key) === settled) defaultsWrites.delete(key); });
+  return result;
 }
 async function writeProjectAgentDefaultsInner(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
   if (defaults.commandPrefix) {

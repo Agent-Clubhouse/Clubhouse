@@ -837,7 +837,7 @@ export function sourceIssues(raw: unknown, allowBuiltin = false): ValidationIssu
       return allowBuiltin && Object.keys(raw).length === 2 && isCatalogId(raw.builtinId) ? [] : invalid;
     case 'import': {
       const known = Object.keys(raw).every((key) => ['kind', 'from', 'projectId', 'nativeName'].includes(key));
-      const from = raw.from === 'native-mcp' || raw.from === 'project-skill' || raw.from === 'persona' || raw.from === 'native-subagent';
+      const from = raw.from === 'native-mcp' || raw.from === 'project-skill' || raw.from === 'persona' || raw.from === 'native-subagent' || raw.from === 'project-defaults';
       const ids = (raw.projectId === undefined || isCatalogId(raw.projectId)) && (raw.nativeName === undefined || isCatalogId(raw.nativeName));
       return known && from && ids ? [] : invalid;
     }

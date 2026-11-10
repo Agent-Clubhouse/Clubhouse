@@ -23,10 +23,17 @@ import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getProvider } from '../../../orchestrators';
 import { sleepAgent, wakeWiredAgent } from './agent-lifecycle';
 import { deliverToDispatcher, isDispatcherTarget, sleepingDispatcherHint } from './dispatcher-delivery';
+import { isDispatcherAgentId } from '../../dispatcher/dispatcher-service';
+import { noteAgentReached } from '../../dispatcher/dispatcher-requests';
 import type { RoutedMessagePart } from '../../../../shared/chat';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
 export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfterPaste } from '../../agent-runtime/pty-input';
+
+/** The Dispatcher messaged or woke an agent: that agent's news is for the request it is working on (#3204). */
+function noteDispatcherReached(callerId: string, targetId: string): void {
+  if (isDispatcherAgentId(callerId)) noteAgentReached(targetId);
+}
 
 // ── Sender label ────────────────────────────────────────────────────────────
 
@@ -243,6 +250,7 @@ export function registerAgentTools(): void {
           meta: { targetAgent: targetId, taskId, runtime: runtime.kind, forceSubmit, messageLength: taggedMessage.length },
         });
         await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit, routed });
+        noteDispatcherReached(agentId, targetId);
 
         return { content: [{ type: 'text', text: sentText(targetName, isBidirectional) }] };
       } catch (err) {
@@ -614,7 +622,9 @@ export function registerAgentTools(): void {
       const targetName = senderOf(agentId, targetId).targetName;
       const taskId = `t_${Date.now().toString(36)}`;
       const tagged = message ? buildTaggedMessage(agentId, targetId, message, taskId) : undefined;
-      return wakeWiredAgent({ callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed });
+      const result = await wakeWiredAgent({ callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed });
+      if (tagged && !result.isError) noteDispatcherReached(agentId, targetId);
+      return result;
     },
   });
 
