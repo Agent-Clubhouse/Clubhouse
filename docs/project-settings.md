@@ -61,8 +61,10 @@ Where they still apply, until they're retired:
   settings page names them.
 - **Never** into a managed agent, a managed helper, or a plain agent created
   without the form: `create_managed_agent` with `managed: false`, a phone's
-  `agent.create`, another computer over Annex, or the plugin API. Their result
-  carries `legacyDefaults: "not_copied"` when the project has legacy values.
+  `agent.create`, another computer over Annex, or the plugin API (the Canvas
+  new agent included). The MCP, phone and Annex results carry
+  `legacyDefaults: "not_copied"` when the project has legacy values; the
+  plugin API's result doesn't change.
 
 The switch to managed of an agent that still used Clubhouse Mode reads them,
 as before (managed-agents D58).
