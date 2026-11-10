@@ -11,6 +11,7 @@ import { persist } from '../telemetry/persist';
 import { publishAppEvent } from './app-event-bus';
 import { getBaseDirPath } from './base-dir';
 import { auditChanges, type AuditKeyFormat } from './settings-audit';
+import { moveFinishedQuickAgents } from './finished-quick-agents-store';
 
 const CURRENT_VERSION = 1;
 
@@ -194,18 +195,16 @@ interface MergedDuplicate {
   path: string;
 }
 
-/** Whether this platform's filesystems compare names without case by default (APFS, HFS+, NTFS). */
+/** Whether this platform's filesystems usually compare names without case (APFS, HFS+, NTFS). Only a guess for one volume. */
 const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
 
 /**
- * How two project paths are compared (#3236): absolute, normalized, and on
- * macOS and Windows without case (and on macOS in one Unicode form). Doesn't
- * touch the disk; {@link canonicalProjectPath} resolves links first.
+ * How the registry compares two stored paths without touching the disk: the
+ * same absolute path, exactly. Case is never folded here: on a case-sensitive
+ * volume /x/Foo and /x/foo are two folders (#3236).
  */
 export function projectPathKey(dirPath: string): string {
-  let key = path.resolve(dirPath);
-  if (process.platform === 'darwin') key = key.normalize('NFC');
-  return CASE_INSENSITIVE_FS ? key.toLowerCase() : key;
+  return path.resolve(dirPath);
 }
 
 /** The folder's real path, links resolved, or the plain absolute path when it can't be read. */
@@ -218,20 +217,38 @@ export async function canonicalProjectPath(dirPath: string): Promise<string> {
   }
 }
 
+/** The folder's device and inode, or null when it can't be read (or the filesystem gives no inode). */
+async function folderIdentity(dirPath: string): Promise<{ dev: bigint; ino: bigint } | null> {
+  try {
+    const s = await fsp.stat(dirPath, { bigint: true });
+    return s.ino === 0n ? null : { dev: s.dev, ino: s.ino };
+  } catch {
+    // telemetry-exempt: an unreadable folder is compared by path
+    return null;
+  }
+}
+
 /**
- * The registered project for a folder, matched by canonical path: the same
- * folder through a link, another spelling or another case (where the platform
- * ignores case) is the same project.
+ * The registered project for a folder (#3236): the same path, the same real
+ * path (links resolved), or the same folder on disk (device and inode), which
+ * covers another case on a volume that ignores case. Only when either folder
+ * can't be read does it fall back to comparing without case, on platforms
+ * whose volumes usually ignore it.
  */
 async function findByCanonicalPath(projects: readonly Project[], dirPath: string): Promise<Project | undefined> {
   const plain = projectPathKey(dirPath);
-  const real = projectPathKey(await canonicalProjectPath(dirPath));
+  const exact = projects.find((p) => projectPathKey(p.path) === plain);
+  if (exact) return exact;
+  const real = await canonicalProjectPath(dirPath);
+  const identity = await folderIdentity(dirPath);
   for (const p of projects) {
-    const key = projectPathKey(p.path);
-    if (key === plain || key === real) return p;
-  }
-  for (const p of projects) {
-    if (projectPathKey(await canonicalProjectPath(p.path)) === real) return p;
+    if (await canonicalProjectPath(p.path) === real) return p;
+    const other = await folderIdentity(p.path);
+    if (identity && other) {
+      if (identity.dev === other.dev && identity.ino === other.ino) return p;
+    } else if (CASE_INSENSITIVE_FS && projectPathKey(p.path).toLowerCase() === plain.toLowerCase()) {
+      return p;
+    }
   }
   return undefined;
 }
@@ -349,6 +366,28 @@ async function registryMutation<T>(run: () => Promise<T>): Promise<T> {
 let chatTipProjectReadUncertain = false;
 export function isChatTipProjectReadUncertain(): boolean { return chatTipProjectReadUncertain; }
 
+/**
+ * What else follows a merged duplicate to the record that's kept (#3236): its
+ * badge and sound overrides and its finished quick agents. Logged, so a merge
+ * is never silent. Writing the merged list is the caller's.
+ */
+async function settleMergedDuplicates(merged: readonly MergedDuplicate[], file: string): Promise<void> {
+  appLog('core:project-store', 'warn', `Merged ${merged.length} duplicate project record(s) for a folder already registered`, {
+    meta: { file, merged: merged.map((m) => ({ keptId: m.keptId, mergedId: m.mergedId })) },
+  });
+  for (const m of merged) {
+    await migrateProjectOverrides(m.mergedId, m.keptId, { keepExisting: true });
+    try {
+      moveFinishedQuickAgents(m.mergedId, m.keptId);
+    } catch (err) {
+      // telemetry-exempt: logged; the merge stands, and the quick agents stay listed under the old id
+      appLog('core:project-store', 'warn', 'Could not move finished quick agents to the kept project', {
+        meta: { keptId: m.keptId, mergedId: m.mergedId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+}
+
 async function readStore(): Promise<ProjectStoreV1> {
   const storePath = await getStorePath();
   const backupPath = await getBackupPath();
@@ -370,10 +409,7 @@ async function readStore(): Promise<ProjectStoreV1> {
       }
       logLoadedIfChanged(storePath, store);
       if (merged.length > 0) {
-        appLog('core:project-store', 'warn', `Merged ${merged.length} duplicate project record(s) for a folder already registered`, {
-          meta: { storePath, merged: merged.map((m) => ({ keptId: m.keptId, mergedId: m.mergedId })) },
-        });
-        for (const m of merged) await migrateProjectOverrides(m.mergedId, m.keptId, { keepExisting: true });
+        await settleMergedDuplicates(merged, storePath);
         try {
           await writeStore(store);
         } catch (writeErr) {
@@ -427,6 +463,7 @@ async function readStore(): Promise<ProjectStoreV1> {
       const recovered = migrate(raw);
       store = recovered.store;
       uncertain = recovered.dropped > 0;
+      if (recovered.merged.length > 0) await settleMergedDuplicates(recovered.merged, backupPath);
       if (store.projects.length > 0) {
         persist.recovery('projects', 'restored_from_backup');
         appLog('core:project-store', 'warn', `Recovered ${store.projects.length} project(s) from backup`, {

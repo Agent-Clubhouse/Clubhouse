@@ -395,8 +395,8 @@ export function listToolGrants(): RegisteredToolGrant[] {
   return out;
 }
 
-/** The groups whose tools the running Dispatcher can call, as toolGroupGates opens them. */
-const DISPATCHER_TOOL_GROUPS: ReadonlySet<ToolGroup> = new Set(['dispatcher', 'actions']);
+/** The groups whose tools the Dispatcher can call, through its work agent or its chat, as toolGroupGates opens them. */
+const DISPATCHER_TOOL_GROUPS: ReadonlySet<ToolGroup> = new Set(['dispatcher', 'dispatcherChat', 'actions']);
 
 /**
  * The grant actions a registered tool lets the running Dispatcher use (#3238):

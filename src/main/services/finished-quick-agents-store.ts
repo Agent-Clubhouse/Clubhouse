@@ -14,6 +14,7 @@
 import { createSettingsStore } from './settings-store';
 import { appLog } from './log-service';
 import {
+  MAX_FINISHED_QUICK_AGENTS,
   applyFinishedQuickAgentOp,
   sanitizeFinishedQuickAgents,
   type FinishedQuickAgentOp,
@@ -111,6 +112,26 @@ export function applyFinishedQuickAgentChange(op: FinishedQuickAgentOp, source?:
   // A window's op is acknowledged even when it changed nothing here.
   if (changed || source) notify();
   return changed;
+}
+
+/**
+ * Move one project's finished quick agents to another (#3236: a duplicate
+ * project merged into the one kept). Newest first, no id twice, capped as
+ * the ops cap them. Returns whether anything moved.
+ */
+export function moveFinishedQuickAgents(fromProjectId: string, toProjectId: string): boolean {
+  const current = store.get();
+  const moving = current.projects[fromProjectId];
+  if (!moving?.length || fromProjectId === toProjectId) return false;
+  const kept = current.projects[toProjectId] ?? [];
+  const seen = new Set(kept.map((r) => r.id));
+  const combined = [...kept, ...moving.filter((r) => !seen.has(r.id)).map((r) => ({ ...r, projectId: toProjectId }))]
+    .sort((a, b) => b.completedAt - a.completedAt)
+    .slice(0, MAX_FINISHED_QUICK_AGENTS);
+  const { [fromProjectId]: _moved, ...rest } = current.projects;
+  save({ ...current, projects: { ...rest, [toProjectId]: combined } });
+  notify();
+  return true;
 }
 
 /** For tests: resolves once the latest write has finished. */

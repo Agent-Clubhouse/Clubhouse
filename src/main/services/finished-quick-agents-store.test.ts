@@ -14,6 +14,7 @@ import {
   getFinishedQuickAgents,
   hydrateFinishedQuickAgents,
   isFinishedQuickAgentsReady,
+  moveFinishedQuickAgents,
   onFinishedQuickAgentsChange,
   resetFinishedQuickAgentsForTests,
 } from './finished-quick-agents-store';
@@ -42,6 +43,20 @@ describe('finished-quick-agents-store (#2467)', () => {
   afterEach(async () => {
     await flushFinishedQuickAgentsForTests();
     fs.rmSync(userData.dir, { recursive: true, force: true });
+  });
+
+  it('moves a merged project\'s list to the one kept, newest first, without repeats (#3236)', async () => {
+    const at = (r: CompletedQuickAgent, completedAt: number) => ({ ...r, completedAt });
+    hydrateFinishedQuickAgents({ kept: [at(rec('a', 'kept'), 3)], dup: [at(rec('b', 'dup'), 5), at(rec('a', 'dup'), 2), at(rec('c', 'dup'), 1)] });
+    const heard = vi.fn();
+    onFinishedQuickAgentsChange(heard);
+
+    expect(moveFinishedQuickAgents('dup', 'kept')).toBe(true);
+
+    expect(getFinishedQuickAgents()).toEqual({ kept: [at(rec('b', 'kept'), 5), at(rec('a', 'kept'), 3), at(rec('c', 'kept'), 1)] });
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect((await stored()).projects).toEqual(getFinishedQuickAgents());
+    expect(moveFinishedQuickAgents('dup', 'kept')).toBe(false);
   });
 
   it('is not ready until a window hands over its localStorage lists', () => {

@@ -11,6 +11,11 @@ vi.mock('fs/promises', () => ({
   copyFile: vi.fn(),
   rename: vi.fn(),
   realpath: vi.fn((p: string) => Promise.resolve(p)),
+  stat: vi.fn(() => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))),
+}));
+
+vi.mock('./finished-quick-agents-store', () => ({
+  moveFinishedQuickAgents: vi.fn(),
 }));
 
 vi.mock('./fs-utils', () => ({
@@ -41,6 +46,7 @@ import { pathExists } from './fs-utils';
 import { list, add, peekProjectsChecked, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, writeIconFile, onProjectsChanged, projectRegistryMutationState } from './project-store';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
+import { moveFinishedQuickAgents } from './finished-quick-agents-store';
 
 // The module uses app.getPath('home') which returns path.join(os.tmpdir(), 'clubhouse-test-home')
 // and app.isPackaged = false → dirName = '.clubhouse-dev'
@@ -249,9 +255,43 @@ describe('add', () => {
     expect(store.projects()).toHaveLength(1);
   });
 
-  it.runIf(process.platform === 'darwin' || process.platform === 'win32')('ignores case where the platform does', async () => {
+  /** Folders on disk by inode: the same number is the same folder, whatever the spelling. */
+  function inodes(map: Record<string, number>) {
+    vi.mocked(fsp.stat).mockImplementation((async (p: any) => {
+      const ino = map[path.resolve(String(p))];
+      if (ino === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return { dev: 1n, ino: BigInt(ino) };
+    }) as any);
+  }
+
+  it('matches another case of a folder when the disk says it is the same folder', async () => {
     const store = memoryStore();
     const dir = path.join(os.tmpdir(), 'dupe-check', 'Shop');
+    inodes({ [dir]: 7, [dir.toUpperCase()]: 7 });
+    const first = await add(dir);
+    expect(await add(dir.toUpperCase())).toEqual(first);
+    expect(store.projects()).toHaveLength(1);
+  });
+
+  it('keeps two folders whose names differ only in case, on a volume that tells them apart (#3236)', async () => {
+    const lower = path.join(os.tmpdir(), 'dupe-check', 'shop');
+    const upper = path.join(os.tmpdir(), 'dupe-check', 'Shop');
+    inodes({ [lower]: 7, [upper]: 8 });
+    const store = memoryStore();
+    const a = await add(lower);
+    const b = await add(upper);
+    expect(a.id).not.toBe(b.id);
+    expect(store.projects().map((p: { path: string }) => p.path)).toEqual([lower, upper]);
+
+    // And loading them again merges nothing: case never folds without the disk.
+    vi.mocked(appLog).mockClear();
+    expect((await list()).map((p) => p.id)).toEqual([a.id, b.id]);
+    expect(appLog).not.toHaveBeenCalledWith('core:project-store', 'warn', expect.stringContaining('Merged'), expect.anything());
+  });
+
+  it.runIf(process.platform === 'darwin' || process.platform === 'win32')('falls back to ignoring case only when a folder can\'t be read', async () => {
+    const store = memoryStore();
+    const dir = path.join(os.tmpdir(), 'dupe-check', 'Gone');
     const first = await add(dir);
     expect(await add(dir.toUpperCase())).toEqual(first);
     expect(store.projects()).toHaveLength(1);
@@ -281,7 +321,31 @@ describe('add', () => {
     expect(projects).toEqual([{ id: 'proj_a', name: 'legacy', path: dir, color: 'indigo', displayName: 'Legacy', emoji: '🛒', orchestrator: 'codex-cli' }]);
     expect(store.projects().map((p: { id: string }) => p.id)).toEqual(['proj_a']);
     expect(saveBadgeSettings).toHaveBeenCalledWith(expect.objectContaining({ projectOverrides: { proj_a: { enabled: false } } }));
+    expect(moveFinishedQuickAgents).toHaveBeenCalledWith('proj_b', 'proj_a');
     expect(appLog).toHaveBeenCalledWith('core:project-store', 'warn', expect.stringContaining('Merged 1 duplicate'), expect.anything());
+  });
+
+  it('merges duplicates recovered from the backup the same way', async () => {
+    const dir = path.join(os.tmpdir(), 'dupe-check', 'from-backup');
+    const backup = path.join(BASE_DIR, 'projects.json.bak');
+    const content = JSON.stringify({ version: 1, projects: [{ id: 'proj_a', name: 'b', path: dir }, { id: 'proj_b', name: 'b', path: dir, color: 'rose' }] });
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p) === backup || !String(p).endsWith('.json') && !String(p).endsWith('.bak'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      if (String(p) === backup) return content;
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    });
+
+    expect(await list()).toEqual([{ id: 'proj_a', name: 'b', path: dir, color: 'rose' }]);
+    expect(moveFinishedQuickAgents).toHaveBeenCalledWith('proj_b', 'proj_a');
+    expect(appLog).toHaveBeenCalledWith('core:project-store', 'warn', expect.stringContaining('Merged 1 duplicate'), expect.objectContaining({ meta: expect.objectContaining({ file: backup }) }));
+  });
+
+  it('keeps case-variant records apart on load', async () => {
+    const lower = path.join(os.tmpdir(), 'dupe-check', 'repo');
+    const upper = path.join(os.tmpdir(), 'dupe-check', 'Repo');
+    memoryStore({ version: 1, projects: [{ id: 'proj_a', name: 'repo', path: lower }, { id: 'proj_b', name: 'Repo', path: upper }] });
+    expect((await list()).map((p) => p.id)).toEqual(['proj_a', 'proj_b']);
+    expect(moveFinishedQuickAgents).not.toHaveBeenCalled();
   });
 });
 
