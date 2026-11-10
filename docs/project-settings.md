@@ -81,6 +81,18 @@ Copy to a plain agent (settings page) and the New agent copy do the same:
 The preview lists each file or setting and what happens to it. Nothing is
 written until the copy is confirmed.
 
+For a new agent the preview reads the files its worktree will start with:
+what git checks out for its branch (the existing `<name>/standby` branch, or
+the project's HEAD). A repository that tracks its own `CLAUDE.md`,
+`AGENTS.md`, `.mcp.json` or `.codex/config.toml` keeps them: the copy adds to
+them exactly as previewed.
+
+**Changed from before #3245.** The old automatic snapshot overwrote the new
+worktree's instructions and MCP file with the project's defaults, replacing
+any committed copy, and replaced the permission rules in its local settings.
+The copy now adds to what's there and never replaces a tracked file. Its
+permission rules are kept and the legacy ones added after them.
+
 ### Import as parts
 
 - The instructions become one library block, named after the project. Legacy

@@ -210,6 +210,17 @@ describe('copy into a plain agent', () => {
     expect(h.updates).toEqual([{ id: 'scout', fields: { lintCommand: 'npm run lint' } }]);
   });
 
+  it('treats an empty command as none, and keeps the project JSON\'s other keys in a new MCP file', async () => {
+    setDefaults({ buildCommand: 'make', mcpJson: JSON.stringify({ inputs: [{ id: 'token' }], mcpServers: { docs: { command: 'docs' } } }) });
+    const a = agent('blank', { buildCommand: '' });
+    h.agents = [a];
+    const preview = await previewCopyIntoAgent(h.projectPath, 'blank');
+    expect(preview.changes.find((c) => c.item === 'buildCommand')?.action).toBe('set');
+    await copyIntoAgent(h.projectPath, 'blank');
+    expect(JSON.parse(fs.readFileSync(path.join(a.worktreePath!, '.mcp.json'), 'utf-8'))).toEqual({ inputs: [{ id: 'token' }], mcpServers: { docs: { command: 'docs' } } });
+    expect(h.updates).toEqual([{ id: 'blank', fields: { buildCommand: 'make' } }]);
+  });
+
   it('skips what the CLI can\'t take, and what isn\'t valid', async () => {
     setDefaults({ permissions: { deny: ['WebFetch'] }, mcpJson: '{not json' });
     h.provider = { ...provider({ permissionRules: false }), displayName: 'Copilot CLI' };

@@ -10,6 +10,7 @@
  * servers are added to what it has; build, test and lint commands become its
  * own where it has none. A CLI that can't take a value skips it.
  */
+import { execFile } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import type { DurableAgentConfig, PermissionsConfig, ProjectAgentDefaults } from '../../shared/types';
@@ -25,7 +26,7 @@ import { isDisposedAgent } from '../../shared/agent-helpers';
 import { replaceWildcards, type WildcardContext } from '../../shared/wildcard-replacer';
 import type { ManagedMcpContent, ManagedPartContent } from '../../shared/managed-agents-types';
 import type { OrchestratorProvider } from '../orchestrators/types';
-import { readLocalMcpJson, readPermissions, readProjectAgentDefaults, writePermissions } from './agent-settings-service';
+import { readLocalMcpJson, readProjectAgentDefaults, writePermissions } from './agent-settings-service';
 import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from './agent-wildcards';
 import { appLog } from './log-service';
 
@@ -160,6 +161,51 @@ function instructionsFile(provider: OrchestratorProvider): string {
   return provider.id === 'copilot-cli' ? path.join(conv.configDir, conv.legacyInstructionsFile) : conv.legacyInstructionsFile;
 }
 
+/**
+ * Reads a file of the agent's folder, by its path relative to the folder, or
+ * null when there's none. A copy reads only through this, so its preview and
+ * the copy itself read the same files.
+ */
+type FolderReader = (relPath: string) => Promise<string | null>;
+
+/** The files of a folder on disk: an existing agent's, or a new one's once its worktree is made. */
+function folderReader(dir: string): FolderReader {
+  return (relPath) => fsp.readFile(path.join(dir, relPath), 'utf-8').catch((): null => null);
+}
+
+function gitShow(projectPath: string, args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile('git', args, { cwd: projectPath, encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => resolve(error ? null : stdout));
+  });
+}
+
+/**
+ * The files a new agent's worktree will have before anything is copied: what
+ * git checks out for its branch. The default `<name>/standby` branch is used
+ * as it is when it already exists, else it starts at the project's HEAD
+ * (agent-config's creation). Nothing when the project isn't a git repository:
+ * the folder starts empty.
+ */
+async function newWorktreeReader(projectPath: string, branch: string): Promise<FolderReader> {
+  const existing = await gitShow(projectPath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]);
+  const head = existing?.trim() || (await gitShow(projectPath, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']))?.trim();
+  if (!head) return async () => null;
+  return (relPath) => gitShow(projectPath, ['show', `${head}:${relPath.replace(/\\/g, '/')}`]);
+}
+
+/** A local settings file's permission rules, as readPermissions reads them: none when it's missing or not valid. */
+function permissionsIn(raw: string | null): PermissionsConfig {
+  if (raw === null) return {};
+  try {
+    const perms = (JSON.parse(raw) as { permissions?: { allow?: unknown; deny?: unknown } })?.permissions;
+    const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined);
+    return { ...(strings(perms?.allow) && { allow: strings(perms?.allow) }), ...(strings(perms?.deny) && { deny: strings(perms?.deny) }) };
+  } catch {
+    // telemetry-exempt: an unreadable file has no rules to keep, as readPermissions treats it
+    return {};
+  }
+}
+
 interface CopyPlan {
   changes: LegacyChange[];
   /** Writes what the changes say. Commands go through `saveCommands`. */
@@ -168,10 +214,10 @@ interface CopyPlan {
 
 /**
  * What a copy of the legacy defaults into `agent`'s folder does, and how to do
- * it. Reads the agent's files (none when `fresh`: a folder not made yet);
- * writes nothing until `apply`.
+ * it. Reads the folder's files through `read` only; writes nothing until
+ * `apply`, and then into `agent.worktreePath`.
  */
-async function planCopy(projectPath: string, agent: DurableAgentConfig, provider: OrchestratorProvider, defaults: ProjectAgentDefaults, fresh = false): Promise<CopyPlan> {
+async function planCopy(projectPath: string, agent: DurableAgentConfig, provider: OrchestratorProvider, defaults: ProjectAgentDefaults, read: FolderReader): Promise<CopyPlan> {
   const wt = agent.worktreePath!;
   const conv = provider.conventions;
   const scp = await resolveSourceControlProvider(projectPath, agent).catch((): undefined => undefined);
@@ -183,7 +229,7 @@ async function planCopy(projectPath: string, agent: DurableAgentConfig, provider
   const text = defaults.instructions?.trim() ? replaceWildcards(defaults.instructions, ctx).trim() : '';
   if (text) {
     const file = rel(instructionsFile(provider));
-    const current = fresh ? '' : await provider.readInstructions(wt).catch((): string => '');
+    const current = (await read(instructionsFile(provider))) ?? '';
     if (current.includes(text)) {
       changes.push({ item: 'instructions', target: file, action: 'unchanged', detail: 'Already in the file.' });
     } else if (!current.trim()) {
@@ -203,7 +249,7 @@ async function planCopy(projectPath: string, agent: DurableAgentConfig, provider
     if (conv.permissionRules === false) {
       changes.push({ item: 'permissions', target: file, action: 'skip', detail: `${provider.displayName} has no allow and deny rules, so they aren't copied. Set its access in its own settings.` });
     } else {
-      const current: PermissionsConfig = fresh ? {} : await readPermissions(wt, conv);
+      const current = permissionsIn(await read(path.join(conv.configDir, conv.localSettingsFile || 'settings.local.json')));
       const addAllow = allow.filter((r) => !(current.allow ?? []).includes(r));
       const addDeny = deny.filter((r) => !(current.deny ?? []).includes(r));
       if (addAllow.length === 0 && addDeny.length === 0) {
@@ -227,12 +273,17 @@ async function planCopy(projectPath: string, agent: DurableAgentConfig, provider
     const json = replaceWildcards(defaults.mcpJson, jsonEscaped(ctx));
     const parsed = serversIn(json);
     const servers = parsed ? Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== 'clubhouse')) : null;
+    // A new file keeps the project JSON's other top-level keys, as the old snapshot wrote it whole.
+    const projectRest = (): Record<string, unknown> => {
+      const { mcpServers: _servers, ...rest } = JSON.parse(json) as Record<string, unknown>;
+      return rest;
+    };
     if (servers === null) {
       changes.push({ item: 'mcp', target: file, action: 'skip', detail: 'The project\'s MCP JSON isn\'t valid JSON, so nothing is copied.' });
     } else if (Object.keys(servers).length === 0) {
       // Nothing to copy.
     } else if (conv.settingsFormat === 'toml') {
-      const exists = !fresh && await fsp.stat(path.join(wt, conv.mcpConfigFile)).then(() => true, () => false);
+      const exists = (await read(conv.mcpConfigFile)) !== null;
       if (exists) {
         changes.push({ item: 'mcp', target: file, action: 'skip', detail: `It already has ${file}, which Clubhouse doesn't add to. ${provider.displayName} gets the project's servers at start while the legacy defaults last.` });
       } else {
@@ -246,7 +297,7 @@ async function planCopy(projectPath: string, agent: DurableAgentConfig, provider
         });
       }
     } else {
-      const raw = fresh ? null : await readLocalMcpJson(wt, conv).catch((): string | null => null);
+      const raw = await read(conv.mcpConfigFile);
       const own = raw === null ? {} : serversIn(raw);
       if (own === null) {
         changes.push({ item: 'mcp', target: file, action: 'skip', detail: `Its ${file} isn't valid JSON, so nothing is added to it.` });
@@ -262,7 +313,7 @@ async function planCopy(projectPath: string, agent: DurableAgentConfig, provider
             detail: `${raw === null ? 'Written with' : 'Adds'} ${add.join(', ')}.${keptNote} With its own file it no longer gets the project's servers at start.`,
           });
           writes.push(async () => {
-            const base = raw === null ? {} : JSON.parse(raw) as Record<string, unknown>;
+            const base = raw === null ? projectRest() : JSON.parse(raw) as Record<string, unknown>;
             const next = { ...base, mcpServers: { ...own, ...Object.fromEntries(add.map((key) => [key, servers[key]])) } };
             await fsp.mkdir(path.dirname(path.join(wt, conv.mcpConfigFile)), { recursive: true });
             await fsp.writeFile(path.join(wt, conv.mcpConfigFile), `${JSON.stringify(next, null, 2)}\n`, 'utf-8');
@@ -277,7 +328,8 @@ async function planCopy(projectPath: string, agent: DurableAgentConfig, provider
   for (const key of COMMAND_KEYS) {
     const value = defaults[key]?.trim() ? defaults[key] : undefined;
     if (!value) continue;
-    if (agent[key] !== undefined) {
+    // An empty command is none (#3245 review).
+    if (agent[key]?.trim()) {
       changes.push({ item: key, target: `${COMMAND_NAMES[key]} command`, action: 'unchanged', detail: `It has its own: ${agent[key]}` });
     } else {
       commands[key] = value;
@@ -313,7 +365,7 @@ export async function previewCopyIntoAgent(projectPath: string, agentId: string)
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
   const blocked = blockedReason(agent);
   if (blocked) return { agentName: agent.name, cli: provider.displayName, changes: [], blocked };
-  const { changes } = await planCopy(projectPath, agent, provider, await readProjectAgentDefaults(projectPath));
+  const { changes } = await planCopy(projectPath, agent, provider, await readProjectAgentDefaults(projectPath), folderReader(agent.worktreePath!));
   return { agentName: agent.name, cli: provider.displayName, changes, blocked: null };
 }
 
@@ -323,7 +375,7 @@ export async function copyIntoAgent(projectPath: string, agentId: string): Promi
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
   const blocked = blockedReason(agent);
   if (blocked) throw new Error(blocked);
-  const plan = await planCopy(projectPath, agent, provider, await readProjectAgentDefaults(projectPath));
+  const plan = await planCopy(projectPath, agent, provider, await readProjectAgentDefaults(projectPath), folderReader(agent.worktreePath!));
   const { updateDurableConfig } = await agentConfig();
   await plan.apply((fields) => updateDurableConfig(projectPath, agentId, fields));
   appLog(LOG_NS, 'info', 'Copied the project\'s legacy defaults into a plain agent', {
@@ -334,8 +386,9 @@ export async function copyIntoAgent(projectPath: string, agentId: string): Promi
 
 /**
  * What the New agent page's copy would do for an agent on `orchestrator`
- * named `name`, in a new worktree: its files don't exist yet, so this reads
- * none. Writes nothing.
+ * named `name`, in a new worktree. The worktree doesn't exist yet, so this
+ * reads the files git will check out for it: the copy then finds the same
+ * files and adds to them as previewed. Writes nothing.
  */
 export async function previewCopyIntoNewAgent(projectPath: string, name: string, orchestrator?: string): Promise<LegacyCopyPreview> {
   const provider = await resolveOrchestrator(projectPath, orchestrator);
@@ -345,8 +398,8 @@ export async function previewCopyIntoNewAgent(projectPath: string, name: string,
     worktreePath: path.join(projectPath, '.clubhouse', 'agents', name),
     branch: `${name}/standby`,
   };
-  // Fresh: the folder isn't made yet, so nothing is read from it.
-  const { changes } = await planCopy(projectPath, draft, provider, await readProjectAgentDefaults(projectPath), true);
+  const read = await newWorktreeReader(projectPath, draft.branch!);
+  const { changes } = await planCopy(projectPath, draft, provider, await readProjectAgentDefaults(projectPath), read);
   return { agentName: name, cli: provider.displayName, changes, blocked: null };
 }
 
@@ -363,7 +416,7 @@ export async function copyIntoNewAgent(
   const defaults = await readProjectAgentDefaults(projectPath);
   if (!hasLegacyAgentDefaults(defaults)) return;
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-  const plan = await planCopy(projectPath, agent, provider, defaults);
+  const plan = await planCopy(projectPath, agent, provider, defaults, folderReader(agent.worktreePath));
   await plan.apply(saveCommands);
 }
 

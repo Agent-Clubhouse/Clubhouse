@@ -24,7 +24,7 @@ vi.mock('../util/shell', () => ({
 }));
 
 import { clearAgentConfigCache, createDurable, flushAllAgentConfigs, getDurableConfig } from './agent-config';
-import { copyIntoAgent, previewCopyIntoAgent } from './legacy-defaults';
+import { copyIntoAgent, previewCopyIntoAgent, previewCopyIntoNewAgent } from './legacy-defaults';
 import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
 import { CodexCliProvider } from '../orchestrators/codex-cli-provider';
 import { CopilotCliProvider } from '../orchestrators/copilot-cli-provider';
@@ -135,5 +135,32 @@ describe('legacy project defaults at creation (#3243, #3245)', () => {
 
     const again = await previewCopyIntoAgent(project, made.id);
     expect(again.changes.every((c) => c.action === 'unchanged')).toBe(true);
+  });
+
+  it('previews a new agent\'s copy from the files git checks out for it, and writes exactly that (#3245 review)', async () => {
+    h.provider = new ClaudeCodeProvider();
+    // The repository already tracks its own instructions and MCP file, one server sharing a name with the defaults.
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# Repo rules\n\nKeep it tidy.\n');
+    fs.writeFileSync(path.join(project, '.mcp.json'), JSON.stringify({ mcpServers: { repo: { command: 'repo-mcp' }, [MARKER]: { command: 'repo-owned' } } }, null, 2));
+    git(['add', 'CLAUDE.md', '.mcp.json']);
+    git(['commit', '-q', '-m', 'tracked agent files']);
+
+    const preview = await previewCopyIntoNewAgent(project, 'tracked');
+    expect(preview.changes.map((c) => `${c.item}:${c.action}`)).toEqual(['instructions:append', 'permissions:write', 'mcp:unchanged', 'buildCommand:set']);
+
+    // The same plan for an agent whose worktree really has those files.
+    const twin = await createDurable(project, 'twin', 'indigo');
+    const twinPreview = await previewCopyIntoAgent(project, twin.id);
+    expect(twinPreview.changes.map(({ item, target, action }) => ({ item, target, action })))
+      .toEqual(preview.changes.map(({ item, target, action }) => ({ item, target, action })));
+
+    // Creating with the copy writes what the preview said: added to the tracked files, never over them.
+    const made = await createDurable(project, 'tracked', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, COPY);
+    const instructions = fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8');
+    expect(instructions.startsWith('# Repo rules\n\nKeep it tidy.')).toBe(true);
+    expect(instructions).toContain(`${MARKER} instructions`);
+    const mcp = JSON.parse(fs.readFileSync(path.join(made.worktreePath!, '.mcp.json'), 'utf-8'));
+    expect(mcp.mcpServers).toEqual({ repo: { command: 'repo-mcp' }, [MARKER]: { command: 'repo-owned' } });
+    expect((await previewCopyIntoAgent(project, made.id)).changes.every((c) => c.action === 'unchanged')).toBe(true);
   });
 });
