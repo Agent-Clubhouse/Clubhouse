@@ -22,6 +22,7 @@ import type {
   LegacyImportResult,
 } from '../../shared/legacy-defaults-types';
 import { hasLegacyAgentDefaults } from '../../shared/project-settings-ownership';
+import { isValidPluginId } from '../../shared/manifest-validator';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { replaceWildcards, type WildcardContext } from '../../shared/wildcard-replacer';
 import type { ManagedMcpContent, ManagedPartContent } from '../../shared/managed-agents-types';
@@ -478,7 +479,12 @@ async function planImport(projectPath: string): Promise<ImportPlan> {
   const { own, plugins: pluginBlocks } = userInstructionsOf(defaults.instructions ?? '');
   const plugins: ImportPlan['plugins'] = new Map();
   const pluginEntry = (id: string) => plugins.get(id) ?? plugins.set(id, {}).get(id)!;
-  for (const p of pluginBlocks) if (p.text) pluginEntry(p.pluginId).instructions = p.text;
+  for (const p of pluginBlocks) {
+    if (!p.text) continue;
+    // Only a real plugin id can own a part; a hand-edited marker stays as saved.
+    if (isValidPluginId(p.pluginId)) pluginEntry(p.pluginId).instructions = p.text;
+    else notes.push(`The block marked for "${p.pluginId}" isn't imported, since that isn't a plugin id.`);
+  }
   const knownPlugins = new Set([
     ...pluginBlocks.map((p) => p.pluginId),
     ...[...(defaults.permissions?.allow ?? []), ...(defaults.permissions?.deny ?? [])].map((r) => /\/\* plugin:([^ ]+) \*\//.exec(r)?.[1]).filter((id): id is string => !!id),
@@ -504,8 +510,9 @@ async function planImport(projectPath: string): Promise<ImportPlan> {
     if (servers === null) notes.push('The MCP servers aren\'t imported because the MCP JSON isn\'t valid JSON.');
     for (const [serverKey, rawDef] of Object.entries(servers ?? {})) {
       if (serverKey === 'clubhouse') continue;
+      // A name that only looks like a plugin's (no valid plugin id) is the person's own server.
       const pluginId = pluginOfServerAmong(serverKey, knownPlugins);
-      if (pluginId) {
+      if (pluginId && isValidPluginId(pluginId)) {
         // The plugin's own: it becomes the plugin's part, under the server's own name.
         const entry = pluginEntry(pluginId);
         entry.mcpServers = { ...entry.mcpServers, [serverKey.slice(`plugin-${pluginId}-`.length)]: rawDef };

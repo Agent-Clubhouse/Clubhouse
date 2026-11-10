@@ -188,6 +188,20 @@ describe('import as parts', () => {
   });
 });
 
+describe('import as parts with saved items that only look like a plugin\'s', () => {
+  it('imports a server whose name has no valid plugin id as the person\'s own, and leaves an odd marker as saved', async () => {
+    setDefaults({
+      instructions: 'Mine.\n\n<!-- plugin:Buddy:start -->\nBe kind.\n<!-- plugin:Buddy:end -->',
+      mcpJson: JSON.stringify({ mcpServers: { docs: { command: 'docs-mcp' }, 'plugin-My_Tool-x': { command: 'x' } } }),
+    });
+    const result = await user(() => importAsParts(h.projectPath));
+    expect(result.created.map((p) => p.name)).toEqual(['app legacy instructions', 'docs', 'plugin-My_Tool-x']);
+    expect(result.pluginParts).toBeUndefined();
+    expect(result.notes.join('\n')).toMatch(/marked for "Buddy" isn't imported/);
+    expect(Object.values(await service.liveEntries()).some((e) => e.source.kind === 'plugin')).toBe(false);
+  });
+});
+
 describe('copy into a plain agent', () => {
   it('previews and copies into its folder, adding to what it has', async () => {
     setDefaults({
