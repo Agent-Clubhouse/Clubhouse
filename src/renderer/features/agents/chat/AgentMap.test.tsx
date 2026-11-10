@@ -7,6 +7,7 @@ import { ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FEWER_CAPABILITIES, FIXTURE_AGENT_ID, type FixtureProvider } from './fixtures';
 import { buildAgentMap } from './view-model';
+import { FINISHED_SHOWN, subagentSummary } from './AgentMapPanel';
 import { useAgentDetailsStore } from '../details/detailsStore';
 
 const agent: Agent = { id: FIXTURE_AGENT_ID, projectId: 'p', name: 'gallant-swift', kind: 'durable', status: 'running', color: 'emerald' };
@@ -76,24 +77,26 @@ describe('Subagents card', () => {
     renderState(stateFor('claude'));
     expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('agent-details-toggle'));
-    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('2 · 1 running');
+    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('1 running · 1 finished');
     expect(screen.queryByTestId('chat-agent-map')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('details-card-subagents-toggle'));
     const panel = screen.getByTestId('chat-agent-map');
     expect(within(panel).getByTestId('agent-map-root')).toHaveTextContent('gallant-swift');
+    // Running first, then finished (#3250).
     const nodes = within(panel).getAllByTestId('agent-map-node');
-    expect(nodes[0]).toHaveTextContent('Find every consumer of AgentChips');
-    expect(nodes[0]).toHaveTextContent('Explore · 12 tools · 41s · 9.8k tok');
-    expect(nodes[1]).toHaveTextContent('code-reviewer');
+    expect(nodes[0]).toHaveTextContent('code-reviewer');
     // A running subagent shows what it is doing.
-    expect(nodes[1]).toHaveTextContent('npx contrast-check');
+    expect(nodes[0]).toHaveTextContent('npx contrast-check');
+    expect(within(panel).getByTestId('agent-map-finished-heading')).toHaveTextContent('Finished');
+    expect(nodes[1]).toHaveTextContent('Find every consumer of AgentChips');
+    expect(nodes[1]).toHaveTextContent('Explore · 12 tools · 41s · 9.8k tok');
     expect(screen.getByTestId('agent-details-toggle')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('expands a subagent to its last steps', () => {
     renderState(stateFor('codex'));
     openSubagents();
-    const node = screen.getAllByTestId('agent-map-node')[1];
+    const node = screen.getAllByTestId('agent-map-node')[0];
     fireEvent.click(within(node).getByRole('button', { expanded: false }));
     const stream = within(node).getByTestId('agent-map-stream');
     expect(within(stream).getAllByTestId('chat-tool-row')).toHaveLength(2);
@@ -105,7 +108,7 @@ describe('Subagents card', () => {
     const cards = screen.getAllByTestId('chat-subagent');
     fireEvent.click(within(cards[1]).getByTestId('chat-subagent-open-map'));
     expect(screen.getByTestId('details-card-subagents')).toHaveAttribute('data-open', 'true');
-    const node = screen.getAllByTestId('agent-map-node')[1];
+    const node = screen.getAllByTestId('agent-map-node')[0];
     expect(within(node).getByRole('button', { expanded: true })).toBeInTheDocument();
     expect(within(node).getByTestId('agent-map-stream')).toBeInTheDocument();
   });
@@ -118,7 +121,7 @@ describe('Subagents card', () => {
     Element.prototype.scrollTo = scrolled;
     renderState(stateFor('claude'));
     openSubagents();
-    const node = screen.getAllByTestId('agent-map-node')[0];
+    const node = screen.getAllByTestId('agent-map-node')[1];
     fireEvent.click(within(node).getByRole('button', { expanded: false }));
     fireEvent.click(within(node).getByText('Show in conversation'));
     const card = screen.getAllByTestId('chat-subagent')[0];
@@ -140,9 +143,10 @@ describe('Subagents card', () => {
     const panel = screen.getByTestId('chat-agent-map');
     expect(within(panel).getByTestId('agent-map-ids-only')).toBeInTheDocument();
     const nodes = within(panel).getAllByTestId('agent-map-node');
-    expect(nodes.map((n) => n.getAttribute('data-subagent-id'))).toEqual(['sub-1', 'sub-2']);
-    expect(within(nodes[1]).getByTestId('agent-map-stream')).toBeInTheDocument();
-    expect(nodes[0]).toHaveTextContent('Status not reported');
+    expect(nodes.map((n) => n.getAttribute('data-subagent-id'))).toEqual(['sub-2', 'sub-1']);
+    expect(within(nodes[0]).getByTestId('agent-map-stream')).toBeInTheDocument();
+    expect(nodes[1]).toHaveTextContent('Status not reported');
+    expect(within(panel).getByTestId('agent-map-finished-heading')).toHaveTextContent('Earlier');
     expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('2 threads');
   });
 
@@ -196,7 +200,7 @@ describe('agent map review fixes', () => {
   it('clears the previous outline when a second jump follows quickly', () => {
     renderState(stateFor('claude'));
     openSubagents();
-    const [first, second] = screen.getAllByTestId('agent-map-node');
+    const [second, first] = screen.getAllByTestId('agent-map-node');
     fireEvent.click(within(first).getByRole('button', { expanded: false }));
     fireEvent.click(within(first).getByText('Show in conversation'));
     const cards = screen.getAllByTestId('chat-subagent');
@@ -246,5 +250,46 @@ describe('agent map review fixes', () => {
     fireEvent.keyDown(column, { key: 'Escape' });
     expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('agent-details-toggle')).toHaveFocus());
+  });
+});
+
+describe('a long-running orchestrator\'s subagents (#3250)', () => {
+  /** The claude fixture plus `extra` finished subagents, oldest first. */
+  function withFinished(extra: number, failed = 0): ChatViewState {
+    const s = stateFor('claude');
+    const subagents = { ...s.subagents };
+    for (let i = 0; i < extra; i++) {
+      subagents[`old-${i}`] = { subagentId: `old-${i}`, name: `old-${i}`, status: i < failed ? 'failed' as const : 'completed' as const };
+    }
+    return { ...s, subagents };
+  }
+
+  it('says what runs now first, and how many finished', () => {
+    expect(subagentSummary(buildAgentMap(withFinished(78, 2)))).toBe('1 running · 79 finished (2 failed)');
+    const idle = withFinished(1);
+    const settled = { ...idle, subagents: { ...idle.subagents, 'sub-2': { ...idle.subagents['sub-2'], status: 'completed' as const } } };
+    expect(subagentSummary(buildAgentMap(settled))).toBe('none running · 3 finished');
+  });
+
+  it('lists running first, then the newest finished, with the rest behind Show all', () => {
+    renderState(withFinished(8));
+    openSubagents();
+    const ids = () => screen.getAllByTestId('agent-map-node').map((n) => n.getAttribute('data-subagent-id'));
+    expect(ids()).toHaveLength(1 + FINISHED_SHOWN);
+    expect(ids()[0]).toBe('sub-2');
+    expect(ids().slice(1)).toEqual(['old-7', 'old-6', 'old-5', 'old-4', 'old-3']);
+    fireEvent.click(screen.getByTestId('agent-map-show-all'));
+    expect(ids()).toHaveLength(10);
+    expect(ids()[9]).toBe('sub-1');
+    expect(screen.getByTestId('agent-map-show-all')).toHaveTextContent('Show fewer');
+    fireEvent.click(screen.getByTestId('agent-map-show-all'));
+    expect(ids()).toHaveLength(1 + FINISHED_SHOWN);
+  });
+
+  it('shows a finished subagent past the cap when it is opened from the conversation', () => {
+    renderState(withFinished(8));
+    fireEvent.click(within(screen.getAllByTestId('chat-subagent')[0]).getByTestId('chat-subagent-open-map'));
+    const node = screen.getAllByTestId('agent-map-node').find((n) => n.getAttribute('data-subagent-id') === 'sub-1')!;
+    expect(within(node).getByRole('button', { expanded: true })).toBeInTheDocument();
   });
 });
