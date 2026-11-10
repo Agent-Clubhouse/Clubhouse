@@ -8,6 +8,7 @@ import { errorText, isStale, managed, partKindLabel, unwrap } from './managedApi
 import { WildcardBar } from './parts-ui';
 import { noteRunningLeftAlone, restartAfterSave } from './restart';
 import { StaleEditDialog } from './StaleEditDialog';
+import { planSkillImport, SKILL_ENTRYPOINT, skillPathError } from '../../../shared/skill-paths';
 
 type SkillFile = ManagedSkillContent['files'][number];
 
@@ -113,6 +114,10 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   // new line or comma isn't swallowed while the person is still typing.
   const [argsText, setArgsText] = useState('');
   const [envText, setEnvText] = useState('');
+  // Files that couldn't be added or renamed, and why (#3247). Nothing is overwritten.
+  const [fileError, setFileError] = useState<string | null>(null);
+  // The supporting file being renamed or moved, and the path typed for it.
+  const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
 
@@ -121,6 +126,8 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     setError(null);
     setImpact(false);
     setStale(null);
+    setFileError(null);
+    setRenaming(null);
     if (!editId) {
       setName(''); setDescription(''); setContent(blankContent(kind)); setOpened({ revision: 0, name: '', description: '' }); setUsedBy([]); setTemplates([]); setArgsText(''); setEnvText('');
       return;
@@ -137,19 +144,36 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
 
   const addFiles = async (items: Array<{ file: File; path: string }>) => {
     if (content.kind !== 'skill') return;
-    // A dropped skill folder: strip the folder name and take the skill name from it.
-    const roots = new Set(items.map((i) => i.path.split('/')[0]));
-    const singleRoot = items.length > 0 && items.every((i) => i.path.includes('/')) && roots.size === 1 ? [...roots][0] : null;
-    const files: SkillFile[] = [...content.files.filter((f) => !(f.path === 'SKILL.md' && !f.content))];
+    // A whole skill folder (one holding SKILL.md) loses its folder name and names the skill.
+    // A supporting folder like assets/ keeps its name (#3247).
+    const plan = planSkillImport(items.map((i) => i.path));
+    // The blank SKILL.md a new skill starts with gives way to an imported one.
+    const files: SkillFile[] = plan.paths.includes(SKILL_ENTRYPOINT)
+      ? content.files.filter((f) => !(f.path === SKILL_ENTRYPOINT && !f.content))
+      : [...content.files];
+    const refused: string[] = [];
     const bits = await executableBitsOf(items.map((i) => i.file));
     for (const [index, item] of items.entries()) {
-      const rel = singleRoot ? item.path.slice(singleRoot.length + 1) : item.path;
-      const next = await readFileAsSkillFile(item.file, rel, bits[index]);
-      const at = files.findIndex((f) => f.path === rel);
-      if (at >= 0) files[at] = next; else files.push(next);
+      const rel = plan.paths[index];
+      const issue = skillPathError(rel, files.map((f) => f.path));
+      if (issue) { refused.push(`${rel || item.path}: ${issue}`); continue; }
+      files.push(await readFileAsSkillFile(item.file, rel, bits[index]));
     }
-    setContent({ ...content, files, skillName: content.skillName || (singleRoot ?? content.skillName) });
-    if (!name && singleRoot) setName(singleRoot);
+    setFileError(refused.length > 0 ? `Not added. ${refused.join(' ')}` : null);
+    setContent({ ...content, files, skillName: content.skillName || (plan.skillName ?? '') });
+    if (!name && plan.skillName) setName(plan.skillName);
+  };
+
+  /** Rename or move a supporting file to another path in the bundle. */
+  const applyRename = () => {
+    if (content.kind !== 'skill' || !renaming) return;
+    const to = renaming.to.trim();
+    if (to === renaming.from) { setRenaming(null); return; }
+    const issue = skillPathError(to, content.files.map((f) => f.path), renaming.from);
+    if (issue) { setFileError(issue); return; }
+    setContent({ ...content, files: content.files.map((f) => (f.path === renaming.from ? { ...f, path: to } : f)) });
+    setRenaming(null);
+    setFileError(null);
   };
 
   const onDrop = async (e: React.DragEvent) => {
@@ -250,7 +274,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
         <div className="flex flex-col gap-3 text-[13px]" onDragOver={(e) => { if (content.kind === 'skill') e.preventDefault(); }} onDrop={(e) => void onDrop(e)}>
           {content.kind === 'skill' && !editId && (
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-surface-2 text-xs text-ctp-subtext0" title="Drop a skill folder here, or use Add files. Files are copied in, never linked.">
-              Drop a skill folder here to fill this in. Its files are copied into the library.
+              Drop a skill folder here to fill this in, or a folder like assets/ to add it under that name. Files are copied into the library.
             </div>
           )}
           <label className="flex items-center gap-4">
@@ -300,7 +324,20 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
                 <span className="w-28 pt-1.5 text-ctp-subtext1">Files</span>
                 <div className="flex-1 flex flex-col gap-1.5">
                   <ul className="rounded-md border border-surface-1" data-testid="managed-skill-files">
-                    {content.files.filter((f) => f.path !== 'SKILL.md').map((f) => (
+                    {content.files.filter((f) => f.path !== 'SKILL.md').map((f) => (renaming?.from === f.path ? (
+                      <li key={f.path} className="flex items-center gap-2 px-2 py-1.5 border-b border-surface-0 last:border-b-0">
+                        <input
+                          className={`${inputClass} flex-1 font-mono text-xs`}
+                          aria-label={`New path for ${f.path}`}
+                          value={renaming.to}
+                          autoFocus
+                          onChange={(e) => setRenaming({ from: f.path, to: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyRename(); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setRenaming(null); } }}
+                        />
+                        <Button kind="quiet" aria-label={`Apply new path for ${f.path}`} onClick={applyRename}>Apply</Button>
+                        <Button kind="quiet" aria-label={`Cancel renaming ${f.path}`} onClick={() => { setRenaming(null); setFileError(null); }}>Cancel</Button>
+                      </li>
+                    ) : (
                       <li key={f.path} className="flex items-center gap-2 px-2 py-1.5 border-b border-surface-0 last:border-b-0">
                         <span className="font-mono text-xs text-ctp-text truncate">{f.path}</span>
                         {f.encoding === 'base64' && <span className="text-xs text-ctp-overlay1">binary</span>}
@@ -308,9 +345,10 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
                           <input type="checkbox" aria-label={`Executable: ${f.path}`} checked={!!f.executable} onChange={(e) => setContent({ ...content, files: content.files.map((x) => (x.path === f.path ? { ...x, executable: e.target.checked } : x)) })} />
                           executable
                         </label>
-                        <Button kind="quiet" aria-label={`Remove ${f.path}`} onClick={() => setContent({ ...content, files: content.files.filter((x) => x.path !== f.path) })}>Remove</Button>
+                        <Button kind="quiet" aria-label={`Rename ${f.path}`} title="Rename or move this file. Use / for folders, like assets/note.md." onClick={() => { setRenaming({ from: f.path, to: f.path }); setFileError(null); }}>Rename</Button>
+                        <Button kind="quiet" aria-label={`Remove ${f.path}`} onClick={() => { setContent({ ...content, files: content.files.filter((x) => x.path !== f.path) }); if (renaming?.from === f.path) setRenaming(null); }}>Remove</Button>
                       </li>
-                    ))}
+                    )))}
                     {content.files.filter((f) => f.path !== 'SKILL.md').length === 0 && <li className="px-2 py-1.5 text-xs text-ctp-overlay1">Only SKILL.md.</li>}
                   </ul>
                   <div className="flex items-center gap-2">
@@ -318,6 +356,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
                     <Button kind="quiet" onClick={() => folderInput.current?.click()}>Add a folder…</Button>
                     <span className="text-xs text-ctp-overlay1">Files are copied in, never linked to where they came from. Scripts never run in Clubhouse.</span>
                   </div>
+                  {fileError && <p role="alert" className="text-xs text-ctp-error" data-testid="managed-skill-file-error">{fileError}</p>}
                   <input ref={fileInput} type="file" multiple hidden onChange={(e) => { const fl = [...(e.target.files ?? [])]; void addFiles(fl.map((file) => ({ file, path: file.name }))); e.target.value = ''; }} />
                   <input ref={folderInput} type="file" multiple hidden {...{ webkitdirectory: '' }} onChange={(e) => { const fl = [...(e.target.files ?? [])]; void addFiles(fl.map((file) => ({ file, path: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name }))); e.target.value = ''; }} />
                 </div>

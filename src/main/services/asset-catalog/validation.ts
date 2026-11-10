@@ -38,6 +38,7 @@ import type {
   ValidationCode,
   ValidationIssue,
 } from '../../../shared/asset-catalog-types';
+import { isSafeSkillPathSegment, MAX_SKILL_PATH_CHARS, SKILL_ENTRYPOINT } from '../../../shared/skill-paths';
 import { containsSecretToken, isSecretKey, redactSecretValues, REDACTED } from '../../telemetry/diag-redaction';
 
 export const MAX_BLOCK_BYTES = 1024 * 1024;
@@ -48,8 +49,6 @@ export const MAX_SKILL_BUNDLE_BYTES = 25 * 1024 * 1024;
 export const MAX_SKILL_FILES = 500;
 
 const MAX_NAME_CHARS = 120;
-const MAX_SKILL_PATH_CHARS = 200;
-const SKILL_ENTRYPOINT = 'SKILL.md';
 
 const OBJECT_KEY_TRAPS = new Set(['__proto__', 'constructor', 'prototype']);
 const ID_RE = /^[A-Za-z0-9][\w.:-]{0,127}$/;
@@ -63,7 +62,6 @@ const MAX_DESCRIPTION_CHARS = 2000;
 const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
-const PATH_ILLEGAL_RE = /[<>:"|?*\\/]/;
 const WINDOWS_DEVICE_RE = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i;
 
 /** Clubhouse's own: its MCP bridge, its skills, and the variables it sets. Only a built-in may project here. */
@@ -286,15 +284,8 @@ function validateMcp(raw: Record<string, unknown>, issues: Issues, reservedAllow
 
 // ── Skills ───────────────────────────────────────────────────────────────
 
-function isSafePathSegment(segment: string): boolean {
-  return !!segment
-    && segment !== '.'
-    && segment !== '..'
-    && !PATH_ILLEGAL_RE.test(segment)
-    && !CONTROL_CHARS_RE.test(segment)
-    && !WINDOWS_DEVICE_RE.test(segment)
-    && !/[. ]$/.test(segment);
-}
+/** The same rule the skill editors check before saving (#3247). */
+const isSafePathSegment = isSafeSkillPathSegment;
 
 function decodedSize(file: SkillFile): number {
   return file.encoding === 'base64' ? Buffer.from(file.content, 'base64').byteLength : Buffer.byteLength(file.content, 'utf8');

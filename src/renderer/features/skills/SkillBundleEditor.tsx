@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { SkillAssetPayload, SkillFile } from '../../../shared/asset-catalog-types';
 import { Button } from '../../components/Button';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
+import { skillPathError } from '../../../shared/skill-paths';
 
 interface Props {
   value: SkillAssetPayload;
@@ -23,15 +24,7 @@ function fileTree(files: SkillFile[]): Directory {
   }
   return root;
 }
-function pathError(path: string, files: SkillFile[], replacing?: string): string | null {
-  if (!path || path.length > 200 || path !== path.normalize('NFC') || path.includes('\\')
-    || path.split('/').some((part) => !part || part === '.' || part === '..' || /[<>:"|?*]/.test(part) || [...part].some((character) => character.charCodeAt(0) < 32)
-      || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) return 'Use a portable path relative to this bundle.';
-  const key = path.toLowerCase();
-  if (files.some((file) => file.path !== replacing && (file.path.toLowerCase() === key
-    || file.path.toLowerCase().startsWith(`${key}/`) || key.startsWith(`${file.path.toLowerCase()}/`)))) return 'That path conflicts with another bundle member.';
-  return null;
-}
+const pathError = (path: string, files: SkillFile[], replacing?: string) => skillPathError(path, files.map((file) => file.path), replacing);
 function language(path: string) {
   const extension = path.split('.').pop();
   return ({ md: 'markdown', json: 'json', js: 'javascript', ts: 'typescript', py: 'python', sh: 'shell', yaml: 'yaml', yml: 'yaml' } as Record<string, string>)[extension] ?? 'plaintext';
@@ -77,10 +70,10 @@ export function SkillBundleEditor({ value, onChange, readOnly = false, disabled 
           </label> : <SettingsMonacoEditor value={selected.content} language={language(selected.path)} readOnly={locked}
             editorKey={selected.path} onChange={(content) => edit({ content })} />}
           {!readOnly && selected.path !== 'SKILL.md' && <div className="flex gap-2 items-end flex-wrap">
-            <label className="text-xs text-ctp-subtext0">New relative path<input aria-label="New relative path" value={renamePath || selected.path}
+            <label className="text-xs text-ctp-subtext0">New relative path<input aria-label="New relative path" value={renamePath}
               disabled={disabled} onChange={(event) => setRenamePath(event.target.value)} className="block rounded-md border border-surface-1 bg-ctp-base text-ctp-text px-2 py-1" /></label>
             <Button disabled={disabled} onClick={() => {
-              const target = renamePath || selected.path;
+              const target = renamePath;
               const issue = pathError(target, value.files, selected.path);
               if (issue) { setError(issue); return; }
               edit({ path: target }); choose(target);

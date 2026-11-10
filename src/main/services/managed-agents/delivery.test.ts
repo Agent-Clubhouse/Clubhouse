@@ -182,6 +182,23 @@ describe('deliverManagedSetup', () => {
     expect(fs.existsSync(path.join(skills, 'mine'))).toBe(true);
   });
 
+  it('writes a supporting folder\'s files at their nested path, like .github/skills/sample-skill/assets/note.md (#3247)', async () => {
+    const skill = await user(() => service.createPart({ name: 'Sample', content: { kind: 'skill', skillName: 'sample-skill', files: [
+      { path: 'SKILL.md', content: 'See [the note](assets/note.md).' },
+      { path: 'assets/note.md', content: '# Note' },
+      { path: 'assets/deep/more.md', content: '# More' },
+    ] } }));
+    const copilot = provider({ configDir: '.github', skillsDir: 'skills', mcpConfigFile: '.github/mcp.json', legacyInstructionsFile: '.github/copilot-instructions.md' }, 'copilot-cli');
+    fs.mkdirSync(path.join(agent.worktreePath!, '.github'));
+    agent.managed = { version: 1, blocks: [], skills: [skill.id], mcps: [] };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: copilot }));
+    const folder = path.join(agent.worktreePath!, '.github', 'skills', 'sample-skill');
+    expect(fs.readFileSync(path.join(folder, 'assets', 'note.md'), 'utf-8')).toBe('# Note');
+    expect(fs.readFileSync(path.join(folder, 'assets', 'deep', 'more.md'), 'utf-8')).toBe('# More');
+    expect(fs.existsSync(path.join(folder, 'note.md'))).toBe(false);
+    expect(fs.readdirSync(folder).sort()).toEqual(['SKILL.md', 'assets']);
+  });
+
   it('never removes the skills folder itself for a "." in its manifest (#3101)', async () => {
     const skill = await user(() => service.createPart({ name: 'Ship 3101', content: { kind: 'skill', skillName: 'ship3101', files: [{ path: 'SKILL.md', content: '# Ship' }] } }));
     const skills = path.join(agent.worktreePath!, '.claude', 'skills');

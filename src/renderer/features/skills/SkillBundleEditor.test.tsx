@@ -72,3 +72,18 @@ it('keeps built-in controls readonly and allows member inspection', () => {
   expect(screen.getByLabelText('Binary bytes (base64)')).toHaveAttribute('readonly');
   expect(current()).toEqual(bundle);
 });
+it('moves a member into a folder, and refuses a cleared or clashing path instead of keeping the old one silently (#3247)', () => {
+  const current = mount();
+  fireEvent.click(screen.getByRole('button', { name: 'check.sh (executable)' }));
+  fireEvent.change(screen.getByLabelText('New relative path'), { target: { value: '' } });
+  expect(screen.getByLabelText('New relative path')).toHaveValue('');
+  fireEvent.click(screen.getByRole('button', { name: 'Rename file' }));
+  expect(screen.getByRole('alert')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('New relative path'), { target: { value: 'references/guide.md' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Rename file' }));
+  expect(screen.getByRole('alert').textContent).toMatch(/conflicts with references\/guide\.md/);
+  expect(current()).toEqual(bundle);
+  fireEvent.change(screen.getByLabelText('New relative path'), { target: { value: 'tools/bin/check.sh' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Rename file' }));
+  expect(current().files[1]).toEqual({ ...bundle.files[1], path: 'tools/bin/check.sh' });
+});
