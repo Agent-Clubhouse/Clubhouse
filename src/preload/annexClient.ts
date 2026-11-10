@@ -58,8 +58,8 @@ export const annexClient = {
     orchestrator?: string; freeAgentMode?: boolean; mcpIds?: string[];
   }): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_CREATE_DURABLE, satelliteId, projectId, params),
-  agentDeleteDurable: (satelliteId: string, projectId: string, agentId: string, mode: string): Promise<unknown> =>
-    ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE, satelliteId, projectId, agentId, mode),
+  agentDeleteDurable: (satelliteId: string, projectId: string, agentId: string, mode: string, helpers?: 'dispose' | 'keep'): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE, satelliteId, projectId, agentId, mode, helpers),
   agentWorktreeStatus: (satelliteId: string, projectId: string, agentId: string): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WORKTREE_STATUS, satelliteId, projectId, agentId),
   agentReorder: (satelliteId: string, projectId: string, orderedIds: string[]) =>

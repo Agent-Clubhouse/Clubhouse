@@ -278,9 +278,10 @@ export function registerAnnexClientHandlers(): void {
 
   // Proxy IPC: delete a durable agent on a satellite
   ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg(), stringArg()],
-    async (_event, satelliteId, projectId, agentId, mode) => {
-      return annexClient.requestDeleteDurable(satelliteId, projectId, agentId, mode);
+    [stringArg(), stringArg(), stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, satelliteId, projectId, agentId, mode, helpers) => {
+      // The satellite checks the choice and refuses anything else.
+      return annexClient.requestDeleteDurable(satelliteId, projectId, agentId, mode, helpers as 'dispose' | 'keep' | undefined);
     },
   ));
 

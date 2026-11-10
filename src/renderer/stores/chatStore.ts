@@ -948,7 +948,10 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     }
     case 'subagent': {
       const d = event.data;
-      return { ...state, subagents: { ...state.subagents, [d.subagentId]: { ...state.subagents[d.subagentId], ...d } } };
+      const prev = state.subagents[d.subagentId];
+      // A driver that has forgotten the name sends the generic one: the name already known stays.
+      const next = prev?.name && d.name === 'subagent' ? { ...prev, ...d, name: prev.name } : { ...prev, ...d };
+      return { ...state, subagents: { ...state.subagents, [d.subagentId]: next } };
     }
 
     case 'usage': {

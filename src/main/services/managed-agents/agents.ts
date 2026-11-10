@@ -118,7 +118,11 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
     : base?.setup ?? { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
   checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(input.settings) ? 'settings' : namesAccess(base?.settings) ? 'template' : 'default');
   // Managed agents always get their own folder: a worktree in a git project, a plain folder otherwise.
-  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
+  // Only the setup goes in it, delivered at start: never the project's legacy agent defaults (#3243).
+  const config = await agentConfig.createDurable(
+    projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode,
+    undefined, undefined, {}, { projectDefaults: false },
+  );
   try {
     await service.saveSetup(projectPath, config.id, setup);
     // What createDurable doesn't take: orchestration, effort, auto-sleep, the helper template and permissions.
@@ -131,8 +135,8 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
     };
     if (Object.keys(rest).length > 0) await applyManagedSettings(projectPath, config.id, rest);
   } catch (err) {
-    // Leave no half-made agent: it has no setup, so remove it.
-    await agentConfig.deleteUnregister(projectPath, config.id).catch(() => {});
+    // Leave no half-made agent: it has no setup, so remove it with the folder and branch it was just given.
+    await agentConfig.deleteDurable(projectPath, config.id).catch(() => {});
     throw err;
   }
   return (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;
@@ -153,8 +157,8 @@ async function createPlainAgent(projectPath: string, input: CreateManagedAgentIn
     try {
       await applyManagedSettings(projectPath, config.id, { orchestration: settings.orchestration });
     } catch (err) {
-      // Leave no half-made agent: its settings didn't apply, so remove it.
-      await agentConfig.deleteUnregister(projectPath, config.id).catch(() => {});
+      // Leave no half-made agent: its settings didn't apply, so remove it with the folder and branch it was just given.
+      await agentConfig.deleteDurable(projectPath, config.id).catch(() => {});
       throw err;
     }
   }

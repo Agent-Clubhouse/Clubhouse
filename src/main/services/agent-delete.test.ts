@@ -43,7 +43,7 @@ import * as agentConfig from './agent-config';
 import { isAgentRunning, killAgent } from './agent-system';
 import { listHelpersEverywhere } from './helper-index';
 import { settleHelpers } from './orchestration-policy';
-import { deleteAgent, isDeleteRefusal } from './agent-delete';
+import { AGENT_DELETE_MODES, deleteAgent, isDeleteRefusal } from './agent-delete';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { Classification, TelemetryRuntime } from '../telemetry/types';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -66,6 +66,11 @@ beforeEach(() => {
   vi.mocked(agentConfig.getWorktreeStatus).mockResolvedValue(clean);
   vi.mocked(listHelpersEverywhere).mockResolvedValue([]);
   vi.mocked(isAgentRunning).mockReturnValue(false);
+  // Stopping the agent being deleted stops it; quick agents stopping first don't.
+  vi.mocked(killAgent).mockImplementation(async (id: string) => {
+    calls.push(`kill:${id}`);
+    if (id === 'orch') vi.mocked(isAgentRunning).mockReturnValue(false);
+  });
   vi.mocked(settleHelpers).mockImplementation(async (_p, _id, choice) => {
     calls.push(`settle:${choice}`);
     return { ok: true, message: choice === 'dispose' ? 'Disposed 2 helper(s)' : 'Kept 2 helper(s)', helperIds: ['h1', 'h2'] };
@@ -99,8 +104,33 @@ describe('deleteAgent (#3182)', () => {
     });
     expect(listHelpersEverywhere).toHaveBeenCalledWith(PROJECT, 'orch', { recursive: true });
     expect(settleHelpers).toHaveBeenCalledWith(PROJECT, 'orch', 'dispose', undefined);
-    expect(killAgent).toHaveBeenCalledWith('orch', PROJECT, undefined, 'user', { waitForExit: true });
+    expect(killAgent).toHaveBeenCalledWith('orch', PROJECT, undefined, 'user', { waitForExit: true, throwOnFailure: true });
     expect(calls).toEqual(['lock:orch', 'settle:dispose', 'kill:orch', 'delete:force']);
+  });
+
+  it('a stop that fails refuses the delete, still reports settled helpers, and the gate opens again (#3199)', async () => {
+    gate.open.set('orch', { crossProject: false });
+    vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
+    vi.mocked(isAgentRunning).mockReturnValue(true);
+    vi.mocked(killAgent).mockRejectedValueOnce(new Error('Timed out waiting for agent exit'));
+    const result = await deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose' });
+    expect(result).toMatchObject({
+      ok: false, stopFailed: 'stop_failed',
+      message: 'Lead couldn\'t be stopped (Timed out waiting for agent exit). Its helpers were settled, but it was not deleted.',
+      helpers: { ok: true, helperIds: ['h1', 'h2'] },
+    });
+    expect(isDeleteRefusal(result)).toBe(false);
+    expect(agentConfig.deleteForce).not.toHaveBeenCalled();
+    expect(gate.open.has('orch')).toBe(true);
+  });
+
+  it('an agent still running after its stop is not deleted: agent_still_running (#3199)', async () => {
+    vi.mocked(isAgentRunning).mockReturnValue(true);
+    vi.mocked(killAgent).mockImplementationOnce(async (id: string) => { calls.push(`kill:${id}`); });
+    const result = await deleteAgent(PROJECT, 'orch', { mode: 'force' });
+    expect(result).toMatchObject({ ok: false, stopFailed: 'agent_still_running', message: 'Lead couldn\'t be stopped. It was not deleted.' });
+    expect(calls).toEqual(['lock:orch', 'kill:orch']);
+    expect(agentConfig.deleteForce).not.toHaveBeenCalled();
   });
 
   it('dispose: helpers with work at risk stop it before the orchestrator is touched', async () => {
@@ -148,13 +178,18 @@ describe('deleteAgent (#3182)', () => {
     expect(agentConfig.deleteSaveAsPatch).toHaveBeenCalledWith(PROJECT, 'orch', '/tmp/lead.patch');
   });
 
-  it('refuses save-patch with no file, an unknown mode, the Dispatcher, and a missing agent without changing anything', async () => {
+  it('refuses save-patch with no file, an unknown mode and the Dispatcher without changing anything', async () => {
     expect(await deleteAgent(PROJECT, 'orch', { mode: 'save-patch' })).toEqual({ ok: false, message: 'save-patch needs a file to save to' });
     expect((await deleteAgent(PROJECT, 'orch', { mode: 'shred' as never })).message).toMatch(/Unknown delete mode/);
     expect(await deleteAgent('/dispatcher', 'x', { mode: 'force' })).toEqual({ ok: false, message: 'The Dispatcher can\'t be deleted.' });
     expect(await deleteAgent(PROJECT, 'disp', { mode: 'force' })).toEqual({ ok: false, message: 'The Dispatcher can\'t be deleted.' });
-    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(undefined as never);
-    expect(await deleteAgent(PROJECT, 'gone', { mode: 'force' })).toEqual({ ok: false, message: 'Agent not found' });
+    expect(calls.filter((c) => !c.startsWith('lock:'))).toEqual([]);
+  });
+
+  it.each(AGENT_DELETE_MODES)('succeeds in %s mode for an agent whose record is already gone, changing nothing (#3246)', async (mode) => {
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(null);
+    const result = await deleteAgent(PROJECT, 'gone', { mode, savePath: '/tmp/gone.patch' });
+    expect(result).toMatchObject({ ok: true, deleted: true });
     expect(calls.filter((c) => !c.startsWith('lock:'))).toEqual([]);
   });
 

@@ -196,6 +196,7 @@ vi.stubGlobal('clubhouse', {
     writeMcpRawJson: async () => ({ ok: true }),
     readProjectAgentDefaults: async () => ({}),
     writeProjectAgentDefaults: asyncNoop,
+    saveProjectUserDefaults: asyncNoop,
     getProjectConfigBreakdown: async () => ({
       userInstructions: '',
       pluginInstructionBlocks: [],

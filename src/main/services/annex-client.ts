@@ -2301,9 +2301,11 @@ export async function requestDeleteDurable(
   projectId: string,
   agentId: string,
   mode: string,
+  helpers?: 'dispose' | 'keep',
 ): Promise<unknown> {
+  // The helper choice (#3199): the satellite asks for one when the agent has helpers.
   return satelliteHttpsRequest(fingerprint, 'POST',
-    `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/delete`, { mode });
+    `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/delete`, { mode, ...(helpers && { helpers }) });
 }
 
 export async function requestWorktreeStatus(

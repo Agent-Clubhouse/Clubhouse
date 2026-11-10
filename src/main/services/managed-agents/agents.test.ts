@@ -34,6 +34,7 @@ vi.mock('../agent-config', () => ({
   updateDurableConfig: vi.fn(),
   createDurable: vi.fn(),
   deleteUnregister: vi.fn(),
+  deleteDurable: vi.fn(async () => {}),
 }));
 /** A stand-in for the retired persona layer's carry; orchestration-policy.test and legacy-migration.test cover the real one. */
 vi.mock('../orchestration-policy', () => ({
@@ -737,9 +738,35 @@ describe('applying settings a template or the builder carries (#2895)', () => {
       return made;
     });
     await user(() => createManagedAgent('/p', { name: 'lead', color: 'indigo', templateId: t.id }));
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/p', 'lead', 'indigo', 'opus', true, 'claude-code', undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/p', 'lead', 'indigo', 'opus', true, 'claude-code', undefined, undefined, undefined, {}, { projectDefaults: false });
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'made', { effort: 'high', idleSleep: 'never', helperTemplateId: 'builtin-template-quality-assurance' });
     expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'made', { orchestrate: true, maxHelpers: 3 });
+  });
+
+  it('creates a managed agent without the project\'s legacy defaults, and a plain one with them (#3243)', async () => {
+    vi.mocked(agentConfig.createDurable).mockImplementation(async (_p, name) => {
+      const made: DurableAgentConfig = { id: `made-${name}`, name, color: 'indigo', createdAt: '2026-11-09T00:00:00.000Z', worktreePath: wt };
+      h.agents.set(made.id, made);
+      return made;
+    });
+    await user(() => createManagedAgent('/p', { name: 'scratch', color: 'indigo', settings: { orchestrator: 'copilot-cli' } }));
+    expect(vi.mocked(agentConfig.createDurable).mock.lastCall?.[10]).toEqual({ projectDefaults: false });
+    await user(() => createManagedAgent('/p', { name: 'plain', color: 'indigo', managed: false, settings: { orchestrator: 'copilot-cli' } }));
+    expect(vi.mocked(agentConfig.createDurable).mock.lastCall?.[10]).toBeUndefined();
+  });
+
+  it('removes a managed agent whose setup could not be saved, with the folder it was just given (#3243)', async () => {
+    vi.mocked(agentConfig.createDurable).mockImplementation(async (_p, name) => {
+      const made: DurableAgentConfig = { id: 'half', name, color: 'indigo', createdAt: '2026-11-09T00:00:00.000Z', worktreePath: wt };
+      h.agents.set(made.id, made);
+      return made;
+    });
+    vi.mocked(agentConfig.deleteDurable).mockClear();
+    const save = vi.spyOn(service, 'saveSetup').mockRejectedValueOnce(new Error('disk full'));
+    await expect(user(() => createManagedAgent('/p', { name: 'half', color: 'indigo' }))).rejects.toThrow('disk full');
+    expect(agentConfig.deleteDurable).toHaveBeenCalledWith('/p', 'half');
+    expect(agentConfig.deleteUnregister).not.toHaveBeenCalled();
+    save.mockRestore();
   });
 
   it('a caller\'s legacy off wins over a template\'s level (#2761)', async () => {
@@ -752,9 +779,9 @@ describe('applying settings a template or the builder carries (#2895)', () => {
       return made;
     });
     await user(() => createManagedAgent('/p', { name: 'off', color: 'indigo', templateId: t.id, settings: { freeAgentMode: false } }));
-    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'off', 'indigo', undefined, true, 'claude-code', 'ask');
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'off', 'indigo', undefined, true, 'claude-code', 'ask', undefined, undefined, {}, { projectDefaults: false });
     await user(() => createManagedAgent('/p', { name: 'tmpl', color: 'indigo', templateId: t.id }));
-    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'tmpl', 'indigo', undefined, true, 'claude-code', 'full_access');
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'tmpl', 'indigo', undefined, true, 'claude-code', 'full_access', undefined, undefined, {}, { projectDefaults: false });
   });
 
   it('a caller\'s legacy on/off keeps the template\'s level when it is already on that side (#2997)', async () => {
@@ -767,11 +794,11 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     const auto = await user(() => service.saveTemplate({ name: 'Auto', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestrator: 'claude-code', access: 'auto' } }));
     const plan = await user(() => service.saveTemplate({ name: 'Plan', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestrator: 'claude-code', access: 'plan' } }));
     await user(() => createManagedAgent('/p', { name: 'on', color: 'indigo', templateId: auto.id, settings: { freeAgentMode: true } }));
-    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'on', 'indigo', undefined, true, 'claude-code', 'auto');
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'on', 'indigo', undefined, true, 'claude-code', 'auto', undefined, undefined, {}, { projectDefaults: false });
     await user(() => createManagedAgent('/p', { name: 'off', color: 'indigo', templateId: plan.id, settings: { freeAgentMode: false } }));
-    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'off', 'indigo', undefined, true, 'claude-code', 'plan');
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'off', 'indigo', undefined, true, 'claude-code', 'plan', undefined, undefined, {}, { projectDefaults: false });
     // A level the caller names wins over the legacy flag it read back beside it.
     await user(() => createManagedAgent('/p', { name: 'named', color: 'indigo', templateId: auto.id, settings: { access: 'plan', freeAgentMode: true } }));
-    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'named', 'indigo', undefined, true, 'claude-code', 'plan');
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'named', 'indigo', undefined, true, 'claude-code', 'plan', undefined, undefined, {}, { projectDefaults: false });
   });
 });

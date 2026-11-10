@@ -17,10 +17,15 @@
  *    react to a row the user already read. The agent's own messages stay in
  *    its own chat and the Dispatcher's transcript.
  *
- * The triage state (open requests, news held for a check-in, what was shown)
- * is kept in `dispatcher-news.json` beside the Dispatcher's folders, not in
- * memory, and survives a restart. Clear chat leaves it alone; Forget
- * everything drops the held news (clearHeldNews).
+ * Each answer or question is matched to the user's request it is for
+ * (dispatcher-requests, #3204): an answer shows now and closes it, a question
+ * leaves it waiting on the user, and the chat is told its id so the user's
+ * answer goes back under it.
+ *
+ * The triage state (news held for a check-in, what was shown) is kept in
+ * `dispatcher-news.json` beside the Dispatcher's folders, not in memory, and
+ * survives a restart. Clear chat leaves it alone; Forget everything drops the
+ * held news (clearHeldNews).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -33,8 +38,6 @@ import { cleanAgentNews } from '../../../shared/dispatcher-chat-noise';
 import {
   applyTriage,
   emptyTriageState,
-  noteRequest,
-  requestClosedBy,
   revertShown,
   triageNews,
   type HeldNews,
@@ -44,7 +47,8 @@ import {
   type TriageState,
 } from './dispatcher-triage';
 import { clearAgentMessages, findInInbox } from './dispatcher-news-inbox';
-import { CHAT_UPDATE_TAG, onHandOff, setChatDelivery, type ChannelMessage } from './dispatcher-channel';
+import { CHAT_UPDATE_TAG, setChatDelivery, type ChannelMessage } from './dispatcher-channel';
+import { findRequestFor, restoreRequest, settleRequest } from './dispatcher-requests';
 import { isDispatcherIdentityAgentId } from './dispatcher-service';
 
 const NS = 'core:dispatcher';
@@ -56,13 +60,15 @@ export interface ChatReport {
   from?: string;
   /** Absent means news that needs the person, as tell_user always meant. */
   kind?: NewsKind;
+  /** The id of the user's request it is about, from the hand-off. */
+  request?: string;
 }
 
 /** What reaches the chat agent, and how the chat shows it. */
 export interface ChatMessage extends ChannelMessage {
   /**
    * Call when it didn't reach the chat: it is forgotten as shown, so the
-   * Dispatcher can send it again, and the request it answered opens again.
+   * Dispatcher can send it again, and the request it settled is put back.
    */
   notDelivered?: () => void;
 }
@@ -93,8 +99,8 @@ function readState(): TriageState {
   if (state) return state;
   try {
     const parsed = JSON.parse(fs.readFileSync(getNewsStatePath(), 'utf8')) as Partial<TriageState>;
+    // An older file's `openRequests` count is left behind: requests are keyed now (dispatcher-requests).
     state = {
-      openRequests: Array.isArray(parsed.openRequests) ? parsed.openRequests.filter((n) => typeof n === 'number') : [],
       held: Array.isArray(parsed.held) ? parsed.held.filter((h) => h && typeof h.text === 'string' && typeof h.at === 'number') : [],
       shown: Array.isArray(parsed.shown) ? parsed.shown.filter((h) => h && typeof h.text === 'string' && typeof h.at === 'number') : [],
       ...(typeof parsed.lastCheckInAt === 'number' && { lastCheckInAt: parsed.lastCheckInAt }),
@@ -121,11 +127,6 @@ function writeState(next: TriageState): void {
   });
 }
 
-/** The person handed something off from the chat: its answer shows right away. */
-export function noteUserRequest(now = Date.now()): void {
-  writeState(noteRequest(readState(), now));
-}
-
 /** News waiting for the next check-in, for the check-in itself and for tests. */
 export function heldNews(): readonly HeldNews[] {
   return readState().held;
@@ -133,8 +134,7 @@ export function heldNews(): readonly HeldNews[] {
 
 /**
  * Forget everything (#3046): drop the news held for the next check-in, so a
- * later check-in doesn't bring back what was forgotten. Open requests and what
- * was shown stay. Returns how many were dropped.
+ * later check-in doesn't bring back what was forgotten. What was shown stays. Returns how many were dropped.
  */
 export function clearHeldNews(): number {
   const current = readState();
@@ -161,17 +161,24 @@ const NEVER_REASONS: Record<Extract<TriageDecision, { show: 'never' }>['reason']
 
 const LATER_REASONS: Record<Extract<TriageDecision, { show: 'later' }>['reason'], string> = {
   routine: 'Held for the next check-in summary.',
-  nothing_asked: 'The user has no open request this answers, so it is held for the next check-in summary.',
+  nothing_asked: 'It answers no request of the user\'s, so it is held for the next check-in summary. If it is the outcome of one, send it again with its request_id.',
 };
 
 function heldLine(h: HeldNews): string {
   return h.fromName ? `- ${h.fromName}: ${h.text}` : `- ${h.text}`;
 }
 
+/** How the user's answer goes back: under the request's id, when the news is for one. */
+function answerWith(request: string | undefined): string {
+  return request ? `pass their answer on with start_work and request_id ${request}` : 'pass their answer on with start_work';
+}
+
 /** The chat's message for the Dispatcher's own words: a Clubhouse update the chat says in its own words. */
-function ownWords(text: string): ChatMessage {
+function ownWords(text: string, reason: 'needs_user' | 'answer', request?: string): ChatMessage {
+  const about = request ? ` on request ${request}` : '';
+  const then = reason === 'needs_user' && request ? ` When they answer, ${answerWith(request)}.` : '';
   return {
-    text: `${CHAT_UPDATE_TAG} News for the user. Tell them in your own words, briefly:\n\n${text}`,
+    text: `${CHAT_UPDATE_TAG} News for the user${about}. Tell them in your own words, briefly.${then}\n\n${text}`,
     routed: [{ fromClubhouse: true, text }],
   };
 }
@@ -186,11 +193,12 @@ function checkInMessage(summary: string, held: readonly HeldNews[]): ChatMessage
  * The chat's message for an agent's news: the chat tells the user in its own words, naming the
  * agent, and that reply is the only thing the user sees of it (#3193).
  */
-export function agentNews(sender: MessageSender, text: string, reason: 'needs_user' | 'answer'): ChatMessage {
+export function agentNews(sender: MessageSender, text: string, reason: 'needs_user' | 'answer', request?: string): ChatMessage {
   const what = reason === 'needs_user'
     ? `${sender.name} needs the user for this. Ask them in your own words, briefly, and say it comes from ${sender.name}. `
-      + 'Keep every option, number and name. They answer here, in this conversation; pass their answer on with start_work.'
-    : `News from ${sender.name} that answers what the user asked. Tell them in your own words, briefly, and say it comes from ${sender.name}. `
+      + `Keep every option, number and name. They answer here, in this conversation; ${answerWith(request)}.`
+    : `News from ${sender.name} that answers what the user asked${request ? ` in request ${request}` : ''}. `
+      + `Tell them in your own words, briefly, and say it comes from ${sender.name}. `
       + 'Keep every number and name.';
   return {
     text: `${CHAT_UPDATE_TAG} ${what} Your reply is the whole message: no acknowledgment before or after it.\n\n${text}`,
@@ -229,16 +237,18 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
     // An agent Clubhouse can't find, such as a name two projects share, is still that agent's news, under the name given.
     else if (!sender && report.from) sender = { name: report.from };
     const cleaned = cleanAgentNews(report.message);
+    const request = findRequestFor({ kind, request: report.request, fromAgentId: sender?.agentId, fromName: sender?.name }, at);
     const item: NewsItem = {
       kind,
       text: cleaned,
       at,
       ...(sender?.agentId && { fromAgentId: sender.agentId }),
       ...(sender && { fromName: sender.name }),
+      ...(request && { request: request.id }),
     };
     const before = readState();
     const decision = triageNews(item, before, at);
-    appLog(NS, 'info', 'Dispatcher news triage', { meta: { kind, show: decision.show, reason: 'reason' in decision ? decision.reason : undefined, fromAgent: !!sender } });
+    appLog(NS, 'info', 'Dispatcher news triage', { meta: { kind, show: decision.show, reason: 'reason' in decision ? decision.reason : undefined, fromAgent: !!sender, request: request?.id } });
     const outcome = {
       kind,
       show: decision.show,
@@ -257,15 +267,18 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
       return { hold: 'later', reason: LATER_REASONS[decision.reason] };
     }
     // Remembered as shown now, so a repeat sent meanwhile is caught, and undone if it never reaches the chat.
-    const closed = requestClosedBy(before, item, decision, at);
     writeState(applyTriage(before, item, decision, at));
-    const notDelivered = () => writeState(revertShown(readState(), item, decision, closed));
+    const settled = request && decision.show === 'now' ? settleRequest(request.id, decision.reason, at) : null;
+    const notDelivered = () => {
+      writeState(revertShown(readState(), item, decision));
+      if (settled) restoreRequest(settled, now());
+    };
     if (decision.show === 'check_in') {
       recordNewsTriage({ ...outcome, held: decision.held.length });
       return { ...checkInMessage(cleaned, decision.held), notDelivered };
     }
     recordNewsTriage(outcome);
-    return { ...(sender ? agentNews(sender, cleaned, decision.reason) : ownWords(cleaned)), notDelivered };
+    return { ...(sender ? agentNews(sender, cleaned, decision.reason, request?.id) : ownWords(cleaned, decision.reason, request?.id)), notDelivered };
   };
 
   return (report) => {
@@ -277,12 +290,11 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
 
 let uninstall: (() => void) | null = null;
 
-/** Make the Dispatcher's chat a group chat: install the triage, and count hand-offs as requests. */
+/** Make the Dispatcher's chat a group chat: install the triage. */
 export function installGroupChat(deps: GroupChatDeps = {}): void {
   uninstall?.();
   setChatDelivery(createGroupChatDelivery(deps));
-  const stop = onHandOff(() => noteUserRequest((deps.now ?? Date.now)()));
-  uninstall = () => { stop(); setChatDelivery(null); };
+  uninstall = () => { setChatDelivery(null); };
 }
 
 /** For tests. */

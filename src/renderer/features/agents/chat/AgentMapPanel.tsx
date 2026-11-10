@@ -10,7 +10,7 @@
  * reported; 'none' has nothing to list.
  */
 
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatItem } from '../../../stores/chatStore';
 import type { Agent } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
@@ -59,13 +59,31 @@ function nodeMeta(node: AgentMapNode, now: number): string {
   return parts.join(' · ');
 }
 
-/** "4 · 1 running · 1 failed", the Subagents card's one-line answer. */
+/**
+ * "1 running · 79 finished (2 failed)", the Subagents card's one-line answer.
+ * What runs now comes first (#3250).
+ */
 export function subagentSummary(map: AgentMap): string {
   if (map.nodes.length === 0) return 'none yet';
+  if (map.mode === 'ids_only') return `${map.nodes.length} ${map.nodes.length === 1 ? 'thread' : 'threads'}`;
   const running = map.nodes.filter((n) => n.status === 'running').length;
   const failed = map.nodes.filter((n) => n.status === 'failed').length;
-  if (map.mode === 'ids_only') return `${map.nodes.length} ${map.nodes.length === 1 ? 'thread' : 'threads'}`;
-  return [String(map.nodes.length), running ? `${running} running` : '', failed ? `${failed} failed` : ''].filter(Boolean).join(' · ');
+  const finished = map.nodes.length - running;
+  return [
+    running ? `${running} running` : 'none running',
+    finished ? `${finished} finished${failed ? ` (${failed} failed)` : ''}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+/** Finished subagents listed before "Show all" (#3250). Every one is still in the conversation. */
+export const FINISHED_SHOWN = 5;
+
+/** Running subagents in the order they started, then finished ones, newest first. */
+export function groupSubagents(nodes: readonly AgentMapNode[]): { running: AgentMapNode[]; finished: AgentMapNode[] } {
+  return {
+    running: nodes.filter((n) => n.status === 'running'),
+    finished: nodes.filter((n) => n.status !== 'running').reverse(),
+  };
 }
 
 /** The last steps of a subagent's stream; the whole stream is in the conversation. */
@@ -167,6 +185,24 @@ export function SubagentList({ missedSubagentId, agent, state, map, selected, on
   const anyRunning = map.nodes.some((n) => n.status === 'running');
   const now = useNow(anyRunning);
   const rootDot = chatDot(state.state);
+  const [showAll, setShowAll] = useState(false);
+  const { running, finished } = useMemo(() => groupSubagents(map.nodes), [map.nodes]);
+  // A subagent opened from the conversation shows even when it's past the cap.
+  const selectedHidden = !!selected && finished.findIndex((n) => n.subagentId === selected) >= FINISHED_SHOWN;
+  const shownFinished = showAll || selectedHidden ? finished : finished.slice(0, FINISHED_SHOWN);
+  // Ids-only drivers don't say when a thread ends.
+  const finishedWord = map.mode === 'ids_only' ? 'Earlier' : 'Finished';
+  const row = (node: AgentMapNode) => (
+    <NodeRow
+      key={node.subagentId}
+      node={node}
+      now={now}
+      open={selected === node.subagentId}
+      onToggle={() => onSelect(selected === node.subagentId ? null : node.subagentId)}
+      onShowInStream={() => onShowInStream(node.subagentId)}
+      missed={missedSubagentId === node.subagentId}
+    />
+  );
   return (
     <div className="flex flex-col" data-testid="chat-agent-map" aria-label="Subagents">
       <div className="flex items-center gap-2 h-7 pr-3.5 pl-[33px] text-[12.5px]" data-testid="agent-map-root">
@@ -183,17 +219,23 @@ export function SubagentList({ missedSubagentId, agent, state, map, selected, on
       {map.nodes.length === 0 ? (
         <p className="pr-3.5 pl-[33px] py-1.5 text-xs text-ctp-overlay1">No subagents in this conversation yet.</p>
       ) : (
-        map.nodes.map((node) => (
-          <NodeRow
-            key={node.subagentId}
-            node={node}
-            now={now}
-            open={selected === node.subagentId}
-            onToggle={() => onSelect(selected === node.subagentId ? null : node.subagentId)}
-            onShowInStream={() => onShowInStream(node.subagentId)}
-            missed={missedSubagentId === node.subagentId}
-          />
-        ))
+        <>
+          {running.map(row)}
+          {finished.length > 0 && running.length > 0 && (
+            <p className="pr-3.5 pl-[33px] pt-2 pb-0.5 text-xs text-ctp-overlay1" data-testid="agent-map-finished-heading">{finishedWord}</p>
+          )}
+          {shownFinished.map(row)}
+          {finished.length > FINISHED_SHOWN && !selectedHidden && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="self-start ml-[33px] mt-1 text-xs text-ctp-link hover:underline cursor-pointer focus-ring rounded-sm"
+              data-testid="agent-map-show-all"
+            >
+              {showAll ? 'Show fewer' : `Show all ${finished.length} ${finishedWord.toLowerCase()}`}
+            </button>
+          )}
+        </>
       )}
     </div>
   );

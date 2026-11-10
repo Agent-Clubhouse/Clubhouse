@@ -122,7 +122,9 @@ describe('the Dispatcher card (#3049)', () => {
     render(<Harness />);
     expect(await screen.findByTestId('dispatcher-card-contact')).toHaveTextContent('Anything about checkout');
     expect(screen.getByTestId('dispatcher-card-owns')).toHaveTextContent('webapp repo');
-    expect(screen.getByTestId('details-card-dispatcher-summary')).toHaveTextContent('Runs the web app epic');
+    // The Dispatcher's name, not the agent's card text (#3249).
+    expect(screen.getByTestId('details-card-dispatcher-summary')).toHaveTextContent('Rosie, your dispatcher');
+    expect(screen.getByTestId('details-card-dispatcher-summary')).not.toHaveTextContent('Runs the web app epic');
     await waitFor(() => expect(screen.getByTestId('dispatcher-card-reach')).toHaveTextContent('Rosie canMessage it, wake it, put it to sleep and 7 more.'));
     expect(window.clubhouse.agent.getGrants).toHaveBeenCalledWith(DISPATCHER_PATH, 'disp');
     expect(window.clubhouse.dispatcher.getAgentCard).toHaveBeenCalledWith('lead');
@@ -147,7 +149,7 @@ describe('the Dispatcher card (#3049)', () => {
     emitCardChanged();
     expect(await screen.findByTestId('dispatcher-card-contact')).toHaveTextContent('Release questions');
     expect(screen.queryByTestId('dispatcher-card-asking')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-dispatcher-summary')).toHaveTextContent('connected');
+    expect(screen.getByTestId('details-card-dispatcher-summary')).toHaveTextContent('Rosie, your dispatcher');
   });
 
   it('No answer: "No description yet" with Edit, and says when an asleep agent is asked', async () => {
@@ -296,8 +298,10 @@ describe('the card\'s words', () => {
     expect(cardStatus(true, null, true)).toBe('asking');
     expect(cardStatus(true, { state: 'none', card: null }, false)).toBe('none');
     expect(cardStatus(true, null, false)).toBe('none');
-    expect(cardSummary('ready', { state: 'ready', card: { purpose: ' Ships releases ' } })).toBe('Ships releases');
-    expect(cardSummary('ready', { state: 'ready', card: {} })).toBe('connected');
+    expect(cardSummary('ready', 'Navi')).toBe('Navi, your dispatcher');
+    expect(cardSummary('ready', 'Dispatcher')).toBe('connected');
+    expect(cardSummary('ready', 'dispatcher')).toBe('connected');
+    expect(cardSummary('off', 'Navi')).toBe('not connected');
   });
 
   it('summarizes what reaches the agent from the real rows', () => {

@@ -52,12 +52,14 @@ vi.mock('./fs-utils', () => ({
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true) }));
-vi.mock('./agent-settings-service', () => ({
+vi.mock('./agent-settings-service', async (importOriginal) => ({
   applyAgentDefaults: vi.fn(async () => undefined),
   readProjectAgentDefaults: vi.fn(async () => ({})),
+  // The real check, so a CLI without permission rules refuses them as it does in the app.
+  assertPermissionRulesSupported: (await importOriginal<typeof import('./agent-settings-service')>()).assertPermissionRulesSupported,
 }));
 vi.mock('./agent-system', () => ({
-  resolveOrchestrator: vi.fn(async () => ({ writeInstructions: vi.fn(), conventions: {} })),
+  resolveOrchestrator: vi.fn(async () => ({ displayName: 'Claude Code', writeInstructions: vi.fn(), conventions: {} })),
 }));
 
 import * as fsp from 'fs/promises';
@@ -81,7 +83,8 @@ import {
   getDurableConfig,
   updateDurableConfig,
 } from './agent-config';
-import { applyAgentDefaults } from './agent-settings-service';
+import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
+import { resolveOrchestrator } from './agent-system';
 import { UnsupportedPermissionRulesError } from './permission-rules-error';
 import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } from './agent-creation';
@@ -712,5 +715,92 @@ describe('interrupted creation recovery (#2226)', () => {
     expect(await recoverInterruptedCreations(PROJECT_PATH)).toEqual([]);
     slow.release();
     expect(await started.done).toBe('ready');
+  });
+});
+
+describe('project defaults a CLI cannot take (#3243)', () => {
+  const RULES = { permissions: { allow: ['Bash(npm test:*)'], deny: ['Bash(rm:*)'] } };
+  /** A CLI with no Clubhouse allow/deny rules, as Copilot CLI is. */
+  const noRules = { displayName: 'Copilot CLI', writeInstructions: vi.fn(), conventions: { permissionRules: false } };
+  const withRules = { displayName: 'Claude Code', writeInstructions: vi.fn(), conventions: {} };
+
+  beforeEach(() => {
+    vi.mocked(applyAgentDefaults).mockClear();
+    vi.mocked(readProjectAgentDefaults).mockResolvedValue(RULES as never);
+  });
+  afterEach(() => {
+    vi.mocked(readProjectAgentDefaults).mockResolvedValue({} as never);
+    vi.mocked(resolveOrchestrator).mockResolvedValue(withRules as never);
+  });
+
+  it('refuses a plain agent before any branch, folder, worktree or record is made', async () => {
+    vi.mocked(resolveOrchestrator).mockResolvedValue(noRules as never);
+    await expect(createDurable(PROJECT_PATH, 'copilot', 'indigo', undefined, true, 'copilot-cli' as never))
+      .rejects.toThrow(/Copilot CLI can't use this project's Default permissions.*Nothing was created/);
+    expect(gitArgv()).toEqual([]);
+    expect(dirs.has(agentPath('copilot'))).toBe(false);
+    expect(files.has(CONFIG_PATH)).toBe(false);
+    expect(events).toEqual([]);
+    expect(applyAgentDefaults).not.toHaveBeenCalled();
+  });
+
+  it('refuses the asynchronous creation and its check up front too, tagged as a refusal', async () => {
+    vi.mocked(resolveOrchestrator).mockResolvedValue(noRules as never);
+    const params = { name: 'copilot', color: 'indigo', orchestrator: 'copilot-cli' as never };
+    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/Default permissions/);
+    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toMatchObject({ message: expect.stringMatching(/Default permissions/) });
+    expect(gitArgv()).toEqual([]);
+    expect(diskAgents()).toEqual([]);
+  });
+
+  it('creates a plain agent and applies the defaults for a CLI that takes them', async () => {
+    vi.mocked(resolveOrchestrator).mockResolvedValue(withRules as never);
+    const config = await createDurable(PROJECT_PATH, 'claude', 'indigo');
+    expect(config.worktreePath).toBe(agentPath('claude'));
+    expect(applyAgentDefaults).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([['without', noRules], ['with', withRules]])('creates a managed agent on a CLI %s permission rules, reading and writing no legacy defaults', async (_label, provider) => {
+    vi.mocked(resolveOrchestrator).mockResolvedValue(provider as never);
+    const config = await createDurable(PROJECT_PATH, 'managed', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, { projectDefaults: false });
+    expect(config).not.toHaveProperty('creation');
+    expect(applyAgentDefaults).not.toHaveBeenCalled();
+    expect(readProjectAgentDefaults).not.toHaveBeenCalled();
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'other', color: 'indigo' }, { projectDefaults: false })).resolves.toBeUndefined();
+  });
+
+  it('skips the defaults for a managed helper started asynchronously', async () => {
+    vi.mocked(resolveOrchestrator).mockResolvedValue(noRules as never);
+    const inject = vi.fn(async () => undefined);
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'helper', color: 'indigo' }, { inject, injectRequired: true, projectDefaults: false });
+    expect(await started.done).toBe('ready');
+    expect(inject).toHaveBeenCalled();
+    expect(applyAgentDefaults).not.toHaveBeenCalled();
+  });
+});
+
+describe('a creation that removes its record tells every window (#3246)', () => {
+  it('sends failed, with no config, when createDurable rolls back, though it sends no other stage', async () => {
+    gitImpl = (args, opts, cb) => {
+      if (isWorktreeAdd(args)) return cb(new Error('fatal: worktree add failed'), '');
+      defaultGit(args, opts, cb);
+    };
+    await expect(createDurable(PROJECT_PATH, 'doomed', 'indigo')).rejects.toThrow(/Failed to create git worktree/);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ stage: 'failed', projectPath: PROJECT_PATH, reason: expect.stringMatching(/worktree/) });
+    expect(events[0].config).toBeUndefined();
+    expect(diskAgents()).toEqual([]);
+  });
+
+  it('sends cancelled when a createDurable is cancelled', async () => {
+    const slow = slowWorktreeAdd();
+    const creating = createDurable(PROJECT_PATH, 'stopped', 'indigo');
+    creating.catch(() => {});
+    await slow.reached;
+    const id = diskAgents()[0].id;
+    await deleteDurable(PROJECT_PATH, id);
+    await expect(creating).rejects.toThrow(/cancelled/);
+    expect(events.map((e) => e.stage)).toEqual(['cancelled']);
+    expect(events[0].agentId).toBe(id);
   });
 });

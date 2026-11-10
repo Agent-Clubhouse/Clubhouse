@@ -5,6 +5,7 @@ import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import { clearDispatcherChat, startDispatcherFresh, type ClearChatResult } from '../services/dispatcher/dispatcher-clear-chat';
 import { installDispatcherWorkHealth } from '../services/dispatcher/dispatcher-work-health';
 import { installGroupChat } from '../services/dispatcher/dispatcher-news';
+import { installRequestTracking } from '../services/dispatcher/dispatcher-request-outcomes';
 import { forgetEverything } from '../services/dispatcher/dispatcher-forget';
 import { listConnectableAgents } from '../services/dispatcher/dispatcher-connected-agents';
 import type { ConnectableAgent, ForgetEverythingResult } from '../../shared/dispatcher-settings-page';
@@ -91,6 +92,8 @@ export function registerDispatcherHandlers(): void {
 
   // Its chat is a group chat (#3043): what reaches it is triaged, and agents' news rewritten.
   installGroupChat();
+  // Each request it is handed reaches the chat with its outcome, failed or stopped included (#3237).
+  installRequestTracking();
 
   // An agent's card, for its Dispatcher card in Details (#3049).
   ipcMain.handle(IPC.DISPATCHER.GET_AGENT_CARD, withValidatedArgs(
@@ -110,7 +113,7 @@ export function registerDispatcherHandlers(): void {
   dispatcher.onDispatcherChanged((state) => {
     broadcastToAllWindows(IPC.DISPATCHER.CHANGED, state);
     // Rebuild its wires without a restart. Its agent starting or stopping moves none, and nor does Behavior.
-    const applied = JSON.stringify({ ...state, running: false, behavior: null });
+    const applied = JSON.stringify({ ...state, running: false, workRunning: false, requestsUnderWay: 0, behavior: null });
     if (state.enabled && applied !== lastApplied) void restorePersistedBindings();
     lastApplied = applied;
   });

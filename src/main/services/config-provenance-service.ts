@@ -1,4 +1,4 @@
-import type { ProjectConfigBreakdown, ProvenancedConfigItem, ConfigProvenance } from '../../shared/types';
+import type { ProjectAgentDefaults, ProjectAgentDefaultsPatch, ProjectConfigBreakdown, ProvenancedConfigItem, ConfigProvenance } from '../../shared/types';
 import * as agentSettings from './agent-settings-service';
 import { listOrphanedPluginIds } from './plugin-discovery';
 
@@ -181,6 +181,86 @@ export async function removePluginInjectionItem(
   }
 
   return false;
+}
+
+/**
+ * Save the Default agent settings page (#3244). Only the fields in `patch` change.
+ * Its instructions, permissions and mcpJson hold the user's part only: whatever
+ * plugins put there is kept from the settings as they are now, exactly once, and
+ * plugin-tagged values in the user's part are dropped.
+ */
+export async function saveProjectUserDefaults(
+  projectPath: string,
+  patch: ProjectAgentDefaultsPatch,
+): Promise<void> {
+  await agentSettings.updateProjectAgentDefaults(projectPath, (current) => {
+    const next: Record<string, unknown> = { ...current };
+    for (const [key, value] of Object.entries(patch) as [keyof ProjectAgentDefaults, unknown][]) {
+      let merged: unknown;
+      if (key === 'instructions') merged = mergeUserInstructions(value as string | null, current.instructions);
+      else if (key === 'permissions') merged = mergeUserPermissions(value as ProjectAgentDefaults['permissions'] | null, current.permissions);
+      else if (key === 'mcpJson') merged = mergeUserMcpJson(value as string | null, current.mcpJson);
+      else merged = value;
+      if (merged === null || merged === undefined || merged === '') delete next[key];
+      else next[key] = merged;
+    }
+    return next as ProjectAgentDefaults;
+  });
+}
+
+function mergeUserInstructions(user: string | null, current: string | undefined): string | undefined {
+  const userPart = (user ?? '').replace(PLUGIN_INSTRUCTION_REGEX, '').replace(/\n{3,}/g, '\n\n').trim();
+  const pluginBlocks = [...(current ?? '').matchAll(PLUGIN_INSTRUCTION_REGEX)].map((m) => m[0]);
+  const merged = [userPart, ...pluginBlocks].filter(Boolean).join('\n\n');
+  return merged || undefined;
+}
+
+function mergeUserPermissions(
+  user: ProjectAgentDefaults['permissions'] | null,
+  current: ProjectAgentDefaults['permissions'],
+): ProjectAgentDefaults['permissions'] {
+  const merged: NonNullable<ProjectAgentDefaults['permissions']> = { ...current };
+  for (const kind of ['allow', 'deny'] as const) {
+    const rules = [
+      ...(user?.[kind] ?? []).filter((r) => !PLUGIN_PERM_REGEX.test(r)),
+      ...(current?.[kind] ?? []).filter((r) => PLUGIN_PERM_REGEX.test(r)),
+    ];
+    if (rules.length > 0) merged[kind] = rules;
+    else delete merged[kind];
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergeUserMcpJson(user: string | null, current: string | undefined): string | undefined {
+  let currentServers: Record<string, unknown> = {};
+  try {
+    currentServers = (JSON.parse(current ?? '{}').mcpServers as Record<string, unknown>) ?? {};
+  } catch { /* nothing to keep from invalid JSON */ }
+  const pluginServers = Object.fromEntries(
+    Object.entries(currentServers).filter(([name]) => parsePluginPrefix(name)),
+  );
+  const userText = (user ?? '').trim();
+  const hasPluginServers = Object.keys(pluginServers).length > 0;
+  if (!userText) {
+    return hasPluginServers ? JSON.stringify({ mcpServers: pluginServers }, null, 2) : undefined;
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(userText);
+  } catch (err) {
+    throw new Error(`Default .mcp.json isn't valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Default .mcp.json must be a JSON object.');
+  }
+  const userServers = Object.fromEntries(
+    Object.entries((parsed.mcpServers as Record<string, unknown>) ?? {}).filter(([name]) => !parsePluginPrefix(name)),
+  );
+  const userHadPluginServers = Object.keys((parsed.mcpServers as Record<string, unknown>) ?? {}).length !== Object.keys(userServers).length;
+  // Keep the user's own formatting when there's nothing to merge.
+  if (!hasPluginServers && !userHadPluginServers) return userText;
+  return JSON.stringify({ ...parsed, mcpServers: { ...userServers, ...pluginServers } }, null, 2);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

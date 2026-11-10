@@ -152,7 +152,7 @@ describe('all of the Dispatcher\'s built-in text', () => {
     const check = (role: 'chat' | 'work', label: string, text: string) => {
       for (const [, name] of text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)) {
         // Arguments and values that look like tool names.
-        if (['contact_when', 'needs_user', 'check_in', 'update_my_card'].includes(name)) continue;
+        if (['contact_when', 'needs_user', 'check_in', 'update_my_card', 'request_id'].includes(name)) continue;
         expect(known(role, name), `${label} names ${name}`).toBe(true);
       }
     };

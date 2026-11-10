@@ -89,6 +89,7 @@ import {
   saveDispatcherPersonality,
   saveDispatcherSetupStatus,
 } from './dispatcher-setup';
+import { onRequestsChanged, requestsUnderWay } from './dispatcher-requests';
 
 export {
   getDispatcherPath, getDispatcherChatPath, getDispatcherNotesPath, getDispatcherNotesArchivePath, getDispatcherMemoryPath,
@@ -223,13 +224,16 @@ export function resolveDispatcherIdentity(projectPath: string, agentId: string):
 export function getDispatcherState(): DispatcherState {
   const { enabled, savedOn, reason } = dispatcherEnablement();
   const chatRunning = !!chatConfig && !!agentRegistry.get(chatConfig.id);
+  const workRunning = !!config && !!agentRegistry.get(config.id);
   return {
     enabled,
     flagOn: true,
     savedOn,
     offReason: reason,
     classic: !newChromeEnabled(),
-    running: (!!config && !!agentRegistry.get(config.id)) || chatRunning,
+    running: workRunning || chatRunning,
+    workRunning,
+    requestsUnderWay: requestsUnderWay(),
     agentId: config?.id ?? null,
     path: config ? getDispatcherPath() : null,
     // Access (#2761) filled in for a Dispatcher saved before it.
@@ -966,6 +970,8 @@ function watchChanges(): void {
   }),
   // Its row and view stay while it runs.
   agentRegistry.onAuthChange((agentId) => { if (agentId === config?.id || agentId === chatConfig?.id) emitChanged(); }),
+  // Its status shows the user's requests still under way (#3220).
+  onRequestsChanged(() => emitChanged()),
   // A change to the Auto mapping can fix or break Behavior's models: check again, and apply at once.
   onHelperRoutingChanged(() => {
     const queuedIn = generation;

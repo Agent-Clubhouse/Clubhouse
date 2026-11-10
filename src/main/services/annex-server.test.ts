@@ -145,6 +145,12 @@ vi.mock('./agent-config', () => ({
   getWorktreeStatus: vi.fn().mockResolvedValue({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true }),
 }));
 
+// The delete service (#3199): its own tests cover settling helpers and stopping the agent.
+vi.mock('./agent-delete', () => ({
+  deleteAgent: vi.fn(),
+  isAgentDeleteMode: (v: unknown) => ['commit-push', 'cleanup-branch', 'save-patch', 'force', 'unregister'].includes(v as string),
+}));
+
 // Mock pty-manager
 vi.mock('./pty-manager', () => ({
   getBuffer: vi.fn().mockReturnValue(''),
@@ -347,6 +353,7 @@ import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
 import * as agentConfigModule from './agent-config';
+import { deleteAgent } from './agent-delete';
 import * as ptyManagerModule from './pty-manager';
 import * as agentSystem from './agent-system';
 import * as _eventReplay from './annex-event-replay';
@@ -462,6 +469,7 @@ describe('annex-server', () => {
     vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
     vi.mocked(agentConfigModule.createDurable).mockResolvedValue({ id: 'durable_new', name: 'test-agent', color: 'indigo', createdAt: '2025-01-01' } as any);
     vi.mocked(agentConfigModule.deleteForce).mockResolvedValue({ ok: true, message: 'Force deleted' });
+    vi.mocked(deleteAgent).mockResolvedValue({ ok: true, message: 'Force deleted', deleted: true });
     vi.mocked(agentConfigModule.deleteUnregister).mockResolvedValue({ ok: true, message: 'Removed' });
     vi.mocked(agentConfigModule.deleteCommitAndPush).mockResolvedValue({ ok: true, message: 'Committed' });
     vi.mocked(agentConfigModule.deleteWithCleanupBranch).mockResolvedValue({ ok: true, message: 'Cleaned' });
@@ -1316,26 +1324,10 @@ describe('annex-server', () => {
       expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('Control messages require mTLS authentication'));
     });
 
-    it('waits for a chat stop before deleting its worktree', async () => {
+    it('a failed stop reaches the remote as a failure, with nothing deleted', async () => {
+      // The delete service stops the agent and throws when the stop fails (agent-delete.test).
       const { port, token } = await startAndPair();
-      let running = true;
-      registerChatRuntime({ agentId: 'remote-agent', kind: 'chat', isRunning: () => running } as never);
-      let finish!: () => void;
-      vi.mocked(agentSystem.killAgent).mockImplementation(() => new Promise<void>(resolve => {
-        finish = () => { running = false; resolve(); };
-      }));
-      const response = request(port, 'POST', '/api/v1/projects/p/agents/remote-agent/delete', { mode: 'force' }, authHeaders(token));
-      await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalled());
-      expect(agentConfigModule.deleteForce).not.toHaveBeenCalled();
-      finish();
-      expect((await response).status).toBe(200);
-      expect(agentConfigModule.deleteForce).toHaveBeenCalledWith('/project', 'remote-agent');
-    });
-
-    it('leaves the worktree intact on a failed chat stop', async () => {
-      const { port, token } = await startAndPair();
-      registerChatRuntime({ agentId: 'remote-agent', kind: 'chat', isRunning: () => true } as never);
-      vi.mocked(agentSystem.killAgent).mockRejectedValue(new Error('stop failed'));
+      vi.mocked(deleteAgent).mockRejectedValue(new Error('stop failed'));
       const response = await request(port, 'POST', '/api/v1/projects/p/agents/remote-agent/delete', { mode: 'force' }, authHeaders(token));
       expect(response.status).toBe(500);
       expect(JSON.parse(response.body)).toEqual({ error: 'stop failed' });
@@ -2881,8 +2873,6 @@ describe('annex-server', () => {
       vi.mocked(projectStore.list).mockReturnValue([
         { id: 'proj_1', name: 'Test Project', path: '/test/path', icon: '' } as any,
       ]);
-      vi.mocked(agentConfigModule.deleteForce).mockResolvedValue({ ok: true, message: 'Force deleted' });
-
       const { port, token } = await startAndPair();
       const res = await request(
         port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete',
@@ -2890,7 +2880,7 @@ describe('annex-server', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(agentConfigModule.deleteForce).toHaveBeenCalledWith('/test/path', 'durable_1');
+      expect(deleteAgent).toHaveBeenCalledWith('/test/path', 'durable_1', { mode: 'force', helpers: undefined });
     });
 
     it('GET /api/v1/group-projects/:id/members dispatches to the members handler, not the get-by-id route', async () => {
@@ -6301,36 +6291,64 @@ describe('annex-server', () => {
       expect(res.status).toBe(400);
     }, 10_000);
 
-    it('POST /api/v1/projects/:id/agents/:agentId/delete force-deletes an agent', async () => {
+    it('POST /api/v1/projects/:id/agents/:agentId/delete deletes through the delete service, force by default', async () => {
       vi.mocked(projectStore.list).mockReturnValue([
         { id: 'proj_1', name: 'Test Project', path: '/test/path', icon: '' } as any,
       ]);
-      vi.mocked(agentConfigModule.deleteForce).mockResolvedValue({ ok: true, message: 'Force deleted' });
-
       const { port, token } = await startAndPair();
-      const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete', {
-        mode: 'force',
-      }, authHeaders(token));
+      const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete', {}, authHeaders(token));
 
       expect(res.status).toBe(200);
-      const body = JSON.parse(res.body);
-      expect(body.ok).toBe(true);
-      expect(agentConfigModule.deleteForce).toHaveBeenCalledWith('/test/path', 'durable_1');
+      expect(JSON.parse(res.body)).toMatchObject({ ok: true, deleted: true });
+      expect(deleteAgent).toHaveBeenCalledWith('/test/path', 'durable_1', { mode: 'force', helpers: undefined });
+      expect(agentConfigModule.deleteForce).not.toHaveBeenCalled();
     }, 10_000);
 
-    it('POST /agents/:id/delete supports unregister mode', async () => {
+    it('POST /agents/:id/delete passes the mode and the helper choice (#3199)', async () => {
       vi.mocked(projectStore.list).mockReturnValue([
         { id: 'proj_1', name: 'P', path: '/p', icon: '' } as any,
       ]);
-      vi.mocked(agentConfigModule.deleteUnregister).mockResolvedValue({ ok: true, message: 'Removed' });
-
       const { port, token } = await startAndPair();
       const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete', {
-        mode: 'unregister',
+        mode: 'unregister', helpers: 'dispose',
       }, authHeaders(token));
 
       expect(res.status).toBe(200);
-      expect(agentConfigModule.deleteUnregister).toHaveBeenCalledWith('/p', 'durable_1');
+      expect(deleteAgent).toHaveBeenCalledWith('/p', 'durable_1', { mode: 'unregister', helpers: 'dispose' });
+    }, 10_000);
+
+    it('POST /agents/:id/delete returns the refusal when helpers need a choice, and deletes nothing (#3199)', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'P', path: '/p', icon: '' } as any,
+      ]);
+      const refusal = {
+        ok: false, message: 'lead has 1 helper. Choose whether to dispose or keep it.',
+        needsHelperChoice: { helpers: [{ id: 'h1', name: 'helper-one' }] },
+      };
+      vi.mocked(deleteAgent).mockResolvedValue(refusal);
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete', { mode: 'force' }, authHeaders(token));
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual(refusal);
+      expect(agentConfigModule.deleteForce).not.toHaveBeenCalled();
+    }, 10_000);
+
+    it.each([
+      [{ mode: 'nuke' }, 'invalid_mode'],
+      [{ mode: 'force', helpers: 'abandon' }, 'invalid_helpers'],
+      // A remote can't choose a file on this machine.
+      [{ mode: 'save-patch' }, 'save_patch_needs_file'],
+    ])('POST /agents/:id/delete refuses %j without deleting', async (body, error) => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'P', path: '/p', icon: '' } as any,
+      ]);
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete', body, authHeaders(token));
+
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toEqual({ error });
+      expect(deleteAgent).not.toHaveBeenCalled();
     }, 10_000);
 
     it('POST /agents/:id/delete returns 404 for unknown project', async () => {

@@ -89,9 +89,9 @@ describe('the sources behind a connection (#2744)', () => {
   });
 
   it('includes a suspended Dispatcher link, which has no binding, with why', async () => {
-    state.links = [{ agentId: 'lead', targetId: 'rev', agentName: 'lead', targetName: 'rev', status: 'suspended', reason: 'orchestration_off' }];
+    state.links = [{ agentId: 'lead', targetId: 'rev', agentName: 'lead', targetName: 'rev', status: 'suspended', reason: 'not_connected_to_dispatcher' }];
     const { pairs } = await listConnectionSources('lead');
-    expect(pairs).toEqual([{ agentId: 'lead', targetId: 'rev', bound: false, sources: [{ kind: 'dispatcher_link', sourceId: 'dispatcher-connections', suspended: 'Orchestration is off for one of these agents.' }] }]);
+    expect(pairs).toEqual([{ agentId: 'lead', targetId: 'rev', bound: false, sources: [{ kind: 'dispatcher_link', sourceId: 'dispatcher-connections', suspended: 'One of these agents is not connected to the Dispatcher.' }] }]);
   });
 
   it('reports sources it couldn\'t read', async () => {

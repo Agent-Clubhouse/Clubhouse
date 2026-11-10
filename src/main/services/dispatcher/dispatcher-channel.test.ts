@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { DurableAgentConfig } from '../../../shared/types';
 
 const h = vi.hoisted(() => ({
@@ -8,8 +11,10 @@ const h = vi.hoisted(() => ({
   configs: new Map<string, DurableAgentConfig>(),
   delivered: [] as Array<{ id: string; text: string; routed: unknown }>,
   delivery: 'delivered' as 'delivered' | 'not_running' | 'stopping',
+  base: '',
 }));
 
+vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.base }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('./dispatcher-settings', () => ({ isDispatcherEnabled: () => h.enabled }));
@@ -47,10 +52,16 @@ import { deliverToDispatcher } from '../clubhouse-mcp/tools/dispatcher-delivery'
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import {
-  CHAT_UPDATE_TAG, HAND_OFF_TAG, _resetDispatcherChannelForTesting, deliverToChat, handOffToDispatcher, onHandOff, setChatDelivery,
+  CHAT_UPDATE_TAG, HAND_OFF_TAG, _resetDispatcherChannelForTesting, deliverToChat, deliverUpdateToChat, handOffToDispatcher, setChatDelivery,
 } from './dispatcher-channel';
+import { _resetDispatcherRequestsForTesting, getRequest, getRequests, getRequestsPath } from './dispatcher-requests';
 
-beforeEach(() => {
+h.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-channel-test-'));
+afterAll(() => fs.rmSync(h.base, { recursive: true, force: true }));
+
+beforeEach(async () => {
+  await _resetDispatcherRequestsForTesting();
+  fs.rmSync(getRequestsPath(), { force: true });
   h.enabled = true;
   h.running.clear();
   h.stopping.clear();
@@ -68,11 +79,16 @@ beforeEach(() => {
 
 describe('handing work from the chat to the Dispatcher (#3036)', () => {
   it('goes to the Dispatcher\'s inbox through the one delivery path (#3037), as agent text, never the user\'s approval', async () => {
-    expect(await handOffToDispatcher('chat', 'wake release-lead and tag 1.0')).toEqual({ outcome: 'delivered' });
+    const result = await handOffToDispatcher('chat', 'wake release-lead and tag 1.0');
+    expect(result).toEqual({ outcome: 'delivered', requestId: expect.stringMatching(/^req_/) });
     expect(deliverToDispatcher).toHaveBeenCalledTimes(1);
     const [req] = vi.mocked(deliverToDispatcher).mock.calls[0] as unknown as [Record<string, unknown>];
     expect(req).toMatchObject({ senderId: 'chat', targetId: 'coordinator', targetName: 'Dispatcher', submit: true, toolName: 'start_work', args: { request: 'wake release-lead and tag 1.0' } });
-    expect(String(req.text).startsWith(HAND_OFF_TAG)).toBe(true);
+    expect(String(req.text).startsWith(`${HAND_OFF_TAG} Request ${result.requestId}.`)).toBe(true);
+    // The Dispatcher reports the outcome under the same id (#3237).
+    expect(req.text).toContain(`tell_user and request_id ${result.requestId}`);
+    expect(req.taskId).toBe(result.requestId);
+    expect(getRequest(result.requestId!)).toMatchObject({ status: 'under_way', text: 'wake release-lead and tag 1.0' });
     expect(req.text).toContain('not their approval');
     expect(req.text).toContain('wake release-lead and tag 1.0');
     // Nothing here starts an agent itself.
@@ -81,26 +97,20 @@ describe('handing work from the chat to the Dispatcher (#3036)', () => {
 
   it('says it started the Dispatcher when the delivery woke it', async () => {
     vi.mocked(deliverToDispatcher).mockResolvedValueOnce({ delivered: true, woke: true });
-    expect(await handOffToDispatcher('chat', 'what is everyone doing?')).toEqual({ outcome: 'started' });
+    expect(await handOffToDispatcher('chat', 'what is everyone doing?')).toMatchObject({ outcome: 'started', requestId: expect.any(String) });
   });
 
   it('passes on why it wasn\'t delivered, such as a wake that asks first', async () => {
     vi.mocked(deliverToDispatcher).mockResolvedValueOnce({ delivered: false, text: 'Dispatcher is asleep, so the message was not delivered. Asked the user.' });
     expect(await handOffToDispatcher('chat', 'x')).toEqual({ outcome: 'undelivered', error: 'Dispatcher is asleep, so the message was not delivered. Asked the user.' });
+    // A request that never went isn't one.
+    expect(getRequests()).toEqual([]);
   });
 
-  it('tells listeners of each hand-off that went through, and none that didn\'t', async () => {
-    const heard = vi.fn();
-    const stop = onHandOff(heard);
-    await handOffToDispatcher('chat', 'tag 1.0');
-    expect(heard).toHaveBeenCalledTimes(1);
-    vi.mocked(deliverToDispatcher).mockResolvedValueOnce({ delivered: false, text: 'no' });
-    await handOffToDispatcher('chat', 'x');
-    await handOffToDispatcher('someone', 'x');
-    expect(heard).toHaveBeenCalledTimes(1);
-    stop();
-    await handOffToDispatcher('chat', 'again');
-    expect(heard).toHaveBeenCalledTimes(1);
+  it('forgets a request whose delivery threw', async () => {
+    vi.mocked(deliverToDispatcher).mockRejectedValueOnce(new Error('runtime gone'));
+    await expect(handOffToDispatcher('chat', 'tag 1.0')).rejects.toThrow('runtime gone');
+    expect(getRequests()).toEqual([]);
   });
 
   it('refuses any caller but the chat, and does nothing while the Dispatcher is off', async () => {
@@ -109,6 +119,47 @@ describe('handing work from the chat to the Dispatcher (#3036)', () => {
     h.enabled = false;
     expect((await handOffToDispatcher('chat', 'x')).outcome).toBe('off');
     expect(deliverToDispatcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('retrying a request (#3237)', () => {
+  it('doesn\'t hand off the same request twice while it is under way', async () => {
+    const first = await handOffToDispatcher('chat', 'Tag 1.0 on main.');
+    const again = await handOffToDispatcher('chat', 'tag 1.0 on main');
+    expect(again).toEqual({ outcome: 'delivered', requestId: first.requestId, reuse: 'already' });
+    expect(deliverToDispatcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands a request off again under its own id, as a follow-up or a retry', async () => {
+    const first = await handOffToDispatcher('chat', 'tag 1.0');
+    const again = await handOffToDispatcher('chat', 'Tag from main.', first.requestId);
+    expect(again).toEqual({ outcome: 'delivered', requestId: first.requestId, reuse: 'again' });
+    const [req] = vi.mocked(deliverToDispatcher).mock.calls[1] as unknown as [Record<string, unknown>];
+    expect(req.text).toContain(`Request ${first.requestId}, handed off again`);
+    expect(req.args).toEqual({ request: 'Tag from main.', request_id: first.requestId });
+    expect(getRequests()).toHaveLength(1);
+  });
+
+  it('refuses an id that names no request', async () => {
+    expect(await handOffToDispatcher('chat', 'tag 1.0', 'req_nope')).toEqual({
+      outcome: 'undelivered', error: 'There is no request req_nope. Leave out request_id to start a new one.',
+    });
+    expect(deliverToDispatcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('Clubhouse\'s own updates to the chat (#3237)', () => {
+  it('reach the chat untriaged, waking it when it sleeps', async () => {
+    const triage = vi.fn(() => null);
+    setChatDelivery(triage);
+    expect((await deliverUpdateToChat({ text: `${CHAT_UPDATE_TAG} Request req_1 was stopped.`, routed: [] })).outcome).toBe('started');
+    expect(triage).not.toHaveBeenCalled();
+    expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'chat', mission: `${CHAT_UPDATE_TAG} Request req_1 was stopped.` }));
+  });
+
+  it('go nowhere while the Dispatcher is off', async () => {
+    h.enabled = false;
+    expect((await deliverUpdateToChat({ text: 'x', routed: [] })).outcome).toBe('off');
   });
 });
 

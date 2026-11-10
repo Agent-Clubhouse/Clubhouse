@@ -6,7 +6,7 @@
  */
 import { create } from 'zustand';
 import { useRemoteProjectStore } from './remoteProjectStore';
-import type { SatelliteSnapshot } from '../../shared/types';
+import type { HelperDeleteChoice, SatelliteSnapshot } from '../../shared/types';
 import type { ChatEvent } from '../../shared/chat';
 
 const remoteChatListeners = new Set<(satelliteId: string, event: ChatEvent) => void>();
@@ -110,7 +110,7 @@ interface AnnexClientStoreState {
     name: string; color: string; model?: string; useWorktree?: boolean;
     orchestrator?: string; freeAgentMode?: boolean; mcpIds?: string[];
   }) => Promise<unknown>;
-  sendAgentDeleteDurable: (satelliteId: string, projectId: string, agentId: string, mode: string) => Promise<unknown>;
+  sendAgentDeleteDurable: (satelliteId: string, projectId: string, agentId: string, mode: string, helpers?: HelperDeleteChoice) => Promise<unknown>;
   requestWorktreeStatus: (satelliteId: string, projectId: string, agentId: string) => Promise<unknown>;
   sendAgentReorder: (satelliteId: string, projectId: string, orderedIds: string[]) => Promise<void>;
 }
@@ -274,8 +274,8 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
     return window.clubhouse.annexClient.agentCreateDurable(satelliteId, projectId, params);
   },
 
-  sendAgentDeleteDurable: async (satelliteId, projectId, agentId, mode) => {
-    return window.clubhouse.annexClient.agentDeleteDurable(satelliteId, projectId, agentId, mode);
+  sendAgentDeleteDurable: async (satelliteId, projectId, agentId, mode, helpers) => {
+    return window.clubhouse.annexClient.agentDeleteDurable(satelliteId, projectId, agentId, mode, helpers);
   },
 
   requestWorktreeStatus: async (satelliteId, projectId, agentId) => {

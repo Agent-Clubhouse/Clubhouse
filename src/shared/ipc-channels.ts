@@ -207,6 +207,7 @@ export const IPC = {
     WRITE_MCP_RAW_JSON: 'agent:write-mcp-raw-json',
     READ_PROJECT_AGENT_DEFAULTS: 'agent:read-project-agent-defaults',
     WRITE_PROJECT_AGENT_DEFAULTS: 'agent:write-project-agent-defaults',
+    SAVE_PROJECT_USER_DEFAULTS: 'agent:save-project-user-defaults',
     GET_CONVENTIONS: 'agent:get-conventions',
     // Project source skills and agent templates: only the plugin agentConfig API's inject and remove (#2901).
     WRITE_SOURCE_SKILL_CONTENT: 'agent:write-source-skill-content',
