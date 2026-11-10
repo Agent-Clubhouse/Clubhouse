@@ -345,6 +345,9 @@ describe('agent-settings-handlers', () => {
       buildCommand: 'make',
     });
     await expect(handler({}, '/project', 'foo', { buildCommand: 'evil' })).rejects.toThrow('Unknown plugin agent default');
+    for (const bad of ['Foo', 'a b', 'x */ y', '../x']) {
+      await expect(handler({}, '/project', bad, { allow: null })).rejects.toThrow('Not a plugin id');
+    }
     expect(agentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
   });
 

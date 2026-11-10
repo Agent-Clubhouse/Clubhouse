@@ -3,6 +3,7 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ProjectAgentDefaultsPatch } from '../../shared/types';
 import { assertPluginAgentDefaultsParts, withPluginParts, type PluginAgentDefaultsParts } from '../../shared/plugin-agent-defaults';
+import { isValidPluginId } from '../../shared/manifest-validator';
 import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
@@ -252,6 +253,8 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.UPDATE_PLUGIN_AGENT_DEFAULTS, withValidatedArgs(
     [stringArg(), stringArg({ maxLength: 128 }), objectArg<PluginAgentDefaultsParts>()],
     async (_event, projectPath, pluginId, parts) => {
+      // The id goes into tags, block markers and MCP name prefixes, so it must be a manifest id.
+      if (!isValidPluginId(pluginId)) throw new Error('Not a plugin id.');
       assertPluginAgentDefaultsParts(parts);
       await agentSettings.updateProjectAgentDefaults(projectPath, (current) => withPluginParts(current, pluginId, parts));
     },
