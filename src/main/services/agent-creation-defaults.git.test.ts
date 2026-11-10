@@ -62,6 +62,9 @@ function legacyResidue(dir: string): string[] {
   return out;
 }
 
+/** A file's text with LF line endings: a Windows checkout can give CRLF. */
+const lf = (text: string) => text.replace(/\r\n/g, '\n');
+
 const PROVIDERS = [
   ['Claude Code', () => new ClaudeCodeProvider()],
   ['Codex', () => new CodexCliProvider()],
@@ -156,7 +159,7 @@ describe('legacy project defaults at creation (#3243, #3245)', () => {
 
     // Creating with the copy writes what the preview said: added to the tracked files, never over them.
     const made = await createDurable(project, 'tracked', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, COPY);
-    const instructions = fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8');
+    const instructions = lf(fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8'));
     expect(instructions.startsWith('# Repo rules\n\nKeep it tidy.')).toBe(true);
     expect(instructions).toContain(`${MARKER} instructions`);
     const mcp = JSON.parse(fs.readFileSync(path.join(made.worktreePath!, '.mcp.json'), 'utf-8'));
@@ -172,11 +175,13 @@ describe('legacy project defaults at creation (#3243, #3245)', () => {
     git(['add', 'CLAUDE.md']);
     git(['commit', '-q', '-m', 'left over']);
     git(['checkout', '-q', 'main']);
+    // As a Windows checkout does: the worktree gets CRLF, while the preview reads LF from git.
+    git(['config', 'core.autocrlf', 'true']);
 
     const preview = await previewCopyIntoNewAgent(project, 'stale');
     expect(preview.changes.find((c) => c.item === 'instructions')?.action).toBe('unchanged');
     const made = await createDurable(project, 'stale', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, COPY);
-    expect(fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8')).toBe(`Old notes.\n\n${DEFAULTS.instructions.trim()}\n`);
+    expect(lf(fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8'))).toBe(`Old notes.\n\n${DEFAULTS.instructions.trim()}\n`);
   });
 
   it('previews from a detached HEAD, where creation starts the branch', async () => {
@@ -189,6 +194,6 @@ describe('legacy project defaults at creation (#3243, #3245)', () => {
     const preview = await previewCopyIntoNewAgent(project, 'detached');
     expect(preview.changes.find((c) => c.item === 'instructions')?.action).toBe('append');
     const made = await createDurable(project, 'detached', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, COPY);
-    expect(fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8').startsWith('# Detached\n\n')).toBe(true);
+    expect(lf(fs.readFileSync(path.join(made.worktreePath!, 'CLAUDE.md'), 'utf-8')).startsWith('# Detached\n\n')).toBe(true);
   });
 });

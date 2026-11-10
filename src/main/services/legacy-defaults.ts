@@ -230,7 +230,8 @@ async function planCopy(projectPath: string, agent: DurableAgentConfig, provider
   if (text) {
     const file = rel(instructionsFile(provider));
     const current = (await read(instructionsFile(provider))) ?? '';
-    if (current.includes(text)) {
+    // Compared without line endings: git can check a file out with CRLF while `git show` gives LF.
+    if (current.replace(/\r\n/g, '\n').includes(text)) {
       changes.push({ item: 'instructions', target: file, action: 'unchanged', detail: 'Already in the file.' });
     } else if (!current.trim()) {
       changes.push({ item: 'instructions', target: file, action: 'write', detail: `Written with the project's instructions (${text.split('\n').length} lines).` });
