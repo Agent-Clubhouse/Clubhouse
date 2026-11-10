@@ -180,6 +180,20 @@ describe('projectStore', () => {
 
       expect(getState().projects).toHaveLength(2);
     });
+
+    it('selects a folder that is already a project instead of listing it twice (#3236)', async () => {
+      const existing = makeProject({ id: 'proj_0', name: 'existing', path: '/existing' });
+      const other = makeProject();
+      useProjectStore.setState({ projects: [existing, other], activeProjectId: other.id });
+      mockProject.add.mockResolvedValueOnce(existing);
+      mockProject.checkGit.mockResolvedValueOnce(true);
+
+      const result = await getState().addProject('/existing/');
+
+      expect(result).toEqual(existing);
+      expect(getState().projects.map((p) => p.id)).toEqual(['proj_0', other.id]);
+      expect(getState().activeProjectId).toBe('proj_0');
+    });
   });
 
   // ---- removeProject ----
@@ -469,10 +483,10 @@ describe('projectStore', () => {
   });
 
   describe('syncProjectDisplay (#2597)', () => {
-    it('takes how projects look, keeping the list and its order', async () => {
+    it('takes how projects look, keeping the order and adding new projects at the end (#3239)', async () => {
       const a = makeProject({ id: 'a' });
       const b = makeProject({ id: 'b', name: 'b' });
-      useProjectStore.setState({ projects: [a, b] });
+      useProjectStore.setState({ projects: [a, b], projectsLoaded: true });
       mockProject.list.mockResolvedValue([
         { ...b, displayName: 'Bee', color: 'rose', emoji: '🐝' },
         a,
@@ -481,10 +495,17 @@ describe('projectStore', () => {
 
       await getState().syncProjectDisplay();
 
-      expect(getState().projects.map((p) => p.id)).toEqual(['a', 'b']);
+      expect(getState().projects.map((p) => p.id)).toEqual(['a', 'b', 'just-added']);
       expect(getState().projects[0]).toBe(a);
       expect(getState().projects[1]).toMatchObject({ displayName: 'Bee', color: 'rose', emoji: '🐝' });
       expect(mockProject.readIcon).not.toHaveBeenCalled();
+    });
+
+    it('adds nothing before the first load', async () => {
+      useProjectStore.setState({ projects: [], projectsLoaded: false });
+      mockProject.list.mockResolvedValue([makeProject({ id: 'a' })]);
+      await getState().syncProjectDisplay();
+      expect(getState().projects).toEqual([]);
     });
 
     it('leaves the state alone when nothing changed', async () => {

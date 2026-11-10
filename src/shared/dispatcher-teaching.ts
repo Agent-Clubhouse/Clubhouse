@@ -25,7 +25,14 @@ export const CAPABILITY_GROUPS = [
   { id: 'tracking', title: 'Keeping track' },
 ] as const;
 
-export type CapabilityGroupId = (typeof CAPABILITY_GROUPS)[number]['id'];
+/**
+ * After the five: what has a tool but is turned off in the Dispatcher's
+ * permissions (#3238), so it can tell "turned off" from "not something
+ * Clubhouse can do".
+ */
+export const TURNED_OFF_GROUP = { id: 'off', title: 'Turned off in your settings' } as const;
+
+export type CapabilityGroupId = (typeof CAPABILITY_GROUPS)[number]['id'] | typeof TURNED_OFF_GROUP.id;
 
 /** What kind of thing an action's target names, which decides how the target is said. */
 type Noun = 'agent' | 'project' | 'action' | 'app' | 'library' | 'parts' | 'templates';
@@ -230,6 +237,21 @@ export function dispatcherCapabilities(grants: readonly GrantLike[]): Capability
     if (lines.length > 0) out.push({ id, title, lines });
   }
   return out;
+}
+
+/**
+ * The permissions-page rows that are Off and that no other grant covers, as
+ * one group of lines (or null when there are none). Each line is said as if
+ * it were on: the group's title says it's off.
+ */
+export function turnedOffCapabilities(rows: readonly GrantLike[], on: readonly GrantLike[]): CapabilityGroup | null {
+  const off = rows.filter((r) => r.mode === 'off'
+    && !on.some((g) => g.mode !== 'off' && g.action === r.action && widerOrSame(g.target, r.target)));
+  const lines = dispatcherCapabilities(off.map((r) => ({ ...r, mode: 'allow' as const })))
+    .flatMap((g) => g.lines)
+    .filter((l) => l.actions.length > 0)
+    .map((l) => ({ ...l, asks: false }));
+  return lines.length > 0 ? { ...TURNED_OFF_GROUP, lines } : null;
 }
 
 /** The answer as plain markdown: a short heading per group, one line per item. */

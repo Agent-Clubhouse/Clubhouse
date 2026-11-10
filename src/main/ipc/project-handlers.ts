@@ -7,7 +7,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { ICON_DATA_URL_MAX_LENGTH } from '../../shared/icon-limits';
 import * as projectStore from '../services/project-store';
 import { repoKeysFor } from '../services/project-repo-keys';
-import { ensureGitignore } from '../services/agent-config';
+import { registerProjectFolder } from '../services/project-add';
 import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps, readMcpConfigs, writeMcpConfigs, readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot } from '../services/agent-settings-service';
 import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
@@ -56,18 +56,9 @@ export function registerProjectHandlers(): void {
     return projectStore.list();
   });
 
-  ipcMain.handle(IPC.PROJECT.ADD, withValidatedArgs([stringArg()], (_event, dirPath: string) =>
-    tel.flow('clubhouse.project.add', {}, async () => {
-      const project = await projectStore.add(dirPath);
-      try {
-        await tel.step('clubhouse.project.add.ensure_gitignore', () => ensureGitignore(dirPath));
-      } catch (err) {
-        appLog('core:project', 'warn', 'ensureGitignore failed (non-fatal)', {
-          meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
-      return project;
-    }),
+  // A folder that's already a project returns that project (#3236), which the window selects.
+  ipcMain.handle(IPC.PROJECT.ADD, withValidatedArgs([stringArg()], async (_event, dirPath: string) =>
+    (await registerProjectFolder(dirPath)).project,
   ));
 
   ipcMain.handle(IPC.PROJECT.REMOVE, withValidatedArgs([stringArg()], (_event, id: string) =>

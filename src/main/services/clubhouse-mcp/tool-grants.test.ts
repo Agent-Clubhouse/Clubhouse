@@ -5,7 +5,8 @@ vi.mock('../plugin-manifest-registry', () => ({
 }));
 
 import { GRANT_ACTIONS } from '../../../shared/agent-grants';
-import { listToolGrants, _resetForTesting } from './tool-registry';
+import { dispatcherToolActions, listToolGrants, _resetForTesting } from './tool-registry';
+import { defaultGrants } from '../../../shared/default-grants';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
 import { registerPluginTools, _resetForTesting as resetPluginTools } from './plugin-tool-registry';
@@ -45,6 +46,20 @@ describe('tool grant declarations (#2967)', () => {
         if (d.target === 'bound' || d.target === 'group_members') expect(tool.kind, tool.name).not.toBe('global');
       }
     }
+  });
+
+  it('the Dispatcher\'s abilities come from tools it can call (#3238)', () => {
+    registerAll();
+    const callable = dispatcherToolActions();
+    expect(callable.has('project.add')).toBe(true);
+    // The chat's tools are the chat's, and a helper's or a connected agent's are theirs.
+    const defaults = defaultGrants({ dispatcher: true, helper: false, orchestrates: false, crossProject: false });
+    const withoutTool = [...new Set(defaults.map((g) => g.action))].filter((a) => !callable.has(a)).sort();
+    // Canvas-only actions the Dispatcher has no canvas for, the model list, and project defaults,
+    // which no tool changes yet: none of them is offered in "What else can you do?".
+    expect(withoutTool).toEqual([
+      'browser.act', 'browser.read', 'group_project.admin', 'group_project.post', 'group_project.read', 'models.read', 'project.configure',
+    ]);
   });
 
   it('only call_wire_tool passes through to the tool it calls', () => {
@@ -166,7 +181,8 @@ describe('tool grant declarations (#2967)', () => {
       rename_device: device.manage on app
       reconnect_device: device.manage on app
       remove_device: device.manage on app
-      start_adding_device: device.manage on app"
+      start_adding_device: device.manage on app
+      add_project: project.add on project_arg"
     `);
   });
 });

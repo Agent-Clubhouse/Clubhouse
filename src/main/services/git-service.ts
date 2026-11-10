@@ -186,6 +186,20 @@ export async function getDefaultBranch(dirPath: string): Promise<string | null> 
 }
 
 /**
+ * The repository's origin URL, with any user name or token taken out, or null
+ * when there is no origin (or no repository).
+ */
+export async function getOriginUrl(dirPath: string): Promise<string | null> {
+  const url = await tryGitExec(['config', '--get', 'remote.origin.url'], dirPath, 'other');
+  return url ? stripUrlCredentials(url) : null;
+}
+
+/** A remote URL without the user name or token some http(s) remotes carry. SSH user names stay. */
+export function stripUrlCredentials(url: string): string {
+  return url.replace(/^(https?:\/\/)[^/@]*@/i, '$1');
+}
+
+/**
  * Polled every few seconds per git widget. Never a span (spec §4.8): a
  * duration histogram bucketed by changed-file count, a poll counter, and a
  * Detailed-level exemplar span only when one poll takes over 2 s.

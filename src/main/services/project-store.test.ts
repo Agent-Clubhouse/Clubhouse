@@ -10,6 +10,7 @@ vi.mock('fs/promises', () => ({
   unlink: vi.fn(),
   copyFile: vi.fn(),
   rename: vi.fn(),
+  realpath: vi.fn((p: string) => Promise.resolve(p)),
 }));
 
 vi.mock('./fs-utils', () => ({
@@ -205,6 +206,82 @@ describe('add', () => {
     expect(project.id).toMatch(/^proj_/);
     expect(project.name).toBe('my-project');
     expect(project.path).toBe('/Users/me/my-project');
+  });
+
+  /** projects.json in memory: writes land on rename, as the store writes them. */
+  function memoryStore(initial?: unknown) {
+    let content: string | null = initial === undefined ? null : JSON.stringify(initial);
+    const pending = new Map<string, string>();
+    vi.mocked(pathExists).mockImplementation(async (p: any) => (String(p) === STORE_PATH ? content !== null : !String(p).endsWith('.json')));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      if (String(p) === STORE_PATH && content !== null) return content;
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    });
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { pending.set(String(p), String(data)); });
+    vi.mocked(fsp.rename).mockImplementation(async (from: any, to: any) => {
+      if (String(to) === STORE_PATH && pending.has(String(from))) content = pending.get(String(from))!;
+    });
+    return { projects: () => (content ? JSON.parse(content).projects : []) };
+  }
+
+  it('returns the existing project for a folder already registered, and writes nothing (#3236)', async () => {
+    const store = memoryStore();
+    const dir = path.join(os.tmpdir(), 'dupe-check', 'shop');
+    const first = await add(dir);
+    vi.mocked(fsp.rename).mockClear();
+
+    const again = await add(dir + path.sep);
+    const dotted = await add(path.join(dir, '..', 'shop'));
+
+    expect(again).toEqual(first);
+    expect(dotted).toEqual(first);
+    expect(store.projects()).toHaveLength(1);
+    expect(fsp.rename).not.toHaveBeenCalled();
+  });
+
+  it('matches a folder by its real path, through a link', async () => {
+    const store = memoryStore();
+    const real = path.join(os.tmpdir(), 'dupe-check', 'real');
+    const link = path.join(os.tmpdir(), 'dupe-check', 'link');
+    vi.mocked(fsp.realpath).mockImplementation(async (p: any) => (String(p) === link ? real : String(p)));
+    const first = await add(real);
+    expect(await add(link)).toEqual(first);
+    expect(store.projects()).toHaveLength(1);
+  });
+
+  it.runIf(process.platform === 'darwin' || process.platform === 'win32')('ignores case where the platform does', async () => {
+    const store = memoryStore();
+    const dir = path.join(os.tmpdir(), 'dupe-check', 'Shop');
+    const first = await add(dir);
+    expect(await add(dir.toUpperCase())).toEqual(first);
+    expect(store.projects()).toHaveLength(1);
+  });
+
+  it('makes one project when the same folder is added twice at once', async () => {
+    const store = memoryStore();
+    const dir = path.join(os.tmpdir(), 'dupe-check', 'race');
+    const [a, b] = await Promise.all([add(dir), add(dir)]);
+    expect(a.id).toBe(b.id);
+    expect(store.projects()).toHaveLength(1);
+  });
+
+  it('merges legacy duplicates on load into the first record, moving overrides, and logs it (#3236)', async () => {
+    const dir = path.join(os.tmpdir(), 'dupe-check', 'legacy');
+    const store = memoryStore({
+      version: 1,
+      projects: [
+        { id: 'proj_a', name: 'legacy', path: dir, color: 'indigo' },
+        { id: 'proj_b', name: 'legacy', path: dir, color: 'rose', displayName: 'Legacy', emoji: '🛒', orchestrator: 'codex-cli' },
+      ],
+    });
+    vi.mocked(getBadgeSettings).mockReturnValueOnce({ ...mockBadgeSettings, projectOverrides: { proj_b: { enabled: false } } } as any);
+
+    const projects = await list();
+
+    expect(projects).toEqual([{ id: 'proj_a', name: 'legacy', path: dir, color: 'indigo', displayName: 'Legacy', emoji: '🛒', orchestrator: 'codex-cli' }]);
+    expect(store.projects().map((p: { id: string }) => p.id)).toEqual(['proj_a']);
+    expect(saveBadgeSettings).toHaveBeenCalledWith(expect.objectContaining({ projectOverrides: { proj_a: { enabled: false } } }));
+    expect(appLog).toHaveBeenCalledWith('core:project-store', 'warn', expect.stringContaining('Merged 1 duplicate'), expect.anything());
   });
 });
 

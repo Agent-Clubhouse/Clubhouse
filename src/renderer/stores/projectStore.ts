@@ -67,29 +67,39 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   syncProjectDisplay: async () => {
-    const latest = new Map<string, Project>((await window.clubhouse.project.list()).map((p: Project) => [p.id, p]));
+    const listed: Project[] = await window.clubhouse.project.list();
+    const latest = new Map<string, Project>(listed.map((p) => [p.id, p]));
     const known = get().projects;
-    // Adds and removes belong to whoever made them: their own replies update the list.
-    const projects = known.map((p) => {
+    // Removes belong to whoever made them: their own replies update the list.
+    const updated = known.map((p) => {
       const next = latest.get(p.id);
       if (!next) return p;
       const same = p.name === next.name && p.displayName === next.displayName && p.color === next.color && p.emoji === next.emoji && p.icon === next.icon;
       return same ? p : { ...p, name: next.name, displayName: next.displayName, color: next.color, emoji: next.emoji, icon: next.icon };
     });
-    if (projects.every((p, i) => p === known[i])) return;
-    set({ projects });
-    const iconChanged = projects.filter((p, i) => p.icon !== known[i].icon);
+    // A project added in main (the Dispatcher's add_project, #3239) joins the end of the list.
+    // Before the first load there's no list to join; loadProjects reads it whole.
+    const knownIds = new Set(known.map((p) => p.id));
+    const added = get().projectsLoaded ? listed.filter((p) => !knownIds.has(p.id)) : [];
+    if (added.length === 0 && updated.every((p, i) => p === known[i])) return;
+    set({ projects: [...updated, ...added] });
+    const iconChanged = updated.filter((p, i) => p.icon !== known[i].icon);
     set((s) => {
       const projectIcons = { ...s.projectIcons };
       for (const p of iconChanged) delete projectIcons[p.id];
       return { projectIcons };
     });
     for (const p of iconChanged) void get().loadProjectIcon(p);
+    for (const p of added) {
+      void get().checkGit(p.id, p.path);
+      if (p.icon) void get().loadProjectIcon(p);
+    }
   },
 
   addProject: async (path) => {
     const project = await window.clubhouse.project.add(path);
-    set((s) => ({ projects: [...s.projects, project] }));
+    // A folder that's already a project comes back as that project (#3236): select it, don't list it twice.
+    set((s) => (s.projects.some((p) => p.id === project.id) ? {} : { projects: [...s.projects, project] }));
     set({ activeProjectId: project.id });
     get().checkGit(project.id, project.path);
     if (project.icon) {

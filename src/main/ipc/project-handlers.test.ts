@@ -26,6 +26,8 @@ vi.mock('electron', () => {
 vi.mock('../services/project-store', () => ({
   list: vi.fn(() => []),
   add: vi.fn((dirPath: string) => ({ id: 'proj_1', name: 'test', path: dirPath })),
+  addProject: vi.fn((dirPath: string) => ({ project: { id: 'proj_1', name: 'test', path: dirPath }, created: true })),
+  canonicalProjectPath: vi.fn((dirPath: string) => dirPath),
   remove: vi.fn(),
   update: vi.fn(() => []),
   reorder: vi.fn(() => []),
@@ -41,6 +43,8 @@ vi.mock('../services/agent-config', () => ({
 
 vi.mock('../services/git-service', () => ({
   isInsideGitRepo: vi.fn(),
+  getDefaultBranch: vi.fn(),
+  getOriginUrl: vi.fn(),
 }));
 
 vi.mock('../services/log-service', () => ({
@@ -173,11 +177,11 @@ describe('project-handlers', () => {
 
   // --- ADD ---
 
-  it('ADD delegates to projectStore.add and calls ensureGitignore', async () => {
+  it('ADD delegates to projectStore.addProject and calls ensureGitignore', async () => {
     const handler = handlers.get(IPC.PROJECT.ADD)!;
     const result = await handler({}, '/tmp/my-project');
 
-    expect(projectStore.add).toHaveBeenCalledWith('/tmp/my-project');
+    expect(projectStore.addProject).toHaveBeenCalledWith('/tmp/my-project');
     expect(ensureGitignore).toHaveBeenCalledWith('/tmp/my-project');
     expect(result).toEqual({ id: 'proj_1', name: 'test', path: '/tmp/my-project' });
   });
@@ -190,14 +194,25 @@ describe('project-handlers', () => {
     const handler = handlers.get(IPC.PROJECT.ADD)!;
     const result = await handler({}, '/tmp/readonly-project');
 
-    expect(projectStore.add).toHaveBeenCalledWith('/tmp/readonly-project');
+    expect(projectStore.addProject).toHaveBeenCalledWith('/tmp/readonly-project');
     expect(result).toEqual({ id: 'proj_1', name: 'test', path: '/tmp/readonly-project' });
+  });
+
+  it('ADD of a folder that is already a project returns it and leaves its .gitignore alone (#3236)', async () => {
+    const existing = { id: 'proj_old', name: 'test', path: '/tmp/my-project' };
+    vi.mocked(projectStore.addProject).mockResolvedValueOnce({ project: existing, created: false });
+
+    const handler = handlers.get(IPC.PROJECT.ADD)!;
+    const result = await handler({}, '/tmp/my-project/');
+
+    expect(result).toEqual(existing);
+    expect(ensureGitignore).not.toHaveBeenCalled();
   });
 
   it('rejects invalid project paths before delegating', async () => {
     const handler = handlers.get(IPC.PROJECT.ADD)!;
     expect(() => handler({}, { bad: true })).toThrow('arg1 must be a string');
-    expect(projectStore.add).not.toHaveBeenCalled();
+    expect(projectStore.addProject).not.toHaveBeenCalled();
   });
 
   // --- REMOVE ---
