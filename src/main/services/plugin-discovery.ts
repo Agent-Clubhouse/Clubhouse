@@ -254,7 +254,13 @@ export async function cleanupProjectPluginInjections(pluginId: string, projectPa
     await agentSettings.updateProjectAgentDefaults(projectPath, (defaults) => withPluginParts(defaults, pluginId, ALL_PLUGIN_PARTS_REMOVED));
   } catch { /* Best-effort */ }
 
-  // 4. Delete the _agentconfig storage directory for this plugin in the project
+  // 4. Remove the parts it contributed for this project (#3245); agents that use one keep their copy.
+  try {
+    const { removeAllPluginManagedParts } = await import('./plugin-parts');
+    await removeAllPluginManagedParts(projectPath, pluginId);
+  } catch { /* Best-effort */ }
+
+  // 5. Delete the _agentconfig storage directory for this plugin in the project
   const agentConfigDataDir = path.join(projectPath, '.clubhouse', 'plugin-data', `_agentconfig:${pluginId}`);
   try {
     await fsp.rm(agentConfigDataDir, { recursive: true, force: true });

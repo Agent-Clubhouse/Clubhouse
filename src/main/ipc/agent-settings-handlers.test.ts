@@ -50,6 +50,11 @@ vi.mock('../services/agent-config', () => ({
   updateDurableConfig: vi.fn(async () => undefined),
 }));
 
+const pluginParts = vi.hoisted(() => ({
+  setPluginManagedParts: vi.fn(async () => ({ notes: [] })),
+  readPluginManagedParts: vi.fn(async () => ({ instructions: null, mcpServers: [] })),
+}));
+vi.mock('../services/plugin-parts', () => pluginParts);
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -347,6 +352,18 @@ describe('agent-settings-handlers', () => {
       await expect(handler({}, '/project', bad, { allow: null })).rejects.toThrow('Not a plugin id');
     }
     expect(agentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
+  });
+
+  it('SET_PLUGIN_MANAGED_PARTS hands a plugin\'s instructions and MCP servers to its parts, never permission rules (#3245)', async () => {
+    const handler = handlers.get(IPC.AGENT.SET_PLUGIN_MANAGED_PARTS)!;
+    await handler({}, '/project', 'foo', { instructions: 'Hi', mcpServers: null });
+    expect(pluginParts.setPluginManagedParts).toHaveBeenCalledWith('/project', 'foo', { instructions: 'Hi', mcpServers: null });
+    await expect(handler({}, '/project', 'foo', { allow: ['Bash(x)'] })).rejects.toThrow('Permission rules aren\'t parts');
+    await expect(handler({}, '/project', 'foo', { instructions: 3 })).rejects.toThrow('Plugin instructions must be text');
+    await expect(handler({}, '/project', 'Foo', { instructions: 'x' })).rejects.toThrow('Not a plugin id');
+    expect(pluginParts.setPluginManagedParts).toHaveBeenCalledTimes(1);
+    await handlers.get(IPC.AGENT.READ_PLUGIN_MANAGED_PARTS)!({}, '/project', 'foo');
+    expect(pluginParts.readPluginManagedParts).toHaveBeenCalledWith('/project', 'foo');
   });
 
   it('SAVE_PROJECT_USER_DEFAULTS updates the saved defaults in place (#3244)', async () => {

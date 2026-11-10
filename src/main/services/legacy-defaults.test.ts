@@ -149,15 +149,15 @@ describe('import as parts', () => {
     });
   });
 
-  it('previews a block and MCP parts, and says what stays behind', async () => {
+  it('previews a block and MCP parts, the plugin\'s as its own, and says what stays behind', async () => {
     const preview = await previewImportAsParts(h.projectPath);
     expect(preview.parts).toEqual([
       { kind: 'block', name: 'app legacy instructions', status: 'new' },
       { kind: 'mcp', name: 'docs', status: 'new' },
       { kind: 'mcp', name: 'keyed', status: 'new' },
+      { kind: 'block', name: 'app: buddy instructions', status: 'new', pluginId: 'buddy' },
+      { kind: 'mcp', name: 'app: buddy chat', status: 'new', pluginId: 'buddy' },
     ]);
-    expect(preview.notes.join('\n')).toMatch(/Instructions from the buddy plugin stay with the plugin/);
-    expect(preview.notes.join('\n')).toMatch(/plugin-buddy-chat comes from the buddy plugin/);
     expect(preview.notes.join('\n')).toMatch(/keyed: values for API_KEY aren't kept/);
     expect(preview.notes.join('\n')).toMatch(/Permission rules aren't parts/);
     expect(Object.values(await service.liveEntries())).toHaveLength(0);
@@ -166,16 +166,39 @@ describe('import as parts', () => {
   it('imports them with the commands filled in, attributed to the project defaults, and once only', async () => {
     const result = await user(() => importAsParts(h.projectPath));
     expect(result.created.map((p) => p.name)).toEqual(['app legacy instructions', 'docs', 'keyed']);
+    expect(result.pluginParts).toEqual(['app: buddy instructions', 'app: buddy chat']);
     const entries = Object.values(await service.liveEntries());
-    expect(entries.every((e) => e.source.kind === 'import' && e.source.from === 'project-defaults')).toBe(true);
-    const block = entries.find((e) => e.kind === 'block')!;
+    const mine = entries.filter((e) => e.source.kind === 'import');
+    expect(mine.map((e) => e.name).sort()).toEqual(['app legacy instructions', 'docs', 'keyed']);
+    expect(mine.every((e) => e.source.kind === 'import' && e.source.from === 'project-defaults')).toBe(true);
+    // The plugin's saved items are now its parts, which its next write updates.
+    expect(entries.filter((e) => e.source.kind === 'plugin').map((e) => [e.name, e.source])).toEqual([
+      ['app: buddy instructions', { kind: 'plugin', pluginId: 'buddy', projectId: 'proj_app', key: 'instructions' }],
+      ['app: buddy chat', { kind: 'plugin', pluginId: 'buddy', projectId: 'proj_app', key: 'mcp:chat' }],
+    ]);
+    const block = mine.find((e) => e.kind === 'block')!;
     const head = await service.headContent(block.id);
     expect(head?.content).toEqual({ kind: 'block', content: 'Run npm test -- --run before a PR.\n\n## Project commands\n\n- Build: `make`' });
 
     const again = await user(() => importAsParts(h.projectPath));
     expect(again.created).toEqual([]);
+    expect(again.pluginParts).toBeUndefined();
     expect(again.existing.map((p) => p.name).sort()).toEqual(['app legacy instructions', 'docs', 'keyed']);
     expect((await previewImportAsParts(h.projectPath)).parts.every((p) => p.status === 'in_library')).toBe(true);
+  });
+});
+
+describe('import as parts with saved items that only look like a plugin\'s', () => {
+  it('imports a server whose name has no valid plugin id as the person\'s own, and leaves an odd marker as saved', async () => {
+    setDefaults({
+      instructions: 'Mine.\n\n<!-- plugin:Buddy:start -->\nBe kind.\n<!-- plugin:Buddy:end -->',
+      mcpJson: JSON.stringify({ mcpServers: { docs: { command: 'docs-mcp' }, 'plugin-My_Tool-x': { command: 'x' } } }),
+    });
+    const result = await user(() => importAsParts(h.projectPath));
+    expect(result.created.map((p) => p.name)).toEqual(['app legacy instructions', 'docs', 'plugin-My_Tool-x']);
+    expect(result.pluginParts).toBeUndefined();
+    expect(result.notes.join('\n')).toMatch(/marked for "Buddy" isn't imported/);
+    expect(Object.values(await service.liveEntries()).some((e) => e.source.kind === 'plugin')).toBe(false);
   });
 });
 

@@ -141,6 +141,12 @@ export type AssetSource =
   | { kind: 'builtin'; builtinId: string }
   /** Ids and names, never a path. */
   | { kind: 'import'; from: 'native-mcp' | 'project-skill' | 'persona' | 'native-subagent' | 'project-defaults'; projectId?: string; nativeName?: string }
+  /**
+   * Contributed by a plugin through its agentConfig API (#3245), for one
+   * project: `key` is `instructions`, or `mcp:<serverKey>`. The plugin's next
+   * write updates the same part. Ids only, never a path.
+   */
+  | { kind: 'plugin'; pluginId: string; projectId: string; key: string }
   /** A user's copy: the origin revision it started from. Never merged, rebased or synced. */
   | { kind: 'copy'; originAssetId: string; originRevision: number };
 

@@ -217,6 +217,9 @@ export const IPC = {
     READ_PROJECT_AGENT_DEFAULTS: 'agent:read-project-agent-defaults',
     SAVE_PROJECT_USER_DEFAULTS: 'agent:save-project-user-defaults',
     UPDATE_PLUGIN_AGENT_DEFAULTS: 'agent:update-plugin-agent-defaults',
+    /** A plugin's instructions and MCP servers as Managed Agent parts (#3245). */
+    SET_PLUGIN_MANAGED_PARTS: 'agent:set-plugin-managed-parts',
+    READ_PLUGIN_MANAGED_PARTS: 'agent:read-plugin-managed-parts',
     GET_CONVENTIONS: 'agent:get-conventions',
     // Project source skills and agent templates: only the plugin agentConfig API's inject and remove (#2901).
     WRITE_SOURCE_SKILL_CONTENT: 'agent:write-source-skill-content',

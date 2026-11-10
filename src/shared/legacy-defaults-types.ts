@@ -33,6 +33,8 @@ export interface LegacyDefaultsSummary {
    * that takes them as launch flags). Names, by agent id.
    */
   inheritingMcp: Array<{ id: string; name: string }>;
+  /** Plugins that now add their instructions and servers as parts for this project (#3245). */
+  pluginsWithParts: string[];
   /** Plain agents with their own folder, which a copy can go into. */
   plainAgents: Array<{ id: string; name: string; cli: string }>;
 }
@@ -59,13 +61,17 @@ export interface LegacyCopyPreview {
 }
 
 export interface LegacyImportPreview {
-  parts: Array<{ kind: 'block' | 'mcp'; name: string; status: 'new' | 'in_library' }>;
+  /** `pluginId`: the part is the plugin's (it keeps it up to date), from what it had saved here. */
+  parts: Array<{ kind: 'block' | 'mcp'; name: string; status: 'new' | 'in_library'; pluginId?: string }>;
   /** What isn't imported, and why. */
   notes: string[];
 }
 
 export interface LegacyImportResult {
+  /** The person's parts made from the defaults. A plugin's are listed under `pluginParts`. */
   created: Array<{ id: string; kind: 'block' | 'mcp'; name: string }>;
+  /** Parts made for plugins from what they had saved here, by name. */
+  pluginParts?: string[];
   /** Parts already in the library with the same content, which weren't made again. */
   existing: Array<{ id: string; kind: 'block' | 'mcp'; name: string }>;
   notes: string[];

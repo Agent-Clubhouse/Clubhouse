@@ -10,6 +10,7 @@
  * servers are added to what it has; build, test and lint commands become its
  * own where it has none. A CLI that can't take a value skips it.
  */
+import { pluginOfMcpServer } from '../../shared/plugin-agent-defaults';
 import { execFile } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -22,6 +23,7 @@ import type {
   LegacyImportResult,
 } from '../../shared/legacy-defaults-types';
 import { hasLegacyAgentDefaults } from '../../shared/project-settings-ownership';
+import { isValidPluginId } from '../../shared/manifest-validator';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { replaceWildcards, type WildcardContext } from '../../shared/wildcard-replacer';
 import type { ManagedMcpContent, ManagedPartContent } from '../../shared/managed-agents-types';
@@ -123,6 +125,7 @@ export async function describeLegacyDefaults(projectPath: string): Promise<Legac
     commands: commandsOf(defaults),
     inheritingMcp,
     plainAgents,
+    pluginsWithParts: await (await import('./plugin-parts')).pluginsWithParts(projectPath),
   };
 }
 
@@ -426,7 +429,18 @@ export async function copyIntoNewAgent(
 interface ImportPlan {
   block: { name: string; content: string } | null;
   mcps: Array<{ name: string; content: ManagedMcpContent }>;
+  /** What each plugin had saved here, which becomes that plugin's parts (#3245). */
+  plugins: Map<string, { instructions?: string; mcpServers?: Record<string, unknown> }>;
   notes: string[];
+}
+
+/**
+ * The plugin a saved `plugin-<id>-<name>` server is from. A plugin id can hold
+ * dashes, so an id already known from an instruction block or a rule tag wins
+ * (the longest that fits), else the shortest one.
+ */
+function pluginOfServerAmong(key: string, known: Set<string>): string | undefined {
+  return pluginOfMcpServer(key, known);
 }
 
 async function projectName(projectPath: string): Promise<string> {
@@ -462,8 +476,20 @@ async function planImport(projectPath: string): Promise<ImportPlan> {
   const { refusal, envAsNames, leftoverWildcards } = await import('./managed-agents/agents');
   const notes: string[] = [];
   const name = await projectName(projectPath);
-  const { own, plugins } = userInstructionsOf(defaults.instructions ?? '');
-  for (const p of plugins) notes.push(`Instructions from the ${p.pluginId} plugin stay with the plugin.`);
+  const { own, plugins: pluginBlocks } = userInstructionsOf(defaults.instructions ?? '');
+  const plugins: ImportPlan['plugins'] = new Map();
+  const pluginEntry = (id: string) => plugins.get(id) ?? plugins.set(id, {}).get(id)!;
+  for (const p of pluginBlocks) {
+    if (!p.text) continue;
+    // Only a real plugin id can own a part; a hand-edited marker stays as saved.
+    if (isValidPluginId(p.pluginId)) pluginEntry(p.pluginId).instructions = p.text;
+    else notes.push(`The block marked for "${p.pluginId}" isn't imported, since that isn't a plugin id.`);
+  }
+  const knownPlugins = new Set([
+    ...await (await import('./plugin-parts')).knownPluginIds(),
+    ...pluginBlocks.map((p) => p.pluginId),
+    ...[...(defaults.permissions?.allow ?? []), ...(defaults.permissions?.deny ?? [])].map((r) => /\/\* plugin:([^ ]+) \*\//.exec(r)?.[1]).filter((id): id is string => !!id),
+  ]);
 
   let block: ImportPlan['block'] = null;
   const scp = defaults.sourceControlProvider;
@@ -485,8 +511,14 @@ async function planImport(projectPath: string): Promise<ImportPlan> {
     if (servers === null) notes.push('The MCP servers aren\'t imported because the MCP JSON isn\'t valid JSON.');
     for (const [serverKey, rawDef] of Object.entries(servers ?? {})) {
       if (serverKey === 'clubhouse') continue;
-      const pluginId = pluginOfServer(serverKey);
-      if (pluginId) { notes.push(`${serverKey} comes from the ${pluginId} plugin and stays with it.`); continue; }
+      // A name that only looks like a plugin's (no valid plugin id) is the person's own server.
+      const pluginId = pluginOfServerAmong(serverKey, knownPlugins);
+      if (pluginId && isValidPluginId(pluginId)) {
+        // The plugin's own: it becomes the plugin's part, under the server's own name.
+        const entry = pluginEntry(pluginId);
+        entry.mcpServers = { ...entry.mcpServers, [serverKey.slice(`plugin-${pluginId}-`.length)]: rawDef };
+        continue;
+      }
       const { def, dropped } = envAsNames(rawDef);
       if (dropped.length > 0) notes.push(`${serverKey}: values for ${dropped.join(', ')} aren't kept. Set them in your environment.`);
       const adopted = adoptNativeMcpServer(serverKey, def);
@@ -507,7 +539,7 @@ async function planImport(projectPath: string): Promise<ImportPlan> {
   if (defaults.permissions?.allow?.length || defaults.permissions?.deny?.length) {
     notes.push('Permission rules aren\'t parts: each CLI has its own syntax. Copy them into a plain agent, or set access on the agent or template.');
   }
-  return { block, mcps, notes };
+  return { block, mcps, plugins, notes };
 }
 
 /** A library part with this exact content, if there is one. */
@@ -535,6 +567,20 @@ export async function previewImportAsParts(projectPath: string): Promise<LegacyI
   for (const mcp of plan.mcps) {
     const found = await partInLibrary('mcp', mcp.content);
     parts.push({ kind: 'mcp', name: found?.name ?? mcp.name, status: found ? 'in_library' : 'new' });
+  }
+  if (plan.plugins.size > 0) {
+    const { hasPluginPart, pluginPartName } = await import('./plugin-parts');
+    const name = await projectName(projectPath);
+    for (const [pluginId, saved] of plan.plugins) {
+      if (saved.instructions) {
+        const has = await hasPluginPart(projectPath, pluginId, { instructions: true });
+        parts.push({ kind: 'block', name: pluginPartName(name, pluginId, 'instructions'), status: has ? 'in_library' : 'new', pluginId });
+      }
+      for (const serverKey of Object.keys(saved.mcpServers ?? {})) {
+        const has = await hasPluginPart(projectPath, pluginId, { serverKey });
+        parts.push({ kind: 'mcp', name: pluginPartName(name, pluginId, serverKey), status: has ? 'in_library' : 'new', pluginId });
+      }
+    }
   }
   return { parts, notes: plan.notes };
 }
@@ -565,8 +611,31 @@ export async function importAsParts(projectPath: string): Promise<LegacyImportRe
   };
   if (plan.block) await make('block', plan.block.name, { kind: 'block', content: plan.block.content });
   for (const mcp of plan.mcps) await make('mcp', mcp.name, mcp.content);
+  // A plugin's saved items become that plugin's parts, which it keeps up to date (#3245).
+  const notes = [...plan.notes];
+  const pluginParts: string[] = [];
+  if (plan.plugins.size > 0) {
+    const { hasPluginPart, importPluginLegacyParts, pluginPartName } = await import('./plugin-parts');
+    const name = await projectName(projectPath);
+    for (const [pluginId, saved] of plan.plugins) {
+      const wanted: Array<[string, { instructions: true } | { serverKey: string }]> = [
+        ...(saved.instructions ? [[pluginPartName(name, pluginId, 'instructions'), { instructions: true as const }] as [string, { instructions: true }]] : []),
+        ...Object.keys(saved.mcpServers ?? {}).map((serverKey): [string, { serverKey: string }] => [pluginPartName(name, pluginId, serverKey), { serverKey }]),
+      ];
+      const before = await Promise.all(wanted.map(([, what]) => hasPluginPart(projectPath, pluginId, what)));
+      const result = await importPluginLegacyParts(projectPath, pluginId, {
+        ...(saved.instructions && { instructions: saved.instructions }),
+        ...(saved.mcpServers && { mcpServers: saved.mcpServers }),
+      });
+      notes.push(...result.notes);
+      // Only what this import made: a server the catalog refused is in the notes instead.
+      for (const [i, [label, what]] of wanted.entries()) {
+        if (!before[i] && await hasPluginPart(projectPath, pluginId, what)) pluginParts.push(label);
+      }
+    }
+  }
   appLog(LOG_NS, 'info', 'Imported the project\'s legacy defaults as parts', {
-    meta: { created: created.length, existing: existing.length },
+    meta: { created: created.length, existing: existing.length, pluginParts: pluginParts.length },
   });
-  return { created, existing, notes: plan.notes };
+  return { created, existing, ...(pluginParts.length > 0 && { pluginParts }), notes };
 }

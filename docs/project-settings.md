@@ -106,14 +106,52 @@ permission rules are kept and the legacy ones added after them.
   managed: environment values become variable names, and a server the
   catalog refuses is named with the reason.
 - Permission rules can't be parts.
-- Plugin instructions and servers stay with their plugin.
+- Plugin instructions and servers become that plugin's parts (see below), as
+  if the plugin had written them since #3245. The plugin's next write updates
+  them.
 - A part with the same content already in the library isn't made again.
 - Parts record their source as an import from project defaults.
 
+## Plugin contributions
+
+A plugin's `agentConfig` API no longer writes the project's legacy defaults:
+
+| Call | Since #3245 |
+|------|-------------|
+| `appendInstructions` | Creates or updates the block part "<project>: <plugin> instructions" |
+| `injectMcpServers` | One MCP server part per server, "<project>: <plugin> <server>"; a server left out of the next call is removed. Env values become names; a refused server is logged |
+| `removeInstructionAppend`, `removeMcpServers` | Remove those parts; agents that use one keep their own copy |
+| `addPermissionAllowRules`, `addPermissionDenyRules` | Do nothing, with a warning in the plugin's log once. Each CLI has its own rule syntax |
+| `removePermissionRules`, `getPermissionRules` | Still remove and read rules saved before |
+| Uninstall | Removes the plugin's parts for the project, as above |
+
+The parts are library parts attributed to the plugin ("by the <plugin>
+plugin", and in the description), with the catalog source
+`{ kind: 'plugin', pluginId, projectId, key }`. A person adds them to an
+agent or template. A plain agent doesn't get them; it uses its own files.
+
+A plugin's write also clears what it had saved in the legacy defaults for the
+same thing, since the part replaces it. Only that plugin's: a saved server is
+matched to its plugin by the longest known plugin id (built-in, installed, or
+named in the saved defaults), so `foo` writing never clears `foo-bar`'s
+`plugin-foo-bar-*` servers. A server the catalog refuses keeps its saved copy,
+since no part replaces it.
+
+**Existing plain agents lose a plugin's MCP servers at their next start after
+the plugin writes them.** Until then they got them from the project's legacy
+MCP servers; afterwards those are the plugin's parts, which only agents that
+list them get. The same goes for a plugin's instructions in agents created
+with the legacy copy from then on. The settings page says which plugins now
+add parts ("<plugin> now adds its instructions and servers as parts"), and so
+does each part's description in the library.
+
+A part's name follows a renamed project at the plugin's next write. Until then, its saved items stay
+read-only like the rest, and Import as parts turns them into the plugin's
+parts without changing the saved values. The plugin API version is
+unchanged: every method keeps its signature.
+
 ## Later
 
-- Plugins contribute attributed managed parts instead of writing project
-  defaults (after #3262).
 - At the end of the deprecation window, which the maintainer decides: remove
   the read-only section, the MCP inheritance and the wildcard fill from
   legacy commands.

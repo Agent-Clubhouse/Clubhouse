@@ -832,6 +832,13 @@ export function sourceIssues(raw: unknown, allowBuiltin = false): ValidationIssu
       const ids = (raw.projectId === undefined || isCatalogId(raw.projectId)) && (raw.nativeName === undefined || isCatalogId(raw.nativeName));
       return known && from && ids ? [] : invalid;
     }
+    case 'plugin': {
+      // A manifest plugin id (lower case, digits and dashes), a project id and its key.
+      const known = Object.keys(raw).length === 4 && ['kind', 'pluginId', 'projectId', 'key'].every((key) => key in raw);
+      const ids = typeof raw.pluginId === 'string' && /^[a-z0-9-]+$/.test(raw.pluginId) && isCatalogId(raw.pluginId)
+        && isCatalogId(raw.projectId) && isCatalogId(raw.key);
+      return known && ids ? [] : invalid;
+    }
     default:
       return invalid;
   }
