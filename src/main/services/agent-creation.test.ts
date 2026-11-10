@@ -58,6 +58,7 @@ vi.mock('./agent-settings-service', async (importOriginal) => ({
   // The real check, so a CLI without permission rules refuses them as it does in the app.
   assertPermissionRulesSupported: (await importOriginal<typeof import('./agent-settings-service')>()).assertPermissionRulesSupported,
 }));
+vi.mock('./legacy-defaults', () => ({ copyIntoNewAgent: vi.fn(async () => undefined) }));
 vi.mock('./agent-system', () => ({
   resolveOrchestrator: vi.fn(async () => ({ displayName: 'Claude Code', writeInstructions: vi.fn(), conventions: {} })),
 }));
@@ -84,8 +85,7 @@ import {
   updateDurableConfig,
 } from './agent-config';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
-import { resolveOrchestrator } from './agent-system';
-import { UnsupportedPermissionRulesError } from './permission-rules-error';
+import { copyIntoNewAgent } from './legacy-defaults';
 import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } from './agent-creation';
 
@@ -343,18 +343,6 @@ describe('startDurableCreation (#2226)', () => {
     expect(diskAgents().find((a) => a.id === started.agentId)).not.toHaveProperty('creation');
     expect(isDurableCreationActive(started.agentId)).toBe(false);
     expect(gitArgv()).toContainEqual(['branch', '--no-track', '--', 'helper/standby', SHA]);
-  });
-
-  it('fails creation visibly when permission defaults cannot be applied', async () => {
-    const reason = 'Copilot does not support these permission rules';
-    vi.mocked(applyAgentDefaults).mockRejectedValueOnce(new UnsupportedPermissionRulesError(reason));
-    const inject = vi.fn();
-    const started = await startDurableCreation(PROJECT_PATH, { name: 'unsupported', color: 'indigo' }, { inject });
-    expect(await started.done).toBe('failed');
-    expect(events.map((e) => e.stage)).toEqual(['config_created', 'worktree_added', 'failed']);
-    expect(events.at(-1)).toMatchObject({ reason, config: { creation: { state: 'failed', reason } } });
-    expect(inject).not.toHaveBeenCalled();
-    expect(diskAgents().find((agent) => agent.id === started.agentId)?.creation).toMatchObject({ state: 'failed', reason });
   });
 
   it('runs the injection hook before ready', async () => {
@@ -718,64 +706,49 @@ describe('interrupted creation recovery (#2226)', () => {
   });
 });
 
-describe('project defaults a CLI cannot take (#3243)', () => {
-  const RULES = { permissions: { allow: ['Bash(npm test:*)'], deny: ['Bash(rm:*)'] } };
-  /** A CLI with no Clubhouse allow/deny rules, as Copilot CLI is. */
-  const noRules = { displayName: 'Copilot CLI', writeInstructions: vi.fn(), conventions: { permissionRules: false } };
-  const withRules = { displayName: 'Claude Code', writeInstructions: vi.fn(), conventions: {} };
-
+describe('the project\'s legacy defaults at creation (#3243, #3245)', () => {
   beforeEach(() => {
-    vi.mocked(applyAgentDefaults).mockClear();
-    vi.mocked(readProjectAgentDefaults).mockResolvedValue(RULES as never);
-  });
-  afterEach(() => {
-    vi.mocked(readProjectAgentDefaults).mockResolvedValue({} as never);
-    vi.mocked(resolveOrchestrator).mockResolvedValue(withRules as never);
+    vi.mocked(copyIntoNewAgent).mockReset();
+    vi.mocked(copyIntoNewAgent).mockResolvedValue(undefined);
   });
 
-  it('refuses a plain agent before any branch, folder, worktree or record is made', async () => {
-    vi.mocked(resolveOrchestrator).mockResolvedValue(noRules as never);
-    await expect(createDurable(PROJECT_PATH, 'copilot', 'indigo', undefined, true, 'copilot-cli' as never))
-      .rejects.toThrow(/Copilot CLI can't use this project's Default permissions.*Nothing was created/);
-    expect(gitArgv()).toEqual([]);
-    expect(dirs.has(agentPath('copilot'))).toBe(false);
-    expect(files.has(CONFIG_PATH)).toBe(false);
-    expect(events).toEqual([]);
-    expect(applyAgentDefaults).not.toHaveBeenCalled();
-  });
-
-  it('refuses the asynchronous creation and its check up front too, tagged as a refusal', async () => {
-    vi.mocked(resolveOrchestrator).mockResolvedValue(noRules as never);
-    const params = { name: 'copilot', color: 'indigo', orchestrator: 'copilot-cli' as never };
-    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/Default permissions/);
-    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toMatchObject({ message: expect.stringMatching(/Default permissions/) });
-    expect(gitArgv()).toEqual([]);
-    expect(diskAgents()).toEqual([]);
-  });
-
-  it('creates a plain agent and applies the defaults for a CLI that takes them', async () => {
-    vi.mocked(resolveOrchestrator).mockResolvedValue(withRules as never);
-    const config = await createDurable(PROJECT_PATH, 'claude', 'indigo');
-    expect(config.worktreePath).toBe(agentPath('claude'));
-    expect(applyAgentDefaults).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([['without', noRules], ['with', withRules]])('creates a managed agent on a CLI %s permission rules, reading and writing no legacy defaults', async (_label, provider) => {
-    vi.mocked(resolveOrchestrator).mockResolvedValue(provider as never);
-    const config = await createDurable(PROJECT_PATH, 'managed', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, { projectDefaults: false });
-    expect(config).not.toHaveProperty('creation');
-    expect(applyAgentDefaults).not.toHaveBeenCalled();
-    expect(readProjectAgentDefaults).not.toHaveBeenCalled();
-    await expect(checkDurableCreation(PROJECT_PATH, { name: 'other', color: 'indigo' }, { projectDefaults: false })).resolves.toBeUndefined();
-  });
-
-  it('skips the defaults for a managed helper started asynchronously', async () => {
-    vi.mocked(resolveOrchestrator).mockResolvedValue(noRules as never);
-    const inject = vi.fn(async () => undefined);
-    const started = await startDurableCreation(PROJECT_PATH, { name: 'helper', color: 'indigo' }, { inject, injectRequired: true, projectDefaults: false });
+  it('copies nothing unless asked, for createDurable and the asynchronous API alike', async () => {
+    const config = await createDurable(PROJECT_PATH, 'plain', 'indigo');
+    expect(config.worktreePath).toBe(agentPath('plain'));
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'helper', color: 'indigo' }, { inject: async () => undefined, injectRequired: true });
     expect(await started.done).toBe('ready');
-    expect(inject).toHaveBeenCalled();
+    expect(copyIntoNewAgent).not.toHaveBeenCalled();
     expect(applyAgentDefaults).not.toHaveBeenCalled();
+  });
+
+  it('copies into the new worktree when asked, before ready, saving the commands on the agent', async () => {
+    vi.mocked(copyIntoNewAgent).mockImplementation(async (_projectPath, agent, saveCommands) => {
+      expect(agent.worktreePath).toBe(agentPath('copier'));
+      expect(dirs.has(agentPath('copier'))).toBe(true);
+      await saveCommands({ buildCommand: 'make' });
+    });
+    const config = await createDurable(PROJECT_PATH, 'copier', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, { copyLegacyDefaults: true });
+    expect(copyIntoNewAgent).toHaveBeenCalledTimes(1);
+    expect(config).toMatchObject({ buildCommand: 'make' });
+    expect(config).not.toHaveProperty('creation');
+  });
+
+  it('never copies into an agent without its own folder', async () => {
+    await createDurable(PROJECT_PATH, 'root', 'indigo', undefined, false, undefined, undefined, undefined, undefined, {}, { copyLegacyDefaults: true });
+    expect(copyIntoNewAgent).not.toHaveBeenCalled();
+  });
+
+  it('logs a failed copy and still makes the agent', async () => {
+    vi.mocked(copyIntoNewAgent).mockRejectedValueOnce(new Error('disk full'));
+    const config = await createDurable(PROJECT_PATH, 'survivor', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {}, { copyLegacyDefaults: true });
+    expect(config).not.toHaveProperty('creation');
+    expect(diskAgents().map((a) => a.name)).toContain('survivor');
+  });
+
+  it('checks a creation without reading the legacy defaults', async () => {
+    vi.mocked(readProjectAgentDefaults).mockClear();
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'other', color: 'indigo' })).resolves.toBeUndefined();
+    expect(readProjectAgentDefaults).not.toHaveBeenCalled();
   });
 });
 

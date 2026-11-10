@@ -95,6 +95,36 @@ describe('NewAgentPage', () => {
     expect(useChromeStore.getState().newAgent).toBeNull();
   });
 
+  it('offers the project\'s legacy defaults, on and previewed, and copies them only while on (#3245)', async () => {
+    window.clubhouse.legacyDefaults.describe = vi.fn().mockResolvedValue({
+      hasValues: true, instructions: 'x', pluginInstructions: [], permissions: { allow: [], deny: [] },
+      mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [],
+    });
+    window.clubhouse.legacyDefaults.previewCopyNew = vi.fn().mockResolvedValue({
+      agentName: 'keen-heron', cli: 'Claude Code', blocked: null,
+      changes: [{ item: 'instructions', target: 'CLAUDE.md', action: 'write', detail: 'Written with the project\'s instructions (1 lines).' }],
+    });
+    openWith({});
+    const toggle = await screen.findByTestId('new-agent-copy-legacy');
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(await screen.findByTestId('legacy-copy-preview')).toHaveTextContent('CLAUDE.md: Written with the project\'s instructions');
+    fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    expect(createDurableAgent).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ copyLegacyDefaults: true }), expect.anything());
+  });
+
+  it('copies nothing when the copy is turned off, or the project has no legacy defaults (#3245)', async () => {
+    window.clubhouse.legacyDefaults.describe = vi.fn().mockResolvedValue({
+      hasValues: true, instructions: 'x', pluginInstructions: [], permissions: { allow: [], deny: [] },
+      mcpServers: [], mcpJsonValid: true, mcpJson: '', commands: {}, inheritingMcp: [], plainAgents: [],
+    });
+    openWith({});
+    fireEvent.click(await screen.findByTestId('new-agent-copy-legacy'));
+    expect(screen.getByText(/Nothing from them is copied/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    expect(createDurableAgent).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ copyLegacyDefaults: false }), expect.anything());
+  });
+
   it('checks a worktree name inline and keeps Create off until it is valid (#2221)', async () => {
     openWith({});
     await waitFor(() => expect(screen.getByLabelText('Own worktree and branch')).toBeTruthy());

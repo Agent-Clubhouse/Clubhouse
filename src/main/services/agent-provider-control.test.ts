@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentRegistry } from './agent-registry';
 import { withAgentActivity, withAgentTransition } from './agent-transition';
 import { changeAgentProvider, previewAgentProvider } from './agent-provider-control';
-const w = vi.hoisted(() => ({ config: {} as any, available: true, instructions: 'same', runtime: 'terminal', running: false, captureFailed: false, beforeCommit: undefined as undefined | (() => void), beforeAvailability: undefined as undefined | (() => void) }));
+const w = vi.hoisted(() => ({ defaults: {} as any, config: {} as any, available: true, instructions: 'same', runtime: 'terminal', running: false, captureFailed: false, beforeCommit: undefined as undefined | (() => void), beforeAvailability: undefined as undefined | (() => void) }));
 vi.mock('./agent-config', () => ({
   getDurableConfig: async () => w.config,
   flushAgentConfig: async () => {},
@@ -15,7 +15,7 @@ vi.mock('./agent-system', () => ({
   waitForAgentStopped: async () => !w.running,
 }));
 vi.mock('./mobile-agents', () => ({ effectiveOrchestrators: () => [{ id: 'claude-code' }, { id: 'codex-cli' }] }));
-vi.mock('./agent-settings-service', () => ({ readProjectAgentDefaults: async () => ({}) }));
+vi.mock('./agent-settings-service', () => ({ readProjectAgentDefaults: async () => w.defaults }));
 vi.mock('./free-agent-settings');
 vi.mock('./chat-runtime-settings', () => ({ isChatEnabled: () => true, resolveRuntimeMode: () => ({ mode: w.runtime }) }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
@@ -30,7 +30,7 @@ const actor = { key: 'phone:paired', assertAuthorized: () => {} };
 const preview = () => previewAgentProvider('/fixture', 'a', 'codex-cli', actor);
 beforeEach(() => {
   w.config = { id: 'a', name: 'Agent', orchestrator: 'claude-code', lastSessionId: 'claude-native', sessionHistory: [{ sessionId: 'claude-native', orchestrator: 'claude-code' }], worktreePath: '/fixture/work', orchestration: { control: 'hands-off' }, mcpIds: ['workiq'] };
-  w.beforeCommit = undefined; w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
+  w.defaults = {}; w.beforeCommit = undefined; w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
   vi.mocked(updateDurableConfig).mockClear(); vi.mocked(agentRegistry.get).mockReturnValue(undefined);
   dispatcherModels.byHand = false;
 });
@@ -55,6 +55,12 @@ describe('guided provider control', () => {
     w.available = true; w.instructions = 'different'; expect(await preview()).toMatchObject({ blocked: 'instructions_not_equivalent' });
     w.instructions = 'same'; w.running = true; expect(await preview()).toMatchObject({ blocked: 'agent_running' });
     expect(updateDurableConfig).not.toHaveBeenCalled();
+  });
+  it('blocks a plain agent on the project\'s legacy permission rules, never a managed one (#3245)', async () => {
+    w.defaults = { permissions: { allow: ['Bash(git:*)'] } };
+    expect(await preview()).toMatchObject({ canSave: false, blocked: 'incompatible_permissions' });
+    w.config.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    expect(await preview()).toMatchObject({ canSave: true, blocked: null });
   });
   it('blocks saving after a failed capture even though the process has stopped', async () => {
     w.captureFailed = true;

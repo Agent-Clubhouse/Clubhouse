@@ -1,4 +1,3 @@
-import { UnsupportedPermissionRulesError } from './permission-rules-error';
 import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
@@ -11,9 +10,6 @@ import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, 
 import { isDisposedAgent, isEffortValue, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { forgetAutoHelper } from './helper-auto-state';
-import { applyAgentDefaults, assertPermissionRulesSupported, readProjectAgentDefaults } from './agent-settings-service';
-import type { WildcardContext } from '../../shared/wildcard-replacer';
-import type { ProjectAgentDefaults } from '../../shared/types';
 import { accessForNewAgent, agentAccess, getPermissionMode } from './free-agent-settings';
 import { accessForLegacyToggle, isAccessLevel, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { tagError } from '../telemetry/types';
@@ -1912,15 +1908,17 @@ export interface DurableCreationRunOptions {
   /** An inject failure fails the creation: the agent can't work without it (a managed helper's setup, #2899). */
   injectRequired?: boolean;
   /**
-   * False: the project's legacy agent defaults (instructions, permissions and
-   * MCP) are neither checked nor written. A managed agent gets exactly its own
-   * setup at its first start, nothing else (#3243).
+   * Copy the project's legacy agent defaults (instructions, permissions, MCP
+   * servers and commands) into the new worktree, as legacy-defaults.ts copies
+   * them (#3245). Only when the person asked: the New agent page's "Copy this
+   * project's legacy defaults". Without it nothing of them is written; a
+   * managed agent never gets them (#3243).
    */
-  projectDefaults?: false;
+  copyLegacyDefaults?: boolean;
 }
 
-/** The part of the run options that changes what a creation checks up front. */
-export type DurableCreationCheckOptions = Pick<DurableCreationRunOptions, 'projectDefaults'>;
+/** The creation options a createDurable caller can set. */
+export type DurableCreationCopyOptions = Pick<DurableCreationRunOptions, 'copyLegacyDefaults'>;
 
 export interface DurableCreationHandle {
   /** The new agent's record, in the 'creating' state. */
@@ -1947,21 +1945,6 @@ async function mutateAgentRecord(
   await writeAgents(projectPath, agents);
   if (flush) await flushAgentConfig(projectPath);
   return cloneAgent(agent);
-}
-
-/**
- * A new agent's `@@` values for the project defaults written into its folder,
- * as the MCP servers get at start (#2439). Without a source control provider
- * if that can't be read; the defaults are still written.
- */
-async function newAgentWildcards(projectPath: string, agent: DurableAgentConfig): Promise<WildcardContext> {
-  const { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } = await import('./agent-wildcards');
-  const defaults = await readProjectAgentDefaults(projectPath).catch((): ProjectAgentDefaults => ({}));
-  const scp = await resolveSourceControlProvider(projectPath, agent).catch((err: unknown): undefined => {
-    appLog('core:agent-config', 'warn', 'Could not read the source control provider for a new agent\'s defaults', { meta: { agentName: agent.name, error: errorMessage(err) } });
-    return undefined;
-  });
-  return buildWildcardContext(agent, projectPath, scp, resolveAgentCommands(agent, defaults));
 }
 
 async function removeAgentRecord(projectPath: string, agentId: string): Promise<void> {
@@ -2138,48 +2121,14 @@ async function foreignParentProject(projectPath: string, params: StartDurableCre
 }
 
 /**
- * Why the project's legacy agent defaults can't be written into a new
- * agent's folder for its CLI, or null (#3243). Checked before the branch,
- * folder or worktree is made, so a CLI that can't take the Default
- * permissions refuses the creation instead of failing part way. A CLI that
- * can't be resolved is left to the creation, which logs it as before.
- */
-async function projectDefaultsProblem(projectPath: string, orchestrator: OrchestratorId | undefined): Promise<Error | null> {
-  const { permissions } = await readProjectAgentDefaults(projectPath);
-  if (!permissions?.allow?.length && !permissions?.deny?.length) return null;
-  let provider: Awaited<ReturnType<typeof resolveOrchestrator>>;
-  try {
-    provider = await resolveOrchestrator(projectPath, orchestrator);
-  } catch {
-    // telemetry-exempt: the creation resolves it again and logs the failure.
-    return null;
-  }
-  try {
-    assertPermissionRulesSupported(permissions, provider.conventions);
-    return null;
-  } catch (err) {
-    // telemetry-exempt: returned as the creation's refusal, tagged for telemetry.
-    if (!(err instanceof UnsupportedPermissionRulesError)) throw err;
-    return tagError(new Error(
-      `${provider.displayName} can't use this project's Default permissions (allow and deny rules). ` +
-      'Remove them from the project\'s agent defaults, or choose another CLI. Nothing was created.',
-    ), 'validation');
-  }
-}
-
-/**
  * Run a creation's up-front checks without creating anything: the name,
  * folder, branch and base rules, and whether the parent,
  * folder or branch is free right now. Throws (tagged `validation`) with the
  * message the creation itself would refuse with. A later creation checks
  * everything again.
  */
-export async function checkDurableCreation(projectPath: string, params: StartDurableCreationParams, options: DurableCreationCheckOptions = {}): Promise<void> {
+export async function checkDurableCreation(projectPath: string, params: StartDurableCreationParams): Promise<void> {
   const plan = params.useWorktree !== false ? planDurableWorktree(projectPath, params.name, params) : undefined;
-  if (plan && options.projectDefaults !== false) {
-    const defaults = await projectDefaultsProblem(projectPath, params.orchestrator);
-    if (defaults) throw defaults;
-  }
   const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
   const agents = await readAgents(projectPath);
   const parentProject = await foreignParentProject(projectPath, params);
@@ -2205,11 +2154,6 @@ export async function beginDurableCreation(
   const plan = useWorktree ? planDurableWorktree(projectPath, name, params) : undefined;
   const parentProject = await foreignParentProject(projectPath, params);
   const parentAgents = parentProject ? await readAgents(parentProject) : undefined;
-  // Defaults the CLI can't take refuse the creation before anything is made (#3243).
-  if (plan && options.projectDefaults !== false) {
-    const defaults = await projectDefaultsProblem(projectPath, orchestrator);
-    if (defaults) throw defaults;
-  }
 
   await ensureDir(clubhouseDir(projectPath));
   // The Dispatcher's folder is no repo, so it gets no .gitignore (#2535).
@@ -2454,24 +2398,16 @@ async function runDurableCreation(
       emit('worktree_added', await reachStage('worktree_added'));
     }
 
-    // Apply project-level defaults as snapshots into the new worktree. A
-    // managed agent never gets them: its setup is delivered at start (#3243).
+    // The project's legacy defaults go in only when the person asked (#3245).
+    // A value the CLI can't take is skipped; a failed copy is logged, never fatal.
     checkCancelled();
-    if (initial.worktreePath && options.projectDefaults !== false) {
-      const worktreePath = initial.worktreePath;
+    if (initial.worktreePath && options.copyLegacyDefaults) {
       try {
-        const provider = await resolveOrchestrator(projectPath, initial.orchestrator);
-        const wildcards = await newAgentWildcards(projectPath, initial);
-        await applyAgentDefaults(
-          worktreePath,
-          projectPath,
-          (wt, content) => provider.writeInstructions(wt, content),
-          provider.conventions,
-          wildcards,
-        );
+        const { copyIntoNewAgent } = await import('./legacy-defaults');
+        await copyIntoNewAgent(projectPath, cloneAgent(initial), async (fields) => { await update((agent) => { Object.assign(agent, fields); }); });
       } catch (err) {
-        if (err instanceof UnsupportedPermissionRulesError) throw err;
-        appLog('core:agent-config', 'warn', 'Failed to apply project agent defaults', {
+        if (err instanceof DurableCreationCancelledError) throw err;
+        appLog('core:agent-config', 'warn', 'Failed to copy the project\'s legacy defaults into the new agent', {
           meta: { agentName: initial.name, error: errorMessage(err) },
         });
       }
@@ -2663,14 +2599,14 @@ export async function createDurable(
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
   worktreeOptions: DurableWorktreeOptions = {},
-  /** `projectDefaults: false` for a managed agent (#3243). */
-  checkOptions: DurableCreationCheckOptions = {},
+  /** `copyLegacyDefaults` when the person asked for the project's legacy defaults (#3245). */
+  copyOptions: DurableCreationCopyOptions = {},
 ): Promise<DurableAgentConfig> {
   const handle = await beginDurableCreation(projectPath, {
     ...worktreeOptions,
     name, color, model, useWorktree, orchestrator, mcpIds, mcpConfigs,
     ...(typeof access === 'boolean' ? { freeAgentMode: access } : access !== undefined ? { access } : {}),
-  }, { keepFailedRecord: false, ...checkOptions });
+  }, { keepFailedRecord: false, ...copyOptions });
   // The caller gets the error, so a failed agent leaves no record behind.
   return handle.done;
 }

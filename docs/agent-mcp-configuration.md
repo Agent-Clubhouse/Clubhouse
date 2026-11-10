@@ -15,7 +15,7 @@ resolution the terminal launch uses:
 | --- | --- |
 | Clubhouse-managed agent | Exactly the MCP server parts in its setup. Never the project defaults or a local file |
 | Unmanaged agent, local JSON file present | Entire effective-provider local `mcpServers` map |
-| Unmanaged agent, local JSON file missing | Project `agentDefaults.mcpJson`, with agent wildcards |
+| Unmanaged agent, local JSON file missing | Project `agentDefaults.mcpJson`, with agent wildcards. Legacy and read-only since #3245; see [Project settings](project-settings.md) |
 | Local JSON explicitly contains `"mcpServers": {}` | No configured servers; inherited entries stay removed |
 | Project MCP JSON that isn't JSON (for example, it still has `@@If` blocks) | No project servers, with an `mcp_configuration` notice; the start goes ahead (D10 in `managed-agents.md`) |
 | Invalid local JSON, or JSON that isn't a valid MCP configuration | Actionable failure, without overwriting the invalid file or substituting an empty map |

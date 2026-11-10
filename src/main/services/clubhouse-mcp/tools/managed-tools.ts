@@ -9,6 +9,7 @@
  * delete_agent (#3182) deletes an agent with its helpers: every choice is an
  * argument and nothing opens a dialog; its grant asks first by default.
  */
+import { legacyDefaultsNotCopied } from '../../legacy-defaults';
 import { createHash, randomBytes } from 'crypto';
 import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
@@ -582,7 +583,12 @@ export function registerManagedTools(): void {
       };
       // Created asleep: nothing here spawns, so the whole creation can run under the grant.
       const config = await asDispatcher(callerId, () => createManagedAgent(project.path, input, checkAccess));
-      return json({ id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping' });
+      // A plain agent made here gets none of the project's legacy defaults (#3245): say so.
+      const legacy = config.managed ? undefined : await legacyDefaultsNotCopied(project.path);
+      return json({
+        id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping',
+        ...(legacy && { legacyDefaults: legacy, note: 'This project has legacy agent defaults. They weren\'t copied into the new agent; the user can copy them from the project\'s settings.' }),
+      });
     });
 
   tool('restart_agent', { actions: ['agent.restart'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },

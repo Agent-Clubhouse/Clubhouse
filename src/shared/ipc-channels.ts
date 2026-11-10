@@ -44,6 +44,15 @@ export const IPC = {
     /** Main to renderer: parts, templates or setups changed; refetch what's shown. */
     CHANGED: 'managed:changed',
   },
+  /** The project's legacy agent defaults (#3245): read-only, imported as parts or copied into a plain agent when asked. */
+  LEGACY_DEFAULTS: {
+    DESCRIBE: 'legacy-defaults:describe',
+    PREVIEW_IMPORT: 'legacy-defaults:preview-import',
+    IMPORT: 'legacy-defaults:import',
+    PREVIEW_COPY: 'legacy-defaults:preview-copy',
+    COPY: 'legacy-defaults:copy',
+    PREVIEW_COPY_NEW: 'legacy-defaults:preview-copy-new',
+  },
   CATALOG_SKILL_BUNDLE: {
     LIST: 'catalog-skill-bundle:list',
     READ: 'catalog-skill-bundle:read',

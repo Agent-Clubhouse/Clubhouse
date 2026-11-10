@@ -756,7 +756,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         // name, folder or branch), so the user is never
         // asked about one that can't start. Approving runs every check again.
         try {
-          await agentConfig.checkDurableCreation(target.path, creation, { projectDefaults: false });
+          await agentConfig.checkDurableCreation(target.path, creation);
         } catch (err) {
           // telemetry-exempt: the refusal reaches the calling agent as the tool result
           return { kind: 'refused', message: `Could not start helper "${name}": ${errorText(err)}`, reason: asReason(errorText(err)) };
@@ -835,8 +835,6 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
           if (helperGrants.length > 0) await applyTemplateGrants(created.id, helperGrants);
         },
         injectRequired: true,
-        // A managed helper gets only its setup, never the project's legacy agent defaults (#3243).
-        projectDefaults: false,
       });
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result

@@ -31,6 +31,11 @@ export interface DurableAgentInput {
    * MCP always runs (D69).
    */
   clubhouseFeatures?: false;
+  /**
+   * Copy the project's legacy agent defaults into its new worktree (#3245).
+   * Only when the person left "Copy this project's legacy defaults" on.
+   */
+  copyLegacyDefaults?: boolean;
 }
 
 /** Delete an agent that was created but never started. A failure is logged; the caller reports its own error. */
@@ -58,7 +63,7 @@ export async function createDurableAgent(
   { onError }: { onError?: (message: string) => void } = {},
 ): Promise<string | null> {
   const fail = (err: unknown) => (onError ? onError(err instanceof Error ? err.message : String(err)) : toastFailure(err));
-  const { name, color, model, useWorktree, orchestrator, access, mcpIds, clubhouseFeatures } = input;
+  const { name, color, model, useWorktree, orchestrator, access, mcpIds, clubhouseFeatures, copyLegacyDefaults } = input;
 
   if (isRemoteProjectId(project.id)) {
     // Remote project — proxy create to satellite via REST
@@ -92,9 +97,11 @@ export async function createDurableAgent(
     : null;
 
   try {
-    const config = await window.clubhouse.agent.createDurable(
-      project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, access, mcpIds,
-    );
+    const args = [project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, access, mcpIds] as const;
+    // Only a copy the person asked for adds the creation options (#3245).
+    const config = copyLegacyDefaults && useWorktree
+      ? await window.clubhouse.agent.createDurable(...args, undefined, undefined, { copyLegacyDefaults: true })
+      : await window.clubhouse.agent.createDurable(...args);
     if (tempId) removeAgent(tempId);
     if (clubhouseFeatures === false) {
       const off = await window.clubhouse.managed.setClubhouseFeatures(project.path, config.id, false);

@@ -6,6 +6,7 @@
  * it can already approve every request one by one.
  */
 
+import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { mobileHelperRoutingDetail } from './mobile-helper-routing';
 import { CONTEXT_WINDOW_APPLIES, type ContextWindowOptions } from '../../shared/context-window';
 import { contextWindowCheck, contextWindowOptionsFor } from './context-window';
@@ -503,10 +504,13 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   const { config } = started;
   // Checked above; a new agent has no helpers, so the desktop's service saves it as the Orchestration card would.
   if (orchestration) await writeOrchestration(project.path, config.id, orchestration);
+  // A phone never copies the project's legacy agent defaults (#3245); the receipt says when it has some.
+  const legacy = await legacyDefaultsNotCopied(project.path);
   return {
     agentId: config.id, projectId: project.id, name: config.name,
     branch: config.branch ?? null, worktreePath: config.worktreePath ?? null,
     state: config.creation?.state === 'creating' ? 'creating' as const : 'sleeping' as const,
+    ...(legacy && { legacyDefaults: legacy }),
   };
 }
 

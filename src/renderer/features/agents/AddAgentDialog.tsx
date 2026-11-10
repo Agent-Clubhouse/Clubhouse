@@ -11,10 +11,12 @@ import { Spinner } from '../../components/Spinner';
 import type { McpCatalogEntry } from '../../../shared/types';
 import type { AccessLevel } from '../../../shared/agent-access';
 import { AccessSelect, accessHelp, useDefaultAccess } from './AccessSelect';
+import { LegacyCopyPreviewList, useHasLegacyDefaults } from './LegacyDefaultsCopy';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, access?: AccessLevel, mcpIds?: string[]) => void;
+  /** `copyLegacyDefaults`: the person left "Copy this project's legacy defaults" on (#3245). */
+  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, access?: AccessLevel, mcpIds?: string[], copyLegacyDefaults?: boolean) => void;
   projectPath?: string;
   /** Surfaced when the most recent create attempt failed, so the user sees why instead of a silently dead button. */
   error?: string | null;
@@ -25,6 +27,9 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
+  const [copyLegacy, setCopyLegacy] = useState(true);
+  const hasLegacyDefaults = useHasLegacyDefaults(projectPath);
+  const offersLegacyCopy = useWorktree && hasLegacyDefaults === true;
   // Access (#2761): the app's Default access until the person picks one.
   const defaultAccess = useDefaultAccess();
   const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
@@ -63,7 +68,10 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || nameProblem) return;
-    onCreate(name.trim(), color, model, useWorktree, orchestrator, access, selectedMcps.length > 0 ? selectedMcps : undefined);
+    const mcps = selectedMcps.length > 0 ? selectedMcps : undefined;
+    // The copy choice goes only where it was offered.
+    if (offersLegacyCopy) onCreate(name.trim(), color, model, useWorktree, orchestrator, access, mcps, copyLegacy);
+    else onCreate(name.trim(), color, model, useWorktree, orchestrator, access, mcps);
   };
 
   return (
@@ -184,6 +192,26 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
               (isolated branch + directory)
             </span>
           </label>
+
+          {offersLegacyCopy && projectPath && (
+            <div className="mb-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={copyLegacy}
+                  onChange={(e) => setCopyLegacy(e.target.checked)}
+                  data-testid="add-agent-copy-legacy"
+                  className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
+                />
+                <span className="text-xs text-ctp-subtext0">Copy this project&apos;s legacy defaults</span>
+              </label>
+              <div className="mt-1 ml-6">
+                {copyLegacy
+                  ? <LegacyCopyPreviewList projectPath={projectPath} name={name} orchestrator={orchestrator} />
+                  : <p className="text-xs text-ctp-subtext0/70">Nothing from them is copied.</p>}
+              </div>
+            </div>
+          )}
 
           {/* Access */}
           <div className="block mb-4">
