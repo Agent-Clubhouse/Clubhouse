@@ -39,7 +39,7 @@ import { listChatRuntimes, registerChatRuntime, unregisterChatRuntime } from './
 import { trackSessionCapture, noteSessionCaptureFailure } from '../session-capture-barrier';
 import { listChatSessions } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
-import { noteChatStartFailure, takeNextStartNotices } from './stale-session';
+import { noteChatStartFailure, noteNextStartNotice, takeNextStartNotices } from './stale-session';
 import { chatResumeResult, recordResumeOutcome, recordSessionCapture } from '../../telemetry/session-telemetry';
 import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
 import { waitsOnPollingGroupProject } from './idle-policy';
@@ -525,6 +525,10 @@ async function runChatStart(
   if (prepared) {
     agentRegistry.setRuntime(params.agentId, 'pty');
     configPipeline.restoreForAgent(params.agentId);
+    // No chat session took the notices for this start (#3240): the terminal start says them instead.
+    if (!facts.attempts.some((a) => a.reason === 'failed_after_session_start')) {
+      for (const notice of prepared.nextStartNotices) noteNextStartNotice(params.agentId, notice);
+    }
   }
   facts.reason = facts.attempts[facts.attempts.length - 1]?.reason ?? 'error';
   // The terminal is where the CLI's own login flow works.

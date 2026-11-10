@@ -1412,6 +1412,8 @@ describe('claudeTurnErrorCode', () => {
     expect(claudeTurnErrorCode('overloaded')).toBe('service_unavailable');
     expect(claudeTurnErrorCode('server_error')).toBe('service_unavailable');
     expect(claudeTurnErrorCode('invalid_request')).toBe('unknown');
+    // A model setting, not the session.
+    expect(claudeTurnErrorCode('model_not_found')).toBe('model_not_found');
     expect(claudeTurnErrorCode(undefined, 'blocking_limit')).toBe('rate_limited');
     expect(claudeTurnErrorCode(undefined, 'api_error', 'refusal')).toBe('refusal');
     expect(claudeTurnErrorCode(undefined, undefined, 'max_tokens')).toBe('max_tokens');

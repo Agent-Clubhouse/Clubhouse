@@ -21,7 +21,7 @@ import { appLog } from '../log-service';
 import { noteNextStartNotice } from '../agent-runtime/stale-session';
 import { getDispatcherChatPath, getDispatcherPath } from './dispatcher-paths';
 import { getDispatcherAgentId, getDispatcherChatAgentId, prepareDispatcherSessionStart } from './dispatcher-service';
-import { endWaitingRequests } from './dispatcher-requests';
+import { endWaitingRequests, waitingRequests, type WaitingRequests } from './dispatcher-requests';
 import type { ChatEventDataMap } from '../../../shared/chat';
 import type { StartFreshResult, StartFreshScope } from '../../../shared/dispatcher-types';
 
@@ -84,8 +84,10 @@ export interface StartFreshDeps extends ClearChatDeps {
   /** Write a notice into a sleeping agent's next conversation. */
   noteNextStart?: (agentId: string, notice: ChatEventDataMap['notice']) => void;
   clearChat?: () => Promise<ClearChatResult>;
-  /** End the requests the old work conversation would have read (#3260), telling the chat. */
-  endWaiting?: () => void;
+  /** The requests the old work conversation owes an outcome (#3260), taken before it is replaced. */
+  takeWaiting?: () => WaitingRequests;
+  /** End those requests, telling the chat. */
+  endWaiting?: (waiting: WaitingRequests) => void;
 }
 
 const WORK_NOTICE: Record<StartFreshReason, string> = {
@@ -133,9 +135,11 @@ export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: S
   let result: 'now' | 'next_start';
   if ((deps.isRunning ?? agentSystem.isAgentRunning)(workId)) {
     await (deps.prepareStart ?? prepareDispatcherSessionStart)(dir, workId);
+    // Taken first: a hand-off that lands during the clear goes to the new conversation and stays under way.
+    const waiting = (deps.takeWaiting ?? waitingRequests)();
     await (deps.clearContext ?? clearRunning)(workId);
     // Its queue and any open turn went with the old conversation: those requests are told as stopped.
-    (deps.endWaiting ?? (() => { endWaitingRequests('cancelled'); }))();
+    (deps.endWaiting ?? ((w) => { endWaitingRequests('cancelled', w); }))(waiting);
     await (deps.addNotice ?? addRunningNotice)(workId, notice);
     result = 'now';
   } else {

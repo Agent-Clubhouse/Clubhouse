@@ -587,6 +587,11 @@ describe('codex chat helpers', () => {
     [{ responseStreamConnectionFailed: { httpStatusCode: null } }, 'service_unavailable'],
     [{ responseStreamDisconnected: { httpStatusCode: null } }, 'service_unavailable'],
     [{ responseTooManyFailedAttempts: { httpStatusCode: 503 } }, 'service_unavailable'],
+    // A status the service answered with: 429 is a rate limit, another 4xx is about the request.
+    [{ httpConnectionFailed: { httpStatusCode: 429 } }, 'rate_limited'],
+    [{ responseStreamConnectionFailed: { httpStatusCode: 400 } }, 'unknown'],
+    [{ responseTooManyFailedAttempts: { httpStatusCode: 404 } }, 'unknown'],
+    ['modelNotFound', 'model_not_found'],
     ['threadRollbackFailed', 'unknown'],
   ] as const)('codexErrorCode maps %s to %s', (info, code) => {
     expect(codexErrorCode(info)).toBe(code);

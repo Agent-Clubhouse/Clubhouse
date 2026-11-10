@@ -101,20 +101,25 @@ describe('Start fresh (#3240)', () => {
   it('quarantines a running work conversation, starts a new one now, and says so in both conversations', async () => {
     const order: string[] = [];
     const notices: Array<[string, string]> = [];
+    const chatMessages: string[] = [];
     const result = await startDispatcherFresh('work', {
       isRunning: () => true,
       workSessionId: async () => 'bad-native',
       quarantine: async (dir, id, sid) => { order.push(`quarantine:${dir === getDispatcherPath()}:${id}:${sid}`); },
       prepareStart: async (dir, id) => { order.push(`prepare:${dir === getDispatcherPath()}:${id}`); },
       clearContext: async (id) => { order.push(`clear:${id}`); },
-      endWaiting: () => { order.push('end-waiting'); },
-      addNotice: async (id, notice) => { notices.push([id, notice.code]); },
+      takeWaiting: () => { order.push('take-waiting'); return { ids: ['req_1'], started: 4 }; },
+      endWaiting: (w) => { order.push(`end-waiting:${w.ids.join(',')}`); },
+      addNotice: async (id, notice) => { notices.push([id, notice.code]); if (id === 'chat') chatMessages.push(notice.message); },
     });
     expect(result).toEqual({ work: 'now' });
     // Quarantined before the new conversation starts, so its end can't restore the old id;
     // the requests the old conversation would have read end once it is gone.
-    expect(order).toEqual(['quarantine:true:work:bad-native', 'prepare:true:work', 'clear:work', 'end-waiting']);
+    // Requests are taken before the clear, so a hand-off that lands during it isn't among them.
+    expect(order).toEqual(['quarantine:true:work:bad-native', 'prepare:true:work', 'take-waiting', 'clear:work', 'end-waiting:req_1']);
     expect(notices).toEqual([['work', 'started_fresh'], ['chat', 'dispatcher_work_started_fresh']]);
+    // Work in progress in the old conversation is gone, so the chat says to ask again.
+    expect(chatMessages.at(-1)).toContain('Ask again for anything that was in progress.');
   });
 
   it('quarantines a sleeping work agent\'s saved session and tells its next start and the chat\'s', async () => {
@@ -140,7 +145,9 @@ describe('Start fresh (#3240)', () => {
     const result = await startDispatcherFresh('both', { isRunning: () => false, workSessionId: async () => 'bad-native', clearChat });
     expect(result).toEqual({ work: 'next_start', chat: 'next_start' });
     expect(clearChat).toHaveBeenCalledTimes(1);
-    expect(staleSession.noteNextStartNotice).toHaveBeenCalledWith('chat', expect.objectContaining({ code: 'dispatcher_started_fresh' }));
+    expect(staleSession.noteNextStartNotice).toHaveBeenCalledWith('chat', expect.objectContaining({
+      code: 'dispatcher_started_fresh', message: expect.stringContaining('Ask again for anything that was in progress.'),
+    }));
     // Only the two conversations' resume ids change: agents, connections, Actions and settings are never written.
     expect(snapshot(h.base)).toEqual(before);
     expect(agentConfig.quarantineSession).toHaveBeenCalledTimes(1);

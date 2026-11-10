@@ -58,9 +58,11 @@ describe('Dispatcher work health (#3240)', () => {
     expect(startFresh).not.toHaveBeenCalled();
   });
 
-  it('never counts errors a fresh session would hit too', () => {
+  it('never counts errors a fresh session would hit too, a provider outage or a missing model included', () => {
+    for (let i = 0; i < REPEATED_TURN_FAILURES + 1; i++) turn('error', { code: 'service_unavailable' });
+    for (let i = 0; i < REPEATED_TURN_FAILURES + 1; i++) turn('error', { code: 'model_not_found' });
     for (let i = 0; i < REPEATED_TURN_FAILURES + 2; i++) {
-      turn('error', { code: ['auth_required', 'account_issue', 'rate_limited', 'rpc_timeout'][i % 4] });
+      turn('error', { code: ['auth_required', 'account_issue', 'rate_limited', 'rpc_timeout', 'service_unavailable', 'model_not_found'][i % 6] });
       turn('error', { code: 'protocol_error', willRetry: true });
     }
     expect(startFresh).not.toHaveBeenCalled();

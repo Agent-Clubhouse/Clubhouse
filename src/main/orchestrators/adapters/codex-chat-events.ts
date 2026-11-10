@@ -741,11 +741,15 @@ export function codexErrorCode(info: CodexErrorInfo | null): ChatErrorCode {
       return 'protocol_error';
     case 'sandboxError':
       return 'tool_failed';
-    // The service, not the thread: an outage or a dropped connection.
+    case 'modelNotFound':
+      return 'model_not_found';
+    // A connection failure says what the service answered, if anything.
     case 'httpConnectionFailed':
     case 'responseStreamConnectionFailed':
     case 'responseStreamDisconnected':
     case 'responseTooManyFailedAttempts':
+      return connectionErrorCode(info);
+    // The service, not the thread: an outage or overload.
     case 'internalServerError':
     case 'serverOverloaded':
     case 'flexUnavailable':
@@ -754,6 +758,19 @@ export function codexErrorCode(info: CodexErrorInfo | null): ChatErrorCode {
     default:
       return 'unknown';
   }
+}
+
+/**
+ * A connection failure by the status it got: none (no network, a dropped
+ * stream) or a 5xx is the service; a 429 is a rate limit; another 4xx is
+ * something about the request, which may be the session's.
+ */
+function connectionErrorCode(info: CodexErrorInfo | null): ChatErrorCode {
+  const detail = info && typeof info === 'object' ? Object.values(info)[0] : undefined;
+  const status = detail && typeof detail === 'object' ? (detail as { httpStatusCode?: unknown }).httpStatusCode : undefined;
+  if (typeof status !== 'number' || status >= 500) return 'service_unavailable';
+  if (status === 429) return 'rate_limited';
+  return 'unknown';
 }
 
 function errorData(error: TurnError): { code: ChatErrorCode; message: string } {

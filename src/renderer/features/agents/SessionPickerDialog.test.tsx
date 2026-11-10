@@ -182,7 +182,7 @@ describe('SessionPickerDialog', () => {
       mockSessions[1],
     ]);
     renderDialog();
-    await waitFor(() => expect(screen.getByTestId('session-blocked-0')).toHaveTextContent('Blocked: kept failing'));
+    await waitFor(() => expect(screen.getByTestId('session-blocked-0')).toHaveTextContent("Kept failing, won't resume"));
     expect(screen.queryByTestId('session-blocked-1')).toBeNull();
     expect(screen.getByTestId('resume-session-0')).toHaveTextContent('Start fresh');
     expect(screen.getByTestId('resume-session-1')).toHaveTextContent('Resume');

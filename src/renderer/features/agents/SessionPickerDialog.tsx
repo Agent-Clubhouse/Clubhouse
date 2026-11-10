@@ -92,7 +92,7 @@ function SessionRow({
               {session.blocked && (
                 <>
                   <span className="mx-1 opacity-50">·</span>
-                  <span data-testid={`session-blocked-${idx}`}>Blocked: kept failing</span>
+                  <span data-testid={`session-blocked-${idx}`}>Kept failing, won't resume</span>
                 </>
               )}
             </div>

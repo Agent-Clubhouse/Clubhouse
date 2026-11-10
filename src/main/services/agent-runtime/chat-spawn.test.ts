@@ -577,6 +577,18 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       expect(notices().filter((n) => n.code === 'resume_blocked')).toEqual([]);
     });
 
+    it('keeps notices left for the next start when the start falls back to the terminal (#3240)', async () => {
+      const { sdk, stream } = drivers();
+      sdk.probe = async () => ({ handshakeOk: false, capabilities: sdk.capabilities, error: 'initialize timed out' });
+      stream.probe = async () => ({ handshakeOk: false, capabilities: stream.capabilities, error: 'initialize timed out' });
+      const { noteNextStartNotice, takeNextStartNotices } = await import('./stale-session');
+      noteNextStartNotice(params.agentId, { level: 'warn', code: 'resume_blocked', message: 'Not resumed.' });
+      expect(await tryStartChatAgent(params, provider, undefined, null)).toBe('terminal');
+      // No chat session wrote it: it waits for the terminal start to say it.
+      expect(notices().filter((n) => n.code === 'resume_blocked')).toEqual([]);
+      expect(takeNextStartNotices(params.agentId)).toEqual([{ level: 'warn', code: 'resume_blocked', message: 'Not resumed.' }]);
+    });
+
     it('drops from the Agent SDK to stream-json when the SDK handshake fails, and says why', async () => {
       const { sdk, stream } = drivers();
       sdk.probe = async () => ({ handshakeOk: false, capabilities: sdk.capabilities, error: 'initialize timed out' });
