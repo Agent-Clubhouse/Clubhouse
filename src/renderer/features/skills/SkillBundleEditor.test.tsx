@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import type { SkillAssetPayload } from '../../../shared/asset-catalog-types';
 import { SkillBundleEditor } from './SkillBundleEditor';
@@ -71,4 +71,38 @@ it('keeps built-in controls readonly and allows member inspection', () => {
   fireEvent.click(screen.getByRole('button', { name: 'logo.bin (executable)' }));
   expect(screen.getByLabelText('Binary bytes (base64)')).toHaveAttribute('readonly');
   expect(current()).toEqual(bundle);
+});
+it('moves a member into a folder, and refuses a cleared or clashing path instead of keeping the old one silently (#3247)', () => {
+  const current = mount();
+  fireEvent.click(screen.getByRole('button', { name: 'check.sh (executable)' }));
+  fireEvent.change(screen.getByLabelText('New relative path'), { target: { value: '' } });
+  expect(screen.getByLabelText('New relative path')).toHaveValue('');
+  fireEvent.click(screen.getByRole('button', { name: 'Rename file' }));
+  expect(screen.getByRole('alert')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('New relative path'), { target: { value: 'references/guide.md' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Rename file' }));
+  expect(screen.getByRole('alert').textContent).toMatch(/conflicts with references\/guide\.md/);
+  expect(current()).toEqual(bundle);
+  fireEvent.change(screen.getByLabelText('New relative path'), { target: { value: 'tools/bin/check.sh' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Rename file' }));
+  expect(current().files[1]).toEqual({ ...bundle.files[1], path: 'tools/bin/check.sh' });
+});
+it('reseeds the rename field when the shown member changes or disappears (#3247)', () => {
+  let setOutside!: (next: SkillAssetPayload) => void;
+  function Fixture() {
+    const [value, setValue] = useState(bundle);
+    setOutside = setValue;
+    return <SkillBundleEditor value={value} onChange={setValue} />;
+  }
+  render(<Fixture />);
+  fireEvent.click(screen.getByRole('button', { name: 'guide.md' }));
+  fireEvent.change(screen.getByLabelText('New relative path'), { target: { value: 'half typed' } });
+  fireEvent.click(screen.getByRole('button', { name: 'check.sh (executable)' }));
+  expect(screen.getByLabelText('New relative path')).toHaveValue('scripts/check.sh');
+  // Removed from outside: the editor falls back to the first member, which has no rename field,
+  // and the next member shown starts from its own path.
+  act(() => setOutside({ ...bundle, files: bundle.files.filter((f) => f.path !== 'scripts/check.sh') }));
+  expect(screen.queryByLabelText('New relative path')).toBeNull();
+  act(() => setOutside({ ...bundle, files: [bundle.files[2], bundle.files[0]] }));
+  expect(screen.getByLabelText('New relative path')).toHaveValue('references/guide.md');
 });
