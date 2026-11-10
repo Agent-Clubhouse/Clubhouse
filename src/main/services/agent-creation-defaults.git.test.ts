@@ -9,6 +9,9 @@ import * as path from 'path';
 // whatever its CLI, and a CLI that can't take the defaults refuses a plain
 // agent before anything is made.
 
+// Real git and worktrees: a loaded or Windows runner can take longer than the default 10 s.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 const h = vi.hoisted(() => ({ provider: null as unknown }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: vi.fn(async () => h.provider) }));
@@ -87,7 +90,8 @@ beforeEach(() => {
 afterEach(async () => {
   await flushAllAgentConfigs();
   clearAgentConfigCache();
-  fs.rmSync(root, { recursive: true, force: true });
+  // Windows can hold a just-closed file briefly (EBUSY): retry rather than fail the hook.
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe('legacy project defaults at creation (#3243)', () => {
