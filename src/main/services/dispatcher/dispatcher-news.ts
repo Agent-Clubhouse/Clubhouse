@@ -22,6 +22,11 @@
  * leaves it waiting on the user, and the chat is told its id so the user's
  * answer goes back under it.
  *
+ * Whoever did the work is named (#3241). An answer in the Dispatcher's own
+ * words for a request it passed to exactly one agent, which has messaged it
+ * since, is that agent's news. Otherwise the Dispatcher is reminded to name
+ * the agent itself.
+ *
  * The triage state (news held for a check-in, what was shown) is kept in
  * `dispatcher-news.json` beside the Dispatcher's folders, not in memory, and
  * survives a restart. Clear chat leaves it alone; Forget everything drops the
@@ -46,9 +51,9 @@ import {
   type TriageDecision,
   type TriageState,
 } from './dispatcher-triage';
-import { clearAgentMessages, findInInbox } from './dispatcher-news-inbox';
+import { clearAgentMessages, findInInbox, lastAgentMessage } from './dispatcher-news-inbox';
 import { CHAT_UPDATE_TAG, setChatDelivery, type ChannelMessage } from './dispatcher-channel';
-import { findRequestFor, restoreRequest, settleRequest } from './dispatcher-requests';
+import { findRequestFor, restoreRequest, settleRequest, type DispatcherRequest } from './dispatcher-requests';
 import { isDispatcherIdentityAgentId } from './dispatcher-service';
 
 const NS = 'core:dispatcher';
@@ -71,6 +76,8 @@ export interface ChatMessage extends ChannelMessage {
    * Dispatcher can send it again, and the request it settled is put back.
    */
   notDelivered?: () => void;
+  /** A word for the Dispatcher in its tool result, such as who the news was credited to. */
+  note?: string;
 }
 
 /** A report that isn't shown now: held for the next check-in, or never shown. */
@@ -206,6 +213,17 @@ export function agentNews(sender: MessageSender, text: string, reason: 'needs_us
   };
 }
 
+/**
+ * The agent an answer in the Dispatcher's own words is from (#3241): the one
+ * agent it reached for the request, when that agent has messaged it since
+ * the hand-off. Anything less certain stays the Dispatcher's own words.
+ */
+export function creditedAgent(request: Pick<DispatcherRequest, 'agents' | 'handedOffAt'>, now: number, isOwnAgent: (id: string) => boolean): MessageSender | null {
+  if (request.agents.length !== 1 || isOwnAgent(request.agents[0])) return null;
+  const last = lastAgentMessage(request.agents[0], now);
+  return last && last.at >= request.handedOffAt ? { agentId: last.agentId, name: last.name } : null;
+}
+
 function defaultFindAgent(from: string): MessageSender | null {
   const lower = from.toLowerCase();
   const seen = new Map<string, string>();
@@ -238,6 +256,14 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
     else if (!sender && report.from) sender = { name: report.from };
     const cleaned = cleanAgentNews(report.message);
     const request = findRequestFor({ kind, request: report.request, fromAgentId: sender?.agentId, fromName: sender?.name }, at);
+    // The outcome of a request another agent did is that agent's news, named or not.
+    let note: string | undefined;
+    if (!sender && !report.from && kind === 'answer' && request) {
+      sender = creditedAgent(request, at, isOwnAgent);
+      note = sender
+        ? `Shown as ${sender.name}'s news, since it did this work. Set from yourself next time.`
+        : request.agents.length ? 'If an agent did this work, set from to it, so the user knows who did it.' : undefined;
+    }
     const item: NewsItem = {
       kind,
       text: cleaned,
@@ -278,7 +304,11 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
       return { ...checkInMessage(cleaned, decision.held), notDelivered };
     }
     recordNewsTriage(outcome);
-    return { ...(sender ? agentNews(sender, cleaned, decision.reason, request?.id) : ownWords(cleaned, decision.reason, request?.id)), notDelivered };
+    return {
+      ...(sender ? agentNews(sender, cleaned, decision.reason, request?.id) : ownWords(cleaned, decision.reason, request?.id)),
+      notDelivered,
+      ...(note && { note }),
+    };
   };
 
   return (report) => {

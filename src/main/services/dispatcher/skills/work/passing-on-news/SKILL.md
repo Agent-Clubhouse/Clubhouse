@@ -24,7 +24,7 @@ What passes between you and an agent stays between you: its progress, its acknow
 
 ## 3. Write it
 
-- **An agent's news:** set `from` to the agent's name or id from `list_agents`. Write `message` as the facts the user needs: "Safari checkout is fixed in #412. All 41 tests pass now." The conversation says it in your voice and names the agent, so keep everything a question needs, such as each option.
+- **An agent's news:** set `from` to the agent's name or id from `list_agents`. Work an agent did is its news, even when you sum it up yourself. Write `message` as the facts the user needs: "Safari checkout is fixed in #412. All 41 tests pass now." The conversation says it in your voice and names the agent, so keep everything a question needs, such as each option.
 - **Your own words:** leave `from` out. Say what you did and where the user can see it, in the first person: "I've scheduled an action. You can manage it in Settings > Actions." Never say how: not "I asked Clubhouse to", not "Clubhouse opened".
 - **For a request:** set `request_id` to the id from its hand-off, for its outcome and for a question about it, from an agent or in your own words.
 - One or two plain sentences. Keep outcomes, numbers, names, PR and issue numbers, and anything the user must decide. Leave out tool names, JSON, task ids, file paths that don't matter, and instructions about how to reply.

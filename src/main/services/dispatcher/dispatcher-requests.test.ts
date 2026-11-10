@@ -13,16 +13,20 @@ import {
   QUIET_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
   REQUEST_TTL_MS,
+  STEPS_MAX,
+  STEP_MAX,
   _resetDispatcherRequestsForTesting,
   _whenRequestsSavedForTesting,
   beginRequest,
   checkRequestTimeouts,
+  doneList,
   getRequest,
   getRequests,
   getRequestsPath,
   matchRequest,
   noteAgentReached,
   noteHandedOff,
+  noteRequestDone,
   noteWorkEvent,
   onRequestsChanged,
   requestsUnderWay,
@@ -298,6 +302,35 @@ describe('outcomes', () => {
   });
 });
 
+describe('steps done (#3241)', () => {
+  it('keeps each finished step once, as one line, for a retry to resume from', () => {
+    const id = handOff('clone acme/web and add it');
+    expect(noteRequestDone(id, ['Cloned acme/web into ~/src/web', '  Checked   git is installed '], now)).toBe(2);
+    expect(noteRequestDone(id, ['cloned acme/web into ~/src/web.', ''], now)).toBe(0);
+    expect(getRequest(id)?.done).toEqual(['Cloned acme/web into ~/src/web', 'Checked git is installed']);
+    expect(doneList(getRequest(id)!)).toBe('- Cloned acme/web into ~/src/web\n- Checked git is installed');
+    expect(doneList({})).toBeNull();
+  });
+
+  it('cuts a long step, keeps the latest STEPS_MAX, and knows no request it wasn\'t given', () => {
+    const id = handOff('many');
+    noteRequestDone(id, ['x'.repeat(STEP_MAX + 50)], now);
+    expect(getRequest(id)?.done?.[0]).toHaveLength(STEP_MAX);
+    noteRequestDone(id, Array.from({ length: STEPS_MAX + 3 }, (_, i) => `Step ${i}`), now);
+    expect(getRequest(id)?.done).toHaveLength(STEPS_MAX);
+    expect(getRequest(id)?.done?.at(-1)).toBe(`Step ${STEPS_MAX + 2}`);
+    expect(noteRequestDone('req_nope', ['x'], now)).toBeNull();
+  });
+
+  it('keeps the steps when a failed request is tried again', () => {
+    const id = handOff('clone acme/web');
+    noteRequestDone(id, ['Made ~/src/web'], now);
+    started();
+    ended('error');
+    expect(beginRequest('clone acme/web', now)).toMatchObject({ kind: 'again', request: { id, done: ['Made ~/src/web'] } });
+  });
+});
+
 describe('the timeout timer', () => {
   it('runs only while someone tells the chat, and stops when tracking stops', () => {
     vi.useFakeTimers({ now: T0 });
@@ -337,6 +370,7 @@ describe('saved state', () => {
     await _resetDispatcherRequestsForTesting();
     setRequestEndedHandler(ended$);
     expect(getRequest(reading)).toMatchObject({ status: 'under_way', turn: 'past', agents: ['a1'] });
+    expect(getRequest(reading)?.done).toBeUndefined();
     expect(getRequest(stale)?.status).toBe('timed_out');
     expect(ended$).not.toHaveBeenCalled();
   });

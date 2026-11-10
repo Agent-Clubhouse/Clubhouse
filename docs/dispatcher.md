@@ -57,6 +57,14 @@ What passes between the Dispatcher and an agent (progress, acknowledgements, an 
 - News that names an agent Clubhouse can't find (a name two projects share, a typo) is still that agent's news, under the name given.
 - News is remembered as shown when it is sent. If it never reaches the chat (a wake that asks first, a chat shutting down, a start that fails), that is undone: it can be sent again, and the request it settled is put back. A question for the user also goes out as a notification that opens the chat. A chat turn that fails after the message arrived isn't detected.
 
+## Routing (#3241)
+
+Who does a piece of work, from the instructions and the `delegating-work` skill:
+
+- **Project work** goes to the agent that owns the project, by card and project. Being awake, free, an orchestrator or recently busy doesn't make an agent the owner.
+- **Machine setup** that no project owns yet is the Dispatcher's, done with its own command line at its own access level, and limited to: read-only checks (a tool and its version, a folder, a git remote), making a folder the user named, and cloning a repository the user gave into a new or empty folder, then adding it as a project when it has a tool for that. Never: project code, installs, sudo, global settings or credentials, deleting, running anything from a cloned repository, submodules unless asked, or cloning into Clubhouse's folders, a worktree or a non-empty folder.
+- **Unsupported**: anything with no owner and no tool. The Dispatcher checks each part before it splits or promises the work, and says so with `needs_user` before starting.
+
 ## Requests (#3237, #3204, #3220)
 
 Each `start_work` is a request with an id (`dispatcher-requests.ts`, kept in `dispatcher-requests.json`). The hand-off carries the id, and the Dispatcher reports under it with `tell_user`'s `request_id`.
@@ -64,6 +72,8 @@ Each `start_work` is a request with an id (`dispatcher-requests.ts`, kept in `di
 - **Outcomes.** An answer for a request closes it. A question about one leaves it waiting on the user, and their answer goes back with `start_work` and the same `request_id`. Clubhouse follows the Dispatcher's turns (`dispatcher-request-outcomes.ts`): when the turn reading a request fails, is stopped, or the session ends before it is read, the request ends and the chat is told, with a retry offered. A request with no outcome times out: after 10 minutes when its turn ended and no agent was reached for it, otherwise after 2 hours.
 - **Which request a report is for** (`matchRequest`): the id given; else, for an agent's news, the latest open request (under way or waiting on the user) that agent was messaged or woken for, so its progress after the request closed isn't an answer; else, for the Dispatcher's own words, the request its current turn is reading; else, for an answer, the one request under way when nothing else could be meant. A question from the Dispatcher in any other turn, such as a failed Action or a missing permission, answers no request.
 - **Retries.** `start_work` with a `request_id` hands that request off again under the same id. The same words as a request under way aren't handed off twice; the same words as one that failed, was stopped or timed out retry it.
+- **Steps done (#3241).** `tell_user`'s `done` notes the finished steps of a request on its record. A retry's hand-off lists them as already done, and the chat's failure update says which parts are done.
+- **Attribution (#3241).** An answer in the Dispatcher's own words for a request it passed to exactly one agent, which has messaged it since the hand-off, is shown as that agent's news, and the tool result tells the Dispatcher so. When it can't be sure (several agents, or no message since), the words stay its own and the result reminds it to set `from`.
 - **Status.** While any request is under way, the sidebar row and the pane header show Working, with "Working on your request", even when the chat is between turns or asleep (`dispatcherDot` in `agent-status.tsx`). The phone still shows the chat's own status.
 
 The rewrite step that put agents' news into their own voice under their own name (#3043) is gone; the `clubhouse.dispatcher.news.rewrite` attributes stay on the triage event, always `none`.

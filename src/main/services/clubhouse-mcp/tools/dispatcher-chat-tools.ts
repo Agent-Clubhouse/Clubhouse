@@ -14,6 +14,8 @@
  * - tell_user, in the `dispatcher` group: the Dispatcher's report to the user.
  *   It says what kind of news it is, whose, and which request it is for, and
  *   the group chat (dispatcher-news) decides when it shows and how it reads.
+ *   `done` notes the steps of that request already finished (#3241), so a
+ *   retry resumes instead of repeating them.
  *
  * Descriptions speak to the agent as the Dispatcher, so neither agent learns
  * to describe a second one to the user.
@@ -27,6 +29,7 @@ import { MemoryReadError, readDispatcherMemory } from '../../dispatcher/dispatch
 import { optionalString, requireString } from './validation';
 import { NEWS_KINDS, isNewsKind, type NewsKind } from '../../dispatcher/dispatcher-triage';
 import { readDispatcherAbilities } from '../../dispatcher/dispatcher-teaching';
+import { noteRequestDone } from '../../dispatcher/dispatcher-requests';
 import { capabilitiesText } from '../../../../shared/dispatcher-teaching';
 
 /** One request or report: long enough for a plan, short enough to stay a message. */
@@ -57,6 +60,19 @@ function readRequestId(args: Record<string, unknown>): string | undefined | McpT
   const id = optionalString(args, 'request_id')?.trim();
   if (!id) return undefined;
   return id.length > 100 ? text('request_id is not a request id. Use the one from the hand-off, or leave it out.', true) : id;
+}
+
+/** At most this many steps in one tell_user. */
+const DONE_MAX = 10;
+
+/** tell_user's `done`: finished steps, one line each, or an error to return. */
+function readDone(args: Record<string, unknown>): string[] | McpToolResult {
+  if (args.done === undefined) return [];
+  const list = typeof args.done === 'string' ? [args.done] : args.done;
+  if (!Array.isArray(list) || !list.every((d) => typeof d === 'string')) return text('done must be a list of short lines.', true);
+  const steps = list.map((d) => d.trim()).filter(Boolean);
+  if (steps.length > DONE_MAX) return text(`done has ${steps.length} steps; send at most ${DONE_MAX}, the ones that matter for a retry.`, true);
+  return steps;
 }
 
 /** What start_work tells the chat about the request it went as. */
@@ -172,6 +188,12 @@ export function registerDispatcherChatTools(): void {
           },
           from: { type: 'string', description: 'The agent whose news this is, by id or name. Leave it out for your own words and check-ins.' },
           request_id: { type: 'string', description: 'The request id from the hand-off this is about. Set it for a request\'s outcome and for a question about one.' },
+          done: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Steps of the request that are finished, one short line each, such as "Cloned acme/web into ~/src/web". '
+              + 'Kept with the request, so trying it again skips them. Needs request_id.',
+          },
         },
         required: ['message'],
       },
@@ -184,11 +206,19 @@ export function registerDispatcherChatTools(): void {
       const from = optionalString(args, 'from')?.trim();
       const request = readRequestId(args);
       if (typeof request === 'object') return request;
+      const done = readDone(args);
+      if (!Array.isArray(done)) return done;
+      if (done.length && !request) return text('done needs request_id: the steps belong to a request.', true);
       try {
+        // Noted whatever becomes of the news: the steps are done either way.
+        const noted = done.length && request ? noteRequestDone(request, done) : 0;
+        if (noted === null) return text(`There is no request ${request}, so the steps weren't noted. Use the id from the hand-off.`, true);
         const result = await deliverToChat(agentId, { message, ...(kind && { kind }), ...(from && { from }), ...(request && { request }) });
-        if (result.held === 'later') return text(`Not shown yet. ${result.reason ?? 'Held for the next check-in summary.'}`);
-        if (result.held === 'never') return text(`Not shown. ${result.reason ?? 'It was held back.'}`);
-        return failure(result) ?? text('The user has it.');
+        const after = [noted ? `Noted ${noted} step${noted === 1 ? '' : 's'} done for request ${request}.` : '', result.note ?? ''].filter(Boolean).join(' ');
+        const withNote = (base: string) => text(after ? `${base} ${after}` : base);
+        if (result.held === 'later') return withNote(`Not shown yet. ${result.reason ?? 'Held for the next check-in summary.'}`);
+        if (result.held === 'never') return withNote(`Not shown. ${result.reason ?? 'It was held back.'}`);
+        return failure(result) ?? withNote('The user has it.');
       } catch (err) {
         // telemetry-exempt: logged, and the error reaches the agent as the tool result
         appLog('core:mcp', 'warn', 'tell_user failed', { meta: { agentId, error: errorText(err) } });

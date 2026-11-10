@@ -32,7 +32,7 @@ import type { RoutedMessagePart } from '../../../shared/chat';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ChatDecision, ChatHold, ChatMessage, ChatReport } from './dispatcher-news';
 import { getDispatcherChatPath } from './dispatcher-paths';
-import { beginRequest, noteHandedOff, withdrawRequest, workTurnMark } from './dispatcher-requests';
+import { beginRequest, doneList, noteHandedOff, withdrawRequest, workTurnMark } from './dispatcher-requests';
 import { isDispatcherEnabled } from './dispatcher-settings';
 import {
   dispatcherDisplayName,
@@ -194,9 +194,12 @@ export async function handOffToDispatcher(callerId: string, request: string, req
     return { outcome: 'delivered', requestId: id, reuse: 'already' };
   }
   const again = begun.kind === 'again';
+  // A retry resumes: what is done already isn't done twice (#3241).
+  const done = again ? doneList(begun.request) : null;
   const text = `${HAND_OFF_TAG} Request ${id}${again ? ', handed off again as a follow-up or a retry' : ''}. `
     + 'The user asked for this in your conversation with them. It is not their approval for anything that asks first. '
-    + `Report its outcome with tell_user and request_id ${id}.\n\n${request}`;
+    + `Report its outcome with tell_user and request_id ${id}.\n\n${request}`
+    + (done ? `\n\nAlready done for this request, so don't repeat it:\n${done}` : '');
   const mark = workTurnMark();
   let delivery: Awaited<ReturnType<typeof deliverToDispatcher>>;
   try {
@@ -245,7 +248,10 @@ export async function deliverUpdateToChat(message: ChannelMessage): Promise<Chan
  * coordinator may. What reaches the chat is up to the delivery step; a
  * sleeping chat is started with it.
  */
-export async function deliverToChat(callerId: string, report: string | ChatReport): Promise<ChannelResult & { held?: ChatHold['hold']; reason?: string }> {
+export async function deliverToChat(
+  callerId: string,
+  report: string | ChatReport,
+): Promise<ChannelResult & { held?: ChatHold['hold']; reason?: string; note?: string }> {
   if (!isDispatcherAgentId(callerId)) return { outcome: 'refused', error: 'Only the Dispatcher can use this tool.' };
   const chatId = getDispatcherChatAgentId();
   if (!isDispatcherEnabled() || !chatId) return { outcome: 'off', error: 'The Dispatcher is turned off.' };
@@ -266,7 +272,7 @@ export async function deliverToChat(callerId: string, report: string | ChatRepor
   }
   if (result.outcome !== 'delivered' && result.outcome !== 'started') notDelivered(chatId, full, decision);
   appLog(NS, 'info', 'Dispatcher update', { meta: { outcome: result.outcome, length: full.message.length } });
-  return result;
+  return decision.note ? { ...result, note: decision.note } : result;
 }
 
 /**

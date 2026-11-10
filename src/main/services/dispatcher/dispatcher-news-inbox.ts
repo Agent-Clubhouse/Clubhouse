@@ -34,6 +34,12 @@ export function findInInbox(from: string, now = Date.now()): MessageSender | nul
   return named.length === 1 ? { agentId: named[0].agentId, name: named[0].name } : null;
 }
 
+/** When an agent last messaged the Dispatcher, if lately, under the name it used. */
+export function lastAgentMessage(agentId: string, now = Date.now()): (MessageSender & { at: number }) | null {
+  const seen = inbox.get(agentId);
+  return seen && now - seen.at < SEEN_TTL_MS ? { agentId: seen.agentId, name: seen.name, at: seen.at } : null;
+}
+
 /** For tests and resets. */
 export function clearAgentMessages(): void {
   inbox.clear();

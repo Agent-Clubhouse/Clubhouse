@@ -10,8 +10,9 @@
  *   it was read ends it, and the chat is told (dispatcher-request-outcomes).
  *   So is no outcome for too long.
  * - A retry names the request, or repeats its words: it is handed off again
- *   under the same id. The same words while it is still under way aren't
- *   handed off twice.
+ *   under the same id, with the steps already done (#3241), so it resumes
+ *   instead of repeating them. The same words while it is still under way
+ *   aren't handed off twice.
  *
  * Requests under way show the Dispatcher as working (#3220). This module has
  * no Dispatcher imports, so its service can read it; the caller says which
@@ -57,6 +58,8 @@ export interface DispatcherRequest {
   agents: string[];
   /** When it got its outcome. */
   endedAt?: number;
+  /** Steps of it already done, oldest first, so a retry doesn't repeat them (#3241). */
+  done?: string[];
 }
 
 /** A request nobody answered in a week is no longer one an answer can be for. */
@@ -68,6 +71,10 @@ export const QUIET_TIMEOUT_MS = 10 * 60 * 1000;
 const REQUESTS_MAX = 50;
 const TEXT_MAX = 1_000;
 const DETAIL_MAX = 300;
+/** A finished step: one short line. */
+export const STEP_MAX = 200;
+/** At most this many steps are kept per request; the oldest go first. */
+export const STEPS_MAX = 20;
 
 /** Request text as compared for a retry: case, spacing and punctuation don't count. */
 export function sameRequestKey(text: string): string {
@@ -160,6 +167,8 @@ function load(now = Date.now()): DispatcherRequest[] {
   requests = saved.filter((r) => now - r.handedOffAt < REQUEST_TTL_MS).map((r) => {
     // The turns it waited on ended with the last run. One that ran out meanwhile is too stale to tell the user about.
     const next: DispatcherRequest = { ...r, agents: r.agents.filter((a) => typeof a === 'string') };
+    if (Array.isArray(r.done)) next.done = r.done.filter((d) => typeof d === 'string');
+    else delete next.done;
     if (next.turn !== 'past') {
       next.turn = 'past';
       next.turnEndedAt = now;
@@ -204,7 +213,7 @@ function changed(now = Date.now()): void {
 }
 
 function copy(r: DispatcherRequest): DispatcherRequest {
-  return { ...r, agents: [...r.agents] };
+  return { ...r, agents: [...r.agents], ...(r.done && { done: [...r.done] }) };
 }
 
 function find(id: string): DispatcherRequest | undefined {
@@ -441,6 +450,43 @@ export function noteAgentReached(agentId: string, now = Date.now()): void {
   const reading = load(now).filter((r) => r.status === 'under_way' && r.turn === 'in_turn' && !r.agents.includes(agentId));
   for (const r of reading) r.agents.push(agentId);
   if (reading.length) changed(now);
+}
+
+// ── Steps done ────────────────────────────────────────────────────────────
+
+/** A step as kept: one line, cut to STEP_MAX. */
+function cleanStep(step: string): string {
+  const line = step.replace(/\s+/g, ' ').trim();
+  return line.length > STEP_MAX ? `${line.slice(0, STEP_MAX - 1)}…` : line;
+}
+
+/** The steps already done, as a list to resume from, or nothing when there are none. */
+export function doneList(r: Pick<DispatcherRequest, 'done'>): string | null {
+  return r.done?.length ? r.done.map((d) => `- ${d}`).join('\n') : null;
+}
+
+/**
+ * Steps of a request that are done, from the Dispatcher's tell_user (#3241).
+ * A step already noted isn't noted twice. Returns how many were new, or null
+ * when the id names no request.
+ */
+export function noteRequestDone(id: string, steps: readonly string[], now = Date.now()): number | null {
+  const r = find(id);
+  if (!r) return null;
+  const done = r.done ?? [];
+  const known = new Set(done.map(sameRequestKey));
+  let added = 0;
+  for (const step of steps.map(cleanStep)) {
+    const key = sameRequestKey(step);
+    if (!key || known.has(key)) continue;
+    known.add(key);
+    done.push(step);
+    added++;
+  }
+  if (!added) return 0;
+  r.done = done.slice(-STEPS_MAX);
+  changed(now);
+  return added;
 }
 
 // ── Outcomes ──────────────────────────────────────────────────────────────

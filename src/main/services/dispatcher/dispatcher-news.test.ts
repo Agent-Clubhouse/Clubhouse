@@ -280,6 +280,52 @@ describe('requests keyed to their id and the agents reached for them (#3204)', (
   });
 });
 
+describe('who did the work is named (#3241)', () => {
+  it('credits an answer in the Dispatcher\'s own words to the one agent that did the request', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    const id = handOff('clone acme/web');
+    noteAgentReached('a1', now);
+    turn('turn_ended');
+    now += 1000;
+    recordAgentMessage('a1', 'webapp-lead', now);
+    const message = shown(await deliver({ message: 'Cloned acme/web into ~/src/web.', kind: 'answer', request: id }));
+    expect(message.text).toContain('News from webapp-lead that answers what the user asked');
+    expect(message.note).toBe('Shown as webapp-lead\'s news, since it did this work. Set from yourself next time.');
+  });
+
+  it('keeps its own words, with a reminder, when it can\'t be sure who did it', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    // Two agents reached.
+    const two = handOff('one');
+    noteAgentReached('a1', now);
+    noteAgentReached('a2', now);
+    turn('turn_ended');
+    recordAgentMessage('a1', 'webapp-lead', now + 1);
+    const first = shown(await deliver({ message: 'Both are done.', kind: 'answer', request: two }));
+    expect(first.text).toContain('News for the user');
+    expect(first.note).toBe('If an agent did this work, set from to it, so the user knows who did it.');
+    // One agent, whose last message came before the hand-off.
+    recordAgentMessage('a3', 'docs-lead', now);
+    now += 1000;
+    const stale = handOff('two');
+    noteAgentReached('a3', now);
+    turn('turn_ended');
+    const second = shown(await deliver({ message: 'The docs are done.', kind: 'answer', request: stale }));
+    expect(second.text).toContain('News for the user');
+  });
+
+  it('leaves the Dispatcher\'s own work its own, with nothing to remind', async () => {
+    installGroupChat(deps().deps);
+    const deliver = h.delivery as (report: unknown) => Promise<ChatDecision>;
+    const id = handOff('check git is installed');
+    const message = shown(await deliver({ message: 'git 2.47 is installed.', kind: 'answer', request: id }));
+    expect(message.text).toContain('News for the user');
+    expect(message.note).toBeUndefined();
+  });
+});
+
 describe('the Dispatcher\'s own words', () => {
   it('reach the chat as a Clubhouse update, which the group chat doesn\'t show by name', async () => {
     const { deps: d } = deps();
