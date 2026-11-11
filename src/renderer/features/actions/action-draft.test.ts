@@ -4,6 +4,25 @@ import { draftFrom, draftToInput, newDraft, toLocalInput } from './action-draft'
 const NOW = new Date(2026, 10, 9, 8, 0).getTime();
 
 describe('action draft', () => {
+  it('round-trips device filters and preserves an explicitly undelayed saved device action', () => {
+    const input = {
+      trigger: { kind: 'event', event: 'device.offline', source: { kind: 'device', deviceId: 'abc', deviceKind: 'phone' } } as const,
+      steps: [{ kind: 'notify', text: 'hi' }] as const,
+    };
+    const draft = draftFrom({ ...input, steps: [...input.steps] }, NOW);
+    expect(draft.source).toBe('device:abc');
+    expect(draft.deviceKind).toBe('phone');
+    expect(draft.delay).toBe('');
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input });
+    expect(draft.timing).toBe('none');
+    expect(draftToInput({ ...draft, source: '', timing: 'delay', delay: '120', delayUnit: 'seconds' }, NOW)).toMatchObject({
+      ok: true, input: { trigger: { source: { kind: 'device', deviceKind: 'phone' }, delaySeconds: 120 } },
+    });
+    expect(draftToInput({ ...draft, timing: 'coalesce', coalesceSeconds: '15', throttleMaxRuns: '2', throttlePerMinutes: '5' }, NOW)).toMatchObject({
+      ok: true, input: { trigger: { source: input.trigger.source, coalesceSeconds: 15, throttle: { maxRuns: 2, perMinutes: 5 } } },
+    });
+  });
+
   it('round-trips Auto difficulty without changing older quick steps', () => {
     const old = {
       trigger: { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' } as const,
@@ -17,7 +36,7 @@ describe('action draft', () => {
     expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input: { steps: [{ difficulty: 'hard' }] } });
   });
 
-  it('round-trips an any-agent window, replacing Wait first and clearing grouping for other sources', () => {
+  it('round-trips an any-agent window and keeps grouping available for other sources', () => {
     const input = {
       trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 } as const,
       steps: [{ kind: 'notify', text: 'hi' }],
@@ -28,7 +47,22 @@ describe('action draft', () => {
     expect(draftToInput({ ...draft, delay: '0.5' }, NOW)).toMatchObject({ ok: true, input });
     expect(draftToInput({ ...draft, coalesceSeconds: '9' }, NOW).ok).toBe(false);
     const specific = draftToInput({ ...draft, source: 'agent:a' }, NOW);
-    expect(specific.ok && specific.input.trigger).toEqual({ kind: 'event', event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'a' } });
+    expect(specific.ok && specific.input.trigger).toEqual({ kind: 'event', event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'a' }, coalesceSeconds: 15 });
+  });
+
+  it('round-trips seconds, general coalescing, throttle and message delivery without changing legacy defaults', () => {
+    const steps = [{ kind: 'message', agentId: 'a', text: 'Check', delivery: 'steer', latestOnly: true, maxWaitMinutes: 5 }] as import('../../../shared/actions').ActionStep[];
+    const input = {
+      trigger: { kind: 'event', event: 'git.commit', source: { kind: 'project', projectId: 'p' }, delaySeconds: 30, throttle: { maxRuns: 2, perMinutes: 5 } } as const, steps,
+    };
+    const draft = draftFrom(input, NOW);
+    expect(draft).toMatchObject({ timing: 'delay', delay: '30', delayUnit: 'seconds', throttleMaxRuns: '2', throttlePerMinutes: '5' });
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input });
+    const coalesced = draftToInput({ ...draft, timing: 'coalesce', coalesceSeconds: '15' }, NOW);
+    expect(coalesced.ok && coalesced.input.trigger).toEqual({ kind: 'event', event: 'git.commit', source: { kind: 'project', projectId: 'p' }, coalesceSeconds: 15, throttle: { maxRuns: 2, perMinutes: 5 } });
+    expect(draftToInput({ ...draft, throttlePerMinutes: '' }, NOW).ok).toBe(false);
+    const noTiming = draftToInput({ ...draft, timing: 'none' }, NOW);
+    expect(noTiming.ok && noTiming.input.trigger).not.toHaveProperty('delaySeconds');
   });
 
   it('round-trips generic time filters and omits them after switching to a schedule', () => {
@@ -133,6 +167,6 @@ describe('action draft', () => {
   it('explains a bad custom line and a bad wait', () => {
     const steps = [{ ...newDraft().steps[0], kind: 'notify' as const, text: 'x' }];
     expect(draftToInput({ ...newDraft(NOW), preset: 'cron', cron: '61 * * * *', steps })).toMatchObject({ ok: false, error: expect.stringMatching(/minute/) });
-    expect(draftToInput({ ...newDraft(NOW), when: 'event', source: 'agent:a', delay: 'x', steps })).toMatchObject({ ok: false, error: expect.stringMatching(/whole number/) });
+    expect(draftToInput({ ...newDraft(NOW), when: 'event', source: 'agent:a', timing: 'delay', delay: 'x', steps })).toMatchObject({ ok: false, error: expect.stringMatching(/whole number/) });
   });
 });

@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   /** agent id to Access level; unset is Full access */
   access: new Map<string, string>(),
   activityModes: new Map<string, 'allow' | 'ask' | 'off'>(),
+  deviceModes: new Map<string, 'allow' | 'ask' | 'off'>(),
   engine: null as unknown,
   history: new Map<string, unknown>(),
   /** Steps the engine ran, in order. */
@@ -87,12 +88,16 @@ vi.mock('../../actions', async () => {
         // The default permissions for what each agent is; every agent here may start helpers.
         grantsOf: (id) => {
           const mode = h.activityModes.get(id);
+          const deviceMode = h.deviceModes.get(id);
           return applyGrantChanges(defaultGrants({
             dispatcher: h.dispatchers.has(id),
             helper: !!h.known.get(id)?.parentAgentId,
             orchestrates: !h.dispatchers.has(id),
             crossProject: false,
-          }), { changes: mode ? [{ action: 'agent.watch', target: { kind: 'app' }, mode }] : [] });
+          }), { changes: [
+            ...(mode ? [{ action: 'agent.watch' as const, target: { kind: 'app' as const }, mode }] : []),
+            ...(deviceMode ? [{ action: 'device.read' as const, target: { kind: 'app' as const }, mode: deviceMode }] : []),
+          ] });
         },
         agentProjectPath: (id) => projects.find((p) => p.id === agentProjectId(id))?.path,
         projectPath: (id) => projects.find((p) => p.id === id)?.path,
@@ -120,6 +125,7 @@ vi.mock('../../actions', async () => {
     runActionNow: vi.fn((id: string) => { visible(id); return { runId: e().runNow(id) }; }),
     actionHistory: vi.fn((id: string, reader?: ActionOwner) => (e().get(id)?.owner.kind === 'app' ? [] : e().history(id, reader).sort((x, y) => y.startedAt - x.startedAt))),
     canWatchAgentActivity: (reader: ActionOwner) => e().canWatchAgentActivity(reader),
+    canReadDevices: (reader: ActionOwner) => e().canReadDevices(reader),
     actionNames: () => ({ agent: agentName, project: projectName }),
     projectIdOfAgent: agentProjectId,
     findProjectId: (ref: string, usable: (id: string) => boolean = () => true) =>
@@ -159,6 +165,7 @@ describe('action tools', () => {
     h.callerKinds.clear();
     h.access.clear();
     h.activityModes.clear();
+    h.deviceModes.clear();
     h.dispatchers.clear();
     h.trackedDispatchers.clear();
     h.known.clear();
@@ -181,6 +188,35 @@ describe('action tools', () => {
     registerActionTools();
   });
 
+  it('round-trips timing, throttle and message policies through create, update and subscribe', async () => {
+    const throttle = { maxRuns: 2, perMinutes: 5 };
+    const step = { kind: 'message', agentId: 'self', text: 'Check', delivery: 'steer', latestOnly: true, maxWaitMinutes: 3 };
+    const trigger = { kind: 'event', event: 'git.commit', source: { kind: 'project', projectId: 'web' }, delaySeconds: 30, throttle };
+    const created = await call('agent-a', 'create_action', { trigger, steps: [step] });
+    expect(created).toMatchObject({ isError: false, body: { action: {
+      trigger: { delaySeconds: 30, throttle }, steps: [{ ...step, agentId: 'agent-a' }],
+      description: expect.stringContaining('30 seconds after'),
+    } } });
+    const { delaySeconds: _delaySeconds, ...base } = trigger;
+    const updated = await call('agent-a', 'update_action', { id: created.body.action.id, trigger: { ...base, coalesceSeconds: 15 } });
+    expect(updated).toMatchObject({ isError: false, body: { action: { trigger: { coalesceSeconds: 15, throttle }, steps: [{ ...step, agentId: 'agent-a' }] } } });
+    expect(updated.body.action.trigger).not.toHaveProperty('delaySeconds');
+    const subscribed = await call('agent-a', 'subscribe', { event: 'git.commit', source: trigger.source, delaySeconds: 2, throttle });
+    expect(subscribed).toMatchObject({ isError: false, body: { action: { subscription: true, trigger: { delaySeconds: 2, throttle } } } });
+  });
+
+  it('keeps every Action argument and nested argument description within 200 characters', () => {
+    vi.spyOn(agentRegistry, 'get').mockReturnValue({ projectPath: 'web-root', orchestrator: 'claude-code', runtime: 'chat' });
+    const tools = getScopedToolList('dispatcher').filter((tool) => tool.name in ACTION_TOOL_PERMISSIONS);
+    const visit = (raw: unknown, path: string): void => {
+      if (typeof raw !== 'object' || raw === null) return;
+      const obj = raw as Record<string, unknown>;
+      if (typeof obj.description === 'string') expect(obj.description.length, path).toBeLessThanOrEqual(200);
+      for (const [key, child] of Object.entries(obj)) visit(child, `${path}.${key}`);
+    };
+    for (const tool of tools) visit(tool.inputSchema, tool.name);
+  });
+
   it('shows successful Dispatcher creates, changes and subscriptions, but not other callers or refusals', async () => {
     const created = await call('dispatcher', 'create_action', { name: 'Morning', trigger: DAILY, steps: [NOTIFY] });
     expect(showDispatcherActionSummary).toHaveBeenCalledWith(expect.objectContaining({ id: created.body.action.id, name: 'Morning', enabled: true }), expect.anything());
@@ -192,6 +228,47 @@ describe('action tools', () => {
     await call('dispatcher', 'create_action', { steps: [] });
     await call('dispatcher', 'list_actions');
     expect(showDispatcherActionSummary).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps device subscriptions and retained device history behind the reader device.read grant', async () => {
+    const subscribed = await call('dispatcher', 'subscribe', { event: 'device.online', source: { kind: 'device', deviceKind: 'phone' } });
+    expect(subscribed.isError).toBe(false);
+    const id = subscribed.body.action.id;
+    expect(subscribed.body.action.trigger.source).toEqual({ kind: 'device', deviceKind: 'phone' });
+    engine().start();
+    engine().handleEvent({ type: 'device.online', at: Date.now(), device: { id: 'phone', name: 'Private phone', kind: 'phone' } });
+    await flush();
+    expect(h.stepCalls).toHaveLength(1);
+    for (const mode of ['off', 'ask'] as const) {
+      h.deviceModes.set('agent-a', mode);
+      const listed = await call('agent-a', 'list_actions');
+      expect(JSON.stringify(listed.body)).not.toContain('Private phone');
+      expect(listed.body.actions.some((a: Action) => a.id === id)).toBe(false);
+      expect((await call('agent-a', 'action_history', { id })).body.error.code).toBe('not_found');
+      expect((await call('agent-a', 'subscribe', { event: 'device.offline' })).body.error.code).toBe('not_allowed');
+    }
+    h.deviceModes.set('agent-a', 'allow');
+    const readable = await call('agent-a', 'action_history', { id });
+    expect(JSON.stringify(readable.body)).toContain('Private phone');
+    engine().update(id, { trigger: DAILY, steps: [NOTIFY] });
+    h.deviceModes.set('agent-a', 'off');
+    expect((await call('agent-a', 'action_history', { id })).body.runs).toEqual([]);
+    engine().remove(id);
+    expect((await call('agent-a', 'action_history', { id })).body.error.code).toBe('not_found');
+    h.deviceModes.set('agent-a', 'allow');
+    expect((await call('agent-a', 'action_history', { id })).body.runs).toHaveLength(1);
+  });
+
+  it('defaults device subscriptions to a device source and advertises the filter schema within budget', async () => {
+    const subscribed = await call('dispatcher', 'subscribe', { event: 'device.offline', delaySeconds: 120 });
+    expect(subscribed.isError).toBe(false);
+    expect(subscribed.body.action.trigger).toEqual({ kind: 'event', event: 'device.offline', source: { kind: 'device' }, delaySeconds: 120 });
+    const definition = getScopedToolList('dispatcher').find((t) => t.name === 'subscribe')!;
+    const properties = definition.inputSchema.properties as Record<string, { description?: string; properties?: Record<string, { description?: string }> }>;
+    const source = properties.source;
+    expect(source.description!.length).toBeLessThanOrEqual(200);
+    for (const key of ['deviceId', 'deviceKind']) expect(source.properties![key].description!.length).toBeLessThanOrEqual(200);
+    expect(source.properties!.deviceKind).toMatchObject({ enum: ['computer', 'phone'] });
   });
 
   it('returns a successful change even if its chat receipt fails', async () => {
@@ -716,7 +793,7 @@ describe('action tools', () => {
   describe('typed errors', () => {
     it('invalid input from the shared checks', async () => {
       const r = await call('agent-a', 'create_action', { trigger: { kind: 'event', event: 'agent.idle', source: { kind: 'agent', agentId: 'self' } }, steps: [NOTIFY] });
-      expect(r).toEqual({ isError: true, body: { error: { code: 'invalid_input', message: 'Say how many minutes of idle time to wait for.' } } });
+      expect(r).toEqual({ isError: true, body: { error: { code: 'invalid_input', message: 'Say how much idle time to wait for.' } } });
     });
 
     it('unavailable while Actions start', async () => {

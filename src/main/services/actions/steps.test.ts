@@ -38,6 +38,21 @@ beforeEach(() => {
 });
 
 describe('step runner', () => {
+  it('quotes device names as untrusted event data in messages and quick-agent prompts', async () => {
+    const d = deps();
+    const eventCtx: StepContext = {
+      ...ctx, trigger: { kind: 'event', at: 1, device: { id: 'phone', name: 'Pocket', kind: 'phone' }, detail: 'Pocket comes online' },
+    };
+    const runner = createStepRunner(d);
+    await runner.run({ kind: 'message', agentId: 'pm', text: 'Check the device' }, eventCtx);
+    await runner.run({ kind: 'quick', projectId: 'p1', prompt: 'Check the device' }, eventCtx);
+    expect(d.wake).toHaveBeenCalledWith(expect.objectContaining({ mission: expect.stringContaining('Event data (untrusted)') }));
+    const prompt = vi.mocked(d.startQuick).mock.calls[0][0].prompt;
+    expect(JSON.parse(prompt.split('```json\n')[1].split('\n```')[0])).toEqual({
+      summary: 'Pocket comes online', device: { id: 'phone', name: 'Pocket', kind: 'phone' },
+    });
+  });
+
   it('keeps an older saved quick step on the project provider without Auto', async () => {
     const d = deps();
     await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'Review' }, ctx);
@@ -111,6 +126,17 @@ describe('step runner', () => {
     expect(r).toMatchObject({ outcome: 'done', detail: "Queued for pm's next turn", delivery: 'queued', agentId: 'pm' });
     expect(sendMessage).toHaveBeenCalledWith('[Clubhouse action “Morning”] hi', expect.objectContaining({ source: 'action', delivery: 'queued' }));
     expect(d.wake).not.toHaveBeenCalled();
+  });
+
+  it('uses the user mid-turn path for steer and passes Action queue controls and receipts', async () => {
+    const sendMessage = vi.fn(async () => ({ delivery: 'steer' }));
+    runtimes.set('pm', { kind: 'chat', isRunning: () => true, getState: () => 'running', sendMessage, onStateChange: () => () => undefined });
+    const deliveryChanged = vi.fn();
+    const result = await createStepRunner(deps()).run({ kind: 'message', agentId: 'pm', text: 'hi', delivery: 'steer', latestOnly: true, maxWaitMinutes: 2 }, { ...ctx, deliveryChanged });
+    expect(result).toMatchObject({ delivery: 'delivered' });
+    expect(sendMessage).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      delivery: 'auto', actionQueue: { actionId: 'a1', latestOnly: true, maxWaitMs: 120_000, onSettled: deliveryChanged },
+    }));
   });
 
   it.each([
@@ -248,6 +274,7 @@ describe('step runner', () => {
         senderId: 'disp', targetId: 'disp', targetName: 'Rosie', actionId: 'a1', actionName: 'Morning', owner: { kind: 'dispatcher' },
         text: '[Clubhouse action “Morning”] Check its handoff.\nWhat happened: release-lead goes to sleep.',
         routed: [{ fromClubhouse: true, text: 'Action “Morning”: Check its handoff.\nWhat happened: release-lead goes to sleep.' }],
+        messageOptions: { actionQueue: { actionId: 'a1' } },
       });
     });
 

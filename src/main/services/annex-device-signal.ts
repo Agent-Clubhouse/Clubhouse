@@ -7,9 +7,13 @@
 const DEBOUNCE_MS = 50;
 
 const listeners = new Set<() => void>();
+const presenceListeners = new Set<() => void>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 export function devicesChanged(): void {
+  for (const listener of [...presenceListeners]) {
+    try { listener(); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
+  }
   if (timer || listeners.size === 0) return;
   timer = setTimeout(() => {
     timer = null;
@@ -18,6 +22,12 @@ export function devicesChanged(): void {
     }
   }, DEBOUNCE_MS);
   timer.unref?.();
+}
+
+/** Presence observes every transition, including ones within a Settings update burst. */
+export function onDevicePresenceChanged(listener: () => void): () => void {
+  presenceListeners.add(listener);
+  return () => { presenceListeners.delete(listener); };
 }
 
 export function onDevicesChanged(listener: () => void): () => void {
@@ -30,4 +40,5 @@ export function resetDeviceSignalForTests(): void {
   if (timer) clearTimeout(timer);
   timer = null;
   listeners.clear();
+  presenceListeners.clear();
 }

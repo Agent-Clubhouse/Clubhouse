@@ -29,6 +29,8 @@ const OUTCOME_WORDS: Record<ActionRun['outcome'], string> = {
   failed: 'Couldn’t run',
   cancelled: 'Cancelled',
   skipped: 'Skipped',
+  throttled: 'Throttled',
+  expired: 'Expired',
 };
 
 const OUTCOME_DOT: Record<ActionRun['outcome'], string> = {
@@ -37,6 +39,8 @@ const OUTCOME_DOT: Record<ActionRun['outcome'], string> = {
   failed: 'bg-ctp-red',
   cancelled: 'bg-surface-2',
   skipped: 'bg-surface-2',
+  throttled: 'bg-surface-2',
+  expired: 'bg-surface-2',
 };
 
 export function OutcomeDot({ outcome }: { outcome: ActionRun['outcome'] }) {

@@ -31,7 +31,7 @@ import { appLog } from '../../log-service';
 import { askFirst } from '../ask-first';
 import { decideGrant } from '../grant-check';
 import type { GrantCallTarget, GrantDecision } from '../../../../shared/agent-grants';
-import type { MessageDelivery, RoutedMessagePart } from '../../../../shared/chat';
+import type { MessageDelivery, RoutedMessagePart, RuntimeSendOptions } from '../../../../shared/chat';
 import { wakeWiredAgent, type DurableAgentLocation } from './agent-lifecycle';
 
 /** The Dispatcher as a connected agent sees it, for the wake grant. */
@@ -87,6 +87,7 @@ export interface DispatcherDeliveryRequest {
   args: Record<string, unknown>;
   /** Sent by an action's step (#3042): nobody can make the call again, so Ask first isn't asked. */
   fromAction?: boolean;
+  messageOptions?: Pick<RuntimeSendOptions, 'delivery' | 'actionQueue'>;
 }
 
 export type DispatcherDelivery =
@@ -143,7 +144,10 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   if (agentRegistry.get(inboxId) && !agentSystem.isAgentStopping(inboxId)) {
     const runtime = getAgentRuntime(inboxId);
     if (!runtime) return { delivered: false, text: `${targetName}'s runtime does not support input.` };
-    const sent = await runtime.sendMessage(req.text, { source: 'mcp', taskId: req.taskId, submit: req.submit, routed: req.routed });
+    const sent = await runtime.sendMessage(req.text, {
+      source: req.messageOptions ? 'action' : 'mcp', taskId: req.taskId, submit: req.submit, routed: req.routed,
+      ...(req.messageOptions && { delivery: 'queued', ...req.messageOptions }),
+    });
     return { delivered: true, woke: false, ...(sent?.delivery && { delivery: sent.delivery }) };
   }
 

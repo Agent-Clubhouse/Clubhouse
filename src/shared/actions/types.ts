@@ -40,7 +40,7 @@ export interface OnceTrigger {
   at: number;
 }
 
-/** Events an action can wait for. Grouped in the form as Agent, Git and App. */
+/** Events an action can wait for. Grouped in the form as Agent, Git, App and Device. */
 export type ActionEventKind =
   // Agent
   | 'agent.woke'
@@ -59,6 +59,9 @@ export type ActionEventKind =
   | 'git.commit'
   | 'git.branch_switched'
   | 'git.remote_updated'
+  // Device
+  | 'device.online'
+  | 'device.offline'
   // App
   | 'app.started'
   | 'app.returned'
@@ -71,7 +74,8 @@ export const AGENT_EVENT_KINDS: readonly ActionEventKind[] = [
 ];
 export const GIT_EVENT_KINDS: readonly ActionEventKind[] = ['git.commit', 'git.branch_switched', 'git.remote_updated'];
 export const APP_EVENT_KINDS: readonly ActionEventKind[] = ['app.started', 'app.returned', 'project.added', 'project.removed'];
-export const ACTION_EVENT_KINDS: readonly ActionEventKind[] = [...AGENT_EVENT_KINDS, ...GIT_EVENT_KINDS, ...APP_EVENT_KINDS];
+export const DEVICE_EVENT_KINDS: readonly ActionEventKind[] = ['device.online', 'device.offline'];
+export const ACTION_EVENT_KINDS: readonly ActionEventKind[] = [...AGENT_EVENT_KINDS, ...GIT_EVENT_KINDS, ...APP_EVENT_KINDS, ...DEVICE_EVENT_KINDS];
 export const TURN_EVENT_KINDS: readonly ActionEventKind[] = ['agent.turn_ended', 'agent.turn_failed'];
 export const ANY_AGENT_EVENT_KINDS: readonly ActionEventKind[] = [...TURN_EVENT_KINDS, 'agent.quick_finished'];
 export const DEFAULT_COALESCE_SECONDS = 60;
@@ -79,7 +83,7 @@ export const MIN_COALESCE_SECONDS = 10;
 export const MAX_COALESCE_SECONDS = 600;
 
 /**
- * Where an event comes from: one agent, a project, or any readable agent. Git events
+ * Where an event comes from: one agent, a project, a device, or any readable agent. Git events
  * use the project (its root and every agent worktree in it) or one agent's
  * worktree. App events take no source; project events may name one project.
  */
@@ -87,6 +91,8 @@ export type ActionEventSource =
   | { kind: 'agent'; agentId: string }
   | { kind: 'project'; projectId: string }
   | { kind: 'app' }
+  /** Devices directly seen by this computer, optionally filtered by id and kind. */
+  | { kind: 'device'; deviceId?: string; deviceKind?: 'computer' | 'phone' }
   /** Turns and quick-run finishes, excluding the subscriber and Dispatcher-owned agents. */
   | { kind: 'any' };
 
@@ -97,9 +103,11 @@ export interface EventTrigger {
   /**
    * Minutes to wait before running. When the wait ends the condition is
    * checked again, and the run is cancelled if it no longer holds. For
-   * `agent.idle` this is the idle time and is required.
+   * `agent.idle` this is the idle time; either minutes or seconds is required.
    */
   delayMinutes?: number;
+  /** Trailing debounce in seconds, instead of delayMinutes. Uses the same persisted wait and re-check. */
+  delaySeconds?: number;
   /** Git events only: run only for this branch, e.g. "main". */
   branch?: string;
   /** app.returned only: required absence, default 30 minutes, minimum 5. */
@@ -108,8 +116,10 @@ export interface EventTrigger {
   afterLocalTime?: string;
   /** At most one started run per local calendar day, including Run now and failures. */
   oncePerDay?: boolean;
-  /** Any-agent events only: fixed window from the first event, default 60 seconds. */
+  /** Fixed window from the first event. Any-agent events default to 60 seconds. */
   coalesceSeconds?: number;
+  /** Sliding window over started runs, including Run now. Skips do not consume it. */
+  throttle?: { maxRuns: number; perMinutes: number };
 }
 
 export const DEFAULT_ABSENCE_MINUTES = 30;
@@ -130,6 +140,10 @@ export interface MessageStep {
   kind: 'message';
   agentId: string;
   text: string;
+  /** A busy target queues by default; steer uses the same path as a user's mid-turn message. */
+  delivery?: 'queue' | 'steer';
+  latestOnly?: boolean;
+  maxWaitMinutes?: number;
 }
 
 export interface QuickAgentStep {
@@ -233,7 +247,7 @@ export interface ActionChatSummary {
 
 // ── Runs and history ────────────────────────────────────────────────────────
 
-export type ActionRunOutcome = 'running' | 'done' | 'failed' | 'cancelled' | 'skipped';
+export type ActionRunOutcome = 'running' | 'done' | 'failed' | 'cancelled' | 'skipped' | 'throttled' | 'expired';
 
 export interface ActionRunTrigger {
   /** schedule, once, event, catch_up (a missed schedule time), or manual (Run now). */
@@ -246,6 +260,19 @@ export interface ActionRunTrigger {
   agentIds?: string[];
   /** A quick source whose read permission is checked again before delivery. */
   sourceAgentId?: string;
+  /** Every occurrence in a coalesced event, rechecked before delivery. */
+  events?: ActionRunEvent[];
+  /** Privacy-safe local device fact. Null marks a run whose device details were removed. */
+  device?: { id: string; name: string; kind: 'computer' | 'phone' } | null;
+}
+
+export interface ActionRunEvent {
+  at: number;
+  event: ActionEventKind;
+  source: Exclude<ActionEventSource, { kind: 'any' }>;
+  detail: string;
+  /** Privacy-safe local device fact. Null marks a run whose device details were removed. */
+  device?: { id: string; name: string; kind: 'computer' | 'phone' } | null;
 }
 
 export interface ActionStepResult {
@@ -253,8 +280,8 @@ export interface ActionStepResult {
   outcome: 'done' | 'failed';
   /** One line in plain words. */
   detail: string;
-  /** Message handoff at step completion, not a receipt for later queue delivery. */
-  delivery?: 'queued' | 'delivered';
+  /** A queued handoff is updated when the runtime delivers, replaces or drops it. */
+  delivery?: 'queued' | 'delivered' | 'expired' | 'replaced' | 'dropped';
   /** Auto's start receipt, using the same shape as helper starts. */
   routing?: HelperRouting;
   /** The agent it woke, messaged, started or put to sleep, for a link. */
@@ -275,6 +302,8 @@ export interface ActionRun {
   chain: string[];
   startedAt: number;
   endedAt?: number;
+  /** A later queue receipt keeps delivery losses visible in retained history. */
+  deliveryUpdatedAt?: number;
   outcome: ActionRunOutcome;
   /** One line of reason for failed, cancelled and skipped runs. */
   reason?: string;

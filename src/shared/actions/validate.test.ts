@@ -5,6 +5,50 @@ import { HISTORY_MAX_AGE_MS, type ActionRun } from './types';
 const schedule = { kind: 'schedule', preset: 'daily', cron: '0  9 * * *', missed: 'once' };
 
 describe('validateActionInput', () => {
+  it('keeps message delivery optional and validates its queue controls', () => {
+    const step = { kind: 'message', agentId: 'a', text: 'hi' };
+    const input = { trigger: schedule, steps: [step] };
+    expect(assertActionInput(input).steps).toEqual([step]);
+    expect(assertActionInput({ ...input, steps: [{ ...step, delivery: 'steer', latestOnly: true, maxWaitMinutes: 5 }] }).steps[0])
+      .toEqual({ ...step, delivery: 'steer', latestOnly: true, maxWaitMinutes: 5 });
+    for (const changes of [{ delivery: 'auto' }, { delivery: null }, { latestOnly: 'true' }, { latestOnly: null }, { maxWaitMinutes: 0 }, { maxWaitMinutes: 1.5 }, { maxWaitMinutes: 10081 }, { maxWaitMinutes: null }]) {
+      expect(() => assertActionInput({ ...input, steps: [{ ...step, ...changes }] })).toThrow(ActionError);
+    }
+  });
+  it('accepts seconds debounce with idle re-checks and rejects ambiguous or invalid timing', () => {
+    const trigger = { kind: 'event', event: 'agent.idle', source: { kind: 'agent', agentId: 'a' }, delaySeconds: 30 };
+    const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };
+    expect(assertActionInput(input).trigger).toEqual(trigger);
+    for (const changes of [
+      { delaySeconds: 0 }, { delaySeconds: -1 }, { delaySeconds: 0.5 }, { delaySeconds: 604801 },
+      { delaySeconds: null }, { delaySeconds: '30' }, { delayMinutes: 1 }, { coalesceSeconds: 10 },
+      { event: 'agent.turn_ended', source: { kind: 'any' } },
+    ]) expect(() => assertActionInput({ ...input, trigger: { ...trigger, ...changes } })).toThrow(ActionError);
+  });
+  it('accepts optional event throttles and refuses invalid windows or run counts', () => {
+    const trigger = { kind: 'event', event: 'app.started', source: { kind: 'app' } };
+    const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };
+    expect(assertActionInput({ ...input, trigger: { ...trigger, throttle: { maxRuns: 2, perMinutes: 5 } } }).trigger).toMatchObject({ throttle: { maxRuns: 2, perMinutes: 5 } });
+    for (const throttle of [null, {}, { maxRuns: 0, perMinutes: 5 }, { maxRuns: 1.5, perMinutes: 5 }, { maxRuns: 2, perMinutes: 0 }, { maxRuns: 2, perMinutes: 10_081 }]) {
+      expect(() => assertActionInput({ ...input, trigger: { ...trigger, throttle } })).toThrow(ActionError);
+    }
+  });
+  it('validates device events and filters without changing delay defaults or retaining private fields', () => {
+    const trigger = { kind: 'event', event: 'device.online', source: { kind: 'device', deviceId: ' AA ', deviceKind: 'phone', address: 'secret', port: 123, certificate: 'secret' } };
+    const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };
+    expect(validateActionInput(input)).toMatchObject({ ok: true, value: { trigger: {
+      kind: 'event', event: 'device.online', source: { kind: 'device', deviceId: 'aa', deviceKind: 'phone' },
+    } } });
+    const valid = validateActionInput(input);
+    expect(valid.ok && valid.value.trigger).not.toHaveProperty('delayMinutes');
+    expect(valid.ok && valid.value.trigger).not.toHaveProperty('source.address');
+    for (const source of [{ kind: 'app' }, { kind: 'device', deviceId: '' }, { kind: 'device', deviceKind: 'desktop' }, { kind: 'device', deviceId: 7 }]) {
+      expect(validateActionInput({ ...input, trigger: { ...trigger, source } }).ok).toBe(false);
+    }
+    expect(validateActionInput({ ...input, trigger: { ...trigger, event: 'agent.slept' } }).ok).toBe(false);
+    expect(validateActionInput({ ...input, trigger: { ...trigger, event: 'device.offline', source: { kind: 'device' }, delayMinutes: 2 } }).ok).toBe(true);
+  });
+
   it('retains Auto difficulty and refuses incompatible quick-step overrides', () => {
     const step = { kind: 'quick', projectId: 'p1', prompt: 'Review', orchestrator: 'auto', difficulty: 'hard' };
     expect(validateActionInput({ trigger: schedule, steps: [step] })).toMatchObject({ ok: true, value: { steps: [step] } });
@@ -27,7 +71,6 @@ describe('validateActionInput', () => {
       ...[9, 601, 10.5, '60', null, NaN].map((coalesceSeconds) => ({ coalesceSeconds })),
       ...['agent.idle', 'agent.slept', 'git.commit', 'app.started'].map((event) => ({ event })),
       { delayMinutes: 1 }, { delayMinutes: 0 }, { delayMinutes: null },
-      { source: { kind: 'agent', agentId: 'a' }, coalesceSeconds: 60 },
     ]) {
       expect(() => assertActionInput({ ...input, trigger: { ...trigger, ...changes } })).toThrow(ActionError);
     }
@@ -41,6 +84,18 @@ describe('validateActionInput', () => {
       expect(validateActionInput({ ...input, trigger: { ...trigger, afterLocalTime } }).ok).toBe(false);
     }
     for (const oncePerDay of [0, 'true', null]) expect(validateActionInput({ ...input, trigger: { ...trigger, oncePerDay } }).ok).toBe(false);
+  });
+
+  it('accepts fixed coalescing on agent, git and app sources but not alongside a delay', () => {
+    for (const trigger of [
+      { kind: 'event', event: 'agent.turn_ended', source: { kind: 'project', projectId: 'p' } },
+      { kind: 'event', event: 'git.commit', source: { kind: 'agent', agentId: 'a' } },
+      { kind: 'event', event: 'app.started', source: { kind: 'app' } },
+    ]) {
+      const input = { trigger: { ...trigger, coalesceSeconds: 10 }, steps: [{ kind: 'notify', text: 'hi' }] };
+      expect(assertActionInput(input).trigger).toEqual(input.trigger);
+      expect(() => assertActionInput({ ...input, trigger: { ...input.trigger, delayMinutes: 1 } })).toThrow(/either a delay/);
+    }
   });
 
   it('validates a return threshold and keeps the optional default absent', () => {
@@ -138,6 +193,11 @@ describe('trimHistory', () => {
   it('drops runs older than 72 hours', () => {
     const runs = [run(1, 1000), run(2, HISTORY_MAX_AGE_MS + 1)];
     expect(trimHistory(runs, now).map((r) => r.id)).toEqual(['r1']);
+  });
+
+  it('keeps a fresh expiry receipt even when the queued handoff was more than 72 hours ago', () => {
+    const expired = { ...run(1, HISTORY_MAX_AGE_MS + 1, 'expired'), deliveryUpdatedAt: now };
+    expect(trimHistory([expired, run(2, 1)], now).map((r) => r.id)).toEqual(['r1', 'r2']);
   });
 
   it('keeps a run that is still going', () => {

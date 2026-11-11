@@ -79,6 +79,19 @@ describe('actions telemetry', () => {
       'clubhouse.action.delayed': false,
     });
   });
+
+  it.each([
+    ['throttled', 'throttled'],
+    ['expired', 'delivery_expired'],
+    ['cancelled', 'delivery_replaced'],
+    ['cancelled', 'delivery_dropped'],
+  ] as const)('records %s with the closed %s reason and no message text', (outcome, reasonCode) => {
+    setProducingRuntime(runtime());
+    recordActionObservation(run({ outcome, reasonCode, reason: SECRET_REASON }));
+    expect(events[0].attrs).toMatchObject({ 'clubhouse.action.run.outcome': outcome, 'clubhouse.action.run.reason': reasonCode });
+    expect(JSON.stringify(events)).not.toContain(SECRET_REASON);
+  });
+
   it('records nothing while telemetry is off', () => {
     recordActionObservation({ ...user, type: 'trigger', trigger: 'schedule' });
     recordActionObservation(run());

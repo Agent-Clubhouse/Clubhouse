@@ -51,6 +51,8 @@ import { createGrantRights } from './rights';
 import { grantsFromFacts } from '../agent-grants-service';
 import { actionMessage, createStepRunner, type DispatcherStepDelivery } from './steps';
 import { ActionPresence } from './presence';
+import { devicePresenceOnline } from '../annex-device-presence';
+import { listDevices } from '../annex-devices';
 
 export { ActionError };
 
@@ -94,6 +96,7 @@ function dispatcherName(): string {
 }
 
 const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWorktree(id: string): string | undefined } = {
+  deviceOnline: devicePresenceOnline,
   // The Dispatcher counts as an agent here, so its subscriptions can message it (#3042).
   agentExists: (id) => !!knownAgent(id) || isDispatcherAgentId(id),
   isRunning: (id) => isAgentRunning(id),
@@ -196,6 +199,7 @@ async function deliverActionToDispatcher(req: DispatcherStepDelivery): Promise<{
       toolName: 'action',
       args: { actionId: req.actionId },
       fromAction: true,
+      ...(req.messageOptions && { messageOptions: req.messageOptions }),
     });
     if (background && !delivery.delivered) clearDispatcherBackgroundWork(inboxId);
     return delivery;
@@ -479,11 +483,18 @@ export function canWatchAgentActivity(reader: ActionOwner): boolean {
   return requireEngine().canWatchAgentActivity(reader);
 }
 
+export function canReadDevices(reader: ActionOwner): boolean {
+  return requireEngine().canReadDevices(reader);
+}
+
 // ── Lookups for the Clubhouse MCP tools ─────────────────────────────────────
 
 /** Agent and project names, for describing actions in plain words. */
 export function actionNames(): ActionNames {
-  return { agent: (id) => facts.agentName(id), project: (id) => facts.projectName(id) };
+  return {
+    agent: (id) => facts.agentName(id), project: (id) => facts.projectName(id),
+    device: (id) => listDevices().find((d) => d.fingerprint.toLowerCase() === id.toLowerCase())?.alias || undefined,
+  };
 }
 
 /** The project an agent belongs to, from the last read. */

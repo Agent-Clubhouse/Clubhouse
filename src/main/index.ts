@@ -18,6 +18,7 @@ import { isFailedCopilotWrite } from './chat/copilot/failed-writes';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
+import { startDevicePresence, stopDevicePresence } from './services/annex-device-presence';
 import { bridgeServer as mcpBridgeServer } from './services/clubhouse-mcp';
 import { unpublishCliEndpoint } from './services/cli-endpoint';
 import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
@@ -327,6 +328,7 @@ app.on('ready', () => {
     } catch (err) {
       appLog('core:dispatcher', 'warn', 'The Dispatcher background work did not start', { meta: { code: codeOf(err) } });
     }
+    startDevicePresence();
     publishAppStarted();
   }).catch((err) => {
     appLog('core:app-events', 'warn', 'The app event bus did not start', { meta: { code: codeOf(err) } });
@@ -527,6 +529,7 @@ app.on('activate', () => {
 // Quit, the update restart and the app restart share one shutdown (#2053);
 // this is what it stops first, before the agents.
 setShutdownBegin(() => {
+  stopDevicePresence();
   stopUpdateChecks();
   stopPeriodicPluginUpdateChecks();
 

@@ -77,6 +77,7 @@ export interface ActionScope {
 }
 
 function canSeeAction(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trigger'>>, reader: ActionOwner): boolean {
+  if (action.trigger?.kind === 'event' && action.trigger.source.kind === 'device' && !actions.canReadDevices(reader)) return false;
   return action.owner.kind !== 'app' && (action.trigger?.kind !== 'event' || action.trigger.source.kind !== 'any' || actions.canWatchAgentActivity(reader));
 }
 
@@ -290,7 +291,8 @@ function subscriptionTrigger(args: Obj, ctx: InputContext): unknown {
   const appEvent = typeof event === 'string' && (event.startsWith('app.') || event.startsWith('project.'));
   let source = args.source;
   if (source === undefined || source === null) {
-    if (appEvent) source = { kind: 'app' };
+    if (typeof event === 'string' && event.startsWith('device.')) source = { kind: 'device' };
+    else if (appEvent) source = { kind: 'app' };
     else if (ctx.agentId) source = { kind: 'project' };
     else throw new ActionError('invalid_input', 'source is required: the agent to watch, as {"kind":"agent","agentId":...}.');
   }
@@ -300,10 +302,12 @@ function subscriptionTrigger(args: Obj, ctx: InputContext): unknown {
     source,
     ...(args.branch !== undefined && { branch: args.branch }),
     ...(args.delayMinutes !== undefined && { delayMinutes: args.delayMinutes }),
+    ...(args.delaySeconds !== undefined && { delaySeconds: args.delaySeconds }),
     ...(args.absenceMinutes !== undefined && { absenceMinutes: args.absenceMinutes }),
     ...(args.afterLocalTime !== undefined && { afterLocalTime: args.afterLocalTime }),
     ...(args.oncePerDay !== undefined && { oncePerDay: args.oncePerDay }),
     ...(args.coalesceSeconds !== undefined && { coalesceSeconds: args.coalesceSeconds }),
+    ...(args.throttle !== undefined && { throttle: args.throttle }),
   }, ctx);
 }
 
@@ -386,35 +390,7 @@ function actionHistory(scope: ActionScope, args: Obj): unknown {
 
 const TRIGGER_SCHEMA = {
   type: 'object',
-  description:
-    'When the action runs. Three kinds:\n' +
-    '- On a schedule, in local time: {"kind":"schedule","preset":"weekdays","hour":9,"minute":0}. ' +
-    'Presets: daily (every day), weekdays (Monday to Friday), weekly (with weekday), hourly (at minute past each hour). ' +
-    'For anything else use preset "cron" with a 5-field cron line, e.g. {"kind":"schedule","preset":"cron","cron":"30 8 * * 1,3"}; ' +
-    'this is the Custom (cron) option and should not be the default. ' +
-    '"missed" says what to do with times that passed while Clubhouse was closed or the machine slept: ' +
-    'skip (default), once (run once when Clubhouse opens), or each (run each missed time, up to 10).\n' +
-    '- Once, at a set time: {"kind":"once","at":"2026-11-08T09:00"} (local time, or epoch milliseconds). ' +
-    'It deletes itself after it runs. If Clubhouse is closed then, it runs when Clubhouse next opens.\n' +
-    '- When something happens: {"kind":"event","event":"agent.slept","source":{"kind":"agent","agentId":"self"},"delayMinutes":30}. ' +
-    'source is one agent ({"kind":"agent","agentId":...}) or any agent in a project ({"kind":"project","projectId":...}); ' +
-    'app events take no source, and project events may name one project. ' +
-    'Turn events and agent.quick_finished also accept source {"kind":"any"}: readable durable and quick agents except you and Dispatcher-owned agents. ' +
-    'Requires agent.watch on app plus agent.read on each agent. It is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents have no default grant. Ask first does not authorize unattended runs. ' +
-    'The member set is dynamic: agents that become readable later join. Quick agents use agent.read on their own identity, with their parent as the my_helper relation. Project sources also check this permission for quick agents. ' +
-    'coalesceSeconds groups events in a fixed window from the first (default 60, range 10 to 600); later events do not extend it. ' +
-    'Do not combine it with delayMinutes. Buffers are discarded at relaunch. Summaries name up to 20 agents; step context lists every involved readable agent. ' +
-    'Agent events: agent.woke, agent.slept, agent.created, agent.deleted, agent.turn_ended, agent.turn_failed, ' +
-    'agent.idle (needs delayMinutes: the idle time), agent.waiting (waits on the person), agent.error, agent.compacted, ' +
-    'agent.quick_finished (once per quick run: completed, failed or cancelled, name, owner, parent, project and duration; no output), helper.finished. Git events (local only, nothing is fetched): git.commit, git.branch_switched, ' +
-    'git.remote_updated (pushed, pulled or fetched), with an optional branch filter. ' +
-    'App events: app.started, app.returned (Clubhouse returns to use after an absence, default 30 minutes, minimum 5; configure absenceMinutes), project.added, project.removed. ' +
-    'Returning uses app focus plus screen lock, suspend or system idle, not focus alone. Relaunch does not count. Absence duration is never included in messages or history. ' +
-    'Any event can use afterLocalTime ("HH:MM" on this computer) and oncePerDay. These also apply to Run now. Only started runs use the day, including failures; skipped runs do not. Moving the clock back does not give an extra run. ' +
-    'What an action may watch follows the same rights as its steps: an agent may watch itself, its helpers, agents it is connected to ' +
-    'and its own project; a helper only itself; the Dispatcher agents connected to it and app events. ' +
-    `delayMinutes (up to ${MAX_DELAY_MINUTES}) waits before running; when the wait ends the condition is checked again, ` +
-    'and the run is cancelled if it no longer holds (for example the agent woke up again). The wait starts over on the next matching event.',
+  description: 'Schedule, once, or event. Timing: none, delaySeconds/delayMinutes (debounce and re-check), or coalesceSeconds (fixed window). Throttle composes. Any watches readable durable and quick agents.',
   properties: {
     kind: { type: 'string', enum: ['schedule', 'once', 'event'] },
     preset: { type: 'string', enum: [...SCHEDULE_PRESETS], description: 'Schedules: daily, weekdays, weekly, hourly, or cron for Custom (cron).' },
@@ -426,19 +402,30 @@ const TRIGGER_SCHEMA = {
     absenceMinutes: { type: 'number', minimum: MIN_ABSENCE_MINUTES, description: 'app.returned only: required absence in whole minutes, at least 5. Default 30. Tracking runs only while an enabled action uses this event.' },
     afterLocalTime: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: 'Events only: run at or after this local wall-clock time, HH:MM. Events before it are ignored. Delayed and queued starts recheck the time. Also applies to Run now.' },
     oncePerDay: { type: 'boolean', description: 'Events only: once per calendar day; moving the clock back gives no extra run. Starts consume the day, including Run now and failures. Skips do not. Saved across restarts.' },
-    coalesceSeconds: { type: 'number', minimum: MIN_COALESCE_SECONDS, maximum: MAX_COALESCE_SECONDS, description: 'Any readable agent: group turn or quick finish events for 10 to 600 seconds from the first. Default 60. No delayMinutes or offline replay. Requires agent.watch and agent.read.' },
+    coalesceSeconds: { type: 'number', minimum: MIN_COALESCE_SECONDS, maximum: MAX_COALESCE_SECONDS, description: 'Events: fixed 10 to 600 second window from the first event. Devices group separately. No delay or replay. Any-agent turns and quick finishes default to 60 and list unique readable agents.' },
+    throttle: {
+      type: 'object', description: 'Events: per-Action sliding cap across all sources, including Run now and failures. Throttled skips consume no lifetime runs or calendar day. Composes with delay or coalescing.',
+      properties: {
+        maxRuns: { type: 'number', minimum: 1, description: 'Maximum started runs in the sliding window, a positive whole number.' },
+        perMinutes: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES, description: 'Sliding window length in whole minutes, up to one week. Saved across restarts.' },
+      },
+      required: ['maxRuns', 'perMinutes'],
+    },
     at: { type: ['string', 'number'], description: 'Once: a date and time like 2026-11-08T09:00 (local time when no zone is given; a date alone is local midnight), or epoch milliseconds. Must be in the future.' },
     event: { type: 'string', enum: [...ACTION_EVENT_KINDS], description: 'Events: what should happen.' },
     source: {
       type: 'object',
-      description: 'Agent: {"kind":"agent","agentId":"<id or self>"}. Project: {"kind":"project","projectId":"<id, name or path>"}. Turns and quick finishes: {"kind":"any"} needs agent.watch and agent.read.',
+      description: 'Agent: agentId/self. Project: projectId/name/path. App: kind app. Any: turns/quick finishes, needs agent.watch and agent.read. Device: optional deviceId/deviceKind, needs device.read.',
       properties: {
-        kind: { type: 'string', enum: ['agent', 'project', 'app', 'any'] },
+        kind: { type: 'string', enum: ['agent', 'project', 'app', 'any', 'device'] },
         agentId: { type: 'string' },
         projectId: { type: 'string' },
+        deviceId: { type: 'string', description: 'Devices only: one id from list_devices. Left out means any device directly seen by this computer.' },
+        deviceKind: { type: 'string', enum: ['computer', 'phone'], description: 'Devices only: filter to computers or phones. May be combined with deviceId.' },
       },
     },
-    delayMinutes: { type: 'number', description: 'Events: minutes to wait, re-checking the condition when the wait ends.' },
+    delayMinutes: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES, description: 'Events: whole-minute trailing debounce. New events restart it; re-check when it ends. Survives restart. Required for idle unless using delaySeconds. No coalescing or any-agent source.' },
+    delaySeconds: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES * 60, description: 'Events: whole-second debounce, up to one week. New events restart it; re-check when it ends. Devices wait separately. Survives restart. Use instead of delayMinutes. No coalescing or any-agent source.' },
     branch: { type: 'string', description: 'Git events: run only for this branch, e.g. "main".' },
   },
   required: ['kind'],
@@ -446,17 +433,9 @@ const TRIGGER_SCHEMA = {
 
 const STEPS_SCHEMA = {
   type: 'array',
-  description:
-    `What the action does: 1 to ${MAX_ACTION_STEPS} steps, run in order, stopping at the first one that couldn't run.\n` +
-    '- {"kind":"wake","agentId":...,"prompt"?:...} wakes an agent, resuming its last session, with an optional first message.\n' +
-    '- {"kind":"message","agentId":...,"text":...} messages an agent. A busy agent gets it on its next turn; a sleeping one is woken with it.\n' +
-    '- {"kind":"quick","projectId"?:...,"worktreeAgentId"?:...,"prompt":...} starts a quick agent in a project\'s root, or in another agent\'s worktree. ' +
-    'Optional overrides: orchestrator, model. orchestrator "auto" uses helper routing with difficulty (default medium), without a model override. It runs headless with Full access.\n' +
-    '- {"kind":"sleep","agentId":...} puts an agent to sleep.\n' +
-    '- {"kind":"notify","text":...} sends the person a Clubhouse notification, following their notification settings.\n' +
-    'agentId "self" means you. An agent\'s actions may act on itself, its helpers and agents it is connected to, and start quick agents ' +
-    'in its own project; a helper\'s actions may act only on itself. The Dispatcher\'s actions may act on agents connected to it, ' +
-    'and can\'t start quick agents. These rights are checked again on every run.',
+  description: `Run 1 to ${MAX_ACTION_STEPS} steps in order, stopping at the first failure. Kinds: wake, message, quick, sleep, notify. Rights follow the owner and are rechecked. Busy messages queue by default; steer is optional.`,
+  minItems: 1,
+  maxItems: MAX_ACTION_STEPS,
   items: {
     type: 'object',
     properties: {
@@ -464,6 +443,9 @@ const STEPS_SCHEMA = {
       agentId: { type: 'string', description: 'wake, message, sleep: the agent, by id, or "self".' },
       prompt: { type: 'string', description: 'wake: optional first message. quick: the quick agent\'s task.' },
       text: { type: 'string', description: 'message: the message. notify: the notice text.' },
+      delivery: { type: 'string', enum: ['queue', 'steer'], description: 'message: queue for the next turn (default), or steer like a user mid-turn message. Steer falls back to queue when unsupported. A sleeping target wakes with the message.' },
+      latestOnly: { type: 'boolean', description: 'message: replace older queued messages from this Action with its newest queued message. Default off. Does not replace user messages or messages from other Actions.' },
+      maxWaitMinutes: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES, description: 'message: maximum whole minutes undelivered in the queue, up to one week. Default no limit. On expiry the message is removed, logged and recorded as expired in run history.' },
       projectId: { type: 'string', description: 'quick: the project to run in, by id, name or path. Left out: the worktree agent\'s project, or your own.' },
       worktreeAgentId: { type: 'string', description: 'quick: run in this agent\'s worktree instead of the project root.' },
       orchestrator: { type: 'string', description: 'quick: a CLI, or "auto" for helper routing. Left out: the project\'s provider, as before.' },
@@ -484,8 +466,8 @@ const ACTION_FIELDS = {
     description: 'When the trigger fires while this action\'s last run is still going: skip (default) or queue (run it after the current run).',
   },
   enabled: { type: 'boolean', description: 'On (default) or off.' },
-  endsAt: { anyOf: [{ type: 'number' }, { type: 'string' }, { type: 'null' }], description: 'Optional for schedule and event actions. Stop at this absolute time, as epoch milliseconds or a date and time with a timezone. It must be in the future. A running run finishes normally. Pass null to remove it.' },
-  maxRuns: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }], description: 'Optional for schedule and event actions. Stop after this many started runs, including Run now and failed runs. Skipped runs do not count. The lifetime runsUsed count survives restarts and edits. Pass null to remove the limit.' },
+  endsAt: { anyOf: [{ type: 'number' }, { type: 'string' }, { type: 'null' }], description: 'Recurring actions: stop at a future absolute time, epoch ms or a date with timezone. A running run finishes normally. Pass null to remove.' },
+  maxRuns: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }], description: 'Recurring actions: lifetime started-run limit, including Run now and failures. Skips, including throttled runs, do not count. runsUsed survives restarts and edits. Pass null to remove.' },
 };
 
 const ID_FIELD = { id: { type: 'string', description: 'The action\'s id, from list_actions.' } };
@@ -638,7 +620,7 @@ export function registerActionTools(): void {
     'action_history',
     {
       description:
-        'Read an action\'s recent runs, newest first: what set it off, the outcome (done, failed, cancelled or skipped) with one line ' +
+        'Read an action\'s recent runs, newest first: what set it off, the outcome (done, failed, cancelled, skipped, throttled or expired) with one line ' +
         'of reason, and what each step did. History keeps at most the last 10 runs within 72 hours. ' + RESULT_NOTE,
       inputSchema: schema(ID_FIELD, ['id']),
     },
@@ -657,14 +639,16 @@ export function registerActionTools(): void {
         source: {
           ...TRIGGER_SCHEMA.properties.source,
           description:
-            'Agent or project by id. Turns and quick finishes accept {"kind":"any"}: readable agents except you and Dispatcher-owned agents. Needs agent.watch and agent.read. Default: your project or app events.',
+            'Agent or project by id. Any: turns/quick finishes, needs agent.watch and agent.read. Device: optional deviceId/deviceKind, needs device.read. Default: your project, app or devices.',
         },
         branch: TRIGGER_SCHEMA.properties.branch,
         delayMinutes: TRIGGER_SCHEMA.properties.delayMinutes,
+        delaySeconds: TRIGGER_SCHEMA.properties.delaySeconds,
         absenceMinutes: TRIGGER_SCHEMA.properties.absenceMinutes,
         afterLocalTime: TRIGGER_SCHEMA.properties.afterLocalTime,
         oncePerDay: TRIGGER_SCHEMA.properties.oncePerDay,
         coalesceSeconds: TRIGGER_SCHEMA.properties.coalesceSeconds,
+        throttle: TRIGGER_SCHEMA.properties.throttle,
         note: { type: 'string', description: 'Optional. What the message should remind you of, e.g. "Tag the release." Left out, it says you asked to be told.' },
         name: ACTION_FIELDS.name,
       }, ['event']),

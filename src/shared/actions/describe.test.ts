@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cronToPresetFields, describeAction, describeTrigger, presetToCron, suggestActionName, type ActionNames } from './describe';
+import { cronToPresetFields, describeAction, describeStep, describeTrigger, presetToCron, suggestActionName, type ActionNames } from './describe';
 import type { ActionStep, ActionTrigger } from './types';
 
 const names: ActionNames = {
@@ -20,6 +20,12 @@ describe('presets', () => {
 });
 
 describe('describeTrigger', () => {
+  it('describes seconds debounce, general coalescing and sliding throttle', () => {
+    const trigger = { kind: 'event', event: 'git.commit', source: { kind: 'project', projectId: 'p1' } } as const;
+    expect(describeTrigger({ ...trigger, delaySeconds: 30, throttle: { maxRuns: 2, perMinutes: 5 } }, names))
+      .toBe('30 seconds after web gets a new commit, at most 2 runs per 5 minutes (sliding window)');
+    expect(describeTrigger({ ...trigger, coalesceSeconds: 10 }, names)).toBe('When web gets a new commit, grouped for 10 seconds from the first event');
+  });
   it('describes the any-readable-agent scope and fixed grouping window', () => {
     const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } } as const;
     expect(describeTrigger(trigger)).toBe('When any readable agent finishes a turn, grouped for 60 seconds from the first turn');
@@ -49,6 +55,12 @@ describe('describeTrigger', () => {
 });
 
 describe('describeAction and suggestActionName', () => {
+  it('describes message steering and queued replacement and expiry, including subscriptions', () => {
+    const step: ActionStep = { kind: 'message', agentId: 'a2', text: 'Check', delivery: 'steer', latestOnly: true, maxWaitMinutes: 5 };
+    expect(describeStep(step, names)).toBe('Message pm, steer when busy, keep only the latest queued message, expire after 5 minutes queued');
+    expect(describeAction({ trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } }, steps: [step], subscription: true }, names))
+      .toContain('Tell pm, steer when busy, keep only the latest queued message, expire after 5 minutes queued');
+  });
   const steps: ActionStep[] = [
     { kind: 'wake', agentId: 'a2', prompt: 'Post the plan' },
     { kind: 'notify', text: 'Done' },
