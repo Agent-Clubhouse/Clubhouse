@@ -110,6 +110,37 @@ describe('Annex Network membership (#3061)', () => {
     expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({ hosts: ['10.0.0.2'], port: 9443 });
   });
 
+  it.each([undefined, 9443])('shares a self-announced loopback endpoint and follows its later port change (saved port: %s)', (port) => {
+    peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+      knownHosts: ['127.0.0.1'], hostPorts: port ? { '127.0.0.1': port } : undefined, mainPort: port,
+    }));
+    listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio', { hosts: ['127.0.0.1'] }) });
+    expect(peers.get(A.toLowerCase())?.hostPorts?.['127.0.0.1']).toBe(9443);
+    expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({
+      hosts: ['127.0.0.1'], port: 9443,
+    });
+
+    listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio', { hosts: ['127.0.0.1'], port: 9000 }) });
+    expect(peers.get(A.toLowerCase())?.hostPorts?.['127.0.0.1']).toBe(9000);
+    expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({
+      hosts: ['127.0.0.1'], port: 9000,
+    });
+  });
+
+  it('shares the announced loopback port without overwriting or exporting a local forward on the same host', () => {
+    peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+      knownHosts: ['127.0.0.1', '10.0.0.2'], hostPorts: { '127.0.0.1': 7443, '10.0.0.2': 9443 }, mainPort: 9443,
+    }));
+    listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio', { hosts: ['127.0.0.1'] }) });
+    const saved = peers.get(A.toLowerCase())!;
+    expect(reachCandidates({ known: saved.knownHosts, ports: saved.hostPorts, port: saved.mainPort })[0]).toEqual({
+      host: '127.0.0.1', port: 7443, source: 'known',
+    });
+    expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({
+      hosts: ['127.0.0.1', '10.0.0.2'], port: 9443,
+    });
+  });
+
   it('keeps a saved forward available after a member announces a full set of direct hosts', () => {
     peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
       knownHosts: ['127.0.0.1', '10.0.0.2'], hostPorts: { '127.0.0.1': 7443, '10.0.0.2': 9443 }, mainPort: 9443,
@@ -121,6 +152,7 @@ describe('Annex Network membership (#3061)', () => {
     expect(candidates[0]).toMatchObject({ host: '127.0.0.1', port: 7443 });
     expect(candidates).toContainEqual({ host: hosts[0], port: 9443, source: 'known' });
     expect(saved.knownHosts).toHaveLength(6);
+    expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({ hosts, port: 9443 });
   });
 
   it('keeps each saved port when a member announces a different direct address or port', () => {
@@ -136,6 +168,7 @@ describe('Annex Network membership (#3061)', () => {
     listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio', { hosts: ['192.168.1.4'], port: 9000 }) });
     expect(peers.get(A.toLowerCase())?.hostPorts?.['192.168.1.4']).toBe(9000);
     expect(peers.get(A.toLowerCase())?.hostPorts?.['127.0.0.1']).toBe(7443);
+    expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({ hosts: ['192.168.1.4'], port: 9000 });
   });
 
   it('adds a device a member vouches for, pins it, connects to it, and tells the other members', () => {

@@ -126,6 +126,13 @@ export function initNetworkMembership(h: Hooks): void {
 /** A member peer as the protocol describes it. */
 function toMember(peer: AnnexPeer): NetworkMember | null {
   if (!peer.tlsCertificateFingerprint || !peer.tlsCertificatePem) return null;
+  const port = peer.announcedReach ? peer.announcedReach.port : peer.mainPort;
+  const knownPorts = hostPortsWithFallback(peer.knownHosts, peer.mainPort, peer.hostPorts);
+  // The v1 wire contract has one port. Only announcements can vouch for a loopback endpoint.
+  const hosts = [...new Set([
+    ...(peer.announcedReach?.hosts ?? []),
+    ...(peer.knownHosts ?? []).filter((host) => !isAnnexLoopback(host) && knownPorts[lower(host)] === port),
+  ])].slice(0, 8);
   return {
     fingerprint: peer.fingerprint,
     publicKey: peer.publicKey,
@@ -135,10 +142,8 @@ function toMember(peer: AnnexPeer): NetworkMember | null {
     icon: peer.icon || 'computer',
     color: peer.color || 'indigo',
     kind: peer.kind ?? 'desktop',
-    // The wire contract has one port. Local remaps aren't routes for other members.
-    hosts: (peer.knownHosts ?? []).filter((host) => !isAnnexLoopback(host)
-      && (!peer.hostPorts || !Object.prototype.hasOwnProperty.call(peer.hostPorts, host.toLowerCase()) || peer.hostPorts[host.toLowerCase()] === peer.mainPort)).slice(0, 8),
-    ...(peer.mainPort && peer.mainPort > 0 && { port: peer.mainPort }),
+    hosts,
+    ...(port && port > 0 && { port }),
     joinedAt: peer.pairedAt || new Date(0).toISOString(),
     ...(peer.pairingId && { pairingId: peer.pairingId }),
   };
@@ -339,15 +344,28 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     if (existing.role !== 'member') return !!stale;
     // A member we know: learn a newer join, and new addresses. Its own hello says where it is now.
     const own = lower(from) === lower(member.fingerprint);
+    const knownPorts = hostPortsWithFallback(existing.knownHosts, existing.mainPort, existing.hostPorts);
     // Its announcement cannot replace the local forward needed to reach it.
-    const localHosts = (existing.knownHosts ?? []).filter(isAnnexLoopback);
+    const localHosts = (existing.knownHosts ?? []).filter((host) => isAnnexLoopback(host) && knownPorts[lower(host)] > 0
+      && !(existing.announcedReach?.hosts.some((announced) => lower(announced) === lower(host))
+        && existing.announcedReach.port === knownPorts[lower(host)]));
     const hosts = own
       ? [...new Set([...localHosts, ...member.hosts, ...(existing.knownHosts ?? [])])].slice(0, 6)
       : [...new Set([...(existing.knownHosts ?? []), ...member.hosts])].slice(0, 6);
     const port = own ? member.port || existing.mainPort : existing.mainPort || member.port;
-    const knownPorts = hostPortsWithFallback(existing.knownHosts, existing.mainPort, existing.hostPorts);
     const announcedPorts = hostPortsWithFallback(member.hosts, member.port, undefined);
-    const hostPorts = own ? { ...knownPorts, ...announcedPorts } : { ...announcedPorts, ...knownPorts };
+    const localPorts = Object.fromEntries(localHosts.map((host) => [lower(host), knownPorts[lower(host)]]));
+    const hostPorts = own ? { ...knownPorts, ...announcedPorts, ...localPorts } : { ...announcedPorts, ...knownPorts };
+    const announcedReach = own || !existing.announcedReach
+      ? { hosts: member.hosts.slice(0, 8), ...(member.port && { port: member.port }) }
+      : {
+        ...existing.announcedReach,
+        hosts: member.port === existing.announcedReach.port
+          ? [...new Set([...existing.announcedReach.hosts, ...member.hosts])].slice(0, 8)
+          : existing.announcedReach.hosts,
+      };
+    const announcedChanged = !existing.announcedReach || announcedReach.port !== existing.announcedReach.port
+      || announcedReach.hosts.join() !== existing.announcedReach.hosts.join();
     // Its pairing moves only with a pairing id (#3107): the one it hadn't learned yet, or a later pairing (paired
     // again). A record without one (a member's own clock, or a desktop's stamp from pairing with it) never moves it.
     const adopt = !!member.pairingId && (!existing.pairingId || laterPairing(member, pairingOf(existing)));
@@ -359,9 +377,9 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     // Paired again since with a new certificate (the pairing member checked its binding): pin the new one.
     const repinned = adopt && !!existing.pairingId && pairingId !== existing.pairingId
       && !annexTls.sameCertificateFingerprint(member.certFingerprint, existing.tlsCertificateFingerprint) && proves(member);
-    if (moved || repinned || joinedAt !== existing.pairedAt || pairingId !== existing.pairingId || name !== existing.alias) {
+    if (moved || announcedChanged || repinned || joinedAt !== existing.pairedAt || pairingId !== existing.pairingId || name !== existing.alias) {
       annexPeers.addPeer({
-        ...existing, knownHosts: hosts, hostPorts, pairedAt: joinedAt, alias: name, ...(port && { mainPort: port }),
+        ...existing, knownHosts: hosts, hostPorts, announcedReach, pairedAt: joinedAt, alias: name, ...(port && { mainPort: port }),
         ...(pairingId && { pairingId }),
         ...(repinned && { tlsCertificateFingerprint: member.certFingerprint, tlsCertificatePem: member.certPem }),
       });
@@ -391,6 +409,7 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     tlsCertificatePem: member.certPem,
     knownHosts: member.hosts.slice(0, 6),
     hostPorts: hostPortsWithFallback(member.hosts.slice(0, 6), member.port, undefined),
+    announcedReach: { hosts: member.hosts.slice(0, 8), ...(member.port && { port: member.port }) },
     ...(member.port && { mainPort: member.port }),
   });
   appLog('core:annex', 'info', 'A device joined the network through another member', { meta: { fingerprint: member.fingerprint, from } });
