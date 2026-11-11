@@ -14,14 +14,19 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(() => new EventEmitter()),
 }));
 
-const testUserDataPath = path.join(os.tmpdir(), 'clubhouse-test-userData');
+const testUserDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-auto-update-'));
 
 describe('auto-update-service', () => {
   beforeEach(() => {
     fs.mkdirSync(testUserDataPath, { recursive: true });
-    for (const filename of ['pending-update-info.json', 'update-apply-attempt.json']) {
-      try { fs.unlinkSync(path.join(testUserDataPath, filename)); } catch {}
-    }
+    const getPath = app.getPath;
+    vi.spyOn(app, 'getPath').mockImplementation((name) =>
+      name === 'userData' || name === 'temp' ? testUserDataPath : getPath(name),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(testUserDataPath, { recursive: true, force: true });
   });
 
   describe('platform update dispatch', () => {
@@ -58,7 +63,7 @@ describe('auto-update-service', () => {
     });
 
     it('uses execFileSync argument arrays for Linux package installation', async () => {
-      const downloadPath = path.join(os.tmpdir(), 'Clubhouse update.deb');
+      const downloadPath = path.join(testUserDataPath, 'Clubhouse update.deb');
       fs.writeFileSync(downloadPath, '');
       try {
         await applyLinuxUpdate(
@@ -76,7 +81,7 @@ describe('auto-update-service', () => {
     });
 
     it('installs RPM packages with the RPM updater instead of the dpkg path', async () => {
-      const downloadPath = path.join(os.tmpdir(), 'Clubhouse update.rpm');
+      const downloadPath = path.join(testUserDataPath, 'Clubhouse update.rpm');
       fs.writeFileSync(downloadPath, '');
       try {
         await applyLinuxUpdate(
@@ -249,8 +254,7 @@ describe('auto-update-service', () => {
     });
 
     it('rejects when the macOS updater script fails to spawn', async () => {
-      const tempDir = path.join(os.tmpdir(), `clubhouse-update-spawn-test-${process.pid}`);
-      fs.mkdirSync(tempDir, { recursive: true });
+      const tempDir = fs.mkdtempSync(path.join(testUserDataPath, 'spawn-'));
       const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
       const getPath = vi.spyOn(app, 'getPath').mockImplementation((name: string) =>
         name === 'exe' ? '/Applications/Clubhouse.app/Contents/MacOS/Clubhouse' : tempDir,
@@ -402,8 +406,7 @@ describe('auto-update-service', () => {
     });
 
     it('applyMacUpdate runs beforeExit before flushing and exiting on relaunch', async () => {
-      const tempDir = path.join(os.tmpdir(), `clubhouse-update-before-exit-${process.pid}`);
-      fs.mkdirSync(tempDir, { recursive: true });
+      const tempDir = fs.mkdtempSync(path.join(testUserDataPath, 'before-exit-'));
       const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
       const getPath = vi.spyOn(app, 'getPath').mockImplementation((name: string) =>
         name === 'exe' ? '/Applications/Clubhouse.app/Contents/MacOS/Clubhouse' : tempDir,
@@ -431,8 +434,7 @@ describe('auto-update-service', () => {
     });
 
     it('applyMacUpdate does not run beforeExit when the updater fails to spawn', async () => {
-      const tempDir = path.join(os.tmpdir(), `clubhouse-update-before-exit-fail-${process.pid}`);
-      fs.mkdirSync(tempDir, { recursive: true });
+      const tempDir = fs.mkdtempSync(path.join(testUserDataPath, 'before-exit-fail-'));
       const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
       const getPath = vi.spyOn(app, 'getPath').mockImplementation((name: string) =>
         name === 'exe' ? '/Applications/Clubhouse.app/Contents/MacOS/Clubhouse' : tempDir,
@@ -499,7 +501,7 @@ describe('auto-update-service', () => {
     });
 
     it.each(['deb', 'rpm'])('applyLinuxUpdate (.%s) runs beforeExit before relaunching', async (ext) => {
-      const downloadPath = path.join(os.tmpdir(), `Clubhouse before-exit.${ext}`);
+      const downloadPath = path.join(testUserDataPath, `Clubhouse before-exit.${ext}`);
       fs.writeFileSync(downloadPath, '');
       const order: string[] = [];
       mockApp.relaunch = vi.fn(() => order.push('relaunch'));
@@ -517,7 +519,7 @@ describe('auto-update-service', () => {
     });
 
     it('does not run beforeExit on apply-on-quit paths', async () => {
-      const downloadPath = path.join(os.tmpdir(), 'Clubhouse before-exit-quit.deb');
+      const downloadPath = path.join(testUserDataPath, 'Clubhouse before-exit-quit.deb');
       fs.writeFileSync(downloadPath, '');
       const beforeExit = vi.fn(async () => {});
 
@@ -840,7 +842,7 @@ describe('auto-update-service', () => {
     let tmpFile: string;
 
     beforeEach(() => {
-      tmpFile = path.join(os.tmpdir(), `test-sha256-${Date.now()}.txt`);
+      tmpFile = path.join(testUserDataPath, 'test-sha256.txt');
     });
 
     afterEach(() => {
@@ -862,7 +864,7 @@ describe('auto-update-service', () => {
     });
 
     it('rejects for non-existent file', async () => {
-      await expect(verifySHA256('/tmp/nonexistent-file-12345.txt', 'abc')).rejects.toThrow();
+      await expect(verifySHA256(path.join(testUserDataPath, 'nonexistent.txt'), 'abc')).rejects.toThrow();
     });
 
     it('handles empty file', async () => {

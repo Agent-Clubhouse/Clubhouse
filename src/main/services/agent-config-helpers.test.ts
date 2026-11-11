@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'path';
 import { watch } from 'fs';
 
@@ -204,6 +204,9 @@ import {
 import { _resetHelperAutoStateForTesting, commitAutoDecision, reservationSummary, reservedLoad, reserveAutoDecision, settleAutoDecision } from './helper-auto-state';
 import type { DurableAgentConfig } from '../../shared/types';
 import { delivered } from './managed-agents/delivery-records';
+import {
+  _resetGrantRequestsForTesting, listGrantRequests, onGrantRequestsChanged, recordGrantRequest,
+} from './grant-requests';
 
 const PROJECT_PATH = path.resolve('helpers-project');
 const CONFIG_PATH = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
@@ -267,6 +270,56 @@ beforeEach(() => {
   probeError = null;
   gitCalls.length = 0;
   registeredProjects.length = 0;
+});
+
+afterEach(() => {
+  _resetGrantRequestsForTesting();
+});
+
+describe('grant requests when an agent leaves', () => {
+  function request(agentId: string) {
+    const result = recordGrantRequest(agentId, {
+      kind: 'grant', agentId, agentName: agentId, projectPath: PROJECT_PATH,
+      actions: ['settings.app.write'], where: 'the app',
+    });
+    if (!result.ok) throw new Error('Grant request was not recorded');
+    return result.request;
+  }
+
+  it.each(['delete', 'unregister', 'dispose'] as const)('%s withdraws requests only for that agent and notifies subscribers', async (mode) => {
+    seed([
+      agent('durable_parent'),
+      withWorktree('durable_helper', {}, { parentAgentId: 'durable_parent' }),
+      agent('durable_other'),
+    ]);
+    const mine = request('durable_helper');
+    const other = request('durable_other');
+    const changed = vi.fn();
+    onGrantRequestsChanged(changed);
+
+    if (mode === 'delete') await deleteDurable(PROJECT_PATH, 'durable_helper');
+    else if (mode === 'unregister') expect(await deleteUnregister(PROJECT_PATH, 'durable_helper')).toMatchObject({ ok: true });
+    else expect(await disposeHelper(PROJECT_PATH, 'durable_helper')).toMatchObject({ ok: true });
+
+    expect(listGrantRequests()).toEqual([other]);
+    expect(changed).toHaveBeenCalledExactlyOnceWith({
+      kind: 'closed', requestIds: [mine.requestId], reason: 'withdrawn',
+    });
+  });
+
+  it('keeps requests when disposal is refused or deletion fails', async () => {
+    seed([withWorktree('durable_helper', { dirty: 1 }, { parentAgentId: 'durable_parent' })]);
+    const mine = request('durable_helper');
+    const changed = vi.fn();
+    onGrantRequestsChanged(changed);
+
+    expect(await disposeHelper(PROJECT_PATH, 'durable_helper')).toMatchObject({ ok: false });
+    rmFailures.add(worktree('durable_helper'));
+    await expect(deleteDurable(PROJECT_PATH, 'durable_helper')).rejects.toThrow();
+
+    expect(listGrantRequests()).toEqual([mine]);
+    expect(changed).not.toHaveBeenCalled();
+  });
 });
 
 describe('helper fields round-trip', () => {

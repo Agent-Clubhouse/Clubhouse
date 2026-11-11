@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fsp from 'fs/promises';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { app } from 'electron';
 
 vi.mock('electron', () => ({
   app: {
-    getPath: () => '/tmp/test-userdata',
+    getPath: vi.fn(),
     getVersion: () => '0.38.0',
   },
 }));
@@ -70,17 +73,21 @@ import { getAgentRuntime } from './agent-runtime';
 import type { AgentRuntime } from '../../shared/chat';
 
 describe('restart-session-service', () => {
-  const statePath = '/tmp/test-userdata/restart-session-state.json';
+  let userDataPath: string;
+  let statePath: string;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-restart-session-'));
+    statePath = path.join(userDataPath, 'restart-session-state.json');
+    vi.mocked(app.getPath).mockReturnValue(userDataPath);
     for (const [id] of agentRegistry.getAllRegistrations()) {
       agentRegistry.untrack(id);
     }
   });
 
   afterEach(async () => {
-    try { await fsp.unlink(statePath); } catch {}
+    await fsp.rm(userDataPath, { recursive: true, force: true });
   });
 
   describe('captureSessionState', () => {
