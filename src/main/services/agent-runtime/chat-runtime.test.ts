@@ -32,6 +32,9 @@ import { agentRegistry } from '../agent-registry';
 import { accessLevelOf } from '../../../shared/orchestration-policy';
 import { appLog } from '../log-service';
 import { closeAgentWork, hasAgentWorkInFlight, reopenLaunches } from '../launch-gate';
+import { ActionsEngine, type EngineState } from '../actions/engine';
+import { createStepRunner } from '../actions/steps';
+import type { Action, ActionRun } from '../../../shared/actions';
 
 /** Let queued microtasks and the runtime's emit chain settle. */
 async function flush(times = 10): Promise<void> {
@@ -104,6 +107,157 @@ describe('held message diagnostics (#3297)', () => {
     await flush();
     return { runtime, driver };
   }
+
+  it('replaces only the same Action queue and keeps other Actions and user messages', async () => {
+    const { runtime, driver } = await running();
+    const first = vi.fn();
+    const old = await runtime.sendMessage('old', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', onSettled: first } });
+    const user = await runtime.sendMessage('user', { source: 'user' });
+    const other = await runtime.sendMessage('other', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'b' } });
+    const latest = await runtime.sendMessage('latest', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', latestOnly: true } });
+    expect(first).toHaveBeenCalledExactlyOnceWith('replaced');
+    expect(runtime.getQueueState().queuedMessageIds).toEqual([user.messageId, other.messageId, latest.messageId]);
+    expect(logs('Queued chat message dropped')).toMatchObject([{ messageId: old.messageId, reason: 'latest_only' }]);
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.sent[0].content).toEqual([{ type: 'text', text: 'user' }]);
+  });
+
+  it('keeps the default Action delivery queued during the idle transition before the queue drains', async () => {
+    const { runtime, driver } = await running();
+    const replaced = vi.fn();
+    await runtime.sendMessage('old', { source: 'action', actionQueue: { actionId: 'a', onSettled: replaced } });
+    driver.last.emit({ type: 'session_state', data: { state: 'idle' } });
+    await flush();
+    const latest = await runtime.sendMessage('latest', { source: 'action', actionQueue: { actionId: 'a', latestOnly: true } });
+    expect(latest.delivery).toBe('queued');
+    expect(replaced).toHaveBeenCalledExactlyOnceWith('replaced');
+    expect(driver.last.sent).toHaveLength(0);
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.sent[0].content).toEqual([{ type: 'text', text: 'latest' }]);
+  });
+
+  it('expires at the exact deadline, logs the loss, and never dispatches expired text', async () => {
+    const { runtime, driver } = await running();
+    const settled = vi.fn();
+    const item = await runtime.sendMessage('stale', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', maxWaitMs: minute, onSettled: settled } });
+    await runtime.sendMessage('still wanted', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'b' } });
+    await vi.advanceTimersByTimeAsync(minute - 1);
+    expect(settled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toHaveBeenCalledExactlyOnceWith('expired');
+    expect(runtime.getQueueState().queuedMessageIds).not.toContain(item.messageId);
+    expect(logs('Queued chat message dropped')).toMatchObject([{ messageId: item.messageId, reason: 'expired', waitedMs: minute }]);
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.sent[0].content).toEqual([{ type: 'text', text: 'still wanted' }]);
+  });
+
+  it('does not expire a message after dispatch and reports its delivery once', async () => {
+    const { runtime, driver } = await running();
+    const settled = vi.fn();
+    await runtime.sendMessage('wanted', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', maxWaitMs: minute, onSettled: settled } });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    await vi.advanceTimersByTimeAsync(2 * minute);
+    expect(settled).toHaveBeenCalledExactlyOnceWith('delivered');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('can expire a pending pre-prompt dispatch and drain the next item without a turn boundary', async () => {
+    let release!: () => void;
+    const { runtime, driver } = await running({ beforePrompt: () => new Promise((resolve) => { release = resolve; }) });
+    const settled = vi.fn();
+    await runtime.sendMessage('stale', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', maxWaitMs: minute, onSettled: settled } });
+    await runtime.sendMessage('next', { source: 'user' });
+    await vi.advanceTimersByTimeAsync(minute - 1);
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toHaveBeenCalledExactlyOnceWith('expired');
+    release();
+    await flush();
+    release();
+    await flush();
+    expect(driver.last.sent.map((send) => send.content)).toEqual([[{ type: 'text', text: 'next' }]]);
+  });
+
+  it('retains the first system prompt when replacing an undelivered Action message', async () => {
+    const { runtime, driver } = await running({ systemPrompt: 'system' });
+    await runtime.sendMessage('old', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a' } });
+    await runtime.sendMessage('new', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', latestOnly: true } });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.sent[0].content).toEqual([{ type: 'text', text: 'system' }, { type: 'text', text: 'new' }]);
+  });
+
+  it('replaces a pending pre-prompt message and serializes concurrent latest-only arrivals', async () => {
+    let release!: () => void;
+    const { runtime, driver } = await running({ beforePrompt: () => new Promise((resolve) => { release = resolve; }) });
+    const settled = vi.fn();
+    await runtime.sendMessage('old', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', onSettled: settled } });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    await Promise.all(['second', 'latest'].map((text) => runtime.sendMessage(text, { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', latestOnly: true } })));
+    expect(settled).toHaveBeenCalledExactlyOnceWith('replaced');
+    expect(runtime.getQueueState().queuedMessageIds).toHaveLength(1);
+    release();
+    await flush();
+    release();
+    await flush();
+    expect(driver.last.sent.map((send) => send.content)).toEqual([[{ type: 'text', text: 'latest' }]]);
+  });
+
+  it('keeps policy-controlled messages in the removable client queue with a native-queue driver', async () => {
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', { ...STEERLESS, queue: 'native', steer: true });
+    const { runtime } = makeRuntime(driver, { now: Date.now });
+    runtimes.push(runtime);
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: {} });
+    await flush();
+    const queued = await runtime.sendMessage('wait', { source: 'action', delivery: 'queued', actionQueue: { actionId: 'a', maxWaitMs: minute } });
+    expect(driver.last.sent).toHaveLength(0);
+    await runtime.sendMessage('steer', { source: 'action', delivery: 'auto', actionQueue: { actionId: 'b' } });
+    expect(driver.last.sent[0].delivery).toBe('steer');
+    await vi.advanceTimersByTimeAsync(minute);
+    expect(runtime.getQueueState().queuedMessageIds).not.toContain(queued.messageId);
+  });
+
+  it('records actual queue expiry and replacement in Action run history, even after the handoff run finished', async () => {
+    const { runtime } = await running();
+    registerChatRuntime(runtime);
+    const history = new Map<string, ActionRun>();
+    let actions: Action[] = [];
+    let state: EngineState = { nextAt: {}, waits: [] };
+    const engine = new ActionsEngine({
+      clock: { now: Date.now, setTimeout, clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>) },
+      storage: { load: () => ({ actions, state }), saveActions: (value) => { actions = value; }, saveState: (value) => { state = value; } },
+      history: { put: (run) => { history.set(run.id, structuredClone(run)); }, list: () => [...history.values()] },
+      facts: { agentExists: () => true, isRunning: () => true, agentName: () => 'Target', agentProjectId: () => 'p', projectName: () => 'Project', projectIdForPath: () => 'p', repoOwner: () => ({}) },
+      rights: { checkSource: () => null, checkStep: () => null, maxActions: () => null },
+      steps: createStepRunner({
+        agentExists: () => true, agentName: () => 'Target', agentWorktree: () => undefined, isRunning: () => true,
+        project: () => undefined, wake: vi.fn(), sleep: vi.fn(), startQuick: vi.fn(), notify: () => ({ shown: true }),
+      }),
+    });
+    try {
+      engine.start();
+      const action = engine.create({ trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } }, steps: [{ kind: 'message', agentId: runtime.agentId, text: 'Check', latestOnly: true, maxWaitMinutes: 1 }] }, { kind: 'user' });
+      const first = engine.runNow(action.id);
+      await flush();
+      expect(history.get(first)).toMatchObject({ outcome: 'done', steps: [{ delivery: 'queued' }] });
+      const second = engine.runNow(action.id);
+      await flush();
+      expect(history.get(first)).toMatchObject({ outcome: 'cancelled', steps: [{ delivery: 'replaced' }] });
+      await vi.advanceTimersByTimeAsync(minute);
+      expect(history.get(second)).toMatchObject({ outcome: 'expired', reason: 'Queued message expired before delivery', steps: [{ delivery: 'expired' }] });
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+    } finally {
+      engine.stop();
+      clearChatRuntimes();
+    }
+  });
 
   it('logs each enqueue with source, depth and turn age, then the actual dispatch wait', async () => {
     const { runtime, driver } = await running();

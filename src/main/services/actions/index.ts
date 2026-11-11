@@ -196,6 +196,7 @@ async function deliverActionToDispatcher(req: DispatcherStepDelivery): Promise<{
       toolName: 'action',
       args: { actionId: req.actionId },
       fromAction: true,
+      ...(req.messageOptions && { messageOptions: req.messageOptions }),
     });
     if (background && !delivery.delivered) clearDispatcherBackgroundWork(inboxId);
     return delivery;

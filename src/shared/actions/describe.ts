@@ -12,6 +12,7 @@ import type {
   ActionEventSource,
   ActionOwner,
   ActionStep,
+  MessageStep,
   ActionTrigger,
   MissedRunRule,
   OverlapRule,
@@ -181,10 +182,14 @@ export function describeTrigger(trigger: ActionTrigger, names: ActionNames = NO_
   const branch = trigger.branch && trigger.event.startsWith('git.') ? ` (${trigger.branch})` : '';
   const absence = trigger.event === 'app.returned' ? ` after at least ${formatMinutes(trigger.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES)} away` : '';
   const what = `${subject} ${EVENT_PHRASES[trigger.event]}${branch}${absence}`;
+  const delay = trigger.delaySeconds !== undefined ? `${trigger.delaySeconds} ${trigger.delaySeconds === 1 ? 'second' : 'seconds'}`
+    : trigger.delayMinutes ? formatMinutes(trigger.delayMinutes) : undefined;
   let description = trigger.event === 'agent.idle'
-    ? `${subject} goes idle for ${formatMinutes(trigger.delayMinutes ?? 0)}`
-    : trigger.delayMinutes ? `${formatMinutes(trigger.delayMinutes)} after ${what}` : `When ${what}`;
+    ? `${subject} goes idle for ${delay ?? formatMinutes(0)}`
+    : delay ? `${delay} after ${what}` : `When ${what}`;
   if (src.kind === 'any') description += `, grouped for ${trigger.coalesceSeconds ?? DEFAULT_COALESCE_SECONDS} seconds from the first ${trigger.event === 'agent.quick_finished' ? 'finish' : 'turn'}`;
+  else if (trigger.coalesceSeconds !== undefined) description += `, grouped for ${trigger.coalesceSeconds} seconds from the first event`;
+  if (trigger.throttle) description += `, at most ${trigger.throttle.maxRuns} ${trigger.throttle.maxRuns === 1 ? 'run' : 'runs'} per ${formatMinutes(trigger.throttle.perMinutes)} (sliding window)`;
   if (trigger.afterLocalTime) {
     const [hour, minute] = trigger.afterLocalTime.split(':').map(Number);
     description += `, at or after ${formatClock(hour, minute)} local time`;
@@ -193,11 +198,18 @@ export function describeTrigger(trigger: ActionTrigger, names: ActionNames = NO_
   return description;
 }
 
+function describeDelivery(step: MessageStep): string {
+  let description = step.delivery === 'steer' ? ', steer when busy' : step.delivery === 'queue' ? ', queue when busy' : '';
+  if (step.latestOnly) description += ', keep only the latest queued message';
+  if (step.maxWaitMinutes !== undefined) description += `, expire after ${formatMinutes(step.maxWaitMinutes)} queued`;
+  return description;
+}
+
 /** One step in plain words, e.g. "Wake pm with a prompt". */
 export function describeStep(step: ActionStep, names: ActionNames = NO_NAMES): string {
   switch (step.kind) {
     case 'wake': return `Wake ${agentName(names, step.agentId)}${step.prompt ? ' with a prompt' : ''}`;
-    case 'message': return `Message ${agentName(names, step.agentId)}`;
+    case 'message': return `Message ${agentName(names, step.agentId)}${describeDelivery(step)}`;
     case 'sleep': return `Put ${agentName(names, step.agentId)} to sleep`;
     case 'notify': return 'Notify you';
     case 'quick': {
@@ -233,7 +245,7 @@ export function describeAction(a: { trigger: ActionTrigger; steps: ActionStep[];
   const step = a.steps[0];
   if (a.subscription && a.steps.length === 1 && step?.kind === 'message') {
     const who = names.agent(step.agentId) ?? (a.owner?.kind === 'dispatcher' || a.owner?.kind === 'app' ? names.dispatcher?.() || 'the Dispatcher' : 'an agent');
-    return `${describeTrigger(a.trigger, names)} → Tell ${who}${suffix}`;
+    return `${describeTrigger(a.trigger, names)} → Tell ${who}${describeDelivery(step)}${suffix}`;
   }
   return `${describeTrigger(a.trigger, names)} → ${describeSteps(a.steps, names)}${suffix}`;
 }
@@ -247,7 +259,7 @@ export function suggestActionName(a: { trigger: ActionTrigger; steps: ActionStep
   if (t.kind === 'schedule') lead = describeTrigger(t, names);
   else if (t.kind === 'once') lead = 'Once';
   else if (t.event === 'agent.idle') lead = `When ${sourceText(t.source, names)} goes idle`;
-  else lead = `After ${describeTrigger({ ...t, delayMinutes: undefined }, names).replace(/^When /, '')}`;
+  else lead = `After ${describeTrigger({ ...t, delayMinutes: undefined, delaySeconds: undefined }, names).replace(/^When /, '')}`;
   const name = `${lead}, ${firstLower}`;
   return name.length > 80 ? `${name.slice(0, 79)}…` : name;
 }

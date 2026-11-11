@@ -5,6 +5,7 @@
 
 import {
   DEFAULT_PRESET_FIELDS,
+  DEFAULT_COALESCE_SECONDS,
   cronToPresetFields,
   presetToCron,
   validateActionInput,
@@ -33,6 +34,9 @@ export interface StepDraft {
   /** Quick agents: a model override (set over MCP; cleared when the provider changes). */
   model: string;
   difficulty: HelperDifficulty;
+  delivery: '' | 'queue' | 'steer';
+  latestOnly?: boolean;
+  maxWaitMinutes: string;
 }
 
 export interface ActionDraft {
@@ -49,7 +53,9 @@ export interface ActionDraft {
   event: ActionEventKind;
   /** 'agent:<id>', 'project:<id>', 'any', or '' for app events. */
   source: string;
-  /** Minutes, as typed. */
+  timing: 'none' | 'delay' | 'coalesce';
+  delayUnit: 'minutes' | 'seconds';
+  /** Delay in the selected unit, as typed. */
   delay: string;
   branch: string;
   /** datetime-local value. */
@@ -61,12 +67,14 @@ export interface ActionDraft {
   afterLocalTime: string;
   oncePerDay: boolean;
   coalesceSeconds: string;
+  throttleMaxRuns: string;
+  throttlePerMinutes: string;
   steps: StepDraft[];
   overlap: OverlapRule;
 }
 
 export function emptyStep(kind: ActionStepKind = 'wake'): StepDraft {
-  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', model: '', difficulty: 'medium' };
+  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', model: '', difficulty: 'medium', delivery: '', maxWaitMinutes: '' };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -89,6 +97,8 @@ export function newDraft(now = Date.now()): ActionDraft {
     missed: 'skip',
     event: 'agent.slept',
     source: '',
+    timing: 'none',
+    delayUnit: 'minutes',
     delay: '',
     branch: '',
     onceAt: toLocalInput(now + 60 * 60 * 1000),
@@ -98,6 +108,8 @@ export function newDraft(now = Date.now()): ActionDraft {
     afterLocalTime: '',
     oncePerDay: false,
     coalesceSeconds: '',
+    throttleMaxRuns: '',
+    throttlePerMinutes: '',
     steps: [emptyStep()],
     overlap: 'skip',
   };
@@ -107,7 +119,11 @@ function stepToDraft(s: ActionStep): StepDraft {
   const d = emptyStep(s.kind);
   switch (s.kind) {
     case 'wake': return { ...d, agentId: s.agentId, text: s.prompt ?? '' };
-    case 'message': return { ...d, agentId: s.agentId, text: s.text };
+    case 'message': return {
+      ...d, agentId: s.agentId, text: s.text, delivery: s.delivery ?? '',
+      ...(s.latestOnly !== undefined && { latestOnly: s.latestOnly }),
+      maxWaitMinutes: s.maxWaitMinutes !== undefined ? String(s.maxWaitMinutes) : '',
+    };
     case 'sleep': return { ...d, agentId: s.agentId };
     case 'notify': return { ...d, text: s.text };
     case 'quick': return {
@@ -137,12 +153,17 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
     d.when = 'event';
     d.event = t.event;
     d.source = t.source.kind === 'agent' ? `agent:${t.source.agentId}` : t.source.kind === 'project' ? `project:${t.source.projectId}` : t.source.kind === 'any' ? 'any' : '';
-    d.delay = t.delayMinutes ? String(t.delayMinutes) : '';
+    d.timing = t.source.kind === 'any' || t.coalesceSeconds !== undefined ? 'coalesce'
+      : t.delaySeconds || t.delayMinutes || t.event === 'agent.idle' ? 'delay' : 'none';
+    d.delayUnit = t.delaySeconds !== undefined ? 'seconds' : 'minutes';
+    d.delay = t.delaySeconds !== undefined ? String(t.delaySeconds) : t.delayMinutes ? String(t.delayMinutes) : '';
     d.branch = t.branch ?? '';
     d.absenceMinutes = t.absenceMinutes !== undefined ? String(t.absenceMinutes) : '';
     d.afterLocalTime = t.afterLocalTime ?? '';
     d.oncePerDay = t.oncePerDay ?? false;
     d.coalesceSeconds = t.coalesceSeconds !== undefined ? String(t.coalesceSeconds) : '';
+    d.throttleMaxRuns = t.throttle ? String(t.throttle.maxRuns) : '';
+    d.throttlePerMinutes = t.throttle ? String(t.throttle.perMinutes) : '';
   }
   return d;
 }
@@ -161,7 +182,12 @@ export function draftCron(d: ActionDraft): string {
 function stepFromDraft(s: StepDraft): Record<string, unknown> {
   switch (s.kind) {
     case 'wake': return { kind: 'wake', agentId: s.agentId, ...(s.text.trim() && { prompt: s.text }) };
-    case 'message': return { kind: 'message', agentId: s.agentId, text: s.text };
+    case 'message': return {
+      kind: 'message', agentId: s.agentId, text: s.text,
+      ...(s.delivery && { delivery: s.delivery }),
+      ...(s.latestOnly !== undefined && { latestOnly: s.latestOnly }),
+      ...(s.maxWaitMinutes.trim() && { maxWaitMinutes: Number(s.maxWaitMinutes) }),
+    };
     case 'sleep': return { kind: 'sleep', agentId: s.agentId };
     case 'notify': return { kind: 'notify', text: s.text };
     case 'quick': return {
@@ -193,14 +219,18 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
     if (at <= now) return { ok: false, error: 'Pick a time in the future.' };
     trigger = { kind: 'once', at };
   } else {
-    const delay = d.source === 'any' || d.delay.trim() === '' ? undefined : Number(d.delay);
-    if (delay !== undefined && !(Number.isInteger(delay) && delay >= 0)) return { ok: false, error: 'The wait must be a whole number of minutes.' };
+    const timing = d.source === 'any' ? 'coalesce' : d.event === 'agent.idle' ? 'delay' : d.timing;
+    const delay = timing === 'delay' && d.delay.trim() !== '' ? Number(d.delay) : undefined;
+    if (timing === 'delay' && (delay === undefined || !Number.isInteger(delay) || delay <= 0)) return { ok: false, error: `The wait must be a positive whole number of ${d.delayUnit}.` };
     trigger = {
-      kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(d.source !== 'any' && delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }),
+      kind: 'event', event: d.event, source: sourceFromDraft(d.source),
+      ...(delay && (d.delayUnit === 'seconds' ? { delaySeconds: delay } : { delayMinutes: delay })),
+      ...(d.branch.trim() && { branch: d.branch.trim() }),
       ...(d.event === 'app.returned' && d.absenceMinutes.trim() && { absenceMinutes: Number(d.absenceMinutes) }),
       ...(d.afterLocalTime && { afterLocalTime: d.afterLocalTime }),
       ...(d.oncePerDay && { oncePerDay: true }),
-      ...(d.source === 'any' && d.coalesceSeconds.trim() && { coalesceSeconds: Number(d.coalesceSeconds) }),
+      ...(timing === 'coalesce' && (d.coalesceSeconds.trim() || d.source !== 'any') && { coalesceSeconds: Number(d.coalesceSeconds.trim() || DEFAULT_COALESCE_SECONDS) }),
+      ...((d.throttleMaxRuns.trim() || d.throttlePerMinutes.trim()) && { throttle: { maxRuns: Number(d.throttleMaxRuns), perMinutes: Number(d.throttlePerMinutes) } }),
     };
   }
   // Keep the exact instant when unchanged, including seconds and the repeated DST hour.

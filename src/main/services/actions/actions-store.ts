@@ -75,6 +75,12 @@ function sanitizeState(raw: unknown): EngineState {
   if (isObject(raw.nextAt)) {
     for (const [id, at] of Object.entries(raw.nextAt)) if (typeof at === 'number' && Number.isFinite(at)) state.nextAt[id] = at;
   }
+  if (isObject(raw.throttleStarts)) {
+    state.throttleStarts = {};
+    for (const [id, times] of Object.entries(raw.throttleStarts)) {
+      if (Array.isArray(times)) state.throttleStarts[id] = times.filter((at): at is number => typeof at === 'number' && Number.isFinite(at) && at >= 0);
+    }
+  }
   if (Array.isArray(raw.waits)) {
     for (const w of raw.waits) {
       if (!isObject(w) || typeof w.actionId !== 'string' || typeof w.dueAt !== 'number' || typeof w.startedAt !== 'number') continue;
@@ -149,7 +155,7 @@ interface StoredHistory {
 function sanitizeRun(raw: unknown): ActionRun | null {
   if (!isObject(raw) || typeof raw.id !== 'string' || typeof raw.actionId !== 'string' || typeof raw.startedAt !== 'number') return null;
   if (!isObject(raw.trigger) || typeof raw.trigger.kind !== 'string' || typeof raw.trigger.at !== 'number') return null;
-  const outcomes = ['running', 'done', 'failed', 'cancelled', 'skipped'];
+  const outcomes = ['running', 'done', 'failed', 'cancelled', 'skipped', 'throttled', 'expired'];
   if (typeof raw.outcome !== 'string' || !outcomes.includes(raw.outcome)) return null;
   const steps = Array.isArray(raw.steps)
     ? raw.steps.filter((s): s is ActionRun['steps'][number] => isObject(s) && ACTION_STEP_KINDS.includes(s.kind as never) && (s.outcome === 'done' || s.outcome === 'failed') && typeof s.detail === 'string')
@@ -166,6 +172,7 @@ function sanitizeRun(raw: unknown): ActionRun | null {
     chain: Array.isArray(raw.chain) ? raw.chain.filter((c): c is string => typeof c === 'string') : [],
     startedAt: raw.startedAt,
     ...(typeof raw.endedAt === 'number' && { endedAt: raw.endedAt }),
+    ...(typeof raw.deliveryUpdatedAt === 'number' && Number.isFinite(raw.deliveryUpdatedAt) && { deliveryUpdatedAt: raw.deliveryUpdatedAt }),
     outcome: raw.outcome as ActionRun['outcome'],
     ...(typeof raw.reason === 'string' && { reason: raw.reason }),
     steps,
@@ -173,13 +180,26 @@ function sanitizeRun(raw: unknown): ActionRun | null {
 }
 
 /**
- * A run still marked running when the app starts didn't finish: Clubhouse
- * closed during it.
+ * The client message queue is not restored on relaunch. Settle its orphaned
+ * receipts as well as runs interrupted by shutdown.
  */
-export function settleInterruptedRuns(runs: ActionRun[]): ActionRun[] {
-  return runs.map((r) => r.outcome === 'running'
-    ? { ...r, outcome: 'cancelled' as const, endedAt: r.endedAt ?? r.startedAt, reason: 'Clubhouse closed before it finished' }
-    : r);
+export function settleInterruptedRuns(runs: ActionRun[], now = Date.now()): ActionRun[] {
+  return runs.map((run) => {
+    const queued = run.steps.some((step) => step.delivery === 'queued');
+    const interrupted = run.outcome === 'running';
+    if (!queued && !interrupted) return run;
+    const reason = 'Clubhouse closed before queued delivery was confirmed';
+    return {
+      ...run,
+      ...(queued && {
+        deliveryUpdatedAt: now,
+        steps: run.steps.map((step) => step.delivery === 'queued' ? { ...step, delivery: 'dropped' as const, detail: reason } : step),
+      }),
+      ...(interrupted
+        ? { outcome: 'cancelled' as const, endedAt: run.endedAt ?? run.startedAt, reason: 'Clubhouse closed before it finished' }
+        : queued && run.outcome === 'done' ? { outcome: 'cancelled' as const, reason } : {}),
+    };
+  });
 }
 
 const historyStore = createSettingsStore<StoredHistory>(
@@ -219,6 +239,9 @@ export function createRunHistory(now: () => number = Date.now): RunHistory & { f
     lastSave = historyStore.save({ version: 1, runs: out }).catch(logSaveError('action history'));
     return lastSave;
   };
+
+  // Persist load-time settlements even if no action runs during this session.
+  if (runs.size) timer = setTimeout(() => { void save(); }, HISTORY_SAVE_DELAY_MS);
 
   return {
     put(run) {

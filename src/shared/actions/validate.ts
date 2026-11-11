@@ -126,13 +126,21 @@ export function validateTrigger(raw: unknown): Result<ActionTrigger> {
       }
       delayMinutes = raw.delayMinutes;
     }
-    if (event === 'agent.idle' && !delayMinutes) return { ok: false, error: 'Say how many minutes of idle time to wait for.' };
-    if (source.value.kind === 'any' && raw.delayMinutes !== undefined) {
+    let delaySeconds: number | undefined;
+    if (raw.delaySeconds !== undefined) {
+      if (raw.delayMinutes !== undefined) return { ok: false, error: 'Set the delay in seconds or minutes, not both.' };
+      if (typeof raw.delaySeconds !== 'number' || !Number.isInteger(raw.delaySeconds) || raw.delaySeconds < 0 || raw.delaySeconds > MAX_DELAY_MINUTES * 60) {
+        return { ok: false, error: `The wait must be a whole number of seconds, up to ${MAX_DELAY_MINUTES * 60}.` };
+      }
+      if (raw.delaySeconds) delaySeconds = raw.delaySeconds;
+    }
+    if (event === 'agent.idle' && !delayMinutes && !delaySeconds) return { ok: false, error: 'Say how much idle time to wait for.' };
+    if (source.value.kind === 'any' && (raw.delayMinutes !== undefined || raw.delaySeconds !== undefined)) {
       return { ok: false, error: 'Any readable agent uses its coalescing window instead of Wait first.' };
     }
     let coalesceSeconds: number | undefined;
     if (raw.coalesceSeconds !== undefined) {
-      if (source.value.kind !== 'any') return { ok: false, error: 'A coalescing window is only for any readable agent.' };
+      if (delayMinutes || delaySeconds) return { ok: false, error: 'Choose either a delay or a coalescing window, not both.' };
       if (typeof raw.coalesceSeconds !== 'number' || !Number.isInteger(raw.coalesceSeconds) || raw.coalesceSeconds < MIN_COALESCE_SECONDS || raw.coalesceSeconds > MAX_COALESCE_SECONDS) {
         return { ok: false, error: `The coalescing window must be whole seconds, from ${MIN_COALESCE_SECONDS} to ${MAX_COALESCE_SECONDS}.` };
       }
@@ -152,13 +160,23 @@ export function validateTrigger(raw: unknown): Result<ActionTrigger> {
       return { ok: false, error: 'The local time must be HH:MM, from 00:00 to 23:59.' };
     }
     if (raw.oncePerDay !== undefined && typeof raw.oncePerDay !== 'boolean') return { ok: false, error: 'Once per calendar day must be true or false.' };
+    let throttle: { maxRuns: number; perMinutes: number } | undefined;
+    if (raw.throttle !== undefined) {
+      if (!isObject(raw.throttle) || typeof raw.throttle.maxRuns !== 'number' || !Number.isSafeInteger(raw.throttle.maxRuns) || raw.throttle.maxRuns <= 0
+        || typeof raw.throttle.perMinutes !== 'number' || !Number.isSafeInteger(raw.throttle.perMinutes) || raw.throttle.perMinutes <= 0 || raw.throttle.perMinutes > MAX_DELAY_MINUTES) {
+        return { ok: false, error: `Throttle needs positive whole runs and minutes, up to ${MAX_DELAY_MINUTES} minutes.` };
+      }
+      throttle = { maxRuns: raw.throttle.maxRuns, perMinutes: raw.throttle.perMinutes };
+    }
     return {
       ok: true, value: {
         kind: 'event', event, source: source.value, ...(delayMinutes && { delayMinutes }), ...(branch && { branch }),
+        ...(delaySeconds && { delaySeconds }),
         ...(absenceMinutes !== undefined && { absenceMinutes }),
         ...(typeof raw.afterLocalTime === 'string' && { afterLocalTime: raw.afterLocalTime }),
         ...(typeof raw.oncePerDay === 'boolean' && { oncePerDay: raw.oncePerDay }),
         ...(coalesceSeconds !== undefined && { coalesceSeconds }),
+        ...(throttle && { throttle }),
       },
     };
   }
@@ -178,7 +196,17 @@ export function validateStep(raw: unknown, index: number): Result<ActionStep> {
     case 'message': {
       const agentId = needAgent(); if (!agentId.ok) return fail(agentId);
       const t = text(raw.text, `${label}’s message`, true); if (!t.ok) return fail(t);
-      return { ok: true, value: { kind: 'message', agentId: agentId.value, text: t.value as string } };
+      if (raw.delivery !== undefined && raw.delivery !== 'queue' && raw.delivery !== 'steer') return { ok: false, error: `${label} delivery must be queue or steer.` };
+      if (raw.latestOnly !== undefined && typeof raw.latestOnly !== 'boolean') return { ok: false, error: `${label} latestOnly must be true or false.` };
+      if (raw.maxWaitMinutes !== undefined && (typeof raw.maxWaitMinutes !== 'number' || !Number.isSafeInteger(raw.maxWaitMinutes) || raw.maxWaitMinutes <= 0 || raw.maxWaitMinutes > MAX_DELAY_MINUTES)) {
+        return { ok: false, error: `${label} max wait must be positive whole minutes, up to ${MAX_DELAY_MINUTES}.` };
+      }
+      return { ok: true, value: {
+        kind: 'message', agentId: agentId.value, text: t.value as string,
+        ...((raw.delivery === 'queue' || raw.delivery === 'steer') && { delivery: raw.delivery }),
+        ...(typeof raw.latestOnly === 'boolean' && { latestOnly: raw.latestOnly }),
+        ...(typeof raw.maxWaitMinutes === 'number' && { maxWaitMinutes: raw.maxWaitMinutes }),
+      } };
     }
     case 'sleep': {
       const agentId = needAgent(); if (!agentId.ok) return fail(agentId);
@@ -274,10 +302,10 @@ export function assertActionInput(raw: unknown, now = Date.now()): ValidActionIn
  * whichever leaves fewer. A run still going is always kept.
  */
 export function trimHistory(runs: ActionRun[], now: number): ActionRun[] {
-  const newestFirst = [...runs].sort((a, b) => b.startedAt - a.startedAt);
+  const newestFirst = [...runs].sort((a, b) => (b.deliveryUpdatedAt ?? b.startedAt) - (a.deliveryUpdatedAt ?? a.startedAt));
   const kept: ActionRun[] = [];
   for (const run of newestFirst) {
-    const fresh = now - run.startedAt <= HISTORY_MAX_AGE_MS;
+    const fresh = now - (run.deliveryUpdatedAt ?? run.startedAt) <= HISTORY_MAX_AGE_MS;
     if (run.outcome === 'running' || (fresh && kept.length < HISTORY_MAX_RUNS)) kept.push(run);
   }
   return kept;

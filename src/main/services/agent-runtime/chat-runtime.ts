@@ -44,6 +44,8 @@ import {
   type RoutedMessagePart,
   type RuntimeSendOptions,
   type RuntimeSendResult,
+  type RuntimeActionQueue,
+  type ActionQueueSettlement,
   type RuntimeTranscriptSlice,
   type SessionEndReason,
 } from '../../../shared/chat';
@@ -165,9 +167,11 @@ interface QueuedMessage {
   parts: ContentBlock[][];
   /** The system prompt, for a driver that can't pass it natively, sent ahead of the first message. */
   preamble: ContentBlock[];
+  actionQueue?: RuntimeActionQueue;
+  expiresAt?: number;
 }
 
-type QueueDropReason = 'removed' | 'clearContext' | 'session_close' | 'replace' | 'send_failed';
+type QueueDropReason = 'removed' | 'clearContext' | 'session_close' | 'replace' | 'send_failed' | 'expired' | 'latest_only';
 
 interface PendingPermission {
   chatRequestId: string;
@@ -204,6 +208,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   /** Shifted out of the queue, but still waiting for the pre-prompt hook. */
   private pendingDispatch: QueuedMessage | undefined;
   private heldWarningTimer: ReturnType<typeof setTimeout> | undefined;
+  private queueExpiryTimer: ReturnType<typeof setTimeout> | undefined;
   private lastHeldWarningAt: number | undefined;
   private readonly inFlightTools = new Map<string, string | undefined>();
   private publishedQueueState = { queuedMessageIds: [] as string[], queueStateSeq: 0 };
@@ -606,16 +611,18 @@ export class ChatAgentRuntime implements AgentRuntime {
     const running = this.draining
       || this.state === 'running' || this.state === 'waiting_permission' || this.state === 'waiting_input';
     const caps = this.capabilities ?? session.capabilities;
+    // Keep Action messages removable even when the driver normally queues natively.
+    const clientQueue = caps.queue !== 'native' || opts.actionQueue !== undefined;
 
     let wanted: MessageDelivery;
-    const requested = opts.delivery ?? 'auto';
+    const requested = opts.delivery ?? (opts.actionQueue ? 'queued' : 'auto');
     if (requested === 'auto') {
       wanted = !running ? 'prompt' : caps.steer ? 'steer' : 'queued';
     } else if (requested === 'steer' && !caps.steer) {
       wanted = running ? 'queued' : 'prompt';
     } else if (requested === 'prompt' && running) {
       wanted = caps.steer ? 'steer' : 'queued';
-    } else if (requested === 'queued' && !running && caps.queue !== 'native' && this.queued.length === 0) {
+    } else if (requested === 'queued' && !running && clientQueue && this.queued.length === 0) {
       // Nothing is running to end and drain the queue (the turn ended first): send it now (#3102).
       // With items still queued, a drain is coming (the turn just ended), so it waits its turn.
       wanted = 'prompt';
@@ -629,7 +636,11 @@ export class ChatAgentRuntime implements AgentRuntime {
       ...(opts.clientCommandId && { clientCommandId: opts.clientCommandId }),
       ...(opts.routed && { routed: opts.routed }),
     };
-    if (wanted === 'queued' && caps.queue !== 'native') {
+    if (wanted === 'queued' && clientQueue) {
+      const expired = this.dropQueued((item) => item.expiresAt !== undefined && item.expiresAt <= this.now(), 'expired', true);
+      const replaced = opts.actionQueue?.latestOnly
+        ? this.dropQueued((item) => item.actionQueue?.actionId === opts.actionQueue!.actionId, 'latest_only', true)
+        : Promise.resolve([]);
       // Helper reports and Clubhouse notices arriving mid-turn join the MCP
       // item at the tail, so a burst becomes one turn. Never a user's message.
       const tail = this.queued[this.queued.length - 1];
@@ -644,12 +655,19 @@ export class ChatAgentRuntime implements AgentRuntime {
         return { delivery: 'queued', messageId: tail.messageId };
       }
       const preamble = this.withSystemPrompt([], caps);
-      const item: QueuedMessage = { messageId, source: opts.source, queuedAt: this.now(), parts: [blocks], preamble, trace: traceContext };
+      const item: QueuedMessage = {
+        messageId, source: opts.source, queuedAt: this.now(), parts: [blocks], preamble, trace: traceContext,
+        ...(opts.actionQueue && { actionQueue: { ...opts.actionQueue } }),
+        ...(opts.actionQueue?.maxWaitMs !== undefined && { expiresAt: this.now() + opts.actionQueue.maxWaitMs }),
+      };
       this.queued.push(item);
       this.logQueueChange('queued', item);
       this.armHeldWarning();
+      this.armQueueExpiry();
       // Written together, so no turn_started falls between the message and the event that says the runtime holds it.
       await Promise.all([
+        expired,
+        replaced,
         this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued' } }),
         this.emitQueueState([messageId], 'queued'),
       ]);
@@ -688,26 +706,73 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   async removeQueued(messageIds?: readonly string[]): Promise<string[]> {
     const wanted = messageIds ? new Set(messageIds) : undefined;
+    return this.dropQueued((item) => !wanted || wanted.has(item.messageId), 'removed');
+  }
+
+  private settleQueued(item: QueuedMessage, delivery: ActionQueueSettlement): void {
+    const callback = item.actionQueue?.onSettled;
+    if (item.actionQueue) delete item.actionQueue.onSettled;
+    if (!callback) return;
+    try { callback(delivery); }
+    catch (err) {
+      // telemetry-exempt: receipt failures are logged locally and must not interrupt delivery
+      appLog('core:chat', 'error', 'Could not record an Action queue receipt', { meta: { agentId: this.agentId, messageId: item.messageId, error: err instanceof Error ? err.message : String(err) } });
+    }
+  }
+
+  private async dropQueued(wanted: (item: QueuedMessage) => boolean, reason: QueueDropReason, includePending = false): Promise<string[]> {
     const removed: string[] = [];
+    const dropped: QueuedMessage[] = [];
+    if (includePending && this.pendingDispatch && wanted(this.pendingDispatch)) {
+      dropped.push(this.pendingDispatch);
+      this.pendingDispatch = undefined;
+    }
     for (let i = this.queued.length - 1; i >= 0; i--) {
       const item = this.queued[i];
       const { messageId } = item;
-      if (wanted && !wanted.has(messageId)) continue;
+      if (!wanted(item)) continue;
       this.queued.splice(i, 1);
-      this.logQueueChange('dropped', item, 'removed');
+      dropped.push(item);
       removed.unshift(messageId);
+    }
+    for (const item of dropped) {
+      if (!removed.includes(item.messageId)) removed.unshift(item.messageId);
+      this.logQueueChange('dropped', item, reason);
+      this.settleQueued(item, reason === 'expired' ? 'expired' : reason === 'latest_only' ? 'replaced' : 'dropped');
+    }
+    const preamble = dropped.flatMap((item) => item.preamble);
+    if (preamble.length) {
+      const next = this.pendingDispatch ?? this.queued[0];
+      if (next) next.preamble.unshift(...preamble);
+      else this.systemPromptApplied = false;
     }
     if (removed.length) {
       this.armHeldWarning();
+      this.armQueueExpiry();
       await this.emit({ type: 'queue_removed', data: { messageIds: removed } });
       await this.emitQueueState(removed, 'removed');
     }
     return removed;
   }
 
+  private armQueueExpiry(): void {
+    if (this.queueExpiryTimer) clearTimeout(this.queueExpiryTimer);
+    this.queueExpiryTimer = undefined;
+    const items = this.pendingDispatch ? [this.pendingDispatch, ...this.queued] : this.queued;
+    const due = items.reduce((earliest, item) => Math.min(earliest, item.expiresAt ?? Infinity), Infinity);
+    if (!Number.isFinite(due) || this.ended) return;
+    this.queueExpiryTimer = setTimeout(() => {
+      this.queueExpiryTimer = undefined;
+      void this.dropQueued((item) => item.expiresAt !== undefined && item.expiresAt <= this.now(), 'expired', true).catch((err) => {
+        appLog('core:chat', 'error', 'Could not publish expired Action messages', { meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) } });
+      }).finally(() => this.armQueueExpiry());
+    }, Math.max(0, due - this.now()));
+    this.queueExpiryTimer.unref?.();
+  }
+
   getQueueState(): { queuedMessageIds: string[]; queueStateSeq: number; queueRemovalSupported: boolean } {
     return { ...this.publishedQueueState, queuedMessageIds: [...this.publishedQueueState.queuedMessageIds],
-      queueRemovalSupported: this.isRunning() && this.getCapabilities()?.queue !== 'native' };
+      queueRemovalSupported: this.isRunning() && (this.getCapabilities()?.queue !== 'native' || this.queued.length > 0) };
   }
 
   private emitQueueState(messageIds: string[], status: ChatEventDataMap['queue_state']['transition']['status']): Promise<void> {
@@ -764,8 +829,12 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
     this.queued.length = 0;
     this.pendingDispatch = undefined;
-    for (const item of items) this.logQueueChange('dropped', item, reason);
+    for (const item of items) {
+      this.logQueueChange('dropped', item, reason);
+      this.settleQueued(item, 'dropped');
+    }
     this.armHeldWarning();
+    this.armQueueExpiry();
   }
 
   private armHeldWarning(): void {
@@ -843,13 +912,20 @@ export class ChatAgentRuntime implements AgentRuntime {
         if (this.pendingDispatch === next) this.logQueueChange('dropped', next, this.stopRequested ? 'session_close' : 'replace');
         return;
       }
-      this.pendingDispatch = undefined;
-      this.logQueueChange('dispatched', next);
-      this.pendingTrace = this.pendingTraceAssigned ? undefined : next.trace;
-      this.pendingTraceAssigned = true;
-      this.pendingTurns.add(pending);
-      await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
-      if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
+      if (this.pendingDispatch !== next || (next.expiresAt !== undefined && next.expiresAt <= this.now())) {
+        if (this.pendingDispatch === next) await this.dropQueued((item) => item === next, 'expired', true);
+        failed = true;
+      } else {
+        this.pendingDispatch = undefined;
+        this.armQueueExpiry();
+        this.logQueueChange('dispatched', next);
+        this.pendingTrace = this.pendingTraceAssigned ? undefined : next.trace;
+        this.pendingTraceAssigned = true;
+        this.pendingTurns.add(pending);
+        await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+        this.settleQueued(next, 'delivered');
+        if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
+      }
     } catch (err) {
       this.pendingTurns.delete(pending);
       if (this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
@@ -857,6 +933,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       // Like a failed plain send, this one message fails and the session stays (#3103).
       // telemetry-exempt: the user sees the notice; logged locally with the reason.
       this.logQueueChange('dropped', next, 'send_failed');
+      this.settleQueued(next, 'dropped');
       // telemetry-exempt: shown to the user as a notice below.
       await this.emitQueueState([next.messageId], 'failed');
       const reason = err instanceof Error ? err.message : String(err);
@@ -865,6 +942,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     } finally {
       if (this.pendingDispatch === next) this.pendingDispatch = undefined;
       this.draining = false;
+      this.armQueueExpiry();
     }
     // Nothing was sent, so no turn will end to drain the rest: go on with the next one.
     if (failed) await this.drainQueue();

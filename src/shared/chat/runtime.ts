@@ -37,6 +37,15 @@ import type {
 
 export type AgentRuntimeKind = 'pty' | 'chat';
 
+export type ActionQueueSettlement = 'delivered' | 'expired' | 'replaced' | 'dropped';
+
+export interface RuntimeActionQueue {
+  actionId: string;
+  latestOnly?: boolean;
+  maxWaitMs?: number;
+  onSettled?: (delivery: ActionQueueSettlement) => void;
+}
+
 export interface RuntimeSendOptions {
   source: MessageSource;
   /** Optional remote command correlation, echoed in the authoritative user_message event. */
@@ -50,6 +59,8 @@ export interface RuntimeSendOptions {
   taskId?: string;
   /** Who sent the message and its text without routing, for chat to show. Never reaches the agent. */
   routed?: RoutedMessagePart[];
+  /** Action-owned client queue controls and a receipt for its eventual delivery or loss. */
+  actionQueue?: RuntimeActionQueue;
   /**
    * PTY only: false types the text without pressing Enter (MCP send_message
    * force_submit=false). Chat runtimes always send.
