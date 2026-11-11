@@ -198,13 +198,14 @@ export function AgentSettingsView({ agent }: Props) {
 
   // Clubhouse-managed agents (#2893): the setup on the agent's config, kept fresh as parts change.
   const [managedSetup, setManagedSetup] = useState<ManagedAgentSetup | null>(null);
+  const [managedLoadedFor, setManagedLoadedFor] = useState<string | null>(null);
   const [clubhouseFeatures, setClubhouseFeatures] = useState(true);
   useEffect(() => {
     if (!projectPath || isRemoteProjectId(agent.projectId)) { setManagedSetup(null); return; }
     let cancelled = false;
     const load = () => {
       window.clubhouse.agent.getDurableConfig(projectPath, agent.id)
-        .then((c) => { if (!cancelled) { setManagedSetup(c?.managed ?? null); setClubhouseFeatures(c?.clubhouseFeatures !== false); } })
+        .then((c) => { if (!cancelled) { setManagedSetup(c?.managed ?? null); setClubhouseFeatures(c?.clubhouseFeatures !== false); setManagedLoadedFor(agent.id); } })
         .catch(() => { /* telemetry-exempt: the General page shows the agent as unmanaged until a read works */ });
     };
     load();
@@ -234,11 +235,14 @@ export function AgentSettingsView({ agent }: Props) {
   // selected once it shows for this agent: a managed agent's builder pages appear after its setup loads.
   const requestedPage = useAgentSettingsPages((s) => s.requestedPage);
   useEffect(() => {
-    if (!requestedPage || requestedPage.agentId !== agent.id || hiddenPages.includes(requestedPage.page)) return;
-    setPage(requestedPage.page);
+    if (!requestedPage || requestedPage.agentId !== agent.id) return;
+    if (requestedPage.page === 'runtime' && managedLoadedFor !== agent.id) return;
+    const targetPage = requestedPage.page === 'runtime' ? (isManagedAgent ? 'settings' : 'general') : requestedPage.page;
+    if (hiddenPages.includes(targetPage)) return;
+    setPage(targetPage);
     // The classic shell stacks the pages: bring the asked-for section into view instead.
-    if (!pageMode) document.getElementById(`agent-settings-section-${requestedPage.page}`)?.scrollIntoView?.({ block: 'start' });
-  }, [requestedPage, agent.id, hiddenPages, setPage, pageMode]);
+    if (!pageMode) document.getElementById(`agent-settings-section-${targetPage}`)?.scrollIntoView?.({ block: 'start' });
+  }, [requestedPage, agent.id, hiddenPages, setPage, pageMode, managedLoadedFor, isManagedAgent]);
 
   // Shell in worktree: the sidebar row (new chrome) or the row under the page
   // (classic) opens it. It stays mounted once opened.

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 
 vi.mock('../../hooks/useModelOptions', () => ({
   useModelOptions: () => ({ options: [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }], loading: false }),
@@ -16,6 +16,8 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useChromeStore, type NewAgentRequest } from '../chromeStore';
 import * as chromeTelemetry from '../telemetry';
+import { useToastStore } from '../../stores/toastStore';
+import { useAgentSettingsPages } from '../../features/agents/agentSettingsPages';
 
 const projects = [
   { id: 'p1', name: 'Clubhouse', path: '/tmp/ch' },
@@ -64,6 +66,7 @@ const openWith = (over: Partial<NewAgentRequest> = {}) => {
 const managedSwitch = () => screen.findByRole('switch', { name: 'Clubhouse managed' });
 
 beforeEach(() => {
+  useToastStore.setState({ toasts: [] });
   vi.restoreAllMocks();
   window.localStorage.clear();
   createDurableAgent.mockReset().mockResolvedValue('a-new');
@@ -360,6 +363,48 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(remove).not.toHaveBeenCalled();
     expect(report).toHaveBeenCalledWith('agent_start', expect.any(Error));
     expect(report).not.toHaveBeenCalledWith('agent_create', expect.anything());
+    fireEvent.click(screen.getByRole('button', { name: 'Change CLI' }));
+    expect(useAgentStore.getState().agentSettingsOpenFor).toBe('m-new');
+    expect(useAgentSettingsPages.getState().requestedPage).toEqual({ agentId: 'm-new', page: 'runtime' });
+    expect(useChromeStore.getState().newAgent).toBeNull();
+  });
+
+  it.each(['created', 'create_failed', 'start_failed'] as const)('keeps a managed %s outcome after closing mid-create', async (outcome) => {
+    let complete!: () => void;
+    const pending = new Promise<void>((resolve) => { complete = resolve; });
+    vi.spyOn(m(), 'createAgent').mockImplementation(async () => {
+      await pending;
+      return (outcome === 'create_failed'
+        ? { ok: false, code: 'failed', message: 'No space left.' }
+        : { ok: true, value: { id: 'm-late' } }) as never;
+    });
+    if (outcome === 'start_failed') spawnDurableAgent.mockRejectedValueOnce(new Error('CLI login expired.'));
+    const onCreated = vi.fn();
+    const onClosed = vi.fn();
+    const page = openWith({ onCreated, onClosed });
+    await managedSwitch();
+    fireEvent.click(screen.getByTestId('new-agent-scratch'));
+    fireEvent.click(screen.getByTestId('new-agent-builder-create'));
+    act(() => { useChromeStore.getState().closeNewAgent(); useUIStore.setState({ explorerTab: 'help' }); });
+    page.unmount();
+    await act(async () => { complete(); await pending; });
+    await waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1));
+    const toast = useToastStore.getState().toasts[0];
+    expect(useUIStore.getState().explorerTab).toBe('help');
+    expect(onClosed).toHaveBeenCalledExactlyOnceWith(outcome === 'create_failed' ? null : 'm-late');
+    if (outcome === 'create_failed') {
+      expect(toast).toMatchObject({ type: 'error', message: expect.stringContaining("Couldn't create the agent") });
+      expect(toast.action).toBeUndefined();
+      expect(onCreated).not.toHaveBeenCalled();
+    } else {
+      expect(onCreated).toHaveBeenCalledExactlyOnceWith('m-late');
+      expect(toast.action?.label).toBe(outcome === 'created' ? 'Open agent' : 'Change CLI');
+      expect(toast.type).toBe(outcome === 'created' ? 'info' : 'error');
+      if (outcome === 'start_failed') expect(toast.message).toContain("Created the agent and its folder, but couldn't start it");
+      act(() => toast.action?.onClick());
+      expect(useAgentStore.getState().activeAgentId).toBe('m-late');
+      if (outcome === 'start_failed') expect(useAgentStore.getState().agentSettingsOpenFor).toBe('m-late');
+    }
   });
 
   it('Back returns to the form with the identity kept', async () => {

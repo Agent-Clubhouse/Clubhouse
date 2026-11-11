@@ -7,6 +7,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { createChatViewState, useChatStore } from '../../stores/chatStore';
 import type { Agent } from '../../../shared/types';
+import { useAgentSettingsPages } from '../../features/agents/agentSettingsPages';
 
 const durable = (over: Partial<Agent> = {}): Agent => ({
   id: 'a1', projectId: 'p1', name: 'snazzy-fox', kind: 'durable', status: 'sleeping', color: 'blue',
@@ -175,6 +176,21 @@ describe('AgentRow menu', () => {
     fireEvent.click(screen.getByTestId('ctx-settings'));
     expect(onSelect).toHaveBeenCalled();
     expect(useAgentStore.getState().agentSettingsOpenFor).toBe('a1');
+  });
+
+  it('offers Change CLI for a failed launch and reveals the agent before its runtime settings', () => {
+    const { row, onSelect } = setup(durable({ status: 'error', errorMessage: 'CLI unavailable' }));
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole('button', { name: 'Change CLI' }));
+    expect(onSelect).toHaveBeenCalled();
+    expect(useAgentStore.getState().agentSettingsOpenFor).toBe('a1');
+    expect(useAgentSettingsPages.getState().requestedPage).toEqual({ agentId: 'a1', page: 'runtime' });
+  });
+
+  it('does not offer a CLI change when folder creation failed', () => {
+    const { row } = setup(durable({ status: 'error', creationFailed: true }));
+    fireEvent.contextMenu(row);
+    expect(screen.queryByRole('button', { name: 'Change CLI' })).toBeNull();
   });
 });
 

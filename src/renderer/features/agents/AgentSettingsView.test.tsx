@@ -1003,6 +1003,26 @@ describe('AgentSettingsView', () => {
       }
     });
 
+    it.each([false, true])('opens the CLI setting after loading config (managed: %s) and saves through the existing path', async (managed) => {
+      window.clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue({
+        id: defaultAgent.id,
+        ...(managed && { managed: { version: 1, blocks: [], skills: [], mcps: [] } }),
+      });
+      useOrchestratorStore.setState((s) => ({
+        allOrchestrators: [...s.allOrchestrators, { ...s.allOrchestrators[0], id: 'codex-cli', displayName: 'Codex' }],
+        enabled: ['claude-code', 'codex-cli'],
+      }));
+      useAgentSettingsPages.getState().setRequestedPage({ agentId: defaultAgent.id, page: 'runtime' });
+      renderSettings({ status: 'error' });
+      await waitFor(() => expect(useAgentSettingsPages.getState().requestedPage).toBeNull());
+      expect(useAgentSettingsPages.getState().page).toBe(managed ? 'settings' : 'general');
+      fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'codex-cli' } });
+      await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(
+        expect.any(String), defaultAgent.id, { orchestrator: 'codex-cli', model: 'default' },
+      ));
+      expect(useAgentStore.getState().agents[defaultAgent.id].orchestrator).toBe('codex-cli');
+    });
+
     it('ignores a page requested for another agent', async () => {
       useAgentSettingsPages.getState().setRequestedPage({ agentId: 'someone-else', page: 'mcp' });
       try {
