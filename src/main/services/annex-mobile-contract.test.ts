@@ -2028,7 +2028,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const bare = await exchange('GET', ROUTE);
     expect(Object.keys(bare.response.body.labels)).toEqual(FAMILIES);
     expect(cell(bare, 'codex-cli', 'hard')).toMatchObject({ effective: { model: 'gpt-6.1-sol', effort: 'high' }, source: 'builtin', state: 'valid', custom: null });
-    // Copilot has a mapping (#3085), which cli "auto" doesn't choose, and no quota source.
+    // Copilot has a mapping and is an Auto last resort, with no quota source.
     expect(bare.response.body.providers['copilot-cli']).toMatchObject({
       autoEligible: true, autoCandidate: true, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
     });

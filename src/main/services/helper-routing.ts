@@ -221,7 +221,7 @@ export type AutoLevelResolution =
  * doesn't depend on the Auto provider switch, which only governs choosing
  * between providers, and it never falls back to a CLI's default model.
  *
- * Copilot has a mapping too (#3085), though `cli: "auto"` doesn't choose it. A
+ * Copilot has a mapping too (#3085), independent of its Auto opt-out. A
  * provider without presets returns `auto_not_supported`, so the caller picks
  * its own fallback. Never throws for a bad provider or level.
  */
@@ -647,7 +647,14 @@ export function startDecisionRecord(routing: HelperRouting | undefined, launched
 export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, AutoLoad>>, now = Date.now()): StartPlanResult {
   const pending = plan.pendingAuto;
   if (!pending) return { ok: true, plan };
-  const { options, skipped, difficulty, orchestratorCli } = pending;
+  const { difficulty, orchestratorCli } = pending;
+  const skipped = { ...pending.skipped };
+  // The opt-out may have changed while model lists were read or the start waited for the lock.
+  const options = pending.options.filter((option) => {
+    if (option.provider !== 'copilot-cli' || orchestrationSettings.getCopilotAuto()) return true;
+    skipped[option.provider] = 'auto_disabled';
+    return false;
+  });
   const total = (provider: string) => (load[provider]?.live ?? 0) + (load[provider]?.reserved ?? 0);
   const candidates: AutoCandidate[] = options.map((o) => {
     const weekly = o.quota.weekly;

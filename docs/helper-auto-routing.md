@@ -81,7 +81,7 @@ Cells are app-scope in v1. Reset removes overrides per cell, per provider or for
 
 Copilot is an Auto candidate of last resort (#3279). Its plan quota cannot be read (`unknown / not_supported`), so it ranks behind every other eligible provider, including a low measured provider or one whose reading failed or became stale. It passes the same enabled, availability, cooldown and valid-mapping checks as the others. `AUTO_CANDIDATE_PROVIDERS` lists the candidates, and the page's `autoCandidate` says the same per provider.
 
-Settings > Smart selection has a separate "Allow Copilot as a last resort" switch, on by default. The app-wide `copilotAuto` setting controls only Auto's choice of Copilot, not explicit Copilot starts, presets, or whether Auto itself is allowed. Turning it off records `auto_disabled` for Copilot. It uses the same revision checks, audit and changed event as other Smart selection settings.
+Settings > Smart selection has a separate "Allow Copilot as a last resort" switch, on by default. The app-wide `copilotAuto` setting controls only Auto's choice of Copilot, not explicit Copilot starts, presets, or whether Auto itself is allowed. Turning it off records `auto_disabled` for Copilot. The opt-out is checked again when Auto decides under the start lock, so it also applies to a start still reading candidates or waiting for the lock. It uses the same revision checks, audit and changed event as other Smart selection settings.
 
 ## Minimum and maximum (#3044)
 
