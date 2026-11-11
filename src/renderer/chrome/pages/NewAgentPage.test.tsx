@@ -467,7 +467,14 @@ describe('NewAgentPage', () => {
       expect(useAgentStore.getState().activeAgentId).not.toBe('a-late');
       const toast = useToastStore.getState().toasts[0];
       expect(toast).toMatchObject({ type: 'info', action: { label: 'Open agent' } });
+      const newerClosed = vi.fn();
+      act(() => {
+        useChromeStore.getState().openNewAgent('durable', 'p1', { onClosed: newerClosed });
+        useChromeStore.getState().setNewAgentBusy(true, { projectIds: ['p1', 'p2'], agentIds: ['a1'] });
+      });
       act(() => toast.action?.onClick());
+      expect(useChromeStore.getState().newAgent).toBeNull();
+      expect(newerClosed).not.toHaveBeenCalled();
       expect(useAgentStore.getState().activeAgentId).toBe('a-late');
       expect(useUIStore.getState().explorerTab).toBe('agents');
     });

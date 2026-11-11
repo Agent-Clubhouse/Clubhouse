@@ -327,11 +327,15 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     projectIds: useProjectStore.getState().projects.map((p) => p.id),
     agentIds: Object.keys(useAgentStore.getState().agents),
   });
+  const openOutcomeAgent = (projectId: string, agentId: string) => {
+    useChromeStore.getState().closeNewAgent();
+    openCreatedAgent(projectId, agentId);
+  };
   const finish = (projectIdDone: string, agentId: string) => {
     if (!stillOpen()) {
       if (!viewingAgent(projectIdDone, agentId)) useToastStore.getState().addToast(durable ? `Created ${name.trim()}.` : 'Started the quick agent.', 'info', {
         label: 'Open agent',
-        onClick: () => openCreatedAgent(projectIdDone, agentId),
+        onClick: () => openOutcomeAgent(projectIdDone, agentId),
       }, outcomeToastKey);
       settleAway(agentId);
       return;
@@ -345,7 +349,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
       if (!created || !viewingAgent(created.projectId, created.agentId)) useToastStore.getState().addToast(message, 'error', created ? {
         label: 'Change CLI',
         onClick: () => {
-          openCreatedAgent(created.projectId, created.agentId);
+          openOutcomeAgent(created.projectId, created.agentId);
           openAgentSettingsOn(created.agentId, 'runtime');
         },
       } : undefined, outcomeToastKey);
