@@ -5,6 +5,7 @@ import { ActionsSettingsView, filterActions } from './ActionsSettingsView';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { ActionForm } from './ActionForm';
 import { useAgentStore } from '../../stores/agentStore';
+import { useAnnexStore } from '../../stores/annexStore';
 
 function action(over: Partial<ActionView>): ActionView {
   return {
@@ -24,6 +25,35 @@ beforeEach(() => {
 });
 
 describe('Settings > Actions', () => {
+  it('offers device and kind filters and starts newly selected device events with a two-minute recheck', async () => {
+    const loadDevices = vi.spyOn(useAnnexStore.getState(), 'loadDevices').mockResolvedValue();
+    window.clubhouse.actions.create = vi.fn(async (input) => action(input));
+    render(<ActionForm open onClose={vi.fn()} />);
+    const form = screen.getByTestId('action-form');
+    fireEvent.change(within(form).getByLabelText('Runs'), { target: { value: 'event' } });
+    fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'device.online' } });
+    expect(within(form).getByLabelText('Device')).toBeTruthy();
+    expect(within(form).getByLabelText('Device kind')).toHaveValue('');
+    expect(within(form).getByLabelText('Timing')).toHaveValue('delay');
+    expect(within(form).getByLabelText('Wait unit')).toHaveValue('seconds');
+    expect(within(form).getByLabelText('Wait first')).toHaveValue(120);
+    expect(within(form).getByText(/This computer's view only/)).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText('Wait first'), { target: { value: '180' } });
+    fireEvent.change(within(form).getByLabelText('Device kind'), { target: { value: 'phone' } });
+    fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'device.offline' } });
+    expect(within(form).getByLabelText('Wait first')).toHaveValue(180);
+    expect(within(form).getByLabelText('Device kind')).toHaveValue('phone');
+    fireEvent.change(within(form).getByLabelText('Wait first'), { target: { value: '120' } });
+    fireEvent.change(within(form).getByLabelText('Step 1 type'), { target: { value: 'notify' } });
+    fireEvent.change(within(form).getByLabelText('Notice text'), { target: { value: 'Check the device' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(window.clubhouse.actions.create).toHaveBeenCalledWith(expect.objectContaining({
+      trigger: { kind: 'event', event: 'device.offline', source: { kind: 'device', deviceKind: 'phone' }, delaySeconds: 120 },
+    })));
+    await waitFor(() => expect(loadDevices).toHaveBeenCalled());
+    loadDevices.mockRestore();
+  });
+
   it('keeps an older quick step on the project provider until Auto is explicitly selected', () => {
     render(<ActionForm open action={action({ steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review changes' }] })} onClose={vi.fn()} onSaved={vi.fn()} />);
     const form = screen.getByTestId('action-form');

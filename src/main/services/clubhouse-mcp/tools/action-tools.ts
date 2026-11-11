@@ -77,6 +77,7 @@ export interface ActionScope {
 }
 
 function canSeeAction(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trigger'>>, reader: ActionOwner): boolean {
+  if (action.trigger?.kind === 'event' && action.trigger.source.kind === 'device' && !actions.canReadDevices(reader)) return false;
   return action.owner.kind !== 'app' && (action.trigger?.kind !== 'event' || action.trigger.source.kind !== 'any' || actions.canWatchAgentActivity(reader));
 }
 
@@ -290,7 +291,8 @@ function subscriptionTrigger(args: Obj, ctx: InputContext): unknown {
   const appEvent = typeof event === 'string' && (event.startsWith('app.') || event.startsWith('project.'));
   let source = args.source;
   if (source === undefined || source === null) {
-    if (appEvent) source = { kind: 'app' };
+    if (typeof event === 'string' && event.startsWith('device.')) source = { kind: 'device' };
+    else if (appEvent) source = { kind: 'app' };
     else if (ctx.agentId) source = { kind: 'project' };
     else throw new ActionError('invalid_input', 'source is required: the agent to watch, as {"kind":"agent","agentId":...}.');
   }
@@ -400,9 +402,9 @@ const TRIGGER_SCHEMA = {
     absenceMinutes: { type: 'number', minimum: MIN_ABSENCE_MINUTES, description: 'app.returned only: required absence in whole minutes, at least 5. Default 30. Tracking runs only while an enabled action uses this event.' },
     afterLocalTime: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: 'Events only: run at or after this local wall-clock time, HH:MM. Events before it are ignored. Delayed and queued starts recheck the time. Also applies to Run now.' },
     oncePerDay: { type: 'boolean', description: 'Events only: once per calendar day; moving the clock back gives no extra run. Starts consume the day, including Run now and failures. Skips do not. Saved across restarts.' },
-    coalesceSeconds: { type: 'number', minimum: MIN_COALESCE_SECONDS, maximum: MAX_COALESCE_SECONDS, description: 'Events: fixed 10 to 600 second window from the first event. No delay or offline replay. Any-agent turns and quick finishes default to 60 and list unique readable agents.' },
+    coalesceSeconds: { type: 'number', minimum: MIN_COALESCE_SECONDS, maximum: MAX_COALESCE_SECONDS, description: 'Events: fixed 10 to 600 second window from the first event. Devices group separately. No delay or replay. Any-agent turns and quick finishes default to 60 and list unique readable agents.' },
     throttle: {
-      type: 'object', description: 'Events: sliding window over started runs, including Run now and failures. Throttled skips consume no lifetime runs or calendar day. Composes with delay or coalescing.',
+      type: 'object', description: 'Events: per-Action sliding cap across all sources, including Run now and failures. Throttled skips consume no lifetime runs or calendar day. Composes with delay or coalescing.',
       properties: {
         maxRuns: { type: 'number', minimum: 1, description: 'Maximum started runs in the sliding window, a positive whole number.' },
         perMinutes: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES, description: 'Sliding window length in whole minutes, up to one week. Saved across restarts.' },
@@ -413,15 +415,17 @@ const TRIGGER_SCHEMA = {
     event: { type: 'string', enum: [...ACTION_EVENT_KINDS], description: 'Events: what should happen.' },
     source: {
       type: 'object',
-      description: 'Agent (agentId or self), project (projectId, name or path), or app. Turns and quick finishes accept any: readable agents except you and Dispatcher-owned agents. Needs agent.watch and agent.read.',
+      description: 'Agent: agentId/self. Project: projectId/name/path. App: kind app. Any: turns/quick finishes, needs agent.watch and agent.read. Device: optional deviceId/deviceKind, needs device.read.',
       properties: {
-        kind: { type: 'string', enum: ['agent', 'project', 'app', 'any'] },
+        kind: { type: 'string', enum: ['agent', 'project', 'app', 'any', 'device'] },
         agentId: { type: 'string' },
         projectId: { type: 'string' },
+        deviceId: { type: 'string', description: 'Devices only: one id from list_devices. Left out means any device directly seen by this computer.' },
+        deviceKind: { type: 'string', enum: ['computer', 'phone'], description: 'Devices only: filter to computers or phones. May be combined with deviceId.' },
       },
     },
     delayMinutes: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES, description: 'Events: whole-minute trailing debounce. New events restart it; re-check when it ends. Survives restart. Required for idle unless using delaySeconds. No coalescing or any-agent source.' },
-    delaySeconds: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES * 60, description: 'Events: whole-second trailing debounce, up to one week. New events restart it; re-check when it ends. Survives restart. Use instead of delayMinutes. No coalescing or any-agent source.' },
+    delaySeconds: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES * 60, description: 'Events: whole-second debounce, up to one week. New events restart it; re-check when it ends. Devices wait separately. Survives restart. Use instead of delayMinutes. No coalescing or any-agent source.' },
     branch: { type: 'string', description: 'Git events: run only for this branch, e.g. "main".' },
   },
   required: ['kind'],
@@ -635,7 +639,7 @@ export function registerActionTools(): void {
         source: {
           ...TRIGGER_SCHEMA.properties.source,
           description:
-            'Agent or project by id. Turns and quick finishes accept {"kind":"any"}: readable agents except you and Dispatcher-owned agents. Needs agent.watch and agent.read. Default: your project or app events.',
+            'Agent or project by id. Any: turns/quick finishes, needs agent.watch and agent.read. Device: optional deviceId/deviceKind, needs device.read. Default: your project, app or devices.',
         },
         branch: TRIGGER_SCHEMA.properties.branch,
         delayMinutes: TRIGGER_SCHEMA.properties.delayMinutes,

@@ -11,6 +11,7 @@ import {
   ACTION_EVENT_KINDS,
   ACTION_STEP_KINDS,
   APP_EVENT_KINDS,
+  DEVICE_EVENT_KINDS,
   GIT_EVENT_KINDS,
   HISTORY_MAX_AGE_MS,
   HISTORY_MAX_RUNS,
@@ -77,6 +78,17 @@ function text(v: unknown, field: string, required: boolean): Result<string | und
 }
 
 function validateSource(event: ActionEventKind, raw: unknown): Result<ActionEventSource> {
+  if (DEVICE_EVENT_KINDS.includes(event)) {
+    if (!isObject(raw) || raw.kind !== 'device') return { ok: false, error: 'Device events need a device source.' };
+    if (raw.deviceId !== undefined && !nonEmpty(raw.deviceId)) return { ok: false, error: 'Give a device id from list_devices, or leave it out for any device.' };
+    if (raw.deviceKind !== undefined && raw.deviceKind !== 'computer' && raw.deviceKind !== 'phone') return { ok: false, error: 'The device kind must be computer or phone.' };
+    return { ok: true, value: {
+      kind: 'device',
+      ...(typeof raw.deviceId === 'string' && { deviceId: raw.deviceId.trim().toLowerCase() }),
+      ...((raw.deviceKind === 'computer' || raw.deviceKind === 'phone') && { deviceKind: raw.deviceKind }),
+    } };
+  }
+  if (isObject(raw) && raw.kind === 'device') return { ok: false, error: 'A device source is only for device events.' };
   if (isObject(raw) && raw.kind === 'any') {
     return ANY_AGENT_EVENT_KINDS.includes(event)
       ? { ok: true, value: { kind: 'any' } }

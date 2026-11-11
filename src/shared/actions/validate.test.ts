@@ -33,6 +33,22 @@ describe('validateActionInput', () => {
       expect(() => assertActionInput({ ...input, trigger: { ...trigger, throttle } })).toThrow(ActionError);
     }
   });
+  it('validates device events and filters without changing delay defaults or retaining private fields', () => {
+    const trigger = { kind: 'event', event: 'device.online', source: { kind: 'device', deviceId: ' AA ', deviceKind: 'phone', address: 'secret', port: 123, certificate: 'secret' } };
+    const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };
+    expect(validateActionInput(input)).toMatchObject({ ok: true, value: { trigger: {
+      kind: 'event', event: 'device.online', source: { kind: 'device', deviceId: 'aa', deviceKind: 'phone' },
+    } } });
+    const valid = validateActionInput(input);
+    expect(valid.ok && valid.value.trigger).not.toHaveProperty('delayMinutes');
+    expect(valid.ok && valid.value.trigger).not.toHaveProperty('source.address');
+    for (const source of [{ kind: 'app' }, { kind: 'device', deviceId: '' }, { kind: 'device', deviceKind: 'desktop' }, { kind: 'device', deviceId: 7 }]) {
+      expect(validateActionInput({ ...input, trigger: { ...trigger, source } }).ok).toBe(false);
+    }
+    expect(validateActionInput({ ...input, trigger: { ...trigger, event: 'agent.slept' } }).ok).toBe(false);
+    expect(validateActionInput({ ...input, trigger: { ...trigger, event: 'device.offline', source: { kind: 'device' }, delayMinutes: 2 } }).ok).toBe(true);
+  });
+
   it('retains Auto difficulty and refuses incompatible quick-step overrides', () => {
     const step = { kind: 'quick', projectId: 'p1', prompt: 'Review', orchestrator: 'auto', difficulty: 'hard' };
     expect(validateActionInput({ trigger: schedule, steps: [step] })).toMatchObject({ ok: true, value: { steps: [step] } });

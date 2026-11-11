@@ -40,7 +40,7 @@ export interface OnceTrigger {
   at: number;
 }
 
-/** Events an action can wait for. Grouped in the form as Agent, Git and App. */
+/** Events an action can wait for. Grouped in the form as Agent, Git, App and Device. */
 export type ActionEventKind =
   // Agent
   | 'agent.woke'
@@ -59,6 +59,9 @@ export type ActionEventKind =
   | 'git.commit'
   | 'git.branch_switched'
   | 'git.remote_updated'
+  // Device
+  | 'device.online'
+  | 'device.offline'
   // App
   | 'app.started'
   | 'app.returned'
@@ -71,7 +74,8 @@ export const AGENT_EVENT_KINDS: readonly ActionEventKind[] = [
 ];
 export const GIT_EVENT_KINDS: readonly ActionEventKind[] = ['git.commit', 'git.branch_switched', 'git.remote_updated'];
 export const APP_EVENT_KINDS: readonly ActionEventKind[] = ['app.started', 'app.returned', 'project.added', 'project.removed'];
-export const ACTION_EVENT_KINDS: readonly ActionEventKind[] = [...AGENT_EVENT_KINDS, ...GIT_EVENT_KINDS, ...APP_EVENT_KINDS];
+export const DEVICE_EVENT_KINDS: readonly ActionEventKind[] = ['device.online', 'device.offline'];
+export const ACTION_EVENT_KINDS: readonly ActionEventKind[] = [...AGENT_EVENT_KINDS, ...GIT_EVENT_KINDS, ...APP_EVENT_KINDS, ...DEVICE_EVENT_KINDS];
 export const TURN_EVENT_KINDS: readonly ActionEventKind[] = ['agent.turn_ended', 'agent.turn_failed'];
 export const ANY_AGENT_EVENT_KINDS: readonly ActionEventKind[] = [...TURN_EVENT_KINDS, 'agent.quick_finished'];
 export const DEFAULT_COALESCE_SECONDS = 60;
@@ -79,7 +83,7 @@ export const MIN_COALESCE_SECONDS = 10;
 export const MAX_COALESCE_SECONDS = 600;
 
 /**
- * Where an event comes from: one agent, a project, or any readable agent. Git events
+ * Where an event comes from: one agent, a project, a device, or any readable agent. Git events
  * use the project (its root and every agent worktree in it) or one agent's
  * worktree. App events take no source; project events may name one project.
  */
@@ -87,6 +91,8 @@ export type ActionEventSource =
   | { kind: 'agent'; agentId: string }
   | { kind: 'project'; projectId: string }
   | { kind: 'app' }
+  /** Devices directly seen by this computer, optionally filtered by id and kind. */
+  | { kind: 'device'; deviceId?: string; deviceKind?: 'computer' | 'phone' }
   /** Turns and quick-run finishes, excluding the subscriber and Dispatcher-owned agents. */
   | { kind: 'any' };
 
@@ -256,6 +262,8 @@ export interface ActionRunTrigger {
   sourceAgentId?: string;
   /** Every occurrence in a coalesced event, rechecked before delivery. */
   events?: ActionRunEvent[];
+  /** Privacy-safe local device fact. Null marks a run whose device details were removed. */
+  device?: { id: string; name: string; kind: 'computer' | 'phone' } | null;
 }
 
 export interface ActionRunEvent {
@@ -263,6 +271,8 @@ export interface ActionRunEvent {
   event: ActionEventKind;
   source: Exclude<ActionEventSource, { kind: 'any' }>;
   detail: string;
+  /** Privacy-safe local device fact. Null marks a run whose device details were removed. */
+  device?: { id: string; name: string; kind: 'computer' | 'phone' } | null;
 }
 
 export interface ActionStepResult {

@@ -13,6 +13,7 @@ import {
   trimHistory,
   type Action,
   type ActionRun,
+  type ActionRunEvent,
 } from '../../../shared/actions';
 import { validateActionInput } from '../../../shared/actions/validate';
 import { appLog } from '../log-service';
@@ -26,6 +27,26 @@ interface StoredActions {
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function sanitizeDevice(raw: unknown): NonNullable<ActionRun['trigger']['device']> | null {
+  if (!isObject(raw) || typeof raw.id !== 'string' || typeof raw.name !== 'string' || (raw.kind !== 'computer' && raw.kind !== 'phone')) return null;
+  return { id: raw.id, name: raw.name, kind: raw.kind };
+}
+
+function sanitizeDeviceEvent(raw: unknown): ActionRunEvent | null {
+  if (!isObject(raw) || !isObject(raw.source) || raw.source.kind !== 'device'
+    || typeof raw.at !== 'number' || !Number.isFinite(raw.at) || typeof raw.detail !== 'string'
+    || (raw.event !== 'device.online' && raw.event !== 'device.offline')) return null;
+  return {
+    at: raw.at, event: raw.event, detail: raw.detail,
+    source: {
+      kind: 'device',
+      ...(typeof raw.source.deviceId === 'string' && { deviceId: raw.source.deviceId }),
+      ...((raw.source.deviceKind === 'computer' || raw.source.deviceKind === 'phone') && { deviceKind: raw.source.deviceKind }),
+    },
+    device: sanitizeDevice(raw.device),
+  };
+}
 
 /** Keep only actions that still validate; a bad record is dropped, not fatal. */
 export function sanitizeActions(raw: unknown): Action[] {
@@ -92,6 +113,7 @@ function sanitizeState(raw: unknown): EngineState {
         detail: typeof w.detail === 'string' ? w.detail : '',
         ...(typeof w.agentId === 'string' && { agentId: w.agentId }),
         ...(typeof w.sourceAgentId === 'string' && { sourceAgentId: w.sourceAgentId }),
+        ...(sanitizeDevice(w.device) && { device: sanitizeDevice(w.device)! }),
       };
       state.waits.push(wait);
     }
@@ -164,11 +186,19 @@ function sanitizeRun(raw: unknown): ActionRun | null {
     && (raw.owner.kind === 'user' || raw.owner.kind === 'dispatcher' || raw.owner.kind === 'app'
       || (raw.owner.kind === 'agent' && typeof raw.owner.agentId === 'string'))
     ? raw.owner as Action['owner'] : undefined;
+  const trigger = raw.trigger as unknown as ActionRun['trigger'];
   return {
     id: raw.id,
     actionId: raw.actionId,
     ...(owner && { owner }),
-    trigger: raw.trigger as unknown as ActionRun['trigger'],
+    trigger: {
+      ...trigger,
+      ...(raw.trigger.device !== undefined && { device: sanitizeDevice(raw.trigger.device) }),
+      ...(Array.isArray(trigger.events) && {
+        events: trigger.events.map((event) => event?.source?.kind === 'device' ? sanitizeDeviceEvent(event) : event)
+          .filter((event): event is ActionRunEvent => event !== null),
+      }),
+    },
     chain: Array.isArray(raw.chain) ? raw.chain.filter((c): c is string => typeof c === 'string') : [],
     startedAt: raw.startedAt,
     ...(typeof raw.endedAt === 'number' && { endedAt: raw.endedAt }),

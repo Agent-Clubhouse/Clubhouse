@@ -4,6 +4,25 @@ import { draftFrom, draftToInput, newDraft, toLocalInput } from './action-draft'
 const NOW = new Date(2026, 10, 9, 8, 0).getTime();
 
 describe('action draft', () => {
+  it('round-trips device filters and preserves an explicitly undelayed saved device action', () => {
+    const input = {
+      trigger: { kind: 'event', event: 'device.offline', source: { kind: 'device', deviceId: 'abc', deviceKind: 'phone' } } as const,
+      steps: [{ kind: 'notify', text: 'hi' }] as const,
+    };
+    const draft = draftFrom({ ...input, steps: [...input.steps] }, NOW);
+    expect(draft.source).toBe('device:abc');
+    expect(draft.deviceKind).toBe('phone');
+    expect(draft.delay).toBe('');
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input });
+    expect(draft.timing).toBe('none');
+    expect(draftToInput({ ...draft, source: '', timing: 'delay', delay: '120', delayUnit: 'seconds' }, NOW)).toMatchObject({
+      ok: true, input: { trigger: { source: { kind: 'device', deviceKind: 'phone' }, delaySeconds: 120 } },
+    });
+    expect(draftToInput({ ...draft, timing: 'coalesce', coalesceSeconds: '15', throttleMaxRuns: '2', throttlePerMinutes: '5' }, NOW)).toMatchObject({
+      ok: true, input: { trigger: { source: input.trigger.source, coalesceSeconds: 15, throttle: { maxRuns: 2, perMinutes: 5 } } },
+    });
+  });
+
   it('round-trips Auto difficulty without changing older quick steps', () => {
     const old = {
       trigger: { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' } as const,

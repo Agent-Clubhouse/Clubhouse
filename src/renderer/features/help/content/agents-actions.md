@@ -71,6 +71,18 @@ Buffers are kept only while Clubhouse is running. Turning off, editing or deleti
 
 If Clubhouse was closed or the machine was asleep at a schedule time, the action skips it by default. You can choose to run once when Clubhouse opens, or to run each missed time, up to 10.
 
+### Annex devices
+
+**A device comes online** and **A device goes offline** watch computers and phones in this computer's Annex Network. You can pick a specific device, a device kind, or both. Each computer reports only what it sees directly. Events are not synchronized or deduplicated across your computers, so the same device can fire an action on several computers.
+
+At launch, each device already connected fires one online event after a short settling window. Local screen lock, sleep, loss of this computer's network and quitting do not turn other devices into offline events. After unlock, wake or reconnect, Clubhouse lets Annex recover and reports only real differences from its last trustworthy view. Detection follows Annex reconnect and heartbeat timing, not a separate probe.
+
+The form starts device events with **Timing** set to **Wait after the latest event** and **Wait first** set to 120 seconds. When the wait ends it checks the device's current state again. Each device has its own wait, and another matching transition restarts that device's wait, so brief Wi-Fi flapping does not deliver repeated messages.
+
+You can instead choose no wait or a fixed grouping window. Device grouping windows are independent too: each device starts its own window, and later events for that device join without extending it. Grouping records what happened, rather than re-checking the current state. Throttle remains a limit on the whole action's started runs across all devices, including Run now, and composes with any timing mode. Daily, lifetime and overlap limits also remain per action.
+
+Agent-owned device actions require `device.read` set to Allow when admitted and when they run. The Dispatcher already has this permission by default. Ask first is not enough for unattended actions. Readers without it cannot see device actions or their device-related history over MCP, including history retained after an edit or deletion. Events contain only the device's id, name and kind (computer or phone), never addresses, ports or certificates.
+
 ## Steps
 
 - **Wake an agent**, with an optional prompt. It resumes the agent's last session, the same as waking it by hand.

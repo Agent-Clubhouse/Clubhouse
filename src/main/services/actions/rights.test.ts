@@ -51,6 +51,19 @@ const appStarts: ActionTrigger = { kind: 'event', event: 'app.started', source: 
 const projectAdded = (projectId: string): ActionTrigger => ({ kind: 'event', event: 'project.added', source: { kind: 'project', projectId } });
 const daily: ActionTrigger = { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' };
 
+it('reuses device.read for device sources with no unattended Ask first grant', () => {
+  const trigger: ActionTrigger = { kind: 'event', event: 'device.online', source: { kind: 'device', deviceKind: 'phone' } };
+  expect(rights.checkSource(user, trigger)).toBeNull();
+  expect(rights.checkSource(dispatcher, trigger)).toBeNull();
+  expect(rights.checkSource(lead, trigger)).toContain('device.read');
+  saved.set('lead', { changes: [{ action: 'device.read', target: { kind: 'app' }, mode: 'allow' }] });
+  expect(rights.checkSource(lead, trigger)).toBeNull();
+  saved.set('lead', { changes: [{ action: 'device.read', target: { kind: 'app' }, mode: 'ask' }] });
+  expect(rights.checkSource(lead, trigger)).toContain('Ask first');
+  saved.set('disp', { changes: [{ action: 'device.read', target: { kind: 'app' }, mode: 'off' }] });
+  expect(rights.checkSource(dispatcher, trigger)).toContain('device.read');
+});
+
 describe('an action does what its owner may (#2960, D131): steps', () => {
   it('lets people do anything, any Access level included', () => {
     expect(rights.checkStep(user, { kind: 'wake', agentId: 'qa' })).toBeNull();

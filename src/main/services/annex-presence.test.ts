@@ -1,14 +1,17 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnnexDevice } from '../../shared/types';
+import type { Action, ActionRun } from '../../shared/actions';
+import type { AppEventInput } from './app-event-bus';
+import { ActionsEngine, type EngineState } from './actions/engine';
 import { AnnexPresence, DEVICE_RECOVERY_SETTLE_MS, DEVICE_STARTUP_SETTLE_MS } from './annex-presence';
 import { devicesChanged, onDevicePresenceChanged, resetDeviceSignalForTests } from './annex-device-signal';
 
-const host = vi.hoisted(() => ({ devices: [] as AnnexDevice[], interfaces: {} as Record<string, Array<{ address: string; internal: boolean }>>, publish: vi.fn() }));
+const host = vi.hoisted(() => ({ devices: [] as AnnexDevice[], interfaces: {} as Record<string, Array<{ address: string; internal: boolean }>>, networkOnline: true, publish: vi.fn() }));
 vi.mock('node:os', () => ({ networkInterfaces: () => host.interfaces }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
-  return { powerMonitor: new EventEmitter() };
+  return { powerMonitor: new EventEmitter(), net: { isOnline: () => host.networkOnline } };
 });
 vi.mock('./annex-devices', () => ({ listDevices: () => host.devices }));
 vi.mock('./app-event-bus', () => ({ publishAppEvent: host.publish }));
@@ -23,6 +26,7 @@ function device(id: string, patch: Partial<AnnexDevice> = {}): AnnexDevice {
 beforeEach(() => {
   vi.useFakeTimers();
   host.devices = [];
+  host.networkOnline = true;
   host.interfaces = { ethernet: [{ address: '192.0.2.1', internal: false }] };
   host.publish.mockClear();
 });
@@ -40,6 +44,80 @@ describe('Annex presence', () => {
     presence.start();
     return presence;
   }
+
+  it.each(['suspend', 'network'] as const)('restores device waits through startup connects and real %s recovery without duplicate starts', async (reason) => {
+    const now = Date.now();
+    const computer = { id: 'computer', name: 'computer', kind: 'computer' } as const;
+    const action: Action = {
+      id: 'saved', name: 'Handshake', owner: { kind: 'user' }, enabled: true, overlap: 'queue', createdAt: 1, updatedAt: 1,
+      trigger: { kind: 'event', event: 'device.online', source: { kind: 'device' }, delaySeconds: 120 },
+      steps: [{ kind: 'notify', text: 'Handshake' }],
+    };
+    let state: EngineState = { nextAt: {}, waits: [{
+      actionId: action.id, device: computer, startedAt: now - 180_000, dueAt: now - 60_000, chain: [], detail: 'computer comes online',
+    }] };
+    const events: AppEventInput[] = [];
+    const runs = new Map<string, ActionRun>();
+    const presence = new AnnexPresence({
+      devices: () => host.devices,
+      publish: (event) => {
+        events.push(event);
+        engine.handleEvent({ ...event, at: Date.now() });
+      },
+    });
+    let seq = 0;
+    const engine = new ActionsEngine({
+      clock: { now: Date.now, setTimeout, clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>) },
+      storage: { load: () => ({ actions: [action], state }), saveActions: vi.fn(), saveState: (next) => { state = next; } },
+      history: { put: (run) => { runs.set(run.id, run); }, list: () => [...runs.values()] },
+      facts: {
+        deviceOnline: (id) => presence.online(id), agentExists: () => false, isRunning: () => false,
+        agentName: () => undefined, agentProjectId: () => undefined, projectName: () => undefined,
+        projectIdForPath: () => undefined, repoOwner: () => ({}),
+      },
+      steps: { run: async (step) => ({ kind: step.kind, outcome: 'done', detail: 'Handshake sent' }) },
+      rights: { checkSource: () => null, checkStep: () => null, maxActions: () => null },
+      newId: () => String(++seq),
+    });
+    host.devices = [device('computer'), device('phone', { kind: 'phone' })];
+    try {
+      engine.start();
+      presence.start();
+      expect(state.waits).toHaveLength(1);
+      expect(runs.size).toBe(0);
+      await vi.advanceTimersByTimeAsync(DEVICE_STARTUP_SETTLE_MS);
+      expect(state.waits.map((wait) => wait.device?.id).sort()).toEqual(['computer', 'phone']);
+      expect(state.waits.every((wait) => wait.dueAt === now + DEVICE_STARTUP_SETTLE_MS + 120_000)).toBe(true);
+
+      presence.setAway(reason, true);
+      host.devices = [];
+      presence.changed();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(runs.size).toBe(0);
+      presence.setAway(reason, false);
+      host.devices = [device('computer'), device('new', { kind: 'phone' })];
+      presence.changed();
+      await vi.advanceTimersByTimeAsync(DEVICE_RECOVERY_SETTLE_MS);
+      expect(events).toEqual([
+        { type: 'device.online', device: computer },
+        { type: 'device.online', device: { id: 'phone', name: 'phone', kind: 'phone' } },
+        { type: 'device.online', device: { id: 'new', name: 'new', kind: 'phone' } },
+        { type: 'device.offline', device: { id: 'phone', name: 'phone', kind: 'phone' } },
+      ]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect([...runs.values()]).toMatchObject([
+        { outcome: 'done', trigger: { device: computer } },
+        { outcome: 'cancelled', trigger: { device: { id: 'phone' } } },
+      ]);
+      expect(state.waits.map((wait) => wait.device?.id)).toEqual(['new']);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect([...runs.values()].filter((run) => run.outcome === 'done').map((run) => run.trigger.device?.id)).toEqual(['computer', 'new']);
+      expect(state.waits).toHaveLength(0);
+    } finally {
+      presence.stop();
+      engine.stop();
+    }
+  });
 
   it('settles startup into one connect per device, including a phone joining during the window', () => {
     const presence = tracker();
@@ -124,6 +202,23 @@ describe('Annex presence', () => {
 });
 
 describe('device presence source wiring', () => {
+  it('suppresses local network loss even if the OS retains the interface address', () => {
+    host.devices = [device('computer')];
+    startDevicePresence();
+    vi.advanceTimersByTime(DEVICE_STARTUP_SETTLE_MS);
+    host.publish.mockClear();
+    host.networkOnline = false;
+    host.devices = [];
+    devicesChanged();
+    vi.advanceTimersByTime(DEVICE_RECOVERY_SETTLE_MS * 2);
+    expect(host.publish).not.toHaveBeenCalled();
+    host.networkOnline = true;
+    host.devices = [device('computer')];
+    devicesChanged();
+    vi.advanceTimersByTime(DEVICE_RECOVERY_SETTLE_MS);
+    expect(host.publish).not.toHaveBeenCalled();
+  });
+
   it('samples local network loss before a socket close and suppresses shutdown disconnects', () => {
     host.devices = [device('computer')];
     startDevicePresence();

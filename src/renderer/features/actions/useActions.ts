@@ -12,6 +12,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { closeDispatcher } from '../dispatcher/dispatcherNav';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
+import { useAnnexStore } from '../../stores/annexStore';
 
 export function useActionsList(): { actions: ActionView[] | null; error: string | null; reload: () => void } {
   const [actions, setActions] = useState<ActionView[] | null>(null);
@@ -50,6 +51,7 @@ export interface ProjectOption {
 export function useActionNames(): { names: ActionNames; agents: AgentOption[]; projects: ProjectOption[] } {
   const agentMap = useAgentStore((s) => s.agents);
   const projectList = useProjectStore((s) => s.projects);
+  const devices = useAnnexStore((s) => s.devices);
   // The Dispatcher by the name the user gave it (#3184).
   const dispatcherName = useDispatcherStore((s) => s.state?.config?.name?.trim() || undefined);
   return useMemo(() => {
@@ -66,11 +68,14 @@ export function useActionNames(): { names: ActionNames; agents: AgentOption[]; p
     const projectNames = new Map(projects.map((p) => [p.id, p.name]));
     const agentNames = new Map(agents.map((a) => [a.id, a.name]));
     return {
-      names: { agent: (id) => agentNames.get(id), project: (id) => projectNames.get(id), dispatcher: () => dispatcherName },
+      names: {
+        agent: (id) => agentNames.get(id), project: (id) => projectNames.get(id), dispatcher: () => dispatcherName,
+        device: (id) => devices.find((d) => d.fingerprint.toLowerCase() === id.toLowerCase())?.alias || undefined,
+      },
       agents,
       projects,
     };
-  }, [agentMap, projectList, dispatcherName]);
+  }, [agentMap, projectList, dispatcherName, devices]);
 }
 
 /** "You", the Dispatcher's name, or the agent's name. */

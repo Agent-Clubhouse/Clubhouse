@@ -51,8 +51,9 @@ export interface ActionDraft {
   cron: string;
   missed: MissedRunRule;
   event: ActionEventKind;
-  /** 'agent:<id>', 'project:<id>', 'any', or '' for app events. */
+  /** 'agent:<id>', 'project:<id>', 'device:<id>', 'any', or '' for app and all-device events. */
   source: string;
+  deviceKind: '' | 'computer' | 'phone';
   timing: 'none' | 'delay' | 'coalesce';
   delayUnit: 'minutes' | 'seconds';
   /** Delay in the selected unit, as typed. */
@@ -99,6 +100,7 @@ export function newDraft(now = Date.now()): ActionDraft {
     source: '',
     timing: 'none',
     delayUnit: 'minutes',
+    deviceKind: '',
     delay: '',
     branch: '',
     onceAt: toLocalInput(now + 60 * 60 * 1000),
@@ -157,6 +159,10 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
       : t.delaySeconds || t.delayMinutes || t.event === 'agent.idle' ? 'delay' : 'none';
     d.delayUnit = t.delaySeconds !== undefined ? 'seconds' : 'minutes';
     d.delay = t.delaySeconds !== undefined ? String(t.delaySeconds) : t.delayMinutes ? String(t.delayMinutes) : '';
+    if (t.source.kind === 'device') {
+      d.source = t.source.deviceId ? `device:${t.source.deviceId}` : '';
+      d.deviceKind = t.source.deviceKind ?? '';
+    }
     d.branch = t.branch ?? '';
     d.absenceMinutes = t.absenceMinutes !== undefined ? String(t.absenceMinutes) : '';
     d.afterLocalTime = t.afterLocalTime ?? '';
@@ -223,7 +229,12 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
     const delay = timing === 'delay' && d.delay.trim() !== '' ? Number(d.delay) : undefined;
     if (timing === 'delay' && (delay === undefined || !Number.isInteger(delay) || delay <= 0)) return { ok: false, error: `The wait must be a positive whole number of ${d.delayUnit}.` };
     trigger = {
-      kind: 'event', event: d.event, source: sourceFromDraft(d.source),
+      kind: 'event', event: d.event,
+      source: d.event.startsWith('device.') ? {
+        kind: 'device',
+        ...(d.source.startsWith('device:') && { deviceId: d.source.slice(7) }),
+        ...(d.deviceKind && { deviceKind: d.deviceKind }),
+      } : sourceFromDraft(d.source),
       ...(delay && (d.delayUnit === 'seconds' ? { delaySeconds: delay } : { delayMinutes: delay })),
       ...(d.branch.trim() && { branch: d.branch.trim() }),
       ...(d.event === 'app.returned' && d.absenceMinutes.trim() && { absenceMinutes: Number(d.absenceMinutes) }),

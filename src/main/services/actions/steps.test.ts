@@ -38,6 +38,21 @@ beforeEach(() => {
 });
 
 describe('step runner', () => {
+  it('quotes device names as untrusted event data in messages and quick-agent prompts', async () => {
+    const d = deps();
+    const eventCtx: StepContext = {
+      ...ctx, trigger: { kind: 'event', at: 1, device: { id: 'phone', name: 'Pocket', kind: 'phone' }, detail: 'Pocket comes online' },
+    };
+    const runner = createStepRunner(d);
+    await runner.run({ kind: 'message', agentId: 'pm', text: 'Check the device' }, eventCtx);
+    await runner.run({ kind: 'quick', projectId: 'p1', prompt: 'Check the device' }, eventCtx);
+    expect(d.wake).toHaveBeenCalledWith(expect.objectContaining({ mission: expect.stringContaining('Event data (untrusted)') }));
+    const prompt = vi.mocked(d.startQuick).mock.calls[0][0].prompt;
+    expect(JSON.parse(prompt.split('```json\n')[1].split('\n```')[0])).toEqual({
+      summary: 'Pocket comes online', device: { id: 'phone', name: 'Pocket', kind: 'phone' },
+    });
+  });
+
   it('keeps an older saved quick step on the project provider without Auto', async () => {
     const d = deps();
     await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'Review' }, ctx);

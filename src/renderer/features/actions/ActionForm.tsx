@@ -8,6 +8,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import {
   AGENT_EVENT_KINDS,
   APP_EVENT_KINDS,
+  DEVICE_EVENT_KINDS,
   EVENT_LABELS,
   GIT_EVENT_KINDS,
   MAX_ACTION_STEPS,
@@ -41,6 +42,7 @@ import { HELPER_DIFFICULTIES, isHelperDifficulty } from '../../../shared/helper-
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useAnnexStore } from '../../stores/annexStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea } from '../settings/SettingsLayout';
 import { draftCron, draftFrom, draftToInput, emptyStep, newDraft, type ActionDraft, type StepDraft } from './action-draft';
@@ -224,6 +226,12 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [runNote, setRunNote] = useState<string | null>(null);
+  const devices = useAnnexStore((s) => s.devices);
+  const loadDevices = useAnnexStore((s) => s.loadDevices);
+  const eventIsDevice = DEVICE_EVENT_KINDS.includes(draft.event);
+  useEffect(() => {
+    if (open && draft.when === 'event' && eventIsDevice) void loadDevices();
+  }, [open, draft.when, eventIsDevice, loadDevices]);
 
   useEffect(() => {
     if (!open) return;
@@ -279,7 +287,16 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
   const eventIsGit = GIT_EVENT_KINDS.includes(draft.event);
   const eventIsApp = APP_EVENT_KINDS.includes(draft.event);
   const projectEvent = draft.event === 'project.added' || draft.event === 'project.removed';
-  const sourceOptions = projectEvent ? (
+  const networkDevices = devices.filter((d) => d.role === 'member' && (!draft.deviceKind || (d.kind === 'phone' ? 'phone' : 'computer') === draft.deviceKind));
+  const sourceOptions = eventIsDevice ? (
+    <select id={`${uid}-source`} className={`${selectClass} w-full`} value={draft.source} onChange={(e) => set({ source: e.target.value })}>
+      <option value="">Any device</option>
+      {draft.source.startsWith('device:') && !networkDevices.some((d) => `device:${d.fingerprint.toLowerCase()}` === draft.source) && (
+        <option value={draft.source}>Previously selected device</option>
+      )}
+      {networkDevices.map((d) => <option key={d.fingerprint} value={`device:${d.fingerprint.toLowerCase()}`}>{d.alias || 'Unnamed device'}</option>)}
+    </select>
+  ) : projectEvent ? (
     <select id={`${uid}-source`} className={`${selectClass} w-full`} value={draft.source} onChange={(e) => set({ source: e.target.value })}>
       <option value="">Any project</option>
       {projects.map((p) => <option key={p.id} value={`project:${p.id}`}>{p.name}</option>)}
@@ -380,6 +397,10 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
             <Field label="What happens" htmlFor={`${uid}-event`}>
               <select id={`${uid}-event`} className={`${selectClass} w-full`} value={draft.event} onChange={(e) => {
                 const event = e.target.value as ActionEventKind;
+                if (DEVICE_EVENT_KINDS.includes(event)) {
+                  set({ event, ...(!eventIsDevice && { source: '', deviceKind: '', timing: 'delay', delayUnit: 'seconds', delay: '120' }) });
+                  return;
+                }
                 // App events take no agent; project events may name a project.
                 const keep = APP_EVENT_KINDS.includes(event) ? (event.startsWith('project.') && draft.source.startsWith('project:') ? draft.source : '') : draft.source.startsWith('project:') || draft.source.startsWith('agent:') || (draft.source === 'any' && ANY_AGENT_EVENT_KINDS.includes(event)) ? draft.source : '';
                 set({ event, source: keep, ...(event === 'agent.idle' && { timing: 'delay' }) });
@@ -387,12 +408,24 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
                 <optgroup label="Agent">{AGENT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
                 <optgroup label="Git">{GIT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
                 <optgroup label="App">{APP_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
+                <optgroup label="Device">{DEVICE_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
               </select>
             </Field>
             {sourceOptions && (
-              <Field label={eventIsGit ? 'Repository' : projectEvent ? 'Project' : 'Agent'} htmlFor={`${uid}-source`}
+              <Field label={eventIsDevice ? 'Device' : eventIsGit ? 'Repository' : projectEvent ? 'Project' : 'Agent'} htmlFor={`${uid}-source`}
                 help={eventIsGit ? 'An agent means its worktree. A project means its folder and every agent worktree in it.' : undefined}>
                 {sourceOptions}
+              </Field>
+            )}
+            {eventIsDevice && (
+              <Field label="Device kind" htmlFor={`${uid}-device-kind`}
+                help="This computer's view only. Devices already connected fire once at launch. Local sleep, network loss and quitting do not report other devices as offline. Detection follows Annex reconnect and heartbeat timing.">
+                <select id={`${uid}-device-kind`} className={`${selectClass} w-full`} value={draft.deviceKind}
+                  onChange={(e) => set({ deviceKind: e.target.value as ActionDraft['deviceKind'] })}>
+                  <option value="">Computers and phones</option>
+                  <option value="computer">Computers</option>
+                  <option value="phone">Phones</option>
+                </select>
               </Field>
             )}
             {eventIsGit && (
@@ -407,7 +440,9 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
                   className={`${settingsInput} w-32`} value={draft.absenceMinutes} onChange={(e) => set({ absenceMinutes: e.target.value })} />
               </Field>
             )}
-            <Field label="Timing" htmlFor={`${uid}-timing`} help="Choose no wait, a trailing delay with a re-check, or a fixed grouping window. Throttle is checked when a run starts.">
+            <Field label="Timing" htmlFor={`${uid}-timing`} help={eventIsDevice
+              ? 'Device waits and grouping windows are independent. Delay re-checks the current state; grouping records events. Throttle limits the whole action.'
+              : 'Choose no wait, a trailing delay with a re-check, or a fixed grouping window. Throttle is checked when a run starts.'}>
               <select id={`${uid}-timing`} className={`${selectClass} w-full`} value={draft.source === 'any' ? 'coalesce' : draft.event === 'agent.idle' ? 'delay' : draft.timing}
                 disabled={draft.source === 'any' || draft.event === 'agent.idle'} onChange={(e) => set({ timing: e.target.value as ActionDraft['timing'] })}>
                 <option value="none">Run without waiting</option>

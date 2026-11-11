@@ -64,6 +64,12 @@ export class AnnexPresence {
     }
   }
 
+  /** Undefined while this computer cannot make a trustworthy observation. */
+  online(id: string): boolean | undefined {
+    if (this.stopped || this.settling || this.blockers.size) return undefined;
+    return this.baseline.has(id.toLowerCase());
+  }
+
   private settle(ms: number): void {
     this.settling = true;
     this.clearTimer();

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Action, ActionRun, ActionStep, ActionStepResult } from '../../../shared/actions';
+import { MAX_RUNS_PER_HOUR, type Action, type ActionRun, type ActionStep, type ActionStepResult } from '../../../shared/actions';
 import type { AppEvent, AppEventInput } from '../app-event-bus';
 import { CHAIN_WINDOW_MS, onAppEvent, resetAppEventBus } from '../app-event-bus';
 import { beginQuickAgentRun, clearQuickAgentRuns, finishQuickAgentRun } from '../quick-agent-events';
@@ -26,6 +26,7 @@ class FakeClock {
   now = () => this.t;
   setTimeout = (fn: () => void, ms: number) => { const id = ++this.seq; this.timers.push({ at: this.t + ms, fn, id }); return id; };
   clearTimeout = (h: unknown) => { this.timers = this.timers.filter((x) => x.id !== h); };
+  get pendingTimers(): number { return this.timers.length; }
   /** Move time forward, running timers as they come due. */
   async advance(ms: number): Promise<void> {
     const end = this.t + ms;
@@ -50,6 +51,7 @@ const START = new Date(2026, 10, 9, 8, 0).getTime();
 const MIN = 60_000;
 
 interface Setup {
+  devices?: Map<string, boolean | undefined>;
   actions?: Action[];
   state?: EngineState;
   agents?: Record<string, { name: string; projectId: string; worktree?: string; quick?: boolean }>;
@@ -76,6 +78,7 @@ function setup(opts: Setup = {}) {
   const saved: { actions: Action[]; state: EngineState } = { actions: opts.actions ?? [], state: opts.state ?? { nextAt: {}, waits: [] } };
   const runs = new Map<string, ActionRun>();
   const facts: EngineFacts = {
+    deviceOnline: (id) => opts.devices?.get(id),
     agentExists: (id) => !!agents[id],
     isRunning: (id) => running.has(id),
     agentName: (id) => agents[id]?.name,
@@ -687,6 +690,261 @@ describe('fixed coalescing for every source', () => {
     const runs = h.engine.history(a.id, user);
     expect(runs[0].steps).toEqual([]);
     expect(JSON.stringify(runs)).not.toContain('release-lead');
+  });
+});
+
+describe('device presence events', () => {
+  const trigger = { kind: 'event', event: 'device.online', source: { kind: 'device' } } as const;
+  const computer = { id: 'computer', name: 'Studio', kind: 'computer' } as const;
+  const phone = { id: 'phone', name: 'Pocket', kind: 'phone' } as const;
+
+  it.each([{}, { delaySeconds: 1 }, { coalesceSeconds: 10 }])('bounds waits, queues, timers and hourly starts during 200 device flips with %j', async (timing) => {
+    const devices = new Map<string, boolean>([['one', false], ['two', false], ['three', false]]);
+    let blocked = true;
+    const releases: Array<() => void> = [];
+    const h = setup({
+      devices,
+      stepImpl: async (step) => {
+        if (blocked) await new Promise<void>((resolve) => { releases.push(resolve); });
+        return { kind: step.kind, outcome: 'done', detail: 'ok' };
+      },
+    });
+    h.engine.start();
+    const actions = (['device.online', 'device.offline'] as const).map((event) => h.engine.create({
+      trigger: { ...trigger, event, ...timing }, steps: [notify], overlap: 'queue',
+    }, user));
+    const queued = (id: string) => vi.mocked(h.hooks.observe).mock.calls.filter(([event]) => event.actionId === id && event.type === 'overlap' && event.what === 'queued').length;
+    const starts = (id: string) => h.stepCalls.filter(({ ctx }) => ctx.action.id === id).length;
+    const interval = (timing.coalesceSeconds ?? timing.delaySeconds ?? 1) * 1000;
+    for (let i = 0; i < 200; i++) {
+      if (i === 40) {
+        for (const action of actions) expect(queued(action.id)).toBe(MAX_QUEUED_RUNS);
+        blocked = false;
+        releases.forEach((release) => release());
+        await h.clock.advance(0);
+      }
+      const id = [...devices.keys()][i % devices.size];
+      const online = !devices.get(id);
+      devices.set(id, online);
+      h.event({ type: online ? 'device.online' : 'device.offline', device: { id, name: id, kind: 'computer' } });
+      expect(h.saved.state.waits.length).toBeLessThanOrEqual(devices.size);
+      expect(h.clock.pendingTimers).toBeLessThanOrEqual(1);
+      await h.clock.advance(interval);
+      for (const action of actions) {
+        expect(Math.max(0, queued(action.id) - starts(action.id) + 1)).toBeLessThanOrEqual(MAX_QUEUED_RUNS);
+        expect(starts(action.id)).toBeLessThanOrEqual(MAX_RUNS_PER_HOUR);
+      }
+    }
+    for (const action of actions) {
+      expect(starts(action.id)).toBe(MAX_RUNS_PER_HOUR);
+      expect(h.engine.get(action.id)?.runsUsed).toBe(MAX_RUNS_PER_HOUR);
+    }
+    expect(vi.mocked(h.hooks.observe).mock.calls.some(([event]) => event.type === 'limit' && event.what === 'hourly')).toBe(true);
+    expect(h.saved.state.waits).toHaveLength(0);
+    expect(h.clock.pendingTimers).toBeLessThanOrEqual(1);
+    h.engine.stop();
+    expect(h.clock.pendingTimers).toBe(0);
+  });
+
+  it('groups fixed windows independently per device and keeps device sources and payloads', async () => {
+    const h = setup();
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, coalesceSeconds: 10 }, steps: [notify], overlap: 'queue' }, user);
+    h.event({ type: 'device.online', device: computer });
+    await h.clock.advance(5000);
+    h.event({ type: 'device.online', device: phone });
+    await h.clock.advance(3000);
+    h.event({ type: 'device.online', device: computer });
+    await h.clock.advance(2000);
+    expect(h.stepCalls).toHaveLength(1);
+    expect(h.stepCalls[0].ctx.trigger).toMatchObject({
+      device: computer, events: [computer, computer].map((device) => ({
+        event: 'device.online', source: { kind: 'device', deviceId: device.id, deviceKind: device.kind }, device,
+      })),
+    });
+    expect(h.history(a.id)[0].trigger.detail).not.toContain('Pocket');
+    await h.clock.advance(5000);
+    expect(h.stepCalls).toHaveLength(2);
+    expect(h.history(a.id)[1].trigger).toMatchObject({ device: phone, events: [{ device: phone }] });
+  });
+
+  it.each([{}, { delaySeconds: 1 }, { coalesceSeconds: 10 }])('keeps the Action throttle global across devices after timing %j', async (timing) => {
+    const h = setup({ devices: new Map([[computer.id, true], [phone.id, true]]) });
+    h.engine.start();
+    const a = h.engine.create({
+      trigger: { ...trigger, ...timing, throttle: { maxRuns: 1, perMinutes: 5 } }, steps: [notify],
+    }, user);
+    h.event({ type: 'device.online', device: computer });
+    await h.clock.advance(10_000);
+    h.event({ type: 'device.online', device: phone });
+    await h.clock.advance(10_000);
+    expect(h.stepCalls).toHaveLength(1);
+    expect(h.history(a.id).map((run) => run.outcome)).toEqual(['done', 'throttled']);
+    expect(h.history(a.id)[1].trigger.device).toEqual(phone);
+    expect(h.engine.get(a.id)?.runsUsed).toBe(1);
+  });
+
+  it('checks device grants at coalesce admission, delivery and retained history after editing or deletion', async () => {
+    let allowed = true;
+    const h = setup({
+      refuseSource: (t) => t.kind === 'event' && t.source.kind === 'device' && !allowed ? 'Missing device.read' : null,
+    });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, coalesceSeconds: 10 }, steps: [notify] }, user);
+    allowed = false;
+    h.event({ type: 'device.online', device: computer });
+    await h.clock.advance(10_000);
+    expect(h.history(a.id)).toHaveLength(0);
+    allowed = true;
+    h.event({ type: 'device.online', device: computer });
+    allowed = false;
+    await h.clock.advance(10_000);
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.history(a.id)).toMatchObject([{ trigger: { device: null, events: [] } }]);
+    allowed = true;
+    h.event({ type: 'device.online', device: phone });
+    await h.clock.advance(10_000);
+    expect(h.history(a.id)).toHaveLength(2);
+    expect(h.engine.history(a.id, user)).toHaveLength(1);
+    h.engine.update(a.id, { trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } }, steps: [notify] });
+    h.engine.remove(a.id);
+    allowed = false;
+    expect(h.engine.history(a.id, user)).toHaveLength(0);
+  });
+
+  it.each(['edit', 'disable', 'remove'] as const)('drops every device grouping window on %s', async (change) => {
+    const h = setup();
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, coalesceSeconds: 10 }, steps: [notify] }, user);
+    h.event({ type: 'device.online', device: computer });
+    h.event({ type: 'device.online', device: phone });
+    if (change === 'remove') h.engine.remove(a.id);
+    else if (change === 'disable') h.engine.setEnabled(a.id, false);
+    else h.engine.update(a.id, { trigger: { ...trigger, coalesceSeconds: 15 }, steps: [notify] });
+    await h.clock.advance(20_000);
+    expect(h.history(a.id)).toHaveLength(0);
+    expect(h.stepCalls).toHaveLength(0);
+  });
+
+  it('matches any device, a specific device and kind filters without sharing their details', async () => {
+    const h = setup();
+    h.engine.start();
+    const all = h.engine.create({ trigger, steps: [notify] }, user);
+    const one = h.engine.create({ trigger: { ...trigger, source: { kind: 'device', deviceId: 'COMPUTER', deviceKind: 'computer' } }, steps: [notify] }, user);
+    const phones = h.engine.create({ trigger: { ...trigger, source: { kind: 'device', deviceKind: 'phone' } }, steps: [notify] }, user);
+    h.event({ type: 'device.online', device: computer });
+    await flush();
+    h.event({ type: 'device.online', device: phone });
+    await flush();
+    expect(h.history(all.id)).toHaveLength(2);
+    expect(h.history(one.id)).toMatchObject([{ trigger: { device: computer, detail: 'Studio comes online' } }]);
+    expect(h.history(phones.id)).toMatchObject([{ trigger: { device: phone } }]);
+  });
+
+  it('keeps independent per-device delays and restarts only the device that flaps', async () => {
+    const devices = new Map<string, boolean | undefined>([['computer', true], ['phone', true]]);
+    const h = setup({ devices });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, delaySeconds: 120 }, steps: [notify], overlap: 'queue' }, user);
+    h.event({ type: 'device.online', device: computer });
+    await h.clock.advance(MIN);
+    h.event({ type: 'device.online', device: phone });
+    devices.set('computer', false);
+    h.event({ type: 'device.offline', device: computer });
+    devices.set('computer', true);
+    h.event({ type: 'device.online', device: computer });
+    expect(h.saved.state.waits).toHaveLength(2);
+    await h.clock.advance(MIN);
+    expect(h.stepCalls).toHaveLength(0);
+    await h.clock.advance(MIN);
+    expect(h.history(a.id).filter((r) => r.outcome === 'done')).toHaveLength(2);
+  });
+
+  it('rechecks online and offline waits, postponing them while this computer is away', async () => {
+    const devices = new Map<string, boolean | undefined>([['computer', true], ['phone', false]]);
+    const h = setup({ devices });
+    h.engine.start();
+    const online = h.engine.create({ trigger: { ...trigger, delaySeconds: 120 }, steps: [notify] }, user);
+    const offline = h.engine.create({ trigger: { ...trigger, event: 'device.offline', delaySeconds: 120 }, steps: [notify] }, user);
+    h.event({ type: 'device.online', device: computer });
+    h.event({ type: 'device.offline', device: phone });
+    devices.set('computer', false);
+    devices.set('phone', undefined);
+    await h.clock.advance(2 * MIN);
+    expect(h.history(online.id)).toMatchObject([{ outcome: 'cancelled', trigger: { device: computer } }]);
+    expect(h.history(offline.id)).toHaveLength(0);
+    expect(h.saved.state.waits).toHaveLength(1);
+    devices.set('phone', false);
+    await h.clock.advance(MIN);
+    expect(h.history(offline.id)).toMatchObject([{ outcome: 'done', trigger: { device: phone } }]);
+  });
+
+  it('restores a device wait only after startup has a trustworthy observation', async () => {
+    const devices = new Map<string, boolean | undefined>([['computer', undefined]]);
+    const action: Action = {
+      id: 'saved', name: 'Handshake', trigger: { ...trigger, delaySeconds: 120 }, steps: [notify],
+      owner: user, enabled: true, overlap: 'queue', createdAt: 1, updatedAt: 1,
+    };
+    const h = setup({ devices, actions: [action], state: { nextAt: {}, waits: [
+      { actionId: action.id, device: computer, startedAt: START - 3 * MIN, dueAt: START - MIN, chain: [], detail: 'Studio comes online' },
+    ] } });
+    h.engine.start();
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.saved.state.waits).toHaveLength(1);
+    devices.set('computer', true);
+    await h.clock.advance(MIN);
+    expect(h.history(action.id)).toMatchObject([{ outcome: 'done', trigger: { device: computer } }]);
+  });
+
+  it('checks permission at admission and delivery and hides retained history from current non-readers', async () => {
+    let allowed = false;
+    const h = setup({
+      devices: new Map([['computer', true]]),
+      refuseSource: (t) => t.kind === 'event' && t.source.kind === 'device' && !allowed ? 'Missing device.read' : null,
+    });
+    h.engine.start();
+    expect(() => h.engine.create({ trigger, steps: [notify] }, user)).toThrow('device.read');
+    allowed = true;
+    const a = h.engine.create({ trigger: { ...trigger, delaySeconds: 120 }, steps: [notify] }, user);
+    h.event({ type: 'device.online', device: computer });
+    allowed = false;
+    await h.clock.advance(2 * MIN);
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.engine.history(a.id, user)).toEqual([]);
+    h.event({ type: 'device.online', device: phone });
+    expect(h.saved.state.waits).toHaveLength(0);
+    allowed = true;
+    h.event({ type: 'device.online', device: computer });
+    await h.clock.advance(2 * MIN);
+    expect(h.stepCalls).toHaveLength(1);
+    h.engine.update(a.id, { trigger: weekdays9, steps: [notify] });
+    allowed = false;
+    expect(h.engine.history(a.id, user)).toEqual([]);
+    h.engine.remove(a.id);
+    expect(h.engine.history(a.id, user)).toEqual([]);
+    allowed = true;
+    expect(h.engine.history(a.id, user)).toHaveLength(2);
+  });
+
+  it.each([{}, { coalesceSeconds: 10 }])('rechecks permission when a queued device run starts with timing %j', async (timing) => {
+    let allowed = true;
+    let release!: () => void;
+    const h = setup({
+      refuseSource: (t) => t.kind === 'event' && t.source.kind === 'device' && !allowed ? 'Missing device.read' : null,
+      stepImpl: async (step) => { await new Promise<void>((resolve) => { release = resolve; }); return { kind: step.kind, outcome: 'done', detail: 'ok' }; },
+    });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, ...timing }, steps: [notify], overlap: 'queue' }, user);
+    h.event({ type: 'device.online', device: computer });
+    h.event({ type: 'device.online', device: phone });
+    await h.clock.advance(10_000);
+    allowed = false;
+    release();
+    await flush();
+    expect(h.stepCalls).toHaveLength(1);
+    expect(h.history(a.id)).toMatchObject([{ outcome: 'done' }, { outcome: 'cancelled', trigger: { device: null } }]);
+    if (timing.coalesceSeconds) expect(h.history(a.id)[1].trigger.events).toEqual([]);
+    expect(h.engine.history(a.id, user)).toHaveLength(0);
   });
 });
 

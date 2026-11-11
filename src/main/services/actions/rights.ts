@@ -137,6 +137,7 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
       const id = ownerId(owner);
       if (!id) return `${ownerName(owner)} can\u2019t watch that.`;
       const source = trigger.source;
+      if (source.kind === 'device') return holds(owner, 'device.read', { kind: 'app' }, 'to watch devices');
       if (source.kind === 'any') return holds(owner, 'agent.watch', { kind: 'app' }, 'to watch activity across readable agents');
       if (source.kind === 'agent') return holds(owner, 'agent.read', agentTarget(id, source.agentId), 'on that agent');
       // App events (Clubhouse starts, a project is added or removed) say nothing private.

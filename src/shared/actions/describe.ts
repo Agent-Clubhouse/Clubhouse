@@ -81,6 +81,7 @@ export interface ActionNames {
   project(projectId: string): string | undefined;
   /** The Dispatcher's display name, when it has one ("Navi"). */
   dispatcher?(): string | undefined;
+  device?(deviceId: string): string | undefined;
 }
 
 const NO_NAMES: ActionNames = { agent: () => undefined, project: () => undefined };
@@ -90,6 +91,8 @@ function agentName(names: ActionNames, id: string): string {
 }
 
 function sourceText(source: ActionEventSource, names: ActionNames): string {
+  if (source.kind === 'device') return source.deviceId ? names.device?.(source.deviceId) ?? 'a specific device'
+    : source.deviceKind === 'computer' ? 'any computer' : source.deviceKind === 'phone' ? 'any phone' : 'any device';
   if (source.kind === 'any') return 'any readable agent';
   if (source.kind === 'agent') return agentName(names, source.agentId);
   if (source.kind === 'project') return `any agent in ${names.project(source.projectId) ?? 'a project'}`;
@@ -113,6 +116,8 @@ const EVENT_PHRASES: Record<ActionEventKind, string> = {
   'git.commit': 'gets a new commit',
   'git.branch_switched': 'switches branch',
   'git.remote_updated': 'is pushed, pulled or fetched',
+  'device.online': 'comes online',
+  'device.offline': 'goes offline',
   'app.started': 'starts',
   'app.returned': 'returns to use',
   'project.added': 'is added',
@@ -141,6 +146,8 @@ export const EVENT_LABELS: Record<ActionEventKind, string> = {
   'git.commit': 'New commit',
   'git.branch_switched': 'Branch switched',
   'git.remote_updated': 'Pushed, pulled or fetched',
+  'device.online': 'A device comes online',
+  'device.offline': 'A device goes offline',
   'app.started': 'Clubhouse starts',
   'app.returned': 'Clubhouse returns to use',
   'project.added': 'A project is added',

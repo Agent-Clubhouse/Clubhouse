@@ -45,6 +45,40 @@ describe('actions store', () => {
     expect(migrate({ state: { ...state, throttleStarts: { a1: [1, 'bad', -1, Infinity, 2] } } }))
       .toEqual({ version: 1, actions: [], state: { ...state, throttleStarts: { a1: [1, 2] } } });
   });
+  it('preserves older actions and waits exactly while retaining privacy-safe device waits', () => {
+    const old = {
+      id: 'old', name: 'Existing', trigger: { kind: 'event', event: 'agent.slept', source: { kind: 'agent', agentId: 'lead' }, delayMinutes: 30 },
+      steps: [{ kind: 'notify', text: 'Ready' }], overlap: 'skip', owner: { kind: 'user' }, enabled: true, createdAt: 1, updatedAt: 1,
+    };
+    const wait = { actionId: 'old', agentId: 'lead', startedAt: 1, dueAt: 2, chain: [], detail: 'Lead goes to sleep' };
+    const migrate = migrations.get('actions.json')!;
+    expect(migrate({ actions: [old], state: { nextAt: {}, waits: [wait] } })).toEqual({
+      version: 1, actions: [old], state: { nextAt: {}, waits: [wait] },
+    });
+    const device = { id: 'phone', name: 'Pocket', kind: 'phone' };
+    const state = { nextAt: {}, waits: [{ ...wait, device: { ...device, address: 'secret', certificate: 'secret', port: 123 } }] };
+    expect(migrate({ actions: [], state })).toMatchObject({ state: { waits: [{ ...wait, device }] } });
+    expect(JSON.stringify(migrate({ actions: [], state }))).not.toContain('secret');
+  });
+
+  it('retains device history privacy tags and strips nested grouped-event transport details', () => {
+    const device = { id: 'phone', name: 'Pocket', kind: 'phone' };
+    const source = { kind: 'device', deviceId: 'phone', deviceKind: 'phone' };
+    const event = { at: 1, event: 'device.online', source, device, detail: 'Pocket comes online' };
+    const run = {
+      id: 'r', actionId: 'a', trigger: { kind: 'event', at: 1, device, events: [event] },
+      chain: [], startedAt: 1, endedAt: 2, outcome: 'done', steps: [],
+    };
+    const privateDevice = { ...device, address: 'secret', port: 123, certificate: 'secret' };
+    const raw = { ...run, trigger: { ...run.trigger, device: privateDevice, events: [null, { ...event, at: 'invalid' }, {
+      ...event, device: privateDevice, source: { ...source, address: 'secret' },
+    }] } };
+    const migrate = migrations.get('action-history.json')!;
+    expect(migrate({ runs: { a: [raw] } })).toEqual({ version: 1, runs: { a: [run] } });
+    const redacted = { ...run, id: 'redacted', trigger: { kind: 'event', at: 1, device: null, events: [] } };
+    expect(migrate({ runs: { a: [redacted] } })).toEqual({ version: 1, runs: { a: [redacted] } });
+  });
+
   it('retains recorded owners across reload while leaving older ownerless runs unchanged', () => {
     const run = { id: 'r1', actionId: 'deleted', trigger: { kind: 'manual', at: 5 }, chain: [], startedAt: 5, outcome: 'done', steps: [] };
     const migrate = migrations.get('action-history.json')!;
