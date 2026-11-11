@@ -135,7 +135,7 @@ describe('Orchestration card (#2232)', () => {
 
     fireEvent.change(screen.getByTestId('orchestrate-control'), { target: { value: 'ask-everything' } });
     await waitFor(() => expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { control: 'ask-everything' }));
-    expect(screen.getByTestId('details-card-orchestrate-summary')).toHaveTextContent('ask for everything · up to 5');
+    await waitFor(() => expect(screen.getByTestId('details-card-orchestrate-summary')).toHaveTextContent('ask for everything · up to 5'));
   });
 
   it('explains a clamped level', async () => {
