@@ -22,6 +22,8 @@ An event trigger can wait, for example 30 minutes after an agent goes to sleep. 
 
 **Goes idle for** works the same way: the time counts from the end of the agent's last turn, a new turn resets it, and the action runs once per idle stretch.
 
+Terminal turn events depend on the CLI's hooks. Claude reports prompt starts, completed and failed turns, and compaction. Codex reports prompt starts, completed and interrupted turns, and compaction. Claude interruptions have no hook, and Copilot has no per-turn completion hook. Tool errors and session exits are not turn failures or turn completions.
+
 ### Event time filters
 
 Every event trigger can optionally run only **After local time**, in HH:MM on this computer, and **Once per calendar day**. Events before the set time are ignored, not held until later. Delayed and queued runs check the current time and date again before starting. The filters also apply to Run now.

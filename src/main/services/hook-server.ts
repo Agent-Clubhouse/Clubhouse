@@ -363,7 +363,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const hookEvent = buildHookEvent(provider, normalized);
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
     annexEventBus.emitHookEvent(agentId, hookEvent as any);
-    publishFromHookEvent(agentId, { kind: normalized.kind, rawName: typeof raw?.hook_event_name === 'string' ? raw.hook_event_name : undefined, toolName: normalized.toolName });
+    publishFromHookEvent(agentId, { ...normalized, rawName: typeof raw?.hook_event_name === 'string' ? raw.hook_event_name : undefined });
     // A shell git command, for the git watcher's attribution (#2955). The
     // hook payload's top-level cwd is where the shell ran (Claude sends it).
     if (normalized.kind === 'pre_tool' || normalized.kind === 'post_tool') {

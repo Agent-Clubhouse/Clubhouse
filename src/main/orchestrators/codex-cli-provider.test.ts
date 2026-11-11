@@ -51,6 +51,9 @@ import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/sh
 import { appLog } from '../services/log-service';
 import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
 import { skillsFolderOf } from '../../shared/skills-folder';
+import { onAppEvent, publishFromHookEvent, resetAppEventBus, type AppEvent } from '../services/app-event-bus';
+
+afterEach(() => resetAppEventBus());
 
 const DEFAULT_SHELL_ENV = { PATH: `/usr/local/bin${path.delimiter}/usr/bin`, OPENAI_API_KEY: 'sk-test-key' };
 
@@ -1033,6 +1036,27 @@ describe('CodexCliProvider', () => {
   });
 
   describe('writeHooksConfig', () => {
+    it('adds interrupt and compaction hooks idempotently while preserving user hooks', async () => {
+      const cwd = path.resolve('project');
+      const userHook = { hooks: [{ type: 'command', command: 'user-hook' }] };
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        customKey: 'preserved',
+        hooks: { Interrupt: [userHook], PostCompact: [userHook], Stop: [userHook] },
+      }));
+      await provider.writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+      const first = String(vi.mocked(fsp.writeFile).mock.calls.at(-1)![1]);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(first);
+      await provider.writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+      const second = JSON.parse(String(vi.mocked(fsp.writeFile).mock.calls.at(-1)![1]));
+      expect(second).toEqual(JSON.parse(first));
+      expect(second.customKey).toBe('preserved');
+      expect(second.hooks.Interrupt).toHaveLength(2);
+      expect(second.hooks.Interrupt[0]).toEqual(userHook);
+      expect(second.hooks.PostCompact).toHaveLength(2);
+      expect(second.hooks.PostCompact[0]).toEqual(userHook);
+      expect(second.hooks.Stop[0]).toEqual(userHook);
+    });
+
     it('creates .codex dir and writes hooks.json', async () => {
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
@@ -1107,7 +1131,7 @@ describe('CodexCliProvider', () => {
       const written = JSON.parse(hookCall![1] as string);
       const events = Object.keys(written.hooks).sort();
       expect(events).toEqual([
-        'PermissionRequest', 'PostToolUse', 'PreToolUse',
+        'Interrupt', 'PermissionRequest', 'PostCompact', 'PostToolUse', 'PreToolUse',
         'SessionStart', 'Stop', 'UserPromptSubmit',
       ]);
       // Claude Code event names that Codex has no equivalent for
@@ -1138,6 +1162,24 @@ describe('CodexCliProvider', () => {
   });
 
   describe('parseHookEvent', () => {
+    it('reports prompt, completion, interruption and compaction to the bus once per turn', () => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      for (const rawName of [
+        'UserPromptSubmit', 'PostCompact', 'Stop', 'Stop',
+        'UserPromptSubmit', 'Interrupt', 'Stop', 'Interrupt',
+      ]) {
+        const normalized = provider.parseHookEvent({ hook_event_name: rawName });
+        expect(normalized).not.toBeNull();
+        publishFromHookEvent('codex', { ...normalized!, rawName });
+      }
+      expect(events.map((event) => event.type)).toEqual([
+        'turn.started', 'agent.compacted', 'turn.ended', 'turn.started', 'turn.ended',
+      ]);
+      expect(events.filter((event) => event.type === 'turn.ended').map((event) => event.outcome)).toEqual(['completed', 'interrupted']);
+      expect(provider.parseHookEvent({ hook_event_name: 'StopFailure' })).toBeNull();
+    });
+
     it('parses PreToolUse as pre_tool', () => {
       const result = provider.parseHookEvent({
         hook_event_name: 'PreToolUse',

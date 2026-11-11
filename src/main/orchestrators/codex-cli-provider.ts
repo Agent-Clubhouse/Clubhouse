@@ -216,6 +216,8 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PostToolUse: 'post_tool',
   PermissionRequest: 'permission_request',
   Stop: 'stop',
+  Interrupt: 'stop',
+  PostCompact: 'notification',
   SessionStart: 'notification',
   UserPromptSubmit: 'notification',
 };
@@ -531,6 +533,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      Interrupt: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PostCompact: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       SessionStart: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       // A longer timeout so the hook server can hold the response while a
@@ -563,6 +567,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
     return {
       kind,
+      ...(eventName === 'Interrupt' ? { outcome: 'interrupted' as const } : {}),
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
       message: obj.message as string | undefined,

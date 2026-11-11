@@ -1711,8 +1711,11 @@ export interface AgentTemplateEntry {
 
 export type HookEventKind = 'pre_tool' | 'post_tool' | 'tool_error' | 'stop' | 'notification' | 'permission_request' | 'permission_resolved';
 
+export type TurnOutcome = 'completed' | 'failed' | 'interrupted';
+
 export interface AgentHookEvent {
   kind: HookEventKind;
+  outcome?: TurnOutcome;
   toolName?: string;
   toolInput?: Record<string, unknown>;
   message?: string;

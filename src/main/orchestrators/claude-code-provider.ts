@@ -60,7 +60,10 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PreToolUse: 'pre_tool',
   PostToolUse: 'post_tool',
   PostToolUseFailure: 'tool_error',
+  UserPromptSubmit: 'notification',
   Stop: 'stop',
+  StopFailure: 'stop',
+  PostCompact: 'notification',
   Notification: 'notification',
   PermissionRequest: 'permission_request',
 };
@@ -225,7 +228,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       PostToolUseFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      StopFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PostCompact: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Notification: [{ matcher: '', hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       // PermissionRequest uses a longer timeout so that the hook server can
       // hold the response while waiting for a remote approval decision from
@@ -258,9 +264,12 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     return {
       kind,
+      ...(eventName === 'StopFailure' ? { outcome: 'failed' as const } : {}),
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
-      message: obj.message as string | undefined,
+      message: eventName === 'StopFailure'
+        ? (typeof obj.error_details === 'string' ? obj.error_details : typeof obj.error === 'string' ? obj.error : undefined)
+        : obj.message as string | undefined,
       ...(typeof obj.permission_mode === 'string' && obj.permission_mode
         ? { permissionLevel: levelFromClaudeMode(obj.permission_mode) }
         : {}),

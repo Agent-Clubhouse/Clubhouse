@@ -6,6 +6,7 @@ import {
   publishAppEvent,
   publishFromChatEvent,
   publishFromHookEvent,
+  forgetHookTurn,
   resetAppEventBus,
   setAgentChain,
   turnOutcomeFromStopReason,
@@ -104,12 +105,41 @@ describe('from terminal hooks', () => {
     expect(events.map((e) => e.type)).toEqual(['turn.started', 'turn.started']);
   });
 
+  it.each([
+    ['Interrupt', 'interrupted'],
+    ['StopFailure', 'failed'],
+  ] as const)('ends a turn once at %s even if Stop follows', (rawName, outcome) => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit' }, 0);
+    publishFromHookEvent('a1', { kind: 'stop', rawName, message: 'Provider detail' }, 1);
+    publishFromHookEvent('a1', { kind: 'stop', rawName }, 2);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop' }, 3);
+    expect(events.filter((event) => event.type === 'turn.ended')).toMatchObject([{ outcome }]);
+    expect(events.filter((event) => event.type === 'agent.error')).toHaveLength(outcome === 'failed' ? 1 : 0);
+  });
+
+  it('deduplicates completion without a start and resets for the next process', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop' });
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop' });
+    forgetHookTurn('a1');
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop' });
+    expect(events.map((event) => event.type)).toEqual(['turn.ended', 'turn.ended']);
+  });
+
+  it('publishes compaction without starting or ending a turn', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'PostCompact' }, 1);
+    expect(events).toEqual([{ type: 'agent.compacted', agentId: 'a1', at: 1 }]);
+  });
+
   it('ignores session start, notifications, tool failures and Copilot’s session end', () => {
     const events = collect();
     publishFromHookEvent('a1', { kind: 'notification', rawName: 'SessionStart' });
     publishFromHookEvent('a1', { kind: 'notification', rawName: 'Notification' });
     publishFromHookEvent('a1', { kind: 'tool_error', rawName: 'PostToolUseFailure' });
     publishFromHookEvent('a1', { kind: 'stop', rawName: 'sessionEnd' });
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'SessionEnd', outcome: 'failed' });
     expect(events).toEqual([]);
   });
 
