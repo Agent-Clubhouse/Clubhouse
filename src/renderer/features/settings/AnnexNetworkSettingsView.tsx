@@ -172,6 +172,14 @@ export function AnnexNetworkSettingsView() {
               <Button onClick={copyPairingLink} kind="ghost">{linkCopied ? 'Copied' : 'Copy'}</Button>
             </SettingsField>
           )}
+          {status.tlsCertificateFingerprint && (
+            <SettingsField label="Certificate fingerprint" htmlFor="annex-full-certificate-fingerprint"
+              help="For pairing without a link, copy this full fingerprint to the other computer along with the one-time code.">
+              <input id="annex-full-certificate-fingerprint" readOnly value={status.tlsCertificateFingerprint}
+                onFocus={(e) => e.currentTarget.select()}
+                className={`${settingsInput} w-full min-w-0 font-mono select-all`} />
+            </SettingsField>
+          )}
           {status.pairingUrl && <AnnexPairingQr url={status.pairingUrl} hosts={status.pairingHosts ?? []} port={status.port} />}
           <p className="text-xs text-ctp-overlay1 py-2">Finishing a pairing always needs a person at the new device.</p>
         </SettingsSection>

@@ -80,6 +80,10 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     render(<AnnexNetworkSettingsView />);
     expect(screen.getByTestId('annex-pairing-code')).toHaveTextContent('123456');
     expect(screen.getByTestId('annex-pairing-link')).toHaveTextContent('clubhousego://pair');
+    const fingerprint = screen.getByLabelText('Certificate fingerprint') as HTMLInputElement;
+    expect(fingerprint).toHaveValue(STATUS.tlsCertificateFingerprint);
+    fireEvent.focus(fingerprint);
+    expect(fingerprint.selectionEnd! - fingerprint.selectionStart!).toBe(STATUS.tlsCertificateFingerprint.length);
     fireEvent.click(screen.getByRole('button', { name: 'New code' }));
     expect(regeneratePin).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Pair with another computer' }));

@@ -2882,6 +2882,55 @@ describe('annex-client', () => {
       expect(annexClient.getSatellite(SAT_FP)).toMatchObject({ host: '127.0.0.1', mainPort: 7443 });
     });
 
+    it('pairs without a link using the expected full fingerprint and the same pinned request', async () => {
+      expect(await annexClient.pairWithEndpoint(' 127.0.0.1:7443 ', '123456', CERT_COLONS)).toEqual({
+        success: true, alias: 'Mini', fingerprint: SAT_FP,
+      });
+      expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'PROBED-PEM', fingerprint: CERT_COLONS });
+      expect(posted[0]).toMatchObject({ url: 'https://127.0.0.1:7443/pair', body: { pin: '123456', network: 1 } });
+      expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
+        fingerprint: SAT_FP, knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7443 }, mainPort: 7443,
+      }));
+    });
+
+    it('never sends a manual PIN when the presented certificate differs', async () => {
+      vi.mocked(annexTls.probePeerCertificate).mockResolvedValue({ certPem: 'OTHER', fingerprint: 'cd'.repeat(32) });
+      expect(await annexClient.pairWithEndpoint('[::1]:7443', '123456', CERT)).toMatchObject({
+        success: false, error: expect.stringMatching(/doesn't match.*code was not sent/),
+      });
+      expect(posted).toHaveLength(0);
+      expect(annexPeers.addPeer).not.toHaveBeenCalled();
+    });
+
+    it.each(['', 'AB12 CD34 EF56 7890', 'ab'.repeat(31), 'zz'.repeat(32)])('rejects malformed manual fingerprint %j before dialing', async (certificate) => {
+      expect(await annexClient.pairWithEndpoint('localhost:7443', '123456', certificate)).toMatchObject({
+        success: false, error: expect.stringMatching(/full certificate fingerprint/),
+      });
+      expect(annexTls.probePeerCertificate).not.toHaveBeenCalled();
+      expect(posted).toHaveLength(0);
+    });
+
+    it.each(['localhost', 'localhost:', 'localhost:0', 'localhost:65536', 'localhost:1.5', 'https://localhost:7443'])('rejects missing or invalid manual port %j', async (address) => {
+      expect(await annexClient.pairWithEndpoint(address, '123456', CERT)).toMatchObject({
+        success: false, error: expect.stringMatching(/main TLS port/),
+      });
+      expect(annexTls.probePeerCertificate).not.toHaveBeenCalled();
+    });
+
+    it('reports an invalid manual PIN before dialing, and a wrong PIN from the server', async () => {
+      expect(await annexClient.pairWithEndpoint('localhost:7443', '12345', CERT)).toMatchObject({ success: false, error: expect.stringMatching(/six-digit/) });
+      expect(annexTls.probePeerCertificate).not.toHaveBeenCalled();
+      answerPair(401, { error: 'invalid_pin' });
+      expect(await annexClient.pairWithEndpoint('localhost:7443', '123456', CERT)).toMatchObject({ success: false, error: expect.stringMatching(/code doesn't match/) });
+      expect(annexPeers.addPeer).not.toHaveBeenCalled();
+    });
+
+    it('reports an unreachable manual endpoint without sending its PIN', async () => {
+      vi.mocked(annexTls.probePeerCertificate).mockRejectedValue(Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }));
+      expect(await annexClient.pairWithEndpoint('localhost:7443', '123456', CERT)).toMatchObject({ success: false, error: expect.stringMatching(/local forward is running/) });
+      expect(posted).toHaveLength(0);
+    });
+
     it('uses the link TLS port when the override is just a host', async () => {
       expect(await annexClient.pairWithLink(await link(), '[::1]')).toMatchObject({ success: true });
       expect(annexTls.probePeerCertificate).toHaveBeenCalledExactlyOnceWith('::1', 9443);

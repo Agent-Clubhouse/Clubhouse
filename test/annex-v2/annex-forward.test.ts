@@ -80,7 +80,7 @@ async function forwardTo(port: number) {
   return { port: localPort, close, restore: () => listen(server, localPort) };
 }
 
-it('pairs, reloads the saved pairing without discovery, and reconnects after a remapped loopback forward returns', async () => {
+it.each(['link', 'manual'])('pairs, reloads without discovery, and reconnects after a remapped loopback forward returns (%s pairing)', async (mode) => {
   const root = mkdtempSync(join(tmpdir(), 'annex-forward-'));
   cleanups.push(() => rmSync(root, { recursive: true, force: true }));
   state.dir = join(root, 'satellite');
@@ -157,11 +157,15 @@ it('pairs, reloads the saved pairing without discovery, and reconnects after a r
   }, { timeout: 10_000, interval: 20 });
 
   client.startClient();
-  expect(await client.pairWithLink(link, `127.0.0.1:${forward.port}`)).toMatchObject({ success: true });
+  const result = mode === 'link'
+    ? await client.pairWithLink(link, `127.0.0.1:${forward.port}`)
+    : await client.pairWithEndpoint(`127.0.0.1:${forward.port}`, '123456', expectedCertificate);
+  expect(result).toMatchObject({ success: true });
   await connected(1);
   expect(peers.getPeer(satellite.fingerprint)).toMatchObject({
-    knownHosts: ['127.0.0.1', '::1'], mainPort: port,
-    hostPorts: { '127.0.0.1': forward.port, '::1': port },
+    knownHosts: mode === 'link' ? ['127.0.0.1', '::1'] : ['127.0.0.1'],
+    mainPort: mode === 'link' ? port : forward.port,
+    hostPorts: mode === 'link' ? { '127.0.0.1': forward.port, '::1': port } : { '127.0.0.1': forward.port },
   });
 
   client.stopClient();
@@ -184,7 +188,7 @@ it('pairs, reloads the saved pairing without discovery, and reconnects after a r
   expect(pairRequests).toBe(1);
 }, 20_000);
 
-it('rejects a TLS-terminating endpoint before sending any PIN or HTTP request', async () => {
+it.each(['link', 'manual'])('rejects a TLS-terminating endpoint before sending any PIN or HTTP request (%s pairing)', async (mode) => {
   const root = mkdtempSync(join(tmpdir(), 'annex-forward-mismatch-'));
   cleanups.push(() => rmSync(root, { recursive: true, force: true }));
   state.dir = join(root, 'satellite');
@@ -219,8 +223,11 @@ it('rejects a TLS-terminating endpoint before sending any PIN or HTTP request', 
     hosts: ['127.0.0.2'], port, fingerprint: satellite.fingerprint, certFingerprint: expectedCertificate,
     pin: '123456', name: 'Satellite',
   })!;
-  expect(await client.pairWithLink(link, `127.0.0.1:${port}`)).toMatchObject({
-    success: false, error: expect.stringMatching(/not the one in the link/),
+  const result = mode === 'link'
+    ? await client.pairWithLink(link, `127.0.0.1:${port}`)
+    : await client.pairWithEndpoint(`127.0.0.1:${port}`, '123456', expectedCertificate);
+  expect(result).toMatchObject({
+    success: false, error: expect.stringMatching(/not the one in the link|code was not sent/),
   });
   expect(requests).toBe(0);
   expect(peers.listPeers()).toEqual([]);

@@ -107,6 +107,8 @@ export const annexClient = {
   /** Pairs using another computer's pairing link. */
   pairWithLink: (link: string, addressOverride?: string): Promise<{ success: boolean; error?: string; alias?: string }> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.PAIR_WITH_LINK, link, addressOverride),
+  pairWithEndpoint: (address: string, pin: string, certificateFingerprint: string): Promise<{ success: boolean; error?: string; alias?: string }> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.PAIR_WITH_ENDPOINT, address, pin, certificateFingerprint),
   onSatellitesChanged: (callback: (satellites: unknown[]) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, sats: Parameters<typeof callback>[0]) => callback(sats);
     ipcRenderer.on(IPC.ANNEX_CLIENT.SATELLITES_CHANGED, listener);

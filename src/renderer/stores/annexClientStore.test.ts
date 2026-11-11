@@ -10,6 +10,7 @@ const mockAnnexClient = {
   getDiscovered: vi.fn(async () => []),
   pairWith: vi.fn(async () => ({ success: true })),
   pairWithLink: vi.fn(async () => ({ success: true })),
+  pairWithEndpoint: vi.fn(async () => ({ success: true })),
   probeService: vi.fn(async () => ({ success: true })),
   connect: vi.fn(),
   disconnect: vi.fn(),
@@ -63,6 +64,15 @@ import {
 function getState() {
   return useAnnexClientStore.getState();
 }
+
+it('forwards manual pairing and surfaces IPC failures', async () => {
+  expect(await getState().pairWithEndpoint('localhost:7443', '123456', 'ab'.repeat(32))).toEqual({ success: true });
+  expect(mockAnnexClient.pairWithEndpoint).toHaveBeenCalledWith('localhost:7443', '123456', 'ab'.repeat(32));
+  mockAnnexClient.pairWithEndpoint.mockRejectedValueOnce(new Error('IPC unavailable'));
+  expect(await getState().pairWithEndpoint('localhost:7443', '123456', 'ab'.repeat(32))).toEqual({
+    success: false, error: PAIRING_UNAVAILABLE_ERROR,
+  });
+});
 
 const DISCOVERED_SERVICE: DiscoveredService = {
   fingerprint: 'XX:YY:ZZ:11',

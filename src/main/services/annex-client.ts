@@ -27,7 +27,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
-import { parsePairingUrl } from './annex-pairing-url';
+import { normalizeCertFingerprint, parsePairingUrl } from './annex-pairing-url';
 import { devicesChanged } from './annex-device-signal';
 import {
   annexProblemText,
@@ -2382,21 +2382,54 @@ async function pairWithLinkImpl(link: string, addressOverride?: string): Promise
   if (override === null) return { success: false, error: 'Enter a host name or IP address, optionally followed by a TLS port, such as 127.0.0.1:7443.' };
   const hosts = override ? [override.host] : parts.hosts;
   const port = override?.port ?? parts.port;
+  return pairWithExpectedCertificate({
+    hosts, port, certFingerprint: parts.certFingerprint, pin: parts.pin, alias: parts.name,
+    expectedFingerprint: parts.fingerprint, linkHosts: parts.hosts, linkPort: parts.port,
+    mismatchError: 'The computer at that address is not the one in the link.',
+  });
+}
+
+/** Pair without a link, trusting only the certificate fingerprint supplied out of band. */
+export function pairWithEndpoint(address: string, pin: string, certificateFingerprint: string): Promise<PairResultForUi> {
+  return pairFlow(async () => {
+    const endpoint = parseTypedHost(address);
+    if (!endpoint?.port) return { success: false, error: 'Enter a host name or IP address and its main TLS port, such as 127.0.0.1:7443.' };
+    const certFingerprint = normalizeCertFingerprint(certificateFingerprint);
+    if (!certFingerprint) return { success: false, error: "Enter the full certificate fingerprint from the other computer's Pairing link section, not its short certificate code." };
+    if (!/^\d{6}$/.test(pin)) return { success: false, error: 'Enter the six-digit one-time code shown on the other computer.' };
+    return pairWithExpectedCertificate({
+      hosts: [endpoint.host], port: endpoint.port, certFingerprint, pin,
+      mismatchError: "The certificate at that address doesn't match the fingerprint you entered. The one-time code was not sent. Check the fingerprint and address.",
+    });
+  }, (r) => (r.success ? 'ok' : pairResultFor(r.error)));
+}
+
+async function pairWithExpectedCertificate(target: {
+  hosts: string[];
+  port: number;
+  certFingerprint: string;
+  pin: string;
+  alias?: string;
+  expectedFingerprint?: string;
+  linkHosts?: string[];
+  linkPort?: number;
+  mismatchError: string;
+}): Promise<PairResultForUi> {
   let lastError = 'Could not reach that computer at any of its addresses.';
-  for (const host of hosts) {
+  for (const host of target.hosts) {
     let cert: annexTls.PinnedCertificate;
     try {
-      cert = await annexTls.probePeerCertificate(host, port);
+      cert = await annexTls.probePeerCertificate(host, target.port);
     } catch (err) { // telemetry-exempt: the next address is tried, and the last error is shown
-      lastError = pairingReachError(err, parts.name, host);
+      lastError = pairingReachError(err, target.alias ?? '', host);
       continue;
     }
-    if (!annexTls.sameCertificateFingerprint(cert.fingerprint, parts.certFingerprint)) {
-      appLog('core:annex-client', 'warn', 'Pairing link address showed a different certificate; not sending the PIN', { meta: { host, port } });
-      lastError = 'The computer at that address is not the one in the link.';
+    if (!annexTls.sameCertificateFingerprint(cert.fingerprint, target.certFingerprint)) {
+      appLog('core:annex-client', 'warn', 'Pairing address showed a different certificate; not sending the PIN', { meta: { host, port: target.port } });
+      lastError = target.mismatchError;
       continue;
     }
-    return pairOverTls({ host, port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin, alias: parts.name, linkHosts: parts.hosts, linkPort: parts.port });
+    return pairOverTls({ ...target, host, pinned: cert, pairingPort: 0 });
   }
   return { success: false, error: lastError };
 }
@@ -2419,7 +2452,7 @@ async function pairOverTls(target: {
   host: string;
   port: number;
   pinned: annexTls.PinnedCertificate;
-  expectedFingerprint: string;
+  expectedFingerprint?: string;
   pairingPort: number;
   pin: string;
   /** The name it's known by so far, for messages. */
@@ -2429,7 +2462,7 @@ async function pairOverTls(target: {
   linkPort?: number;
 }): Promise<PairResultForUi> {
   const localIdentity = annexIdentity.getOrCreateIdentity();
-  if (target.expectedFingerprint.toLowerCase() === localIdentity.fingerprint.toLowerCase()) {
+  if (target.expectedFingerprint?.toLowerCase() === localIdentity.fingerprint.toLowerCase()) {
     return { success: false, error: "That's this computer." };
   }
   const localSettings = annexSettings.getSettings();
@@ -2462,9 +2495,10 @@ async function pairOverTls(target: {
   const fingerprint = typeof body.fingerprint === 'string' ? body.fingerprint.toLowerCase() : '';
   const publicKey = typeof body.publicKey === 'string' ? body.publicKey : '';
   if (!fingerprint || !publicKey || annexIdentity.computeFingerprint(publicKey) !== fingerprint
-    || fingerprint !== target.expectedFingerprint.toLowerCase()) {
+    || (target.expectedFingerprint && fingerprint !== target.expectedFingerprint.toLowerCase())) {
     return { success: false, error: "That computer's answer didn't match its identity. Nothing was saved." };
   }
+  if (fingerprint === localIdentity.fingerprint.toLowerCase()) return { success: false, error: "That's this computer." };
   if (typeof body.tlsCertificateFingerprint === 'string'
     && !annexTls.sameCertificateFingerprint(body.tlsCertificateFingerprint, target.pinned.fingerprint)) {
     return { success: false, error: "That computer's answer didn't match its certificate. Nothing was saved." };

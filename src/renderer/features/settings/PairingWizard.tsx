@@ -24,10 +24,15 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
   const probeService = useAnnexClientStore((s) => s.probeService);
   const pairWith = useAnnexClientStore((s) => s.pairWith);
   const pairWithLink = useAnnexClientStore((s) => s.pairWithLink);
+  const pairWithEndpoint = useAnnexClientStore((s) => s.pairWithEndpoint);
 
   const [step, setStep] = useState<WizardStep>('choose');
   const [link, setLink] = useState('');
   const [addressOverride, setAddressOverride] = useState('');
+  const [manual, setManual] = useState(false);
+  const [endpoint, setEndpoint] = useState('');
+  const [manualPin, setManualPin] = useState('');
+  const [fingerprint, setFingerprint] = useState('');
   const [selectedService, setSelectedService] = useState<DiscoveredService | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [pin, setPin] = useState('');
@@ -125,6 +130,17 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
     setStep('choose');
   }
 
+  async function handlePairWithEndpoint() {
+    if (!endpoint.trim() || manualPin.length !== 6 || !fingerprint.trim() || pairing) return;
+    setPairing(true);
+    const result = await pairWithEndpoint(endpoint.trim(), manualPin, fingerprint.trim());
+    setPairing(false);
+    setManualPin('');
+    showResult(result.success, result.success
+      ? `Paired with ${result.alias || 'that computer'}`
+      : result.error || 'Pairing failed. Try again.', 'choose');
+  }
+
   let title = `Pair with ${selectedService?.alias || 'service'}`;
   if (step === 'choose') title = repairTarget ? `Pair again with ${repairTarget.alias}` : 'Pair with another computer';
   if (step === 'result') title = 'Pairing result';
@@ -185,6 +201,37 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
               Use a host or host:port instead of the link&apos;s addresses. The port is the main TLS port, not the identity-hint port.
               {' '}For a local forward, enter its listening address and port. The certificate must still match the link.
             </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Button onClick={() => setManual(!manual)} kind="ghost" aria-expanded={manual}>
+              Pair without a link
+            </Button>
+            {manual && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-ctp-overlay1">
+                  Get the one-time code and full certificate fingerprint from the other computer&apos;s Annex settings.
+                  The certificate is checked before the code is sent.
+                </p>
+                <label htmlFor="annex-manual-endpoint" className="block text-[13px] text-ctp-text">Address and port</label>
+                <input id="annex-manual-endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder="127.0.0.1:7443" spellCheck={false} className={`${settingsInput} w-full font-mono`} />
+                <p className="text-xs text-ctp-overlay1">Include the main TLS port, not the identity-hint port. For a forward, use its local listening port.</p>
+                <label htmlFor="annex-manual-fingerprint" className="block text-[13px] text-ctp-text">Certificate fingerprint</label>
+                <input id="annex-manual-fingerprint" value={fingerprint} onChange={(e) => setFingerprint(e.target.value)}
+                  spellCheck={false} className={`${settingsInput} w-full font-mono`} />
+                <p className="text-xs text-ctp-overlay1">Copy the full fingerprint from the Pairing link section, not the short certificate code.</p>
+                <label htmlFor="annex-manual-pin" className="block text-[13px] text-ctp-text">One-time code</label>
+                <input id="annex-manual-pin" value={manualPin} inputMode="numeric" maxLength={6}
+                  onChange={(e) => setManualPin(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void handlePairWithEndpoint(); }}
+                  className={`${settingsInput} w-[140px] font-mono`} />
+                <Button onClick={handlePairWithEndpoint} kind="primary"
+                  disabled={pairing || !endpoint.trim() || manualPin.length !== 6 || !fingerprint.trim()}>
+                  {pairing ? 'Pairing…' : 'Pair manually'}
+                </Button>
+              </div>
+            )}
           </div>
 
           <div>
