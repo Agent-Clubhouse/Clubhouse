@@ -199,6 +199,8 @@ let pairingPort = 0;
 let tlsServer: https.Server | null = null;
 /** Answers 503 to everything when the TLS server couldn't be created. Nothing authenticated is ever served without TLS. */
 let httpServer: http.Server | null = null;
+/** Includes sockets still waiting for a TLS handshake, HTTP headers, or a WebSocket upgrade. */
+const incomingSockets = new Set<import('net').Socket>();
 let wss: WebSocketServer | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
@@ -4928,6 +4930,21 @@ function handleTlsUnavailable(req: http.IncomingMessage, res: http.ServerRespons
   sendJson(res, 503, TLS_UNAVAILABLE);
 }
 
+function isCurrentServer(server: http.Server | https.Server): boolean {
+  return server === tlsServer || server === httpServer || server === pairingServer;
+}
+
+function trackIncomingSockets(server: http.Server | https.Server): void {
+  server.on('connection', (socket) => {
+    if (!isCurrentServer(server)) {
+      socket.destroy();
+      return;
+    }
+    incomingSockets.add(socket);
+    socket.once('close', () => incomingSockets.delete(socket));
+  });
+}
+
 export function start(): void {
   if (tlsServer || httpServer) {
     appLog('core:annex', 'debug', 'Annex server start() called but already running');
@@ -4949,6 +4966,7 @@ export function start(): void {
 
   // --- Pairing server (plain HTTP): identity hint only; pairing itself is on the TLS port ---
   pairingServer = http.createServer(handlePairingRequest);
+  trackIncomingSockets(pairingServer);
 
   // --- Main server (TLS with mTLS) ---
   let tlsOptions: tls.TlsOptions;
@@ -4971,11 +4989,17 @@ export function start(): void {
   if (!tlsServer) {
     httpServer = mainServer as http.Server;
   }
+  trackIncomingSockets(mainServer);
 
-  wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
+  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
+  wss = websocketServer;
 
   // WebSocket upgrade handler for the main server
   mainServer.on('upgrade', (req: http.IncomingMessage, socket: any, head: Buffer) => {
+    if (!isCurrentServer(mainServer)) {
+      socket.destroy();
+      return;
+    }
     if (!tlsServer) {
       refuseUpgrade(socket, 503, TLS_UNAVAILABLE);
       return;
@@ -5022,14 +5046,14 @@ export function start(): void {
       meta: { authType, peerFingerprint: peerFingerprintForWs, remoteAddress: req.socket.remoteAddress },
     });
 
-    wss!.handleUpgrade(req, socket, head, (ws) => {
+    websocketServer.handleUpgrade(req, socket, head, (ws) => {
       wsAuthTypes.set(ws, authType);
       if (urlObj.searchParams.get('iconRefs') === '1') wsIconRefs.add(ws);
       const clientKind = urlObj.searchParams.get('client');
       if (clientKind === 'mobile' || clientKind === 'desktop') wsClientKinds.set(ws, clientKind);
       wsPeerFingerprints.set(ws, peerFingerprintForWs);
       wsPeerPins.set(ws, auth.peer.tlsCertificateFingerprint!);
-      wss!.emit('connection', ws, req);
+      websocketServer.emit('connection', ws, req);
     });
   });
 
@@ -5544,6 +5568,9 @@ export function stop(): void {
     pairingServer.close();
     pairingServer = null;
   }
+  // server.close() leaves active and incomplete requests alive, including TLS handshakes.
+  for (const socket of incomingSockets) socket.destroy();
+  incomingSockets.clear();
 
   serverPort = 0;
   pairingPort = 0;

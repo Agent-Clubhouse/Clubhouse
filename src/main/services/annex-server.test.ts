@@ -2123,6 +2123,60 @@ describe('annex-server', () => {
       vi.restoreAllMocks();
     });
 
+    it('cuts accepted sockets, including unfinished TLS and upgrades, when switching to loopback only', async () => {
+      const servers: net.Server[] = [];
+      const accepted: net.Socket[] = [];
+      const clients: net.Socket[] = [];
+      const originalListen = net.Server.prototype.listen;
+      vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        servers.push(this);
+        this.on('connection', (socket) => accepted.push(socket));
+        return Reflect.apply(originalListen, this, args);
+      });
+      const phone = device();
+      peers.set(phone.fingerprint, pinned(phone));
+      try {
+        await startServer();
+        await vi.waitFor(() => expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0));
+        const { port, pairingPort } = annexServer.getStatus();
+        vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: port, pairingPort });
+        const pendingTls = net.connect({ host: '127.0.0.1', port });
+        const upgrade = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...phone });
+        const hint = net.connect({ host: '127.0.0.1', port: pairingPort });
+        clients.push(pendingTls, upgrade, hint);
+        const errors: Error[] = [];
+        for (const socket of clients) socket.on('error', (err) => errors.push(err));
+        await Promise.all([
+          new Promise<void>((resolve) => pendingTls.once('connect', resolve)),
+          new Promise<void>((resolve) => upgrade.once('secureConnect', resolve)),
+          new Promise<void>((resolve) => hint.once('connect', resolve)),
+        ]);
+        upgrade.write(['GET /ws HTTP/1.1', 'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
+          'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', ''].join('\r\n'));
+        hint.write('GET /api/v1/identity HTTP/1.1\r\nHost: 127.0.0.1\r\n');
+        await vi.waitFor(() => expect(accepted).toHaveLength(3));
+        expect(errors).toEqual([]);
+
+        vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+        annexServer.stop();
+        annexServer.start();
+        await vi.waitFor(() => expect(annexServer.getStatus().pairingPort).toBe(pairingPort));
+        await vi.waitFor(() => expect(clients.every((socket) => socket.destroyed)).toBe(true));
+        expect(accepted.every((socket) => socket.destroyed)).toBe(true);
+        for (const server of servers.slice(-2)) {
+          expect(server.address()).toMatchObject({ address: '127.0.0.1', family: 'IPv4' });
+        }
+        expect(annexServer.getStatus()).toMatchObject({ port, pairingPort, advertising: false });
+        const publishes = mockBonjour.publish.mock.calls.length;
+        annexServer.republishAdvertisement();
+        expect(mockBonjour.publish).toHaveBeenCalledTimes(publishes);
+        expect(await call('GET', '/api/v1/status', phone)).toMatchObject({ status: 200 });
+        expect(peers.get(phone.fingerprint)).toEqual(pinned(phone));
+      } finally {
+        for (const socket of clients) socket.destroy();
+      }
+    });
+
     it('pairs over TLS, pins the client certificate, and answers with the fields phones read', async () => {
       await startServer();
       const phone = device();
