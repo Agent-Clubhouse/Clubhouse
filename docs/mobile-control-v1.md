@@ -106,7 +106,7 @@ Every Annex snapshot adds `appUpdate`:
 }
 ```
 
-All six top-level fields are always present. `currentVersion` is the running desktop's version, never an installation promise. `availableVersion` is a newer version the updater knows, or `null`. `downloadProgress` is a number from 0 to 100, possibly fractional. `reason` is `null` or a sentence explaining unsupported updates or the updater's last failure. Display it; do not branch on its wording. There are no installer paths, URLs or credentials in this object.
+All six top-level fields are always present. `currentVersion` is the running desktop's version, never an installation promise. `availableVersion` is a newer version the updater knows, or `null`. `downloadProgress` is a number from 0 to 100, possibly fractional. `reason` is `null` or a fixed plain sentence explaining unsupported updates or the updater's last failure category. Display it; do not branch on its wording. Updater failures use fixed messages such as "The update could not be downloaded", "The installer could not be prepared", or "Restart failed". `request.error`, updater-related command refusal messages and grant-row details never include raw updater exception text. Full diagnostics stay in local desktop logs only. There are no installer paths, URLs or credentials in this object.
 
 | `state` | Meaning |
 |---|---|
@@ -130,7 +130,7 @@ On Windows, immediately before running `Update.exe`, a remote-approved install r
 | `failed` | Nothing more will be attempted for this request. `error` is a sentence explaining the failure, such as expired approval, changed update/working agents, idle deadline, stop failure or installer failure. Some already interrupted/stopped agents may remain idle/asleep. |
 | `cancelled` | The person declined, or a controlling device cancelled before restart began. Nothing more will be attempted. |
 
-`error` is `null` outside `failed`. `expiresAt` is `null` for `restarting`, `failed` and `cancelled`. On a successful install the app exits; there is no success/completed request state.
+`error` is `null` outside `failed`; failures use fixed plain messages, not exception text. `expiresAt` is `null` for `restarting`, `failed` and `cancelled`. On a successful install the app exits; there is no success/completed request state.
 
 Changes to updater status/progress or request state send the normal replayable WebSocket envelope `{type:"app_update:changed",payload:<the entire appUpdate object>,seq:<global Annex sequence>}` and schedule a snapshot refresh. Replace `appUpdate` from the payload, not a patch. An event or snapshot can arrive before a command receipt. Multiple changes can be coalesced into one snapshot; do not require a snapshot between events or assume every intermediate state will be seen. Use normal snapshot/replay cursor rules. The event and snapshot have the same object shape.
 

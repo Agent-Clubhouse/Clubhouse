@@ -607,6 +607,7 @@ import { recordStartRequest, _resetStartRequestsForTesting } from './helper-star
 import { listDisposeRequests, recordDisposeRequest, _resetDisposeRequestsForTesting } from './helper-dispose-requests';
 import { callKey, dropGrantRequestsFor, recordGrantRequest, _resetGrantRequestsForTesting } from './grant-requests';
 import { _resetAppUpdateForTesting } from './app-update-request';
+import { AppUpdateError } from '../../shared/app-update';
 import { GRANT_REQUEST_TTL_MS } from '../../shared/grant-requests';
 import { getAgentRuntime, registerChatRuntime, unregisterChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 import { getDispatcherState } from './dispatcher/dispatcher-service';
@@ -3269,7 +3270,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   it('Clubhouse updates: status, explicit human approval, cancellation and install failure', async () => {
     resetWorld();
     _resetAppUpdateForTesting({ keepListeners: true });
-    W.updateApply.mockRejectedValue(new Error('The fixture installer refused.'));
+    const privateDiagnostic = 'Failed /Users/private-update-user/Library/update.zip C:\\Users\\private-update-user\\update.zip https://updates.example.invalid/private-updater-token';
+    W.updateApply.mockRejectedValue(new AppUpdateError('prepare', { cause: new Error(privateDiagnostic) }));
     const ws = await connect();
     ws.send.mockClear();
     const statuses: unknown[] = [];
@@ -3286,8 +3288,11 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await status();
     await command('dispatcher_unavailable (use the desktop banner instead)', { type: 'app.update.request' });
     W.dispatcher.enabled = true;
-    await command('update_not_ready (nothing downloaded)', { type: 'app.update.request' });
-    W.updateStatus = { ...W.updateStatus, state: 'checking', availableVersion: '1.1.0' };
+    W.updateStatus = { ...W.updateStatus, state: 'error', availableVersion: '1.1.0', error: privateDiagnostic, errorCategory: 'download' };
+    publish();
+    expect((await status()).appUpdate.reason).toBe('The update could not be downloaded.');
+    const notReady = await command('update_not_ready (nothing downloaded)', { type: 'app.update.request' });
+    W.updateStatus = { ...W.updateStatus, state: 'checking', availableVersion: '1.1.0', error: null };
     publish(); await status();
     W.updateStatus = { ...W.updateStatus, state: 'downloading', downloadProgress: 42.5 };
     publish(); await status();
@@ -3311,7 +3316,12 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('update_restart_started', { type: 'app.update.cancel', requestId: next.body.result.requestId });
     await status();
     await eventually(() => expect(W.updateApply).toHaveBeenCalledTimes(1));
+    await eventually(() => expect(frames(ws).some((frame) => frame.type === 'app_update:changed' && frame.payload.request?.error === 'The installer could not be prepared.')).toBe(true));
     await status();
+    for (const payload of [statuses, frames(ws).filter((frame) => frame.type === 'app_update:changed'), pending.grantRequests, asked.body, notReady.body, next.body]) {
+      expect(JSON.stringify(payload)).not.toContain('private-update-user');
+      expect(JSON.stringify(payload)).not.toContain('private-updater-token');
+    }
     fixtures.set('app-update-statuses.json', { direction: 'desktop-to-phone', field: 'appUpdate', values: statuses });
     fixtures.set('app-update-events.json', { direction: 'desktop-to-phone',
       note: 'The payload replaces snapshot.appUpdate. seq is the normal replay sequence; shown here as 1000. Applying is faked and fails without restarting.',

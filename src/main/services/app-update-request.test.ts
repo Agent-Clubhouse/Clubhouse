@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { LiveAgentInfo, UpdateStatus } from '../../shared/types';
 import type { AgentRegistration } from './agent-registry';
-import { APP_UPDATE_IDLE_WAIT_MS } from '../../shared/app-update';
+import { APP_UPDATE_FAILURE_MESSAGES, APP_UPDATE_IDLE_WAIT_MS, AppUpdateError } from '../../shared/app-update';
 
 const fake = vi.hoisted(() => ({
   status: {} as UpdateStatus,
@@ -40,6 +40,7 @@ import { _resetAppUpdateForTesting, answerAppUpdateRequest, cancelAppUpdate, get
 import { answerGrantRequest } from './grant-request-answers';
 import { _resetGrantRequestsForTesting, consumeCallApproval, callKey, listGrantRequests, peekGrantRequest } from './grant-requests';
 import { runGrantCommand, type GrantRequestPlaces } from './mobile-grant-requests';
+import { appLog } from './log-service';
 
 const places: GrantRequestPlaces = { projects: [], dispatcher: { projectId: '__dispatcher__', paths: ['/dispatcher'], agentId: 'dispatcher-chat', askingIds: ['dispatcher'] } };
 const working = (id = 'builder'): LiveAgentInfo => ({ agentId: id, projectPath: '/project', orchestrator: 'claude-code', runtime: 'chat', isWorking: true, lastActivity: null, resumeStrategy: 'auto' });
@@ -104,8 +105,8 @@ describe('human-approved Clubhouse updates', () => {
 
   it('does not advertise a missing installer as ready or record an unsafe approval', async () => {
     fake.readyProblem = 'The downloaded installer is missing.';
-    expect(getAppUpdateStatus()).toMatchObject({ state: 'available', reason: fake.readyProblem });
-    await expect(requestAppUpdate()).rejects.toMatchObject({ code: 'update_not_ready', detail: fake.readyProblem });
+    expect(getAppUpdateStatus()).toMatchObject({ state: 'available', reason: APP_UPDATE_FAILURE_MESSAGES.missing });
+    await expect(requestAppUpdate()).rejects.toMatchObject({ code: 'update_not_ready', detail: APP_UPDATE_FAILURE_MESSAGES.missing });
     expect(listGrantRequests()).toEqual([]);
     expect(fake.apply).not.toHaveBeenCalled();
   });
@@ -250,12 +251,36 @@ describe('human-approved Clubhouse updates', () => {
     expect(fake.apply).not.toHaveBeenCalled();
   });
 
-  it('reports an apply error rather than claiming success', async () => {
-    fake.apply.mockRejectedValue(new Error('Installer refused'));
+  it.each([false, true])('keeps installer diagnostics local while publishing a fixed failure (typed: %s)', async (typed) => {
+    const diagnostic = 'Failed /Users/private-update-user/Library/update.zip C:\\Users\\private-update-user\\update.zip https://updates.example.invalid/private-updater-token';
+    const cause = new Error(diagnostic);
+    fake.apply.mockRejectedValue(typed ? new AppUpdateError('prepare', { cause }) : cause);
+    const events: unknown[] = [];
+    const off = onAppUpdateChanged(() => events.push(getAppUpdateStatus()));
     const pending = await requestAppUpdate();
     answerAppUpdateRequest(pending.requestId, true, 'now');
     await vi.advanceTimersByTimeAsync(250);
-    expect(getAppUpdateStatus().request).toMatchObject({ state: 'failed', error: 'Installer refused' });
+    const snapshot = getAppUpdateStatus();
+    expect(snapshot.request).toMatchObject({ state: 'failed', error: typed ? APP_UPDATE_FAILURE_MESSAGES.prepare : APP_UPDATE_FAILURE_MESSAGES.restart });
+    expect(JSON.stringify({ snapshot, events })).not.toContain('private-update-user');
+    expect(JSON.stringify({ snapshot, events })).not.toContain('private-updater-token');
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).toContain('private-update-user');
+    off();
+  });
+
+  it('never returns installer diagnostics in a phone approval refusal or grant row', async () => {
+    const pending = await requestAppUpdate();
+    fake.readyProblem = '/Users/private-update-user/update.zip https://updates.example.invalid/private-updater-token';
+    expect(JSON.stringify(listGrantRequests())).not.toContain('private-update-user');
+    await expect(runGrantCommand({
+      version: 1, epoch: 'e', commandId: 'c', type: 'grant.answer', requestId: pending.requestId, answer: 'allow_once', updateMode: 'now',
+    }, places, { viewer: 'phone', assertAuthorized: vi.fn() })).rejects.toMatchObject({
+      code: 'grant_answer_failed', detail: APP_UPDATE_FAILURE_MESSAGES.missing,
+    });
+    expect(getAppUpdateStatus()).toMatchObject({
+      reason: APP_UPDATE_FAILURE_MESSAGES.missing,
+      request: { state: 'failed', error: APP_UPDATE_FAILURE_MESSAGES.missing },
+    });
   });
 
   it('expires pending approvals and never schedules a restart', async () => {
@@ -279,7 +304,8 @@ describe('human-approved Clubhouse updates', () => {
     expect(changed).toHaveBeenCalledTimes(1);
     fake.status.state = 'error';
     fake.status.error = 'Download failed';
-    expect(getAppUpdateStatus()).toMatchObject({ state: 'available', reason: 'Download failed' });
+    fake.status.errorCategory = 'download';
+    expect(getAppUpdateStatus()).toMatchObject({ state: 'available', reason: 'The update could not be downloaded.' });
     fake.unsupported = 'This build cannot update itself.';
     expect(getAppUpdateStatus()).toMatchObject({ state: 'unsupported', reason: fake.unsupported });
     off();

@@ -1,6 +1,7 @@
 import { registerGlobalTool } from '../tool-registry';
 import { requestAppUpdate } from '../../app-update-request';
 import { appLog } from '../../log-service';
+import { MobileControlError } from '../../mobile-control';
 
 export function registerAppUpdateTools(): void {
   registerGlobalTool('request_app_update', {
@@ -14,7 +15,7 @@ export function registerAppUpdateTools(): void {
       // telemetry-exempt: refusal is logged below and returned as a visible tool error.
       const message = err instanceof Error ? err.message : String(err);
       appLog('core:mcp', 'warn', 'Update request refused', { meta: { reason: message } });
-      return { content: [{ type: 'text', text: err instanceof Error && 'detail' in err && typeof err.detail === 'string' ? err.detail : message }], isError: true };
+      return { content: [{ type: 'text', text: err instanceof MobileControlError ? err.detail ?? err.code : 'The update request could not be prepared. Try again on the desktop.' }], isError: true };
     }
   }, { group: 'dispatcher', grant: { actions: ['app.update'], target: 'app', askHandledByTool: true } });
 }

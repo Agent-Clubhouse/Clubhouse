@@ -409,10 +409,27 @@ describe('auto-update-service', () => {
       const name = process.platform === 'darwin'
         ? 'applyMacUpdate' : process.platform === 'win32' ? 'applyWindowsUpdate' : 'applyLinuxUpdate';
       const handler = vi.spyOn(platformUpdateHandlers, name).mockResolvedValue(false);
-      await expect(applyUpdate(readyStatus, { requireApplied: true })).rejects.toThrow('installer could not be applied');
+      await expect(applyUpdate(readyStatus, { requireApplied: true })).rejects.toThrow('installer is missing or out of date');
       expect(mockApp.relaunch).not.toHaveBeenCalled();
       expect(mockApp.exit).not.toHaveBeenCalled();
       handler.mockRestore();
+    });
+
+    it('wraps remote installer failures in a fixed category while retaining the local cause', async () => {
+      const name = process.platform === 'darwin'
+        ? 'applyMacUpdate' : process.platform === 'win32' ? 'applyWindowsUpdate' : 'applyLinuxUpdate';
+      const cause = new Error('/Users/private-update-user/update.zip https://updates.example.invalid/private-updater-token');
+      const handler = vi.spyOn(platformUpdateHandlers, name).mockRejectedValue(cause);
+      try {
+        await expect(applyUpdate(readyStatus, { requireApplied: true })).rejects.toMatchObject({
+          message: 'The installer could not be applied. Update Clubhouse from the desktop.',
+          category: 'install', cause,
+        });
+        expect(mockApp.relaunch).not.toHaveBeenCalled();
+        expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        handler.mockRestore();
+      }
     });
 
     it.each([false, true])('reports Linux installer failure without changing desktop fallback behavior (requireApplied: %s)', async (requireApplied) => {

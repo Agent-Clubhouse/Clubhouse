@@ -1,5 +1,27 @@
 export type AppUpdateMode = 'now' | 'when_idle';
 
+export const APP_UPDATE_FAILURE_MESSAGES = {
+  check: 'The update could not be checked.',
+  download: 'The update could not be downloaded.',
+  prepare: 'The installer could not be prepared.',
+  install: 'The installer could not be applied. Update Clubhouse from the desktop.',
+  missing: 'The installer is missing or out of date. Download the update again from the desktop.',
+  restart: 'Restart failed. Request the update again.',
+  version_changed: 'A newer update became available; request again.',
+  feed: 'The update feed could not be verified. Request the update again.',
+} as const;
+export type AppUpdateFailureCategory = keyof typeof APP_UPDATE_FAILURE_MESSAGES;
+
+/** Only this fixed message crosses devices; the original failure stays in cause for local logs. */
+export class AppUpdateError extends Error {
+  readonly cause?: unknown;
+
+  constructor(readonly category: AppUpdateFailureCategory, options?: { cause?: unknown }) {
+    super(APP_UPDATE_FAILURE_MESSAGES[category]);
+    this.cause = options?.cause;
+  }
+}
+
 export interface AppUpdateApproval {
   version: string;
   workingAgents: Array<{ agentId: string; name: string }>;

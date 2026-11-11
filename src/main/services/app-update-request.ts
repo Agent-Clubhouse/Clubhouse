@@ -1,5 +1,6 @@
 import { app } from 'electron';
-import { APP_UPDATE_IDLE_WAIT_MS, type AppUpdateMode, type AppUpdateRequest, type AppUpdateStatus } from '../../shared/app-update';
+import { APP_UPDATE_FAILURE_MESSAGES, APP_UPDATE_IDLE_WAIT_MS, AppUpdateError, type AppUpdateMode, type AppUpdateRequest, type AppUpdateStatus } from '../../shared/app-update';
+import type { UpdateStatus } from '../../shared/types';
 import { GRANT_REQUEST_DETAILS_MAX, type GrantRequestAnswer } from '../../shared/grant-requests';
 import * as updater from './auto-update-service';
 import { getDispatcherState, getDispatcherPath } from './dispatcher/dispatcher-service';
@@ -21,20 +22,26 @@ const listeners = new Set<() => void>();
 let closing = false;
 let creating = false;
 
+class UpdateRequestRefused extends Error {}
+
+function publicUpdaterError(status: UpdateStatus): string | null {
+  return status.error ? APP_UPDATE_FAILURE_MESSAGES[status.errorCategory ?? 'check'] : null;
+}
+
 function emit(): void { for (const listener of listeners) listener(); }
 function clearTimer(): void { if (timer) clearTimeout(timer); timer = null; }
 
 export function getAppUpdateStatus(): AppUpdateStatus {
   const status = updater.getStatus();
   const reason = updater.getSelfUpdateUnsupportedReason();
-  const readyProblem = status.state === 'ready' ? updater.getReadyUpdateProblem() : null;
+  const readyProblem = status.state === 'ready' && updater.getReadyUpdateProblem() ? APP_UPDATE_FAILURE_MESSAGES.missing : null;
   const availableVersion = status.availableVersion && updater.isNewerVersion(status.availableVersion, app.getVersion()) ? status.availableVersion : null;
   return {
     state: reason ? 'unsupported' : status.state === 'ready' && !readyProblem ? 'ready' : status.state === 'downloading' ? 'downloading' : availableVersion ? 'available' : 'none',
     currentVersion: app.getVersion(),
     availableVersion,
     downloadProgress: Math.max(0, Math.min(100, status.downloadProgress)),
-    reason: reason ?? readyProblem ?? status.error,
+    reason: reason ?? readyProblem ?? publicUpdaterError(status),
     request: request ? { ...request } : null,
   };
 }
@@ -65,12 +72,24 @@ function closeApproval(allow: boolean): void {
   } finally { closing = false; }
 }
 
-function fail(message: string): void {
+function fail(message: string, error?: unknown): void {
   clearTimer();
   closeApproval(false);
   if (request) request = { ...request, state: 'failed', expiresAt: null, error: message };
-  appLog('update:session-resume', 'warn', 'Requested update did not restart', { meta: { reason: message } });
+  const cause = error instanceof Error && 'cause' in error ? error.cause : undefined;
+  appLog('update:session-resume', 'warn', 'Requested update did not restart', {
+    meta: {
+      reason: message,
+      ...(error !== undefined && { error: error instanceof Error ? error.stack ?? error.message : String(error) }),
+      ...(cause !== undefined && { cause: cause instanceof Error ? cause.stack ?? cause.message : String(cause) }),
+    },
+  });
   emit();
+}
+
+function failUnexpected(error: unknown): void {
+  fail(error instanceof AppUpdateError ? APP_UPDATE_FAILURE_MESSAGES[error.category]
+    : error instanceof UpdateRequestRefused ? error.message : APP_UPDATE_FAILURE_MESSAGES.restart, error);
 }
 
 function readyReason(version?: string): string | null {
@@ -80,7 +99,7 @@ function readyReason(version?: string): string | null {
   if (status.state !== 'ready' || !status.availableVersion) return 'The update is not ready to install.';
   if (version && status.availableVersion !== version) return 'The available update changed. Request it again to review the new version.';
   const problem = updater.getReadyUpdateProblem();
-  if (problem) return problem;
+  if (problem) return APP_UPDATE_FAILURE_MESSAGES.missing;
   if (!getDispatcherState().enabled) return 'Turn on the Dispatcher to request an update from your phone. You can still update from the desktop banner.';
   return null;
 }
@@ -149,7 +168,7 @@ async function restart(mode: AppUpdateMode, id: string): Promise<void> {
   if (mode === 'when_idle') {
     if (Date.now() >= Date.parse(request.expiresAt!)) { fail('Agents did not become idle within 30 minutes. Nothing was interrupted.'); return; }
     if (getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking)) {
-      timer = setTimeout(() => { void restart(mode, id).catch((err: unknown) => fail(err instanceof Error ? err.message : String(err))); }, 1000);
+      timer = setTimeout(() => { void restart(mode, id).catch(failUnexpected); }, 1000);
       timer.unref?.();
       return;
     }
@@ -160,30 +179,31 @@ async function restart(mode: AppUpdateMode, id: string): Promise<void> {
     if (mode === 'now') {
       for (const agent of getLiveAgentsForUpdate({ includePendingWork: true }).filter((agent) => agent.isWorking)) {
         if (!reviewed.has(agent.agentId) || reviewed.get(agent.agentId) !== agentRegistry.get(agent.agentId)) {
-          throw new Error('Another agent started working after this request. Request the update again to review it.');
+          throw new UpdateRequestRefused('Another agent started working after this request. Request the update again to review it.');
         }
         const interrupted = await resolveAgentForUpdate(agent.agentId, 'interrupt');
         if (interrupted.status !== 'resolved') {
-          if (reviewed.get(agent.agentId) !== agentRegistry.get(agent.agentId)) throw new Error('An agent restarted after approval. Request the update again.');
+          if (reviewed.get(agent.agentId) !== agentRegistry.get(agent.agentId)) throw new UpdateRequestRefused('An agent restarted after approval. Request the update again.');
           const stopped = await resolveAgentForUpdate(agent.agentId, 'kill');
-          if (stopped.status !== 'resolved') throw new Error(stopped.message ?? 'An agent could not be stopped. Nothing was installed.');
+          if (stopped.status !== 'resolved') throw new AppUpdateError('restart', { cause: stopped.message });
         }
       }
     }
-    if (getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking)) throw new Error('An agent is still working. Request the update again.');
+    if (getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking)) throw new UpdateRequestRefused('An agent is still working. Request the update again.');
     const changed = readyReason(request.version);
-    if (changed) throw new Error(changed);
+    if (changed) throw new UpdateRequestRefused(changed);
     const version = request.version;
     await applyUpdateRestart({ agentNames: {} }, () => {
       const reason = readyReason(version);
-      if (reason) throw new Error(reason);
-      if (getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking)) throw new Error('An agent started working before shutdown. Request the update again.');
+      if (reason) throw new UpdateRequestRefused(reason);
+      if (getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking)) throw new UpdateRequestRefused('An agent started working before shutdown. Request the update again.');
     });
     // A real successful apply exits. Returning means it failed or was cancelled locally.
-    fail(updater.getStatus().error ?? 'The updater returned without restarting. Update Clubhouse from the desktop.');
+    const status = updater.getStatus();
+    fail(publicUpdaterError(status) ?? APP_UPDATE_FAILURE_MESSAGES.restart, status.error ?? undefined);
   } catch (err) {
     // telemetry-exempt: fail logs the failure and publishes it to the person.
-    fail(err instanceof Error ? err.message : String(err));
+    failUnexpected(err);
   }
 }
 
@@ -207,7 +227,7 @@ export function answerAppUpdateRequest(requestId: string, allow: boolean, mode?:
     expiresAt: mode === 'now' ? null : new Date(Date.now() + APP_UPDATE_IDLE_WAIT_MS).toISOString() };
   emit();
   // Let the answer receipt leave before shutdown starts. The request's restarting event is still best effort.
-  timer = setTimeout(() => { void restart(mode, requestId).catch((err: unknown) => fail(err instanceof Error ? err.message : String(err))); }, 250);
+  timer = setTimeout(() => { void restart(mode, requestId).catch(failUnexpected); }, 250);
   timer.unref?.();
   return { ok: true };
 }

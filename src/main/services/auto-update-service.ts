@@ -8,6 +8,7 @@ import * as crypto from 'crypto';
 import { spawn, execFileSync } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
+import { AppUpdateError } from '../../shared/app-update';
 import { getSettings, saveSettings } from './update-settings';
 import { appLog, flush as flushLogs, flushSync as flushLogsSync } from './log-service';
 import { applyRemoteCliDenylist } from './agent-runtime/chat-version-policy';
@@ -761,7 +762,7 @@ export async function checkForUpdates(
     // A failed check (offline after sleep, a 5xx) leaves the update already downloaded
     // ready, so the banner and install-on-quit keep it (#3104).
     if (readyBefore) setState('ready', readyBefore);
-    else setState('error', { error: msg });
+    else setState('error', { error: msg, errorCategory: 'check' });
     recordCheck('failed', err);
     return status;
   }
@@ -885,7 +886,7 @@ async function downloadUpdate(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:download', 'error', `Download failed: ${msg}`);
-    setState('error', { error: msg, downloadProgress: 0 });
+    setState('error', { error: msg, downloadProgress: 0, errorCategory: 'download' });
     recordUpdateDownload({ startMs: downloadStartMs, result: 'failed', error: err });
   }
 }
@@ -982,16 +983,21 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeEx
 }
 
 async function checkWindowsApprovedVersion(releasesUrl: string, approvedVersion: string): Promise<void> {
-  const feed = await fetchText(`${releasesUrl}/RELEASES`, 64 * 1024);
+  let feed: string;
+  try {
+    feed = await fetchText(`${releasesUrl}/RELEASES`, 64 * 1024);
+  } catch (cause) {
+    throw new AppUpdateError('feed', { cause });
+  }
   let latest: string | undefined;
   for (const line of feed.trim().split(/\r?\n/)) {
     const entry = /^[a-f\d]{40}\s+(?:com\.mason-allen\.)?clubhouse-(\d+\.\d+\.\d+(?:-beta\.?\d+|rc)?)-(?:full|delta)\.nupkg\s+\d+$/i.exec(line.trim());
-    if (!entry) throw new Error('The update feed could not be verified. Request the update again.');
+    if (!entry) throw new AppUpdateError('feed');
     // electron-winstaller removes dots from NuGet prerelease labels.
     const version = entry[1].replace(/-beta(\d+)$/i, '-beta.$1');
     if (!latest || isNewerVersion(version, latest)) latest = version;
   }
-  if (latest !== approvedVersion) throw new Error('A newer update became available; request again.');
+  if (latest !== approvedVersion) throw new AppUpdateError('version_changed');
 }
 
 export async function applyWindowsUpdate(context: ApplyContext, { relaunch, beforeExit, onCommit, requireApprovedVersion }: ApplyOptions): Promise<boolean> {
@@ -1109,7 +1115,13 @@ export async function applyUpdate(updateStatus: UpdateStatus = status, options: 
   }
 
   const applyStartMs = Date.now();
-  const context = await prepareApply(updateStatus, 'update:apply');
+  let context: ApplyContext;
+  try {
+    context = await prepareApply(updateStatus, 'update:apply');
+  } catch (cause) {
+    if (!options.requireApplied) throw cause;
+    throw new AppUpdateError('prepare', { cause });
+  }
 
   setState('idle', {
     availableVersion: null,
@@ -1164,21 +1176,23 @@ export async function applyUpdate(updateStatus: UpdateStatus = status, options: 
       }
       setState('error', {
         error: 'Automatic install cancelled — use "Download manually" to install the update',
+        errorCategory: 'install',
         availableVersion: context.version,
         artifactUrl: context.artifactUrl,
       });
-      if (options.requireApplied) throw new Error('The installer could not be applied. Update Clubhouse from the desktop.');
+      if (options.requireApplied) throw new AppUpdateError('install', { cause: err });
       return;
     }
-    setState('error', { error: `Update failed: ${msg}`, availableVersion: context.version, artifactUrl: context.artifactUrl });
+    setState('error', { error: `Update failed: ${msg}`, errorCategory: err instanceof AppUpdateError ? err.category : 'install', availableVersion: context.version, artifactUrl: context.artifactUrl });
+    if (options.requireApplied && !(err instanceof AppUpdateError)) throw new AppUpdateError('install', { cause: err });
     throw err;
   }
   // No platform handler applied the update; this relaunch is the fallback.
   if (!spanRecorded) recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: false });
   if (options.requireApplied) {
     const error = 'The installer could not be applied. Update Clubhouse from the desktop.';
-    setState('error', { error, availableVersion: context.version, artifactUrl: context.artifactUrl });
-    throw new Error(error);
+    setState('error', { error, errorCategory: 'missing', availableVersion: context.version, artifactUrl: context.artifactUrl });
+    throw new AppUpdateError('missing');
   }
   app.relaunch();
   await flushBeforeExit();

@@ -22,6 +22,14 @@
       "availableVersion": "1.1.0",
       "currentVersion": "0.0.0-test",
       "downloadProgress": 0,
+      "reason": "The update could not be downloaded.",
+      "request": null,
+      "state": "available"
+    },
+    {
+      "availableVersion": "1.1.0",
+      "currentVersion": "0.0.0-test",
+      "downloadProgress": 0,
       "reason": null,
       "request": null,
       "state": "available"
@@ -104,7 +112,7 @@
       "downloadProgress": 100,
       "reason": null,
       "request": {
-        "error": "The fixture installer refused.",
+        "error": "The installer could not be prepared.",
         "expiresAt": null,
         "requestId": "grant_00000000-0000-4000-8000-000000000003",
         "state": "failed",
