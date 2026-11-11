@@ -356,9 +356,8 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
     const next = `${text.slice(0, range.start)}${replaceLinks(editable, replacements)}${text.slice(range.end)}`;
     if (next !== text) {
       const stat = await fsp.stat(full);
-      await writeFileAtomic(full, next);
       // Link maintenance is not a new fact or a freshness signal.
-      await fsp.utimes(full, stat.atimeMs / 1000, stat.mtimeMs / 1000);
+      await writeFileAtomic(full, next, stat);
       report.changed = true;
     }
   }

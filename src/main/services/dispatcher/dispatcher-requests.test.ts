@@ -175,6 +175,10 @@ describe('following the Dispatcher\'s turns (#3237)', () => {
     expect(ended$).not.toHaveBeenCalled();
     settleRequest(active, 'answer', now);
     expect(getRequest(active)?.status).toBe('done');
+    checkRequestTimeouts(now + QUIET_TIMEOUT_MS);
+    expect(getRequest(begun.request.id)?.status).toBe('timed_out');
+    expect(getRequest(active)?.status).toBe('done');
+    expect(ended$).toHaveBeenCalledWith(expect.objectContaining({ id: begun.request.id }), 'timed_out', undefined);
   });
 
   it('a request read in a turn that ends well stays under way until its outcome comes back', () => {

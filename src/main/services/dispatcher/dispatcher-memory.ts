@@ -75,11 +75,13 @@ export function memorySlug(name: string): string {
 }
 
 /** Write through a temporary file and a rename, so a reader never sees half a file. */
-export async function writeFileAtomic(file: string, content: string): Promise<void> {
+export async function writeFileAtomic(file: string, content: string, timestamps?: { atimeMs: number; mtimeMs: number }): Promise<void> {
   await fsp.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   try {
     await fsp.writeFile(tmp, content, 'utf-8');
+    // Stamp maintenance writes before publishing them, never over a later edit.
+    if (timestamps) await fsp.utimes(tmp, timestamps.atimeMs / 1000, timestamps.mtimeMs / 1000);
     await fsp.rename(tmp, file);
   } catch (err) {
     await fsp.rm(tmp, { force: true });

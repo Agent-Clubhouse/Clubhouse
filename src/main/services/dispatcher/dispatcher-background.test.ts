@@ -36,6 +36,7 @@ import {
   upkeepReviewText,
 } from './dispatcher-background';
 import { MEMORY_INDEX_CAP_BYTES, renderTopicPage } from './dispatcher-memory';
+import * as memoryFiles from './dispatcher-memory';
 import { captureEvents, type EventCapture } from '../../telemetry/__test-utils__/event-capture';
 
 const DISPATCHER = 'disp-1';
@@ -94,6 +95,7 @@ beforeEach(() => {
   install();
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   _resetDispatcherBackgroundForTesting();
   fs.rmSync(tmp, { recursive: true, force: true });
 });
@@ -237,6 +239,29 @@ describe('the upkeep gate', () => {
     expect('send' in result && result.send).toContain('topics/notes.md (confirmed)');
     install();
     expect(await runDispatcherUpkeep()).toHaveProperty('skip');
+  });
+
+  it('reviews a real agent edit made just after upkeep replaces a repaired page (part of #3218)', async () => {
+    topic('topics/checkout-fix.md', 'confirmed', 120_000);
+    topic('topics/notes.md', 'confirmed', 120_000);
+    const notes = path.join(memory, 'topics', 'notes.md');
+    fs.appendFileSync(notes, 'See [fix](Checkout%20Fix.md).\n');
+    const old = new Date(world.now - 120_000);
+    fs.utimesSync(notes, old, old);
+    fs.writeFileSync(path.join(tmp, 'dispatcher-upkeep.json'), JSON.stringify({ lastCheckedAt: world.now - 60_000 }));
+    const write = memoryFiles.writeFileAtomic;
+    vi.spyOn(memoryFiles, 'writeFileAtomic').mockImplementation(async (...args) => {
+      await write(...args);
+      if (args[0] === notes) {
+        fs.appendFileSync(notes, 'An agent added a new fact.\n');
+        const editedAt = new Date(world.now - 1_000);
+        fs.utimesSync(notes, editedAt, editedAt);
+      }
+    });
+
+    const result = await runDispatcherUpkeep();
+    expect(fs.readFileSync(notes, 'utf-8')).toContain('An agent added a new fact.');
+    expect('send' in result && result.send).toContain('topics/notes.md (confirmed)');
   });
 });
 

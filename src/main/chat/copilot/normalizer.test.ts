@@ -46,6 +46,11 @@ describe('copilot normalizer', () => {
     expect(copilotErrorCode({ errorType: 'query', message: 'No response was returned. Send your message again to retry.' })).toBe('empty_response');
     expect(copilotErrorCode({ message: 'No response was returned.' })).toBe('empty_response');
     expect(copilotErrorCode({ message: 'No response from the server' })).toBe('unknown');
+    expect(copilotErrorCode({ message: 'Provider error: No response was returned.' })).toBe('unknown');
+    expect(copilotErrorCode({ message: 'No response was returned. Invalid provider configuration.' })).toBe('unknown');
+    expect(copilotErrorCode({ statusCode: 401, errorCode: 'empty_response' })).toBe('auth_required');
+    expect(copilotErrorCode({ statusCode: 429, errorType: 'empty_response' })).toBe('rate_limited');
+    expect(copilotErrorCode({ errorType: 'context_limit', message: 'No response was returned.' })).toBe('context_overflow');
     expect(copilotErrorCode({ statusCode: 503, message: 'No response was returned.' })).toBe('service_unavailable');
   });
 

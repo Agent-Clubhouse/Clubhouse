@@ -109,6 +109,8 @@ describe('runMemoryUpkeep: timeline and links', () => {
       : page.startsWith('topics/') ? topic('unconfirmed', body) : body;
     write(page, text, 29);
     const file = path.join(root, page);
+    const seconds = (NOW.getTime() - 29 * DAY) / 1000 + 0.123456;
+    fs.utimesSync(file, seconds, seconds);
     const before = fs.statSync(file).mtimeMs;
     const report = await runMemoryUpkeep(NOW, { root });
     expect(report.linksFixed).toHaveLength(1);
