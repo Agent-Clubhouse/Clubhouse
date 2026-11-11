@@ -217,6 +217,15 @@ describe('restart-session-service', () => {
       expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions[0]).toMatchObject({ agentName: 'new-name', worktreePath: '/p/current' });
     });
 
+    it('keeps quick agents quick when a phone captures without renderer metadata', async () => {
+      vi.mocked(getProvider).mockReturnValue({ capabilities: { sessionResume: true } } as never);
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', getNativeSessionId: () => 'quick-session' } as AgentRuntime);
+      vi.mocked(getDurableConfig).mockResolvedValue(null);
+      agentRegistry.register('quick_123_abc', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
+      await captureSessionState(new Map());
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions[0]).toMatchObject({ kind: 'quick', sessionId: 'quick-session' });
+    });
+
     it('writes state file with PTY agents only', async () => {
       agentRegistry.register('darling-gazelle', {
         projectPath: '/projects/club',

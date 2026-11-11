@@ -401,6 +401,16 @@ describe('auto-update-service', () => {
       }
     });
 
+    it('never relaunches without applying an installer for a remotely approved update', async () => {
+      const name = process.platform === 'darwin'
+        ? 'applyMacUpdate' : process.platform === 'win32' ? 'applyWindowsUpdate' : 'applyLinuxUpdate';
+      const handler = vi.spyOn(platformUpdateHandlers, name).mockResolvedValue(false);
+      await expect(applyUpdate(readyStatus, { requireApplied: true })).rejects.toThrow('installer could not be applied');
+      expect(mockApp.relaunch).not.toHaveBeenCalled();
+      expect(mockApp.exit).not.toHaveBeenCalled();
+      handler.mockRestore();
+    });
+
     it('applyMacUpdate runs beforeExit before flushing and exiting on relaunch', async () => {
       const tempDir = path.join(os.tmpdir(), `clubhouse-update-before-exit-${process.pid}`);
       fs.mkdirSync(tempDir, { recursive: true });

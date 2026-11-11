@@ -66,4 +66,19 @@ describe('permission requests (#2970)', () => {
     expect(describeGrantRequests([request({ kind: 'call', actions: ['project.add'] })])).toBe('Add or open projects');
     expect(describeGrantRequests([request(), request({ requestId: 'g2' })])).toBe('Change app settings (2 requests)');
   });
+
+  it('shows an update and its interruption list with explicit restart choices, never a generic Allow', async () => {
+    const update = request({ kind: 'call', actions: ['app.update'], update: { version: '1.1.0', workingAgents: [{ agentId: 'builder', name: 'Builder' }] },
+      details: 'Working agents that Restart now would interrupt: Builder (builder).' });
+    useGrantRequestStore.getState().add(update);
+    expect(describeGrantRequests([update])).toBe('Update Clubhouse to 1.1.0');
+    expect(describeGrantRequests([request({ requestId: 'earlier' }), update])).toBe('Update Clubhouse to 1.1.0 (2 requests)');
+    render(<GrantRequestList agentId="a1" agentName="Dispatcher" />);
+    expect(screen.getByText('Update Clubhouse to 1.1.0')).toBeInTheDocument();
+    expect(screen.getByText(/Working agents.*Builder/)).toBeInTheDocument();
+    expect(screen.queryByTestId('grant-request-allow')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Restart when idle' }));
+    await waitFor(() => expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledWith('g1', true, 'when_idle'));
+  });
 });

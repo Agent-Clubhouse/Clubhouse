@@ -90,6 +90,7 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   'project.configure': { group: 'projects', verb: 'change the defaults of', noun: 'project' },
   'settings.app.read': { group: 'projects', verb: 'see app settings', noun: 'app' },
   'settings.app.write': { group: 'projects', verb: 'change app settings', noun: 'app' },
+  'app.update': { group: 'projects', verb: 'request a Clubhouse update for your approval', noun: 'app' },
   'device.read': { group: 'projects', verb: 'see your devices', noun: 'app' },
   'device.manage': { group: 'projects', verb: 'rename, reconnect or remove your devices', noun: 'app' },
   'agent.read': { group: 'tracking', verb: 'see the status and output of', noun: 'agent' },

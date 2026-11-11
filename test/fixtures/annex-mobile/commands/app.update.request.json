@@ -1,0 +1,143 @@
+{
+  "cases": [
+    {
+      "name": "update_unsupported (development build)",
+      "request": {
+        "commandId": "cmd_229",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.request",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_229",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_unsupported",
+            "message": "This is a development build. Update it from the desktop."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "dispatcher_unavailable (use the desktop banner instead)",
+      "request": {
+        "commandId": "cmd_230",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.request",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_230",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "dispatcher_unavailable",
+            "message": "Turn on the Dispatcher to request an update from your phone. You can still update from the desktop banner."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "update_not_ready (nothing downloaded)",
+      "request": {
+        "commandId": "cmd_231",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.request",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_231",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_not_ready",
+            "message": "Wait until the update is ready to install."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted request (only asks the person)",
+      "request": {
+        "commandId": "cmd_232",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.request",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_232",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "error": null,
+            "expiresAt": "2027-01-16T08:00:00.000Z",
+            "requestId": "grant_00000000-0000-4000-8000-000000000002",
+            "state": "pending_approval",
+            "version": "1.1.0"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "update_request_active (one request at a time)",
+      "request": {
+        "commandId": "cmd_233",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.request",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_233",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_request_active",
+            "message": "An update request is already in progress."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted new request after cancellation",
+      "request": {
+        "commandId": "cmd_238",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.request",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_238",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "error": null,
+            "expiresAt": "2027-01-16T08:00:00.000Z",
+            "requestId": "grant_00000000-0000-4000-8000-000000000003",
+            "state": "pending_approval",
+            "version": "1.1.0"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    }
+  ],
+  "type": "app.update.request"
+}

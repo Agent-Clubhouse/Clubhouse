@@ -6,7 +6,7 @@
         "answer": "allow_once",
         "commandId": "cmd_219",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000006",
+        "requestId": "grant_00000000-0000-4000-8000-000000000008",
         "type": "grant.answer",
         "version": 1
       },
@@ -17,7 +17,7 @@
           "result": {
             "answer": "allow_once",
             "kind": "call",
-            "requestId": "grant_00000000-0000-4000-8000-000000000006"
+            "requestId": "grant_00000000-0000-4000-8000-000000000008"
           },
           "status": "completed",
           "version": 1
@@ -31,7 +31,7 @@
         "answer": "allow_lasting",
         "commandId": "cmd_220",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000007",
+        "requestId": "grant_00000000-0000-4000-8000-000000000009",
         "type": "grant.answer",
         "version": 1
       },
@@ -42,7 +42,7 @@
           "result": {
             "answer": "allow_lasting",
             "kind": "grant",
-            "requestId": "grant_00000000-0000-4000-8000-000000000007"
+            "requestId": "grant_00000000-0000-4000-8000-000000000009"
           },
           "status": "completed",
           "version": 1
@@ -56,7 +56,7 @@
         "answer": "decline",
         "commandId": "cmd_221",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000008",
+        "requestId": "grant_00000000-0000-4000-8000-000000000010",
         "type": "grant.answer",
         "version": 1
       },
@@ -67,7 +67,7 @@
           "result": {
             "answer": "decline",
             "kind": "call",
-            "requestId": "grant_00000000-0000-4000-8000-000000000008"
+            "requestId": "grant_00000000-0000-4000-8000-000000000010"
           },
           "status": "completed",
           "version": 1
@@ -81,7 +81,7 @@
         "answer": "allow_lasting",
         "commandId": "cmd_222",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000009",
+        "requestId": "grant_00000000-0000-4000-8000-000000000011",
         "type": "grant.answer",
         "version": 1
       },
@@ -105,7 +105,7 @@
         "answer": "allow_once",
         "commandId": "cmd_223",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000010",
+        "requestId": "grant_00000000-0000-4000-8000-000000000012",
         "type": "grant.answer",
         "version": 1
       },
@@ -129,7 +129,7 @@
         "answer": "allow_lasting",
         "commandId": "cmd_224",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000007",
+        "requestId": "grant_00000000-0000-4000-8000-000000000009",
         "type": "grant.answer",
         "version": 1
       },
@@ -153,7 +153,7 @@
         "answer": "allow_lasting",
         "commandId": "cmd_225",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000010",
+        "requestId": "grant_00000000-0000-4000-8000-000000000012",
         "type": "grant.answer",
         "version": 1
       },
@@ -177,7 +177,7 @@
         "answer": "decline",
         "commandId": "cmd_226",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000011",
+        "requestId": "grant_00000000-0000-4000-8000-000000000013",
         "type": "grant.answer",
         "version": 1
       },
@@ -201,7 +201,7 @@
         "answer": "decline",
         "commandId": "cmd_227",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000011",
+        "requestId": "grant_00000000-0000-4000-8000-000000000013",
         "type": "grant.answer",
         "version": 1
       },
@@ -225,7 +225,7 @@
         "answer": "allow_once",
         "commandId": "cmd_228",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "requestId": "grant_00000000-0000-4000-8000-000000000012",
+        "requestId": "grant_00000000-0000-4000-8000-000000000014",
         "type": "grant.answer",
         "version": 1
       },
@@ -241,6 +241,82 @@
           "version": 1
         },
         "status": 404
+      }
+    },
+    {
+      "name": "grant_answer_failed (generic Allow from an older phone does not install)",
+      "request": {
+        "answer": "allow_once",
+        "commandId": "cmd_234",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000002",
+        "type": "grant.answer",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_234",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "grant_answer_failed",
+            "message": "Choose Restart now or Restart when idle to approve this update."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted update approval (wait for idle)",
+      "request": {
+        "answer": "allow_once",
+        "commandId": "cmd_235",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000002",
+        "type": "grant.answer",
+        "updateMode": "when_idle",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_235",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answer": "allow_once",
+            "kind": "call",
+            "requestId": "grant_00000000-0000-4000-8000-000000000002"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted update approval (restart now)",
+      "request": {
+        "answer": "allow_once",
+        "commandId": "cmd_239",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000003",
+        "type": "grant.answer",
+        "updateMode": "now",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_239",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "answer": "allow_once",
+            "kind": "call",
+            "requestId": "grant_00000000-0000-4000-8000-000000000003"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
       }
     }
   ],

@@ -51,6 +51,8 @@ import {
   type GrantRequestPlaces,
 } from './mobile-grant-requests';
 import { onGrantRequestsChanged } from './grant-requests';
+import { getAppUpdateStatus, onAppUpdateChanged, requestAppUpdate, cancelAppUpdate } from './app-update-request';
+import { APP_UPDATE_CHANGED_EVENT, APP_UPDATE_IDLE_WAIT_MS } from '../../shared/app-update';
 import { onDisposeRequestsChanged } from './helper-dispose-requests';
 import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
 import { sniffImage } from './agent-runtime/chat-attachments';
@@ -263,6 +265,7 @@ let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
 let unsubHelperRequests: (() => void) | null = null;
 let unsubDispatcher: (() => void) | null = null;
+let unsubAppUpdate: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -295,6 +298,8 @@ function releaseMtlsLockIfLastClient(hasMtlsClient: boolean): boolean {
 
 /** Unsubscribe all event bus listeners to prevent accumulation on restart cycles. */
 function unsubscribeEventBus(): void {
+  unsubAppUpdate?.();
+  unsubAppUpdate = null;
   unsubPtyData?.();
   unsubHookEvent?.();
   unsubChatEvent?.();
@@ -1290,6 +1295,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     helperRequests: buildMobileHelperRequests(projects, durablesByProject),
     // Clubhouse permission requests waiting on the user (#3205); gated by capabilities.grantRequests.
     grantRequests: buildMobileGrantRequests(grantRequestPlaces(projects)),
+    appUpdate: getAppUpdateStatus(),
     // Moves when presets or a cell's state change, so an open or cached page knows to refetch (#2671).
     helperRoutingRevision: helperRoutingRevision(),
     lastSeq: eventReplay.getLastSeq(),
@@ -3601,6 +3607,9 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     // phone, or a desktop or phone in its Annex Network) sees and answers them as Needs you does.
     grantRequests: { version: 1, snapshotField: 'grantRequests', events: { opened: GRANT_REQUEST_OPENED_EVENT, resolved: GRANT_REQUEST_RESOLVED_EVENT },
       commands: ['grant.answer'], answers: MOBILE_GRANT_ANSWERS },
+    appUpdate: { version: 1, snapshotField: 'appUpdate', event: APP_UPDATE_CHANGED_EVENT,
+      commands: ['app.update.request', 'app.update.cancel'], approvalCommand: 'grant.answer', approvalModeField: 'updateMode',
+      modes: ['now', 'when_idle'], idleWaitMs: APP_UPDATE_IDLE_WAIT_MS },
     chatControls: { version: 1 },
     // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
     slashCommands: { version: 1, snapshotField: 'slashCommands', event: 'commands_available', maxCommands: MOBILE_SLASH_COMMANDS_MAX },
@@ -3989,6 +3998,8 @@ function localizeCommandAgent(command: MobileCommand): MobileCommand {
 async function runMobileCommand(input: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
   assertAuthorized();
   const command = localizeCommandAgent(input);
+  if (command.type === 'app.update.request') return requestAppUpdate(assertAuthorized);
+  if (command.type === 'app.update.cancel') return cancelAppUpdate(command.requestId);
   if (command.type === 'helperRouting.update') return runHelperRoutingUpdate(command, assertAuthorized, findProjectById);
   if (command.type === 'dispatcher.setEnabled') {
     // onDispatcherChanged broadcasts dispatcher:changed and refreshes the snapshot.
@@ -5258,6 +5269,10 @@ export function start(): void {
   // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
   const dispatcherChangedPayload = (state: ReturnType<typeof getDispatcherState>) => ({ ...dispatcherChange(state), ...dispatcherOffFields(state, dispatcherAgentView) });
   let lastDispatcherChange = JSON.stringify(dispatcherChangedPayload(getDispatcherState()));
+  unsubAppUpdate = onAppUpdateChanged(() => {
+    broadcastAndBuffer(APP_UPDATE_CHANGED_EVENT, getAppUpdateStatus());
+    broadcastSnapshotRefresh();
+  });
   unsubDispatcher = onDispatcherChanged((state) => {
     const change = dispatcherChangedPayload(state);
     const key = JSON.stringify(change);

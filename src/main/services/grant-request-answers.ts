@@ -15,7 +15,7 @@ import { GRANT_ACTION_LABELS } from '../../shared/agent-grant-changes';
 import type { GrantRequest, GrantRequestAnswer } from '../../shared/grant-requests';
 import { setAgentGrant } from './agent-grants-service';
 import { deliverHelperUpdate } from './clubhouse-mcp/tools/helper-delivery';
-import { finishGrantAnswer, grantRequestKey, restoreGrantRequest, takeGrantRequest } from './grant-requests';
+import { finishGrantAnswer, grantRequestKey, peekGrantRequest, restoreGrantRequest, takeGrantRequest } from './grant-requests';
 import { appLog } from './log-service';
 import { recordGrantRequest } from './grant-telemetry';
 import { currentSettingsOrigin } from './settings-audit';
@@ -39,7 +39,13 @@ function what(request: GrantRequest): string {
   return `${GRANT_ACTION_LABELS[action] ?? action} (${action}) on ${request.where}`;
 }
 
-export async function answerGrantRequest(requestId: string, allow: boolean): Promise<GrantRequestAnswer> {
+export async function answerGrantRequest(requestId: string, allow: boolean, updateMode?: import('../../shared/app-update').AppUpdateMode, assertAuthorized?: () => void): Promise<GrantRequestAnswer> {
+  if (peekGrantRequest(requestId)?.update) {
+    const { answerAppUpdateRequest } = await import('./app-update-request');
+    assertAuthorized?.();
+    return answerAppUpdateRequest(requestId, allow, updateMode);
+  }
+  if (updateMode !== undefined) return { ok: false, error: 'This request is not an update approval.' };
   // Used up before anything is saved, so a second answer, or the expiry, can't land meanwhile.
   const key = grantRequestKey(requestId);
   const request = takeGrantRequest(requestId, allow);

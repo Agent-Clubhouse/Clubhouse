@@ -22,6 +22,22 @@
         "path": "/api/v1/mobile/agents/state",
         "version": 1
       },
+      "appUpdate": {
+        "approvalCommand": "grant.answer",
+        "approvalModeField": "updateMode",
+        "commands": [
+          "app.update.request",
+          "app.update.cancel"
+        ],
+        "event": "app_update:changed",
+        "idleWaitMs": 1800000,
+        "modes": [
+          "now",
+          "when_idle"
+        ],
+        "snapshotField": "appUpdate",
+        "version": 1
+      },
       "attachments": {
         "imageTypes": [
           "image/png",
@@ -68,7 +84,9 @@
         "dispatcher.update",
         "dispatcher.setModels",
         "dispatcher.clearChat",
-        "dispatcher.forgetEverything"
+        "dispatcher.forgetEverything",
+        "app.update.request",
+        "app.update.cancel"
       ],
       "contextWindow": {
         "version": 1

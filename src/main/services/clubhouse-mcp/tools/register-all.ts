@@ -25,6 +25,7 @@ import { registerGrantRequestTools } from './grant-request-tools';
 import { registerAgentCardTools } from './agent-card-tools';
 import { registerDeviceTools } from './device-tools';
 import { registerProjectAddTools } from './project-add-tools';
+import { registerAppUpdateTools } from './app-update-tools';
 
 export function registerClubhouseMcpTools(): void {
   registerAgentTools();
@@ -49,4 +50,5 @@ export function registerClubhouseMcpTools(): void {
   registerAgentCardTools();
   registerDeviceTools();
   registerProjectAddTools();
+  registerAppUpdateTools();
 }

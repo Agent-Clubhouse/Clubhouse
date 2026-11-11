@@ -209,14 +209,14 @@
       "request": {
         "agentId": "durable_term",
         "commandId": "cmd_full",
-        "epoch": "00000000-0000-4000-8000-000000000005",
+        "epoch": "00000000-0000-4000-8000-000000000007",
         "type": "agent.stop",
         "version": 1
       },
       "response": {
         "body": {
           "commandId": "cmd_full",
-          "epoch": "00000000-0000-4000-8000-000000000005",
+          "epoch": "00000000-0000-4000-8000-000000000007",
           "error": {
             "code": "command_capacity",
             "message": "command_capacity"

@@ -71,6 +71,15 @@ describe('the Dispatcher\'s defaults (#3050, #3034)', () => {
     expect(mode(dispatcher, 'settings.app.write', { kind: 'app' })).toBe('ask');
   });
 
+  it('only the Dispatcher gets a default update grant, and it asks first', () => {
+    expect(mode(dispatcher, 'app.update', { kind: 'app' })).toBe('ask');
+    for (const facts of [
+      { dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: true, orchestrates: true, crossProject: true },
+      { dispatcher: true, dispatcherChat: true, helper: false, orchestrates: false, crossProject: false },
+    ]) expect(defaultGrants(facts).some((g) => g.action === 'app.update')).toBe(false);
+  });
+
   it('asks first to delete any agent; no other agent deletes one outside its helpers (#3182)', () => {
     expect(mode(dispatcher, 'agent.dispose', { kind: 'any' })).toBe('ask');
     for (const facts of [

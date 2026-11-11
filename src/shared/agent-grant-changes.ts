@@ -313,6 +313,7 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'template.push': 'Push templates to agents',
   'settings.app.read': 'See app settings',
   'settings.app.write': 'Change app settings',
+  'app.update': 'Update Clubhouse',
   'action.read': 'See Actions',
   'action.write': 'Change Actions',
   'action.run': 'Run Actions',

@@ -68,9 +68,24 @@ const W = vi.hoisted(() => ({
   // Lasting grants a phone's Allow saved (#3205), and whether saving one fails.
   grantSaves: [] as unknown[],
   grantSaveFails: false,
+  updateStatus: { state: 'idle', availableVersion: null, downloadProgress: 0, error: null } as import('../../shared/types').UpdateStatus,
+  updateUnsupported: 'This is a development build. Update it from the desktop.' as string | null,
+  updateListeners: new Set<() => void>(),
+  updateWorking: [] as import('../../shared/types').LiveAgentInfo[],
+  updateApply: vi.fn(async () => { throw new Error('The fixture installer refused.'); }),
 }));
 const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
 const NOW_FOR_MOCKS = vi.hoisted(() => 1_800_000_000_000);
+
+vi.mock('./auto-update-service', async (original) => ({
+  ...await original<typeof import('./auto-update-service')>(),
+  getStatus: () => ({ ...W.updateStatus }),
+  getSelfUpdateUnsupportedReason: () => W.updateUnsupported,
+  getReadyUpdateProblem: () => null,
+  onStatusChanged: (l: () => void) => { W.updateListeners.add(l); return () => W.updateListeners.delete(l); },
+}));
+vi.mock('./restart-session-service', () => ({ getLiveAgentsForUpdate: () => W.updateWorking }));
+vi.mock('./update-restart-service', () => ({ applyUpdateRestart: W.updateApply, resolveAgentForUpdate: vi.fn() }));
 
 vi.mock('./dispatcher/dispatcher-service', () => {
   const config = () => (W.durables[DISPATCHER_PATH] ?? [])[0] ?? null;
@@ -591,6 +606,7 @@ import * as eventReplay from './annex-event-replay';
 import { recordStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
 import { listDisposeRequests, recordDisposeRequest, _resetDisposeRequestsForTesting } from './helper-dispose-requests';
 import { callKey, dropGrantRequestsFor, recordGrantRequest, _resetGrantRequestsForTesting } from './grant-requests';
+import { _resetAppUpdateForTesting } from './app-update-request';
 import { GRANT_REQUEST_TTL_MS } from '../../shared/grant-requests';
 import { getAgentRuntime, registerChatRuntime, unregisterChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 import { getDispatcherState } from './dispatcher/dispatcher-service';
@@ -3247,6 +3263,62 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     events.push(seq(resolved().find((f) => f.payload.outcome === 'withdrawn')));
     fixtures.set('grant-request-events.json', { direction: 'desktop-to-phone',
       note: 'seq is the replay sequence; a snapshot follows each, with the row. opened never carries the arguments. outcome: answered (from any device), expired, or withdrawn (its agent was deleted).', frames: events });
+    W.dispatcher.enabled = false;
+  });
+
+  it('Clubhouse updates: status, explicit human approval, cancellation and install failure', async () => {
+    resetWorld();
+    _resetAppUpdateForTesting({ keepListeners: true });
+    W.updateApply.mockRejectedValue(new Error('The fixture installer refused.'));
+    const ws = await connect();
+    ws.send.mockClear();
+    const statuses: unknown[] = [];
+    const status = async () => {
+      const snapshot = frames(await connect()).find((f) => f.type === 'snapshot').payload;
+      statuses.push(snapshot.appUpdate);
+      return snapshot;
+    };
+    const publish = () => { for (const listener of W.updateListeners) listener(); };
+    await status();
+    await command('update_unsupported (development build)', { type: 'app.update.request' });
+    W.updateUnsupported = null;
+    publish();
+    await status();
+    await command('dispatcher_unavailable (use the desktop banner instead)', { type: 'app.update.request' });
+    W.dispatcher.enabled = true;
+    await command('update_not_ready (nothing downloaded)', { type: 'app.update.request' });
+    W.updateStatus = { ...W.updateStatus, state: 'checking', availableVersion: '1.1.0' };
+    publish(); await status();
+    W.updateStatus = { ...W.updateStatus, state: 'downloading', downloadProgress: 42.5 };
+    publish(); await status();
+    W.updateStatus = { ...W.updateStatus, state: 'ready', downloadProgress: 100 };
+    W.updateWorking = [{ agentId: 'durable_chat', projectPath: APP, orchestrator: 'claude-code', runtime: 'chat', isWorking: true, lastActivity: null, resumeStrategy: 'auto' }];
+    publish(); await status();
+    const asked = await command('accepted request (only asks the person)', { type: 'app.update.request' });
+    const id = asked.body.result.requestId;
+    const pending = await status();
+    fixtures.set('snapshot-app-update-approval.json', { direction: 'desktop-to-phone', appUpdate: pending.appUpdate, grantRequest: pending.grantRequests.find((r: { requestId: string }) => r.requestId === id) });
+    await command('update_request_active (one request at a time)', { type: 'app.update.request' });
+    await command('grant_answer_failed (generic Allow from an older phone does not install)', { type: 'grant.answer', requestId: id, answer: 'allow_once' });
+    await command('accepted update approval (wait for idle)', { type: 'grant.answer', requestId: id, answer: 'allow_once', updateMode: 'when_idle' });
+    await status();
+    await command('accepted cancel (nothing interrupted)', { type: 'app.update.cancel', requestId: id });
+    await status();
+    await command('update_request_not_found', { type: 'app.update.cancel', requestId: 'missing' });
+    W.updateWorking = [];
+    const next = await command('accepted new request after cancellation', { type: 'app.update.request' });
+    await command('accepted update approval (restart now)', { type: 'grant.answer', requestId: next.body.result.requestId, answer: 'allow_once', updateMode: 'now' });
+    await command('update_restart_started', { type: 'app.update.cancel', requestId: next.body.result.requestId });
+    await status();
+    await eventually(() => expect(W.updateApply).toHaveBeenCalledTimes(1));
+    await status();
+    fixtures.set('app-update-statuses.json', { direction: 'desktop-to-phone', field: 'appUpdate', values: statuses });
+    fixtures.set('app-update-events.json', { direction: 'desktop-to-phone',
+      note: 'The payload replaces snapshot.appUpdate. seq is the normal replay sequence; shown here as 1000. Applying is faked and fails without restarting.',
+      frames: frames(ws).filter((f) => f.type === 'app_update:changed').map((f) => ({ ...f, seq: 1000 })) });
+    W.updateStatus = { ...W.updateStatus, state: 'idle', availableVersion: null, downloadProgress: 0 };
+    W.updateUnsupported = 'This is a development build. Update it from the desktop.';
+    _resetAppUpdateForTesting({ keepListeners: true });
     W.dispatcher.enabled = false;
   });
 

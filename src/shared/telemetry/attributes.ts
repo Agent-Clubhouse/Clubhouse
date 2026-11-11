@@ -563,6 +563,7 @@ export const ATTR = {
     // settings reads (#2653)
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
     'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
+    'request_app_update',
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'set_connection_tools',
     // orchestration: connection tools (#2230)

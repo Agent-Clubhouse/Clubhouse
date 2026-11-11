@@ -97,6 +97,7 @@ export function toMobileGrantRequest(request: GrantRequest, places: GrantRequest
   if (!place) return null;
   return {
     requestId: request.requestId,
+    ...(request.update && { update: request.update }),
     kind: request.kind,
     projectId: place.projectId,
     agent: { agentId: place.agentId, name: request.agentName },
@@ -152,8 +153,8 @@ export interface GrantCommandResult {
 
 /** Run `grant.answer`. Errors are MobileControlErrors for the receipt. */
 export async function runGrantCommand(command: GrantCommand, places: GrantRequestPlaces, deps: GrantCommandDeps): Promise<GrantCommandResult> {
-  const { requestId, answer } = command;
-  // From here to the answer taking the request nothing waits, so no other answer or expiry lands in between.
+  const { requestId, answer, updateMode } = command;
+  // The answer rechecks the row and authorization if loading the update service yields.
   const request = peekGrantRequest(requestId);
   const row = request ? toMobileGrantRequest(request, places) : null;
   // A device answers only what it could have been shown.
@@ -163,11 +164,14 @@ export async function runGrantCommand(command: GrantCommand, places: GrantReques
       ? 'This request is for one call. Allow it once, or decline it.'
       : 'This request adds a lasting permission. Allow or decline it.');
   }
+  if (updateMode !== undefined && (!request.update || answer !== 'allow_once')) {
+    throw new MobileControlError('grant_answer_not_offered', 409, 'rejected', 'A restart choice is only for allowing an update request once.');
+  }
   deps.assertAuthorized();
-  const result = await answerGrantRequest(requestId, answer !== 'decline');
+  const result = await answerGrantRequest(requestId, answer !== 'decline', updateMode, deps.assertAuthorized);
   if (result.ok === false) {
     // Put back when saving the permission failed, unless its agent went or asked again meanwhile.
-    if (peekGrantRequest(requestId)) throw new MobileControlError('grant_answer_failed', 409, 'rejected', result.error);
+    if (request.update || peekGrantRequest(requestId)) throw new MobileControlError('grant_answer_failed', 409, 'rejected', result.error);
     throw new MobileControlError('grant_request_not_found', 404, 'rejected', GONE);
   }
   return { requestId, kind: request.kind, answer };

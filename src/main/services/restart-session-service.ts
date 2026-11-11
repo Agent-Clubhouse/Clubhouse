@@ -114,7 +114,7 @@ export async function captureSessionState(
       sessionStarted: sessionId ? true : sessionStarted,
       resumeStrategy: canResume ? 'auto' : 'manual',
       worktreePath,
-      kind: meta?.kind || 'durable',
+      kind: meta?.kind || (!config && agentId.startsWith('quick_') ? 'quick' : 'durable'),
       // For display after the restart only. The resume queue must not send it
       // to the resumed CLI, which would run it again as a new turn (#2074).
       mission: meta?.mission,

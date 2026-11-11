@@ -102,6 +102,8 @@ let status: UpdateStatus = {
 };
 
 let checkTimer: ReturnType<typeof setInterval> | null = null;
+const statusListeners = new Set<() => void>();
+let linuxSelfUpdateSupported: boolean | undefined;
 // Which Squirrel feed holds the version the last check picked. A preview-channel
 // user can be offered a stable build, which the preview feed may not carry.
 let squirrelFeedIsPreview: boolean | null = null;
@@ -364,6 +366,7 @@ export function buildMacQuitUpdateScript(
 }
 
 function broadcastStatus(): void {
+  for (const listener of statusListeners) listener();
   const wins = BrowserWindow.getAllWindows();
   for (const win of wins) {
     try {
@@ -734,6 +737,7 @@ export async function checkForUpdates(
 
     recordCheck('available');
     // macOS/Linux: download the artifact ourselves
+    setState('checking', { availableVersion: manifest.version, artifactUrl: artifact.url, error: null, downloadProgress: 0 });
     await downloadUpdate(manifest.version, manifest.releaseNotes || null, manifest.releaseMessage || null, artifact);
     // downloadUpdate reports its own failure as `error`. An older update still on disk stays
     // ready; a failed one for the same version may have removed that very file, so not then.
@@ -1072,7 +1076,7 @@ export async function applyPlatformUpdate(
   return false;
 }
 
-export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<void> {
+export async function applyUpdate(updateStatus: UpdateStatus = status, options: { requireApplied?: boolean } = {}): Promise<void> {
   if (updateStatus.state !== 'ready') {
     throw new Error('No update ready to apply');
   }
@@ -1140,6 +1144,11 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
   }
   // No platform handler applied the update; this relaunch is the fallback.
   if (!spanRecorded) recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: false });
+  if (options.requireApplied) {
+    const error = 'The installer could not be applied. Update Clubhouse from the desktop.';
+    setState('error', { error, availableVersion: context.version, artifactUrl: context.artifactUrl });
+    throw new Error(error);
+  }
   app.relaunch();
   await flushBeforeExit();
   app.exit(0);
@@ -1384,8 +1393,44 @@ export function getStatus(): UpdateStatus {
   return { ...status };
 }
 
+export function onStatusChanged(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => { statusListeners.delete(listener); };
+}
+
+/** Whether this installation can use the existing self-updater, without its relaunch-only fallback. */
+export function getSelfUpdateUnsupportedReason(): string | null {
+  if (!app.isPackaged) return 'This is a development build. Update it from the desktop.';
+  if (process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE === '1') return 'Updates are disabled for this build.';
+  if (!/^\d+\.\d+\.\d+(?:-beta\.\d+|rc)?$/.test(app.getVersion()) || app.getName().toLowerCase() !== 'clubhouse') {
+    return 'This build cannot update itself. Install a release build from the desktop.';
+  }
+  if (process.platform === 'darwin') {
+    return /\/Contents\/MacOS\/[^/]+$/.test(app.getPath('exe')) ? null : 'This installation is not an updatable Mac app.';
+  }
+  if (process.platform === 'win32') {
+    return fs.existsSync(getSquirrelUpdateExePath()) ? null : 'This installation has no updater. Reinstall Clubhouse from the desktop.';
+  }
+  if (process.platform === 'linux' && (linuxSelfUpdateSupported ??= detectLinuxPackageFormat() !== 'unknown')) return null;
+  return 'This installation needs a manual update from the desktop.';
+}
+
+/** Remote approvals must not reach applyUpdate's relaunch-only fallback. */
+export function getReadyUpdateProblem(): string | null {
+  if (status.state !== 'ready' || !status.availableVersion || !isNewerVersion(status.availableVersion, app.getVersion())) {
+    return 'The update is not ready to install.';
+  }
+  if (process.platform !== 'win32') {
+    const extension = status.downloadPath ? path.extname(status.downloadPath) : '';
+    const supported = process.platform === 'darwin' ? extension === '.zip' : extension === '.deb' || extension === '.rpm';
+    if (!supported || !status.downloadPath || !fs.existsSync(status.downloadPath)) return 'The downloaded installer is missing or cannot be applied. Download the update again from the desktop.';
+  }
+  return null;
+}
+
 export function _setStatusForTesting(nextStatus: UpdateStatus): void {
   status = { ...nextStatus };
+  linuxSelfUpdateSupported = undefined;
 }
 
 /**

@@ -297,6 +297,9 @@ vi.stubGlobal('clubhouse', {
     sendToolResult: noop,
   },
   app: {
+    getAppUpdateRequest: async () => null,
+    cancelAppUpdateRequest: asyncNoop,
+    onAppUpdateRequestChanged: () => noop,
     openExternalUrl: asyncNoop,
     getNotificationSettings: async () => ({ enabled: true }),
     saveNotificationSettings: asyncNoop,

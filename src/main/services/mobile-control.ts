@@ -44,7 +44,9 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
   'helper.decline': ['requestId'],
-  'grant.answer': ['requestId', 'answer'],
+  'grant.answer': ['requestId', 'answer', 'updateMode'],
+  'app.update.request': [],
+  'app.update.cancel': ['requestId'],
   'quick.dismiss': ['projectId', 'agentId'],
   'quick.clear': ['projectId'],
   'dispatcher.setEnabled': ['enabled'],
@@ -55,7 +57,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'helperRouting.update': ['revision', 'scope', 'projectId', 'cells', 'reset', 'auto', 'copilotAuto'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
-const OPTIONAL = new Set(['reviewedDigest', 'delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped']);
+const OPTIONAL = new Set(['reviewedDigest', 'delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped', 'updateMode']);
 const ROUTING_OPTIONAL = new Set(['projectId', 'auto', 'copilotAuto']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 /** Commands whose fields are all optional, with at least one set: Settings > Dispatcher's (#3206). */
@@ -109,6 +111,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
     else if (key === 'effort') { if (v !== null && !text(v, 64)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'level' || key === 'access') { if (!(PERMISSION_LEVELS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
     else if (key === 'answer') { if (!(MOBILE_GRANT_ANSWERS as readonly unknown[]).includes(v)) throw new MobileControlError('invalid_command', 400); }
+    else if (key === 'updateMode') { if (v !== 'now' && v !== 'when_idle') throw new MobileControlError('invalid_command', 400); }
     else if (key === 'runtime') { if (!['default', 'chat', 'terminal'].includes(v as string)) throw new MobileControlError('invalid_command', 400); }
     else if (!text(v, ['text', 'message', 'prompt'].includes(key) ? 65536 : key === 'emoji' ? 16 : 256)) throw new MobileControlError('invalid_command', 400);
   }

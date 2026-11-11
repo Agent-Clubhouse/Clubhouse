@@ -14,6 +14,9 @@ Object.defineProperty(globalThis, 'window', {
         saveUpdateSettings: vi.fn().mockResolvedValue(undefined),
         checkForUpdates: vi.fn().mockResolvedValue({}),
         getUpdateStatus: vi.fn().mockResolvedValue({}),
+        getAppUpdateRequest: vi.fn().mockResolvedValue(null),
+        cancelAppUpdateRequest: vi.fn(),
+        onAppUpdateRequestChanged: vi.fn().mockReturnValue(vi.fn()),
         applyUpdate: vi.fn().mockResolvedValue(undefined),
         getLiveAgentsForUpdate: vi.fn().mockResolvedValue([]),
         confirmUpdateRestart: vi.fn().mockResolvedValue(undefined),
@@ -60,6 +63,8 @@ Object.defineProperty(globalThis, 'window', {
 });
 
 function resetStores() {
+  vi.mocked(window.clubhouse.app.getAppUpdateRequest).mockResolvedValue(null);
+  vi.mocked(window.clubhouse.app.onAppUpdateRequestChanged).mockReturnValue(vi.fn());
   useUpdateStore.setState({
     status: {
       state: 'idle',
@@ -94,6 +99,19 @@ describe('UpdateBanner', () => {
   it('renders nothing when state is idle', () => {
     const { container } = render(<UpdateBanner />);
     expect(container.innerHTML).toBe('');
+  });
+
+  it('shows an approved idle wait and lets the person cancel it without restarting', async () => {
+    const pending = { requestId: 'update-1', state: 'waiting_for_idle' as const, version: '1.1.0', expiresAt: '2026-11-11T12:30:00Z', error: null };
+    vi.mocked(window.clubhouse.app.getAppUpdateRequest).mockResolvedValueOnce(pending);
+    vi.mocked(window.clubhouse.app.cancelAppUpdateRequest).mockResolvedValueOnce({ ...pending, state: 'cancelled' });
+    render(<UpdateBanner />);
+    const cancel = await screen.findByRole('button', { name: 'Cancel update' });
+    expect(screen.getByRole('status')).toHaveTextContent('up to 30 minutes');
+    await act(async () => { fireEvent.click(cancel); });
+    expect(window.clubhouse.app.cancelAppUpdateRequest).toHaveBeenCalledWith('update-1');
+    expect(screen.queryByRole('button', { name: 'Cancel update' })).not.toBeInTheDocument();
+    expect(window.clubhouse.app.confirmUpdateRestart).not.toHaveBeenCalled();
   });
 
   it('renders nothing when state is checking', () => {
