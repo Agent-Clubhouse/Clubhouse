@@ -76,4 +76,24 @@ describe('quick run completion events', () => {
     vi.setSystemTime(Date.now() + 1);
     expect(knownQuickAgents().has('quick')).toBe(false);
   });
+
+  it('expires finished identities without another lookup while retaining live runs', () => {
+    const finished = beginQuickAgentRun(start);
+    const identities = knownQuickAgents();
+    finishQuickAgentRun(finished, 'completed');
+    vi.advanceTimersByTime(60_000);
+    const later = beginQuickAgentRun({ ...start, agentId: 'later' });
+    finishQuickAgentRun(later, 'completed');
+    beginQuickAgentRun({ ...start, agentId: 'live' });
+
+    vi.advanceTimersByTime(MAX_DELAY_MINUTES * 60_000 - 60_000 + 1);
+    expect(identities.has('quick')).toBe(false);
+    expect(identities.has('later')).toBe(true);
+    expect(identities.has('live')).toBe(true);
+    vi.advanceTimersByTime(60_000);
+    expect(identities.has('later')).toBe(false);
+    expect(identities.has('live')).toBe(true);
+    clearQuickAgentRuns();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

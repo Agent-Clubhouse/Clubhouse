@@ -20,6 +20,22 @@ const runs = new Map<string, QuickAgentRun>();
 // Keep only identity and scope, not prompt or output, through delayed delivery
 // and its final rights check. Nothing is persisted in actions.json.
 const FINISHED_RETENTION_MS = MAX_DELAY_MINUTES * 60_000;
+let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleFinishedExpiry(): void {
+  if (expiryTimer) return;
+  let nextExpiry = Infinity;
+  for (const run of runs.values()) {
+    if (run.finishedAt !== undefined) nextExpiry = Math.min(nextExpiry, run.finishedAt + FINISHED_RETENTION_MS);
+  }
+  if (!Number.isFinite(nextExpiry)) return;
+  expiryTimer = setTimeout(() => {
+    expiryTimer = undefined;
+    knownQuickAgents();
+    scheduleFinishedExpiry();
+  }, Math.max(0, nextExpiry - Date.now()) + 1);
+  expiryTimer.unref?.();
+}
 
 export function knownQuickAgents(now = Date.now()): ReadonlyMap<string, QuickAgentRun> {
   for (const [id, run] of runs) {
@@ -83,6 +99,7 @@ export function finishQuickAgentRun(run: QuickAgentRun, outcome: 'completed' | '
     at: run.finishedAt,
   });
   if (runs.get(run.agentId) === run) clearAgentChain(run.agentId);
+  scheduleFinishedExpiry();
 }
 
 export function finishQuickAgentExit(agentId: string, exitCode: number): void {
@@ -94,6 +111,8 @@ export function finishQuickAgentExit(agentId: string, exitCode: number): void {
 }
 
 export function clearQuickAgentRuns(): void {
+  if (expiryTimer) clearTimeout(expiryTimer);
+  expiryTimer = undefined;
   for (const id of runs.keys()) {
     clearAgentChain(id);
     forgetHookTurn(id);
