@@ -201,6 +201,42 @@ describe('event time filters', () => {
     expect(h.engine.isRunning(a.id)).toBe(false);
   });
 
+  it('admits a return during the queued handoff without starting twice on the new day', async () => {
+    let finish!: (result: ActionStepResult) => void;
+    const h = setup({ stepImpl: () => new Promise((resolve) => { finish = resolve; }) });
+    h.engine.start();
+    const a = h.engine.create({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, afterLocalTime: '08:00', oncePerDay: true },
+      steps: [notify], overlap: 'queue',
+    }, user);
+    const returned = () => h.event({ type: 'app.returned', actionIds: [a.id] });
+    returned();
+    h.clock.t = new Date(2026, 10, 10, 8).getTime();
+    returned();
+    let raced = false;
+    vi.mocked(h.hooks.observe).mockImplementation((observation) => {
+      if (observation.type === 'run' && observation.outcome === 'done' && !raced) {
+        raced = true;
+        queueMicrotask(() => {
+          expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-09');
+          returned();
+        });
+      }
+    });
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    expect(raced).toBe(true);
+    expect(h.stepCalls).toHaveLength(2);
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+    expect(vi.mocked(h.hooks.observe).mock.calls.filter(([o]) => o.type === 'overlap' && o.what === 'queued')).toHaveLength(2);
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    expect(h.stepCalls).toHaveLength(2);
+    expect(h.engine.get(a.id)?.runsUsed).toBe(2);
+    expect(h.history(a.id).filter((r) => r.outcome === 'cancelled')).toHaveLength(1);
+    expect(h.engine.isRunning(a.id)).toBe(false);
+  });
+
   it('does not consume a new date on an hourly-limit skip', async () => {
     const h = setup({ start: new Date(2026, 10, 9, 23, 30).getTime() });
     h.engine.start();
@@ -248,6 +284,63 @@ describe('event time filters', () => {
     expect(h.stepCalls).toHaveLength(0);
     expect(h.saved.state.lastFiredDate?.[a.id]).toBeUndefined();
     expect(h.history(a.id)).toMatchObject([{ outcome: 'skipped', reason: 'Before 20:00 local time' }]);
+  });
+
+  it('uses the start date, not the admission date, for a delayed run crossing midnight', async () => {
+    const h = setup({ start: new Date(2026, 10, 9, 23, 55).getTime() });
+    h.engine.start();
+    const a = h.engine.create({
+      trigger: { ...trigger, delayMinutes: 20, afterLocalTime: '00:10', oncePerDay: true }, steps: [notify],
+    }, user);
+    h.event({ type: 'app.started' });
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBeUndefined();
+    await h.clock.advance(20 * MIN);
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+    h.event({ type: 'app.started' });
+    h.engine.runNow(a.id);
+    await h.clock.advance(20 * MIN);
+    expect(h.stepCalls).toHaveLength(1);
+    expect(h.engine.get(a.id)?.runsUsed).toBe(1);
+  });
+
+  it('persists the last allowed return date at the lifetime run cap', async () => {
+    const h = setup();
+    h.engine.start();
+    const a = h.engine.create({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, afterLocalTime: '08:00', oncePerDay: true },
+      steps: [notify], maxRuns: 2,
+    }, user);
+    h.event({ type: 'app.returned', actionIds: [a.id] });
+    await flush();
+    h.engine.runNow(a.id);
+    expect(h.engine.get(a.id)).toMatchObject({ enabled: true, runsUsed: 1 });
+    h.clock.t = new Date(2026, 10, 10, 8).getTime();
+    h.event({ type: 'app.returned', actionIds: [a.id] });
+    await flush();
+    expect(h.saved.actions[0]).toMatchObject({ enabled: false, runsUsed: 2, offReason: 'Reached its 2-run limit' });
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+    h.clock.t = new Date(2026, 10, 11, 8).getTime();
+    h.engine.runNow(a.id);
+    expect(h.stepCalls).toHaveLength(2);
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+  });
+
+  it('does not consume the date when a delayed return reaches its exact end time', async () => {
+    const h = setup();
+    h.engine.start();
+    const a = h.engine.create({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, delayMinutes: 10, afterLocalTime: '08:00', oncePerDay: true },
+      steps: [notify], endsAt: START + 10 * MIN,
+    }, user);
+    h.event({ type: 'app.returned', actionIds: [a.id] });
+    expect(h.saved.state.waits).toHaveLength(1);
+    await h.clock.advance(10 * MIN);
+    expect(h.engine.get(a.id)).toMatchObject({ enabled: false, offReason: 'Ended at the set time' });
+    h.engine.runNow(a.id);
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBeUndefined();
+    expect(h.engine.get(a.id)?.runsUsed).toBeUndefined();
+    expect(h.saved.state.waits).toHaveLength(0);
   });
 
   async function withLocalZone(zone: string, run: (setZone: (value: string) => void) => Promise<void>): Promise<void> {
@@ -318,6 +411,31 @@ describe('event time filters', () => {
       h.event({ type: 'app.started' });
       await flush();
       expect(h.stepCalls).toHaveLength(2);
+      expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-11');
+    });
+  });
+
+  it('allows a later eastbound date but not a westbound return to an already used date', async () => {
+    await withLocalZone('Pacific/Honolulu', async (setZone) => {
+      const h = setup({ start: Date.UTC(2026, 10, 9, 10, 30) });
+      h.engine.start();
+      const a = h.engine.create({ trigger: { ...trigger, afterLocalTime: '00:00', oncePerDay: true }, steps: [notify] }, user);
+      h.event({ type: 'app.started' });
+      await flush();
+      expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-09');
+      setZone('Pacific/Kiritimati');
+      h.event({ type: 'app.started' });
+      await flush();
+      expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+      setZone('Pacific/Honolulu');
+      h.event({ type: 'app.started' });
+      h.clock.t += 24 * 60 * MIN;
+      h.event({ type: 'app.started' });
+      expect(h.stepCalls).toHaveLength(2);
+      setZone('Pacific/Kiritimati');
+      h.event({ type: 'app.started' });
+      await flush();
+      expect(h.stepCalls).toHaveLength(3);
       expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-11');
     });
   });
