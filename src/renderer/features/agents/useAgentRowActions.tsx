@@ -11,6 +11,7 @@ import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectSt
 import { wakeDurableAgent, type WakeMode } from './wake-durable-agent';
 import { useManagedStatus } from '../managed/managedApi';
 import { requestManagedRestart } from '../managed/restart';
+import { openAgentSettingsOn } from './agentSettingsPages';
 
 /**
  * The agent row's actions, shared by the legacy list row and the new chrome's
@@ -193,6 +194,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     if (isDispatcher) openDispatcherSettings();
     else openAgentSettings(agent.id);
   }, [agent.id, openAgentSettings, isDispatcher]);
+  const handleChangeCli = useCallback(() => openAgentSettingsOn(agent.id, 'runtime'), [agent.id]);
 
   const handleClearChat = useCallback(() => requestClearChat(agent.name), [agent.name]);
   const handleStartFresh = useCallback(() => requestStartFresh(agent.name), [agent.name]);
@@ -216,6 +218,17 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
 
     // No actions while agent is being created
     if (isCreating) return list;
+
+    if (isDurable && agent.status === 'error' && !agent.creationFailed && !isRemote && !isDispatcher) {
+      list.push({
+        id: 'change-cli',
+        label: 'Change CLI',
+        icon: <span aria-hidden="true">{'\u21C4'}</span>,
+        hoverColor: 'hover:text-ctp-accent',
+        visible: true,
+        handler: handleChangeCli,
+      });
+    }
 
     // Priority 1: Start/Stop (highest — collapses last)
     if (agent.status === 'running') {
@@ -392,7 +405,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleClearChat, handleStartFresh, handleSetUp, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
+  }, [agent.status, agent.kind, agent.creationFailed, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleChangeCli, handleClearChat, handleStartFresh, handleSetUp, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
 
   return actions;
 }

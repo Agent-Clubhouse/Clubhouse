@@ -62,4 +62,14 @@ describe('toastStore', () => {
     useToastStore.getState().addToast('Same msg', 'info');
     expect(useToastStore.getState().toasts).toHaveLength(2);
   });
+
+  it('keeps distinct actionable outcomes and deduplicates repeated delivery of one outcome', () => {
+    const add = useToastStore.getState().addToast;
+    const first = { label: 'Open agent', onClick: () => {} };
+    const second = { label: 'Open agent', onClick: () => {} };
+    add('Could not start', 'error', first, 'request-1');
+    add('Could not start', 'error', second, 'request-2');
+    add('Could not start', 'error', first, 'request-1');
+    expect(useToastStore.getState().toasts.map((toast) => toast.action)).toEqual([first, second]);
+  });
 });

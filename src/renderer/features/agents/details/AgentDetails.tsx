@@ -49,6 +49,8 @@ import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/Orchest
 import { useEffectiveOrchestrator } from '../effective-orchestrator';
 import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
 import { DispatcherCard } from './DispatcherCard';
+import { openAgentSettingsOn } from '../agentSettingsPages';
+import { Button } from '../../../components/Button';
 
 export type CardId = 'changes' | 'subagents' | 'canvases' | 'dispatcher' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session' | 'actions';
 
@@ -307,6 +309,12 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         </Tooltip>
       </div>
 
+      {agent.kind === 'durable' && agent.status === 'error' && !agent.creationFailed && !dispatcher && !isRemoteProjectId(agent.projectId) && (
+        <div className="px-1 text-xs text-ctp-subtext0">
+          <p>Its CLI could not start.</p>
+          <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'runtime')}>Change CLI</Button>
+        </div>
+      )}
       <SettingsCard agent={agent} chat={chat} projectPath={projectPath} provider={provider} />
 
       {!dispatcher && <ChangesCard

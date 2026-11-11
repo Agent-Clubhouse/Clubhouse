@@ -24,6 +24,7 @@ import { DetailsToggle } from './details/DetailsToggle';
 import { useAgentDetailsStore } from './details/detailsStore';
 import { useNarrow } from './pane/useNarrow';
 import { useEffectiveOrchestrator } from './effective-orchestrator';
+import { openAgentSettingsOn } from './agentSettingsPages';
 import {
   BranchIcon, FileRow, Kbd, ModelLabel, SectionHead, StateToolbar, ToolbarSeparator,
 } from './states/parts';
@@ -293,8 +294,8 @@ export function SleepingAgent({ agent, details = false }: {
                   <ModelLabel orchestrator={cli} model={agent.model} />
                   <span className="ml-auto flex items-center"><Kbd>{shortcut}</Kbd></span>
                   {failed && !isRemote && (
-                    <Button kind="ghost" onClick={() => (isDispatcher ? openDispatcherSettings() : openAgentSettings(agent.id))} data-testid="open-settings-button">
-                      Open settings
+                    <Button kind="ghost" onClick={() => (isDispatcher ? openDispatcherSettings() : agent.creationFailed ? openAgentSettings(agent.id) : openAgentSettingsOn(agent.id, 'runtime'))} data-testid="open-settings-button">
+                      {isDispatcher || agent.creationFailed ? 'Open settings' : 'Change CLI'}
                     </Button>
                   )}
                   <span className="inline-flex flex-shrink-0">

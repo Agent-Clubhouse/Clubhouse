@@ -55,14 +55,14 @@ interface AgentSettingsPagesState {
    * selects it once the page is shown for that agent: a managed agent's
    * builder pages appear only after its setup loads.
    */
-  requestedPage: { agentId: string; page: AgentSettingsPage } | null;
+  requestedPage: { agentId: string; page: AgentSettingsPage | 'runtime' } | null;
   setPage: (page: AgentSettingsPage) => void;
   setDirtyPages: (pages: AgentSettingsPage[]) => void;
   setCount: (page: AgentSettingsPage, count: number) => void;
   setHiddenPages: (pages: AgentSettingsPage[]) => void;
   setShellOpen: (open: boolean) => void;
   setPendingLeave: (then: (() => void) | null) => void;
-  setRequestedPage: (request: { agentId: string; page: AgentSettingsPage } | null) => void;
+  setRequestedPage: (request: AgentSettingsPagesState['requestedPage']) => void;
   /** Back to General with nothing dirty, for a newly opened agent. Keeps a requested page. */
   reset: () => void;
 }
@@ -105,9 +105,10 @@ export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) 
 
 /**
  * Open an agent's settings on one page (the setup-changed bar's "What changed"
- * opens Preview). The view selects it once that page is shown for the agent.
+ * opens Preview). Runtime opens General for a plain agent or Settings for a
+ * managed agent, after its config loads.
  */
-export function openAgentSettingsOn(agentId: string, page: AgentSettingsPage): void {
+export function openAgentSettingsOn(agentId: string, page: AgentSettingsPage | 'runtime'): void {
   useAgentSettingsPages.getState().setRequestedPage({ agentId, page });
   useAgentStore.getState().openAgentSettings(agentId);
 }

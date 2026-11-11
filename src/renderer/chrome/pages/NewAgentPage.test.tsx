@@ -15,6 +15,8 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 import { useChromeStore, type NewAgentRequest } from '../chromeStore';
+import { useToastStore } from '../../stores/toastStore';
+import { useAgentSettingsPages } from '../../features/agents/agentSettingsPages';
 
 const projects = [
   { id: 'p1', name: 'Clubhouse', path: '/tmp/ch' },
@@ -24,6 +26,7 @@ let spawnQuickAgent: ReturnType<typeof vi.fn>;
 const req = (over: Partial<NewAgentRequest> = {}): NewAgentRequest => ({ kind: 'durable', seq: 1, ...over });
 
 beforeEach(() => {
+  useToastStore.setState({ toasts: [] });
   // The plain-agent form: Clubhouse managed off, as last chosen. NewAgentPage.managed.test covers managed.
   window.localStorage.setItem('clubhouse.newAgent.managed', 'off');
   createDurableAgent.mockReset().mockResolvedValue('a-new');
@@ -34,6 +37,7 @@ beforeEach(() => {
   useDefaultAccessStore.setState({ defaultAccess: 'ask' });
   useProjectStore.setState({ projects: projects as never, activeProjectId: 'p1', projectIcons: {} });
   useAgentStore.setState({
+    activeAgentId: null,
     agents: { a1: { id: 'a1', projectId: 'p2', name: 'gallant-swift', kind: 'durable', status: 'running', color: 'blue', orchestrator: 'claude-code' } } as never,
     spawnQuickAgent,
   } as never);
@@ -323,6 +327,40 @@ describe('NewAgentPage', () => {
     expect(useChromeStore.getState().newAgent).not.toBeNull();
   });
 
+  it('offers CLI recovery for a created plain agent instead of creating it again', async () => {
+    createDurableAgent.mockImplementation(async (_p: unknown, _i: unknown, opts: { onError: (m: string, id: string) => void }) => {
+      opts.onError('CLI not found', 'a-created');
+      return null;
+    });
+    openWith({});
+    await submitWhenReady();
+    expect(await screen.findByTestId('new-agent-error')).toHaveTextContent("Created the agent and its worktree, but couldn't start it: CLI not found");
+    expect(screen.queryByTestId('new-agent-submit')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Change CLI' }));
+    expect(useAgentStore.getState().agentSettingsOpenFor).toBe('a-created');
+    expect(useAgentSettingsPages.getState().requestedPage).toEqual({ agentId: 'a-created', page: 'runtime' });
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    expect(createDurableAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['close', 'replace'] as const)('reports the created agent when an inline start failure is dismissed by %s', async (navigation) => {
+    createDurableAgent.mockImplementation(async (_p: unknown, _i: unknown, opts: { onError: (m: string, id: string) => void }) => {
+      opts.onError('CLI not found', 'a-created');
+      return null;
+    });
+    const onCreated = vi.fn();
+    const onClosed = vi.fn();
+    openWith({ onCreated, onClosed });
+    await submitWhenReady();
+    await screen.findByRole('button', { name: 'Change CLI' });
+    act(() => {
+      if (navigation === 'replace') useChromeStore.getState().openNewAgent('quick');
+      else useChromeStore.getState().closeNewAgent();
+    });
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith('a-created');
+    expect(onClosed).toHaveBeenCalledExactlyOnceWith('a-created');
+  });
+
   it('is busy while creating: Cancel is disabled and the button says so', async () => {
     createDurableAgent.mockReturnValue(new Promise(() => {}));
     openWith({});
@@ -335,19 +373,110 @@ describe('NewAgentPage', () => {
   describe('leaving while it creates', () => {
     const deferred = <T,>() => { let resolve!: (v: T) => void; let reject!: (e: unknown) => void; const promise = new Promise<T>((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
 
+    it.each([false, true])('retains the outcome when unmounted before the chrome request closes (failed: %s)', async (failed) => {
+      const pending = deferred<string | null>();
+      let onError!: (message: string) => void;
+      createDurableAgent.mockImplementation((_p: unknown, _i: unknown, opts: { onError: typeof onError }) => {
+        onError = opts.onError;
+        return pending.promise;
+      });
+      const onCreated = vi.fn();
+      const onClosed = vi.fn();
+      const page = openWith({ onCreated, onClosed });
+      await submitWhenReady();
+      page.unmount();
+      await act(async () => {
+        if (failed) onError('No space left.');
+        pending.resolve(failed ? null : 'a-late');
+        await pending.promise;
+      });
+      expect(useToastStore.getState().toasts).toHaveLength(1);
+      if (failed) expect(onCreated).not.toHaveBeenCalled();
+      else expect(onCreated).toHaveBeenCalledExactlyOnceWith('a-late');
+      expect(onClosed).toHaveBeenCalledExactlyOnceWith(failed ? null : 'a-late');
+      expect(useChromeStore.getState().newAgent).toBeNull();
+    });
+
+    it.each([false, true])('does not toast an outcome for the agent already being viewed (failed: %s)', async (failed) => {
+      const pending = deferred<string | null>();
+      let onError!: (message: string, id?: string) => void;
+      createDurableAgent.mockImplementation((_p: unknown, _i: unknown, opts: { onError: typeof onError }) => {
+        onError = opts.onError;
+        return pending.promise;
+      });
+      const onClosed = vi.fn();
+      const page = openWith({ onClosed });
+      await submitWhenReady();
+      act(() => {
+        useChromeStore.getState().closeNewAgent();
+        useAgentStore.setState({ activeAgentId: 'a-late' });
+        useChromeStore.setState({ projectScopeId: null });
+      });
+      page.unmount();
+      await act(async () => {
+        if (failed) onError('CLI not found', 'a-late');
+        pending.resolve(failed ? null : 'a-late');
+        await pending.promise;
+      });
+      expect(useToastStore.getState().toasts).toHaveLength(0);
+      expect(onClosed).toHaveBeenCalledExactlyOnceWith('a-late');
+    });
+
+    it('keeps identical off-page failures actionable for each creation', async () => {
+      const attempts: { onError: (message: string, id?: string) => void; pending: ReturnType<typeof deferred<string | null>> }[] = [];
+      createDurableAgent.mockImplementation((_p: unknown, _i: unknown, opts: { onError: (message: string, id?: string) => void }) => {
+        const pending = deferred<string | null>();
+        attempts.push({ onError: opts.onError, pending });
+        return pending.promise;
+      });
+      for (let index = 0; index < 2; index++) {
+        const page = openWith({});
+        await submitWhenReady();
+        act(() => useChromeStore.getState().closeNewAgent());
+        page.unmount();
+      }
+      await act(async () => {
+        for (const [index, attempt] of attempts.entries()) {
+          attempt.onError('CLI not found', `a-${index}`);
+          attempt.pending.resolve(null);
+          await attempt.pending.promise;
+        }
+      });
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts).toHaveLength(2);
+      for (const [index, toast] of toasts.entries()) {
+        act(() => toast.action?.onClick());
+        expect(useAgentStore.getState().activeAgentId).toBe(`a-${index}`);
+        expect(useAgentStore.getState().agentSettingsOpenFor).toBe(`a-${index}`);
+      }
+    });
+
     it('onClosed waits for the creation, onCreated comes first, and nothing navigates', async () => {
       const pending = deferred<string | null>();
       createDurableAgent.mockReturnValue(pending.promise);
       const events: string[] = [];
-      openWith({ onCreated: (id) => events.push(`created:${id}`), onClosed: (id) => events.push(`closed:${id}`) });
+      const page = openWith({ onCreated: (id) => events.push(`created:${id}`), onClosed: (id) => events.push(`closed:${id}`) });
       await submitWhenReady();
       // The user goes to Help.
       act(() => { useUIStore.setState({ explorerTab: 'help' }); useChromeStore.getState().closeNewAgent(); });
+      page.unmount();
       expect(events).toEqual([]);
       await act(async () => { pending.resolve('a-late'); await pending.promise; });
       expect(events).toEqual(['created:a-late', 'closed:a-late']);
       expect(useUIStore.getState().explorerTab).toBe('help');
       expect(useAgentStore.getState().activeAgentId).not.toBe('a-late');
+      const toast = useToastStore.getState().toasts[0];
+      expect(toast).toMatchObject({ type: 'info', action: { label: 'Open agent' } });
+      const newerClosed = vi.fn();
+      act(() => {
+        useChromeStore.getState().openNewAgent('durable', 'p1', { onClosed: newerClosed });
+        useChromeStore.getState().setNewAgentBusy(true, { projectIds: ['p1', 'p2'], agentIds: ['a1'] });
+      });
+      act(() => toast.action?.onClick());
+      expect(useChromeStore.getState().newAgent).toBeNull();
+      expect(newerClosed).not.toHaveBeenCalled();
+      expect(useAgentStore.getState().activeAgentId).toBe('a-late');
+      expect(useUIStore.getState().explorerTab).toBe('agents');
     });
 
     it('leaves a page opened meanwhile alone', async () => {
@@ -376,6 +505,33 @@ describe('NewAgentPage', () => {
       await act(async () => { pending.reject(new Error('nope')); await pending.promise.catch(() => {}); });
       expect(onClosed).toHaveBeenCalledExactlyOnceWith(null);
       expect(onCreated).not.toHaveBeenCalled();
+      expect(useToastStore.getState().toasts).toEqual([expect.objectContaining({ type: 'error', message: "Couldn't start the agent: nope" })]);
+    });
+
+    it.each([undefined, 'a-created'])('toasts a plain creation failure after unmount (created id: %s)', async (createdAgentId) => {
+      const pending = deferred<string | null>();
+      let onError!: (message: string, id?: string) => void;
+      createDurableAgent.mockImplementation((_p: unknown, _i: unknown, opts: { onError: typeof onError }) => {
+        onError = opts.onError;
+        return pending.promise;
+      });
+      const onClosed = vi.fn();
+      const page = openWith({ onClosed });
+      await submitWhenReady();
+      act(() => useChromeStore.getState().closeNewAgent());
+      page.unmount();
+      await act(async () => { onError('CLI not found', createdAgentId); pending.resolve(null); await pending.promise; });
+      const toast = useToastStore.getState().toasts[0];
+      expect(toast.type).toBe('error');
+      expect(toast.message).toContain(createdAgentId ? "but couldn't start it" : "Couldn't create the agent");
+      expect(onClosed).toHaveBeenCalledExactlyOnceWith(createdAgentId ?? null);
+      if (createdAgentId) {
+        expect(toast.action?.label).toBe('Change CLI');
+        act(() => toast.action?.onClick());
+        expect(useAgentStore.getState().agentSettingsOpenFor).toBe(createdAgentId);
+      } else {
+        expect(toast.action).toBeUndefined();
+      }
     });
   });
 

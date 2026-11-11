@@ -9,6 +9,7 @@ import type { Agent } from '../../../shared/types';
 import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { rendererLog } from '../../plugins/renderer-logger';
+import { useAgentSettingsPages } from './agentSettingsPages';
 
 vi.mock('../../plugins/renderer-logger', async (orig) => {
   const actual = await orig<typeof import('../../plugins/renderer-logger')>();
@@ -149,13 +150,25 @@ describe('SleepingAgent', () => {
       expect(screen.getByTestId('launch-error')).toHaveTextContent('codex exited before it started.');
     });
 
-    it('offers Retry and Open settings', () => {
+    it('offers Retry and Change CLI on the runtime settings page', () => {
       const openAgentSettings = vi.fn();
       useAgentStore.setState({ openAgentSettings });
       renderComponent({ status: 'error' });
       expect(screen.getByTestId('wake-button')).toHaveTextContent('Retry');
-      fireEvent.click(screen.getByTestId('open-settings-button'));
+      fireEvent.click(screen.getByRole('button', { name: 'Change CLI' }));
       expect(openAgentSettings).toHaveBeenCalledWith('agent-1');
+      expect(useAgentSettingsPages.getState().requestedPage).toEqual({ agentId: 'agent-1', page: 'runtime' });
+    });
+
+    it('retries with the newly saved CLI and reset model rather than the failed launch config', async () => {
+      const saved = { id: 'agent-1', name: 'bold-falcon', orchestrator: 'codex-cli', model: 'default' };
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([saved]);
+      renderComponent({ status: 'error', orchestrator: 'claude-code', model: 'sonnet' });
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('wake-button'));
+      await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalledWith(
+        'proj-1', '/projects/test', saved, false, undefined,
+      ));
     });
   });
 

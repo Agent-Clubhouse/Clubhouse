@@ -11,6 +11,7 @@ import type { LastSessionInfo } from '../states/useLastSession';
 import { AgentDetails } from './AgentDetails';
 import { LOCKED_HINT, NEXT_WAKE_NOTE } from './SettingsCard';
 import { useAgentDetailsStore } from './detailsStore';
+import { useAgentSettingsPages } from '../agentSettingsPages';
 
 const sleeping: Agent = {
   id: 'a1', projectId: 'p1', name: 'faithful-urchin', kind: 'durable', status: 'sleeping', color: 'teal',
@@ -96,6 +97,13 @@ describe('CLI row (#2593)', () => {
     await waitFor(() => expect(cli()).toBeInTheDocument());
     expect(cli()!.value).toBe('claude-code');
     expect(optionLabels(cli()!)).toEqual(['Claude Code', 'Codex']);
+  });
+
+  it('offers Change CLI directly in a failed agent details view', () => {
+    render(<AgentDetails agent={{ ...sleeping, status: 'error', errorMessage: 'CLI unavailable' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Change CLI' }));
+    expect(useAgentStore.getState().agentSettingsOpenFor).toBe(sleeping.id);
+    expect(useAgentSettingsPages.getState().requestedPage).toEqual({ agentId: sleeping.id, page: 'runtime' });
   });
 
   it('keeps the current CLI on offer when it has been turned off', async () => {

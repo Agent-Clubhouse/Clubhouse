@@ -26,7 +26,7 @@ export const HOVER_OPEN_MS = 600;
 const HOVER_CLOSE_MS = 150;
 
 /** Actions that show the agent in the pane before they run (settings render there). */
-const REVEAL_FIRST = new Set(['settings']);
+const REVEAL_FIRST = new Set(['settings', 'change-cli']);
 
 /** While a popup is open it is where the user is (spec §8). */
 function useSurfaceWhile(open: boolean, surface: ChromeSurface) {

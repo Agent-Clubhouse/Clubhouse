@@ -163,6 +163,7 @@ export function AgentSettingsView({ agent }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const availability = useOrchestratorStore((s) => s.availability);
   // Resolve orchestrators the same way AddAgentDialog does, so the selector
   // behaves consistently with agent creation.
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
@@ -198,13 +199,14 @@ export function AgentSettingsView({ agent }: Props) {
 
   // Clubhouse-managed agents (#2893): the setup on the agent's config, kept fresh as parts change.
   const [managedSetup, setManagedSetup] = useState<ManagedAgentSetup | null>(null);
+  const [managedLoadedFor, setManagedLoadedFor] = useState<string | null>(null);
   const [clubhouseFeatures, setClubhouseFeatures] = useState(true);
   useEffect(() => {
     if (!projectPath || isRemoteProjectId(agent.projectId)) { setManagedSetup(null); return; }
     let cancelled = false;
     const load = () => {
       window.clubhouse.agent.getDurableConfig(projectPath, agent.id)
-        .then((c) => { if (!cancelled) { setManagedSetup(c?.managed ?? null); setClubhouseFeatures(c?.clubhouseFeatures !== false); } })
+        .then((c) => { if (!cancelled) { setManagedSetup(c?.managed ?? null); setClubhouseFeatures(c?.clubhouseFeatures !== false); setManagedLoadedFor(agent.id); } })
         .catch(() => { /* telemetry-exempt: the General page shows the agent as unmanaged until a read works */ });
     };
     load();
@@ -234,11 +236,14 @@ export function AgentSettingsView({ agent }: Props) {
   // selected once it shows for this agent: a managed agent's builder pages appear after its setup loads.
   const requestedPage = useAgentSettingsPages((s) => s.requestedPage);
   useEffect(() => {
-    if (!requestedPage || requestedPage.agentId !== agent.id || hiddenPages.includes(requestedPage.page)) return;
-    setPage(requestedPage.page);
+    if (!requestedPage || requestedPage.agentId !== agent.id) return;
+    if (requestedPage.page === 'runtime' && managedLoadedFor !== agent.id) return;
+    const targetPage = requestedPage.page === 'runtime' ? (isManagedAgent ? 'settings' : 'general') : requestedPage.page;
+    if (hiddenPages.includes(targetPage)) return;
+    setPage(targetPage);
     // The classic shell stacks the pages: bring the asked-for section into view instead.
-    if (!pageMode) document.getElementById(`agent-settings-section-${requestedPage.page}`)?.scrollIntoView?.({ block: 'start' });
-  }, [requestedPage, agent.id, hiddenPages, setPage, pageMode]);
+    if (!pageMode) document.getElementById(`agent-settings-section-${targetPage}`)?.scrollIntoView?.({ block: 'start' });
+  }, [requestedPage, agent.id, hiddenPages, setPage, pageMode, managedLoadedFor, isManagedAgent]);
 
   // Shell in worktree: the sidebar row (new chrome) or the row under the page
   // (classic) opens it. It stays mounted once opened.
@@ -346,8 +351,16 @@ export function AgentSettingsView({ agent }: Props) {
 
   const handleOrchestratorChange = async (value: string) => {
     if (!projectPath) return;
-    // Main resets the model on a new CLI, as it can't run the old one's (#2593).
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value, model: 'default' });
+    try {
+      const result = await window.clubhouse.agent.checkOrchestrator(projectPath, value);
+      if (!result.available) throw new Error(result.error || 'This CLI is not installed.');
+      // Main resets the model on a new CLI, as it can't run the old one's (#2593).
+      await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value, model: 'default' });
+    } catch (err) {
+      reportChromeActionFailed('agent_settings_save', err);
+      useToastStore.getState().addToast(`Couldn't change the CLI: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      return;
+    }
     setSavedModel('default');
     useAgentStore.setState((s) => {
       const existing = s.agents[agent.id];
@@ -974,7 +987,9 @@ export function AgentSettingsView({ agent }: Props) {
             className={selectClass}
           >
             {orchestratorOptions.map((o) => (
-              <option key={o.id} value={o.id}>{o.displayName}</option>
+              <option key={o.id} value={o.id} disabled={availability[o.id]?.available === false}>
+                {o.displayName}{availability[o.id]?.available === false ? ' (unavailable)' : ''}
+              </option>
             ))}
           </select>
         </Field>
