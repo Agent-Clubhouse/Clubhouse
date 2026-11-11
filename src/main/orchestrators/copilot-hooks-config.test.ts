@@ -100,6 +100,61 @@ describe('Copilot hook document boundary', () => {
     expect(appLog).not.toHaveBeenCalled();
   });
 
+  it('waits for an in-progress repair before reading its temporarily truncated file', async () => {
+    const { root, file } = await fixture('{"version":1}');
+    const write = fsp.writeFile;
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => { writing = resolve; });
+    let resume!: () => void;
+    const paused = new Promise<void>((resolve) => { resume = resolve; });
+    vi.spyOn(fsp, 'writeFile').mockImplementationOnce(async (...args) => {
+      await write(file, '');
+      writing();
+      await paused;
+      return write(...args);
+    });
+    const first = readCopilotHooksConfig(root);
+    await started;
+    const read = vi.spyOn(fsp, 'readFile');
+    const second = readCopilotHooksConfig(root).then((value) => value, (error: unknown) => error);
+    await Promise.resolve();
+    await Promise.resolve();
+    const readsDuringRepair = read.mock.calls.length;
+    resume();
+    expect(await first).toEqual({ version: 1, hooks: {} });
+    expect(await second).toEqual({ version: 1, hooks: {} });
+    expect(readsDuringRepair).toBe(0);
+  });
+
+  it('serializes Windows case and separator aliases of the same hook file', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    let contents = '{"version":1}';
+    const read = vi.spyOn(fsp, 'readFile').mockImplementation(async () => contents);
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => { writing = resolve; });
+    let resume!: () => void;
+    const paused = new Promise<void>((resolve) => { resume = resolve; });
+    const write = vi.spyOn(fsp, 'writeFile').mockImplementation(async (_file, value) => {
+      writing();
+      await paused;
+      contents = String(value);
+    });
+    const first = readCopilotHooksConfig('C:\\Project');
+    await started;
+    read.mockClear();
+    const second = readCopilotHooksConfig('c:/project');
+    await Promise.resolve();
+    await Promise.resolve();
+    const readsDuringRepair = read.mock.calls.length;
+    resume();
+    expect(await Promise.all([first, second])).toEqual([
+      { version: 1, hooks: {} }, { version: 1, hooks: {} },
+    ]);
+    expect(readsDuringRepair).toBe(0);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(appLog).toHaveBeenCalledTimes(1);
+  });
+
   it('repairs changed formatting after releasing the per-file lock', async () => {
     const { root, file } = await fixture('{"version":1}');
     const read = fsp.readFile;

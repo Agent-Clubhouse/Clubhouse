@@ -8,6 +8,9 @@ Legacy permissions are handled without review (#2866): a file whose only key is 
 
 The exact data-free residue `{"version":1}` is also recovered automatically (#3278). Pre-0.43 Clubhouse cleanup could leave this shape. Before either terminal or chat launch, Clubhouse normalizes it to `{"version":1,"hooks":{}}`, logging the repair once. Concurrent starts serialize the repair per file and re-read it before writing; subsequent reads leave the valid document unchanged. A failed repair stops startup with the file path and access/manual-repair instructions. Near misses such as `{}`, `{"version":2}`, `{"version":1,"other":true}`, or `{"version":1,"hooks":null}` remain untouched and require manual repair.
 
+Reads share the recovery lock, so another start cannot read an incomplete repair.
+Windows paths differing only in case or slash direction share that lock.
+
 | Runtime | Clubhouse hook server | Callback path and limits |
 | --- | --- | --- |
 | Terminal | On | Clubhouse merges command hooks into the Copilot hook document, preserving custom entries and replacing its own entries on repeat writes. Hook changes require restart. |
