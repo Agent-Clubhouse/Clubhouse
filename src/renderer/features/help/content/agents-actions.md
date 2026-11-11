@@ -24,6 +24,8 @@ An event trigger can wait, for example 30 minutes after an agent goes to sleep. 
 
 Terminal turn events depend on the CLI's hooks. Claude reports prompt starts, completed and failed turns, and compaction. Codex reports prompt starts, completed and interrupted turns, and compaction. Claude interruptions have no hook, and Copilot has no per-turn completion hook. Tool errors and session exits are not turn failures or turn completions.
 
+Claude failure events include only a recognized error category, not free-form provider details that could contain conversation content or credentials.
+
 ### Event time filters
 
 Every event trigger can optionally run only **After local time**, in HH:MM on this computer, and **Once per calendar day**. Events before the set time are ignored, not held until later. Delayed and queued runs check the current time and date again before starting. The filters also apply to Run now.

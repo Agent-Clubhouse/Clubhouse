@@ -382,8 +382,28 @@ describe('ClaudeCodeProvider', () => {
         'turn.started', 'agent.compacted', 'turn.ended', 'turn.started', 'turn.ended', 'agent.error',
       ]);
       expect(events.filter((event) => event.type === 'turn.ended').map((event) => event.outcome)).toEqual(['completed', 'failed']);
-      expect(events.at(-1)).toMatchObject({ message: 'Rate limit reached' });
+      expect(events.at(-1)).toMatchObject({ message: 'Claude turn failed: rate_limit' });
       expect(provider.parseHookEvent({ hook_event_name: 'Interrupt' })).toBeNull();
+    });
+
+    it.each(['rate_limit', 'secret-in-error', '__proto__', undefined])('limits StopFailure details to a known error category (%s)', (error) => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      const normalized = provider.parseHookEvent({
+        hook_event_name: 'StopFailure',
+        error,
+        error_details: `Authorization: Bearer secret /Users/private/project ${'x'.repeat(100_000)}`,
+        prompt: 'private prompt',
+        tool_input: { command: 'private tool command' },
+        last_assistant_message: 'private response',
+      });
+      publishFromHookEvent('claude', { ...normalized!, rawName: 'StopFailure' });
+      const failure = events.find((event) => event.type === 'agent.error');
+      expect(failure).toEqual(expect.objectContaining({
+        message: `Claude turn failed: ${error === 'rate_limit' ? 'rate_limit' : 'unknown'}`,
+      }));
+      expect(JSON.stringify(failure).length).toBeLessThan(200);
+      expect(JSON.stringify(failure)).not.toMatch(/secret|private|Bearer/);
     });
 
     it('parses Notification as notification', () => {

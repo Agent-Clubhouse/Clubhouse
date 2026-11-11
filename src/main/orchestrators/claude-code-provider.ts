@@ -1,4 +1,5 @@
 import type { ListModelsOptions } from './types';
+import type { SDKAssistantMessageError } from '@anthropic-ai/claude-agent-sdk';
 import type { PlanQuotaReading } from '../../shared/helper-routing';
 import { probeClaudeQuota } from './quota-probes';
 import { claudeContextWindowOptions, type ContextWindowOptions } from '../../shared/context-window';
@@ -66,6 +67,23 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PostCompact: 'notification',
   Notification: 'notification',
   PermissionRequest: 'permission_request',
+};
+
+// Free-form error_details can contain request content, local paths or credentials.
+const STOP_FAILURE_MESSAGES: Record<SDKAssistantMessageError, string> = {
+  authentication_failed: 'Claude turn failed: authentication_failed',
+  oauth_org_not_allowed: 'Claude turn failed: oauth_org_not_allowed',
+  account_on_hold: 'Claude turn failed: account_on_hold',
+  verification_required: 'Claude turn failed: verification_required',
+  billing_error: 'Claude turn failed: billing_error',
+  rate_limit: 'Claude turn failed: rate_limit',
+  overloaded: 'Claude turn failed: overloaded',
+  invalid_request: 'Claude turn failed: invalid_request',
+  model_not_found: 'Claude turn failed: model_not_found',
+  server_error: 'Claude turn failed: server_error',
+  unknown: 'Claude turn failed: unknown',
+  max_output_tokens: 'Claude turn failed: max_output_tokens',
+  cloud_credential_error: 'Claude turn failed: cloud_credential_error',
 };
 
 export class ClaudeCodeProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable {
@@ -269,7 +287,9 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
       message: eventName === 'StopFailure'
-        ? (typeof obj.error_details === 'string' ? obj.error_details : typeof obj.error === 'string' ? obj.error : undefined)
+        ? (typeof obj.error === 'string' && Object.hasOwn(STOP_FAILURE_MESSAGES, obj.error)
+          ? STOP_FAILURE_MESSAGES[obj.error as SDKAssistantMessageError]
+          : STOP_FAILURE_MESSAGES.unknown)
         : obj.message as string | undefined,
       ...(typeof obj.permission_mode === 'string' && obj.permission_mode
         ? { permissionLevel: levelFromClaudeMode(obj.permission_mode) }
