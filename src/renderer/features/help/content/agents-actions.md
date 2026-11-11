@@ -60,4 +60,6 @@ An action set off by another action carries that chain along. A chain stops afte
 
 Each action keeps its last 10 runs from the past 72 hours: when it ran, what set it off, how it went, and links to the agents it woke or started. Open an action from **Settings > Actions** to see them. **Run now** runs an action straight away for testing.
 
+Every agent also has an **Actions** card in **Details**. It groups actions made by that agent, actions that act on it and actions its events set off, using the same list as the agent's Actions settings page. Open a row to see its history, run it now, turn it on or off, edit it or delete it without leaving the agent. These are your controls; the action keeps its original owner and permissions. The Dispatcher's card keeps the actions it made.
+
 A message accepted into an agent's queue records "Queued for" followed by the agent's name and "next turn" instead of "Sent". The action fired, but this is not confirmed delivery. The run stays Done and does not track later queue delivery, removal or failure.

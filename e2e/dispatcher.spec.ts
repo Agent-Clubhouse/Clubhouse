@@ -207,6 +207,8 @@ async function openOrchestrateCard(w: Page): Promise<void> {
   await expect(head).toBeVisible({ timeout: 10_000 });
   if ((await head.getAttribute('aria-expanded')) !== 'true') await head.click();
   await expect(w.locator('[data-testid="orchestrate-toggle"]')).toBeVisible();
+  await expect(w.getByTestId('orchestration-helpers').first()).toBeVisible();
+  await expect(w.getByTestId('details-card-helpers')).toHaveCount(0);
 }
 
 /** Show Agent details for the orchestrator and expand its Dispatcher card (#3049). */
@@ -240,6 +242,7 @@ test('a saved experimental false: no row or Connect switch, and its page says it
   const details = w.locator('[data-testid="agent-details"]');
   if (!(await details.isVisible().catch(() => false))) await w.locator('[data-testid="agent-details-toggle"]').first().click();
   await expect(details.locator('[data-testid="details-card-orchestrate"]')).toBeVisible();
+  await expect(details.getByTestId('details-card-actions')).toBeVisible();
   await expect(w.locator('[data-testid="details-card-dispatcher"]')).toHaveCount(0);
   await expect(row(w)).toHaveCount(0);
   expect(fs.existsSync(dispatcherDir())).toBe(false);

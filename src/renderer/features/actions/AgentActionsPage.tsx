@@ -1,13 +1,15 @@
 /**
- * Agent settings > Actions (#2954), and the Dispatcher's Actions card in
+ * Agent settings > Actions (#2954), and every agent's Actions card in
  * Agent details: the actions that involve one agent, in three groups.
  */
 
+import { useState } from 'react';
 import { describeAction, type ActionInput, type ActionView } from '../../../shared/actions';
 import { Button } from '../../components/Button';
 import { settingsHelp } from '../settings/SettingsLayout';
 import { CardNote, DetailsCard } from '../agents/details/DetailsCard';
-import { OutcomeDot } from './ActionCard';
+import { ActionCard, OutcomeDot } from './ActionCard';
+import { ActionForm } from './ActionForm';
 import { openActionsSettings, useActionNames, useActionsList } from './useActions';
 
 export interface AgentActionGroups {
@@ -31,11 +33,11 @@ export function agentActionGroups(list: ActionView[], agentId: string, projectId
   };
 }
 
-function ActionLine({ action }: { action: ActionView }) {
+function ActionLine({ action, onOpen }: { action: ActionView; onOpen?: (id: string) => void }) {
   const { names } = useActionNames();
   return (
     <li className="py-2 border-t border-surface-0">
-      <button type="button" className="w-full text-left cursor-pointer group" onClick={() => openActionsSettings({ cardId: action.id })} data-testid="agent-action-row">
+      <button type="button" className="w-full text-left cursor-pointer group" onClick={() => onOpen ? onOpen(action.id) : openActionsSettings({ cardId: action.id })} data-testid="agent-action-row">
         <div className="flex items-center gap-2">
           {action.lastRun && <OutcomeDot outcome={action.lastRun.outcome} />}
           <span className="text-[13px] text-ctp-text truncate group-hover:underline">{action.name}</span>
@@ -47,14 +49,14 @@ function ActionLine({ action }: { action: ActionView }) {
   );
 }
 
-function Group({ title, empty, list, note }: { title: string; empty: string; list: ActionView[]; note?: string }) {
+function Group({ title, empty, list, note, onOpen }: { title: string; empty: string; list: ActionView[]; note?: string; onOpen?: (id: string) => void }) {
   return (
     <section className="mt-5">
       <h3 className="text-[13px] font-semibold text-ctp-text">{title}</h3>
       {note && list.length > 0 && <div className={settingsHelp}>{note}</div>}
       {list.length === 0
         ? <div className={`${settingsHelp} mt-1`}>{empty}</div>
-        : <ul className="mt-1">{list.map((a) => <ActionLine key={a.id} action={a} />)}</ul>}
+        : <ul className="mt-1">{list.map((a) => <ActionLine key={a.id} action={a} onOpen={onOpen} />)}</ul>}
     </section>
   );
 }
@@ -85,6 +87,40 @@ export function AgentActionsPage({ agentId, agentName, projectId }: { agentId: s
         </>
       )}
     </div>
+  );
+}
+
+/** Uses the same user-authorized management UI and IPC as Settings > Actions. */
+export function AgentActionsCard({ agentId, agentName, projectId, open, onToggle }: {
+  agentId: string;
+  agentName: string;
+  projectId?: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { actions, error, reload } = useActionsList();
+  const groups = agentActionGroups(actions ?? [], agentId, projectId);
+  const related = new Set([...groups.owned, ...groups.targeting, ...groups.triggeredBy].map((a) => a.id)).size;
+  const [cardId, setCardId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ActionView | null>(null);
+  const card = actions?.find((a) => a.id === cardId);
+  return (
+    <>
+      <DetailsCard id="actions" title="Actions" summary={actions ? `${related} related` : error ? 'couldn’t load' : 'loading'} open={open} onToggle={onToggle}>
+        {error && <CardNote><span role="alert">Couldn’t load actions. {error}</span> <Button kind="ghost" onClick={reload}>Try again</Button></CardNote>}
+        {!actions && !error && <CardNote>Loading actions.</CardNote>}
+        {actions && related === 0 && <CardNote>No actions are made by, act on or are set off by {agentName}.</CardNote>}
+        {actions && related > 0 && (
+          <div className="px-3 pb-1">
+            {groups.owned.length > 0 && <Group title={`Made by ${agentName}`} empty="" list={groups.owned} note={`Their usage counts toward ${agentName}.`} onOpen={setCardId} />}
+            {groups.targeting.length > 0 && <Group title={`Act on ${agentName}`} empty="" list={groups.targeting} onOpen={setCardId} />}
+            {groups.triggeredBy.length > 0 && <Group title={`Set off by ${agentName}`} empty="" list={groups.triggeredBy} onOpen={setCardId} />}
+          </div>
+        )}
+      </DetailsCard>
+      {card && <ActionCard action={card} onClose={() => setCardId(null)} onEdit={() => { setCardId(null); setEditing(card); }} />}
+      {editing && <ActionForm open action={editing} onClose={() => setEditing(null)} onSaved={reload} />}
+    </>
   );
 }
 

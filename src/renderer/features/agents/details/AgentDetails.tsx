@@ -35,7 +35,7 @@ import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
 import { buildAgentMap, formatCost, formatDuration, formatTokens } from '../chat/view-model';
 import { ChangesCard, type ChangesScope } from './ChangesCard';
-import { DispatcherActionsCard } from '../../actions/AgentActionsPage';
+import { AgentActionsCard, DispatcherActionsCard } from '../../actions/AgentActionsPage';
 import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
 import { SettingsCard } from './SettingsCard';
 import { McpCard } from './McpCard';
@@ -379,8 +379,6 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         )}
       </DetailsCard>}
 
-      {dispatcher && <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />}
-
       {showConnections && (
         <ConnectionsCard
           agent={wiresAgent}
@@ -391,6 +389,10 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           onDisconnect={disconnectToolWire}
         />
       )}
+
+      {dispatcher
+        ? <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />
+        : <AgentActionsCard agentId={agent.id} agentName={agent.name} projectId={agent.projectId} open={open('actions')} onToggle={() => toggleCard('actions')} />}
 
       {ctx && ctxPct !== null && (
         <DetailsCard
