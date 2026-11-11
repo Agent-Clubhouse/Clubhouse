@@ -86,7 +86,8 @@ export interface EngineStorage {
 export interface RunHistory {
   /** Record a new run, or replace one with the same id. */
   put(run: ActionRun): void;
-  list(actionId: string): ActionRun[];
+  /** Omit the id for all retained history, including deleted and one-time actions. */
+  list(actionId?: string): ActionRun[];
 }
 
 /** What the engine needs to know about agents and projects. Synchronous: answered from caches. */
@@ -372,7 +373,7 @@ export class ActionsEngine {
     return this.deps.rights.checkSource(reader, { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } }) === null;
   }
 
-  history(id: string, reader?: ActionOwner): ActionRun[] {
+  history(id?: string, reader?: ActionOwner): ActionRun[] {
     const runs = this.deps.history.list(id);
     if (!reader) return runs;
     return runs.flatMap((run) => {

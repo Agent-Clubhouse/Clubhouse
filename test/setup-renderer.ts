@@ -606,6 +606,7 @@ vi.stubGlobal('clubhouse', {
     delete: async () => undefined,
     runNow: async () => ({ runId: 'run_1' }),
     history: async () => [],
+    usage: async () => [],
     onChanged: () => noop,
     onNotice: () => noop,
   },

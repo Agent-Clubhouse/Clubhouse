@@ -689,6 +689,7 @@ export const IPC = {
     DELETE: 'actions:delete',
     RUN_NOW: 'actions:run-now',
     HISTORY: 'actions:history',
+    USAGE: 'actions:usage',
     /** Main → renderer: the actions or a run changed. No payload; the renderer re-lists. */
     CHANGED: 'actions:changed',
     /** Main → renderer: a mechanical failure or an action Clubhouse turned off, for a toast. */

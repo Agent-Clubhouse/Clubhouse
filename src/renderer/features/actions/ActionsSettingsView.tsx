@@ -13,15 +13,17 @@ import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsPage, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import { ActionCard, OutcomeDot, formatWhen, outcomeWords } from './ActionCard';
 import { ActionForm } from './ActionForm';
+import { ActionOwnerUsage } from './ActionOwnerUsage';
 import { actionProjectId, ownerLabel, useActionNames, useActionsList, useActionsNav } from './useActions';
 
-type Filter = 'all' | 'you' | 'agents' | 'off';
+type Filter = 'all' | 'you' | 'agents' | 'off' | 'owners';
 
 const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'you', label: 'By you' },
   { id: 'agents', label: 'By agents' },
   { id: 'off', label: 'Turned off' },
+  { id: 'owners', label: 'By owner' },
 ];
 
 export function filterActions(list: ActionView[], filter: Filter): ActionView[] {
@@ -126,7 +128,7 @@ export function ActionsSettingsView() {
           <Button kind="ghost" className="mt-2" onClick={reload}>Try again</Button>
         </div>
       )}
-      {actions && actions.length === 0 && (
+      {actions && actions.length === 0 && filter !== 'owners' && (
         <div className="mt-6" data-testid="actions-empty">
           <p className="text-[13px] text-ctp-text">
             An action does one to three steps when its trigger fires: wake or message an agent, start a quick agent, put an agent to sleep, or notify you.
@@ -142,7 +144,7 @@ export function ActionsSettingsView() {
           </ul>
         </div>
       )}
-      {actions && actions.length > 0 && (
+      {actions && (
         <>
           <TabList<Filter>
             label="Show actions"
@@ -155,7 +157,7 @@ export function ActionsSettingsView() {
             testIdPrefix="actions-filter"
           />
           <div {...tabPanelProps(tabsId, filter)}>
-            {shown.length === 0
+            {filter === 'owners' ? <ActionOwnerUsage onOpen={setCardId} /> : shown.length === 0
               ? <div className={`${settingsHelp} py-3 border-t border-surface-0`}>Nothing here.</div>
               : <ul>{shown.map((a) => <ActionRow key={a.id} action={a} onOpen={() => setCardId(a.id)} />)}</ul>}
           </div>

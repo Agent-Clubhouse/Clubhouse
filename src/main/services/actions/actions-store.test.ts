@@ -13,9 +13,26 @@ vi.mock('../settings-store', () => ({
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 
-import { sanitizeActions, settleInterruptedRuns } from './actions-store';
+import { createRunHistory, sanitizeActions, settleInterruptedRuns } from './actions-store';
 
 describe('actions store', () => {
+  it('retains recorded owners across reload while leaving older ownerless runs unchanged', () => {
+    const run = { id: 'r1', actionId: 'deleted', trigger: { kind: 'manual', at: 5 }, chain: [], startedAt: 5, outcome: 'done', steps: [] };
+    const migrate = migrations.get('action-history.json')!;
+    const runs = [run, { ...run, id: 'r2', owner: { kind: 'agent', agentId: 'lead' } }];
+    expect(migrate({ runs: { deleted: runs } })).toEqual({ version: 1, runs: { deleted: runs } });
+  });
+
+  it('reads all retained history across actions without losing each action’s trim', async () => {
+    const history = createRunHistory(() => 100);
+    const run = { id: 'r1', actionId: 'deleted', trigger: { kind: 'manual', at: 5 }, chain: [], startedAt: 5, outcome: 'done', steps: [] } as const;
+    history.put({ ...run, chain: [], steps: [] });
+    history.put({ ...run, id: 'r2', actionId: 'other', chain: [], steps: [] });
+    expect(history.list()).toHaveLength(2);
+    expect(history.list('deleted')).toHaveLength(1);
+    await history.flush();
+  });
+
   it('loads older quick steps unchanged and retains explicit Auto difficulty', () => {
     const old = {
       id: 'a1', name: 'Review', trigger: { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' },

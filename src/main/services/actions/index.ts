@@ -14,12 +14,14 @@ import {
   ActionError,
   assertActionInput,
   subscriptionStep,
+  summarizeActionUsage,
   type Action,
   type ActionNames,
   type ActionNotice,
   type ActionOwner,
   type ActionRun,
   type ActionView,
+  type ActionOwnerUsage,
   type EventTrigger,
   type ValidActionInput,
 } from '../../../shared/actions';
@@ -464,6 +466,12 @@ export function actionHistory(id: string, reader?: ActionOwner): ActionRun[] {
   const a = e.get(id);
   if (a?.owner.kind === 'app') return [];
   return e.history(id, reader).sort((x, y) => y.startedAt - x.startedAt);
+}
+
+/** User-only Settings view. MCP history continues to use its reader-scoped path. */
+export function actionUsage(): ActionOwnerUsage[] {
+  const e = requireEngine();
+  return summarizeActionUsage(e.list(), e.history());
 }
 
 export function canWatchAgentActivity(reader: ActionOwner): boolean {
