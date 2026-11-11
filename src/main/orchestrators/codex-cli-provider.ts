@@ -543,11 +543,10 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     };
 
     const codexDir = path.join(cwd, '.codex');
-    await fsp.mkdir(codexDir, { recursive: true });
-
     const hooksPath = path.join(codexDir, 'hooks.json');
 
     try {
+      await fsp.mkdir(codexDir, { recursive: true });
       await writeTerminalHooksConfig(hooksPath, hooks, isClubhouseHookEntry);
     } catch (err) {
       await preserveUnchangedSnapshot(hooksPath);

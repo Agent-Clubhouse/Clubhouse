@@ -341,6 +341,7 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?
     try {
       if (await fsp.readFile(absPath, 'utf-8') === snapshot.originalContent) return;
     } catch (err) {
+      // telemetry-exempt: setup already reported its failure; cleanup only explains why it left user bytes untouched.
       appLog('core:config-pipeline', 'warn', 'Refused hook config cleanup skipped: current file could not be read', {
         meta: { filePath: absPath, error: err instanceof Error ? err.message : String(err) },
       });

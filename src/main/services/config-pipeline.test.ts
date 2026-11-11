@@ -627,6 +627,17 @@ describe('config-pipeline', () => {
       expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
+    it('does not clean the snapshot when hook directory access refuses startup', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('{"hooks":{"Stop":[{"command":"${CLUBHOUSE_AGENT_ID}"}]}}\n');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      const error = Object.assign(new Error('directory access denied'), { code: 'EACCES' });
+      vi.mocked(fsp.mkdir).mockRejectedValueOnce(error);
+      await expect(new ClaudeCodeProvider().writeHooksConfig('/project', 'http://127.0.0.1:9999/hook')).rejects.toBe(error);
+      await restoreAll();
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
     it('still removes a managed-only group after successful idempotent setup', async () => {
       vi.mocked(fsp.readFile).mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
       const provider = new ClaudeCodeProvider();

@@ -258,11 +258,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     };
 
     const claudeDir = path.join(cwd, '.claude');
-    await fsp.mkdir(claudeDir, { recursive: true });
-
     const settingsPath = path.join(claudeDir, 'settings.local.json');
 
     try {
+      await fsp.mkdir(claudeDir, { recursive: true });
       await writeTerminalHooksConfig(settingsPath, hooks, isClubhouseHookEntry);
     } catch (err) {
       await preserveUnchangedSnapshot(settingsPath);
