@@ -410,7 +410,7 @@ const TRIGGER_SCHEMA = {
     missed: { type: 'string', enum: [...MISSED_RUN_RULES], description: 'Schedules: skip (default), once or each.' },
     absenceMinutes: { type: 'number', minimum: MIN_ABSENCE_MINUTES, description: 'app.returned only: required absence in whole minutes, at least 5. Default 30. Tracking runs only while an enabled action uses this event.' },
     afterLocalTime: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: 'Events only: run at or after this local wall-clock time, HH:MM. Events before it are ignored. Delayed and queued starts recheck the time. Also applies to Run now.' },
-    oncePerDay: { type: 'boolean', description: 'Events only: once per calendar day; moving the clock back does not give an extra run. A started run consumes the day, including Run now and failures. The date survives restart; skipped runs do not consume it.' },
+    oncePerDay: { type: 'boolean', description: 'Events only: once per calendar day; moving the clock back gives no extra run. Starts consume the day, including Run now and failures. Skips do not. Saved across restarts.' },
     at: { type: ['string', 'number'], description: 'Once: a date and time like 2026-11-08T09:00 (local time when no zone is given; a date alone is local midnight), or epoch milliseconds. Must be in the future.' },
     event: { type: 'string', enum: [...ACTION_EVENT_KINDS], description: 'Events: what should happen.' },
     source: {
