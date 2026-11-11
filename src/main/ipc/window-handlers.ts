@@ -265,6 +265,7 @@ export function registerWindowHandlers(): void {
     [stringArg({ optional: true }), stringArg({ optional: true, maxLength: 64 })],
     (_event, agentId, target) => {
     const mainWindow = findMainWindow();
+    if (!mainWindow && target === 'connections') throw new Error('The main window is not open.');
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();

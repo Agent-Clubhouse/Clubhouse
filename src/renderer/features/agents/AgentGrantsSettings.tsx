@@ -10,13 +10,14 @@ import type { Agent } from '../../../shared/types';
 import type { GrantTarget } from '../../../shared/agent-grants';
 import {
   GRANT_ACTION_LABELS, grantKey, grantTargetLabel, targetKey,
-  type AgentGrantsView, type GrantChangeMode, type GrantRow,
+  type AgentGrantsView, type GrantChangeMode, type GrantRow, type GrantToolMap,
 } from '../../../shared/agent-grant-changes';
 import { Button } from '../../components/Button';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { Field, SectionHeading } from './agentSettingsUi';
 import { GrantRequestList } from './GrantRequestList';
 import { useGrantRequestStore } from '../../stores/grantRequestStore';
+import { AgentConnectionSummary } from './helpers/AgentConnectionSummary';
 
 const MODES: ReadonlyArray<{ mode: GrantChangeMode; label: string }> = [
   { mode: 'off', label: 'Off' },
@@ -63,13 +64,15 @@ export function groupGrantRows(rows: readonly GrantRow[]): GrantGroup[] {
   return [...groups.values()].sort((a, b) => rank(a) - rank(b));
 }
 
-export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
+export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0, onNavigate }: {
   agent: Pick<Agent, 'id' | 'name'>;
   projectPath: string | undefined;
   /** Bumped by the page's Reload button. */
   refreshKey?: number;
+  onNavigate?: () => void;
 }) {
   const [view, setView] = useState<AgentGrantsView | null>(null);
+  const [tools, setTools] = useState<GrantToolMap>({});
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   // Modes picked but not saved yet, by grant key. A failed save drops its entry, so the row shows the saved value again.
@@ -89,11 +92,15 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
     if (!projectPath) return;
     let cancelled = false;
     const seq = ++requestSeq.current;
-    window.clubhouse.agent.getGrants(projectPath, agent.id)
-      .then((next) => {
+    Promise.all([
+      window.clubhouse.agent.getGrants(projectPath, agent.id),
+      window.clubhouse.agent.getGrantTools(),
+    ])
+      .then(([next, names]) => {
         if (cancelled || seq < appliedSeq.current) return;
         appliedSeq.current = seq;
         setView(next);
+        setTools(names);
       })
       .catch(() => {
         // telemetry-exempt: the page says it couldn't read them and offers Try again
@@ -151,6 +158,7 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
   const intro = (
     <p className="text-xs text-ctp-overlay1 mb-1">
       This is what {agent.name} can do to other agents, projects and the app through Clubhouse, separate from its Access level, which governs its CLI.
+      {' '}Connected-agent tools also require a connection and its per-direction tool switch, even when a grant is Allow.
       {' '}It's a guardrail on Clubhouse, not a sandbox, so other programs running as you aren't limited by it.
     </p>
   );
@@ -195,12 +203,14 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
       {groups.map((group) => (
         <section key={group.key} data-testid={`agent-grants-group-${group.key}`} aria-label={group.label}>
           <SectionHeading title={group.label} />
+          {group.rows[0].target.kind === 'connected' && <AgentConnectionSummary agentId={agent.id} onNavigate={onNavigate} />}
           {group.rows.map((row) => {
             const key = grantKey(row);
             return (
               <GrantRowField
                 key={key}
                 row={row}
+                tools={tools[row.action] ?? []}
                 targetLabel={group.label}
                 coveredBy={coveredLabel(view, row)}
                 mode={pending[key] ?? row.mode}
@@ -235,13 +245,14 @@ function coveredLabel(view: AgentGrantsView | null, row: GrantRow): string | und
   return wider ? grantTargetLabel(wider.target) : undefined;
 }
 
-export function GrantRowField({ row, targetLabel, coveredBy, note, mode, disabled, error, onChange }: {
+export function GrantRowField({ row, targetLabel, coveredBy, note, tools, mode, disabled, error, onChange }: {
   row: GrantRow;
   targetLabel: string;
   /** A wider row allows this action: this row's own setting would change nothing. */
   coveredBy?: string;
   /** Set elsewhere: why, in place of the choices being changeable. */
   note?: string;
+  tools?: readonly string[];
   mode: GrantChangeMode;
   disabled: boolean;
   error: string | undefined;
@@ -276,6 +287,19 @@ export function GrantRowField({ row, targetLabel, coveredBy, note, mode, disable
           ))}
         </div>
       </Field>
+      {tools && (
+        <details className="pb-2 text-xs text-ctp-overlay1">
+          <summary className="cursor-pointer">MCP tools</summary>
+          {tools.length > 0 ? (
+            <>
+              <p className="mt-1">Connection tool names include a target-specific prefix. Tools can require other permissions too.</p>
+              <ul className="mt-1 space-y-0.5">
+                {tools.map((tool) => <li key={tool}><code>{tool}</code></li>)}
+              </ul>
+            </>
+          ) : <p className="mt-1">No registered MCP tools use this permission.</p>}
+        </details>
+      )}
       {error && <p role="alert" className="pb-1.5 text-xs text-ctp-error">{error}</p>}
     </div>
   );

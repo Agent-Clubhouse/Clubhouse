@@ -73,6 +73,7 @@ vi.stubGlobal('clubhouse', {
   },
   agent: {
     getGrants: async () => ({ rows: [], helper: false, dispatcher: false, orchestrates: false }),
+    getGrantTools: async () => ({}),
     setGrant: async () => ({ rows: [], helper: false, dispatcher: false, orchestrates: false }),
     resetGrants: async () => ({ rows: [], helper: false, dispatcher: false, orchestrates: false }),
     onConfigsChanged: () => noop,

@@ -7,6 +7,7 @@ import { createChatViewState } from '../../../stores/chatStore';
 import { AgentDetails, BRANCH_REFRESH_MS, relativeFolder, useBranchChanges } from './AgentDetails';
 import { DetailsToggle } from './DetailsToggle';
 import { useAgentDetailsStore } from './detailsStore';
+import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 
 const agent: Agent = {
   id: 'a1', projectId: 'p1', name: 'faithful-urchin', kind: 'durable', status: 'running', color: 'teal',
@@ -20,11 +21,13 @@ const branch = {
 beforeEach(() => {
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
   useAgentDetailsStore.setState({ open: true, focus: null });
+  useMcpBindingStore.setState({ bindings: [] });
   window.clubhouse.git.branchChanges = vi.fn(async () => branch);
 });
 
 afterEach(() => {
   useProjectStore.setState({ projects: [] });
+  useMcpBindingStore.setState({ bindings: [] });
 });
 
 describe('AgentDetails in the terminal', () => {
@@ -80,6 +83,33 @@ describe('AgentDetails in the terminal', () => {
     expect(screen.getByTestId('details-card-mcp')).not.toHaveAttribute('data-open');
     act(() => { useAgentDetailsStore.getState().reveal({ agentId: 'a1', card: 'mcp' }); });
     expect(screen.getByTestId('details-card-mcp')).toHaveAttribute('data-open', 'true');
+  });
+
+  it('opens an empty Connections card from permissions settings (#3275)', async () => {
+    render(<AgentDetails agent={agent} />);
+    act(() => { useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'connections' }); });
+    expect(await screen.findByTestId('details-card-connections')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByText(/No Clubhouse MCP wires/)).toBeInTheDocument();
+  });
+
+  it('lets a quick agent edit its existing disabled tools through the canvas Connections route (#3213)', async () => {
+    const quick = { ...agent, kind: 'quick' as const };
+    const binding = { agentId: quick.id, targetId: 'other', targetKind: 'agent' as const, label: 'Other', disabledTools: ['read_output'] };
+    useMcpBindingStore.setState({ bindings: [binding] });
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: quick.id, targetId: 'other', bound: true, sources: [{ kind: 'canvas', sourceId: 'canvas-wires' }] }],
+      unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.setDisabledTools = vi.fn(async () => {});
+    render(<AgentDetails agent={quick} />);
+    act(() => { useAgentDetailsStore.getState().reveal({ agentId: quick.id, card: 'connections' }); });
+    expect(await screen.findByTestId('details-card-connections')).toHaveAttribute('data-open', 'true');
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
+    const read = screen.getByRole('switch', { name: `Read output (${quick.name} to Other)` });
+    expect(read).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(read);
+    await waitFor(() => expect(window.clubhouse.mcpBinding.setDisabledTools).toHaveBeenCalledWith(quick.id, 'other', []));
   });
 });
 

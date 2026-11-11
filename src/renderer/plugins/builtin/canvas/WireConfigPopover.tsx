@@ -108,8 +108,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
   };
 
   const handleSavePermissions = async (disabledTools: string[]) => {
-    // This direction only: each direction of a connection has its own permissions, saved in the
-    // connection store (D129). The other direction is edited from its own wire or the Connections card.
+    // Agent connections use the Connections card. Other targets keep their wire-scoped permissions.
     try {
       await setDisabledTools(binding.agentId, binding.targetId, disabledTools);
     } catch {
@@ -237,6 +236,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
           binding={liveBinding}
           onSave={handleSavePermissions}
           onClose={() => setShowPermissions(false)}
+          onNavigate={onClose}
         />
       )}
     </>

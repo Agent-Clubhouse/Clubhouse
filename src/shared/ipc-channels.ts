@@ -162,6 +162,7 @@ export const IPC = {
     GET_DURABLE_CONFIG: 'agent:get-durable-config',
     /** Clubhouse permissions (#2971). */
     GET_GRANTS: 'agent:get-grants',
+    GET_GRANT_TOOLS: 'agent:get-grant-tools',
     SET_GRANT: 'agent:set-grant',
     RESET_GRANTS: 'agent:reset-grants',
     /** Main → renderer (#2970): a Clubhouse permission request waiting on the user. */

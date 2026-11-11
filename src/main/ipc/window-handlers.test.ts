@@ -202,6 +202,12 @@ describe('window-handlers', () => {
     expect(mainWin.webContents.send).toHaveBeenCalledWith(IPC.WINDOW.NAVIGATE_TO_AGENT, 'disp', 'dispatcher-settings');
   });
 
+  it('FOCUS_MAIN rejects Connections navigation when only a popout remains (#3213)', async () => {
+    await handlers.get(IPC.WINDOW.CREATE_POPOUT)!({}, { type: 'canvas' });
+    expect(() => handlers.get(IPC.WINDOW.FOCUS_MAIN)!({}, 'agent-123', 'connections'))
+      .toThrow('The main window is not open.');
+  });
+
   it('CREATE_POPOUT brings an agent\'s open popout forward instead of opening another (#3235)', async () => {
     const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
     const first = await createHandler({}, { type: 'agent', agentId: 'disp', projectId: '__dispatcher__' });

@@ -252,7 +252,7 @@ export function DispatcherCard({ agent, orch, open, onToggle }: {
           testId="dispatcher-card-all-permissions"
         >
           <div className="max-h-[70vh] overflow-y-auto">
-            <AgentGrantsSettings agent={{ id: grants.id, name }} projectPath={grants.path} />
+            <AgentGrantsSettings agent={{ id: grants.id, name }} projectPath={grants.path} onNavigate={() => setAllPermissionsOpen(false)} />
           </div>
         </Modal>
       )}
