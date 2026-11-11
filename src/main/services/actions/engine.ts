@@ -960,6 +960,13 @@ export class ActionsEngine {
   private async runOnce(action: Action, trigger: ActionRunTrigger, chain: string[], runId: string): Promise<{ action: Action; run: QueuedRun } | null> {
     const actionId = action.id;
     if (action.trigger.kind !== 'once' && this.actions.has(actionId)) {
+      // A queued handoff crosses an await: edits and expiry can happen before it starts.
+      action = this.require(actionId);
+      const ended = this.enforceLifetime(action);
+      if (ended) {
+        this.recordOnly(action, trigger, chain, 'cancelled', 'lifetime_limit', ended);
+        return null;
+      }
       action = { ...action, runsUsed: (action.runsUsed ?? 0) + 1 };
       this.actions.set(actionId, action);
       if (!this.enforceLifetime(action)) this.persist();

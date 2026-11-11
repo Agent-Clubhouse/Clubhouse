@@ -156,6 +156,73 @@ describe('lifetime limits', () => {
     expect(history(a.id).at(-1)).toMatchObject({ outcome: 'skipped', reason: 'Ran 60 times in the last hour' });
   });
 
+  it('counts queued event and manual starts once and cancels the rest at the cap', async () => {
+    const releases: Array<() => void> = [];
+    const { engine, event, stepCalls, history, saved } = setup({
+      stepImpl: (step) => new Promise((resolve) => {
+        releases.push(() => resolve({ kind: step.kind, outcome: 'done', detail: 'ok' }));
+      }),
+    });
+    engine.start();
+    const a = engine.create({ trigger: returned, steps: [notify], maxRuns: 3, overlap: 'queue' }, user);
+    for (let i = 0; i < 4; i++) {
+      event({ type: 'app.started' });
+      engine.runNow(a.id);
+    }
+    expect(engine.get(a.id)?.runsUsed).toBe(1);
+    for (let i = 0; i < 3; i++) {
+      releases.shift()?.();
+      await flush();
+    }
+    expect(stepCalls).toHaveLength(3);
+    expect(history(a.id).filter((r) => r.outcome === 'done')).toHaveLength(3);
+    expect(history(a.id).filter((r) => r.outcome === 'cancelled')).toHaveLength(5);
+    expect(saved.actions[0]).toMatchObject({ enabled: false, runsUsed: 3 });
+  });
+
+  it('rechecks expiry when a queued run actually starts', async () => {
+    let finish!: (result: ActionStepResult) => void;
+    const { engine, clock, hooks, stepCalls, history } = setup({
+      stepImpl: () => new Promise((resolve) => { finish = resolve; }),
+    });
+    engine.start();
+    const endsAt = START + MIN;
+    const a = engine.create({ trigger: returned, steps: [notify], endsAt, overlap: 'queue' }, user);
+    engine.runNow(a.id);
+    engine.runNow(a.id);
+    vi.mocked(hooks.observe).mockImplementation((observation) => {
+      if (observation.type === 'run' && observation.outcome === 'done') {
+        queueMicrotask(() => { clock.t = endsAt; });
+      }
+    });
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    expect(stepCalls).toHaveLength(1);
+    expect(engine.get(a.id)).toMatchObject({ enabled: false, runsUsed: 1, offReason: 'Ended at the set time' });
+    expect(history(a.id).some((r) => r.outcome === 'running')).toBe(false);
+  });
+
+  it('honors a lowered run limit during the queued-run handoff', async () => {
+    let finish!: (result: ActionStepResult) => void;
+    const { engine, hooks, stepCalls } = setup({
+      stepImpl: () => new Promise((resolve) => { finish = resolve; }),
+    });
+    engine.start();
+    const input = { trigger: returned, steps: [notify], maxRuns: 3, overlap: 'queue' };
+    const a = engine.create(input, user);
+    engine.runNow(a.id);
+    engine.runNow(a.id);
+    vi.mocked(hooks.observe).mockImplementation((observation) => {
+      if (observation.type === 'run' && observation.outcome === 'done') {
+        queueMicrotask(() => { engine.update(a.id, { ...input, maxRuns: 1 }); });
+      }
+    });
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    expect(stepCalls).toHaveLength(1);
+    expect(engine.get(a.id)).toMatchObject({ enabled: false, maxRuns: 1, runsUsed: 1, offReason: 'Reached its 1-run limit' });
+  });
+
   it('persists starts independently of history and bounds catch-up queues after restart', async () => {
     const first = setup();
     first.engine.start();
