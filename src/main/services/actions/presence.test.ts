@@ -85,6 +85,19 @@ describe('Action presence', () => {
     expect(h.returned).not.toHaveBeenCalled();
   });
 
+  it('does not count active time in another app as part of a later short lock', async () => {
+    const h = setup();
+    h.tracker.configure([{ id: 'a', absenceMinutes: 5 }]);
+    h.signal('blur');
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 10; i++) { h.input(); await vi.advanceTimersByTimeAsync(MIN); }
+    h.signal('lock');
+    await vi.advanceTimersByTimeAsync(MIN);
+    h.signal('unlock', true);
+    h.signal('focus', true);
+    expect(h.returned).not.toHaveBeenCalled();
+  });
+
   it('deduplicates frontmost lock, suspend, resume, unlock and focus signals', async () => {
     const h = setup();
     h.tracker.configure([{ id: 'a' }]);

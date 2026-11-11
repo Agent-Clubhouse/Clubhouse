@@ -22,6 +22,7 @@ export class ActionPresence {
   private timer: unknown = null;
   private locked = false;
   private suspended = false;
+  private blockedSince: number | null = null;
   private awaySince: number | null = null;
   private qualified = new Set<string>();
 
@@ -44,6 +45,7 @@ export class ActionPresence {
     if (this.unlisten) return;
     this.locked = false;
     this.suspended = false;
+    this.blockedSince = null;
     this.qualified.clear();
     this.awaySince = Math.max(this.deps.clock.now(), this.deps.lastUse() ?? 0);
     this.unlisten = this.deps.signals.listen((signal) => this.signal(signal));
@@ -56,6 +58,7 @@ export class ActionPresence {
     if (this.timer !== null) this.deps.clock.clearTimeout(this.timer);
     this.timer = null;
     this.awaySince = null;
+    this.blockedSince = null;
     this.qualified.clear();
   }
 
@@ -63,18 +66,23 @@ export class ActionPresence {
     if (this.awaySince === null) return;
     for (const w of this.watches) {
       const threshold = (w.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES) * 60_000;
-      if (now - this.awaySince >= threshold && (this.locked || this.suspended || (idle !== null && idle * 1000 >= threshold))) {
+      const blockedLongEnough = this.blockedSince !== null && now - this.blockedSince >= threshold;
+      if (now - this.awaySince >= threshold && (blockedLongEnough || (idle !== null && idle * 1000 >= threshold))) {
         this.qualified.add(w.id);
       }
     }
   }
 
   private signal(signal: PresenceSignal): void {
-    this.collect(this.deps.clock.now(), this.deps.signals.idleSeconds());
+    const now = this.deps.clock.now();
+    this.collect(now, this.deps.signals.idleSeconds());
+    const wasBlocked = this.locked || this.suspended;
     if (signal === 'lock') this.locked = true;
     if (signal === 'unlock') this.locked = false;
     if (signal === 'suspend') this.suspended = true;
     if (signal === 'resume') this.suspended = false;
+    if (!wasBlocked && (this.locked || this.suspended)) this.blockedSince = now;
+    if (!this.locked && !this.suspended) this.blockedSince = null;
     if (signal === 'blur') {
       // Another Clubhouse window may receive focus in the same event-loop turn.
       this.arm(0);
