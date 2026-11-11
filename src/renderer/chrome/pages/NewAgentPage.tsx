@@ -26,7 +26,7 @@ import { ManagedUiError, useManagedTemplates } from '../../features/managed/mana
 import { createManagedDurableAgent, settingsAccess, type ManagedAgentInput } from '../../features/managed/create-managed-agent';
 import type { SetupDraft } from '../../features/managed/ManagedBuilder';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
-import { useChromeStore, settleNewAgent, type NewAgentRequest } from '../chromeStore';
+import { useChromeStore, settleNewAgent, retainNewAgentResult, type NewAgentRequest } from '../chromeStore';
 import { openCreatedAgent } from '../startPage';
 import { ProjectPicker } from './ProjectPicker';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
@@ -283,6 +283,12 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const setBusy = useChromeStore((s) => s.setNewAgentBusy);
   const [error, setError] = useState<string | null>(null);
   const [createdButNotStarted, setCreatedButNotStarted] = useState<{ projectId: string; agentId: string } | null>(null);
+  const [outcomeToastKey] = useState(() => crypto.randomUUID());
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   // With its own worktree a durable agent's name becomes a folder and a git
   // branch, so it is checked here as strictly as the main process will (#2221).
   // A managed agent always gets its own folder.
@@ -302,18 +308,32 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   // The page stays up, busy, until the agent exists; a failure is shown here
   // with the form intact. If the user left (or another New agent replaced this
   // one) meanwhile, a toast keeps the outcome without changing the current view.
-  const stillOpen = () => useChromeStore.getState().newAgent === request;
+  const stillOpen = () => mounted.current && useChromeStore.getState().newAgent === request;
+  const settleAway = (agentId: string | null) => {
+    if (useChromeStore.getState().newAgent === request) {
+      if (agentId) retainNewAgentResult(request, agentId);
+      close(agentId);
+    }
+    settleNewAgent(request, agentId);
+  };
+  const viewingAgent = (projectId: string, agentId: string) => {
+    const ui = useUIStore.getState();
+    const chrome = useChromeStore.getState();
+    return !chrome.newAgent && !chrome.projectScopeId && !ui.activeHostId && !ui.dispatcherOpen
+      && ui.explorerTab === 'agents' && useProjectStore.getState().activeProjectId === projectId
+      && useAgentStore.getState().activeAgentId === agentId;
+  };
   const goBusy = () => setBusy(true, {
     projectIds: useProjectStore.getState().projects.map((p) => p.id),
     agentIds: Object.keys(useAgentStore.getState().agents),
   });
   const finish = (projectIdDone: string, agentId: string) => {
     if (!stillOpen()) {
-      useToastStore.getState().addToast(durable ? `Created ${name.trim()}.` : 'Started the quick agent.', 'info', {
+      if (!viewingAgent(projectIdDone, agentId)) useToastStore.getState().addToast(durable ? `Created ${name.trim()}.` : 'Started the quick agent.', 'info', {
         label: 'Open agent',
         onClick: () => openCreatedAgent(projectIdDone, agentId),
-      });
-      settleNewAgent(request, agentId);
+      }, outcomeToastKey);
+      settleAway(agentId);
       return;
     }
     request.onCreated?.(agentId);
@@ -322,16 +342,17 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   };
   const failed = (message: string, created?: { projectId: string; agentId: string }) => {
     if (!stillOpen()) {
-      useToastStore.getState().addToast(message, 'error', created ? {
+      if (!created || !viewingAgent(created.projectId, created.agentId)) useToastStore.getState().addToast(message, 'error', created ? {
         label: 'Change CLI',
         onClick: () => {
           openCreatedAgent(created.projectId, created.agentId);
           openAgentSettingsOn(created.agentId, 'runtime');
         },
-      } : undefined);
-      settleNewAgent(request, created?.agentId ?? null);
+      } : undefined, outcomeToastKey);
+      settleAway(created?.agentId ?? null);
       return;
     }
+    if (created) retainNewAgentResult(request, created.agentId);
     setBusy(false);
     setError(message);
     setCreatedButNotStarted(created ?? null);
@@ -466,7 +487,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     pickAndAddProject()
       .then((added) => { if (added && stillOpen()) setProjectId(added.id); })
       .catch((err) => reportChromeActionFailed('add_project', err))
-      .finally(() => { if (stillOpen()) setBusy(false); else settleNewAgent(request, null); });
+      .finally(() => { if (stillOpen()) setBusy(false); else settleAway(null); });
   };
 
   const projectName = project ? project.displayName || project.name : '';
@@ -474,7 +495,6 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   if (createdButNotStarted) {
     const { projectId: createdProjectId, agentId } = createdButNotStarted;
     const leaveResult = (open: boolean, changeCli = false) => {
-      request.onCreated?.(agentId);
       close(agentId);
       if (open) openCreatedAgent(createdProjectId, agentId);
       if (changeCli) openAgentSettingsOn(agentId, 'runtime');

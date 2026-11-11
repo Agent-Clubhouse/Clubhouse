@@ -96,10 +96,21 @@ export interface NewAgentOptions {
 
 /** Pages closed from outside while creating: their onClosed waits for settleNewAgent. */
 const unsettled = new WeakSet<NewAgentRequest>();
+const createdResults = new WeakMap<NewAgentRequest, string>();
+
+/** Keep a created-but-not-started result when navigation closes its page. */
+export function retainNewAgentResult(request: NewAgentRequest, agentId: string): void {
+  createdResults.set(request, agentId);
+}
 
 function endNewAgent(request: NewAgentRequest, inFlight: boolean, createdAgentId: string | null): void {
   if (inFlight) unsettled.add(request);
-  else request.onClosed?.(createdAgentId);
+  else {
+    const retainedId = createdResults.get(request);
+    createdResults.delete(request);
+    if (retainedId) request.onCreated?.(retainedId);
+    request.onClosed?.(createdAgentId ?? retainedId ?? null);
+  }
 }
 
 /**
