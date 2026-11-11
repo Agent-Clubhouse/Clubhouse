@@ -160,6 +160,19 @@ describe('Clubhouse’s own actions (#3040)', () => {
     expect(h.deliver).toHaveBeenCalledTimes(1);
     expect(h.note).not.toHaveBeenCalled();
   });
+
+  it('keeps queued Dispatcher acceptance in the completed run history', async () => {
+    h.deliver.mockResolvedValueOnce({ delivered: true, woke: false, delivery: 'queued' });
+    const mine = createAction({ trigger: nightly, steps: message('hello') }, { kind: 'user' });
+    runActionNow(mine.id);
+    await flush();
+    expect(actionHistory(mine.id)).toEqual([
+      expect.objectContaining({
+        outcome: 'done',
+        steps: [expect.objectContaining({ detail: "Queued for Rosie's next turn", delivery: 'queued' })],
+      }),
+    ]);
+  });
 });
 
 /** Run outcomes as the engine reports them to telemetry, which sees hidden runs too. */

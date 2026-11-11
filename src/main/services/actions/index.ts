@@ -24,6 +24,7 @@ import {
 } from '../../../shared/actions';
 import { IPC } from '../../../shared/ipc-channels';
 import type { Project } from '../../../shared/types';
+import type { MessageDelivery } from '../../../shared/chat';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { isAgentRunning } from '../agent-system';
 import { onAppEvent } from '../app-event-bus';
@@ -148,7 +149,7 @@ export function setAppActionGate(name: string, gate: AppActionGate | null): void
  * their gate first. Clubhouse's and the Dispatcher's own actions are its
  * background work, so the turn they start counts apart from conversations.
  */
-async function deliverActionToDispatcher(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string; skipped?: boolean }> {
+async function deliverActionToDispatcher(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean; delivery?: MessageDelivery } | { delivered: false; text: string; skipped?: boolean }> {
   let { text, routed } = req;
   const gate = req.owner.kind === 'app' ? appGates.get(req.actionName) : undefined;
   if (gate) {

@@ -84,6 +84,9 @@ function RunRow({ run }: { run: ActionRun }) {
             return (
               <li key={i} className="text-ctp-overlay1">
                 {s.detail}
+                {s.delivery === 'queued' && (
+                  <div>The action fired. The message was queued, not confirmed delivered.</div>
+                )}
                 {s.agentId && project && (
                   <>
                     {' '}

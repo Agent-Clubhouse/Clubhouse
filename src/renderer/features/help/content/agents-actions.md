@@ -53,3 +53,5 @@ An action set off by another action carries that chain along. A chain stops afte
 ## History
 
 Each action keeps its last 10 runs from the past 72 hours: when it ran, what set it off, how it went, and links to the agents it woke or started. Open an action from **Settings > Actions** to see them. **Run now** runs an action straight away for testing.
+
+A message accepted into an agent's queue records "Queued for" followed by the agent's name and "next turn" instead of "Sent". The action fired, but this is not confirmed delivery. The run stays Done and does not track later queue delivery, removal or failure.
