@@ -5,6 +5,19 @@ import { HISTORY_MAX_AGE_MS, type ActionRun } from './types';
 const schedule = { kind: 'schedule', preset: 'daily', cron: '0  9 * * *', missed: 'once' };
 
 describe('validateActionInput', () => {
+  it('accepts optional recurring limits and rejects invalid limits with invalid_input', () => {
+    const input = { trigger: schedule, steps: [{ kind: 'notify', text: 'hi' }] };
+    const now = 100_000;
+    expect(validateActionInput({ ...input, endsAt: now + 1, maxRuns: 5 }, { now })).toMatchObject({ ok: true, value: { endsAt: now + 1, maxRuns: 5 } });
+    for (const limits of [{ endsAt: now - 1 }, { endsAt: NaN }, { maxRuns: 0 }, { maxRuns: -1 }, { maxRuns: 1.5 }, { maxRuns: Infinity }]) {
+      try { assertActionInput({ ...input, ...limits }, now); expect.fail('Expected a refusal'); }
+      catch (err) { expect(err).toMatchObject({ code: 'invalid_input' }); }
+    }
+    for (const limits of [{ endsAt: now + 1 }, { maxRuns: 1 }]) {
+      expect(validateActionInput({ ...input, trigger: { kind: 'once', at: now + 1 }, ...limits }, { now }).ok).toBe(false);
+    }
+  });
+
   it('normalizes a valid action and drops unknown fields', () => {
     const r = validateActionInput({ name: '  Morning  ', trigger: schedule, steps: [{ kind: 'wake', agentId: 'a1', prompt: '', extra: 1 }], junk: true });
     expect(r).toEqual({

@@ -988,7 +988,7 @@ export const ATTR = {
   actionMissedBucket: enumAttr('clubhouse.action.missed_bucket', ['0', '1', '2-4', '5-9', '10+']),
   actionRunOutcome: enumAttr('clubhouse.action.run.outcome', ['done', 'failed', 'cancelled', 'skipped']),
   actionRunReason: enumAttr('clubhouse.action.run.reason', [
-    'none', 'self_trigger', 'chain_limit', 'overlap', 'hourly_limit', 'missed', 'condition_changed', 'turned_off', 'edited',
+    'none', 'self_trigger', 'chain_limit', 'overlap', 'hourly_limit', 'lifetime_limit', 'missed', 'condition_changed', 'turned_off', 'edited',
     'deleted', 'rights_refused', 'step_failed', 'step_threw',
   ]),
   actionRunSteps: intAttr('clubhouse.action.run.steps'),

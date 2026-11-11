@@ -369,6 +369,19 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
           </Field>
         )}
 
+        {draft.when !== 'once' && (
+          <>
+            <Field label="Ends at (optional)" htmlFor={`${uid}-ends`}
+              help="The action turns off at this time. A run already in progress finishes normally.">
+              <input id={`${uid}-ends`} type="datetime-local" className={`${settingsInput} w-full`} value={draft.endsAt} onChange={(e) => set({ endsAt: e.target.value })} />
+            </Field>
+            <Field label="Maximum runs (optional)" htmlFor={`${uid}-max-runs`}
+              help="Every started run counts, including Run now and failed runs. Skipped runs do not count. The count survives restarts and edits.">
+              <input id={`${uid}-max-runs`} type="number" min={1} step={1} className={`${settingsInput} w-32`} value={draft.maxRuns} onChange={(e) => set({ maxRuns: e.target.value })} />
+            </Field>
+          </>
+        )}
+
         <h3 className="text-[13px] font-semibold text-ctp-text mt-5">Then</h3>
         <div className={`${settingsHelp} mb-1`}>Steps run in order and stop at the first one that couldn’t run.</div>
         {draft.steps.map((s, i) => (

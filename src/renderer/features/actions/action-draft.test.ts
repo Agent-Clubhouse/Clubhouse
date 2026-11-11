@@ -4,6 +4,21 @@ import { draftFrom, draftToInput, newDraft, toLocalInput } from './action-draft'
 const NOW = new Date(2026, 10, 9, 8, 0).getTime();
 
 describe('action draft', () => {
+  it('round-trips recurring limits and omits them when changed to once', () => {
+    const input = {
+      trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } } as const,
+      steps: [{ kind: 'notify', text: 'hi' }] as const,
+      endsAt: NOW + 60 * 60_000, maxRuns: 5,
+    };
+    const draft = draftFrom({ ...input, steps: [...input.steps] }, NOW);
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input });
+    expect(draftToInput({ ...draft, maxRuns: '1.5' }, NOW).ok).toBe(false);
+    expect(draftToInput(draft, input.endsAt + 1).ok).toBe(false);
+    const once = draftToInput({ ...draft, when: 'once' }, NOW);
+    expect(once.ok && once.input.endsAt).toBeUndefined();
+    expect(once.ok && once.input.maxRuns).toBeUndefined();
+  });
+
   it('starts as a weekday schedule that needs an agent', () => {
     const d = newDraft(NOW);
     expect(d.when).toBe('schedule');

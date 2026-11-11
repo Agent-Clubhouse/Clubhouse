@@ -48,6 +48,12 @@ An agent can ask to be told when something happens, for example "tell me when ma
 
 ## Limits
 
+Schedule and event actions can have an optional **Ends at** time and **Maximum runs**. Every started run counts, including scheduled runs, events, missed-time catch-up, Run now and failures. Runs skipped because another run is still going or the hourly limit was reached do not count.
+
+The lifetime count survives restarts, sleep and edits, independently of the shorter history. The card shows the remaining runs and end time. At either limit the action turns off and says why, keeping its history. No new run starts at or after the end time, including delayed or queued runs and missed-time catch-up after restart. A run already in progress finishes normally.
+
+One-time actions do not have these limits. Over MCP, create_action and update_action accept endsAt (epoch milliseconds or a date and time) and maxRuns (a positive whole number). list_actions returns them with runsUsed. Pass null to remove a limit.
+
 An action set off by another action carries that chain along. A chain stops after three actions, an action can't set itself off, and one action runs at most 60 times an hour.
 
 ## History

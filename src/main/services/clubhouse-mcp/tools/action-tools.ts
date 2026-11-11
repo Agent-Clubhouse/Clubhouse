@@ -252,7 +252,11 @@ function contextFor(scope: ActionScope): InputContext {
   return scope.owner.kind === 'agent' ? { agentId: scope.owner.agentId } : {};
 }
 
-const INPUT_FIELDS = ['name', 'trigger', 'steps', 'overlap', 'enabled'] as const;
+const INPUT_FIELDS = ['name', 'trigger', 'steps', 'overlap', 'enabled', 'endsAt', 'maxRuns'] as const;
+
+function prepareEndsAt(value: unknown): unknown {
+  return value === undefined || value === null ? value : onceAt(value);
+}
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -262,6 +266,7 @@ function createAction(scope: ActionScope, args: Obj): unknown {
   for (const key of INPUT_FIELDS) if (args[key] !== undefined) input[key] = args[key];
   input.trigger = prepareTrigger(args.trigger, ctx);
   input.steps = prepareSteps(args.steps, ctx);
+  input.endsAt = prepareEndsAt(args.endsAt);
   return { action: present(actions.createAction(input, scope.owner)) };
 }
 
@@ -307,7 +312,7 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
   const id = idArg(args);
   const current = findChangeable(scope, id);
   const changes = INPUT_FIELDS.filter((key) => args[key] !== undefined);
-  if (changes.length === 0) throw new ActionError('invalid_input', 'Nothing to change. Pass the fields to change: name, trigger, steps, overlap or enabled.');
+  if (changes.length === 0) throw new ActionError('invalid_input', 'Nothing to change. Pass name, trigger, steps, overlap, enabled, endsAt or maxRuns.');
   // Only turning it on or off: the same as the switch in Settings.
   if (changes.length === 1 && changes[0] === 'enabled') {
     if (typeof args.enabled !== 'boolean') throw new ActionError('invalid_input', 'enabled must be true or false.');
@@ -324,6 +329,8 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
     steps: args.steps !== undefined ? prepareSteps(args.steps, ctx) : current.steps,
     overlap: args.overlap !== undefined ? args.overlap : current.overlap,
     enabled: args.enabled !== undefined ? args.enabled : current.enabled,
+    endsAt: args.endsAt !== undefined ? prepareEndsAt(args.endsAt) : current.endsAt,
+    maxRuns: args.maxRuns !== undefined ? args.maxRuns : current.maxRuns,
   };
   return { action: present(actions.updateAction(id, input)) };
 }
@@ -451,6 +458,8 @@ const ACTION_FIELDS = {
     description: 'When the trigger fires while this action\'s last run is still going: skip (default) or queue (run it after the current run).',
   },
   enabled: { type: 'boolean', description: 'On (default) or off.' },
+  endsAt: { anyOf: [{ type: 'number' }, { type: 'string' }, { type: 'null' }], description: 'Optional for schedule and event actions. Stop at this absolute time, as epoch milliseconds or a date and time with a timezone. It must be in the future. A running run finishes normally. Pass null to remove it.' },
+  maxRuns: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }], description: 'Optional for schedule and event actions. Stop after this many started runs, including Run now and failed runs. Skipped runs do not count. The lifetime runsUsed count survives restarts and edits. Pass null to remove the limit.' },
 };
 
 const ID_FIELD = { id: { type: 'string', description: 'The action\'s id, from list_actions.' } };
@@ -541,7 +550,7 @@ export function registerActionTools(): void {
     {
       description:
         'List the actions you can manage, each with its trigger, steps, on or off state (with the reason when Clubhouse turned it off), ' +
-        'any problem from its last run, next run time and last run. You see every action; you can change and run only those you made. ' + RESULT_NOTE,
+        'any problem from its last run, next run time and last run, and optional endsAt, maxRuns and lifetime runsUsed. You see every action; you can change and run only those you made. ' + RESULT_NOTE,
       inputSchema: schema({}),
     },
     (callerId, args) => guarded('list_actions', callerId, args, (scope) => listActions(scope)),

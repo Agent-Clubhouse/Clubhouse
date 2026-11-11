@@ -121,6 +121,104 @@ const notify: ActionStep = { kind: 'notify', text: 'hi' };
 const weekdays9 = { kind: 'schedule', preset: 'weekdays', cron: '0 9 * * 1-5', missed: 'skip' } as const;
 const user = { kind: 'user' } as const;
 
+describe('lifetime limits', () => {
+  const returned = { kind: 'event', event: 'app.started', source: { kind: 'app' } } as const;
+
+  it('counts event, failed and manual starts, but not overlap skips', async () => {
+    let finish!: (result: ActionStepResult) => void;
+    const { engine, event, history, saved } = setup({
+      stepImpl: () => new Promise((resolve) => { finish = resolve; }),
+    });
+    engine.start();
+    const a = engine.create({ trigger: returned, steps: [notify], maxRuns: 2 }, user);
+    event({ type: 'app.started' });
+    engine.runNow(a.id);
+    expect(engine.get(a.id)?.runsUsed).toBe(1);
+    expect(history(a.id).some((r) => r.outcome === 'skipped')).toBe(true);
+    finish({ kind: 'notify', outcome: 'failed', detail: 'No notification service' });
+    await flush();
+    engine.runNow(a.id);
+    expect(engine.get(a.id)).toMatchObject({ enabled: false, runsUsed: 2, offReason: 'Reached its 2-run limit' });
+    expect(saved.actions[0].runsUsed).toBe(2);
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    engine.runNow(a.id);
+    expect(engine.get(a.id)?.runsUsed).toBe(2);
+    expect(history(a.id).filter((r) => r.outcome === 'done' || r.outcome === 'failed')).toHaveLength(2);
+  });
+
+  it('does not count hourly-limit skips', async () => {
+    const { engine, history } = setup();
+    engine.start();
+    const a = engine.create({ trigger: returned, steps: [notify], maxRuns: 61 }, user);
+    for (let i = 0; i < 61; i++) { engine.runNow(a.id); await flush(); }
+    expect(engine.get(a.id)).toMatchObject({ enabled: true, runsUsed: 60 });
+    expect(history(a.id).at(-1)).toMatchObject({ outcome: 'skipped', reason: 'Ran 60 times in the last hour' });
+  });
+
+  it('persists starts independently of history and bounds catch-up queues after restart', async () => {
+    const first = setup();
+    first.engine.start();
+    const a = first.engine.create({
+      trigger: { ...weekdays9, missed: 'each' }, steps: [notify], maxRuns: 3, overlap: 'queue',
+    }, user);
+    first.engine.runNow(a.id);
+    await flush();
+    first.engine.stop();
+    const second = setup({ actions: first.saved.actions, state: first.saved.state, start: START + 4 * 24 * 60 * MIN });
+    second.engine.start();
+    await flush(); await flush();
+    expect(second.engine.get(a.id)).toMatchObject({ runsUsed: 3, enabled: false, offReason: 'Reached its 3-run limit' });
+    expect(second.stepCalls).toHaveLength(2);
+    expect(second.engine.nextRunAt(a.id)).toBeUndefined();
+  });
+
+  it('counts scheduled starts and leaves missed-time skips unconsumed', async () => {
+    const { engine, clock } = setup();
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify], maxRuns: 2 }, user);
+    clock.t += 2 * 24 * 60 * MIN;
+    engine.resume();
+    await flush();
+    expect(engine.get(a.id)?.runsUsed).toBeUndefined();
+    await clock.advance(60 * MIN);
+    expect(engine.get(a.id)?.runsUsed).toBe(1);
+  });
+
+  it('never arms times beyond the end and lets an active run finish at expiry', async () => {
+    let finish!: (result: ActionStepResult) => void;
+    const { engine, clock, history } = setup({ stepImpl: () => new Promise((resolve) => { finish = resolve; }) });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify], endsAt: START + 30 * MIN }, user);
+    expect(engine.nextRunAt(a.id)).toBeUndefined();
+    engine.runNow(a.id);
+    await clock.advance(30 * MIN);
+    expect(engine.get(a.id)).toMatchObject({ enabled: false, offReason: 'Ended at the set time', runsUsed: 1 });
+    expect(history(a.id)[0].outcome).toBe('running');
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    expect(history(a.id)[0].outcome).toBe('done');
+    engine.runNow(a.id);
+    expect(engine.get(a.id)?.runsUsed).toBe(1);
+  });
+
+  it('does not catch up an expired action or restore its delayed wait', async () => {
+    const first = setup();
+    first.engine.start();
+    const a = first.engine.create({ trigger: { ...weekdays9, missed: 'each' }, steps: [notify], endsAt: START + 2 * 60 * MIN }, user);
+    const b = first.engine.create({ trigger: { ...returned, delayMinutes: 120 }, steps: [notify], endsAt: START + 60 * MIN }, user);
+    first.event({ type: 'app.started' });
+    first.engine.stop();
+    const second = setup({ actions: first.saved.actions, state: first.saved.state, start: START + 24 * 60 * MIN });
+    second.engine.start();
+    await flush();
+    expect(second.stepCalls).toHaveLength(0);
+    for (const id of [a.id, b.id]) expect(second.engine.get(id)).toMatchObject({ enabled: false, offReason: 'Ended at the set time' });
+    expect(second.saved.state.waits).toEqual([]);
+    expect(second.saved.state.nextAt).toEqual({});
+  });
+});
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe('creating and editing', () => {

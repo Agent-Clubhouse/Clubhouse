@@ -168,6 +168,12 @@ export interface Action {
   overlap: OverlapRule;
   owner: ActionOwner;
   enabled: boolean;
+  /** Recurring actions only: stop at this absolute time, in epoch milliseconds. */
+  endsAt?: number;
+  /** Recurring actions only: stop after this many started runs, including Run now and failures. */
+  maxRuns?: number;
+  /** Lifetime started-run count, independent of trimmed history. */
+  runsUsed?: number;
   /** Why Clubhouse turned it off, shown under its name. Cleared when it is turned back on. */
   offReason?: string;
   /** The last mechanical failure, shown under its name until a run succeeds or it is edited. */
@@ -189,6 +195,8 @@ export interface ActionInput {
   steps: ActionStep[];
   overlap?: OverlapRule;
   enabled?: boolean;
+  endsAt?: number;
+  maxRuns?: number;
 }
 
 // ── Runs and history ────────────────────────────────────────────────────────

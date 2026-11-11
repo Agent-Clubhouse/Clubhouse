@@ -172,6 +172,25 @@ describe('action tools', () => {
     registerActionTools();
   });
 
+  it('round-trips optional lifetime limits through create, update and list', async () => {
+    const endsAt = Date.now() + 24 * 60 * 60_000;
+    const created = await call('agent-a', 'create_action', { trigger: DAILY, steps: [NOTIFY], endsAt, maxRuns: 5 });
+    expect(created).toMatchObject({ isError: false, body: { action: { endsAt, maxRuns: 5 } } });
+    const id = created.body.action.id;
+    expect(created.body.action).toMatchObject({ endsAt, maxRuns: 5 });
+    await call('agent-a', 'run_action', { id });
+    await flush();
+    const updated = await call('agent-a', 'update_action', { id, maxRuns: 3 });
+    expect(updated.body.action).toMatchObject({ endsAt, maxRuns: 3, runsUsed: 1 });
+    const listed = await call('agent-a', 'list_actions');
+    expect(listed.body.actions.find((a: Action) => a.id === id)).toMatchObject({ endsAt, maxRuns: 3, runsUsed: 1, description: expect.stringContaining('2 of 3 runs remaining') });
+    const cleared = await call('agent-a', 'update_action', { id, endsAt: null, maxRuns: null });
+    expect(cleared.body.action.endsAt).toBeUndefined();
+    expect(cleared.body.action.maxRuns).toBeUndefined();
+    const invalid = await call('agent-a', 'update_action', { id, maxRuns: 0 });
+    expect(invalid.body.error.code).toBe('invalid_input');
+  });
+
   it('registers all seven tools, each mapped to an action.* permission', () => {
     expect(ACTION_TOOL_PERMISSIONS).toEqual({
       create_action: 'action.create', list_actions: 'action.list', update_action: 'action.update',

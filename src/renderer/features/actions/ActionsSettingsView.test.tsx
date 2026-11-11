@@ -21,6 +21,25 @@ beforeEach(() => {
 });
 
 describe('Settings > Actions', () => {
+  it('shows remaining runs and the end time on a bounded action card', async () => {
+    list = [action({ maxRuns: 5, runsUsed: 2, endsAt: new Date(2027, 0, 5, 9).getTime() })];
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByText('Morning plan'));
+    const card = await screen.findByTestId('action-card');
+    expect(within(card).getByText(/3 of 5 runs remaining\. Ends Jan 5, 2027 at 9:00 AM/)).toBeTruthy();
+  });
+
+  it('offers optional recurring limits and hides them for once', async () => {
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByTestId('actions-new'));
+    const form = await screen.findByTestId('action-form');
+    expect(within(form).getByLabelText('Ends at (optional)')).toBeTruthy();
+    expect(within(form).getByLabelText('Maximum runs (optional)')).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText('Runs'), { target: { value: 'once' } });
+    expect(within(form).queryByLabelText('Maximum runs (optional)')).toBeNull();
+    expect(within(form).queryByLabelText('Ends at (optional)')).toBeNull();
+  });
+
   it('shows what actions do and three starters when there are none', async () => {
     render(<ActionsSettingsView />);
     const empty = await screen.findByTestId('actions-empty');

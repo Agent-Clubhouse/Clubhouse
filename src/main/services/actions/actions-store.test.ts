@@ -14,6 +14,15 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 import { sanitizeActions, settleInterruptedRuns } from './actions-store';
 
 describe('actions store', () => {
+  it('keeps expired actions and their lifetime counter on reload', () => {
+    const a = {
+      id: 'expired', name: 'Temporary', trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } },
+      steps: [{ kind: 'notify', text: 'hi' }], overlap: 'skip', owner: { kind: 'user' }, enabled: false,
+      endsAt: 1, maxRuns: 100, runsUsed: 37, offReason: 'Ended at the set time', createdAt: 0, updatedAt: 1,
+    };
+    expect(sanitizeActions([a])).toEqual([a]);
+  });
+
   it('keeps valid actions and drops broken ones', () => {
     const good = { id: 'a1', name: 'Morning', trigger: { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' }, steps: [{ kind: 'notify', text: 'x' }], overlap: 'queue', owner: { kind: 'user' }, enabled: false, offReason: 'Turned off: pm was deleted', createdAt: 1, updatedAt: 2 };
     const out = sanitizeActions([good, { id: 'bad' }, { ...good, id: 'a2', owner: { kind: 'agent' } }, { ...good, id: 'a3', steps: [] }, 'junk']);
