@@ -130,11 +130,17 @@ vi.mock('./managed-agents/legacy-migration', async (importOriginal) => ({
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 const auditRows = vi.hoisted(() => [] as Array<Record<string, unknown>>);
-vi.mock('./settings-audit', async (importOriginal) => ({
-  ...await importOriginal<typeof import('./settings-audit')>(),
-  appendSettingsAudit: async (row: Record<string, unknown>) => { auditRows.push(row); return true; },
-  currentSettingsOrigin: () => ({ surface: 'ui' }),
-}));
+vi.mock('./settings-audit', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./settings-audit')>();
+  return {
+    ...original,
+    appendSettingsAudit: async (row: Record<string, unknown>) => { auditRows.push(row); return true; },
+    currentSettingsOrigin: () => {
+      const current = original.currentSettingsOrigin();
+      return current.surface === 'system' ? { surface: 'ui' } : current;
+    },
+  };
+});
 
 
 import {
@@ -155,6 +161,7 @@ import { isCrossProjectEnabled, isOrchestrationEnabled, setOrchestrationEnabled,
 import * as agentConfig from './agent-config';
 import { mcpCallAccess, mcpCallerKind, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
 import { disposeHelperTool } from './clubhouse-mcp/tools/helper-dispose-tools';
+import { withSettingsSurface } from './settings-audit';
 
 function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
   return { id, name: id, color: 'blue', createdAt: '2026-10-18T00:00:00Z', ...extra };
@@ -463,6 +470,48 @@ describe('setOrchestrationPolicy precondition (#2661)', () => {
 });
 
 describe('setOrchestrationPolicy', () => {
+  it.each([
+    [{}, { connectToDispatcher: true }],
+    [{}, { orchestrate: true }],
+    [{ orchestrate: true, connectToDispatcher: false }, { connectToDispatcher: null }],
+    [{ orchestrate: true, connectToDispatcher: false }, { connectToDispatcher: true }],
+    [{ orchestrate: true }, { orchestrate: false }],
+    [{ connectToDispatcher: true }, { connectToDispatcher: false }],
+  ] as const)('refuses agent-originated effective connection changes from %j with %j', async (before, patch) => {
+    for (const surface of ['mcp', 'dispatcher'] as const) {
+      setAgents(PROJECT, [agent('target', { orchestration: { ...before } })]);
+      const result = await withSettingsSurface(surface, 'caller', () => setOrchestrationPolicy(PROJECT, 'target', patch));
+      expect(result).toMatchObject({ ok: false, message: expect.stringContaining('connection.bootstrap') });
+      expect(find('target').orchestration).toEqual(before);
+      expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+      expect(auditRows).toContainEqual(expect.objectContaining({
+        surface, actorId: 'caller', targetId: 'target', outcome: 'refused', code: 'connection_bootstrap_required',
+      }));
+    }
+  });
+
+  it('lets an agent change helper policy when the effective connection stays unchanged', async () => {
+    setAgents(PROJECT, [agent('target', { orchestration: { connectToDispatcher: false } })]);
+    expect(await withSettingsSurface('dispatcher', 'caller', () => setOrchestrationPolicy(PROJECT, 'target', {
+      orchestrate: true, maxHelpers: 3,
+    }))).toMatchObject({ ok: true, policy: { orchestrate: true, connectToDispatcher: false, maxHelpers: 3 } });
+  });
+
+  it('uses the real caller origin even when the audit surface is overridden', async () => {
+    setAgents(PROJECT, [agent('target')]);
+    expect(await withSettingsSurface('mcp', 'caller', () => setOrchestrationPolicy(PROJECT, 'target', {
+      orchestrate: true,
+    }, { surface: 'ui' }))).toMatchObject({ ok: false, policy: { connectToDispatcher: false } });
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+  });
+
+  it('allows the internal authorized bootstrap write from an MCP call', async () => {
+    setAgents(PROJECT, [agent('target')]);
+    expect(await withSettingsSurface('mcp', 'dispatcher', () => setOrchestrationPolicy(PROJECT, 'target', {
+      connectToDispatcher: true,
+    }, { surface: 'dispatcher', connectionBootstrap: true }))).toMatchObject({ ok: true, policy: { connectToDispatcher: true } });
+  });
+
   it('persists the change and opens the gate of a running agent', async () => {
     setAgents(PROJECT, [agent('orch')]);
     live('orch');

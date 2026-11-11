@@ -34,6 +34,7 @@ export const GRANT_ACTIONS = [
   'agent.grant', // what an agent can do or reach: Access, helper policy, MCP servers, skills, instructions, its grants
   // Connections and group projects
   'connection.manage',
+  'connection.bootstrap',
   'group_project.read',
   'group_project.post',
   'group_project.admin',
@@ -82,6 +83,8 @@ export type GrantTarget =
   | { kind: 'self' }
   | { kind: 'parent' }
   | { kind: 'my_helpers' }
+  /** Only the new agent created by this call, never an existing agent. */
+  | { kind: 'created_by_me' }
   /**
    * `excludeDispatcher`: not the Dispatcher, which nothing connected to it may reset (#2921 gap fix).
    * `onlyDispatcher`: the Dispatcher alone, which a message from a connected agent wakes (#3037).
@@ -126,7 +129,7 @@ export interface GrantCallTarget {
   kind: 'agent' | 'browser' | 'project' | 'group_project' | 'app' | 'library' | 'action';
   /** For an Action target: its id. `relations` has `self` when the caller owns it. */
   actionId?: string;
-  relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member'>;
+  relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member' | 'created_by_me'>;
   /** The target agent is the Dispatcher. */
   isDispatcher?: boolean;
   /** The caller's connection to the target agent, on this computer, has Wake it on (#3215). */
@@ -177,6 +180,7 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
     case 'self': return rel.includes('self');
     case 'parent': return rel.includes('parent');
     case 'my_helpers': return rel.includes('my_helper');
+    case 'created_by_me': return target.kind === 'agent' && rel.includes('created_by_me') && !target.isDispatcher;
     case 'connected':
       return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher) && !(grant.onlyDispatcher && !target.isDispatcher)
         && !(grant.wakeOn && !target.wakeOn);

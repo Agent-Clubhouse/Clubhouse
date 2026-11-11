@@ -34,6 +34,17 @@ describe('the approval setting as grant modes (#2970)', () => {
 
 describe('the Dispatcher\'s defaults (#3050, #3034)', () => {
   const dispatcher = defaultGrants({ dispatcher: true, helper: false, orchestrates: false, crossProject: false });
+  it('only the Dispatcher asks to bootstrap an agent created in the same call (#3281)', () => {
+    expect(dispatcher.filter((g) => g.action === 'connection.bootstrap')).toEqual([
+      { action: 'connection.bootstrap', target: { kind: 'created_by_me' }, mode: 'ask', source: 'structural' },
+    ]);
+    for (const facts of [
+      { dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: true, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: false, orchestrates: true, crossProject: true },
+      { dispatcherChat: true, dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+    ]) expect(defaultGrants(facts).some((g) => g.action === 'connection.bootstrap')).toBe(false);
+  });
   const mode = (grants: Grant[], action: Parameters<typeof grantKey>[0]['action'], target: Parameters<typeof grantKey>[0]['target']) =>
     grants.filter((g) => grantKey(g) === grantKey({ action, target })).map((g) => g.mode).sort().reverse()[0];
   const connected = { kind: 'connected' } as const;

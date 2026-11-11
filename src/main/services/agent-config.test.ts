@@ -92,6 +92,7 @@ import { isInsideGitRepo } from './git-service';
 import {
   listDurable,
   createDurable,
+  beginDurableCreation,
   renameDurable,
   updateDurable,
   deleteDurable,
@@ -350,6 +351,14 @@ describe('createDurable', () => {
   it('generates durable_ prefixed ID', async () => {
     const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
     expect(config.id).toMatch(/^durable_/);
+  });
+
+  it('deferred Dispatcher bootstrap stays off from the first creating record (#3281)', async () => {
+    const handle = await beginDurableCreation(PROJECT_PATH,
+      { name: 'deferred', color: 'indigo', useWorktree: false }, { connectToDispatcher: false });
+    expect(handle.config.creation?.state).toBe('creating');
+    expect(handle.config.orchestration?.connectToDispatcher).toBe(false);
+    expect((await handle.done).orchestration?.connectToDispatcher).toBe(false);
   });
 
   it('stamps a new agent as carried: it never had the retired persona layer (D62)', async () => {

@@ -179,25 +179,25 @@ export interface DirectionToolsChange {
  * Replace several directions' lists in one write, as the Dispatcher's (#3215).
  * `guard` sees each direction's entry under the store's lock, so a user's
  * write that lands after the caller looked is seen too; it throws to refuse,
- * and then nothing is written.
+ * and then nothing is written. Returning false leaves that direction alone.
  */
 export async function setConnectionDirections(
   changes: readonly DirectionToolsChange[],
-  guard: (current: ConnectionDirection | undefined, change: DirectionToolsChange) => void,
+  guard: (current: ConnectionDirection | undefined, change: DirectionToolsChange) => void | false,
 ): Promise<ConnectionDirection[]> {
   if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
   let written: ConnectionDirection[] = [];
   await store.update((file) => {
     const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
     const now = new Date().toISOString();
-    const next = changes.map((c): ConnectionDirection => {
+    const next = changes.flatMap((c): ConnectionDirection[] => {
       const current = list.find((d) => directionKey(d.from, d.to) === directionKey(c.from, c.to));
-      guard(current, c);
-      return {
+      if (guard(current, c) === false) return [];
+      return [{
         from: c.from, to: c.to, disabledTools: [...new Set(c.disabledTools)],
         ...(c.enabledTools.length > 0 && { enabledTools: [...new Set(c.enabledTools)] }),
         setBy: 'dispatcher', ...(current?.link && { link: current.link }), updatedAt: now,
-      };
+      }];
     });
     const keys = new Set(next.map((d) => directionKey(d.from, d.to)));
     written = next;
@@ -213,6 +213,26 @@ export async function setConnectionDirections(
     }
   }
   return written;
+}
+
+/** Roll back only entries this call wrote, never a user's intervening edit. */
+export async function rollBackConnectionDirections(written: readonly ConnectionDirection[]): Promise<void> {
+  if (written.length === 0) return;
+  if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
+  await store.update((file) => ({
+    ...file,
+    directions: (Array.isArray(file.directions) ? file.directions : []).filter((raw) => {
+      const current = normalizeConnectionDirection(raw);
+      return !current || !written.some((d) => JSON.stringify(d) === JSON.stringify(current));
+    }),
+  }));
+  for (const d of written) {
+    for (const listener of [...listeners]) {
+      try { listener(d.from, d.to); } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
 }
 
 /**

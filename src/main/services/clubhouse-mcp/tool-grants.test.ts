@@ -181,7 +181,7 @@ describe('tool grant declarations (#2967)', () => {
       save_agent_template: template.write on library
       push_agent_template: template.write on library; template.push on agent_arg if agents
       delete_agent_template: template.write on library
-      create_managed_agent: agent.create on project_arg; agent.grant on project_arg if settings or templateId
+      create_managed_agent: agent.create on project_arg; agent.grant on project_arg if settings or templateId; connection.bootstrap on created_by_me if connectToDispatcher is true
       restart_agent: agent.restart on agent_arg
       delete_agent: agent.dispose on agent_arg
       answer_helper_question: agent.message on my_helpers

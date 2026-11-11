@@ -86,18 +86,18 @@ A separate thread per agent was considered instead. It would keep the clutter ou
 
 ## What connections start with (#3214)
 
-The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". A connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off, except where an agent already controls the other. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).
+The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". A connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off, except for a parent's direction to its own helper. Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).
 
 | Direction | Starts with |
 |---|---|
 | Orchestrator → its own helper | every tool on, wake included |
-| Dispatcher → any agent | every tool on: clear, compact, wake, and sleep (its own, as before) |
+| Dispatcher → any agent | read, message and wake; `clear_agent` and `compact_agent` off |
 | Helper → its orchestrator | send and wake; `clear_agent` and `compact_agent` off |
 | Any agent → Dispatcher | send and wake; `clear_agent` and `compact_agent` off |
 | Agent ↔ agent: an orchestrator's connections, `connect_agents`, and `connect_orchestrators` without `allow` | send and wake; `clear_agent` and `compact_agent` off |
 | A canvas wire the user draws, Make two-way | send and wake; `clear_agent` and `compact_agent` off |
 
-An explicit `allow` on `connect_orchestrators` or `set_connection_tools` still wins. Sleep isn't a connection switch: `sleep_agent` is offered only to the Dispatcher (its tool group), never to another agent, whatever a direction's switches say. Wake still needs the caller's `agent.wake` grant on top of the switch, so **Ask first** or **Off** on the permissions page holds it back (see Wake on a connection below). A helper's wire to its orchestrator offers no tool the helper's grants don't cover: a helper reaches its orchestrator with `message_parent`, so wake on that direction is a switch with nothing behind it.
+An explicit `allow` on `connect_orchestrators` or `set_connection_tools` still wins. Agent-originated settings and template pushes cannot change effective Connect to Dispatcher, including clearing its saved override or changing the `orchestrate` fallback; only the separately authorized `connection.bootstrap` creation flow can establish that connection. Native desktop and paired-device user controls remain available. Sleep isn't a connection switch: `sleep_agent` is offered only to the Dispatcher (its tool group), never to another agent, whatever a direction's switches say. Wake still needs the caller's `agent.wake` grant on top of the switch, so **Ask first** or **Off** on the permissions page holds it back (see Wake on a connection below). A helper's wire to its orchestrator offers no tool the helper's grants don't cover: a helper reaches its orchestrator with `message_parent`, so wake on that direction is a switch with nothing behind it.
 
 Each source gives every direction it lists starting lists (`startingTools` on the binding: `disabledTools`, and `enabledTools` for wake). They apply whichever source bound the pair first, so a canvas wire with no list of its own doesn't leave the pair with every tool on. A saved direction always wins, an explicit everything-on included. When two sources give the same direction starting lists, the first one in the rebuild decides, so the helper source keeps an orchestrator's tools on its own helper. With nothing saved, the live binding carries the starting `enabledTools`, and wake reads from it (`localConnectionWakeOn` in `connection-grants-store.ts`, `localDirectionTools`). A wire drawn on the canvas is saved at once with wake on (`setDisabledTools` with `start`). A first change on the Connections card to a direction with nothing saved keeps the wake its source started it with.
 

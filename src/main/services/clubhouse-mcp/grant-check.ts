@@ -102,6 +102,7 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     case 'self': return { kind: 'agent', relations: ['self'] };
     case 'parent': return { kind: 'agent', relations: ['parent'] };
     case 'my_helpers': return { kind: 'agent', relations: ['my_helper'] };
+    case 'created_by_me': return { kind: 'agent', relations: ['created_by_me'] };
     case 'connected': return { kind: 'agent', relations: ['connected'] };
     case 'app': return { kind: 'app' };
     case 'library': return { kind: 'library' };
@@ -142,6 +143,7 @@ export function whereText(target: GrantCallTarget): string {
   if (target.isDispatcher && rel.includes('connected')) return 'the Dispatcher';
   if (rel.includes('parent')) return 'your orchestrator';
   if (rel.includes('my_helper')) return 'your helpers';
+  if (rel.includes('created_by_me')) return 'the agent created by this call';
   if (rel.includes('connected')) return target.kind === 'browser' ? 'a canvas browser you are wired to' : 'an agent you are connected to';
   if (rel.includes('group_member')) return 'members of this group project';
   if (target.notGroupMember) return 'an agent that is not a member of this group project';
@@ -208,7 +210,8 @@ export function callerGrants(agentId: string): Grant[] {
 export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, wire?: GrantCheckWire, argTargets?: ArgTargets): GrantCheck {
   if (!grant) return OK;
   const declarations = toolGrantDeclarations(grant)
-    .filter((d) => !d.ifArgs || d.ifArgs.some((a) => args[a] !== undefined && args[a] !== null));
+    .filter((d) => (!d.ifArgs || d.ifArgs.some((a) => args[a] !== undefined && args[a] !== null))
+      && (!d.ifTrue || d.ifTrue.some((a) => args[a] === true)));
   if (declarations.length === 0) return OK;
   const caller = callerOf(agentId);
   const grants = callerGrants(agentId);

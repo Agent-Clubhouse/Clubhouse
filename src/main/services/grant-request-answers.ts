@@ -19,6 +19,7 @@ import { finishGrantAnswer, grantRequestKey, restoreGrantRequest, takeGrantReque
 import { appLog } from './log-service';
 import { recordGrantRequest } from './grant-telemetry';
 import { currentSettingsOrigin } from './settings-audit';
+import { recordDispatcherControl } from '../telemetry/dispatcher-telemetry';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -55,6 +56,13 @@ export async function answerGrantRequest(requestId: string, allow: boolean): Pro
   }
   finishGrantAnswer(requestId);
   recordGrantRequest({ agentId: request.agentId, kind: request.kind, outcome: allow ? 'allowed' : 'declined', actions: request.actions });
+  if (request.kind === 'call' && request.actions.includes('connection.bootstrap')) {
+    recordDispatcherControl({
+      tool: request.toolName ?? 'create_managed_agent', actorId: request.agentId, targets: [],
+      requested: { requestId: request.requestId },
+      outcome: allow ? 'ok' : 'refused', code: allow ? 'bootstrap_approved' : 'bootstrap_declined',
+    });
+  }
   appLog('core:mcp', 'info', allow ? 'Permission request allowed' : 'Permission request declined', {
     meta: { agentId: request.agentId, requestId, kind: request.kind, surface: currentSettingsOrigin().surface },
   });

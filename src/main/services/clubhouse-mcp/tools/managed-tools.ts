@@ -14,7 +14,7 @@ import { createHash, randomBytes } from 'crypto';
 import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
-import type { ToolGrant } from '../tool-grants';
+import type { ToolGrant, ToolGrantDeclaration } from '../tool-grants';
 import { appLog } from '../../log-service';
 import * as projectStore from '../../project-store';
 import * as agentConfig from '../../agent-config';
@@ -39,6 +39,7 @@ import { resolveArgTargets } from '../arg-targets';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import { deleteAgent } from '../../agent-delete';
 import type { AgentDeleteResult, HelperDeleteChoice } from '../../../../shared/types';
+import { createDispatcherManagedAgent } from '../dispatcher-bootstrap';
 
 const ACTOR = 'Dispatcher';
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
@@ -99,6 +100,12 @@ function objectArg<T>(args: Record<string, unknown>, key: string): T | undefined
 function settingsArg(args: Record<string, unknown>, keep?: ManagedTemplateSettings): ManagedTemplateSettings | undefined {
   const settings = objectArg<ManagedTemplateSettings>(args, 'settings');
   if (settings && 'grants' in settings) throw new ArgError('settings.grants: only the user sets a template\'s Clubhouse permissions, in Settings. Leave it out.');
+  if (settings?.orchestration !== undefined && (!settings.orchestration || typeof settings.orchestration !== 'object' || Array.isArray(settings.orchestration))) {
+    throw new ArgError('settings.orchestration must be an object.');
+  }
+  if (settings?.orchestration && 'connectToDispatcher' in settings.orchestration) {
+    throw new ArgError('settings.orchestration.connectToDispatcher is not accepted. When creating an agent, use the top-level connectToDispatcher option, which has its own permission. Only the user changes existing connections.');
+  }
   if (!settings) return undefined;
   return keep?.grants?.length ? { ...settings, grants: keep.grants } : settings;
 }
@@ -221,6 +228,11 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
 }
 
 const DELETE_GRANT: ToolGrant = { actions: ['agent.dispose'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } };
+const CREATE_GRANTS: readonly ToolGrantDeclaration[] = [
+  { actions: ['agent.create'], target: 'project_arg', from: { args: ['project'] } },
+  { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['settings', 'templateId'], from: { args: ['project'] } },
+  { actions: ['connection.bootstrap'], target: 'created_by_me', ifTrue: ['connectToDispatcher'] },
+];
 const HELPER_CHOICES = ['dispose', 'keep'] as const;
 const WORKTREE_CHOICES = ['delete', 'keep'] as const;
 
@@ -547,9 +559,10 @@ export function registerManagedTools(): void {
       return json({ status: 'deleted' });
     });
 
-  tool('create_managed_agent', [{ actions: ['agent.create'], target: 'project_arg', from: { args: ['project'] } }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['settings', 'templateId'], from: { args: ['project'] } }],
-    'Create a durable agent, asleep; wake it with wake_agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts.',
-    { project: PROJECT, name: S, color: S, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
+  describeCallsForAsk('create_managed_agent', (args) => `Create ${String(args.name)} in ${String(args.project)}.${args.connectToDispatcher === true ? ' Connect only that new agent to the Dispatcher controller in both directions. Each direction can read, message and wake, with clear and compact off. Existing user switches stay as they are.' : ''}`);
+  tool('create_managed_agent', CREATE_GRANTS.map((g) => ({ ...g, askHandledByTool: true })),
+    'Create a durable agent, asleep. connectToDispatcher: true asks for the separate connection.bootstrap permission on only this new agent, Ask first by default. Once connected, its generated wake_agent and send_message tools become available. Without it, ask the user to enable Connect to Dispatcher; an unconnected agent cannot be woken or messaged here. Both connection directions start with read, message and wake on, clear and compact off. Retrying the same connected creation in this app session returns its receipt, not another agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts. settings.orchestration.connectToDispatcher is not accepted.',
+    { project: PROJECT, name: S, color: S, connectToDispatcher: { type: 'boolean', description: 'Connect only the agent created by this call, with separate approval. Default false.' }, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
     async (callerId, args) => {
       const project = await resolveProject(requireString(args, 'project'));
       const hasSetup = ['blocks', 'skills', 'mcps'].some((k) => args[k] !== undefined);
@@ -558,6 +571,7 @@ export function registerManagedTools(): void {
       const input = {
         name: requireString(args, 'name'),
         color: optionalString(args, 'color') ?? 'indigo',
+        deferDispatcherConnection: true as const,
         ...(plain && { managed: false as const }),
         templateId: optionalString(args, 'templateId'),
         ...(hasSetup && { setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') } }),
@@ -581,14 +595,13 @@ export function registerManagedTools(): void {
           });
         if (refused) throw new ArgError(refused);
       };
-      // Created asleep: nothing here spawns, so the whole creation can run under the grant.
-      const config = await asDispatcher(callerId, () => createManagedAgent(project.path, input, checkAccess));
+      // Templates and orchestration defaults cannot implicitly bootstrap a connection.
+      input.settings = { ...input.settings, orchestration: { ...input.settings?.orchestration, connectToDispatcher: false } };
       // A plain agent made here gets none of the project's legacy defaults (#3245): say so.
-      const legacy = config.managed ? undefined : await legacyDefaultsNotCopied(project.path);
-      return json({
-        id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping',
-        ...(legacy && { legacyDefaults: legacy, note: 'This project has legacy agent defaults. They weren\'t copied into the new agent; the user can copy them from the project\'s settings.' }),
-      });
+      const legacy = plain ? await legacyDefaultsNotCopied(project.path) : undefined;
+      return createDispatcherManagedAgent(callerId, args, project, CREATE_GRANTS,
+        () => asDispatcher(callerId, () => createManagedAgent(project.path, input, checkAccess)),
+        legacy ? { legacyDefaults: legacy, note: 'This project has legacy agent defaults. They weren\'t copied into the new agent; the user can copy them from the project\'s settings.' } : {});
     });
 
   tool('restart_agent', { actions: ['agent.restart'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },

@@ -139,10 +139,9 @@ export const EVERY_SWITCH_ON: StartingSwitches = { disabledTools: [], enabledToo
 
 /**
  * What each direction of a connection Clubhouse makes itself starts with
- * (#3214; the maintainer's defaults, 2026-11-09). An orchestrator has every
- * tool on its own helper, and the Dispatcher every tool on any agent (its wake
- * and sleep don't use the switch). Every other direction starts like a new
- * connection: send and wake, with clear and compact off.
+ * (#3214, #3281). An orchestrator has every tool on its own helper.
+ * Every other direction starts like a new connection: read, message and
+ * wake, with clear and compact off. Saved user switches always win.
  */
 export const AUTOMATIC_CONNECTION_SWITCHES: {
   readonly parentToHelper: StartingSwitches;
@@ -153,7 +152,7 @@ export const AUTOMATIC_CONNECTION_SWITCHES: {
 } = {
   parentToHelper: EVERY_SWITCH_ON,
   helperToParent: NEW_CONNECTION_SWITCHES,
-  dispatcherToAgent: EVERY_SWITCH_ON,
+  dispatcherToAgent: NEW_CONNECTION_SWITCHES,
   agentToDispatcher: NEW_CONNECTION_SWITCHES,
   orchestratorLink: NEW_CONNECTION_SWITCHES,
 };

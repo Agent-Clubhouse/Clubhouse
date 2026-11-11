@@ -1949,10 +1949,12 @@ export interface DurableCreationRunOptions {
    * managed agent never gets them (#3243).
    */
   copyLegacyDefaults?: boolean;
+  /** MCP creation stays unconnected from its first record until bootstrap is approved. */
+  connectToDispatcher?: false;
 }
 
 /** The creation options a createDurable caller can set. */
-export type DurableCreationCopyOptions = Pick<DurableCreationRunOptions, 'copyLegacyDefaults' | 'creationRequestId'>;
+export type DurableCreationCopyOptions = Pick<DurableCreationRunOptions, 'copyLegacyDefaults' | 'creationRequestId' | 'connectToDispatcher'>;
 
 export interface DurableCreationHandle {
   /** The new agent's record, in the 'creating' state. */
@@ -2225,6 +2227,7 @@ export async function beginDurableCreation(
     createdAt: startedAt,
     // A new agent never had the retired persona layer, so there is nothing to carry onto it (D62).
     personaLayerCarriedAt: startedAt,
+    ...(options.connectToDispatcher === false && { orchestration: { connectToDispatcher: false } }),
     ...(model && model !== 'default' ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(routing ? { routing } : {}),

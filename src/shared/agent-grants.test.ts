@@ -19,6 +19,11 @@ describe('agent grants (#2966)', () => {
       [{ kind: 'parent' }, { kind: 'agent', relations: ['connected'] }, false],
       [{ kind: 'my_helpers' }, { kind: 'agent', relations: ['my_helper'] }, true],
       [{ kind: 'my_helpers' }, { kind: 'agent', relations: [] }, false],
+      [{ kind: 'created_by_me' }, { kind: 'agent', relations: ['created_by_me'] }, true],
+      [{ kind: 'created_by_me' }, { kind: 'agent', relations: ['connected'] }, false],
+      [{ kind: 'created_by_me' }, { kind: 'agent', relations: ['my_helper'] }, false],
+      [{ kind: 'created_by_me' }, { kind: 'agent', relations: ['created_by_me'], isDispatcher: true }, false],
+      [{ kind: 'created_by_me' }, { kind: 'project', relations: ['created_by_me'] }, false],
       [{ kind: 'connected' }, { kind: 'agent', relations: ['connected'] }, true],
       [{ kind: 'connected' }, { kind: 'agent', relations: ['parent'] }, false],
       // Waking the Dispatcher by messaging it (#3037): the Dispatcher alone.
