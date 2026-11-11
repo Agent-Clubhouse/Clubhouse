@@ -39,6 +39,11 @@ export const app = {
     ipcRenderer.on(IPC.APP.OPEN_ABOUT, listener);
     return () => { ipcRenderer.removeListener(IPC.APP.OPEN_ABOUT, listener); };
   },
+  onModelCatalogNotice: (callback: (message: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, message: string) => callback(message);
+    ipcRenderer.on(IPC.APP.MODEL_CATALOG_NOTICE, listener);
+    return () => { ipcRenderer.removeListener(IPC.APP.MODEL_CATALOG_NOTICE, listener); };
+  },
 
   getTheme: () =>
     ipcRenderer.invoke(IPC.APP.GET_THEME),

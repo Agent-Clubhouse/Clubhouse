@@ -344,6 +344,7 @@ export const IPC = {
     NOTIFICATION_CLICKED: 'app:notification-clicked',
     /** Main→renderer: an agent deliberately requested the user's attention via notify_user. */
     AGENT_ATTENTION: 'app:agent-attention',
+    MODEL_CATALOG_NOTICE: 'app:model-catalog-notice',
     GET_THEME: 'app:get-theme',
     SAVE_THEME: 'app:save-theme',
     THEME_CHANGED: 'app:theme-changed',

@@ -40,6 +40,7 @@ const NOT_SETTINGS = new Set([
   'chat-cli-denylist.json',
   // Auto's last fair-tie choice is internal scheduling history, not a person's setting.
   'helper-auto-rotation.json',
+  'helper-model-catalogs.json',
 ]);
 
 describe('settings audit inventory', () => {

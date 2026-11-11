@@ -50,6 +50,7 @@ vi.stubGlobal('window', {
   clubhouse: {
     app: {
       onOpenSettings: vi.fn(() => mockRemovers.onOpenSettings),
+      onModelCatalogNotice: vi.fn(() => vi.fn()),
       onOpenAbout: vi.fn(() => mockRemovers.onOpenAbout),
       onNotificationClicked: vi.fn(() => mockRemovers.onNotificationClicked),
       onAgentAttention: vi.fn(() => mockRemovers.onAgentAttention),
@@ -390,6 +391,23 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.window.onCanvasMutation).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToAgent).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToPluginSettings).toHaveBeenCalled();
+  });
+
+  it('shows catalog changes once in the main window with a Smart selection action', () => {
+    const handler = vi.mocked(window.clubhouse.app.onModelCatalogNotice).mock.calls.at(-1)![0];
+    const ui = { explorerTab: 'agents', setSettingsContext: vi.fn(), setSettingsSubPage: vi.fn(), toggleSettings: vi.fn(), setDispatcherOpen: vi.fn() };
+    vi.mocked(useUIStore.getState).mockReturnValue(ui as never);
+    handler('New models for Codex: New. Review Smart selection');
+    const action = vi.mocked(useToastStore.getState().addToast).mock.calls.at(-1)![2];
+    expect(action?.label).toBe('Review Smart selection');
+    action?.onClick();
+    expect(ui.setSettingsContext).toHaveBeenCalledWith('app');
+    expect(ui.setSettingsSubPage).toHaveBeenCalledWith('smart-selection');
+    expect(ui.toggleSettings).toHaveBeenCalledOnce();
+    vi.mocked(useToastStore.getState().addToast).mockClear();
+    vi.mocked(window.clubhouse.window.isPopout).mockReturnValueOnce(true);
+    handler('New models for Codex: New. Review Smart selection');
+    expect(useToastStore.getState().addToast).not.toHaveBeenCalled();
   });
 
   it('reveals Connections when a canvas popout asks the main window to edit them (#3213)', () => {
