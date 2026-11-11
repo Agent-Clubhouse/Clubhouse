@@ -218,6 +218,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
   switch (kind) {
     case 'pre_tool':
     case 'post_tool': {
+      if (completedCopilotHookTurns.has(agentId)) return;
       if (turnId && turn?.turnId) {
         if (turnId === turn.turnId && turn.ended) return;
         if (turnId !== turn.turnId) return;

@@ -7,7 +7,6 @@ import {
   publishAppEvent,
   publishFromChatEvent,
   publishFromHookEvent,
-  forgetHookTurn,
   resetAppEventBus,
   setAgentChain,
   turnOutcomeFromStopReason,
@@ -94,12 +93,29 @@ describe('from terminal hooks', () => {
     publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 1);
     publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 2);
     publishFromHookEvent('a1', { kind: 'post_tool', rawName: 'postToolUse' }, 3);
+    publishFromHookEvent('a1', { kind: 'pre_tool', rawName: 'preToolUse', toolName: 'AskUserQuestion' }, 10 * 60_000);
     publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 10 * 60_000);
     publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 10 * 60_000 + 1);
     publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 10 * 60_000 + 2);
-    expect(events.filter((e) => e.type === 'turn.ended')).toEqual([
+    expect(events).toEqual([
+      { type: 'turn.started', agentId: 'a1', via: 'hook', at: 0 },
       { type: 'turn.ended', agentId: 'a1', via: 'hook', outcome: 'completed', at: 1 },
+      { type: 'turn.started', agentId: 'a1', via: 'hook', at: 10 * 60_000 + 1 },
       { type: 'turn.ended', agentId: 'a1', via: 'hook', outcome: 'completed', at: 10 * 60_000 + 2 },
+    ]);
+  });
+
+  it('attributes an uncorrelated late Copilot stop to the current prompt boundary', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 0);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 1);
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 2);
+    // The old stop has no turn ID to distinguish it from the current turn's stop.
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 3);
+    publishFromHookEvent('a1', { kind: 'pre_tool', rawName: 'preToolUse' }, 4);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 5);
+    expect(events.map((event) => [event.type, event.at])).toEqual([
+      ['turn.started', 0], ['turn.ended', 1], ['turn.started', 2], ['turn.ended', 3],
     ]);
   });
 
