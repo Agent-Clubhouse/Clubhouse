@@ -6,6 +6,7 @@
  */
 
 import { appLog } from './log-service';
+import { observeHelperModelCatalog } from './helper-model-catalog';
 import { getProvider } from '../orchestrators';
 import type { ModelInfo, ModelList, OrchestratorId, OrchestratorProvider } from '../orchestrators';
 
@@ -16,7 +17,9 @@ function errorText(err: unknown): string {
 /** The provider's model list for its local login, or null when the provider can't list models. */
 export async function modelListFor(provider: OrchestratorProvider, refresh = false): Promise<ModelList | null> {
   if (!provider.listModels) return null;
-  return provider.listModels(refresh ? { refresh: true } : {});
+  const list = await provider.listModels(refresh ? { refresh: true } : {});
+  await observeHelperModelCatalog(provider, list);
+  return list;
 }
 
 function accepts(provider: OrchestratorProvider, model: string, list: ModelList): boolean {

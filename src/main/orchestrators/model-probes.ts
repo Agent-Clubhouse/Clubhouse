@@ -141,10 +141,12 @@ export async function probeCodexModels(ctx: ModelProbeContext): Promise<ModelInf
     let cursor: string | null = null;
     for (let page = 0; page < CODEX_MAX_PAGES; page++) {
       const res = await client.request('model/list', cursor ? { cursor } : {});
+      if (!Array.isArray(res?.data)) throw new Error('Codex returned an incomplete model catalog');
       data.push(...(res?.data ?? []));
       cursor = res?.nextCursor ?? null;
       if (!cursor) break;
     }
+    if (cursor) throw new Error('Codex model catalog exceeded the page limit');
     return parseCodexModelList(data);
   } finally {
     detach();

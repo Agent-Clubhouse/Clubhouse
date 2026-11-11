@@ -47,7 +47,7 @@ import { showRemovedPluginApiNotice } from './services/removed-plugin-api-notice
 import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
-import { closeDispatcher, openDispatcher, openDispatcherNavTarget } from './features/dispatcher/dispatcherNav';
+import { closeDispatcher, openAutoSettings, openDispatcher, openDispatcherNavTarget } from './features/dispatcher/dispatcherNav';
 import { requestLeaveAgentSettings } from './features/agents/agentSettingsPages';
 import { openAgent } from './features/agents/helpers/orchestration-hooks';
 import { useAgentDetailsStore } from './features/agents/details/detailsStore';
@@ -57,6 +57,11 @@ import { useAgentDetailsStore } from './features/agents/details/detailsStore';
 
 function initWindowListeners(): (() => void)[] {
   const removers: (() => void)[] = [];
+
+  removers.push(window.clubhouse.app.onModelCatalogNotice((message) => {
+    if (window.clubhouse.window.isPopout()) return;
+    useToastStore.getState().addToast(message, 'info', { label: 'Review Smart selection', onClick: openAutoSettings });
+  }));
 
   // Open Settings from menu
   removers.push(

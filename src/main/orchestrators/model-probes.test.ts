@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -14,6 +14,7 @@ import {
 } from './model-probes';
 import { chatFixturePath, writeFakeCliShims, type ChatFixtureCli } from './adapters/testing/fake-cli';
 import type { Model } from './adapters/codex-protocol';
+import { CodexAppServerClient } from './adapters/codex-app-server-client';
 
 type Entry = { from: 'client' | 'cli'; msg: Record<string, any> };
 /** A fixture's entries, without its header. */
@@ -159,6 +160,34 @@ describe('live probes, replayed through the fake CLI (no real CLI, no prompt)', 
     expect(r.mismatch).toBeNull();
     expect(r.complete).toBe(true);
     expect(r.argv).toEqual(['app-server']);
+  });
+
+  it('Codex: refuses a partial catalog when the page limit leaves another cursor', async () => {
+    vi.spyOn(CodexAppServerClient.prototype, 'start').mockResolvedValue({
+      userAgent: 'test', codexHome: '/test', platformFamily: 'unix', platformOs: 'macos',
+    });
+    const request = vi.spyOn(CodexAppServerClient.prototype, 'requestRaw').mockResolvedValue({
+      data: [{ id: 'listed', model: 'listed', displayName: 'Listed' }], nextCursor: 'another-page',
+    });
+    const kill = vi.spyOn(CodexAppServerClient.prototype, 'kill').mockImplementation(() => {});
+    await expect(probeCodexModels({
+      binary: 'unused', cwd: os.tmpdir(), signal: new AbortController().signal, timeoutMs: 1000,
+    })).rejects.toThrow('page limit');
+    expect(request).toHaveBeenCalledTimes(5);
+    expect(kill).toHaveBeenCalledOnce();
+  });
+
+  it('Codex: refuses a missing model page instead of treating it as the end of the catalog', async () => {
+    vi.spyOn(CodexAppServerClient.prototype, 'start').mockResolvedValue({
+      userAgent: 'test', codexHome: '/test', platformFamily: 'unix', platformOs: 'macos',
+    });
+    vi.spyOn(CodexAppServerClient.prototype, 'requestRaw')
+      .mockResolvedValueOnce({ data: [{ id: 'listed', model: 'listed' }], nextCursor: 'next' })
+      .mockResolvedValueOnce({});
+    vi.spyOn(CodexAppServerClient.prototype, 'kill').mockImplementation(() => {});
+    await expect(probeCodexModels({
+      binary: 'unused', cwd: os.tmpdir(), signal: new AbortController().signal, timeoutMs: 1000,
+    })).rejects.toThrow('incomplete model catalog');
   });
 
   it('Copilot: connect and models.list over the SDK, never a session or a prompt', async () => {
