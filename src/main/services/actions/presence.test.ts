@@ -98,6 +98,22 @@ describe('Action presence', () => {
     expect(h.returned).toHaveBeenCalledExactlyOnceWith(['a']);
   });
 
+  it.each([
+    { from: 5, to: 30, returns: false },
+    { from: 30, to: 5, returns: true },
+  ])('rechecks eligibility when an away action changes from $from to $to minutes', async ({ from, to, returns }) => {
+    const h = setup();
+    h.tracker.configure([{ id: 'a', absenceMinutes: from }]);
+    h.signal('blur');
+    await vi.advanceTimersByTimeAsync(6 * MIN);
+    h.tracker.configure([{ id: 'a', absenceMinutes: to }]);
+    h.signal('focus', true);
+    if (returns) expect(h.returned).toHaveBeenCalledExactlyOnceWith(['a']);
+    else expect(h.returned).not.toHaveBeenCalled();
+    expect(h.powerMonitor.listenerCount('signal')).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
   it('does not count idle time while Clubhouse remains focused or ordinary window switching', async () => {
     const h = setup();
     h.tracker.configure([{ id: 'a', absenceMinutes: 5 }]);

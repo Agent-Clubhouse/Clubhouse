@@ -37,13 +37,17 @@ export class ActionPresence {
 
   configure(watches: ReturnWatch[]): void {
     const previous = new Map(this.watches.map((w) => [w.id, w.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES]));
+    const changed = watches.length !== previous.size || watches.some((w) => previous.get(w.id) !== (w.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES));
     for (const id of this.qualified) {
       const next = watches.find((w) => w.id === id);
       if (!next || previous.get(id) !== (next.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES)) this.qualified.delete(id);
     }
     this.watches = watches;
     if (!watches.length) { this.stop(); return; }
-    if (this.unlisten) return;
+    if (this.unlisten) {
+      if (changed) this.sample();
+      return;
+    }
     this.locked = false;
     this.suspended = false;
     this.blockedSince = null;
