@@ -615,14 +615,16 @@ export async function pruneMemoryHistory(root: string = getDispatcherMemoryPath(
   await walk(path.join(root, MEMORY_HISTORY_DIR));
 }
 
-export async function moveMemoryHistory(from: string, to: string, root?: string): Promise<void> {
+export async function moveMemoryHistory(from: string, to: string, root: string = getDispatcherMemoryPath()): Promise<void> {
   const source = await historyPath(from, root);
   const target = await historyPath(to, root);
   if (source === target) return;
   const files = await historyFiles(source);
   if (files.length) await fsp.mkdir(target, { recursive: true });
   for (const file of files) await fsp.rename(path.join(source, file), path.join(target, file));
-  await prunePageHistory(target, Date.now());
+  const current = await readIfExists(path.join(root, to));
+  if (current !== null) await rememberVersion(to, current, root, Date.now());
+  else await prunePageHistory(target, Date.now());
 }
 
 function sameStamp(a: MemoryFileStamp | undefined, b: MemoryFileStamp): boolean {

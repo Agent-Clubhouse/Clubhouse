@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  MAX_MEMORY_ACCESS_PAGES, MEMORY_HISTORY_VERSIONS, memoryAccessPath, memoryWrite, observeMemoryPage,
+  MAX_MEMORY_ACCESS_PAGES, MEMORY_HISTORY_VERSIONS, memoryAccessPath, memoryWrite, moveAgentPage, observeMemoryPage,
   parseTopicPage, pruneMemoryHistory, readMemoryAccess, recordMemoryRead, renderAgentPage, writeAgentCard,
 } from './dispatcher-memory';
 import { readDispatcherMemory } from './dispatcher-memory-reader';
@@ -167,6 +167,14 @@ describe('write_memory and shared memory writes', () => {
     await expect(writeDispatcherMemory('history/topics/release.md/old.md', 'bad', root)).rejects.toThrow(/read only/);
     await pruneMemoryHistory(root, NOW.getTime() + 31 * DAY);
     expect(versions('topics/release.md')).toEqual([]);
+  });
+
+  it('keeps the current renamed page in history even when source writes share one clock tick', async () => {
+    for (let i = 0; i < 8; i++) await writeAgentCard('lead', `Card ${i}`, root);
+    await moveAgentPage('lead', 'new-lead', root);
+    const current = fs.readFileSync(path.join(root, 'agents', 'new-lead.md'), 'utf8');
+    expect(versions('agents/new-lead.md')).toHaveLength(MEMORY_HISTORY_VERSIONS);
+    expect(versions('agents/new-lead.md')).toContain(current);
   });
 
   it('attributes direct edits by timestamp and digest, saves the observed bytes and does not repeat attribution', async () => {
