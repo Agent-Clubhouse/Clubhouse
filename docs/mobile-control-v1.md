@@ -56,13 +56,147 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 
 - `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
 - `helper.decline`: `{requestId}`; decline it. The orchestrator is told, as from the desktop.
-- `grant.answer`: `{requestId, answer}`; answer a Clubhouse permission request (an Ask-first call or a `request_grant` ask) as Needs you does, from any device that controls this computer. `answer` is `allow_once`, `allow_lasting` or `decline`. See [Grant requests](#grant-requests).
+- `grant.answer`: `{requestId, answer, updateMode?}`; answer a Clubhouse permission request (an Ask-first call or a `request_grant` ask) as Needs you does, from any device that controls this computer. `answer` is `allow_once`, `allow_lasting` or `decline`. An update's `allow_once` additionally requires `updateMode:"now"|"when_idle"`. See [Grant requests](#grant-requests) and [Desktop updates](#desktop-updates).
+- `app.update.request`: `{}`; request human approval of the ready desktop update through the Dispatcher. Never installs or approves anything. See [Desktop updates](#desktop-updates).
+- `app.update.cancel`: `{requestId}`; cancel a pending update approval or an approved idle wait. See [Desktop updates](#desktop-updates).
 
 For `chat.send`, `result` is `{delivery:"prompt"|"steer"|"queued",messageId:"authoritative runtime ID"}`. The matching `user_message.data` additionally echoes `clientCommandId` equal to the request commandId, including queued/steered sends. The event may arrive before the receipt: reconcile by clientCommandId immediately, then by messageId; never guess by text or timestamps. Local/legacy sends omit the optional field.
 
 Receipt on success: `{version:1,commandId,epoch,status:"completed",result:{...}}`. Completion means command dispatch completed, not agent turn completion. Errors: `{version:1,commandId?,epoch,status:"rejected"|"failed",error:{code,message}}`. `message` is the code, or for some refusals (`invalid_name`, `create_refused`, `agent_running`) a sentence the desktop would show; branch on `code` only. HTTP 400 invalid_command/unsupported_version; 403 client_certificate_required; 404 agent_not_found/project_not_found; 409 epoch_mismatch/command_conflict/session_mismatch/wrong_machine (the agent's address names another machine, which `machine` gives; see `docs/annex-network-phone.md`)/not_chat/pending_request_not_found/images_not_supported/attachment_unavailable, and the [chat controls](#chat-controls) refusals; 413 too_large; 429 command_capacity; 500 command_failed. A failed command can have partial effects; retain its receipt and reconcile.
 
-### Oversized commands
+## Desktop updates
+
+This is additive to mobile v1 and Annex v2. Gate the entire feature, including the update-specific approval buttons, on `capabilities.appUpdate.version >= 1`. An older desktop has no `appUpdate` capability, snapshot field, commands or events. Older phones can ignore the additions. The existing generic Allow cannot install an update.
+
+The authenticated capabilities response adds exactly:
+
+```json
+"appUpdate": {
+  "version": 1,
+  "snapshotField": "appUpdate",
+  "event": "app_update:changed",
+  "commands": ["app.update.request", "app.update.cancel"],
+  "approvalCommand": "grant.answer",
+  "approvalModeField": "updateMode",
+  "modes": ["now", "when_idle"],
+  "idleWaitMs": 1800000
+}
+```
+
+The two new commands also appear in `capabilities.commands`. `grantRequests` keeps its existing version, answers and events. Its update rows add the optional `update` object below.
+
+### Status and events
+
+Every Annex snapshot adds `appUpdate`:
+
+```json
+{
+  "state": "ready",
+  "currentVersion": "0.43.0",
+  "availableVersion": "0.43.1",
+  "downloadProgress": 100,
+  "reason": null,
+  "request": {
+    "requestId": "grant_uuid",
+    "state": "pending_approval",
+    "version": "0.43.1",
+    "expiresAt": "2026-11-12T12:00:00.000Z",
+    "error": null
+  }
+}
+```
+
+All six top-level fields are always present. `currentVersion` is the running desktop's version, never an installation promise. `availableVersion` is a newer version the updater knows, or `null`. `downloadProgress` is a number from 0 to 100, possibly fractional. `reason` is `null` or a fixed plain sentence explaining unsupported updates or the updater's last failure category. Display it; do not branch on its wording. Updater failures use fixed messages such as "The update could not be downloaded", "The installer could not be prepared", or "Restart failed". `request.error`, updater-related command refusal messages and grant-row details never include raw updater exception text. Full diagnostics stay in local desktop logs only. There are no installer paths, URLs or credentials in this object.
+
+| `state` | Meaning |
+|---|---|
+| `none` | No newer update is known. This includes before the first successful check or while checking with no known version. It does not claim that a check succeeded. |
+| `available` | A newer version is known but not ready. This can be brief before download, or remain after a failed download, with `reason`. |
+| `downloading` | The desktop is downloading the artifact; show `downloadProgress`. |
+| `ready` | The existing updater is ready to install. macOS/Linux artifacts have been downloaded and verified. Windows Squirrel downloads its package during installation, so readiness/progress 100 there does not promise that package bytes are already on disk. |
+| `unsupported` | This installation cannot self-update: for example a development/unpackaged build, disabled updates, integration/main/nightly/nonrelease build, missing Windows updater, or unsupported local installer. `reason` explains. Do not offer Request update. |
+
+Requesting this feature does not trigger a network check or download. The existing desktop updater and Settings control those. Only `ready` can be requested; an installation rechecks readiness, the installer and the reviewed version before stopping agents and again before apply. A missing installer cannot cause a restart-only fallback.
+
+On Windows, immediately before running `Update.exe`, a remote-approved install re-reads the selected channel's actual Squirrel `RELEASES` feed. If its latest version differs from the approved version, the request fails with "A newer update became available; request again." A failed or unreadable feed also refuses installation. The existing desktop banner does not make this extra check. Squirrel still installs from the live feed: a release published in the small gap between that check and installation can replace the reviewed version. It is a Clubhouse release from the same HTTPS update channel, not an exact-version guarantee. The Windows nupkg and its embedded binaries are not currently signed. A pinned local Squirrel feed for remote approvals and signing those packages/binaries remain follow-ups.
+
+`request` is `null` before any request in this app run. Otherwise it is the most recent request, with exactly `requestId`, `state`, `version`, `expiresAt`, and `error`. `version` is the version approved for that request, not the current app version. A fresh request replaces a terminal one; a restart clears it. Requests are not queued or persisted.
+
+| `request.state` | Meaning |
+|---|---|
+| `pending_approval` | Needs a person's decision. `expiresAt` is the grant request's ISO deadline, 24 hours after creation. |
+| `waiting_for_idle` | A person chose Restart when idle. `expiresAt` is the ISO deadline, 30 minutes after approval. Checks all live agents about once a second, including any started later. Never interrupts them. |
+| `restarting` | A person chose Restart now, or an approved idle wait reached idle. Cancellation is no longer available. Gate actions, session capture, shutdown and installer work can take time before the socket closes. |
+| `failed` | Nothing more will be attempted for this request. `error` is a sentence explaining the failure, such as expired approval, changed update/working agents, idle deadline, stop failure or installer failure. Some already interrupted/stopped agents may remain idle/asleep. |
+| `cancelled` | The person declined, or a controlling device cancelled before restart began. Nothing more will be attempted. |
+
+`error` is `null` outside `failed`; failures use fixed plain messages, not exception text. `expiresAt` is `null` for `restarting`, `failed` and `cancelled`. On a successful install the app exits; there is no success/completed request state.
+
+Changes to updater status/progress or request state send the normal replayable WebSocket envelope `{type:"app_update:changed",payload:<the entire appUpdate object>,seq:<global Annex sequence>}` and schedule a snapshot refresh. Replace `appUpdate` from the payload, not a patch. An event or snapshot can arrive before a command receipt. Multiple changes can be coalesced into one snapshot; do not require a snapshot between events or assume every intermediate state will be seen. Use normal snapshot/replay cursor rules. The event and snapshot have the same object shape.
+
+### Requesting and approving
+
+`app.update.request` takes no fields beyond `{version:1,commandId,epoch,type:"app.update.request"}`. Its successful receipt's `result` is the whole request object above with `state:"pending_approval"`. Completion means the request was recorded, not approved or installed. There is only one active update request across every device and agent.
+
+The Dispatcher must be enabled and available. This command never turns it on, wakes a model or runs a paid prompt. When the Dispatcher is unavailable, the person can still update from the desktop banner. The Dispatcher-only MCP tool `request_app_update` records exactly the same kind of request. Its narrow grant is `app.update` on the app, default Ask first for the Dispatcher and absent for all other agents and its read-only chat. Even changing it to Allow never bypasses the person's installation approval.
+
+The existing Needs you list and Dispatcher approvals bar show **Update Clubhouse to &lt;version&gt;**. The existing `grantRequests` snapshot has the matching `kind:"call"`, `actions:["app.update"]`, `toolName:"request_app_update"`, `answers:["allow_once","decline"]`, `projectId:"__dispatcher__"` row. It includes all existing fields and additionally:
+
+```json
+"update": {
+  "version": "0.43.1",
+  "workingAgents": [
+    {"agentId":"durable_builder","name":"Builder"}
+  ]
+}
+```
+
+`workingAgents` is the list reviewed at request creation; empty means no working agents then. A name falls back to the agent id if no saved name is known. The existing `detail`/`arguments`/`allowEffect` fields disclose the interruption list, version and safe restart semantics too. Show the interruption list and explanation before offering the choices. Do not infer approval from chat text, a Dispatcher message, the request itself, or any saved permission.
+
+Offer three human choices:
+
+- **Restart now:** send `grant.answer` with `{requestId,answer:"allow_once",updateMode:"now"}`. The bounded #3272 gate interrupts each reviewed working agent (up to 10 seconds), then stops it if interruption did not resolve (up to another 10 seconds). A stop intent excludes that registration from automatic resume, even if it times out. If interruption or stopping cannot safely resolve the gate, or a newly working/replaced agent was not covered by the review, the request fails instead of installing. Launches close before capture; checks repeat across capture. Auto-resumable conversations are captured before shutdown; interrupted turns are not replayed. Headless runs end and do not resume.
+- **Restart when idle:** send `grant.answer` with `{requestId,answer:"allow_once",updateMode:"when_idle"}`. Waits for every live agent to be idle, including permission/input waits (working) and headless runs (always working). Terminal work uses the existing gate's recent-output heuristic, not a guarantee of application-level task completion. After 30 minutes it fails without interrupting or stopping anyone. It remains cancellable until restart begins, from the phone or the desktop update notice.
+- **Cancel:** send `grant.answer` with `{requestId,answer:"decline"}`. No `updateMode`.
+
+Remote restarts also count messages still being delivered and queued chat turns as work. Once restart begins, they freeze new agent messages and terminal input alongside launches; queued chat turns pause without being removed. The working-agent check repeats after the in-flight spawn drain, before any runtime stop or config restore. Work that appeared during that drain fails the request without stopping it. A failed restart reopens admission and queued delivery; this does not change the existing desktop banner's gate.
+
+The two allowed modes are an additive optional field on `grant.answer`, but required for an update's `allow_once`. A generic `allow_once` without `updateMode`, including from an older phone, is refused with `grant_answer_failed` and a sentence asking for a restart choice; the request stays waiting. `allow_lasting` is never offered for an update. `updateMode` on any other grant, or with Decline, is `grant_answer_not_offered`. Invalid enum values and unknown fields are `invalid_command`. A successfully answered `grant.answer` keeps its existing result shape `{requestId,kind:"call",answer:"allow_once"|"decline"}`.
+
+Approval consumes the grant once, with the normal `grant_request:resolved` event, then publishes `waiting_for_idle` or `restarting`. The installer is deferred briefly to let the receipt leave. Actual socket delivery of that receipt or the final event cannot be guaranteed. A concurrent answer is `grant_request_not_found`; no agent retries the call to install it. `grant_request:opened` remains an id-only notification; read the row from a snapshot. Grant notifications and update events can interleave; correlate by `requestId`, and treat the fresh snapshot as authoritative.
+
+`app.update.cancel` takes `{requestId}` besides the base fields. It cancels `pending_approval` or `waiting_for_idle`, removes an unanswered grant if any, and returns the request object with `state:"cancelled"`. The same most-recent request can be cancelled again, even if it was already terminal. It never interrupts/stops agents. Once `restarting`, it is refused.
+
+All commands use the existing pinned-mTLS authentication, per-peer/per-epoch idempotency and receipts. Other controlling devices can see, approve or cancel this machine's request, just as they can answer other Needs you requests.
+
+| HTTP/code | Refusal or action |
+|---|---|
+| 409 `update_unsupported` | This installation cannot self-update; show `error.message`. |
+| 409 `dispatcher_unavailable` | Dispatcher is off/unavailable; use the desktop banner or turn on the Dispatcher. |
+| 409 `update_not_ready` | Wait for ready, or the version/readiness changed while preparing the request. |
+| 409 `update_request_active` | Another request is being created, pending approval, waiting for idle or restarting. Reconcile from `appUpdate.request`. |
+| 409 `update_approval_capacity` | Dispatcher has too many approvals, or the interruption list is too large to review safely. Answer existing approvals or use desktop. |
+| 404 `update_request_not_found` | The cancellation id is not this app run's most recent request. |
+| 409 `update_restart_started` | Too late to cancel. Reconnect and reconcile. |
+| 409 `grant_answer_failed` | An update choice is missing, or readiness/version/working-agent review changed. Show the sentence and refetch; an unsafe/stale update request becomes `failed` and requires a fresh explicit request. |
+| 409 `grant_answer_not_offered` | Wrong approval kind/choice, such as lasting permission or a restart mode on another grant. |
+| 404 `grant_request_not_found` | Expired/already answered/withdrawn, or Dispatcher no longer visible. Refetch. |
+
+Later gate/install failures are asynchronous `appUpdate.request.state:"failed"` with `error`, not changes to an already completed receipt. A failed install does not automatically retry, restart without an applied installer, or resume stopped agents. There may still be a local operating-system installer/elevation prompt, especially on Linux; the phone cannot answer or bypass it.
+
+### Restart and reconnect
+
+A successful update uses the same session capture, runtime shutdown, config restore and resume path as the desktop update gate. Do not interpret WebSocket disconnection as successful installation.
+
+For **persistent pairing**, the desktop keeps its Annex identity, TLS certificate, peer/client-certificate pins, Annex setting and preferred ports in the same user-data profile. Reconnect using the existing pinned server certificate and the same client identity/certificate; no new PIN is needed for an ordinary update. Use discovery/saved reachable addresses as usual; a preferred port can change if occupied. A loopback/tailnet forward must still be running and reachable. Never weaken pinning to reconnect.
+
+`pairingMode:"session"` and ephemeral integration profiles deliberately do not persist trust, so cannot promise reconnect without pairing after a desktop restart. Identity/profile reset, revoked pairing, changed server certificate or unavailable network likewise requires the existing trust/recovery flow; do not pair again merely because restart temporarily disconnects.
+
+After reconnect, fetch capabilities and the new snapshot. A process restart creates a **new epoch**: discard old receipt retries and replay cursors, and never resend the old request/approval under a new commandId to recover a lost receipt. The latest `appUpdate.currentVersion` is the installation result; compare it with the requested version. `appUpdate.request` starts at `null`. If the old version remains, the outcome is unconfirmed/failed, not an instruction to retry automatically. Restored agents follow existing auto/manual resume policy. Shells and live socket subscriptions from the previous connection end and must be opened again explicitly.
+
+Canonical fixtures: `app-update-statuses.json`, `snapshot-app-update-approval.json`, `app-update-events.json`, `commands/app.update.request.json`, `commands/app.update.cancel.json`, and the additive update cases in `commands/grant.answer.json`. The fixture installer is a fake that fails without applying an update or restarting an app.
+
+## Oversized commands
 
 A request body over 1 MiB (1048576 bytes, measured as sent, whether from `Content-Length` or as a chunked body arrives) is refused before it is parsed, after the client certificate check. The command doesn't run, nothing changes, no receipt is kept and no receipt capacity is used.
 

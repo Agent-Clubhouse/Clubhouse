@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { GrantRequest } from '../../shared/grant-requests';
-import { grantRequestActionLabels } from '../../shared/grant-requests';
+import { describeGrantRequest, grantRequestActionLabels } from '../../shared/grant-requests';
 
 /**
  * Clubhouse permission requests waiting on the user (#2970). Main holds each
@@ -54,8 +54,9 @@ export function grantRequestsByAgent(
 
 /** The Needs you line for an agent's requests. */
 export function describeGrantRequests(list: readonly GrantRequest[]): string {
-  const first = list[0];
+  const first = list.find((request) => request.update) ?? list[0];
   if (!first) return 'Asks for a permission';
+  if (first.update) return list.length > 1 ? `${describeGrantRequest(first)} (${list.length} requests)` : describeGrantRequest(first);
   const label = grantRequestActionLabels(first).join(', ');
   return list.length > 1 ? `${label} (${list.length} requests)` : label;
 }

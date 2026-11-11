@@ -23,11 +23,13 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ id: string; message: string } | null>(null);
 
-  const answer = async (request: GrantRequest, allow: boolean) => {
+  const answer = async (request: GrantRequest, allow: boolean, updateMode?: import('../../../shared/app-update').AppUpdateMode) => {
     setBusy(request.requestId);
     setError(null);
     try {
-      const result = await window.clubhouse.agent.answerGrantRequest(request.requestId, allow);
+      const result = updateMode
+        ? await window.clubhouse.agent.answerGrantRequest(request.requestId, allow, updateMode)
+        : await window.clubhouse.agent.answerGrantRequest(request.requestId, allow);
       if (result.ok === true) {
         remove([request.requestId]);
         onAnswered?.();
@@ -52,8 +54,11 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
           )}
           <p className="text-xs text-ctp-overlay1">{grantRequestAllowEffect(r)}</p>
           <div className="flex items-center gap-2">
-            <Button kind="primary" onClick={() => void answer(r, true)} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>
-            <Button onClick={() => void answer(r, false)} disabled={busy !== null} data-testid="grant-request-decline">Decline</Button>
+            {r.update ? <>
+              <Button kind="primary" onClick={() => void answer(r, true, 'now')} disabled={busy !== null}>Restart now</Button>
+              <Button onClick={() => void answer(r, true, 'when_idle')} disabled={busy !== null}>Restart when idle</Button>
+            </> : <Button kind="primary" onClick={() => void answer(r, true)} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>}
+            <Button onClick={() => void answer(r, false)} disabled={busy !== null} data-testid="grant-request-decline">{r.update ? 'Cancel' : 'Decline'}</Button>
           </div>
           {error?.id === r.requestId && <p role="alert" className="text-xs text-ctp-error">{error.message}</p>}
         </li>

@@ -1,0 +1,77 @@
+{
+  "cases": [
+    {
+      "name": "accepted cancel (nothing interrupted)",
+      "request": {
+        "commandId": "cmd_237",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000002",
+        "type": "app.update.cancel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_237",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "error": null,
+            "expiresAt": null,
+            "requestId": "grant_00000000-0000-4000-8000-000000000002",
+            "state": "cancelled",
+            "version": "1.1.0"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "update_request_not_found",
+      "request": {
+        "commandId": "cmd_238",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "missing",
+        "type": "app.update.cancel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_238",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_request_not_found",
+            "message": "That update request is no longer available."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "update_restart_started",
+      "request": {
+        "commandId": "cmd_241",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "grant_00000000-0000-4000-8000-000000000003",
+        "type": "app.update.cancel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_241",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_restart_started",
+            "message": "Restart has already started and cannot be cancelled."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    }
+  ],
+  "type": "app.update.cancel"
+}

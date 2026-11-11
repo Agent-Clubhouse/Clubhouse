@@ -1,0 +1,55 @@
+{
+  "appUpdate": {
+    "availableVersion": "1.1.0",
+    "currentVersion": "0.0.0-test",
+    "downloadProgress": 100,
+    "reason": null,
+    "request": {
+      "error": null,
+      "expiresAt": "2027-01-16T08:00:00.000Z",
+      "requestId": "grant_00000000-0000-4000-8000-000000000002",
+      "state": "pending_approval",
+      "version": "1.1.0"
+    },
+    "state": "ready"
+  },
+  "direction": "desktop-to-phone",
+  "grantRequest": {
+    "actionLabels": [
+      "Update Clubhouse"
+    ],
+    "actions": [
+      "app.update"
+    ],
+    "agent": {
+      "agentId": "durable_dispatcher",
+      "name": "Dispatcher"
+    },
+    "allowEffect": "Restart now interrupts the listed working agents, then stops any that do not become idle. Stopped agents will not resume. Restart when idle waits up to 30 minutes and never interrupts agents. Agent conversations resume, not interrupted turns.",
+    "answers": [
+      "allow_once",
+      "decline"
+    ],
+    "arguments": "{\"version\":\"1.1.0\"}",
+    "detail": "Working agents that Restart now would interrupt: planner (durable_chat).",
+    "expiresAt": "2027-01-16T08:00:00.000Z",
+    "kind": "call",
+    "projectId": "__dispatcher__",
+    "reason": null,
+    "requestId": "grant_00000000-0000-4000-8000-000000000002",
+    "requestedAt": "2027-01-15T08:00:00.000Z",
+    "summary": "Update Clubhouse to 1.1.0",
+    "target": null,
+    "toolName": "request_app_update",
+    "update": {
+      "version": "1.1.0",
+      "workingAgents": [
+        {
+          "agentId": "durable_chat",
+          "name": "planner"
+        }
+      ]
+    },
+    "where": "the app"
+  }
+}

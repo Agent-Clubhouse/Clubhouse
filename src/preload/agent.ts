@@ -36,8 +36,8 @@ export const agent = {
   listGrantRequests: (): Promise<GrantRequest[]> =>
     ipcRenderer.invoke(IPC.AGENT.LIST_GRANT_REQUESTS),
   /** Allow or decline a permission request. Main tells the agent. */
-  answerGrantRequest: (requestId: string, allow: boolean): Promise<GrantRequestAnswer> =>
-    ipcRenderer.invoke(IPC.AGENT.ANSWER_GRANT_REQUEST, requestId, allow),
+  answerGrantRequest: (requestId: string, allow: boolean, updateMode?: import('../shared/app-update').AppUpdateMode): Promise<GrantRequestAnswer> =>
+    ipcRenderer.invoke(IPC.AGENT.ANSWER_GRANT_REQUEST, requestId, allow, updateMode),
   listDurable: (projectPath: string) =>
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>

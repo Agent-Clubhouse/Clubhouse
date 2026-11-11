@@ -1364,6 +1364,8 @@ export interface UpdateManifest {
 }
 
 export interface UpdateStatus {
+  /** Fixed-message category for remote diagnostics; error retains the local detail. */
+  errorCategory?: import('./app-update').AppUpdateFailureCategory;
   state: UpdateState;
   availableVersion: string | null;
   releaseNotes: string | null;

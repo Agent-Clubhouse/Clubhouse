@@ -87,6 +87,7 @@ vi.mock('../services/auto-update-service', () => ({
   stopPeriodicChecks: vi.fn(),
   checkForUpdates: vi.fn(async () => null),
   getStatus: vi.fn(() => ({ state: 'idle' })),
+  onStatusChanged: vi.fn(() => vi.fn()),
   applyUpdate: vi.fn(async () => {}),
   getPendingReleaseNotes: vi.fn(() => null),
   clearPendingReleaseNotes: vi.fn(),
@@ -117,6 +118,7 @@ vi.mock('../services/log-settings', () => ({
 vi.mock('../services/agent-system', () => ({
   resolveOrchestrator: vi.fn(async () => ({})),
   spawnAgent: vi.fn(async () => {}),
+  whenSpawnsSettled: vi.fn(async () => {}),
 }));
 
 vi.mock('../services/pty-manager', () => ({
@@ -139,6 +141,7 @@ vi.mock('../services/restart-session-service', () => ({
   loadPendingResume: vi.fn(async () => null),
   captureSessionState: vi.fn(async () => {}),
   markAgentStoppedForUpdate: vi.fn(),
+  clearPendingResume: vi.fn(async () => {}),
 }));
 
 vi.mock('../services/agent-runtime', async (importOriginal) => ({
@@ -179,9 +182,11 @@ vi.mock('../services/agent-config', () => ({
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';
+import { applyUpdateRestart } from '../services/update-restart-service';
 import { resetAppShutdownForTests } from '../services/app-shutdown';
-import { launchesOpen } from '../services/launch-gate';
-import { captureSessionState, getLiveAgentsForUpdate, markAgentStoppedForUpdate } from '../services/restart-session-service';
+import { agentWorkOpen, launchesOpen } from '../services/launch-gate';
+import { whenSpawnsSettled } from '../services/agent-system';
+import { captureSessionState, clearPendingResume, getLiveAgentsForUpdate, markAgentStoppedForUpdate } from '../services/restart-session-service';
 import { getAgentRuntime } from '../services/agent-runtime';
 import type { AgentRuntime } from '../../shared/chat';
 import { UPDATE_AGENT_ACTION_TIMEOUT_MS, type LiveAgentInfo } from '../../shared/types';
@@ -937,6 +942,44 @@ describe('app-handlers', () => {
     vi.mocked(autoUpdateService.applyUpdate).mockRejectedValueOnce(new Error('Update.exe not found'));
     await expect(handleHandlers.get(IPC.APP.CONFIRM_UPDATE_RESTART)!({}, { agentNames: {} })).rejects.toThrow('Update.exe not found');
     expect(launchesOpen()).toBe(true);
+  });
+
+  it('a remote restart closes launches and rechecks the approved state across capture and shutdown', async () => {
+    updateReady();
+    const validate = vi.fn(() => { expect(launchesOpen()).toBe(false); expect(agentWorkOpen()).toBe(false); });
+    await applyUpdateRestart({ agentNames: {} }, validate);
+    expect(validate).toHaveBeenCalledTimes(4);
+    expect(autoUpdateService.applyUpdate).toHaveBeenCalledWith(undefined, { requireApplied: true });
+    expect(clearPendingResume).toHaveBeenCalledOnce();
+    expect(launchesOpen()).toBe(true);
+  });
+
+  it('a changed remote gate after capture does not stop agents or install, and reopens launches', async () => {
+    updateReady();
+    let checks = 0;
+    await expect(applyUpdateRestart({ agentNames: {} }, () => {
+      if (++checks === 2) throw new Error('Another agent started working');
+    })).rejects.toThrow('Another agent started working');
+    expect(captureSessionState).toHaveBeenCalledOnce();
+    expect(ptyManagerMock.killAll).not.toHaveBeenCalled();
+    expect(autoUpdateService.applyUpdate).not.toHaveBeenCalled();
+    expect(clearPendingResume).toHaveBeenCalledOnce();
+    expect(launchesOpen()).toBe(true);
+  });
+
+  it('refuses newly working agents after draining spawns without stopping or restoring their config', async () => {
+    updateReady();
+    let working = false;
+    vi.mocked(whenSpawnsSettled).mockImplementationOnce(async () => { working = true; });
+    await expect(applyUpdateRestart({ agentNames: {} }, () => {
+      if (working) throw new Error('An agent started working during the drain');
+    })).rejects.toThrow('started working during the drain');
+    expect(ptyManagerMock.killAll).not.toHaveBeenCalled();
+    expect(headlessManagerMock.stopAll).not.toHaveBeenCalled();
+    expect(autoUpdateService.applyUpdate).not.toHaveBeenCalled();
+    expect(clearPendingResume).toHaveBeenCalledOnce();
+    expect(launchesOpen()).toBe(true);
+    expect(agentWorkOpen()).toBe(true);
   });
 
   it('GET_PENDING_RELEASE_NOTES delegates to autoUpdateService', async () => {

@@ -5,6 +5,7 @@ import { UpdateGateModal, UpdateGateAgent, type UpdateGateActionState } from './
 import { UPDATE_AGENT_ACTION_TIMEOUT_MS, type LiveAgentInfo, type UpdateAgentAction, type UpdateAgentActionResult } from '../../../shared/types';
 import { NoticeCard } from '../../components/NoticeCard';
 import { Button } from '../../components/Button';
+import type { AppUpdateRequest } from '../../../shared/app-update';
 
 // Literal class strings so Tailwind can see every variant it needs to generate.
 const TONES = {
@@ -44,6 +45,35 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
   const gateAttempt = useRef(0);
   const refreshSequence = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const [updateRequest, setUpdateRequest] = useState<AppUpdateRequest | null>(null);
+  const [requestError, setRequestError] = useState<string>();
+
+  useEffect(() => {
+    let changed = false;
+    const off = window.clubhouse.app.onAppUpdateRequestChanged((request) => { changed = true; setUpdateRequest(request); });
+    window.clubhouse.app.getAppUpdateRequest().then((request) => { if (!changed) setUpdateRequest(request); }).catch(() => {
+      // telemetry-exempt: shown beside the existing update banner.
+      setRequestError('Could not read the update request.');
+    });
+    return () => { changed = true; off(); };
+  }, []);
+
+  const cancelRequest = async () => {
+    if (!updateRequest) return;
+    try { setUpdateRequest(await window.clubhouse.app.cancelAppUpdateRequest(updateRequest.requestId)); setRequestError(undefined); }
+    catch {
+      // telemetry-exempt: shown with the cancel action for retry.
+      setRequestError('Could not cancel the update request. Try again.');
+    }
+  };
+  const requestNotice = updateRequest?.state === 'waiting_for_idle' || updateRequest?.state === 'restarting' || updateRequest?.state === 'failed' || requestError ? (
+    <div className="rounded-lg border border-surface-0 px-3 py-2 text-sm text-ctp-text" role="status">
+      {requestError ?? (updateRequest?.state === 'failed' ? updateRequest.error
+        : updateRequest?.state === 'restarting' ? 'Restarting to update Clubhouse.'
+          : `Clubhouse will update to ${updateRequest?.version} when all agents are idle. It will wait up to 30 minutes.`)}
+      {updateRequest?.state === 'waiting_for_idle' && <Button onClick={() => void cancelRequest()}>Cancel update</Button>}
+    </div>
+  ) : null;
 
   const isReady = status.state === 'ready';
   const isApplyError = status.state === 'error' && !!status.artifactUrl;
@@ -207,7 +237,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
 
   // When in simulate mode, render only the gate modal (no banner needed)
   if (!shouldShow) {
-    return showGate ? (
+    return <>{requestNotice}{showGate ? (
       <UpdateGateModal
         agents={gateAgents}
         actionStates={actionStates}
@@ -218,7 +248,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
         onConfirm={handleGateConfirm}
         onResolveAgent={handleGateResolve}
       />
-    ) : null;
+    ) : null}</>;
   }
 
   const gate = showGate && (
@@ -242,6 +272,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
     );
     return (
       <>
+        {requestNotice}
         {isApplyError ? (
           <NoticeCard tone="error" title="Update failed" meta={version} testId="update-banner"
             actions={<>{download('primary')}{later}</>}>
@@ -277,6 +308,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
 
   return (
     <>
+      {requestNotice}
       <div
         className={`flex-shrink-0 flex items-center gap-3 px-4 py-2 border-b ${tone.bar} text-sm`}
         data-testid="update-banner"

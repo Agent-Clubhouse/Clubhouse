@@ -71,6 +71,7 @@ import { getDurableConfig } from './agent-config';
 import * as headlessManager from './headless-manager';
 import { getAgentRuntime } from './agent-runtime';
 import type { AgentRuntime } from '../../shared/chat';
+import { runAgentWork } from './launch-gate';
 
 describe('restart-session-service', () => {
   let userDataPath: string;
@@ -222,6 +223,15 @@ describe('restart-session-service', () => {
         ['durable_one', { kind: 'durable', worktreePath: '/p/current' }],
       ]));
       expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions[0]).toMatchObject({ agentName: 'new-name', worktreePath: '/p/current' });
+    });
+
+    it('keeps quick agents quick when a phone captures without renderer metadata', async () => {
+      vi.mocked(getProvider).mockReturnValue({ capabilities: { sessionResume: true } } as never);
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', getNativeSessionId: () => 'quick-session' } as AgentRuntime);
+      vi.mocked(getDurableConfig).mockResolvedValue(null);
+      agentRegistry.register('quick_123_abc', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
+      await captureSessionState(new Map());
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions[0]).toMatchObject({ kind: 'quick', sessionId: 'quick-session' });
     });
 
     it('writes state file with PTY agents only', async () => {
@@ -438,6 +448,25 @@ describe('restart-session-service', () => {
   });
 
   describe('getLiveAgentsForUpdate', () => {
+    it('counts queued and in-flight messages as work for remote approvals without changing the desktop gate', async () => {
+      agentRegistry.register('pending-chat', { projectPath: '/project', orchestrator: 'claude-code', runtime: 'chat' });
+      const runtime = {
+        kind: 'chat', isRunning: () => true, getState: () => 'idle',
+        getQueueState: () => ({ queuedMessageIds: ['queued'], queueStateSeq: 1, queueRemovalSupported: true }),
+      } as AgentRuntime;
+      vi.mocked(getAgentRuntime).mockReturnValue(runtime);
+      expect(getLiveAgentsForUpdate()[0].isWorking).toBe(false);
+      expect(getLiveAgentsForUpdate({ includePendingWork: true })[0].isWorking).toBe(true);
+      runtime.getQueueState = () => ({ queuedMessageIds: [], queueStateSeq: 2, queueRemovalSupported: true });
+      let finish!: () => void;
+      const sending = runAgentWork('pending-chat', () => new Promise<void>((resolve) => { finish = resolve; }));
+      expect(getLiveAgentsForUpdate({ includePendingWork: true })[0].isWorking).toBe(true);
+      finish();
+      await sending;
+      expect(getLiveAgentsForUpdate({ includePendingWork: true })[0].isWorking).toBe(false);
+      vi.mocked(getAgentRuntime).mockReset();
+    });
+
     it('returns empty array when no agents are registered', () => {
       const result = getLiveAgentsForUpdate();
       expect(result).toEqual([]);

@@ -101,6 +101,8 @@ export interface AgentRuntime {
   isSwappingSession?(): boolean;
   /** Coarse state for status badges; chat runtimes derive it from events. */
   getState(): ChatSessionState;
+  /** Work not yet reflected by the coarse state, including accepted messages and queued turns. */
+  hasPendingWork?(): boolean;
   /** Clubhouse chat session identity, used to reject stale remote commands. */
   getSessionId?(): string;
   /** When the running turn started (ms), or null between turns. Chat runtimes only. */

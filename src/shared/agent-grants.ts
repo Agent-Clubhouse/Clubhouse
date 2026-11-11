@@ -53,6 +53,7 @@ export const GRANT_ACTIONS = [
   // The app
   'settings.app.read',
   'settings.app.write',
+  'app.update', // request an update; applying always needs a person's one-time approval
   'action.read', // Actions (#2918)
   'action.write',
   'action.run',

@@ -351,8 +351,11 @@ export function registerAgentHandlers(): void {
     async (_event, projectPath, agentId) => resetAgentGrants(projectPath, agentId)));
   // Permission requests in Needs you (#2970).
   ipcMain.handle(IPC.AGENT.LIST_GRANT_REQUESTS, () => listGrantRequests());
-  ipcMain.handle(IPC.AGENT.ANSWER_GRANT_REQUEST, withValidatedArgs([stringArg({ maxLength: 200 }), booleanArg()],
-    async (_event, requestId, allow) => answerGrantRequest(requestId, allow)));
+  ipcMain.handle(IPC.AGENT.ANSWER_GRANT_REQUEST, withValidatedArgs([stringArg({ maxLength: 200 }), booleanArg(), stringArg({ optional: true })],
+    async (_event, requestId, allow, updateMode) => {
+      if (updateMode !== undefined && updateMode !== 'now' && updateMode !== 'when_idle') throw new Error('Invalid update restart choice');
+      return answerGrantRequest(requestId, allow, updateMode === 'now' ? 'now' : updateMode === 'when_idle' ? 'when_idle' : undefined);
+    }));
 
   ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, withValidatedArgs(
     [stringArg(), stringArg()],

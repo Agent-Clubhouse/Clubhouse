@@ -147,6 +147,7 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
       structural('agent.watch', APP),
       // The Annex Network's devices (#3068): it sees them, and asks before it changes any.
       structural('device.read', APP), structural('device.manage', APP, 'ask'),
+      structural('app.update', APP, 'ask'),
     );
   }
   return out;

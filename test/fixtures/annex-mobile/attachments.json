@@ -12,7 +12,7 @@
       },
       "response": {
         "body": {
-          "attachmentId": "00000000-0000-4000-8000-000000000002",
+          "attachmentId": "00000000-0000-4000-8000-000000000004",
           "bytes": 29,
           "height": 2556,
           "mimeType": "image/png",
@@ -34,7 +34,7 @@
       },
       "response": {
         "body": {
-          "attachmentId": "00000000-0000-4000-8000-000000000003",
+          "attachmentId": "00000000-0000-4000-8000-000000000005",
           "bytes": 29,
           "height": 2556,
           "mimeType": "image/png",
@@ -56,7 +56,7 @@
       },
       "response": {
         "body": {
-          "attachmentId": "00000000-0000-4000-8000-000000000004",
+          "attachmentId": "00000000-0000-4000-8000-000000000006",
           "bytes": 12,
           "mimeType": "image/jpeg",
           "version": 1

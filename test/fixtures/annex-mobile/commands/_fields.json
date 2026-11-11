@@ -126,6 +126,18 @@
         "agentId"
       ]
     },
+    "app.update.cancel": {
+      "fields": [
+        "requestId"
+      ],
+      "required": [
+        "requestId"
+      ]
+    },
+    "app.update.request": {
+      "fields": [],
+      "required": []
+    },
     "chat.interrupt": {
       "fields": [
         "agentId",
@@ -264,7 +276,8 @@
     "grant.answer": {
       "fields": [
         "requestId",
-        "answer"
+        "answer",
+        "updateMode"
       ],
       "required": [
         "requestId",

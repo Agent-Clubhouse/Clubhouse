@@ -8,6 +8,7 @@ import * as crypto from 'crypto';
 import { spawn, execFileSync } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
+import { AppUpdateError } from '../../shared/app-update';
 import { getSettings, saveSettings } from './update-settings';
 import { appLog, flush as flushLogs, flushSync as flushLogsSync } from './log-service';
 import { applyRemoteCliDenylist } from './agent-runtime/chat-version-policy';
@@ -102,6 +103,8 @@ let status: UpdateStatus = {
 };
 
 let checkTimer: ReturnType<typeof setInterval> | null = null;
+const statusListeners = new Set<() => void>();
+let linuxSelfUpdateSupported: boolean | undefined;
 // Which Squirrel feed holds the version the last check picked. A preview-channel
 // user can be offered a stable build, which the preview feed may not carry.
 let squirrelFeedIsPreview: boolean | null = null;
@@ -364,6 +367,7 @@ export function buildMacQuitUpdateScript(
 }
 
 function broadcastStatus(): void {
+  for (const listener of statusListeners) listener();
   const wins = BrowserWindow.getAllWindows();
   for (const win of wins) {
     try {
@@ -379,7 +383,7 @@ function setState(state: UpdateState, patch?: Partial<UpdateStatus>): void {
   broadcastStatus();
 }
 
-function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
+function fetchText(url: string, maxBytes?: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.get(url, { timeout: 15_000 }, (res) => {
@@ -391,18 +395,28 @@ function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
         return;
       }
       let data = '';
-      res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (err) {
-          reject(err);
+      let bytes = 0;
+      res.on('data', (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (maxBytes !== undefined && bytes > maxBytes) {
+          reject(new Error('The update feed is too large to verify.'));
+          res.destroy();
+          return;
         }
+        data += chunk.toString();
+      });
+      res.on('error', reject);
+      res.on('end', () => {
+        resolve(data);
       });
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
   });
+}
+
+function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
+  return fetchText(url).then((text): T => JSON.parse(text));
 }
 
 const MAX_REDIRECTS = 5;
@@ -734,6 +748,7 @@ export async function checkForUpdates(
 
     recordCheck('available');
     // macOS/Linux: download the artifact ourselves
+    setState('checking', { availableVersion: manifest.version, artifactUrl: artifact.url, error: null, downloadProgress: 0 });
     await downloadUpdate(manifest.version, manifest.releaseNotes || null, manifest.releaseMessage || null, artifact);
     // downloadUpdate reports its own failure as `error`. An older update still on disk stays
     // ready; a failed one for the same version may have removed that very file, so not then.
@@ -747,7 +762,7 @@ export async function checkForUpdates(
     // A failed check (offline after sleep, a 5xx) leaves the update already downloaded
     // ready, so the banner and install-on-quit keep it (#3104).
     if (readyBefore) setState('ready', readyBefore);
-    else setState('error', { error: msg });
+    else setState('error', { error: msg, errorCategory: 'check' });
     recordCheck('failed', err);
     return status;
   }
@@ -871,7 +886,7 @@ async function downloadUpdate(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:download', 'error', `Download failed: ${msg}`);
-    setState('error', { error: msg, downloadProgress: 0 });
+    setState('error', { error: msg, downloadProgress: 0, errorCategory: 'download' });
     recordUpdateDownload({ startMs: downloadStartMs, result: 'failed', error: err });
   }
 }
@@ -888,6 +903,7 @@ interface ApplyContext {
 
 interface ApplyOptions {
   relaunch: boolean;
+  requireApprovedVersion?: boolean;
   /**
    * Runs right before a relaunch path calls app.exit(). The handlers exit the
    * process themselves, so anything the caller needs persisted (the apply
@@ -966,7 +982,25 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeEx
   return true;
 }
 
-export async function applyWindowsUpdate(context: ApplyContext, { relaunch, beforeExit, onCommit }: ApplyOptions): Promise<boolean> {
+async function checkWindowsApprovedVersion(releasesUrl: string, approvedVersion: string): Promise<void> {
+  let feed: string;
+  try {
+    feed = await fetchText(`${releasesUrl}/RELEASES`, 64 * 1024);
+  } catch (cause) {
+    throw new AppUpdateError('feed', { cause });
+  }
+  let latest: string | undefined;
+  for (const line of feed.trim().split(/\r?\n/)) {
+    const entry = /^[a-f\d]{40}\s+(?:com\.mason-allen\.)?clubhouse-(\d+\.\d+\.\d+(?:-beta\.?\d+|rc)?)-(?:full|delta)\.nupkg\s+\d+$/i.exec(line.trim());
+    if (!entry) throw new AppUpdateError('feed');
+    // electron-winstaller removes dots from NuGet prerelease labels.
+    const version = entry[1].replace(/-beta(\d+)$/i, '-beta.$1');
+    if (!latest || isNewerVersion(version, latest)) latest = version;
+  }
+  if (latest !== approvedVersion) throw new AppUpdateError('version_changed');
+}
+
+export async function applyWindowsUpdate(context: ApplyContext, { relaunch, beforeExit, onCommit, requireApprovedVersion }: ApplyOptions): Promise<boolean> {
   const updateExe = getSquirrelUpdateExePath();
   if (!await pathExists(updateExe)) {
     throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
@@ -974,6 +1008,9 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch, befo
   const releasesUrl = getSquirrelReleasesUrl(squirrelFeedIsPreview ?? getSettings().previewChannel);
   const appExeName = path.basename(process.execPath);
   if (relaunch) {
+    if (requireApprovedVersion) await checkWindowsApprovedVersion(releasesUrl, context.version);
+    // Squirrel still reads the live HTTPS channel: a release published between
+    // this check and --update can win. Pinning a local feed is a follow-up.
     execFileSync(updateExe, ['--update', releasesUrl], {
       timeout: 300_000,
       encoding: 'utf-8',
@@ -1072,13 +1109,19 @@ export async function applyPlatformUpdate(
   return false;
 }
 
-export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<void> {
+export async function applyUpdate(updateStatus: UpdateStatus = status, options: { requireApplied?: boolean } = {}): Promise<void> {
   if (updateStatus.state !== 'ready') {
     throw new Error('No update ready to apply');
   }
 
   const applyStartMs = Date.now();
-  const context = await prepareApply(updateStatus, 'update:apply');
+  let context: ApplyContext;
+  try {
+    context = await prepareApply(updateStatus, 'update:apply');
+  } catch (cause) {
+    if (!options.requireApplied) throw cause;
+    throw new AppUpdateError('prepare', { cause });
+  }
 
   setState('idle', {
     availableVersion: null,
@@ -1111,7 +1154,10 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
   };
 
   try {
-    const applied = await applyPlatformUpdate(context, { relaunch: true, beforeExit: recordOnce, onCommit });
+    const applied = await applyPlatformUpdate(context, {
+      relaunch: true, beforeExit: recordOnce, onCommit,
+      ...(options.requireApplied && { requireApprovedVersion: true }),
+    });
     if (applied) {
       await recordOnce();
       return;
@@ -1130,16 +1176,24 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
       }
       setState('error', {
         error: 'Automatic install cancelled — use "Download manually" to install the update',
+        errorCategory: 'install',
         availableVersion: context.version,
         artifactUrl: context.artifactUrl,
       });
+      if (options.requireApplied) throw new AppUpdateError('install', { cause: err });
       return;
     }
-    setState('error', { error: `Update failed: ${msg}`, availableVersion: context.version, artifactUrl: context.artifactUrl });
+    setState('error', { error: `Update failed: ${msg}`, errorCategory: err instanceof AppUpdateError ? err.category : 'install', availableVersion: context.version, artifactUrl: context.artifactUrl });
+    if (options.requireApplied && !(err instanceof AppUpdateError)) throw new AppUpdateError('install', { cause: err });
     throw err;
   }
   // No platform handler applied the update; this relaunch is the fallback.
   if (!spanRecorded) recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: false });
+  if (options.requireApplied) {
+    const error = 'The installer could not be applied. Update Clubhouse from the desktop.';
+    setState('error', { error, errorCategory: 'missing', availableVersion: context.version, artifactUrl: context.artifactUrl });
+    throw new AppUpdateError('missing');
+  }
   app.relaunch();
   await flushBeforeExit();
   app.exit(0);
@@ -1384,8 +1438,44 @@ export function getStatus(): UpdateStatus {
   return { ...status };
 }
 
+export function onStatusChanged(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => { statusListeners.delete(listener); };
+}
+
+/** Whether this installation can use the existing self-updater, without its relaunch-only fallback. */
+export function getSelfUpdateUnsupportedReason(): string | null {
+  if (!app.isPackaged) return 'This is a development build. Update it from the desktop.';
+  if (process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE === '1') return 'Updates are disabled for this build.';
+  if (!/^\d+\.\d+\.\d+(?:-beta\.\d+|rc)?$/.test(app.getVersion()) || app.getName().toLowerCase() !== 'clubhouse') {
+    return 'This build cannot update itself. Install a release build from the desktop.';
+  }
+  if (process.platform === 'darwin') {
+    return /\/Contents\/MacOS\/[^/]+$/.test(app.getPath('exe')) ? null : 'This installation is not an updatable Mac app.';
+  }
+  if (process.platform === 'win32') {
+    return fs.existsSync(getSquirrelUpdateExePath()) ? null : 'This installation has no updater. Reinstall Clubhouse from the desktop.';
+  }
+  if (process.platform === 'linux' && (linuxSelfUpdateSupported ??= detectLinuxPackageFormat() !== 'unknown')) return null;
+  return 'This installation needs a manual update from the desktop.';
+}
+
+/** Remote approvals must not reach applyUpdate's relaunch-only fallback. */
+export function getReadyUpdateProblem(): string | null {
+  if (status.state !== 'ready' || !status.availableVersion || !isNewerVersion(status.availableVersion, app.getVersion())) {
+    return 'The update is not ready to install.';
+  }
+  if (process.platform !== 'win32') {
+    const extension = status.downloadPath ? path.extname(status.downloadPath) : '';
+    const supported = process.platform === 'darwin' ? extension === '.zip' : extension === '.deb' || extension === '.rpm';
+    if (!supported || !status.downloadPath || !fs.existsSync(status.downloadPath)) return 'The downloaded installer is missing or cannot be applied. Download the update again from the desktop.';
+  }
+  return null;
+}
+
 export function _setStatusForTesting(nextStatus: UpdateStatus): void {
   status = { ...nextStatus };
+  linuxSelfUpdateSupported = undefined;
 }
 
 /**

@@ -36,6 +36,8 @@ export interface GrantRequest {
   argumentsText?: string;
   /** The agent's reason, in its words. */
   reason?: string;
+  /** Update requests need an explicit restart choice, never a generic Allow. */
+  update?: import('./app-update').AppUpdateApproval;
   createdAt: string;
   expiresAt: string;
 }
@@ -50,7 +52,7 @@ export const GRANT_REQUEST_REASON_MAX = 500;
  */
 export const GRANT_REQUEST_DETAILS_MAX = 20_000;
 
-export type GrantRequestAnswer = { ok: true } | { ok: false; error: string };
+export type GrantRequestAnswer = { ok: true } | { ok: false; error: string; reason?: 'request_not_found' };
 
 /** The labels of the permissions a request needs. */
 export function grantRequestActionLabels(request: Pick<GrantRequest, 'actions'>): string[] {
@@ -58,7 +60,8 @@ export function grantRequestActionLabels(request: Pick<GrantRequest, 'actions'>)
 }
 
 /** The request's line in Needs you, on the desktop and on a phone (#3205). */
-export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actions' | 'toolName' | 'where'>): string {
+export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actions' | 'toolName' | 'where' | 'update'>): string {
+  if (request.update) return `Update Clubhouse to ${request.update.version}`;
   const needs = grantRequestActionLabels(request).join(', ');
   return request.kind === 'call'
     ? `Wants to run ${request.toolName ?? 'a tool'}, which needs: ${needs} on ${request.where}.`
@@ -66,7 +69,8 @@ export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actio
 }
 
 /** What Allow does, shown under the request. */
-export function grantRequestAllowEffect(request: Pick<GrantRequest, 'kind'>): string {
+export function grantRequestAllowEffect(request: Pick<GrantRequest, 'kind' | 'update'>): string {
+  if (request.update) return 'Restart now interrupts the listed working agents, then stops any that do not become idle. Stopped agents will not resume. Restart when idle waits up to 30 minutes and never interrupts agents. Agent conversations resume, not interrupted turns.';
   return request.kind === 'call'
     ? 'Allow runs this one call when it tries again. Its permissions stay as they are.'
     : 'Allow adds this to its Clubhouse permissions, where you can remove it later.';

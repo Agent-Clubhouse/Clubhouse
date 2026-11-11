@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import { ACCESS_LEVELS, isAccessLevel } from '../../shared/agent-access';
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { ArchInfo, BadgeSettings, LoggingSettings, NotificationSettings, ThemeId, UPDATE_AGENT_ACTION_TIMEOUT_MS, type UpdateAgentAction, type UpdateAgentActionResult } from '../../shared/types';
+import { ArchInfo, BadgeSettings, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
 import { getCliInstallStatus, installCli, uninstallCli } from '../services/cli-install';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
@@ -29,11 +29,10 @@ import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayArg } from './validation';
-import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState, markAgentStoppedForUpdate } from '../services/restart-session-service';
-import * as ptyManager from '../services/pty-manager';
-import * as headlessManager from '../services/headless-manager';
+import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume } from '../services/restart-session-service';
+import { applyUpdateRestart, captureAndShutDown, resolveAgentForUpdate } from '../services/update-restart-service';
+import { getAppUpdateStatus, onAppUpdateChanged, cancelAppUpdate } from '../services/app-update-request';
 import { cancelAppShutdown, runAppShutdown } from '../services/app-shutdown';
-import { getAgentRuntime } from '../services/agent-runtime';
 import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
 import { syncActiveTheme, validateActiveThemeSnapshot, type ActiveThemeSnapshot } from '../services/active-theme-store';
@@ -50,115 +49,6 @@ import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
-
-type RestartAgentMeta = Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string; permissionMode?: import('../../shared/types').FreeAgentPermissionMode }>;
-
-type RestartData = { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> };
-
-/**
- * Capture what the restart resumes, then run the app shutdown (#2053):
- * stop every runtime, save their session ids and restore config. app.exit()
- * skips before-quit, so these paths await it before exiting.
- */
-async function captureAndShutDown(data: RestartData): Promise<void> {
-  const agentNames = new Map(Object.entries(data.agentNames));
-  const agentMeta = data.agentMeta ? new Map(Object.entries(data.agentMeta)) as RestartAgentMeta : undefined;
-  // Before the stop: it reads the live runtimes and terminal buffers.
-  await captureSessionState(agentNames, agentMeta);
-  await runAppShutdown('update');
-}
-
-/** The update restart in progress, which a second click joins. */
-let updateRestart: Promise<void> | null = null;
-
-/**
- * Shut down and apply the update, once. A second request while one is in
- * progress (a double-click on Restart) joins it instead of applying again.
- * Nothing stops before the update is known to be ready. Installing exits the
- * app; if this apply returns or throws instead, the app is still running, so
- * launches reopen and agents can be woken again.
- */
-function applyUpdateRestart(data?: RestartData): Promise<void> {
-  if (updateRestart) return updateRestart;
-  if (autoUpdateService.getStatus().state !== 'ready') return Promise.reject(new Error('No update ready to apply'));
-  const run = (async () => {
-    try {
-      if (data) await captureAndShutDown(data);
-      else await runAppShutdown('update');
-      await autoUpdateService.applyUpdate();
-    } finally {
-      cancelAppShutdown();
-      updateRestart = null;
-    }
-  })();
-  updateRestart = run;
-  return run;
-}
-
-function resolveAgentForUpdate(agentId: string, action: UpdateAgentAction): Promise<UpdateAgentActionResult> {
-  const startedAt = Date.now();
-  const before = getLiveAgentsForUpdate().find((agent) => agent.agentId === agentId);
-  const runtime = getAgentRuntime(agentId);
-  const meta = {
-    agentId, action, runtime: before?.runtime ?? runtime?.kind ?? 'unknown',
-    provider: before?.orchestrator ?? 'unknown', workingBefore: before?.isWorking ?? false,
-  };
-  appLog('update:session-resume', 'info', 'Update gate action started', {
-    meta: { ...meta, durationMs: 0, result: 'started', workingAfter: meta.workingBefore },
-  });
-  // Record intent before stop can hide the runtime or await driver shutdown.
-  const undoStop = action === 'kill' ? markAgentStoppedForUpdate(agentId) : undefined;
-
-  return new Promise((resolve) => {
-    let completed = false;
-    let settled = false;
-    const working = () => getLiveAgentsForUpdate().some((agent) => agent.agentId === agentId && agent.isWorking);
-    const finish = (status: UpdateAgentActionResult['status']) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(deadline);
-      clearInterval(poll);
-      const isWorking = working();
-      appLog('update:session-resume', status === 'resolved' ? 'info' : 'warn', 'Update gate action finished', {
-        meta: { ...meta, durationMs: Date.now() - startedAt, result: status, workingAfter: isWorking },
-      });
-      if (status === 'resolved') resolve({ status, isWorking });
-      else resolve({
-        status, isWorking,
-        message: action === 'interrupt'
-          ? status === 'timeout'
-            ? 'The agent did not become idle in time. Choose Stop now to end it without resuming after restart.'
-            : 'Could not interrupt the agent. Try again or choose Stop now.'
-          : status === 'timeout'
-            ? 'Stopping took too long. Try Stop now again. This agent will not resume after restart.'
-            : 'Could not stop the agent. Try Stop now again.',
-      });
-    };
-    const check = () => {
-      const stopped = runtime?.kind === 'pty' ? !runtime.isRunning()
-        : !runtime ? !headlessManager.isHeadless(agentId) && !ptyManager.isRunning(agentId) : true;
-      if (!settled && completed && (action === 'kill' ? stopped : !working())) finish('resolved');
-    };
-    const deadline = setTimeout(() => finish('timeout'), UPDATE_AGENT_ACTION_TIMEOUT_MS);
-    const poll = setInterval(check, 250);
-    // Promise chaining also catches synchronous failures without logging driver
-    // errors, which may contain prompts or local paths.
-    void Promise.resolve().then(async () => {
-      if (!runtime && headlessManager.isHeadless(agentId)) {
-        headlessManager.kill(agentId);
-      } else if (action === 'interrupt') {
-        if (runtime) await runtime.interrupt();
-        else ptyManager.write(agentId, '\x03');
-      } else {
-        if (runtime) await runtime.stop({ graceful: false, throwOnFailure: true });
-        else ptyManager.kill(agentId);
-      }
-    }).then(() => { completed = true; check(); }, () => {
-      undoStop?.();
-      finish('error');
-    });
-  });
-}
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, withValidatedArgs(
@@ -476,6 +366,9 @@ export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.GET_UPDATE_STATUS, () => {
     return autoUpdateService.getStatus();
   });
+  ipcMain.handle(IPC.APP.GET_APP_UPDATE_REQUEST, () => getAppUpdateStatus().request);
+  ipcMain.handle(IPC.APP.CANCEL_APP_UPDATE_REQUEST, withValidatedArgs([stringArg()], (_event, requestId) => cancelAppUpdate(requestId)));
+  onAppUpdateChanged(() => broadcastToAllWindows(IPC.APP.APP_UPDATE_REQUEST_CHANGED, getAppUpdateStatus().request));
 
   ipcMain.handle(IPC.APP.APPLY_UPDATE, () => applyUpdateRestart());
 

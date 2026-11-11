@@ -348,6 +348,14 @@
         }
       },
       "appCanvasState": null,
+      "appUpdate": {
+        "availableVersion": null,
+        "currentVersion": "0.0.0-test",
+        "downloadProgress": 0,
+        "reason": "This is a development build. Update it from the desktop.",
+        "request": null,
+        "state": "unsupported"
+      },
       "bulletinDigests": {},
       "canvasState": {},
       "dispatcher": null,

@@ -14,6 +14,7 @@ import * as freeAgentSettings from './free-agent-settings';
 import { getDurableConfig } from './agent-config';
 import { isAssistantAgent } from '../../shared/assistant-utils';
 import { isDispatcherCoordinatorPath } from './dispatcher/dispatcher-paths';
+import { hasAgentWorkInFlight } from './launch-gate';
 
 const SCHEMA_VERSION = 1;
 const STALENESS_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -114,7 +115,7 @@ export async function captureSessionState(
       sessionStarted: sessionId ? true : sessionStarted,
       resumeStrategy: canResume ? 'auto' : 'manual',
       worktreePath,
-      kind: meta?.kind || 'durable',
+      kind: meta?.kind || (!config && agentId.startsWith('quick_') ? 'quick' : 'durable'),
       // For display after the restart only. The resume queue must not send it
       // to the resumed CLI, which would run it again as a new turn (#2074).
       mission: meta?.mission,
@@ -232,7 +233,7 @@ const CHAT_WORKING_STATES = new Set(['running', 'waiting_permission', 'waiting_i
  * and headless runs. Chat agents resume like terminals; a headless run ends
  * with the restart and isn't resumed.
  */
-export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
+export function getLiveAgentsForUpdate(options: { includePendingWork?: boolean } = {}): LiveAgentInfo[] {
   const all = agentRegistry.getAllRegistrations();
   const result: LiveAgentInfo[] = [];
   const now = Date.now();
@@ -240,14 +241,16 @@ export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
 
   for (const [agentId, reg] of all) {
     const base = { agentId, projectPath: reg.projectPath, orchestrator: reg.orchestrator, runtime: reg.runtime };
+    const pendingWork = options.includePendingWork && hasAgentWorkInFlight(agentId);
     if (reg.runtime === 'pty') {
       const lastActivity = ptyManager.getLastActivity(agentId);
-      const isWorking = lastActivity !== null && (now - lastActivity) < WORKING_THRESHOLD_MS;
+      const isWorking = !!pendingWork || lastActivity !== null && (now - lastActivity) < WORKING_THRESHOLD_MS;
       result.push({ ...base, isWorking, lastActivity, resumeStrategy: resumeStrategyFor(reg.orchestrator) });
     } else if (reg.runtime === 'chat') {
       const runtime = getAgentRuntime(agentId);
-      if (!runtime?.isRunning()) continue;
-      result.push({ ...base, isWorking: CHAT_WORKING_STATES.has(runtime.getState()), lastActivity: null, resumeStrategy: resumeStrategyFor(reg.orchestrator) });
+      if (!runtime || !runtime.isRunning() && !pendingWork) continue;
+      const queued = options.includePendingWork && (runtime.hasPendingWork?.() ?? !!runtime.getQueueState?.().queuedMessageIds.length);
+      result.push({ ...base, isWorking: !!pendingWork || !!queued || CHAT_WORKING_STATES.has(runtime.getState()), lastActivity: null, resumeStrategy: resumeStrategyFor(reg.orchestrator) });
     } else if (reg.runtime === 'headless') {
       if (!headlessManager.isHeadless(agentId)) continue;
       result.push({ ...base, isWorking: true, lastActivity: null, resumeStrategy: 'manual' });

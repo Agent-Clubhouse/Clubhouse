@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
+import { PassThrough } from 'stream';
+import type { IncomingMessage } from 'http';
+import * as https from 'https';
 import { execFileSync, spawn } from 'child_process';
 import { app } from 'electron';
 import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyMacUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt, platformKey } from './auto-update-service';
@@ -13,6 +16,7 @@ vi.mock('child_process', () => ({
   execFileSync: vi.fn(),
   spawn: vi.fn(() => new EventEmitter()),
 }));
+vi.mock('https', () => ({ get: vi.fn() }));
 
 const testUserDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-auto-update-'));
 
@@ -405,6 +409,48 @@ describe('auto-update-service', () => {
       }
     });
 
+    it('never relaunches without applying an installer for a remotely approved update', async () => {
+      const name = process.platform === 'darwin'
+        ? 'applyMacUpdate' : process.platform === 'win32' ? 'applyWindowsUpdate' : 'applyLinuxUpdate';
+      const handler = vi.spyOn(platformUpdateHandlers, name).mockResolvedValue(false);
+      await expect(applyUpdate(readyStatus, { requireApplied: true })).rejects.toThrow('installer is missing or out of date');
+      expect(mockApp.relaunch).not.toHaveBeenCalled();
+      expect(mockApp.exit).not.toHaveBeenCalled();
+      handler.mockRestore();
+    });
+
+    it('wraps remote installer failures in a fixed category while retaining the local cause', async () => {
+      const name = process.platform === 'darwin'
+        ? 'applyMacUpdate' : process.platform === 'win32' ? 'applyWindowsUpdate' : 'applyLinuxUpdate';
+      const cause = new Error('/Users/private-update-user/update.zip https://updates.example.invalid/private-updater-token');
+      const handler = vi.spyOn(platformUpdateHandlers, name).mockRejectedValue(cause);
+      try {
+        await expect(applyUpdate(readyStatus, { requireApplied: true })).rejects.toMatchObject({
+          message: 'The installer could not be applied. Update Clubhouse from the desktop.',
+          category: 'install', cause,
+        });
+        expect(mockApp.relaunch).not.toHaveBeenCalled();
+        expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        handler.mockRestore();
+      }
+    });
+
+    it.each([false, true])('reports Linux installer failure without changing desktop fallback behavior (requireApplied: %s)', async (requireApplied) => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+      const handler = vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockRejectedValue(new Error('Elevation cancelled'));
+      try {
+        const applying = applyUpdate(readyStatus, { requireApplied });
+        if (requireApplied) await expect(applying).rejects.toThrow('installer could not be applied');
+        else await expect(applying).resolves.toBeUndefined();
+        expect(mockApp.relaunch).not.toHaveBeenCalled();
+        expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        handler.mockRestore();
+        platformSpy.mockRestore();
+      }
+    });
+
     it('applyMacUpdate runs beforeExit before flushing and exiting on relaunch', async () => {
       const tempDir = fs.mkdtempSync(path.join(testUserDataPath, 'before-exit-'));
       const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
@@ -495,6 +541,41 @@ describe('auto-update-service', () => {
         )).rejects.toThrow('update failed');
         expect(beforeExit).not.toHaveBeenCalled();
         expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        pathExists.mockRestore();
+      }
+    });
+
+    it.each([
+      ['2.0.0', '2.0.0', true],
+      ['2.0.0-beta.12', '2.0.0-beta12', true],
+      ['2.0.0', '2.1.0', false],
+    ])('rechecks the live Windows feed before installing approved %s (feed: %s)', async (approved, published, matches) => {
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      vi.mocked(spawn).mockImplementation(spawnedChild);
+      vi.mocked(execFileSync).mockClear();
+      const feed = `${'a'.repeat(40)} com.mason-allen.clubhouse-${published}-full.nupkg 1234\n`;
+      vi.mocked(https.get).mockImplementation((_url, _options, callback) => {
+        const response = Object.assign(new PassThrough(), { statusCode: 200 });
+        queueMicrotask(() => { callback?.(response as IncomingMessage); response.end(feed); });
+        return new EventEmitter() as ReturnType<typeof https.get>;
+      });
+      try {
+        const installing = applyWindowsUpdate(
+          { downloadPath: null, version: approved, artifactUrl: null },
+          { relaunch: true, requireApprovedVersion: true },
+        );
+        if (matches) {
+          await expect(installing).resolves.toBe(true);
+          expect(execFileSync).toHaveBeenCalledWith(expect.any(String), ['--update', expect.any(String)], expect.any(Object));
+        } else {
+          await expect(installing).rejects.toThrow('A newer update became available; request again');
+          // Only Update.exe matters here; Linux runners also see the platform's package-manager probes.
+          expect(execFileSync).not.toHaveBeenCalledWith(expect.any(String), ['--update', expect.any(String)], expect.anything());
+          expect(spawn).not.toHaveBeenCalled();
+          expect(mockApp.exit).not.toHaveBeenCalled();
+        }
+        expect(https.get).toHaveBeenCalledWith(expect.stringMatching(/\/RELEASES$/), expect.any(Object), expect.any(Function));
       } finally {
         pathExists.mockRestore();
       }

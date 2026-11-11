@@ -1,5 +1,6 @@
 import type { HelperRoutingReadOptions, HelperRoutingSettings, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../shared/helper-routing';
 import type { AccessLevel } from '../shared/agent-access';
+import type { AppUpdateRequest } from '../shared/app-update';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { CliInstallStatus, NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients, LiveAgentInfo, UpdateAgentAction, UpdateAgentActionResult } from '../shared/types';
@@ -124,6 +125,15 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.CHECK_FOR_UPDATES),
   getUpdateStatus: () =>
     ipcRenderer.invoke(IPC.APP.GET_UPDATE_STATUS),
+  getAppUpdateRequest: (): Promise<AppUpdateRequest | null> =>
+    ipcRenderer.invoke(IPC.APP.GET_APP_UPDATE_REQUEST),
+  cancelAppUpdateRequest: (requestId: string): Promise<AppUpdateRequest> =>
+    ipcRenderer.invoke(IPC.APP.CANCEL_APP_UPDATE_REQUEST, requestId),
+  onAppUpdateRequestChanged: (callback: (request: AppUpdateRequest | null) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: AppUpdateRequest | null) => callback(request);
+    ipcRenderer.on(IPC.APP.APP_UPDATE_REQUEST_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.APP.APP_UPDATE_REQUEST_CHANGED, listener); };
+  },
   applyUpdate: () =>
     ipcRenderer.invoke(IPC.APP.APPLY_UPDATE),
   getLiveAgentsForUpdate: (): Promise<LiveAgentInfo[]> =>

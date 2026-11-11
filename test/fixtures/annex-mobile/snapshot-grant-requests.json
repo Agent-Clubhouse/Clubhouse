@@ -24,7 +24,7 @@
       "kind": "call",
       "projectId": "__dispatcher__",
       "reason": "You said the phone was lost.",
-      "requestId": "grant_00000000-0000-4000-8000-000000000006",
+      "requestId": "grant_00000000-0000-4000-8000-000000000008",
       "requestedAt": "2027-01-15T07:58:00.000Z",
       "summary": "Wants to run remove_device, which needs: Manage devices on the app.",
       "target": null,
@@ -53,7 +53,7 @@
       "kind": "grant",
       "projectId": "proj_app",
       "reason": "To set the cheap model for easy tasks.",
-      "requestId": "grant_00000000-0000-4000-8000-000000000007",
+      "requestId": "grant_00000000-0000-4000-8000-000000000009",
       "requestedAt": "2027-01-15T07:59:00.000Z",
       "summary": "Asks for Change app settings on the app.",
       "target": {

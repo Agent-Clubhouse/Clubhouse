@@ -19,6 +19,7 @@ import { stripTerminalEscapes } from '../../shared/terminal-text';
 import * as renderDiag from './pty-render-diagnostics';
 import { altScreenAfter, replayStart, type PtyBufferSnapshot, type PtySnapshotSize } from '../../shared/pty-snapshot';
 import { PtyInputModeTracker } from '../../shared/pty-input-modes';
+import { assertAgentWorkOpen } from './launch-gate';
 
 /** Pattern matching common API key environment variable names. */
 const API_KEY_ENV_PATTERN = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AZURE_OPENAI_API_KEY|MISTRAL_API_KEY|COHERE_API_KEY|HUGGING_FACE_TOKEN|HF_TOKEN)$/;
@@ -702,6 +703,7 @@ export function isShellBusy(id: string): boolean {
 const MAX_WRITE_LENGTH = 64 * 1024;
 
 export function write(agentId: string, data: string): void {
+  assertAgentWorkOpen();
   const session = sessions.get(agentId);
   if (!session) return;
 
@@ -721,6 +723,7 @@ export function write(agentId: string, data: string): void {
  * the plain `write()` path would UTF-8 encode chars >= 0x80 into two bytes.
  */
 export function writeBinary(agentId: string, data: string): void {
+  assertAgentWorkOpen();
   const session = sessions.get(agentId);
   if (!session) return;
 
