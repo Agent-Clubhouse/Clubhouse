@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** `config` is the chat a phone sees (#3036); `coordinatorId` the hidden agent that keeps the Dispatcher's id. */
 const S = vi.hoisted(() => ({
-  enabled: false, newLayout: true, running: false, classicUnsaved: false,
+  enabled: false, newLayout: true, running: false, classicUnsaved: false, requestsUnderWay: 0,
   config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } as Record<string, unknown> | null,
   coordinatorId: 'durable_coordinator',
 }));
@@ -11,7 +11,7 @@ vi.mock('./dispatcher/dispatcher-service', () => {
   const state = () => ({ enabled: S.enabled, flagOn: true, savedOn: S.enabled, classic: !S.newLayout, running: S.running,
     offReason: S.enabled ? null : S.classicUnsaved ? 'classic_layout' : 'switch_off', agentId: S.config ? S.coordinatorId : null,
     path: S.config ? '/base/dispatcher' : null, config: S.config ? { ...S.config, id: S.coordinatorId } : null,
-    chatAgentId: (S.config?.id as string) ?? null, chatPath: S.config ? '/base/dispatcher-chat' : null, chatRunning: S.running });
+    chatAgentId: (S.config?.id as string) ?? null, chatPath: S.config ? '/base/dispatcher-chat' : null, chatRunning: S.running, requestsUnderWay: S.requestsUnderWay });
   return {
     DISPATCHER_NAME: 'Dispatcher',
     getDispatcherPath: () => '/base/dispatcher',
@@ -31,7 +31,7 @@ vi.mock('../window-chrome', () => ({ newChromeEnabled: () => S.newLayout }));
 import * as dispatcher from './dispatcher/dispatcher-service';
 import {
   activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherCommandsWhileOff, dispatcherFolderProject,
-  dispatcherOffFields, dispatcherShellProject, isDisabledDispatcherId, phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
+  dispatcherOffFields, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
 import type { ChatEvent } from '../../shared/chat';
 
@@ -42,7 +42,7 @@ async function refusal(promise: Promise<unknown>) {
 }
 
 beforeEach(() => {
-  Object.assign(S, { enabled: false, newLayout: true, running: false, classicUnsaved: false, config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } });
+  Object.assign(S, { enabled: false, newLayout: true, running: false, classicUnsaved: false, requestsUnderWay: 0, config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } });
   vi.mocked(dispatcher.setDispatcherEnabled).mockClear();
 });
 
@@ -89,7 +89,7 @@ describe('while it is off', () => {
   it('switched off: only setEnabled is left, and every payload says so', () => {
     Object.assign(S, { enabled: false, running: false });
     expect(dispatcherShellProject('__dispatcher__')).toBeUndefined();
-    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: true, agentId: null });
+    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: true, requestsUnderWay: 0, agentId: null });
     expect(dispatcherOffFields(dispatcher.getDispatcherState(), view)).toEqual({
       offReason: 'switched_off', running: false, status: 'sleeping', detail: 'Turned off', commandsWhileOff: ['dispatcher.setEnabled'], agent: { view: S.config },
     });
@@ -151,7 +151,7 @@ describe('capability and change event', () => {
   it('reports the gate and the layout', () => {
     S.enabled = true;
     expect(dispatcherCapability()).toEqual({
-      version: 1, enabled: true, flagOn: true, newLayout: true, projectId: '__dispatcher__',
+      version: 1, enabled: true, flagOn: true, requestsUnderWay: 0, newLayout: true, projectId: '__dispatcher__',
       snapshotField: 'dispatcher', event: 'dispatcher:changed',
       // Settings > Dispatcher from a phone (#3206): its route and commands.
       commands: ['dispatcher.setEnabled', 'dispatcher.update', 'dispatcher.setModels', 'dispatcher.clearChat', 'dispatcher.forgetEverything'],
@@ -160,16 +160,31 @@ describe('capability and change event', () => {
   });
 
   it('sends the agent id only while it is on', () => {
-    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: true, agentId: null });
+    expect(dispatcherChange()).toEqual({ enabled: false, flagOn: true, requestsUnderWay: 0, agentId: null });
     S.enabled = true;
-    expect(dispatcherChange()).toEqual({ enabled: true, flagOn: true, agentId: 'durable_d' });
+    expect(dispatcherChange()).toEqual({ enabled: true, flagOn: true, requestsUnderWay: 0, agentId: 'durable_d' });
+  });
+
+  it.each([false, true])('shares the request count in every payload while enabled is %s', (enabled) => {
+    S.enabled = enabled;
+    for (const requestsUnderWay of [0, 2, 1, 0]) {
+      S.requestsUnderWay = requestsUnderWay;
+      for (const payload of [dispatcherSnapshotFlags(), dispatcherChange(), dispatcherCapability()]) {
+        expect(payload).toMatchObject({ enabled, requestsUnderWay });
+      }
+    }
+  });
+
+  it('uses the supplied event state rather than a newer service state', () => {
+    const state = { ...dispatcher.getDispatcherState(), enabled: true, requestsUnderWay: 2 };
+    expect(dispatcherChange(state)).toEqual({ enabled: true, flagOn: true, requestsUnderWay: 2, agentId: 'durable_d' });
   });
 });
 
 describe('dispatcher.setEnabled', () => {
   it('turns it on and off', async () => {
-    expect(await setDispatcherEnabledFromPhone(true, allow)).toEqual({ enabled: true, flagOn: true, agentId: 'durable_d' });
-    expect(await setDispatcherEnabledFromPhone(false, allow)).toEqual({ enabled: false, flagOn: true, agentId: null });
+    expect(await setDispatcherEnabledFromPhone(true, allow)).toEqual({ enabled: true, flagOn: true, requestsUnderWay: 0, agentId: 'durable_d' });
+    expect(await setDispatcherEnabledFromPhone(false, allow)).toEqual({ enabled: false, flagOn: true, requestsUnderWay: 0, agentId: null });
     expect(dispatcher.setDispatcherEnabled).toHaveBeenCalledTimes(2);
   });
 

@@ -39,7 +39,8 @@
           "result": {
             "agentId": "durable_dispatcher",
             "enabled": true,
-            "flagOn": true
+            "flagOn": true,
+            "requestsUnderWay": 0
           },
           "status": "completed",
           "version": 1
@@ -63,7 +64,8 @@
           "result": {
             "agentId": "durable_dispatcher",
             "enabled": true,
-            "flagOn": true
+            "flagOn": true,
+            "requestsUnderWay": 0
           },
           "status": "completed",
           "version": 1
@@ -87,7 +89,8 @@
           "result": {
             "agentId": null,
             "enabled": false,
-            "flagOn": true
+            "flagOn": true,
+            "requestsUnderWay": 0
           },
           "status": "completed",
           "version": 1

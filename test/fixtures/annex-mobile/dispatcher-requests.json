@@ -1,0 +1,242 @@
+{
+  "cases": [
+    {
+      "capabilities": {
+        "commands": [
+          "dispatcher.setEnabled",
+          "dispatcher.update",
+          "dispatcher.setModels",
+          "dispatcher.clearChat",
+          "dispatcher.forgetEverything"
+        ],
+        "enabled": true,
+        "event": "dispatcher:changed",
+        "flagOn": true,
+        "newLayout": true,
+        "projectId": "__dispatcher__",
+        "requestsUnderWay": 0,
+        "settings": {
+          "path": "/api/v1/mobile/dispatcher/settings",
+          "version": 1
+        },
+        "snapshotField": "dispatcher",
+        "version": 1
+      },
+      "changes": [],
+      "requestsUnderWay": 0,
+      "snapshot": {
+        "agent": {
+          "access": "ask",
+          "branch": null,
+          "color": "indigo",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_dispatcher",
+          "isDispatcher": true,
+          "kind": "durable",
+          "lastActivityAt": 1800000000000,
+          "model": null,
+          "name": "Dispatcher",
+          "orchestrator": "claude-code",
+          "projectId": "__dispatcher__",
+          "status": "sleeping"
+        },
+        "enabled": true,
+        "flagOn": true,
+        "projectId": "__dispatcher__",
+        "requestsUnderWay": 0
+      }
+    },
+    {
+      "capabilities": {
+        "commands": [
+          "dispatcher.setEnabled",
+          "dispatcher.update",
+          "dispatcher.setModels",
+          "dispatcher.clearChat",
+          "dispatcher.forgetEverything"
+        ],
+        "enabled": true,
+        "event": "dispatcher:changed",
+        "flagOn": true,
+        "newLayout": true,
+        "projectId": "__dispatcher__",
+        "requestsUnderWay": 2,
+        "settings": {
+          "path": "/api/v1/mobile/dispatcher/settings",
+          "version": 1
+        },
+        "snapshotField": "dispatcher",
+        "version": 1
+      },
+      "changes": [
+        {
+          "payload": {
+            "agentId": "durable_dispatcher",
+            "enabled": true,
+            "flagOn": true,
+            "requestsUnderWay": 2
+          },
+          "seq": 1000,
+          "type": "dispatcher:changed"
+        }
+      ],
+      "requestsUnderWay": 2,
+      "snapshot": {
+        "agent": {
+          "access": "ask",
+          "branch": null,
+          "color": "indigo",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_dispatcher",
+          "isDispatcher": true,
+          "kind": "durable",
+          "lastActivityAt": 1800000000000,
+          "model": null,
+          "name": "Dispatcher",
+          "orchestrator": "claude-code",
+          "projectId": "__dispatcher__",
+          "status": "sleeping"
+        },
+        "enabled": true,
+        "flagOn": true,
+        "projectId": "__dispatcher__",
+        "requestsUnderWay": 2
+      }
+    },
+    {
+      "capabilities": {
+        "commands": [
+          "dispatcher.setEnabled",
+          "dispatcher.update",
+          "dispatcher.setModels",
+          "dispatcher.clearChat",
+          "dispatcher.forgetEverything"
+        ],
+        "enabled": true,
+        "event": "dispatcher:changed",
+        "flagOn": true,
+        "newLayout": true,
+        "projectId": "__dispatcher__",
+        "requestsUnderWay": 1,
+        "settings": {
+          "path": "/api/v1/mobile/dispatcher/settings",
+          "version": 1
+        },
+        "snapshotField": "dispatcher",
+        "version": 1
+      },
+      "changes": [
+        {
+          "payload": {
+            "agentId": "durable_dispatcher",
+            "enabled": true,
+            "flagOn": true,
+            "requestsUnderWay": 1
+          },
+          "seq": 1000,
+          "type": "dispatcher:changed"
+        }
+      ],
+      "requestsUnderWay": 1,
+      "snapshot": {
+        "agent": {
+          "access": "ask",
+          "branch": null,
+          "color": "indigo",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_dispatcher",
+          "isDispatcher": true,
+          "kind": "durable",
+          "lastActivityAt": 1800000000000,
+          "model": null,
+          "name": "Dispatcher",
+          "orchestrator": "claude-code",
+          "projectId": "__dispatcher__",
+          "status": "sleeping"
+        },
+        "enabled": true,
+        "flagOn": true,
+        "projectId": "__dispatcher__",
+        "requestsUnderWay": 1
+      }
+    },
+    {
+      "capabilities": {
+        "commands": [
+          "dispatcher.setEnabled",
+          "dispatcher.update",
+          "dispatcher.setModels",
+          "dispatcher.clearChat",
+          "dispatcher.forgetEverything"
+        ],
+        "enabled": true,
+        "event": "dispatcher:changed",
+        "flagOn": true,
+        "newLayout": true,
+        "projectId": "__dispatcher__",
+        "requestsUnderWay": 0,
+        "settings": {
+          "path": "/api/v1/mobile/dispatcher/settings",
+          "version": 1
+        },
+        "snapshotField": "dispatcher",
+        "version": 1
+      },
+      "changes": [
+        {
+          "payload": {
+            "agentId": "durable_dispatcher",
+            "enabled": true,
+            "flagOn": true,
+            "requestsUnderWay": 0
+          },
+          "seq": 1000,
+          "type": "dispatcher:changed"
+        }
+      ],
+      "requestsUnderWay": 0,
+      "snapshot": {
+        "agent": {
+          "access": "ask",
+          "branch": null,
+          "color": "indigo",
+          "detailedStatus": null,
+          "emoji": null,
+          "executionMode": null,
+          "freeAgentMode": false,
+          "hasSession": false,
+          "icon": null,
+          "id": "durable_dispatcher",
+          "isDispatcher": true,
+          "kind": "durable",
+          "lastActivityAt": 1800000000000,
+          "model": null,
+          "name": "Dispatcher",
+          "orchestrator": "claude-code",
+          "projectId": "__dispatcher__",
+          "status": "sleeping"
+        },
+        "enabled": true,
+        "flagOn": true,
+        "projectId": "__dispatcher__",
+        "requestsUnderWay": 0
+      }
+    }
+  ],
+  "direction": "desktop-to-phone"
+}

@@ -5,7 +5,8 @@
       "payload": {
         "agentId": "durable_dispatcher",
         "enabled": true,
-        "flagOn": true
+        "flagOn": true,
+        "requestsUnderWay": 0
       },
       "seq": 1000,
       "type": "dispatcher:changed"
@@ -14,7 +15,8 @@
       "payload": {
         "agentId": null,
         "enabled": false,
-        "flagOn": true
+        "flagOn": true,
+        "requestsUnderWay": 0
       },
       "seq": 1000,
       "type": "dispatcher:changed"

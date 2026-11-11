@@ -57,6 +57,7 @@ const W = vi.hoisted(() => ({
   finishedReady: true,
   // The app-wide Dispatcher (#2533): off unless a test turns it on.
   dispatcher: { enabled: false, newLayout: true, running: false, classicUnsaved: false },
+  dispatcherRequestsUnderWay: 0,
   // Settings > Dispatcher's own values (#3206): Behavior, Choose models yourself and the personality.
   dispatcherSettings: null as null | { level: string; models: Record<string, unknown>; personality: { preset: string; text: string } },
   dispatcherListeners: new Set<(state: any) => void>(),
@@ -76,7 +77,7 @@ vi.mock('./dispatcher/dispatcher-service', () => {
   const state = () => ({ enabled: enabled(), flagOn: true, savedOn: W.dispatcher.enabled, classic: !W.dispatcher.newLayout, offReason: enabled() ? null : W.dispatcher.classicUnsaved ? 'classic_layout' : 'switch_off', running: W.dispatcher.running, agentId: config()?.id ?? null,
     path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null,
     // Phones see the Dispatcher's chat (#3036); here the one record stands for it, so the contract is unchanged.
-    chatAgentId: config()?.id ?? null, chatPath: config() ? DISPATCHER_PATH : null, chatRunning: W.dispatcher.running,
+    chatAgentId: config()?.id ?? null, chatPath: config() ? DISPATCHER_PATH : null, chatRunning: W.dispatcher.running, requestsUnderWay: W.dispatcherRequestsUnderWay,
     behavior: { level: W.dispatcherSettings!.level, provider: config()?.orchestrator ?? null, auto: { ready: true } },
     models: W.dispatcherSettings!.models, personality: W.dispatcherSettings!.personality });
   const changed = () => { for (const l of W.dispatcherListeners) l(state()); };
@@ -749,6 +750,7 @@ function resetWorld() {
     ],
   };
   W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
+  W.dispatcherRequestsUnderWay = 0;
   W.dispatcherSettings = { level: 'standard', models: { byHand: false, chat: null, work: null }, personality: { preset: 'concise', text: 'Be short and direct. Lead with the answer, use as few words as it takes, and skip pleasantries. Add detail only when asked.' } };
   W.running = new Set(['durable_term']);
   W.revert = new Set();
@@ -1638,7 +1640,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const ws = await connect();
     ws.send.mockClear();
     const on = await command('accepted', { type: 'dispatcher.setEnabled', enabled: true });
-    expect(on.body.result).toEqual({ enabled: true, flagOn: true, agentId: 'durable_dispatcher' });
+    expect(on.body.result).toEqual({ enabled: true, flagOn: true, requestsUnderWay: 0, agentId: 'durable_dispatcher' });
     await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
     const changedOn = frames(ws).find((f) => f.type === 'dispatcher:changed');
     const snapshot = frames(ws).find((f) => f.type === 'snapshot').payload;
@@ -1684,6 +1686,42 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     fixtures.set('dispatcher-routes.json', routes);
     W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
+  });
+
+  it('broadcasts request-only changes while the Dispatcher chat is sleeping (#3261)', async () => {
+    W.dispatcher.enabled = true;
+    for (const listener of W.dispatcherListeners) listener(getDispatcherState());
+    const ws = await connect();
+    const cases: unknown[] = [];
+    for (const requestsUnderWay of [0, 2, 1, 0]) {
+      ws.send.mockClear();
+      W.dispatcherRequestsUnderWay = requestsUnderWay;
+      for (const listener of W.dispatcherListeners) listener(getDispatcherState());
+      await eventually(() => expect(frames(ws).some((f) =>
+        f.type === 'snapshot' && f.payload.dispatcher?.requestsUnderWay === requestsUnderWay,
+      )).toBe(true));
+      const changes = frames(ws).filter((f) => f.type === 'dispatcher:changed');
+      if (cases.length === 0) {
+        expect(changes).toEqual([]);
+      } else {
+        expect(changes).toHaveLength(1);
+        expect(changes[0].payload).toEqual({ enabled: true, flagOn: true, agentId: 'durable_dispatcher', requestsUnderWay });
+      }
+      const snapshot = frames(ws).filter((f) => f.type === 'snapshot').at(-1).payload.dispatcher;
+      const capabilities = (await send('GET', '/api/v1/mobile/capabilities')).body.dispatcher;
+      expect(snapshot).toMatchObject({ enabled: true, requestsUnderWay, agent: { status: 'sleeping' } });
+      expect(capabilities).toMatchObject({ enabled: true, requestsUnderWay });
+      cases.push({
+        requestsUnderWay, snapshot, capabilities,
+        changes: changes.map((frame) => ({ ...frame, seq: 1000 })),
+      });
+      ws.send.mockClear();
+      for (const listener of W.dispatcherListeners) listener(getDispatcherState());
+      expect(frames(ws).filter((f) => f.type === 'dispatcher:changed')).toEqual([]);
+    }
+    fixtures.set('dispatcher-requests.json', { direction: 'desktop-to-phone', cases });
+    W.dispatcher.enabled = false;
+    for (const listener of W.dispatcherListeners) listener(getDispatcherState());
   });
 
   it('Settings > Dispatcher from a phone (#3206)', async () => {
@@ -3221,12 +3259,12 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       return;
     }
     const onDisk = fs.existsSync(FIXTURE_DIR) ? fs.readdirSync(FIXTURE_DIR, { recursive: true }).map(String).filter((f) => f.endsWith('.json') && f !== 'index.json').map((f) => f.split(path.sep).join('/')).sort() : [];
-    const stale = [...rendered].filter(([name, text]) => !fs.existsSync(path.join(FIXTURE_DIR, name)) || fs.readFileSync(path.join(FIXTURE_DIR, name), 'utf8') !== text).map(([name]) => name);
+    const stale = [...rendered].filter(([name, text]) => !fs.existsSync(path.join(FIXTURE_DIR, name)) || fs.readFileSync(path.join(FIXTURE_DIR, name), 'utf8').replace(/\r\n/g, '\n') !== text).map(([name]) => name);
     const extra = onDisk.filter((name) => !rendered.has(name));
     // The first line that differs in each stale file, so a CI failure says what changed.
     const firstDifference = Object.fromEntries(stale.map((name) => {
       const file = path.join(FIXTURE_DIR, name);
-      const was = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n') : [];
+      const was = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').split('\n') : [];
       const now = rendered.get(name)!.split('\n');
       const line = now.findIndex((text, i) => text !== was[i]);
       return [name, { line: line + 1, onDisk: was[line] ?? null, generated: now[line] ?? null }];

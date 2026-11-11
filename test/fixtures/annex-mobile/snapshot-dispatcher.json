@@ -38,6 +38,7 @@
     },
     "enabled": true,
     "flagOn": true,
-    "projectId": "__dispatcher__"
+    "projectId": "__dispatcher__",
+    "requestsUnderWay": 0
   }
 }
