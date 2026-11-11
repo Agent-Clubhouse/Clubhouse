@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { AgentGrantsView, GrantRow } from '../../../shared/agent-grant-changes';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { grantRows, type AgentGrantsView, type GrantRow } from '../../../shared/agent-grant-changes';
+import { defaultGrants } from '../../../shared/default-grants';
 import { AgentGrantsSettings, groupGrantRows } from './AgentGrantsSettings';
+import { useMcpBindingStore } from '../../stores/mcpBindingStore';
+import { useAgentStore } from '../../stores/agentStore';
+import { useAgentDetailsStore } from './details/detailsStore';
 
 const PROJECT = path.join('/work', 'proj');
 const agent = { id: 'lead', name: 'epic-lead' };
@@ -41,12 +45,64 @@ function radios(name: string) {
 }
 
 beforeEach(() => {
+  useMcpBindingStore.setState({ bindings: [] });
+  useAgentDetailsStore.setState({ open: false, focus: null });
+  useAgentStore.setState({
+    agents: { lead: { ...agent, projectId: 'p1', kind: 'durable', status: 'sleeping', color: 'teal' } },
+    agentSettingsOpenFor: 'lead',
+  });
   window.clubhouse.agent.getGrants = vi.fn(async () => defaultsView());
+  window.clubhouse.agent.getGrantTools = vi.fn(async () => ({ 'agent.message': ['send_file', 'send_message', 'wake_agent'] }));
   window.clubhouse.agent.setGrant = vi.fn(async () => defaultsView());
   window.clubhouse.agent.resetGrants = vi.fn(async () => defaultsView());
 });
 
 describe('Clubhouse permissions page (#2971)', () => {
+  it.each([0, 1, 3])('explains a non-orchestrating template with %i outgoing connections (#3275)', async (count) => {
+    const traits = { helper: false, dispatcher: false, orchestrates: false, crossProject: false };
+    window.clubhouse.agent.getGrants = vi.fn(async () => ({
+      ...traits, rows: grantRows(defaultGrants(traits), undefined),
+    }));
+    useMcpBindingStore.setState({ bindings: [
+      ...Array.from({ length: count }, (_, i) => ({ agentId: 'lead', targetId: `other-${i}`, targetKind: 'agent' as const, label: `Other ${i}` })),
+      { agentId: 'incoming', targetId: 'lead', targetKind: 'agent', label: 'epic-lead' },
+      { agentId: 'lead', targetId: 'browser', targetKind: 'browser', label: 'Browser' },
+    ] });
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    const groups = await screen.findAllByTestId('agent-connection-summary');
+    for (const summary of groups) {
+      expect(summary).toHaveTextContent(`${count} outgoing ${count === 1 ? 'connection.' : 'connections.'}`);
+      expect(summary).toHaveTextContent("the tool's per-direction switch");
+      if (count === 0) expect(summary).toHaveTextContent('These grants currently reach no agents');
+      else expect(summary).not.toHaveTextContent('These grants currently reach no agents');
+    }
+    fireEvent.click(within(groups[0]).getByRole('button', { name: 'Edit connections' }));
+    expect(useAgentDetailsStore.getState().focus).toMatchObject({ agentId: 'lead', card: 'connections' });
+    expect(useAgentDetailsStore.getState().open).toBe(true);
+    expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+  });
+
+  it('updates the connection count when the live bindings change (#3275)', async () => {
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    const summary = await screen.findByTestId('agent-connection-summary');
+    expect(summary).toHaveTextContent('0 outgoing connections.');
+    act(() => useMcpBindingStore.setState({ bindings: [{ agentId: 'lead', targetId: 'other', targetKind: 'agent', label: 'Other' }] }));
+    expect(summary).toHaveTextContent('1 outgoing connection.');
+    expect(summary).not.toHaveTextContent('currently reach no agents');
+  });
+
+  it('reveals only the tools mapped to that row, without changing its grant (#3275)', async () => {
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    const grant = await screen.findByTestId('agent-grant-row-agent.message@connected');
+    const disclosure = grant.querySelector('details')!;
+    expect(disclosure).not.toHaveAttribute('open');
+    fireEvent.click(within(grant).getByText('MCP tools'));
+    expect(disclosure).toHaveAttribute('open');
+    expect([...disclosure.querySelectorAll('code')].map((c) => c.textContent)).toEqual(['send_file', 'send_message', 'wake_agent']);
+    expect(disclosure).not.toHaveTextContent('clear_agent');
+    expect(window.clubhouse.agent.setGrant).not.toHaveBeenCalled();
+  });
+
   it('groups rows by target in page order, with where each comes from', async () => {
     render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
     await screen.findByRole('radiogroup', { name: 'Wake (Its helpers)' });

@@ -239,7 +239,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const wiresAgent = useMemo(() => (wiresId === agent.id ? agent : { ...agent, id: wiresId }), [agent, wiresId]);
   const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === wiresId || (b.targetKind === 'agent' && b.targetId === wiresId)));
   // The Dispatcher has no orchestration of its own, but its wires to orchestrators show (#2538).
-  const showConnections = (!!orchestrationPath && (orchestrating || hasWires)) || (dispatcher && hasWires);
+  const connectionsRequested = focus?.agentId === agent.id && focus.card === 'connections';
+  const showConnections = (!!orchestrationPath && (orchestrating || hasWires || connectionsRequested)) || (dispatcher && (hasWires || connectionsRequested));
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
   const disconnectToolWire = useCallback(async (c: Connection) => {
     const unbind = useMcpBindingStore.getState().unbind;

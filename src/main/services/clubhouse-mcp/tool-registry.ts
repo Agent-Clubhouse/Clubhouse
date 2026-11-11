@@ -7,6 +7,7 @@ import { withSettingsSurface } from '../settings-audit';
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { isToolGrantPassThrough, toolGrantDeclarations, type ToolGrant } from './tool-grants';
 import type { GrantAction } from '../../../shared/agent-grants';
+import type { GrantToolMap } from '../../../shared/agent-grant-changes';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
@@ -393,6 +394,22 @@ export function listToolGrants(): RegisteredToolGrant[] {
   }
   for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant, ...(tool.group && { group: tool.group }) });
   return out;
+}
+
+/** Read-only help for the permissions page, derived from the declarations used at runtime. */
+export function grantToolMap(): GrantToolMap {
+  const tools: GrantToolMap = {};
+  for (const { name, grant } of listToolGrants()) {
+    if (!grant) continue;
+    for (const declaration of toolGrantDeclarations(grant)) {
+      for (const action of declaration.actions) {
+        const names = tools[action] ??= [];
+        if (!names.includes(name)) names.push(name);
+      }
+    }
+  }
+  for (const names of Object.values(tools)) names.sort();
+  return tools;
 }
 
 /** The groups whose tools the Dispatcher can call, through its controller or its chat, as toolGroupGates opens them. */

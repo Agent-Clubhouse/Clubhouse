@@ -13,6 +13,9 @@ import { isGrantAction, widerOrSame, type Grant, type GrantAction, type GrantMod
  */
 export type GrantChangeMode = GrantMode | 'off';
 
+/** Registered MCP tool names (suffixes for connection tools), grouped by the action they check. */
+export type GrantToolMap = Partial<Record<GrantAction, string[]>>;
+
 export interface GrantChange {
   action: GrantAction;
   target: GrantTarget;

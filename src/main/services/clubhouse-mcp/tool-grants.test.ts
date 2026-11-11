@@ -6,7 +6,7 @@ vi.mock('../plugin-manifest-registry', () => ({
 
 import { GRANT_ACTIONS } from '../../../shared/agent-grants';
 import { getAttributeSpec } from '../../../shared/telemetry/attributes';
-import { dispatcherToolActions, listToolGrants, _resetForTesting } from './tool-registry';
+import { dispatcherToolActions, grantToolMap, listToolGrants, _resetForTesting } from './tool-registry';
 import { defaultGrants } from '../../../shared/default-grants';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
@@ -74,6 +74,21 @@ describe('tool grant declarations (#2967)', () => {
   it('only call_wire_tool passes through to the tool it calls', () => {
     const passThrough = registerAll().filter((t) => isToolGrantPassThrough(t.grant)).map((t) => `${t.name}: ${t.grant}`);
     expect(passThrough).toEqual(['call_wire_tool: called_tool']);
+  });
+
+  it('derives permission disclosures from every declaration, including conditional actions (#3275)', () => {
+    registerAll();
+    const tools = grantToolMap();
+    expect(tools['agent.reset']).toEqual(['clear_agent', 'compact_agent']);
+    expect(tools['agent.message']).toContain('send_message');
+    expect(tools['agent.message']).toContain('send_file');
+    expect(tools['agent.message']).toContain('wake_agent');
+    expect(tools['agent.wake']).toEqual(['wake_agent', 'wake_helper']);
+    expect(tools['browser.read']).toEqual(['get_accessibility_tree', 'get_console', 'get_page_content', 'screenshot']);
+    expect(Object.values(tools).flat()).not.toContain('call_wire_tool');
+    // Mutating a read-only IPC reply must not change the registry.
+    tools['agent.reset']?.push('not_a_tool');
+    expect(grantToolMap()['agent.reset']).toEqual(['clear_agent', 'compact_agent']);
   });
 
   it('plugin tools are marked as plugin tools, with no action', () => {

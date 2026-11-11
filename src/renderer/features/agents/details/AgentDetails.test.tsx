@@ -81,6 +81,13 @@ describe('AgentDetails in the terminal', () => {
     act(() => { useAgentDetailsStore.getState().reveal({ agentId: 'a1', card: 'mcp' }); });
     expect(screen.getByTestId('details-card-mcp')).toHaveAttribute('data-open', 'true');
   });
+
+  it('opens an empty Connections card from permissions settings (#3275)', async () => {
+    render(<AgentDetails agent={agent} />);
+    act(() => { useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'connections' }); });
+    expect(await screen.findByTestId('details-card-connections')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByText(/No Clubhouse MCP wires/)).toBeInTheDocument();
+  });
 });
 
 describe('AgentDetails for the Dispatcher', () => {

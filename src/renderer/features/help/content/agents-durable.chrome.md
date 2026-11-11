@@ -71,6 +71,8 @@ Changing the level in a chat's composer applies to that session only. The agent'
 
 Access governs what an agent's CLI does on your machine. Clubhouse permissions govern what it can do through Clubhouse: read or message other agents, start helpers, change app settings, run Actions. They're on the **Clubhouse permissions** page in the agent's settings, grouped by what they reach. Each one is **Off**, **Ask first** or **Allow**.
 
+**Connected agents** shows the outgoing connection count, not every agent in Clubhouse. With no outgoing connections, those grants currently reach no agents. Even **Allow** needs an existing connection and the tool's switch turned on in that direction. The reverse direction has separate switches, and a switch never overrides the sender's Clubhouse permissions. **Edit connections** opens the agent's **Connections** card. Expand **MCP tools** under a permission to see the registered tool names it governs; connection tools add a target-specific prefix to those names.
+
 When a call needs a permission set to Ask first, the agent doesn't wait. The request goes to **Needs you** with what the call would do, and the agent is told it's waiting. Select it to see the request, then choose **Allow** or **Decline**. Allow runs that one call when the agent tries again; the agent's permissions don't change. To allow it every time, set the permission to Allow on the agent's page. Requests expire after 24 hours, and the agent is told your answer either way.
 
 An agent can also ask for a permission it doesn't have, with its reason. Allowing that adds it to the agent's page, marked as set by you, where you can turn it off again.

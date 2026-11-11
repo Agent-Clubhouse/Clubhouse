@@ -1,5 +1,6 @@
 import { contextWindowOptionsFor } from '../services/context-window';
 import { readAgentGrants, resetAgentGrants, setAgentGrant } from '../services/agent-grants-service';
+import { grantToolMap } from '../services/clubhouse-mcp/tool-registry';
 import { listGrantRequests } from '../services/grant-requests';
 import { answerGrantRequest } from '../services/grant-request-answers';
 import type { GrantChange } from '../../shared/agent-grant-changes';
@@ -341,6 +342,7 @@ export function registerAgentHandlers(): void {
   ));
 
   // Clubhouse permissions (#2971): the user's own surface, so no grant check applies.
+  ipcMain.handle(IPC.AGENT.GET_GRANT_TOOLS, () => grantToolMap());
   ipcMain.handle(IPC.AGENT.GET_GRANTS, withValidatedArgs([stringArg(), stringArg()],
     async (_event, projectPath, agentId) => readAgentGrants(projectPath, agentId)));
   ipcMain.handle(IPC.AGENT.SET_GRANT, withValidatedArgs([stringArg(), stringArg(), objectArg<Omit<GrantChange, 'by' | 'at'>>()],
