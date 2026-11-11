@@ -76,7 +76,7 @@ export function isDispatcherAgent(agent: Pick<Agent, 'id' | 'projectId'> | null 
 
 /**
  * A chat message sender's agent record (findSenderAgent), except that either
- * Dispatcher agent is the Dispatcher's chat agent: its work agent has no
+ * Dispatcher agent is the Dispatcher's chat agent: its controller has no
  * picture of its own and isn't the name the user knows it by.
  */
 export function findChatSenderAgent<T extends { name: string }>(

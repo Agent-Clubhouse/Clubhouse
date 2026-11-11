@@ -8,10 +8,10 @@
  * running chat starts a new conversation at once, with its instructions and
  * memory index written fresh; a sleeping one starts fresh at its next wake.
  *
- * Start fresh (#3240) does the same for the Dispatcher's work conversation,
- * or for both. The work conversation's native session is quarantined, so no
+ * Start fresh (#3240) does the same for the Dispatcher's controller conversation,
+ * or for both. The controller conversation's native session is quarantined, so no
  * wake resumes it and no late session end makes it the resume id again.
- * Clubhouse starts the work fresh on its own when its conversation fails
+ * Clubhouse starts the controller fresh on its own when its conversation fails
  * every turn (dispatcher-work-health).
  */
 import * as agentConfig from '../agent-config';
@@ -71,12 +71,12 @@ export async function clearDispatcherChat(deps: ClearChatDeps = {}): Promise<Cle
   return { cleared: 'next_start' };
 }
 
-/** Why the work conversation starts fresh: the person asked, or it failed every turn. */
+/** Why the controller conversation starts fresh: the person asked, or it failed every turn. */
 export type StartFreshReason = 'user' | 'repeated_failures';
 
 export interface StartFreshDeps extends ClearChatDeps {
   workAgentId?: () => string | null;
-  /** The work conversation's native session now, or its saved resume id when it's asleep. */
+  /** The controller conversation's native session now, or its saved resume id when it's asleep. */
   workSessionId?: (dir: string, agentId: string) => Promise<string | null>;
   quarantine?: (dir: string, agentId: string, sessionId: string) => Promise<unknown>;
   /** Write a notice into a running agent's conversation. */
@@ -84,20 +84,20 @@ export interface StartFreshDeps extends ClearChatDeps {
   /** Write a notice into a sleeping agent's next conversation. */
   noteNextStart?: (agentId: string, notice: ChatEventDataMap['notice']) => void;
   clearChat?: () => Promise<ClearChatResult>;
-  /** The requests the old work conversation owes an outcome (#3260), taken before it is replaced. */
+  /** The requests the old controller conversation owes an outcome (#3260), taken before it is replaced. */
   takeWaiting?: () => WaitingRequests;
   /** End those requests, telling the chat. */
   endWaiting?: (waiting: WaitingRequests) => void;
 }
 
 const WORK_NOTICE: Record<StartFreshReason, string> = {
-  user: 'Started fresh. The previous work conversation ended and is not resumed again.',
-  repeated_failures: 'Started fresh. The previous work conversation failed every turn, so Clubhouse stopped resuming it.',
+  user: 'Started fresh. The previous controller conversation ended and is not resumed again.',
+  repeated_failures: 'Started fresh. The previous controller conversation failed every turn, so Clubhouse stopped resuming it.',
 };
 
 const CHAT_NOTICE: Record<StartFreshReason, string> = {
-  user: 'Dispatcher work started fresh. Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.',
-  repeated_failures: 'Dispatcher work kept failing in its conversation, so it started a fresh one. '
+  user: 'Dispatcher controller started fresh. Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.',
+  repeated_failures: 'Dispatcher controller kept failing in its conversation, so it started a fresh one. '
     + 'Memory, agents, connections, Actions and settings are unchanged. Ask again for anything that was in progress.',
 };
 
@@ -120,8 +120,8 @@ async function tell(agentId: string, notice: ChatEventDataMap['notice'], deps: S
 }
 
 /**
- * Start the Dispatcher's work conversation fresh. Its native session is
- * quarantined first, so the old one can't come back; a running work agent
+ * Start the Dispatcher's controller conversation fresh. Its native session is
+ * quarantined first, so the old one can't come back; a running controller
  * then starts a new conversation at once, a sleeping one at its next wake.
  */
 export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: StartFreshDeps = {}): Promise<'now' | 'next_start'> {
@@ -146,12 +146,12 @@ export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: S
     (deps.noteNextStart ?? noteNextStartNotice)(workId, notice);
     result = 'next_start';
   }
-  appLog('core:dispatcher', reason === 'user' ? 'info' : 'warn', 'Dispatcher work started fresh', { meta: { reason, running: result === 'now', quarantined: !!sessionId } });
+  appLog('core:dispatcher', reason === 'user' ? 'info' : 'warn', 'Dispatcher controller started fresh', { meta: { reason, running: result === 'now', quarantined: !!sessionId } });
   return result;
 }
 
 /**
- * Start fresh from the Dispatcher's menu: its work conversation, or both of
+ * Start fresh from the Dispatcher's menu: its controller conversation, or both of
  * its conversations. Only conversations go; memory, agents, connections,
  * Actions and settings stay. The visible chat says what happened.
  */

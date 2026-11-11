@@ -126,7 +126,7 @@ export const DISPATCHER_OFF: DispatcherState = {
   personality: DEFAULT_DISPATCHER_PERSONALITY, setup: NO_DISPATCHER_SETUP,
 };
 
-/** What Start fresh (#3240) starts over: the Dispatcher's work conversation, or both of its conversations. */
+/** What Start fresh (#3240) starts over: the Dispatcher's controller conversation, or both of its conversations. */
 export type StartFreshScope = 'work' | 'both';
 
 /** When each conversation starts fresh: now (it was running) or at its next start. */

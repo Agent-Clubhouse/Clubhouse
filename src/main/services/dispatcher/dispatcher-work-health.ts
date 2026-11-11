@@ -1,9 +1,9 @@
 /**
- * Repeated failures in the Dispatcher's work conversation (#3240). A native
+ * Repeated failures in the Dispatcher's controller conversation (#3240). A native
  * session can resume fine and then fail every turn: its history is the
  * problem, so every wake, retry, restart and Dispatcher switch fails the same
  * way. After REPEATED_TURN_FAILURES turns in a row fail on one session, the
- * work starts fresh: that session is quarantined, never resumed again, and
+ * controller starts fresh: that session is quarantined, never resumed again, and
  * the visible chat says so.
  *
  * Only turns count. A turn that ends well resets the count; one cancelled
@@ -36,7 +36,7 @@ let turnExcused = false;
 /** A fresh start is under way: the turns it ends don't count again. */
 let recovering: Promise<void> | null = null;
 
-/** Fold one chat event of the work agent into its failure count. Exported for tests. */
+/** Fold one chat event of the controller into its failure count. Exported for tests. */
 export function noteWorkChatEvent(event: ChatEvent, deps: WorkHealthDeps = {}): void {
   const workId = (deps.workAgentId ?? getDispatcherAgentId)();
   if (!workId || event.agentId !== workId) return;
@@ -57,17 +57,17 @@ export function noteWorkChatEvent(event: ChatEvent, deps: WorkHealthDeps = {}): 
   else if (stopReason === 'error' && !turnExcused) failures.count++;
   turnExcused = false;
   if (failures.count < REPEATED_TURN_FAILURES || recovering) return;
-  appLog('core:dispatcher', 'warn', 'Dispatcher work failed every turn; starting fresh', { meta: { failedTurns: failures.count } });
+  appLog('core:dispatcher', 'warn', 'Dispatcher controller failed every turn; starting fresh', { meta: { failedTurns: failures.count } });
   failures = null;
   const run = (deps.startFresh ?? (() => startDispatcherFresh('work', {}, 'repeated_failures')))();
   recovering = Promise.resolve(run).then((): void => undefined, (err: unknown): void => {
-    appLog('core:dispatcher', 'error', 'Dispatcher work could not start fresh', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    appLog('core:dispatcher', 'error', 'Dispatcher controller could not start fresh', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }).finally(() => { recovering = null; });
 }
 
 let unsubscribe: (() => void) | null = null;
 
-/** Watch the work conversation. Called once, with the Dispatcher's other handlers. */
+/** Watch the controller conversation. Called once, with the Dispatcher's other handlers. */
 export function installDispatcherWorkHealth(): void {
   unsubscribe ??= onChatEvent((event) => noteWorkChatEvent(event));
 }

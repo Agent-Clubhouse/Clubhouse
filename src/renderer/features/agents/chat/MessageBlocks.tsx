@@ -338,7 +338,7 @@ export function formatWhen(at: number, now: number = Date.now()): string {
 }
 
 /**
- * `timing` (the Dispatcher work view, #3242): when the error happened, and
+ * `timing` (the Dispatcher controller view, #3242): when the error happened, and
  * whether it belongs to a run that has ended. An ended run's error is history,
  * not a current failure, so it isn't announced as an alert.
  */

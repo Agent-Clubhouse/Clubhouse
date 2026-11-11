@@ -23,7 +23,7 @@ import { PoppedOutPlaceholder } from '../popout/PoppedOutPlaceholder';
  * again from the chat or its menu shows here too. After Set up later, a line
  * above the chat offers it again.
  *
- * With the debug view on (#3188), its work agent's row shows that agent's chat
+ * With the debug view on (#3188), its controller's row shows that agent's chat
  * here instead, read-only.
  *
  * While its chat is popped out (#3235) the view shows where it went, as a

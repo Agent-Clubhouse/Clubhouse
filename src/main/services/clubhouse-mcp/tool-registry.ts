@@ -395,7 +395,7 @@ export function listToolGrants(): RegisteredToolGrant[] {
   return out;
 }
 
-/** The groups whose tools the Dispatcher can call, through its work agent or its chat, as toolGroupGates opens them. */
+/** The groups whose tools the Dispatcher can call, through its controller or its chat, as toolGroupGates opens them. */
 const DISPATCHER_TOOL_GROUPS: ReadonlySet<ToolGroup> = new Set(['dispatcher', 'dispatcherChat', 'actions']);
 
 /**

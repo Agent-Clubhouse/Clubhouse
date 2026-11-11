@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-// #3240 with #3260: the same failing turns that make the work start fresh end
+// #3240 with #3260: the same failing turns that make the controller start fresh end
 // the requests they were reading as failed, so none is left waiting on a
 // conversation that is gone.
 
@@ -39,7 +39,7 @@ function event<T extends keyof ChatEventDataMap>(type: T, data: ChatEventDataMap
   return { v: 1, agentId: 'coordinator', sessionId: 's', seq: 1, ts: now, type, data } as unknown as ChatEvent;
 }
 
-/** Both listeners see every work event, as they do in the app. */
+/** Both listeners see every controller event, as they do in the app. */
 function emit(e: ChatEvent): void {
   noteWorkEvent(e, now);
   noteWorkChatEvent(e, { nativeSessionId: () => 'bad-native', startFresh });
@@ -66,8 +66,8 @@ beforeEach(async () => {
   setRequestEndedHandler(ended);
 });
 
-describe('Dispatcher work recovery with the request ledger (#3240, #3260)', () => {
-  it('ends each failed turn\'s request as failed, and starts the work fresh on the last failure', async () => {
+describe('Dispatcher controller recovery with the request ledger (#3240, #3260)', () => {
+  it('ends each failed turn\'s request as failed, and starts the controller fresh on the last failure', async () => {
     const ids: string[] = [];
     for (let i = 0; i < REPEATED_TURN_FAILURES; i++) {
       ids.push(handOff(`request ${i}`));
@@ -79,7 +79,7 @@ describe('Dispatcher work recovery with the request ledger (#3240, #3260)', () =
     await _whenRecoveredForTesting();
   });
 
-  it('a provider outage fails its requests but never starts the work fresh', () => {
+  it('a provider outage fails its requests but never starts the controller fresh', () => {
     const ids: string[] = [];
     for (let i = 0; i < REPEATED_TURN_FAILURES + 1; i++) {
       ids.push(handOff(`request ${i}`));

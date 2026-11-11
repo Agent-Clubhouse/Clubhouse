@@ -4,10 +4,10 @@ import * as path from 'path';
 import ts from 'typescript';
 
 /**
- * The Dispatcher is two agents under one identity (#3036), and the one that
- * does the work is never named or shown. No string the app can show (UI text,
+ * The Dispatcher is two agents under one identity (#3036). Its controller's
+ * transcript is shown only in the debug view (#3188). No string the app can show (UI text,
  * status lines, notifications, tool results, errors, help, and what either
- * agent is told) may mention a coordinator or a second session.
+ * agent is told) may mention a coordinator, a second session or the controller's old name.
  *
  * Code may call it the coordinator in identifiers and comments; this reads
  * only string literals, template text and JSX text, plus the help pages and
@@ -19,7 +19,7 @@ const SOURCE_DIRS = ['src/main', 'src/renderer', 'src/shared', 'src/preload'];
 const TEXT_FILES_DIRS = ['src/renderer/features/help/content', 'src/main/services/dispatcher'];
 
 /** Words that would name a second session. "phone book" is the agent cards' internal name (#3034). */
-const FORBIDDEN = /\bcoordinators?\b|\b(?:second|hidden|background|two|other) (?:agent )?sessions?\b|\bphone ?book\b/i;
+const FORBIDDEN = /\bcoordinators?\b|\b(?:second|hidden|background|two|other) (?:agent )?sessions?\b|\bphone ?book\b|\bwork (?:agent|conversation|session)s?\b|\bDispatcher work\b|\bWork only\b/i;
 
 function walk(dir: string, accept: (file: string) => boolean, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -55,8 +55,8 @@ function shownStrings(file: string): Array<{ line: number; text: string }> {
   return found;
 }
 
-describe('the Dispatcher\'s hidden agent is never named (#3036)', () => {
-  it('no string the app can show mentions a coordinator or a second session', () => {
+describe('the Dispatcher uses one identity and calls its controller by its current name (#3036)', () => {
+  it('no string the app can show mentions a coordinator, a second session or the controller\'s old name', () => {
     const files = SOURCE_DIRS.flatMap((dir) => walk(path.join(ROOT, dir), (f) => /\.tsx?$/.test(f) && !f.endsWith('.d.ts') && !isTest(f)));
     expect(files.length).toBeGreaterThan(100);
     const hits: string[] = [];
@@ -74,6 +74,8 @@ describe('the Dispatcher\'s hidden agent is never named (#3036)', () => {
     expect(seen).toContain('Retry');
     // Choose models yourself's job label (#3191) is read too, and passes.
     expect(seen).toContain('Working in the background');
+    expect(seen).toContain('Dispatcher controller');
+    expect(seen).toContain('Controller only');
   }, 60_000); // It parses every source file, which is slow on a loaded machine.
 
   it('no help page, and nothing either agent is told, mentions one either', () => {
@@ -89,11 +91,11 @@ describe('the Dispatcher\'s hidden agent is never named (#3036)', () => {
   });
 
   it('catches the words it is for', () => {
-    for (const text of ['Asking the coordinator…', 'The Coordinators', 'a hidden session', 'its second session', 'the phone book', 'two agent sessions']) {
+    for (const text of ['Asking the coordinator…', 'The Coordinators', 'a hidden session', 'its second session', 'the phone book', 'two agent sessions', 'work agent', 'work conversation', 'work session', 'Dispatcher work', 'Work only']) {
       expect(FORBIDDEN.test(text), text).toBe(true);
     }
     // "Working in the background" is the maintainer-approved label for Choose models yourself (#3191): it names a job, not a session.
-    for (const text of ['Asking what it does…', 'Coordinate, don\'t implement', 'one session', 'a new session', 'Working in the background']) {
+    for (const text of ['Asking what it does…', 'Coordinate, don\'t implement', 'one session', 'a new session', 'Working in the background', 'Dispatcher controller', 'the Dispatcher\'s controller', 'controller conversation', 'credited work', 'work it delegates']) {
       expect(FORBIDDEN.test(text), text).toBe(false);
     }
   });

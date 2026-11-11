@@ -2,7 +2,7 @@
 
 What shipped under the Level Up epic (#3034), for people working on Clubhouse. The user-facing article is `src/renderer/features/help/content/agents-dispatcher.chrome.md`. "Dispatcher" is the working name; it lives in one constant, `DEFAULT_DISPATCHER_NAME` in `src/shared/dispatcher-name.ts`.
 
-To the user it is one identity: one name, one chat, one set of settings. No UI text, help page, status line or instructions file may say how the work is divided inside it. `src/main/services/dispatcher/dispatcher-copy.test.ts` fails on any string the app can show that names a coordinator or a second, hidden or background session.
+To the user it is one identity: one name, one chat, one set of settings. The debug view calls the agent that does its work the Dispatcher's controller. `src/main/services/dispatcher/dispatcher-copy.test.ts` fails on any string the app can show that names a coordinator, a second, hidden or background session, or the controller by its old name.
 
 ## On by default (#3053)
 
@@ -117,10 +117,10 @@ The Dispatcher can link two agents connected to it so they reach each other dire
 
 **Settings > Experimental > Dispatcher debug view** (flag `dispatcherDebug`, preview-only) changes only what is shown, never what the Dispatcher does. Off is exactly the normal view.
 
-- **Work agent row.** A row named "Dispatcher work" under the Dispatcher's opens the work agent's chat (`state.agentId`) in the Dispatcher's view, read-only: its transcript and live events, everything shown, no composer or controls (`DispatcherWorkView.tsx`). The agent isn't loaded into the agent store, so nothing else (canvas, palette, Needs you) sees it.
+- **Controller row.** A row named "Dispatcher controller" under the Dispatcher's opens the controller's chat (`state.agentId`) in the Dispatcher's view, read-only: its transcript and live events, everything shown, no composer or controls (`DispatcherWorkView.tsx`). The agent isn't loaded into the agent store, so nothing else (canvas, palette, Needs you) sees it.
 - **Hidden content.** The Dispatcher's chat shows every item as it is, and marks each block the group chat would hide ("Debug · hidden from the chat": tool calls, thoughts, normal turn footers, subagent work, Clubhouse updates including agents' raw news) or clean ("Debug · raw, the chat shows it cleaned"). The marks come from `groupChatDebugMarks` in `features/dispatcher/group-chat.ts`, so they follow the same rules. Desktop only: a phone still gets the filtered chat.
 
-The switch is read at startup and updated by the Experimental page as it saves, so no restart is needed. Its copy calls the agent the work agent, which `dispatcher-copy.test.ts` allows, so the test needs no exception.
+The switch is read at startup and updated by the Experimental page as it saves, so no restart is needed. Its copy calls the agent the controller, which `dispatcher-copy.test.ts` allows without an exception.
 
 ## Its name
 

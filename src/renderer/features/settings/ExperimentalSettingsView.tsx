@@ -18,7 +18,7 @@ export const EXPERIMENTAL_FEATURES: Array<{
   {
     id: DISPATCHER_DEBUG_FLAG,
     label: 'Dispatcher debug view',
-    description: 'Adds a sidebar row for the Dispatcher\'s work agent, whose chat opens read-only, and shows the tool calls, Clubhouse updates and agents\' raw news the Dispatcher\'s chat hides, marked as debug. Changes nothing the Dispatcher does.',
+    description: 'Adds a sidebar row for the Dispatcher\'s controller, whose chat opens read-only, and shows the tool calls, Clubhouse updates and agents\' raw news the Dispatcher\'s chat hides, marked as debug. Changes nothing the Dispatcher does.',
   },
 ];
 

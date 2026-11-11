@@ -5,7 +5,7 @@ import { DISPATCHER_DEBUG_FLAG } from '../../../shared/types';
  * The Dispatcher debug view (#3188), a switch in Settings > Experimental. It
  * changes only what is shown, never what the Dispatcher does:
  *
- * - its work agent (the one that holds its connections, `state.agentId`) gets
+ * - its controller (the one that holds its connections, `state.agentId`) gets
  *   a row under the Dispatcher's, which opens that agent's chat read-only
  *   (DispatcherWorkView);
  * - the Dispatcher's chat shows what it normally hides (tool calls, Clubhouse
@@ -20,7 +20,7 @@ export { DISPATCHER_DEBUG_FLAG };
 
 interface DispatcherDebugState {
   on: boolean;
-  /** The Dispatcher's view shows the work agent's chat rather than its own. Only read while `on`. */
+  /** The Dispatcher's view shows the controller's chat rather than its own. Only read while `on`. */
   workOpen: boolean;
   setOn: (on: boolean) => void;
   setWorkOpen: (open: boolean) => void;
@@ -47,7 +47,7 @@ export function useDispatcherDebug(): boolean {
   return useDispatcherDebugStore((s) => s.on);
 }
 
-/** Whether the Dispatcher's view shows the work agent's chat. */
+/** Whether the Dispatcher's view shows the controller's chat. */
 export function useDispatcherWorkOpen(): boolean {
   return useDispatcherDebugStore((s) => s.on && s.workOpen);
 }

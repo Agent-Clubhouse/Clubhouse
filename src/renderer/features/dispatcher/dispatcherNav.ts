@@ -34,7 +34,7 @@ export function openDispatcherNavTarget(target: string): void {
 
 /**
  * Show the Dispatcher's view. Does nothing while it's turned off. `work` shows
- * its work agent's chat instead, with the debug view on (#3188).
+ * its controller's chat instead, with the debug view on (#3188).
  */
 export function openDispatcher(opts: { work?: boolean } = {}): void {
   if (!useDispatcherStore.getState().project) return;

@@ -793,21 +793,21 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
   describe('debug view (#3188)', () => {
     afterEach(() => useDispatcherDebugStore.setState({ on: false, workOpen: false }));
 
-    it('shows no work row while the debug view is off', () => {
+    it('shows no controller row while the debug view is off', () => {
       turnOn();
       render(<ChromeSidebar />);
       expect(screen.getByTestId('dispatcher-row')).toBeTruthy();
       expect(screen.queryByTestId('dispatcher-work-row')).toBeNull();
     });
 
-    it('shows the work row under the Dispatcher\'s, which opens its chat in the Dispatcher\'s view', () => {
+    it('shows the controller row under the Dispatcher\'s, which opens its chat in the Dispatcher\'s view', () => {
       turnOn();
       useDispatcherDebugStore.setState({ on: true });
       render(<ChromeSidebar />);
       const work = screen.getByTestId('dispatcher-work-row');
       expect(!!(screen.getByTestId('dispatcher-row').compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-      expect(work.textContent).toContain('Dispatcher work');
-      const item = within(work).getByRole('treeitem', { name: 'Dispatcher work' });
+      expect(work.textContent).toContain('Dispatcher controller');
+      const item = within(work).getByRole('treeitem', { name: 'Dispatcher controller' });
       expect(within(item).getByRole('img', { name: 'Sleeping' })).toBeTruthy();
       fireEvent.click(item);
       expect(useUIStore.getState().dispatcherOpen).toBe(true);

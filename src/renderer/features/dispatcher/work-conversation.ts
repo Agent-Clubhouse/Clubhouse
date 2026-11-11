@@ -1,8 +1,8 @@
 /**
- * The Dispatcher work view's reading of its conversation (#3242): which CLI
+ * The Dispatcher controller view's reading of its conversation (#3242): which CLI
  * run is active, if any, and whether that run is failing. Errors kept from an
  * ended run, or from before a fresh start, are history: they never make the
- * work look unhealthy.
+ * controller look unhealthy.
  */
 import type { ChatViewState, NoticeItem } from '../../stores/chatStore';
 

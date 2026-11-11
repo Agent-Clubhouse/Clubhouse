@@ -47,11 +47,13 @@ describe('the Dispatcher\'s row status (#3220)', () => {
   });
 });
 
-describe('the debug work row (#3220)', () => {
+describe('the debug controller row (#3220)', () => {
   beforeEach(() => useChatStore.setState({ agents: {} } as never));
 
-  it('shows Sleeping when the work agent is asleep, whatever the chat is doing', () => {
+  it('shows Sleeping when the controller is asleep, whatever the chat is doing', () => {
     render(<DispatcherWorkRow agentId="coordinator" running={false} active={false} onSelect={() => {}} />);
+    expect(screen.getByRole('tree', { name: 'Dispatcher controller (debug)' })).toBeTruthy();
+    expect(screen.getByRole('treeitem', { name: 'Dispatcher controller' })).toBeTruthy();
     expect(screen.getByTestId('dispatcher-work-row').querySelector('[data-dot]')?.getAttribute('data-dot')).toBe('sleeping');
   });
 });

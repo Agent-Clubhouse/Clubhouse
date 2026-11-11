@@ -90,12 +90,12 @@ describe('UserMessage', () => {
     expect(screen.getByTestId('chat-sent-avatar').querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
   });
 
-  it('shows the Dispatcher\'s work agent, or its chat, as the Dispatcher', () => {
+  it('shows the Dispatcher\'s controller, or its chat, as the Dispatcher', () => {
     useDispatcherStore.setState({ state: { agentId: 'dispatcher_work', chatAgentId: 'dispatcher_chat' } as never });
     useAgentStore.setState({
       agents: {
         dispatcher_chat: agent({ id: 'dispatcher_chat', name: 'Dispatcher', icon: 'd.png' }),
-        // In the debug view (#3188) the work agent is loaded too, with no picture of its own.
+        // In the debug view (#3188) the controller is loaded too, with no picture of its own.
         dispatcher_work: agent({ id: 'dispatcher_work', name: 'Navi' }),
       },
       agentIcons: { dispatcher_chat: 'data:image/png;base64,DDDD' },
