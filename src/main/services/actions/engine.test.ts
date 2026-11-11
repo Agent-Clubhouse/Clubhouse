@@ -290,6 +290,59 @@ describe('quick agent Action sources', () => {
       vi.useRealTimers();
     }
   });
+
+  it('preserves a delayed causal chain across relaunch and a long quick run', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(START);
+    resetAppEventBus();
+    const original = setup({ agents: { quick: { name: 'Review', projectId: 'p1', quick: true } } });
+    const trigger = { kind: 'event', event: 'agent.quick_finished', source: { kind: 'project', projectId: 'p1' }, delayMinutes: 1 } as const;
+    original.engine.start();
+    const first = original.engine.create({ trigger, steps: [notify] }, user);
+    const next = original.engine.create({ trigger, steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review' }] }, user);
+    original.event({ ...finish, chain: [first.id] });
+    expect(original.saved.state.waits).toMatchObject([
+      { actionId: first.id, chain: [first.id], sourceAgentId: 'quick' },
+      { actionId: next.id, chain: [first.id], sourceAgentId: 'quick' },
+    ]);
+    original.engine.stop();
+
+    const resumed = setup({
+      actions: original.saved.actions, state: original.saved.state, agents: original.agents, start: START + MIN,
+      stepImpl: (step, context) => runner.run(step, context),
+    });
+    const startQuick = vi.fn<StepDeps['startQuick']>(async (request) => {
+      const run = beginQuickAgentRun({ agentId: 'quick', projectPath: request.project.path, name: request.name, quickOwner: request.quickOwner, chain: request.chain });
+      vi.setSystemTime(Date.now() + CHAIN_WINDOW_MS + 1);
+      finishQuickAgentRun(run, 'completed');
+      return { id: 'quick', name: request.name };
+    });
+    const runner = createStepRunner({
+      agentExists: () => true, agentName: () => 'Review', agentWorktree: () => undefined, isRunning: () => false,
+      project: () => ({ id: 'p1', path: '/p1', name: 'web' }), startQuick,
+      wake: async () => ({ ok: true, text: '' }), sleep: async () => ({ ok: true, text: '' }), notify: () => ({ shown: true }),
+    });
+    const off = onAppEvent((event) => resumed.engine.handleEvent(event));
+    try {
+      resumed.engine.start();
+      await flush();
+      await resumed.clock.advance(MIN);
+      expect(startQuick).toHaveBeenCalledTimes(1);
+      expect(startQuick.mock.calls[0][0].chain).toEqual([first.id, next.id]);
+      expect(resumed.saved.state.waits).toEqual([]);
+      expect(resumed.history(first.id)).toMatchObject([
+        { outcome: 'skipped', reason: 'It can’t set itself off' },
+        { outcome: 'skipped', reason: 'It can’t set itself off' },
+      ]);
+      expect(resumed.history(next.id).some((run) => run.reason === 'It can’t set itself off')).toBe(true);
+    } finally {
+      off();
+      resumed.engine.stop();
+      clearQuickAgentRuns();
+      resetAppEventBus();
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('any readable agent turn windows', () => {
