@@ -29,8 +29,9 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { HELPER_SPAWN_RESULTS, HELPER_TELEMETRY_LIMITS, type HelperSpawnResult } from '../../shared/telemetry/helper-usage-contract';
+import { HELPER_SPAWN_RESULTS, HELPER_TASK_PROFILES, HELPER_TELEMETRY_LIMITS, type HelperSpawnResult, type HelperTaskProfile } from '../../shared/telemetry/helper-usage-contract';
 import { HELPER_DIFFICULTIES, HELPER_ROUTING_MODES, type HelperDifficulty } from '../../shared/helper-routing';
+import { readBurnForecast, readBurnObservation, readForecastRun, type BurnForecast, type BurnObservation, type ForecastRun } from '../services/helper-auto-forecast';
 
 export const LEDGER_FORMAT_VERSION = 1;
 
@@ -53,6 +54,10 @@ export interface LedgerEntry {
   difficulty: HelperDifficulty | null;
   mappingRevision?: string;
   mappingFingerprint?: string;
+  taskProfile?: HelperTaskProfile;
+  forecast?: BurnForecast;
+  forecastRun?: ForecastRun;
+  burnObservation?: BurnObservation;
   /** What the start came to, once known. Absent while the start is unresolved. */
   spawn?: LedgerSpawn;
   /** `spawn` was taken from a run that began, not reported by routing. */
@@ -102,6 +107,9 @@ function readEntry(v: unknown): LedgerEntry | undefined {
   if (e.difficulty !== null && e.difficulty !== undefined && !(HELPER_DIFFICULTIES as readonly unknown[]).includes(e.difficulty)) return undefined;
   if (e.spawn !== undefined && !SPAWNS.includes(e.spawn as string)) return undefined;
   if (!textOrNull(e.mappingRevision) || !textOrNull(e.mappingFingerprint)) return undefined;
+  const forecast = readBurnForecast(e.forecast);
+  const observation = readBurnObservation(e.burnObservation);
+  const forecastRun = readForecastRun(e.forecastRun);
   return {
     helperId: e.helperId, decisionId: e.decisionId, decidedAtMs: e.decidedAtMs, touchedMs: e.touchedMs,
     mode: e.mode as LedgerEntry['mode'], policyVersion: e.policyVersion,
@@ -111,6 +119,12 @@ function readEntry(v: unknown): LedgerEntry | undefined {
     ...(typeof e.mappingFingerprint === 'string' && { mappingFingerprint: e.mappingFingerprint }),
     ...(e.spawn !== undefined && { spawn: e.spawn as LedgerSpawn }),
     ...(e.spawnInferred === true && { spawnInferred: true }),
+    ...(HELPER_TASK_PROFILES.includes(e.taskProfile as never) && { taskProfile: e.taskProfile as HelperTaskProfile }),
+    ...(forecast && { forecast, burnObservation: observation ?? { atMs: now(), attribution: 'whole_login_unknown' as const, reason: 'restart' as const } }),
+    ...(forecastRun?.endedMs !== undefined ? { forecastRun }
+      : (forecastRun || e.spawn === undefined || e.spawn === 'started' || e.spawn === 'orphaned') ? {
+        forecastRun: { startedMs: e.decidedAtMs, endedMs: Math.max(e.decidedAtMs, now()), usageSamples: 0, usable: false },
+      } : {}),
   };
 }
 
@@ -216,6 +230,24 @@ export function getEntry(helperId: string): LedgerEntry | undefined {
   return entries.get(helperId);
 }
 
+export function forecastHistory(): readonly LedgerEntry[] {
+  return [...entries.values()];
+}
+
+export function setForecastRun(helperId: string, evidence: ForecastRun): void {
+  const entry = entries.get(helperId);
+  if (!entry) return;
+  entry.forecastRun = { ...evidence };
+  persist();
+}
+
+export function setBurnObservation(helperId: string, observation: BurnObservation): void {
+  const entry = entries.get(helperId);
+  if (!entry?.forecast || entry.burnObservation) return;
+  entry.burnObservation = observation;
+  persist();
+}
+
 /** Find the entry a decision id belongs to (a spawn result may arrive before the helper id is known elsewhere). */
 export function getEntryByDecision(decisionId: string): LedgerEntry | undefined {
   for (const e of entries.values()) if (e.decisionId === decisionId) return e;
@@ -280,6 +312,13 @@ export function forgetRun(helperId: string): void {
 
 /** Forget every run, for telemetry going off: nothing is open any more as far as the ledger can say. */
 export function clearRuns(): void {
+  for (const helperId of runs.keys()) {
+    const entry = entries.get(helperId);
+    if (entry?.forecastRun) {
+      entry.forecastRun = { ...entry.forecastRun, endedMs: Math.max(entry.forecastRun.startedMs, now()), usable: false };
+    }
+  }
+  // In memory only: turning recording off must not write forecast state.
   runs.clear();
 }
 

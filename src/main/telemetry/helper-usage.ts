@@ -38,6 +38,7 @@ import { isTelemetryActive, tel, telemetryLevel } from './facade';
 import { modelFamily, orchestratorAttr } from './spawn-telemetry';
 import * as ledger from './helper-decision-ledger';
 import { RunUsageTracker, type UsageSample } from './helper-usage-accounting';
+import { observeHelperBurn, predictHelperBurn, type BurnForecast } from '../services/helper-auto-forecast';
 
 // --- Gate and budget -------------------------------------------------------------
 
@@ -186,6 +187,7 @@ export function bindHelperDecision(decisionId: string, helperId: string): void {
 /** One routing decision, accepted or refused: the receipt, then one event per provider it considered. */
 export function recordHelperDecision(rec: HelperDecisionRecord): void {
   guarded(() => {
+    let forecast: BurnForecast | undefined;
     if (rec.outcome === 'chosen') {
       const decision: PendingDecision = {
         decisionId: rec.decisionId,
@@ -198,7 +200,13 @@ export function recordHelperDecision(rec: HelperDecisionRecord): void {
         difficulty: rec.resolved.difficulty,
         mappingRevision: rec.mappingRevision,
         mappingFingerprint: rec.mappingFingerprint,
+        ...(rec.taskProfile && { taskProfile: rec.taskProfile }),
       };
+      if (rec.mode === 'auto') {
+        const baseline = rec.candidates.find((c) => c.provider === rec.resolved.provider && c.chosen)?.quota;
+        forecast = predictHelperBurn(decision, ledger.forecastHistory(), rec.decidedAtMs, baseline);
+        decision.forecast = forecast;
+      }
       pendingDecisions.set(rec.decisionId, decision);
       while (pendingDecisions.size > MAX_PENDING_DECISIONS) pendingDecisions.delete(pendingDecisions.keys().next().value as string);
       if (rec.helperId) bind(rec.decisionId, rec.helperId);
@@ -252,12 +260,50 @@ export function recordHelperDecision(rec: HelperDecisionRecord): void {
       tie?.cursorKey ? ATTR.helperTieCursorKeyHash(tie.cursorKey) : undefined,
       tie?.cursorBefore !== undefined && ATTR.helperTieCursorBefore(tie.cursorBefore),
       tie?.cursorAfter !== undefined && ATTR.helperTieCursorAfter(tie.cursorAfter),
+      ...(forecast ? forecastAttrs(forecast) : []),
     ]);
     for (const c of candidates) {
       if (!admit()) break;
       emit('clubhouse.helper.decision.candidate', candidateAttrs(rec.decisionId, c));
     }
   });
+}
+
+function forecastAttrs(forecast: BurnForecast): Array<TelAttr | undefined> {
+  return [
+    ATTR.helperForecastWeeklySamples(forecast.weekly.samples),
+    ATTR.helperForecastFiveHourSamples(forecast.fiveHour.samples),
+    forecast.weekly.expectedBp !== undefined ? ATTR.helperForecastWeeklyBp(forecast.weekly.expectedBp) : undefined,
+    forecast.fiveHour.expectedBp !== undefined ? ATTR.helperForecastFiveHourBp(forecast.fiveHour.expectedBp) : undefined,
+  ];
+}
+
+function evaluateForecasts(provider: string, quota: QuotaView): void {
+  const history = ledger.forecastHistory();
+  for (const entry of history) {
+    if (entry.provider !== provider) continue;
+    const observation = observeHelperBurn(entry, history, quota);
+    if (!observation) continue;
+    ledger.setBurnObservation(entry.helperId, observation);
+    if (!admit()) continue;
+    emit('clubhouse.helper.forecast', [
+      ATTR.helperDecisionIdHash(entry.decisionId),
+      observation.runId ? ATTR.helperRunIdHash(observation.runId) : undefined,
+      ATTR.orchestrator(cli(provider)),
+      entry.model ? ATTR.helperModelHash(entry.model) : undefined,
+      effortAttr(entry.effort),
+      ATTR.helperRoutingDifficulty(entry.difficulty ?? 'none'),
+      ATTR.helperTaskProfile(entry.taskProfile ?? 'unspecified'),
+      entry.mappingRevision ? ATTR.helperMappingRevisionHash(entry.mappingRevision) : undefined,
+      ATTR.helperForecastReason(observation.reason),
+      ATTR.helperForecastAttribution(observation.attribution),
+      ATTR.helperForecastUsageSamples(entry.forecastRun?.usageSamples ?? 0),
+      observation.weekly ? ATTR.helperForecastWeeklyObservedBp(observation.weekly.observedBp) : undefined,
+      observation.fiveHour ? ATTR.helperForecastFiveHourObservedBp(observation.fiveHour.observedBp) : undefined,
+      observation.weekly?.errorBp !== undefined ? ATTR.helperForecastWeeklyErrorBp(observation.weekly.errorBp) : undefined,
+      observation.fiveHour?.errorBp !== undefined ? ATTR.helperForecastFiveHourErrorBp(observation.fiveHour.errorBp) : undefined,
+    ]);
+  }
 }
 
 // --- What became of it -------------------------------------------------------------
@@ -348,6 +394,7 @@ function windowOf(view: QuotaWindowView | null | undefined): { bp?: number; rese
  */
 export function recordQuotaSample(provider: string, quota: QuotaView): void {
   guarded(() => {
+    evaluateForecasts(provider, quota);
     const t = clock();
     const weekly = windowOf(quota.weekly);
     const five = windowOf(quota.fiveHour);
@@ -412,6 +459,8 @@ interface RunContext {
   sessionIds: Set<string>;
   actualModel?: string;
   disposeRequested: boolean;
+  forecastUsageSamples: number;
+  forecastUsable: boolean;
 }
 
 /** The open run of each helper, by agent id. */
@@ -453,7 +502,13 @@ function emitUsage(ctx: RunContext, sample: UsageSample | undefined): void {
   if (!sample) return;
   if (!admit()) {
     ctx.tracker.counts.samplesDropped++;
+    ctx.forecastUsable = false;
     return;
+  }
+  if (sample.reset) ctx.forecastUsable = false;
+  if (sample.kind === 'turn') {
+    ctx.forecastUsageSamples++;
+    if (sample.completeness !== 'complete' || sample.scope === 'unscoped' || sample.dedup === 'none') ctx.forecastUsable = false;
   }
   emit('clubhouse.helper.usage.sample', usageAttrs(ctx, ledger.getEntry(ctx.helperId), sample));
 }
@@ -492,6 +547,11 @@ function finishRun(helperId: string, endedMs: number, outcome: HelperRunOutcome)
   ledger.endRun(helperId, endedMs);
   try {
     for (const sample of ctx.tracker.finalSamples(endedMs)) emitUsage(ctx, sample);
+    ledger.setForecastRun(helperId, {
+      runId: ctx.run.runId, startedMs: ctx.run.startedMs, endedMs, usageSamples: ctx.forecastUsageSamples,
+      usable: ctx.forecastUsable && outcome === 'completed' && !ctx.disposeRequested
+        && ctx.tracker.counts.turnsMissing === 0 && ctx.tracker.counts.samplesDropped === 0,
+    });
     emitOutcome(helperId, ctx, endedMs, ctx.disposeRequested ? 'disposed' : outcome);
   } finally {
     // The closed run is forgotten only now, after its final events went out.
@@ -526,17 +586,23 @@ export function handleHelperChatEvent(event: ChatEvent): void {
       if (existing) {
         // A context clear starts a new chat session on the same run.
         existing.sessionIds.add(event.sessionId);
+        existing.forecastUsable = false;
         return;
       }
+      const forecastUsable = !d.resumed && !entry.forecastRun && d.provider === entry.provider && d.model === entry.model;
+      const run = ledger.beginRun(agentId, event.ts, d.resumed === true);
+      ledger.setForecastRun(agentId, { runId: run.runId, startedMs: event.ts, usageSamples: 0, usable: forecastUsable });
       runs.set(agentId, {
         helperId: agentId,
         driver: d.driver,
         provider: d.provider,
-        run: ledger.beginRun(agentId, event.ts, d.resumed === true),
+        run,
         tracker: new RunUsageTracker(d.driver, undefined, d.resumed === true),
         sessionIds: new Set([event.sessionId]),
         actualModel: d.model,
         disposeRequested: false,
+        forecastUsageSamples: 0,
+        forecastUsable,
       });
       return;
     }
@@ -544,10 +610,14 @@ export function handleHelperChatEvent(event: ChatEvent): void {
     if (!ctx || !ctx.sessionIds.has(event.sessionId)) return;
     switch (event.type) {
       case 'session_info':
-        if (event.data.model) ctx.actualModel = event.data.model;
+        if (event.data.model) {
+          ctx.actualModel = event.data.model;
+          if (event.data.model !== ledger.getEntry(agentId)?.model) ctx.forecastUsable = false;
+        }
         return;
       case 'model_changed':
         ctx.actualModel = event.data.modelId;
+        ctx.forecastUsable = false;
         return;
       case 'turn_started':
         ctx.tracker.turnStarted(event.turnId, event.ts);
@@ -569,6 +639,7 @@ export function handleHelperChatEvent(event: ChatEvent): void {
           // Not a chat run: the helper dropped to the terminal.
           runs.delete(agentId);
           ledger.endRun(agentId, event.ts);
+          ledger.setForecastRun(agentId, { runId: ctx.run.runId, startedMs: ctx.run.startedMs, usageSamples: 0, usable: false });
           ledger.forgetRun(agentId);
           return;
         }
@@ -592,7 +663,16 @@ function handleAgentExit(agentId: string, exitCode: number): void {
       return;
     }
     // A helper that ran in the terminal: an outcome without usage.
-    if (ledger.getEntry(agentId)) emitOutcome(agentId, undefined, undefined, exitCode === 0 ? 'completed' : 'failed');
+    const entry = ledger.getEntry(agentId);
+    if (entry) {
+      if (entry.forecastRun?.endedMs === undefined) {
+        ledger.setForecastRun(agentId, {
+          ...(entry.forecastRun?.runId && { runId: entry.forecastRun.runId }),
+          startedMs: entry.forecastRun?.startedMs ?? entry.decidedAtMs, endedMs: t, usageSamples: 0, usable: false,
+        });
+      }
+      emitOutcome(agentId, undefined, undefined, exitCode === 0 ? 'completed' : 'failed');
+    }
   });
 }
 

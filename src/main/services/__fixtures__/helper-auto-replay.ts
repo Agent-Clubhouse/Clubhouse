@@ -7,8 +7,10 @@
  * percent, as it would from a CLI.
  */
 
-import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, type QuotaState, type QuotaUnknownReason } from '../../../shared/helper-routing';
+import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, type QuotaState, type QuotaUnknownReason, type QuotaView } from '../../../shared/helper-routing';
+import type { DecisionQuota } from '../../../shared/telemetry/helper-usage-contract';
 import { AUTO_WEEK_MS, decideAutoProvider, type AutoCandidate, type AutoDecision, type AutoPolicyOptions } from '../helper-auto-policy';
+import { observeHelperBurn, predictHelperBurn, type ForecastEntry } from '../helper-auto-forecast';
 
 export const HOUR = 60 * 60_000;
 export const DAY = 24 * HOUR;
@@ -29,6 +31,7 @@ export interface SimSubscription {
   outsidePerHour?: number;
   /** When it can be chosen: a provider removed, then back. Default always. */
   available?: (t: number) => boolean;
+  expectedBurnBp?: number;
 }
 
 export interface SimConfig {
@@ -111,10 +114,11 @@ export function runReplay(config: SimConfig): SimResult {
     for (let n = config.arrivals(t); n > 0; n--) {
       const candidates: AutoCandidate[] = subs.filter((s) => s.available?.(t) ?? true).map((s) => {
         const load = running.filter((r) => r.key === s.key).length;
-        if (s.unreadable) return { key: s.key, provider: s.provider, quotaState: 'unknown', quotaUnknownReason: s.unknownReason ?? 'read_failed', verified: true, load };
+        const forecast = s.expectedBurnBp !== undefined ? { expectedBurnBp: s.expectedBurnBp } : {};
+        if (s.unreadable) return { key: s.key, provider: s.provider, quotaState: 'unknown', quotaUnknownReason: s.unknownReason ?? 'read_failed', verified: true, load, ...forecast };
         const reading = seen.get(s.key)!;
         return {
-          key: s.key, provider: s.provider, verified: true, load,
+          key: s.key, provider: s.provider, verified: true, load, ...forecast,
           quotaState: stateFor(reading.percent, s.used >= s.capacity),
           weekly: { usedPercent: reading.percent, resetsAtMs: reading.resetsAt },
         };
@@ -151,4 +155,86 @@ export function runReplay(config: SimConfig): SimResult {
   }
   result.meanSpreadBp = ticks > 0 ? Math.round(spreadSum / ticks) : 0;
   return result;
+}
+
+export type ForecastReplayEvent =
+  | { atMs: number; type: 'decision'; entry: ForecastEntry; baseline?: DecisionQuota }
+  | { atMs: number; type: 'quota'; provider: string; quota: QuotaView };
+
+export interface ForecastCalibration {
+  decisions: number;
+  unknown: number;
+  evaluated: number;
+  excluded: number;
+  maeBp?: number;
+  biasBp?: number;
+}
+
+/** Availability time, not quota timestamp, orders events: a delayed read cannot train an earlier decision. */
+export function runForecastReplay(events: readonly ForecastReplayEvent[]): {
+  entries: ForecastEntry[];
+  calibration: Record<string, ForecastCalibration>;
+} {
+  const entries: ForecastEntry[] = [];
+  for (const event of [...events].sort((a, b) => a.atMs - b.atMs)) {
+    if (event.type === 'decision') {
+      const e = structuredClone(event.entry);
+      e.forecast = predictHelperBurn(e, entries, event.atMs, event.baseline);
+      entries.push(e);
+    } else {
+      for (const e of entries) {
+        if (e.provider !== event.provider) continue;
+        const observation = observeHelperBurn(e, entries, event.quota);
+        if (observation) e.burnObservation = observation;
+      }
+    }
+  }
+  const errors = new Map<string, number[]>();
+  const calibration: Record<string, ForecastCalibration> = {};
+  for (const e of entries) {
+    for (const window of ['weekly', 'fiveHour'] as const) {
+      const key = `${e.forecast!.key ?? 'unknown_identity'}:${window}`;
+      const c = calibration[key] ??= { decisions: 0, unknown: 0, evaluated: 0, excluded: 0 };
+      c.decisions++;
+      if (e.forecast![window].expectedBp === undefined) c.unknown++;
+      if (e.burnObservation && e.burnObservation.reason !== 'observed') c.excluded++;
+      const error = e.burnObservation?.[window]?.errorBp;
+      if (error === undefined) continue;
+      c.evaluated++;
+      const values = errors.get(key) ?? [];
+      values.push(error);
+      errors.set(key, values);
+      c.maeBp = values.reduce((sum, n) => sum + Math.abs(n), 0) / values.length;
+      c.biasBp = values.reduce((sum, n) => sum + n, 0) / values.length;
+    }
+  }
+  return { entries, calibration };
+}
+
+/** Simulated quota intervals, not a claim about live per-helper burn. No providers or paid prompts. */
+export function forecastReplayFixture(start: number, burns: readonly number[], identity: Partial<ForecastEntry> = {}): ForecastReplayEvent[] {
+  const events: ForecastReplayEvent[] = [];
+  const resetsAtMs = start + 7 * DAY;
+  let usedBp = 0;
+  burns.forEach((burn, i) => {
+    const atMs = start + i * HOUR;
+    const fiveResetsAtMs = start + (Math.floor(i / 5) + 1) * 5 * HOUR;
+    const e: ForecastEntry = {
+      decisionId: `forecast-${identity.provider ?? 'claude-code'}-${atMs}`, decidedAtMs: atMs,
+      provider: 'claude-code', model: 'opus', effort: 'high', difficulty: 'hard', mappingRevision: 'r1.0',
+      spawn: 'started', ...identity,
+      forecastRun: { startedMs: atMs, endedMs: atMs + HOUR / 2, usageSamples: 1, usable: true },
+    };
+    events.push({ type: 'decision', atMs, entry: e, baseline: {
+      state: 'known', source: 'cli_query', quality: 'fresh', asOfMs: atMs - 1000,
+      windows: [{ name: 'weekly', usedBp, resetsAtMs }, { name: 'fiveHour', usedBp, resetsAtMs: fiveResetsAtMs }],
+    } });
+    usedBp += burn;
+    events.push({ type: 'quota', atMs: atMs + HOUR / 2, provider: e.provider!, quota: {
+      state: 'known', source: 'cli_query', asOf: new Date(atMs + HOUR / 2).toISOString(),
+      weekly: { usedPercent: usedBp / 100, resetsAt: new Date(resetsAtMs).toISOString() },
+      fiveHour: { usedPercent: usedBp / 100, resetsAt: new Date(fiveResetsAtMs).toISOString() },
+    } });
+  });
+  return events;
 }

@@ -6,6 +6,7 @@ import { getAttributeSpec, type TelAttr } from '../../shared/telemetry/attribute
 import type { ChatEvent, ChatEventType } from '../../shared/chat/events';
 import { HELPER_TELEMETRY_LIMITS, type DecisionCandidate, type HelperDecisionRecord } from '../../shared/telemetry/helper-usage-contract';
 import type { QuotaView } from '../../shared/helper-routing';
+import { broadcastAgentExit } from '../services/agent-exit-broadcast';
 import { abortPending, setLocalSink, setRuntime } from './facade';
 import { passThroughSink } from './__test-utils__/producing-runtime';
 import * as ledger from './helper-decision-ledger';
@@ -13,6 +14,7 @@ import {
   _resetHelperUsageForTests,
   bindHelperDecision,
   handleHelperChatEvent,
+  installHelperUsageTelemetry,
   newDecisionId,
   recordHelperDecision,
   recordHelperDisposed,
@@ -95,6 +97,142 @@ function chat(type: ChatEventType, data: unknown, extra: { agentId?: string; ses
 
 const started = (agentId = 'helper-1', over: Record<string, unknown> = {}) =>
   handleHelperChatEvent(chat('session_started', { driver: 'claude_stream_json', provider: 'claude-code', cwd: '/x', resumed: false, model: 'claude-sonnet-5-5', capabilities: {}, ...over }, { agentId }));
+
+describe('Stage 3 shadow forecasts', () => {
+  function run(helperId: string, model = 'claude-sonnet-5-5'): void {
+    started(helperId, { driver: 'claude_agent_sdk', model });
+    handleHelperChatEvent(chat('turn_started', { trigger: 'prompt' }, { agentId: helperId, turnId: 't', ts: now + 1 }));
+    handleHelperChatEvent(chat('usage', { scope: 'turn', coverage: 'main', tokens: { input: 100, output: 10 } }, { agentId: helperId, turnId: 't', ts: now + 2 }));
+    handleHelperChatEvent(chat('turn_ended', { stopReason: 'end_turn', usage: { input: 100, output: 10 } }, { agentId: helperId, turnId: 't', ts: now + 3 }));
+    handleHelperChatEvent(chat('session_ended', { reason: 'idle_timeout' }, { agentId: helperId, ts: now + 4 }));
+  }
+
+  it('joins complete usage to later quota intervals, persists immutable predictions and records errors locally only', async () => {
+    const reset = now + 86_400_000;
+    let lastPrediction: unknown;
+    for (let i = 0; i < 6; i++) {
+      const rec = decision({ decisionId: `forecast-${i}`, helperId: `h-${i}`, candidates: [
+        candidate('claude-code', { chosen: true, quota: {
+          state: 'known', source: 'cli_query', quality: 'fresh', asOfMs: now,
+          windows: [{ name: 'weekly', usedBp: i * 100, resetsAtMs: reset }],
+        } }),
+      ] });
+      recordHelperDecision(rec);
+      lastPrediction = structuredClone(ledger.getEntry(`h-${i}`)?.forecast);
+      run(`h-${i}`);
+      now += 10;
+      recordQuotaSample('claude-code', {
+        state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
+        weekly: { usedPercent: i + (i === 5 ? 2 : 1), resetsAt: new Date(reset).toISOString() },
+      });
+      expect(ledger.getEntry(`h-${i}`)?.forecast).toEqual(lastPrediction);
+      now += 60_000;
+    }
+    expect(ledger.getEntry('h-5')).toMatchObject({
+      forecast: { weekly: { samples: 5, expectedBp: 100 } },
+      burnObservation: { reason: 'observed', attribution: 'whole_login_unknown', weekly: { observedBp: 200, errorBp: 100 } },
+    });
+    const observation = events('clubhouse.helper.forecast').at(-1)!;
+    expect(observation.attrs).toMatchObject({
+      'clubhouse.helper_forecast.weekly_error_bp': 100, 'clubhouse.helper_forecast.attribution': 'whole_login_unknown',
+    });
+    expect(observation.opts?.localOnly).toBe(true);
+    expect(exported).toEqual([]);
+    await ledger.flushLedger();
+    ledger.configureLedger({ file: path.join(dir, 'ledger.json'), now: () => now });
+    expect(ledger.getEntry('h-5')?.forecast).toEqual(lastPrediction);
+    expect(ledger.getEntry('h-5')?.burnObservation?.weekly?.errorBp).toBe(100);
+    recordQuotaSample('claude-code', {
+      state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
+      weekly: { usedPercent: 10, resetsAt: new Date(reset).toISOString() },
+    });
+    expect(events('clubhouse.helper.forecast')).toHaveLength(6);
+  });
+
+  it('does not calibrate changed model identity or write telemetry-off decisions', () => {
+    recordHelperDecision(decision());
+    run('helper-1', 'different-model');
+    recordQuotaSample('claude-code', {
+      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
+    });
+    expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
+    setLocalSink(null);
+    setRuntime(null);
+    const size = ledger.ledgerSize();
+    recordHelperDecision(decision({ helperId: 'off' }));
+    expect(ledger.ledgerSize()).toBe(size);
+    expect(ledger.getEntry('off')).toBeUndefined();
+  });
+
+  it('preserves completed chat evidence when its later process exit arrives, and joins the exact usage run', () => {
+    installHelperUsageTelemetry({ ledgerFile: path.join(dir, 'ledger.json') });
+    recordHelperDecision(decision());
+    run('helper-1');
+    const evidence = structuredClone(ledger.getEntry('helper-1')?.forecastRun);
+    broadcastAgentExit('helper-1', 0);
+    expect(ledger.getEntry('helper-1')?.forecastRun).toEqual(evidence);
+    recordQuotaSample('claude-code', {
+      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
+    });
+    const observation = events('clubhouse.helper.forecast')[0];
+    expect(observation.attrs['clubhouse.helper_run.id_hash']).toBe(evidence?.runId);
+  });
+
+  it('keeps a chat-to-terminal fallback overlapping until the process actually exits', () => {
+    installHelperUsageTelemetry({ ledgerFile: path.join(dir, 'ledger.json') });
+    recordHelperDecision(decision());
+    started('helper-1', { driver: 'claude_agent_sdk' });
+    handleHelperChatEvent(chat('session_ended', { reason: 'fallback' }, { ts: now + 4 }));
+    expect(ledger.getEntry('helper-1')?.forecastRun?.endedMs).toBeUndefined();
+    now += 10;
+    broadcastAgentExit('helper-1', 0);
+    expect(ledger.getEntry('helper-1')?.forecastRun).toMatchObject({ endedMs: now, usable: false });
+  });
+
+  it.each(['reset', 'dropped_final'])('excludes %s evidence discovered only in the closing usage samples', (scenario) => {
+    recordHelperDecision(decision());
+    started('helper-1', { driver: 'claude_agent_sdk' });
+    handleHelperChatEvent(chat('turn_started', { trigger: 'prompt' }, { turnId: 't' }));
+    handleHelperChatEvent(chat('usage', { scope: 'turn', coverage: 'main', tokens: { input: 100, output: 10 } }, { turnId: 't' }));
+    handleHelperChatEvent(chat('turn_ended', { stopReason: 'end_turn', usage: { input: 100, output: 10 } }, { turnId: 't' }));
+    handleHelperChatEvent(chat('usage', { scope: 'session', coverage: 'inclusive', tokens: { input: 100, output: 10 } }));
+    if (scenario === 'reset') {
+      handleHelperChatEvent(chat('usage', { scope: 'session', coverage: 'inclusive', tokens: { input: 1, output: 1 } }));
+    } else {
+      for (let i = 0; i < HELPER_TELEMETRY_LIMITS.maxEventsPerHour; i++) {
+        recordHelperReuse({ helperId: 'unrelated', kind: 'wake' });
+      }
+    }
+    handleHelperChatEvent(chat('session_ended', { reason: 'idle_timeout' }, { ts: now + 4 }));
+    expect(ledger.getEntry('helper-1')?.forecastRun).toMatchObject({ usageSamples: 1, usable: false });
+    recordQuotaSample('claude-code', {
+      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
+    });
+    expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
+  });
+
+  it.each(['missing_usage', 'resumed', 'cancelled'])('leaves %s runs ineligible for calibration', (scenario) => {
+    recordHelperDecision(decision());
+    if (scenario === 'missing_usage') {
+      started('helper-1', { driver: 'claude_agent_sdk' });
+      handleHelperChatEvent(chat('session_ended', { reason: 'idle_timeout' }, { ts: now + 4 }));
+    } else if (scenario === 'resumed') {
+      started('helper-1', { driver: 'claude_agent_sdk', resumed: true });
+      handleHelperChatEvent(chat('session_ended', { reason: 'idle_timeout' }, { ts: now + 4 }));
+    } else {
+      started('helper-1', { driver: 'claude_agent_sdk' });
+      handleHelperChatEvent(chat('session_ended', { reason: 'stopped' }, { ts: now + 4 }));
+    }
+    recordQuotaSample('claude-code', {
+      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
+    });
+    expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
+  });
+});
 
 describe('decisions', () => {
   it('records an Auto decision with every provider, quota, load and tie input, local only', () => {

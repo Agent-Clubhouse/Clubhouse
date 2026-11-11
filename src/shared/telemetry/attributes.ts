@@ -622,6 +622,17 @@ export const ATTR = {
   helperTaskProfile: enumAttr('clubhouse.helper_decision.task_profile', HELPER_TASK_PROFILES),
   helperDecidedAtMs: intAttr('clubhouse.helper_decision.decided_at_ms'),
   helperDecisionAgeMs: intAttr('clubhouse.helper_decision.age_ms'),
+  helperForecastWeeklySamples: intAttr('clubhouse.helper_forecast.weekly_samples'),
+  helperForecastFiveHourSamples: intAttr('clubhouse.helper_forecast.five_hour_samples'),
+  helperForecastWeeklyBp: intAttr('clubhouse.helper_forecast.weekly_bp'),
+  helperForecastFiveHourBp: intAttr('clubhouse.helper_forecast.five_hour_bp'),
+  helperForecastWeeklyObservedBp: intAttr('clubhouse.helper_forecast.weekly_observed_bp'),
+  helperForecastFiveHourObservedBp: intAttr('clubhouse.helper_forecast.five_hour_observed_bp'),
+  helperForecastWeeklyErrorBp: intAttr('clubhouse.helper_forecast.weekly_error_bp'),
+  helperForecastFiveHourErrorBp: intAttr('clubhouse.helper_forecast.five_hour_error_bp'),
+  helperForecastUsageSamples: intAttr('clubhouse.helper_forecast.usage_samples'),
+  helperForecastAttribution: enumAttr('clubhouse.helper_forecast.attribution', ['whole_login_unknown']),
+  helperForecastReason: enumAttr('clubhouse.helper_forecast.reason', ['observed', 'missing_baseline', 'reset', 'decreased', 'overlap', 'incomplete', 'restart']),
   helperModelHash: hashAttr('clubhouse.helper_decision.model_hash'),
   helperRequestedModelHash: hashAttr('clubhouse.helper_decision.requested_model_hash'),
   helperMappingRevisionHash: hashAttr('clubhouse.helper_decision.mapping_revision_hash'),
@@ -1734,6 +1745,8 @@ export const EVENTS = {
   // Helper decisions, outcomes and usage (#2747). Recorded locally at the default level and written with `localOnly`: never exported.
   /** One routing decision, accepted or refused. Attributes: decision and agent id hashes, mode, orchestrator, model hash and family, effort, task profile, mapping hashes, thresholds, counts, tie fields. */
   'clubhouse.helper.decision': { level: 'standard' },
+  /** Shadow forecast error against a whole-login interval, never attributed per-helper consumption. Local only. */
+  'clubhouse.helper.forecast': { level: 'standard' },
   /** One provider as a decision saw it. Attributes: decision id hash, orchestrator, eligibility, exclusion, load, quota, score. */
   'clubhouse.helper.decision.candidate': { level: 'standard' },
   /** What became of a decision: started, left asleep, failed, refused, cancelled. */
