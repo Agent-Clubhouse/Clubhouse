@@ -5400,6 +5400,7 @@ export function start(): void {
     if (pairingReady) recordServerStarted(serverStartMs, !!tlsServer);
     publishBonjour();
   }).catch((err) => {
+    if (!isCurrentServer(mainServer)) return; // stopped while binding or waiting to retry
     appLog('core:annex', 'error', 'Annex main server failed to listen', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
@@ -5413,6 +5414,7 @@ export function start(): void {
     if (mainReady) recordServerStarted(serverStartMs, !!tlsServer);
     publishBonjour();
   }).catch((err) => {
+    if (!isCurrentServer(pairing)) return; // stopped while binding or waiting to retry
     appLog('core:annex', 'error', 'Annex pairing server failed to listen', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
@@ -5451,6 +5453,10 @@ export function republishAdvertisement(): void {
 /** A ListenFn for `server`. On error the server is closed, so it can listen again. */
 function listenServer(server: http.Server | https.Server, host: string): ListenFn {
   const listenOn = (port: number, address: string) => new Promise<number>((resolve, reject) => {
+    if (!isCurrentServer(server)) {
+      reject(new Error('Annex server stopped before listen'));
+      return;
+    }
     const onError = (err: Error) => {
       server.close();
       reject(err);
@@ -5458,6 +5464,11 @@ function listenServer(server: http.Server | https.Server, host: string): ListenF
     server.once('error', onError);
     server.listen(port, address, () => {
       server.removeListener('error', onError);
+      if (!isCurrentServer(server)) {
+        server.close();
+        reject(new Error('Annex server stopped while binding'));
+        return;
+      }
       const addr = server.address();
       if (addr && typeof addr === 'object') resolve(addr.port);
       else reject(new Error('Annex server has no address after listen'));

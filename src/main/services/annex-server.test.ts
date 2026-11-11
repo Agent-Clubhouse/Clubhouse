@@ -523,6 +523,56 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('stable ports (#go-device-readiness)', () => {
+    it('never retries a stopped wide listener after loopback-only mode is enabled', async () => {
+      const actual = await vi.importActual<typeof import('./annex-network-profile')>('./annex-network-profile');
+      const servers = new Set<net.Server>();
+      const staleAttempts: string[] = [];
+      const originalListen = net.Server.prototype.listen;
+      let stopped = false;
+      let failedServer: net.Server | undefined;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (typeof args[0] !== 'number' || typeof args[1] !== 'string') throw new Error('Expected port and host');
+        servers.add(this);
+        if (this === failedServer && stopped) staleAttempts.push(args[1]);
+        if (!failedServer && args[0] === 53123) {
+          failedServer = this;
+          process.nextTick(() => {
+            this.emit('error', Object.assign(new Error('Port taken'), { code: 'EADDRINUSE' }));
+            annexServer.stop();
+            stopped = true;
+            vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+            vi.mocked(annexNetworkProfile).mockReturnValueOnce(actual.annexNetworkProfile({}, true));
+            annexServer.start();
+          });
+          return this;
+        }
+        // Inspect the wide address requested without exposing test fixtures to the LAN.
+        args[1] = '127.0.0.1';
+        return Reflect.apply(originalListen, this, args);
+      });
+      try {
+        vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 53123, pairingPort: 0 });
+        vi.mocked(annexNetworkProfile).mockReturnValueOnce(actual.annexNetworkProfile({}, false));
+        annexServer.start();
+        await vi.waitFor(() => {
+          expect(stopped).toBe(true);
+          expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0);
+          expect(annexServer.getStatus().port).toBeGreaterThan(0);
+        });
+        expect(staleAttempts).toEqual([]);
+        expect(failedServer?.listening).toBe(false);
+        expect(annexServer.getStatus().advertising).toBe(false);
+        expect(mockBonjour.publish).not.toHaveBeenCalled();
+        for (const server of servers) {
+          if (server.listening) expect(server.address()).toMatchObject({ address: '127.0.0.1', family: 'IPv4' });
+        }
+      } finally {
+        annexServer.stop();
+        for (const server of servers) server.close();
+        listen.mockRestore();
+      }
+    });
+
     it('rebinds both listeners in each mode, disables advertising, and still accepts a paired certificate after restart', async () => {
       const actual = await vi.importActual<typeof import('./annex-network-profile')>('./annex-network-profile');
       const requestedHosts: string[] = [];
