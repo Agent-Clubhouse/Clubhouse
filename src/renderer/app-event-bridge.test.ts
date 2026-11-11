@@ -343,6 +343,7 @@ import { useUIStore } from './stores/uiStore';
 import { useToastStore } from './stores/toastStore';
 import { fileState } from './plugins/builtin/files/state';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
+import { useAgentDetailsStore } from './features/agents/details/detailsStore';
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -389,6 +390,24 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.window.onCanvasMutation).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToAgent).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToPluginSettings).toHaveBeenCalled();
+  });
+
+  it('reveals Connections when a canvas popout asks the main window to edit them (#3213)', () => {
+    const setActiveAgent = vi.fn();
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      ...useAgentStore.getState(), agents: { a1: createAgent('a1', 'p1') }, agentSettingsOpenFor: null, setActiveAgent,
+    } as never);
+    const setExplorerTab = vi.fn();
+    vi.mocked(useUIStore.getState).mockReturnValue({
+      ...useUIStore.getState(), setExplorerTab, setDispatcherOpen: vi.fn(),
+    });
+    useAgentDetailsStore.setState({ open: false, focus: null });
+    const navigate = vi.mocked(window.clubhouse.window.onNavigateToAgent).mock.calls.at(-1)![0];
+    navigate('a1', 'connections');
+    expect(setActiveAgent).toHaveBeenCalledWith('a1', 'p1');
+    expect(setExplorerTab).toHaveBeenCalledWith('agents', 'p1');
+    expect(useAgentDetailsStore.getState().focus).toMatchObject({ agentId: 'a1', card: 'connections' });
+    expect(useAgentDetailsStore.getState().open).toBe(true);
   });
 
   it('shows the one-time structured-mode-removed notice on init', () => {

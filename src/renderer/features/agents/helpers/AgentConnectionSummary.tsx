@@ -23,6 +23,14 @@ export function AgentConnectionSummary({ agentId, onNavigate }: { agentId: strin
       setError(true);
       return;
     }
+    if (window.clubhouse.window.isPopout()) {
+      void window.clubhouse.window.focusMain(id, 'connections').then(
+        () => onNavigate?.(),
+        // telemetry-exempt: the link reports that it couldn't open the card.
+        () => setError(true),
+      );
+      return;
+    }
     requestLeaveAgentSettings(() => {
       openAgent(projectId, id);
       useAgentDetailsStore.getState().reveal({ agentId: id, card: 'connections' });

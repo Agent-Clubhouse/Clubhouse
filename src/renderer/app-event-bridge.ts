@@ -48,6 +48,9 @@ import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
 import { closeDispatcher, openDispatcher, openDispatcherNavTarget } from './features/dispatcher/dispatcherNav';
+import { requestLeaveAgentSettings } from './features/agents/agentSettingsPages';
+import { openAgent } from './features/agents/helpers/orchestration-hooks';
+import { useAgentDetailsStore } from './features/agents/details/detailsStore';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
@@ -151,6 +154,13 @@ function initWindowListeners(): (() => void)[] {
   removers.push(
     window.clubhouse.window.onNavigateToAgent((agentId: string, target?: string) => {
       const agent = useAgentStore.getState().agents[agentId];
+      if (agent && target === 'connections') {
+        requestLeaveAgentSettings(() => {
+          openAgent(agent.projectId, agentId);
+          useAgentDetailsStore.getState().reveal({ agentId, card: 'connections' });
+        });
+        return;
+      }
       if (agent && isDispatcherAgent(agent)) {
         if (target) openDispatcherNavTarget(target);
         else openDispatcher();

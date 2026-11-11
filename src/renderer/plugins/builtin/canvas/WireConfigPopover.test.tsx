@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { WireConfigPopover } from './WireConfigPopover';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useAgentDetailsStore } from '../../../features/agents/details/detailsStore';
+import { WAKE_TOOL } from '../../../../shared/connection-grants';
+import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
+import { useDispatcherStore } from '../../../features/dispatcher/dispatcherStore';
 
 describe('WireConfigPopover', () => {
   const browserBinding: McpBindingEntry = {
@@ -23,6 +27,10 @@ describe('WireConfigPopover', () => {
   beforeEach(() => {
     useMcpBindingStore.setState({ bindings: [browserBinding, agentBinding] });
     useAgentStore.setState({ agents: {} });
+    useAgentDetailsStore.setState({ open: false, focus: null });
+    useDispatcherStore.setState({ state: null });
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs: [], unreadable: [] }));
     vi.clearAllMocks();
   });
 
@@ -63,6 +71,122 @@ describe('WireConfigPopover', () => {
       <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
     );
     expect(getByTestId('wire-bidirectional-toggle')).toBeTruthy();
+  });
+
+  it('summarizes both saved directions and opens the sender Connections card without rewriting tools (#3213)', async () => {
+    const forward = { ...agentBinding, disabledTools: ['read_output', 'future_tool'], enabledTools: [WAKE_TOOL] };
+    const reverse = { ...agentBinding, agentId: 'agent-2', targetId: 'agent-1', label: 'Agent 1', disabledTools: ['clear_agent'] };
+    const setDisabledTools = vi.fn();
+    useMcpBindingStore.setState({ bindings: [forward, reverse], setDisabledTools });
+    useAgentStore.setState({ agents: {
+      'agent-1': { id: 'agent-1', name: 'A', projectId: 'p1', kind: 'durable', status: 'sleeping', color: 'teal' },
+      'agent-2': { id: 'agent-2', name: 'B', projectId: 'p1', kind: 'durable', status: 'running', color: 'teal' },
+    } });
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => [
+      { from: { agentId: 'agent-1' }, to: { agentId: 'agent-2' }, disabledTools: ['send_message', 'future_tool'], enabledTools: [WAKE_TOOL], updatedAt: '' },
+      { from: { agentId: 'agent-2' }, to: { agentId: 'agent-1' }, disabledTools: ['clear_agent'], updatedAt: '' },
+    ]);
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'agent-1', targetId: 'agent-2', bound: true, sources: [{ kind: 'canvas', sourceId: 'canvas-wires' }, { kind: 'tool_link', sourceId: 'orchestrator-connections' }] }],
+      unreadable: [],
+    }));
+    const onClose = vi.fn();
+    const onUpdateWireDefinition = vi.fn();
+    const { getByTestId } = render(<WireConfigPopover binding={forward} x={100} y={200} onClose={onClose} onUpdateWireDefinition={onUpdateWireDefinition} />);
+    fireEvent.click(getByTestId('wire-permissions-button'));
+    const aToB = await waitFor(() => getByTestId('wire-connection-direction-agent-1-agent-2'));
+    const bToA = getByTestId('wire-connection-direction-agent-2-agent-1');
+    expect(aToB).toHaveTextContent('A \u2192 B');
+    expect(bToA).toHaveTextContent('B \u2192 A');
+    const switchRow = (section: HTMLElement, label: string) => within(section).getByText(label).closest('li');
+    expect(switchRow(aToB, 'Send messages')).toHaveTextContent('Off');
+    expect(switchRow(aToB, 'Read output')).toHaveTextContent('On');
+    expect(switchRow(aToB, 'Wake it')).toHaveTextContent('On');
+    expect(switchRow(bToA, 'Send messages')).toHaveTextContent('On');
+    expect(switchRow(bToA, 'Clear its context')).toHaveTextContent('Off');
+    expect(switchRow(bToA, 'Wake it')).toHaveTextContent('Off');
+    expect(aToB).toHaveTextContent('From: Canvas wire, Made by an orchestrator.');
+    const dialog = within(getByTestId('wire-tool-permissions-dialog'));
+    expect(dialog.queryByRole('switch')).toBeNull();
+    expect(dialog.queryByTestId('wire-permissions-save')).toBeNull();
+    expect(dialog.getByText(/sender's Clubhouse permissions can still turn a tool off or require Ask first/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole('button', { name: 'Edit connections' }));
+    expect(useAgentDetailsStore.getState().focus).toMatchObject({ agentId: 'agent-1', card: 'connections' });
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(setDisabledTools).not.toHaveBeenCalled();
+    expect(onUpdateWireDefinition).not.toHaveBeenCalled();
+    expect(useMcpBindingStore.getState().bindings).toEqual([forward, reverse]);
+  });
+
+  it('uses live starting switches, shows a missing reverse direction, and refreshes saved changes (#3213)', async () => {
+    const forward = { ...agentBinding, agentName: 'A', targetName: 'B', disabledTools: ['clear_agent', 'compact_agent'], enabledTools: [WAKE_TOOL] };
+    useMcpBindingStore.setState({ bindings: [forward] });
+    let changed!: () => void;
+    const unsubscribe = vi.fn();
+    window.clubhouse.mcpBinding.onConnectionGrantsChanged = vi.fn((cb) => { changed = () => cb('agent-1', 'agent-2', []); return unsubscribe; });
+    const { getByTestId, unmount } = render(<WireConfigPopover binding={forward} x={100} y={200} onClose={vi.fn()} />);
+    fireEvent.click(getByTestId('wire-permissions-button'));
+    const aToB = await waitFor(() => getByTestId('wire-connection-direction-agent-1-agent-2'));
+    expect(within(aToB).getByText('Wake it').closest('li')).toHaveTextContent('On');
+    expect(getByTestId('wire-connection-direction-agent-2-agent-1')).toHaveTextContent('Not connected this way.');
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => [
+      { from: { agentId: 'agent-1' }, to: { agentId: 'agent-2' }, disabledTools: ['read_output'], updatedAt: '' },
+    ]);
+    act(() => changed());
+    await waitFor(() => expect(within(getByTestId('wire-connection-direction-agent-1-agent-2')).getByText('Wake it').closest('li')).toHaveTextContent('Off'));
+    unmount();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('opens the Connections card in the main window from a canvas popout (#3213)', async () => {
+    useAgentStore.setState({ agents: {
+      'agent-1': { id: 'agent-1', name: 'A', projectId: 'p1', kind: 'durable', status: 'running', color: 'teal' },
+    } });
+    window.clubhouse.window.isPopout = vi.fn(() => true);
+    window.clubhouse.window.focusMain = vi.fn(async () => {});
+    const onClose = vi.fn();
+    const { getByTestId, getByRole } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={onClose} />);
+    fireEvent.click(getByTestId('wire-permissions-button'));
+    fireEvent.click(getByRole('button', { name: 'Edit connections' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(window.clubhouse.window.focusMain).toHaveBeenCalledWith('agent-1', 'connections');
+    expect(useAgentDetailsStore.getState().focus).toBeNull();
+  });
+
+  it('reports failed connection reads instead of presenting default switches, and can retry (#3213)', async () => {
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn().mockRejectedValueOnce(new Error('unreadable')).mockResolvedValueOnce([]);
+    const { getByTestId, findByRole, getByRole, queryByTestId } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />);
+    fireEvent.click(getByTestId('wire-permissions-button'));
+    expect(await findByRole('alert')).toHaveTextContent("Couldn't read the connection permissions.");
+    expect(queryByTestId('wire-connection-direction-agent-1-agent-2')).toBeNull();
+    fireEvent.click(getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(getByTestId('wire-connection-direction-agent-1-agent-2')).toBeInTheDocument());
+  });
+
+  it.each(['helper', 'dispatcher'] as const)('matches the Connections card by omitting Wake it on a %s link (#3213)', async (kind) => {
+    if (kind === 'dispatcher') useDispatcherStore.setState({ state: { ...DISPATCHER_OFF, agentId: agentBinding.targetId } });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: agentBinding.agentId, targetId: agentBinding.targetId, bound: true, sources: [{ kind: kind === 'helper' ? 'helper' : 'dispatcher_auto', sourceId: kind }] }],
+      unreadable: [],
+    }));
+    const { getByTestId, findByText, queryByText } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />);
+    fireEvent.click(getByTestId('wire-permissions-button'));
+    await waitFor(() => expect(getByTestId('wire-connection-direction-agent-1-agent-2')).toBeInTheDocument());
+    expect(await findByText(/This connection has no Wake it switch/)).toBeInTheDocument();
+    expect(queryByText('Wake it')).toBeNull();
+  });
+
+  it('keeps group-project permissions wire-scoped and preserves existing disabled tool data (#3213)', async () => {
+    const group: McpBindingEntry = { agentId: 'agent-1', targetId: 'group', targetKind: 'group-project', label: 'Group', disabledTools: ['broadcast', 'future_tool'] };
+    const setDisabledTools = vi.fn(async () => {});
+    useMcpBindingStore.setState({ bindings: [group], setDisabledTools });
+    const { getByTestId, getByRole, queryByTestId } = render(<WireConfigPopover binding={group} x={100} y={200} onClose={vi.fn()} />);
+    fireEvent.click(getByTestId('wire-permissions-button'));
+    expect(queryByTestId('agent-connection-summary')).toBeNull();
+    expect(window.clubhouse.mcpBinding.getConnectionGrants).not.toHaveBeenCalled();
+    fireEvent.click(getByRole('switch', { name: 'Post Bulletin' }));
+    fireEvent.click(getByTestId('wire-permissions-save'));
+    await waitFor(() => expect(setDisabledTools).toHaveBeenCalledWith('agent-1', 'group', ['broadcast', 'future_tool', 'post_bulletin']));
   });
 
   it('turning two-way on gives the new reverse direction the new-wire default (#2969)', async () => {
