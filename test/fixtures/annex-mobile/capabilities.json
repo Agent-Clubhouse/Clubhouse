@@ -142,7 +142,8 @@
       "helperRouting": {
         "autoCandidates": [
           "claude-code",
-          "codex-cli"
+          "codex-cli",
+          "copilot-cli"
         ],
         "autoOffReasons": [
           "not_enabled",
@@ -159,6 +160,7 @@
         "commands": [
           "helperRouting.update"
         ],
+        "copilotAuto": true,
         "difficulties": [
           "easy",
           "medium",
@@ -170,6 +172,9 @@
           "builtin_preset",
           "candidate_skipped",
           "model_unverified"
+        ],
+        "lastResortCandidates": [
+          "copilot-cli"
         ],
         "levels": [
           "minimum",
@@ -212,6 +217,7 @@
           "fair_rotation",
           "better_quota_tier",
           "unknown_fallback",
+          "last_resort_unmeasured",
           "sticky",
           "default_order"
         ],
@@ -223,6 +229,7 @@
         "skipped": [
           "cli_disabled",
           "cli_unavailable",
+          "auto_disabled",
           "auto_not_supported",
           "no_valid_mapping",
           "cooling_down",

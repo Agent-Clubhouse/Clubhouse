@@ -7,7 +7,7 @@
  * percent, as it would from a CLI.
  */
 
-import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, type QuotaState } from '../../../shared/helper-routing';
+import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, type QuotaState, type QuotaUnknownReason } from '../../../shared/helper-routing';
 import { AUTO_WEEK_MS, decideAutoProvider, type AutoCandidate, type AutoDecision, type AutoPolicyOptions } from '../helper-auto-policy';
 
 export const HOUR = 60 * 60_000;
@@ -24,6 +24,7 @@ export interface SimSubscription {
   used?: number;
   /** Its readings can't be had: the policy sees `unknown`. */
   unreadable?: boolean;
+  unknownReason?: QuotaUnknownReason;
   /** Use from outside Clubhouse, in work units per hour. */
   outsidePerHour?: number;
   /** When it can be chosen: a provider removed, then back. Default always. */
@@ -110,7 +111,7 @@ export function runReplay(config: SimConfig): SimResult {
     for (let n = config.arrivals(t); n > 0; n--) {
       const candidates: AutoCandidate[] = subs.filter((s) => s.available?.(t) ?? true).map((s) => {
         const load = running.filter((r) => r.key === s.key).length;
-        if (s.unreadable) return { key: s.key, provider: s.provider, quotaState: 'unknown', verified: true, load };
+        if (s.unreadable) return { key: s.key, provider: s.provider, quotaState: 'unknown', quotaUnknownReason: s.unknownReason ?? 'read_failed', verified: true, load };
         const reading = seen.get(s.key)!;
         return {
           key: s.key, provider: s.provider, verified: true, load,
@@ -125,7 +126,7 @@ export function runReplay(config: SimConfig): SimResult {
       result.picks[decision.key]++;
       result.sequence.push(decision.key);
       result.reasons[decision.reason] = (result.reasons[decision.reason] ?? 0) + 1;
-      if (decision.tier === 'unmeasured') result.unknownChosen++;
+      if (decision.tier === 'unmeasured' || decision.tier === 'last_resort') result.unknownChosen++;
       running.push({ key: decision.key, from: t, until: t + config.runMs, rate: config.work / config.runMs });
     }
 

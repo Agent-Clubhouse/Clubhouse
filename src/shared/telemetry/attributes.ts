@@ -598,7 +598,7 @@ export const ATTR = {
   helperRoutingEffort: enumAttr('clubhouse.helper_routing.effort', ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'other']),
   helperRoutingPreset: enumAttr('clubhouse.helper_routing.preset', ['builtin', 'custom', 'none']),
   helperRoutingConfigSource: enumAttr('clubhouse.helper_routing.config_source', ['request', 'persona', 'orchestrator', 'auto', 'custom_mapping', 'builtin_mapping', 'cli_default']),
-  helperRoutingReason: enumAttr('clubhouse.helper_routing.reason', ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'sticky', 'default_order']),
+  helperRoutingReason: enumAttr('clubhouse.helper_routing.reason', ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'last_resort_unmeasured', 'sticky', 'default_order']),
   helperRoutingFallback: enumAttr('clubhouse.helper_routing.fallback', ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified']),
   helperRoutingPolicyVersion: intAttr('clubhouse.helper_routing.policy_version'),
   helperRoutingLoad: enumAttr('clubhouse.helper_routing.load_bucket', ['0', '1', '2-3', '4-7', '8+']),
@@ -649,7 +649,7 @@ export const ATTR = {
   // One candidate of a decision.
   helperCandidateEligible: boolAttr('clubhouse.helper_candidate.eligible'),
   helperCandidateChosen: boolAttr('clubhouse.helper_candidate.chosen'),
-  helperCandidateExcluded: enumAttr('clubhouse.helper_candidate.excluded', ['cli_disabled', 'cli_unavailable', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted', 'none']),
+  helperCandidateExcluded: enumAttr('clubhouse.helper_candidate.excluded', ['cli_disabled', 'cli_unavailable', 'auto_disabled', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted', 'none']),
   helperCandidateMappedSource: enumAttr('clubhouse.helper_candidate.mapped_source', ['request', 'persona', 'orchestrator', 'auto', 'custom_mapping', 'builtin_mapping', 'cli_default']),
   helperCandidateMappedVerified: boolAttr('clubhouse.helper_candidate.mapped_verified'),
   helperCandidateLoadLive: intAttr('clubhouse.helper_candidate.load_live'),

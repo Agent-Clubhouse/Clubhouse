@@ -38,10 +38,10 @@ function settings(
           maximum: cell({ follows: 'hard', ...bounds.maximum }),
         },
       },
-      // Copilot (#3085): a mapping, not an Auto candidate, and a model list that may report no levels.
+      // Copilot has unreadable quota and a model list that may report no levels.
       'copilot-cli': {
         autoEligible: true,
-        autoCandidate: false,
+        autoCandidate: true,
         quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
         choices: { source: 'live', asOf: null, models: [{ id: 'claude-sonnet-5.5', label: 'Claude Sonnet 5.5', efforts: ['low', 'medium', 'high'] }, { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5', efforts: [] }] },
         cells: {
@@ -367,15 +367,30 @@ describe('HelperPresetsSection (#2671)', () => {
       return shown;
     };
 
-    it('lists all five levels under Copilot, and says Auto doesn\'t pick it', async () => {
+    it('lists all five levels under Copilot and explains its unknown-quota last-resort role', async () => {
       render(<HelperPresetsSection />);
       expect((await screen.findByTestId('helper-presets-copilot-cli')).textContent).toContain('Copilot');
       const rows = screen.getAllByTestId(/^helper-preset-copilot-cli-[a-z]+$/).map((row) => row.dataset.testid);
       expect(rows).toEqual(['minimum', 'easy', 'medium', 'hard', 'maximum'].map((level) => `helper-preset-copilot-cli-${level}`));
       expect((screen.getByTestId('helper-preset-copilot-cli-minimum-model') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Same as Easy (Claude Sonnet 5.5)');
       expect((screen.getByTestId('helper-preset-copilot-cli-maximum-model') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Same as Hard (Claude Sonnet 5.5)');
-      expect(screen.getByTestId('helper-presets-copilot-cli-not-candidate').textContent).toBe('Auto provider doesn’t pick Copilot. These are used when a helper on Copilot names a level.');
+      expect(screen.queryByTestId('helper-presets-copilot-cli-not-candidate')).toBeNull();
+      expect(screen.getByText(/Copilot's quota is unknown/).textContent).toContain('even if another provider');
       expect((screen.getByTestId('helper-preset-copilot-cli-hard-effort') as HTMLSelectElement).value).toBe('medium');
+    });
+
+    it('allows Copilot by default and saves the opt-out with the current revision without enabling Auto', async () => {
+      const saved = { ...settings({}, 'r2.0'), copilotAuto: false };
+      app().updateHelperRouting.mockResolvedValue({ ok: true, settings: saved });
+      render(<HelperPresetsSection />);
+      const toggle = await screen.findByTestId('helper-presets-copilot-auto');
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      fireEvent.click(toggle);
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', copilotAuto: false }));
+      await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+      expect(screen.getByTestId('helper-presets-auto').getAttribute('aria-checked')).toBe('false');
+      fireEvent.click(toggle);
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenLastCalledWith({ revision: 'r2.0', copilotAuto: true }));
     });
 
     it('says a model has no effort levels instead of offering choices', async () => {

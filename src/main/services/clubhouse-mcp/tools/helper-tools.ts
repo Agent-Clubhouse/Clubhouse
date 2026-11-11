@@ -1371,7 +1371,7 @@ export function registerHelperTools(): void {
           removeParts: { type: 'array', items: { type: 'string' }, description: `${NEEDS_MANAGED} Agent part ids from the template to leave out for this helper only. To swap a part, remove one and add another. The Clubhouse MCP part can't be removed.` },
           cli: {
             type: 'string',
-            description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to yours. Or "auto", with difficulty, if Auto provider is on for you. Clubhouse picks Claude or Codex, favoring the CLI that has used less of its plan limit. This balances plan use, not cost. It refuses if Auto provider is off.',
+            description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to yours. Or "auto", with difficulty, if Auto provider is on for you. Clubhouse picks Claude or Codex, favoring the CLI that has used less of its plan limit. This balances plan use, not cost. Copilot is a last resort if allowed in Settings: its quota is unknown and it never outranks another eligible provider, even one with low or temporarily unreadable quota. It refuses if Auto provider is off.',
           },
           model: {
             type: 'string',

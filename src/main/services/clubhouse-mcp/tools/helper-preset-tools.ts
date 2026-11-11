@@ -43,7 +43,7 @@ export function registerHelperPresetTools(): void {
         + 'whether it is custom or built in, whether it is still valid, the choices, and the revision to send with a change. '
         + 'Levels are easy, medium and hard (the difficulties start_helper takes), plus minimum and maximum, the cheapest and strongest choices. '
         + 'An unset minimum or maximum uses easy or hard, shown by `follows`. '
-        + 'A model whose `efforts` is empty takes effort null. `autoCandidate` says whether cli "auto" chooses that CLI (Copilot: no). App-wide. Changes nothing.',
+        + 'A model whose `efforts` is empty takes effort null. `autoCandidate` says whether cli "auto" can choose that CLI. Copilot is a last resort with unknown quota if allowed in Settings. App-wide. Changes nothing.',
       inputSchema: { type: 'object', properties: {} },
     },
     async () => {

@@ -79,7 +79,9 @@ Cells are app-scope in v1. Reset removes overrides per cell, per provider or for
 
 **Copilot** (#3085) has presets, so a helper on Copilot can name a difficulty (`preset` mode) and `resolveAutoLevel` covers it. Its built-ins are Copilot's ids for the Claude family: `claude-haiku-5.5` low, `claude-sonnet-5.5` medium and `claude-opus-5.5` high. Its live list (the SDK's models.list) reports each model's levels, though some models report none, and its fallback list reports none at all. A cell for a model with no levels has `effort: null` and is valid; a level on it is refused against a live list. Settings shows "No effort levels" in place of the effort picker for such a model.
 
-Copilot is still excluded from `auto`, with reason `auto_not_supported`: whether `cli: "auto"` should choose it is a routing decision of its own, and it has no quota source to balance on. `AUTO_CANDIDATE_PROVIDERS` lists the providers Auto chooses between, and the page's `autoCandidate` says the same per provider.
+Copilot is an Auto candidate of last resort (#3279). Its plan quota cannot be read (`unknown / not_supported`), so it ranks behind every other eligible provider, including a low measured provider or one whose reading failed or became stale. It passes the same enabled, availability, cooldown and valid-mapping checks as the others. `AUTO_CANDIDATE_PROVIDERS` lists the candidates, and the page's `autoCandidate` says the same per provider.
+
+Settings > Smart selection has a separate "Allow Copilot as a last resort" switch, on by default. The app-wide `copilotAuto` setting controls only Auto's choice of Copilot, not explicit Copilot starts, presets, or whether Auto itself is allowed. Turning it off records `auto_disabled` for Copilot. It uses the same revision checks, audit and changed event as other Smart selection settings.
 
 ## Minimum and maximum (#3044)
 
@@ -114,10 +116,10 @@ Read token-free, with no prompt. Checked on one login on Claude Code 2.1.312 and
 | State | Meaning | Routing |
 |---|---|---|
 | `known` | Under 80% used | Eligible |
-| `low` | 80% up to 95% used | Used only if nothing better is left |
+| `low` | 80% up to 95% used | Used after headroom and temporarily unmeasured providers, before the last resort |
 | `near_limit` | 95% or more used, and the provider hasn't said the limit is reached. Quota remains. | Skipped, our own reserve: `quota_near_limit` |
 | `exhausted` | The provider reported the limit reached: a `rejected` status, `rateLimitReachedType`, or a `rate_limited` error | Skipped: `quota_exhausted` |
-| `unknown` | No current reading. `unknownReason`: `not_read`, `stale` (over 15 minutes old), `not_applicable` (for example an API key), `read_failed`, `not_supported` | Never scored. Used only once every measured provider is `low` or out |
+| `unknown` | No current reading. `unknownReason`: `not_read`, `stale` (over 15 minutes old), `not_applicable` (for example an API key), `read_failed`, `not_supported` | Never scored. Temporarily unmeasured providers precede `low`; `not_supported` comes strictly last |
 
 The UI and telemetry never say exhausted while quota remains. Used percent alone never produces `exhausted`, even at 100%.
 
@@ -125,7 +127,7 @@ The UI and telemetry never say exhausted while quota remains. Used percent alone
 
 Every state has `asOf`, and a stale reading keeps its.
 
-`unknown` is never scored, never 0 and never healthy. A provider without a weekly reading waits while a measured one has headroom, and takes work once every measured one is `low` or out, labeled `unknown_fallback` in `reason` and `quotaBasis`. The risk is stated, not hidden: when it does get work it may already be spent, and a failed start puts it on the cooldown below. Policy 1 scored unknown as known and recorded `unknown_scored_as_healthy`; old records keep that value.
+`unknown` is never scored, never 0 and never healthy. A provider temporarily without a weekly reading waits while a measured one has headroom, and takes work once every measured one is `low` or out, labeled `unknown_fallback` in `reason` and `quotaBasis`. A provider with no quota reader (`not_supported`, currently Copilot) waits behind those providers and `low` too. Its reason is always `last_resort_unmeasured`, even if it is the only candidate; `quotaBasis` is `unknown_fallback`. Its receipt says plainly that its quota is unknown and no provider with readable plan usage was eligible. The risk is stated, not hidden: when it does get work it may already be spent, and a failed start puts it on the cooldown below. Policy 1 scored unknown as known and recorded `unknown_scored_as_healthy`; old records keep that value.
 
 Percent used is only compared within a provider's own plan. There is no claim of equal cost across providers, and dollar fields aren't used.
 
@@ -137,12 +139,12 @@ A provider's helpers, across all orchestrators, that are creating, starting or h
 
 A pure function, one decision per start. Inputs that need a CLI are read before the global start lock, and the decision runs under it.
 
-Policy 2 (#2887) balances plan consumption. Nothing in it knows who asked, which provider was chosen last, or the order providers were registered in.
+Policy 3 (#3279) preserves policy 2's plan-consumption balancing (#2887) and adds an unreadable-quota last resort. Nothing in it knows who asked, which provider was chosen last, or the order providers were registered in.
 
 1. Candidates: enabled, available, Auto-eligible, a valid mapping cell, not cooling down. Each runs the user's mapped model and effort for the difficulty; Auto picks the provider only.
 2. Drop `exhausted` and `near_limit`. That includes the five-hour window and the mapped model's own window: they are constraints, never added to the weekly figure.
-3. **Tier:** `headroom` (a weekly reading, and every counted window under 80%), then `unmeasured` (no weekly reading), then `low` (some counted window at 80% to 95%). A mapping that couldn't be checked ranks behind one that could, within a tier.
-4. **Pressure:** the weekly percent used, in basis points. Lowest wins. An `unmeasured` tier has no pressure: all of it ties.
+3. **Tier:** `headroom` (a weekly reading, and every counted window under 80%), then `unmeasured` (temporarily no weekly reading), then `low` (some counted window at 80% to 95%), then `last_resort` (`unknown / not_supported`). A mapping that couldn't be checked ranks behind one that could, within a tier.
+4. **Pressure:** the weekly percent used, in basis points. Lowest wins. The `unmeasured` and `last_resort` tiers have no pressure: each tier ties within itself.
 5. **Ties:** pressures within the tie band, 0 by default, so only equal readings. Among them the lowest load wins, then the rotation.
 
 **Rotation.** Keyed by the sorted set of tied candidates, each a provider (`<provider>:default`, the key used before profiles were removed). The next one after the key this same set chose last, in sorted order. Saved in `helper-auto-rotation.json`, so a restart doesn't hand the next tie to the first provider. It moves only when a decision commits, once the helper exists, so a refused start doesn't take a turn. Within a run it is exact, from memory: decisions the rotation alone settled for one set differ by at most one. Across restarts the saved file is best-effort history, since a failed or unflushed write, an evicted set or an unreadable file brings back an older cursor or none. Each run is still a round robin, so after R restarts the counts differ by at most R + 1, whatever was lost.
@@ -206,11 +208,11 @@ Effort follows the same idea more simply: any change of model or CLI clears it, 
 
 Stable codes:
 
-- `reason`: `explicit_request`, `persona_pinned`, `preset_on_cli`, `only_candidate`, `lower_pressure`, `lower_load`, `fair_rotation`, `better_quota_tier`, `unknown_fallback`. Policy 1's `sticky` and `default_order` stay readable on old records.
+- `reason`: `explicit_request`, `persona_pinned`, `preset_on_cli`, `only_candidate`, `lower_pressure`, `lower_load`, `fair_rotation`, `better_quota_tier`, `unknown_fallback`, `last_resort_unmeasured`. Policy 1's `sticky` and `default_order` stay readable on old records.
 - `decisionId`: for an Auto decision, its id, shared by its reservation and its #2747 decision record.
 - `fallback`: `none`, `builtin_preset`, `candidate_skipped`, `model_unverified`, `retried_after_spawn_failure`.
 - `source`: `request`, `persona`, `auto`, `orchestrator`, `custom_mapping`, `builtin_mapping`, `cli_default`.
-- `skipped`, per provider: `cli_disabled`, `cli_unavailable`, `auto_not_supported`, `no_valid_mapping`, `cooling_down`, `quota_near_limit`, `quota_exhausted`.
+- `skipped`, per provider: `cli_disabled`, `cli_unavailable`, `auto_disabled`, `auto_not_supported`, `no_valid_mapping`, `cooling_down`, `quota_near_limit`, `quota_exhausted`.
 - `auto.reason`, when Auto is off: `not_enabled`, `project_off`, `orchestration_off`, `dispatcher_locked`. `mcp_off` stays in `autoOffReasons` as a code only and is never sent.
 
 MCP calls the provider `cli`, as `start_helper` does.
@@ -390,14 +392,14 @@ App-wide preset editing from the phone is in scope.
      "custom":null,"builtin":{"model":"gpt-6.1-sol","effort":"high"},"editable":true},
     "medium":{"effective":{"model":"gpt-6.1-terra","effort":"medium"},"source":"builtin","fallback":"builtin_preset","state":"stale","staleReason":"model_unavailable",
      "custom":{"model":"gone","effort":"high"},"builtin":{"model":"gpt-6.1-terra","effort":"medium"},"editable":true}}},
-  "copilot-cli":{"autoEligible":true,"autoCandidate":false,"quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},
+  "copilot-cli":{"autoEligible":true,"autoCandidate":true,"quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},
    "choices":{"source":"live","asOf":"…","models":[{"id":"claude-haiku-4.5","label":"Claude Haiku 4.5","efforts":[]}]},
    "cells":{"easy":{"effective":{"model":"claude-haiku-4.5","effort":null},"source":"custom","state":"valid",
      "custom":{"model":"claude-haiku-4.5","effort":null},"builtin":{"model":"claude-haiku-5.5","effort":"low"},"editable":true},…}},
   "other-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},"cells":null}}}
 ```
 
-A cell with nothing valid has `effective: null`. `autoEligible` says whether a provider has presets, and `autoCandidate` whether `cli: "auto"` chooses it (Copilot: false, #3085). With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
+A cell with nothing valid has `effective: null`. `autoEligible` says whether a provider has presets, and `autoCandidate` whether `cli: "auto"` can choose it (Copilot: true as a last resort, #3279). The additive `copilotAuto` boolean in settings says whether the person allows that fallback; absent on older desktops. Capability fields `lastResortCandidates: ["copilot-cli"]` and `copilotAuto: true` advertise this policy and the app-wide toggle. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
 
 **Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes, when an app-wide read finds that a cell's state changed, or when something that decides Auto changes: a project's `off` from any surface, an orchestrator's switch, or Clubhouse MCP. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
@@ -416,6 +418,7 @@ A cell with nothing valid has `effective: null`. `autoEligible` says whether a p
 | reason | `fair_rotation` | Its turn among providers with the same usage |
 | reason | `better_quota_tier` | This provider has more of its limit left |
 | reason | `unknown_fallback` | Its usage couldn't be checked, and the others are getting close to their limits |
+| reason | `last_resort_unmeasured` | Its quota is unknown. No provider with readable plan usage was eligible |
 | reason | `sticky` | Stayed on the provider chosen last |
 | reason | `default_order` | No reason to switch |
 | fallback | `builtin_preset` | The saved choice is no longer offered, so the default was used |
@@ -425,6 +428,7 @@ A cell with nothing valid has `effective: null`. `autoEligible` says whether a p
 | skipped | `cli_disabled` | Turned off in Settings |
 | skipped | `cli_unavailable` | Not available on this computer |
 | skipped | `auto_not_supported` | Auto doesn't support this provider yet |
+| skipped | `auto_disabled` | Turned off for Auto in Settings |
 | skipped | `no_valid_mapping` | No choice for this difficulty is offered now |
 | skipped | `cooling_down` | It failed to start recently |
 | skipped | `quota_near_limit` | Close to its limit |
@@ -446,7 +450,7 @@ A cell with nothing valid has `effective: null`. `autoEligible` says whether a p
 
 `known` says limit available, not capacity guaranteed. `unknown` is never worded as available. Context status has no labels: see [Context window](#context-window).
 
-**Write:** command `helperRouting.update` with `{revision,scope,projectId?,auto?,cells?:[{provider,difficulty,model,effort}],reset?:{provider?,difficulty?}}`, returning fresh settings. Only scopes the capability lists are accepted. A project scope accepts only `auto: "off"|null`. Errors: 400 `invalid_helper_routing`, 409 `helper_routing_stale`, 409 `model_unavailable`, 409 `effort_unavailable`. Agent scope stays in `orchestration.autoHelpers` through `agent.update`.
+**Write:** command `helperRouting.update` with `{revision,scope,projectId?,auto?,copilotAuto?,cells?:[{provider,difficulty,model,effort}],reset?:{provider?,difficulty?}}`, returning fresh settings. Only scopes the capability lists are accepted. `copilotAuto` is an app-wide boolean, independent of `auto`; a project scope accepts only `auto: "off"|null`. Errors: 400 `invalid_helper_routing`, 409 `helper_routing_stale`, 409 `model_unavailable`, 409 `effort_unavailable`. Agent scope stays in `orchestration.autoHelpers` through `agent.update`.
 
 **A stale write** writes nothing, for any part of the command, and its 409 returns `{revision, settings}`. A client shows the fresh values and lets the person apply their change again. It must not retry on its own, since that could overwrite someone else's edit.
 

@@ -50,7 +50,7 @@ export function isAutoBoundLevel(value: unknown): value is AutoBoundLevel {
 }
 
 /** Recorded on each decision, so telemetry can tell which values produced it. */
-export const HELPER_ROUTING_POLICY_VERSION = 2;
+export const HELPER_ROUTING_POLICY_VERSION = 3;
 
 /**
  * The providers with an Auto mapping: presets for every level, which
@@ -65,11 +65,10 @@ export function isPresetProvider(value: unknown): value is PresetProvider {
 }
 
 /**
- * The providers `cli: "auto"` chooses between. A subset of PRESET_PROVIDERS:
- * Copilot has a mapping but isn't a candidate (#3085), since that is a routing
- * decision of its own, and it has no quota source to balance on.
+ * The providers `cli: "auto"` chooses between. Copilot has no plan-quota reader,
+ * so it ranks last, behind even low and temporarily unmeasured providers (#3279).
  */
-export const AUTO_CANDIDATE_PROVIDERS = ['claude-code', 'codex-cli'] as const satisfies readonly PresetProvider[];
+export const AUTO_CANDIDATE_PROVIDERS = ['claude-code', 'codex-cli', 'copilot-cli'] as const satisfies readonly PresetProvider[];
 export type AutoCandidateProvider = (typeof AUTO_CANDIDATE_PROVIDERS)[number];
 
 export function isAutoCandidateProvider(value: unknown): value is AutoCandidateProvider {
@@ -145,11 +144,11 @@ export function normalizeSavedPresets(raw: unknown): SavedPresets {
 
 export type HelperRoutingMode = 'explicit' | 'preset' | 'auto';
 /** `sticky` and `default_order` are policy 1's, and `persona_pinned` is from before personas were retired (#2901), kept so an older saved decision still reads. */
-export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli' | 'only_candidate' | 'lower_pressure' | 'lower_load' | 'fair_rotation' | 'better_quota_tier' | 'unknown_fallback' | 'sticky' | 'default_order';
+export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli' | 'only_candidate' | 'lower_pressure' | 'lower_load' | 'fair_rotation' | 'better_quota_tier' | 'unknown_fallback' | 'last_resort_unmeasured' | 'sticky' | 'default_order';
 export type HelperRoutingFallback = 'none' | 'builtin_preset' | 'candidate_skipped' | 'model_unverified';
 /** `persona` is from before personas were retired (#2901), kept so an older saved decision still reads. */
 export type HelperRoutingFieldSource = 'request' | 'persona' | 'orchestrator' | 'auto' | 'custom_mapping' | 'builtin_mapping' | 'cli_default';
-export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_not_supported' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
+export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_disabled' | 'auto_not_supported' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
 export type { HelperAutoOffReason, HelperAutoSource } from './orchestration-policy';
 export type PresetCellState = 'valid' | 'unverified' | 'stale';
 export type PresetStaleReason = 'model_unavailable' | 'effort_unavailable';
@@ -157,9 +156,9 @@ export type HelperContextStatus = 'none' | 'applied' | 'reset' | 'not_applied';
 
 /** What the desktop advertises at this stage. A client keys on these, so nothing is listed before it works. */
 export const HELPER_ROUTING_MODES: readonly HelperRoutingMode[] = ['explicit', 'preset', 'auto'];
-export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'sticky', 'default_order'];
+export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'last_resort_unmeasured', 'sticky', 'default_order'];
 export const HELPER_ROUTING_FALLBACKS: readonly HelperRoutingFallback[] = ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified'];
-export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted'];
+export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_disabled', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted'];
 export const HELPER_AUTO_OFF_REASONS: readonly HelperAutoOffReason[] = ['not_enabled', 'project_off', 'orchestration_off', 'mcp_off', 'dispatcher_locked'];
 export const PRESET_CELL_STATES: readonly PresetCellState[] = ['valid', 'unverified', 'stale'];
 
@@ -178,6 +177,7 @@ export const HELPER_ROUTING_LABELS = {
     fair_rotation: 'Its turn among providers with the same usage',
     better_quota_tier: 'This provider has more of its limit left',
     unknown_fallback: 'Its usage couldn’t be checked, and the others are getting close to their limits',
+    last_resort_unmeasured: 'Its quota is unknown. No provider with readable plan usage was eligible',
     sticky: 'Stayed on the provider chosen last',
     default_order: 'No reason to switch',
   },
@@ -191,6 +191,7 @@ export const HELPER_ROUTING_LABELS = {
   skipped: {
     cli_disabled: 'Turned off in Settings',
     cli_unavailable: 'Not available on this computer',
+    auto_disabled: 'Turned off for Auto in Settings',
     auto_not_supported: 'Auto doesn’t support this provider yet',
     no_valid_mapping: 'No choice for this difficulty is offered now',
     cooling_down: 'It failed to start recently',
@@ -268,7 +269,8 @@ export interface HelperRouting {
   /**
    * `unknown_fallback`: the chosen provider's usage was unknown, and it was used
    * only because every measured one was past the low mark. It says nothing about
-   * its capacity. `unknown_scored_as_healthy` is policy 1's, kept for old records.
+   * its capacity. Also used for the last-resort tier, whose reason explicitly
+   * says its quota is unknown. `unknown_scored_as_healthy` is policy 1's, kept for old records.
    */
   quotaBasis?: 'known' | 'unknown_fallback' | 'unknown_scored_as_healthy';
   /** The decision's id, for an Auto choice. It names the decision and its reservation, never the helper. */
@@ -342,8 +344,8 @@ export type ProviderRoutingView =
     /** The provider has an Auto mapping: presets for every level. */
     autoEligible: true;
     /**
-     * Whether `cli: "auto"` chooses between it and the others. Copilot has a
-     * mapping but isn't a candidate (#3085). Older desktops don't send it.
+     * Whether `cli: "auto"` can choose it. Copilot is a last-resort candidate
+     * (#3279). Older desktops don't send it.
      */
     autoCandidate: boolean;
     quota: QuotaView;
@@ -359,6 +361,8 @@ export interface HelperRoutingSettings {
   serverTime: string;
   labels: typeof HELPER_ROUTING_LABELS;
   providers: Record<string, ProviderRoutingView>;
+  /** Allow Copilot as Auto's last resort. Absent on older desktops; defaults to true. */
+  copilotAuto?: boolean;
   /** With an agent in the request: whether it can use presets, and why not. */
   agent?: { usable: boolean; reason?: 'dispatcher_locked' | 'orchestration_off' };
   auto: HelperAutoView;
@@ -393,6 +397,8 @@ export interface HelperRoutingUpdate {
   reset?: { provider?: string; difficulty?: string };
   /** `cli: "auto"`, at the write's scope: a boolean app-wide, `off` or null for a project. */
   auto?: boolean | 'off' | null;
+  /** App-wide only. Allow Copilot as Auto's last resort without enabling Auto itself. */
+  copilotAuto?: boolean;
 }
 
 export type HelperRoutingUpdateResult =

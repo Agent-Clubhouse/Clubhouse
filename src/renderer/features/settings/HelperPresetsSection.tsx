@@ -237,7 +237,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
         )}
         {settings && (
           <p className={settingsHelp}>
-            Lets an orchestrator ask Clubhouse to pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit. It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.
+            Lets an orchestrator ask Clubhouse to pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit, with Copilot as a last resort. It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.
           </p>
         )}
         <p className={settingsHelp}>
@@ -272,6 +272,23 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
               <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-quota`}>
                 {quotaLine(view.quota, settings!)} Limits for one model aren’t included.
               </p>
+              {provider === 'copilot-cli' && view.autoCandidate && (
+                <>
+                  <label className="mt-1 flex items-center gap-2.5 text-[13px] text-ctp-text">
+                    <Toggle
+                      checked={settings!.copilotAuto !== false}
+                      disabled={busy}
+                      onChange={(on) => void update({ copilotAuto: on })}
+                      aria-label="Allow Copilot as Auto's last resort"
+                      data-testid="helper-presets-copilot-auto"
+                    />
+                    <span>Allow Copilot as a last resort</span>
+                  </label>
+                  <p className="mt-0.5 text-xs text-ctp-overlay1">
+                    Copilot's quota is unknown. Auto picks it only when no other provider is eligible, even if another provider's limit is low or its usage could not be checked.
+                  </p>
+                </>
+              )}
               {view.autoCandidate === false && (
                 <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-not-candidate`}>
                   {autoLabel} doesn’t pick {PROVIDER_NAMES[provider] ?? provider}. These are used when a helper on {PROVIDER_NAMES[provider] ?? provider} names a level.

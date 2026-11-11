@@ -439,13 +439,13 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
   const difficulty = request.difficulty as HelperDifficulty;
   const enabled = getOrchestratorSettings().enabled ?? [];
   const skipped: Record<string, HelperRoutingSkip> = {};
-  // Copilot has a mapping but isn't a candidate (#3085), so it's skipped like a provider without one.
   for (const other of getAllProviders()) {
     if (!isAutoCandidateProvider(other.id) && (enabled.length === 0 || enabled.includes(other.id))) skipped[other.id] = 'auto_not_supported';
   }
   const options: AutoOption[] = [];
   await Promise.all(AUTO_CANDIDATE_PROVIDERS.map(async (provider) => {
     if (enabled.length > 0 && !enabled.includes(provider)) { skipped[provider] = 'cli_disabled'; return; }
+    if (provider === 'copilot-cli' && !orchestrationSettings.getCopilotAuto()) { skipped[provider] = 'auto_disabled'; return; }
     if (!(await providerUsable(provider, projectPath))) { skipped[provider] = 'cli_unavailable'; return; }
     if (await isProviderCoolingDown(provider)) { skipped[provider] = 'cooling_down'; return; }
     const { resolved } = await resolveCell(provider, difficulty);
@@ -613,7 +613,7 @@ function autoDecisionRecord(args: {
   };
 }
 
-/** The numbers policy 2 ran with, so a record can be replayed. It has no reservation expiry, sticky time or margin. */
+/** The numbers this policy ran with, so a record can be replayed. It has no reservation expiry, sticky time or margin. */
 const AUTO_THRESHOLDS = { quotaLowBp: QUOTA_LOW_PERCENT * 100, quotaNearLimitBp: QUOTA_NEAR_LIMIT_PERCENT * 100, quotaStaleMs: QUOTA_STALE_MS };
 
 /**
@@ -655,6 +655,7 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
       key: o.key,
       provider: o.provider,
       quotaState: o.quota.state,
+      ...(o.quota.unknownReason && { quotaUnknownReason: o.quota.unknownReason }),
       ...(weekly && { weekly: { usedPercent: weekly.usedPercent, resetsAtMs: epochOf(weekly.resetsAt) ?? null } }),
       verified: o.cell.fallback !== 'model_unverified',
       load: total(o.provider),
@@ -678,12 +679,11 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
     resolved: { provider: decision.provider, model: cell.cell.model, effort: effort ?? null, difficulty },
     source: { provider: 'auto', model: cell.source, effort: effort ? cell.source : 'cli_default' },
     reason: decision.reason,
-    // Copilot can never be chosen, so its being skipped isn't a fallback.
     fallback: cell.fallback !== 'none' ? cell.fallback : Object.values(allSkipped).some((code) => code !== 'auto_not_supported') ? 'candidate_skipped' : 'none',
     context: { status: 'none' },
     load: Object.fromEntries(options.map((o) => [o.provider, total(o.provider)])),
     quota: Object.fromEntries(options.map((o) => [o.provider, decisionQuota(o.quota)])),
-    quotaBasis: decision.tier === 'unmeasured' ? 'unknown_fallback' : 'known',
+    quotaBasis: decision.tier === 'unmeasured' || decision.tier === 'last_resort' ? 'unknown_fallback' : 'known',
     ...(Object.keys(allSkipped).length > 0 && { skipped: allSkipped }),
   };
   const { cursorKey, cursorAfter } = decision.tie;
@@ -910,7 +910,7 @@ export async function readHelperRouting(options: { projectPath?: string; autoCon
     }
   }
   const auto = await readHelperAuto(options.autoContext ?? (options.projectPath ? { projectPath: options.projectPath } : {}));
-  return { revision: helperRoutingRevision(), serverTime: new Date(Date.now()).toISOString(), labels: HELPER_ROUTING_LABELS, providers, auto };
+  return { revision: helperRoutingRevision(), serverTime: new Date(Date.now()).toISOString(), labels: HELPER_ROUTING_LABELS, providers, auto, copilotAuto: orchestrationSettings.getCopilotAuto() };
 }
 
 // ── Changing them ────────────────────────────────────────────────────────
@@ -950,7 +950,8 @@ interface PresetWriteOrigin {
 function checkShape(update: HelperRoutingUpdate): void {
   const invalid = (message: string) => new HelperRoutingError('invalid_helper_routing', message);
   if (typeof update?.revision !== 'string' || savedPartOf(update.revision) === null) throw invalid('Send the revision this change was made from.');
-  if (!update.cells?.length && !update.reset && update.auto === undefined) throw invalid('Send cells to change, a reset, or auto.');
+  if (!update.cells?.length && !update.reset && update.auto === undefined && update.copilotAuto === undefined) throw invalid('Send cells to change, a reset, auto, or copilotAuto.');
+  if (update.copilotAuto !== undefined && typeof update.copilotAuto !== 'boolean') throw invalid('copilotAuto must be true or false.');
   for (const cell of update.cells ?? []) {
     if (!isPresetProvider(cell?.provider)) throw invalid(`${String(cell?.provider)} has no presets.`);
     if (!isAutoLevel(cell.difficulty)) throw invalid(`difficulty must be one of ${AUTO_LEVELS.join(', ')}.`);
@@ -1003,7 +1004,7 @@ export function updateHelperPresets(update: HelperRoutingUpdate, origin: PresetW
 }
 
 async function writePresets(update: HelperRoutingUpdate, { surface, projectPath }: PresetWriteOrigin): Promise<HelperRoutingSettings> {
-  const action = update?.auto !== undefined && !update.cells?.length && !update.reset ? 'toggle'
+  const action = (update?.auto !== undefined || update?.copilotAuto !== undefined) && !update.cells?.length && !update.reset ? 'toggle'
     : update?.reset && !update.cells?.length
     ? update.reset.difficulty ? 'reset_cell' : update.reset.provider ? 'reset_provider' : 'reset_all'
     : 'set';
@@ -1017,7 +1018,7 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
     checkShape(update);
     const invalid = (message: string) => new HelperRoutingError('invalid_helper_routing', message);
     if (projectPath) {
-      if (update.cells?.length || update.reset) throw invalid('A project can only turn Auto off.');
+      if (update.cells?.length || update.reset || update.copilotAuto !== undefined) throw invalid('A project can only turn Auto off.');
       if (update.auto !== 'off' && update.auto !== null) throw invalid('A project can only set auto to off or null.');
     } else if (update.auto !== undefined && typeof update.auto !== 'boolean') {
       throw invalid('App-wide, auto is true or false.');
@@ -1063,6 +1064,11 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
       await orchestrationSettings.saveAutoHelpers(update.auto === true);
       await appendSettingsAudit({ surface, scope: 'app', key: 'helper_auto', before, after: update.auto === true, outcome: 'ok' });
     }
+  }
+  if (update.copilotAuto !== undefined) {
+    const before = orchestrationSettings.getCopilotAuto();
+    await orchestrationSettings.saveCopilotAuto(update.copilotAuto);
+    await appendSettingsAudit({ surface, scope: 'app', key: 'helper_auto.copilot-cli', before, after: update.copilotAuto, outcome: 'ok' });
   }
   if (projectPath || (!update.cells?.length && !update.reset)) {
     helperPresetsChanged(action, surface, true);

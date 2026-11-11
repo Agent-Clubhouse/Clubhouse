@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   app: { getPath: () => userData },
 }));
 
-import { getGlobalHelperCap, getPresets, getPresetsRevision, getSettings, savePresets, saveSettings } from './orchestration-settings';
+import { getCopilotAuto, getGlobalHelperCap, getPresets, getPresetsRevision, getSettings, saveCopilotAuto, savePresets, saveSettings } from './orchestration-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 
 const file = path.join(userData, 'orchestration-settings.json');
@@ -46,6 +46,24 @@ describe('orchestration settings', () => {
   it('falls back to the default for a bad value on disk', () => {
     fs.writeFileSync(file, JSON.stringify({ globalHelperCap: 'lots' }));
     expect(getGlobalHelperCap()).toBe(20);
+  });
+
+  it('allows Copilot by default, persists its opt-out and revision, and preserves it when other settings change', async () => {
+    expect(getCopilotAuto()).toBe(true);
+    fs.writeFileSync(file, JSON.stringify({ globalHelperCap: 5, autoHelpers: true }));
+    resetAllSettingsStoresForTests();
+    expect(getCopilotAuto()).toBe(true);
+    await saveCopilotAuto(false);
+    expect(getPresetsRevision()).toBe(1);
+    await saveSettings({ globalHelperCap: 8, copilotAuto: true });
+    await savePresets({});
+    resetAllSettingsStoresForTests();
+    expect(getCopilotAuto()).toBe(false);
+    expect(getSettings().autoHelpers).toBe(true);
+    expect(getPresetsRevision()).toBe(2);
+    await saveCopilotAuto(true);
+    resetAllSettingsStoresForTests();
+    expect(getCopilotAuto()).toBe(true);
   });
 });
 

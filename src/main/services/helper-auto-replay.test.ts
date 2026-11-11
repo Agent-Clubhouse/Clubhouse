@@ -10,6 +10,7 @@ import { DAY, HOUR, runReplay, type SimConfig } from './__fixtures__/helper-auto
 const T0 = 1_800_000_000_000;
 const A = 'claude-code:default';
 const B = 'codex-cli:default';
+const C = 'copilot-cli:default';
 
 const base = (over: Partial<SimConfig>): SimConfig => ({
   subscriptions: [
@@ -132,6 +133,34 @@ describe('Auto replay', () => {
       ],
     }));
     expect(r.picks[B]).toBeGreaterThan(r.picks[A] * 3);
+  });
+
+  it('keeps Copilot last through headroom and low readings, then falls back at near-limit', () => {
+    const r = runReplay(base({
+      subscriptions: [
+        { key: A, provider: 'claude-code', capacity: 100, resetsAt: T0 + 7 * DAY, used: 78 },
+        { key: B, provider: 'codex-cli', capacity: 100, resetsAt: T0 + 7 * DAY, used: 100 },
+        { key: C, provider: 'copilot-cli', capacity: 100, resetsAt: T0 + 7 * DAY, unreadable: true, unknownReason: 'not_supported' },
+      ],
+      end: T0 + DAY,
+    }));
+    expect(r.sequence.slice(0, 17)).toEqual(Array(17).fill(A));
+    expect(r.sequence.slice(17)).toEqual(Array(7).fill(C));
+    expect(r.reasons.last_resort_unmeasured).toBe(7);
+    expect(r.unknownChosen).toBe(7);
+    expect(r.refused).toBe(0);
+  });
+
+  it('a temporarily unreadable provider stays ahead of Copilot, and Copilot takes over while it is unavailable', () => {
+    const r = runReplay(base({
+      subscriptions: [
+        { key: A, provider: 'claude-code', capacity: 100, resetsAt: T0 + 7 * DAY, unreadable: true, available: (t) => t < T0 + 3 * HOUR },
+        { key: C, provider: 'copilot-cli', capacity: 100, resetsAt: T0 + 7 * DAY, unreadable: true, unknownReason: 'not_supported' },
+      ],
+      end: T0 + 6 * HOUR,
+    }));
+    expect(r.sequence).toEqual([A, A, A, C, C, C]);
+    expect(r.reasons.last_resort_unmeasured).toBe(3);
   });
 
   it('a provider that leaves and comes back rejoins the rotation, and nothing starves', () => {

@@ -22,6 +22,14 @@ describe('helperRouting.update parsing (#2671)', () => {
     expect(() => parseMobileCommand(base)).toThrow(MobileControlError);
   });
 
+  it('accepts a Copilot-only Auto toggle without cells or the global Auto switch', () => {
+    expect(parseMobileCommand({ ...base, copilotAuto: false })).toMatchObject({ copilotAuto: false });
+    expect(parseMobileCommand({ ...base, copilotAuto: true })).toMatchObject({ copilotAuto: true });
+    for (const copilotAuto of ['off', null, 0]) {
+      expect(() => parseMobileCommand({ ...base, copilotAuto })).toThrow(MobileControlError);
+    }
+  });
+
   it.each([
     [{ cells: [] }],
     [{ cells: 'x' }],

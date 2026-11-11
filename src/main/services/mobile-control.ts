@@ -52,11 +52,11 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'dispatcher.setModels': ['byHand', 'role', 'provider', 'model', 'effort', 'contextWindow'],
   'dispatcher.clearChat': ['expectedState'],
   'dispatcher.forgetEverything': ['expectedState'],
-  'helperRouting.update': ['revision', 'scope', 'projectId', 'cells', 'reset', 'auto'],
+  'helperRouting.update': ['revision', 'scope', 'projectId', 'cells', 'reset', 'auto', 'copilotAuto'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['reviewedDigest', 'delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped']);
-const ROUTING_OPTIONAL = new Set(['projectId', 'auto']);
+const ROUTING_OPTIONAL = new Set(['projectId', 'auto', 'copilotAuto']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 /** Commands whose fields are all optional, with at least one set: Settings > Dispatcher's (#3206). */
 const ANY_OF = new Set<string>(['dispatcher.update', 'dispatcher.setModels']);
@@ -64,7 +64,7 @@ export const isOptionalCommandField = (type: MobileCommand['type'], key: string)
   ANY_OF.has(type) ? true : type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'helperRouting.update' && ROUTING_OPTIONAL.has(key) ? true
       : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
-const BOOLEAN_FIELDS = new Set(['waitForStopped', 'resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled', 'byHand']);
+const BOOLEAN_FIELDS = new Set(['waitForStopped', 'resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled', 'byHand', 'copilotAuto']);
 /** Fields agent.update clears with null. */
 export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration', 'contextWindow']);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -114,7 +114,7 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   }
   if (value.delivery !== undefined && !['auto', 'prompt', 'steer', 'queued'].includes(value.delivery as string)) throw new MobileControlError('invalid_command', 400);
   if ((type === 'agent.update' || ANY_OF.has(type)) && !fields.some((k) => k !== 'agentId' && value[k] !== undefined)) throw new MobileControlError('invalid_command', 400);
-  if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined && value.auto === undefined) throw new MobileControlError('invalid_command', 400);
+  if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined && value.auto === undefined && value.copilotAuto === undefined) throw new MobileControlError('invalid_command', 400);
   if (type === 'agent.start' && value.expectedSessionId !== undefined && (value.resume !== true || !text(value.expectedProvider))) throw new MobileControlError('invalid_command', 400);
   return value as unknown as MobileCommand;
 }

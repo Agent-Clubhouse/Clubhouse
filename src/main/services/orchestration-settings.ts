@@ -12,6 +12,8 @@ export interface OrchestrationSettings {
   helperPresetsRevision?: number;
   /** "Auto provider" for orchestrators that don't set it themselves (#2671). Off unless the user turns it on. */
   autoHelpers?: boolean;
+  /** Copilot is allowed as Auto's last resort unless explicitly turned off (#3279). */
+  copilotAuto?: boolean;
 }
 
 function validRevision(value: unknown): number {
@@ -30,9 +32,10 @@ const store = createSettingsStore<OrchestrationSettings>(
     helperPresets: normalizeSavedPresets(raw.helperPresets),
     helperPresetsRevision: validRevision(raw.helperPresetsRevision),
     autoHelpers: raw.autoHelpers === true,
+    copilotAuto: raw.copilotAuto !== false,
   }),
   // Presets and Auto have rows of their own, with reasons.
-  { audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'autoHelpers'] } },
+  { audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'autoHelpers', 'copilotAuto'] } },
 );
 
 export const getSettings = store.get;
@@ -53,6 +56,14 @@ export function getAutoHelpers(): boolean {
 /** Turn Auto on or off for the app, moving the revision. */
 export async function saveAutoHelpers(on: boolean): Promise<void> {
   await store.save({ ...getSettings(), autoHelpers: on, helperPresetsRevision: getPresetsRevision() + 1 });
+}
+
+export function getCopilotAuto(): boolean {
+  return getSettings().copilotAuto !== false;
+}
+
+export async function saveCopilotAuto(on: boolean): Promise<void> {
+  await store.save({ ...getSettings(), copilotAuto: on, helperPresetsRevision: getPresetsRevision() + 1 });
 }
 
 /** A project's setting changed: an open page should refetch. */

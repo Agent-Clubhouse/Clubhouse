@@ -36,6 +36,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -80,6 +81,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -89,6 +91,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -366,7 +369,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -531,6 +534,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -575,6 +579,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -584,6 +589,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -861,7 +867,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -1014,6 +1020,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -1058,6 +1065,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -1067,6 +1075,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -1344,7 +1353,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -1508,6 +1517,7 @@
           },
           "source": "dispatcher_locked"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -1552,6 +1562,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -1561,6 +1572,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -1838,7 +1850,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -2011,6 +2023,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -2055,6 +2068,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -2064,6 +2078,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -2341,7 +2356,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -2502,6 +2517,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -2546,6 +2562,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -2555,6 +2572,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -2832,7 +2850,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -2997,6 +3015,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -3041,6 +3060,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -3050,6 +3070,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -3334,7 +3355,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -3487,6 +3508,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -3531,6 +3553,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -3540,6 +3563,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -3804,7 +3828,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -3957,6 +3981,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -4001,6 +4026,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -4010,6 +4036,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -4294,7 +4321,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -4447,6 +4474,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "labels": {
           "autoOff": {
@@ -4491,6 +4519,7 @@
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
             "fair_rotation": "Its turn among providers with the same usage",
+            "last_resort_unmeasured": "Its quota is unknown. No provider with readable plan usage was eligible",
             "lower_load": "Fewer helpers running on this provider",
             "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
@@ -4500,6 +4529,7 @@
             "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
+            "auto_disabled": "Turned off for Auto in Settings",
             "auto_not_supported": "Auto doesn’t support this provider yet",
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
@@ -4763,7 +4793,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {

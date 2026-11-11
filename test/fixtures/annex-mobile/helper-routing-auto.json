@@ -242,6 +242,53 @@
         "provider": "auto"
       }
     },
+    "copilotLastResort": {
+      "balanced": true,
+      "context": {
+        "status": "none"
+      },
+      "decidedAt": "2027-01-15T08:00:00.000Z",
+      "display": {
+        "reason": "Its quota is unknown. No provider with readable plan usage was eligible",
+        "summary": "claude-opus-5.5, high effort. Its quota is unknown. No provider with readable plan usage was eligible."
+      },
+      "fallback": "none",
+      "load": {
+        "copilot-cli": 0
+      },
+      "mode": "auto",
+      "policyVersion": 3,
+      "quota": {
+        "copilot-cli": {
+          "asOf": null,
+          "state": "unknown",
+          "unknownReason": "not_supported"
+        }
+      },
+      "quotaBasis": "unknown_fallback",
+      "reason": "last_resort_unmeasured",
+      "requested": {
+        "difficulty": "hard",
+        "effort": null,
+        "model": null,
+        "provider": "auto"
+      },
+      "resolved": {
+        "difficulty": "hard",
+        "effort": "high",
+        "model": "claude-opus-5.5",
+        "provider": "copilot-cli"
+      },
+      "skipped": {
+        "claude-code": "quota_near_limit",
+        "codex-cli": "cooling_down"
+      },
+      "source": {
+        "effort": "builtin_mapping",
+        "model": "builtin_mapping",
+        "provider": "auto"
+      }
+    },
     "explicitWithWarning": {
       "balanced": false,
       "context": {
