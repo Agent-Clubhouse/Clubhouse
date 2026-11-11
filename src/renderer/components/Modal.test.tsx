@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { Modal } from './Modal';
@@ -263,17 +263,18 @@ describe('Modal', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it.each(['Escape', 'backdrop', 'Close'] as const)('dismisses only the discard prompt via %s and restores focus', (way) => {
+    it.each(['Escape', 'backdrop', 'Close'] as const)('dismisses only the discard prompt via %s and restores focus', async (way) => {
+      const user = userEvent.setup();
       const onClose = vi.fn();
       render(editor(onClose, true));
       const cancel = screen.getByRole('button', { name: 'Cancel' });
       cancel.focus();
       dismiss('Cancel');
       const prompt = screen.getByRole('dialog', { name: 'Discard changes?' });
-      if (way === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+      if (way === 'Escape') await user.keyboard('{Escape}');
       else if (way === 'backdrop') fireEvent.click(prompt.parentElement!);
       else fireEvent.click(within(prompt).getByRole('button', { name: 'Close' }));
-      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull());
       expect(onClose).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(cancel);
     });

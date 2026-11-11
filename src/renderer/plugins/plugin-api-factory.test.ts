@@ -4565,12 +4565,12 @@ describe('plugin-api-factory', () => {
     });
 
     it('is not seen by Promise.prototype.then or Map.prototype.get patched after the host loaded', async () => {
-      const seen: unknown[] = [];
+      const seen: Array<string | undefined> = [];
       // The patches see the whole realm, the test runner's module mocks included, which throw
-      // when serialized. Only what serializes is kept: a secret or token is a string or sits in
-      // a plain object, so the check below still sees it.
+      // when serialized. Snapshot what serializes now: pending module-cache entries can later
+      // gain circular exports (e.g. HighlightJS). Secrets and tokens still serialize as strings.
       const keep = (v: unknown) => {
-        try { JSON.stringify(v, (_k, x) => (x instanceof Map || x instanceof Set ? [...x] : x)); seen.push(v); } catch { /* a module mock */ }
+        try { seen.push(JSON.stringify(v, (_k, x) => (x instanceof Map || x instanceof Set ? [...x] : x))); } catch { /* a module mock */ }
       };
       // Plain stubs: vi.fn itself calls .then on returned promises to record results.
       const issuedFor: string[] = [];
@@ -4597,6 +4597,10 @@ describe('plugin-api-factory', () => {
         return v;
       };
       try {
+        // Earlier permission-denial tests start this import without awaiting it.
+        // Exercise that overlap even when this test runs alone. A cold import with the patched
+        // built-ins is slow on CI runners, hence this test's longer timeout.
+        await import('./plugin-loader');
         const ctx = makeCtx();
         const api = createPluginAPI(ctx, undefined, mcpManifest());
         api.mcp.onToolCall(async () => ({ content: [{ type: 'text', text: 'ok' }] }));
@@ -4612,14 +4616,14 @@ describe('plugin-api-factory', () => {
         expect(issuedFor).toEqual([`issuer-secret:${ctx.pluginId}`]);
         expect(revoked).toEqual([`token-${ctx.pluginId}-1`]);
         // ...but neither passed through a patched built-in.
-        const leaked = JSON.stringify(seen, (_k, v) => (v instanceof Map || v instanceof Set ? [...v] : v));
+        const leaked = JSON.stringify(seen);
         expect(leaked).not.toContain('issuer-secret');
         expect(leaked).not.toContain(`token-${ctx.pluginId}-1`);
       } finally {
         Promise.prototype.then = realThen;
         Map.prototype.get = realGet;
       }
-    });
+    }, 30_000);
 
     it("lets a plugin's deactivate() call removeTools after its token is gone, and gives the old context no new token", async () => {
       const ctx = makeCtx();
