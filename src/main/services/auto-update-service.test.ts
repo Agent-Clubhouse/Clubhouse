@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
+import { PassThrough } from 'stream';
+import type { IncomingMessage } from 'http';
+import * as https from 'https';
 import { execFileSync, spawn } from 'child_process';
 import { app } from 'electron';
 import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyMacUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt, platformKey } from './auto-update-service';
@@ -13,6 +16,7 @@ vi.mock('child_process', () => ({
   execFileSync: vi.fn(),
   spawn: vi.fn(() => new EventEmitter()),
 }));
+vi.mock('https', () => ({ get: vi.fn() }));
 
 const testUserDataPath = path.join(os.tmpdir(), 'clubhouse-test-userData');
 
@@ -518,6 +522,40 @@ describe('auto-update-service', () => {
         )).rejects.toThrow('update failed');
         expect(beforeExit).not.toHaveBeenCalled();
         expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        pathExists.mockRestore();
+      }
+    });
+
+    it.each([
+      ['2.0.0', '2.0.0', true],
+      ['2.0.0-beta.12', '2.0.0-beta12', true],
+      ['2.0.0', '2.1.0', false],
+    ])('rechecks the live Windows feed before installing approved %s (feed: %s)', async (approved, published, matches) => {
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      vi.mocked(spawn).mockImplementation(spawnedChild);
+      vi.mocked(execFileSync).mockClear();
+      const feed = `${'a'.repeat(40)} com.mason-allen.clubhouse-${published}-full.nupkg 1234\n`;
+      vi.mocked(https.get).mockImplementation((_url, _options, callback) => {
+        const response = Object.assign(new PassThrough(), { statusCode: 200 });
+        queueMicrotask(() => { callback?.(response as IncomingMessage); response.end(feed); });
+        return new EventEmitter() as ReturnType<typeof https.get>;
+      });
+      try {
+        const installing = applyWindowsUpdate(
+          { downloadPath: null, version: approved, artifactUrl: null },
+          { relaunch: true, requireApprovedVersion: true },
+        );
+        if (matches) {
+          await expect(installing).resolves.toBe(true);
+          expect(execFileSync).toHaveBeenCalledWith(expect.any(String), ['--update', expect.any(String)], expect.any(Object));
+        } else {
+          await expect(installing).rejects.toThrow('A newer update became available; request again');
+          expect(execFileSync).not.toHaveBeenCalled();
+          expect(spawn).not.toHaveBeenCalled();
+          expect(mockApp.exit).not.toHaveBeenCalled();
+        }
+        expect(https.get).toHaveBeenCalledWith(expect.stringMatching(/\/RELEASES$/), expect.any(Object), expect.any(Function));
       } finally {
         pathExists.mockRestore();
       }

@@ -382,7 +382,7 @@ function setState(state: UpdateState, patch?: Partial<UpdateStatus>): void {
   broadcastStatus();
 }
 
-function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
+function fetchText(url: string, maxBytes?: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.get(url, { timeout: 15_000 }, (res) => {
@@ -394,18 +394,28 @@ function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
         return;
       }
       let data = '';
-      res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (err) {
-          reject(err);
+      let bytes = 0;
+      res.on('data', (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (maxBytes !== undefined && bytes > maxBytes) {
+          reject(new Error('The update feed is too large to verify.'));
+          res.destroy();
+          return;
         }
+        data += chunk.toString();
+      });
+      res.on('error', reject);
+      res.on('end', () => {
+        resolve(data);
       });
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
   });
+}
+
+function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
+  return fetchText(url).then((text): T => JSON.parse(text));
 }
 
 const MAX_REDIRECTS = 5;
@@ -892,6 +902,7 @@ interface ApplyContext {
 
 interface ApplyOptions {
   relaunch: boolean;
+  requireApprovedVersion?: boolean;
   /**
    * Runs right before a relaunch path calls app.exit(). The handlers exit the
    * process themselves, so anything the caller needs persisted (the apply
@@ -970,7 +981,20 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeEx
   return true;
 }
 
-export async function applyWindowsUpdate(context: ApplyContext, { relaunch, beforeExit, onCommit }: ApplyOptions): Promise<boolean> {
+async function checkWindowsApprovedVersion(releasesUrl: string, approvedVersion: string): Promise<void> {
+  const feed = await fetchText(`${releasesUrl}/RELEASES`, 64 * 1024);
+  let latest: string | undefined;
+  for (const line of feed.trim().split(/\r?\n/)) {
+    const entry = /^[a-f\d]{40}\s+(?:com\.mason-allen\.)?clubhouse-(\d+\.\d+\.\d+(?:-beta\.?\d+|rc)?)-(?:full|delta)\.nupkg\s+\d+$/i.exec(line.trim());
+    if (!entry) throw new Error('The update feed could not be verified. Request the update again.');
+    // electron-winstaller removes dots from NuGet prerelease labels.
+    const version = entry[1].replace(/-beta(\d+)$/i, '-beta.$1');
+    if (!latest || isNewerVersion(version, latest)) latest = version;
+  }
+  if (latest !== approvedVersion) throw new Error('A newer update became available; request again.');
+}
+
+export async function applyWindowsUpdate(context: ApplyContext, { relaunch, beforeExit, onCommit, requireApprovedVersion }: ApplyOptions): Promise<boolean> {
   const updateExe = getSquirrelUpdateExePath();
   if (!await pathExists(updateExe)) {
     throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
@@ -978,6 +1002,9 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch, befo
   const releasesUrl = getSquirrelReleasesUrl(squirrelFeedIsPreview ?? getSettings().previewChannel);
   const appExeName = path.basename(process.execPath);
   if (relaunch) {
+    if (requireApprovedVersion) await checkWindowsApprovedVersion(releasesUrl, context.version);
+    // Squirrel still reads the live HTTPS channel: a release published between
+    // this check and --update can win. Pinning a local feed is a follow-up.
     execFileSync(updateExe, ['--update', releasesUrl], {
       timeout: 300_000,
       encoding: 'utf-8',
@@ -1115,7 +1142,10 @@ export async function applyUpdate(updateStatus: UpdateStatus = status, options: 
   };
 
   try {
-    const applied = await applyPlatformUpdate(context, { relaunch: true, beforeExit: recordOnce, onCommit });
+    const applied = await applyPlatformUpdate(context, {
+      relaunch: true, beforeExit: recordOnce, onCommit,
+      ...(options.requireApplied && { requireApprovedVersion: true }),
+    });
     if (applied) {
       await recordOnce();
       return;
