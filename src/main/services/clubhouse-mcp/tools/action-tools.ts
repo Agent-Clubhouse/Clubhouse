@@ -388,7 +388,7 @@ function actionHistory(scope: ActionScope, args: Obj): unknown {
 
 const TRIGGER_SCHEMA = {
   type: 'object',
-  description: 'Schedule, once, or event. Timing: none, delaySeconds/delayMinutes (debounce and re-check), or coalesceSeconds (fixed window). Throttle composes. Any watches readable durable and quick agents with rights.',
+  description: 'Schedule, once, or event. Timing: none, delaySeconds/delayMinutes (debounce and re-check), or coalesceSeconds (fixed window). Throttle composes. Any watches readable durable and quick agents.',
   properties: {
     kind: { type: 'string', enum: ['schedule', 'once', 'event'] },
     preset: { type: 'string', enum: [...SCHEDULE_PRESETS], description: 'Schedules: daily, weekdays, weekly, hourly, or cron for Custom (cron).' },
