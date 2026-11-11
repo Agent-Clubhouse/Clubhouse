@@ -19,6 +19,8 @@ import { PENDING_RESTART_NOTE, useManagedRestart } from '../../managed/restart';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { useAgentDetailsStore } from './detailsStore';
+import { AutoSleepRow } from './AutoSleepRow';
+import type { useAutoSleep } from './useAutoSleep';
 
 export const SETUP_WAITING_NOTE = 'Applies when it restarts or next wakes.';
 
@@ -97,7 +99,7 @@ function SetupRows({ setup, templateName, templateChange, runsOn, context, chang
   );
 }
 
-export function SetupCard({ agent, projectPath, setup, runsOn, context = null }: {
+export function SetupCard({ agent, projectPath, setup, runsOn, context = null, autoSleep }: {
   agent: Agent;
   projectPath: string;
   setup: ManagedAgentSetup;
@@ -105,6 +107,7 @@ export function SetupCard({ agent, projectPath, setup, runsOn, context = null }:
   runsOn: string;
   /** What the session runs with and any choice waiting for the next start (#2790). Null hides the row. */
   context?: string | null;
+  autoSleep?: ReturnType<typeof useAutoSleep>;
 }) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
@@ -131,11 +134,12 @@ export function SetupCard({ agent, projectPath, setup, runsOn, context = null }:
   const templateChange = template?.updatedBy ? `Template ${changedLine(template.updatedAt, template.updatedBy).replace(/^C/, 'c')}` : null;
   const changes = status?.waiting && status.running ? status.changes : null;
   const waiting = changes !== null;
-  const summary = setupSummary(templateName, changes ? Math.max(1, changes.length) : 0);
+  const summary = [setupSummary(templateName, changes ? Math.max(1, changes.length) : 0), autoSleep?.summary].filter(Boolean).join(' · ');
 
   return (
     <DetailsCard id="settings" title="Setup" summary={summary} open={open} onToggle={() => setOpen(!open)}>
       <SetupRows setup={setup} templateName={templateName} templateChange={templateChange} runsOn={runsOn} context={context} changes={changes} />
+      {autoSleep?.showAutoSleep && <AutoSleepRow idle={autoSleep.idle} onChange={autoSleep.onChange} />}
       {setup.updatedBy && <CardNote><span data-testid="details-setup-changed">{changedLine(setup.updatedAt, setup.updatedBy)}</span></CardNote>}
       <span role="status" className="sr-only" data-testid="details-setup-live">{pending ? PENDING_RESTART_NOTE : waiting ? SETUP_WAITING_NOTE : ''}</span>
       {(waiting || pending) && <CardNote><span data-testid="details-setup-note">{pending ? PENDING_RESTART_NOTE : SETUP_WAITING_NOTE}</span></CardNote>}
@@ -149,7 +153,7 @@ export function SetupCard({ agent, projectPath, setup, runsOn, context = null }:
       {dismissError && <CardNote><span className="text-ctp-error" role="alert">{dismissError}</span></CardNote>}
       <div className="pr-3.5 pl-[33px] pt-1 flex items-center gap-1.5">
         <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'instructions')} data-testid="details-setup-open-builder">Open builder</Button>
-        {/* Model, effort and context are changed on the agent's Settings page; the card edits nothing. */}
+        {/* Model, effort and context are changed on the agent's Settings page. */}
         <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'settings')} data-testid="details-setup-open-settings">Model and context</Button>
         {waiting && (
           <Button kind="ghost" onClick={() => restart({ fresh: !!status?.cliChanged })} disabled={busy} data-testid="details-setup-restart">

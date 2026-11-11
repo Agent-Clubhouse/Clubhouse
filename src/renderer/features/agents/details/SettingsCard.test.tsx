@@ -9,6 +9,7 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { AgentDetails } from './AgentDetails';
 import { SettingsCard } from './SettingsCard';
+import { resetChatFlag } from '../chat/chat-flag';
 import {
   accessText, instructionsLabel, isRowLocked, LOCKED_HINT, modelLabel, recordAccess, settingsSummary,
 } from './SettingsCard';
@@ -107,6 +108,34 @@ describe('settings helpers', () => {
     expect(instructionsLabel(false, 'a\nb\n')).toBe('Custom, 2 lines');
     expect(instructionsLabel(false, 'a')).toBe('Custom, 1 line');
     expect(instructionsLabel(false, '  \n')).toBeNull();
+  });
+});
+
+describe('Managed Setup card auto-sleep (#3283)', () => {
+  afterEach(() => { vi.restoreAllMocks(); resetChatFlag(); });
+
+  it.each(['running', 'sleeping'] as const)('keeps auto-sleep editable in the managed %s agent Setup card', async (status) => {
+    const projectPath = 'managed-project';
+    resetChatFlag();
+    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ chat: true });
+    vi.spyOn(window.clubhouse.chat, 'getAgentRuntime').mockResolvedValue({ chat: true, live: false, chatAvailable: true });
+    saved = { idleSleep: 30, runtimeMode: 'chat' };
+    vi.spyOn(window.clubhouse.managed, 'getSetup').mockResolvedValue({ ok: true, value: { version: 1, blocks: [], skills: [], mcps: [] } });
+    vi.spyOn(window.clubhouse.managed, 'listTemplates').mockResolvedValue({ ok: true, value: [] });
+    vi.spyOn(window.clubhouse.managed, 'listParts').mockResolvedValue({ ok: true, value: [] });
+    vi.spyOn(window.clubhouse.managed, 'status').mockResolvedValue({
+      ok: true, value: { managed: true, running: status === 'running', waiting: false, changes: [], cliChanged: false },
+    });
+    render(<SettingsCard agent={{ ...agent, status }} chat={status === 'running' ? chatState() : undefined} projectPath={projectPath} provider="Claude Code" />);
+    await screen.findByRole('region', { name: 'Setup' });
+    await waitFor(() => expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Sleeps after 30 min'));
+    const card = openSettings();
+    const select = card.getByTestId('details-auto-sleep');
+    expect(select).not.toBeDisabled();
+    expect(within(select).getByRole('option', { name: /App default/ })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'never' } });
+    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(projectPath, 'a1', { idleSleep: 'never' }));
+    await waitFor(() => expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Never sleeps'));
   });
 });
 

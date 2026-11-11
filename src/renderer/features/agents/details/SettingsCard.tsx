@@ -32,12 +32,10 @@ import { AccessSelect } from '../AccessSelect';
 import {
   accessLabel as levelLabel, isLegacyFreeAgent, startableAccess, type AccessLevel, type AccessRuntime,
 } from '../../../../shared/agent-access';
-import { useChatFlag } from '../chat/chat-flag';
-import { normalizeIdleSleep } from '../../../../shared/idle-sleep';
-import { AutoSleepRow, autoSleepSummary, SELECT_CLASS, useAppIdleMinutes } from './AutoSleepRow';
+import { AutoSleepRow, SELECT_CLASS } from './AutoSleepRow';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { useAgentDetailsStore } from './detailsStore';
-import { useDurableConfig } from './useDurableConfig';
+import { useAutoSleep } from './useAutoSleep';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../../dispatcher/dispatcherNav';
 import { useManagedParts, useManagedSetup, useManagedStatus, useManagedTemplates } from '../../managed/managedApi';
@@ -174,11 +172,6 @@ interface SettingRow {
   render?: () => ReactNode;
 }
 
-/** The saved runtime override as shown; null when unset. */
-function runtimeName(mode: string | undefined): 'Chat' | 'CLI' | null {
-  return mode === 'chat' ? 'Chat' : mode === 'terminal' ? 'CLI' : null;
-}
-
 /** "Applied on the next wake": spawn settings of a sleeping agent take effect when it wakes. */
 export const NEXT_WAKE_NOTE = 'Applied on the next wake';
 
@@ -218,8 +211,9 @@ export function SettingsCard(props: SettingsCardProps) {
   const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
   const { value: setup } = useManagedSetup(local ? projectPath : undefined, local ? agent.id : undefined);
   // The saved model and context, for what the next start uses (#2790).
-  const { config } = useDurableConfig(local && setup ? projectPath : undefined, agent.id);
-  if (!local || !setup || !projectPath) return <AgentSettingsCard {...props} />;
+  const autoSleep = useAutoSleep(agent, chat, projectPath);
+  const { config } = autoSleep;
+  if (!local || !setup || !projectPath) return <AgentSettingsCard {...props} autoSleep={autoSleep} />;
   const awake = agent.status !== 'sleeping' && agent.status !== 'error';
   const session = chat && awake ? chat : undefined;
   const modelNow = modelLabel(session ? session.model : agent.model, session);
@@ -228,18 +222,17 @@ export function SettingsCard(props: SettingsCardProps) {
   const runsOn = `${provider} · ${model}`;
   const saved = pendingContextChoice(config?.contextWindow, session?.contextLimits);
   const context = nowAndNextStart(session ? contextSummary(session.contextLimits, session.usage.context?.size) : null, saved);
-  return <SetupCard agent={agent} projectPath={projectPath} setup={setup} runsOn={runsOn} context={context} />;
+  return <SetupCard agent={agent} projectPath={projectPath} setup={setup} runsOn={runsOn} context={context} autoSleep={autoSleep} />;
 }
 
-function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardProps) {
+function AgentSettingsCard({ agent, chat, projectPath, provider, autoSleep }: SettingsCardProps & { autoSleep: ReturnType<typeof useAutoSleep> }) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const hintId = useId();
   const remote = isRemoteProjectId(agent.projectId);
   // Only local durable agents have a config here; one on another machine keeps it there.
   const local = agent.kind === 'durable' && !remote && !!projectPath;
-  const { config, loaded, update } = useDurableConfig(local ? projectPath : undefined, agent.id);
-  const appMinutes = useAppIdleMinutes();
+  const { config, loaded, update, runsIn, showAutoSleep, idle, chatFlag, nextRuntime } = autoSleep;
   const orchestrator = useEffectiveOrchestrator(agent);
   const permissionsSupported = useOrchestratorStore((s) => s.allOrchestrators.find((o) => o.id === orchestrator)?.capabilities.permissions ?? true);
   // An unmanaged agent that still names a persona is offered the switch (#2901).
@@ -268,19 +261,6 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   // Saved values once the config has loaded (main drops unset ones); the agent's own until then.
   const saved = loaded && config ? config : null;
   // Asleep: the runtime the next wake starts in, as main decides it (the override, else the provider setting).
-  const chatFlag = useChatFlag();
-  const next = useRead(
-    asleep && local && chatFlag === true ? `${agent.id}\n${orchestrator}\n${saved?.runtimeMode ?? ''}` : null,
-    () => window.clubhouse.chat.getAgentRuntime(agent.id, orchestrator, { projectPath, starting: true }),
-    `${agent.id}\n${orchestrator}\n`,
-  );
-  const nextRuntime = next.state === 'done' ? next.value : null;
-  let runsIn: 'Chat' | 'CLI' | null;
-  if (!asleep) runsIn = chat ? 'Chat' : 'CLI';
-  else if (!local) runsIn = null;
-  else if (chatFlag === false) runsIn = 'CLI';
-  else if (nextRuntime) runsIn = nextRuntime.chat ? 'Chat' : 'CLI';
-  else runsIn = runtimeName(saved?.runtimeMode);
   const modelId = chat && !asleep ? chat.model : (saved ? saved.model : agent.model);
   const model = modelLabel(modelId, asleep ? undefined : chat);
   // A model changed in the chat session isn't saved: the next start uses the saved one (#2790).
@@ -294,15 +274,12 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const access = accessText(startLevel, liveLevel, permissionsSupported);
   // Asleep, the picker offers the levels of the runtime the next wake starts in, when known.
   const accessRuntime: AccessRuntime | undefined = runsIn === 'Chat' ? 'chat' : runsIn === 'CLI' ? 'terminal' : undefined;
-  // Only chat agents idle-sleep: a running chat, or a sleeping agent that wakes into chat.
-  const showAutoSleep = local && (asleep ? runsIn === 'Chat' : !!chat);
-  const idle = loaded ? normalizeIdleSleep(config?.idleSleep) : null;
   const summary = settingsSummary({
     runsIn,
     model,
     // The one line keeps the level it runs at now; the row says what it starts at.
     access: liveLevel ? levelLabel(liveLevel) : access,
-    autoSleep: showAutoSleep && idle !== null ? autoSleepSummary(idle, appMinutes) : null,
+    autoSleep: autoSleep.summary,
   });
   const effort = !asleep && chat?.effortReported && chat.effort ? chat.effort[0].toUpperCase() + chat.effort.slice(1) + (chat.effortIsDefault ? ' (default)' : '') : null;
 
@@ -442,7 +419,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
     },
     ...(showAutoSleep ? [{
       id: 'auto-sleep', label: 'Auto-sleep', editable: 'always' as const,
-      render: () => <AutoSleepRow key="auto-sleep" idle={idle} onChange={(next) => update({ idleSleep: next === 'inherit' ? null : next })} />,
+      render: () => <AutoSleepRow key="auto-sleep" idle={idle} onChange={autoSleep.onChange} />,
     }] : []),
     ...(local ? [
       { id: 'mcp', label: 'MCP servers', editable: 'never' as const, value: readText(mcp, (names) => (names.length === 0 ? 'None' : `${names.length} configured`)) },
