@@ -125,6 +125,13 @@ vi.mock('../services/pty-manager', () => ({
   killAll: vi.fn(async () => {}),
   getBuffer: vi.fn(() => ''),
   getLastActivity: vi.fn(() => null),
+  isRunning: vi.fn(() => false),
+}));
+
+vi.mock('../services/headless-manager', () => ({
+  isHeadless: vi.fn(() => false),
+  kill: vi.fn(),
+  stopAll: vi.fn(async () => {}),
 }));
 
 vi.mock('../services/restart-session-service', () => ({
@@ -179,6 +186,7 @@ import { getAgentRuntime } from '../services/agent-runtime';
 import type { AgentRuntime } from '../../shared/chat';
 import { UPDATE_AGENT_ACTION_TIMEOUT_MS, type LiveAgentInfo } from '../../shared/types';
 import * as ptyManagerMock from '../services/pty-manager';
+import * as headlessManagerMock from '../services/headless-manager';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
@@ -327,6 +335,43 @@ describe('app-handlers', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(stop).toHaveBeenCalledWith({ graceful: false, throwOnFailure: true });
       finishStop();
+      expect(await request).toMatchObject({ status: 'resolved' });
+    });
+
+    it('releases the exclusion when the stop fails instead of excluding a still-working agent', async () => {
+      const undoStop = vi.fn();
+      vi.mocked(markAgentStoppedForUpdate).mockReturnValueOnce(undoStop);
+      stop.mockRejectedValueOnce(new Error('close failed'));
+      await handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', 'kill');
+      expect(undoStop).toHaveBeenCalledOnce();
+    });
+
+    it('waits for a managed PTY exit rather than treating signal dispatch as completion', async () => {
+      const isRunning = vi.fn(() => true);
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'pty', interrupt, stop, isRunning } as AgentRuntime);
+      vi.mocked(getLiveAgentsForUpdate).mockReturnValue([{ ...liveAgent, runtime: 'pty', isWorking: false }]);
+      const request = handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', 'kill');
+      const done = vi.fn();
+      void request.then(done);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(done).not.toHaveBeenCalled();
+      isRunning.mockReturnValue(false);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(await request).toMatchObject({ status: 'resolved' });
+    });
+
+    it('waits for headless exit after sending the stop signal', async () => {
+      vi.mocked(getAgentRuntime).mockReturnValue(undefined);
+      vi.mocked(headlessManagerMock.isHeadless).mockReturnValue(true);
+      vi.mocked(getLiveAgentsForUpdate).mockReturnValue([{ ...liveAgent, runtime: 'headless' }]);
+      const request = handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', 'kill');
+      const done = vi.fn();
+      void request.then(done);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(done).not.toHaveBeenCalled();
+      vi.mocked(headlessManagerMock.isHeadless).mockReturnValue(false);
+      vi.mocked(getLiveAgentsForUpdate).mockReturnValue([]);
+      await vi.advanceTimersByTimeAsync(250);
       expect(await request).toMatchObject({ status: 'resolved' });
     });
 

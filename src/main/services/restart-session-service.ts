@@ -3,7 +3,7 @@ import { isAccessLevel } from '../../shared/agent-access';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { appLog } from './log-service';
-import { agentRegistry } from './agent-registry';
+import { agentRegistry, type AgentRegistration } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import * as headlessManager from './headless-manager';
 import { getAgentRuntime } from './agent-runtime';
@@ -18,10 +18,15 @@ import { isDispatcherCoordinatorPath } from './dispatcher/dispatcher-paths';
 const SCHEMA_VERSION = 1;
 const STALENESS_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const STATE_FILENAME = 'restart-session-state.json';
-const stoppedForUpdate = new Set<string>();
+// Wake reuses the agent ID, but creates a new registration.
+const stoppedForUpdate = new WeakSet<AgentRegistration>();
 
-export function markAgentStoppedForUpdate(agentId: string): void {
-  stoppedForUpdate.add(agentId);
+export function markAgentStoppedForUpdate(agentId: string): () => void {
+  const registration = agentRegistry.get(agentId);
+  if (registration) stoppedForUpdate.add(registration);
+  return () => {
+    if (registration) stoppedForUpdate.delete(registration);
+  };
 }
 
 function getStatePath(): string {
@@ -36,7 +41,7 @@ export async function captureSessionState(
   const sessions: RestartSessionEntry[] = [];
 
   for (const [agentId, reg] of all) {
-    if (stoppedForUpdate.has(agentId)) continue;
+    if (stoppedForUpdate.has(reg)) continue;
     if (reg.runtime !== 'pty' && reg.runtime !== 'chat') continue;
     const provider = getProvider(reg.orchestrator);
     if (!provider) continue;
@@ -99,7 +104,7 @@ export async function captureSessionState(
     const permissionMode = meta?.permissionMode ?? freeAgentSettings.getPermissionMode(reg.projectPath);
 
     // A stop can arrive while session discovery is awaiting disk I/O.
-    if (stoppedForUpdate.has(agentId)) continue;
+    if (stoppedForUpdate.has(reg)) continue;
     sessions.push({
       agentId,
       agentName,
@@ -121,18 +126,19 @@ export async function captureSessionState(
     });
   }
 
+  const statePath = getStatePath();
+  await fsp.mkdir(path.dirname(statePath), { recursive: true });
   const state: RestartSessionState = {
     version: SCHEMA_VERSION,
     capturedAt: new Date().toISOString(),
     appVersion: app.getVersion(),
-    sessions,
+    // A previous row can be stopped while a later row awaits discovery.
+    sessions: sessions.filter((session) => !stoppedForUpdate.has(all.get(session.agentId)!)),
   };
 
-  const statePath = getStatePath();
-  await fsp.mkdir(path.dirname(statePath), { recursive: true });
   await fsp.writeFile(statePath, JSON.stringify(state, null, 2), 'utf-8');
-  appLog('update:session-resume', 'info', `Captured ${sessions.length} sessions for resume`, {
-    meta: { sessionCount: sessions.length, agentIds: sessions.map((s) => s.agentId) },
+  appLog('update:session-resume', 'info', `Captured ${state.sessions.length} sessions for resume`, {
+    meta: { sessionCount: state.sessions.length, agentIds: state.sessions.map((s) => s.agentId) },
   });
 }
 

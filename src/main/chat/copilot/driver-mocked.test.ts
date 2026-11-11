@@ -82,6 +82,28 @@ describe('Copilot SDK callback wiring with fake transport', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'turn_ended', data: { stopReason: 'error' } }));
   });
 
+  it('does not log SDK error content while closing for an update', async () => {
+    let exited!: () => void;
+    fake.launch.mockResolvedValue({
+      uri: 'fake', connectionToken: 'fake', exited: new Promise<void>((resolve) => { exited = resolve; }),
+      kill: async () => { exited(); }, stderrTail: () => '', exitCode: () => null,
+    });
+    fake.create.mockResolvedValue({
+      ...sdkSession(),
+      disconnect: async () => { throw new Error('private prompt /private/chat/path'); },
+    });
+    const log = vi.fn();
+    const session = await new CopilotSdkChatDriver({ log }).start({
+      agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit',
+    });
+
+    await session.close();
+
+    expect(log).toHaveBeenCalledWith('warn', 'Copilot did not close cleanly');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private prompt');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('/private/chat/path');
+  });
+
   it.each([undefined, 'prior-session'])('registers callbacks once for create or resume (%s)', async (resumeNativeSessionId) => {
     const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit', resumeNativeSessionId });
     expect(fake.configs).toHaveLength(1);

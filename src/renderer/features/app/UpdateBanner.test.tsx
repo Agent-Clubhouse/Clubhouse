@@ -476,6 +476,53 @@ describe('UpdateBanner card variant (new chrome)', () => {
       await act(async () => { fireEvent.click(screen.getByTestId('update-restart-btn')); });
     }
 
+    it('checks a woken agent again after cancelling an earlier successful stop', async () => {
+      vi.mocked(window.clubhouse.app.resolveWorkingAgent).mockResolvedValue({ status: 'resolved', isWorking: false });
+      await openGate();
+      vi.mocked(window.clubhouse.app.getLiveAgentsForUpdate).mockResolvedValue([]);
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop now' })); });
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      vi.mocked(window.clubhouse.app.getLiveAgentsForUpdate).mockResolvedValue([liveAgent]);
+      await act(async () => { fireEvent.click(screen.getByTestId('update-restart-btn')); });
+      expect(screen.getByText('Update agent')).toBeInTheDocument();
+      expect(screen.getByTestId('update-gate-restart-btn')).toBeDisabled();
+    });
+
+    it('ignores a stale idle poll that finishes after a newer working poll', async () => {
+      await openGate();
+      let finishOld!: (agents: LiveAgentInfo[]) => void;
+      vi.mocked(window.clubhouse.app.getLiveAgentsForUpdate).mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+      await act(async () => { finishOld([{ ...liveAgent, isWorking: false }]); });
+      expect(screen.getByTestId('update-gate-restart-btn')).toBeDisabled();
+    });
+
+    it('does not let a late stop response from a cancelled gate hide a newly working agent', async () => {
+      let finishStop!: (result: UpdateAgentActionResult) => void;
+      vi.mocked(window.clubhouse.app.resolveWorkingAgent).mockImplementation(() => new Promise((resolve) => { finishStop = resolve; }));
+      await openGate();
+      fireEvent.click(screen.getByRole('button', { name: 'Stop now' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await act(async () => { fireEvent.click(screen.getByTestId('update-restart-btn')); });
+      await act(async () => { finishStop({ status: 'resolved', isWorking: false }); });
+      expect(screen.getByText('Update agent')).toBeInTheDocument();
+      expect(screen.getByTestId('update-gate-restart-btn')).toBeDisabled();
+    });
+
+    it('shows the main-process deadline result without the renderer deadline overwriting it', async () => {
+      vi.mocked(window.clubhouse.app.resolveWorkingAgent).mockImplementation(() => new Promise((resolve) => {
+        setTimeout(() => resolve({
+          status: 'timeout', isWorking: true, message: 'The agent did not become idle in time.',
+        }), UPDATE_AGENT_ACTION_TIMEOUT_MS);
+      }));
+      await openGate();
+      fireEvent.click(screen.getByRole('button', { name: 'Interrupt' }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(UPDATE_AGENT_ACTION_TIMEOUT_MS + 2000); });
+      expect(screen.getByRole('alert')).toHaveTextContent('The agent did not become idle in time.');
+      expect(screen.getByRole('alert')).not.toHaveTextContent('Interrupt did not respond');
+      expect(screen.getByRole('button', { name: 'Stop now' })).toBeEnabled();
+    });
+
     it('keeps a stopping row until main confirms, including when polling no longer sees the runtime', async () => {
       let finish!: (result: UpdateAgentActionResult) => void;
       vi.mocked(window.clubhouse.app.resolveWorkingAgent).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));

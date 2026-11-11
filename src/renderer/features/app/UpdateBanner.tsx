@@ -41,6 +41,8 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
   const pendingActions = useRef(new Set<string>());
   const stoppingAgents = useRef(new Set<string>());
   const stoppedAgents = useRef(new Set<string>());
+  const gateAttempt = useRef(0);
+  const refreshSequence = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const isReady = status.state === 'ready';
@@ -54,8 +56,11 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
   const hasRunningAgents = runningAgents.length > 0;
 
   const refreshGateAgents = useCallback(async () => {
+    const attempt = gateAttempt.current;
+    const sequence = ++refreshSequence.current;
     try {
       const live = await window.clubhouse.app.getLiveAgentsForUpdate();
+      if (attempt !== gateAttempt.current || sequence !== refreshSequence.current) return;
       setGateAgents((previous) => {
         // resumeStrategy comes from the main process, which derives it from the
         // provider's session capability — the same source the capture path uses.
@@ -72,12 +77,31 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
       )));
       setGateError(undefined);
     } catch {
+      if (attempt !== gateAttempt.current || sequence !== refreshSequence.current) return;
       // telemetry-exempt: The gate displays the lookup failure with a retry action.
       setGateError('Could not check active agents.');
     } finally {
-      setGateLoading(false);
+      if (attempt === gateAttempt.current && sequence === refreshSequence.current) setGateLoading(false);
     }
   }, [agents]);
+
+  const openGate = () => {
+    gateAttempt.current++;
+    pendingActions.current = new Set();
+    stoppingAgents.current = new Set();
+    stoppedAgents.current = new Set();
+    setGateAgents([]);
+    setActionStates({});
+    setGateError(undefined);
+    setGateLoading(true);
+    setShowGate(true);
+  };
+
+  const cancelGate = () => {
+    gateAttempt.current++;
+    setShowGate(false);
+    setSimulateMode(false);
+  };
 
   useEffect(() => {
     if (showGate) {
@@ -95,7 +119,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
       const running = Object.values(useAgentStore.getState().agents).filter((a) => a.status === 'running');
       if (running.length > 0) {
         setSimulateMode(true);
-        setShowGate(true);
+        openGate();
       } else {
         // No agents — go straight to capture + relaunch
         window.clubhouse.app.devSimulateUpdateRestart({ agentNames: {} });
@@ -105,7 +129,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
 
   const handleRestart = () => {
     if (hasRunningAgents) {
-      setShowGate(true);
+      openGate();
       return;
     }
     // No agents — go straight to restart with session capture
@@ -138,6 +162,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
 
   const handleGateResolve = async (agentId: string, action: UpdateAgentAction) => {
     if (pendingActions.current.has(agentId)) return;
+    const attempt = gateAttempt.current;
     pendingActions.current.add(agentId);
     if (action === 'kill') stoppingAgents.current.add(agentId);
     setActionStates((prev) => ({ ...prev, [agentId]: { action, status: 'pending' } }));
@@ -152,6 +177,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
         }), UPDATE_AGENT_ACTION_TIMEOUT_MS + 2000);
       });
       const result = await Promise.race([window.clubhouse.app.resolveWorkingAgent(agentId, action), deadline]);
+      if (attempt !== gateAttempt.current) return;
       if (result.status === 'resolved') {
         if (action === 'kill') {
           stoppedAgents.current.add(agentId);
@@ -167,13 +193,14 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
         setActionStates((prev) => ({ ...prev, [agentId]: { action, status: result.status, message: result.message } }));
       }
     } catch {
+      if (attempt !== gateAttempt.current) return;
       // telemetry-exempt: The row displays the request failure with retry and stop actions.
       setActionStates((prev) => ({
         ...prev, [agentId]: { action, status: 'error', message: 'The request failed. Try again or choose Stop now.' },
       }));
     } finally {
       clearTimeout(timer);
-      pendingActions.current.delete(agentId);
+      if (attempt === gateAttempt.current) pendingActions.current.delete(agentId);
     }
     void refreshGateAgents();
   };
@@ -187,7 +214,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
         loading={gateLoading}
         error={gateError}
         onRetry={refreshGateAgents}
-        onCancel={() => { setShowGate(false); setSimulateMode(false); }}
+        onCancel={cancelGate}
         onConfirm={handleGateConfirm}
         onResolveAgent={handleGateResolve}
       />
@@ -201,7 +228,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
       loading={gateLoading}
       error={gateError}
       onRetry={refreshGateAgents}
-      onCancel={() => setShowGate(false)}
+      onCancel={cancelGate}
       onConfirm={handleGateConfirm}
       onResolveAgent={handleGateResolve}
     />

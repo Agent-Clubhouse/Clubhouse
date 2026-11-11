@@ -84,6 +84,42 @@ describe('restart-session-service', () => {
   });
 
   describe('captureSessionState', () => {
+    beforeEach(() => {
+      vi.mocked(getProvider).mockReturnValue({
+        capabilities: { sessionResume: true },
+        extractSessionId: () => 'existing-session',
+      } as never);
+    });
+
+    it('captures a newly woken agent after an earlier update stop was cancelled', async () => {
+      const agentId = 'woken-after-update-stop';
+      const registration = { projectPath: path.resolve('test-project'), orchestrator: 'claude-code' as const, runtime: 'chat' as const };
+      agentRegistry.register(agentId, registration);
+      markAgentStoppedForUpdate(agentId);
+      agentRegistry.register(agentId, { ...registration });
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', getNativeSessionId: () => 'new-session' } as AgentRuntime);
+
+      await captureSessionState(new Map());
+
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions).toEqual([
+        expect.objectContaining({ agentId, sessionId: 'new-session' }),
+      ]);
+    });
+
+    it('captures an agent whose update stop failed', async () => {
+      const agentId = 'failed-update-stop';
+      agentRegistry.register(agentId, { projectPath: path.resolve('test-project'), orchestrator: 'claude-code', runtime: 'chat' });
+      const undoStop = markAgentStoppedForUpdate(agentId);
+      undoStop();
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', getNativeSessionId: () => 'live-session' } as AgentRuntime);
+
+      await captureSessionState(new Map());
+
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions).toEqual([
+        expect.objectContaining({ agentId, sessionId: 'live-session' }),
+      ]);
+    });
+
     it.each(['pty', 'chat'] as const)('excludes a stopped %s agent even while it remains registered', async (runtime) => {
       const agentId = `stopped-update-${runtime}`;
       const projectPath = path.resolve('test-project');
@@ -109,6 +145,24 @@ describe('restart-session-service', () => {
       await captureSessionState(new Map());
 
       expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions).toEqual([]);
+      expect(getDurableConfig).toHaveBeenCalledOnce();
+    });
+
+    it('excludes an already-discovered agent stopped while a later agent is being discovered', async () => {
+      for (const agentId of ['first', 'second']) {
+        agentRegistry.register(agentId, { projectPath: path.resolve('test-project'), orchestrator: 'claude-code', runtime: 'chat' });
+      }
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', getNativeSessionId: () => 'session' } as AgentRuntime);
+      vi.mocked(getDurableConfig).mockImplementation(async (_projectPath, agentId) => {
+        if (agentId === 'second') markAgentStoppedForUpdate('first');
+        return null;
+      });
+
+      await captureSessionState(new Map());
+
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions).toEqual([
+        expect.objectContaining({ agentId: 'second' }),
+      ]);
     });
 
     it.each(['pty', 'chat'] as const)('recovers durable identity for a live %s agent missing from the renderer', async (runtime) => {

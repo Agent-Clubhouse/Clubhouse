@@ -107,7 +107,7 @@ function resolveAgentForUpdate(agentId: string, action: UpdateAgentAction): Prom
     meta: { ...meta, durationMs: 0, result: 'started', workingAfter: meta.workingBefore },
   });
   // Record intent before stop can hide the runtime or await driver shutdown.
-  if (action === 'kill') markAgentStoppedForUpdate(agentId);
+  const undoStop = action === 'kill' ? markAgentStoppedForUpdate(agentId) : undefined;
 
   return new Promise((resolve) => {
     let completed = false;
@@ -131,11 +131,13 @@ function resolveAgentForUpdate(agentId: string, action: UpdateAgentAction): Prom
             : 'Could not interrupt the agent. Try again or choose Stop now.'
           : status === 'timeout'
             ? 'Stopping took too long. Try Stop now again. This agent will not resume after restart.'
-            : 'Could not stop the agent. Try Stop now again. This agent will not resume after restart.',
+            : 'Could not stop the agent. Try Stop now again.',
       });
     };
     const check = () => {
-      if (!settled && completed && (action === 'kill' || !working())) finish('resolved');
+      const stopped = runtime?.kind === 'pty' ? !runtime.isRunning()
+        : !runtime ? !headlessManager.isHeadless(agentId) && !ptyManager.isRunning(agentId) : true;
+      if (!settled && completed && (action === 'kill' ? stopped : !working())) finish('resolved');
     };
     const deadline = setTimeout(() => finish('timeout'), UPDATE_AGENT_ACTION_TIMEOUT_MS);
     const poll = setInterval(check, 250);
@@ -151,7 +153,10 @@ function resolveAgentForUpdate(agentId: string, action: UpdateAgentAction): Prom
         if (runtime) await runtime.stop({ graceful: false, throwOnFailure: true });
         else ptyManager.kill(agentId);
       }
-    }).then(() => { completed = true; check(); }, () => finish('error'));
+    }).then(() => { completed = true; check(); }, () => {
+      undoStop?.();
+      finish('error');
+    });
   });
 }
 

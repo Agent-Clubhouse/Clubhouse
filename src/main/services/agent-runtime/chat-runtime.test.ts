@@ -30,6 +30,7 @@ import { _forgetSentPermissionsForTest, isIncompletePermission } from '../annex-
 import * as permissionQueue from '../annex-permission-queue';
 import { agentRegistry } from '../agent-registry';
 import { accessLevelOf } from '../../../shared/orchestration-policy';
+import { appLog } from '../log-service';
 
 /** Let queued microtasks and the runtime's emit chain settle. */
 async function flush(times = 10): Promise<void> {
@@ -144,6 +145,39 @@ describe('ChatAgentRuntime rich media', () => {
 });
 
 describe('ChatAgentRuntime', () => {
+  it('joins a pending strict stop instead of ending a still-closing session on retry', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded } = makeRuntime(driver);
+    await runtime.start();
+    const session = driver.last;
+    let finishClose!: () => void;
+    const close = vi.spyOn(session, 'close').mockImplementation(() => new Promise((resolve) => { finishClose = resolve; }));
+    const first = runtime.stop({ throwOnFailure: true });
+    const second = runtime.stop({ throwOnFailure: true });
+    const completed = vi.fn();
+    void second.then(completed);
+    await flush();
+    expect(close).toHaveBeenCalledOnce();
+    expect(runtime.isRunning()).toBe(true);
+    expect(completed).not.toHaveBeenCalled();
+    expect(onEnded).not.toHaveBeenCalled();
+    finishClose();
+    await Promise.all([first, second]);
+    expect(onEnded).toHaveBeenCalledOnce();
+    expect(runtime.isRunning()).toBe(false);
+  });
+
+  it('does not log driver close error content', async () => {
+    vi.mocked(appLog).mockClear();
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    vi.spyOn(driver.last, 'close').mockRejectedValue(new Error('private prompt /private/chat/path'));
+    await expect(runtime.stop({ throwOnFailure: true })).rejects.toThrow('private prompt');
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('private prompt');
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('/private/chat/path');
+  });
+
   it('reports driver close failure to callers that must not delete the worktree', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

@@ -206,6 +206,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   private sleptAfterMs: number | undefined;
   private ended = false;
   private stopRequested = false;
+  private stopInFlight: Promise<void> | undefined;
   /** clearContext() is replacing the driver session: no session is open, but chat still runs the agent. */
   private swapping = false;
   /** Aborts the driver start in progress, if any. */
@@ -503,7 +504,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   // ── AgentRuntime ───────────────────────────────────────────────────────
 
   isRunning(): boolean {
-    return !!this.session && !this.ended;
+    return (!!this.session || !!this.stopInFlight) && !this.ended;
   }
 
   isSwappingSession(): boolean {
@@ -743,6 +744,19 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   async stop(opts: { throwOnFailure?: boolean } = {}): Promise<void> {
+    const operation = this.stopInFlight ??= this.stopSession();
+    try {
+      await operation;
+    } catch (err) {
+      if (opts.throwOnFailure) throw err;
+      this.session = undefined;
+      await this.end('stopped', 0);
+    } finally {
+      if (this.stopInFlight === operation) this.stopInFlight = undefined;
+    }
+  }
+
+  private async stopSession(): Promise<void> {
     const session = this.session;
     appLog('core:chat', 'info', 'Stopping chat session', {
       meta: { agentId: this.agentId, driver: this.opts.driverId, nativeSessionId: this.nativeSessionId ?? null, sessionOpen: !!session },
@@ -757,14 +771,11 @@ export class ChatAgentRuntime implements AgentRuntime {
         await session.close();
       } catch (err) {
         appLog('core:chat', 'warn', 'Driver close failed', {
-          meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) },
+          meta: { agentId: this.agentId, driver: this.opts.driverId, result: 'close_failed' },
         });
-        if (opts.throwOnFailure) {
-          // Keep a still-live session reachable for a retry. Reporting it as
-          // asleep would let a later delete skip shutdown after this failure.
-          if (!this.ended) this.session = session;
-          throw err;
-        }
+        // Keep a still-live session reachable for a retry.
+        if (!this.ended) this.session = session;
+        throw err;
       }
     }
     await this.end('stopped', 0);
