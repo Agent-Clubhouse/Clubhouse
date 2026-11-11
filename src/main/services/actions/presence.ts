@@ -24,6 +24,7 @@ export class ActionPresence {
   private suspended = false;
   private blockedSince: number | null = null;
   private awaySince: number | null = null;
+  private recordedUseAt: number | null = null;
   private qualified = new Set<string>();
 
   constructor(private readonly deps: {
@@ -103,7 +104,10 @@ export class ActionPresence {
       const ids = this.watches.filter((w) => this.qualified.has(w.id)).map((w) => w.id);
       this.awaySince = null;
       this.qualified.clear();
-      this.deps.used(now);
+      if (this.recordedUseAt === null || now - this.recordedUseAt >= 60_000 || ids.length) {
+        this.recordedUseAt = now;
+        this.deps.used(now);
+      }
       if (ids.length) this.deps.returned(ids);
     }
     if (this.unlisten) this.arm(60_000);

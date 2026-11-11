@@ -55,6 +55,20 @@ describe('Action presence', () => {
     expect(h.powerMonitor.listenerCount('signal')).toBe(0);
   });
 
+  it('coalesces repeated focus signals into at most one last-use write per minute', async () => {
+    const h = setup();
+    h.tracker.configure([{ id: 'a', absenceMinutes: 5 }]);
+    expect(h.used).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 10; i++) {
+      await vi.advanceTimersByTimeAsync(100);
+      h.signal('blur');
+      h.signal('focus', true);
+    }
+    expect(h.used).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(h.used).toHaveBeenCalledTimes(2);
+  });
+
   it('requires no app focus and idle evidence, and applies each configured threshold', async () => {
     const h = setup();
     h.tracker.configure([{ id: 'short', absenceMinutes: 5 }, { id: 'default' }]);
