@@ -35,8 +35,10 @@ vi.mock('../../agent-config', () => ({
   listDurable: async () => [...state.agents.values()],
   peekDurableConfigs: async () => [...state.agents.values()].filter((a) => !state.hiddenFromPeek.has(a.id)),
   getDurableConfig: async (_p: string, id: string) => state.agents.get(id) ?? null,
-  createDurable: async (_p: string, name: string, color: string, model?: string, _worktree?: boolean, orchestrator?: string) => {
-    const a: DurableAgentConfig = { id: `new-${name}`, name, color, createdAt: '', worktreePath: `/w/${name}`, ...(model && { model }), ...(orchestrator && { orchestrator: orchestrator as never }) };
+  createDurable: async (_p: string, name: string, color: string, model?: string, _worktree?: boolean, orchestrator?: string,
+    _access?: unknown, _mcpIds?: unknown, _mcpConfigs?: unknown, _worktreeOptions?: unknown, options?: { connectToDispatcher?: false }) => {
+    const a: DurableAgentConfig = { id: `new-${name}`, name, color, createdAt: '', worktreePath: `/w/${name}`, ...(model && { model }), ...(orchestrator && { orchestrator: orchestrator as never }),
+      ...(options?.connectToDispatcher === false && { orchestration: { connectToDispatcher: false } }) };
     state.agents.set(a.id, a);
     return a;
   },
@@ -89,12 +91,13 @@ import { managedAgents, restartManagedAgent } from '../../managed-agents';
 import { _resetSettingsAuditForTesting } from '../../settings-audit';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON } from '../../../../shared/managed-agents-types';
 import { BUILTIN_BLOCK_IDS } from '../../managed-agents/builtins';
-import { getAgentGrantChanges } from '../../agent-grants-store';
+import { getAgentGrantChanges, updateAgentGrantChanges } from '../../agent-grants-store';
 import { deleteAgent } from '../../agent-delete';
 import { agentRegistry } from '../../agent-registry';
 import { listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
 import { describeDeleteCall } from './managed-tools';
 import { _resetDispatcherBootstrapForTesting } from '../dispatcher-bootstrap';
+import { getOrchestrationPolicy, setOrchestrationPolicy } from '../../orchestration-policy';
 
 const call = async (name: string, args: Record<string, unknown>, caller = 'dispatcher') => {
   const r = await callTool(caller, name, args);
@@ -320,6 +323,44 @@ describe('delete_agent_part', () => {
 });
 
 describe('templates', () => {
+  it.each(['off', 'declined', 'user-disabled'] as const)('a confirmed template push cannot reconnect a %s agent by omitting the connection field', async (mode) => {
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/proj', orchestrator: 'claude-code', runtime: 'chat' });
+    agentRegistry.setLaunchCap('dispatcher', { freeAgentMode: true, access: 'full_access' });
+    try {
+      const template = await managedAgents().getTemplate('builtin-template-orchestrator');
+      const createArgs = { project: 'Clubhouse', name: `unconnected-${mode}`, templateId: template.id };
+      if (mode === 'off') {
+        await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'connection.bootstrap', target: { kind: 'created_by_me' }, mode: 'off' }] }));
+        expect((await call('create_managed_agent', { ...createArgs, connectToDispatcher: true })).isError).toBe(true);
+      } else if (mode === 'declined') {
+        expect((await call('create_managed_agent', { ...createArgs, connectToDispatcher: true })).json.status).toBe('needs_approval');
+        expect(takeGrantRequest(listGrantRequests('dispatcher')[0].requestId, false)).toBeTruthy();
+      }
+      const made = await call('create_managed_agent', { ...createArgs, connectToDispatcher: false });
+      expect(made.isError, made.content[0].text).toBeFalsy();
+      const target = state.agents.get(made.json.id)!;
+      if (mode === 'user-disabled') {
+        await setOrchestrationPolicy('/proj', target.id, { connectToDispatcher: true });
+        await setOrchestrationPolicy('/proj', target.id, { connectToDispatcher: false });
+      }
+      const { connectToDispatcher: _connection, ...orchestration } = template.settings.orchestration!;
+      const args = { id: template.id, ...template.setup, settings: { ...template.settings, orchestration }, agents: [target.id] };
+      const preview = await call('push_agent_template', args);
+      expect(preview.json.status).toBe('needs_confirmation');
+      const pushed = await call('push_agent_template', { ...args, confirm: preview.json.confirm });
+      expect(pushed.json).toMatchObject({
+        status: 'pushed', applied: 0, failed: [{ agentId: target.id, message: expect.stringContaining('connection.bootstrap') }],
+      });
+      expect(target.orchestration?.connectToDispatcher).toBe(false);
+      expect((await getOrchestrationPolicy('/proj', target.id))?.connectToDispatcher).toBe(false);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
   it('save_agent_template with an id keeps the fields the call left out', async () => {
     const skill = (await call('create_agent_part', { kind: 'skill', name: 'Keep skill', content: { kind: 'skill', skillName: 'keep-skill', files: [{ path: 'SKILL.md', content: '# k' }] } })).json;
     const t = (await call('save_agent_template', {

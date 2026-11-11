@@ -115,7 +115,7 @@ export async function createDispatcherManagedAgent(
           from: { agentId: p.agentId }, to: { agentId: p.targetId }, ...NEW_CONNECTION_SWITCHES,
         })), (current) => { assertTarget(created); return current ? false : undefined; });
         const saved = await setOrchestrationPolicy(project.path, targetId, { connectToDispatcher: true }, {
-          surface: 'dispatcher', actorId, precondition: assertTarget,
+          surface: 'dispatcher', actorId, precondition: assertTarget, connectionBootstrap: true,
         });
         if (!saved.ok) throw new BootstrapRefused(saved.message);
         await rebuildPersistedBindings();
@@ -153,7 +153,7 @@ export async function createDispatcherManagedAgent(
       const cleanup: unknown[] = [];
       if (config && config.id !== actorId && !config.parentAgentId && !isDisposedAgent(config)) {
         try {
-          const reset = await setOrchestrationPolicy(project.path, config.id, { connectToDispatcher: false }, { surface: 'dispatcher', actorId });
+          const reset = await setOrchestrationPolicy(project.path, config.id, { connectToDispatcher: false }, { surface: 'dispatcher', actorId, connectionBootstrap: true });
           if (!reset.ok) cleanup.push(new Error(reset.message));
         } catch (error) {
           // telemetry-exempt: returned in rollbackErrors; the remaining cleanup must still run

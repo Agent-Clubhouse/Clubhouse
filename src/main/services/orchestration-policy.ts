@@ -309,6 +309,8 @@ export async function setOrchestrationPolicy(
     /** Who is asking, for the audit record. Defaults to the surface this call came in on. */
     surface?: SettingsAuditSurface;
     actorId?: string;
+    /** Internal to the separately authorized create-and-bootstrap flow; never taken from tool arguments. */
+    connectionBootstrap?: true;
   } = {},
 ): Promise<SetOrchestrationPolicyResult> {
   const patch = validateOrchestrationPatch(rawPatch);
@@ -323,6 +325,11 @@ export async function setOrchestrationPolicy(
     options.precondition?.(agent, current);
     const stored = applyOrchestrationPatch(agent.orchestration, patch);
     const next = await resolveFor(projectPath, agent, stored);
+    if ((who.surface === 'mcp' || who.surface === 'dispatcher') && !options.connectionBootstrap
+      && current.connectToDispatcher !== next.connectToDispatcher) {
+      await auditPolicyRefusal(audit, patch, 'connection_bootstrap_required');
+      return { ok: false, message: 'Only the user changes existing connections. A new connection requires connection.bootstrap through create_managed_agent.', policy: current };
+    }
     if (next.orchestrate && isDisposedAgent(agent)) {
       await auditPolicyRefusal(audit, patch, 'agent_disposed');
       return { ok: false, message: 'A disposed agent cannot orchestrate', policy: current };
