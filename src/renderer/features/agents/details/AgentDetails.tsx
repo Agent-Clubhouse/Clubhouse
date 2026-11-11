@@ -301,6 +301,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
       aria-label={`${agent.name} details`}
       onKeyDown={(e) => {
         if (e.key !== 'Escape' || e.defaultPrevented) return;
+        if (!(e.target instanceof Node) || !e.currentTarget.contains(e.target)) return;
         e.preventDefault();
         setOpen(false);
         // Focus goes back to this pane's toolbar button.

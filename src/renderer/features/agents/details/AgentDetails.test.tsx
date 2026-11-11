@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import type { ActionView } from '../../../../shared/actions';
 import type { Agent } from '../../../../shared/types';
 import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -92,6 +93,33 @@ describe('AgentDetails in the terminal', () => {
     act(() => { useAgentDetailsStore.getState().reveal({ agentId: 'a1', card: 'mcp' }); });
     expect(screen.getByTestId('details-card-skills-mcp')).toHaveAttribute('data-open', 'true');
     expect(screen.getByTestId('details-card-mcp')).toBeInTheDocument();
+  });
+
+  it('lets Action dialogs handle Escape without hiding details or discarding edits', async () => {
+    const reminder: ActionView = {
+      id: 'reminder', name: 'Progress reminder', owner: { kind: 'agent', agentId: agent.id },
+      trigger: { kind: 'schedule', preset: 'cron', cron: '*/30 * * * *', missed: 'skip' },
+      steps: [{ kind: 'notify', text: 'Report progress' }], overlap: 'skip',
+      enabled: true, running: false, createdAt: 1, updatedAt: 1,
+    };
+    window.clubhouse.actions.list = vi.fn(async () => [reminder]);
+    window.clubhouse.actions.history = vi.fn(async () => []);
+    render(<AgentDetails agent={agent} />);
+    fireEvent.click(screen.getByTestId('details-card-actions-toggle'));
+    fireEvent.click(await screen.findByTestId('agent-action-row'));
+    const card = await screen.findByTestId('action-card');
+    fireEvent.keyDown(card, { key: 'Escape' });
+    expect(screen.queryByTestId('action-card')).not.toBeInTheDocument();
+    expect(useAgentDetailsStore.getState().open).toBe(true);
+
+    fireEvent.click(screen.getByTestId('agent-action-row'));
+    fireEvent.click(within(await screen.findByTestId('action-card')).getByRole('button', { name: 'Edit' }));
+    const name = within(await screen.findByTestId('action-form')).getByLabelText('Name');
+    fireEvent.change(name, { target: { value: 'Keep my changes' } });
+    fireEvent.keyDown(name, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'Discard changes?' })).toBeInTheDocument();
+    expect(name).toHaveValue('Keep my changes');
+    expect(useAgentDetailsStore.getState().open).toBe(true);
   });
 
   it('starts cards collapsed, keeps Settings saved, and resets other cards on a new agent visit', async () => {
