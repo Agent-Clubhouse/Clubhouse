@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { useToastStore } from '../../stores/toastStore';
+import { useProjectStore } from '../../stores/projectStore';
 import { PopoutAgentActions } from './PopoutAgentActions';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
@@ -12,10 +13,6 @@ vi.mock('../../stores/agentStore', () => ({
     agents: mockAgents,
     spawnDurableAgent: vi.fn(),
   }),
-}));
-
-vi.mock('../../stores/projectStore', () => ({
-  useProjectStore: (selector: (s: any) => any) => selector({ projects: [{ id: 'proj-1', path: '/proj' }] }),
 }));
 
 const mockWake = vi.fn();
@@ -34,6 +31,7 @@ function setWidth(w: number) {
 describe('PopoutAgentActions', () => {
   const width = window.innerWidth;
   beforeEach(() => {
+    useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'Project', path: 'project-dir' }] });
     for (const key of Object.keys(mockAgents)) delete mockAgents[key];
     window.clubhouse.agent.killAgent = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.pty.kill = vi.fn().mockResolvedValue(undefined);
@@ -61,7 +59,7 @@ describe('PopoutAgentActions', () => {
     mockAgents['agent-1'] = agent({ status: 'sleeping' });
     render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
     fireEvent.click(screen.getByTestId('popout-wake-button'));
-    await waitFor(() => expect(mockWake).toHaveBeenCalledWith('proj-1', '/proj', 'agent-1', 'resume'));
+    await waitFor(() => expect(mockWake).toHaveBeenCalledWith('proj-1', 'project-dir', 'agent-1', 'resume'));
   });
 
   it('offers no Wake for a sleeping quick agent', () => {
@@ -70,14 +68,31 @@ describe('PopoutAgentActions', () => {
     expect(screen.queryByTestId('popout-wake-button')).not.toBeInTheDocument();
   });
 
-  it('shows the agent in the main window and stops it', () => {
+  it('shows the agent in the main window and stops it', async () => {
     mockAgents['agent-1'] = agent();
     render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
     fireEvent.click(screen.getByTestId('popout-view-button'));
     expect(window.clubhouse.window.focusMain).toHaveBeenCalledWith('agent-1');
     fireEvent.click(screen.getByTestId('popout-stop-button'));
     // The call takes the project's folder.
-    expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('agent-1', '/proj');
+    await waitFor(() => expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('agent-1', 'project-dir'));
+  });
+
+  it.each(['running', 'sleeping'])('loads the project before acting on a %s agent in a fresh pop-out', async (status) => {
+    useProjectStore.setState({ projects: [], projectsLoaded: false });
+    window.clubhouse.project.list = vi.fn().mockResolvedValue([{ id: 'proj-1', name: 'Project', path: 'project-dir' }]);
+    window.clubhouse.project.checkGit = vi.fn().mockResolvedValue(false);
+    mockAgents['agent-1'] = agent({ status });
+    render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
+    fireEvent.click(screen.getByTestId(status === 'running' ? 'popout-stop-button' : 'popout-wake-button'));
+    await waitFor(() => {
+      if (status === 'running') {
+        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('agent-1', 'project-dir');
+      } else {
+        expect(mockWake).toHaveBeenCalledWith('proj-1', 'project-dir', 'agent-1', 'resume');
+      }
+    });
+    expect(window.clubhouse.project.list).toHaveBeenCalledOnce();
   });
 
   describe('the Dispatcher (#3235)', () => {
@@ -93,11 +108,11 @@ describe('PopoutAgentActions', () => {
       await waitFor(() => expect(mockWake).toHaveBeenCalledWith(DISPATCHER_PROJECT_ID, 'dispatcher-dir', 'disp', 'resume'));
     });
 
-    it('stops it with its folder and shows its view in the main window', () => {
+    it('stops it with its folder and shows its view in the main window', async () => {
       mockAgents.disp = agent({ id: 'disp', name: 'Dispatcher', projectId: DISPATCHER_PROJECT_ID });
       render(<PopoutAgentActions agentId="disp" projectId={DISPATCHER_PROJECT_ID} />);
       fireEvent.click(screen.getByTestId('popout-stop-button'));
-      expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('disp', 'dispatcher-dir');
+      await waitFor(() => expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('disp', 'dispatcher-dir'));
       fireEvent.click(screen.getByTestId('popout-view-button'));
       expect(window.clubhouse.window.focusMain).toHaveBeenCalledWith('disp');
     });
