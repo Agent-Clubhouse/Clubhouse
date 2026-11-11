@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ManagedPart, ManagedPartConsumer, ManagedPartContent, ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { BlockList } from './BlockList';
@@ -132,16 +133,18 @@ describe('a stale edit', () => {
   });
 
   it.each(['Escape', 'backdrop', 'Close', 'Cancel'])('%s returns to the block edit without taking theirs', async (way) => {
+    const user = userEvent.setup();
     const { dialog, update } = await openAndSave();
-    if (way === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+    if (way === 'Escape') await user.keyboard('{Escape}');
     else if (way === 'backdrop') fireEvent.click(dialog.parentElement!);
     else fireEvent.click(within(dialog).getByRole('button', { name: way }));
-    expect(screen.queryByTestId('managed-stale-dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('managed-stale-dialog')).toBeNull());
     expect(screen.getByRole('textbox')).toHaveValue('line one\nmy line');
     expect(update).toHaveBeenCalledTimes(1);
   });
 
   it('Close returns to the part editor with its dirty draft intact', async () => {
+    const user = userEvent.setup();
     vi.spyOn(m(), 'getPart')
       .mockResolvedValueOnce({ ok: true, value: full('rules', 'old') })
       .mockResolvedValue({ ok: true, value: theirs });
@@ -153,11 +156,12 @@ describe('a stale edit', () => {
     fireEvent.click(screen.getByTestId('managed-part-save'));
     const dialog = await screen.findByTestId('managed-stale-dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByTestId('managed-stale-dialog')).toBeNull());
     expect(screen.getByLabelText('Block text')).toHaveValue('my edit');
     expect(onClose).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledTimes(1);
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.getByRole('dialog', { name: 'Discard changes?' })).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(await screen.findByRole('dialog', { name: 'Discard changes?' })).toBeTruthy();
   });
 
   it('Fork puts the edit on a copy for this agent', async () => {
@@ -174,9 +178,9 @@ describe('a stale edit', () => {
       { kind: 'mcp', serverKey: 'github', transport: 'stdio', command: 'npx', args: ['github'], envVars: ['TOKEN'] },
     ];
     const ways = ['Escape', 'backdrop', 'Close', 'Cancel'];
-    const dismiss = (way: string) => {
+    const dismiss = async (way: string) => {
       const dialog = screen.getByTestId('managed-part-dialog');
-      if (way === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+      if (way === 'Escape') await userEvent.setup().keyboard('{Escape}');
       else if (way === 'backdrop') fireEvent.click(dialog.parentElement!);
       else fireEvent.click(within(dialog).getByRole('button', { name: way }));
     };
@@ -192,7 +196,7 @@ describe('a stale edit', () => {
 
       it.each(ways)('closes via %s before editing', async (way) => {
         const onClose = await open();
-        dismiss(way);
+        await dismiss(way);
         expect(onClose).toHaveBeenCalledTimes(1);
         expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
       });
@@ -201,11 +205,11 @@ describe('a stale edit', () => {
         const onClose = await open();
         const label = content.kind === 'block' ? 'Block text' : content.kind === 'skill' ? 'SKILL.md' : 'Arguments';
         fireEvent.change(screen.getByLabelText(label), { target: { value: 'My unsaved edit\n' } });
-        dismiss(way);
+        await dismiss(way);
         expect(onClose).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
         expect(screen.getByLabelText(label)).toHaveValue('My unsaved edit\n');
-        dismiss(way);
+        await dismiss(way);
         fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
         expect(onClose).toHaveBeenCalledTimes(1);
       });
@@ -216,14 +220,14 @@ describe('a stale edit', () => {
         const update = vi.spyOn(m(), 'updatePart').mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
         fireEvent.change(screen.getByTestId('managed-part-description'), { target: { value: 'My description' } });
         fireEvent.click(screen.getByTestId('managed-part-save'));
-        for (const way of ways) dismiss(way);
+        for (const way of ways) await dismiss(way);
         expect(update).toHaveBeenCalledTimes(1);
         expect(onClose).not.toHaveBeenCalled();
         expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
         await act(async () => { fail(new ManagedUiError('failed', 'Save failed')); });
         expect(screen.getByRole('alert')).toHaveTextContent('Save failed');
         expect(screen.getByTestId('managed-part-description')).toHaveValue('My description');
-        dismiss('Cancel');
+        await dismiss('Cancel');
         expect(screen.getByRole('dialog', { name: 'Discard changes?' })).toBeTruthy();
       });
 
@@ -231,7 +235,7 @@ describe('a stale edit', () => {
         const onClose = await open();
         fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Changed' } });
         fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'rules' } });
-        dismiss('Escape');
+        await dismiss('Escape');
         expect(onClose).toHaveBeenCalledTimes(1);
       });
     });
@@ -250,18 +254,18 @@ describe('a stale edit', () => {
       const executable = screen.getByRole('checkbox', { name: 'Executable: check.sh' });
       fireEvent.click(executable);
       fireEvent.click(executable);
-      dismiss('Escape');
+      await dismiss('Escape');
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it('treats a cleared optional MCP field as pristine after reverting the transport', () => {
+    it('treats a cleared optional MCP field as pristine after reverting the transport', async () => {
       const onClose = vi.fn();
       render(<PartDialog open kind="mcp" onClose={onClose} />);
       fireEvent.change(screen.getByLabelText('Transport'), { target: { value: 'http' } });
       fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.com' } });
       fireEvent.change(screen.getByLabelText('URL'), { target: { value: '' } });
       fireEvent.change(screen.getByLabelText('Transport'), { target: { value: 'stdio' } });
-      dismiss('Escape');
+      await dismiss('Escape');
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
