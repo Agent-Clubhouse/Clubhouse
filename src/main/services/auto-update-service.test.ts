@@ -568,7 +568,8 @@ describe('auto-update-service', () => {
           expect(execFileSync).toHaveBeenCalledWith(expect.any(String), ['--update', expect.any(String)], expect.any(Object));
         } else {
           await expect(installing).rejects.toThrow('A newer update became available; request again');
-          expect(execFileSync).not.toHaveBeenCalled();
+          // Only Update.exe matters here; Linux runners also see the platform's package-manager probes.
+          expect(execFileSync).not.toHaveBeenCalledWith(expect.any(String), ['--update', expect.any(String)], expect.anything());
           expect(spawn).not.toHaveBeenCalled();
           expect(mockApp.exit).not.toHaveBeenCalled();
         }
