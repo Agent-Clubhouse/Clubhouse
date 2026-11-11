@@ -59,7 +59,7 @@ type DisposeTarget = DisposeHelperTarget & { projectPath: string };
 
 const LINK = 'text-xs text-ctp-overlay1 hover:text-ctp-text disabled:opacity-50 cursor-pointer';
 
-export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestrating, open, onToggle, approvals, onRemoved }: {
+export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestrating, open, onToggle, approvals, onRemoved, embedded = false }: {
   agent: Agent;
   projectPath: string;
   /** The agent's direct helpers in every project (useHelpersEverywhere), disposed ones included. */
@@ -71,6 +71,8 @@ export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestra
   approvals?: HelperApprovals;
   /** A disposed row was removed or a helper disposed: re-read the configs. */
   onRemoved: () => void;
+  /** The helper list inside Orchestration, without a second accordion. */
+  embedded?: boolean;
 }) {
   const rail = useAgentStore((s) => s.agents);
   const killAgent = useAgentStore((s) => s.killAgent);
@@ -166,15 +168,9 @@ export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestra
     };
   };
 
-  return (
+  const summary = helpersSummary(live.length, orchestrating ? maxHelpers : undefined, starting, waiting.length);
+  const content = (
     <>
-      <DetailsCard
-        id="helpers"
-        title="Helpers"
-        summary={helpersSummary(live.length, orchestrating ? maxHelpers : undefined, starting, waiting.length)}
-        open={open}
-        onToggle={onToggle}
-      >
         {live.length === 0 && waiting.length === 0 && (
           <CardNote>
             {orchestrating
@@ -307,7 +303,18 @@ export function HelpersCard({ agent, projectPath, helpers, maxHelpers, orchestra
           </div>
         )}
         {error && <p className="pr-3.5 pl-[33px] pt-1 pb-1.5 text-xs text-ctp-error" role="alert" data-testid="helpers-error">{error}</p>}
-      </DetailsCard>
+    </>
+  );
+  return (
+    <>
+      {embedded ? (
+        <section aria-label="Clubhouse helpers" data-testid="orchestration-helpers">
+          <h3 className="pr-3.5 pl-[33px] pt-2 pb-1 text-xs font-semibold text-ctp-subtext1">Clubhouse helpers <span className="font-normal text-ctp-overlay1">{summary}</span></h3>
+          {content}
+        </section>
+      ) : (
+        <DetailsCard id="helpers" title="Helpers" summary={summary} open={open} onToggle={onToggle}>{content}</DetailsCard>
+      )}
       {disposing && (
         <DisposeHelperDialog
           helper={disposing}

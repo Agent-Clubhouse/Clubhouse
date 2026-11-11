@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent, DurableAgentConfig, HelperCascadeResult } from '../../../../shared/types';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -471,7 +471,7 @@ describe('Turning orchestration off with helpers (#2232)', () => {
 });
 
 describe('Orchestration cards in Agent details', () => {
-  it('shows Orchestrate for a top-level agent, and Helpers and Connections once it orchestrates', async () => {
+  it('opens the embedded helpers through the legacy focus target and keeps Connections separate', async () => {
     stored.orchestrate = true;
     configs = [config('lead', 'epic-lead'), config('h1', 'impl-ipc', { parentAgentId: 'lead', branch: 'impl-ipc/work' })];
     // The Helpers card lists helpers from every project through main (#2514).
@@ -480,8 +480,10 @@ describe('Orchestration cards in Agent details', () => {
       .map((config) => ({ projectId: 'p1', projectPath: PROJECT, config }))) as never;
     render(<AgentDetails agent={lead} />);
     expect(await screen.findByTestId('details-card-orchestrate')).toBeInTheDocument();
-    expect(await screen.findByTestId('details-card-helpers')).toBeInTheDocument();
-    expect(screen.getByTestId('details-card-helpers-summary')).toHaveTextContent('1 of 5');
+    expect(screen.queryByTestId('details-card-helpers')).not.toBeInTheDocument();
+    act(() => useAgentDetailsStore.getState().reveal({ agentId: lead.id, card: 'helpers' }));
+    expect(await screen.findByTestId('orchestration-helpers')).toHaveTextContent('1 of 5');
+    expect(within(screen.getByTestId('details-card-orchestrate')).getByTestId('helper-row-h1')).toBeInTheDocument();
     expect(screen.getByTestId('details-card-connections')).toBeInTheDocument();
   });
 

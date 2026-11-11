@@ -202,7 +202,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   useEffect(() => {
     if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
     handled.current = focus.nonce;
-    setOpenCards((s) => new Set(s).add(focus.card));
+    setOpenCards((s) => new Set(s).add(focus.card === 'helpers' ? 'orchestrate' : focus.card));
     if (focus.subagentId) setSelectedSub(focus.subagentId);
   }, [focus, agent.id]);
 
@@ -330,6 +330,12 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         onReviewAll={onReviewAll}
       />}
 
+      {showDispatcherCard && (
+        <DispatcherCard agent={agent} orch={orchestration.orch} open={open('dispatcher')} onToggle={() => toggleCard('dispatcher')} />
+      )}
+
+      <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
+
       {showSubagents && chat && map && (
         <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
           <SubagentList
@@ -372,12 +378,6 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           </ul>
         )}
       </DetailsCard>}
-
-      {showDispatcherCard && (
-        <DispatcherCard agent={agent} orch={orchestration.orch} open={open('dispatcher')} onToggle={() => toggleCard('dispatcher')} />
-      )}
-
-      <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
 
       {dispatcher && <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />}
 

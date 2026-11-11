@@ -1,7 +1,7 @@
 /**
- * The Orchestration and Helpers cards (#2232) as one unit, for Agent details
+ * Orchestration policy and Clubhouse helpers (#2232, #3286) in one card, for Agent details
  * beside a running agent and for the sleeping view. A sleeping orchestrator
- * has no details column, so its view shows the same two cards under the wake
+ * has no details column, so its view shows the same card under the wake
  * composer: pending starts wait there with Approve off until it's awake, and
  * Decline still works.
  */
@@ -45,7 +45,7 @@ export function useOrchestrationCards(agent: Agent, projectPath: string | undefi
 
 export type OrchestrationCardsModel = ReturnType<typeof useOrchestrationCards>;
 
-/** The Orchestration card, then the Helpers card, each when it applies. */
+/** Helpers share the policy's accordion, not the provider's Subagents card. */
 export function OrchestrationCardPair({ agent, model, isOpen, onToggle }: {
   agent: Agent;
   model: OrchestrationCardsModel;
@@ -54,25 +54,25 @@ export function OrchestrationCardPair({ agent, model, isOpen, onToggle }: {
 }) {
   const { orchestrationPath, orch, everywhere, orchestrating, approvals, reloadConfigs, showOrchestrate, showHelpers } = model;
   if (!orchestrationPath) return null;
-  return (
-    <>
-      {showOrchestrate && (
-        <OrchestrateCard agent={agent} projectPath={orchestrationPath} orch={orch} open={isOpen('orchestrate')} onToggle={() => onToggle('orchestrate')} />
-      )}
-      {showHelpers && everywhere && (
+  const helpers = showHelpers && everywhere ? (
         <HelpersCard
           agent={agent}
           projectPath={orchestrationPath}
           helpers={everywhere}
           maxHelpers={orch.policy?.maxHelpers}
           orchestrating={orchestrating}
-          open={isOpen('helpers')}
-          onToggle={() => onToggle('helpers')}
+          open={isOpen('orchestrate')}
+          onToggle={() => onToggle('orchestrate')}
           approvals={approvals}
           onRemoved={reloadConfigs}
+          embedded
         />
-      )}
-    </>
+  ) : null;
+  if (!showOrchestrate) return helpers;
+  return (
+    <OrchestrateCard agent={agent} projectPath={orchestrationPath} orch={orch} open={isOpen('orchestrate')} onToggle={() => onToggle('orchestrate')}>
+      {helpers}
+    </OrchestrateCard>
   );
 }
 
@@ -80,7 +80,7 @@ export function OrchestrationCardPair({ agent, model, isOpen, onToggle }: {
  * The cards on a sleeping orchestrator's view: shown once it orchestrates,
  * has helpers or has starts waiting, and kept for the rest of the visit so
  * turning orchestration off doesn't pull the card from under the pointer.
- * The Helpers card opens on its own while starts wait, and when Needs you
+ * Orchestration opens on its own while starts wait, and when Needs you
  * asks for it.
  */
 export function SleepingOrchestration({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
@@ -93,12 +93,12 @@ export function SleepingOrchestration({ agent, projectPath }: { agent: Agent; pr
 
   const [open, setOpen] = useState<Set<'orchestrate' | 'helpers'>>(() => new Set());
   useEffect(() => { setOpen(new Set()); }, [agent.id]);
-  // A start waiting on the user opens the Helpers card, once per agent.
+  // A start waiting on the user opens Orchestration, once per agent.
   const autoOpened = useRef<string | null>(null);
   useEffect(() => {
     if (!waiting || autoOpened.current === agent.id) return;
     autoOpened.current = agent.id;
-    setOpen((s) => new Set(s).add('helpers'));
+    setOpen((s) => new Set(s).add('orchestrate'));
   }, [waiting, agent.id]);
   // "Open in details" (a Needs you entry) opens the card here too.
   const focus = useAgentDetailsStore((s) => s.focus);
@@ -106,7 +106,7 @@ export function SleepingOrchestration({ agent, projectPath }: { agent: Agent; pr
   useEffect(() => {
     if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
     handled.current = focus.nonce;
-    if (focus.card === 'orchestrate' || focus.card === 'helpers') setOpen((s) => new Set(s).add(focus.card as 'orchestrate' | 'helpers'));
+    if (focus.card === 'orchestrate' || focus.card === 'helpers') setOpen((s) => new Set(s).add('orchestrate'));
   }, [focus, agent.id]);
 
   if (!shown || !model.orchestrationPath || (!model.showOrchestrate && !model.showHelpers)) return null;

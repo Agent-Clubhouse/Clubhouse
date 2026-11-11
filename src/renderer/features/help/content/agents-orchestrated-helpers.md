@@ -52,7 +52,7 @@ Creating a worktree can take up to a minute on a large repository, so `start_hel
 
 The orchestrator keeps track of its helpers with `list_helpers`, which shows each one's project, status, branch, worktree and uncommitted work. It can pause a helper with `sleep_helper` and resume it with `wake_helper`, with an optional message.
 
-The **Helpers** card in the orchestrator's details lists its helpers with their status, branch and unsaved work. From there you can open a helper, put it to sleep, wake it, or dispose of it.
+The **Clubhouse helpers** section inside **Orchestration** lists helpers with their status, branch and unsaved work. From there you can open a helper, put it to sleep, wake it, or dispose of it. These are Clubhouse-managed agents, not the provider's **Subagents**, which remain a separate accordion immediately after Orchestration. A sleeping orchestrator shows the same Orchestration card under its wake composer.
 
 ## Helpers in other projects
 
@@ -93,7 +93,7 @@ At any level the orchestrator can still ask you when it judges a choice is yours
 
 Under **Hands-off**, a question a helper asks goes to its orchestrator instead of **Needs you**, and the helper waits for the answer. The orchestrator answers with `answer_helper_question`, or passes the question to you, and then it shows under **Needs you**. The helper's chat marks a question that went to the orchestrator, and you can answer it there yourself. If the orchestrator is asleep, the question comes to you. Under the other control levels, helpers' questions always come to you. Helpers running in the CLI view answer their questions there, so theirs always come to you.
 
-Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing until you answer. The request shows under **Needs you** on the orchestrator, and as a row marked **Waiting for approval** in its **Helpers** card. You also get a desktop notification, if those are on. Select **Approve** to start the helper with the same checks as any other start, including the helper limits and the access ceiling. If the orchestrator is asleep, wake it first, and the request keeps waiting until then. Select **Decline** to drop it. Either way the orchestrator gets a message. Each orchestrator can have up to 3 requests waiting. A request that waits 24 hours expires. Waiting requests are also cleared when Clubhouse quits, and when you turn off orchestration for the agent or dispose or delete it.
+Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing until you answer. The request shows under **Needs you** on the orchestrator, and as a row marked **Waiting for approval** in its **Clubhouse helpers** section. You also get a desktop notification, if those are on. Select **Approve** to start the helper with the same checks as any other start, including the helper limits and the access ceiling. If the orchestrator is asleep, wake it first, and the request keeps waiting until then. Select **Decline** to drop it. Either way the orchestrator gets a message. Each orchestrator can have up to 3 requests waiting. A request that waits 24 hours expires. Waiting requests are also cleared when Clubhouse quits, and when you turn off orchestration for the agent or dispose or delete it.
 
 ## Limits
 
@@ -106,7 +106,7 @@ Running helpers count against your plan's usage limits, and every message betwee
 
 ## Accepting work
 
-When a helper is done, the orchestrator checks its work and calls `hand_off`, saying whether the work was pushed, merged into the orchestrator's branch, or copied. The helper then shows as **Handed off**, and the Helpers card offers **Review**. Handing off doesn't dispose of the helper. Clubhouse never merges on its own; the agents use ordinary Git.
+When a helper is done, the orchestrator checks its work and calls `hand_off`, saying whether the work was pushed, merged into the orchestrator's branch, or copied. The helper then shows as **Handed off**, and Clubhouse helpers in Orchestration offers **Review**. Handing off doesn't dispose of the helper. Clubhouse never merges on its own; the agents use ordinary Git.
 
 ## Disposing
 
@@ -127,9 +127,9 @@ When the orchestrator calls `dispose_helper`:
 - **Something holds it.** Nothing is deleted and the helper keeps running. The orchestrator gets back the facts, such as which files are uncommitted and how many commits weren't pushed. It can finish the work, ask you, or call again with `force` when the only problem is work at risk.
 - **Under Ask for everything**, the request goes to **Needs you** instead, and `force` is refused. Selecting it opens the dispose dialog, where you dispose of the helper or decline. If the orchestrator is running, it's told what you chose.
 
-When you dispose of a helper yourself from the Helpers card, the dialog runs the same checks. A clean helper shows **Dispose**, work at risk shows **Dispose anyway**, and a failed check only offers **Check again**. **Just sleep** stops the helper and keeps everything.
+When you dispose of a helper yourself from Orchestration, the dialog runs the same checks. A clean helper shows **Dispose**, work at risk shows **Dispose anyway**, and a failed check only offers **Check again**. **Just sleep** stops the helper and keeps everything.
 
-Disposed helpers move to a **Disposed** section at the end of the Helpers card, where **Remove** deletes them for good. When you delete an orchestrator, Clubhouse removes its disposed helpers too. **Settings > Managed agents > Helpers** lists any disposed helpers left without an orchestrator, each with **Remove**, and **Clear all** removes them all.
+Disposed helpers move to a **Disposed** section at the end of Clubhouse helpers in Orchestration, where **Remove** deletes them for good. When you delete an orchestrator, Clubhouse removes its disposed helpers too. **Settings > Managed agents > Helpers** lists any disposed helpers left without an orchestrator, each with **Remove**, and **Clear all** removes them all.
 
 If you delete an orchestrator that still has helpers, Clubhouse asks whether to dispose of them, with the same checks, or keep them as normal agents.
 
