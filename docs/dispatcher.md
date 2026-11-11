@@ -48,6 +48,8 @@ Tests: `dispatcher-service.test.ts` ("1.0 default"), `e2e/layout-default.spec.ts
 
 **Memory upkeep freshness (part of #3218).** Mechanical link repairs preserve each page's modification time, so they neither trigger another agent review nor restart the 30-day staleness clock. The preserved timestamp is applied before the repaired file is published, so it cannot hide a later agent edit. Upkeep collects changed topics and agent notes after its repairs and saves a completion-time checkpoint. Actual agent edits still trigger review; only stale, unconfirmed, unreferenced topics are archived.
 
+**Topic provenance (#3218).** Topics use plain header lines, not front matter: `Status:`, `Source:`, `Created:` and `Updated:` (ISO 8601 with a zone), then a blank line and body. Header order is flexible and extensions survive round trips. Existing undated pages need no migration: freshness uses a valid, nonfuture Updated date with a zone, otherwise mtime. Clubhouse topic writes preserve Created and stamp Updated. Important facts carry inline dated sources. The controller records contradictions explicitly as `Conflicting: YYYY-MM-DD ...` lines (the five newest dates, 500 characters each), with both claims and sources; there is no heuristic fact detector. Upkeep surfaces open conflicts instead of archiving them, and telemetry records only their page count.
+
 ## Agents' news in the chat (#3193)
 
 What passes between the Dispatcher and an agent (progress, acknowledgements, an agent's questions to it) stays out of the chat. The agent's own chat keeps all of it. The chat shows only what is for the user:

@@ -362,6 +362,10 @@ export type TopicStatus = 'confirmed' | 'unconfirmed';
 export interface TopicPage {
   status: TopicStatus;
   source: string;
+  created?: string;
+  updated?: string;
+  /** Original header lines, including extensions and their order. */
+  headerLines?: string[];
   body: string;
 }
 
@@ -369,20 +373,87 @@ export function topicPagePath(topic: string, root?: string): string {
   return path.join(memoryPaths(root).topics, `${memorySlug(topic)}.md`);
 }
 
-/**
- * A topic page is a `Status:` line and a `Source:` line, a blank line, then the
- * body exactly as given.
- */
+const TOPIC_KEYS = ['Status', 'Source', 'Created', 'Updated'] as const;
+
+/** Header lines, a blank line, then the body exactly as given. */
 export function renderTopicPage(page: TopicPage): string {
-  const source = page.source.replace(/\s*\n\s*/g, ' ').trim();
-  return `Status: ${page.status}\nSource: ${source}\n\n${page.body}`;
+  const values: Record<string, string | undefined> = {
+    Status: page.status, Source: page.source, Created: page.created, Updated: page.updated,
+  };
+  const headers = page.headerLines ?? [];
+  const last = new Map<string, number>();
+  const matches = headers.map((line, index) => {
+    const match = /^([^:]+):[ \t]*(.*)$/.exec(line);
+    if (match) last.set(match[1], index);
+    return match;
+  });
+  const seen = new Set<string>();
+  const lines = headers.flatMap((line, index) => {
+    const match = matches[index];
+    if (!match || !TOPIC_KEYS.includes(match[1] as typeof TOPIC_KEYS[number])) return [line];
+    const key = match[1];
+    seen.add(key);
+    const value = values[key];
+    if (value === undefined) return [];
+    if (index !== last.get(key) || match[2] === value) return [line];
+    return [`${key}: ${value.replace(/\s*\n\s*/g, ' ').trim()}`];
+  });
+  for (const key of TOPIC_KEYS) {
+    if (!seen.has(key) && values[key] !== undefined) lines.push(`${key}: ${values[key]!.replace(/\s*\n\s*/g, ' ').trim()}`);
+  }
+  return `${lines.join('\n')}\n\n${page.body}`;
 }
 
-/** Null when the text doesn't start with a `Status:` header. */
+/** Legacy pages need no dates; unknown header lines survive a round trip. */
 export function parseTopicPage(text: string): TopicPage | null {
-  const match = /^Status: (confirmed|unconfirmed)\nSource: ([^\n]*)\n\n/.exec(text);
-  if (!match) return null;
-  return { status: match[1] as TopicStatus, source: match[2], body: text.slice(match[0].length) };
+  const at = text.indexOf('\n\n');
+  if (at < 0) return null;
+  const lines = text.slice(0, at).split('\n');
+  const headers = new Map<string, string>();
+  for (const line of lines) {
+    const match = /^([^:]+):[ \t]*(.*)$/.exec(line);
+    if (match) headers.set(match[1], match[2]);
+  }
+  const status = headers.get('Status');
+  const source = headers.get('Source');
+  if ((status !== 'confirmed' && status !== 'unconfirmed') || source === undefined) return null;
+  const page: TopicPage = { status, source, body: text.slice(at + 2) };
+  if (headers.has('Created')) page.created = headers.get('Created');
+  if (headers.has('Updated')) page.updated = headers.get('Updated');
+  if (text.slice(0, at) !== `Status: ${status}\nSource: ${source.trim()}`) page.headerLines = lines;
+  return page;
+}
+
+/** Only zoned, real, nonfuture content dates override the file's timestamp. */
+export function topicUpdatedAt(page: TopicPage | null, mtimeMs: number, nowMs: number = Date.now()): number {
+  const value = page?.updated ?? '';
+  const match = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  const updated = match ? Date.parse(value) : NaN;
+  const day = match ? Date.parse(`${match[1]}T00:00:00Z`) : NaN;
+  return Number.isFinite(updated) && updated <= nowMs && Number.isFinite(day)
+    && new Date(day).toISOString().slice(0, 10) === match?.[1] ? updated : mtimeMs;
+}
+
+export const MAX_CONFLICT_NOTES = 5;
+const CONFLICT_NOTE = /^Conflicting:[ \t]*(\d{4}-\d{2}-\d{2})(?=[ \t]|$)/;
+
+export function hasConflictNotes(text: string): boolean {
+  return text.split('\n').some((line) => CONFLICT_NOTE.test(line));
+}
+
+/** Explicit notes, not guessed contradictions: retain the newest five short entries. */
+export function boundConflictNotes(text: string): string {
+  const lines = text.split('\n');
+  const notes = lines.flatMap((line, index) => {
+    const match = CONFLICT_NOTE.exec(line);
+    return match ? [{ index, date: match[1] }] : [];
+  });
+  notes.sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index);
+  const kept = new Set(notes.slice(0, MAX_CONFLICT_NOTES).map((note) => note.index));
+  return lines.flatMap((line, index) => {
+    if (!CONFLICT_NOTE.test(line)) return [line];
+    return kept.has(index) ? [[...line].slice(0, 500).join('')] : [];
+  }).join('\n');
 }
 
 export async function readTopic(topic: string, root?: string): Promise<TopicPage | null> {
@@ -393,6 +464,11 @@ export async function readTopic(topic: string, root?: string): Promise<TopicPage
 export async function writeTopic(topic: string, page: TopicPage, root?: string): Promise<string> {
   await ensureMemoryLayout(root);
   const file = topicPagePath(topic, root);
-  await writeFileAtomic(file, renderTopicPage(page));
+  const previous = await readTopic(topic, root);
+  const now = new Date().toISOString();
+  await writeFileAtomic(file, renderTopicPage({
+    ...page, headerLines: page.headerLines ?? previous?.headerLines,
+    created: previous?.created ?? page.created ?? now, updated: now, body: boundConflictNotes(page.body),
+  }));
   return file;
 }

@@ -23,7 +23,7 @@ const DISPATCHER_EVENTS = [
 
 const HEALTH: DispatcherMemoryHealth = {
   pages: 12, bytes: 20_480, topics: 5, agentPages: 3, timelinePages: 3, indexBytes: 9_000, indexCapBytes: 8_192,
-  unlinkedTopics: 2, staleTopics: 1, unconfirmedTopics: 4, brokenLinks: 3, missingSources: 1,
+  unlinkedTopics: 2, staleTopics: 1, unconfirmedTopics: 4, conflictingPages: 2, brokenLinks: 3, missingSources: 1,
 };
 
 /** Every Dispatcher event, once, through the public recorders. */
@@ -94,6 +94,7 @@ describe('Dispatcher telemetry with telemetry on', () => {
         'clubhouse.dispatcher.memory.index_over_cap': true,
         'clubhouse.dispatcher.memory.unlinked_topics': 2,
         'clubhouse.dispatcher.memory.stale_topics': 1,
+        'clubhouse.dispatcher.memory.conflicting_pages': 2,
         'clubhouse.dispatcher.memory.unconfirmed_topics': 4,
         'clubhouse.dispatcher.memory.broken_links': 3,
         'clubhouse.dispatcher.memory.missing_sources': 1,

@@ -21,6 +21,9 @@ import {
   loadIndex,
   memorySlug,
   parseAgentPage,
+  parseTopicPage,
+  renderTopicPage,
+  boundConflictNotes,
   readAgentPage,
   readIndex,
   readTopic,
@@ -59,7 +62,21 @@ describe('layout', () => {
     const fresh = await import('./dispatcher-memory');
     expect(await fresh.loadIndex(root)).toBe('Checkout is the priority.\n');
     expect((await fresh.readAgentPage('webapp-lead', root))?.card).toBe('Owns the web app.');
-    expect(await fresh.readTopic('checkout', root)).toEqual({ status: 'confirmed', source: 'webapp-lead, 2026-11-07', body: '# Checkout\n\nFixed in #412.\n' });
+    expect(await fresh.readTopic('checkout', root)).toMatchObject({ status: 'confirmed', source: 'webapp-lead, 2026-11-07', body: '# Checkout\n\nFixed in #412.\n' });
+  });
+
+  it('loads legacy memory without rewriting or dating its topic pages', async () => {
+    await ensureMemoryLayout(root);
+    const file = path.join(root, 'topics', 'legacy.md');
+    const text = 'Status: unconfirmed\nSource: old chat\n\nSource: body text\n';
+    fs.writeFileSync(file, text);
+    const old = new Date('2026-01-01T00:00:00Z');
+    fs.utimesSync(file, old, old);
+    const before = fs.statSync(file).mtimeMs;
+    await loadIndex(root);
+    expect(await readTopic('legacy', root)).toMatchObject({ status: 'unconfirmed', source: 'old chat', body: 'Source: body text\n' });
+    expect(fs.readFileSync(file, 'utf-8')).toBe(text);
+    expect(fs.statSync(file).mtimeMs).toBe(before);
   });
 
   it('slugs names so a page never leaves its folder', () => {
@@ -147,7 +164,70 @@ describe('topic pages', () => {
     const body = 'Status: not a header\n\nbody kept as is';
     await writeTopic('Release 1.0', { status: 'unconfirmed', source: 'chat\nwith a newline', body }, root);
     expect(fs.existsSync(path.join(root, 'topics', 'release-1.0.md'))).toBe(true);
-    expect(await readTopic('Release 1.0', root)).toEqual({ status: 'unconfirmed', source: 'chat with a newline', body });
+    expect(await readTopic('Release 1.0', root)).toMatchObject({ status: 'unconfirmed', source: 'chat with a newline', body });
+  });
+
+  it.each([
+    'Status: confirmed\nSource: chat\n\nBody\n\nkept',
+    'Updated: 2026-11-09T12:00:00Z\nOwner: pm\nSource: chat\nCreated: 2026-11-08T10:00:00+02:00\nStatus: unconfirmed\nextra line\n\nBody\n',
+    'Status: confirmed\nSource: chat  \nUpdated: 2026-11-09T12:00:00Z \n\nSource: body source\nUpdated: body date\n\nBody\n',
+    'Status: unconfirmed\nSource: first source\nOwner: pm\nSource: primary source\nStatus: confirmed\n\nBody\n',
+  ])('round-trips legacy and extended headers without loss', (text) => {
+    const parsed = parseTopicPage(text);
+    expect(parsed).not.toBeNull();
+    expect(renderTopicPage(parsed!)).toBe(text);
+    expect(parseTopicPage(renderTopicPage(parsed!))).toEqual(parsed);
+  });
+
+  it('updates known headers without dropping extensions or moving them into the body', () => {
+    const parsed = parseTopicPage('Owner: pm\nSource: chat\nStatus: unconfirmed\n\nBody')!;
+    const next = renderTopicPage({ ...parsed, status: 'confirmed', updated: '2026-11-09T12:00:00Z' });
+    expect(next).toBe('Owner: pm\nSource: chat\nStatus: confirmed\nUpdated: 2026-11-09T12:00:00Z\n\nBody');
+    expect(parseTopicPage('Status: nonsense\nSource: chat\n\nBody')).toBeNull();
+    expect(parseTopicPage('Status: confirmed\nSource: chat\n\nStatus: unconfirmed\nSource: body source\nUpdated: body date\n')).toMatchObject({
+      status: 'confirmed', source: 'chat', body: 'Status: unconfirmed\nSource: body source\nUpdated: body date\n',
+    });
+  });
+
+  it('preserves extension headers when replacing a topic without parser metadata', async () => {
+    await ensureMemoryLayout(root);
+    const file = path.join(root, 'topics', 'extensions.md');
+    fs.writeFileSync(file, 'Owner: pm\nSource: chat\ncustom line\nStatus: unconfirmed\n\nOld body\n');
+    await writeTopic('extensions', { status: 'confirmed', source: 'transcript', body: 'New body\n' }, root);
+    expect(fs.readFileSync(file, 'utf-8')).toMatch(/^Owner: pm\nSource: transcript\ncustom line\nStatus: confirmed\nCreated: .+\nUpdated: .+\n\nNew body\n$/);
+  });
+
+  it('bounds only dated conflict notes, keeping the newest dates without reordering other content', () => {
+    const notes = [
+      'Conflicting: 2026-11-09 newest',
+      'Fact kept in place',
+      ...[8, 7, 6, 5, 4].map((day) => `Conflicting: 2026-11-0${day} fact-${day}`),
+      `Conflicting: ordinary body label ${'x'.repeat(600)}`,
+      'Tail\n',
+    ];
+    expect(boundConflictNotes(notes.join('\n'))).toBe(notes.filter((line) => !line.includes('fact-4')).join('\n'));
+  });
+
+  it('does not split a Unicode character at the conflict-note limit', () => {
+    const note = boundConflictNotes(`Conflicting: 2026-11-09 x${'🙂'.repeat(500)}`);
+    expect([...note]).toHaveLength(500);
+    expect(Buffer.from(note).toString('utf8')).toBe(note);
+  });
+
+  it('stamps writes, preserves Created, and bounds explicit conflict notes', async () => {
+    const page = { status: 'confirmed' as const, source: 'chat', created: '2026-01-01T00:00:00Z', body: 'Fact\n' };
+    await writeTopic('dates', page, root);
+    await writeTopic('dates', { ...page, created: '2026-02-01T00:00:00Z', body: Array.from({ length: 8 }, (_, i) => `Conflicting: 2026-11-09 source-${i} ${'x'.repeat(600)}`).join('\n') }, root);
+    const next = (await readTopic('dates', root))!;
+    expect(next.created).toBe(page.created);
+    expect(Number.isFinite(Date.parse(next.updated!))).toBe(true);
+    expect(next.body.split('\n')).toHaveLength(5);
+    expect(next.body).not.toContain('source-2');
+    expect(next.body).toContain('source-3');
+    expect(next.body.split('\n').every((line) => line.length <= 500)).toBe(true);
+    expect(boundConflictNotes('Fact\n')).toBe('Fact\n');
+    await writeTopic('dates', { ...next, source: 'another chat' }, root);
+    expect((await readTopic('dates', root))?.body).toBe(next.body);
   });
 });
 

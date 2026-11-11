@@ -26,6 +26,8 @@ import {
   memoryPaths,
   memorySlug,
   parseTopicPage,
+  topicUpdatedAt,
+  hasConflictNotes,
   readIfExists,
   writeFileAtomic,
   type TopicStatus,
@@ -58,6 +60,7 @@ export interface MemoryPage {
   mtimeMs: number;
   /** Topics only: their Status line. */
   status?: TopicStatus;
+  updatedAt?: number;
 }
 
 export interface UpkeepReport {
@@ -69,6 +72,7 @@ export interface UpkeepReport {
   brokenLinks: Array<{ page: string; target: string }>;
   /** Cited files (transcripts, mostly) that are gone. */
   missingSources: Array<{ page: string; source: string }>;
+  conflictingPages: string[];
   /** Whether anything on disk changed. */
   changed: boolean;
 }
@@ -89,7 +93,7 @@ async function defaultFileExists(file: string): Promise<boolean> {
  * Every page in memory, not counting the archive, with when it last changed.
  * Mechanical link repairs preserve these times so only agent edits trigger review.
  */
-export async function listMemoryPages(root?: string): Promise<MemoryPage[]> {
+export async function listMemoryPages(root?: string, nowMs: number = Date.now()): Promise<MemoryPage[]> {
   const base = memoryPaths(root).root;
   const out: MemoryPage[] = [];
   async function walk(dir: string): Promise<void> {
@@ -113,7 +117,10 @@ export async function listMemoryPages(root?: string): Promise<MemoryPage[]> {
       const item: MemoryPage = { page, mtimeMs: stat.mtimeMs };
       if (page.startsWith('topics/')) {
         const parsed = parseTopicPage((await readIfExists(full)) ?? '');
-        if (parsed) item.status = parsed.status;
+        if (parsed) {
+          item.status = parsed.status;
+          item.updatedAt = topicUpdatedAt(parsed, stat.mtimeMs, nowMs);
+        }
       }
       out.push(item);
     }
@@ -317,7 +324,7 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
   const root = memoryPaths(options.root).root;
   const fileExists = options.fileExists ?? defaultFileExists;
   const staleMs = (options.staleDays ?? DEFAULT_STALE_DAYS) * DAY_MS;
-  const report: UpkeepReport = { rolledUp: { days: [], weeks: [] }, linksFixed: [], archived: [], brokenLinks: [], missingSources: [], changed: false };
+  const report: UpkeepReport = { rolledUp: { days: [], weeks: [] }, linksFixed: [], archived: [], brokenLinks: [], missingSources: [], conflictingPages: [], changed: false };
   if ((await readIfExists(path.join(root, 'index.md'))) === null && (await snapshot(root)).size === 0) return report;
 
   // 1. Timeline.
@@ -327,7 +334,7 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
   // 2. Links between pages.
   const files = await snapshot(root);
   const resolver: Resolver = { exists: (f) => files.has(path.normalize(f)) };
-  let pages = await listMemoryPages(root);
+  let pages = await listMemoryPages(root, now.getTime());
   for (const { page } of pages) {
     const full = path.join(root, page);
     const text = (await readIfExists(full)) ?? '';
@@ -364,14 +371,15 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
 
   // 3. Stale topics, until nothing more is stale: a page only a pruned page named is stale too,
   //    so a second run finds nothing left to do.
-  pages = await listMemoryPages(root);
+  pages = await listMemoryPages(root, now.getTime());
   const texts = new Map<string, string>();
   for (const { page } of pages) texts.set(page, (await readIfExists(path.join(root, page))) ?? '');
   const kept = new Set(pages.map((p) => p.page));
   for (;;) {
     const stale = pages.filter((p) => {
       if (!kept.has(p.page) || !p.page.startsWith('topics/') || p.status !== 'unconfirmed') return false;
-      if (now.getTime() - p.mtimeMs < staleMs) return false;
+      if (hasConflictNotes(texts.get(p.page) ?? '')) return false;
+      if (now.getTime() - (p.updatedAt ?? p.mtimeMs) < staleMs) return false;
       const file = path.normalize(path.join(root, p.page));
       for (const other of kept) {
         if (other === p.page) continue;
@@ -393,6 +401,7 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
 
   // 4. Cited files that are gone.
   for (const page of kept) {
+    if (hasConflictNotes(texts.get(page) ?? '')) report.conflictingPages.push(page);
     for (const source of citedFiles(root, page, texts.get(page) ?? '')) {
       const { file } = splitAnchor(source);
       if (!(await fileExists(path.normalize(safeDecode(file))))) report.missingSources.push({ page, source });
@@ -414,7 +423,7 @@ export async function measureMemoryHealth(
 ): Promise<DispatcherMemoryHealth> {
   const root = memoryPaths(options.root).root;
   const staleMs = (options.staleDays ?? DEFAULT_STALE_DAYS) * DAY_MS;
-  const pages = await listMemoryPages(root);
+  const pages = await listMemoryPages(root, now.getTime());
   const texts = new Map<string, string>();
   let bytes = 0;
   for (const { page } of pages) {
@@ -438,8 +447,9 @@ export async function measureMemoryHealth(
     indexBytes: Buffer.byteLength(texts.get('index.md') ?? '', 'utf8'),
     indexCapBytes: MEMORY_INDEX_CAP_BYTES,
     unlinkedTopics,
-    staleTopics: topics.filter((p) => now.getTime() - p.mtimeMs >= staleMs).length,
+    staleTopics: topics.filter((p) => now.getTime() - (p.updatedAt ?? p.mtimeMs) >= staleMs).length,
     unconfirmedTopics: topics.filter((p) => p.status === 'unconfirmed').length,
+    conflictingPages: pages.filter((p) => hasConflictNotes(texts.get(p.page) ?? '')).length,
     brokenLinks: report.brokenLinks.length,
     missingSources: report.missingSources.length,
   };
