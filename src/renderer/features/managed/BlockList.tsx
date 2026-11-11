@@ -313,6 +313,7 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
           busy={busy}
           error={error}
           onKeepMine={() => void save(stale.restart, stale.theirs.revision)}
+          onClose={() => setStale(null)}
           onTakeTheirs={() => { setStale(null); setEditing(null); setError(null); }}
           onFork={() => void forkInstead()}
           forkLabel={`Fork for ${agent?.agentName ?? 'this agent'}`}

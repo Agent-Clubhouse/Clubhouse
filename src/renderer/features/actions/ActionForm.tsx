@@ -179,13 +179,17 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
   const loadOrchestrators = useOrchestratorStore((s) => s.loadSettings);
   useEffect(() => { void loadOrchestrators(); }, [loadOrchestrators]);
   const [draft, setDraft] = useState<ActionDraft>(() => (action ? draftFrom(action) : initial ? draftFrom(initial) : newDraft()));
+  const [openedDraft, setOpenedDraft] = useState(draft);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
   const [runNote, setRunNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setDraft(action ? draftFrom(action) : initial ? draftFrom(initial) : newDraft());
+    const next = action ? draftFrom(action) : initial ? draftFrom(initial) : newDraft();
+    setDraft(next);
+    setOpenedDraft(next);
     setError(null);
     setRunNote(null);
   }, [open, action, initial]);
@@ -219,6 +223,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
 
   const runNow = async () => {
     if (!action) return;
+    setRunning(true);
     setRunNote(null);
     try {
       await window.clubhouse.actions.runNow(action.id);
@@ -226,6 +231,8 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
     } catch (err) {
       // telemetry-exempt: shown in the form
       setError(ipcErrorMessage(err));
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -245,16 +252,17 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
     <Modal
       open={open}
       onClose={onClose}
-      onDismiss={() => undefined}
+      busy={saving || running}
+      dirty={JSON.stringify(draft) !== JSON.stringify(openedDraft)}
       title={action ? 'Edit action' : 'New action'}
       width="w-[560px]"
       testId="action-form"
-      footer={(
+      footer={(dismiss) => (
         <>
           <span className={`${settingsHelp} mr-auto`}>Usage counts toward {ownerLabel(owner, names) === 'You' ? 'you' : ownerLabel(owner, names)}.</span>
-          {action && <Button kind="ghost" onClick={() => { void runNow(); }}>Run now</Button>}
-          <Button kind="ghost" onClick={onClose}>Cancel</Button>
-          <Button kind="primary" disabled={saving} onClick={() => { void save(); }} data-testid="action-form-save">Save</Button>
+          {action && <Button kind="ghost" disabled={saving || running} onClick={() => { void runNow(); }}>Run now</Button>}
+          <Button kind="ghost" onClick={dismiss} disabled={saving || running}>Cancel</Button>
+          <Button kind="primary" disabled={saving || running} onClick={() => { void save(); }} data-testid="action-form-save">Save</Button>
         </>
       )}
     >

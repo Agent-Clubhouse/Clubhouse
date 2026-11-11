@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ManagedPart, ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
+import type { ManagedPart, ManagedPartConsumer, ManagedPartContent, ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { BlockList } from './BlockList';
 import { ImpactDialog, impactTitle, needsImpactDialog } from './ImpactDialog';
 import { PartDialog } from './PartDialog';
@@ -9,6 +9,7 @@ import { builtFromLine, changedLine } from './attribution';
 import { lineDiff, partAsText } from './stale-edit';
 import { leftAloneNotice, resetPendingRestarts } from './restart';
 import { useToastStore } from '../../stores/toastStore';
+import { ManagedUiError } from './managedApi';
 
 /** Shared part edits (#2897): templates in the save dialog, the toast after it, and stale edits. */
 
@@ -130,11 +131,139 @@ describe('a stale edit', () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['Escape', 'backdrop', 'Close', 'Cancel'])('%s returns to the block edit without taking theirs', async (way) => {
+    const { dialog, update } = await openAndSave();
+    if (way === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+    else if (way === 'backdrop') fireEvent.click(dialog.parentElement!);
+    else fireEvent.click(within(dialog).getByRole('button', { name: way }));
+    expect(screen.queryByTestId('managed-stale-dialog')).toBeNull();
+    expect(screen.getByRole('textbox')).toHaveValue('line one\nmy line');
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it('Close returns to the part editor with its dirty draft intact', async () => {
+    vi.spyOn(m(), 'getPart')
+      .mockResolvedValueOnce({ ok: true, value: full('rules', 'old') })
+      .mockResolvedValue({ ok: true, value: theirs });
+    const update = vi.spyOn(m(), 'updatePart').mockResolvedValueOnce(STALE);
+    const onClose = vi.fn();
+    render(<PartDialog open kind="block" editId="rules" onClose={onClose} />);
+    await waitFor(() => expect(screen.getByLabelText('Block text')).toHaveValue('old'));
+    fireEvent.change(screen.getByLabelText('Block text'), { target: { value: 'my edit' } });
+    fireEvent.click(screen.getByTestId('managed-part-save'));
+    const dialog = await screen.findByTestId('managed-stale-dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.getByLabelText('Block text')).toHaveValue('my edit');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'Discard changes?' })).toBeTruthy();
+  });
+
   it('Fork puts the edit on a copy for this agent', async () => {
     const { dialog, onFork } = await openAndSave();
     expect(within(dialog).getByTestId('managed-stale-fork').textContent).toBe('Fork for release-lead');
     fireEvent.click(within(dialog).getByTestId('managed-stale-fork'));
     await waitFor(() => expect(onFork).toHaveBeenCalled());
+  });
+
+  describe('part editor dismissal', () => {
+    const contents: ManagedPartContent[] = [
+      { kind: 'block', content: 'Original instructions' },
+      { kind: 'skill', skillName: 'review', files: [{ path: 'SKILL.md', content: 'Review changes' }] },
+      { kind: 'mcp', serverKey: 'github', transport: 'stdio', command: 'npx', args: ['github'], envVars: ['TOKEN'] },
+    ];
+    const ways = ['Escape', 'backdrop', 'Close', 'Cancel'];
+    const dismiss = (way: string) => {
+      const dialog = screen.getByTestId('managed-part-dialog');
+      if (way === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+      else if (way === 'backdrop') fireEvent.click(dialog.parentElement!);
+      else fireEvent.click(within(dialog).getByRole('button', { name: way }));
+    };
+
+    describe.each(contents)('$kind', (content) => {
+      const open = async () => {
+        vi.spyOn(m(), 'getPart').mockResolvedValue({ ok: true, value: { ...part('rules', { kind: content.kind }), content } });
+        const onClose = vi.fn();
+        render(<PartDialog open kind={content.kind} editId="rules" onClose={onClose} />);
+        await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('rules'));
+        return onClose;
+      };
+
+      it.each(ways)('closes via %s before editing', async (way) => {
+        const onClose = await open();
+        dismiss(way);
+        expect(onClose).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+      });
+
+      it.each(ways)('confirms dirty dismissal via %s and preserves work when declined', async (way) => {
+        const onClose = await open();
+        const label = content.kind === 'block' ? 'Block text' : content.kind === 'skill' ? 'SKILL.md' : 'Arguments';
+        fireEvent.change(screen.getByLabelText(label), { target: { value: 'My unsaved edit\n' } });
+        dismiss(way);
+        expect(onClose).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+        expect(screen.getByLabelText(label)).toHaveValue('My unsaved edit\n');
+        dismiss(way);
+        fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+        expect(onClose).toHaveBeenCalledTimes(1);
+      });
+
+      it('blocks every way out while saving and keeps the eventual error and draft visible', async () => {
+        const onClose = await open();
+        let fail!: (reason: Error) => void;
+        const update = vi.spyOn(m(), 'updatePart').mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
+        fireEvent.change(screen.getByTestId('managed-part-description'), { target: { value: 'My description' } });
+        fireEvent.click(screen.getByTestId('managed-part-save'));
+        for (const way of ways) dismiss(way);
+        expect(update).toHaveBeenCalledTimes(1);
+        expect(onClose).not.toHaveBeenCalled();
+        expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+        await act(async () => { fail(new ManagedUiError('failed', 'Save failed')); });
+        expect(screen.getByRole('alert')).toHaveTextContent('Save failed');
+        expect(screen.getByTestId('managed-part-description')).toHaveValue('My description');
+        dismiss('Cancel');
+        expect(screen.getByRole('dialog', { name: 'Discard changes?' })).toBeTruthy();
+      });
+
+      it('treats a reverted edit as pristine', async () => {
+        const onClose = await open();
+        fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Changed' } });
+        fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'rules' } });
+        dismiss('Escape');
+        expect(onClose).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('treats a reverted executable checkbox as pristine when the flag was omitted', async () => {
+      vi.spyOn(m(), 'getPart').mockResolvedValue({
+        ok: true,
+        value: {
+          ...part('review', { kind: 'skill' }),
+          content: { kind: 'skill', skillName: 'review', files: [{ path: 'SKILL.md', content: 'Review' }, { path: 'check.sh', content: 'echo check' }] },
+        },
+      });
+      const onClose = vi.fn();
+      render(<PartDialog open kind="skill" editId="review" onClose={onClose} />);
+      await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('review'));
+      const executable = screen.getByRole('checkbox', { name: 'Executable: check.sh' });
+      fireEvent.click(executable);
+      fireEvent.click(executable);
+      dismiss('Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a cleared optional MCP field as pristine after reverting the transport', () => {
+      const onClose = vi.fn();
+      render(<PartDialog open kind="mcp" onClose={onClose} />);
+      fireEvent.change(screen.getByLabelText('Transport'), { target: { value: 'http' } });
+      fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.com' } });
+      fireEvent.change(screen.getByLabelText('URL'), { target: { value: '' } });
+      fireEvent.change(screen.getByLabelText('Transport'), { target: { value: 'stdio' } });
+      dismiss('Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('in the part dialog, saves mine as a library copy and leaves the shared part alone', async () => {

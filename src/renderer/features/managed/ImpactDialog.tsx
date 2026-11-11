@@ -43,12 +43,13 @@ export function ImpactDialog({ open, partName, consumers, templates = [], busy, 
     <Modal
       open={open}
       onClose={onCancel}
+      busy={busy}
       title={impactTitle(partName, consumers.length, templates.length)}
       width="w-[560px]"
       testId="managed-impact-dialog"
-      footer={<>
+      footer={(dismiss) => <>
         {onForkInstead && <Button kind="quiet" className="mr-auto" onClick={onForkInstead} disabled={busy}>{forkLabel ?? 'Fork for this agent instead'}</Button>}
-        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+        <Button onClick={dismiss} disabled={busy}>Cancel</Button>
         <Button kind="primary" disabled={busy} onClick={() => onSave(running.filter((c) => restart.has(c.agentId)))} data-testid="managed-impact-save">
           {restart.size > 0 ? `Save and restart ${restart.size}` : 'Save'}
         </Button>

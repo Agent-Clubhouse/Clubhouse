@@ -83,6 +83,17 @@ function blankContent(kind: ManagedPartKind): ManagedPartContent {
   return { kind, serverKey: '', transport: 'stdio', command: '', args: [], envVars: [] };
 }
 
+/** Compare field values, not whether an optional default was explicitly stored. */
+function draftSnapshot(name: string, description: string, content: ManagedPartContent, argsText: string, envText: string): string {
+  const fields = content.kind === 'block' ? content.content
+    : content.kind === 'skill' ? [
+      content.skillName,
+      content.files.map((file) => [file.path, file.content, file.encoding ?? 'utf8', !!file.executable]),
+    ]
+      : [content.serverKey, content.transport, content.command ?? '', content.url ?? '', content.args ?? [], content.envVars ?? [], content.env];
+  return JSON.stringify([name, description, content.kind, fields, argsText, envText]);
+}
+
 /**
  * Create or edit a block, skill or MCP server (#2894, #2895). Created here,
  * it's saved to the library and `onCreated` adds it to the agent. Editing a
@@ -114,6 +125,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   // new line or comma isn't swallowed while the person is still typing.
   const [argsText, setArgsText] = useState('');
   const [envText, setEnvText] = useState('');
+  const [initialDraft, setInitialDraft] = useState(() => draftSnapshot('', '', blankContent(kind), '', ''));
   // Files that couldn't be added or renamed, and why (#3247). Nothing is overwritten.
   const [fileError, setFileError] = useState<string | null>(null);
   // The supporting file being renamed or moved, and the path typed for it.
@@ -130,14 +142,18 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     setRenaming(null);
     if (!editId) {
       setName(''); setDescription(''); setContent(blankContent(kind)); setOpened({ revision: 0, name: '', description: '' }); setUsedBy([]); setTemplates([]); setArgsText(''); setEnvText('');
+      setInitialDraft(draftSnapshot('', '', blankContent(kind), '', ''));
       return;
     }
     let cancelled = false;
     void unwrap(managed().getPart(editId)).then((p) => {
       if (cancelled) return;
       setName(p.name); setDescription(p.description); setContent(p.content); setOpened({ revision: p.revision, name: p.name, description: p.description }); setUsedBy(p.usedBy); setTemplates(p.templates);
-      setArgsText(p.content.kind === 'mcp' ? (p.content.args ?? []).join('\n') : '');
-      setEnvText(p.content.kind === 'mcp' ? (p.content.envVars ?? []).join(', ') : '');
+      const args = p.content.kind === 'mcp' ? (p.content.args ?? []).join('\n') : '';
+      const env = p.content.kind === 'mcp' ? (p.content.envVars ?? []).join(', ') : '';
+      setArgsText(args);
+      setEnvText(env);
+      setInitialDraft(draftSnapshot(p.name, p.description, p.content, args, env));
     }).catch((err) => { /* telemetry-exempt: shown to the person */ if (!cancelled) setError(errorText(err)); });
     return () => { cancelled = true; };
   }, [open, editId, kind]);
@@ -261,17 +277,18 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
       <Modal
         open={open && !impact && !stale}
         onClose={onClose}
-        onDismiss={() => {}}
+        busy={busy}
+        dirty={draftSnapshot(name, description, content, argsText, envText) !== initialDraft || (!!renaming && renaming.to !== renaming.from)}
         title={title}
         width="w-[640px]"
         testId="managed-part-dialog"
-        footer={<>
+        footer={(dismiss) => <>
           <span className="mr-auto self-center text-xs text-ctp-overlay1">
             {editId
               ? (usedBy.length > 1 ? `Used by ${usedBy.length} agents. They get the change at their next start.` : 'Applies at the next start.')
               : `Saved to the library${agentName ? ` and added to ${agentName}` : ''}.`}
           </span>
-          <Button onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button onClick={dismiss} disabled={busy}>Cancel</Button>
           <Button kind="primary" onClick={save} disabled={busy || !valid} data-testid="managed-part-save">{editId ? 'Save' : `Create ${partKindLabel(kind).toLowerCase()}`}</Button>
         </>}
       >
@@ -423,6 +440,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
           mine={{ name, description, content: toSave() }}
           busy={busy}
           error={error}
+          onClose={() => setStale(null)}
           onKeepMine={() => {
             const theirs: Opened = { revision: stale.theirs.revision, name: stale.theirs.name, description: stale.theirs.description };
             setOpened(theirs);

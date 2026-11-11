@@ -114,7 +114,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
 
   // Esc and the backdrop can't discard a note or a drawing (feedback composer contract, section 2). Cancel is the explicit way.
   const holdsWork = notes.trim() !== '' || inkByShot.some((ink) => ink.length > 0) || reopened?.carriedMarks === true;
-  const dismiss = phase === 'sending' || (phase === 'review' && holdsWork) ? (): void => undefined : cancel;
+  const dismiss = phase === 'review' && holdsWork ? (): void => undefined : cancel;
 
   const send = async (includeScreenshot: boolean) => {
     setPhase('sending');
@@ -160,8 +160,8 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
   };
 
   return (
-    <Modal open onClose={phase === 'sending' ? () => undefined : cancel} onDismiss={dismiss} title="Send feedback" width="w-[560px]">
-      <div className="px-5 pb-5 pt-3 space-y-3" data-testid="feedback-review">
+    <Modal open onClose={cancel} onDismiss={dismiss} busy={phase === 'sending'} title="Send feedback" width="w-[560px]">
+      {(requestClose) => <div className="px-5 pb-5 pt-3 space-y-3" data-testid="feedback-review">
         {phase === 'saved' ? (
           <div className="space-y-3">
             <p className="text-sm text-ctp-text" role="status" data-testid="feedback-sent-state">
@@ -261,7 +261,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
             )}
             {error && <p className="text-sm text-ctp-error" role="alert" data-testid="feedback-error">{error}</p>}
             <div className="flex items-center justify-end gap-2">
-              <button type="button" onClick={cancel} disabled={phase === 'sending'} className="px-3 py-1.5 text-sm rounded-md text-ctp-subtext1 hover:text-ctp-text hover:bg-surface-0 disabled:opacity-50">
+              <button type="button" onClick={requestClose} disabled={phase === 'sending'} className="px-3 py-1.5 text-sm rounded-md text-ctp-subtext1 hover:text-ctp-text hover:bg-surface-0 disabled:opacity-50">
                 Cancel
               </button>
               <button
@@ -284,7 +284,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
             </div>
           </>
         )}
-      </div>
+      </div>}
     </Modal>
   );
 }

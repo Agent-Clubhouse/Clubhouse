@@ -153,10 +153,11 @@ export function RestartConfirmDialog({ agentName, fresh, busy, onWhenTurnEnds, o
     <Modal
       open
       onClose={onCancel}
+      busy={busy}
       title={`Restart ${agentName}?`}
       testId="managed-restart-confirm"
-      footer={<>
-        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+      footer={(dismiss) => <>
+        <Button onClick={dismiss} disabled={busy}>Cancel</Button>
         <Button onClick={onNow} disabled={busy} data-testid="managed-restart-now">Restart now</Button>
         <Button kind="primary" onClick={onWhenTurnEnds} disabled={busy} data-testid="managed-restart-when-turn-ends">Restart when this turn ends</Button>
       </>}

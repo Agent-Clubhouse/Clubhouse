@@ -1,4 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { Modal } from './Modal';
 
@@ -209,6 +211,122 @@ describe('Modal', () => {
     e.preventDefault();
     document.dispatchEvent(e);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  describe('state-aware dismissal', () => {
+    const ways = ['Escape', 'backdrop', 'Close', 'Cancel'] as const;
+    function dismiss(way: typeof ways[number]) {
+      const dialog = screen.getByRole('dialog', { name: 'Editor' });
+      if (way === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+      else if (way === 'backdrop') fireEvent.click(dialog.parentElement!);
+      else fireEvent.click(within(dialog).getByRole('button', { name: way }));
+    }
+
+    function editor(onClose: () => void, dirty = false, busy = false) {
+      return <Modal open onClose={onClose} dirty={dirty} busy={busy} title="Editor" footer={(requestClose) => <button onClick={requestClose}>Cancel</button>}>
+        <input aria-label="Draft" defaultValue="Unsaved work" />
+      </Modal>;
+    }
+
+    it.each(ways)('closes a pristine dialog via %s', (way) => {
+      const onClose = vi.fn();
+      render(editor(onClose));
+      dismiss(way);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+    });
+
+    it.each(ways)('asks before discarding dirty work via %s', (way) => {
+      const onClose = vi.fn();
+      render(editor(onClose, true));
+      dismiss(way);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog', { name: 'Discard changes?' })).toBeInTheDocument();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep editing' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+      expect(screen.getByLabelText('Draft')).toHaveValue('Unsaved work');
+      expect(onClose).not.toHaveBeenCalled();
+      dismiss(way);
+      fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(ways)('blocks %s while busy, even if dirty, and uses the latest state', (way) => {
+      const onClose = vi.fn();
+      const { rerender } = render(editor(onClose));
+      rerender(editor(onClose, true, true));
+      dismiss(way);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+      rerender(editor(onClose));
+      dismiss(way);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['Escape', 'backdrop', 'Close'] as const)('dismisses only the discard prompt via %s and restores focus', (way) => {
+      const onClose = vi.fn();
+      render(editor(onClose, true));
+      const cancel = screen.getByRole('button', { name: 'Cancel' });
+      cancel.focus();
+      dismiss('Cancel');
+      const prompt = screen.getByRole('dialog', { name: 'Discard changes?' });
+      if (way === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+      else if (way === 'backdrop') fireEvent.click(prompt.parentElement!);
+      else fireEvent.click(within(prompt).getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(cancel);
+    });
+
+    it('blocks an open discard prompt if the editor becomes busy', () => {
+      const onClose = vi.fn();
+      const { rerender } = render(editor(onClose, true));
+      dismiss('Escape');
+      rerender(editor(onClose, true, true));
+      fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByRole('dialog', { name: 'Discard changes?' })).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('traps keyboard focus in the discard prompt and restores the editor field on Escape', async () => {
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      render(editor(onClose, true));
+      const draft = screen.getByLabelText('Draft');
+      expect(draft).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(screen.getByRole('button', { name: 'Keep editing' })).toHaveFocus();
+      await user.tab();
+      expect(screen.getByRole('button', { name: 'Discard changes' })).toHaveFocus();
+      await user.tab();
+      expect(within(screen.getByRole('dialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Close' })).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(screen.getByRole('button', { name: 'Discard changes' })).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(draft).toHaveFocus();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('returns focus to the opener after confirming discard closes both dialogs', async () => {
+      const user = userEvent.setup();
+      function Harness() {
+        const [open, setOpen] = useState(false);
+        return <>
+          <button onClick={() => setOpen(true)}>Open editor</button>
+          <Modal open={open} onClose={() => setOpen(false)} dirty title="Editor">
+            <input aria-label="Draft" defaultValue="Unsaved work" />
+          </Modal>
+        </>;
+      }
+      render(<Harness />);
+      const opener = screen.getByRole('button', { name: 'Open editor' });
+      await user.click(opener);
+      await user.keyboard('{Escape}');
+      await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(opener).toHaveFocus();
+    });
   });
 
   describe('onDismiss', () => {
