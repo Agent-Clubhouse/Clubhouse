@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import { ACCESS_LEVELS, isAccessLevel } from '../../shared/agent-access';
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { ArchInfo, BadgeSettings, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
+import { ArchInfo, BadgeSettings, LoggingSettings, NotificationSettings, ThemeId, UPDATE_AGENT_ACTION_TIMEOUT_MS, type UpdateAgentAction, type UpdateAgentActionResult } from '../../shared/types';
 import { getCliInstallStatus, installCli, uninstallCli } from '../services/cli-install';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
@@ -29,7 +29,7 @@ import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayArg } from './validation';
-import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
+import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState, markAgentStoppedForUpdate } from '../services/restart-session-service';
 import * as ptyManager from '../services/pty-manager';
 import * as headlessManager from '../services/headless-manager';
 import { cancelAppShutdown, runAppShutdown } from '../services/app-shutdown';
@@ -93,6 +93,66 @@ function applyUpdateRestart(data?: RestartData): Promise<void> {
   })();
   updateRestart = run;
   return run;
+}
+
+function resolveAgentForUpdate(agentId: string, action: UpdateAgentAction): Promise<UpdateAgentActionResult> {
+  const startedAt = Date.now();
+  const before = getLiveAgentsForUpdate().find((agent) => agent.agentId === agentId);
+  const runtime = getAgentRuntime(agentId);
+  const meta = {
+    agentId, action, runtime: before?.runtime ?? runtime?.kind ?? 'unknown',
+    provider: before?.orchestrator ?? 'unknown', workingBefore: before?.isWorking ?? false,
+  };
+  appLog('update:session-resume', 'info', 'Update gate action started', {
+    meta: { ...meta, durationMs: 0, result: 'started', workingAfter: meta.workingBefore },
+  });
+  // Record intent before stop can hide the runtime or await driver shutdown.
+  if (action === 'kill') markAgentStoppedForUpdate(agentId);
+
+  return new Promise((resolve) => {
+    let completed = false;
+    let settled = false;
+    const working = () => getLiveAgentsForUpdate().some((agent) => agent.agentId === agentId && agent.isWorking);
+    const finish = (status: UpdateAgentActionResult['status']) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      clearInterval(poll);
+      const isWorking = working();
+      appLog('update:session-resume', status === 'resolved' ? 'info' : 'warn', 'Update gate action finished', {
+        meta: { ...meta, durationMs: Date.now() - startedAt, result: status, workingAfter: isWorking },
+      });
+      if (status === 'resolved') resolve({ status, isWorking });
+      else resolve({
+        status, isWorking,
+        message: action === 'interrupt'
+          ? status === 'timeout'
+            ? 'The agent did not become idle in time. Choose Stop now to end it without resuming after restart.'
+            : 'Could not interrupt the agent. Try again or choose Stop now.'
+          : status === 'timeout'
+            ? 'Stopping took too long. Try Stop now again. This agent will not resume after restart.'
+            : 'Could not stop the agent. Try Stop now again. This agent will not resume after restart.',
+      });
+    };
+    const check = () => {
+      if (!settled && completed && (action === 'kill' || !working())) finish('resolved');
+    };
+    const deadline = setTimeout(() => finish('timeout'), UPDATE_AGENT_ACTION_TIMEOUT_MS);
+    const poll = setInterval(check, 250);
+    // Promise chaining also catches synchronous failures without logging driver
+    // errors, which may contain prompts or local paths.
+    void Promise.resolve().then(async () => {
+      if (!runtime && headlessManager.isHeadless(agentId)) {
+        headlessManager.kill(agentId);
+      } else if (action === 'interrupt') {
+        if (runtime) await runtime.interrupt();
+        else ptyManager.write(agentId, '\x03');
+      } else {
+        if (runtime) await runtime.stop({ graceful: false, throwOnFailure: true });
+        else ptyManager.kill(agentId);
+      }
+    }).then(() => { completed = true; check(); }, () => finish('error'));
+  });
 }
 
 export function registerAppHandlers(): void {
@@ -575,17 +635,8 @@ export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.RESOLVE_WORKING_AGENT, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, agentId, action) => {
-      const runtime = getAgentRuntime(agentId);
-      if (!runtime && headlessManager.isHeadless(agentId)) {
-        // A headless run has no interrupt: both end it.
-        headlessManager.kill(agentId);
-      } else if (action === 'interrupt') {
-        if (runtime) await runtime.interrupt();
-        else ptyManager.write(agentId, '\x03');
-      } else if (action === 'kill') {
-        if (runtime) await runtime.stop({ graceful: false });
-        else ptyManager.kill(agentId);
-      }
+      if (action !== 'interrupt' && action !== 'kill') throw new Error('Invalid update gate action');
+      return resolveAgentForUpdate(agentId, action);
     },
   ));
 

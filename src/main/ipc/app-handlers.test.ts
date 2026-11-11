@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 
 vi.mock('../services/free-agent-settings');
@@ -131,6 +131,12 @@ vi.mock('../services/restart-session-service', () => ({
   getLiveAgentsForUpdate: vi.fn(() => []),
   loadPendingResume: vi.fn(async () => null),
   captureSessionState: vi.fn(async () => {}),
+  markAgentStoppedForUpdate: vi.fn(),
+}));
+
+vi.mock('../services/agent-runtime', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../services/agent-runtime')>(),
+  getAgentRuntime: vi.fn(),
 }));
 
 vi.mock('../services/annex-server', () => ({
@@ -168,7 +174,10 @@ import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';
 import { resetAppShutdownForTests } from '../services/app-shutdown';
 import { launchesOpen } from '../services/launch-gate';
-import { captureSessionState } from '../services/restart-session-service';
+import { captureSessionState, getLiveAgentsForUpdate, markAgentStoppedForUpdate } from '../services/restart-session-service';
+import { getAgentRuntime } from '../services/agent-runtime';
+import type { AgentRuntime } from '../../shared/chat';
+import { UPDATE_AGENT_ACTION_TIMEOUT_MS, type LiveAgentInfo } from '../../shared/types';
 import * as ptyManagerMock from '../services/pty-manager';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
@@ -244,6 +253,89 @@ describe('app-handlers', () => {
   });
 
   // --- Core ---
+
+  describe('update gate actions', () => {
+    const liveAgent: LiveAgentInfo = {
+      agentId: 'update-agent', projectPath: 'project', orchestrator: 'claude-code',
+      runtime: 'chat', isWorking: true, lastActivity: null, resumeStrategy: 'auto',
+    };
+    const interrupt = vi.fn<AgentRuntime['interrupt']>();
+    const stop = vi.fn<AgentRuntime['stop']>();
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      interrupt.mockResolvedValue(undefined);
+      stop.mockResolvedValue(undefined);
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', interrupt, stop } as AgentRuntime);
+      vi.mocked(getLiveAgentsForUpdate).mockReturnValue([liveAgent]);
+    });
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('waits for interrupt-to-idle before confirming and logs sanitized diagnostics', async () => {
+      const request = handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', 'interrupt');
+      const done = vi.fn();
+      void request.then(done);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(interrupt).toHaveBeenCalledOnce();
+      expect(done).not.toHaveBeenCalled();
+      vi.mocked(getLiveAgentsForUpdate).mockReturnValue([{ ...liveAgent, isWorking: false }]);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(await request).toEqual({ status: 'resolved', isWorking: false });
+      expect(logService.appLog).toHaveBeenLastCalledWith('update:session-resume', 'info', 'Update gate action finished', {
+        meta: {
+          agentId: 'update-agent', action: 'interrupt', runtime: 'chat', provider: 'claude-code',
+          durationMs: 750, result: 'resolved', workingBefore: true, workingAfter: false,
+        },
+      });
+      expect(JSON.stringify(vi.mocked(logService.appLog).mock.calls)).not.toContain('projectPath');
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each(['interrupt', 'kill'] as const)('bounds an unresponsive %s and records timeout', async (action) => {
+      (action === 'interrupt' ? interrupt : stop).mockImplementation(() => new Promise(() => {}));
+      const request = handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', action);
+      await vi.advanceTimersByTimeAsync(UPDATE_AGENT_ACTION_TIMEOUT_MS);
+      expect(await request).toMatchObject({ status: 'timeout', isWorking: true, message: expect.stringContaining('Stop now') });
+      expect(logService.appLog).toHaveBeenLastCalledWith('update:session-resume', 'warn', 'Update gate action finished', {
+        meta: expect.objectContaining({ action, durationMs: UPDATE_AGENT_ACTION_TIMEOUT_MS, result: 'timeout' }),
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('times out when a PTY keeps producing output after interrupt completes', async () => {
+      vi.mocked(getLiveAgentsForUpdate).mockReturnValue([{ ...liveAgent, runtime: 'pty' }]);
+      const request = handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', 'interrupt');
+      await vi.advanceTimersByTimeAsync(UPDATE_AGENT_ACTION_TIMEOUT_MS);
+      expect(interrupt).toHaveBeenCalledOnce();
+      expect(await request).toMatchObject({ status: 'timeout', isWorking: true });
+    });
+
+    it.each(['interrupt', 'kill'] as const)('returns an actionable error for failed %s without logging driver content', async (action) => {
+      (action === 'interrupt' ? interrupt : stop).mockRejectedValue(new Error('private prompt and local path'));
+      const result = await handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', action);
+      expect(result).toMatchObject({ status: 'error', message: expect.stringContaining('Try') });
+      expect(JSON.stringify(vi.mocked(logService.appLog).mock.calls)).not.toContain('private prompt');
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('excludes a stopped agent before awaiting its driver and confirms only once stop finishes', async () => {
+      let finishStop!: () => void;
+      stop.mockImplementation(() => new Promise((resolve) => { finishStop = resolve; }));
+      const request = handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', 'kill');
+      expect(markAgentStoppedForUpdate).toHaveBeenCalledWith('update-agent');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(stop).toHaveBeenCalledWith({ graceful: false, throwOnFailure: true });
+      finishStop();
+      expect(await request).toMatchObject({ status: 'resolved' });
+    });
+
+    it('rejects unknown actions without stopping an agent', async () => {
+      await expect(handleHandlers.get(IPC.APP.RESOLVE_WORKING_AGENT)!({}, 'update-agent', 'wait')).rejects.toThrow('Invalid update gate action');
+      expect(stop).not.toHaveBeenCalled();
+      expect(interrupt).not.toHaveBeenCalled();
+    });
+  });
 
   it('OPEN_EXTERNAL_URL delegates to shell.openExternal for https', async () => {
     const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;

@@ -1945,3 +1945,10 @@ export interface LiveAgentInfo {
   resumeStrategy: ResumeStrategy;
 }
 
+export type UpdateAgentAction = 'interrupt' | 'kill';
+export const UPDATE_AGENT_ACTION_TIMEOUT_MS = 10_000;
+
+export type UpdateAgentActionResult =
+  | { status: 'resolved'; isWorking: boolean }
+  | { status: 'timeout' | 'error'; isWorking: boolean; message: string };
+

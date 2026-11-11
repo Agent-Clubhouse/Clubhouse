@@ -2,7 +2,7 @@ import type { HelperRoutingReadOptions, HelperRoutingSettings, HelperRoutingUpda
 import type { AccessLevel } from '../shared/agent-access';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { CliInstallStatus, NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients } from '../shared/types';
+import type { CliInstallStatus, NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients, LiveAgentInfo, UpdateAgentAction, UpdateAgentActionResult } from '../shared/types';
 
 export const app = {
   app: {
@@ -121,7 +121,7 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.GET_UPDATE_STATUS),
   applyUpdate: () =>
     ipcRenderer.invoke(IPC.APP.APPLY_UPDATE),
-  getLiveAgentsForUpdate: () =>
+  getLiveAgentsForUpdate: (): Promise<LiveAgentInfo[]> =>
     ipcRenderer.invoke(IPC.APP.GET_LIVE_AGENTS_FOR_UPDATE),
   getPendingResumes: () =>
     ipcRenderer.invoke(IPC.APP.GET_PENDING_RESUMES),
@@ -135,7 +135,7 @@ export const app = {
   },
   resumeManualAgent: (agentId: string, projectPath: string, sessionId?: string) =>
     ipcRenderer.invoke(IPC.APP.RESUME_MANUAL_AGENT, agentId, projectPath, sessionId),
-  resolveWorkingAgent: (agentId: string, action: string) =>
+  resolveWorkingAgent: (agentId: string, action: UpdateAgentAction): Promise<UpdateAgentActionResult> =>
     ipcRenderer.invoke(IPC.APP.RESOLVE_WORKING_AGENT, agentId, action),
   confirmUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) =>
     ipcRenderer.invoke(IPC.APP.CONFIRM_UPDATE_RESTART, data),

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useUpdateStore } from '../../stores/updateStore';
 import { useAgentStore } from '../../stores/agentStore';
-import { UpdateGateModal, UpdateGateAgent } from './UpdateGateModal';
-import type { LiveAgentInfo } from '../../../shared/types';
+import { UpdateGateModal, UpdateGateAgent, type UpdateGateActionState } from './UpdateGateModal';
+import { UPDATE_AGENT_ACTION_TIMEOUT_MS, type LiveAgentInfo, type UpdateAgentAction, type UpdateAgentActionResult } from '../../../shared/types';
 import { NoticeCard } from '../../components/NoticeCard';
 import { Button } from '../../components/Button';
 
@@ -35,6 +35,12 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
   const [showGate, setShowGate] = useState(false);
   const [simulateMode, setSimulateMode] = useState(false);
   const [gateAgents, setGateAgents] = useState<UpdateGateAgent[]>([]);
+  const [actionStates, setActionStates] = useState<Record<string, UpdateGateActionState>>({});
+  const [gateLoading, setGateLoading] = useState(true);
+  const [gateError, setGateError] = useState<string>();
+  const pendingActions = useRef(new Set<string>());
+  const stoppingAgents = useRef(new Set<string>());
+  const stoppedAgents = useRef(new Set<string>());
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const isReady = status.state === 'ready';
@@ -50,19 +56,32 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
   const refreshGateAgents = useCallback(async () => {
     try {
       const live = await window.clubhouse.app.getLiveAgentsForUpdate();
-      setGateAgents(
+      setGateAgents((previous) => {
         // resumeStrategy comes from the main process, which derives it from the
         // provider's session capability — the same source the capture path uses.
-        live.map((a: LiveAgentInfo) => ({
+        const next = live.filter((a: LiveAgentInfo) => !stoppedAgents.current.has(a.agentId)).map((a: LiveAgentInfo) => ({
           ...a,
           agentName: agents[a.agentId]?.name || a.agentId,
-        })),
-      );
-    } catch { /* ignore */ }
+        }));
+        const ids = new Set(next.map((a) => a.agentId));
+        return [...next, ...previous.filter((a) => !ids.has(a.agentId)
+          && (pendingActions.current.has(a.agentId) || stoppingAgents.current.has(a.agentId)))];
+      });
+      setActionStates((previous) => Object.fromEntries(Object.entries(previous).filter(([id, state]) =>
+        state.action === 'kill' || pendingActions.current.has(id) || live.some((a: LiveAgentInfo) => a.agentId === id && a.isWorking),
+      )));
+      setGateError(undefined);
+    } catch {
+      // telemetry-exempt: The gate displays the lookup failure with a retry action.
+      setGateError('Could not check active agents.');
+    } finally {
+      setGateLoading(false);
+    }
   }, [agents]);
 
   useEffect(() => {
     if (showGate) {
+      setGateLoading(true);
       refreshGateAgents();
       pollRef.current = setInterval(refreshGateAgents, 2000);
     }
@@ -117,13 +136,46 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
     }
   };
 
-  const handleGateResolve = async (agentId: string, action: 'wait' | 'interrupt' | 'kill') => {
-    if (action === 'wait') return;
-    await window.clubhouse.app.resolveWorkingAgent(agentId, action);
-    if (action === 'kill') {
-      setGateAgents((prev) => prev.filter((a) => a.agentId !== agentId));
+  const handleGateResolve = async (agentId: string, action: UpdateAgentAction) => {
+    if (pendingActions.current.has(agentId)) return;
+    pendingActions.current.add(agentId);
+    if (action === 'kill') stoppingAgents.current.add(agentId);
+    setActionStates((prev) => ({ ...prev, [agentId]: { action, status: 'pending' } }));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const deadline = new Promise<UpdateAgentActionResult>((resolve) => {
+        timer = setTimeout(() => resolve({
+          status: 'timeout', isWorking: true,
+          message: action === 'interrupt'
+            ? 'Interrupt did not respond in time. Try again or choose Stop now.'
+            : 'Stop did not respond in time. Try Stop now again.',
+        }), UPDATE_AGENT_ACTION_TIMEOUT_MS + 2000);
+      });
+      const result = await Promise.race([window.clubhouse.app.resolveWorkingAgent(agentId, action), deadline]);
+      if (result.status === 'resolved') {
+        if (action === 'kill') {
+          stoppedAgents.current.add(agentId);
+          stoppingAgents.current.delete(agentId);
+          setGateAgents((prev) => prev.filter((a) => a.agentId !== agentId));
+        }
+        setActionStates((prev) => {
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+      } else {
+        setActionStates((prev) => ({ ...prev, [agentId]: { action, status: result.status, message: result.message } }));
+      }
+    } catch {
+      // telemetry-exempt: The row displays the request failure with retry and stop actions.
+      setActionStates((prev) => ({
+        ...prev, [agentId]: { action, status: 'error', message: 'The request failed. Try again or choose Stop now.' },
+      }));
+    } finally {
+      clearTimeout(timer);
+      pendingActions.current.delete(agentId);
     }
-    setTimeout(refreshGateAgents, 1000);
+    void refreshGateAgents();
   };
 
   // When in simulate mode, render only the gate modal (no banner needed)
@@ -131,6 +183,10 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
     return showGate ? (
       <UpdateGateModal
         agents={gateAgents}
+        actionStates={actionStates}
+        loading={gateLoading}
+        error={gateError}
+        onRetry={refreshGateAgents}
         onCancel={() => { setShowGate(false); setSimulateMode(false); }}
         onConfirm={handleGateConfirm}
         onResolveAgent={handleGateResolve}
@@ -141,6 +197,10 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
   const gate = showGate && (
     <UpdateGateModal
       agents={gateAgents}
+      actionStates={actionStates}
+      loading={gateLoading}
+      error={gateError}
+      onRetry={refreshGateAgents}
       onCancel={() => setShowGate(false)}
       onConfirm={handleGateConfirm}
       onResolveAgent={handleGateResolve}
@@ -178,7 +238,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
             </>}>
             {status.releaseMessage
               ? <span data-testid="update-release-message">{status.releaseMessage}</span>
-              : 'Restart to finish installing. Running agents resume.'}
+              : 'Restart to finish installing. Agent conversations resume, not interrupted turns.'}
           </NoticeCard>
         )}
         {gate}

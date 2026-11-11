@@ -18,6 +18,11 @@ import { isDispatcherCoordinatorPath } from './dispatcher/dispatcher-paths';
 const SCHEMA_VERSION = 1;
 const STALENESS_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const STATE_FILENAME = 'restart-session-state.json';
+const stoppedForUpdate = new Set<string>();
+
+export function markAgentStoppedForUpdate(agentId: string): void {
+  stoppedForUpdate.add(agentId);
+}
 
 function getStatePath(): string {
   return path.join(app.getPath('userData'), STATE_FILENAME);
@@ -31,6 +36,7 @@ export async function captureSessionState(
   const sessions: RestartSessionEntry[] = [];
 
   for (const [agentId, reg] of all) {
+    if (stoppedForUpdate.has(agentId)) continue;
     if (reg.runtime !== 'pty' && reg.runtime !== 'chat') continue;
     const provider = getProvider(reg.orchestrator);
     if (!provider) continue;
@@ -92,6 +98,8 @@ export async function captureSessionState(
     // Prefer per-agent meta (future-proofing), fall back to project-level setting.
     const permissionMode = meta?.permissionMode ?? freeAgentSettings.getPermissionMode(reg.projectPath);
 
+    // A stop can arrive while session discovery is awaiting disk I/O.
+    if (stoppedForUpdate.has(agentId)) continue;
     sessions.push({
       agentId,
       agentName,

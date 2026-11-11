@@ -1,5 +1,12 @@
 import { Modal } from '../../components/Modal';
 import { StatusDot } from '../agents/agent-status';
+import type { UpdateAgentAction } from '../../../shared/types';
+
+export interface UpdateGateActionState {
+  action: UpdateAgentAction;
+  status: 'pending' | 'error' | 'timeout';
+  message?: string;
+}
 
 export interface UpdateGateAgent {
   agentId: string;
@@ -12,62 +19,79 @@ export interface UpdateGateAgent {
 
 interface UpdateGateModalProps {
   agents: UpdateGateAgent[];
+  actionStates?: Record<string, UpdateGateActionState>;
+  loading?: boolean;
+  error?: string;
+  onRetry?: () => void;
   onCancel: () => void;
   onConfirm: () => void;
-  onResolveAgent: (agentId: string, action: 'wait' | 'interrupt' | 'kill') => void;
+  onResolveAgent: (agentId: string, action: UpdateAgentAction) => void;
 }
 
-export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }: UpdateGateModalProps) {
-  const workingAgents = agents.filter((a) => a.isWorking);
-  const idleAgents = agents.filter((a) => !a.isWorking);
-  const hasWorking = workingAgents.length > 0;
+export function UpdateGateModal({ agents, actionStates = {}, loading = false, error, onRetry, onCancel, onConfirm, onResolveAgent }: UpdateGateModalProps) {
+  const needsAction = (agent: UpdateGateAgent) => agent.isWorking || !!actionStates[agent.agentId];
+  const workingAgents = agents.filter(needsAction);
+  const idleAgents = agents.filter((a) => !needsAction(a));
+  const restartDisabled = loading || !!error || workingAgents.length > 0;
 
   return (
     <Modal open={true} onClose={onCancel} aria-label="Update ready" width="w-full max-w-lg mx-4">
-        <h2 className="text-base font-semibold text-ctp-text mb-4">Update Ready — Active Agents</h2>
+        <h2 className="text-base font-semibold text-ctp-text mb-4">Update ready</h2>
+        <p className="text-xs text-ctp-subtext0 mb-4">
+          Interrupt ends the current turn. Only the conversation resumes after restart, not the interrupted turn.
+          {' '}Stop now ends the agent and excludes it from resuming after restart.
+        </p>
+        {loading && <p role="status" className="text-xs text-ctp-subtext0 mb-2">Checking active agents.</p>}
+        {error && <p role="alert" className="text-xs text-ctp-text mb-2">
+          {error} <button onClick={onRetry} className="underline cursor-pointer">Try again</button>
+        </p>}
 
         {workingAgents.length > 0 && (
           <div className="mb-4">
-            <div className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Still working</div>
-            {workingAgents.map((agent) => (
-              <div key={agent.agentId} className="flex items-center justify-between bg-surface-0 border border-surface-2 rounded-lg px-3 py-2.5 mb-1.5">
-                <div className="flex items-center gap-2">
-                  <StatusDot dot="working" />
-                  <span className="text-sm text-ctp-text font-medium">{agent.agentName}</span>
-                  <span className="text-xs text-ctp-subtext0">Working</span>
+            <div className="text-xs text-ctp-subtext0 mb-2">Needs attention</div>
+            {workingAgents.map((agent) => {
+              const state = actionStates[agent.agentId];
+              const pending = state?.status === 'pending';
+              return (
+                <div key={agent.agentId} className="bg-surface-0 border border-surface-2 rounded-lg px-3 py-2.5 mb-1.5" aria-busy={pending}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <StatusDot dot="working" />
+                      <span className="text-sm text-ctp-text font-medium">{agent.agentName}</span>
+                      <span role={pending ? 'status' : undefined} className="text-xs text-ctp-subtext0">
+                        {pending ? state.action === 'kill' ? 'Stopping...' : 'Interrupting...' : agent.isWorking ? 'Working' : 'Idle'}
+                      </span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        disabled={pending || state?.action === 'kill'}
+                        onClick={() => onResolveAgent(agent.agentId, 'interrupt')}
+                        className="px-3 py-1 text-xs rounded-md bg-surface-1 border border-surface-2 text-ctp-text
+                          hover:bg-surface-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                      >
+                        Interrupt
+                      </button>
+                      <button
+                        disabled={pending}
+                        onClick={() => onResolveAgent(agent.agentId, 'kill')}
+                        className="px-3 py-1 text-xs rounded-md bg-surface-1 border border-surface-2 text-ctp-text
+                          hover:bg-surface-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                      >
+                        Stop now
+                      </button>
+                    </div>
+                  </div>
+                  {state?.message && <p role="alert" className="text-xs text-ctp-text mt-2">{state.message}</p>}
                 </div>
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => onResolveAgent(agent.agentId, 'wait')}
-                    className="px-3 py-1 text-xs rounded-md bg-surface-1 border border-surface-2 text-ctp-subtext1
-                      hover:bg-surface-2 hover:text-ctp-text transition-colors cursor-pointer"
-                  >
-                    Wait
-                  </button>
-                  <button
-                    onClick={() => onResolveAgent(agent.agentId, 'interrupt')}
-                    className="px-3 py-1 text-xs rounded-md bg-ctp-peach/15 border border-ctp-peach/30 text-ctp-peach
-                      hover:bg-ctp-peach/25 transition-colors cursor-pointer font-medium"
-                  >
-                    Interrupt & Resume
-                  </button>
-                  <button
-                    onClick={() => onResolveAgent(agent.agentId, 'kill')}
-                    className="px-3 py-1 text-xs rounded-md bg-ctp-red/15 border border-ctp-red/30 text-ctp-red
-                      hover:bg-ctp-red/25 transition-colors cursor-pointer font-medium"
-                  >
-                    Kill
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
         {idleAgents.length > 0 && (
           <div className="mb-4">
-            <div className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">
-              {workingAgents.length > 0 ? 'Will resume after restart' : 'All agents will resume after restart'}
+            <div className="text-xs text-ctp-subtext0 mb-2">
+              Conversations after restart
             </div>
             {idleAgents.map((agent) => (
               <div key={agent.agentId} className="flex items-center justify-between bg-surface-0 border border-surface-2 rounded-lg px-3 py-2.5 mb-1.5">
@@ -75,11 +99,7 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
                   <StatusDot dot="idle" />
                   <span className="text-sm text-ctp-text font-medium">{agent.agentName}</span>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  agent.resumeStrategy === 'auto'
-                    ? 'bg-ctp-green/10 text-ctp-green border border-ctp-green/20'
-                    : 'bg-ctp-yellow/10 text-ctp-yellow border border-ctp-yellow/20'
-                }`}>
+                <span className="text-xs text-ctp-subtext0">
                   {agent.resumeStrategy === 'auto' ? 'Auto-resume' : 'Manual resume'}
                 </span>
               </div>
@@ -87,6 +107,11 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
           </div>
         )}
 
+        {restartDisabled && <p id="update-gate-restart-reason" className="text-xs text-ctp-subtext0">
+          {loading || error
+            ? 'Restart is unavailable until active agents can be checked.'
+            : 'Restart is unavailable while agents are working or an action needs attention. Wait for idle, interrupt, or choose Stop now.'}
+        </p>}
         <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-surface-2">
           <button
             onClick={onCancel}
@@ -98,14 +123,15 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
           <button
             data-testid="update-gate-restart-btn"
             onClick={onConfirm}
-            disabled={hasWorking}
+            disabled={restartDisabled}
+            aria-describedby={restartDisabled ? 'update-gate-restart-reason' : undefined}
             className={`px-4 py-1.5 text-xs rounded-md transition-colors font-medium ${
-              hasWorking
+              restartDisabled
                 ? 'bg-surface-1 text-ctp-subtext0/40 cursor-not-allowed'
                 : 'bg-ctp-accent text-ctp-on-accent hover:bg-ctp-accent/80 cursor-pointer'
             }`}
           >
-            Restart Now
+            Restart now
           </button>
         </div>
     </Modal>

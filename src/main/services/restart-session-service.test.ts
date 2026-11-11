@@ -59,7 +59,7 @@ vi.mock('./agent-runtime', async () => {
   return { ...actual, getAgentRuntime: vi.fn((id: string) => actual.getAgentRuntime(id)) };
 });
 
-import { captureSessionState, loadPendingResume, clearPendingResume, getLiveAgentsForUpdate } from './restart-session-service';
+import { captureSessionState, loadPendingResume, clearPendingResume, getLiveAgentsForUpdate, markAgentStoppedForUpdate } from './restart-session-service';
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
@@ -84,6 +84,33 @@ describe('restart-session-service', () => {
   });
 
   describe('captureSessionState', () => {
+    it.each(['pty', 'chat'] as const)('excludes a stopped %s agent even while it remains registered', async (runtime) => {
+      const agentId = `stopped-update-${runtime}`;
+      const projectPath = path.resolve('test-project');
+      agentRegistry.register(agentId, { projectPath, orchestrator: 'claude-code', runtime });
+      markAgentStoppedForUpdate(agentId);
+
+      await captureSessionState(new Map([[agentId, 'Stopped agent']]));
+
+      expect(agentRegistry.get(agentId)).toBeDefined();
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions).toEqual([]);
+      expect(getDurableConfig).not.toHaveBeenCalled();
+    });
+
+    it('excludes a stop requested while session discovery is still awaiting configuration', async () => {
+      const agentId = 'stopped-during-capture';
+      agentRegistry.register(agentId, { projectPath: path.resolve('test-project'), orchestrator: 'claude-code', runtime: 'chat' });
+      vi.mocked(getDurableConfig).mockImplementationOnce(async () => {
+        markAgentStoppedForUpdate(agentId);
+        return null;
+      });
+      vi.mocked(getAgentRuntime).mockReturnValue({ kind: 'chat', getNativeSessionId: () => 'stopped-session' } as AgentRuntime);
+
+      await captureSessionState(new Map());
+
+      expect(JSON.parse(await fsp.readFile(statePath, 'utf-8')).sessions).toEqual([]);
+    });
+
     it.each(['pty', 'chat'] as const)('recovers durable identity for a live %s agent missing from the renderer', async (runtime) => {
       vi.mocked(pathExists).mockResolvedValue(true);
       const agentId = 'durable_missing';
