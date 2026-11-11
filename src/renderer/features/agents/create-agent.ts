@@ -60,9 +60,16 @@ function toastFailure(err: unknown): void {
 export async function createDurableAgent(
   project: AgentProjectRef,
   input: DurableAgentInput,
-  { onError }: { onError?: (message: string) => void } = {},
+  { onError }: { onError?: (message: string, createdAgentId?: string) => void } = {},
 ): Promise<string | null> {
-  const fail = (err: unknown) => (onError ? onError(err instanceof Error ? err.message : String(err)) : toastFailure(err));
+  const fail = (err: unknown, createdAgentId?: string) => {
+    const message = err instanceof Error ? err.message : String(err);
+    if (onError) {
+      if (createdAgentId) onError(message, createdAgentId);
+      else onError(message);
+    } else if (createdAgentId) useToastStore.getState().addToast(`Created the agent, but couldn't start it: ${message}`, 'error');
+    else toastFailure(err);
+  };
   const { name, color, model, useWorktree, orchestrator, access, mcpIds, clubhouseFeatures, copyLegacyDefaults } = input;
 
   if (isRemoteProjectId(project.id)) {
@@ -96,11 +103,16 @@ export async function createDurableAgent(
     ? registerCreatingAgent(project.id, name, color, orchestrator, access)
     : null;
 
+  let createdAgentId: string | undefined;
   try {
     const args = [project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, access, mcpIds] as const;
-    // Only a copy the person asked for adds the creation options (#3245).
-    const config = copyLegacyDefaults && useWorktree
-      ? await window.clubhouse.agent.createDurable(...args, undefined, undefined, { copyLegacyDefaults: true })
+    // Keep correlation local; remote creates above never send a window's temporary id.
+    const options = {
+      ...(copyLegacyDefaults && useWorktree && { copyLegacyDefaults: true }),
+      ...(tempId && { creationRequestId: tempId }),
+    };
+    const config = Object.keys(options).length > 0
+      ? await window.clubhouse.agent.createDurable(...args, undefined, undefined, options)
       : await window.clubhouse.agent.createDurable(...args);
     if (tempId) removeAgent(tempId);
     if (clubhouseFeatures === false) {
@@ -111,14 +123,16 @@ export async function createDurableAgent(
         throw new Error(off.message || "Couldn't turn Clubhouse features off");
       }
     }
+    createdAgentId = config.id;
     await spawnDurableAgent(project.id, project.path, config, false);
     return config.id;
   } catch (err) {
     if (tempId) removeAgent(tempId);
-    console.error('Failed to create durable agent:', err);
-    tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
-    tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
-    fail(err);
+    const action = createdAgentId ? 'agent_start' : 'agent_create';
+    console.error(createdAgentId ? 'Failed to start the created durable agent:' : 'Failed to create durable agent:', err);
+    tel.event('clubhouse.ui.action_failed', [ATTR.uiAction(action), ATTR.errorType('unknown')]);
+    tel.exception(err, { handled: true, attrs: [ATTR.uiAction(action)] });
+    fail(err, createdAgentId);
     return null;
   }
 }

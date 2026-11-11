@@ -208,10 +208,11 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.SET_HELPER_TEMPLATE_CHOICE, withValidatedArgs([booleanArg()], (_e, on) => result(() => s().setHelperTemplateChoice(on))));
 
   ipcMain.handle(IPC.MANAGED.CREATE_AGENT, withValidatedArgs(
-    [stringArg(), objectArg<{ name: string; color: string; templateId?: string; setup?: { blocks: string[]; skills: string[]; mcps: string[] }; settings?: ManagedTemplateSettings }>({ validate: (v) => {
+    [stringArg(), objectArg<{ name: string; color: string; templateId?: string; setup?: { blocks: string[]; skills: string[]; mcps: string[] }; settings?: ManagedTemplateSettings; creationRequestId?: string }>({ validate: (v) => {
       stringArg({ maxLength: 200 })(v.name, 'name');
       stringArg({ maxLength: 64 })(v.color, 'color');
       if (v.setup !== undefined) setupShape(v.setup);
+      if (v.creationRequestId !== undefined) stringArg({ maxLength: 128 })(v.creationRequestId, 'creationRequestId');
     } })],
     (_e, projectPath, input) => result(() => createManagedAgent(projectPath, input)),
   ));

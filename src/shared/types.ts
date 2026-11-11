@@ -630,6 +630,8 @@ export interface HelperCascadeResult {
 
 /** Persisted creation state of a durable agent (#2226). */
 export interface DurableAgentCreation {
+  /** This window's temporary row id. Removed with creation when ready; never part of an agent payload. */
+  requestId?: string;
   /** 'creating' while the worktree is set up; 'failed' once it gave up (see `reason`). */
   state: 'creating' | 'failed';
   startedAt: string;
@@ -679,6 +681,8 @@ export interface DurableWorktreeOptions {
 
 /** Everything the asynchronous create API takes (#2226). */
 export interface StartDurableCreationParams extends DurableWorktreeOptions {
+  /** Correlates a renderer's temporary row with the record while creation is pending. */
+  creationRequestId?: string;
   name: string;
   color: string;
   model?: string;

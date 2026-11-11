@@ -11,11 +11,21 @@ const state = vi.hoisted(() => ({
   restartOrigins: [] as string[],
   /** Rows the grant check's peek doesn't see, as when it can't place a name. */
   hiddenFromPeek: new Set<string>(),
+  available: true,
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base } }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../agent-system', async (original) => ({
+  ...await original<typeof import('../../agent-system')>(),
+  resolveOrchestrator: async (_projectPath: string, cli?: string) => ({
+    id: cli ?? 'claude-code',
+    displayName: 'Test CLI',
+    checkAvailability: async () => ({ available: state.available }),
+    conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md' },
+  }),
+}));
 vi.mock('../dispatcher-gate', async (importOriginal) => ({
   ...await importOriginal<typeof import('../dispatcher-gate')>(),
   isDispatcherAgent: (id: string) => id === 'dispatcher',
@@ -93,6 +103,7 @@ beforeEach(async () => {
   state.running = new Set();
   state.restartOrigins = [];
   state.hiddenFromPeek = new Set();
+  state.available = true;
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
   grantMock.granted = false;
@@ -115,6 +126,14 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     expect(created.json).toMatchObject({ name: 'Rules', updatedBy: 'Dispatcher' });
     const listed = await call('list_agent_parts', { kind: 'block' });
     expect(listed.json.map((p: { name: string }) => p.name)).toContain('Rules');
+  });
+
+  it('refuses create_managed_agent before creating anything when its resolved CLI is unavailable', async () => {
+    state.available = false;
+    const made = await call('create_managed_agent', { project: 'Clubhouse', name: 'unavailable' });
+    expect(made.isError).toBe(true);
+    expect(made.content[0].text).toContain('Test CLI is unavailable.');
+    expect(state.agents.size).toBe(0);
   });
 
   it('a shared edit needs the preview\'s confirm token, and saves with it', async () => {

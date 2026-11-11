@@ -15,6 +15,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useChromeStore, type NewAgentRequest } from '../chromeStore';
+import * as chromeTelemetry from '../telemetry';
 
 const projects = [
   { id: 'p1', name: 'Clubhouse', path: '/tmp/ch' },
@@ -144,7 +145,10 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(screen.getByTestId('managed-template-grants-custom-release').querySelector('summary')?.textContent).not.toContain('helpers');
 
     fireEvent.click(within(builtin).getByRole('button', { name: 'Create from Orchestrator' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', { name: 'keen-heron', color: 'emerald', templateId: 'builtin-template-orchestrator' }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', {
+      name: 'keen-heron', color: 'emerald', templateId: 'builtin-template-orchestrator',
+      settings: { orchestrator: 'claude-code' }, creationRequestId: expect.stringMatching(/^creating_/),
+    }));
     await waitFor(() => expect(spawnDurableAgent).toHaveBeenCalledWith('p1', '/tmp/ch', expect.objectContaining({ id: 'm-new' }), false));
     await waitFor(() => expect(useChromeStore.getState().newAgent).toBeNull());
     expect(useAgentStore.getState().activeAgentId).toBe('m-new');
@@ -173,6 +177,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
 
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', {
+      creationRequestId: expect.stringMatching(/^creating_/),
       name: 'keen-heron',
       color: expect.any(String),
       setup: { blocks: ['b-identity', 'b-orch'], skills: ['s-notes'], mcps: ['builtin-mcp-clubhouse'], templateId: 'builtin-template-orchestrator' },
@@ -310,6 +315,51 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect((await screen.findByTestId('new-agent-error')).textContent).toBe("Couldn't create the agent: That name is taken. Pick another.");
     expect(screen.getByTestId('new-agent-builder')).toBeTruthy();
     expect(spawnDurableAgent).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'claude-code'] as const)('uses the offered CLI unless the template sets one (%s), including on the pending row', async (templateCli) => {
+    useOrchestratorStore.setState({
+      allOrchestrators: [
+        { id: 'claude-code', displayName: 'Claude Code' },
+        { id: 'copilot-cli', displayName: 'Copilot CLI' },
+      ] as never,
+      enabled: ['copilot-cli'],
+      availability: { 'claude-code': { available: false }, 'copilot-cli': { available: true } },
+    });
+    const template = { ...builtinTemplate, settings: { ...builtinTemplate.settings, orchestrator: templateCli } };
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template] } as never);
+    let complete!: (result: { ok: false; code: 'failed'; message: string }) => void;
+    const create = vi.spyOn(m(), 'createAgent').mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
+    const view = openWith();
+    await managedSwitch();
+    fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'cli-scout' } });
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Create from Orchestrator' }));
+    const cli = templateCli ?? 'copilot-cli';
+    await waitFor(() => expect(create).toHaveBeenCalledWith(projects[0].path, expect.objectContaining({ settings: { orchestrator: cli } })));
+    const pending = Object.values(useAgentStore.getState().agents).filter((a) => a.name === 'cli-scout');
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({ status: 'creating', orchestrator: cli });
+    complete({ ok: false, code: 'failed', message: 'Stopped for the test.' });
+    await screen.findByTestId('new-agent-error');
+    view.unmount();
+  });
+
+  it('reports a first-start failure as a start failure and keeps the created agent', async () => {
+    vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
+    spawnDurableAgent.mockRejectedValueOnce(new Error('CLI login expired.'));
+    const report = vi.spyOn(chromeTelemetry, 'reportChromeActionFailed');
+    const remove = vi.spyOn(window.clubhouse.agent, 'deleteDurable');
+    openWith();
+    await managedSwitch();
+    fireEvent.click(screen.getByTestId('new-agent-scratch'));
+    fireEvent.click(screen.getByTestId('new-agent-builder-create'));
+    expect((await screen.findByTestId('new-agent-error')).textContent).toBe("Created the agent and its folder, but couldn't start it: CLI login expired.");
+    expect(useChromeStore.getState().newAgentBusy).toBe(false);
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+    expect(remove).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledWith('agent_start', expect.any(Error));
+    expect(report).not.toHaveBeenCalledWith('agent_create', expect.anything());
   });
 
   it('Back returns to the form with the identity kept', async () => {

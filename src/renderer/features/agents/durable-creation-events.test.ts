@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { applyDurableCreationEvent } from './durable-creation-events';
 import { useAgentStore } from '../../stores/agentStore';
 import type { Agent, DurableAgentConfig, DurableCreationEvent } from '../../../shared/types';
+import { useProjectStore } from '../../stores/projectStore';
+import * as path from 'path';
 
 /** The record main keeps for a failed asynchronous creation, marked failed with its reason. */
 const failedConfig = (reason: string): DurableAgentConfig => ({
@@ -30,6 +32,25 @@ describe('applyDurableCreationEvent', () => {
     applyDurableCreationEvent(event('ready'));
     expect(useAgentStore.getState().agents.h1.status).toBe('sleeping');
     expect(useAgentStore.getState().agents.h1.creationFailed).toBeFalsy();
+  });
+
+  it('correlates before a fast creation clears its request id, without a membership read', () => {
+    const projectPath = path.resolve('project');
+    useProjectStore.setState({ projects: [{ id: 'p1', name: 'Project', path: projectPath }] });
+    useAgentStore.setState({ agents: {} });
+    const requestId = useAgentStore.getState().registerCreatingAgent('p1', 'h1', 'blue', 'copilot-cli');
+    applyDurableCreationEvent(event('config_created', {
+      projectPath, config: { ...failedConfig(''), creation: { state: 'creating', startedAt: '2026-11-10T00:00:00Z', requestId } },
+    }));
+    expect(Object.keys(useAgentStore.getState().agents)).toEqual(['h1']);
+    applyDurableCreationEvent(event('ready', { projectPath, config: { ...failedConfig(''), creation: undefined } }));
+    expect(useAgentStore.getState().agents.h1.status).toBe('sleeping');
+  });
+
+  it.each(['spawning', 'running', 'error'] as const)('does not overwrite a first start already marked %s with a delayed ready event', (status) => {
+    useAgentStore.setState((s) => ({ agents: { h1: { ...s.agents.h1, status, errorMessage: 'First start failed.' } } }));
+    applyDurableCreationEvent(event('ready'));
+    expect(useAgentStore.getState().agents.h1.status).toBe(status);
   });
 
   it('removes the row when a failed creation took its record with it (#3246)', () => {

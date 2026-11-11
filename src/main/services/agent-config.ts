@@ -1926,6 +1926,7 @@ function planDurableWorktree(projectPath: string, name: string, options: Durable
 }
 
 export interface DurableCreationRunOptions {
+  creationRequestId?: string;
   /** Send the stages to onDurableCreationEvent listeners (the asynchronous API does). */
   emitEvents?: boolean;
   /**
@@ -1949,7 +1950,7 @@ export interface DurableCreationRunOptions {
 }
 
 /** The creation options a createDurable caller can set. */
-export type DurableCreationCopyOptions = Pick<DurableCreationRunOptions, 'copyLegacyDefaults'>;
+export type DurableCreationCopyOptions = Pick<DurableCreationRunOptions, 'copyLegacyDefaults' | 'creationRequestId'>;
 
 export interface DurableCreationHandle {
   /** The new agent's record, in the 'creating' state. */
@@ -2238,6 +2239,7 @@ export async function beginDurableCreation(
     // must not take it for one that did where the old setting is still on for the project (D59).
     ...(legacyClubhouseModeEnabled(projectPath) ? { clubhouseModeOverride: true } : {}),
     creation: {
+      ...(params.creationRequestId && { requestId: params.creationRequestId }),
       state: 'creating',
       startedAt,
       stage: 'config_created',
@@ -2643,9 +2645,10 @@ export async function createDurable(
   }
   const handle = await beginDurableCreation(projectPath, {
     ...worktreeOptions,
+    ...(copyOptions.creationRequestId && { creationRequestId: copyOptions.creationRequestId }),
     name, color, model, useWorktree, orchestrator, mcpIds, mcpConfigs,
     ...(typeof access === 'boolean' ? { freeAgentMode: access } : access !== undefined ? { access } : {}),
-  }, { keepFailedRecord: false, ...copyOptions });
+  }, { keepFailedRecord: false, ...copyOptions, emitEvents: !!copyOptions.creationRequestId });
   // The caller gets the error, so a failed agent leaves no record behind.
   return handle.done;
 }

@@ -340,13 +340,24 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     const target = project;
     reportChromeFeature('new_agent_create');
     createManagedDurableAgent({ id: target.id, path: target.path }, { name: name.trim(), color, ...input })
-      .then(async (id) => { await saveImage(target.path, id); finish(target.id, id); })
+      .then(async (result) => {
+        await saveImage(target.path, result.agentId);
+        if (result.status === 'start_failed') {
+          reportChromeActionFailed('agent_start', result.error);
+          failed(`Created the agent and its folder, but couldn't start it: ${failureText(result.error)}`);
+          return;
+        }
+        finish(target.id, result.agentId);
+      })
       .catch((err) => {
         reportChromeActionFailed('agent_create', err);
         failed(`Couldn't create the agent: ${failureText(err)}`);
       });
   };
-  const createFromTemplate = (t: ManagedTemplate) => createManaged({ templateId: t.id });
+  const createFromTemplate = (t: ManagedTemplate) => createManaged({
+    templateId: t.id,
+    settings: { orchestrator: t.settings.orchestrator || resolvedOrchestrator },
+  });
   const createFromBuilder = (setup: SetupDraft, settings: ManagedTemplateSettings) => createManaged({ setup, settings });
 
   const submit = () => {
@@ -370,7 +381,9 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           clubhouseFeatures: !remote && !clubhouseFeatures ? false : undefined,
           copyLegacyDefaults: offersLegacyCopy && copyLegacy,
         },
-        { onError: (message) => failed(`Couldn't create the agent: ${message}`) },
+        { onError: (message, createdAgentId) => failed(createdAgentId
+          ? `Created the agent${isGit && useWorktree ? ' and its worktree' : ''}, but couldn't start it: ${message}`
+          : `Couldn't create the agent: ${message}`) },
       ).then(async (id) => {
         if (!id) return;
         await saveImage(target.path, id);

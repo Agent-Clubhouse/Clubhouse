@@ -27,6 +27,7 @@ const h = vi.hoisted(() => ({
   personaPolicy: {} as Record<string, Record<string, unknown>>,
   /** Calls into orchestration-policy, in order. */
   policyCalls: [] as string[],
+  availability: { available: true } as { available: boolean; error?: string },
 }));
 
 vi.mock('../agent-config', () => ({
@@ -57,8 +58,10 @@ vi.mock('./legacy-migration', async (importOriginal) => ({
   materializedDefaults: vi.fn(async () => h.modeDefaults),
 }));
 vi.mock('../agent-system', () => ({
-  resolveOrchestrator: async () => ({
-    id: 'claude-code',
+  resolveOrchestrator: async (_projectPath: string, cli?: string) => ({
+    id: cli ?? 'claude-code',
+    displayName: cli === 'copilot-cli' ? 'Copilot CLI' : 'Claude Code',
+    checkAvailability: async () => h.availability,
     conventions: h.conventions,
     readInstructions: async (worktree: string) => (h.instructionsFromDisk ? fs.readFileSync(path.join(worktree, 'CLAUDE.md'), 'utf-8') : h.instructions),
   }),
@@ -124,6 +127,7 @@ beforeEach(async () => {
   vi.mocked(materialization.materializedDefaults).mockClear();
   h.personaPolicy = {};
   h.policyCalls = [];
+  h.availability = { available: true };
   h.conventions = { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', settingsFormat: 'json' };
   h.agents.clear();
   h.agents.set('ada', { id: 'ada', name: 'ada', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt });
@@ -753,6 +757,45 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     expect(vi.mocked(agentConfig.createDurable).mock.lastCall).toHaveLength(7);
     await user(() => createManagedAgent('/p', { name: 'plain', color: 'indigo', managed: false, settings: { orchestrator: 'copilot-cli' } }));
     expect(vi.mocked(agentConfig.createDurable).mock.lastCall).toHaveLength(7);
+  });
+
+  it.each([false, true])('refuses an unavailable resolved CLI before making an agent or saving setup (plain: %s)', async (plain) => {
+    h.availability = { available: false, error: 'Claude Code was not found in PATH.' };
+    const save = vi.spyOn(service, 'saveSetup');
+    await expect(user(() => createManagedAgent(path.resolve('project'), {
+      name: 'unavailable', color: 'indigo', ...(plain && { managed: false as const }),
+    }))).rejects.toThrow('Claude Code is unavailable. Claude Code was not found in PATH.');
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    save.mockRestore();
+  });
+
+  it('passes a renderer request id through without opting in to legacy defaults', async () => {
+    vi.mocked(agentConfig.createDurable).mockResolvedValue(h.agents.get('ada')!);
+    await user(() => createManagedAgent(path.resolve('project'), {
+      name: 'requested', color: 'indigo', creationRequestId: 'creating_request',
+      settings: { orchestrator: 'copilot-cli' },
+    }));
+    expect(agentConfig.createDurable).toHaveBeenCalledWith(path.resolve('project'), 'requested', 'indigo', undefined, true, 'copilot-cli', undefined,
+      undefined, undefined, undefined, { creationRequestId: 'creating_request' });
+  });
+
+  it('creates each listed built-in template with the available CLI selected by the page', async () => {
+    const projectPath = path.resolve('project');
+    vi.mocked(agentConfig.createDurable).mockImplementation(async (_projectPath, name, color, _model, _worktree, orchestrator) => {
+      const made: DurableAgentConfig = { id: name, name, color, orchestrator, worktreePath: wt, createdAt: '2026-11-10T00:00:00Z' };
+      h.agents.set(made.id, made);
+      return made;
+    });
+    const templates = (await user(() => service.listTemplates())).filter((template) => template.builtin && !template.retired);
+    expect(templates.length).toBeGreaterThan(0);
+    for (const [index, template] of templates.entries()) {
+      const made = await user(() => createManagedAgent(projectPath, {
+        name: `template-${index}`, color: 'indigo', templateId: template.id, settings: { orchestrator: 'copilot-cli' },
+      }));
+      expect(made.orchestrator).toBe('copilot-cli');
+    }
+    expect(agentConfig.createDurable).toHaveBeenCalledTimes(templates.length);
   });
 
   it('removes a managed agent whose setup could not be saved, with the folder it was just given (#3243)', async () => {

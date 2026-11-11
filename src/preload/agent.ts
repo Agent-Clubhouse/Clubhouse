@@ -41,7 +41,7 @@ export const agent = {
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>
     ipcRenderer.invoke(IPC.AGENT.GET_RUNNING_STATUSES, agentIds),
   /** `creationOptions.copyLegacyDefaults`: copy the project's legacy agent defaults into it, as asked on the New agent page (#3245). */
-  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, access?: boolean | AccessLevel, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, worktreeOptions?: DurableWorktreeOptions, creationOptions?: { copyLegacyDefaults?: boolean }) =>
+  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, access?: boolean | AccessLevel, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, worktreeOptions?: DurableWorktreeOptions, creationOptions?: { copyLegacyDefaults?: boolean; creationRequestId?: string }) =>
     ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds, mcpConfigs, worktreeOptions, creationOptions),
   /** Asynchronous create (#2226): resolves with the id while the worktree is still being made. */
   startDurableCreation: (projectPath: string, params: StartDurableCreationParams): Promise<{ agentId: string; config: DurableAgentConfig }> =>
