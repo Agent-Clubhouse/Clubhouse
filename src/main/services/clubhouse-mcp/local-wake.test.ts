@@ -257,13 +257,15 @@ describe('wake on by default (the maintainer\'s defaults, 2026-11-09)', () => {
     expect(lifecycle.sleepAgent).not.toHaveBeenCalled();
   });
 
-  it('the Dispatcher starts with every tool on an agent: clear, compact, wake, and sleep', async () => {
+  it('the Dispatcher starts with read, message and wake, but no clear or compact', async () => {
     bindingManager.bind('dispatcher', wire('dispatcher', 'b'));
     start('dispatcher', 'b', AUTOMATIC_CONNECTION_SWITCHES.dispatcherToAgent);
-    expect(readLocalDirectionTools('dispatcher', 'b').disabled).toEqual([]);
+    expect(readLocalDirectionTools('dispatcher', 'b').disabled).toEqual(['clear_agent', 'compact_agent']);
     expect(suffixes('dispatcher', 'b')).toEqual(expect.arrayContaining(['get_status', 'wake_agent']));
     expect((await call('dispatcher', 'b', 'wake_agent')).isError).toBeFalsy();
     running.add('b');
-    expect(suffixes('dispatcher', 'b')).toEqual(expect.arrayContaining(['clear_agent', 'compact_agent', 'sleep_agent', 'send_message']));
+    expect(suffixes('dispatcher', 'b')).toEqual(expect.arrayContaining(['sleep_agent', 'send_message']));
+    expect(suffixes('dispatcher', 'b')).not.toContain('clear_agent');
+    expect(suffixes('dispatcher', 'b')).not.toContain('compact_agent');
   });
 });

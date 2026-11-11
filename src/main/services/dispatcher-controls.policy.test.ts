@@ -62,6 +62,7 @@ import { isCrossProjectEnabled, isOrchestrationEnabled, setOrchestrationEnabled 
 import { agentRegistry } from './agent-registry';
 import { setOrchestratorHelpers } from './dispatcher-controls';
 import { setOrchestrationPolicy } from './orchestration-policy';
+import { withSettingsSurface } from './settings-audit';
 
 const AGENT = { color: 'teal', createdAt: '2026-01-01T00:00:00.000Z' };
 const CONNECTED = { orchestrate: true, connectToDispatcher: true };
@@ -189,7 +190,7 @@ describe('authorization together with the update', () => {
   it('refuses under the agent\'s lock when the user disconnects it after the first check', async () => {
     state.afterList = async () => {
       state.afterList = null;
-      const outcome = await setOrchestrationPolicy(state.project, LEAD, { connectToDispatcher: false });
+      const outcome = await withSettingsSurface('ui', undefined, () => setOrchestrationPolicy(state.project, LEAD, { connectToDispatcher: false }));
       expect(outcome.ok).toBe(true);
     };
     const result = await set({ agent_id: LEAD, max_helpers: 3 });
