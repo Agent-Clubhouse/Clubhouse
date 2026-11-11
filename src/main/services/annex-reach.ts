@@ -4,6 +4,7 @@
  * byte-transparent forward. The pinned certificate decides whether it is really it.
  */
 import { isIP } from 'net';
+import { isAnnexLoopback } from '../../shared/annex-problems';
 
 export interface ReachAddress {
   host: string;
@@ -106,8 +107,9 @@ export function rankAddresses(addresses: readonly string[]): string[] {
  * 1. what discovery announced just now (it's on this network now);
  * 2. what the person typed;
  * 3. where it was reached before, most recent first, and the hosts in its pairing link.
- * Each known host uses its own port. Entries without one use the legacy `port`;
- * with no port at all they're left out.
+ * Each known host uses its own port. Direct hosts also try the legacy `port`
+ * afterward, in case an older build updated it. Loopback remaps never do.
+ * With no port at all they're left out.
  */
 export function reachCandidates(options: {
   discovered?: ReachAddress | null;
@@ -129,7 +131,10 @@ export function reachCandidates(options: {
     const parsed = parseTypedHost(options.typed);
     if (parsed) add(parsed.host, parsed.port ?? knownPort(parsed.host), 'typed');
   }
-  for (const host of options.known ?? []) add(host, knownPort(host.toLowerCase()), 'known');
+  for (const host of options.known ?? []) {
+    add(host, knownPort(host.toLowerCase()), 'known');
+    if (!isAnnexLoopback(host)) add(host, options.port, 'known');
+  }
   return out;
 }
 

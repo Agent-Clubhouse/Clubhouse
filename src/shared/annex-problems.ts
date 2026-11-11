@@ -38,12 +38,11 @@ export interface AnnexProblem {
 export function isAnnexLoopback(host: string | undefined): boolean {
   const value = host?.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
   if (!value) return false;
-  if (!value.includes(':')) return value === 'localhost'
-    || (/^127(?:\.\d{1,3}){3}$/.test(value) && value.split('.').every((part) => Number(part) <= 255));
-  const url = `http://[${value}]/`;
+  const url = value.includes(':') ? `http://[${value}]/` : `http://${value}/`;
   if (!URL.canParse(url)) return false;
   const normalized = new URL(url).hostname;
-  return normalized === '[::1]' || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(normalized);
+  return normalized === 'localhost' || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+    || normalized === '[::1]' || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(normalized);
 }
 
 /** Problems a live connection retries by itself. While pairing nothing retries, so they say to try again. */

@@ -34,7 +34,7 @@ describe('annex problems', () => {
   });
 
   it.each([
-    '127.0.0.1', '127.12.34.56', 'localhost', 'LOCALHOST.', '::1', '[::1]', '0:0:0:0:0:0:0:1',
+    '127.0.0.1', '127.12.34.56', '0x7f000001', '0x7f.0.0.1', 'localhost', 'LOCALHOST.', '::1', '[::1]', '0:0:0:0:0:0:0:1',
     '::ffff:127.0.0.1', '::ffff:7f00:1', '0::1', '::0001', '0000:0000:0000:0000:0000:0000:0000:0001', '0:0:0:0:0:ffff:7f00:1',
   ])('suggests checking the forward for loopback target %s', (host) => {
     for (const code of ['refused', 'unreachable'] as const) {

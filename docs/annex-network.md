@@ -25,6 +25,8 @@ For example, start a user-managed SSH forward with `ssh -N -L 127.0.0.1:7443:127
 
 The reached address and its port are remembered alongside the link's direct addresses and their original port. Loopback remaps never replace the legacy default port. Reconnect works without mDNS after restarting Clubhouse and retries with normal backoff when a forward drops and returns. Clubhouse does not start or manage the forward. A refused or unreachable loopback connection suggests checking that the local forward is running. Local loopback addresses and remapped ports are not advertised to other network members; the mobile and membership wire contracts are unchanged.
 
+Membership announcements keep saved loopback routes even when the remote computer lists many direct addresses. After using an older build, a direct address tries its saved per-address port first and the legacy default afterward if it differs; a successful connection updates the saved port. Loopback addresses never borrow that fallback port.
+
 ## Real-device checks
 
 Synthetic tests can't cover certificates under Electron or local network discovery, so each stage merged on green CI and these checks wait for real devices before a release. They're written as one script to run in order: each part says what it starts from, each step says what to do, then what you should see (✓). The issue in brackets is where the behaviour was built, for filing anything that fails.

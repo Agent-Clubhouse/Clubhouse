@@ -156,6 +156,37 @@ describe('annex-peers', () => {
       expect(getPeer('aa:bb:cc')!.knownHosts).toBeUndefined();
     });
 
+    it.each(['127.0.0.1', '0x7f000001', '0x7f.0.0.1'])('keeps the direct default after reaching loopback host %s', (host) => {
+      addPeer({ ...makePeer('aa:bb:cc'), role: 'satellite', knownHosts: ['10.0.0.4'], mainPort: 9443 });
+      noteReached('aa:bb:cc', host, 7443);
+      resetForTests();
+      expect(getPeer('aa:bb:cc')).toMatchObject({
+        mainPort: 9443, knownHosts: [host, '10.0.0.4'], hostPorts: { [host]: 7443, '10.0.0.4': 9443 },
+      });
+    });
+
+    it('reaches and heals a direct port changed by an older build without changing the saved forward', () => {
+      addPeer({
+        ...makePeer('aa:bb:cc'), role: 'satellite', knownHosts: ['192.168.1.5', '127.0.0.1'],
+        mainPort: 9443, hostPorts: { '192.168.1.5': 9443, '127.0.0.1': 7443 },
+      });
+      const file = path.join(tmpDir, 'annex-peers.json');
+      const oldBuildPeers = JSON.parse(fs.readFileSync(file, 'utf8')) as AnnexPeer[];
+      // Older builds update only the shared port when they reach an existing host.
+      oldBuildPeers[0].mainPort = 9000;
+      fs.writeFileSync(file, JSON.stringify(oldBuildPeers));
+      resetForTests();
+      const peer = getPeer('aa:bb:cc')!;
+      expect(reachCandidates({ known: peer.knownHosts, ports: peer.hostPorts, port: peer.mainPort })).toEqual([
+        { host: '192.168.1.5', port: 9443, source: 'known' },
+        { host: '192.168.1.5', port: 9000, source: 'known' },
+        { host: '127.0.0.1', port: 7443, source: 'known' },
+      ]);
+      noteReached('aa:bb:cc', '192.168.1.5', 9000);
+      resetForTests();
+      expect(getPeer('aa:bb:cc')?.hostPorts).toEqual({ '192.168.1.5': 9000, '127.0.0.1': 7443 });
+    });
+
     it('sets and clears a typed host', () => {
       addPeer(makePeer('aa:bb:cc'));
       expect(setTypedHost('aa:bb:cc', 'studio.tail1234.ts.net')).toBe(true);

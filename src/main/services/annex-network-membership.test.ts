@@ -57,6 +57,7 @@ vi.mock('./annex-network-channel', () => ({
 
 import * as membership from './annex-network-membership';
 import * as annexSettings from './annex-settings';
+import { reachCandidates } from './annex-reach';
 
 function member(f: string, c: string, name: string, extra: Partial<NetworkMember> = {}): NetworkMember {
   return {
@@ -102,11 +103,24 @@ describe('Annex Network membership (#3061)', () => {
 
   it('keeps the existing wire contract and never shares local forward addresses or remapped ports', () => {
     peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
-      knownHosts: ['127.0.0.1', 'localhost', '::1', '10.0.0.2', 'other.local'],
-      hostPorts: { '127.0.0.1': 7443, localhost: 7443, '::1': 7443, '10.0.0.2': 9443, 'other.local': 8443 },
+      knownHosts: ['127.0.0.1', 'localhost', '::1', '0x7f000001', '10.0.0.2', 'other.local'],
+      hostPorts: { '127.0.0.1': 7443, localhost: 7443, '::1': 7443, '0x7f000001': 9443, '10.0.0.2': 9443, 'other.local': 8443 },
       mainPort: 9443,
     }));
     expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({ hosts: ['10.0.0.2'], port: 9443 });
+  });
+
+  it('keeps a saved forward available after a member announces a full set of direct hosts', () => {
+    peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+      knownHosts: ['127.0.0.1', '10.0.0.2'], hostPorts: { '127.0.0.1': 7443, '10.0.0.2': 9443 }, mainPort: 9443,
+    }));
+    const hosts = Array.from({ length: 6 }, (_, index) => `192.168.1.${index + 1}`);
+    listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio', { hosts }) });
+    const saved = peers.get(A.toLowerCase())!;
+    const candidates = reachCandidates({ known: saved.knownHosts, ports: saved.hostPorts, port: saved.mainPort });
+    expect(candidates[0]).toMatchObject({ host: '127.0.0.1', port: 7443 });
+    expect(candidates).toContainEqual({ host: hosts[0], port: 9443, source: 'known' });
+    expect(saved.knownHosts).toHaveLength(6);
   });
 
   it('keeps each saved port when a member announces a different direct address or port', () => {

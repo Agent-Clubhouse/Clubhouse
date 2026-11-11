@@ -2607,6 +2607,21 @@ describe('annex-client', () => {
       expect(sockets[1].url).toBe('wss://10.0.0.4:9443/ws?client=desktop');
     });
 
+    it('reaches the legacy direct port after an older build leaves a stale per-host port', async () => {
+      vi.useFakeTimers();
+      peer = {
+        ...base, knownHosts: ['10.0.0.4', '127.0.0.1'],
+        hostPorts: { '10.0.0.4': 9443, '127.0.0.1': 7443 }, mainPort: 9000,
+      };
+      annexClient.startClient();
+      expect(sockets[0].url).toBe('wss://10.0.0.4:9443/ws?client=desktop');
+      sockets[0].handlers.error(refused());
+      await vi.advanceTimersByTimeAsync(250);
+      expect(sockets[1].url).toBe('wss://10.0.0.4:9000/ws?client=desktop');
+      sockets[1].handlers.open();
+      expect(annexPeers.noteReached).toHaveBeenLastCalledWith(FP, '10.0.0.4', 9000);
+    });
+
     it('picks a routable address from an announcement, IPv6 when that is all there is, never link-local', async () => {
       peer = { ...base };
       mockHttpGetIdentity({ fingerprint: FP, alias: 'Studio', icon: 'server', color: 'green', publicKey: 'sat-pk' });

@@ -339,8 +339,10 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     if (existing.role !== 'member') return !!stale;
     // A member we know: learn a newer join, and new addresses. Its own hello says where it is now.
     const own = lower(from) === lower(member.fingerprint);
+    // Its announcement cannot replace the local forward needed to reach it.
+    const localHosts = (existing.knownHosts ?? []).filter(isAnnexLoopback);
     const hosts = own
-      ? [...new Set([...member.hosts, ...(existing.knownHosts ?? [])])].slice(0, 6)
+      ? [...new Set([...localHosts, ...member.hosts, ...(existing.knownHosts ?? [])])].slice(0, 6)
       : [...new Set([...(existing.knownHosts ?? []), ...member.hosts])].slice(0, 6);
     const port = own ? member.port || existing.mainPort : existing.mainPort || member.port;
     const knownPorts = hostPortsWithFallback(existing.knownHosts, existing.mainPort, existing.hostPorts);

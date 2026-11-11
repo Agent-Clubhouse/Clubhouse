@@ -77,6 +77,7 @@ describe('annex reach (#3058)', () => {
     })).toEqual([
       { host: '192.168.1.9', port: 9443, source: 'discovered' },
       { host: 'localhost', port: 7443, source: 'typed' },
+      { host: '192.168.1.9', port: 9000, source: 'known' },
       { host: 'old.local', port: 9000, source: 'known' },
       { host: '::1', port: 8443, source: 'known' },
     ]);
