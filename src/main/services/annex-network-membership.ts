@@ -34,6 +34,8 @@ import * as annexTls from './annex-tls';
 import * as networkChannel from './annex-network-channel';
 import { devicesChanged } from './annex-device-signal';
 import { appLog } from './log-service';
+import { hostPortsWithFallback } from './annex-reach';
+import { isAnnexLoopback } from '../../shared/annex-problems';
 
 // ---------------------------------------------------------------------------
 // Stored state
@@ -133,7 +135,9 @@ function toMember(peer: AnnexPeer): NetworkMember | null {
     icon: peer.icon || 'computer',
     color: peer.color || 'indigo',
     kind: peer.kind ?? 'desktop',
-    hosts: (peer.knownHosts ?? []).slice(0, 8),
+    // The wire contract has one port. Local remaps aren't routes for other members.
+    hosts: (peer.knownHosts ?? []).filter((host) => !isAnnexLoopback(host)
+      && (!peer.hostPorts || !Object.prototype.hasOwnProperty.call(peer.hostPorts, host.toLowerCase()) || peer.hostPorts[host.toLowerCase()] === peer.mainPort)).slice(0, 8),
     ...(peer.mainPort && peer.mainPort > 0 && { port: peer.mainPort }),
     joinedAt: peer.pairedAt || new Date(0).toISOString(),
     ...(peer.pairingId && { pairingId: peer.pairingId }),
@@ -339,19 +343,23 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
       ? [...new Set([...member.hosts, ...(existing.knownHosts ?? [])])].slice(0, 6)
       : [...new Set([...(existing.knownHosts ?? []), ...member.hosts])].slice(0, 6);
     const port = own ? member.port || existing.mainPort : existing.mainPort || member.port;
+    const knownPorts = hostPortsWithFallback(existing.knownHosts, existing.mainPort, existing.hostPorts);
+    const announcedPorts = hostPortsWithFallback(member.hosts, member.port, undefined);
+    const hostPorts = own ? { ...knownPorts, ...announcedPorts } : { ...announcedPorts, ...knownPorts };
     // Its pairing moves only with a pairing id (#3107): the one it hadn't learned yet, or a later pairing (paired
     // again). A record without one (a member's own clock, or a desktop's stamp from pairing with it) never moves it.
     const adopt = !!member.pairingId && (!existing.pairingId || laterPairing(member, pairingOf(existing)));
     const joinedAt = adopt ? member.joinedAt : existing.pairedAt;
     const pairingId = adopt ? member.pairingId : existing.pairingId;
     const name = own && member.name !== existing.alias ? member.name : existing.alias;
-    const moved = hosts.join() !== (existing.knownHosts ?? []).join() || port !== existing.mainPort;
+    const moved = hosts.join() !== (existing.knownHosts ?? []).join() || port !== existing.mainPort
+      || hosts.some((host) => hostPorts[host.toLowerCase()] !== knownPorts[host.toLowerCase()]);
     // Paired again since with a new certificate (the pairing member checked its binding): pin the new one.
     const repinned = adopt && !!existing.pairingId && pairingId !== existing.pairingId
       && !annexTls.sameCertificateFingerprint(member.certFingerprint, existing.tlsCertificateFingerprint) && proves(member);
     if (moved || repinned || joinedAt !== existing.pairedAt || pairingId !== existing.pairingId || name !== existing.alias) {
       annexPeers.addPeer({
-        ...existing, knownHosts: hosts, pairedAt: joinedAt, alias: name, ...(port && { mainPort: port }),
+        ...existing, knownHosts: hosts, hostPorts, pairedAt: joinedAt, alias: name, ...(port && { mainPort: port }),
         ...(pairingId && { pairingId }),
         ...(repinned && { tlsCertificateFingerprint: member.certFingerprint, tlsCertificatePem: member.certPem }),
       });
@@ -380,6 +388,7 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     tlsCertificateFingerprint: member.certFingerprint,
     tlsCertificatePem: member.certPem,
     knownHosts: member.hosts.slice(0, 6),
+    hostPorts: hostPortsWithFallback(member.hosts.slice(0, 6), member.port, undefined),
     ...(member.port && { mainPort: member.port }),
   });
   appLog('core:annex', 'info', 'A device joined the network through another member', { meta: { fingerprint: member.fingerprint, from } });

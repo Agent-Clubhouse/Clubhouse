@@ -100,6 +100,30 @@ describe('Annex Network membership (#3061)', () => {
     expect(v.removals).toEqual([]);
   });
 
+  it('keeps the existing wire contract and never shares local forward addresses or remapped ports', () => {
+    peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+      knownHosts: ['127.0.0.1', 'localhost', '::1', '10.0.0.2', 'other.local'],
+      hostPorts: { '127.0.0.1': 7443, localhost: 7443, '::1': 7443, '10.0.0.2': 9443, 'other.local': 8443 },
+      mainPort: 9443,
+    }));
+    expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({ hosts: ['10.0.0.2'], port: 9443 });
+  });
+
+  it('keeps each saved port when a member announces a different direct address or port', () => {
+    peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+      knownHosts: ['127.0.0.1', '10.0.0.2'], hostPorts: { '127.0.0.1': 7443 }, mainPort: 9443,
+    }));
+    listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio', { hosts: ['192.168.1.4'], port: 7000 }) });
+    expect(peers.get(A.toLowerCase())).toMatchObject({
+      mainPort: 7000, hostPorts: { '127.0.0.1': 7443, '10.0.0.2': 9443, '192.168.1.4': 7000 },
+    });
+    listener!(B, view([member(A, '0a', 'Studio', { hosts: ['192.168.1.4', 'new.local'], port: 8000 })]));
+    expect(peers.get(A.toLowerCase())?.hostPorts).toEqual({ '127.0.0.1': 7443, '10.0.0.2': 9443, '192.168.1.4': 7000, 'new.local': 8000 });
+    listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio', { hosts: ['192.168.1.4'], port: 9000 }) });
+    expect(peers.get(A.toLowerCase())?.hostPorts?.['192.168.1.4']).toBe(9000);
+    expect(peers.get(A.toLowerCase())?.hostPorts?.['127.0.0.1']).toBe(7443);
+  });
+
   it('adds a device a member vouches for, pins it, connects to it, and tells the other members', () => {
     open = [A, B];
     listener!(A, view([member(A, '0a', 'Studio'), member(N, '0e', 'New Mac')]));

@@ -67,6 +67,30 @@ describe('annex reach (#3058)', () => {
     expect(withReachableAs(['127.0.0.1'], '127.0.0.1', 'studio')).toEqual(['127.0.0.1']);
   });
 
+  it('keeps remapped and direct ports with their hosts, including mixed legacy records', () => {
+    expect(reachCandidates({
+      discovered: { host: '192.168.1.9', port: 9443 },
+      typed: 'LOCALHOST',
+      known: ['localhost', '192.168.1.9', 'old.local', '::1'],
+      ports: { localhost: 7443, '192.168.1.9': 9443, '::1': 8443 },
+      port: 9000,
+    })).toEqual([
+      { host: '192.168.1.9', port: 9443, source: 'discovered' },
+      { host: 'localhost', port: 7443, source: 'typed' },
+      { host: 'old.local', port: 9000, source: 'known' },
+      { host: '::1', port: 8443, source: 'known' },
+    ]);
+    expect(reachCandidates({ known: ['127.0.0.1'], ports: { '127.0.0.1': 7443 } })).toEqual([
+      { host: '127.0.0.1', port: 7443, source: 'known' },
+    ]);
+    expect(reachCandidates({ typed: 'localhost:8443', ports: { localhost: 7443 } })).toEqual([
+      { host: 'localhost', port: 8443, source: 'typed' },
+    ]);
+    expect(reachCandidates({ known: ['constructor'], ports: {}, port: 9443 })).toEqual([
+      { host: 'constructor', port: 9443, source: 'known' },
+    ]);
+  });
+
   it('remembers the newest host first, keeps a few, and ignores case', () => {
     expect(rememberHost(['a', 'B', 'c'], 'b')).toEqual(['b', 'a', 'c']);
     expect(rememberHost(undefined, 'x')).toEqual(['x']);

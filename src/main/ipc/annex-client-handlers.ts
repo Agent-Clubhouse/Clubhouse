@@ -73,9 +73,9 @@ export function registerAnnexClientHandlers(): void {
   ));
 
   ipcMain.handle(IPC.ANNEX_CLIENT.PAIR_WITH_LINK, withValidatedArgs(
-    [stringArg()],
-    async (_event, link) => {
-      const result = await annexClient.pairWithLink(link);
+    [stringArg(), stringArg({ optional: true })],
+    async (_event, link, addressOverride) => {
+      const result = await annexClient.pairWithLink(link, addressOverride);
       if (result.success) noLongerController(result.fingerprint);
       return result;
     },

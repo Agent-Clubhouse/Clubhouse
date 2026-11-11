@@ -482,7 +482,7 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     lastError: s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
     ...(s.needsPairing && { needsPairing: true }),
-    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, s.alias, s.problem) }),
+    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, s.alias, { ...s.problem, host: s.host }) }),
   };
 }
 
@@ -514,7 +514,7 @@ function setState(
   }
   if (error !== undefined) {
     sat.problem = problem ?? { code: classifyConnectionError(error) };
-    sat.lastError = annexProblemText(describeAnnexProblem(sat.problem.code, sat.alias, sat.problem));
+    sat.lastError = annexProblemText(describeAnnexProblem(sat.problem.code, sat.alias, { ...sat.problem, host: sat.host }));
   }
   appLog('core:annex-client', error ? 'warn' : 'info', `Satellite state: ${prev} → ${state}`, {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, ...(error ? { error } : {}) },
@@ -1275,7 +1275,7 @@ const NEXT_ADDRESS_DELAY_MS = 250;
 function candidatesFor(sat: SatelliteConnectionInternal): ReachAddress[] {
   const peer = annexPeers.getPeer(sat.fingerprint);
   const port = peer?.mainPort || sat.mainPort;
-  const list = reachCandidates({ discovered: sat.discovered, typed: peer?.typedHost, known: peer?.knownHosts, port });
+  const list = reachCandidates({ discovered: sat.discovered, typed: peer?.typedHost, known: peer?.knownHosts, ports: peer?.hostPorts, port });
   // Where it is now (from pairing), if nothing else lists it.
   if (sat.host && sat.mainPort && !list.some((a) => a.host === sat.host.toLowerCase() && a.port === sat.mainPort)) {
     list.push({ host: sat.host, port: sat.mainPort });
@@ -1577,7 +1577,7 @@ export function setSatelliteHost(fingerprint: string, input: string): SetHostRes
     return { ok: false, error: 'Type a name or address, such as studio.local, a tailnet name or 192.168.1.20, with an optional :port.' };
   }
   const sat = satellites.get(fingerprint);
-  if (parsed && !parsed.port && !peer.mainPort && !sat?.mainPort) {
+  if (parsed && !parsed.port && !(peer.hostPorts && Object.prototype.hasOwnProperty.call(peer.hostPorts, parsed.host)) && !peer.mainPort && !sat?.mainPort) {
     return { ok: false, error: "This computer hasn't reached it yet, so add its port too, such as studio.local:9443. Its Annex settings show the port." };
   }
   annexPeers.setTypedHost(fingerprint, value || undefined);
@@ -2339,7 +2339,7 @@ export async function probeService(fingerprint: string): Promise<{ success: bool
     probedCertificates.set(fingerprint, { ...cert, host, port });
     return { success: true, certFingerprint: cert.fingerprint };
   } catch (err) { // telemetry-exempt: shown to the person pairing
-    return { success: false, error: pairingReachError(err, discovered?.alias || known?.alias || '') };
+    return { success: false, error: pairingReachError(err, discovered?.alias || known?.alias || '', host) };
   }
 }
 
@@ -2371,35 +2371,39 @@ async function pairWithServiceImpl(fingerprint: string, pin: string): Promise<Pa
  * as a QR code). The link names the certificate, so nothing needs comparing by
  * eye: an address showing any other certificate is never sent the PIN.
  */
-export function pairWithLink(link: string): Promise<PairResultForUi> {
-  return pairFlow(() => pairWithLinkImpl(link), (r) => (r.success ? 'ok' : pairResultFor(r.error)));
+export function pairWithLink(link: string, addressOverride?: string): Promise<PairResultForUi> {
+  return pairFlow(() => pairWithLinkImpl(link, addressOverride), (r) => (r.success ? 'ok' : pairResultFor(r.error)));
 }
 
-async function pairWithLinkImpl(link: string): Promise<PairResultForUi> {
+async function pairWithLinkImpl(link: string, addressOverride?: string): Promise<PairResultForUi> {
   const parts = parsePairingUrl(link);
   if (!parts) return { success: false, error: "That isn't a Clubhouse pairing link. Copy it from the other computer's Annex settings." };
+  const override = addressOverride?.trim() ? parseTypedHost(addressOverride) : undefined;
+  if (override === null) return { success: false, error: 'Enter a host name or IP address, optionally followed by a TLS port, such as 127.0.0.1:7443.' };
+  const hosts = override ? [override.host] : parts.hosts;
+  const port = override?.port ?? parts.port;
   let lastError = 'Could not reach that computer at any of its addresses.';
-  for (const host of parts.hosts) {
+  for (const host of hosts) {
     let cert: annexTls.PinnedCertificate;
     try {
-      cert = await annexTls.probePeerCertificate(host, parts.port);
+      cert = await annexTls.probePeerCertificate(host, port);
     } catch (err) { // telemetry-exempt: the next address is tried, and the last error is shown
-      lastError = pairingReachError(err, parts.name);
+      lastError = pairingReachError(err, parts.name, host);
       continue;
     }
     if (!annexTls.sameCertificateFingerprint(cert.fingerprint, parts.certFingerprint)) {
-      appLog('core:annex-client', 'warn', 'Pairing link address showed a different certificate; not sending the PIN', { meta: { host, port: parts.port } });
+      appLog('core:annex-client', 'warn', 'Pairing link address showed a different certificate; not sending the PIN', { meta: { host, port } });
       lastError = 'The computer at that address is not the one in the link.';
       continue;
     }
-    return pairOverTls({ host, port: parts.port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin, alias: parts.name, linkHosts: parts.hosts });
+    return pairOverTls({ host, port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin, alias: parts.name, linkHosts: parts.hosts, linkPort: parts.port });
   }
   return { success: false, error: lastError };
 }
 
 /** A failure to reach a computer while pairing, as what happened and what to do. */
-function pairingReachError(err: unknown, alias: string): string {
-  return annexProblemText(describeAnnexProblem(classifyConnectionError(err), alias, { pairing: true }));
+function pairingReachError(err: unknown, alias: string, host: string): string {
+  return annexProblemText(describeAnnexProblem(classifyConnectionError(err), alias, { pairing: true, host }));
 }
 
 /** Plain messages for a satellite's pairing refusals that don't carry their own. */
@@ -2422,6 +2426,7 @@ async function pairOverTls(target: {
   alias?: string;
   /** Every host its pairing link lists, remembered as other ways to reach it (#3058). */
   linkHosts?: string[];
+  linkPort?: number;
 }): Promise<PairResultForUi> {
   const localIdentity = annexIdentity.getOrCreateIdentity();
   if (target.expectedFingerprint.toLowerCase() === localIdentity.fingerprint.toLowerCase()) {
@@ -2444,7 +2449,7 @@ async function pairOverTls(target: {
       ...(annexSettings.networkEnabled(localSettings) && membership.ownPairing() && { selfPairing: membership.ownPairing() }),
     });
   } catch (err) { // telemetry-exempt: shown to the person pairing; the pair flow records the result
-    return { success: false, error: pairingReachError(err, target.alias ?? '') };
+    return { success: false, error: pairingReachError(err, target.alias ?? '', target.host) };
   }
 
   let body: Record<string, unknown> = {};
@@ -2487,7 +2492,11 @@ async function pairOverTls(target: {
     tlsCertificateFingerprint: target.pinned.fingerprint,
     tlsCertificatePem: target.pinned.certPem,
     knownHosts: rememberHost(target.linkHosts, target.host),
-    mainPort: target.port,
+    hostPorts: {
+      ...Object.fromEntries((target.linkHosts ?? []).map((host) => [host.toLowerCase(), target.linkPort ?? target.port])),
+      [target.host.toLowerCase()]: target.port,
+    },
+    mainPort: target.linkPort ?? target.port,
     // A typed host survives pairing again.
     ...(annexPeers.getPeer(fingerprint)?.typedHost && { typedHost: annexPeers.getPeer(fingerprint)!.typedHost }),
   });

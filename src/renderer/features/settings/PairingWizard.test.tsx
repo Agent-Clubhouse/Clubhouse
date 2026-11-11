@@ -120,8 +120,17 @@ describe('PairingWizard', () => {
       fireEvent.change(screen.getByLabelText('Paste pairing link'), { target: { value: '  clubhousego://pair?v=1  ' } });
       fireEvent.click(pairBtn);
       expect(await screen.findByText('Paired with Studio Mac')).toBeInTheDocument();
-      expect(mockPairWithLink).toHaveBeenCalledWith('clubhousego://pair?v=1');
+      expect(mockPairWithLink).toHaveBeenCalledWith('clubhousego://pair?v=1', undefined);
       expect(mockProbeService).not.toHaveBeenCalled();
+    });
+
+    it('passes the optional forwarded TLS endpoint without changing the pairing link', async () => {
+      render(<PairingWizard onClose={mockOnClose} />);
+      fireEvent.change(screen.getByLabelText('Paste pairing link'), { target: { value: 'clubhousego://pair?v=1' } });
+      fireEvent.change(screen.getByLabelText('Address override (optional)'), { target: { value: ' 127.0.0.1:7443 ' } });
+      fireEvent.keyDown(screen.getByLabelText('Address override (optional)'), { key: 'Enter' });
+      expect(await screen.findByText('Paired with Studio Mac')).toBeInTheDocument();
+      expect(mockPairWithLink).toHaveBeenCalledWith('clubhousego://pair?v=1', '127.0.0.1:7443');
     });
 
     it('shows the error as given', async () => {

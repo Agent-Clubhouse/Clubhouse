@@ -1,7 +1,7 @@
 /**
  * Where to reach a paired satellite (#3058). Direct connections only: every
- * address here is the satellite itself, over the LAN or a tailnet. Nothing is
- * relayed, and the pinned certificate decides whether an address is really it.
+ * address reaches the satellite, over the LAN, a tailnet or a user-managed
+ * byte-transparent forward. The pinned certificate decides whether it is really it.
  */
 import { isIP } from 'net';
 
@@ -106,15 +106,19 @@ export function rankAddresses(addresses: readonly string[]): string[] {
  * 1. what discovery announced just now (it's on this network now);
  * 2. what the person typed;
  * 3. where it was reached before, most recent first, and the hosts in its pairing link.
- * Entries without a port use `port`; with no port at all they're left out.
+ * Each known host uses its own port. Entries without one use the legacy `port`;
+ * with no port at all they're left out.
  */
 export function reachCandidates(options: {
   discovered?: ReachAddress | null;
   typed?: string;
   known?: readonly string[];
+  ports?: Readonly<Record<string, number>>;
   port?: number;
 }): ReachAddress[] {
   const out: ReachAddress[] = [];
+  const knownPort = (host: string): number | undefined =>
+    options.ports && Object.prototype.hasOwnProperty.call(options.ports, host) ? options.ports[host] : options.port;
   const add = (host: string | undefined, port: number | undefined, source: ReachAddress['source']): void => {
     if (!host || !port || port <= 0) return;
     const h = host.toLowerCase();
@@ -123,10 +127,22 @@ export function reachCandidates(options: {
   if (options.discovered) add(options.discovered.host, options.discovered.port, 'discovered');
   if (options.typed) {
     const parsed = parseTypedHost(options.typed);
-    if (parsed) add(parsed.host, parsed.port ?? options.port, 'typed');
+    if (parsed) add(parsed.host, parsed.port ?? knownPort(parsed.host), 'typed');
   }
-  for (const host of options.known ?? []) add(host, options.port, 'known');
+  for (const host of options.known ?? []) add(host, knownPort(host.toLowerCase()), 'known');
   return out;
+}
+
+/** Give legacy hosts their original default before another address or announcement changes it. */
+export function hostPortsWithFallback(
+  known: readonly string[] | undefined,
+  port: number | undefined,
+  ports: Readonly<Record<string, number>> | undefined,
+): Record<string, number> {
+  return Object.fromEntries([
+    ...(port ? (known ?? []).map((host) => [host.toLowerCase(), port] as const) : []),
+    ...Object.entries(ports ?? {}),
+  ]);
 }
 
 /**

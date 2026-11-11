@@ -34,6 +34,21 @@ describe('annex problems', () => {
   });
 
   it.each([
+    '127.0.0.1', '127.12.34.56', 'localhost', 'LOCALHOST.', '::1', '[::1]', '0:0:0:0:0:0:0:1',
+    '::ffff:127.0.0.1', '::ffff:7f00:1', '0::1', '::0001', '0000:0000:0000:0000:0000:0000:0000:0001', '0:0:0:0:0:ffff:7f00:1',
+  ])('suggests checking the forward for loopback target %s', (host) => {
+    for (const code of ['refused', 'unreachable'] as const) {
+      expect(describeAnnexProblem(code, 'Mini', { host }).action).toMatch(/local forward is running/);
+      expect(describeAnnexProblem(code, 'Mini', { host, pairing: true }).action).toMatch(/local forward is running/);
+    }
+    expect(describeAnnexProblem('cert-mismatch', 'Mini', { host }).action).not.toMatch(/forward/);
+  });
+
+  it.each(['192.168.1.5', '100.64.0.1', 'studio.local', '::2'])('keeps network advice for non-loopback target %s', (host) => {
+    expect(describeAnnexProblem('refused', 'Mini', { host }).action).not.toMatch(/forward/);
+  });
+
+  it.each([
     [{ code: 'ECONNREFUSED' }, 'refused'],
     [{ code: 'EHOSTUNREACH' }, 'unreachable'],
     [{ code: 'ENETUNREACH' }, 'unreachable'],

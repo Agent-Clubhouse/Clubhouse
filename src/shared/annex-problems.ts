@@ -34,6 +34,18 @@ export interface AnnexProblem {
   action: string;
 }
 
+/** Loopback endpoints often belong to a user-managed forward, not to the remote computer. */
+export function isAnnexLoopback(host: string | undefined): boolean {
+  const value = host?.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (!value) return false;
+  if (!value.includes(':')) return value === 'localhost'
+    || (/^127(?:\.\d{1,3}){3}$/.test(value) && value.split('.').every((part) => Number(part) <= 255));
+  const url = `http://[${value}]/`;
+  if (!URL.canParse(url)) return false;
+  const normalized = new URL(url).hostname;
+  return normalized === '[::1]' || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(normalized);
+}
+
 /** Problems a live connection retries by itself. While pairing nothing retries, so they say to try again. */
 const PAIRING_ACTIONS: Partial<Record<AnnexProblemCode, string>> = {
   unreachable: "Check this computer's network connection, then try again.",
@@ -51,7 +63,7 @@ const PAIRING_ACTIONS: Partial<Record<AnnexProblemCode, string>> = {
 export function describeAnnexProblem(
   code: AnnexProblemCode,
   alias: string,
-  detail?: { status?: number; pairing?: boolean },
+  detail?: { status?: number; pairing?: boolean; host?: string },
 ): AnnexProblem {
   const name = alias || 'That computer';
   const text = ((): [string, string] => {
@@ -94,7 +106,10 @@ export function describeAnnexProblem(
         return [`Couldn't connect to ${name}.`, 'Reconnect. If it keeps failing, check that Annex Network is on there.'];
     }
   })();
-  const action = (detail?.pairing && PAIRING_ACTIONS[code]) || text[1];
+  const forward = (code === 'refused' || code === 'unreachable') && isAnnexLoopback(detail?.host);
+  const action = forward
+    ? 'Check that the local forward is running and that Clubhouse is open there with Annex turned on.'
+    : (detail?.pairing && PAIRING_ACTIONS[code]) || text[1];
   return { code, message: text[0], action };
 }
 

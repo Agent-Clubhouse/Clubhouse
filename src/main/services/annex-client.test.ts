@@ -2595,6 +2595,18 @@ describe('annex-client', () => {
       expect(sockets.length).toBeGreaterThanOrEqual(5);
     });
 
+    it('reconnects through a saved forward without borrowing its port for direct hosts', async () => {
+      vi.useFakeTimers();
+      peer = { ...base, knownHosts: ['127.0.0.1', '10.0.0.4'], hostPorts: { '127.0.0.1': 7443, '10.0.0.4': 9443 }, mainPort: 9443 };
+      annexClient.startClient();
+      expect(sockets[0].url).toBe('wss://127.0.0.1:7443/ws?client=desktop');
+      sockets[0].handlers.error(refused());
+      expect(annexClient.getSatellite(FP)?.lastError).toMatch(/local forward is running/);
+      expect(annexClient.getSatellite(FP)?.problem?.action).toMatch(/local forward is running/);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(sockets[1].url).toBe('wss://10.0.0.4:9443/ws?client=desktop');
+    });
+
     it('picks a routable address from an announcement, IPv6 when that is all there is, never link-local', async () => {
       peer = { ...base };
       mockHttpGetIdentity({ fingerprint: FP, alias: 'Studio', icon: 'server', color: 'green', publicKey: 'sat-pk' });
@@ -2615,6 +2627,11 @@ describe('annex-client', () => {
       expect(annexClient.satelliteAddress(FP)).toBe('studio.tail1234.ts.net:9443');
       expect(annexClient.setSatelliteHost(FP, '')).toEqual({ ok: true });
       expect(annexPeers.setTypedHost).toHaveBeenLastCalledWith(FP, undefined);
+    });
+
+    it('can reuse a remembered address-specific port when no legacy default is stored', () => {
+      peer = { ...base, knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7443 } };
+      expect(annexClient.setSatelliteHost(FP, '127.0.0.1')).toEqual({ ok: true });
     });
 
     const mismatch = () => Object.assign(new Error('pin'), { code: 'ERR_ANNEX_PIN_MISMATCH' });
@@ -2832,10 +2849,52 @@ describe('annex-client', () => {
       expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
         fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', role: 'satellite', tlsCertificateFingerprint: CERT_COLONS, tlsCertificatePem: 'PROBED-PEM',
         knownHosts: ['192.168.1.60'], mainPort: 9443,
+        hostPorts: { '192.168.1.60': 9443 },
       }));
       // A satellite that didn't agree to join (older, or Annex Network off) stays a satellite.
       expect(vi.mocked(annexPeers.addPeer).mock.calls[0][0].role).toBe('satellite');
       expect(annexClient.getSatellite(SAT_FP)).toMatchObject({ host: '192.168.1.60', mainPort: 9443 });
+    });
+
+    it('pairs only through the override and saves both its port and the original link ports', async () => {
+      expect(await annexClient.pairWithLink(await link(), ' 127.0.0.1:7443 ')).toMatchObject({ success: true });
+      expect(annexTls.probePeerCertificate).toHaveBeenCalledExactlyOnceWith('127.0.0.1', 7443);
+      expect(posted.map((p) => p.url)).toEqual(['https://127.0.0.1:7443/pair']);
+      expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
+        knownHosts: ['127.0.0.1', '192.168.1.60'], mainPort: 9443,
+        hostPorts: { '127.0.0.1': 7443, '192.168.1.60': 9443 },
+      }));
+      expect(annexClient.getSatellite(SAT_FP)).toMatchObject({ host: '127.0.0.1', mainPort: 7443 });
+    });
+
+    it('uses the link TLS port when the override is just a host', async () => {
+      expect(await annexClient.pairWithLink(await link(), '[::1]')).toMatchObject({ success: true });
+      expect(annexTls.probePeerCertificate).toHaveBeenCalledExactlyOnceWith('::1', 9443);
+      expect(posted[0].url).toBe('https://[::1]:9443/pair');
+    });
+
+    it.each(['https://127.0.0.1:7443', '127.0.0.1:0', '127.0.0.1:65536', 'localhost:', 'not a host'])('rejects invalid override %j before dialing', async (override) => {
+      expect(await annexClient.pairWithLink(await link(), override)).toMatchObject({ success: false, error: expect.stringMatching(/TLS port/) });
+      expect(annexTls.probePeerCertificate).not.toHaveBeenCalled();
+      expect(posted).toHaveLength(0);
+    });
+
+    it('never sends the PIN or falls back to link hosts when the override presents another certificate', async () => {
+      vi.mocked(annexTls.probePeerCertificate).mockResolvedValue({ certPem: 'PROXY-PEM', fingerprint: 'cd'.repeat(32) });
+      expect(await annexClient.pairWithLink(await link(), '127.0.0.1:7443')).toMatchObject({
+        success: false, error: expect.stringMatching(/not the one in the link/),
+      });
+      expect(annexTls.probePeerCertificate).toHaveBeenCalledExactlyOnceWith('127.0.0.1', 7443);
+      expect(posted).toHaveLength(0);
+      expect(annexPeers.addPeer).not.toHaveBeenCalled();
+    });
+
+    it('suggests checking the forward when a loopback override refuses the connection', async () => {
+      vi.mocked(annexTls.probePeerCertificate).mockRejectedValue(Object.assign(new Error('connect refused'), { code: 'ECONNREFUSED' }));
+      expect(await annexClient.pairWithLink(await link(), '127.0.0.1:7443')).toMatchObject({
+        success: false, error: expect.stringMatching(/local forward is running/),
+      });
+      expect(posted).toHaveLength(0);
     });
 
     it('joins as a network member when the satellite agrees, and stays one-to-one when Annex Network is off (#3061)', async () => {

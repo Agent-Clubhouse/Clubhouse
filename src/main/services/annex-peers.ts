@@ -10,7 +10,8 @@ import { app } from 'electron';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import { devicesChanged } from './annex-device-signal';
-import { rememberHost } from './annex-reach';
+import { hostPortsWithFallback, rememberHost } from './annex-reach';
+import { isAnnexLoopback } from '../../shared/annex-problems';
 import type { AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -53,7 +54,7 @@ function loadPeers(): AnnexPeer[] {
   try {
     const raw = fs.readFileSync(getPeersPath(), 'utf-8');
     const parsed: unknown = JSON.parse(raw);
-    cachedPeers = Array.isArray(parsed) ? parsed as AnnexPeer[] : [];
+    cachedPeers = Array.isArray(parsed) ? (parsed as AnnexPeer[]).map(withHostPorts) : [];
     return cachedPeers;
   } catch {
     cachedPeers = [];
@@ -70,6 +71,11 @@ function savePeers(peers: AnnexPeer[]): void {
   const target = getPeersPath();
   fs.writeFileSync(target, JSON.stringify(peers, null, 2), { encoding: 'utf-8', mode: 0o600 });
   try { fs.chmodSync(target, 0o600); } catch { /* telemetry-exempt: no POSIX modes on Windows */ }
+}
+
+function withHostPorts(peer: AnnexPeer): AnnexPeer {
+  if (!peer.knownHosts?.length) return peer;
+  return { ...peer, hostPorts: hostPortsWithFallback(peer.knownHosts, peer.mainPort, peer.hostPorts) };
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +120,7 @@ export function controlledFromHere(peer: Pick<AnnexPeer, 'role' | 'kind'> | unde
 }
 
 export function addPeer(peer: AnnexPeer): void {
+  peer = withHostPorts(peer);
   const peers = loadPeers();
   const existing = peers.findIndex((p) => p.fingerprint === peer.fingerprint);
   if (existing !== -1) {
@@ -151,8 +158,9 @@ export function noteReached(fingerprint: string, host: string, port: number): vo
   const peers = loadPeers();
   const peer = peers.find((p) => p.fingerprint === fingerprint);
   if (!peer || !host || !(port > 0)) return;
+  peer.hostPorts = { ...hostPortsWithFallback(peer.knownHosts, peer.mainPort, peer.hostPorts), [host.toLowerCase()]: port };
   peer.knownHosts = rememberHost(peer.knownHosts, host);
-  peer.mainPort = port;
+  if (!peer.mainPort || !isAnnexLoopback(host)) peer.mainPort = port;
   peer.lastSeen = new Date().toISOString();
   savePeers(peers);
 }
