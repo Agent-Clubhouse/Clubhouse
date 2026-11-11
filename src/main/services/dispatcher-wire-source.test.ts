@@ -161,19 +161,18 @@ afterEach(() => {
 describe('dispatcherWiresForProject', () => {
   it('wires an orchestrator with the switch on both ways, named Dispatcher at its end', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!, 'Wardfall');
-    const allOn = { disabledTools: [], enabledTools: ['wake_agent'], startingTools: true };
     const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true };
     expect(out).toEqual([
-      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName: 'Wardfall', ...allOn },
+      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName: 'Wardfall', ...starting },
       { agentId: 'durable_lead', targetId: DISPATCHER, targetKind: 'agent', label: 'Dispatcher', agentName: 'lead', targetName: 'Dispatcher', projectName: 'Wardfall', ...starting },
     ]);
   });
 
-  it('starts the Dispatcher with every tool on the agent, and the agent with send and wake but no clear or compact over it (#3214)', async () => {
+  it('starts both directions with read, message and wake but no clear or compact without saved bootstrap switches (#3281)', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!);
     expect(out).toHaveLength(2);
     const [toAgent, toDispatcher] = out;
-    expect(toAgent).toMatchObject({ agentId: DISPATCHER, disabledTools: [], enabledTools: ['wake_agent'], startingTools: true });
+    expect(toAgent).toMatchObject({ agentId: DISPATCHER, disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true });
     expect(toDispatcher).toMatchObject({ targetId: DISPATCHER, disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true });
     // Wake is a switch turned on, never a tool left off the list.
     for (const b of out) expect(b.disabledTools).not.toContain('wake_agent');

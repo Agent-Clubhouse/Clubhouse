@@ -53,7 +53,7 @@ type Pair = { agentId: string; targetId: string };
 function pairBindings(dispatcherId: string, agent: DurableAgentConfig, projectName?: string): PersistedBinding[] {
   const project = projectName ? { projectName } : {};
   const name = dispatcherDisplayName();
-  // The Dispatcher starts with every tool on the agent; the agent starts like a new connection over it (#3214).
+  // Both directions use narrow defaults when no user-owned switches are saved (#3281).
   return [
     {
       agentId: dispatcherId, targetId: agent.id, targetKind: 'agent',

@@ -224,20 +224,18 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
   });
   afterEach(() => { for (const u of unregister) u(); });
 
-  it('every direction starts as set: orchestrator to helper and Dispatcher to agent with every tool, the rest send and wake without clear or compact', async () => {
+  it('only orchestrator to helper starts with every tool; Dispatcher and other directions have clear and compact off', async () => {
     unregister.push(registerPersistedBindingSource({
       id: 'orchestrator-connections', prune: true, collect: async () => [wire('a', 'b', startingTools(AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink))],
     }));
     await rebuildPersistedBindings();
     expect(readLocalDirectionTools('a', 'h')).toEqual({ allowed: ALL, disabled: [] });
-    expect(readLocalDirectionTools('disp', 'a')).toEqual({ allowed: ALL, disabled: [] });
-    for (const [from, to] of [['h', 'a'], ['a', 'disp'], ['a', 'b']]) {
+    for (const [from, to] of [['h', 'a'], ['disp', 'a'], ['a', 'disp'], ['a', 'b']]) {
       expect(readLocalDirectionTools(from, to)).toEqual({ allowed: SEND_AND_WAKE, disabled: CLEAR_COMPACT });
       expect(toolsOf(from, to)).toEqual(CLEAR_COMPACT);
       expect(localConnectionWakeOn(from, to)).toBe(true);
     }
     expect(toolsOf('a', 'h')).toBeUndefined();
-    expect(toolsOf('disp', 'a')).toBeUndefined();
     // Live only until the one-time pass has run: it decides for older connections.
     expect(listConnectionDirections('a')).toEqual([]);
   });
@@ -245,13 +243,12 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
   it('the one-time pass keeps each older connection\'s starting lists, wake included, and only where nothing is saved', async () => {
     await rebuildPersistedBindings();
     expect(await migrate()).toBe('done');
-    for (const [from, to] of [[H, A], [A, DISP]]) {
+    for (const [from, to] of [[H, A], [DISP, A], [A, DISP]]) {
       expect(getConnectionDirection(from, to)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
       expect(getConnectionDirection(from, to)?.setBy).toBeUndefined();
     }
-    // Every tool on is the parent's and the Dispatcher's start: no entry needed, the binding says so.
+    // Every tool on is only the parent's start: no entry needed, the binding says so.
     expect(getConnectionDirection(A, H)).toBeUndefined();
-    expect(getConnectionDirection(DISP, A)).toBeUndefined();
     expect(localConnectionWakeOn('a', 'h')).toBe(true);
     expect(connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION)).toBe(true);
   });
