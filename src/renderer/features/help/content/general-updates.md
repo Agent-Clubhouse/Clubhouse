@@ -9,6 +9,10 @@ Clubhouse checks for updates automatically and applies them with minimal disrupt
 3. **Notify** — A blue banner shows the new version. Click **Restart to update** or dismiss.
 4. **Apply** — If agents are running, a confirmation dialog warns before restarting.
 
+In the update dialog, **Interrupt** ends the current turn. After restart, only the conversation resumes, not the interrupted turn. **Stop now** ends the agent and prevents it from resuming after restart. Each action shows progress and reports a failure or timeout. If interrupt takes too long, choose **Stop now**. Restart stays unavailable until agents are idle and pending actions are resolved.
+
+Cancelling the dialog does not undo a stop. If you wake that agent before updating later, its new conversation can resume normally.
+
 ## After updating
 
 A **What's New** dialog shows release notes on first launch after an update. View past release notes anytime in **Settings > What's New**.

@@ -584,7 +584,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     this.closing = true;
     this.settlePending('agent');
     this.quietFailedWrites();
-    const grace = (work: Promise<unknown>) => withTimeout(work, CLOSE_GRACE_MS, 'Copilot close').catch((err: Error) => this.log('warn', 'Copilot did not close cleanly', { error: err.message }));
+    const grace = (work: Promise<unknown>) => withTimeout(work, CLOSE_GRACE_MS, 'Copilot close').catch(() => this.log('warn', 'Copilot did not close cleanly'));
     if (this.sdk) await grace(this.sdk.disconnect());
     await grace(this.client.stop());
     await this.server.kill();
