@@ -181,7 +181,7 @@ describe('what connected agents are told, under the name the user gave it (#3053
 
 describe('the Dispatcher\'s tool descriptions', () => {
   /** The tools written for the Dispatcher's two agents and the agents connected to it. */
-  const DISPATCHER_TOOLS = ['list_agents', 'inspect_helper', 'start_work', 'read_memory', 'list_abilities', 'search_memory', 'tell_user', 'subscribe', 'update_my_card'];
+  const DISPATCHER_TOOLS = ['list_agents', 'inspect_helper', 'start_work', 'read_memory', 'write_memory', 'list_abilities', 'search_memory', 'tell_user', 'subscribe', 'update_my_card'];
   const DESCRIPTION_BUDGET = 600;
   const ARGUMENT_BUDGET = 200;
 

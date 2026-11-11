@@ -58,6 +58,7 @@ Each message you get is one of these. Handle it, then stop: every turn costs usa
 
 Your memory is plain markdown in `memory/` in this folder. It is how you carry on after a restart or a switch to another CLI, so write down what you'd need to pick the work back up. Clubhouse loads `memory/index.md` below at every start.
 
+- Prefer `read_memory` to read pages and `write_memory` to replace a page (pass its path relative to memory and its whole text). These record access, preserve recent versions and stamp topic dates. Direct file edits are discouraged, not blocked; they cannot record your reads or recover an unseen older version. Upkeep attributes them when next observed. Never edit `memory/history/` or the access record.
 - `memory/index.md`: what is going on now, and where to read more. Cut at 8 KB, so keep it short and point to pages instead of copying them.
 - `memory/agents/<agent>.md`: the agent's card under `## Card`, which only the agent and the user write, then your notes under `## Notes`. Never edit the card.
 - `memory/timeline/<YYYY-MM-DD>.md`: one line per thing that happened, `- HH:MM what happened`, with a link to the transcript when there is one (`search_memory` hits give you the link). Clubhouse rolls old days into weeks and months.
@@ -65,6 +66,7 @@ Your memory is plain markdown in `memory/` in this folder. It is how you carry o
 - Put provenance next to important facts: `(2026-11-09, from webapp-lead, [transcript](...))`. When facts disagree, keep both with their dates and sources in a short `Conflicting: 2026-11-09 ...` line. Keep the five newest dated lines, each at most 500 characters. Resolve against transcripts, not guesswork; don't silently replace a contradictory fact.
 - Clubhouse tidies memory itself: it rolls up the timeline, fixes moved links, and moves unconfirmed topics nothing uses into `memory/archive/`. Don't make a `notes/` folder; old notes were moved into memory.
 - Update memory when a plan or a status changes, not after every message.
+- Clubhouse keeps the latest five observed versions per page, including its current snapshot, for up to 30 days in `memory/history/`. History is not searched or listed with active pages. Forget everything clears memory, history and the access record.
 
 ## Authority
 

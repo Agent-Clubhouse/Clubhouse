@@ -7,8 +7,8 @@
  *   `agent.message` on itself: one identity, two agents. Each request gets
  *   an id its outcome comes back under (#3237): success, failure, stopped or
  *   no outcome yet. A retry or follow-up names the id.
- * - read_memory, in the `dispatcherChat` group: the chat reads the
- *   Dispatcher's memory, read-only (dispatcher-memory-reader).
+ * - read_memory, in both groups: reads recorded by dispatcher-memory-reader.
+ * - write_memory, in `dispatcher` only: protected, versioned memory writes.
  * - list_abilities, in the `dispatcherChat` group: what the Dispatcher can do,
  *   built from its live grants (#3048), for "What else can you do?".
  * - tell_user, in the `dispatcher` group: the Dispatcher's report to the user.
@@ -26,6 +26,7 @@ import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { deliverToChat, handOffToDispatcher, type ChannelResult, type HandOffResult } from '../../dispatcher/dispatcher-channel';
 import { MemoryReadError, readDispatcherMemory } from '../../dispatcher/dispatcher-memory-reader';
+import { writeDispatcherMemory } from '../../dispatcher/dispatcher-memory-writer';
 import { optionalString, requireString } from './validation';
 import { NEWS_KINDS, isNewsKind, type NewsKind } from '../../dispatcher/dispatcher-triage';
 import { readDispatcherAbilities } from '../../dispatcher/dispatcher-teaching';
@@ -144,7 +145,35 @@ export function registerDispatcherChatTools(): void {
         return text(`Memory could not be read: ${errorText(err)}`, true);
       }
     },
-    { group: 'dispatcherChat', grant: { actions: ['agent.read'], target: 'self' } },
+    { group: ['dispatcher', 'dispatcherChat'], grant: { actions: ['agent.read'], target: 'self' } },
+  );
+
+  registerGlobalTool(
+    'write_memory',
+    {
+      description: 'Replace a memory page with plain markdown. Read it first, keep its sources and unknown headers, and edit only Notes on an agent page, never its Card. Topic pages need Status and Source headers; Created is preserved and Updated is stamped for you. Previous versions are kept in bounded history.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          page: { type: 'string', description: 'The .md page relative to memory, such as topics/checkout.md. History and archive are read only.' },
+          text: { type: 'string', description: 'The whole page, including its headers and any unchanged sections.' },
+        },
+        required: ['page', 'text'],
+      },
+    },
+    async (agentId, args) => {
+      const page = requireString(args, 'page')?.trim();
+      if (!page || typeof args.text !== 'string') return text('write_memory needs page and text.', true);
+      try {
+        return text(JSON.stringify(await writeDispatcherMemory(page, args.text), null, 2));
+      } catch (err) {
+        if (err instanceof MemoryReadError) return text(err.message, true);
+        // telemetry-exempt: logged, and the error reaches the agent as the tool result
+        appLog('core:mcp', 'warn', 'write_memory failed', { meta: { agentId, error: errorText(err) } });
+        return text(`Memory could not be written: ${errorText(err)}`, true);
+      }
+    },
+    { group: 'dispatcher', grant: { actions: ['memory.write'], target: 'self' } },
   );
 
   registerGlobalTool(

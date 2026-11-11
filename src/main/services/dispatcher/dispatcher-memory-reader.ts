@@ -2,13 +2,13 @@
  * The chat's read-only way into the Dispatcher's memory (#3036), in the
  * layout of dispatcher-memory (#3038): index.md, agents/, timeline/, topics/. The memory folder is inside the coordinator's folder, which the chat
  * doesn't run in, and CLI file permissions differ by provider and Access
- * level. So the chat reads memory through the read_memory tool, which can
- * only read markdown pages inside the memory folder. Nothing here writes.
+ * level. Both roles can read through read_memory, confined to markdown pages
+ * inside memory. Reads record access outside the memory folder.
  */
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { getDispatcherMemoryPath } from './dispatcher-paths';
-import { capIndex, readIndex } from './dispatcher-memory';
+import { capIndex, readIndex, recordMemoryRead, MEMORY_HISTORY_DIR } from './dispatcher-memory';
 
 /** One page's text at most; memory pages are meant to be short. */
 export const MAX_MEMORY_PAGE_CHARS = 64_000;
@@ -44,6 +44,7 @@ async function listPages(root: string): Promise<{ pages: string[]; truncated: bo
     for (const entry of entries) {
       // Links are never followed: they could lead out of the folder.
       if (entry.isSymbolicLink()) continue;
+      if (dir === root && entry.name === MEMORY_HISTORY_DIR) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!(await walk(full))) return false;
@@ -62,6 +63,38 @@ function bounded(text: string): Pick<MemoryRead, 'text' | 'truncated'> {
   return text.length <= MAX_MEMORY_PAGE_CHARS ? { text } : { text: text.slice(0, MAX_MEMORY_PAGE_CHARS), truncated: true };
 }
 
+/** Shared read/write path rules; validate existing ancestors before creating anything. */
+export async function resolveMemoryPage(page: string, root: string, writing = false): Promise<string> {
+  const wanted = page.trim().replace(/\\/g, '/');
+  if (path.isAbsolute(wanted) || wanted.includes(':') || wanted.includes('\0') || wanted.split('/').includes('..')) {
+    throw new MemoryReadError('Name a page inside memory, such as agents/webapp-lead.md.');
+  }
+  if (wanted.split('/').some((part) => part !== '.' && (/[. ]$|[<>"|?*]/.test(part)
+    || /^(con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/i.test(part)))) {
+    throw new MemoryReadError('Memory page paths cannot contain reserved or ambiguous file names.');
+  }
+  if (!wanted.endsWith('.md')) throw new MemoryReadError('Memory pages are .md files.');
+  const realRoot = await fsp.realpath(root);
+  const target = path.join(realRoot, ...wanted.split('/'));
+  if (!isInside(realRoot, target)) throw new MemoryReadError('Name a page inside memory.');
+  let current = realRoot;
+  const parts = path.relative(realRoot, target).split(path.sep);
+  for (let i = 0; i < parts.length; i++) {
+    current = path.join(current, parts[i]);
+    let stat: import('fs').Stats;
+    try { stat = await fsp.lstat(current); } catch (err) {
+      if (writing && (err as NodeJS.ErrnoException).code === 'ENOENT') return path.join(current, ...parts.slice(i + 1));
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new MemoryReadError(`There is no memory page "${wanted}". Read memory with no page for the list.`);
+      throw err;
+    }
+    if (stat.isSymbolicLink()) throw new MemoryReadError('Memory page paths cannot contain links.');
+    if (i < parts.length - 1 && !stat.isDirectory()) throw new MemoryReadError(`"${wanted}" is not a page.`);
+    if (i === parts.length - 1 && !stat.isFile()) throw new MemoryReadError(`"${wanted}" is not a page.`);
+    current = await fsp.realpath(current);
+  }
+  return current;
+}
+
 /**
  * Read one memory page, or with none, the index and the list of pages. A page
  * is a `.md` path relative to the memory folder, such as `agents/webapp-lead.md`.
@@ -73,24 +106,16 @@ export async function readDispatcherMemory(page?: string, root: string = getDisp
   if (page === undefined || page.trim() === '' || page.trim() === 'index.md') {
     const { pages, truncated } = await listPages(realRoot);
     // The index as a start loads it, cut to its cap; never created from here.
+    // Validate index.md too: it must not be a link out of memory.
+    await resolveMemoryPage('index.md', realRoot, true);
     const index = await readIndex(realRoot);
     const text = index ? capIndex(index) : 'There is no index yet.';
     return { page: 'index.md', ...bounded(text), pages, ...(truncated && { pagesTruncated: true }) };
   }
 
-  const wanted = page.trim().replace(/\\/g, '/');
-  if (path.isAbsolute(wanted) || /^[a-z]:/i.test(wanted) || wanted.split('/').includes('..')) {
-    throw new MemoryReadError('Name a page inside memory, such as agents/webapp-lead.md.');
-  }
-  if (!wanted.endsWith('.md')) throw new MemoryReadError('Memory pages are .md files.');
-  const target = path.join(realRoot, ...wanted.split('/'));
-  if (!isInside(realRoot, target) || !(await exists(target))) {
-    throw new MemoryReadError(`There is no memory page "${wanted}". Read memory with no page for the list.`);
-  }
-  // A link inside memory must not lead out of it.
-  const real = await fsp.realpath(target);
-  if (!isInside(realRoot, real)) throw new MemoryReadError(`There is no memory page "${wanted}".`);
-  const stat = await fsp.stat(real);
-  if (!stat.isFile()) throw new MemoryReadError(`"${wanted}" is not a page.`);
-  return { page: wanted, ...bounded(await fsp.readFile(real, 'utf-8')) };
+  const target = await resolveMemoryPage(page, realRoot);
+  const wanted = path.relative(realRoot, target).split(path.sep).join('/');
+  const text = await fsp.readFile(target, 'utf-8');
+  await recordMemoryRead(wanted, realRoot);
+  return { page: wanted, ...bounded(text) };
 }

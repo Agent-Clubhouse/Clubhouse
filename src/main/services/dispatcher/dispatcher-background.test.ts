@@ -227,6 +227,31 @@ describe('the upkeep gate', () => {
     expect(await runDispatcherUpkeep()).toHaveProperty('skip');
   });
 
+  it('does not review a card update made through Clubhouse', async () => {
+    await memoryFiles.writeAgentCard('lead', 'Owns work', memory);
+    const result = await runDispatcherUpkeep();
+    expect(result).toHaveProperty('skip');
+    expect((await memoryFiles.readMemoryAccess(memory))['agents/lead.md'].lastWriter).toBe('clubhouse:card');
+  });
+
+  it('does not lose an unreviewed direct notes edit when a card is updated', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date(world.now - 120_000));
+      await memoryFiles.writeAgentCard('lead', 'Owns work', memory);
+      fs.writeFileSync(path.join(tmp, 'dispatcher-upkeep.json'), JSON.stringify({ lastCheckedAt: world.now - 60_000 }));
+      const file = path.join(memory, 'agents', 'lead.md');
+      fs.appendFileSync(file, 'New direct notes.\n');
+      vi.setSystemTime(new Date(world.now - 1_000));
+      await memoryFiles.writeAgentCard('lead', 'Owns more work', memory);
+      const result = await runDispatcherUpkeep();
+      expect('send' in result && result.send).toContain('agents/lead.md');
+      expect(fs.readFileSync(file, 'utf8')).toContain('New direct notes.');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not review upkeep-only link repairs again and checkpoints completion (part of #3218)', async () => {
     topic('topics/checkout-fix.md', 'confirmed', 120_000);
     const notes = path.join(memory, 'topics', 'notes.md');
@@ -277,14 +302,15 @@ describe('the upkeep gate', () => {
     const old = new Date(world.now - 120_000);
     fs.utimesSync(notes, old, old);
     fs.writeFileSync(path.join(tmp, 'dispatcher-upkeep.json'), JSON.stringify({ lastCheckedAt: world.now - 60_000 }));
-    const write = memoryFiles.writeFileAtomic;
-    vi.spyOn(memoryFiles, 'writeFileAtomic').mockImplementation(async (...args) => {
-      await write(...args);
-      if (args[0] === notes) {
+    const write = memoryFiles.memoryWrite;
+    vi.spyOn(memoryFiles, 'memoryWrite').mockImplementation(async (...args) => {
+      const written = await write(...args);
+      if (args[0] === 'topics/notes.md') {
         fs.appendFileSync(notes, 'An agent added a new fact.\n');
         const editedAt = new Date(world.now - 1_000);
         fs.utimesSync(notes, editedAt, editedAt);
       }
+      return written;
     });
 
     const result = await runDispatcherUpkeep();
@@ -384,10 +410,19 @@ describe('upkeep telemetry (#3052)', () => {
 });
 
 describe('upkeepReviewText', () => {
-  const empty = { rolledUp: { days: [], weeks: [] }, linksFixed: [], archived: [], brokenLinks: [], missingSources: [], conflictingPages: [], changed: false };
+  const empty = { rolledUp: { days: [], weeks: [] }, linksFixed: [], archived: [], brokenLinks: [], missingSources: [], conflictingPages: [], directEdits: [], neglectedPages: [], changed: false };
 
   it('surfaces conflicts even when a page has not changed', () => {
     expect(upkeepReviewText([], { ...empty, conflictingPages: ['topics/conflict.md'] })).toContain('topics/conflict.md: dated Conflicting notes');
+  });
+
+  it('caps neglected-page reviews and sends nothing when there are none', () => {
+    const neglectedPages = Array.from({ length: 20 }, (_, i) => `topics/old-${i}.md`);
+    const text = upkeepReviewText([], { ...empty, neglectedPages })!;
+    expect(text).toContain('topics/old-14.md');
+    expect(text).not.toContain('topics/old-15.md');
+    expect(text).toContain('5 more');
+    expect(upkeepReviewText([], empty)).toBeNull();
   });
   it('is null when nothing changed and nothing is left to fix', () => {
     expect(upkeepReviewText([], { ...empty, rolledUp: { days: ['2026-11-01'], weeks: [] }, changed: true })).toBeNull();

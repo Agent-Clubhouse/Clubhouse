@@ -36,6 +36,13 @@ describe('ISO weeks', () => {
 });
 
 describe('appendTimeline', () => {
+  it('keeps every entry when appends overlap', async () => {
+    const at = new Date(2026, 10, 7, 9, 5);
+    await Promise.all(Array.from({ length: 8 }, (_, i) => appendTimeline({ at, text: `Entry ${i}` }, root)));
+    const text = read('2026-11-07.md');
+    for (let i = 0; i < 8; i++) expect(text).toContain(`Entry ${i}\n`);
+  });
+
   it('adds timestamped lines to the day file, with a transcript link', async () => {
     await appendTimeline({ at: new Date(2026, 10, 7, 9, 5), text: 'Checkout fixed\nin #412', transcript: 'transcripts/abc.jsonl' }, root);
     await appendTimeline({ at: new Date(2026, 10, 7, 14, 30), text: 'Release tagged' }, root);

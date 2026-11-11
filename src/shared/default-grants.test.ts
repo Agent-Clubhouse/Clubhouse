@@ -50,6 +50,16 @@ describe('the Dispatcher\'s defaults (#3050, #3034)', () => {
   const connected = { kind: 'connected' } as const;
   const anyProject = { kind: 'project', project: 'any' } as const;
 
+  it('allows memory writes only for its controller by default', () => {
+    expect(mode(dispatcher, 'memory.write', { kind: 'self' })).toBe('allow');
+    for (const facts of [
+      { dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: true, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: false, orchestrates: true, crossProject: true },
+      { dispatcher: true, dispatcherChat: true, helper: false, orchestrates: false, crossProject: false },
+    ]) expect(defaultGrants(facts).some((g) => g.action === 'memory.write')).toBe(false);
+  });
+
   it('has broad power over connected agents, plus connections', () => {
     for (const action of ['agent.read', 'agent.message', 'agent.wake', 'agent.sleep', 'agent.reset', 'agent.display', 'agent.configure', 'connection.manage'] as const) {
       expect(mode(dispatcher, action, connected), action).toBe('allow');

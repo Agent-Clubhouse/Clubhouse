@@ -23,7 +23,7 @@ vi.mock('./dispatcher-channel', () => ({
 import { forgetEverything, getForgetGeneration, memoryFingerprint } from './dispatcher-forget';
 import { refreshDispatcherInstructions } from './dispatcher-service';
 import { _resetDispatcherNewsForTesting, _whenNewsSavedForTesting, heldNews } from './dispatcher-news';
-import { DEFAULT_INDEX } from './dispatcher-memory';
+import { DEFAULT_INDEX, memoryAccessPath, memoryWrite, readMemoryAccess, recordMemoryRead } from './dispatcher-memory';
 import { getDispatcherMemoryPath, getDispatcherPath } from './dispatcher-paths';
 
 h.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-forget-test-'));
@@ -82,6 +82,21 @@ beforeEach(async () => {
 });
 
 describe('Forget everything (#3046)', () => {
+  it('clears all versions and the access record as well as current memory', async () => {
+    await memoryWrite('topics/release.md', 'Status: confirmed\nSource: pm\n\nFirst', 'agent tool', memory());
+    await memoryWrite('topics/release.md', 'Status: confirmed\nSource: pm\n\nSecond', 'agent tool', memory());
+    await recordMemoryRead('topics/release.md', memory());
+    expect(fs.existsSync(path.join(memory(), 'history'))).toBe(true);
+    expect(Object.keys(await readMemoryAccess(memory()))).toContain('topics/release.md');
+    await forgetEverything({ refreshInstructions: async () => {
+      await recordMemoryRead('index.md', memory());
+    } });
+    expect(fs.existsSync(path.join(memory(), 'history'))).toBe(false);
+    expect(fs.existsSync(memoryAccessPath(memory()))).toBe(false);
+    expect(await readMemoryAccess(memory())).toEqual({});
+    expect(fs.readFileSync(path.join(memory(), 'index.md'), 'utf8')).toBe(DEFAULT_INDEX);
+  });
+
   it('clears memory, old notes and held news, and leaves agents, connections and Actions', async () => {
     const kept = everythingElse();
     expect(Object.keys(kept)).toEqual(expect.arrayContaining([

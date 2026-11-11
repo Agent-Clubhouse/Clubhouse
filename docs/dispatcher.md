@@ -50,6 +50,14 @@ Tests: `dispatcher-service.test.ts` ("1.0 default"), `e2e/layout-default.spec.ts
 
 **Topic provenance (#3218).** Topics use plain header lines, not front matter: `Status:`, `Source:`, `Created:` and `Updated:` (ISO 8601 with a zone), then a blank line and body. Header order is flexible and extensions survive round trips. Existing undated pages need no migration: freshness uses a valid, nonfuture Updated date with a zone, otherwise mtime. Clubhouse topic writes preserve Created and stamp Updated. Important facts carry inline dated sources. The controller records contradictions explicitly as `Conflicting: YYYY-MM-DD ...` lines (the five newest dates, 500 characters each), with both claims and sources; there is no heuristic fact detector. Upkeep surfaces open conflicts instead of archiving them, and telemetry records only their page count.
 
+**Memory access and versions (#3219).** Both the chat and controller have `read_memory`; only the controller has `write_memory`, with the `memory.write` grant on itself allowed by default. It replaces a whole `.md` page relative to memory, rejects escaping paths, symlink components and Windows-reserved names, protects agent cards, caps the index, and stamps topic dates. Protections apply after path normalization and regardless of folder casing; existing paths use their canonical filesystem spelling for access records and write locks. Conflict limits apply only to Notes on agent pages, never their Cards. History and archive are read only through the tool. Direct agent edits are discouraged, not blocked.
+
+All Clubhouse page writers share `memoryWrite(page, text, reason)`, including cards, migration, timeline rollup, link repair and archive moves. `dispatcher/memory-access.json`, outside the searchable memory folder, keeps the last read/write, writer, bounded counters and file stamps/digests for up to 1,000 pages (most recently accessed first), never page text. Explicit reads, index loads and returned search hits count as access; internal upkeep scans do not. At upkeep, mtime and digest distinguish direct edits from the last Clubhouse write, including edits within one timestamp tick. Clubhouse-only card/repair writes do not trigger review or erase a pending controller/direct edit.
+
+Read-modify-write updates to cards, timeline entries and repaired links use the latest bytes under the shared page lock. Archive moves hold that same lock on the source and recheck its status and freshness before retiring it, so a concurrent tool edit is not overwritten or removed.
+
+`memory/history/<page>/` keeps the latest five observed versions per page, including its current snapshot, for up to 30 days. Before replacing legacy bytes they are saved too; a direct edit can only retain an older version Clubhouse had already observed, not recover an unseen overwritten file. History follows archive/rename moves and is excluded from active page lists, search, staleness and health sizes. Upkeep removes expired/excess snapshots, and lists at most 15 neglected pages (the rest counted): neither read nor updated by the controller in 30 days, including old never-read pages. Recent reads or controller writes clear that neglect; without changes, problems or neglect, upkeep sends nothing. Telemetry counts neglected pages only.
+
 ## Agents' news in the chat (#3193)
 
 What passes between the Dispatcher and an agent (progress, acknowledgements, an agent's questions to it) stays out of the chat. The agent's own chat keeps all of it. The chat shows only what is for the user:
@@ -141,7 +149,7 @@ A switch under Behavior in Settings > Dispatcher. Off, Behavior gives both agent
 
 ## Forget everything
 
-Clears `memory/` (including upkeep's `memory/archive/`), an unsorted `notes/`, every `notes-archive*`, and news held for the next check-in, then makes a fresh index and rewrites its instructions. It never touches its agents, connections, links, permissions, Actions, Behavior, personality, usage history or its chat. Clear chat is the separate way to start the chat over.
+Clears `memory/` (including `memory/archive/` and `memory/history/`), `dispatcher/memory-access.json`, an unsorted `notes/`, every `notes-archive*`, and news held for the next check-in, then makes a fresh index and rewrites its instructions. It never touches its agents, connections, links, permissions, Actions, Behavior, personality, usage history or its chat. Clear chat is the separate way to start the chat over.
 
 ## Files
 
@@ -150,6 +158,7 @@ All under the Clubhouse base folder (`~/.clubhouse`, or `.clubhouse-dev` in deve
 | File | Holds | Cleared by Forget everything |
 |---|---|---|
 | `dispatcher/memory/` | memory | yes |
+| `dispatcher/memory-access.json` | bounded read/write metadata, no page text | yes |
 | `dispatcher/notes-archive*/` | notes from before memory | yes |
 | `dispatcher-news.json` | held news, recently shown | held news only |
 | `dispatcher-requests.json` | the user's requests from the last week and how each ended | no |

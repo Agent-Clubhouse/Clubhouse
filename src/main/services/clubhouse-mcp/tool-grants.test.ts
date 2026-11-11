@@ -156,6 +156,7 @@ describe('tool grant declarations (#2967)', () => {
       inspect_helper: agent.read on agent_arg
       start_work: agent.message on self
       read_memory: agent.read on self
+      write_memory: memory.write on self
       list_abilities: agent.read on self
       tell_user: user.notify on app
       search_memory: agent.read on self

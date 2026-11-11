@@ -32,7 +32,7 @@ import {
   readIfExists,
   renderTopicPage,
   setIndexSection,
-  writeFileAtomic,
+  memoryWrite,
 } from './dispatcher-memory';
 
 const NS = 'core:dispatcher';
@@ -121,7 +121,7 @@ async function placeTopic(topicsDir: string, slug: string, source: string, body:
     const file = path.join(topicsDir, `${n === 1 ? slug : `${slug}-${n}`}.md`);
     const existing = await readIfExists(file);
     if (existing === null) {
-      await writeFileAtomic(file, renderTopicPage({ status: 'unconfirmed', source, body }));
+      await memoryWrite(`topics/${path.basename(file)}`, renderTopicPage({ status: 'unconfirmed', source, body }), 'migration', path.dirname(topicsDir));
       return file;
     }
     if (parseTopicPage(existing)?.body === body) return file;
@@ -132,9 +132,9 @@ async function placeTopic(topicsDir: string, slug: string, source: string, body:
 async function placeDay(timelineDir: string, name: string, text: string): Promise<string> {
   const file = path.join(timelineDir, name.toLowerCase());
   const existing = await readIfExists(file);
-  if (existing === null) await writeFileAtomic(file, text);
+  if (existing === null) await memoryWrite(`timeline/${path.basename(file)}`, text, 'migration', path.dirname(timelineDir));
   else if (!existing.includes(text)) {
-    await writeFileAtomic(file, `${existing.trimEnd()}\n\n## Moved from notes/${name}\n\n${text}`);
+    await memoryWrite(`timeline/${path.basename(file)}`, `${existing.trimEnd()}\n\n## Moved from notes/${name}\n\n${text}`, 'migration', path.dirname(timelineDir));
   }
   return file;
 }

@@ -19,7 +19,7 @@ function actionsShown(groups: CapabilityGroup[]): Set<GrantAction> {
 }
 
 /** Not offered to the reader, on purpose (see ABILITIES). */
-const UNSAID: ReadonlySet<GrantAction> = new Set(['models.read', 'grant.request', 'browser.read', 'browser.act', 'group_project.read', 'group_project.post', 'group_project.admin']);
+const UNSAID: ReadonlySet<GrantAction> = new Set(['memory.write', 'models.read', 'grant.request', 'browser.read', 'browser.act', 'group_project.read', 'group_project.post', 'group_project.admin']);
 
 describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
   it('answers the Dispatcher\'s defaults in the five groups, in order', () => {

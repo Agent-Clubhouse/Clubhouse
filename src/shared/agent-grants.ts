@@ -32,6 +32,7 @@ export const GRANT_ACTIONS = [
   'agent.create', // the target is the project it's created in
   'agent.dispose', // remove an agent and its worktree
   'agent.grant', // what an agent can do or reach: Access, helper policy, MCP servers, skills, instructions, its grants
+  'memory.write', // the Dispatcher's controller writes its own memory through write_memory
   // Connections and group projects
   'connection.manage',
   'connection.bootstrap',

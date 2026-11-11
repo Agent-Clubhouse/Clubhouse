@@ -127,6 +127,7 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     if (facts.crossProject) out.push(structural('agent.create', ANY_PROJECT, modes.create), structural('project.read', ANY_PROJECT));
   }
   if (facts.dispatcher) {
+    out.push(structural('memory.write', SELF));
     // Broad power over agents; the maintainer kept the builder's v1 reach (any agent, any project).
     for (const a of ['agent.read', 'agent.message', 'agent.wake', 'agent.sleep', 'agent.reset', 'agent.display', 'agent.configure', 'connection.manage'] as const) {
       out.push(structural(a, CONNECTED));

@@ -549,7 +549,7 @@ export const ATTR = {
     // the Dispatcher (#2536)
     'list_agents', 'inspect_helper',
     // the Dispatcher's two agents (#3036)
-    'start_work', 'read_memory', 'tell_user',
+    'start_work', 'read_memory', 'write_memory', 'tell_user',
     // what the Dispatcher can do, from its grants (#3048)
     'list_abilities',
     // search over the Dispatcher's memory and transcripts (#3039)
@@ -1026,6 +1026,7 @@ export const ATTR = {
   /** Topics untouched for the upkeep's stale age (30 days), confirmed or not. */
   dispatcherMemoryStaleTopics: intAttr('clubhouse.dispatcher.memory.stale_topics'),
   dispatcherMemoryConflictingPages: intAttr('clubhouse.dispatcher.memory.conflicting_pages'),
+  dispatcherMemoryNeglectedPages: intAttr('clubhouse.dispatcher.memory.neglected_pages'),
   dispatcherMemoryUnconfirmedTopics: intAttr('clubhouse.dispatcher.memory.unconfirmed_topics'),
   /** Links between memory pages that upkeep couldn't fix. */
   dispatcherMemoryBrokenLinks: intAttr('clubhouse.dispatcher.memory.broken_links'),
