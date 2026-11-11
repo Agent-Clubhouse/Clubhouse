@@ -938,14 +938,14 @@ async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void>
 }
 
 function startFlush(projectPath: string, entry: CacheEntry): Promise<void> {
-  // Immutable write snapshot. Callers mutate entry.agents in place (e.g.
-  // createDurable pushes onto it), so the write must not observe — and then
-  // falsely acknowledge — changes made after this point.
-  const revision = entry.revision;
-  const snapshot = cloneAgents(entry.agents);
-  const baseline = entry.baselineAgents;
-
   const flushPromise = (async () => {
+    // Share a queued flush with other mutations/barriers in this event-loop turn.
+    // pendingFlush is installed before yielding; every waiter still awaits disk.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    // Callers mutate agents in place, so only this immutable revision is acknowledged.
+    const revision = entry.revision;
+    const snapshot = cloneAgents(entry.agents);
+    const baseline = entry.baselineAgents;
     let agentsToWrite = snapshot;
     let externalAgents: DurableAgentConfig[] | null = null;
     const currentRaw = await readConfigFileIfPresent(agentsConfigPath(projectPath));
@@ -1063,7 +1063,7 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
   return entry.agents;
 }
 
-async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
+async function writeAgents(projectPath: string, agents: DurableAgentConfig[], deferFlush = false): Promise<void> {
   let entry = configCache.get(projectPath);
   if (!entry) {
     entry = {
@@ -1097,7 +1097,7 @@ async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): P
   if (entry.identity) syncAgentIdClaims(entry.identity, agents);
   entry.revision++;
   entry.dirty = true;
-  scheduleFlush(projectPath, entry);
+  if (!deferFlush) scheduleFlush(projectPath, entry);
   notifyAgentConfigChanged(projectPath);
 }
 
@@ -1858,6 +1858,8 @@ interface ActiveCreation {
   controller: AbortController;
   /** Settles once the creation has finished, including its cleanup. */
   settled: Promise<void>;
+  /** Post-worktree setup/stage mutations share the mandatory ready barrier. */
+  deferWritesUntilReady?: boolean;
 }
 
 /** Creations in progress in this process, by agent id. */
@@ -1974,7 +1976,7 @@ async function mutateAgentRecord(
   const agent = agentsById.get(agentId);
   if (!agent) return null;
   fn(agent);
-  await writeAgents(projectPath, agents);
+  await writeAgents(projectPath, agents, activeCreations.get(agentId)?.deferWritesUntilReady);
   if (flush) await flushAgentConfig(projectPath);
   return cloneAgent(agent);
 }
@@ -2428,6 +2430,11 @@ async function runDurableCreation(
         ownsFolder = await claimAgentFolder(wtPath, plan.folder);
       }
       checkCancelled();
+      // These four crash-safety barriers remain distinct: creating record,
+      // branch ownership, folder ownership, then ready. Only setup/stage writes
+      // after the worktree exists may share ready; explicit flushes and unrelated
+      // mutations can still persist them earlier.
+      active.deferWritesUntilReady = true;
       emit('worktree_added', await reachStage('worktree_added'));
     }
 
@@ -3307,7 +3314,7 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
   } else {
     delete agent.managed;
   }
-  await writeAgents(projectPath, agents);
+  await writeAgents(projectPath, agents, activeCreations.get(agentId)?.deferWritesUntilReady);
   await auditChanges('agent', 'agent', agentId, managedBefore, managedAuditFields(agent), MANAGED_AUDIT_CATALOG);
 }
 

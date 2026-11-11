@@ -83,6 +83,8 @@ import {
   resolveHelpersForDelete,
   getDurableConfig,
   updateDurableConfig,
+  setManagedSetup,
+  renameDurable,
 } from './agent-config';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { copyIntoNewAgent } from './legacy-defaults';
@@ -330,6 +332,84 @@ describe('checkDurableCreation', () => {
 });
 
 describe('startDurableCreation (#2226)', () => {
+  const configWrites = () => vi.mocked(fsp.writeFile).mock.calls
+    .filter(([file]) => String(file).startsWith(`${CONFIG_PATH}.tmp.`));
+
+  it('keeps all four crash-recovery barriers for a worktree creation', async () => {
+    vi.mocked(fsp.writeFile).mockClear();
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'barriers', color: 'indigo' });
+    expect(await started.done).toBe('ready');
+    const snapshots = configWrites().map(([, data]) => (JSON.parse(String(data)) as DurableAgentConfig[])[0]);
+    expect(snapshots).toHaveLength(4);
+    expect(snapshots[0]).toMatchObject({ creation: { state: 'creating' }, branchOwned: false });
+    expect(snapshots[1]).toMatchObject({ creation: { state: 'creating' }, branchOwned: true, branchStartSha: SHA });
+    expect(snapshots[1].creation).not.toHaveProperty('folderOwned');
+    expect(snapshots[2]).toMatchObject({ creation: { state: 'creating', folderOwned: true }, branchOwned: true });
+    expect(snapshots[3]).not.toHaveProperty('creation');
+    expect(diskAgents()[0]).toEqual(snapshots[3]);
+  });
+
+  it('folds a slow helper setup into ready, reducing five creation writes to four', async () => {
+    const parent = await createDurable(PROJECT_PATH, 'parent', 'blue', undefined, false);
+    await flushAgentConfig(PROJECT_PATH);
+    vi.mocked(fsp.writeFile).mockClear();
+    let injected!: () => void;
+    let release!: () => void;
+    const setupSaved = new Promise<void>((resolve) => { injected = resolve; });
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const started = await startDurableCreation(PROJECT_PATH, {
+      name: 'managed-helper', color: 'indigo', parentAgentId: parent.id, disposable: true,
+    }, {
+      inject: async (created) => {
+        await setManagedSetup(PROJECT_PATH, created.id, { version: 1, blocks: ['identity'], skills: [], mcps: [] });
+        injected();
+        await held;
+      },
+      injectRequired: true,
+    });
+    try {
+      await setupSaved;
+      // Longer than the ordinary 100ms debounce, which used to add a fifth write.
+      await new Promise<void>((resolve) => setTimeout(resolve, 150));
+      expect((await getDurableConfig(PROJECT_PATH, started.agentId))?.managed?.blocks).toEqual(['identity']);
+    } finally {
+      release();
+    }
+    expect(await started.done).toBe('ready');
+    expect(configWrites()).toHaveLength(4);
+    expect(diskAgents().find((agent) => agent.id === started.agentId)).toMatchObject({
+      managed: { blocks: ['identity'] }, parentAgentId: parent.id, disposable: true,
+    });
+  });
+
+  it('does not defer explicit barriers or unrelated mutations during helper injection', async () => {
+    const parent = await createDurable(PROJECT_PATH, 'parent', 'blue', undefined, false);
+    await flushAgentConfig(PROJECT_PATH);
+    let injected!: () => void;
+    let release!: () => void;
+    const setupSaved = new Promise<void>((resolve) => { injected = resolve; });
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'helper', color: 'indigo', parentAgentId: parent.id }, {
+      inject: async (created) => {
+        await setManagedSetup(PROJECT_PATH, created.id, { version: 1, blocks: ['identity'], skills: [], mcps: [] });
+        await flushAgentConfig(PROJECT_PATH);
+        injected();
+        await held;
+      },
+      injectRequired: true,
+    });
+    try {
+      await setupSaved;
+      expect(diskAgents().find((agent) => agent.id === started.agentId)?.managed?.blocks).toEqual(['identity']);
+      await renameDurable(PROJECT_PATH, parent.id, 'renamed-parent');
+      await vi.waitFor(() => expect(diskAgents().find((agent) => agent.id === parent.id)?.name).toBe('renamed-parent'));
+    } finally {
+      release();
+    }
+    expect(await started.done).toBe('ready');
+    expect(diskAgents().find((agent) => agent.id === started.agentId)).not.toHaveProperty('creation');
+  });
+
   it('returns the id while git worktree add is still running, then reports each stage', async () => {
     const slow = slowWorktreeAdd();
     const started = await startDurableCreation(PROJECT_PATH, { name: 'helper', color: 'indigo', branchFrom: 'main' });
