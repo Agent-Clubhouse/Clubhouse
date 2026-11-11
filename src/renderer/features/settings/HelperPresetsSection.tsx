@@ -237,7 +237,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
         )}
         {settings && (
           <p className={settingsHelp}>
-            Lets an orchestrator ask Clubhouse to pick between Claude Code and Codex for a helper, from helper counts and plan limits. It balances counts, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.
+            Lets an orchestrator ask Clubhouse to pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit. It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.
           </p>
         )}
         <p className={settingsHelp}>

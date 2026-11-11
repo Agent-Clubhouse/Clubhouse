@@ -93,7 +93,7 @@ export function HelperSelectionSelect({ id, value, disabled, className, onChange
   );
 }
 
-export const HELPER_SELECTION_HELP = 'Smart lets Clubhouse pick between Claude Code and Codex for each helper, from helper counts and plan limits. Fixed keeps the CLI the agent names.';
+export const HELPER_SELECTION_HELP = 'Smart lets Clubhouse pick between Claude Code and Codex for each helper, favoring the CLI that has used less of its plan limit. This balances plan use, not cost. Fixed keeps the CLI the agent names.';
 
 /** The app's default helper template id, or null until read. */
 export function useDefaultHelperTemplate(): string | null {

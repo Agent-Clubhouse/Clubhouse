@@ -1010,7 +1010,7 @@ A read still going returns `not_read` after at most 3 seconds, with a short `ref
 
 ### Auto provider
 
-Lets an orchestrator's `cli: "auto"` pick between Claude Code and Codex for a helper, from helper counts and plan limits. It balances counts, not cost, and a helper stays on its provider for its whole task: a wake never decides again. Off unless a person turns it on. Fixtures: `helper-routing-auto.json`.
+Lets an orchestrator's `cli: "auto"` pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit. It balances plan use, not cost, and a helper stays on its provider for its whole task. A wake never decides again. Off unless a person turns it on. Fixtures: `helper-routing-auto.json`.
 
 ```json
 "auto":{"effective":false,"source":"project","reason":"project_off",

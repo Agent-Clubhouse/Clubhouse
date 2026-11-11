@@ -71,7 +71,7 @@ describe('HelperPresetsSection (#2671)', () => {
     render(<HelperPresetsSection />);
     fireEvent.click(await screen.findByTestId('helper-presets-auto'));
     await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', auto: true }));
-    expect(screen.getByText(/balances counts, not cost/)).toBeTruthy();
+    expect(screen.getByText(/balances plan use, not cost/)).toBeTruthy();
   });
 
   it('keeps the providers in a fixed order however main lists them, before and after a save (#3186)', async () => {
