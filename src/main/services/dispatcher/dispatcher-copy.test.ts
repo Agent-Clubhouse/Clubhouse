@@ -66,6 +66,17 @@ describe('the Dispatcher uses one identity and calls its controller by its curre
       expect(text, file).toMatch(/five/);
     }
   });
+
+  it('prefers instrumented memory tools without claiming direct edits are blocked', () => {
+    const dir = path.join(ROOT, 'src/main/services/dispatcher');
+    for (const file of ['dispatcher-instructions.md', 'skills/work/memory-upkeep/SKILL.md']) {
+      const text = fs.readFileSync(path.join(dir, file), 'utf-8');
+      expect(text).toContain('read_memory');
+      expect(text).toContain('write_memory');
+      expect(text).toContain('discouraged, not blocked');
+      expect(text).toMatch(/record.*reads|record access/);
+    }
+  });
   it('no string the app can show mentions a coordinator, a second session or the controller\'s old name', () => {
     const files = SOURCE_DIRS.flatMap((dir) => walk(path.join(ROOT, dir), (f) => /\.tsx?$/.test(f) && !f.endsWith('.d.ts') && !isTest(f)));
     expect(files.length).toBeGreaterThan(100);

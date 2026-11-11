@@ -288,6 +288,7 @@ export interface AgentGrantsView {
 
 /** What each action lets an agent do, in plain words, for the permissions page. */
 export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
+  'memory.write': 'Write memory',
   'agent.read': 'See status, output and settings',
   'agent.message': 'Send messages and files',
   'agent.wake': 'Wake',

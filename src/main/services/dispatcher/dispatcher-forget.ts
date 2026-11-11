@@ -21,7 +21,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { appLog } from '../log-service';
 import { getDispatcherMemoryPath, getDispatcherNotesPath } from './dispatcher-paths';
-import { ensureMemoryLayout } from './dispatcher-memory';
+import { ensureMemoryLayout, memoryAccessPath } from './dispatcher-memory';
 import { listNotesArchives } from './dispatcher-memory-migration';
 import { clearHeldNews } from './dispatcher-news';
 import { refreshDispatcherInstructions } from './dispatcher-service';
@@ -92,7 +92,7 @@ export async function forgetEverything(deps: ForgetDeps = {}): Promise<ForgetEve
   // Before anything goes, so a second request confirmed for the same memory can't run it again.
   forgetGeneration++;
   const memory = (deps.memoryPath ?? getDispatcherMemoryPath)();
-  const targets = [memory, (deps.notesPath ?? getDispatcherNotesPath)(), ...(await (deps.listArchives ?? listNotesArchives)())];
+  const targets = [memory, memoryAccessPath(memory), (deps.notesPath ?? getDispatcherNotesPath)(), ...(await (deps.listArchives ?? listNotesArchives)())];
 
   let removed = 0;
   for (const target of targets) {
@@ -111,6 +111,9 @@ export async function forgetEverything(deps: ForgetDeps = {}): Promise<ForgetEve
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   }
+  // Layout/instruction refresh may read the new index; none of that is retained access.
+  await fsp.rm(memoryAccessPath(memory), { force: true });
+  await fsp.rm(path.join(memory, 'history'), { recursive: true, force: true });
   appLog('core:dispatcher', 'info', 'Dispatcher memory forgotten', { meta: { removed, heldNews } });
   return { removed, heldNews };
 }

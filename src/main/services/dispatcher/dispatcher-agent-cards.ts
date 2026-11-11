@@ -467,7 +467,7 @@ export class AgentCards {
       }
       const text = renderCard(card);
       if (!text) return { ok: false, error: 'Say when to reach it or what it owns.' };
-      await writeAgentCard(rec.page, text, root);
+      await writeAgentCard(rec.page, text, root, 'user card');
       rec.editedAt = this.iso();
       delete rec.request;
       await this.save();

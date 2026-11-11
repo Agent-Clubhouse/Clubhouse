@@ -83,9 +83,11 @@ describe('the Dispatcher\'s chat', () => {
 describe('the Dispatcher', () => {
   it('keeps its own tools, gets tell_user, and is not offered start_work', () => {
     const tools = names('dispatcher');
-    expect(tools).toEqual(expect.arrayContaining(['list_agents', 'inspect_helper', 'tell_user', 'create_action', 'search_memory']));
+    expect(tools).toEqual(expect.arrayContaining(['list_agents', 'inspect_helper', 'tell_user', 'create_action', 'search_memory', 'read_memory', 'write_memory']));
     expect(tools).not.toContain('start_work');
-    expect(tools).not.toContain('read_memory');
+    expect(names('chat')).not.toContain('write_memory');
+    setMcpCaller('ordinary', PROJECT, {});
+    expect(names('ordinary')).not.toContain('write_memory');
   });
 
   it('is not offered tell_user once it is tracked as the chat instead', () => {

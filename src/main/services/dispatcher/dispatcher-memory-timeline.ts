@@ -12,7 +12,7 @@
  */
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { memoryPaths, readIfExists, writeFileAtomic } from './dispatcher-memory';
+import { memoryPaths, readIfExists, memoryWrite, relativeMemoryPage } from './dispatcher-memory';
 
 const DAY_FILE = /^(\d{4})-(\d{2})-(\d{2})\.md$/;
 const WEEK_FILE = /^(\d{4})-W(\d{2})\.md$/;
@@ -76,8 +76,8 @@ export async function appendTimeline(entry: TimelineEntry, root?: string): Promi
   const link = entry.transcript ? ` ([transcript](${entry.transcript}))` : '';
   const line = `- ${pad(entry.at.getHours())}:${pad(entry.at.getMinutes())} ${text}${link}\n`;
   const existing = await readIfExists(file);
-  if (existing === null) await writeFileAtomic(file, `# ${key}\n\n${line}`);
-  else await fsp.appendFile(file, `${existing.endsWith('\n') || existing === '' ? '' : '\n'}${line}`, 'utf-8');
+  await memoryWrite(relativeMemoryPage(file, root), existing === null ? `# ${key}\n\n${line}`
+    : `${existing}${existing.endsWith('\n') || existing === '' ? '' : '\n'}${line}`, 'timeline', root);
   return file;
 }
 
@@ -125,15 +125,15 @@ function withoutTitle(text: string): string {
  * Append `## heading` and `body` to `file` (created with `title` if missing),
  * unless that exact section is already there from an earlier, interrupted run.
  */
-async function appendSection(file: string, title: string, heading: string, body: string): Promise<void> {
+async function appendSection(file: string, title: string, heading: string, body: string, root?: string): Promise<void> {
   const section = `## ${heading}\n\n${body}\n`;
   const existing = await readIfExists(file);
   if (existing === null) {
-    await writeFileAtomic(file, `# ${title}\n\n${section}`);
+    await memoryWrite(relativeMemoryPage(file, root), `# ${title}\n\n${section}`, 'timeline rollup', root);
     return;
   }
   if (existing.includes(section)) return;
-  await writeFileAtomic(file, `${existing.trimEnd()}\n\n${section}`);
+  await memoryWrite(relativeMemoryPage(file, root), `${existing.trimEnd()}\n\n${section}`, 'timeline rollup', root);
 }
 
 /**
@@ -163,7 +163,7 @@ export async function rollUpTimeline(now: Date, options: RollupOptions = {}, roo
     const { week } = isoWeekOf(key);
     if (text) {
       const body = await condenseKeepingLinks({ into: 'week', from: key, text }, options.condense);
-      await appendSection(path.join(dir, `${week}.md`), `Week ${week}`, key, body);
+      await appendSection(path.join(dir, `${week}.md`), `Week ${week}`, key, body, root);
     }
     await fsp.rm(file, { force: true });
     result.days.push(key);
@@ -183,7 +183,7 @@ export async function rollUpTimeline(now: Date, options: RollupOptions = {}, roo
     const month = `${thursday.getUTCFullYear()}-${pad(thursday.getUTCMonth() + 1)}`;
     if (text) {
       const body = await condenseKeepingLinks({ into: 'month', from: week, text }, options.condense);
-      await appendSection(path.join(dir, `${month}.md`), `Month ${month}`, week, body);
+      await appendSection(path.join(dir, `${month}.md`), `Month ${month}`, week, body, root);
     }
     await fsp.rm(file, { force: true });
     result.weeks.push(week);

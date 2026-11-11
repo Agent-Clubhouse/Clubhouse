@@ -29,7 +29,12 @@ import {
   topicUpdatedAt,
   hasConflictNotes,
   readIfExists,
-  writeFileAtomic,
+  memoryWrite,
+  moveMemoryHistory,
+  observeMemoryPage,
+  readMemoryAccess,
+  pruneMemoryHistory,
+  MEMORY_HISTORY_DIR,
   type TopicStatus,
 } from './dispatcher-memory';
 import { isoWeekOf, linkTargets, rollUpTimeline, type RollupResult } from './dispatcher-memory-timeline';
@@ -50,6 +55,7 @@ export interface UpkeepOptions {
   keepDays?: number;
   keepWeeks?: number;
   staleDays?: number;
+  neglectDays?: number;
   /** Whether a cited file exists. Defaults to the file system. */
   fileExists?: (file: string) => Promise<boolean>;
 }
@@ -73,6 +79,8 @@ export interface UpkeepReport {
   /** Cited files (transcripts, mostly) that are gone. */
   missingSources: Array<{ page: string; source: string }>;
   conflictingPages: string[];
+  directEdits: string[];
+  neglectedPages: string[];
   /** Whether anything on disk changed. */
   changed: boolean;
 }
@@ -107,7 +115,7 @@ export async function listMemoryPages(root?: string, nowMs: number = Date.now())
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (dir === base && entry.name === MEMORY_ARCHIVE_DIR) continue;
+        if (dir === base && (entry.name === MEMORY_ARCHIVE_DIR || entry.name === MEMORY_HISTORY_DIR)) continue;
         await walk(full);
         continue;
       }
@@ -261,7 +269,7 @@ async function snapshot(root: string): Promise<Set<string>> {
     }
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) await walk(full);
+      if (entry.isDirectory() && !(dir === root && entry.name === MEMORY_HISTORY_DIR)) await walk(full);
       else out.add(path.normalize(full));
     }
   }
@@ -324,8 +332,15 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
   const root = memoryPaths(options.root).root;
   const fileExists = options.fileExists ?? defaultFileExists;
   const staleMs = (options.staleDays ?? DEFAULT_STALE_DAYS) * DAY_MS;
-  const report: UpkeepReport = { rolledUp: { days: [], weeks: [] }, linksFixed: [], archived: [], brokenLinks: [], missingSources: [], conflictingPages: [], changed: false };
+  const report: UpkeepReport = { rolledUp: { days: [], weeks: [] }, linksFixed: [], archived: [], brokenLinks: [], missingSources: [], conflictingPages: [], directEdits: [], neglectedPages: [], changed: false };
   if ((await readIfExists(path.join(root, 'index.md'))) === null && (await snapshot(root)).size === 0) return report;
+
+  const before = await readMemoryAccess(root);
+  for (const { page } of await listMemoryPages(root)) await observeMemoryPage(page, root, now.getTime());
+  const observed = await readMemoryAccess(root);
+  report.directEdits = Object.entries(observed).filter(([page, entry]) => entry.lastWriter === 'agent direct'
+    && (entry.observed?.mtimeMs !== before[page]?.observed?.mtimeMs || entry.observed?.hash !== before[page]?.observed?.hash)).map(([page]) => page);
+  await pruneMemoryHistory(root, now.getTime());
 
   // 1. Timeline.
   report.rolledUp = await rollUpTimeline(now, { keepDays: options.keepDays, keepWeeks: options.keepWeeks }, root);
@@ -364,7 +379,7 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
     if (next !== text) {
       const stat = await fsp.stat(full);
       // Link maintenance is not a new fact or a freshness signal.
-      await writeFileAtomic(full, next, stat);
+      await memoryWrite(page, next, 'upkeep link fix', root, { preserveFreshness: true, timestamps: stat });
       report.changed = true;
     }
   }
@@ -394,7 +409,10 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
     if (kept.has(p.page)) continue;
     const from = path.join(root, p.page);
     const to = await archiveTarget(root, 'topics', path.basename(p.page));
-    await fsp.rename(from, to);
+    await memoryWrite(toPosix(path.relative(root, to)), (await readIfExists(from))!, 'archive', root,
+      { preserveFreshness: true, timestamps: await fsp.stat(from) });
+    await moveMemoryHistory(p.page, toPosix(path.relative(root, to)), root);
+    await fsp.rm(from);
     report.archived.push(p.page);
     report.changed = true;
   }
@@ -407,7 +425,20 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
       if (!(await fileExists(path.normalize(safeDecode(file))))) report.missingSources.push({ page, source });
     }
   }
+  const access = await readMemoryAccess(root);
+  report.neglectedPages = neglectedMemoryPages(now, pages.filter((p) => kept.has(p.page)), access, options.neglectDays);
   return report;
+}
+
+export function neglectedMemoryPages(
+  now: Date, pages: MemoryPage[], access: Awaited<ReturnType<typeof readMemoryAccess>>, days: number = DEFAULT_STALE_DAYS,
+): string[] {
+  const cutoff = now.getTime() - days * DAY_MS;
+  return pages.filter((p) => {
+    const entry = access[p.page];
+    const lastContent = entry?.lastAgentWrite ?? p.updatedAt ?? p.mtimeMs;
+    return (entry?.lastRead ?? lastContent) <= cutoff && lastContent <= cutoff;
+  }).map((p) => p.page);
 }
 
 /**
@@ -419,7 +450,7 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
 export async function measureMemoryHealth(
   now: Date,
   report: Pick<UpkeepReport, 'brokenLinks' | 'missingSources'>,
-  options: Pick<UpkeepOptions, 'root' | 'staleDays'> = {},
+  options: Pick<UpkeepOptions, 'root' | 'staleDays' | 'neglectDays'> = {},
 ): Promise<DispatcherMemoryHealth> {
   const root = memoryPaths(options.root).root;
   const staleMs = (options.staleDays ?? DEFAULT_STALE_DAYS) * DAY_MS;
@@ -450,6 +481,7 @@ export async function measureMemoryHealth(
     staleTopics: topics.filter((p) => now.getTime() - (p.updatedAt ?? p.mtimeMs) >= staleMs).length,
     unconfirmedTopics: topics.filter((p) => p.status === 'unconfirmed').length,
     conflictingPages: pages.filter((p) => hasConflictNotes(texts.get(p.page) ?? '')).length,
+    neglectedPages: neglectedMemoryPages(now, pages, await readMemoryAccess(root), options.neglectDays).length,
     brokenLinks: report.brokenLinks.length,
     missingSources: report.missingSources.length,
   };

@@ -36,13 +36,13 @@ function write(rel: string, text: string, ageDays = 0): void {
 const read = (rel: string) => fs.readFileSync(path.join(root, rel), 'utf-8');
 const exists = (rel: string) => fs.existsSync(path.join(root, rel));
 
-/** Every file under memory with its content, for before/after comparisons. */
+/** Active and archived pages, excluding bounded version snapshots. */
 function snapshot(): Record<string, string> {
   const out: Record<string, string> = {};
   const walk = (dir: string) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, e.name);
-      if (e.isDirectory()) walk(full);
+      if (e.isDirectory()) { if (!(dir === root && e.name === 'history')) walk(full); }
       else out[path.relative(root, full).split(path.sep).join('/')] = fs.readFileSync(full, 'utf-8');
     }
   };

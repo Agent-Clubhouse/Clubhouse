@@ -24,6 +24,7 @@ import * as readline from 'readline';
 import { getDispatcherFolders, getDispatcherMemoryPath } from './dispatcher-paths';
 import { getAllProviders } from '../../orchestrators/registry';
 import { isSessionCapable } from '../../orchestrators/types';
+import { MEMORY_HISTORY_DIR, recordMemoryRead } from './dispatcher-memory';
 
 export type SearchScope = 'all' | 'memory' | 'transcripts';
 
@@ -170,6 +171,7 @@ async function memoryPages(root: string): Promise<string[]> {
       // Links are never followed: they could lead out of memory.
       if (entry.isSymbolicLink()) continue;
       const full = path.join(dir, entry.name);
+      if (dir === root && entry.name === MEMORY_HISTORY_DIR) continue;
       if (entry.isDirectory()) await walk(full);
       else if (entry.isFile() && entry.name.endsWith('.md')) pages.push(full);
     }
@@ -541,6 +543,7 @@ export async function searchDispatcher(query: string, options: SearchOptions = {
     hits.sort((a, b) => b.score - a.score || a.page.localeCompare(b.page) || a.line - b.line);
     if (hits.length > limit) result.more = true;
     result.memory = hits.slice(0, limit).map(({ score: _score, ...hit }) => hit);
+    for (const page of new Set(result.memory.map((hit) => hit.page))) await recordMemoryRead(page, options.memoryRoot);
   }
 
   if (scope !== 'memory') {

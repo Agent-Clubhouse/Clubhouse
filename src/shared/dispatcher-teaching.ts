@@ -58,6 +58,7 @@ const anyProject = (t: GrantTarget) => t.kind === 'any' || (t.kind === 'project'
  * verbs in a line.
  */
 const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
+  'memory.write': null,
   'agent.message': { group: 'agents', verb: 'message', noun: 'agent' },
   'agent.wake': { group: 'agents', verb: 'wake', noun: 'agent' },
   'agent.sleep': { group: 'agents', verb: 'put to sleep', noun: 'agent' },

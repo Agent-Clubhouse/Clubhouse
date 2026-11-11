@@ -16,7 +16,7 @@
  */
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { getDispatcherMemoryPath } from './dispatcher-paths';
 
 /**
@@ -105,11 +105,9 @@ export async function ensureMemoryLayout(root?: string): Promise<MemoryPaths> {
   for (const dir of [paths.agents, paths.timeline, paths.topics]) {
     await fsp.mkdir(dir, { recursive: true });
   }
-  try {
-    await fsp.writeFile(paths.index, DEFAULT_INDEX, { encoding: 'utf-8', flag: 'wx' });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-  }
+  await withPageLock(paths.index, async () => {
+    if ((await readIfExists(paths.index)) === null) await memoryWrite('index.md', DEFAULT_INDEX, 'layout', paths.root);
+  });
   return paths;
 }
 
@@ -159,13 +157,15 @@ export function capIndex(text: string, cap: number = MEMORY_INDEX_CAP_BYTES): st
 
 /** index.md as it is on disk, or '' when there is none. */
 export async function readIndex(root?: string): Promise<string> {
-  return (await readIfExists(memoryPaths(root).index)) ?? '';
+  const text = await readIfExists(memoryPaths(root).index);
+  if (text !== null) await recordMemoryRead('index.md', root);
+  return text ?? '';
 }
 
 /** Replace index.md, cut to its cap. Returns what was written. */
 export async function writeIndex(content: string, root?: string, cap: number = MEMORY_INDEX_CAP_BYTES): Promise<string> {
   const capped = capIndex(content, cap);
-  await writeFileAtomic(memoryPaths(root).index, capped);
+  await memoryWrite('index.md', capped, 'index', root);
   return capped;
 }
 
@@ -278,19 +278,19 @@ function withPageLock<T>(file: string, fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function writeAgentSection(agent: string, section: keyof AgentPage, text: string, root?: string): Promise<AgentPage> {
+async function writeAgentSection(agent: string, section: keyof AgentPage, text: string, root?: string, reason: string = section === 'card' ? 'card' : 'notes'): Promise<AgentPage> {
   await ensureMemoryLayout(root);
   return withPageLock(agentPagePath(agent, root), async () => {
     const current = (await readAgentPage(agent, root)) ?? { card: '', notes: '' };
     const next = { ...current, [section]: text };
-    await writeFileAtomic(agentPagePath(agent, root), renderAgentPage(agent, next));
+    await memoryWrite(relativeMemoryPage(agentPagePath(agent, root), root), renderAgentPage(agent, next), reason, root);
     return parseAgentPage(renderAgentPage(agent, next));
   });
 }
 
 /** Replace the agent's card, keeping the Dispatcher's notes. */
-export function writeAgentCard(agent: string, card: string, root?: string): Promise<AgentPage> {
-  return writeAgentSection(agent, 'card', card, root);
+export function writeAgentCard(agent: string, card: string, root?: string, reason: string = 'card'): Promise<AgentPage> {
+  return writeAgentSection(agent, 'card', card, root, reason);
 }
 
 /** Replace the Dispatcher's notes on an agent, keeping the agent's card. */
@@ -322,7 +322,7 @@ export async function ensureAgentPage(agent: string, root?: string): Promise<voi
   const file = agentPagePath(agent, root);
   await withPageLock(file, async () => {
     if ((await readIfExists(file)) !== null) return;
-    await writeFileAtomic(file, renderAgentPage(agent, { card: AGENT_CARD_PLACEHOLDER, notes: '' }));
+    await memoryWrite(relativeMemoryPage(file, root), renderAgentPage(agent, { card: AGENT_CARD_PLACEHOLDER, notes: '' }), 'card placeholder', root);
   });
 }
 
@@ -338,7 +338,7 @@ export async function moveAgentPage(from: string, to: string, root?: string): Pr
     // Same file, new title.
     await withPageLock(toFile, async () => {
       const page = await readAgentPage(from, root);
-      if (page) await writeFileAtomic(toFile, renderAgentPage(to, page));
+      if (page) await memoryWrite(relativeMemoryPage(toFile, root), renderAgentPage(to, page), 'card rename', root);
     });
     return;
   }
@@ -350,7 +350,8 @@ export async function moveAgentPage(from: string, to: string, root?: string): Pr
     const existing = await readAgentPage(to, root);
     const notes = [existing?.notes, moved.notes].filter((n): n is string => !!n).join('\n\n');
     const card = moved.card && moved.card !== AGENT_CARD_PLACEHOLDER ? moved.card : existing?.card || moved.card;
-    await writeFileAtomic(toFile, renderAgentPage(to, { card, notes }));
+    await memoryWrite(relativeMemoryPage(toFile, root), renderAgentPage(to, { card, notes }), 'card rename', root);
+    await moveMemoryHistory(relativeMemoryPage(fromFile, root), relativeMemoryPage(toFile, root), root);
     await fsp.rm(fromFile, { force: true });
   }));
 }
@@ -464,11 +465,239 @@ export async function readTopic(topic: string, root?: string): Promise<TopicPage
 export async function writeTopic(topic: string, page: TopicPage, root?: string): Promise<string> {
   await ensureMemoryLayout(root);
   const file = topicPagePath(topic, root);
-  const previous = await readTopic(topic, root);
-  const now = new Date().toISOString();
-  await writeFileAtomic(file, renderTopicPage({
-    ...page, headerLines: page.headerLines ?? previous?.headerLines,
-    created: previous?.created ?? page.created ?? now, updated: now, body: boundConflictNotes(page.body),
-  }));
+  await memoryWrite(relativeMemoryPage(file, root), renderTopicPage(page), 'topic', root);
   return file;
+}
+
+// ── Access and versions ────────────────────────────────────────────────────
+
+export const MAX_MEMORY_ACCESS_PAGES = 1_000;
+export const MEMORY_HISTORY_VERSIONS = 5;
+export const MEMORY_HISTORY_DAYS = 30;
+export const MEMORY_HISTORY_DIR = 'history';
+const DAY_MS = 86_400_000;
+
+interface MemoryFileStamp {
+  mtimeMs: number;
+  hash: string;
+}
+
+export interface MemoryAccess {
+  lastRead?: number;
+  lastWrite?: number;
+  lastWriter?: string;
+  lastAgentWrite?: number;
+  lastClubhouseWrite?: MemoryFileStamp;
+  observed?: MemoryFileStamp;
+  reads: number;
+  writes: number;
+}
+
+export function memoryAccessPath(root: string = getDispatcherMemoryPath()): string {
+  return path.join(path.dirname(root), 'memory-access.json');
+}
+
+export function relativeMemoryPage(file: string, root: string = getDispatcherMemoryPath()): string {
+  return path.relative(root, file).split(path.sep).join('/');
+}
+
+function hashMemory(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+function object(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function timestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function fileStamp(value: unknown): value is MemoryFileStamp {
+  return object(value) && timestamp(value.mtimeMs) && typeof value.hash === 'string' && /^[a-f0-9]{64}$/.test(value.hash);
+}
+
+export async function readMemoryAccess(root?: string): Promise<Record<string, MemoryAccess>> {
+  const text = await readIfExists(memoryAccessPath(root));
+  if (text === null) return {};
+  const raw: unknown = JSON.parse(text);
+  if (!object(raw) || raw.version !== 1 || !object(raw.pages)) throw new Error('Invalid memory access record.');
+  const pages: Record<string, MemoryAccess> = {};
+  for (const [page, value] of Object.entries(raw.pages)) {
+    if (!object(value) || !timestamp(value.reads) || !timestamp(value.writes)
+      || (value.lastRead !== undefined && !timestamp(value.lastRead))
+      || (value.lastWrite !== undefined && !timestamp(value.lastWrite))
+      || (value.lastAgentWrite !== undefined && !timestamp(value.lastAgentWrite))
+      || (value.lastWriter !== undefined && (typeof value.lastWriter !== 'string' || value.lastWriter.length > 100))
+      || (value.lastClubhouseWrite !== undefined && !fileStamp(value.lastClubhouseWrite))
+      || (value.observed !== undefined && !fileStamp(value.observed))) throw new Error('Invalid memory access record.');
+    pages[page] = {
+      reads: value.reads, writes: value.writes,
+      ...(timestamp(value.lastRead) && { lastRead: value.lastRead }),
+      ...(timestamp(value.lastWrite) && { lastWrite: value.lastWrite }),
+      ...(timestamp(value.lastAgentWrite) && { lastAgentWrite: value.lastAgentWrite }),
+      ...(typeof value.lastWriter === 'string' && { lastWriter: value.lastWriter }),
+      ...(fileStamp(value.lastClubhouseWrite) && { lastClubhouseWrite: value.lastClubhouseWrite }),
+      ...(fileStamp(value.observed) && { observed: value.observed }),
+    };
+  }
+  return pages;
+}
+
+async function updateMemoryAccess(page: string, update: (entry: MemoryAccess) => MemoryAccess, root?: string): Promise<void> {
+  const file = memoryAccessPath(root);
+  await withPageLock(file, async () => {
+    const pages = await readMemoryAccess(root);
+    pages[page] = update(pages[page] ?? { reads: 0, writes: 0 });
+    const kept = Object.entries(pages).sort((a, b) => Math.max(b[1].lastRead ?? 0, b[1].lastWrite ?? 0)
+      - Math.max(a[1].lastRead ?? 0, a[1].lastWrite ?? 0) || Number(b[0] === page) - Number(a[0] === page)).slice(0, MAX_MEMORY_ACCESS_PAGES);
+    await writeFileAtomic(file, `${JSON.stringify({ version: 1, pages: Object.fromEntries(kept) })}\n`);
+  });
+}
+
+export async function recordMemoryRead(page: string, root?: string, now: number = Date.now()): Promise<void> {
+  await updateMemoryAccess(page, (entry) => ({ ...entry, lastRead: now, reads: Math.min(entry.reads + 1, Number.MAX_SAFE_INTEGER) }), root);
+}
+
+async function historyFiles(dir: string): Promise<string[]> {
+  try {
+    return (await fsp.readdir(dir, { withFileTypes: true })).filter((e) => e.isFile() && /^\d{13}-[a-f0-9]+\.md$/.test(e.name)).map((e) => e.name).sort();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+async function historyPath(page: string, root: string = getDispatcherMemoryPath()): Promise<string> {
+  const { resolveMemoryPage } = await import('./dispatcher-memory-reader');
+  return path.dirname(await resolveMemoryPage(`${MEMORY_HISTORY_DIR}/${page}/snapshot.md`, root, true));
+}
+
+async function prunePageHistory(dir: string, now: number): Promise<void> {
+  const files = await historyFiles(dir);
+  const recent = files.filter((name) => now - Number(name.slice(0, 13)) <= MEMORY_HISTORY_DAYS * DAY_MS);
+  const kept = new Set(recent.slice(-MEMORY_HISTORY_VERSIONS));
+  for (const name of files) if (!kept.has(name)) await fsp.rm(path.join(dir, name));
+}
+
+async function rememberVersion(page: string, text: string, root: string, now: number): Promise<void> {
+  if (page.startsWith(`${MEMORY_HISTORY_DIR}/`)) throw new Error('History cannot contain history.');
+  const dir = await historyPath(page, root);
+  const files = await historyFiles(dir);
+  const last = files[files.length - 1];
+  if (!last || await readIfExists(path.join(dir, last)) !== text) {
+    const at = Math.max(Math.floor(now), last ? Number(last.slice(0, 13)) + 1 : 0);
+    await writeFileAtomic(path.join(dir, `${String(at).padStart(13, '0')}-${randomBytes(8).toString('hex')}.md`), text);
+  }
+  await prunePageHistory(dir, now);
+}
+
+export async function pruneMemoryHistory(root: string = getDispatcherMemoryPath(), now: number = Date.now()): Promise<void> {
+  const { resolveMemoryPage } = await import('./dispatcher-memory-reader');
+  await resolveMemoryPage(`${MEMORY_HISTORY_DIR}/snapshot.md`, root, true);
+  const walk = async (dir: string): Promise<void> => {
+    let entries: import('fs').Dirent[];
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+    await prunePageHistory(dir, now);
+    for (const entry of entries) if (entry.isDirectory()) await walk(path.join(dir, entry.name));
+  };
+  await walk(path.join(root, MEMORY_HISTORY_DIR));
+}
+
+export async function moveMemoryHistory(from: string, to: string, root?: string): Promise<void> {
+  const source = await historyPath(from, root);
+  const target = await historyPath(to, root);
+  if (source === target) return;
+  const files = await historyFiles(source);
+  if (files.length) await fsp.mkdir(target, { recursive: true });
+  for (const file of files) await fsp.rename(path.join(source, file), path.join(target, file));
+  await prunePageHistory(target, Date.now());
+}
+
+function sameStamp(a: MemoryFileStamp | undefined, b: MemoryFileStamp): boolean {
+  // Some file systems round mtimes. The digest also catches edits within one timestamp tick.
+  return !!a && Math.abs(a.mtimeMs - b.mtimeMs) < 1 && a.hash === b.hash;
+}
+
+/** Observe direct edits without rewriting the page. Unobserved legacy bytes have no recoverable prior version. */
+export async function observeMemoryPage(page: string, root: string = getDispatcherMemoryPath(), now: number = Date.now()): Promise<void> {
+  const realRoot = await fsp.realpath(root);
+  await withPageLock(`write:${path.join(realRoot, page)}`, async () => {
+    const text = await readIfExists(path.join(root, page));
+    if (text === null) return;
+    const stat = await fsp.stat(path.join(root, page));
+    const stamp = { mtimeMs: stat.mtimeMs, hash: hashMemory(text) };
+    const entry = (await readMemoryAccess(root))[page];
+    if (sameStamp(entry?.observed, stamp)) return;
+    await rememberVersion(page, text, root, now);
+    await updateMemoryAccess(page, (current) => ({
+      ...current, observed: stamp,
+      ...(!sameStamp(current.lastClubhouseWrite, stamp) && {
+        lastWrite: stat.mtimeMs,
+        lastAgentWrite: entry?.observed ? now : page.startsWith('topics/') ? topicUpdatedAt(parseTopicPage(text), stat.mtimeMs, now) : stat.mtimeMs,
+        lastWriter: 'agent direct',
+        writes: Math.min(current.writes + 1, Number.MAX_SAFE_INTEGER),
+      }),
+    }), root);
+  });
+}
+
+export interface MemoryWriteOptions {
+  /** Link repairs and archive moves are not changes to the facts. */
+  preserveFreshness?: boolean;
+  timestamps?: { atimeMs: number; mtimeMs: number };
+}
+
+/** All Clubhouse page writes: previous bytes, stamped topics, bounded metadata and a current snapshot. */
+export async function memoryWrite(
+  page: string, text: string, reason: string, root: string = getDispatcherMemoryPath(), options: MemoryWriteOptions = {},
+): Promise<string> {
+  if (reason.length > 80) throw new Error('Memory write reason is too long.');
+  const { resolveMemoryPage } = await import('./dispatcher-memory-reader');
+  await fsp.mkdir(root, { recursive: true });
+  const file = await resolveMemoryPage(page, root, true);
+  const relative = relativeMemoryPage(file, await fsp.realpath(root));
+  if (relative.startsWith(`${MEMORY_HISTORY_DIR}/`)) throw new Error('Memory history is read only.');
+  return withPageLock(`write:${file}`, async () => {
+    const previous = await readIfExists(file);
+    const stat = previous === null ? null : await fsp.stat(file);
+    const now = Date.now();
+    const entry = (await readMemoryAccess(root))[relative];
+    const previousStamp = stat && previous !== null ? { mtimeMs: stat.mtimeMs, hash: hashMemory(previous) } : undefined;
+    const direct = previousStamp && !sameStamp(entry?.observed ?? entry?.lastClubhouseWrite, previousStamp);
+    if (reason === 'agent tool' && relative.startsWith('agents/')) {
+      const before = parseAgentPage(previous ?? '');
+      const after = parseAgentPage(text);
+      if (before.card !== after.card) throw new Error('Only the agent and the user may change its Card. Keep the card and edit only Notes.');
+    }
+    let next = relative === 'index.md' ? capIndex(text) : text;
+    const topic = relative.startsWith('topics/') ? parseTopicPage(next) : null;
+    if (topic && !options.preserveFreshness) {
+      const before = previous === null ? null : parseTopicPage(previous);
+      const headerLines = [...(topic.headerLines ?? before?.headerLines ?? [])];
+      for (const line of before?.headerLines ?? []) {
+        const key = /^([^:]+):/.exec(line)?.[1];
+        if (key && TOPIC_KEYS.includes(key as typeof TOPIC_KEYS[number])) continue;
+        if (!headerLines.includes(line) && (!key || !headerLines.some((header) => header.startsWith(`${key}:`)))) headerLines.push(line);
+      }
+      next = renderTopicPage({ ...topic, headerLines, created: before?.created ?? topic.created ?? new Date(now).toISOString(),
+        updated: new Date(now).toISOString(), body: boundConflictNotes(topic.body) });
+    } else next = boundConflictNotes(next);
+    if (previous !== null) await rememberVersion(relative, previous, root, now);
+    if (next !== previous) await writeFileAtomic(file, next, options.timestamps ?? (options.preserveFreshness && stat ? stat : undefined));
+    const written = await fsp.stat(file);
+    const stamp = { mtimeMs: written.mtimeMs, hash: hashMemory(next) };
+    await rememberVersion(relative, next, root, now + 1);
+    await updateMemoryAccess(relative, (current) => ({
+      ...current, lastWrite: now, lastWriter: reason === 'agent tool' ? reason : `clubhouse:${reason}`,
+      lastClubhouseWrite: stamp, observed: stamp, writes: Math.min(current.writes + 1, Number.MAX_SAFE_INTEGER),
+      ...(direct && previousStamp && { lastAgentWrite: entry?.observed ? now
+        : relative.startsWith('topics/') ? topicUpdatedAt(parseTopicPage(previous!), previousStamp.mtimeMs, now) : previousStamp.mtimeMs }),
+      ...(reason === 'agent tool' && { lastAgentWrite: now }),
+    }), root);
+    return next;
+  });
 }

@@ -36,7 +36,7 @@ import {
   type BackgroundActionSpec,
 } from './dispatcher-background-plan';
 import { getDispatcherBehaviorPlan, onDispatcherBehaviorChanged } from './dispatcher-behavior';
-import { readIfExists, writeFileAtomic } from './dispatcher-memory';
+import { observeMemoryPage, readMemoryAccess, readIfExists, writeFileAtomic } from './dispatcher-memory';
 import { getDispatcherAgentId, getDispatcherState, onDispatcherChanged } from './dispatcher-service';
 import { listMemoryPages, measureMemoryHealth, runMemoryUpkeep, type MemoryPage, type UpkeepReport } from './dispatcher-upkeep';
 import { dispatcherTelemetryActive, recordMemoryHealth, recordMemoryUpkeep } from '../../telemetry/dispatcher-telemetry';
@@ -160,7 +160,7 @@ export function upkeepReviewText(changed: MemoryPage[], report: UpkeepReport): s
     ...report.brokenLinks.map((b) => `${b.page}: the link to ${b.target} goes nowhere`),
     ...report.conflictingPages.map((page) => `${page}: dated Conflicting notes need checking against their sources`),
   ];
-  if (!changed.length && !problems.length) return null;
+  if (!changed.length && !problems.length && !report.neglectedPages.length) return null;
   const done: string[] = [];
   if (report.rolledUp.days.length || report.rolledUp.weeks.length) done.push('rolled the timeline up');
   if (report.linksFixed.length) done.push(`fixed ${report.linksFixed.length === 1 ? 'a link' : `${report.linksFixed.length} links`}`);
@@ -172,6 +172,9 @@ export function upkeepReviewText(changed: MemoryPage[], report: UpkeepReport): s
     parts.push(['These pages changed since the last upkeep. Check them against the transcripts they cite, using search_memory:', ...capped(order, (p) => (p.status ? `${p.page} (${p.status})` : p.page))].join('\n'));
   }
   if (problems.length) parts.push(['Clubhouse couldn’t fix these:', ...capped(problems, (p) => p)].join('\n'));
+  if (report.neglectedPages.length) parts.push(['These pages have not been read or updated through the tools in 30 days (or have never been read). Read them and decide what to keep, merge or retire:', ...capped(report.neglectedPages, (p) => p)].join('\n'));
+  const direct = report.directEdits.filter((page) => changed.some((p) => p.page === page) || report.neglectedPages.includes(page));
+  if (direct.length) parts.push(['Direct file edits were observed on these pages. Prefer read_memory and write_memory so access and versions are recorded:', ...capped(direct, (p) => p)].join('\n'));
   parts.push('Mark a topic confirmed when a transcript backs it. Keep a short dated Conflicting: note with both sources when facts disagree, then resolve against transcripts. Fix the links and keep index.md short. This is for you, so don’t call tell_user for it. Your memory-upkeep skill has the steps.');
   return parts.join('\n\n');
 }
@@ -213,7 +216,14 @@ export function runDispatcherUpkeep(): Promise<{ send: string } | { skip: string
     try {
       report = await runMemoryUpkeep(new Date(now), { root });
       const checkedAt = deps.now();
-      changed = (await listMemoryPages(root, checkedAt)).filter((p) => (p.updatedAt ?? p.mtimeMs) > since && reviewable(p));
+      const pages = await listMemoryPages(root, checkedAt);
+      for (const { page } of pages) await observeMemoryPage(page, root, checkedAt);
+      const access = await readMemoryAccess(root);
+      changed = pages.filter((p) => {
+        const entry = access[p.page];
+        const updated = entry?.lastAgentWrite ?? (entry?.lastClubhouseWrite ? 0 : p.updatedAt ?? p.mtimeMs);
+        return updated > since && reviewable(p);
+      });
       await writeFileAtomic(deps.stateFile(), `${JSON.stringify({ lastCheckedAt: checkedAt } satisfies UpkeepState)}\n`);
     } catch (err) {
       recordMemoryUpkeep({ outcome: 'error' });
@@ -227,6 +237,8 @@ export function runDispatcherUpkeep(): Promise<{ send: string } | { skip: string
         archived: report.archived.length,
         brokenLinks: report.brokenLinks.length,
         missingSources: report.missingSources.length,
+        directEdits: report.directEdits.length,
+        neglectedPages: report.neglectedPages.length,
         toCheck: changed.length,
       },
     });
