@@ -233,6 +233,7 @@ function createPresence(): ActionPresence {
         const blur = () => listener('blur');
         app.on('browser-window-focus', focus);
         app.on('browser-window-blur', blur);
+        // Lock/unlock are macOS/Windows only; Linux uses focus, suspend/resume and idle time where reported.
         const lock = () => listener('lock');
         const unlock = () => listener('unlock');
         const suspend = () => listener('suspend');
