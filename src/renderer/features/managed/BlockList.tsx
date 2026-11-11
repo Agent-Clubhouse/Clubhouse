@@ -6,7 +6,7 @@ import { ImpactDialog, needsImpactDialog } from './ImpactDialog';
 import { errorText, isStale, managed, sourceLabel, unwrap } from './managedApi';
 import { noteRunningLeftAlone, restartAfterSave } from './restart';
 import { StaleEditDialog } from './StaleEditDialog';
-import { GripIcon, WildcardBar } from './parts-ui';
+import { GripIcon, PartCatalogStatus, WildcardBar } from './parts-ui';
 
 export interface BuilderAgent {
   projectPath: string;
@@ -19,9 +19,11 @@ export interface BuilderAgent {
  * handle and use the arrow keys, to reorder. Editing a block edits it for
  * every agent that uses it; Save, Discard and Fork-instead sit in the block.
  */
-export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShared, onWrite, wildcardValues, disabled, notice }: {
+export function BlockList({ blocks, parts, error, onRetry, agent, onChange, onFork, onBackToShared, onWrite, wildcardValues, disabled, notice }: {
   blocks: string[];
-  parts: ManagedPartSummary[];
+  parts: ManagedPartSummary[] | null;
+  error?: string | null;
+  onRetry?: () => void;
   agent?: BuilderAgent;
   onChange: (blocks: string[]) => void;
   /** Fork a block for this agent: switches it to the copy and returns the copy's id. */
@@ -34,13 +36,24 @@ export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShar
   /** Said in the list's live region, such as "Identity added." from the library. `seq` makes a repeat count. */
   notice?: { text: string; seq: number };
 }) {
-  const byId = new Map(parts.map((p) => [p.id, p]));
+  const byId = new Map(parts?.map((p) => [p.id, p]));
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
   const [announce, setAnnounce] = useState('');
   const handles = useRef<Array<HTMLButtonElement | null>>([]);
   const writeButton = useRef<HTMLButtonElement | null>(null);
   useEffect(() => { if (notice) setAnnounce(notice.text); }, [notice]);
+
+  if (parts === null || error) {
+    return (
+      <div data-testid="managed-block-list">
+        <PartCatalogStatus error={error} onRetry={onRetry} />
+        {!error && <ol aria-label="Instruction blocks, in the order the agent reads them" className="flex flex-col gap-2">
+          {blocks.map((id, index) => <li key={id} className="rounded-lg border border-surface-1 px-3 py-2 text-xs text-ctp-overlay1">Loading block {index + 1}.</li>)}
+        </ol>}
+      </div>
+    );
+  }
 
   /** Take a block out, and put focus on the block that took its place, the one before, or Write a block. */
   const remove = (index: number) => {

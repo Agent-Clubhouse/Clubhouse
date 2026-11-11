@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedPartConsumer, type ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedPartConsumer, type ManagedPartKind, type ManagedPartSummary, type ManagedResult } from '../../../shared/managed-agents-types';
 import { BlockList } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { ImpactDialog } from './ImpactDialog';
@@ -205,6 +205,57 @@ describe('ImpactDialog', () => {
 });
 
 describe('ManagedBuilder', () => {
+  it.each([false, true])('waits for the catalog before deciding whether a block is missing (missing: %s)', async (missing) => {
+    let resolveSetup!: (value: ManagedResult<ManagedAgentSetup | null>) => void;
+    let resolveParts!: (value: ManagedResult<ManagedPartSummary[]>) => void;
+    const setup = new Promise<ManagedResult<ManagedAgentSetup | null>>((resolve) => { resolveSetup = resolve; });
+    const parts = new Promise<ManagedResult<ManagedPartSummary[]>>((resolve) => { resolveParts = resolve; });
+    vi.spyOn(m(), 'getSetup').mockReturnValue(setup);
+    vi.spyOn(m(), 'listParts').mockImplementation((kind) => kind === 'block' ? parts : Promise.resolve({ ok: true, value: [] }));
+    render(<ManagedBuilder target={{ kind: 'agent', agent: { ...agent, projectPath: 'project-dir' } }} tab="instructions" />);
+    expect(screen.queryByTestId('managed-block-list')).not.toBeInTheDocument();
+    await act(async () => { resolveSetup({ ok: true, value: { version: 1, blocks: ['identity', 'tone'], skills: [], mcps: [] } }); });
+    const list = within(screen.getByTestId('managed-block-list'));
+    expect(list.getAllByRole('listitem')).toHaveLength(2);
+    expect(list.getByText('Loading block 1.')).toBeInTheDocument();
+    expect(screen.queryByText(/no longer exists/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('No blocks match.')).not.toBeInTheDocument();
+    await act(async () => {
+      resolveParts({ ok: true, value: [part('identity', { name: 'Identity' }), ...(missing ? [] : [part('tone', { name: 'Tone' })])] });
+    });
+    expect(list.getByText('Identity')).toBeInTheDocument();
+    if (missing) expect(list.getByText(/no longer exists/)).toBeInTheDocument();
+    else {
+      expect(list.queryByText(/no longer exists/)).not.toBeInTheDocument();
+      expect(list.getByText('Tone')).toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ['instructions', 'block', 'managed-library-panel'],
+    ['skills', 'skill', 'managed-skill-list'],
+    ['mcp', 'mcp', 'managed-mcp-list'],
+  ] as const)('shows pending and failed %s catalogs with Retry instead of missing or empty parts', async (tab, kind, testId) => {
+    let resolveParts!: (value: ManagedResult<ManagedPartSummary[]>) => void;
+    const parts = new Promise<ManagedResult<ManagedPartSummary[]>>((resolve) => { resolveParts = resolve; });
+    vi.spyOn(m(), 'getSetup').mockResolvedValue({ ok: true, value: { version: 1, blocks: ['configured'], skills: ['configured'], mcps: ['configured'] } });
+    const load = vi.spyOn(m(), 'listParts').mockImplementation((requested: ManagedPartKind) => requested === kind ? parts : Promise.resolve({ ok: true, value: [] }));
+    render(<ManagedBuilder target={{ kind: 'agent', agent: { ...agent, projectPath: 'project-dir' } }} tab={tab} />);
+    const catalog = within(await screen.findByTestId(testId));
+    expect(catalog.getByRole('status')).toHaveTextContent('Loading the library.');
+    expect(catalog.queryByRole('button')).not.toBeInTheDocument();
+    await act(async () => { resolveParts({ ok: false, code: 'failed', message: 'Could not read the library.' }); });
+    expect(catalog.getByRole('alert')).toHaveTextContent('Could not read the library.');
+    expect(screen.queryByText(/no longer exists/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No .+ yet|No blocks match/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
+    load.mockResolvedValue({ ok: true, value: [part('configured', { kind, name: 'Configured part' })] });
+    fireEvent.click(catalog.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(catalog.queryByRole('alert')).not.toBeInTheDocument());
+    expect(catalog.getByText('Configured part')).toBeInTheDocument();
+  });
+
   it('adds a block from the library to a draft', async () => {
     vi.spyOn(m(), 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'block' ? [part('identity', { name: 'Identity', builtin: true })] : [] }) as never);
     const onChange = vi.fn();

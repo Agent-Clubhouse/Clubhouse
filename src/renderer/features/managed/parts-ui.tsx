@@ -1,5 +1,15 @@
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { WILDCARDS } from './managedApi';
+import { Button } from '../../components/Button';
+
+export function PartCatalogStatus({ error, onRetry }: { error?: string | null; onRetry?: () => void }) {
+  return error ? (
+    <div role="alert" className="text-xs text-ctp-error flex items-center gap-2 py-3">
+      <span>{error}</span>
+      {onRetry && <Button onClick={onRetry}>Retry</Button>}
+    </div>
+  ) : <p role="status" className="text-xs text-ctp-overlay1 py-3">Loading the library.</p>;
+}
 
 /** The agent's color as a small round avatar with its initials. */
 export function AgentDot({ name, color }: { name: string; color: string }) {

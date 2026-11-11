@@ -409,7 +409,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     openWith();
     await managedSwitch();
     fireEvent.click(screen.getByTestId('new-agent-scratch'));
-    fireEvent.click(screen.getByTestId('managed-write-block'));
+    fireEvent.click(await screen.findByTestId('managed-write-block'));
     const dialog = await screen.findByTestId('managed-part-dialog');
     fireEvent.keyDown(within(dialog).getByLabelText('Name'), { key: 'Enter', metaKey: true });
     fireEvent.keyDown(within(dialog).getByLabelText('Name'), { key: 'Enter', ctrlKey: true });

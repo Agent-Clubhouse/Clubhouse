@@ -117,12 +117,12 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
   }
 
   const update = (kind: ManagedPartKind, ids: string[]) => { void save({ ...setup, [listKey(kind)]: ids }); };
-  const skillParts = skills.value ?? [];
+  const skillParts = skills.value;
   const toggle = (kind: ManagedPartKind, id: string, on: boolean) => {
     // The Clubhouse MCP part is always on (saveSetup adds it back anyway).
     if (kind === 'mcp' && id === CLUBHOUSE_MCP_PART_ID && !on) return;
     const list = setup[listKey(kind)];
-    if (kind === 'skill') {
+    if (kind === 'skill' && skillParts && !skills.error) {
       setSkillClash(null);
       if (on && !list.includes(id)) {
         const part = skillParts.find((p) => p.id === id);
@@ -138,7 +138,7 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
     update(kind, on ? (list.includes(id) ? list : [...list, id]) : list.filter((x) => x !== id));
   };
   // A setup saved with a clash (before this check) says so too.
-  const savedClash = findSkillFolderClash(skillsIn(setup.skills, skillParts));
+  const savedClash = skillParts && !skills.error ? findSkillFolderClash(skillsIn(setup.skills, skillParts)) : null;
   const skillWarning = skillClash ?? (savedClash && skillFolderClashMessage(savedClash.a, savedClash.b, savedClash.folder));
   const fork = async (kind: ManagedPartKind, id: string): Promise<string | undefined> => {
     setActionError(null);
@@ -174,7 +174,9 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
         <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
           <BlockList
             blocks={setup.blocks}
-            parts={blocks.value ?? []}
+            parts={blocks.value}
+            error={blocks.error}
+            onRetry={blocks.reload}
             agent={agent}
             onChange={(ids) => update('block', ids)}
             onFork={(id) => fork('block', id)}
@@ -183,7 +185,9 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
             notice={notice}
           />
           <LibraryPanel
-            parts={blocks.value ?? []}
+            parts={blocks.value}
+            error={blocks.error}
+            onRetry={blocks.reload}
             inUse={setup.blocks}
             onAdd={(id) => {
               update('block', [...setup.blocks, id]);
@@ -198,7 +202,9 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
       {tab === 'skills' && (
         <PartToggleList
           kind="skill"
-          parts={skills.value ?? []}
+          parts={skills.value}
+          error={skills.error}
+          onRetry={skills.reload}
           selected={setup.skills}
           agent={agent}
           note={`${setup.skills.length} on · copied into ${agentName ?? 'the agent'}'s folder at its next start`}
@@ -211,7 +217,9 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
       {tab === 'mcp' && (
         <PartToggleList
           kind="mcp"
-          parts={mcps.value ?? []}
+          parts={mcps.value}
+          error={mcps.error}
+          onRetry={mcps.reload}
           selected={setup.mcps}
           agent={agent}
           note="Sign-in comes from your environment. Clubhouse stores no secrets."
