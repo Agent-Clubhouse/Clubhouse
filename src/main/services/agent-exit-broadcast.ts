@@ -1,8 +1,9 @@
 import { IPC } from '../../shared/ipc-channels';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
+import type { QuickAgentRun } from './quick-agent-events';
 
-type ExitListener = (agentId: string, exitCode: number) => void;
+type ExitListener = (agentId: string, exitCode: number, quickRun?: QuickAgentRun) => void;
 const exitListeners = new Set<ExitListener>();
 
 /**
@@ -22,8 +23,9 @@ export function onAgentExit(fn: ExitListener): () => void {
  * @param agentId  - The agent whose process exited.
  * @param exitCode - The process exit code.
  * @param lastOutput - Optional last PTY output for renderer diagnostics.
+ * @param quickRun - The quick run captured when the process started, if known.
  */
-export function broadcastAgentExit(agentId: string, exitCode: number, lastOutput?: string): void {
+export function broadcastAgentExit(agentId: string, exitCode: number, lastOutput?: string, quickRun?: QuickAgentRun): void {
   if (lastOutput !== undefined) {
     broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode, lastOutput);
   } else {
@@ -31,6 +33,9 @@ export function broadcastAgentExit(agentId: string, exitCode: number, lastOutput
   }
   annexEventBus.emitPtyExit(agentId, exitCode);
   for (const fn of exitListeners) {
-    try { fn(agentId, exitCode); } catch { /* ignore */ }
+    try {
+      if (quickRun) fn(agentId, exitCode, quickRun);
+      else fn(agentId, exitCode);
+    } catch { /* ignore */ }
   }
 }

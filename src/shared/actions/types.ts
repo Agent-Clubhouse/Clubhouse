@@ -53,6 +53,7 @@ export type ActionEventKind =
   | 'agent.waiting'
   | 'agent.error'
   | 'agent.compacted'
+  | 'agent.quick_finished'
   | 'helper.finished'
   // Git
   | 'git.commit'
@@ -66,18 +67,19 @@ export type ActionEventKind =
 
 export const AGENT_EVENT_KINDS: readonly ActionEventKind[] = [
   'agent.woke', 'agent.slept', 'agent.created', 'agent.deleted', 'agent.turn_ended', 'agent.turn_failed',
-  'agent.idle', 'agent.waiting', 'agent.error', 'agent.compacted', 'helper.finished',
+  'agent.idle', 'agent.waiting', 'agent.error', 'agent.compacted', 'agent.quick_finished', 'helper.finished',
 ];
 export const GIT_EVENT_KINDS: readonly ActionEventKind[] = ['git.commit', 'git.branch_switched', 'git.remote_updated'];
 export const APP_EVENT_KINDS: readonly ActionEventKind[] = ['app.started', 'app.returned', 'project.added', 'project.removed'];
 export const ACTION_EVENT_KINDS: readonly ActionEventKind[] = [...AGENT_EVENT_KINDS, ...GIT_EVENT_KINDS, ...APP_EVENT_KINDS];
 export const TURN_EVENT_KINDS: readonly ActionEventKind[] = ['agent.turn_ended', 'agent.turn_failed'];
+export const ANY_AGENT_EVENT_KINDS: readonly ActionEventKind[] = [...TURN_EVENT_KINDS, 'agent.quick_finished'];
 export const DEFAULT_COALESCE_SECONDS = 60;
 export const MIN_COALESCE_SECONDS = 10;
 export const MAX_COALESCE_SECONDS = 600;
 
 /**
- * Where an event comes from: one durable agent, a project, or any readable durable agent. Git events
+ * Where an event comes from: one agent, a project, or any readable agent. Git events
  * use the project (its root and every agent worktree in it) or one agent's
  * worktree. App events take no source; project events may name one project.
  */
@@ -85,7 +87,7 @@ export type ActionEventSource =
   | { kind: 'agent'; agentId: string }
   | { kind: 'project'; projectId: string }
   | { kind: 'app' }
-  /** Turn events from readable durable agents, excluding the subscriber and Dispatcher-owned agents. */
+  /** Turns and quick-run finishes, excluding the subscriber and Dispatcher-owned agents. */
   | { kind: 'any' };
 
 export interface EventTrigger {
@@ -106,7 +108,7 @@ export interface EventTrigger {
   afterLocalTime?: string;
   /** At most one started run per local calendar day, including Run now and failures. */
   oncePerDay?: boolean;
-  /** Any-agent turn events only: fixed window from the first turn, default 60 seconds. */
+  /** Any-agent events only: fixed window from the first event, default 60 seconds. */
   coalesceSeconds?: number;
 }
 
@@ -242,6 +244,8 @@ export interface ActionRunTrigger {
   detail?: string;
   /** Readable agents in a coalesced turn event, rechecked before delivery. Empty when redacted. */
   agentIds?: string[];
+  /** A quick source whose read permission is checked again before delivery. */
+  sourceAgentId?: string;
 }
 
 export interface ActionStepResult {

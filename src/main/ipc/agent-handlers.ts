@@ -591,6 +591,8 @@ export function registerAgentHandlers(): void {
         if (typeof v.projectPath !== 'string' || !v.projectPath) throw new Error(`${name}.projectPath must be a non-empty string`);
         if (typeof v.cwd !== 'string' || !v.cwd) throw new Error(`${name}.cwd must be a non-empty string`);
         if (typeof v.kind !== 'string' || !v.kind) throw new Error(`${name}.kind must be a non-empty string`);
+        if (v.name !== undefined && (typeof v.name !== 'string' || !v.name.trim() || v.name.length > 200)) throw new Error(`${name}.name must be a name up to 200 characters`);
+        if (v.parentAgentId !== undefined && (typeof v.parentAgentId !== 'string' || !v.parentAgentId || v.parentAgentId.length > 200)) throw new Error(`${name}.parentAgentId must be an agent id`);
         if (v.access !== undefined && !isAccessLevel(v.access)) throw new Error(`${name}.access must be an access level`);
         if (v.managedTemplate !== undefined) {
           const t = v.managedTemplate as { id?: unknown; agentName?: unknown; addParts?: unknown; removeParts?: unknown } | null;
@@ -611,7 +613,9 @@ export function registerAgentHandlers(): void {
     })],
     async (_event, params) => {
       try {
-        await agentSystem.spawnAgent(params);
+        // Provenance is main-owned. A desktop start is the person even when
+        // it uses a durable agent's worktree and quick-agent defaults.
+        await agentSystem.spawnAgent({ ...params, ...(params.kind === 'quick' && { quickOwner: { kind: 'user' }, chain: [] }) });
       } catch (err) {
         appLog('core:ipc', 'error', 'Agent spawn failed', {
           meta: {

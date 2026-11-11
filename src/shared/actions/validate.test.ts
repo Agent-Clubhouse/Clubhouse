@@ -13,10 +13,13 @@ describe('validateActionInput', () => {
     }
   });
 
-  it('accepts any readable agent only for turn events, with an optional bounded window and no delay', () => {
+  it('accepts any readable agent for turn and quick-finish events with bounded grouping and no delay', () => {
     const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } };
     const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };
     expect(validateActionInput(input)).toMatchObject({ ok: true, value: { trigger } });
+    expect(validateActionInput({ ...input, trigger: { ...trigger, event: 'agent.quick_finished' } })).toMatchObject({
+      ok: true, value: { trigger: { event: 'agent.quick_finished', source: { kind: 'any' } } },
+    });
     for (const coalesceSeconds of [10, 60, 600]) {
       expect(validateActionInput({ ...input, trigger: { ...trigger, event: 'agent.turn_failed', coalesceSeconds } })).toMatchObject({ ok: true, value: { trigger: { coalesceSeconds } } });
     }

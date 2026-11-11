@@ -89,7 +89,7 @@ function agentName(names: ActionNames, id: string): string {
 }
 
 function sourceText(source: ActionEventSource, names: ActionNames): string {
-  if (source.kind === 'any') return 'any readable durable agent';
+  if (source.kind === 'any') return 'any readable agent';
   if (source.kind === 'agent') return agentName(names, source.agentId);
   if (source.kind === 'project') return `any agent in ${names.project(source.projectId) ?? 'a project'}`;
   return 'Clubhouse';
@@ -107,6 +107,7 @@ const EVENT_PHRASES: Record<ActionEventKind, string> = {
   'agent.waiting': 'waits on you',
   'agent.error': 'hits an error',
   'agent.compacted': 'compacts its context',
+  'agent.quick_finished': 'finishes a quick run',
   'helper.finished': 'has a helper finish',
   'git.commit': 'gets a new commit',
   'git.branch_switched': 'switches branch',
@@ -134,6 +135,7 @@ export const EVENT_LABELS: Record<ActionEventKind, string> = {
   'agent.waiting': 'Waits on you',
   'agent.error': 'Hits an error',
   'agent.compacted': 'Compacts its context',
+  'agent.quick_finished': 'A quick agent finishes',
   'helper.finished': 'A helper finishes',
   'git.commit': 'New commit',
   'git.branch_switched': 'Branch switched',
@@ -182,7 +184,7 @@ export function describeTrigger(trigger: ActionTrigger, names: ActionNames = NO_
   let description = trigger.event === 'agent.idle'
     ? `${subject} goes idle for ${formatMinutes(trigger.delayMinutes ?? 0)}`
     : trigger.delayMinutes ? `${formatMinutes(trigger.delayMinutes)} after ${what}` : `When ${what}`;
-  if (src.kind === 'any') description += `, grouped for ${trigger.coalesceSeconds ?? DEFAULT_COALESCE_SECONDS} seconds from the first turn`;
+  if (src.kind === 'any') description += `, grouped for ${trigger.coalesceSeconds ?? DEFAULT_COALESCE_SECONDS} seconds from the first ${trigger.event === 'agent.quick_finished' ? 'finish' : 'turn'}`;
   if (trigger.afterLocalTime) {
     const [hour, minute] = trigger.afterLocalTime.split(':').map(Number);
     description += `, at or after ${formatClock(hour, minute)} local time`;

@@ -12,6 +12,7 @@ import { generateQuickName } from '../../shared/name-generator';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { isChatAgent } from './agent-runtime';
 import { isHeadlessAgent, spawnAgent } from './agent-system';
+import type { QuickAgentOwner } from '../../shared/types';
 
 export interface QuickAgentEntry {
   id: string;
@@ -73,6 +74,8 @@ export interface StartQuickAgentParams {
   interactive?: boolean;
   /** No one is watching: headless whatever the project's spawn mode, or fail (#3033). */
   headless?: boolean;
+  quickOwner?: QuickAgentOwner;
+  chain?: string[];
 }
 
 /** Start a quick agent. Resolves once it has spawned; rejects if it couldn't. */
@@ -98,6 +101,10 @@ export async function startQuickAgent(p: StartQuickAgentParams): Promise<QuickAg
       projectPath: p.project.path,
       cwd: p.cwd || p.project.path,
       kind: 'quick',
+      name: entry.name,
+      ...(p.parentAgentId && { parentAgentId: p.parentAgentId }),
+      quickOwner: p.quickOwner ?? { kind: 'user' },
+      ...(p.chain && { chain: p.chain }),
       model: p.model,
       ...(p.effort && { effort: p.effort }),
       mission: p.prompt,

@@ -202,6 +202,23 @@ describe('action tools', () => {
     expect(engine().list().filter((a) => a.name === 'Morning')).toHaveLength(1);
   });
 
+  it('accepts quick finishes over MCP and advertises readable quick sources within property budgets', async () => {
+    const result = await call('dispatcher', 'create_action', {
+      trigger: { kind: 'event', event: 'agent.quick_finished', source: { kind: 'any' }, coalesceSeconds: 10 },
+      steps: [NOTIFY],
+    });
+    expect(result.isError).toBe(false);
+    expect(result.body.action.trigger).toMatchObject({ event: 'agent.quick_finished', source: { kind: 'any' } });
+    const tools = getScopedToolList('dispatcher');
+    const create = tools.find((tool) => tool.name === 'create_action')!;
+    const trigger = create.inputSchema.properties!.trigger as { description: string; properties: Record<string, { description?: string }> };
+    expect(trigger.description).toContain('readable durable and quick agents');
+    expect(trigger.description).not.toContain('Quick agents are not included');
+    for (const property of Object.values(trigger.properties)) {
+      if (property.description) expect(property.description.length).toBeLessThanOrEqual(200);
+    }
+  });
+
   it('requires an activity grant and round-trips any-agent windows through every MCP surface', async () => {
     const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 };
     h.activityModes.set('dispatcher', 'ask');
@@ -246,6 +263,8 @@ describe('action tools', () => {
   it('filters grouped lastRun and history for each reader, including changed and deleted actions after revocation', async () => {
     vi.useFakeTimers();
     try {
+      const hiddenName = 'zz-hidden-agent-sentinel';
+      h.known.get('agent-b')!.name = hiddenName;
       engine().start();
       const a = engine().create({
         name: 'Watch turns',
@@ -267,7 +286,7 @@ describe('action tools', () => {
       expect((await listed()).lastRun).toBeUndefined();
       h.wires.add('agent-a>agent-b');
       const first = await listed();
-      expect(first.lastRun.trigger).toMatchObject({ agentIds: ['agent-b'], detail: 'Failed turns: qa' });
+      expect(first.lastRun.trigger).toMatchObject({ agentIds: ['agent-b'], detail: `Failed turns: ${hiddenName}` });
       expect(JSON.stringify(first)).not.toContain('api-lead');
       h.wires.add('agent-a>agent-c');
       expect((await listed()).lastRun.trigger.agentIds).toEqual(['agent-b', 'agent-c']);
@@ -276,7 +295,7 @@ describe('action tools', () => {
       engine().update(a.id, { name: a.name, trigger: DAILY, steps: [NOTIFY] });
       const retained = await call('agent-a', 'action_history', { id: a.id });
       expect(retained.body.runs[0].trigger).toMatchObject({ agentIds: ['agent-c'], detail: 'Failed turns: api-lead' });
-      expect(JSON.stringify(retained.body)).not.toContain('qa');
+      expect(JSON.stringify(retained.body)).not.toContain(hiddenName);
       for (const mode of ['ask', 'off'] as const) {
         h.activityModes.set('agent-a', mode);
         expect((await listed()).lastRun).toBeUndefined();
@@ -368,6 +387,8 @@ describe('action tools', () => {
   it('redacts partial-batch provenance, unreadable step states and copied reasons, and first-member time', async () => {
     vi.useFakeTimers();
     try {
+      const hiddenName = 'zz-hidden-agent-sentinel';
+      h.known.get('agent-b')!.name = hiddenName;
       engine().start();
       const a = engine().create({
         name: 'Watch turns',
@@ -381,11 +402,12 @@ describe('action tools', () => {
       engine().tick();
       await flush();
       const original = engine().history(a.id)[0];
+      expect(original.trigger.detail).toContain(hiddenName);
       h.history.set(original.id, {
-        ...original, outcome: 'failed', reason: 'qa was asleep',
+        ...original, outcome: 'failed', reason: `${hiddenName} was asleep`,
         steps: [
           { kind: 'message', outcome: 'done', agentId: 'agent-a', detail: 'Queued for release-lead' },
-          { kind: 'message', outcome: 'failed', agentId: 'agent-b', detail: 'qa was asleep' },
+          { kind: 'message', outcome: 'failed', agentId: 'agent-b', detail: `${hiddenName} was asleep` },
         ],
       });
       h.activityModes.set('agent-a', 'allow');
@@ -399,7 +421,7 @@ describe('action tools', () => {
       expect(run.steps).toHaveLength(1);
       expect(run.reason).toBeUndefined();
       expect(JSON.stringify(result.body)).not.toContain('cause-b');
-      expect(JSON.stringify(result.body)).not.toContain('qa');
+      expect(JSON.stringify(result.body)).not.toContain(hiddenName);
       expect(result.body.action.lastRun).toEqual(run);
       expect(original.trigger.at).toBeLessThan(run.trigger.at);
       expect(engine().history(a.id)[0]).toMatchObject({ chain: ['cause-b'], trigger: { agentIds: ['agent-b', 'agent-c'], at: original.trigger.at } });

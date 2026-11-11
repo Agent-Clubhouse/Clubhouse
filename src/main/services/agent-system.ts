@@ -54,6 +54,8 @@ function lowerAccess(a: AccessLevel, b: AccessLevel): AccessLevel {
 }
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { publishAppEvent } from './app-event-bus';
+import { beginQuickAgentRun, finishQuickAgentRun, noteQuickAgentStop } from './quick-agent-events';
+import type { QuickAgentOwner } from '../../shared/types';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
@@ -89,6 +91,11 @@ export interface SpawnAgentParams {
   projectPath: string;
   cwd: string;
   kind: 'durable' | 'quick' | 'companion';
+  name?: string;
+  parentAgentId?: string;
+  /** Main-process launch provenance, set before a process can emit events. */
+  quickOwner?: QuickAgentOwner;
+  chain?: string[];
   model?: string;
   /** Filled in from a durable agent's config, once checked for this launch (#2660). */
   contextWindow?: string;
@@ -298,6 +305,7 @@ export const RESUME_BLOCKED_NOTICE = "That session kept failing every turn, so i
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
+  const quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
   const spawn = withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
     assertProviderSelection(params.agentId, params.orchestrator);
     return spawnAgentTracked(params, managed);
@@ -305,6 +313,9 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   inflightSpawns.add(spawn);
   try {
     await spawn;
+  } catch (error) {
+    if (quickRun && !(error instanceof ProcessStartedReceiptError)) finishQuickAgentRun(quickRun, 'failed');
+    throw error;
   } finally {
     inflightSpawns.delete(spawn);
   }
@@ -1345,6 +1356,9 @@ export async function killAgent(
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId, trigger, waitForExit: opts.waitForExit === true } });
   agentKillRequested(agentId, trigger);
   noteKillRequest(agentId, { trigger, ...(opts.by ? { by: opts.by } : {}) });
+  // Headless finalization knows whether the process had already exited when
+  // stop was requested. Do not turn a completed run with held pipes into a cancellation.
+  if (agentRegistry.get(agentId)?.runtime !== 'headless' && !headlessManager.isHeadless(agentId)) noteQuickAgentStop(agentId);
   try {
     // A chat start in progress is cancelled (and its runtime stopped) here.
     if (await cancelChatStart(agentId, { throwOnFailure: opts.throwOnFailure })) return;

@@ -21,7 +21,7 @@ import {
   MIN_ABSENCE_MINUTES,
   MISSED_RUN_RULES,
   SCHEDULE_PRESETS,
-  TURN_EVENT_KINDS,
+  ANY_AGENT_EVENT_KINDS,
   type ActionEventKind,
   type ActionEventSource,
   type ActionRun,
@@ -78,9 +78,9 @@ function text(v: unknown, field: string, required: boolean): Result<string | und
 
 function validateSource(event: ActionEventKind, raw: unknown): Result<ActionEventSource> {
   if (isObject(raw) && raw.kind === 'any') {
-    return TURN_EVENT_KINDS.includes(event)
+    return ANY_AGENT_EVENT_KINDS.includes(event)
       ? { ok: true, value: { kind: 'any' } }
-      : { ok: false, error: 'Any readable agent is only for finished or failed turns.' };
+      : { ok: false, error: 'Any readable agent is only for finished or failed turns and quick agent finishes.' };
   }
   if (APP_EVENT_KINDS.includes(event)) {
     if (event.startsWith('project.') && isObject(raw) && raw.kind === 'project' && nonEmpty(raw.projectId)) {

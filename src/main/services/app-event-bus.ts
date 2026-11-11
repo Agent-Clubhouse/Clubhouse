@@ -8,14 +8,14 @@
  * terminal hooks, the git watcher). The bus imports none of its consumers.
  */
 
-import type { HookEventKind, TurnOutcome } from '../../shared/types';
+import type { HookEventKind, QuickAgentOwner, TurnOutcome } from '../../shared/types';
 import type { ChatEvent, TurnStopReason } from '../../shared/chat';
 import { COMPACTION_SETTLED } from '../../shared/chat';
 
 export type { TurnOutcome } from '../../shared/types';
 
-/** Where a turn event came from: a chat runtime, or a terminal CLI's hooks. */
-export type TurnVia = 'chat' | 'hook';
+/** Where a turn event came from: chat, terminal hooks, or a headless run. */
+export type TurnVia = 'chat' | 'hook' | 'headless';
 
 interface Stamp {
   /** Epoch ms when it was published. */
@@ -37,6 +37,7 @@ export type AppEvent = Stamp & (
   | { type: 'agent.waiting'; agentId: string; via: TurnVia; reason: 'permission' | 'question' }
   | { type: 'agent.error'; agentId: string; via: TurnVia; message: string }
   | { type: 'agent.compacted'; agentId: string }
+  | { type: 'agent.quick_finished'; agentId: string; name: string; owner: QuickAgentOwner; parentAgentId?: string; projectPath: string; durationMs: number; outcome: 'completed' | 'failed' | 'cancelled' }
   | { type: 'helper.finished'; agentId: string; parentAgentId: string; projectPath: string }
   | { type: 'git.commit'; repoPath: string; branch: string; agentId?: string }
   | { type: 'git.branch_switched'; repoPath: string; branch: string; previousBranch?: string; agentId?: string }
@@ -91,10 +92,10 @@ const agentChains = new Map<string, { chain: string[]; until: number }>();
 
 /**
  * Mark an agent's next events as caused by these actions (for loop
- * protection). Called by Actions when a step acts on the agent.
+ * protection). Quick launches use runScoped until their final event.
  */
-export function setAgentChain(agentId: string, chain: string[], now = Date.now()): void {
-  agentChains.set(agentId, { chain: [...chain], until: now + CHAIN_WINDOW_MS });
+export function setAgentChain(agentId: string, chain: string[], now = Date.now(), runScoped = false): void {
+  agentChains.set(agentId, { chain: [...chain], until: runScoped ? Infinity : now + CHAIN_WINDOW_MS });
 }
 
 function currentAgentChain(agentId: string, now: number): string[] | undefined {
@@ -162,6 +163,34 @@ const hookTurns = new Map<string, { lastAt: number; ended: boolean; turnId?: str
 
 /** Copilot's stop hook has no turn ID; only a new prompt re-arms completion. */
 const completedCopilotHookTurns = new Set<string>();
+export interface HeadlessTurn {
+  agentId: string;
+  ended: boolean;
+  chain?: string[];
+  outcome?: TurnOutcome;
+}
+
+const headlessTurns = new Map<string, HeadlessTurn>();
+
+/** One headless process is one turn. Its finalizer, not its hooks, owns the end. */
+export function startHeadlessTurn(agentId: string): HeadlessTurn {
+  const previous = headlessTurns.get(agentId);
+  if (previous) finishHeadlessTurn(previous, 'interrupted');
+  const turn: HeadlessTurn = { agentId, ended: false, chain: currentAgentChain(agentId, Date.now()) };
+  headlessTurns.set(agentId, turn);
+  hookTurns.set(agentId, { lastAt: Date.now(), ended: false });
+  publishAppEvent({ type: 'turn.started', agentId, via: 'headless', chain: turn.chain });
+  return turn;
+}
+
+export function finishHeadlessTurn(turn: HeadlessTurn, outcome: TurnOutcome, errorCategory?: string): void {
+  if (turn.ended) return;
+  turn.ended = true;
+  publishAppEvent({ type: 'turn.ended', agentId: turn.agentId, via: 'headless', outcome, chain: turn.chain });
+  if (outcome === 'failed' && errorCategory) {
+    publishAppEvent({ type: 'agent.error', agentId: turn.agentId, via: 'headless', message: errorCategory, chain: turn.chain });
+  }
+}
 
 /**
  * A turn that has said nothing for this long is treated as over: Claude runs
@@ -204,6 +233,19 @@ function startHookTurn(agentId: string, at: number, turnId?: string): void {
  */
 export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Date.now()): void {
   const { kind, rawName, toolName, turnId } = facts;
+  const headless = headlessTurns.get(agentId);
+  if (headless) {
+    if (headless.ended) return;
+    if (kind === 'stop') {
+      const outcome = facts.outcome ?? (rawName === 'StopFailure' ? 'failed' : rawName === 'Interrupt' ? 'interrupted' : undefined);
+      if (outcome && headless.outcome !== 'failed') headless.outcome = outcome;
+    } else if (kind === 'permission_request' || (kind === 'pre_tool' && toolName && QUESTION_TOOLS.has(toolName))) {
+      publishAppEvent({ type: 'agent.waiting', agentId, via: 'headless', reason: kind === 'permission_request' ? 'permission' : 'question', at: now });
+    } else if (rawName === 'PostCompact') {
+      publishAppEvent({ type: 'agent.compacted', agentId, at: now });
+    }
+    return;
+  }
   const turn = hookTurns.get(agentId);
   if (rawName && PROMPT_HOOKS.has(rawName)) {
     if (turnId && turn?.turnId === turnId) return;
@@ -260,6 +302,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
 export function forgetHookTurn(agentId: string): void {
   hookTurns.delete(agentId);
   completedCopilotHookTurns.delete(agentId);
+  headlessTurns.delete(agentId);
 }
 
 /** For tests. */
@@ -268,4 +311,5 @@ export function resetAppEventBus(): void {
   agentChains.clear();
   hookTurns.clear();
   completedCopilotHookTurns.clear();
+  headlessTurns.clear();
 }

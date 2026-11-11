@@ -796,7 +796,7 @@ describe('agent-handlers', () => {
     const quick = (managedTemplate: unknown) => ({ agentId: 'q1', projectPath: '/p', cwd: '/p', kind: 'quick', managedTemplate });
     const ok = quick({ id: 't', agentName: 'q', addParts: ['a'], removeParts: ['b'] });
     await handler({}, ok);
-    expect(agentSystem.spawnAgent).toHaveBeenCalledWith(ok);
+    expect(agentSystem.spawnAgent).toHaveBeenCalledWith({ ...ok, quickOwner: { kind: 'user' }, chain: [] });
     vi.mocked(agentSystem.spawnAgent).mockClear();
     for (const bad of [
       { id: 't', agentName: 'q', addParts: 'a' },
@@ -809,6 +809,15 @@ describe('agent-handlers', () => {
     expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
   });
 
+  it('SPAWN_AGENT forwards quick identity but owns its provenance and validates identity fields', async () => {
+    const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
+    const quick = { agentId: 'q1', projectPath: '/p', cwd: '/p', kind: 'quick', name: 'Review', parentAgentId: 'lead' };
+    await handler({}, { ...quick, quickOwner: { kind: 'action', actionId: 'spoofed' }, chain: ['spoofed'] });
+    expect(agentSystem.spawnAgent).toHaveBeenCalledWith({ ...quick, quickOwner: { kind: 'user' }, chain: [] });
+    for (const bad of [{ name: '' }, { name: 7 }, { parentAgentId: '' }, { parentAgentId: [] }]) {
+      await expect(Promise.resolve().then(() => handler({}, { ...quick, ...bad }))).rejects.toThrow();
+    }
+  });
   it('SPAWN_AGENT logs and rethrows on error', async () => {
     vi.mocked(agentSystem.spawnAgent).mockRejectedValueOnce(new Error('spawn failed'));
     const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
