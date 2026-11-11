@@ -2882,14 +2882,23 @@ describe('annex-client', () => {
       expect(annexClient.getSatellite(SAT_FP)).toMatchObject({ host: '127.0.0.1', mainPort: 7443 });
     });
 
-    it('pairs without a link using the expected full fingerprint and the same pinned request', async () => {
-      expect(await annexClient.pairWithEndpoint(' 127.0.0.1:7443 ', '123456', CERT_COLONS)).toEqual({
+    it.each([CERT, CERT_COLONS, Array(32).fill('aB').join(' ')])('pairs without a link using a full fingerprint %j and the same pinned request', async (certificate) => {
+      expect(await annexClient.pairWithEndpoint(' 127.0.0.1:7443 ', '123456', certificate)).toEqual({
         success: true, alias: 'Mini', fingerprint: SAT_FP,
       });
       expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'PROBED-PEM', fingerprint: CERT_COLONS });
       expect(posted[0]).toMatchObject({ url: 'https://127.0.0.1:7443/pair', body: { pin: '123456', network: 1 } });
       expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
         fingerprint: SAT_FP, knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7443 }, mainPort: 7443,
+      }));
+    });
+
+    it('pairs manually using bracketed IPv6 and remembers the unbracketed host with its port', async () => {
+      expect(await annexClient.pairWithEndpoint('[::1]:7443', '123456', CERT)).toMatchObject({ success: true });
+      expect(annexTls.probePeerCertificate).toHaveBeenCalledExactlyOnceWith('::1', 7443);
+      expect(posted[0].url).toBe('https://[::1]:7443/pair');
+      expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
+        knownHosts: ['::1'], hostPorts: { '::1': 7443 }, mainPort: 7443,
       }));
     });
 
@@ -2902,7 +2911,7 @@ describe('annex-client', () => {
       expect(annexPeers.addPeer).not.toHaveBeenCalled();
     });
 
-    it.each(['', 'AB12 CD34 EF56 7890', 'ab'.repeat(31), 'zz'.repeat(32)])('rejects malformed manual fingerprint %j before dialing', async (certificate) => {
+    it.each(['', 'AB12 CD34 EF56 7890', 'ab'.repeat(20), 'ab'.repeat(31), 'ab'.repeat(33), 'zz'.repeat(32)])('rejects malformed manual fingerprint %j before dialing', async (certificate) => {
       expect(await annexClient.pairWithEndpoint('localhost:7443', '123456', certificate)).toMatchObject({
         success: false, error: expect.stringMatching(/full certificate fingerprint/),
       });
@@ -2910,7 +2919,12 @@ describe('annex-client', () => {
       expect(posted).toHaveLength(0);
     });
 
-    it.each(['localhost', 'localhost:', 'localhost:0', 'localhost:65536', 'localhost:1.5', 'https://localhost:7443'])('rejects missing or invalid manual port %j', async (address) => {
+    it.each([
+      'localhost', 'localhost:', 'localhost:0', 'localhost:65536', 'localhost:1.5',
+      'localhost:-1', 'https://localhost:7443', 'user@localhost:7443',
+      'localhost:7443/pair', 'localhost:7443?pin=123456', 'localhost:7443#fragment',
+      'localhost\\other:7443', '[::1]:0', '[::1]:65536',
+    ])('rejects missing or invalid manual port %j', async (address) => {
       expect(await annexClient.pairWithEndpoint(address, '123456', CERT)).toMatchObject({
         success: false, error: expect.stringMatching(/main TLS port/),
       });
