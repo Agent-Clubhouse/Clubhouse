@@ -39,6 +39,22 @@ beforeEach(() => {
 });
 
 describe('step runner', () => {
+  it('keeps an older saved quick step on the project provider without Auto', async () => {
+    const d = deps();
+    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'Review' }, ctx);
+    expect(d.startQuick).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'codex-cli' }));
+    expect(d.startQuick).not.toHaveBeenCalledWith(expect.objectContaining({ difficulty: expect.anything() }));
+  });
+
+  it('passes Auto difficulty and records its routing receipt in the step result', async () => {
+    const routing = { resolved: { provider: 'codex-cli' } } as import('../../../shared/helper-routing').HelperRouting;
+    const d = deps({ startQuick: vi.fn(async () => ({ id: 'quick_1', name: 'Morning', routing })) });
+    const owner = { kind: 'agent', agentId: 'lead' } as const;
+    const result = await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'Review', orchestrator: 'auto' }, { ...ctx, action: { ...ctx.action, owner } });
+    expect(d.startQuick).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'auto', difficulty: 'medium', owner }));
+    expect(result).toMatchObject({ outcome: 'done', routing });
+  });
+
   it('includes the grouped agents in delivered messages and quick-agent prompts', async () => {
     const d = deps();
     const eventCtx: StepContext = {

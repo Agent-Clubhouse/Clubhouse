@@ -218,6 +218,7 @@ vi.mock('../../mcp-bridge-starter', () => ({ ensureMcpBridge: () => mockEnsureBr
 import { AgentStoppingError } from '../../agent-runtime/agent-stopping';
 import {
   approveHelperStart,
+  currentHelperLoad,
   declineHelperStart,
   HELPER_PERSONA_IGNORED,
   registerHelperTools,
@@ -231,7 +232,7 @@ import { agentRegistry } from '../../agent-registry';
 import { setHelperStartFields as agentConfigSetStartFields } from '../../agent-config';
 import { _resetProviderQuotaForTesting, noteProviderFailure } from '../../provider-quota';
 import { _resetHelperRoutingForTesting } from '../../helper-routing';
-import { reservationSummary } from '../../helper-auto-state';
+import { commitAutoDecision, reservationSummary, reserveAutoDecision, settleAutoDecision } from '../../helper-auto-state';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 import { setMcpCaller } from '../mcp-call-gate';
 import { managedAgents } from '../../managed-agents';
@@ -1052,6 +1053,40 @@ describe('start_helper cli "auto" (#2671)', () => {
     mockRecordDecision.mockClear();
     mockRecordSpawnResult.mockClear();
     mockRecordReuse.mockClear();
+  });
+
+  it('counts live quick agents from every project but not sleeping, stopping or ordinary agents', async () => {
+    for (const id of ['quick_live', 'quick_sleeping', 'quick_stopping', 'ordinary']) {
+      agentRegistry.register(id, { projectPath: FAR, orchestrator: 'claude-code', runtime: 'pty' });
+      if (id !== 'quick_sleeping') running.add(id);
+    }
+    const stop = beginStop('quick_stopping');
+    const creation = controllableCreation();
+    try {
+      expect(await currentHelperLoad(PROJECT)).toEqual({ 'claude-code': { live: 1, reserved: 0 } });
+      const body = parse(await start({}));
+      expect(body.routing).toMatchObject({ resolved: { provider: 'codex-cli' }, load: { 'claude-code': 1, 'codex-cli': 0 } });
+    } finally {
+      stop.exit();
+      if (agents.get('helper_h')?.creation?.state === 'creating') creation.ready('helper_h');
+      await _settleHelperStartsForTesting();
+    }
+  });
+
+  it('counts a quick start exactly once as its reservation becomes a live registration', async () => {
+    reserveAutoDecision('action-decision', { provider: 'claude-code', key: 'claude-code' });
+    expect(await currentHelperLoad(PROJECT)).toEqual({ 'claude-code': { live: 0, reserved: 1 } });
+    agentRegistry.register('quick_action', { projectPath: FAR, orchestrator: 'claude-code', runtime: 'pty' });
+    running.add('quick_action');
+    commitAutoDecision('action-decision', 'quick_action');
+    expect(await currentHelperLoad(PROJECT)).toEqual({ 'claude-code': { live: 1, reserved: 0 } });
+    expect(reservationSummary().held).toBe(1);
+    settleAutoDecision('action-decision', 'started');
+    expect(await currentHelperLoad(PROJECT)).toEqual({ 'claude-code': { live: 1, reserved: 0 } });
+    expect(reservationSummary().held).toBe(0);
+    running.delete('quick_action');
+    agentRegistry.untrack('quick_action');
+    expect(await currentHelperLoad(PROJECT)).toEqual({});
   });
 
   it('records the decision with its helper, holds the provider through the start, and records it started', async () => {

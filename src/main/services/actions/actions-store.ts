@@ -153,9 +153,14 @@ function sanitizeRun(raw: unknown): ActionRun | null {
   const steps = Array.isArray(raw.steps)
     ? raw.steps.filter((s): s is ActionRun['steps'][number] => isObject(s) && ACTION_STEP_KINDS.includes(s.kind as never) && (s.outcome === 'done' || s.outcome === 'failed') && typeof s.detail === 'string')
     : [];
+  const owner = isObject(raw.owner)
+    && (raw.owner.kind === 'user' || raw.owner.kind === 'dispatcher' || raw.owner.kind === 'app'
+      || (raw.owner.kind === 'agent' && typeof raw.owner.agentId === 'string'))
+    ? raw.owner as Action['owner'] : undefined;
   return {
     id: raw.id,
     actionId: raw.actionId,
+    ...(owner && { owner }),
     trigger: raw.trigger as unknown as ActionRun['trigger'],
     chain: Array.isArray(raw.chain) ? raw.chain.filter((c): c is string => typeof c === 'string') : [],
     startedAt: raw.startedAt,
@@ -223,7 +228,8 @@ export function createRunHistory(now: () => number = Date.now): RunHistory & { f
       if (!timer) timer = setTimeout(() => { void save(); }, HISTORY_SAVE_DELAY_MS);
     },
     list(actionId) {
-      return trimHistory(runs.get(actionId) ?? [], now()).map((r) => ({ ...r, steps: [...r.steps], chain: [...r.chain] }));
+      const ids = actionId === undefined ? [...runs.keys()] : [actionId];
+      return ids.flatMap((id) => trimHistory(runs.get(id) ?? [], now())).map((r) => ({ ...r, steps: [...r.steps], chain: [...r.chain] }));
     },
     flush() {
       if (timer) { clearTimeout(timer); return save(); }

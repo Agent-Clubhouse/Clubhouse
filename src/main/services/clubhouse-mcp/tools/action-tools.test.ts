@@ -35,6 +35,7 @@ vi.mock('../dispatcher-gate', async (original) => ({
 }));
 vi.mock('../../app-event-sources', () => ({ knownAgent: (id: string) => h.known.get(id) }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../dispatcher/dispatcher-action-summary', () => ({ showDispatcherActionSummary: vi.fn(async () => undefined) }));
 
 // The Actions service over a real engine with the real grant rights, and
 // facts from the table above. Mirrors src/main/services/actions/index.ts.
@@ -130,6 +131,7 @@ import * as actions from '../../actions';
 import { ACTION_TOOL_PERMISSIONS, actionScope, registerActionTools } from './action-tools';
 import { callTool, getScopedToolList, isGlobalTool, _resetForTesting } from '../tool-registry';
 import { agentRegistry } from '../../agent-registry';
+import { showDispatcherActionSummary } from '../../dispatcher/dispatcher-action-summary';
 
 const engine = () => h.engine as ActionsEngine;
 const NOTIFY = { kind: 'notify', text: 'Stand-up time' };
@@ -177,6 +179,27 @@ describe('action tools', () => {
     seed('by-dispatcher', { kind: 'dispatcher' });
     seed('hidden', { kind: 'app' });
     registerActionTools();
+  });
+
+  it('shows successful Dispatcher creates, changes and subscriptions, but not other callers or refusals', async () => {
+    const created = await call('dispatcher', 'create_action', { name: 'Morning', trigger: DAILY, steps: [NOTIFY] });
+    expect(showDispatcherActionSummary).toHaveBeenCalledWith(expect.objectContaining({ id: created.body.action.id, name: 'Morning', enabled: true }), expect.anything());
+    await call('dispatcher', 'update_action', { id: created.body.action.id, enabled: false });
+    expect(showDispatcherActionSummary).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }), expect.anything());
+    await call('dispatcher', 'subscribe', { event: 'agent.slept', source: { kind: 'agent', agentId: 'agent-a' } });
+    expect(showDispatcherActionSummary).toHaveBeenCalledTimes(3);
+    await call('agent-a', 'create_action', { trigger: DAILY, steps: [NOTIFY] });
+    await call('dispatcher', 'create_action', { steps: [] });
+    await call('dispatcher', 'list_actions');
+    expect(showDispatcherActionSummary).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns a successful change even if its chat receipt fails', async () => {
+    vi.mocked(showDispatcherActionSummary).mockRejectedValueOnce(new Error('Transcript unavailable'));
+    const result = await call('dispatcher', 'create_action', { name: 'Morning', trigger: DAILY, steps: [NOTIFY] });
+    expect(result.isError).toBe(false);
+    expect(engine().get(result.body.action.id)?.name).toBe('Morning');
+    expect(engine().list().filter((a) => a.name === 'Morning')).toHaveLength(1);
   });
 
   it('requires an activity grant and round-trips any-agent windows through every MCP surface', async () => {
@@ -561,12 +584,13 @@ describe('action tools', () => {
   });
 
   describe('rights (review of #2952)', () => {
-    it('only an agent at Full access may have quick agent steps', async () => {
+    it.each([undefined, 'auto'])('only an agent at Full access may have quick agent steps with provider %s', async (orchestrator) => {
       h.access.set('agent-a', 'ask');
-      const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x' }] });
+      const step = { kind: 'quick', prompt: 'x', ...(orchestrator && { orchestrator }) };
+      const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [step] });
       expect(r.body.error).toEqual({ code: 'not_allowed', message: 'Agent steps run with Full access, and release-lead runs at Ask first, so its actions can’t start quick agents.' });
       h.access.set('agent-a', 'full_access');
-      expect((await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x' }] })).isError).toBe(false);
+      expect((await call('agent-a', 'create_action', { trigger: DAILY, steps: [step] })).isError).toBe(false);
     });
 
     it('refuses an edit or turning on once the agent drops below Full access', async () => {

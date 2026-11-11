@@ -4,3 +4,4 @@ export * from './describe';
 export * from './validate';
 export * from './view';
 export * from './subscription';
+export * from './usage';

@@ -26,6 +26,7 @@ import { setAgentChain } from '../app-event-bus';
 import { getAgentRuntime, isAgentStoppingError } from '../agent-runtime';
 import type { StepContext, StepRunner } from './engine';
 import type { AccessLevel } from '../../../shared/agent-access';
+import type { HelperDifficulty, HelperRouting } from '../../../shared/helper-routing';
 
 export interface StepDeps {
   agentExists(agentId: string): boolean;
@@ -36,7 +37,7 @@ export interface StepDeps {
   /** wakeWiredAgent's JSON result: status, and whether a mission was delivered. */
   wake(req: { callerId: string; targetId: string; targetName: string; mission?: string; missionRouted?: RoutedMessagePart[] }): Promise<{ ok: boolean; status?: string; messageDelivered?: boolean; text: string }>;
   sleep(req: { callerId: string; targetId: string; targetName: string }): Promise<{ ok: boolean; status?: string; text: string }>;
-  startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; access: AccessLevel; headless: true; name: string }): Promise<{ id: string; name: string }>;
+  startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; difficulty?: HelperDifficulty; owner: ActionOwner; access: AccessLevel; headless: true; name: string }): Promise<{ id: string; name: string; routing?: HelperRouting }>;
   notify(title: string, body: string): { shown: boolean; reason?: string };
   /** The Dispatcher, reached only through its one delivery path. Unset: no agent is the Dispatcher. */
   dispatcher?: {
@@ -126,7 +127,7 @@ function happenedOf(ctx: StepContext): string | undefined {
 
 export function createStepRunner(deps: StepDeps): StepRunner {
   const fail = (step: ActionStep, detail: string, agentId?: string): ActionStepResult => ({ kind: step.kind, outcome: 'failed', detail, ...(agentId && { agentId }) });
-  const done = (step: ActionStep, detail: string, extra: { agentId?: string; projectId?: string; delivery?: ActionStepResult['delivery'] } = {}): ActionStepResult => ({ kind: step.kind, outcome: 'done', detail, ...extra });
+  const done = (step: ActionStep, detail: string, extra: { agentId?: string; projectId?: string; delivery?: ActionStepResult['delivery']; routing?: HelperRouting } = {}): ActionStepResult => ({ kind: step.kind, outcome: 'done', detail, ...extra });
 
   async function wakeOrMessage(step: ActionStep & { agentId: string }, ctx: StepContext, text: string | undefined): Promise<ActionStepResult> {
     const id = step.agentId;
@@ -219,10 +220,12 @@ export function createStepRunner(deps: StepDeps): StepRunner {
             const orchestrator = step.orchestrator || project.orchestrator || 'claude-code';
             const started = await deps.startQuick({
               project: { id: project.id, path: project.path },
+              owner: ctx.action.owner,
               cwd,
               prompt: actionMessage(ctx.action.name, step.prompt, ctx.trigger?.agentIds ? happenedOf(ctx) : undefined, !!ctx.trigger?.agentIds).text,
               orchestrator,
               ...(step.model && { model: step.model }),
+              ...(step.orchestrator === 'auto' && { difficulty: step.difficulty ?? 'medium' }),
               // Headless at Full access, whatever the project's spawn mode, so an
               // unattended run never waits at a prompt (#3033).
               access: QUICK_STEP_ACCESS,
@@ -231,7 +234,7 @@ export function createStepRunner(deps: StepDeps): StepRunner {
             });
             // Commits it makes in a worktree carry this run's chain on.
             setAgentChain(started.id, ctx.chain);
-            return done(step, `Started a quick agent in ${project.name}`, { agentId: started.id, projectId: project.id });
+            return done(step, `Started a quick agent in ${project.name}`, { agentId: started.id, projectId: project.id, ...(started.routing && { routing: started.routing }) });
           } catch (err) {
             // telemetry-exempt: the reason is the step's result, shown and toasted
             return fail(step, `Couldn’t start a quick agent: ${err instanceof Error ? err.message : String(err)}`);

@@ -67,12 +67,13 @@ vi.mock('./actions-store', () => ({
   }),
   createRunHistory: () => ({
     put: (run: { id: string; actionId: string; startedAt: number }) => { h.runs.set(run.id, run); },
-    list: (id: string) => [...h.runs.values()].filter((r) => r.actionId === id),
+    list: (id?: string) => [...h.runs.values()].filter((r) => id === undefined || r.actionId === id),
   }),
 }));
 
 import {
   actionHistory,
+  actionUsage,
   actionsReady,
   createAction,
   deleteAction,
@@ -97,6 +98,15 @@ const message = (text: string) => [{ kind: 'message', agentId: 'disp', text }];
 const nightly = { kind: 'schedule', preset: 'daily', cron: '30 3 * * *', missed: 'once' };
 const idle = { kind: 'event', event: 'agent.idle', source: { kind: 'agent', agentId: 'disp' }, delayMinutes: 20 } as const;
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+it('includes retained runs after an Action is deleted from the saved list', async () => {
+  const action = createAction({ name: 'Once', trigger: { kind: 'once', at: Date.now() + 60_000 }, steps: [{ kind: 'notify', text: 'Ready' }] }, { kind: 'user' });
+  runActionNow(action.id);
+  await flush();
+  deleteAction(action.id);
+  expect(getAction(action.id)).toBeUndefined();
+  expect(actionUsage()).toMatchObject([{ owner: { kind: 'user' }, actions: [], runs24h: 1, runs7d: 1 }]);
+});
 
 beforeEach(async () => {
   h.saved = { actions: [], state: { nextAt: {}, waits: [] } };

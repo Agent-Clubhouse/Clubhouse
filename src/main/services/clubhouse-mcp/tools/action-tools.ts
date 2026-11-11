@@ -451,7 +451,7 @@ const STEPS_SCHEMA = {
     '- {"kind":"wake","agentId":...,"prompt"?:...} wakes an agent, resuming its last session, with an optional first message.\n' +
     '- {"kind":"message","agentId":...,"text":...} messages an agent. A busy agent gets it on its next turn; a sleeping one is woken with it.\n' +
     '- {"kind":"quick","projectId"?:...,"worktreeAgentId"?:...,"prompt":...} starts a quick agent in a project\'s root, or in another agent\'s worktree. ' +
-    'Optional overrides: orchestrator, model. It runs headless with Full access, so only an agent that itself runs at Full access may have quick steps.\n' +
+    'Optional overrides: orchestrator, model. orchestrator "auto" uses helper routing with difficulty (default medium), without a model override. It runs headless with Full access.\n' +
     '- {"kind":"sleep","agentId":...} puts an agent to sleep.\n' +
     '- {"kind":"notify","text":...} sends the person a Clubhouse notification, following their notification settings.\n' +
     'agentId "self" means you. An agent\'s actions may act on itself, its helpers and agents it is connected to, and start quick agents ' +
@@ -466,7 +466,8 @@ const STEPS_SCHEMA = {
       text: { type: 'string', description: 'message: the message. notify: the notice text.' },
       projectId: { type: 'string', description: 'quick: the project to run in, by id, name or path. Left out: the worktree agent\'s project, or your own.' },
       worktreeAgentId: { type: 'string', description: 'quick: run in this agent\'s worktree instead of the project root.' },
-      orchestrator: { type: 'string', description: 'quick: which CLI to use. Default: the project\'s provider.' },
+      orchestrator: { type: 'string', description: 'quick: a CLI, or "auto" for helper routing. Left out: the project\'s provider, as before.' },
+      difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'], description: 'quick with orchestrator "auto": task difficulty. Default: medium.' },
       model: { type: 'string', description: 'quick: which model to use.' },
     },
     required: ['kind'],
@@ -500,7 +501,21 @@ type Handler = (scope: ActionScope, args: Obj) => unknown;
 async function guarded(tool: ActionToolName, callerId: string, args: Obj, handler: Handler): Promise<McpToolResult> {
   try {
     const scope = actionScope(callerId);
-    const result = json(handler(scope, args));
+    const value = handler(scope, args);
+    const result = json(value);
+    if (scope.owner.kind === 'dispatcher' && (tool === 'create_action' || tool === 'update_action' || tool === 'subscribe')
+      && isObject(value) && isObject(value.action) && typeof value.action.id === 'string') {
+      const action = actions.getAction(value.action.id);
+      if (action) {
+        try {
+          const { showDispatcherActionSummary } = await import('../../dispatcher/dispatcher-action-summary');
+          await showDispatcherActionSummary(action, actions.actionNames());
+        } catch (err) {
+          // telemetry-exempt: the change already succeeded; a failed receipt must not invite a duplicate create.
+          appLog('core:dispatcher', 'warn', 'Could not show an Action summary', { meta: { error: err instanceof Error ? err.message : String(err) } });
+        }
+      }
+    }
     appLog('core:mcp', 'info', `${tool}: done`, { meta: { agentId: callerId, scope: scope.owner.kind } });
     return result;
   } catch (err) {
@@ -566,7 +581,7 @@ export function registerActionTools(): void {
     {
       description:
         'Create an action: a workflow Clubhouse runs on a schedule, when something happens, or once, whenever the app is open. ' +
-        'You own it, and its usage counts toward you. There is no notice to the person; it shows in Settings > Actions with you as owner. ' +
+        'You own it, and its usage counts toward you. It shows in Settings > Actions with you as owner. Dispatcher changes also show a summary in its chat. ' +
         'An agent may own up to 20 actions, a helper 5 and the Dispatcher 50. ' +
         RESULT_NOTE,
       inputSchema: schema(ACTION_FIELDS, ['trigger', 'steps']),

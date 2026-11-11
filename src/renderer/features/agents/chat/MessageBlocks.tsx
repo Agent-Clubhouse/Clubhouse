@@ -29,6 +29,7 @@ import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, PlanIcon, QuestionIcon
 import { formatCost, formatDuration, formatTokens, shortName } from './view-model';
 import { rendererLog } from '../../../plugins/renderer-logger';
 import { formatAgo } from '../states/format';
+import { ActionSummaryCard } from '../../actions/ActionSummaryCard';
 
 /** Markdown re-renders at most this often while a message streams. */
 const STREAMING_RENDER_MS = 80;
@@ -299,6 +300,7 @@ export function PlanDocumentCard({ item, error }: { item: PlanDocumentItem; erro
 }
 
 export function NoticeRow({ item }: { item: NoticeItem }) {
+  if (item.code === 'action_changed' && item.actionSummary) return <ActionSummaryCard summary={item.actionSummary} />;
   if (item.running) {
     // In progress (a context compaction): the tool rows' spinner, then the notice it settles into.
     return (

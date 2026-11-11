@@ -15,6 +15,7 @@ export function registerActionsHandlers(): void {
   registered = true;
 
   ipcMain.handle(IPC.ACTIONS.LIST, () => actions.listActions());
+  ipcMain.handle(IPC.ACTIONS.USAGE, () => actions.actionUsage());
   ipcMain.handle(IPC.ACTIONS.CREATE, withValidatedArgs(
     [objectArg<Record<string, unknown>>()],
     (_event, input) => actions.createAction(input, { kind: 'user' }),

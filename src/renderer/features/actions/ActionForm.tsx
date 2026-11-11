@@ -36,6 +36,7 @@ import {
   type SchedulePreset,
 } from '../../../shared/actions';
 import { accessLabel } from '../../../shared/agent-access';
+import { HELPER_DIFFICULTIES, isHelperDifficulty } from '../../../shared/helper-routing';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -150,9 +151,18 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
           <Field label="Provider" htmlFor={`${uid}-provider`}>
             <select id={`${uid}-provider`} className={`${selectClass} w-full`} value={step.orchestrator} onChange={(e) => set({ orchestrator: e.target.value, model: '' })}>
               <option value="">The project’s provider</option>
+              <option value="auto">Auto</option>
               {orchestrators.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
             </select>
           </Field>
+          {step.orchestrator === 'auto' && (
+            <Field label="Difficulty" htmlFor={`${uid}-difficulty`} help="Auto uses your helper routing settings to choose a provider and model.">
+              <select id={`${uid}-difficulty`} className={`${selectClass} w-full`} value={step.difficulty}
+                onChange={(e) => { if (isHelperDifficulty(e.target.value)) set({ difficulty: e.target.value }); }}>
+                {HELPER_DIFFICULTIES.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}
+              </select>
+            </Field>
+          )}
           <div className={`${settingsHelp} mt-1`} data-testid="action-form-quick-access">
             Agent steps run with {accessLabel(QUICK_STEP_ACCESS)}, so they never stop to ask.
           </div>

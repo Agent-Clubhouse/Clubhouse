@@ -18,6 +18,7 @@ import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAct
 import { Modal } from '../../components/Modal';
 import { Toggle } from '../../components/Toggle';
 import { ipcErrorMessage } from '../../utils/ipc-error';
+import { describeRouting } from '../../../shared/helper-routing';
 import { openAgent } from '../agents/helpers/orchestration-hooks';
 import { settingsError, settingsHelp } from '../settings/SettingsLayout';
 import { ownerLabel, useActionNames } from './useActions';
@@ -85,6 +86,7 @@ function RunRow({ run }: { run: ActionRun }) {
             return (
               <li key={i} className="text-ctp-overlay1">
                 {s.detail}
+                {s.routing && <div>Auto chose {s.routing.resolved.provider}. {describeRouting(s.routing)}</div>}
                 {s.delivery === 'queued' && (
                   <div>The action fired. The message was queued, not confirmed delivered.</div>
                 )}

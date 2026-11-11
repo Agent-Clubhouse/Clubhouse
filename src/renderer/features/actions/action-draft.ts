@@ -16,6 +16,7 @@ import {
   type OverlapRule,
   type SchedulePreset,
 } from '../../../shared/actions';
+import type { HelperDifficulty } from '../../../shared/helper-routing';
 
 export type WhenKind = 'schedule' | 'event' | 'once';
 
@@ -31,6 +32,7 @@ export interface StepDraft {
   orchestrator: string;
   /** Quick agents: a model override (set over MCP; cleared when the provider changes). */
   model: string;
+  difficulty: HelperDifficulty;
 }
 
 export interface ActionDraft {
@@ -64,7 +66,7 @@ export interface ActionDraft {
 }
 
 export function emptyStep(kind: ActionStepKind = 'wake'): StepDraft {
-  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', model: '' };
+  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', model: '', difficulty: 'medium' };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -109,7 +111,7 @@ function stepToDraft(s: ActionStep): StepDraft {
     case 'sleep': return { ...d, agentId: s.agentId };
     case 'notify': return { ...d, text: s.text };
     case 'quick': return {
-      ...d, projectId: s.projectId, worktreeAgentId: s.worktreeAgentId ?? '', text: s.prompt, orchestrator: s.orchestrator ?? '', model: s.model ?? '',
+      ...d, projectId: s.projectId, worktreeAgentId: s.worktreeAgentId ?? '', text: s.prompt, orchestrator: s.orchestrator ?? '', model: s.model ?? '', difficulty: s.difficulty ?? 'medium',
     };
   }
 }
@@ -167,6 +169,7 @@ function stepFromDraft(s: StepDraft): Record<string, unknown> {
       ...(s.worktreeAgentId && { worktreeAgentId: s.worktreeAgentId }),
       ...(s.orchestrator && { orchestrator: s.orchestrator }),
       ...(s.model && { model: s.model }),
+      ...(s.orchestrator === 'auto' && { difficulty: s.difficulty }),
     };
   }
 }

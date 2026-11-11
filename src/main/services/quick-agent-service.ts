@@ -61,6 +61,7 @@ export interface StartQuickAgentParams {
   prompt: string;
   orchestrator: string;
   model?: string;
+  effort?: string;
   freeAgentMode?: boolean;
   /** Access level (#2761). Unset: spawnAgent applies the project's default. */
   access?: AccessLevel;
@@ -98,6 +99,7 @@ export async function startQuickAgent(p: StartQuickAgentParams): Promise<QuickAg
       cwd: p.cwd || p.project.path,
       kind: 'quick',
       model: p.model,
+      ...(p.effort && { effort: p.effort }),
       mission: p.prompt,
       ...(p.systemPrompt && { systemPrompt: p.systemPrompt }),
       orchestrator: p.orchestrator,

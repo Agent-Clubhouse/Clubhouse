@@ -19,9 +19,52 @@ beforeEach(() => {
   window.clubhouse.actions.list = vi.fn(async () => list);
   window.clubhouse.actions.setEnabled = vi.fn(async (id: string, enabled: boolean) => ({ ...list.find((a) => a.id === id)!, enabled }));
   window.clubhouse.actions.history = vi.fn(async () => []);
+  window.clubhouse.actions.usage = vi.fn(async () => []);
 });
 
 describe('Settings > Actions', () => {
+  it('keeps an older quick step on the project provider until Auto is explicitly selected', () => {
+    render(<ActionForm open action={action({ steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review changes' }] })} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const form = screen.getByTestId('action-form');
+    expect((within(form).getByLabelText('Provider') as HTMLSelectElement).value).toBe('');
+    expect(within(form).queryByLabelText('Difficulty')).toBeNull();
+    fireEvent.change(within(form).getByLabelText('Provider'), { target: { value: 'auto' } });
+    expect((within(form).getByLabelText('Difficulty') as HTMLSelectElement).value).toBe('medium');
+    fireEvent.change(within(form).getByLabelText('Difficulty'), { target: { value: 'hard' } });
+    expect((within(form).getByLabelText('Difficulty') as HTMLSelectElement).value).toBe('hard');
+    fireEvent.change(within(form).getByLabelText('Provider'), { target: { value: '' } });
+    expect(within(form).queryByLabelText('Difficulty')).toBeNull();
+  });
+
+  it('shows a plain owner list with recent runs, failures and links to saved Actions', async () => {
+    list = [action({})];
+    window.clubhouse.actions.usage = vi.fn(async () => [
+      { owner: { kind: 'user' }, actions: [{ id: 'a1', name: 'Morning plan' }], runs24h: 2, runs7d: 3, failures24h: 1, failures7d: 1 },
+      { owner: { kind: 'dispatcher' }, actions: [], runs24h: 1, runs7d: 4, failures24h: 0, failures7d: 2 },
+    ]);
+    const { rerender } = render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'By owner' }));
+    const usage = await screen.findByTestId('actions-owner-usage');
+    expect(await within(usage).findByText('You')).toBeTruthy();
+    expect(within(usage).getByText('Last 24 hours: 2 recent runs, 1 failure.')).toBeTruthy();
+    expect(within(usage).getByText('Last 7 days: 3 recent runs, 1 failure.')).toBeTruthy();
+    expect(within(usage).getByText(/last 7 days is not a full total/)).toBeTruthy();
+    expect(within(usage).getAllByTestId('actions-owner')).toHaveLength(2);
+    rerender(<ActionsSettingsView />);
+    expect(window.clubhouse.actions.usage).toHaveBeenCalledTimes(1);
+    expect(window.clubhouse.actions.history).not.toHaveBeenCalled();
+    fireEvent.click(within(usage).getByRole('button', { name: 'Morning plan' }));
+    expect(await screen.findByTestId('action-card')).toBeTruthy();
+  });
+
+  it('keeps owner usage available after all saved Actions are gone and reports load failures', async () => {
+    window.clubhouse.actions.usage = vi.fn(async () => { throw new Error('History unavailable'); });
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'By owner' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('History unavailable');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
   it('offers any readable agent only for turns, replacing Wait first with the bounded grouping control', async () => {
     list = [action({
       trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 },

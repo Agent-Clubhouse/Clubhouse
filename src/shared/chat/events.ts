@@ -22,6 +22,7 @@
  */
 
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from './capabilities';
+import type { ActionChatSummary } from '../actions/types';
 
 /** Contract major version, carried on every envelope. Structured mode's model was v1. */
 export const CHAT_CONTRACT_VERSION = 2 as const;
@@ -560,6 +561,8 @@ export interface ChatEventDataMap {
     /** Stable code for UI and telemetry, e.g. 'continued_from_terminal', 'untested_cli_version', 'fallback'. */
     code: string;
     message: string;
+    /** Clubhouse-generated receipt for the Dispatcher's Action tools only. */
+    actionSummary?: ActionChatSummary;
     /** With code `event_omitted`: this stands in for an event too large for an Annex chat page. */
     omitted?: { type: string; originalBytes: number };
   };

@@ -5,6 +5,14 @@ import { HISTORY_MAX_AGE_MS, type ActionRun } from './types';
 const schedule = { kind: 'schedule', preset: 'daily', cron: '0  9 * * *', missed: 'once' };
 
 describe('validateActionInput', () => {
+  it('retains Auto difficulty and refuses incompatible quick-step overrides', () => {
+    const step = { kind: 'quick', projectId: 'p1', prompt: 'Review', orchestrator: 'auto', difficulty: 'hard' };
+    expect(validateActionInput({ trigger: schedule, steps: [step] })).toMatchObject({ ok: true, value: { steps: [step] } });
+    for (const changes of [{ difficulty: 'maximum' }, { difficulty: null }, { orchestrator: 'claude-code' }, { model: 'opus' }]) {
+      expect(validateActionInput({ trigger: schedule, steps: [{ ...step, ...changes }] }).ok).toBe(false);
+    }
+  });
+
   it('accepts any readable agent only for turn events, with an optional bounded window and no delay', () => {
     const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } };
     const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };

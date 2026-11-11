@@ -124,6 +124,7 @@ export interface NoticeItem extends ChatItemBase {
   level: 'info' | 'warn';
   code: string;
   message: string;
+  actionSummary?: ChatEventDataMap['notice']['actionSummary'];
   /** Still in progress (a context compaction that hasn't finished). */
   running?: boolean;
 }
@@ -976,7 +977,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'notice': {
       const d = event.data;
       if (d.code === 'untested_cli_version') return { ...state, untestedCliNote: d.message };
-      const item: NoticeItem = { ...itemBase(event, `notice:${sid}:${event.seq}`), kind: 'notice', level: d.level, code: d.code, message: d.message };
+      const item: NoticeItem = { ...itemBase(event, `notice:${sid}:${event.seq}`), kind: 'notice', level: d.level, code: d.code, message: d.message, ...(d.actionSummary && { actionSummary: d.actionSummary }) };
       if (d.code === COMPACTION_STARTED) {
         // One running row per compaction, however often the provider repeats it.
         if (state.compactionItemId !== null) return state;

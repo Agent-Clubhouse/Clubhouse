@@ -14,12 +14,14 @@ import {
   ActionError,
   assertActionInput,
   subscriptionStep,
+  summarizeActionUsage,
   type Action,
   type ActionNames,
   type ActionNotice,
   type ActionOwner,
   type ActionRun,
   type ActionView,
+  type ActionOwnerUsage,
   type EventTrigger,
   type ValidActionInput,
 } from '../../../shared/actions';
@@ -41,7 +43,7 @@ import { DISPATCHER_NAME, getDispatcherAgentId, getDispatcherState, isDispatcher
 import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
 import * as projectStore from '../project-store';
-import { startQuickAgent } from '../quick-agent-service';
+import { startActionQuickAgent } from './quick-routing';
 import { createActionsStorage, createRunHistory } from './actions-store';
 import { ActionsEngine, type EngineFacts, type EngineObservation } from './engine';
 import { matchProjectRef } from './project-ref';
@@ -320,7 +322,7 @@ function createEngine(): ActionsEngine {
     wakeRefusal: (owner, agentId) => rights.checkStep(owner, { kind: 'wake', agentId }),
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
-    startQuick: (req) => startQuickAgent(req),
+    startQuick: (req) => startActionQuickAgent(req),
     notify: (title, body) => {
       const settings = notificationService.getSettings();
       if (!settings.enabled) return { shown: false, reason: 'notifications are off in Settings' };
@@ -464,6 +466,12 @@ export function actionHistory(id: string, reader?: ActionOwner): ActionRun[] {
   const a = e.get(id);
   if (a?.owner.kind === 'app') return [];
   return e.history(id, reader).sort((x, y) => y.startedAt - x.startedAt);
+}
+
+/** User-only Settings view. MCP history continues to use its reader-scoped path. */
+export function actionUsage(): ActionOwnerUsage[] {
+  const e = requireEngine();
+  return summarizeActionUsage(e.list(), e.history());
 }
 
 export function canWatchAgentActivity(reader: ActionOwner): boolean {

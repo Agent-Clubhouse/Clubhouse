@@ -56,6 +56,10 @@ If Clubhouse was closed or the machine was asleep at a schedule time, the action
 
 Steps stop at the first one that couldn't run.
 
+A quick-agent step can use **Auto** with easy, medium or hard difficulty (medium by default). It uses the same provider selection, quota checks and model mappings as helpers in **Settings > Smart selection**. Its routing receipt appears in recent runs. If Auto is off or no provider can run it, the step says why and does not start. An explicit provider stays explicit. Steps saved without a provider still use the project's provider.
+
+An agent-owned action also follows its owner's Auto setting, checked again before the provider is chosen. Your actions follow the app and project settings.
+
 ## When an action can't run
 
 You get a notice only when an action couldn't do its job: an agent couldn't wake or start, a provider isn't installed, a target is gone, or the action is no longer allowed to do a step. The reason shows on the action's row and card. There are no retries; the next run happens as usual.
@@ -65,6 +69,8 @@ If an agent an action uses is deleted, the action turns off and says why.
 ## Who made it
 
 You, the Dispatcher and agents can all make actions. An action's usage counts toward whoever made it. Agents manage their own actions through Clubhouse, and a helper's actions are deleted with the helper.
+
+When the Dispatcher creates or changes an action through Clubhouse, its chat shows the name, trigger, steps and on or off state. **Open** opens it in Settings. **Turn off** is your control, using the same path as the switch in Settings.
 
 An agent's action can do only what the agent itself may. Its steps and what it watches follow the agent's Clubhouse permissions, so turning a permission off reaches its actions too. A permission set to Ask first counts as no, because nobody is there to ask when an action runs.
 
@@ -85,6 +91,8 @@ An action set off by another action carries that chain along. A chain stops afte
 ## History
 
 Each action keeps its last 10 runs from the past 72 hours: when it ran, what set it off, how it went, and links to the agents it woke or started. Open an action from **Settings > Actions** to see them. **Run now** runs an action straight away for testing.
+
+**By owner** in Settings > Actions groups your actions, each agent's actions and the Dispatcher's actions. It lists recent runs and failures in the last 24 hours and 7 days, including retained runs of deleted and one-time actions. These counts include skipped and cancelled runs. History is trimmed to 10 runs per action within 72 hours, so they are not complete usage totals for either period. Older history without an owner uses the saved action's owner when available; otherwise it appears under **Unknown owner**.
 
 Every agent also has an **Actions** card in **Details**. It groups actions made by that agent, actions that act on it and actions its events set off, using the same list as the agent's Actions settings page. Open a row to see its history, run it now, turn it on or off, edit it or delete it without leaving the agent. These are your controls; the action keeps its original owner and permissions. The Dispatcher's card keeps the actions it made.
 
