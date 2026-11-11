@@ -1175,8 +1175,12 @@ export interface AnnexPeer {
   role?: AnnexPeerRole;
   /** For a satellite: addresses it was reached at or listed in its pairing link, most recently reached first (#3058). */
   knownHosts?: string[];
-  /** For a satellite: its main (TLS) port when it was last reached or paired. */
+  /** TLS ports per known host, keyed by lowercase host. Older records fall back to mainPort. */
+  hostPorts?: Record<string, number>;
+  /** Legacy default TLS port, kept for hosts without a per-address port and older builds. */
   mainPort?: number;
+  /** Endpoints learned from membership announcements, kept separate from this machine's private forwards. */
+  announcedReach?: { hosts: string[]; port?: number };
   /** For a satellite: a host name or address the person typed, such as a tailnet name. */
   typedHost?: string;
   /** For a network member: a computer or a phone, as it said when it joined. */

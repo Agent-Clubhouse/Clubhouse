@@ -1,0 +1,227 @@
+import { mkdtempSync, mkdirSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import * as net from 'net';
+import * as https from 'https';
+import type { TLSSocket } from 'tls';
+import { WebSocketServer } from 'ws';
+import { afterEach, expect, it, vi } from 'vitest';
+
+const state = vi.hoisted(() => ({ dir: '' }));
+
+vi.mock('electron', () => ({
+  app: { getPath: () => state.dir, isPackaged: false, getVersion: () => '0.0.0-test' },
+  BrowserWindow: { getAllWindows: () => [] },
+}));
+vi.mock('bonjour-service', () => ({
+  default: class {
+    find() { return { stop() {} }; }
+    destroy() {}
+  },
+}));
+vi.mock('../../src/main/services/log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../src/main/util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+vi.mock('../../src/main/services/annex-network-channel', () => ({
+  connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn(),
+}));
+vi.mock('../../src/main/services/annex-settings', () => ({
+  getSettings: () => ({ enableClient: true, autoReconnect: true, networkEnabled: false, alias: 'Controller', icon: 'computer', color: 'indigo' }),
+  networkEnabled: () => false,
+}));
+
+import * as client from '../../src/main/services/annex-client';
+import * as identity from '../../src/main/services/annex-identity';
+import * as tls from '../../src/main/services/annex-tls';
+import * as peers from '../../src/main/services/annex-peers';
+import { buildPairingUrl } from '../../src/main/services/annex-pairing-url';
+import { ANNEX_PROTOCOL_VERSION } from '../../src/shared/types';
+
+const cleanups: Array<() => Promise<void> | void> = [];
+
+afterEach(async () => {
+  client.stopClient();
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  identity.resetForTests();
+  tls.resetForTests();
+  peers.resetForTests();
+});
+
+async function listen(server: net.Server, port = 0): Promise<number> {
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Expected a TCP listening address');
+  return address.port;
+}
+
+/** No TLS handling: both directions carry exactly the bytes received. */
+async function forwardTo(port: number) {
+  const sockets = new Set<net.Socket>();
+  const server = net.createServer((incoming) => {
+    const outgoing = net.connect(port, '127.0.0.1');
+    for (const socket of [incoming, outgoing]) {
+      sockets.add(socket);
+      socket.on('close', () => { sockets.delete(socket); });
+    }
+    incoming.on('error', () => outgoing.destroy());
+    outgoing.on('error', () => incoming.destroy());
+    incoming.on('close', () => outgoing.destroy());
+    outgoing.on('close', () => incoming.destroy());
+    incoming.pipe(outgoing).pipe(incoming);
+  });
+  const localPort = await listen(server);
+  const close = async () => {
+    for (const socket of sockets) socket.destroy();
+    if (server.listening) await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
+  };
+  cleanups.push(close);
+  return { port: localPort, close, restore: () => listen(server, localPort) };
+}
+
+it('pairs, reloads the saved pairing without discovery, and reconnects after a remapped loopback forward returns', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'annex-forward-'));
+  cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+  state.dir = join(root, 'satellite');
+  mkdirSync(state.dir);
+  const satellite = identity.getOrCreateIdentity();
+  const credentials = tls.createTlsServerOptions(satellite);
+  const cert = tls.getOrCreateCert(satellite);
+  const expectedCertificate = tls.certificateFingerprint(cert.certPem);
+  identity.resetForTests();
+  tls.resetForTests();
+  state.dir = join(root, 'controller');
+  mkdirSync(state.dir);
+
+  let pairedClientCertificate = '';
+  let pairRequests = 0;
+  let connections = 0;
+  const clientCertificates: string[] = [];
+  // A minimal satellite fixture using real TLS, certificate binding and WebSockets.
+  const server = https.createServer(credentials, (req, res) => {
+    if (req.url !== '/pair') { res.writeHead(404).end(); return; }
+    pairRequests++;
+    let text = '';
+    req.on('data', (chunk) => { text += chunk; });
+    req.on('end', () => {
+      const body = JSON.parse(text);
+      const certificate = (req.socket as TLSSocket).getPeerCertificate();
+      if (body.pin !== '123456' || !tls.verifyCertBinding(body.publicKey, certificate.raw, body.certBinding)) {
+        res.writeHead(401).end();
+        return;
+      }
+      pairedClientCertificate = certificate.fingerprint256;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        fingerprint: satellite.fingerprint, publicKey: satellite.publicKey, alias: 'Forwarded satellite',
+        tlsCertificateFingerprint: expectedCertificate,
+      }));
+    });
+  });
+  const wss = new WebSocketServer({ noServer: true });
+  server.on('upgrade', (req, socket, head) => {
+    const certificate = (req.socket as TLSSocket).getPeerCertificate();
+    if (!pairedClientCertificate || certificate.fingerprint256 !== pairedClientCertificate) {
+      socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      return;
+    }
+    clientCertificates.push(certificate.fingerprint256);
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      connections++;
+      ws.send(JSON.stringify({
+        type: 'snapshot',
+        payload: { protocolVersion: ANNEX_PROTOCOL_VERSION, lastSeq: connections, projects: [], agents: {}, quickAgents: {} },
+      }));
+    });
+  });
+  const port = await listen(server);
+  cleanups.push(async () => {
+    for (const ws of wss.clients) ws.terminate();
+    wss.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const forward = await forwardTo(port);
+  expect(forward.port).not.toBe(port);
+  // This fixture's link address stands in for a remote address unavailable here.
+  const link = buildPairingUrl({
+    hosts: ['::1'], port, fingerprint: satellite.fingerprint, certFingerprint: expectedCertificate,
+    pin: '123456', name: 'Forwarded satellite',
+  })!;
+  const connected = (count: number) => vi.waitFor(() => {
+    expect(connections).toBe(count);
+    expect(client.getSatellite(satellite.fingerprint)).toMatchObject({
+      state: 'connected', host: '127.0.0.1', mainPort: forward.port, snapshot: { lastSeq: count },
+    });
+  }, { timeout: 10_000, interval: 20 });
+
+  client.startClient();
+  expect(await client.pairWithLink(link, `127.0.0.1:${forward.port}`)).toMatchObject({ success: true });
+  await connected(1);
+  expect(peers.getPeer(satellite.fingerprint)).toMatchObject({
+    knownHosts: ['127.0.0.1', '::1'], mainPort: port,
+    hostPorts: { '127.0.0.1': forward.port, '::1': port },
+  });
+
+  client.stopClient();
+  peers.resetForTests();
+  identity.resetForTests();
+  tls.resetForTests();
+  expect(client.getSatellites()).toEqual([]);
+  client.startClient();
+  await connected(2);
+  expect(client.getDiscoveredServices()).toEqual([]);
+  expect(pairRequests).toBe(1);
+  expect(new Set(clientCertificates).size).toBe(1);
+
+  await forward.close();
+  await vi.waitFor(() => expect(client.getSatellite(satellite.fingerprint)?.lastError).toMatch(/local forward is running/), {
+    timeout: 5_000, interval: 20,
+  });
+  await forward.restore();
+  await connected(3);
+  expect(pairRequests).toBe(1);
+}, 20_000);
+
+it('rejects a TLS-terminating endpoint before sending any PIN or HTTP request', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'annex-forward-mismatch-'));
+  cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+  state.dir = join(root, 'satellite');
+  mkdirSync(state.dir);
+  const satellite = identity.getOrCreateIdentity();
+  const expectedCertificate = tls.certificateFingerprint(tls.getOrCreateCert(satellite).certPem);
+  identity.resetForTests();
+  tls.resetForTests();
+  state.dir = join(root, 'proxy');
+  mkdirSync(state.dir);
+  const proxyIdentity = identity.getOrCreateIdentity();
+  let requests = 0;
+  const server = https.createServer(tls.createTlsServerOptions(proxyIdentity), (_req, res) => {
+    requests++;
+    res.end();
+  });
+  const sockets = new Set<net.Socket>();
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  const port = await listen(server);
+  cleanups.push(async () => {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  identity.resetForTests();
+  tls.resetForTests();
+  state.dir = join(root, 'controller');
+  mkdirSync(state.dir);
+  const link = buildPairingUrl({
+    hosts: ['127.0.0.2'], port, fingerprint: satellite.fingerprint, certFingerprint: expectedCertificate,
+    pin: '123456', name: 'Satellite',
+  })!;
+  expect(await client.pairWithLink(link, `127.0.0.1:${port}`)).toMatchObject({
+    success: false, error: expect.stringMatching(/not the one in the link/),
+  });
+  expect(requests).toBe(0);
+  expect(peers.listPeers()).toEqual([]);
+}, 10_000);

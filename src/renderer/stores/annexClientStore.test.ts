@@ -168,7 +168,7 @@ describe('annexClientStore', () => {
     it('delegates to IPC and returns the result', async () => {
       mockAnnexClient.pairWithLink.mockResolvedValueOnce({ success: true, alias: 'Studio Mac' } as never);
       const result = await getState().pairWithLink('clubhousego://pair?v=1');
-      expect(mockAnnexClient.pairWithLink).toHaveBeenCalledWith('clubhousego://pair?v=1');
+      expect(mockAnnexClient.pairWithLink).toHaveBeenCalledWith('clubhousego://pair?v=1', undefined);
       expect(result).toEqual({ success: true, alias: 'Studio Mac' });
     });
 

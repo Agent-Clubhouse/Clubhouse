@@ -90,7 +90,7 @@ interface AnnexClientStoreState {
   /** Pairs with a discovered service after `probeService`. */
   pairWith: (fingerprint: string, pin: string) => Promise<PairResult>;
   /** Pairs using another computer's pairing link. */
-  pairWithLink: (link: string) => Promise<PairResult>;
+  pairWithLink: (link: string, addressOverride?: string) => Promise<PairResult>;
   connect: (fingerprint: string, bearerToken?: string) => Promise<void>;
   disconnect: (fingerprint: string) => Promise<void>;
   forgetSatellite: (fingerprint: string) => Promise<void>;
@@ -154,9 +154,9 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
     }
   },
 
-  pairWithLink: async (link) => {
+  pairWithLink: async (link, addressOverride) => {
     try {
-      return await window.clubhouse.annexClient.pairWithLink(link);
+      return await window.clubhouse.annexClient.pairWithLink(link, addressOverride);
     } catch {
       return { success: false, error: PAIRING_UNAVAILABLE_ERROR };
     }

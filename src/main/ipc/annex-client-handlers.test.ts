@@ -23,6 +23,7 @@ vi.mock('../services/annex-client', () => ({
   getSatellites: vi.fn(() => []),
   getDiscoveredServices: vi.fn(() => []),
   pairWithService: vi.fn(async () => ({ success: true })),
+  pairWithLink: vi.fn(async () => ({ success: true })),
   connect: vi.fn(),
   disconnect: vi.fn(),
   retry: vi.fn(),
@@ -104,6 +105,15 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH)!;
     await handler({}, 'fp:aa:bb', '123456');
     expect(annexClient.pairWithService).toHaveBeenCalledWith('fp:aa:bb', '123456');
+  });
+
+  it('PAIR_WITH_LINK accepts old callers and forwards an optional endpoint', async () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH_LINK)!;
+    await handler({}, 'clubhousego://pair?v=1');
+    expect(annexClient.pairWithLink).toHaveBeenLastCalledWith('clubhousego://pair?v=1', undefined);
+    await handler({}, 'clubhousego://pair?v=1', '127.0.0.1:7443');
+    expect(annexClient.pairWithLink).toHaveBeenLastCalledWith('clubhousego://pair?v=1', '127.0.0.1:7443');
+    expect(() => handler({}, 'clubhousego://pair?v=1', 7443)).toThrow();
   });
 
   it('SCAN delegates to annexClient.scan', () => {

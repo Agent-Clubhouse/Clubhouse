@@ -28,6 +28,7 @@ import {
   noteReached, setTypedHost,
 } from './annex-peers';
 import { app } from 'electron';
+import { reachCandidates } from './annex-reach';
 
 function makePeer(fingerprint: string, alias = 'Test'): AnnexPeer {
   return {
@@ -111,7 +112,41 @@ describe('annex-peers', () => {
       addPeer({ ...makePeer('aa:bb:cc'), role: 'satellite', knownHosts: ['10.0.0.4', 'studio.local'], mainPort: 9000 });
       noteReached('aa:bb:cc', 'Studio.local', 9443);
       resetForTests();
-      expect(getPeer('aa:bb:cc')).toMatchObject({ knownHosts: ['studio.local', '10.0.0.4'], mainPort: 9443 });
+      expect(getPeer('aa:bb:cc')).toMatchObject({
+        knownHosts: ['studio.local', '10.0.0.4'], mainPort: 9443,
+        hostPorts: { 'studio.local': 9443, '10.0.0.4': 9000 },
+      });
+    });
+
+    it('migrates legacy and mixed records without losing peers, fields or downgrade compatibility', () => {
+      const legacy = { ...makePeer('legacy'), role: 'satellite', knownHosts: ['192.168.1.5', 'Studio.local'], mainPort: 9443, extra: { kept: true } };
+      const mixed = { ...makePeer('mixed'), knownHosts: ['127.0.0.1', '192.168.1.6', '::1'], mainPort: 9443,
+        hostPorts: { '127.0.0.1': 7443, '::1': 8443 } };
+      const noAddress = makePeer('no-address');
+      fs.writeFileSync(path.join(tmpDir, 'annex-peers.json'), JSON.stringify([legacy, mixed, noAddress]));
+      expect(listPeers()).toHaveLength(3);
+      expect(getPeer('legacy')).toEqual({ ...legacy, hostPorts: { '192.168.1.5': 9443, 'studio.local': 9443 } });
+      expect(getPeer('mixed')).toEqual({ ...mixed, hostPorts: { ...mixed.hostPorts, '192.168.1.6': 9443 } });
+
+      noteReached('legacy', '127.0.0.1', 7443);
+      noteReached('legacy', '192.168.1.5', 9443);
+      noteReached('mixed', '192.168.1.6', 9000);
+      resetForTests();
+      const peer = getPeer('legacy')!;
+      expect(peer).toMatchObject({ ...legacy, lastSeen: expect.any(String), knownHosts: ['192.168.1.5', '127.0.0.1', 'Studio.local'] });
+      expect(reachCandidates({ known: peer.knownHosts, ports: peer.hostPorts, port: peer.mainPort }).map(({ host, port }) => [host, port])).toEqual([
+        ['192.168.1.5', 9443], ['127.0.0.1', 7443], ['studio.local', 9443],
+      ]);
+      expect(getPeer('mixed')?.hostPorts).toEqual({ '127.0.0.1': 7443, '::1': 8443, '192.168.1.6': 9000 });
+      const saved = JSON.parse(fs.readFileSync(path.join(tmpDir, 'annex-peers.json'), 'utf8')) as AnnexPeer[];
+      expect(saved).toHaveLength(3);
+      // Older builds ignore hostPorts and can still use the original direct hosts and default.
+      expect(saved[0]).toMatchObject({ mainPort: 9443, extra: legacy.extra });
+      expect(reachCandidates({ known: saved[0].knownHosts, port: saved[0].mainPort })).toContainEqual({
+        host: '192.168.1.5', port: 9443, source: 'known',
+      });
+      expect(saved[0].knownHosts).toContain('Studio.local');
+      expect(getPeer('no-address')).toEqual(noAddress);
     });
 
     it('ignores an unknown peer or an address with no port', () => {
@@ -119,6 +154,37 @@ describe('annex-peers', () => {
       noteReached('nope', '10.0.0.4', 9443);
       noteReached('aa:bb:cc', '10.0.0.4', 0);
       expect(getPeer('aa:bb:cc')!.knownHosts).toBeUndefined();
+    });
+
+    it.each(['127.0.0.1', '0x7f000001', '0x7f.0.0.1'])('keeps the direct default after reaching loopback host %s', (host) => {
+      addPeer({ ...makePeer('aa:bb:cc'), role: 'satellite', knownHosts: ['10.0.0.4'], mainPort: 9443 });
+      noteReached('aa:bb:cc', host, 7443);
+      resetForTests();
+      expect(getPeer('aa:bb:cc')).toMatchObject({
+        mainPort: 9443, knownHosts: [host, '10.0.0.4'], hostPorts: { [host]: 7443, '10.0.0.4': 9443 },
+      });
+    });
+
+    it('reaches and heals a direct port changed by an older build without changing the saved forward', () => {
+      addPeer({
+        ...makePeer('aa:bb:cc'), role: 'satellite', knownHosts: ['192.168.1.5', '127.0.0.1'],
+        mainPort: 9443, hostPorts: { '192.168.1.5': 9443, '127.0.0.1': 7443 },
+      });
+      const file = path.join(tmpDir, 'annex-peers.json');
+      const oldBuildPeers = JSON.parse(fs.readFileSync(file, 'utf8')) as AnnexPeer[];
+      // Older builds update only the shared port when they reach an existing host.
+      oldBuildPeers[0].mainPort = 9000;
+      fs.writeFileSync(file, JSON.stringify(oldBuildPeers));
+      resetForTests();
+      const peer = getPeer('aa:bb:cc')!;
+      expect(reachCandidates({ known: peer.knownHosts, ports: peer.hostPorts, port: peer.mainPort })).toEqual([
+        { host: '192.168.1.5', port: 9443, source: 'known' },
+        { host: '192.168.1.5', port: 9000, source: 'known' },
+        { host: '127.0.0.1', port: 7443, source: 'known' },
+      ]);
+      noteReached('aa:bb:cc', '192.168.1.5', 9000);
+      resetForTests();
+      expect(getPeer('aa:bb:cc')?.hostPorts).toEqual({ '192.168.1.5': 9000, '127.0.0.1': 7443 });
     });
 
     it('sets and clears a typed host', () => {

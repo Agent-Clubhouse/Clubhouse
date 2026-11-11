@@ -27,6 +27,7 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
 
   const [step, setStep] = useState<WizardStep>('choose');
   const [link, setLink] = useState('');
+  const [addressOverride, setAddressOverride] = useState('');
   const [selectedService, setSelectedService] = useState<DiscoveredService | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [pin, setPin] = useState('');
@@ -108,7 +109,7 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
     const trimmed = link.trim();
     if (!trimmed || pairing) return;
     setPairing(true);
-    const result = await pairWithLink(trimmed);
+    const result = await pairWithLink(trimmed, addressOverride.trim() || undefined);
     setPairing(false);
     if (result.success) {
       setLink('');
@@ -167,6 +168,23 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
                 {pairing ? 'Pairing…' : 'Pair'}
               </Button>
             </div>
+            <label htmlFor="annex-pairing-address" className="block text-[13px] text-ctp-text">
+              Address override (optional)
+            </label>
+            <input
+              id="annex-pairing-address"
+              type="text"
+              value={addressOverride}
+              onChange={(e) => setAddressOverride(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handlePairWithLink(); }}
+              placeholder="127.0.0.1:7443"
+              spellCheck={false}
+              className={`${settingsInput} w-full font-mono`}
+            />
+            <p className="text-xs text-ctp-overlay1">
+              Use a host or host:port instead of the link&apos;s addresses. The port is the main TLS port, not the identity-hint port.
+              {' '}For a local forward, enter its listening address and port. The certificate must still match the link.
+            </p>
           </div>
 
           <div>
