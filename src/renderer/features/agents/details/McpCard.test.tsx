@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { Agent, AgentMcpConnection } from '../../../../shared/types';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { createChatViewState } from '../../../stores/chatStore';
@@ -55,7 +55,7 @@ describe('MCP servers card', () => {
       return () => { connectionListeners.delete(listener); };
     });
     useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
-    useAgentDetailsStore.setState({ open: true, focus: null });
+    useAgentDetailsStore.setState({ open: true, focus: { agentId: agent.id, card: 'mcp', nonce: 1 } });
     useAgentStore.setState({ agentSpawnedAt: { a1: SPAWNED } } as never);
     useMcpBindingStore.setState({
       bindings: [
@@ -84,7 +84,6 @@ describe('MCP servers card', () => {
     };
     render(<AgentDetails agent={{ ...agent, mcpIds: [] }} chat={chat} />);
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('3 connected · 1 not connected');
-    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     const card = screen.getByTestId('details-card-mcp');
     expect(card).not.toHaveTextContent('none configured');
     await waitFor(() => expect(card).toHaveTextContent('Connected · 9 tools'));
@@ -99,7 +98,6 @@ describe('MCP servers card', () => {
   it('shows a terminal agent\'s Clubhouse MCP connection and keeps configured servers apart', async () => {
     render(<AgentDetails agent={agent} />);
     await waitFor(() => expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('1 connected · 1 configured'));
-    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     expect(screen.getAllByTestId('details-mcp-row')[0]).toHaveTextContent('ClubhouseConnected · 9 tools');
     expect(screen.getByTestId('details-mcp-configured')).toHaveTextContent('githubConfigured');
     expect(window.clubhouse.mcpBinding.getAgentConnection).toHaveBeenCalledWith('a1');
@@ -110,7 +108,6 @@ describe('MCP servers card', () => {
     render(<AgentDetails agent={{ ...agent, mcpIds: [] }} />);
     await waitFor(() => expect(window.clubhouse.mcpBinding.getAgentConnection).toHaveBeenCalled());
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('none');
-    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     expect(screen.getByTestId('details-card-mcp')).toHaveTextContent('isn’t connected to any MCP servers');
   });
 
@@ -118,7 +115,6 @@ describe('MCP servers card', () => {
     const getConnection = vi.fn<() => Promise<AgentMcpConnection | null>>().mockResolvedValue(null);
     window.clubhouse.mcpBinding.getAgentConnection = getConnection;
     render(<AgentDetails agent={{ ...agent, orchestrator: 'copilot-cli', mcpIds: [] }} />);
-    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     await act(async () => {});
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('none');
 

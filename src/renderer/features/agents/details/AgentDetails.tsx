@@ -4,16 +4,11 @@
  * replaces the old Agents and Changes side panels. There is no pane to pin or
  * resize; the chat column moves left so no card covers a message.
  *
- * The cards, each collapsed to a one-line answer until clicked: Settings
- * (#2280), Changes, Subagents, Canvases, the Dispatcher's card (#3049, titled
- * with its name, shown while the Dispatcher is on for an agent that can
- * connect to it), Orchestrate, Helpers, Connections,
- * Context window, MCP servers and Session. Cards the runtime can't fill
- * are left out (#2094): Subagents when the agent doesn't report them (the
- * terminal, or a driver without subagents) and Context window until the
- * agent reports how full it is. The orchestration cards (#2232) are for local durable agents:
- * Orchestrate for any that isn't itself a helper, Helpers once it
- * orchestrates or has helpers, Connections once it orchestrates or has wires.
+ * Settings, Changes, Dispatcher, Orchestration (including Clubhouse helpers),
+ * provider Subagents, Connections, Actions, Skills and MCP, Session (including
+ * reported context) and nonempty Canvases (#3286). Runtime evidence stays
+ * separate from configured content in Settings. Unsupported cards are omitted.
+ * Local durable agents have orchestration controls unless they are helpers.
  * A direct Connections link also opens that card for a local quick agent.
  *
  * The Dispatcher is an experience, not an agent to inspect (#3184): it shows
@@ -40,7 +35,7 @@ import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
 import { SettingsCard } from './SettingsCard';
 import { McpCard } from './McpCard';
 import { ProviderSkillsCard } from './ProviderSkillsCard';
-import { useAgentDetailsStore } from './detailsStore';
+import { containingDetailsCard, useAgentDetailsStore, useDetailsCardState, type CardId } from './detailsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import type { LastSessionInfo } from '../states/useLastSession';
 import { describeSleep, formatAgo, formatShortDuration, formatUsd } from '../states/format';
@@ -52,7 +47,7 @@ import { DispatcherCard } from './DispatcherCard';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { Button } from '../../../components/Button';
 
-export type CardId = 'changes' | 'subagents' | 'canvases' | 'dispatcher' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session' | 'actions';
+export type { CardId } from './detailsStore';
 
 /** A worktree inside the project, as a path relative to it; null when it lives elsewhere. */
 export function relativeFolder(worktree: string | undefined, projectPath: string | undefined): string | null {
@@ -188,14 +183,8 @@ export interface AgentDetailsProps {
 export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch, lastSession }: AgentDetailsProps) {
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
   const focus = useAgentDetailsStore((s) => s.focus);
-  const [openCards, setOpenCards] = useState<Set<CardId>>(() => new Set());
   const [scope, setScope] = useState<ChangesScope>('branch');
   const [selectedSub, setSelectedSub] = useState<string | null>(null);
-  const toggleCard = useCallback((id: CardId) => setOpenCards((s) => {
-    const next = new Set(s);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  }), []);
 
   const projectPath = useProjectPath(agent.projectId);
   const cwd = agentCwd(agent, projectPath);
@@ -220,12 +209,13 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const canvases = useAgentCanvases(agent);
   const showCanvases = !dispatcher && canvases.length > 0;
   const running = agent.status === 'running';
-  // Asleep (#2281): the live-only cards go, and Session is the last one.
+  // Asleep (#2281): live-only evidence goes, and Session becomes Last session.
   const asleep = agent.status === 'sleeping' || agent.status === 'error';
 
   // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
   const orchestration = useOrchestrationCards(agent, projectPath);
   const { orchestrationPath, ownConfig, helperIds, orchestrating } = orchestration;
+  const { openCards, setOpenCards, toggleCard } = useDetailsCardState(agent.id, orchestration.approvals.pending.length > 0);
   // The Dispatcher's card (#3049): while it's on, for the agents the Orchestration card is for. Helpers never connect.
   const { show: dispatcherOn } = useDispatcherConnection();
   const showDispatcherCard = dispatcherOn && orchestration.showOrchestrate;
@@ -269,19 +259,29 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
     lastSession && lastSession.costUsd > 0 ? formatUsd(lastSession.costUsd) : null,
   ].filter(Boolean).join(' · ');
   const limits = chat?.capabilities?.limits ? chat.usage.limits : [];
+  const showEvidence = !dispatcher && (!asleep || !!chat);
+  const available = new Set<CardId>(['settings', 'actions']);
+  if (!dispatcher) { available.add('changes'); available.add('session'); }
+  if (showCanvases) available.add('canvases');
+  if (showSubagents) available.add('subagents');
+  if (showDispatcherCard) available.add('dispatcher');
+  if (orchestration.showOrchestrate) available.add('orchestrate');
+  if (showConnections) available.add('connections');
+  if (showEvidence) available.add('skills-mcp');
+  const requested = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
+  const focusCard = requested && available.has(requested) ? requested : dispatcher ? 'actions' : 'session';
 
-  // A membership can arrive after the index read, or disappear while open.
+  // Resolve aliases and unavailable targets again as capabilities or memberships load.
   const handled = useRef<string | null>(null);
   useEffect(() => {
     if (!focus || focus.agentId !== agent.id) return;
-    const card = focus.card === 'helpers' ? 'orchestrate' : focus.card === 'context' ? 'session'
-      : focus.card === 'canvases' && !showCanvases ? dispatcher ? 'actions' : 'session' : focus.card;
-    const key = `${focus.nonce}:${card}`;
+    const key = `${agent.id}:${focus.nonce}:${focusCard}`;
     if (handled.current === key) return;
     handled.current = key;
-    setOpenCards((s) => new Set(s).add(card));
+    if (focusCard === 'settings') useAgentDetailsStore.getState().setSettingsOpen(true);
+    else setOpenCards((s) => new Set(s).add(focusCard));
     if (focus.subagentId) setSelectedSub(focus.subagentId);
-  }, [focus, agent.id, showCanvases, dispatcher]);
+  }, [focus, agent.id, focusCard, setOpenCards]);
   useEffect(() => {
     if (showCanvases) return;
     setOpenCards((s) => {
@@ -291,7 +291,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
       next.add(dispatcher ? 'actions' : 'session');
       return next;
     });
-  }, [showCanvases, dispatcher]);
+  }, [showCanvases, dispatcher, setOpenCards]);
 
   return (
     <aside
@@ -378,19 +378,22 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
       {dispatcher
         ? <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />
-        : <AgentActionsCard agentId={agent.id} agentName={agent.name} projectId={agent.projectId} open={open('actions')} onToggle={() => toggleCard('actions')} />}
+        : <AgentActionsCard key={agent.id} agentId={agent.id} agentName={agent.name} projectId={agent.projectId} open={open('actions')} onToggle={() => toggleCard('actions')} />}
 
-      {!asleep && !dispatcher && <McpCard
-        agent={agent}
-        projectPath={projectPath}
-        live={chat?.mcpServers ?? null}
-        spawnedAt={spawnedAt}
-        refreshKey={refreshKey}
-        open={open('mcp')}
-        onToggle={() => toggleCard('mcp')}
-      />}
-
-      {chat && !dispatcher && <ProviderSkillsCard agent={agent} chat={chat} open={open('provider-skills')} onToggle={() => toggleCard('provider-skills')} />}
+      {showEvidence && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
+        <CardNote>Configured skills and MCP servers are in Settings. These are connection status and provider-reported session evidence.</CardNote>
+        {!asleep && <McpCard
+          agent={agent}
+          projectPath={projectPath}
+          live={chat?.mcpServers ?? null}
+          spawnedAt={spawnedAt}
+          refreshKey={refreshKey}
+          open={open('skills-mcp')}
+          onToggle={() => toggleCard('skills-mcp')}
+          embedded
+        />}
+        {chat && <ProviderSkillsCard agent={agent} chat={chat} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')} embedded />}
+      </DetailsCard>}
 
       {asleep && !dispatcher && (
         <DetailsCard id="session" title="Last session" summary={lastSummary} open={open('session')} onToggle={() => toggleCard('session')}>

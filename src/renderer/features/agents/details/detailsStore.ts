@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
 
 /**
  * Whether Agent details (#2032) is showing, for every agent pane in this
@@ -7,8 +8,48 @@ import { create } from 'zustand';
  */
 
 const KEY = 'clubhouse.agentDetails.open';
-/** Whether the Settings card (#2280) is open, the one card that remembers it. */
+/** Settings is the only card persisted across visits, using its original key. */
 const SETTINGS_KEY = 'clubhouse.agentDetails.settingsOpen';
+
+export type CardId = 'settings' | 'changes' | 'dispatcher' | 'orchestrate' | 'subagents' | 'connections' | 'actions' | 'skills-mcp' | 'session' | 'canvases';
+type FocusCard = CardId | 'helpers' | 'context' | 'mcp' | 'provider-skills';
+
+export function containingDetailsCard(card: FocusCard): CardId {
+  if (card === 'helpers') return 'orchestrate';
+  if (card === 'context') return 'session';
+  if (card === 'mcp' || card === 'provider-skills') return 'skills-mcp';
+  return card;
+}
+
+/**
+ * Cards start collapsed, apart from the saved Settings preference. Other
+ * toggles last for this agent visit; pending approvals open Orchestration once.
+ * The awake column and sleeping presentation share this policy.
+ */
+export function useDetailsCardState(agentId: string, waiting: boolean) {
+  const [state, setState] = useState(() => ({ agentId, cards: new Set<CardId>() }));
+  const openCards = state.agentId === agentId ? state.cards : new Set<CardId>();
+  const setOpenCards = useCallback((update: SetStateAction<Set<CardId>>) => {
+    setState((s) => {
+      const current = s.agentId === agentId ? s.cards : new Set<CardId>();
+      return { agentId, cards: typeof update === 'function' ? update(current) : update };
+    });
+  }, [agentId]);
+  useEffect(() => { setOpenCards((s) => s); }, [setOpenCards]);
+  const autoOpened = useRef(false);
+  useEffect(() => { autoOpened.current = false; }, [agentId]);
+  useEffect(() => {
+    if (!waiting || autoOpened.current) return;
+    autoOpened.current = true;
+    setOpenCards((s) => new Set(s).add('orchestrate'));
+  }, [waiting, setOpenCards]);
+  const toggleCard = useCallback((id: CardId) => setOpenCards((s) => {
+    const next = new Set(s);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  }), [setOpenCards]);
+  return { openCards, setOpenCards, toggleCard };
+}
 
 function readOpen(key = KEY): boolean {
   try {
@@ -32,7 +73,7 @@ function writeOpen(open: boolean, key = KEY): void {
 /** A request to open one card from elsewhere, e.g. "Open in details" on a subagent card. */
 export interface DetailsFocus {
   agentId: string;
-  card: 'changes' | 'subagents' | 'orchestrate' | 'helpers' | 'connections' | 'dispatcher' | 'context' | 'session' | 'canvases';
+  card: FocusCard;
   /** The subagent to expand, for the Subagents card. */
   subagentId?: string;
   nonce: number;

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
-import { useAgentDetailsStore } from '../details/detailsStore';
+import { useAgentDetailsStore, useDetailsCardState } from '../details/detailsStore';
 import { SectionHead } from '../states/parts';
 import { OrchestrateCard } from './OrchestrateCard';
 import { HelpersCard } from './HelpersCard';
@@ -49,24 +49,24 @@ export type OrchestrationCardsModel = ReturnType<typeof useOrchestrationCards>;
 export function OrchestrationCardPair({ agent, model, isOpen, onToggle }: {
   agent: Agent;
   model: OrchestrationCardsModel;
-  isOpen: (card: 'orchestrate' | 'helpers') => boolean;
-  onToggle: (card: 'orchestrate' | 'helpers') => void;
+  isOpen: (card: 'orchestrate') => boolean;
+  onToggle: (card: 'orchestrate') => void;
 }) {
   const { orchestrationPath, orch, everywhere, orchestrating, approvals, reloadConfigs, showOrchestrate, showHelpers } = model;
   if (!orchestrationPath) return null;
   const helpers = showHelpers && everywhere ? (
-        <HelpersCard
-          agent={agent}
-          projectPath={orchestrationPath}
-          helpers={everywhere}
-          maxHelpers={orch.policy?.maxHelpers}
-          orchestrating={orchestrating}
-          open={isOpen('orchestrate')}
-          onToggle={() => onToggle('orchestrate')}
-          approvals={approvals}
-          onRemoved={reloadConfigs}
-          embedded
-        />
+    <HelpersCard
+      agent={agent}
+      projectPath={orchestrationPath}
+      helpers={everywhere}
+      maxHelpers={orch.policy?.maxHelpers}
+      orchestrating={orchestrating}
+      open={!showOrchestrate || isOpen('orchestrate')}
+      onToggle={() => onToggle('orchestrate')}
+      approvals={approvals}
+      onRemoved={reloadConfigs}
+      embedded
+    />
   ) : null;
   if (!showOrchestrate) return helpers;
   return (
@@ -91,15 +91,7 @@ export function SleepingOrchestration({ agent, projectPath }: { agent: Agent; pr
   useEffect(() => { if (relevant) setShownFor(agent.id); }, [relevant, agent.id]);
   const shown = relevant || shownFor === agent.id;
 
-  const [open, setOpen] = useState<Set<'orchestrate' | 'helpers'>>(() => new Set());
-  useEffect(() => { setOpen(new Set()); }, [agent.id]);
-  // A start waiting on the user opens Orchestration, once per agent.
-  const autoOpened = useRef<string | null>(null);
-  useEffect(() => {
-    if (!waiting || autoOpened.current === agent.id) return;
-    autoOpened.current = agent.id;
-    setOpen((s) => new Set(s).add('orchestrate'));
-  }, [waiting, agent.id]);
+  const { openCards: open, setOpenCards: setOpen, toggleCard } = useDetailsCardState(agent.id, waiting);
   // "Open in details" (a Needs you entry) opens the card here too.
   const focus = useAgentDetailsStore((s) => s.focus);
   const handled = useRef<number | null>(null);
@@ -107,7 +99,7 @@ export function SleepingOrchestration({ agent, projectPath }: { agent: Agent; pr
     if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
     handled.current = focus.nonce;
     if (focus.card === 'orchestrate' || focus.card === 'helpers') setOpen((s) => new Set(s).add('orchestrate'));
-  }, [focus, agent.id]);
+  }, [focus, agent.id, setOpen]);
 
   if (!shown || !model.orchestrationPath || (!model.showOrchestrate && !model.showHelpers)) return null;
   return (
@@ -117,11 +109,7 @@ export function SleepingOrchestration({ agent, projectPath }: { agent: Agent; pr
         agent={agent}
         model={model}
         isOpen={(card) => open.has(card)}
-        onToggle={(card) => setOpen((s) => {
-          const next = new Set(s);
-          if (next.has(card)) next.delete(card); else next.add(card);
-          return next;
-        })}
+        onToggle={toggleCard}
       />
     </section>
   );

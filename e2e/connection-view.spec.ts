@@ -87,6 +87,12 @@ test('the connection view: both directions with their own tools, saved in the st
   const head = w.locator('[data-testid="details-card-connections-toggle"]').first();
   if (!(await head.isVisible().catch(() => false))) await w.getByRole('button', { name: 'Agent details' }).first().click();
   await expect(head).toBeVisible({ timeout: 15_000 });
+  const details = w.getByTestId('agent-details');
+  await expect(details.getByTestId('details-card-settings')).toHaveAccessibleName('Settings');
+  await expect(details.getByTestId('details-card-actions')).toBeVisible();
+  await expect(details.getByTestId('details-card-context')).toHaveCount(0);
+  await expect(details.getByTestId('details-card-helpers')).toHaveCount(0);
+  await expect(details.getByTestId('details-card-canvases')).toHaveCount(0);
   if ((await head.getAttribute('aria-expanded')) !== 'true') await head.click();
 
   // The connection, from the store alone.

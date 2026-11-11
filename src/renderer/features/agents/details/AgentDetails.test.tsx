@@ -21,7 +21,7 @@ const branch = {
 
 beforeEach(() => {
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
-  useAgentDetailsStore.setState({ open: true, focus: null });
+  useAgentDetailsStore.setState({ open: true, settingsOpen: false, focus: null });
   useMcpBindingStore.setState({ bindings: [] });
   getProjectCanvasStore('p1').setState({ canvases: [], loaded: false });
   useAppCanvasStore.setState({ canvases: [], loaded: true });
@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 describe('AgentDetails in the terminal', () => {
-  it('exposes passive chat skill reports in a separate details card', async () => {
+  it('keeps passive skill reports and MCP evidence inside one combined card', async () => {
     const chat = {
       ...createChatViewState(agent.id), sessionId: 'shared-session', nativeSessionId: 'native-session',
       provider: 'claude-code', driver: 'claude_agent_sdk' as const,
@@ -45,9 +45,12 @@ describe('AgentDetails in the terminal', () => {
       },
     };
     render(<AgentDetails agent={agent} chat={chat} />);
+    fireEvent.click(screen.getByTestId('details-card-skills-mcp-toggle'));
     expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent('1 reported');
-    fireEvent.click(screen.getByTestId('details-card-provider-skills-toggle'));
     expect(screen.getByText('review')).toBeInTheDocument();
+    expect(screen.getByTestId('details-card-skills-mcp')).toContainElement(screen.getByTestId('details-card-mcp'));
+    expect(screen.getByTestId('details-card-skills-mcp')).toContainElement(screen.getByTestId('details-card-provider-skills'));
+    expect(screen.queryByTestId('details-card-provider-skills-toggle')).not.toBeInTheDocument();
     expect(await screen.findByText('1 file')).toBeInTheDocument();
   });
 
@@ -57,6 +60,7 @@ describe('AgentDetails in the terminal', () => {
     // #2094: no Subagents or Context window card the terminal can only call "not reported".
     expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
     expect(screen.queryByTestId('details-card-context')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('details-card-skills-mcp-toggle'));
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('2 configured');
     fireEvent.click(screen.getByTestId('details-card-session-toggle'));
     const session = screen.getByTestId('details-card-session');
@@ -84,9 +88,29 @@ describe('AgentDetails in the terminal', () => {
 
   it('opens a card asked for from elsewhere', () => {
     render(<AgentDetails agent={agent} />);
-    expect(screen.getByTestId('details-card-mcp')).not.toHaveAttribute('data-open');
+    expect(screen.getByTestId('details-card-skills-mcp')).not.toHaveAttribute('data-open');
     act(() => { useAgentDetailsStore.getState().reveal({ agentId: 'a1', card: 'mcp' }); });
-    expect(screen.getByTestId('details-card-mcp')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('details-card-skills-mcp')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('details-card-mcp')).toBeInTheDocument();
+  });
+
+  it('starts cards collapsed, keeps Settings saved, and resets other cards on a new agent visit', async () => {
+    const { rerender } = render(<AgentDetails agent={agent} />);
+    expect(screen.getAllByTestId(/^details-card-.*-toggle$/).every((c) => c.getAttribute('aria-expanded') === 'false')).toBe(true);
+    fireEvent.click(screen.getByTestId('details-card-settings-toggle'));
+    fireEvent.click(screen.getByTestId('details-card-session-toggle'));
+    rerender(<AgentDetails agent={{ ...agent, id: 'a2' }} />);
+    expect(screen.getByTestId('details-card-settings')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('details-card-session')).not.toHaveAttribute('data-open');
+    expect(localStorage.getItem('clubhouse.agentDetails.settingsOpen')).toBe('1');
+    await act(async () => {});
+  });
+
+  it.each(['helpers', 'subagents', 'dispatcher', 'connections'] as const)('falls back from unavailable %s for a remote agent', async (card) => {
+    const remote = { ...agent, projectId: 'remote||sat||p1' };
+    render(<AgentDetails agent={remote} />);
+    await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card }));
+    expect(screen.getByTestId('details-card-session')).toHaveAttribute('data-open', 'true');
   });
 
   it('opens an empty Connections card from permissions settings (#3275)', async () => {

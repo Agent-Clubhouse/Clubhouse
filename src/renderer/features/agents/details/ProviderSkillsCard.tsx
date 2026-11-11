@@ -5,11 +5,12 @@ import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { reportedSkillsFor } from './reported-skills';
 
 /** Only renders metadata already in chat state. No filesystem reads or provider requests. */
-export function ProviderSkillsCard({ agent, chat, open, onToggle }: {
+export function ProviderSkillsCard({ agent, chat, open, onToggle, embedded }: {
   agent: Agent;
   chat: ChatViewState;
   open: boolean;
   onToggle: () => void;
+  embedded?: boolean;
 }) {
   const project = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId));
   // Match the selected override, else the known project's default. An absent
@@ -20,7 +21,7 @@ export function ProviderSkillsCard({ agent, chat, open, onToggle }: {
     || chat.state === 'sleeping' || chat.state === 'error';
   return (
     <DetailsCard id="provider-skills" title="Reported skills"
-      summary={names ? `${names.length} reported` : 'Unknown'} open={open} onToggle={onToggle}>
+      summary={names ? `${names.length} reported` : 'Unknown'} open={open} onToggle={onToggle} embedded={embedded}>
       <CardNote>
         {historical ? 'Last session snapshot. ' : 'Session snapshot. '}
         Provider-reported names do not prove a skill was used or executed. Filesystem scope and origin are not reported.

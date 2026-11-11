@@ -1039,7 +1039,7 @@ describe('ChatView review fixes', () => {
 });
 
 describe('ChatView agent details', () => {
-  beforeEach(() => { useAgentDetailsStore.setState({ open: false, focus: null }); });
+  beforeEach(() => { useAgentDetailsStore.setState({ open: false, settingsOpen: false, focus: null }); });
 
   it('hides the details column below 640px of pane, and brings it back when there is room', () => {
     const observers: Array<{ cb: ResizeObserverCallback; el?: Element }> = [];
@@ -1071,15 +1071,17 @@ describe('ChatView agent details', () => {
     }
   });
 
-  it('shows and hides the details column from the toolbar, with every card collapsed', () => {
+  it('shows and hides the details column from the toolbar, with every available card collapsed', async () => {
     renderFixture('claude', 'conversation');
     expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    await act(async () => { fireEvent.click(screen.getByTestId('agent-details-toggle')); });
     const column = screen.getByTestId('agent-details');
-    for (const id of ['changes', 'subagents', 'mcp', 'session']) {
+    for (const id of ['settings', 'changes', 'subagents', 'actions', 'skills-mcp', 'session']) {
       expect(within(column).getByTestId(`details-card-${id}`)).not.toHaveAttribute('data-open');
     }
-    expect(within(column).queryByTestId('details-card-canvases')).not.toBeInTheDocument();
+    for (const id of ['canvases', 'context', 'helpers', 'mcp', 'provider-skills']) {
+      expect(within(column).queryByTestId(`details-card-${id}`)).not.toBeInTheDocument();
+    }
     // The column sits beside the conversation, not over it.
     expect(column.parentElement).toBe(screen.getByTestId('chat-stream').closest('[data-testid="chat-view"] > div:last-child'));
     fireEvent.click(screen.getByTestId('agent-details-toggle'));
