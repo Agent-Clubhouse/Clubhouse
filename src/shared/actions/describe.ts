@@ -205,13 +205,25 @@ export function describeSteps(steps: ActionStep[], names: ActionNames = NO_NAMES
 }
 
 /** The list line: "Weekdays at 9:00 AM → Wake pm with a prompt". A subscription (#3042) reads "→ Tell pm". */
-export function describeAction(a: { trigger: ActionTrigger; steps: ActionStep[]; subscription?: true; owner?: ActionOwner }, names: ActionNames = NO_NAMES): string {
+export function describeLimits(a: { endsAt?: number; maxRuns?: number; runsUsed?: number }): string {
+  const parts: string[] = [];
+  if (a.maxRuns !== undefined) {
+    const remaining = Math.max(0, a.maxRuns - (a.runsUsed ?? 0));
+    parts.push(`${remaining} of ${a.maxRuns} runs remaining`);
+  }
+  if (a.endsAt !== undefined) parts.push(`Ends ${formatDateTime(a.endsAt)}`);
+  return parts.join('. ');
+}
+
+export function describeAction(a: { trigger: ActionTrigger; steps: ActionStep[]; subscription?: true; owner?: ActionOwner; endsAt?: number; maxRuns?: number; runsUsed?: number }, names: ActionNames = NO_NAMES): string {
+  const limits = describeLimits(a);
+  const suffix = limits ? `. ${limits}` : '';
   const step = a.steps[0];
   if (a.subscription && a.steps.length === 1 && step?.kind === 'message') {
     const who = names.agent(step.agentId) ?? (a.owner?.kind === 'dispatcher' || a.owner?.kind === 'app' ? names.dispatcher?.() || 'the Dispatcher' : 'an agent');
-    return `${describeTrigger(a.trigger, names)} → Tell ${who}`;
+    return `${describeTrigger(a.trigger, names)} → Tell ${who}${suffix}`;
   }
-  return `${describeTrigger(a.trigger, names)} → ${describeSteps(a.steps, names)}`;
+  return `${describeTrigger(a.trigger, names)} → ${describeSteps(a.steps, names)}${suffix}`;
 }
 
 /** A suggested name, e.g. "After release-lead sleeps, start a quick agent". Editable. */

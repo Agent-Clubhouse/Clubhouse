@@ -172,6 +172,45 @@ describe('action tools', () => {
     registerActionTools();
   });
 
+  it('round-trips optional lifetime limits through create, update and list', async () => {
+    const endsAt = Date.now() + 24 * 60 * 60_000;
+    const created = await call('agent-a', 'create_action', { trigger: DAILY, steps: [NOTIFY], endsAt, maxRuns: 5 });
+    expect(created).toMatchObject({ isError: false, body: { action: { endsAt, maxRuns: 5 } } });
+    const id = created.body.action.id;
+    expect(created.body.action).toMatchObject({ endsAt, maxRuns: 5 });
+    await call('agent-a', 'run_action', { id });
+    await flush();
+    const updated = await call('agent-a', 'update_action', { id, maxRuns: 3 });
+    expect(updated.body.action).toMatchObject({ endsAt, maxRuns: 3, runsUsed: 1 });
+    const listed = await call('agent-a', 'list_actions');
+    expect(listed.body.actions.find((a: Action) => a.id === id)).toMatchObject({ endsAt, maxRuns: 3, runsUsed: 1, description: expect.stringContaining('2 of 3 runs remaining') });
+    const cleared = await call('agent-a', 'update_action', { id, endsAt: null, maxRuns: null });
+    expect(cleared.body.action.endsAt).toBeUndefined();
+    expect(cleared.body.action.maxRuns).toBeUndefined();
+    const invalid = await call('agent-a', 'update_action', { id, maxRuns: 0 });
+    expect(invalid.body.error.code).toBe('invalid_input');
+  });
+
+  it('turns off a lowered limit without resetting starts when limits are cleared or raised', async () => {
+    const created = await call('agent-a', 'create_action', { trigger: DAILY, steps: [NOTIFY], maxRuns: 5 });
+    const id = created.body.action.id;
+    for (let i = 0; i < 2; i++) {
+      await call('agent-a', 'run_action', { id });
+      await flush();
+    }
+    const lowered = await call('agent-a', 'update_action', { id, maxRuns: 1 });
+    expect(lowered).toMatchObject({ isError: false, body: { action: { enabled: false, runsUsed: 2, maxRuns: 1, offReason: 'Reached its 1-run limit' } } });
+    const cleared = await call('agent-a', 'update_action', { id, maxRuns: null });
+    expect(cleared.body.action).toMatchObject({ enabled: false, runsUsed: 2 });
+    expect(cleared.body.action.maxRuns).toBeUndefined();
+    const raised = await call('agent-a', 'update_action', { id, maxRuns: 3, enabled: true });
+    expect(raised.body.action).toMatchObject({ enabled: true, runsUsed: 2, maxRuns: 3 });
+    expect(raised.body.action.offReason).toBeUndefined();
+    await call('agent-a', 'run_action', { id });
+    await flush();
+    expect(engine().get(id)).toMatchObject({ enabled: false, runsUsed: 3, offReason: 'Reached its 3-run limit' });
+  });
+
   it('registers all seven tools, each mapped to an action.* permission', () => {
     expect(ACTION_TOOL_PERMISSIONS).toEqual({
       create_action: 'action.create', list_actions: 'action.list', update_action: 'action.update',

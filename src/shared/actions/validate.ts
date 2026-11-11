@@ -172,13 +172,31 @@ export interface ValidActionInput {
   steps: ActionStep[];
   overlap: OverlapRule;
   enabled: boolean;
+  endsAt?: number;
+  maxRuns?: number;
 }
 
 /** Check and normalize action input. Unknown fields are dropped. */
-export function validateActionInput(raw: unknown): Result<ValidActionInput> {
+export function validateActionInput(raw: unknown, options: { now?: number; allowPastEndsAt?: boolean } = {}): Result<ValidActionInput> {
   if (!isObject(raw)) return { ok: false, error: 'An action is required.' };
   const trigger = validateTrigger(raw.trigger);
   if (!trigger.ok) return fail(trigger);
+  const limits: { endsAt?: number; maxRuns?: number } = {};
+  if (raw.endsAt !== undefined && raw.endsAt !== null) {
+    if (trigger.value.kind === 'once') return { ok: false, error: 'One-time actions cannot have an end time.' };
+    if (typeof raw.endsAt !== 'number' || !Number.isFinite(raw.endsAt) || raw.endsAt <= 0 || raw.endsAt > MAX_ONCE_AT) {
+      return { ok: false, error: 'The end time must be an absolute timestamp in milliseconds.' };
+    }
+    if (!options.allowPastEndsAt && raw.endsAt <= (options.now ?? Date.now())) return { ok: false, error: 'Pick an end time in the future.' };
+    limits.endsAt = raw.endsAt;
+  }
+  if (raw.maxRuns !== undefined && raw.maxRuns !== null) {
+    if (trigger.value.kind === 'once') return { ok: false, error: 'One-time actions cannot have a run limit.' };
+    if (typeof raw.maxRuns !== 'number' || !Number.isSafeInteger(raw.maxRuns) || raw.maxRuns <= 0) {
+      return { ok: false, error: 'The run limit must be a positive whole number.' };
+    }
+    limits.maxRuns = raw.maxRuns;
+  }
   if (!Array.isArray(raw.steps) || raw.steps.length === 0) return { ok: false, error: 'Add at least one step.' };
   if (raw.steps.length > MAX_ACTION_STEPS) return { ok: false, error: `An action has at most ${MAX_ACTION_STEPS} steps.` };
   const steps: ActionStep[] = [];
@@ -196,12 +214,12 @@ export function validateActionInput(raw: unknown): Result<ValidActionInput> {
   }
   const overlap: OverlapRule = raw.overlap === 'queue' ? 'queue' : 'skip';
   const enabled = raw.enabled !== false;
-  return { ok: true, value: { name, trigger: trigger.value, steps, overlap, enabled } };
+  return { ok: true, value: { name, trigger: trigger.value, steps, overlap, enabled, ...limits } };
 }
 
 /** Throwing form, for callers that report ActionError. */
-export function assertActionInput(raw: unknown): ValidActionInput {
-  const result = validateActionInput(raw);
+export function assertActionInput(raw: unknown, now = Date.now()): ValidActionInput {
+  const result = validateActionInput(raw, { now });
   if (!result.ok) throw new ActionError('invalid_input', result.error);
   return result.value;
 }

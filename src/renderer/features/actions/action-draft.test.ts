@@ -4,6 +4,39 @@ import { draftFrom, draftToInput, newDraft, toLocalInput } from './action-draft'
 const NOW = new Date(2026, 10, 9, 8, 0).getTime();
 
 describe('action draft', () => {
+  it('round-trips recurring limits and omits them when changed to once', () => {
+    const input = {
+      trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } } as const,
+      steps: [{ kind: 'notify', text: 'hi' }] as const,
+      endsAt: NOW + 60 * 60_000, maxRuns: 5,
+    };
+    const draft = draftFrom({ ...input, steps: [...input.steps] }, NOW);
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input });
+    expect(draftToInput({ ...draft, maxRuns: '1.5' }, NOW).ok).toBe(false);
+    expect(draftToInput(draft, input.endsAt + 1).ok).toBe(false);
+    const once = draftToInput({ ...draft, when: 'once' }, NOW);
+    expect(once.ok && once.input.endsAt).toBeUndefined();
+    expect(once.ok && once.input.maxRuns).toBeUndefined();
+  });
+
+  it.each(['2027-01-05T14:15:32.123Z', '2027-11-07T06:30:00.000Z'])(
+    'preserves an unchanged absolute end time through edits: %s',
+    (timestamp) => {
+      const endsAt = Date.parse(timestamp);
+      const draft = draftFrom({
+        trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } },
+        steps: [{ kind: 'notify', text: 'hi' }],
+        endsAt,
+      }, NOW);
+      expect(draft.endsAt).toBe(toLocalInput(endsAt));
+      expect(draftToInput({ ...draft, name: 'Renamed' }, NOW)).toMatchObject({ ok: true, input: { endsAt } });
+      const changed = draftToInput({ ...draft, endsAt: '2027-12-01T10:15' }, NOW);
+      expect(changed).toMatchObject({ ok: true, input: { endsAt: new Date(2027, 11, 1, 10, 15).getTime() } });
+      const cleared = draftToInput({ ...draft, endsAt: '' }, NOW);
+      expect(cleared.ok && cleared.input.endsAt).toBeUndefined();
+    },
+  );
+
   it('starts as a weekday schedule that needs an agent', () => {
     const d = newDraft(NOW);
     expect(d.when).toBe('schedule');

@@ -145,6 +145,7 @@ export type RunReasonCode =
   | 'chain_limit'
   | 'overlap'
   | 'hourly_limit'
+  | 'lifetime_limit'
   | 'missed'
   | 'condition_changed'
   | 'turned_off'
@@ -312,6 +313,7 @@ export class ActionsEngine {
       if (!a || a.trigger.kind !== 'schedule' || !a.enabled) delete this.state.nextAt[id];
     }
     for (const a of this.actions.values()) {
+      if (a.enabled && this.enforceLifetime(a)) continue;
       if (a.enabled && a.trigger.kind === 'schedule' && this.state.nextAt[a.id] === undefined) this.armSchedule(a);
     }
     this.restoreWaits();
@@ -405,7 +407,7 @@ export class ActionsEngine {
   }
 
   create(input: unknown, owner: ActionOwner, opts: { subscription?: boolean } = {}): Action {
-    const valid = assertActionInput(input);
+    const valid = assertActionInput(input, this.now());
     this.checkRights(owner, valid.trigger, valid.steps);
     this.checkTargets(valid.trigger, valid.steps);
     this.checkCount(owner);
@@ -421,6 +423,8 @@ export class ActionsEngine {
       overlap: valid.overlap,
       owner,
       enabled: valid.enabled,
+      ...(valid.endsAt !== undefined && { endsAt: valid.endsAt }),
+      ...(valid.maxRuns !== undefined && { maxRuns: valid.maxRuns }),
       ...(opts.subscription && { subscription: true as const }),
       createdAt: now,
       updatedAt: now,
@@ -472,7 +476,7 @@ export class ActionsEngine {
   /** Replace an action's definition. The owner stays; rights are checked against it. */
   update(id: string, input: unknown): Action {
     const current = this.require(id);
-    const valid = assertActionInput(input);
+    const valid = assertActionInput(input, this.now());
     this.checkRights(current.owner, valid.trigger, valid.steps);
     this.checkTargets(valid.trigger, valid.steps);
     // An edit that doesn't say keeps the on/off state: it never quietly turns back on.
@@ -483,6 +487,8 @@ export class ActionsEngine {
       trigger: valid.trigger,
       steps: valid.steps,
       overlap: valid.overlap,
+      endsAt: valid.endsAt,
+      maxRuns: valid.maxRuns,
       enabled: saysEnabled ? valid.enabled : current.enabled,
       updatedAt: this.now(),
     };
@@ -492,6 +498,7 @@ export class ActionsEngine {
     delete next.problem;
     if (next.enabled) delete next.offReason;
     this.actions.set(id, next);
+    if (next.enabled && this.enforceLifetime(next)) return this.require(id);
     this.dropWaits(id);
     this.cancelQueued(id, 'edited', 'The action was edited before this run started');
     delete this.state.nextAt[id];
@@ -510,6 +517,7 @@ export class ActionsEngine {
       delete next.problem;
     }
     this.actions.set(id, next);
+    if (enabled && this.enforceLifetime(next)) return this.require(id);
     if (!enabled) {
       this.dropWaits(id);
       this.cancelQueued(id, 'turned_off', 'The action was turned off before this run started');
@@ -571,6 +579,19 @@ export class ActionsEngine {
     if (action.enabled && action.owner.kind !== 'app') this.deps.hooks?.turnedOff?.(next, reason);
   }
 
+  private lifetimeReason(action: Action): string | null {
+    if (action.trigger.kind === 'once') return null;
+    if (action.endsAt !== undefined && this.now() >= action.endsAt) return 'Ended at the set time';
+    if (action.maxRuns !== undefined && (action.runsUsed ?? 0) >= action.maxRuns) return `Reached its ${action.maxRuns}-run limit`;
+    return null;
+  }
+
+  private enforceLifetime(action: Action): string | null {
+    const reason = this.lifetimeReason(action);
+    if (reason) this.turnOff(action, reason);
+    return reason;
+  }
+
   // ── Persistence ──
 
   private persist(): void {
@@ -587,10 +608,10 @@ export class ActionsEngine {
   // ── Clock ──
 
   private armSchedule(action: Action): void {
-    if (action.trigger.kind !== 'schedule') return;
+    if (action.trigger.kind !== 'schedule' || !this.actions.get(action.id)?.enabled) return;
     const parsed = parseCron(action.trigger.cron);
     const next = parsed.ok ? nextCronTime(parsed.spec, this.now()) : null;
-    if (next) this.state.nextAt[action.id] = next.getTime();
+    if (next && (action.endsAt === undefined || next.getTime() < action.endsAt)) this.state.nextAt[action.id] = next.getTime();
     else delete this.state.nextAt[action.id];
   }
 
@@ -600,6 +621,7 @@ export class ActionsEngine {
     let earliest = Infinity;
     for (const a of this.actions.values()) {
       if (!a.enabled) continue;
+      if (a.endsAt !== undefined) earliest = Math.min(earliest, a.endsAt);
       if (a.trigger.kind === 'once') earliest = Math.min(earliest, a.trigger.at);
       const at = this.state.nextAt[a.id];
       if (at !== undefined) earliest = Math.min(earliest, at);
@@ -619,6 +641,7 @@ export class ActionsEngine {
     let dirty = false;
     for (const action of this.list()) {
       if (!action.enabled) continue;
+      if (this.enforceLifetime(action)) continue;
       const t = action.trigger;
       if (t.kind === 'once' && t.at <= now) {
         // One-time actions delete themselves as they fire; the run stays in history.
@@ -767,6 +790,7 @@ export class ActionsEngine {
   }
 
   private onMatch(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
+    if (this.enforceLifetime(action)) return;
     const branchText = occ.branch === '*' ? 'many branches' : occ.branch;
     const detail = `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`;
     this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: !!trigger.delayMinutes });
@@ -888,6 +912,9 @@ export class ActionsEngine {
 
   /** Start a run, or skip or queue it. Returns the run id. */
   private fire(action: Action, trigger: ActionRunTrigger, chain: string[], opts: { forceQueue?: boolean } = {}): string {
+    action = this.actions.get(action.id) ?? action;
+    const ended = this.enforceLifetime(action);
+    if (ended) return this.recordOnly(action, trigger, chain, 'skipped', 'lifetime_limit', ended);
     if (chain.includes(action.id)) {
       this.observe(action, { type: 'limit', what: 'self', chainDepth: chain.length });
       return this.recordOnly(action, trigger, chain, 'skipped', 'self_trigger', 'It can’t set itself off');
@@ -932,6 +959,18 @@ export class ActionsEngine {
   /** One run. Returns the queued run to start next, if any. */
   private async runOnce(action: Action, trigger: ActionRunTrigger, chain: string[], runId: string): Promise<{ action: Action; run: QueuedRun } | null> {
     const actionId = action.id;
+    if (action.trigger.kind !== 'once' && this.actions.has(actionId)) {
+      // A queued handoff crosses an await: edits and expiry can happen before it starts.
+      action = this.require(actionId);
+      const ended = this.enforceLifetime(action);
+      if (ended) {
+        this.recordOnly(action, trigger, chain, 'cancelled', 'lifetime_limit', ended);
+        return null;
+      }
+      action = { ...action, runsUsed: (action.runsUsed ?? 0) + 1 };
+      this.actions.set(actionId, action);
+      if (!this.enforceLifetime(action)) this.persist();
+    }
     const starts = this.recentStarts.get(actionId) ?? [];
     starts.push(this.now());
     this.recentStarts.set(actionId, starts);
@@ -1013,6 +1052,11 @@ export class ActionsEngine {
     const nextRun = queue?.shift();
     const latest = this.actions.get(actionId);
     if (!nextRun || !latest) return null;
+    const ended = this.enforceLifetime(latest);
+    if (ended) {
+      this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'cancelled', 'lifetime_limit', ended);
+      return null;
+    }
     if (!latest.enabled && nextRun.trigger.kind !== 'manual') {
       this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'cancelled', 'turned_off', 'The action was turned off before this run started');
       for (const rest of queue?.splice(0) ?? []) this.recordOnly(latest, rest.trigger, rest.chain, 'cancelled', 'turned_off', 'The action was turned off before this run started');

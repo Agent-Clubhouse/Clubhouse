@@ -8,6 +8,7 @@ import {
   MISSED_RUN_LABELS,
   OVERLAP_LABELS,
   describeStep,
+  describeLimits,
   describeTrigger,
   type ActionRun,
   type ActionView,
@@ -169,6 +170,12 @@ export function ActionCard({ action, onClose, onEdit }: { action: ActionView; on
         <dl className="mt-4 grid grid-cols-[120px_1fr] gap-y-2 text-xs">
           <dt className="text-ctp-overlay1">When</dt>
           <dd className="text-ctp-text">{describeTrigger(t, names)}</dd>
+          {describeLimits(action) && (
+            <>
+              <dt className="text-ctp-overlay1">Limits</dt>
+              <dd className="text-ctp-text">{describeLimits(action)}</dd>
+            </>
+          )}
           {t.kind === 'schedule' && (
             <>
               <dt className="text-ctp-overlay1">Missed times</dt>

@@ -33,7 +33,7 @@ export function sanitizeActions(raw: unknown): Action[] {
   const out: Action[] = [];
   for (const item of raw) {
     if (!isObject(item) || typeof item.id !== 'string' || !isObject(item.owner)) continue;
-    const valid = validateActionInput(item);
+    const valid = validateActionInput(item, { allowPastEndsAt: true });
     if (!valid.ok) continue;
     const owner = item.owner as Action['owner'];
     if (!['user', 'dispatcher', 'agent', 'app'].includes(owner.kind)) continue;
@@ -46,6 +46,9 @@ export function sanitizeActions(raw: unknown): Action[] {
       overlap: valid.value.overlap,
       owner,
       enabled: valid.value.enabled,
+      ...(valid.value.endsAt !== undefined && { endsAt: valid.value.endsAt }),
+      ...(valid.value.maxRuns !== undefined && { maxRuns: valid.value.maxRuns }),
+      ...(typeof item.runsUsed === 'number' && Number.isSafeInteger(item.runsUsed) && item.runsUsed >= 0 && { runsUsed: item.runsUsed }),
       ...(typeof item.offReason === 'string' && { offReason: item.offReason }),
       ...(typeof item.problem === 'string' && { problem: item.problem }),
       createdAt: typeof item.createdAt === 'number' ? item.createdAt : 0,

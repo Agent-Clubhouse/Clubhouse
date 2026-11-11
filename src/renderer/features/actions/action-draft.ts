@@ -52,6 +52,9 @@ export interface ActionDraft {
   branch: string;
   /** datetime-local value. */
   onceAt: string;
+  endsAt: string;
+  originalEndsAt?: number;
+  maxRuns: string;
   steps: StepDraft[];
   overlap: OverlapRule;
 }
@@ -83,6 +86,8 @@ export function newDraft(now = Date.now()): ActionDraft {
     delay: '',
     branch: '',
     onceAt: toLocalInput(now + 60 * 60 * 1000),
+    endsAt: '',
+    maxRuns: '',
     steps: [emptyStep()],
     overlap: 'skip',
   };
@@ -106,6 +111,11 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
   const d = newDraft(now);
   if (input.name) d.name = input.name;
   if (input.overlap) d.overlap = input.overlap;
+  if (input.endsAt !== undefined) {
+    d.endsAt = toLocalInput(input.endsAt);
+    d.originalEndsAt = input.endsAt;
+  }
+  if (input.maxRuns !== undefined) d.maxRuns = String(input.maxRuns);
   if (input.steps?.length) d.steps = input.steps.map(stepToDraft);
   const t = input.trigger;
   if (t?.kind === 'schedule') {
@@ -171,8 +181,15 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
     if (delay !== undefined && !(Number.isInteger(delay) && delay >= 0)) return { ok: false, error: 'The wait must be a whole number of minutes.' };
     trigger = { kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }) };
   }
-  const raw = { ...(d.name.trim() && { name: d.name.trim() }), trigger, steps: d.steps.map(stepFromDraft), overlap: d.overlap };
-  const valid = validateActionInput(raw);
+  // Keep the exact instant when unchanged, including seconds and the repeated DST hour.
+  const endsAt = d.originalEndsAt !== undefined && d.endsAt === toLocalInput(d.originalEndsAt)
+    ? d.originalEndsAt : new Date(d.endsAt).getTime();
+  const raw = {
+    ...(d.name.trim() && { name: d.name.trim() }), trigger, steps: d.steps.map(stepFromDraft), overlap: d.overlap,
+    ...(d.when !== 'once' && d.endsAt && { endsAt }),
+    ...(d.when !== 'once' && d.maxRuns.trim() && { maxRuns: Number(d.maxRuns) }),
+  };
+  const valid = validateActionInput(raw, { now });
   if (!valid.ok) return { ok: false, error: valid.error };
   // No on/off state: a new action starts on, and an edit keeps what the action has now.
   const { enabled: _enabled, name, ...rest } = valid.value;
