@@ -377,6 +377,14 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
             >
               <input id={`${uid}-delay`} type="number" min={0} className={`${settingsInput} w-32`} value={draft.delay} onChange={(e) => set({ delay: e.target.value })} />
             </Field>
+            <Field label="After local time (optional)" htmlFor={`${uid}-after-time`}
+              help="Only events at or after this time on this computer can run. Queued and delayed runs check again when they start. This also applies to Run now.">
+              <input id={`${uid}-after-time`} type="time" className={`${settingsInput} w-40`} value={draft.afterLocalTime} onChange={(e) => set({ afterLocalTime: e.target.value })} />
+            </Field>
+            <Field label="Once per calendar day" htmlFor={`${uid}-once-per-day`}
+              help="Moving the clock back doesn't give an extra run. Only started runs use the day, including Run now and failed runs.">
+              <input id={`${uid}-once-per-day`} type="checkbox" checked={draft.oncePerDay} onChange={(e) => set({ oncePerDay: e.target.checked })} />
+            </Field>
           </>
         )}
 

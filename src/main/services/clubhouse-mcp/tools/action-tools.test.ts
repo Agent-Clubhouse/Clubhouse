@@ -220,6 +220,19 @@ describe('action tools', () => {
     expect(sub).toMatchObject({ isError: false, body: { action: { trigger: { absenceMinutes: 5 } } } });
   });
 
+  it('round-trips generic event time filters on create, update and subscribe', async () => {
+    const trigger = { kind: 'event', event: 'app.started', afterLocalTime: '08:00', oncePerDay: true };
+    const result = await call('dispatcher', 'create_action', { trigger, steps: [NOTIFY] });
+    expect(result).toMatchObject({ isError: false, body: { action: { trigger: { ...trigger, source: { kind: 'app' } } } } });
+    expect(result.body.action.description).toContain("once per calendar day; moving the clock back doesn't give an extra run");
+    const updated = await call('dispatcher', 'update_action', { id: result.body.action.id, trigger: { ...trigger, afterLocalTime: '09:30' } });
+    expect(updated.body.action.trigger).toMatchObject({ afterLocalTime: '09:30', oncePerDay: true });
+    const sub = await call('dispatcher', 'subscribe', { event: 'app.returned', afterLocalTime: '08:00', oncePerDay: true });
+    expect(sub).toMatchObject({ isError: false, body: { action: { trigger: { afterLocalTime: '08:00', oncePerDay: true } } } });
+    const invalid = await call('dispatcher', 'update_action', { id: result.body.action.id, trigger: { ...trigger, afterLocalTime: '24:00' } });
+    expect(invalid.body.error.code).toBe('invalid_input');
+  });
+
   it('registers all seven tools, each mapped to an action.* permission', () => {
     expect(ACTION_TOOL_PERMISSIONS).toEqual({
       create_action: 'action.create', list_actions: 'action.list', update_action: 'action.update',

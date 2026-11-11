@@ -121,6 +121,208 @@ const notify: ActionStep = { kind: 'notify', text: 'hi' };
 const weekdays9 = { kind: 'schedule', preset: 'weekdays', cron: '0 9 * * 1-5', missed: 'skip' } as const;
 const user = { kind: 'user' } as const;
 
+describe('event time filters', () => {
+  const trigger = { kind: 'event', event: 'app.started', source: { kind: 'app' } } as const;
+
+  it('ignores early events and consumes the day only when a run starts, including failed Run now', async () => {
+    const h = setup({ start: START - MIN, stepImpl: async () => ({ kind: 'notify', outcome: 'failed', detail: 'Unavailable' }) });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, afterLocalTime: '08:00', oncePerDay: true }, steps: [notify] }, user);
+    h.event({ type: 'app.started' });
+    h.engine.runNow(a.id);
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBeUndefined();
+    h.clock.t = START;
+    h.engine.runNow(a.id);
+    await flush();
+    expect(h.history(a.id).at(-1)?.outcome).toBe('failed');
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-09');
+    h.event({ type: 'app.started' });
+    h.engine.runNow(a.id);
+    expect(h.engine.get(a.id)?.runsUsed).toBe(1);
+    expect(h.stepCalls).toHaveLength(1);
+  });
+
+  it('persists the used date across restart and history loss, allowing the next local date', async () => {
+    const first = setup();
+    first.engine.start();
+    const a = first.engine.create({ trigger: { ...trigger, oncePerDay: true }, steps: [notify] }, user);
+    first.event({ type: 'app.started' });
+    await flush();
+    first.engine.stop();
+    const second = setup({ actions: first.saved.actions, state: first.saved.state, start: START + 60 * MIN });
+    second.engine.start();
+    second.event({ type: 'app.started' });
+    expect(second.stepCalls).toHaveLength(0);
+    second.clock.t = new Date(2026, 10, 10, 8).getTime();
+    second.event({ type: 'app.started' });
+    await flush();
+    expect(second.stepCalls).toHaveLength(1);
+    expect(second.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+  });
+
+  it('does not consume a new date on an overlap skip', async () => {
+    let finish!: (result: ActionStepResult) => void;
+    const h = setup({ stepImpl: () => new Promise((resolve) => { finish = resolve; }) });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, oncePerDay: true }, steps: [notify] }, user);
+    h.event({ type: 'app.started' });
+    h.clock.t = new Date(2026, 10, 10, 8).getTime();
+    h.event({ type: 'app.started' });
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-09');
+    expect(h.history(a.id).at(-1)).toMatchObject({ outcome: 'skipped', reason: 'The last run was still going' });
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    h.event({ type: 'app.started' });
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+    expect(h.engine.get(a.id)?.runsUsed).toBe(2);
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+  });
+
+  it('consumes the date at a queued start, cancelling other queued runs without counting them', async () => {
+    let finish!: (result: ActionStepResult) => void;
+    const h = setup({ stepImpl: () => new Promise((resolve) => { finish = resolve; }) });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, oncePerDay: true }, steps: [notify], overlap: 'queue' }, user);
+    h.event({ type: 'app.started' });
+    h.clock.t = new Date(2026, 10, 10, 8).getTime();
+    h.event({ type: 'app.started' });
+    h.event({ type: 'app.started' });
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-09');
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    expect(h.stepCalls).toHaveLength(2);
+    expect(h.engine.get(a.id)?.runsUsed).toBe(2);
+    expect(h.history(a.id).at(-1)?.outcome).toBe('cancelled');
+    expect(h.engine.isRunning(a.id)).toBe(false);
+  });
+
+  it('does not consume a new date on an hourly-limit skip', async () => {
+    const h = setup({ start: new Date(2026, 10, 9, 23, 30).getTime() });
+    h.engine.start();
+    const a = h.engine.create({ trigger, steps: [notify] }, user);
+    for (let i = 0; i < 60; i++) { h.engine.runNow(a.id); await flush(); }
+    h.clock.t = new Date(2026, 10, 10, 0, 1).getTime();
+    h.engine.update(a.id, { trigger: { ...trigger, oncePerDay: true }, steps: [notify] });
+    h.event({ type: 'app.started' });
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-09');
+    expect(h.history(a.id).at(-1)).toMatchObject({ outcome: 'skipped', reason: 'Ran 60 times in the last hour' });
+    h.clock.t = new Date(2026, 10, 10, 0, 31).getTime();
+    h.event({ type: 'app.started' });
+    await flush();
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+    expect(h.engine.get(a.id)?.runsUsed).toBe(61);
+  });
+
+  it('rechecks the local cutoff before a queued start after the clock moves back', async () => {
+    let finish!: (result: ActionStepResult) => void;
+    const h = setup({ stepImpl: () => new Promise((resolve) => { finish = resolve; }) });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, afterLocalTime: '08:00', oncePerDay: true }, steps: [notify], overlap: 'queue' }, user);
+    h.event({ type: 'app.started' });
+    h.clock.t = new Date(2026, 10, 10, 8).getTime();
+    h.event({ type: 'app.started' });
+    h.clock.t -= MIN;
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+    expect(h.stepCalls).toHaveLength(1);
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-09');
+    expect(h.history(a.id).at(-1)).toMatchObject({ outcome: 'cancelled', reason: 'Before 08:00 local time' });
+    h.clock.t += MIN;
+    h.event({ type: 'app.started' });
+    expect(h.engine.get(a.id)?.runsUsed).toBe(2);
+    finish({ kind: 'notify', outcome: 'done', detail: 'ok' });
+    await flush();
+  });
+
+  it('rechecks the wall-clock time when a delayed run crosses midnight', async () => {
+    const h = setup({ start: new Date(2026, 10, 9, 23, 55).getTime() });
+    h.engine.start();
+    const a = h.engine.create({ trigger: { ...trigger, delayMinutes: 20, afterLocalTime: '20:00', oncePerDay: true }, steps: [notify] }, user);
+    h.event({ type: 'app.started' });
+    await h.clock.advance(20 * MIN);
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.saved.state.lastFiredDate?.[a.id]).toBeUndefined();
+    expect(h.history(a.id)).toMatchObject([{ outcome: 'skipped', reason: 'Before 20:00 local time' }]);
+  });
+
+  async function withLocalZone(zone: string, run: (setZone: (value: string) => void) => Promise<void>): Promise<void> {
+    const part = (date: Date, field: 'year' | 'month' | 'day' | 'hour' | 'minute'): number => {
+      const value = new Intl.DateTimeFormat('en-US', {
+        timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).formatToParts(date).find((p) => p.type === field)?.value;
+      if (!value) throw new Error(`Missing local ${field}`);
+      return Number(value);
+    };
+    const spies = [
+      vi.spyOn(Date.prototype, 'getFullYear').mockImplementation(function (this: Date) { return part(this, 'year'); }),
+      vi.spyOn(Date.prototype, 'getMonth').mockImplementation(function (this: Date) { return part(this, 'month') - 1; }),
+      vi.spyOn(Date.prototype, 'getDate').mockImplementation(function (this: Date) { return part(this, 'day'); }),
+      vi.spyOn(Date.prototype, 'getHours').mockImplementation(function (this: Date) { return part(this, 'hour'); }),
+      vi.spyOn(Date.prototype, 'getMinutes').mockImplementation(function (this: Date) { return part(this, 'minute'); }),
+    ];
+    try { await run((value) => { zone = value; }); }
+    finally { for (const spy of spies) spy.mockRestore(); }
+  }
+
+  it('does not reuse the calendar day in the repeated DST hour', async () => {
+    await withLocalZone('America/New_York', async () => {
+      const h = setup({ start: Date.UTC(2026, 10, 1, 5, 30) });
+      h.engine.start();
+      const a = h.engine.create({ trigger: { ...trigger, afterLocalTime: '01:30', oncePerDay: true }, steps: [notify] }, user);
+      h.event({ type: 'app.started' });
+      await flush();
+      h.clock.t = Date.UTC(2026, 10, 1, 6, 30);
+      h.event({ type: 'app.started' });
+      expect(h.stepCalls).toHaveLength(1);
+      h.clock.t = Date.UTC(2026, 10, 2, 6, 30);
+      h.event({ type: 'app.started' });
+      await flush();
+      expect(h.engine.get(a.id)?.runsUsed).toBe(2);
+    });
+  });
+
+  it('allows the next event after a spring-forward jump past the cutoff', async () => {
+    await withLocalZone('America/New_York', async () => {
+      const h = setup({ start: Date.UTC(2026, 2, 8, 6, 59) });
+      h.engine.start();
+      const a = h.engine.create({ trigger: { ...trigger, afterLocalTime: '02:30', oncePerDay: true }, steps: [notify] }, user);
+      h.event({ type: 'app.started' });
+      expect(h.stepCalls).toHaveLength(0);
+      h.clock.t = Date.UTC(2026, 2, 8, 7);
+      h.event({ type: 'app.started' });
+      await flush();
+      expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-03-08');
+      expect(h.stepCalls).toHaveLength(1);
+    });
+  });
+
+  it('keeps a local-date high-water mark across timezone changes and revisited dates', async () => {
+    await withLocalZone('Pacific/Kiritimati', async (setZone) => {
+      const h = setup({ start: Date.UTC(2026, 10, 9, 10, 30) });
+      h.engine.start();
+      const a = h.engine.create({ trigger: { ...trigger, afterLocalTime: '00:00', oncePerDay: true }, steps: [notify] }, user);
+      h.event({ type: 'app.started' });
+      await flush();
+      expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-10');
+      setZone('Pacific/Honolulu');
+      h.event({ type: 'app.started' });
+      h.clock.t += 24 * 60 * MIN;
+      h.event({ type: 'app.started' });
+      expect(h.stepCalls).toHaveLength(1);
+      h.clock.t += 24 * 60 * MIN;
+      h.event({ type: 'app.started' });
+      await flush();
+      expect(h.stepCalls).toHaveLength(2);
+      expect(h.saved.state.lastFiredDate?.[a.id]).toBe('2026-11-11');
+    });
+  });
+});
+
 describe('lifetime limits', () => {
   const returned = { kind: 'event', event: 'app.started', source: { kind: 'app' } } as const;
 

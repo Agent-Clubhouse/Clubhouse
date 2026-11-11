@@ -62,6 +62,16 @@ function sanitizeState(raw: unknown): EngineState {
   const state: EngineState = { nextAt: {}, waits: [] };
   if (!isObject(raw)) return state;
   if (typeof raw.lastUse === 'number' && Number.isFinite(raw.lastUse) && raw.lastUse >= 0) state.lastUse = raw.lastUse;
+  if (isObject(raw.lastFiredDate)) {
+    state.lastFiredDate = {};
+    for (const [id, date] of Object.entries(raw.lastFiredDate)) {
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const time = Date.parse(`${date}T00:00:00Z`);
+      if (Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === date) {
+        state.lastFiredDate[id] = date;
+      }
+    }
+  }
   if (isObject(raw.nextAt)) {
     for (const [id, at] of Object.entries(raw.nextAt)) if (typeof at === 'number' && Number.isFinite(at)) state.nextAt[id] = at;
   }

@@ -128,7 +128,18 @@ export function validateTrigger(raw: unknown): Result<ActionTrigger> {
       }
       absenceMinutes = raw.absenceMinutes;
     }
-    return { ok: true, value: { kind: 'event', event, source: source.value, ...(delayMinutes && { delayMinutes }), ...(branch && { branch }), ...(absenceMinutes !== undefined && { absenceMinutes }) } };
+    if (raw.afterLocalTime !== undefined && (typeof raw.afterLocalTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(raw.afterLocalTime))) {
+      return { ok: false, error: 'The local time must be HH:MM, from 00:00 to 23:59.' };
+    }
+    if (raw.oncePerDay !== undefined && typeof raw.oncePerDay !== 'boolean') return { ok: false, error: 'Once per calendar day must be true or false.' };
+    return {
+      ok: true, value: {
+        kind: 'event', event, source: source.value, ...(delayMinutes && { delayMinutes }), ...(branch && { branch }),
+        ...(absenceMinutes !== undefined && { absenceMinutes }),
+        ...(typeof raw.afterLocalTime === 'string' && { afterLocalTime: raw.afterLocalTime }),
+        ...(typeof raw.oncePerDay === 'boolean' && { oncePerDay: raw.oncePerDay }),
+      },
+    };
   }
   return { ok: false, error: 'The trigger must be a schedule, an event, or once.' };
 }
