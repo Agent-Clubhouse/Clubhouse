@@ -37,7 +37,7 @@ export interface StepDeps {
   /** wakeWiredAgent's JSON result: status, and whether a mission was delivered. */
   wake(req: { callerId: string; targetId: string; targetName: string; mission?: string; missionRouted?: RoutedMessagePart[] }): Promise<{ ok: boolean; status?: string; messageDelivered?: boolean; text: string }>;
   sleep(req: { callerId: string; targetId: string; targetName: string }): Promise<{ ok: boolean; status?: string; text: string }>;
-  startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; difficulty?: HelperDifficulty; access: AccessLevel; headless: true; name: string }): Promise<{ id: string; name: string; routing?: HelperRouting }>;
+  startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; difficulty?: HelperDifficulty; owner: ActionOwner; access: AccessLevel; headless: true; name: string }): Promise<{ id: string; name: string; routing?: HelperRouting }>;
   notify(title: string, body: string): { shown: boolean; reason?: string };
   /** The Dispatcher, reached only through its one delivery path. Unset: no agent is the Dispatcher. */
   dispatcher?: {
@@ -220,6 +220,7 @@ export function createStepRunner(deps: StepDeps): StepRunner {
             const orchestrator = step.orchestrator || project.orchestrator || 'claude-code';
             const started = await deps.startQuick({
               project: { id: project.id, path: project.path },
+              owner: ctx.action.owner,
               cwd,
               prompt: actionMessage(ctx.action.name, step.prompt, ctx.trigger?.agentIds ? happenedOf(ctx) : undefined, !!ctx.trigger?.agentIds).text,
               orchestrator,

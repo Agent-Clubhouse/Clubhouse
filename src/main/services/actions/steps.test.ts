@@ -49,8 +49,9 @@ describe('step runner', () => {
   it('passes Auto difficulty and records its routing receipt in the step result', async () => {
     const routing = { resolved: { provider: 'codex-cli' } } as import('../../../shared/helper-routing').HelperRouting;
     const d = deps({ startQuick: vi.fn(async () => ({ id: 'quick_1', name: 'Morning', routing })) });
-    const result = await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'Review', orchestrator: 'auto' }, ctx);
-    expect(d.startQuick).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'auto', difficulty: 'medium' }));
+    const owner = { kind: 'agent', agentId: 'lead' } as const;
+    const result = await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'Review', orchestrator: 'auto' }, { ...ctx, action: { ...ctx.action, owner } });
+    expect(d.startQuick).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'auto', difficulty: 'medium', owner }));
     expect(result).toMatchObject({ outcome: 'done', routing });
   });
 

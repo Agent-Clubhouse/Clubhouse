@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HelperRouting } from '../../../shared/helper-routing';
+import { decideHelperAuto, resolveOrchestrationPolicy } from '../../../shared/orchestration-policy';
 
 const h = vi.hoisted(() => ({ running: true, exits: new Set<(id: string) => void>() }));
 vi.mock('../agent-system', () => ({ isAgentRunning: () => h.running }));
@@ -14,17 +15,22 @@ vi.mock('../helper-routing', () => ({
   planHelperStart: vi.fn(),
   readHelperAuto: vi.fn(async () => ({ effective: true })),
   decideAutoPlan: vi.fn(),
-  autoOffRefusal: vi.fn(() => ({ message: 'Auto is turned off.' })),
+  autoOffRefusal: vi.fn(() => ({ ok: false, code: 'auto_off', message: 'Auto is turned off.', userReason: 'Auto is turned off.' })),
 }));
 vi.mock('../helper-auto-state', () => ({ commitAutoDecision: vi.fn(), settleAutoDecision: vi.fn() }));
 vi.mock('../quick-agent-service', () => ({ startQuickAgent: vi.fn(async () => ({ id: 'quick_1', name: 'Review' })) }));
+vi.mock('../agent-config', () => ({ getDurableConfig: vi.fn() }));
+vi.mock('../orchestration-policy', () => ({ getOrchestrationPolicy: vi.fn() }));
 
 import { startActionQuickAgent } from './quick-routing';
 import { decideAutoPlan, planHelperStart, readHelperAuto } from '../helper-routing';
 import { commitAutoDecision, settleAutoDecision } from '../helper-auto-state';
 import { startQuickAgent } from '../quick-agent-service';
+import { getDurableConfig } from '../agent-config';
+import { getOrchestrationPolicy } from '../orchestration-policy';
 
-const request = { project: { id: 'p1', path: '/p1' }, prompt: 'Review changes', orchestrator: 'auto', headless: true };
+const request = { project: { id: 'p1', path: '/p1' }, prompt: 'Review changes', orchestrator: 'auto', headless: true, owner: { kind: 'user' } as const };
+const ownerConfig = { id: 'lead', name: 'Lead', color: 'blue', createdAt: '', orchestration: { orchestrate: true, autoHelpers: true } };
 const routing: HelperRouting = {
   mode: 'auto', balanced: true, decidedAt: '2026-11-11T00:00:00Z', policyVersion: 1,
   requested: { provider: 'auto', model: null, effort: null, difficulty: 'medium' },
@@ -37,6 +43,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.running = true;
   h.exits.clear();
+  vi.mocked(getDurableConfig).mockResolvedValue(ownerConfig);
+  vi.mocked(getOrchestrationPolicy).mockResolvedValue(resolveOrchestrationPolicy(ownerConfig.orchestration));
   vi.mocked(readHelperAuto).mockResolvedValue({ effective: true } as Awaited<ReturnType<typeof readHelperAuto>>);
   vi.mocked(planHelperStart).mockResolvedValue({ ok: true, plan: { routing } });
   vi.mocked(decideAutoPlan).mockReturnValue({
@@ -45,6 +53,41 @@ beforeEach(() => {
 });
 
 describe('Action quick-agent routing', () => {
+  function useOwnerPolicy(app: boolean) {
+    vi.mocked(readHelperAuto).mockImplementation(async (context) => ({
+      ...decideHelperAuto({ app, projectOff: false, policy: context?.agent?.policy }),
+      scopes: { app: { value: app, editable: true } },
+    }));
+    vi.mocked(planHelperStart).mockImplementation(async ({ auto }) => auto?.effective
+      ? { ok: true, plan: { routing } }
+      : { ok: false, code: 'auto_off', message: 'Auto is off. Name a CLI.', userReason: 'Auto is off.' });
+  }
+
+  it('honors the owner opt-out even when Auto is enabled for the app', async () => {
+    vi.mocked(getOrchestrationPolicy).mockResolvedValue(resolveOrchestrationPolicy({ orchestrate: true, autoHelpers: false }));
+    useOwnerPolicy(true);
+    await expect(startActionQuickAgent({ ...request, owner: { kind: 'agent', agentId: 'lead' } })).rejects.toThrow('Auto is off.');
+    expect(startQuickAgent).not.toHaveBeenCalled();
+    expect(decideAutoPlan).not.toHaveBeenCalled();
+  });
+
+  it('honors the owner opt-in even when Auto is disabled for the app', async () => {
+    useOwnerPolicy(false);
+    await startActionQuickAgent({ ...request, owner: { kind: 'agent', agentId: 'lead' } });
+    expect(readHelperAuto).toHaveBeenCalledWith({ projectPath: '/p1', agent: { config: ownerConfig, policy: resolveOrchestrationPolicy(ownerConfig.orchestration) } });
+    expect(startQuickAgent).toHaveBeenCalled();
+  });
+
+  it('rechecks the owner policy under the start lock before reserving a provider', async () => {
+    useOwnerPolicy(true);
+    vi.mocked(getOrchestrationPolicy)
+      .mockResolvedValueOnce(resolveOrchestrationPolicy(ownerConfig.orchestration))
+      .mockResolvedValueOnce(resolveOrchestrationPolicy({ orchestrate: true, autoHelpers: false }));
+    await expect(startActionQuickAgent({ ...request, owner: { kind: 'agent', agentId: 'lead' } })).rejects.toThrow('Auto');
+    expect(decideAutoPlan).not.toHaveBeenCalled();
+    expect(startQuickAgent).not.toHaveBeenCalled();
+  });
+
   it('uses helper Auto with medium difficulty and returns its receipt', async () => {
     expect(await startActionQuickAgent(request)).toMatchObject({ id: 'quick_1', routing });
     expect(planHelperStart).toHaveBeenCalledWith({ cli: 'auto', difficulty: 'medium', projectPath: '/p1', auto: { effective: true } });
