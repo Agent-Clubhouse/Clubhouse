@@ -85,6 +85,15 @@ describe('Action presence', () => {
     expect(h.returned).not.toHaveBeenCalled();
   });
 
+  it('does not infer an absence when tracking starts with an already-idle focused window', async () => {
+    const h = setup(Date.now() - 24 * 60 * MIN);
+    await vi.advanceTimersByTimeAsync(30 * MIN);
+    h.tracker.configure([{ id: 'a', absenceMinutes: 5 }]);
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    h.signal('focus', true);
+    expect(h.returned).not.toHaveBeenCalled();
+  });
+
   it('does not count active time in another app as part of a later short lock', async () => {
     const h = setup();
     h.tracker.configure([{ id: 'a', absenceMinutes: 5 }]);

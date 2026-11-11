@@ -47,7 +47,8 @@ export class ActionPresence {
     this.suspended = false;
     this.blockedSince = null;
     this.qualified.clear();
-    this.awaySince = Math.max(this.deps.clock.now(), this.deps.lastUse() ?? 0);
+    const baseline = Math.max(this.deps.clock.now(), this.deps.lastUse() ?? 0);
+    this.awaySince = this.deps.signals.focused() ? null : baseline;
     this.unlisten = this.deps.signals.listen((signal) => this.signal(signal));
     this.sample();
   }
