@@ -73,6 +73,7 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   preToolUse: 'pre_tool',
   postToolUse: 'post_tool',
   errorOccurred: 'tool_error',
+  agentStop: 'stop',
   sessionEnd: 'stop',
   permissionRequest: 'permission_request',
   sessionStart: 'notification',
@@ -301,6 +302,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       preToolUse: [{ type: 'command', bash: makeCurl('preToolUse'), timeoutSec: 5 }],
       postToolUse: [{ type: 'command', bash: makeCurl('postToolUse'), timeoutSec: 5 }],
       errorOccurred: [{ type: 'command', bash: makeCurl('errorOccurred'), timeoutSec: 5 }],
+      agentStop: [{ type: 'command', bash: makeCurl('agentStop'), timeoutSec: 5 }],
       // PermissionRequest uses a long timeout to allow for remote approval via Annex
       permissionRequest: [{ type: 'command', bash: makeCurl('permissionRequest'), timeoutSec: PERMISSION_HOOK_TIMEOUT_SEC }],
       sessionStart: [{ type: 'command', bash: makeCurl('sessionStart'), timeoutSec: 5 }],

@@ -3,6 +3,8 @@ import * as http from 'http';
 import { agentRegistry as realRegistry } from './agent-registry';
 import { accessLevelOf } from '../../shared/orchestration-policy';
 import { recentGitCommands, resetGitCommandLog } from './git-command-log';
+import { CopilotCliProvider } from '../orchestrators/copilot-cli-provider';
+import { forgetHookTurn, onAppEvent, type AppEvent } from './app-event-bus';
 
 // Track what gets sent to BrowserWindow
 const mockSend = vi.fn();
@@ -367,6 +369,37 @@ describe('hook-server', () => {
         'agent-1',
         expect.objectContaining({ kind: 'pre_tool', toolName: 'shell' })
       );
+    });
+
+    it('delivers Copilot agentStop hints as one completed Actions event per prompt', async () => {
+      mockGetAgentOrchestrator.mockReturnValue('copilot-cli');
+      mockResolveOrchestrator.mockResolvedValue(new CopilotCliProvider());
+      const events: AppEvent[] = [];
+      const off = onAppEvent((event) => events.push(event));
+      forgetHookTurn('agent-1');
+      const post = (event: string, payload: Record<string, unknown> = {}) =>
+        postToServer(port, `/hook/agent-1/${event}`, {
+          sessionId: 'session-1', timestamp: Date.now(), cwd: '/my/project', ...payload,
+        }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      try {
+        await post('userPromptSubmitted', { prompt: 'first' });
+        await post('errorOccurred', { error: 'recoverable', recoverable: true });
+        await post('sessionEnd', { reason: 'complete' });
+        await post('agentStop', { stopReason: 'end_turn' });
+        await post('agentStop', { stopReason: 'end_turn' });
+        await post('userPromptSubmitted', { prompt: 'second' });
+        await post('agentStop', { stopReason: 'end_turn' });
+        expect(events.map((event) => event.type)).toEqual([
+          'turn.started', 'turn.ended', 'turn.started', 'turn.ended',
+        ]);
+        expect(events.filter((event) => event.type === 'turn.ended')).toEqual([
+          expect.objectContaining({ agentId: 'agent-1', via: 'hook', outcome: 'completed' }),
+          expect.objectContaining({ agentId: 'agent-1', via: 'hook', outcome: 'completed' }),
+        ]);
+      } finally {
+        off();
+        forgetHookTurn('agent-1');
+      }
     });
 
     it('does not override existing hook_event_name with URL hint', async () => {

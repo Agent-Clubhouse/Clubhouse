@@ -558,7 +558,7 @@ describe('CopilotCliProvider', () => {
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
       const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
-      for (const eventKey of ['preToolUse', 'postToolUse', 'errorOccurred', 'sessionStart', 'userPromptSubmitted']) {
+      for (const eventKey of ['preToolUse', 'postToolUse', 'errorOccurred', 'agentStop', 'sessionStart', 'userPromptSubmitted']) {
         const entry = written.hooks[eventKey][0];
         expect(entry.type).toBe('command');
         expect(entry.timeoutSec).toBe(5);
@@ -595,7 +595,7 @@ describe('CopilotCliProvider', () => {
       expect(written.hooks.sessionEnd[0].timeoutSec).toBe(5);
     });
 
-    it('writes all 7 hook events', async () => {
+    it('writes all 8 hook events', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
@@ -604,11 +604,12 @@ describe('CopilotCliProvider', () => {
       expect(hookKeys).toContain('preToolUse');
       expect(hookKeys).toContain('postToolUse');
       expect(hookKeys).toContain('errorOccurred');
+      expect(hookKeys).toContain('agentStop');
       expect(hookKeys).toContain('permissionRequest');
       expect(hookKeys).toContain('sessionStart');
       expect(hookKeys).toContain('sessionEnd');
       expect(hookKeys).toContain('userPromptSubmitted');
-      expect(hookKeys).toHaveLength(7);
+      expect(hookKeys).toHaveLength(8);
     });
   });
 
@@ -656,6 +657,26 @@ describe('CopilotCliProvider', () => {
     it('parses sessionEnd event as stop', () => {
       const result = provider.parseHookEvent({ hook_event_name: 'sessionEnd' });
       expect(result?.kind).toBe('stop');
+    });
+
+    it('maps the SDK-defined top-level agentStop hook to stop', () => {
+      expect(provider.parseHookEvent({
+        hook_event_name: 'agentStop',
+        sessionId: 'session-1',
+        stopReason: 'end_turn',
+        transcriptPath: '/session/events.jsonl',
+      })).toEqual({
+        kind: 'stop',
+        toolName: undefined,
+        toolInput: undefined,
+        message: undefined,
+      });
+    });
+
+    it('does not map child stops or SDK stream events to terminal completion', () => {
+      for (const hook_event_name of ['subagentStop', 'assistant.turn_end', 'session.idle']) {
+        expect(provider.parseHookEvent({ hook_event_name })).toBeNull();
+      }
     });
 
     it('accepts camelCase toolName field', () => {
