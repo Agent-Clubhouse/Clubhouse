@@ -67,9 +67,13 @@ describe('unmanaged agents', () => {
     expect(onNotice).not.toHaveBeenCalled();
   });
 
-  it('still rejects a non-bridge server named clubhouse with a notice', async () => {
+  it.each([
+    { command: 'user-server' },
+    { command: 'node', args: ['server.js', '--label', 'clubhouse-mcp-bridge'] },
+    { command: 'node', args: ['clubhouse-mcp-bridge-wrapper.js'] },
+  ])('still rejects a non-bridge server named clubhouse with a notice: %j', async (clubhouse) => {
     fs.writeFileSync(path.join(worktree, '.mcp.json'), JSON.stringify({ mcpServers: {
-      clubhouse: { command: 'user-server' }, own: { command: 'own' },
+      clubhouse, own: { command: 'own' },
     } }));
     const onNotice = vi.fn();
     await expect(resolveAgentMcpServers(worktree, agent(), { cwd: worktree, conventions, onNotice }))

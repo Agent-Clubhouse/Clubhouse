@@ -307,7 +307,7 @@ function cleanJsonSnapshotText(content: string): string {
     const parsed = JSON.parse(content);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return content;
     const before = JSON.stringify(parsed);
-    const cleaned = scrubClubhouseNonce(stripClubhouseMcp(stripClubhouseHooks(parsed)));
+    const cleaned = scrubClubhouseNonce(stripClubhouseMcp(parsed));
     return before === JSON.stringify(cleaned) ? content : JSON.stringify(cleaned, null, 2);
   } catch {
     // telemetry-exempt: not JSON, so there is no entry to scrub; restore it as it was.

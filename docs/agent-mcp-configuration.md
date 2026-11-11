@@ -28,6 +28,9 @@ Chat reads its configured source before bridge injection. `clubhouse` is reserve
 for the live bridge; a configured entry cannot replace it. One in the agent's own
 file is dropped with a notice only when it is a user-authored, non-bridge server.
 Bridge-shaped leftovers from older releases or crashes are ignored silently.
+Bridge recognition requires `node` with a single argument whose filename is
+exactly `clubhouse-mcp-bridge.js`; user servers that merely mention that name
+in other arguments are not bridge entries.
 JSON restore removes injected bridge entries while preserving user servers and
 other settings, deleting a newly generated file if nothing remains.
 The Clubhouse MCP always runs: every agent gets the bridge,
