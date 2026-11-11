@@ -364,14 +364,15 @@ describe('ClaudeCodeProvider', () => {
       const events: AppEvent[] = [];
       onAppEvent((event) => events.push(event));
       for (const raw of [
-        { hook_event_name: 'UserPromptSubmit' },
+        { hook_event_name: 'UserPromptSubmit', prompt_id: 'one' },
         { hook_event_name: 'PostToolUseFailure', message: 'tool failed' },
         { hook_event_name: 'PostCompact' },
-        { hook_event_name: 'Stop' },
-        { hook_event_name: 'Stop' },
-        { hook_event_name: 'UserPromptSubmit' },
-        { hook_event_name: 'StopFailure', error: 'rate_limit', error_details: 'Rate limit reached' },
-        { hook_event_name: 'Stop' },
+        { hook_event_name: 'Stop', prompt_id: 'one' },
+        { hook_event_name: 'Stop', prompt_id: 'one' },
+        { hook_event_name: 'UserPromptSubmit', prompt_id: 'two' },
+        { hook_event_name: 'Stop', prompt_id: 'one' },
+        { hook_event_name: 'StopFailure', prompt_id: 'two', error: 'rate_limit', error_details: 'Rate limit reached' },
+        { hook_event_name: 'Stop', prompt_id: 'two' },
       ]) {
         const normalized = provider.parseHookEvent(raw);
         expect(normalized).not.toBeNull();

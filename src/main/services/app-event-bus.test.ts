@@ -127,6 +127,35 @@ describe('from terminal hooks', () => {
     expect(events.map((event) => event.type)).toEqual(['turn.ended', 'turn.ended']);
   });
 
+  it.each(['Stop', 'StopFailure', 'Interrupt'])('ignores a late %s from the previous identified turn', (rawName) => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit', turnId: 'old' }, 0);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop', turnId: 'old' }, 1);
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit', turnId: 'new' }, 2);
+    publishFromHookEvent('a1', { kind: 'stop', rawName, turnId: 'old', message: 'old failure' }, 3);
+    publishFromHookEvent('a1', { kind: 'post_tool', turnId: 'old' }, 4);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop', turnId: 'new' }, 5);
+    publishFromHookEvent('a1', { kind: 'post_tool', turnId: 'old' }, 6);
+    publishFromHookEvent('a1', { kind: 'stop', rawName, turnId: 'old' }, 7);
+    expect(events.map((event) => [event.type, event.at])).toEqual([
+      ['turn.started', 0], ['turn.ended', 1], ['turn.started', 2], ['turn.ended', 5],
+    ]);
+  });
+
+  it('does not reopen an identified turn for duplicate prompts or late tools', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit', turnId: 'one' }, 0);
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit', turnId: 'one' }, 1);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop', turnId: 'one' }, 2);
+    publishFromHookEvent('a1', { kind: 'post_tool', turnId: 'one' }, 3);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop', turnId: 'one' }, 4);
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit', turnId: 'two' }, 5);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop', turnId: 'two' }, 6);
+    expect(events.map((event) => [event.type, event.at])).toEqual([
+      ['turn.started', 0], ['turn.ended', 2], ['turn.started', 5], ['turn.ended', 6],
+    ]);
+  });
+
   it('publishes compaction without starting or ending a turn', () => {
     const events = collect();
     publishFromHookEvent('a1', { kind: 'notification', rawName: 'PostCompact' }, 1);

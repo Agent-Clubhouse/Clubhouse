@@ -567,6 +567,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
     return {
       kind,
+      ...(typeof obj.turn_id === 'string' && obj.turn_id ? { turnId: obj.turn_id } : {}),
       ...(eventName === 'Interrupt' ? { outcome: 'interrupted' as const } : {}),
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,

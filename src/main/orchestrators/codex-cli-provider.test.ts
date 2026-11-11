@@ -1165,11 +1165,11 @@ describe('CodexCliProvider', () => {
     it('reports prompt, completion, interruption and compaction to the bus once per turn', () => {
       const events: AppEvent[] = [];
       onAppEvent((event) => events.push(event));
-      for (const rawName of [
-        'UserPromptSubmit', 'PostCompact', 'Stop', 'Stop',
-        'UserPromptSubmit', 'Interrupt', 'Stop', 'Interrupt',
+      for (const [rawName, turnId] of [
+        ['UserPromptSubmit', 'one'], ['PostCompact', 'one'], ['Stop', 'one'], ['Stop', 'one'],
+        ['UserPromptSubmit', 'two'], ['Stop', 'one'], ['Interrupt', 'two'], ['Stop', 'two'], ['Interrupt', 'two'],
       ]) {
-        const normalized = provider.parseHookEvent({ hook_event_name: rawName });
+        const normalized = provider.parseHookEvent({ hook_event_name: rawName, turn_id: turnId });
         expect(normalized).not.toBeNull();
         publishFromHookEvent('codex', { ...normalized!, rawName });
       }

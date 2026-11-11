@@ -158,7 +158,7 @@ export function publishFromChatEvent(event: ChatEvent): void {
 }
 
 /** Terminal agents whose turn is under way, as far as their hooks tell, and when they last reported. */
-const hookTurns = new Map<string, { lastAt: number; ended: boolean }>();
+const hookTurns = new Map<string, { lastAt: number; ended: boolean; turnId?: string }>();
 
 /**
  * A turn that has said nothing for this long is treated as over: Claude runs
@@ -180,12 +180,13 @@ export interface HookFacts {
   /** The CLI's own hook name (e.g. Stop, UserPromptSubmit, sessionEnd). */
   rawName?: string;
   toolName?: string;
+  turnId?: string;
   outcome?: TurnOutcome;
   message?: string;
 }
 
-function startHookTurn(agentId: string, at: number): void {
-  hookTurns.set(agentId, { lastAt: at, ended: false });
+function startHookTurn(agentId: string, at: number, turnId?: string): void {
+  hookTurns.set(agentId, { lastAt: at, ended: false, turnId });
   publishAppEvent({ type: 'turn.started', agentId, via: 'hook', at });
 }
 
@@ -200,9 +201,11 @@ function startHookTurn(agentId: string, at: number): void {
  *   session start and notification hooks publish nothing.
  */
 export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Date.now()): void {
-  const { kind, rawName, toolName } = facts;
+  const { kind, rawName, toolName, turnId } = facts;
+  const turn = hookTurns.get(agentId);
   if (rawName && PROMPT_HOOKS.has(rawName)) {
-    startHookTurn(agentId, now);
+    if (turnId && turn?.turnId === turnId) return;
+    startHookTurn(agentId, now, turnId);
     return;
   }
   if (rawName === 'PostCompact') {
@@ -212,8 +215,11 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
   switch (kind) {
     case 'pre_tool':
     case 'post_tool': {
-      const turn = hookTurns.get(agentId);
-      if (!turn || turn.ended || now - turn.lastAt > HOOK_TURN_STALE_MS) startHookTurn(agentId, now);
+      if (turnId && turn?.turnId) {
+        if (turnId === turn.turnId && turn.ended) return;
+        if (turnId !== turn.turnId) return;
+      }
+      if (!turn || turn.ended || now - turn.lastAt > HOOK_TURN_STALE_MS) startHookTurn(agentId, now, turnId);
       else turn.lastAt = now;
       if (kind === 'pre_tool' && toolName && QUESTION_TOOLS.has(toolName)) {
         publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'question', at: now });
@@ -222,8 +228,9 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
     }
     case 'stop':
       if (rawName && !TURN_END_HOOKS.has(rawName)) return;
-      if (hookTurns.get(agentId)?.ended) return;
-      hookTurns.set(agentId, { lastAt: now, ended: true });
+      if (turnId && turn?.turnId && turnId !== turn.turnId) return;
+      if (turn?.ended) return;
+      hookTurns.set(agentId, { lastAt: now, ended: true, turnId: turnId ?? turn?.turnId });
       {
         const outcome = facts.outcome ?? (rawName === 'Interrupt' ? 'interrupted' : rawName === 'StopFailure' ? 'failed' : 'completed');
         publishAppEvent({ type: 'turn.ended', agentId, via: 'hook', outcome, at: now });

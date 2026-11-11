@@ -264,6 +264,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     return {
       kind,
+      ...(typeof obj.prompt_id === 'string' && obj.prompt_id ? { turnId: obj.prompt_id } : {}),
       ...(eventName === 'StopFailure' ? { outcome: 'failed' as const } : {}),
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
