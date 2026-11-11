@@ -196,6 +196,7 @@ vi.mock('../../../orchestrators', () => ({
       id,
       getCapabilities: () => ({}),
       checkAvailability: async () => ({ available: true }),
+      ...(id !== 'copilot-cli' && { readPlanQuota: async () => null }),
       ...(modelLists.has(id) && { listModels: async () => modelLists.get(id) }),
       ...(id === 'claude-code' && { acceptsModel: (m: string, l: ModelList) => claudeAcceptsModel(m, l) }),
     }
@@ -1070,7 +1071,7 @@ describe('start_helper cli "auto" (#2671)', () => {
       // Its own creation, still going: the first one's has already finished.
       second = controllableCreation();
       const next = parse(await start({ name: 'h2', folder: 'h2' }));
-      expect((next.routing as { load: Record<string, number> }).load).toEqual({ 'claude-code': 1, 'codex-cli': 0 });
+      expect((next.routing as { load: Record<string, number> }).load).toEqual({ 'claude-code': 1, 'codex-cli': 0, 'copilot-cli': 0 });
       expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
     } finally {
       // Finish every creation this test still holds open, then wait for both starts, so none outlives it.
@@ -1104,6 +1105,7 @@ describe('start_helper cli "auto" (#2671)', () => {
   it('a refusal records a refused decision and holds nothing', async () => {
     await noteProviderFailure('claude-code', 'auth');
     await noteProviderFailure('codex-cli', 'auth');
+    await noteProviderFailure('copilot-cli', 'auth');
     const result = await start({});
     expect(result.isError).toBe(true);
     expect(mockRecordDecision).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused', refusalCode: 'no_candidate' }));
@@ -1169,7 +1171,7 @@ describe('start_helper cli "auto" (#2671)', () => {
     running.add('r1');
     running.add('r2');
     const body = parse(await start({}));
-    expect(body.routing).toMatchObject({ reason: 'lower_load', resolved: { provider: 'codex-cli' }, load: { 'claude-code': 2, 'codex-cli': 0 } });
+    expect(body.routing).toMatchObject({ reason: 'lower_load', resolved: { provider: 'codex-cli' }, load: { 'claude-code': 2, 'codex-cli': 0, 'copilot-cli': 0 } });
   });
 
   it('checks again under the lock: turned off while it read the candidates, it refuses and creates nothing', async () => {
@@ -1230,6 +1232,24 @@ describe('start_helper cli "auto" (#2671)', () => {
     expect(secondStart.content[0].text).toContain('"cooling_down"');
     const again = parse(secondStart);
     expect(again.routing).toMatchObject({ resolved: { provider: 'codex-cli' }, skipped: { 'claude-code': 'cooling_down' } });
+  });
+
+  it('a failed last-resort Copilot spawn is attempted once, preserves its task and cools down without a retry', async () => {
+    await noteProviderFailure('claude-code', 'auth');
+    await noteProviderFailure('codex-cli', 'auth');
+    const creation = controllableCreation();
+    mockSpawnAgent.mockRejectedValueOnce(Object.assign(new Error('Login required'), { code: 'auth_required' }));
+    const started = parse(await start({ task: 'the Copilot task' }));
+    expect(started.routing).toMatchObject({ reason: 'last_resort_unmeasured', quotaBasis: 'unknown_fallback', resolved: { provider: 'copilot-cli' } });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+    expect(agents.get('helper_h')).toMatchObject({ orchestrator: 'copilot-cli', pendingTask: 'the Copilot task' });
+    expect(mockRecordSpawnResult).toHaveBeenCalledWith(expect.objectContaining({ helperId: 'helper_h', result: 'spawn_failed', cooldownKind: 'auth' }));
+    const next = await start({ name: 'h2', folder: 'h2' });
+    expect(next.isError).toBe(true);
+    expect(next.content[0].text).toContain('copilot-cli: It failed to start recently');
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
   });
 
   it('wake never decides again', async () => {

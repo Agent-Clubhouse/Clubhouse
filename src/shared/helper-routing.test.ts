@@ -109,6 +109,12 @@ describe('helper routing', () => {
       .toBe('its default model. You or the orchestrator chose this.');
   });
 
+  it('a last-resort receipt says plainly that its quota is unknown', () => {
+    const description = describeRouting({ ...routing, reason: 'last_resort_unmeasured', resolved: { ...routing.resolved, provider: 'copilot-cli' } });
+    expect(description).toContain('Its quota is unknown. No provider with readable plan usage was eligible.');
+    expect(description).not.toMatch(/healthy|capacity|cheapest/i);
+  });
+
   it('the built-in Orchestrator block makes no claims of cost or preference', () => {
     // The text comes from the maintainer's builder (#2902), so check what it must not say, not its wording.
     const text = fs.readFileSync(path.join(__dirname, '../main/services/managed-agents/builtin-text/orchestrator.md'), 'utf8');

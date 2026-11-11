@@ -295,7 +295,8 @@
         "projectId",
         "cells",
         "reset",
-        "auto"
+        "auto",
+        "copilotAuto"
       ],
       "required": [
         "revision",

@@ -48,6 +48,7 @@ const W = vi.hoisted(() => ({
   helperStart: 'approve' as 'approve' | 'blocked' | 'refused' | 'no_valid_mapping' | 'no_candidate' | 'auto_off' | 'warned',
   presets: {} as Record<string, Record<string, { model: string; effort: string | null }>>,
   presetsRevision: 0,
+  copilotAuto: true,
   autoHelpers: false,
   projectDefaults: {} as Record<string, unknown>,
   helperStartRefusals: 0,
@@ -507,6 +508,8 @@ vi.mock('./orchestration-settings', () => ({
   savePresets: async (presets: unknown) => { W.presets = presets as never; W.presetsRevision++; },
   getAutoHelpers: () => W.autoHelpers,
   saveAutoHelpers: async (on: boolean) => { W.autoHelpers = on; W.presetsRevision++; },
+  getCopilotAuto: () => W.copilotAuto,
+  saveCopilotAuto: async (on: boolean) => { W.copilotAuto = on; W.presetsRevision++; },
   bumpPresetsRevision: async () => { W.presetsRevision++; },
 }));
 // The helper presets read the CLIs' model lists: only those cases put providers here.
@@ -2025,9 +2028,9 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const bare = await exchange('GET', ROUTE);
     expect(Object.keys(bare.response.body.labels)).toEqual(FAMILIES);
     expect(cell(bare, 'codex-cli', 'hard')).toMatchObject({ effective: { model: 'gpt-6.1-sol', effort: 'high' }, source: 'builtin', state: 'valid', custom: null });
-    // Copilot has a mapping (#3085), which cli "auto" doesn't choose, and no quota source.
+    // Copilot has a mapping and is an Auto last resort, with no quota source.
     expect(bare.response.body.providers['copilot-cli']).toMatchObject({
-      autoEligible: true, autoCandidate: false, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
+      autoEligible: true, autoCandidate: true, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
     });
     expect(bare.response.body.providers['codex-cli']).toMatchObject({ autoEligible: true, autoCandidate: true });
     expect(cell(bare, 'copilot-cli', 'hard')).toMatchObject({ effective: { model: 'claude-opus-5.5', effort: 'high' }, source: 'builtin', state: 'valid' });
@@ -2314,6 +2317,13 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       betterTier: autoDecision({ reason: 'better_quota_tier', quota: {
         'claude-code': { state: 'low', asOf: new Date(NOW).toISOString(), limitingWindow: 'fiveHour' }, 'codex-cli': { state: 'known', asOf: new Date(NOW).toISOString(), limitingWindow: 'weekly' },
       } }),
+      copilotLastResort: autoDecision({
+        policyVersion: 3, resolved: field('copilot-cli', 'claude-opus-5.5', 'high', 'hard'),
+        reason: 'last_resort_unmeasured', quotaBasis: 'unknown_fallback',
+        load: { 'copilot-cli': 0 },
+        quota: { 'copilot-cli': { state: 'unknown', unknownReason: 'not_supported', asOf: null } },
+        skipped: { 'claude-code': 'quota_near_limit', 'codex-cli': 'cooling_down' },
+      }),
       explicitWithWarning: decision({
         mode: 'explicit', requested: field('codex-cli', 'gpt-6.1-sol', 'high', null), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', null),
         source: { provider: 'request', model: 'request', effort: 'request' }, reason: 'explicit_request',
@@ -2351,6 +2361,17 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('auto_off', { type: 'helper.approve', requestId: helperStart({ cli: 'auto', difficulty: 'hard' }) });
     W.helperStart = 'approve';
     fixtures.set('helper-routing-auto.json', { direction: 'desktop-to-phone', field: 'auto', cases: autoCases, heldStart: heldRow, heldStartWithWarning: warnedRow, snapshotRow: autoRow, settingsRouting: autoSettings });
+
+    const copilotRevision = (await exchange('GET', ROUTE)).response.body.revision;
+    const copilotOff = await command('accepted Copilot Auto opt-out', write({ revision: copilotRevision, copilotAuto: false }), { commandId: 'cmd_copilot_auto_off' });
+    expect(copilotOff.body.result.copilotAuto).toBe(false);
+    expect(copilotOff.body.result.auto.effective).toBe(false);
+    await command('invalid_helper_routing (Copilot opt-out is app-wide)', {
+      type: 'helperRouting.update', scope: 'project', projectId: 'proj_app', revision: copilotOff.body.result.revision, copilotAuto: true,
+    }, { commandId: 'cmd_copilot_auto_project' });
+    const copilotOn = await command('accepted Copilot Auto opt-in', write({ revision: copilotOff.body.result.revision, copilotAuto: true }), { commandId: 'cmd_copilot_auto_on' });
+    expect(copilotOn.body.result.copilotAuto).toBe(true);
+    expect(copilotOn.body.result.auto.effective).toBe(false);
 
     W.providers = {};
     vi.mocked(Date.now).mockRestore();

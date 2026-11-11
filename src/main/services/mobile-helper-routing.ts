@@ -55,6 +55,8 @@ export function helperRoutingCapability() {
     /** The providers with presets, Copilot included (#3085), and the ones `cli: "auto"` chooses between. */
     presetProviders: PRESET_PROVIDERS,
     autoCandidates: AUTO_CANDIDATE_PROVIDERS,
+    lastResortCandidates: ['copilot-cli'] as const,
+    copilotAuto: true,
     reasons: HELPER_ROUTING_REASONS,
     fallbacks: HELPER_ROUTING_FALLBACKS,
     skipped: HELPER_ROUTING_SKIPS,
@@ -121,7 +123,7 @@ export async function runHelperRoutingUpdate(
   assertAuthorized();
   try {
     return await updateHelperPresets(
-      { revision: command.revision, cells: command.cells, reset: command.reset, ...(command.auto !== undefined && { auto: command.auto }) },
+      { revision: command.revision, cells: command.cells, reset: command.reset, ...(command.auto !== undefined && { auto: command.auto }), ...(command.copilotAuto !== undefined && { copilotAuto: command.copilotAuto }) },
       { surface: 'mobile', ...(projectPath && { projectPath }) },
     );
   } catch (err) {

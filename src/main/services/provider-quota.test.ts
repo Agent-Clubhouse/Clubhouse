@@ -380,4 +380,19 @@ describe('failures and cooldowns', () => {
     expect(await isProviderCoolingDown('claude-code')).toBe(true);
     expect(W.cooldowns).toEqual([['claude-code', 'quota']]);
   });
+
+  it.each([
+    ['auth_required', 'auth', AUTO_COOLDOWN_AUTH_MS],
+    ['rate_limited', 'quota', AUTO_COOLDOWN_QUOTA_MS],
+  ] as const)('Copilot %s session errors cool down future Auto starts even without readable quota', async (code, kind, duration) => {
+    watchSessionQuota();
+    W.registrations.set('copilot', { projectPath: '/p', orchestrator: 'copilot-cli' });
+    W.chat!({ type: 'error', agentId: 'copilot', data: { code, message: 'x' } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await isProviderCoolingDown('copilot-cli')).toBe(true);
+    expect(W.cooldowns).toEqual([['copilot-cli', kind]]);
+    expect(await readProviderQuota('copilot-cli')).toMatchObject({ state: 'unknown', unknownReason: 'not_supported' });
+    vi.setSystemTime(NOW + duration);
+    expect(await isProviderCoolingDown('copilot-cli')).toBe(false);
+  });
 });

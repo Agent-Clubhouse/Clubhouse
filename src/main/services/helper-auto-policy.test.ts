@@ -4,6 +4,7 @@ import { AUTO_WEEK_MS, decideAutoProvider, tieSetKey, type AutoCandidate, type A
 const NOW = 1_800_000_000_000;
 const A = 'claude-code:default';
 const B = 'codex-cli:default';
+const C = 'copilot-cli:default';
 
 function cand(key: string, used: number | null, extra: Partial<AutoCandidate> = {}): AutoCandidate {
   return {
@@ -77,6 +78,29 @@ describe('decideAutoProvider', () => {
     expect(picks).toEqual([A, B, A, B]);
   });
 
+  it.each([
+    ['headroom', cand(A, 79, { verified: false, load: 100 })],
+    ['low', cand(A, 94, { verified: false, load: 100 })],
+    ['read failed', cand(A, null, { quotaUnknownReason: 'read_failed', verified: false, load: 100 })],
+    ['stale', cand(A, null, { quotaUnknownReason: 'stale', verified: false, load: 100 })],
+  ])('unreadable quota never outranks %s, regardless of load, verification or order', (_name, other) => {
+    const copilot = cand(C, null, { quotaUnknownReason: 'not_supported' });
+    for (const candidates of [[copilot, other], [other, copilot]]) {
+      const decision = decide(candidates);
+      expect(decision).toMatchObject({ ok: true, key: A });
+      expect(decision.evaluations.find((e) => e.key === C)).toEqual({
+        key: C, provider: 'copilot-cli', verified: true, load: 0, tier: 'last_resort', rank: 1, score: { basis: 'unmeasured' },
+      });
+    }
+  });
+
+  it('uses the last resort only after exclusions, with an explicit reason even when it is the only candidate', () => {
+    const copilot = cand(C, null, { quotaUnknownReason: 'not_supported' });
+    for (const candidates of [[copilot], [cand(A, 95), copilot, cand(B, 10, { quotaState: 'exhausted' })]]) {
+      expect(decide(candidates)).toMatchObject({ ok: true, key: C, reason: 'last_resort_unmeasured', tier: 'last_resort' });
+    }
+  });
+
   it('a mapping that couldn\'t be checked ranks behind one that could', () => {
     expect(decide([cand(A, 10, { verified: false }), cand(B, 50)])).toMatchObject({ ok: true, key: B });
   });
@@ -93,6 +117,11 @@ describe('decideAutoProvider', () => {
     it('with equal resets, orders as weekly use does', () => {
       const d = decide([cand(A, 40), cand(B, 30)], { options: { basis: 'reset_schedule' } });
       expect(d).toMatchObject({ ok: true, key: B, basis: 'reset_schedule' });
+    });
+
+    it('does not require a reset for the last-resort candidate', () => {
+      expect(decide([cand(A, 40), cand(C, null, { quotaUnknownReason: 'not_supported' })], { options: { basis: 'reset_schedule' } }))
+        .toMatchObject({ ok: true, key: A, basis: 'reset_schedule' });
     });
 
     it('falls back to weekly use when any measured reset is missing or more than a week out', () => {

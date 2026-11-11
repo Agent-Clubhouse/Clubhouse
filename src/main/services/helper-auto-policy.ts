@@ -14,7 +14,7 @@
  * about equal absolute capacity.
  */
 
-import type { HelperRoutingReason, QuotaState } from '../../shared/helper-routing';
+import type { HelperRoutingReason, QuotaState, QuotaUnknownReason } from '../../shared/helper-routing';
 
 export const AUTO_COOLDOWN_AUTH_MS = 10 * 60_000;
 export const AUTO_COOLDOWN_QUOTA_MS = 30 * 60_000;
@@ -45,7 +45,7 @@ export interface AutoPolicyOptions {
   tieBandBp?: number;
 }
 
-export type AutoSkipReason = 'cli_disabled' | 'cli_unavailable' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
+export type AutoSkipReason = 'cli_disabled' | 'cli_unavailable' | 'auto_disabled' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
 
 /**
  * In order of preference. `headroom`: under the low mark on every counted window,
@@ -53,9 +53,10 @@ export type AutoSkipReason = 'cli_disabled' | 'cli_unavailable' | 'no_valid_mapp
  * unknown; it's used only when no measured provider has headroom left, and is
  * never scored. `low`: some counted window, the 5-hour or the mapped model's
  * included, is past the low mark. Short and model windows constrain; they aren't
- * added to the weekly figure.
+ * added to the weekly figure. `last_resort`: quota cannot be read at all
+ * (`not_supported`), so it waits behind every other eligible tier.
  */
-export const AUTO_TIERS = ['headroom', 'unmeasured', 'low'] as const;
+export const AUTO_TIERS = ['headroom', 'unmeasured', 'low', 'last_resort'] as const;
 export type AutoTier = (typeof AUTO_TIERS)[number];
 
 export interface AutoCandidate {
@@ -67,6 +68,7 @@ export interface AutoCandidate {
   provider: string;
   /** From every window that counts for the mapped model: weekly, 5-hour and the model's own. */
   quotaState: QuotaState;
+  quotaUnknownReason?: QuotaUnknownReason;
   /** The provider's weekly window, as read. Absent when there is none. */
   weekly?: { usedPercent: number | null; resetsAtMs: number | null };
   /** False when the model list may be out of date, so the mapping couldn't be checked. Ranks behind one that could. */
@@ -131,6 +133,7 @@ function weeklyUsed(c: AutoCandidate): number | undefined {
 }
 
 function tierOf(c: AutoCandidate): AutoTier {
+  if (c.quotaState === 'unknown' && c.quotaUnknownReason === 'not_supported') return 'last_resort';
   if (c.quotaState === 'low') return 'low';
   return c.quotaState === 'known' && weeklyUsed(c) !== undefined ? 'headroom' : 'unmeasured';
 }
@@ -149,7 +152,7 @@ function scoreOf(c: AutoCandidate, now: number, basis: AutoScoreBasis): AutoScor
   if (used === undefined) return { basis: 'unmeasured' };
   const weeklyUsedBp = Math.round(used * 100);
   // Excluded, or without a usable state: the reading is kept, but nothing ranks on it.
-  if (tierOf(c) === 'unmeasured') return { basis: 'unmeasured', weeklyUsedBp };
+  if (tierOf(c) === 'unmeasured' || tierOf(c) === 'last_resort') return { basis: 'unmeasured', weeklyUsedBp };
   if (basis === 'weekly_used') return { basis, weeklyUsedBp, pressureBp: weeklyUsedBp };
   const phase = cyclePhaseBp(c, now)!;
   return { basis, weeklyUsedBp, cyclePhaseBp: phase, targetBp: phase, pressureBp: weeklyUsedBp - phase };
@@ -165,7 +168,7 @@ function scoreOf(c: AutoCandidate, now: number, basis: AutoScoreBasis): AutoScor
 export function decideAutoProvider(input: AutoPolicyInput): AutoDecision {
   const { now, candidates, cursors } = input;
   const bandBp = Math.max(0, input.options?.tieBandBp ?? AUTO_TIE_BAND_BP);
-  const measured = candidates.filter((c) => tierOf(c) !== 'unmeasured');
+  const measured = candidates.filter((c) => tierOf(c) !== 'unmeasured' && tierOf(c) !== 'last_resort');
   const wanted = input.options?.basis ?? 'weekly_used';
   const basis: AutoScoreBasis = wanted === 'reset_schedule' && measured.every((c) => cyclePhaseBp(c, now) !== undefined) ? 'reset_schedule' : 'weekly_used';
 
@@ -183,7 +186,7 @@ export function decideAutoProvider(input: AutoPolicyInput): AutoDecision {
   ranked.forEach((e, i) => { e.rank = i; });
   const best = ranked[0];
   const group = ranked.filter((e) => order(e) === order(best));
-  const tied = best.tier === 'unmeasured'
+  const tied = best.tier === 'unmeasured' || best.tier === 'last_resort'
     ? group
     : group.filter((e) => (e.score.pressureBp ?? 0) - (best.score.pressureBp ?? 0) <= bandBp);
 
@@ -202,7 +205,8 @@ export function decideAutoProvider(input: AutoPolicyInput): AutoDecision {
     Object.assign(tie, { cursorKey, ...(before !== undefined && { cursorBefore: before }), cursorAfter: next });
   }
 
-  const reason: HelperRoutingReason = candidates.length === 1 ? 'only_candidate'
+  const reason: HelperRoutingReason = best.tier === 'last_resort' ? 'last_resort_unmeasured'
+    : candidates.length === 1 ? 'only_candidate'
     : best.tier === 'unmeasured' && measured.some((c) => c.quotaState !== 'exhausted' && c.quotaState !== 'near_limit') ? 'unknown_fallback'
       : tie.cursorKey ? 'fair_rotation'
         : tie.byLoad ? 'lower_load'

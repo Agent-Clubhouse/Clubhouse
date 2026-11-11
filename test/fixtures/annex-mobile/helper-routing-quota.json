@@ -193,6 +193,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "providers": {
           "claude-code": {
@@ -441,7 +442,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -588,6 +589,7 @@
           },
           "source": "default"
         },
+        "copilotAuto": true,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "providers": {
           "claude-code": {
@@ -845,7 +847,7 @@
             }
           },
           "copilot-cli": {
-            "autoCandidate": false,
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {

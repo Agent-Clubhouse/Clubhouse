@@ -15,6 +15,7 @@ const W = vi.hoisted(() => ({
   audit: [] as Array<Record<string, unknown>>,
   telemetry: [] as unknown[][],
   appAuto: false,
+  copilotAuto: true,
   enabled: [] as string[],
   projects: new Map<string, Record<string, unknown>>(),
   quota: new Map<string, unknown>(),
@@ -60,6 +61,8 @@ vi.mock('./orchestration-settings', () => ({
   savePresets: async (presets: typeof W.saved) => { W.saved = presets; W.revision++; },
   getAutoHelpers: () => W.appAuto,
   saveAutoHelpers: async (on: boolean) => { W.appAuto = on; W.revision++; },
+  getCopilotAuto: () => W.copilotAuto,
+  saveCopilotAuto: async (on: boolean) => { W.copilotAuto = on; W.revision++; },
   bumpPresetsRevision: async () => { W.revision++; },
 }));
 vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: W.enabled }) }));
@@ -154,6 +157,7 @@ beforeEach(() => {
   W.audit = [];
   W.telemetry = [];
   W.appAuto = false;
+  W.copilotAuto = true;
   W.enabled = [];
   W.projects = new Map();
   W.quota = new Map();
@@ -174,7 +178,7 @@ describe('planHelperStart: precedence', () => {
     const result = await plan({ difficulty: 'hard', orchestratorCli: 'codex-cli' });
     expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
     expect(result!.routing).toMatchObject({
-      mode: 'preset', balanced: false, policyVersion: 2, reason: 'preset_on_cli', fallback: 'none',
+      mode: 'preset', balanced: false, policyVersion: 3, reason: 'preset_on_cli', fallback: 'none',
       requested: { provider: null, model: null, effort: null, difficulty: 'hard' },
       resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
       source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' },
@@ -717,11 +721,12 @@ describe('Copilot (#3085)', () => {
     expect(await resolveAutoLevel('copilot-cli', 'medium')).toMatchObject({ ok: true, model: 'claude-sonnet-5.5' });
   });
 
-  it('the page shows all five levels, a mapping that cli "auto" doesn\'t choose', async () => {
+  it('the page shows all five levels and Copilot as an allowed Auto candidate', async () => {
     const settings = await readHelperRouting();
     const view = settings.providers['copilot-cli'];
     if (!view.autoEligible) throw new Error('eligible');
-    expect(view.autoCandidate).toBe(false);
+    expect(view.autoCandidate).toBe(true);
+    expect(settings.copilotAuto).toBe(true);
     expect(settings.providers['claude-code']).toMatchObject({ autoEligible: true, autoCandidate: true });
     expect(Object.keys(view.cells)).toEqual(['minimum', 'easy', 'medium', 'hard', 'maximum']);
     expect(view.cells.easy).toMatchObject({ state: 'valid', source: 'builtin', builtin: { model: 'claude-haiku-5.5', effort: 'low' } });
@@ -764,13 +769,79 @@ describe('Copilot (#3085)', () => {
     expect(result!.routing.source.effort).toBe('cli_default');
   });
 
-  it('cli "auto" never chooses Copilot, even when it is the only provider left, and doesn\'t read its list', async () => {
+  it('cli "auto" chooses Copilot with unknown quota when it is the only provider left', async () => {
     const on = { effective: true, source: 'app' as const, scopes: { app: { value: true, editable: true } } };
     W.unavailable = new Set(['claude-code', 'codex-cli']);
     const result = await planHelperStart({ ...base, cli: 'auto', difficulty: 'easy', auto: on });
-    expect(result).toMatchObject({ ok: false, code: 'no_candidate' });
-    if (result.ok === false) expect(result.message).toContain('copilot-cli: Auto doesn’t support this provider yet');
-    expect(W.listCalls.filter((c) => c.provider === 'copilot-cli')).toEqual([]);
+    if (result.ok === false) throw new Error(result.message);
+    const chosen = decideAutoPlan(result.plan!, {});
+    expect(chosen).toMatchObject({
+      ok: true,
+      plan: {
+        provider: 'copilot-cli', model: 'claude-haiku-5.5', effort: 'low',
+        routing: { reason: 'last_resort_unmeasured', quotaBasis: 'unknown_fallback', quota: { 'copilot-cli': { state: 'unknown', unknownReason: 'not_supported' } } },
+        decision: { reason: 'last_resort_unmeasured', policyVersion: 3, candidates: expect.arrayContaining([
+          expect.objectContaining({ provider: 'copilot-cli', chosen: true, eligible: true, tier: 3, mapped: expect.objectContaining({ verified: true }), score: { basis: 'unmeasured', rank: 0 } }),
+        ]) },
+      },
+    });
+    expect(W.listCalls.some((c) => c.provider === 'copilot-cli')).toBe(true);
+  });
+
+  it.each([
+    ['cli_disabled', () => { W.enabled = ['claude-code']; }],
+    ['auto_disabled', () => { W.copilotAuto = false; }],
+    ['cli_unavailable', () => { W.unavailable.add('copilot-cli'); }],
+    ['cooling_down', () => { W.cooling.add('copilot-cli'); }],
+    ['no_valid_mapping', () => { W.lists.set('copilot-cli', live(COPILOT.filter((model) => model.id !== 'claude-sonnet-5.5'))); }],
+  ])('Copilot passes the same checks and reports %s rather than unsupported', async (code, setup) => {
+    W.unavailable = new Set(['claude-code', 'codex-cli']);
+    setup();
+    const result = await planHelperStart({
+      ...base, cli: 'auto', difficulty: 'medium',
+      auto: { effective: true, source: 'app', scopes: { app: { value: true, editable: true } } },
+    });
+    expect(result).toMatchObject({ ok: false, code: 'no_candidate', decision: { candidates: expect.arrayContaining([
+      expect.objectContaining({ provider: 'copilot-cli', eligible: false, excluded: code }),
+    ]) } });
+  });
+
+  it('saves and audits the Auto opt-out, invalidates stale writes, and leaves explicit Copilot starts available', async () => {
+    const revision = helperRoutingRevision();
+    const settings = await write({ copilotAuto: false });
+    expect(settings.copilotAuto).toBe(false);
+    expect(settings.revision).not.toBe(revision);
+    expect(W.audit.at(-1)).toMatchObject({ key: 'helper_auto.copilot-cli', before: true, after: false, outcome: 'ok' });
+    expect((await plan({ cli: 'copilot-cli', difficulty: 'hard' }))!.provider).toBe('copilot-cli');
+    await expect(updateHelperPresets({ revision, copilotAuto: true }, { surface: 'ui' })).rejects.toMatchObject({ code: 'helper_routing_stale' });
+    expect(W.copilotAuto).toBe(false);
+    expect((await write({ copilotAuto: true })).copilotAuto).toBe(true);
+  });
+
+  it.each([false, true])('honors a Copilot opt-out after candidates were read (another candidate: %s)', async (hasAlternative) => {
+    W.unavailable.add('claude-code');
+    if (!hasAlternative) W.unavailable.add('codex-cli');
+    W.quota.set('codex-cli', { state: 'low', source: 'cli_query', asOf: null, weekly: { usedPercent: 94, resetsAt: null } });
+    const prepared = await plan({
+      cli: 'auto', difficulty: 'medium',
+      auto: { effective: true, source: 'app', scopes: { app: { value: true, editable: true } } },
+    });
+    await write({ copilotAuto: false });
+
+    const result = decideAutoPlan(prepared!, {});
+    expect(result).toMatchObject(hasAlternative
+      ? { ok: true, plan: { provider: 'codex-cli', routing: { skipped: { 'copilot-cli': 'auto_disabled' } } } }
+      : { ok: false, code: 'no_candidate' });
+    const record = result.ok ? result.plan?.decision : result.decision;
+    expect(record?.candidates).toContainEqual(expect.objectContaining({ provider: 'copilot-cli', eligible: false, excluded: 'auto_disabled' }));
+    expect(reservedLoad()).not.toHaveProperty('copilot-cli');
+  });
+
+  it('refuses non-boolean or project-scoped Copilot Auto settings without changing them', async () => {
+    await expect(write({ copilotAuto: 'false' })).rejects.toMatchObject({ code: 'invalid_helper_routing' });
+    await expect(updateHelperPresets({ revision: helperRoutingRevision(), copilotAuto: false }, { surface: 'mobile', projectPath: '/p' }))
+      .rejects.toMatchObject({ code: 'invalid_helper_routing' });
+    expect(W.copilotAuto).toBe(true);
   });
 });
 
@@ -815,7 +886,7 @@ describe('Auto (#2671)', () => {
     const plan = await decided({ 'claude-code': 2 });
     expect(plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
     expect(plan.routing).toMatchObject({
-      mode: 'auto', balanced: true, policyVersion: 2, reason: 'lower_load', fallback: 'none', quotaBasis: 'known',
+      mode: 'auto', balanced: true, policyVersion: 3, reason: 'lower_load', fallback: 'none', quotaBasis: 'known',
       decisionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       requested: { provider: 'auto', model: null, effort: null, difficulty: 'hard' },
       resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
@@ -829,7 +900,7 @@ describe('Auto (#2671)', () => {
     const plan = await decided({ 'claude-code': 2 });
     const record = plan.decision!;
     expect(record).toMatchObject({
-      decisionId: plan.routing.decisionId, policyVersion: 2, mode: 'auto', outcome: 'chosen', orchestratorProvider: 'claude-code',
+      decisionId: plan.routing.decisionId, policyVersion: 3, mode: 'auto', outcome: 'chosen', orchestratorProvider: 'claude-code',
       requested: { provider: 'auto', difficulty: 'hard' }, resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol' },
       reason: 'lower_load', mappingKind: 'builtin', mappingRevision: helperRoutingRevision(),
       tie: { setSize: 2, bandBp: 0, reason: 'lower_load', byLoad: true },
@@ -844,7 +915,10 @@ describe('Auto (#2671)', () => {
     });
     expect(record.candidates[0]).toMatchObject({ load: { live: 2, reserved: 0 } });
     expect(record.candidates[0].chosen).toBeUndefined();
-    expect(record.candidates[2]).toEqual({ provider: 'copilot-cli', eligible: false, excluded: 'auto_not_supported', load: { live: 0, reserved: 0 } });
+    expect(record.candidates[2]).toMatchObject({
+      provider: 'copilot-cli', eligible: true, tier: 3, load: { live: 0, reserved: 0 },
+      quota: { state: 'unknown', unknownReason: 'not_supported' }, score: { basis: 'unmeasured', rank: 2 },
+    });
   });
 
   it('unknown quota waits behind measured headroom and is never scored', async () => {
@@ -879,13 +953,33 @@ describe('Auto (#2671)', () => {
     expect(plan.routing).toMatchObject({ fallback: 'candidate_skipped', balanced: true });
   });
 
-  it('lists Copilot as skipped with its reason', async () => {
+  it('keeps Copilot behind a low measured provider', async () => {
+    W.cooling.add('claude-code');
+    W.quota.set('codex-cli', { ...known, state: 'low', weekly: { usedPercent: 94, resetsAt: known.weekly.resetsAt } });
     const plan = await decided();
-    expect(plan.routing.skipped).toEqual({ 'copilot-cli': 'auto_not_supported' });
+    expect(plan.provider).toBe('codex-cli');
+    expect(plan.routing.skipped).toEqual({ 'claude-code': 'cooling_down' });
+  });
+
+  it.each(['read_failed', 'stale'])('keeps a temporarily unmeasured provider (%s) ahead of Copilot', async (unknownReason) => {
+    W.cooling.add('claude-code');
+    W.quota.set('codex-cli', { state: 'unknown', unknownReason, source: 'none', asOf: null });
+    const plan = await decided({ 'codex-cli': 100 });
+    expect(plan.provider).toBe('codex-cli');
+  });
+
+  it('uses Copilot after the measured providers reach the exclusion threshold', async () => {
+    W.quota.set('claude-code', { ...known, state: 'near_limit' });
+    W.quota.set('codex-cli', { ...known, state: 'exhausted' });
+    const plan = await decided();
+    expect(plan.provider).toBe('copilot-cli');
+    expect(plan.routing.reason).toBe('last_resort_unmeasured');
+    expect(plan.routing.skipped).toEqual({ 'claude-code': 'quota_near_limit', 'codex-cli': 'quota_exhausted' });
   });
 
   it('with nothing left, refuses at once, naming each provider, and queues nothing', async () => {
     W.cooling.add('claude-code');
+    W.copilotAuto = false;
     W.quota.set('codex-cli', { ...known, state: 'near_limit' });
     const result = await auto();
     expect(result).toMatchObject({ ok: false, code: 'no_candidate' });
@@ -951,6 +1045,7 @@ describe('Auto (#2671)', () => {
 
     it('a refusal holds nothing, and has a record', async () => {
       W.cooling.add('claude-code');
+      W.copilotAuto = false;
       W.quota.set('codex-cli', { ...known, state: 'near_limit' });
       const result = await auto();
       expect(result).toMatchObject({ ok: false, decision: { outcome: 'refused', refusalCode: 'no_candidate', fallback: 'candidate_skipped' } });
