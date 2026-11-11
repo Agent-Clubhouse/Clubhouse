@@ -30,6 +30,7 @@ import {
   hasConflictNotes,
   readIfExists,
   memoryWrite,
+  withMemoryPageLock,
   moveMemoryHistory,
   observeMemoryPage,
   readMemoryAccess,
@@ -377,9 +378,12 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
     if (!replacements.size) continue;
     const next = `${text.slice(0, range.start)}${replaceLinks(editable, replacements)}${text.slice(range.end)}`;
     if (next !== text) {
-      const stat = await fsp.stat(full);
       // Link maintenance is not a new fact or a freshness signal.
-      await memoryWrite(page, next, 'upkeep link fix', root, { preserveFreshness: true, timestamps: stat });
+      await memoryWrite(page, (current) => {
+        if (current === null) throw new Error('Memory page disappeared during link repair.');
+        const range = editableRange(page, current);
+        return current.slice(0, range.start) + replaceLinks(current.slice(range.start, range.end), replacements) + current.slice(range.end);
+      }, 'upkeep link fix', root, { preserveFreshness: true });
       report.changed = true;
     }
   }
@@ -407,14 +411,21 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
   }
   for (const p of pages) {
     if (kept.has(p.page)) continue;
-    const from = path.join(root, p.page);
     const to = await archiveTarget(root, 'topics', path.basename(p.page));
-    await memoryWrite(toPosix(path.relative(root, to)), (await readIfExists(from))!, 'archive', root,
-      { preserveFreshness: true, timestamps: await fsp.stat(from) });
-    await moveMemoryHistory(p.page, toPosix(path.relative(root, to)), root);
-    await fsp.rm(from);
-    report.archived.push(p.page);
-    report.changed = true;
+    await withMemoryPageLock(p.page, root, async (from) => {
+      const current = await readIfExists(from);
+      if (current === null) return;
+      const stat = await fsp.stat(from);
+      const topic = parseTopicPage(current);
+      if (topic?.status !== 'unconfirmed' || hasConflictNotes(current)
+        || now.getTime() - topicUpdatedAt(topic, stat.mtimeMs, now.getTime()) < staleMs) return;
+      await memoryWrite(toPosix(path.relative(root, to)), current, 'archive', root,
+        { preserveFreshness: true, timestamps: stat });
+      await moveMemoryHistory(p.page, toPosix(path.relative(root, to)), root);
+      await fsp.rm(from);
+      report.archived.push(p.page);
+      report.changed = true;
+    });
   }
 
   // 4. Cited files that are gone.

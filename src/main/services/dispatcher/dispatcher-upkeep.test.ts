@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => '/nonexistent-base-dir' }));
+vi.mock('fs/promises', async (importOriginal) => ({ ...await importOriginal<typeof fsp>() }));
 
 import { renderAgentPage, renderTopicPage } from './dispatcher-memory';
+import * as memoryFiles from './dispatcher-memory';
+import { writeDispatcherMemory } from './dispatcher-memory-writer';
 import { listMemoryPages, measureMemoryHealth, runMemoryUpkeep } from './dispatcher-upkeep';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -130,9 +134,49 @@ describe('runMemoryUpkeep: pruning keeps every page it shouldn’t prune', () =>
     expect(read('archive/topics/stale.md')).toBe('pruned earlier\n');
     expect(read('archive/topics/stale-2.md')).toContain('Nobody links here');
   });
+
+  it('does not archive a topic confirmed while its archive destination is being prepared', async () => {
+    const mkdir = fsp.mkdir;
+    let edited = false;
+    const spy = vi.spyOn(fsp, 'mkdir').mockImplementation(async (...args: Parameters<typeof mkdir>) => {
+      const result = await mkdir(...args);
+      if (args[0] === path.join(root, 'archive', 'topics') && !edited) {
+        edited = true;
+        await writeDispatcherMemory('topics/stale.md', topic('confirmed', 'New verified facts'), root);
+      }
+      return result;
+    });
+    try {
+      const report = await runMemoryUpkeep(NOW, { root });
+      expect(edited).toBe(true);
+      expect(report.archived).not.toContain('topics/stale.md');
+      expect(read('topics/stale.md')).toContain('New verified facts');
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe('runMemoryUpkeep: timeline and links', () => {
+  it('repairs the latest page without discarding a concurrent tool edit', async () => {
+    write('topics/checkout-fix.md', topic('confirmed', 'The fix'), 1);
+    write('topics/notes.md', topic('confirmed', 'See [fix](Checkout%20Fix.md).'), 1);
+    const memoryWrite = memoryFiles.memoryWrite;
+    const spy = vi.spyOn(memoryFiles, 'memoryWrite').mockImplementation(async (...args) => {
+      if (args[2] === 'upkeep link fix') {
+        await writeDispatcherMemory('topics/notes.md', topic('confirmed', 'See [fix](Checkout%20Fix.md).\nNew verified fact.'), root);
+      }
+      return memoryWrite(...args);
+    });
+    try {
+      await runMemoryUpkeep(NOW, { root });
+      expect(read('topics/notes.md')).toContain('New verified fact.');
+      expect(read('topics/notes.md')).toContain('](checkout-fix.md)');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it.each(['topics/notes.md', 'agents/web.md', 'index.md'])('preserves the modification time when repairing links in %s (part of #3218)', async (page) => {
     write('topics/checkout-fix.md', topic('confirmed', 'x\n'), 1);
     const body = 'See [fix](topics/Checkout%20Fix.md).\n';

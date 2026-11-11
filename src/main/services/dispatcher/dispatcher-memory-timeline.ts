@@ -75,8 +75,7 @@ export async function appendTimeline(entry: TimelineEntry, root?: string): Promi
   const text = entry.text.replace(/\s*\n\s*/g, ' ').trim();
   const link = entry.transcript ? ` ([transcript](${entry.transcript}))` : '';
   const line = `- ${pad(entry.at.getHours())}:${pad(entry.at.getMinutes())} ${text}${link}\n`;
-  const existing = await readIfExists(file);
-  await memoryWrite(relativeMemoryPage(file, root), existing === null ? `# ${key}\n\n${line}`
+  await memoryWrite(relativeMemoryPage(file, root), (existing) => existing === null ? `# ${key}\n\n${line}`
     : `${existing}${existing.endsWith('\n') || existing === '' ? '' : '\n'}${line}`, 'timeline', root);
   return file;
 }
@@ -127,13 +126,8 @@ function withoutTitle(text: string): string {
  */
 async function appendSection(file: string, title: string, heading: string, body: string, root?: string): Promise<void> {
   const section = `## ${heading}\n\n${body}\n`;
-  const existing = await readIfExists(file);
-  if (existing === null) {
-    await memoryWrite(relativeMemoryPage(file, root), `# ${title}\n\n${section}`, 'timeline rollup', root);
-    return;
-  }
-  if (existing.includes(section)) return;
-  await memoryWrite(relativeMemoryPage(file, root), `${existing.trimEnd()}\n\n${section}`, 'timeline rollup', root);
+  await memoryWrite(relativeMemoryPage(file, root), (existing) => existing === null ? `# ${title}\n\n${section}`
+    : existing.includes(section) ? existing : `${existing.trimEnd()}\n\n${section}`, 'timeline rollup', root);
 }
 
 /**

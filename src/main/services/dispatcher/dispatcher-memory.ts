@@ -278,13 +278,21 @@ function withPageLock<T>(file: string, fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** Hold the same lock as tool writes while retiring a source page. */
+export async function withMemoryPageLock<T>(page: string, root: string, fn: (file: string) => Promise<T>): Promise<T> {
+  const { resolveMemoryPage } = await import('./dispatcher-memory-reader');
+  const file = await resolveMemoryPage(page, root, true);
+  return withPageLock(`write:${file}`, () => fn(file));
+}
+
 async function writeAgentSection(agent: string, section: keyof AgentPage, text: string, root?: string, reason: string = section === 'card' ? 'card' : 'notes'): Promise<AgentPage> {
   await ensureMemoryLayout(root);
   return withPageLock(agentPagePath(agent, root), async () => {
-    const current = (await readAgentPage(agent, root)) ?? { card: '', notes: '' };
-    const next = { ...current, [section]: text };
-    await memoryWrite(relativeMemoryPage(agentPagePath(agent, root), root), renderAgentPage(agent, next), reason, root);
-    return parseAgentPage(renderAgentPage(agent, next));
+    const written = await memoryWrite(relativeMemoryPage(agentPagePath(agent, root), root), (previous) => {
+      const current = previous === null ? { card: '', notes: '' } : parseAgentPage(previous);
+      return renderAgentPage(agent, { ...current, [section]: text });
+    }, reason, root);
+    return parseAgentPage(written);
   });
 }
 
@@ -653,7 +661,7 @@ export interface MemoryWriteOptions {
 
 /** All Clubhouse page writes: previous bytes, stamped topics, bounded metadata and a current snapshot. */
 export async function memoryWrite(
-  page: string, text: string, reason: string, root: string = getDispatcherMemoryPath(), options: MemoryWriteOptions = {},
+  page: string, content: string | ((previous: string | null) => string), reason: string, root: string = getDispatcherMemoryPath(), options: MemoryWriteOptions = {},
 ): Promise<string> {
   if (reason.length > 80) throw new Error('Memory write reason is too long.');
   const { resolveMemoryPage, MemoryReadError } = await import('./dispatcher-memory-reader');
@@ -663,11 +671,12 @@ export async function memoryWrite(
   const kind = relative.toLowerCase();
   if (kind.startsWith(`${MEMORY_HISTORY_DIR}/`)) throw new MemoryReadError('Memory history is read only.');
   if (reason === 'agent tool' && kind.startsWith('archive/')) throw new MemoryReadError('Archived memory is read only.');
-  if (reason === 'agent tool' && kind.startsWith('topics/') && !parseTopicPage(text)) {
-    throw new MemoryReadError('Topic pages need Status and Source headers, then a blank line and the body.');
-  }
   return withPageLock(`write:${file}`, async () => {
     const previous = await readIfExists(file);
+    const text = typeof content === 'function' ? content(previous) : content;
+    if (reason === 'agent tool' && kind.startsWith('topics/') && !parseTopicPage(text)) {
+      throw new MemoryReadError('Topic pages need Status and Source headers, then a blank line and the body.');
+    }
     const stat = previous === null ? null : await fsp.stat(file);
     const now = Date.now();
     const entry = (await readMemoryAccess(root))[relative];
