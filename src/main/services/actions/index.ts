@@ -37,7 +37,7 @@ import { isDispatcherEnabled } from '../dispatcher/dispatcher-settings';
 import { sleepAgent, wakeWiredAgent } from '../clubhouse-mcp/tools/agent-lifecycle';
 import { deliverToDispatcher, dispatcherInboxId } from '../clubhouse-mcp/tools/dispatcher-delivery';
 import { clearDispatcherBackgroundWork, noteDispatcherBackgroundWork } from '../dispatcher/dispatcher-usage';
-import { DISPATCHER_NAME, getDispatcherAgentId, getDispatcherState, isDispatcherAgentId } from '../dispatcher/dispatcher-service';
+import { DISPATCHER_NAME, getDispatcherAgentId, getDispatcherState, isDispatcherAgentId, isDispatcherIdentityAgentId, isDispatcherPath } from '../dispatcher/dispatcher-service';
 import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
 import * as projectStore from '../project-store';
@@ -114,6 +114,18 @@ const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWork
   parentOf: (id) => knownAgent(id)?.parentAgentId,
   agentWorktree: (id) => knownAgent(id)?.worktreePath,
   dispatcherAgentId: () => getDispatcherAgentId() ?? undefined,
+  isDispatcherOwnedAgent: (id) => {
+    const seen = new Set<string>();
+    let current: string | undefined = id;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      if (isDispatcherIdentityAgentId(current)) return true;
+      const agent = knownAgent(current);
+      if (isDispatcherPath(agent?.projectPath)) return true;
+      current = agent?.parentAgentId;
+    }
+    return false;
+  },
 };
 
 function parseToolResult(result: { content: Array<{ type: string; text?: string }>; isError?: boolean }): { ok: boolean; status?: string; messageDelivered?: boolean; text: string } {
@@ -446,12 +458,16 @@ export function runActionNow(id: string): { runId: string } {
   return { runId: requireEngine().runNow(id) };
 }
 
-export function actionHistory(id: string): ActionRun[] {
+export function actionHistory(id: string, reader?: ActionOwner): ActionRun[] {
   // History outlives one-time actions, so an id that is gone still reads.
   const e = requireEngine();
   const a = e.get(id);
   if (a?.owner.kind === 'app') return [];
-  return e.history(id).sort((x, y) => y.startedAt - x.startedAt);
+  return e.history(id, reader).sort((x, y) => y.startedAt - x.startedAt);
+}
+
+export function canWatchAgentActivity(reader: ActionOwner): boolean {
+  return requireEngine().canWatchAgentActivity(reader);
 }
 
 // ── Lookups for the Clubhouse MCP tools ─────────────────────────────────────

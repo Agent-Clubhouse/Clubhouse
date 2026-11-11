@@ -19,6 +19,7 @@
 
 import {
   ActionError,
+  DEFAULT_COALESCE_SECONDS,
   MAX_CHAIN_DEPTH,
   MAX_MISSED_RUNS,
   MAX_RUNS_PER_HOUR,
@@ -104,6 +105,8 @@ export interface EngineFacts {
    * Clubhouse's own (#3040), tell. Unset when there is no Dispatcher.
    */
   dispatcherAgentId?(): string | undefined;
+  /** Both Dispatcher identities and their owned helpers, never watched by an any-agent source. */
+  isDispatcherOwnedAgent?(agentId: string): boolean;
 }
 
 export interface StepContext {
@@ -265,6 +268,13 @@ interface QueuedRun {
   runId: string;
 }
 
+interface TurnBatch {
+  startedAt: number;
+  dueAt: number;
+  /** Keep each member's causes so revoking its read access also removes its causes. */
+  agents: Map<string, Set<string>>;
+}
+
 export class ActionsEngine {
   private actions = new Map<string, Action>();
   private state: EngineState = { nextAt: {}, waits: [] };
@@ -276,6 +286,8 @@ export class ActionsEngine {
   private recentStarts = new Map<string, number[]>();
   /** When each agent last started a turn, for the idle re-check. */
   private lastTurnStart = new Map<string, number>();
+  /** Live-only turn windows. Ordinary events are never replayed after relaunch. */
+  private turnBatches = new Map<string, TurnBatch>();
   private idCounter = 0;
 
   constructor(private readonly deps: EngineDeps) {}
@@ -338,6 +350,7 @@ export class ActionsEngine {
     if (this.timer !== null) this.deps.clock.clearTimeout(this.timer);
     this.timer = null;
     this.started = false;
+    this.turnBatches.clear();
   }
 
   /** The machine woke from sleep, or the clock jumped: catch up now. */
@@ -355,8 +368,32 @@ export class ActionsEngine {
     return this.actions.get(id);
   }
 
-  history(id: string): ActionRun[] {
-    return this.deps.history.list(id);
+  canWatchAgentActivity(reader: ActionOwner): boolean {
+    return this.deps.rights.checkSource(reader, { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } }) === null;
+  }
+
+  history(id: string, reader?: ActionOwner): ActionRun[] {
+    const runs = this.deps.history.list(id);
+    if (!reader) return runs;
+    return runs.flatMap((run) => {
+      if (run.trigger.agentIds === undefined) return [run];
+      if (!this.canWatchAgentActivity(reader)) return [];
+      const canRead = (agentId: string) => this.deps.facts.agentExists(agentId)
+        && !this.deps.rights.checkSource(reader, { kind: 'event', event: 'agent.turn_ended', source: { kind: 'agent', agentId } });
+      const agentIds = run.trigger.agentIds.filter(canRead);
+      if (!agentIds.length) return [];
+      const partial = agentIds.length !== run.trigger.agentIds.length;
+      const steps = partial ? run.steps.filter((step) => !step.agentId || canRead(step.agentId)) : run.steps;
+      const { reason, ...rest } = run;
+      return [{
+        ...rest, steps, chain: partial ? [] : run.chain,
+        ...(steps.length === run.steps.length && reason !== undefined && { reason }),
+        trigger: {
+          ...run.trigger, agentIds, ...(partial && { at: run.startedAt }),
+          detail: this.turnDetail(agentIds, run.trigger.detail?.startsWith('Failed turns:')),
+        },
+      }];
+    });
   }
 
   /** The next time a schedule or one-time action runs, for the UI. */
@@ -670,6 +707,7 @@ export class ActionsEngine {
       if (at !== undefined) earliest = Math.min(earliest, at);
     }
     for (const w of this.state.waits) earliest = Math.min(earliest, w.dueAt);
+    for (const batch of this.turnBatches.values()) earliest = Math.min(earliest, batch.dueAt);
     if (earliest === Infinity) return;
     const delay = Math.max(0, Math.min(MAX_TIMER_MS, earliest - this.now()));
     this.timer = this.deps.clock.setTimeout(() => {
@@ -708,6 +746,9 @@ export class ActionsEngine {
         this.finishWait(wait);
         dirty = true;
       }
+    }
+    for (const [id, batch] of this.turnBatches) {
+      if (batch.dueAt <= now) this.finishTurnBatch(id, batch);
     }
     if (dirty) {
       this.deps.storage.saveActions(this.list());
@@ -832,6 +873,7 @@ export class ActionsEngine {
     if (trigger.branch && occ.branch !== trigger.branch) return false;
     const src = trigger.source;
     if (src.kind === 'app') return true;
+    if (src.kind === 'any') return !!occ.agentId;
     if (src.kind === 'agent') return occ.agentId === src.agentId;
     return occ.projectId === src.projectId;
   }
@@ -839,6 +881,10 @@ export class ActionsEngine {
   private onMatch(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
     if (this.enforceLifetime(action)) return;
     if (this.eventFilterReason(action)) return;
+    if (trigger.source.kind === 'any') {
+      this.collectTurn(action, trigger, occ, chain);
+      return;
+    }
     const branchText = occ.branch === '*' ? 'many branches' : occ.branch;
     const detail = `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`;
     this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: !!trigger.delayMinutes });
@@ -861,6 +907,69 @@ export class ActionsEngine {
     this.observe(action, { type: 'wait', what: existing ? 'restarted' : 'started', event: trigger.event });
     this.saveState();
     this.armTimer();
+  }
+
+  private readableTurnAgent(action: Action, agentId: string): boolean {
+    const facts = this.deps.facts;
+    if (!facts.agentExists(agentId) || agentId === this.subscriberOf(action.owner)) return false;
+    if (agentId === facts.dispatcherAgentId?.() || facts.isDispatcherOwnedAgent?.(agentId)) return false;
+    return this.deps.rights.checkSource(action.owner, {
+      kind: 'event', event: 'agent.turn_ended', source: { kind: 'agent', agentId },
+    }) === null;
+  }
+
+  private turnDetail(agentIds: string[], failed = false): string {
+    const names = agentIds.slice(0, 20).map((id) => this.agentSubject(id).replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').trim().slice(0, 80));
+    const more = agentIds.length > names.length ? ` and ${agentIds.length - names.length} more agents` : '';
+    const what = failed ? 'Failed turns' : 'Finished turns';
+    return `${what}: ${names.join(', ')}${more}`;
+  }
+
+  /** Rebuild details from current rights, including after a queued handoff or an async step. */
+  private readableTurnTrigger(action: Action, trigger: ActionRunTrigger): ActionRunTrigger | null {
+    if (trigger.kind !== 'event' || action.trigger.kind !== 'event' || action.trigger.source.kind !== 'any') return trigger;
+    if (this.deps.rights.checkSource(action.owner, action.trigger)) return null;
+    const agentIds = (trigger.agentIds ?? []).filter((id) => this.readableTurnAgent(action, id));
+    return agentIds.length ? { ...trigger, agentIds, detail: this.turnDetail(agentIds, action.trigger.event === 'agent.turn_failed') } : null;
+  }
+
+  private collectTurn(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
+    const pending = this.turnBatches.get(action.id);
+    if (pending && pending.dueAt <= this.now()) {
+      this.finishTurnBatch(action.id, pending);
+      action = this.actions.get(action.id) ?? action;
+      if (!action.enabled || this.enforceLifetime(action) || this.eventFilterReason(action)) return;
+    }
+    const refused = this.deps.rights.checkSource(action.owner, trigger);
+    // Without the activity grant, even a per-turn skipped history entry would reveal activity.
+    if (refused) return;
+    if (!occ.agentId || !this.readableTurnAgent(action, occ.agentId)) return;
+    if (chain.includes(action.id) || chain.length >= MAX_CHAIN_DEPTH) {
+      this.fire(action, { kind: 'event', at: this.now(), agentIds: [occ.agentId] }, chain);
+      return;
+    }
+    let batch = this.turnBatches.get(action.id);
+    if (!batch) {
+      batch = { startedAt: this.now(), dueAt: this.now() + (trigger.coalesceSeconds ?? DEFAULT_COALESCE_SECONDS) * 1000, agents: new Map() };
+      this.turnBatches.set(action.id, batch);
+    }
+    const causes = batch.agents.get(occ.agentId) ?? new Set<string>();
+    for (const id of chain) {
+      if (causes.size >= MAX_CHAIN_DEPTH) break;
+      causes.add(id);
+    }
+    batch.agents.set(occ.agentId, causes);
+    this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: true });
+    this.armTimer();
+  }
+
+  private finishTurnBatch(id: string, batch: TurnBatch): void {
+    this.turnBatches.delete(id);
+    const action = this.actions.get(id);
+    if (!action?.enabled || action.trigger.kind !== 'event' || action.trigger.source.kind !== 'any') return;
+    const agentIds = [...batch.agents.keys()].filter((agentId) => this.readableTurnAgent(action, agentId));
+    const chain = [...new Set(agentIds.flatMap((agentId) => [...batch.agents.get(agentId)!]))];
+    this.fire(action, { kind: 'event', at: batch.startedAt, agentIds }, chain);
   }
 
   /** Whether a delayed trigger's condition still holds when its wait ends. */
@@ -905,6 +1014,7 @@ export class ActionsEngine {
   }
 
   private dropWaits(actionId: string): void {
+    this.turnBatches.delete(actionId);
     this.dropWaitsWhere((w) => w.actionId === actionId, false);
   }
 
@@ -943,6 +1053,7 @@ export class ActionsEngine {
   // ── Runs ──
 
   private recordOnly(action: Action, trigger: ActionRunTrigger, chain: string[], outcome: 'skipped' | 'cancelled', reasonCode: RunReasonCode, reason: string): string {
+    trigger = this.readableTurnTrigger(action, trigger) ?? { kind: trigger.kind, at: trigger.at, agentIds: [] };
     const now = this.now();
     const run: ActionRun = { id: this.newId('run'), actionId: action.id, owner: action.owner, trigger, chain, startedAt: now, endedAt: now, outcome, reason, steps: [] };
     if (action.owner.kind !== 'app') this.deps.history.put(run);
@@ -965,6 +1076,9 @@ export class ActionsEngine {
     if (ended) return this.recordOnly(action, trigger, chain, 'skipped', 'lifetime_limit', ended);
     const filtered = this.eventFilterReason(action);
     if (filtered) return this.recordOnly(action, trigger, chain, 'skipped', 'event_filter', filtered);
+    const readable = this.readableTurnTrigger(action, trigger);
+    if (!readable) return this.recordOnly(action, { kind: trigger.kind, at: trigger.at, agentIds: [] }, [], 'skipped', 'rights_refused', 'The activity permission or read access is no longer available');
+    trigger = readable;
     if (chain.includes(action.id)) {
       this.observe(action, { type: 'limit', what: 'self', chainDepth: chain.length });
       return this.recordOnly(action, trigger, chain, 'skipped', 'self_trigger', 'It can’t set itself off');
@@ -1009,6 +1123,14 @@ export class ActionsEngine {
   /** One run. Returns the queued run to start next, if any. */
   private async runOnce(action: Action, trigger: ActionRunTrigger, chain: string[], runId: string): Promise<{ action: Action; run: QueuedRun } | null> {
     const actionId = action.id;
+    action = this.actions.get(actionId) ?? action;
+    const readable = this.readableTurnTrigger(action, trigger);
+    if (!readable) {
+      const reason = 'The activity permission or read access is no longer available';
+      this.recordOnly(action, { kind: trigger.kind, at: trigger.at, agentIds: [] }, [], 'cancelled', 'rights_refused', reason);
+      return this.nextQueued(actionId);
+    }
+    trigger = readable;
     if (action.trigger.kind !== 'once' && this.actions.has(actionId)) {
       // A queued handoff crosses an await: edits and expiry can happen before it starts.
       action = this.require(actionId);
@@ -1049,6 +1171,15 @@ export class ActionsEngine {
       failureCode = 'rights_refused';
     }
     for (const step of sourceRefused ? [] : action.steps) {
+      const currentTrigger = this.readableTurnTrigger(action, trigger);
+      if (!currentTrigger) {
+        run.trigger = { kind: trigger.kind, at: trigger.at, agentIds: [] };
+        failure = 'The activity permission or read access is no longer available';
+        failureCode = 'rights_refused';
+        break;
+      }
+      trigger = currentTrigger;
+      run.trigger = trigger;
       // Rights are checked again on every run: what was allowed may not be now.
       const refused = this.deps.rights.checkStep(action.owner, step);
       if (refused) {
@@ -1109,6 +1240,10 @@ export class ActionsEngine {
       this.deps.hooks?.changed?.();
     }
 
+    return this.nextQueued(actionId);
+  }
+
+  private nextQueued(actionId: string): { action: Action; run: QueuedRun } | null {
     const queue = this.running.get(actionId);
     const nextRun = queue?.shift();
     const latest = this.actions.get(actionId);

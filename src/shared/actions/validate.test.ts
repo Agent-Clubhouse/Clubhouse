@@ -5,6 +5,23 @@ import { HISTORY_MAX_AGE_MS, type ActionRun } from './types';
 const schedule = { kind: 'schedule', preset: 'daily', cron: '0  9 * * *', missed: 'once' };
 
 describe('validateActionInput', () => {
+  it('accepts any readable agent only for turn events, with an optional bounded window and no delay', () => {
+    const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } };
+    const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };
+    expect(validateActionInput(input)).toMatchObject({ ok: true, value: { trigger } });
+    for (const coalesceSeconds of [10, 60, 600]) {
+      expect(validateActionInput({ ...input, trigger: { ...trigger, event: 'agent.turn_failed', coalesceSeconds } })).toMatchObject({ ok: true, value: { trigger: { coalesceSeconds } } });
+    }
+    for (const changes of [
+      ...[9, 601, 10.5, '60', null, NaN].map((coalesceSeconds) => ({ coalesceSeconds })),
+      ...['agent.idle', 'agent.slept', 'git.commit', 'app.started'].map((event) => ({ event })),
+      { delayMinutes: 1 }, { delayMinutes: 0 }, { delayMinutes: null },
+      { source: { kind: 'agent', agentId: 'a' }, coalesceSeconds: 60 },
+    ]) {
+      expect(() => assertActionInput({ ...input, trigger: { ...trigger, ...changes } })).toThrow(ActionError);
+    }
+  });
+
   it('validates generic event time filters as strict local HH:MM and a boolean', () => {
     const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'a' }, afterLocalTime: '08:00', oncePerDay: true };
     const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };

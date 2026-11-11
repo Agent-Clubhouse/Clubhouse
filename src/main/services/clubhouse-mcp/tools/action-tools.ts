@@ -32,6 +32,8 @@ import {
   MAX_ACTION_STEPS,
   MAX_DELAY_MINUTES,
   MIN_ABSENCE_MINUTES,
+  MIN_COALESCE_SECONDS,
+  MAX_COALESCE_SECONDS,
   MISSED_RUN_RULES,
   SCHEDULE_PRESETS,
   describeAction,
@@ -69,9 +71,13 @@ export interface ActionScope {
   owner: ActionOwner;
   /** Whether the caller may see and change this action. */
   /** Whether the caller may read this action (list, history). */
-  canSee(action: Pick<Action, 'owner'>): boolean;
+  canSee(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trigger'>>): boolean;
   /** Whether the caller may change, delete or run it. */
   canChange(action: Pick<Action, 'owner'>): boolean;
+}
+
+function canSeeAction(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trigger'>>, reader: ActionOwner): boolean {
+  return action.owner.kind !== 'app' && (action.trigger?.kind !== 'event' || action.trigger.source.kind !== 'any' || actions.canWatchAgentActivity(reader));
 }
 
 /**
@@ -89,7 +95,7 @@ export interface ActionScope {
  */
 export function actionScope(callerId: string): ActionScope {
   if (isDispatcherAgent(callerId)) {
-    return { owner: { kind: 'dispatcher' }, canSee: (a) => a.owner.kind !== 'app', canChange: (a) => a.owner.kind !== 'app' };
+    return { owner: { kind: 'dispatcher' }, canSee: (a) => canSeeAction(a, { kind: 'dispatcher' }), canChange: (a) => a.owner.kind !== 'app' };
   }
   if (isTrackedDispatcher(callerId)) {
     throw new ActionError('not_allowed', 'The Dispatcher is turned off, so it can’t manage actions.');
@@ -99,11 +105,12 @@ export function actionScope(callerId: string): ActionScope {
     throw new ActionError('not_allowed', 'Quick agents can’t own actions, because they end when their task does. Ask the person or the agent that started you to set one up.');
   }
   const helper = kind === 'helper' || !!knownAgent(callerId)?.parentAgentId;
+  const owner: ActionOwner = { kind: 'agent', agentId: callerId, ...(helper && { helper: true }) };
   return {
-    owner: { kind: 'agent', agentId: callerId, ...(helper && { helper: true }) },
+    owner,
     // Agents read every action people and agents can see, but change and run
     // only their own: running a person's action would act at the person's access.
-    canSee: (a) => a.owner.kind !== 'app',
+    canSee: (a) => canSeeAction(a, owner),
     canChange: (a) => a.owner.kind === 'agent' && a.owner.agentId === callerId,
   };
 }
@@ -119,8 +126,10 @@ export function actionToolError(code: ActionToolErrorCode, message: string): Mcp
 }
 
 /** The action as the UI has it, plus one line in plain words. */
-function present(view: ActionView): ActionView & { description: string } {
-  return { ...view, description: describeAction(view, actions.actionNames()) };
+function present(view: ActionView, reader: ActionOwner): ActionView & { description: string } {
+  const { lastRun: _lastRun, ...action } = view;
+  const lastRun = actions.actionHistory(view.id, reader)[0];
+  return { ...action, ...(lastRun && { lastRun }), description: describeAction(view, actions.actionNames()) };
 }
 
 const NOT_FOUND = 'No action with that id.';
@@ -268,7 +277,7 @@ function createAction(scope: ActionScope, args: Obj): unknown {
   input.trigger = prepareTrigger(args.trigger, ctx);
   input.steps = prepareSteps(args.steps, ctx);
   input.endsAt = prepareEndsAt(args.endsAt);
-  return { action: present(actions.createAction(input, scope.owner)) };
+  return { action: present(actions.createAction(input, scope.owner), scope.owner) };
 }
 
 /**
@@ -294,6 +303,7 @@ function subscriptionTrigger(args: Obj, ctx: InputContext): unknown {
     ...(args.absenceMinutes !== undefined && { absenceMinutes: args.absenceMinutes }),
     ...(args.afterLocalTime !== undefined && { afterLocalTime: args.afterLocalTime }),
     ...(args.oncePerDay !== undefined && { oncePerDay: args.oncePerDay }),
+    ...(args.coalesceSeconds !== undefined && { coalesceSeconds: args.coalesceSeconds }),
   }, ctx);
 }
 
@@ -304,11 +314,11 @@ function subscribe(scope: ActionScope, args: Obj): unknown {
     ...(args.note !== undefined && { note: args.note }),
     ...(args.name !== undefined && { name: args.name }),
   };
-  return { action: present(actions.subscribe(input, scope.owner)) };
+  return { action: present(actions.subscribe(input, scope.owner), scope.owner) };
 }
 
 function listActions(scope: ActionScope): unknown {
-  const visible = actions.listActions().filter((a) => scope.canSee(a)).map(present);
+  const visible = actions.listActions().filter((a) => scope.canSee(a)).map((a) => present(a, scope.owner));
   return { count: visible.length, actions: visible };
 }
 
@@ -320,7 +330,7 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
   // Only turning it on or off: the same as the switch in Settings.
   if (changes.length === 1 && changes[0] === 'enabled') {
     if (typeof args.enabled !== 'boolean') throw new ActionError('invalid_input', 'enabled must be true or false.');
-    return { action: present(actions.setActionEnabled(id, args.enabled)) };
+    return { action: present(actions.setActionEnabled(id, args.enabled), scope.owner) };
   }
   const ctx = contextFor(scope);
   // A name that was the suggestion for the old trigger and steps follows them.
@@ -336,7 +346,7 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
     endsAt: args.endsAt !== undefined ? prepareEndsAt(args.endsAt) : current.endsAt,
     maxRuns: args.maxRuns !== undefined ? args.maxRuns : current.maxRuns,
   };
-  return { action: present(actions.updateAction(id, input)) };
+  return { action: present(actions.updateAction(id, input), scope.owner) };
 }
 
 function deleteAction(scope: ActionScope, args: Obj): unknown {
@@ -354,7 +364,7 @@ function runAction(scope: ActionScope, args: Obj): unknown {
   return {
     runId,
     note: 'The run goes on in the background. Read action_history for how it went.',
-    ...(view && { action: present(view) }),
+    ...(view && { action: present(view, scope.owner) }),
   };
 }
 
@@ -363,11 +373,11 @@ function actionHistory(scope: ActionScope, args: Obj): unknown {
   const view = actions.getAction(id);
   if (view) {
     if (!scope.canSee(view)) throw new ActionError('not_found', NOT_FOUND);
-    return { actionId: id, action: present(view), runs: actions.actionHistory(id) };
+    return { actionId: id, action: present(view, scope.owner), runs: actions.actionHistory(id, scope.owner) };
   }
   // A one-time action deletes itself after it runs, and its history stays.
   // Each run keeps its owner; runs from before that are the Dispatcher's to read.
-  const runs = actions.actionHistory(id).filter((r) => (r.owner ? scope.canSee({ owner: r.owner }) : scope.owner.kind === 'dispatcher'));
+  const runs = actions.actionHistory(id, scope.owner).filter((r) => (r.owner ? scope.canSee({ owner: r.owner }) : scope.owner.kind === 'dispatcher'));
   if (runs.length === 0) throw new ActionError('not_found', NOT_FOUND);
   return { actionId: id, runs };
 }
@@ -389,6 +399,11 @@ const TRIGGER_SCHEMA = {
     '- When something happens: {"kind":"event","event":"agent.slept","source":{"kind":"agent","agentId":"self"},"delayMinutes":30}. ' +
     'source is one agent ({"kind":"agent","agentId":...}) or any agent in a project ({"kind":"project","projectId":...}); ' +
     'app events take no source, and project events may name one project. ' +
+    'Turn events also accept source {"kind":"any"}: readable durable agents except you and Dispatcher-owned agents. Quick agents are not included. ' +
+    'Requires agent.watch on app plus agent.read on each agent. It is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents have no default grant. Ask first does not authorize unattended runs. ' +
+    'The member set is dynamic: durable agents that become readable later join. ' +
+    'coalesceSeconds groups turns in a fixed window from the first (default 60, range 10 to 600); later turns do not extend it. ' +
+    'Do not combine it with delayMinutes. Buffers are discarded at relaunch. Summaries name up to 20 agents; step context lists every involved readable agent. ' +
     'Agent events: agent.woke, agent.slept, agent.created, agent.deleted, agent.turn_ended, agent.turn_failed, ' +
     'agent.idle (needs delayMinutes: the idle time), agent.waiting (waits on the person), agent.error, agent.compacted, ' +
     'helper.finished. Git events (local only, nothing is fetched): git.commit, git.branch_switched, ' +
@@ -411,13 +426,14 @@ const TRIGGER_SCHEMA = {
     absenceMinutes: { type: 'number', minimum: MIN_ABSENCE_MINUTES, description: 'app.returned only: required absence in whole minutes, at least 5. Default 30. Tracking runs only while an enabled action uses this event.' },
     afterLocalTime: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: 'Events only: run at or after this local wall-clock time, HH:MM. Events before it are ignored. Delayed and queued starts recheck the time. Also applies to Run now.' },
     oncePerDay: { type: 'boolean', description: 'Events only: once per calendar day; moving the clock back gives no extra run. Starts consume the day, including Run now and failures. Skips do not. Saved across restarts.' },
+    coalesceSeconds: { type: 'number', minimum: MIN_COALESCE_SECONDS, maximum: MAX_COALESCE_SECONDS, description: 'Any readable agent only: group turns for 10 to 600 whole seconds from the first turn. Default 60. Later turns do not extend it. No delayMinutes or offline replay. Requires agent.watch and agent.read.' },
     at: { type: ['string', 'number'], description: 'Once: a date and time like 2026-11-08T09:00 (local time when no zone is given; a date alone is local midnight), or epoch milliseconds. Must be in the future.' },
     event: { type: 'string', enum: [...ACTION_EVENT_KINDS], description: 'Events: what should happen.' },
     source: {
       type: 'object',
-      description: 'Events: {"kind":"agent","agentId":"<id or self>"} or {"kind":"project","projectId":"<id, name or path>"}. For agents, a project left out means your own.',
+      description: 'One agent: {"kind":"agent","agentId":"<id or self>"}. A project: {"kind":"project","projectId":"<id, name or path>"}. Turns: {"kind":"any"} watches readable durable agents with agent.watch.',
       properties: {
-        kind: { type: 'string', enum: ['agent', 'project', 'app'] },
+        kind: { type: 'string', enum: ['agent', 'project', 'app', 'any'] },
         agentId: { type: 'string' },
         projectId: { type: 'string' },
       },
@@ -510,9 +526,13 @@ async function guarded(tool: ActionToolName, callerId: string, args: Obj, handle
  * the same: read all, change and run only your own.
  */
 const LIST = { group: 'actions', grant: { actions: ['action.read'], target: 'app' } } as const;
-const CREATE = { group: 'actions', grant: { actions: ['action.write'], target: 'app' } } as const;
+// Ask first cannot authorize unattended watching: rights.ts explains that a saved Allow is needed.
+const WATCH_ACTIVITY = { actions: ['agent.watch'], target: 'app', ifAnyAgentSource: true, askHandledByTool: true } as const;
+const CREATE = { group: 'actions', grant: [{ actions: ['action.write'], target: 'app' }, WATCH_ACTIVITY] } as const;
+// Trigger/step grants are rechecked by rights.ts, not granted by action.write.
 // The action named in the arguments: its owner tells the caller's own from others'.
 const WRITE_ONE = { group: 'actions', grant: { actions: ['action.write'], target: 'action_arg' } } as const;
+const UPDATE_ONE = { group: 'actions', grant: [WRITE_ONE.grant, WATCH_ACTIVITY] } as const;
 const RUN_ONE = { group: 'actions', grant: { actions: ['action.run'], target: 'action_arg' } } as const;
 
 function schema(properties: Obj, required: string[] = []): McpToolDefinition['inputSchema'] {
@@ -575,7 +595,7 @@ export function registerActionTools(): void {
       inputSchema: schema({ ...ID_FIELD, ...ACTION_FIELDS }, ['id']),
     },
     (callerId, args) => guarded('update_action', callerId, args, updateAction),
-    WRITE_ONE,
+    UPDATE_ONE,
   );
   registerGlobalTool(
     'delete_action',
@@ -614,22 +634,22 @@ export function registerActionTools(): void {
     'subscribe',
     {
       description:
-        'Ask to be told when something happens, such as main being pushed or an agent finishing a turn. ' +
-        'Each time, Clubhouse messages you what happened with your note, waking you first if needed. ' +
-        'It is an action you own, in Settings > Actions: stop it with delete_action, or pause it with update_action and enabled false. ' + RESULT_NOTE,
+        'Subscribe to an event. Clubhouse messages you what happened with your note, waking you if needed. ' +
+        'Watching any readable durable agent is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. ' +
+        'You own the action in Settings > Actions. Stop it with delete_action, or pause it with update_action and enabled false. ' + RESULT_NOTE,
       inputSchema: schema({
         event: TRIGGER_SCHEMA.properties.event,
         source: {
           ...TRIGGER_SCHEMA.properties.source,
           description:
-            'What to watch: {"kind":"agent","agentId":"<id or self>"} or {"kind":"project","projectId":"<id, name or path>"}. ' +
-            'Left out: your own project, or Clubhouse for app and project events.',
+            'One durable agent or project by id. Turns also accept {"kind":"any"}: readable durable agents, except you and Dispatcher-owned agents. Needs agent.watch. Default: your project or app events.',
         },
         branch: TRIGGER_SCHEMA.properties.branch,
         delayMinutes: TRIGGER_SCHEMA.properties.delayMinutes,
         absenceMinutes: TRIGGER_SCHEMA.properties.absenceMinutes,
         afterLocalTime: TRIGGER_SCHEMA.properties.afterLocalTime,
         oncePerDay: TRIGGER_SCHEMA.properties.oncePerDay,
+        coalesceSeconds: TRIGGER_SCHEMA.properties.coalesceSeconds,
         note: { type: 'string', description: 'Optional. What the message should remind you of, e.g. "Tag the release." Left out, it says you asked to be told.' },
         name: ACTION_FIELDS.name,
       }, ['event']),

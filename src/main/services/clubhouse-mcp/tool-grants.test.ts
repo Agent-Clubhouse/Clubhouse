@@ -53,6 +53,7 @@ describe('tool grant declarations (#2967)', () => {
     registerAll();
     const callable = dispatcherToolActions();
     expect(callable.has('project.add')).toBe(true);
+    expect(callable.has('agent.watch')).toBe(true);
     // Its own tools and its chat's count; a helper's or a connected agent's are theirs.
     const defaults = defaultGrants({ dispatcher: true, helper: false, orchestrates: false, crossProject: false });
     const withoutTool = [...new Set(defaults.map((g) => g.action))].filter((a) => !callable.has(a)).sort();
@@ -191,13 +192,13 @@ describe('tool grant declarations (#2967)', () => {
       remove_from_group_project: connection.manage on agent_arg
       connect_agents: connection.manage on agent_arg
       disconnect_agents: connection.manage on agent_arg
-      create_action: action.write on app
+      create_action: action.write on app; agent.watch on app if any-agent source
       list_actions: action.read on app
-      update_action: action.write on action_arg
+      update_action: action.write on action_arg; agent.watch on app if any-agent source
       delete_action: action.write on action_arg
       run_action: action.run on action_arg
       action_history: action.read on app
-      subscribe: action.write on app
+      subscribe: action.write on app; agent.watch on app if any-agent source
       read_helper_presets: settings.app.read on app
       set_helper_presets: settings.app.write on app
       request_grant: grant.request on self

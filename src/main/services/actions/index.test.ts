@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   focused: true,
   idle: 0,
   sleepSeconds: 0,
+  known: new Map<string, { projectPath: string; name: string; parentAgentId?: string }>(),
 }));
 
 vi.mock('electron', async () => {
@@ -31,7 +32,7 @@ vi.mock('../app-event-bus', () => ({
   publishAppEvent: vi.fn((event: AppEventInput) => { for (const fn of h.events) fn({ at: Date.now(), ...event } as AppEvent); }),
   setAgentChain: vi.fn(),
 }));
-vi.mock('../app-event-sources', () => ({ knownAgent: () => undefined, knownAgents: () => new Map() }));
+vi.mock('../app-event-sources', () => ({ knownAgent: (id: string) => h.known.get(id), knownAgents: () => h.known }));
 vi.mock('../clubhouse-mcp/binding-manager', () => ({ bindingManager: { getBindingsForAgent: () => [] } }));
 vi.mock('../clubhouse-mcp/orchestration-gate', () => ({ isCrossProjectEnabled: () => false, isOrchestrationEnabled: () => false, orchestrationControl: () => undefined }));
 vi.mock('../dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => true }));
@@ -50,6 +51,8 @@ vi.mock('../dispatcher/dispatcher-service', () => ({
   getDispatcherAgentId: () => 'disp',
   getDispatcherState: () => ({ config: { name: 'Rosie' } }),
   isDispatcherAgentId: (id: string) => id === 'disp',
+  isDispatcherIdentityAgentId: (id: string) => id === 'disp' || id === 'disp-chat',
+  isDispatcherPath: (p?: string) => p === 'dispatcher-folder',
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../notification-service', () => ({ getSettings: () => ({ enabled: false }), sendNotification: vi.fn() }));
@@ -98,6 +101,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 beforeEach(async () => {
   h.saved = { actions: [], state: { nextAt: {}, waits: [] } };
   h.runs.clear();
+  h.known.clear();
   h.deliver.mockClear();
   h.note.mockClear();
   h.clear.mockClear();
@@ -112,6 +116,30 @@ afterEach(() => {
   for (const stop of stops.splice(0)) stop();
   stopActions();
   setAppActionGate('Upkeep', null);
+});
+
+it('excludes both Dispatcher identities and owned helper ancestry from any-agent turn batches', async () => {
+  vi.useFakeTimers();
+  try {
+    h.known.set('lead', { projectPath: 'project-folder', name: 'Lead' });
+    h.known.set('disp-chat', { projectPath: 'dispatcher-folder', name: 'Chat' });
+    h.known.set('helper', { projectPath: 'project-folder', name: 'Helper', parentAgentId: 'disp' });
+    h.known.set('nested', { projectPath: 'project-folder', name: 'Nested', parentAgentId: 'helper' });
+    h.known.set('internal', { projectPath: 'dispatcher-folder', name: 'Internal' });
+    const a = createAction({
+      trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 10 },
+      steps: [{ kind: 'notify', text: 'Turns finished' }],
+    }, { kind: 'user' });
+    for (const agentId of ['disp', 'disp-chat', 'helper', 'nested', 'internal', 'lead']) {
+      publishAppEvent({ type: 'turn.ended', agentId, via: 'chat', outcome: 'done' });
+    }
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(actionHistory(a.id)).toHaveLength(1);
+    expect(actionHistory(a.id)[0].trigger).toMatchObject({ agentIds: ['lead'], detail: 'Finished turns: Lead' });
+  } finally {
+    stopActions();
+    vi.useRealTimers();
+  }
 });
 
 it('wires Electron presence only for enabled return actions and persists use without publishing absence details', async () => {

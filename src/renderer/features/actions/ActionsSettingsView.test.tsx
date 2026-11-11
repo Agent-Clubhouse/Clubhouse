@@ -22,6 +22,28 @@ beforeEach(() => {
 });
 
 describe('Settings > Actions', () => {
+  it('offers any readable agent only for turns, replacing Wait first with the bounded grouping control', async () => {
+    list = [action({
+      trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 },
+    })];
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByText('Morning plan'));
+    const card = await screen.findByTestId('action-card');
+    expect(within(card).getByText(/any readable durable agent finishes a turn, grouped for 15 seconds from the first turn/)).toBeTruthy();
+    fireEvent.click(within(card).getByRole('button', { name: 'Edit' }));
+    const form = await screen.findByTestId('action-form');
+    const group = within(form).getByLabelText('Group turns for (seconds)') as HTMLInputElement;
+    expect([group.min, group.max, group.value]).toEqual(['10', '600', '15']);
+    expect(within(form).getByText(/allowed by default for the Dispatcher and can be turned off/)).toBeTruthy();
+    expect(within(form).queryByLabelText('Wait first (minutes, optional)')).toBeNull();
+    fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.turn_failed' } });
+    expect(within(form).getByRole('option', { name: 'Any readable agent' })).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.slept' } });
+    expect(within(form).queryByRole('option', { name: 'Any readable agent' })).toBeNull();
+    expect(within(form).queryByLabelText('Group turns for (seconds)')).toBeNull();
+    expect(within(form).getByLabelText('Wait first (minutes, optional)')).toBeTruthy();
+  });
+
   it('offers time and daily filters for all event kinds and shows them on the card', async () => {
     list = [action({
       trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, afterLocalTime: '08:00', oncePerDay: true },

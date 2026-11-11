@@ -60,6 +60,16 @@ describe('the Dispatcher\'s defaults (#3050, #3034)', () => {
     ]) expect(defaultGrants(facts).some((g) => g.action === 'memory.write')).toBe(false);
   });
 
+  it('allows the Dispatcher to watch readable-agent activity; nobody else gets a default activity grant', () => {
+    expect(mode(dispatcher, 'agent.watch', { kind: 'app' })).toBe('allow');
+    for (const facts of [
+      { dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: true, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: false, orchestrates: true, crossProject: true },
+      { dispatcherChat: true, dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+    ]) expect(defaultGrants(facts).some((g) => g.action === 'agent.watch')).toBe(false);
+  });
+
   it('has broad power over connected agents, plus connections', () => {
     for (const action of ['agent.read', 'agent.message', 'agent.wake', 'agent.sleep', 'agent.reset', 'agent.display', 'agent.configure', 'connection.manage'] as const) {
       expect(mode(dispatcher, action, connected), action).toBe('allow');

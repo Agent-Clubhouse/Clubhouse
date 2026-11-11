@@ -4,6 +4,20 @@ import { draftFrom, draftToInput, newDraft, toLocalInput } from './action-draft'
 const NOW = new Date(2026, 10, 9, 8, 0).getTime();
 
 describe('action draft', () => {
+  it('round-trips an any-agent window, replacing Wait first and clearing grouping for other sources', () => {
+    const input = {
+      trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 } as const,
+      steps: [{ kind: 'notify', text: 'hi' }],
+    };
+    const draft = draftFrom(input, NOW);
+    expect(draft.source).toBe('any');
+    expect(draftToInput({ ...draft, delay: '30' }, NOW)).toMatchObject({ ok: true, input });
+    expect(draftToInput({ ...draft, delay: '0.5' }, NOW)).toMatchObject({ ok: true, input });
+    expect(draftToInput({ ...draft, coalesceSeconds: '9' }, NOW).ok).toBe(false);
+    const specific = draftToInput({ ...draft, source: 'agent:a' }, NOW);
+    expect(specific.ok && specific.input.trigger).toEqual({ kind: 'event', event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'a' } });
+  });
+
   it('round-trips generic time filters and omits them after switching to a schedule', () => {
     const input = {
       trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, afterLocalTime: '08:00', oncePerDay: true } as const,

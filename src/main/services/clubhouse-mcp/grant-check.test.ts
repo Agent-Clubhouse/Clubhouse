@@ -302,7 +302,7 @@ describe('a person\'s changes reach the next call (#2971)', () => {
 
   it('subscribing is making an Action (#3042): it follows action.write on the app', async () => {
     const subscribe = registerAll().find((t) => t.name === 'subscribe')!;
-    expect(subscribe.grant).toEqual({ actions: ['action.write'], target: 'app' });
+    expect(toolGrantDeclarations(subscribe.grant)).toContainEqual({ actions: ['action.write'], target: 'app' });
     for (const caller of CALLERS) expect(checkToolGrant(caller, subscribe.grant, {}).ok, caller).toBe(true);
     await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'action.write', target: { kind: 'app' }, mode: 'off' }] }));
     try {
@@ -310,6 +310,27 @@ describe('a person\'s changes reach the next call (#2971)', () => {
       expect(refused).toMatchObject({ ok: false, reason: 'no_grant' });
       if (refused.ok === false) expect(refused.message).toContain('action.write on the app');
       expect(checkToolGrant('orchestrator', subscribe.grant, {}).ok).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+
+  it('requires activity permission only for an any-agent source, flat or nested, even without a window argument', async () => {
+    const tools = registerAll();
+    const subscribe = tools.find((t) => t.name === 'subscribe')!;
+    const create = tools.find((t) => t.name === 'create_action')!;
+    expect(checkToolGrant('plain', subscribe.grant, { source: { kind: 'agent', agentId: 'plain' } }).ok).toBe(true);
+    expect(checkToolGrant('plain', create.grant, { trigger: { kind: 'schedule' } }).ok).toBe(true);
+    const direct = { source: { kind: 'any' } };
+    const nested = { trigger: { kind: 'event', source: { kind: 'any' } } };
+    expect(checkToolGrant('plain', subscribe.grant, direct)).toMatchObject({ ok: false, action: 'agent.watch' });
+    expect(checkToolGrant('plain', create.grant, nested)).toMatchObject({ ok: false, action: 'agent.watch' });
+    // The engine, not a one-call approval, explains why a saved Allow is necessary.
+    expect(checkToolGrant('dispatcher', subscribe.grant, direct).ok).toBe(true);
+    try {
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.watch', target: { kind: 'app' }, mode: 'allow' }] }));
+      expect(checkToolGrant('plain', subscribe.grant, direct).ok).toBe(true);
+      expect(checkToolGrant('plain', create.grant, nested).ok).toBe(true);
     } finally {
       await updateAgentGrantChanges('plain', () => undefined);
     }
