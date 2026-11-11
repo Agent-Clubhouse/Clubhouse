@@ -3,6 +3,7 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { execSync, execFileSync } from 'child_process';
+import { isDeepStrictEqual } from 'util';
 import { app } from 'electron';
 import { getShellEnvironment } from '../util/shell';
 import type { LaunchWrapperConfig } from '../../shared/types';
@@ -507,6 +508,61 @@ export function mergeHookEntries(
   }
 
   return merged;
+}
+
+/** Refuse ambiguous user files instead of treating failed reads as an empty config. */
+export async function writeTerminalHooksConfig(
+  filePath: string,
+  newHooks: Record<string, unknown[]>,
+  isOwnEntry: (entry: unknown) => boolean,
+): Promise<void> {
+  let contents: string | undefined;
+  try {
+    contents = await fsp.readFile(filePath, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      throw new Error(`Cannot read hooks at ${filePath}. Fix file access and restart the agent.`);
+    }
+  }
+  let existing: unknown = {};
+  if (contents !== undefined) {
+    try {
+      existing = JSON.parse(contents);
+    } catch {
+      throw new Error(`Invalid JSON in hooks at ${filePath}. Repair the file and restart the agent. Clubhouse did not modify it.`);
+    }
+  }
+  if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+    throw new Error(`Invalid hook settings at ${filePath}. Expected an object. Clubhouse did not modify it.`);
+  }
+  const settings = existing as Record<string, unknown>;
+  const hooks = settings.hooks;
+  if (hooks !== undefined && (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)
+    || Object.values(hooks).some((entries) => !Array.isArray(entries)))) {
+    throw new Error(`Invalid hooks at ${filePath}. Expected an object of event arrays. Clubhouse did not modify it.`);
+  }
+  // Recognize the fixed-port writer too, but never claim an entry with user additions.
+  const normalize = (entry: unknown): unknown => JSON.parse(JSON.stringify(entry, (key, value) =>
+    key === 'command' && typeof value === 'string'
+      ? value.replace(/(:\/\/(?:127\.0\.0\.1|localhost):)\d+(\/hook\/)/g,
+        (_match, prefix, suffix) => `${prefix}${process.platform === 'win32' ? '%CLUBHOUSE_HOOK_PORT%' : '${CLUBHOUSE_HOOK_PORT}'}${suffix}`)
+      : value));
+  const generated = [
+    ...Object.values(newHooks).flat(),
+    { hooks: [{ type: 'command', command: 'cat | curl -s -X POST http://127.0.0.1:1/hook/${CLUBHOUSE_AGENT_ID} || true' }] },
+  ].map(normalize);
+  const mergedHooks = mergeHookEntries(settings, newHooks, (entry) => {
+    if (!isOwnEntry(entry)) return false;
+    if (!/CLUBHOUSE_AGENT_ID|CLUBHOUSE_HOOK_NONCE|X-Clubhouse-Nonce/.test(JSON.stringify(entry))) return false;
+    if (!generated.some((known) => isDeepStrictEqual(known, normalize(entry)))) {
+      throw new Error(`Ambiguous Clubhouse hook at ${filePath}. Separate or review customized callbacks and restart the agent. Clubhouse did not modify it.`);
+    }
+    return true;
+  });
+  const merged = { ...settings, hooks: mergedHooks };
+  if (!isDeepStrictEqual(settings, merged)) {
+    await fsp.writeFile(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+  }
 }
 
 /**

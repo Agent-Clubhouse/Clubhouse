@@ -1,6 +1,6 @@
 import type { PermissionLevel } from '../../shared/chat/capabilities';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
-import type { McpServerDef } from '../../shared/types';
+import type { McpServerDef, TurnOutcome } from '../../shared/types';
 import type { ContextWindowOptions } from '../../shared/context-window';
 
 export type OrchestratorId = 'claude-code' | (string & {});
@@ -95,6 +95,9 @@ export interface HeadlessCommandResult {
 
 export interface NormalizedHookEvent {
   kind: 'pre_tool' | 'post_tool' | 'tool_error' | 'stop' | 'notification' | 'permission_request';
+  outcome?: TurnOutcome;
+  /** Claude's prompt_id or Codex's turn_id, when supplied by the CLI. */
+  turnId?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
   message?: string;

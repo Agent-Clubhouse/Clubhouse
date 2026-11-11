@@ -10,7 +10,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   writeFile: vi.fn(async () => undefined),
 }));
 
@@ -28,6 +28,9 @@ import * as fsp from 'fs/promises';
 import { getShellEnvironment } from '../util/shell';
 import { ClaudeCodeProvider } from './claude-code-provider';
 import type { ModelList } from './types';
+import { onAppEvent, publishFromHookEvent, resetAppEventBus, type AppEvent } from '../services/app-event-bus';
+
+afterEach(() => resetAppEventBus());
 
 /** Match any path whose basename is 'claude' (with or without .exe/.cmd) */
 function isClaudePath(p: string | Buffer | URL): boolean {
@@ -357,6 +360,52 @@ describe('ClaudeCodeProvider', () => {
       expect(result?.message).toBe('Done');
     });
 
+    it('reports genuine failures and compaction without mistaking tool errors for turn failures', () => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      for (const raw of [
+        { hook_event_name: 'UserPromptSubmit', prompt_id: 'one' },
+        { hook_event_name: 'PostToolUseFailure', message: 'tool failed' },
+        { hook_event_name: 'PostCompact' },
+        { hook_event_name: 'Stop', prompt_id: 'one' },
+        { hook_event_name: 'Stop', prompt_id: 'one' },
+        { hook_event_name: 'UserPromptSubmit', prompt_id: 'two' },
+        { hook_event_name: 'Stop', prompt_id: 'one' },
+        { hook_event_name: 'StopFailure', prompt_id: 'two', error: 'rate_limit', error_details: 'Rate limit reached' },
+        { hook_event_name: 'Stop', prompt_id: 'two' },
+      ]) {
+        const normalized = provider.parseHookEvent(raw);
+        expect(normalized).not.toBeNull();
+        publishFromHookEvent('claude', { ...normalized!, rawName: raw.hook_event_name });
+      }
+      expect(events.map((event) => event.type)).toEqual([
+        'turn.started', 'agent.compacted', 'turn.ended', 'turn.started', 'turn.ended', 'agent.error',
+      ]);
+      expect(events.filter((event) => event.type === 'turn.ended').map((event) => event.outcome)).toEqual(['completed', 'failed']);
+      expect(events.at(-1)).toMatchObject({ message: 'Claude turn failed: rate_limit' });
+      expect(provider.parseHookEvent({ hook_event_name: 'Interrupt' })).toBeNull();
+    });
+
+    it.each(['rate_limit', 'secret-in-error', '__proto__', undefined])('limits StopFailure details to a known error category (%s)', (error) => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      const normalized = provider.parseHookEvent({
+        hook_event_name: 'StopFailure',
+        error,
+        error_details: `Authorization: Bearer secret /Users/private/project ${'x'.repeat(100_000)}`,
+        prompt: 'private prompt',
+        tool_input: { command: 'private tool command' },
+        last_assistant_message: 'private response',
+      });
+      publishFromHookEvent('claude', { ...normalized!, rawName: 'StopFailure' });
+      const failure = events.find((event) => event.type === 'agent.error');
+      expect(failure).toEqual(expect.objectContaining({
+        message: `Claude turn failed: ${error === 'rate_limit' ? 'rate_limit' : 'unknown'}`,
+      }));
+      expect(JSON.stringify(failure).length).toBeLessThan(200);
+      expect(JSON.stringify(failure)).not.toMatch(/secret|private|Bearer/);
+    });
+
     it('parses Notification as notification', () => {
       const result = provider.parseHookEvent({ hook_event_name: 'Notification', message: 'Hello' });
       expect(result?.kind).toBe('notification');
@@ -469,6 +518,29 @@ describe('ClaudeCodeProvider', () => {
   });
 
   describe('writeHooksConfig', () => {
+    it('upgrades existing hooks idempotently without replacing user hooks or settings', async () => {
+      const cwd = path.resolve('project');
+      const userHook = { hooks: [{ type: 'command', command: 'user-hook' }] };
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        permissions: { allow: ['Read'] },
+        hooks: { UserPromptSubmit: [userHook], Stop: [userHook], CustomEvent: [userHook] },
+      }));
+      await provider.writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+      const first = String(vi.mocked(fsp.writeFile).mock.calls.at(-1)![1]);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(first);
+      await provider.writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+      const second = JSON.parse(String(vi.mocked(fsp.writeFile).mock.calls.at(-1)![1]));
+      expect(second).toEqual(JSON.parse(first));
+      expect(second.permissions).toEqual({ allow: ['Read'] });
+      expect(second.hooks.UserPromptSubmit).toHaveLength(2);
+      expect(second.hooks.UserPromptSubmit[0]).toEqual(userHook);
+      expect(second.hooks.Stop[0]).toEqual(userHook);
+      expect(second.hooks.CustomEvent).toEqual([userHook]);
+      expect(second.hooks.StopFailure).toHaveLength(1);
+      expect(second.hooks.PostCompact).toHaveLength(1);
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+    });
+
     it('creates .claude dir and writes settings.local.json', async () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         if (isClaudePath(p as string)) return true;

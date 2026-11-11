@@ -26,9 +26,9 @@ import { codexContextWindowOptions, parseCodexContextCatalog, type ContextWindow
 import { probeCodexModels, type ModelProbeContext } from './model-probes';
 import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
-import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
+import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
-import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { isClubhouseHookEntry, preserveUnchangedSnapshot } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
 
@@ -216,6 +216,8 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PostToolUse: 'post_tool',
   PermissionRequest: 'permission_request',
   Stop: 'stop',
+  Interrupt: 'stop',
+  PostCompact: 'notification',
   SessionStart: 'notification',
   UserPromptSubmit: 'notification',
 };
@@ -531,6 +533,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      Interrupt: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PostCompact: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       SessionStart: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       // A longer timeout so the hook server can hold the response while a
@@ -539,19 +543,15 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     };
 
     const codexDir = path.join(cwd, '.codex');
-    await fsp.mkdir(codexDir, { recursive: true });
-
     const hooksPath = path.join(codexDir, 'hooks.json');
 
-    let existing: Record<string, unknown> = {};
     try {
-      existing = JSON.parse(await fsp.readFile(hooksPath, 'utf-8'));
-    } catch {
-      // No existing file — expected on first run
+      await fsp.mkdir(codexDir, { recursive: true });
+      await writeTerminalHooksConfig(hooksPath, hooks, isClubhouseHookEntry);
+    } catch (err) {
+      await preserveUnchangedSnapshot(hooksPath);
+      throw err;
     }
-
-    const mergedHooks = mergeHookEntries(existing, hooks, isClubhouseHookEntry);
-    await fsp.writeFile(hooksPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {
@@ -563,6 +563,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
     return {
       kind,
+      ...(typeof obj.turn_id === 'string' && obj.turn_id ? { turnId: obj.turn_id } : {}),
+      ...(eventName === 'Interrupt' ? { outcome: 'interrupted' as const } : {}),
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
       message: obj.message as string | undefined,

@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
 import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
+import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
+import { CodexCliProvider } from '../orchestrators/codex-cli-provider';
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(() => Promise.reject(new Error('ENOENT'))),
   writeFile: vi.fn(() => Promise.resolve(undefined)),
   unlink: vi.fn(() => Promise.resolve(undefined)),
+  mkdir: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 vi.mock('./fs-utils', () => ({
@@ -120,6 +123,27 @@ describe('config-pipeline', () => {
       expect(written.hooks.PreToolUse).toEqual([
         { hooks: [{ type: 'command', command: 'echo user-hook' }] },
       ]);
+    });
+
+    it('removes only the managed callback inside a mixed group, retaining user order and metadata', async () => {
+      const before = { type: 'command', command: 'user-before' };
+      const after = { type: 'command', command: 'curl https://example.com/hook/user-after', customKey: true };
+      const own = { type: 'command', command: CLUBHOUSE_HOOK_CMD };
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        customSetting: 'keep',
+        hooks: {
+          PreToolUse: [{ matcher: 'Bash', customGroupKey: 'keep', hooks: [before, own, after] }],
+          Stop: [{ hooks: [own] }],
+        },
+      }));
+      expect(await stripClubhouseHooksFromFile('/project/.claude/settings.local.json')).toBe(true);
+      const written = JSON.parse(String(vi.mocked(fsp.writeFile).mock.calls[0][1]));
+      expect(written).toEqual({
+        customSetting: 'keep',
+        hooks: { PreToolUse: [{ matcher: 'Bash', customGroupKey: 'keep', hooks: [before, after] }] },
+      });
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
   });
 
@@ -573,6 +597,63 @@ describe('config-pipeline', () => {
   });
 
   describe('restoreAll', () => {
+    it.each([
+      ['Claude', () => new ClaudeCodeProvider(), '.claude/settings.local.json'],
+      ['Codex', () => new CodexCliProvider(), '.codex/hooks.json'],
+    ] as const)('leaves a refused %s hook setup byte-identical on shutdown', async (_name, makeProvider, relative) => {
+      const original = JSON.stringify({
+        permissions: { allow: ['Read'] },
+        hooks: { Stop: [{ hooks: [
+          { type: 'command', command: CLUBHOUSE_HOOK_CMD },
+          { type: 'command', command: 'user-command' },
+        ] }] },
+      }, null, '\t') + '\n';
+      vi.mocked(fsp.readFile).mockResolvedValue(original);
+      await snapshotFile('agent-1', path.join('/project', relative));
+      await expect(makeProvider().writeHooksConfig('/project', 'http://127.0.0.1:9999/hook')).rejects.toThrow('Ambiguous Clubhouse hook');
+      await restoreAll();
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
+      expect(hasSnapshot(path.join('/project', relative))).toBe(false);
+    });
+
+    it('preserves commented JSON after refused startup and shutdown', async () => {
+      const original = '{\n  // user comment\n  "hooks": {}\n}\n';
+      vi.mocked(fsp.readFile).mockResolvedValue(original);
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await expect(new ClaudeCodeProvider().writeHooksConfig('/project', 'http://127.0.0.1:9999/hook')).rejects.toThrow('Invalid JSON');
+      await restoreAll();
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('does not clean the snapshot when hook directory access refuses startup', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('{"hooks":{"Stop":[{"command":"${CLUBHOUSE_AGENT_ID}"}]}}\n');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      const error = Object.assign(new Error('directory access denied'), { code: 'EACCES' });
+      vi.mocked(fsp.mkdir).mockRejectedValueOnce(error);
+      await expect(new ClaudeCodeProvider().writeHooksConfig('/project', 'http://127.0.0.1:9999/hook')).rejects.toBe(error);
+      await restoreAll();
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('still removes a managed-only group after successful idempotent setup', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      const provider = new ClaudeCodeProvider();
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const current = String(vi.mocked(fsp.writeFile).mock.calls[0][1]);
+      vi.mocked(fsp.writeFile).mockClear();
+      vi.mocked(fsp.readFile).mockResolvedValue(current);
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      await restoreAll();
+      expect(fsp.writeFile).toHaveBeenCalledWith(
+        path.resolve('/project/.claude/settings.local.json'), '{}', 'utf-8',
+      );
+    });
+
     it('restores all snapshots at once', async () => {
       vi.mocked(fsp.readFile)
         .mockResolvedValueOnce('content-a')
@@ -741,11 +822,24 @@ describe('config-pipeline', () => {
       expect(isClubhouseHookEntry(42)).toBe(false);
     });
 
-    it('detects entries containing /hook/ URL pattern', () => {
+    it.each([
+      'curl http://127.0.0.1:8080/hook/some-agent',
+      'curl https://example.com/hook/user',
+      './scripts/hook/lint.sh',
+      'echo "${CLUBHOUSE_AGENT_ID}"',
+    ])('does not claim an unrelated user command: %s', (command) => {
       const entry = {
-        hooks: [{ type: 'command', command: 'curl http://127.0.0.1:8080/hook/some-agent' }],
+        hooks: [{ type: 'command', command }],
       };
-      expect(isClubhouseHookEntry(entry)).toBe(true);
+      expect(isClubhouseHookEntry(entry)).toBe(false);
+    });
+
+    it.each([
+      'cat | curl -s -X POST http://127.0.0.1:9999/hook/${CLUBHOUSE_AGENT_ID} || true',
+      'cat | curl -s -X POST http://localhost:${CLUBHOUSE_HOOK_PORT}/hook/${CLUBHOUSE_AGENT_ID} || true',
+      'curl -s -X POST http://127.0.0.1:%CLUBHOUSE_HOOK_PORT%/hook/%CLUBHOUSE_AGENT_ID% || (exit /b 0)',
+    ])('recognizes generated loopback callbacks without a nonce: %s', (command) => {
+      expect(isClubhouseHookEntry({ hooks: [{ type: 'command', command }] })).toBe(true);
     });
   });
 

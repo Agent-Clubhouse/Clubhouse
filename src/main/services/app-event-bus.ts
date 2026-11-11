@@ -8,11 +8,11 @@
  * terminal hooks, the git watcher). The bus imports none of its consumers.
  */
 
-import type { HookEventKind } from '../../shared/types';
+import type { HookEventKind, TurnOutcome } from '../../shared/types';
 import type { ChatEvent, TurnStopReason } from '../../shared/chat';
 import { COMPACTION_SETTLED } from '../../shared/chat';
 
-export type TurnOutcome = 'completed' | 'failed' | 'interrupted';
+export type { TurnOutcome } from '../../shared/types';
 
 /** Where a turn event came from: a chat runtime, or a terminal CLI's hooks. */
 export type TurnVia = 'chat' | 'hook';
@@ -158,18 +158,19 @@ export function publishFromChatEvent(event: ChatEvent): void {
 }
 
 /** Terminal agents whose turn is under way, as far as their hooks tell, and when they last reported. */
-const hookTurns = new Map<string, number>();
+const hookTurns = new Map<string, { lastAt: number; ended: boolean; turnId?: string }>();
 
 /**
  * A turn that has said nothing for this long is treated as over: Claude runs
- * no Stop hook when the person interrupts a turn.
+ * no interruption hook when the person interrupts a turn. Silence alone is
+ * not evidence of an interrupted outcome, so this only resets start detection.
  */
 const HOOK_TURN_STALE_MS = 5 * 60 * 1000;
 
 /** Raw hook names that mean the person (or Clubhouse) sent a prompt. */
 const PROMPT_HOOKS: ReadonlySet<string> = new Set(['UserPromptSubmit', 'userPromptSubmitted']);
 /** Raw hook names that mean a turn finished. Copilot's sessionEnd is the process ending, not a turn. */
-const TURN_END_HOOKS: ReadonlySet<string> = new Set(['Stop']);
+const TURN_END_HOOKS: ReadonlySet<string> = new Set(['Stop', 'StopFailure', 'Interrupt']);
 /** Tools that put a question to the person. */
 const QUESTION_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion']);
 
@@ -179,35 +180,47 @@ export interface HookFacts {
   /** The CLI's own hook name (e.g. Stop, UserPromptSubmit, sessionEnd). */
   rawName?: string;
   toolName?: string;
+  turnId?: string;
+  outcome?: TurnOutcome;
+  message?: string;
 }
 
-function startHookTurn(agentId: string, at: number): void {
-  hookTurns.set(agentId, at);
+function startHookTurn(agentId: string, at: number, turnId?: string): void {
+  hookTurns.set(agentId, { lastAt: at, ended: false, turnId });
   publishAppEvent({ type: 'turn.started', agentId, via: 'hook', at });
 }
 
 /**
  * Turn a terminal CLI hook into bus events. Terminal coverage is what the
  * CLIs' hooks allow:
- * - a turn starts at a prompt hook, or at the first tool when the CLI has no
- *   prompt hook registered (Claude);
- * - it ends at a Stop hook (Claude, Codex); Copilot has none per turn;
+ * - a turn starts at a prompt hook, or at the first tool without one;
+ * - it ends at Stop, StopFailure (Claude) or Interrupt (Codex);
+ *   Copilot has no per-turn end hook;
  * - waiting on you is a permission request, or a question tool;
  * - tool failures are not "hits an error" (a failed grep is routine), and
  *   session start and notification hooks publish nothing.
  */
 export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Date.now()): void {
-  const { kind, rawName, toolName } = facts;
+  const { kind, rawName, toolName, turnId } = facts;
+  const turn = hookTurns.get(agentId);
   if (rawName && PROMPT_HOOKS.has(rawName)) {
-    startHookTurn(agentId, now);
+    if (turnId && turn?.turnId === turnId) return;
+    startHookTurn(agentId, now, turnId);
+    return;
+  }
+  if (rawName === 'PostCompact') {
+    publishAppEvent({ type: 'agent.compacted', agentId, at: now });
     return;
   }
   switch (kind) {
     case 'pre_tool':
     case 'post_tool': {
-      const last = hookTurns.get(agentId);
-      if (last === undefined || now - last > HOOK_TURN_STALE_MS) startHookTurn(agentId, now);
-      else hookTurns.set(agentId, now);
+      if (turnId && turn?.turnId) {
+        if (turnId === turn.turnId && turn.ended) return;
+        if (turnId !== turn.turnId) return;
+      }
+      if (!turn || turn.ended || now - turn.lastAt > HOOK_TURN_STALE_MS) startHookTurn(agentId, now, turnId);
+      else turn.lastAt = now;
       if (kind === 'pre_tool' && toolName && QUESTION_TOOLS.has(toolName)) {
         publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'question', at: now });
       }
@@ -215,8 +228,17 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
     }
     case 'stop':
       if (rawName && !TURN_END_HOOKS.has(rawName)) return;
-      hookTurns.delete(agentId);
-      publishAppEvent({ type: 'turn.ended', agentId, via: 'hook', outcome: 'completed', at: now });
+      if (turnId && turn?.turnId && turnId !== turn.turnId) return;
+      // The first explicit end wins; a later failure cannot revise a published completion.
+      if (turn?.ended) return;
+      hookTurns.set(agentId, { lastAt: now, ended: true, turnId: turnId ?? turn?.turnId });
+      {
+        const outcome = facts.outcome ?? (rawName === 'Interrupt' ? 'interrupted' : rawName === 'StopFailure' ? 'failed' : 'completed');
+        publishAppEvent({ type: 'turn.ended', agentId, via: 'hook', outcome, at: now });
+        if (outcome === 'failed' && facts.message) {
+          publishAppEvent({ type: 'agent.error', agentId, via: 'hook', message: facts.message, at: now });
+        }
+      }
       return;
     case 'permission_request':
       publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'permission', at: now });

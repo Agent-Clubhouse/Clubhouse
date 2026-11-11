@@ -63,6 +63,7 @@ async function cleanupCopilotHooksFile(file: string, options?: ConfigCleanupOpti
 interface FileSnapshot {
   originalContent: string | null; // null = file didn't exist before us
   refCount: number;
+  preserveIfUnchanged?: boolean;
 }
 
 /** Keyed by absolute file path */
@@ -160,6 +161,14 @@ export function hasSnapshot(filePath: string): boolean {
   return snapshots.has(path.resolve(filePath));
 }
 
+/** A refused hook setup must not turn its untouched snapshot into a cleanup write. */
+export function preserveUnchangedSnapshot(filePath: string): Promise<void> {
+  return withMutex(async () => {
+    const snapshot = snapshots.get(path.resolve(filePath));
+    if (snapshot) snapshot.preserveIfUnchanged = true;
+  });
+}
+
 /**
  * Resolve the hooks config file path for a provider in a given project directory.
  * Returns null if the provider doesn't support hooks.
@@ -173,8 +182,7 @@ export function getHooksConfigPath(provider: OrchestratorProvider, cwd: string):
 
 /**
  * Check if a hook entry was written by Clubhouse.
- * Detects our entries by looking for the CLUBHOUSE_AGENT_ID env var
- * or the /hook/ URL pattern in command/bash strings.
+ * Require a nonce marker or the generated loopback callback command shape.
  */
 export function isClubhouseHookEntry(entry: unknown): boolean {
   if (!entry || typeof entry !== 'object') return false;
@@ -203,7 +211,8 @@ export function isClubhouseHookEntry(entry: unknown): boolean {
 }
 
 function isClubhouseCommand(cmd: string): boolean {
-  return cmd.includes('CLUBHOUSE_AGENT_ID') || cmd.includes('/hook/');
+  if (cmd.includes('X-Clubhouse-Nonce') || cmd.includes('CLUBHOUSE_HOOK_NONCE')) return true;
+  return /^(?:cat \| )?curl -s -X POST http:\/\/(?:127\.0\.0\.1|localhost):(?:\d+|\$\{CLUBHOUSE_HOOK_PORT\}|%CLUBHOUSE_HOOK_PORT%)\/hook\/(?:\$\{CLUBHOUSE_AGENT_ID\}|%CLUBHOUSE_AGENT_ID%)(?: \|\| true| \|\| \(exit \/b 0\))?$/.test(cmd);
 }
 
 /**
@@ -221,7 +230,13 @@ export function stripClubhouseHooks(settings: Record<string, unknown>): Record<s
 
   for (const [eventKey, entries] of Object.entries(hooksObj)) {
     if (!Array.isArray(entries)) continue;
-    const userEntries = entries.filter(e => !isClubhouseHookEntry(e));
+    const userEntries = entries.flatMap((entry) => {
+      if (!isClubhouseHookEntry(entry)) return [entry];
+      const group = entry as Record<string, unknown>;
+      if (!Array.isArray(group.hooks)) return [];
+      const kept = group.hooks.filter((hook) => !isClubhouseHookEntry(hook));
+      return kept.length ? [{ ...group, hooks: kept }] : [];
+    });
     if (userEntries.length > 0) {
       cleaned[eventKey] = userEntries;
     }
@@ -321,6 +336,18 @@ function isTomlFile(filePath: string): boolean {
 }
 
 async function restoreSnapshot(absPath: string, snapshot: FileSnapshot, options?: ConfigCleanupOptions): Promise<void> {
+  if (snapshot.preserveIfUnchanged) {
+    if (snapshot.originalContent === null) return;
+    try {
+      if (await fsp.readFile(absPath, 'utf-8') === snapshot.originalContent) return;
+    } catch (err) {
+      // telemetry-exempt: setup already reported its failure; cleanup only explains why it left user bytes untouched.
+      appLog('core:config-pipeline', 'warn', 'Refused hook config cleanup skipped: current file could not be read', {
+        meta: { filePath: absPath, error: err instanceof Error ? err.message : String(err) },
+      });
+      return;
+    }
+  }
   // Keep Copilot out of generic corrupt-file unlink/snapshot-fallback recovery.
   if (isCopilotHooksPath(absPath)) {
     await cleanupCopilotHooksFile(absPath, options);

@@ -1,4 +1,5 @@
 import type { ListModelsOptions } from './types';
+import type { SDKAssistantMessageError } from '@anthropic-ai/claude-agent-sdk';
 import type { PlanQuotaReading } from '../../shared/helper-routing';
 import { probeClaudeQuota } from './quota-probes';
 import { claudeContextWindowOptions, type ContextWindowOptions } from '../../shared/context-window';
@@ -23,8 +24,8 @@ import {
 } from './types';
 import { BaseProvider } from './base-provider';
 import { probeClaudeModels, type ModelProbeContext } from './model-probes';
-import { cliStateDir, homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
-import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { cliStateDir, homePath, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, resolveEncodedPathDir, parseJsonlFile } from './shared';
+import { isClubhouseHookEntry, preserveUnchangedSnapshot } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 
 const TOOL_VERBS: Record<string, string> = {
@@ -60,9 +61,29 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PreToolUse: 'pre_tool',
   PostToolUse: 'post_tool',
   PostToolUseFailure: 'tool_error',
+  UserPromptSubmit: 'notification',
   Stop: 'stop',
+  StopFailure: 'stop',
+  PostCompact: 'notification',
   Notification: 'notification',
   PermissionRequest: 'permission_request',
+};
+
+// Free-form error_details can contain request content, local paths or credentials.
+const STOP_FAILURE_MESSAGES: Record<SDKAssistantMessageError, string> = {
+  authentication_failed: 'Claude turn failed: authentication_failed',
+  oauth_org_not_allowed: 'Claude turn failed: oauth_org_not_allowed',
+  account_on_hold: 'Claude turn failed: account_on_hold',
+  verification_required: 'Claude turn failed: verification_required',
+  billing_error: 'Claude turn failed: billing_error',
+  rate_limit: 'Claude turn failed: rate_limit',
+  overloaded: 'Claude turn failed: overloaded',
+  invalid_request: 'Claude turn failed: invalid_request',
+  model_not_found: 'Claude turn failed: model_not_found',
+  server_error: 'Claude turn failed: server_error',
+  unknown: 'Claude turn failed: unknown',
+  max_output_tokens: 'Claude turn failed: max_output_tokens',
+  cloud_credential_error: 'Claude turn failed: cloud_credential_error',
 };
 
 export class ClaudeCodeProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable {
@@ -225,7 +246,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       PostToolUseFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      StopFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PostCompact: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Notification: [{ matcher: '', hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       // PermissionRequest uses a longer timeout so that the hook server can
       // hold the response while waiting for a remote approval decision from
@@ -234,19 +258,15 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     };
 
     const claudeDir = path.join(cwd, '.claude');
-    await fsp.mkdir(claudeDir, { recursive: true });
-
     const settingsPath = path.join(claudeDir, 'settings.local.json');
 
-    let existing: Record<string, unknown> = {};
     try {
-      existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
-    } catch {
-      // No existing file — expected on first run
+      await fsp.mkdir(claudeDir, { recursive: true });
+      await writeTerminalHooksConfig(settingsPath, hooks, isClubhouseHookEntry);
+    } catch (err) {
+      await preserveUnchangedSnapshot(settingsPath);
+      throw err;
     }
-
-    const mergedHooks = mergeHookEntries(existing, hooks, isClubhouseHookEntry);
-    await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {
@@ -258,9 +278,15 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     return {
       kind,
+      ...(typeof obj.prompt_id === 'string' && obj.prompt_id ? { turnId: obj.prompt_id } : {}),
+      ...(eventName === 'StopFailure' ? { outcome: 'failed' as const } : {}),
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
-      message: obj.message as string | undefined,
+      message: eventName === 'StopFailure'
+        ? (typeof obj.error === 'string' && Object.prototype.hasOwnProperty.call(STOP_FAILURE_MESSAGES, obj.error)
+          ? STOP_FAILURE_MESSAGES[obj.error as SDKAssistantMessageError]
+          : STOP_FAILURE_MESSAGES.unknown)
+        : obj.message as string | undefined,
       ...(typeof obj.permission_mode === 'string' && obj.permission_mode
         ? { permissionLevel: levelFromClaudeMode(obj.permission_mode) }
         : {}),
