@@ -28,7 +28,7 @@ import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
 import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
-import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { isClubhouseHookEntry, preserveUnchangedSnapshot } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
 
@@ -547,7 +547,12 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
     const hooksPath = path.join(codexDir, 'hooks.json');
 
-    await writeTerminalHooksConfig(hooksPath, hooks, isClubhouseHookEntry);
+    try {
+      await writeTerminalHooksConfig(hooksPath, hooks, isClubhouseHookEntry);
+    } catch (err) {
+      await preserveUnchangedSnapshot(hooksPath);
+      throw err;
+    }
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {

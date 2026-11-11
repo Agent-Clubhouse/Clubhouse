@@ -25,7 +25,7 @@ import {
 import { BaseProvider } from './base-provider';
 import { probeClaudeModels, type ModelProbeContext } from './model-probes';
 import { cliStateDir, homePath, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, resolveEncodedPathDir, parseJsonlFile } from './shared';
-import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { isClubhouseHookEntry, preserveUnchangedSnapshot } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 
 const TOOL_VERBS: Record<string, string> = {
@@ -262,7 +262,12 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     const settingsPath = path.join(claudeDir, 'settings.local.json');
 
-    await writeTerminalHooksConfig(settingsPath, hooks, isClubhouseHookEntry);
+    try {
+      await writeTerminalHooksConfig(settingsPath, hooks, isClubhouseHookEntry);
+    } catch (err) {
+      await preserveUnchangedSnapshot(settingsPath);
+      throw err;
+    }
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {
