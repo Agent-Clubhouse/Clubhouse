@@ -32,7 +32,7 @@ beforeEach(() => {
   native = 'bad-native';
 });
 
-describe('Dispatcher work health (#3240)', () => {
+describe('Dispatcher controller health (#3240)', () => {
   it('does not quarantine empty responses and resets preceding failures on their normal turn end (#3284)', () => {
     for (let i = 0; i < REPEATED_TURN_FAILURES + 1; i++) {
       turn('error', { code: 'protocol_error' });
@@ -44,7 +44,7 @@ describe('Dispatcher work health (#3240)', () => {
     expect(startFresh).not.toHaveBeenCalled();
   });
 
-  it('starts the work fresh once its conversation fails every turn', async () => {
+  it('starts the controller fresh once its conversation fails every turn', async () => {
     for (let i = 0; i < REPEATED_TURN_FAILURES - 1; i++) turn('error', { code: 'protocol_error' });
     expect(startFresh).not.toHaveBeenCalled();
     turn('error', { code: 'protocol_error' });
@@ -52,7 +52,7 @@ describe('Dispatcher work health (#3240)', () => {
     await _whenRecoveredForTesting();
   });
 
-  it('uses the real Start fresh, for the work only, saying it was repeated failures', async () => {
+  it('uses the real Start fresh, for the controller only, saying it was repeated failures', async () => {
     for (let i = 0; i < REPEATED_TURN_FAILURES; i++) {
       noteWorkChatEvent(ev('turn_ended', { stopReason: 'error' }), { nativeSessionId: () => native });
     }

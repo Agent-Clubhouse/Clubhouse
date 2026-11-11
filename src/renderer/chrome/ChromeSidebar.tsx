@@ -341,11 +341,11 @@ export function ChromeSidebar() {
   const dispatcherLoadError = useDispatcherStore((s) => s.loadError);
   // Shown from its state, so a failed agent load still opens the view with its error (#2572).
   const dispatcherShown = useUIStore((s) => s.dispatcherOpen) && !!dispatcherAgentId;
-  // The debug view (#3188): a row for its work agent, whose chat the Dispatcher's view shows instead.
+  // The debug view (#3188): a row for its controller, whose chat the Dispatcher's view shows instead.
   const dispatcherDebug = useDispatcherDebug();
   const dispatcherWorkOpen = useDispatcherWorkOpen();
   const dispatcherWorkId = useDispatcherStore((s) => s.state?.agentId ?? null);
-  // The work agent's own running state: `running` is true while either of its agents runs.
+  // The controller's own running state: `running` is true while either of its agents runs.
   const dispatcherWorkRunning = useDispatcherStore((s) => !!s.state?.workRunning);
   const dispatcherRequestsUnderWay = useDispatcherStore((s) => s.state?.requestsUnderWay ?? 0);
 

@@ -291,7 +291,7 @@ export interface ChatViewState {
   untestedCliNote: string | null;
   /**
    * Each CLI run of this conversation, oldest first (#3242): a wake that
-   * resumes it is a new run. The Dispatcher work view draws a boundary at
+   * resumes it is a new run. The Dispatcher controller view draws a boundary at
    * each one and tells errors of an ended run from the active one's.
    */
   runs: ChatRun[];

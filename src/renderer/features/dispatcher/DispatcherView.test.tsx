@@ -35,7 +35,7 @@ afterEach(() => {
 describe('DispatcherView debug view (#3188)', () => {
   afterEach(() => useDispatcherDebugStore.setState({ on: false, workOpen: false }));
 
-  it('shows its work agent\'s chat, read-only, while the debug view is on and its row chose it', async () => {
+  it('shows its controller\'s chat, read-only, while the debug view is on and its row chose it', async () => {
     const read = vi.fn(async () => [
       { agentId: 'disp-work', sessionId: 's', seq: 1, ts: 1, type: 'agent_message', data: { messageId: 'a1', text: 'Checking the agents.' } },
     ]);
@@ -47,7 +47,7 @@ describe('DispatcherView debug view (#3188)', () => {
     render(<DispatcherView />);
     const view = screen.getByTestId('dispatcher-work-view');
     expect(view.getAttribute('data-agent-id')).toBe('disp-work');
-    expect(screen.getByTestId('dispatcher-work-note').textContent).toContain('Read only');
+    expect(screen.getByTestId('dispatcher-work-note').textContent).toBe('Debug view of the Dispatcher’s controller. Read only.');
     expect(await screen.findByText('Checking the agents.')).toBeTruthy();
     expect(read).toHaveBeenCalledWith('disp-work', undefined);
     expect(screen.queryByTestId('runtime-pane')).toBeNull();
@@ -126,16 +126,17 @@ describe('DispatcherView', () => {
     clearChat.mockRestore();
   });
 
-  it('offers Start fresh in its menu, for its work or both conversations, keeping everything else (#3240)', async () => {
+  it('offers Start fresh in its menu, for its controller or both conversations, keeping everything else (#3240)', async () => {
     const startFresh = vi.spyOn(window.clubhouse.dispatcher, 'startFresh').mockResolvedValue({ work: 'next_start' });
     useAgentStore.setState({ agents: { disp: dispatcher() } });
     render(<><DispatcherView /><StartFreshHost /></>);
     fireEvent.click(screen.getByTestId('sleeping-more'));
     fireEvent.click(within(screen.getByTestId('agent-context-menu')).getByTestId('ctx-start-fresh'));
     const confirm = await waitFor(() => screen.getByTestId('dispatcher-start-fresh-confirm'));
+    expect(confirm.textContent).toContain('Dispatcher’s controller conversation ends and a new one starts.');
     expect(confirm.textContent).toContain('Memory, agents, connections, Actions and settings stay as they are.');
     expect(startFresh).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId('dispatcher-start-fresh-work'));
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Controller only' }));
     await waitFor(() => expect(screen.queryByTestId('dispatcher-start-fresh-confirm')).toBeNull());
     expect(startFresh).toHaveBeenCalledWith('work');
 

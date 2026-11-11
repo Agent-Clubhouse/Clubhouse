@@ -4,7 +4,7 @@
  * through requestClearChat and the agent dialog host draws it
  * (ClearChatHost). Clearing never touches what the Dispatcher remembers.
  *
- * Start fresh (#3240) is the same for its work conversation, or for both of
+ * Start fresh (#3240) is the same for its controller conversation, or for both of
  * its conversations: requestStartFresh, drawn by StartFreshHost.
  */
 import { useState } from 'react';
@@ -88,12 +88,12 @@ export function StartFreshDialog({ name, busy, onConfirm, onCancel }: {
       footer={<>
         <Button onClick={onCancel} disabled={busy}>Cancel</Button>
         <Button onClick={() => onConfirm('both')} disabled={busy} data-testid="dispatcher-start-fresh-both">Both conversations</Button>
-        <Button kind="primary" onClick={() => onConfirm('work')} disabled={busy} data-testid="dispatcher-start-fresh-work">Work only</Button>
+        <Button kind="primary" onClick={() => onConfirm('work')} disabled={busy} data-testid="dispatcher-start-fresh-work">Controller only</Button>
       </>}
     >
       <div className="flex flex-col gap-2 text-[13px] text-ctp-subtext1">
         <p>
-          {name}&rsquo;s work conversation ends and a new one starts. The old one is never resumed again. Use this when its work keeps failing.
+          {name}&rsquo;s controller conversation ends and a new one starts. The old one is never resumed again. Use this when its work keeps failing.
         </p>
         <p>
           Both conversations also clears the chat. Memory, agents, connections, Actions and settings stay as they are.

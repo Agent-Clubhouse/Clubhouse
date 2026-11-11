@@ -327,7 +327,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
         visible: true,
         handler: handleClearChat,
       });
-      // Start fresh (#3240): its work conversation, or both, when the work keeps failing.
+      // Start fresh (#3240): its controller conversation, or both, when the work keeps failing.
       list.push({
         id: 'start-fresh',
         label: 'Start fresh',

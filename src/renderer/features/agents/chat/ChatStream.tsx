@@ -240,7 +240,7 @@ export interface ChatStreamProps {
   /** The Dispatcher debug view (#3188): items the group chat would hide or clean, by id, each block marked. */
   debugMarks?: ReadonlyMap<string, GroupChatDebugMark>;
   /**
-   * The Dispatcher work view (#3242): a boundary at the start of each CLI run,
+   * The Dispatcher controller view (#3242): a boundary at the start of each CLI run,
    * saying whether it is active or ended, and errors with their time. `activeSince`
    * is when the active run started, or null when none is.
    */

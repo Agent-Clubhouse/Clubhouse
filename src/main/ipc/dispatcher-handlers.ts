@@ -53,7 +53,7 @@ export function registerDispatcherHandlers(): void {
       return startDispatcherFresh(scope);
     },
   ));
-  // A work conversation that fails every turn starts fresh on its own (#3240).
+  // A controller conversation that fails every turn starts fresh on its own (#3240).
   installDispatcherWorkHealth();
   // What it used today, conversations apart from background work (#3040).
   ipcMain.handle(IPC.DISPATCHER.GET_USAGE, (): DispatcherUsageSplit => getDispatcherUsageSplit());

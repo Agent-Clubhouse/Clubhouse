@@ -38,7 +38,7 @@ beforeEach(() => {
   useChatStore.setState({ agents: {}, loading: {}, partial: {}, loaded: {} });
 });
 
-describe('Dispatcher work view boundaries (#3242)', () => {
+describe('Dispatcher controller view boundaries (#3242)', () => {
   it('marks each run active or ended, and an ended run\'s error as history with its time', () => {
     seed(resumedAfterFailure());
     render(<DispatcherWorkView agentId="work" />);
@@ -80,7 +80,7 @@ describe('Dispatcher work view boundaries (#3242)', () => {
     seed([
       ...resumedAfterFailure(),
       started('s2', 5_000, false, 'new-native'),
-      ev('s2', 5_001, 'notice', { level: 'warn', code: 'started_fresh', message: 'Started fresh. The previous work conversation failed every turn, so Clubhouse stopped resuming it.' }),
+      ev('s2', 5_001, 'notice', { level: 'warn', code: 'started_fresh', message: 'Started fresh. The previous controller conversation failed every turn, so Clubhouse stopped resuming it.' }),
     ]);
     render(<DispatcherWorkView agentId="work" />);
     expect(screen.getByTestId('dispatcher-work-native-id').textContent).toBe('new-native');
@@ -90,7 +90,7 @@ describe('Dispatcher work view boundaries (#3242)', () => {
   });
 });
 
-describe('Dispatcher work health (#3242)', () => {
+describe('Dispatcher controller health (#3242)', () => {
   it('comes from the active run only', () => {
     const recovered = foldChatEvents(undefined, 'work', resumedAfterFailure());
     expect(activeRunSince(recovered)).toBe(2_000);
@@ -114,7 +114,7 @@ describe('Dispatcher work health (#3242)', () => {
     expect(activeRunFailing(endedAfterFailing)).toBe(false);
   });
 
-  it('the work row shows an error only while the active run is failing', () => {
+  it('the controller row shows an error only while the active run is failing', () => {
     seed(resumedAfterFailure());
     const { rerender } = render(<DispatcherWorkRow agentId="work" running active={false} onSelect={() => {}} />);
     expect(screen.getByRole('img').getAttribute('data-dot')).toBe('idle');

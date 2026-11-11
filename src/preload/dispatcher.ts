@@ -21,7 +21,7 @@ export const dispatcher = {
     setModels: (update: DispatcherModelsUpdate): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_MODELS, update),
     /** Starts its conversation over (#3043): now if it's running, else at its next start. Memory stays. */
     clearChat: (): Promise<{ cleared: 'now' | 'next_start' }> => ipcRenderer.invoke(IPC.DISPATCHER.CLEAR_CHAT),
-    /** Start fresh (#3240): its work conversation, or both. Memory, agents, connections, Actions and settings stay. */
+    /** Start fresh (#3240): its controller conversation, or both. Memory, agents, connections, Actions and settings stay. */
     startFresh: (scope: StartFreshScope): Promise<StartFreshResult> => ipcRenderer.invoke(IPC.DISPATCHER.START_FRESH, scope),
     /** Forget everything (#3046): clears its memory and held news. Agents, connections and Actions stay. */
     forgetEverything: (): Promise<ForgetEverythingResult> => ipcRenderer.invoke(IPC.DISPATCHER.FORGET_EVERYTHING),

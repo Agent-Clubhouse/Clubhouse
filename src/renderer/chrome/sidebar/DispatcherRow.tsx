@@ -103,8 +103,8 @@ function PendingRow({ failed, active, onSelect }: { failed: boolean; active: boo
 }
 
 /**
- * The Dispatcher debug view's row (#3188), under the Dispatcher's: its work
- * agent, which opens that agent's chat read-only in the Dispatcher's view.
+ * The Dispatcher debug view's row (#3188), under the Dispatcher's: its
+ * controller, which opens that agent's chat read-only in the Dispatcher's view.
  * The agent isn't in the agent store, so the row has no menu or hover card;
  * its dot says whether it is running and in a turn, and whether the active
  * run's last turn failed.
@@ -121,7 +121,7 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
   const failing = useChatStore((s) => activeRunFailing(s.agents[agentId]));
   const dot: AgentDot = !running ? 'sleeping' : inTurn ? 'working' : failing ? 'error' : 'idle';
   return (
-    <div role="tree" aria-label="Dispatcher work (debug)" data-testid="dispatcher-work-row" className="flex-shrink-0 px-1.5 pb-1">
+    <div role="tree" aria-label="Dispatcher controller (debug)" data-testid="dispatcher-work-row" className="flex-shrink-0 px-1.5 pb-1">
       <div
         data-active={active}
         aria-current={active ? 'true' : undefined}
@@ -135,7 +135,7 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
           tabIndex={0}
           aria-level={1}
           aria-selected={active}
-          aria-label="Dispatcher work"
+          aria-label="Dispatcher controller"
           aria-describedby={noteId}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
@@ -145,7 +145,7 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
         >
           <StatusDot dot={dot} />
           <span className="w-[18px] h-[18px] flex-shrink-0 rounded-full bg-surface-1" aria-hidden="true" />
-          <span className="truncate font-medium">Dispatcher work</span>
+          <span className="truncate font-medium">Dispatcher controller</span>
           <span id={noteId} className="ml-auto flex-shrink-0 text-xs text-ctp-overlay1">debug</span>
         </div>
       </div>

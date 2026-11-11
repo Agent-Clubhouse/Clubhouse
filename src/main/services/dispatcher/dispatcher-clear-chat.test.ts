@@ -98,7 +98,7 @@ describe('Clear chat', () => {
 });
 
 describe('Start fresh (#3240)', () => {
-  it('quarantines a running work conversation, starts a new one now, and says so in both conversations', async () => {
+  it('quarantines a running controller conversation, starts a new one now, and says so in both conversations', async () => {
     const order: string[] = [];
     const notices: Array<[string, string]> = [];
     const chatMessages: string[] = [];
@@ -118,18 +118,22 @@ describe('Start fresh (#3240)', () => {
     // Requests are taken before the clear, so a hand-off that lands during it isn't among them.
     expect(order).toEqual(['quarantine:true:work:bad-native', 'prepare:true:work', 'take-waiting', 'clear:work', 'end-waiting:req_1']);
     expect(notices).toEqual([['work', 'started_fresh'], ['chat', 'dispatcher_work_started_fresh']]);
+    expect(chatMessages.at(-1)).toContain('Dispatcher controller started fresh.');
     // Work in progress in the old conversation is gone, so the chat says to ask again.
     expect(chatMessages.at(-1)).toContain('Ask again for anything that was in progress.');
   });
 
-  it('quarantines a sleeping work agent\'s saved session and tells its next start and the chat\'s', async () => {
+  it('quarantines a sleeping controller\'s saved session and tells its next start and the chat\'s', async () => {
     const endWaiting = vi.fn();
     const result = await startDispatcherWorkFresh('repeated_failures', { isRunning: () => false, endWaiting });
     // Nothing was running, so nothing was cut short.
     expect(endWaiting).not.toHaveBeenCalled();
     expect(result).toBe('next_start');
     expect(agentConfig.quarantineSession).toHaveBeenCalledWith(getDispatcherPath(), 'work', 'saved-native');
-    expect(staleSession.noteNextStartNotice).toHaveBeenCalledWith('work', expect.objectContaining({ code: 'started_fresh', level: 'warn' }));
+    expect(staleSession.noteNextStartNotice).toHaveBeenCalledWith('work', expect.objectContaining({
+      code: 'started_fresh', level: 'warn',
+      message: 'Started fresh. The previous controller conversation failed every turn, so Clubhouse stopped resuming it.',
+    }));
   });
 
   it('forgets the resume id when there is no session to quarantine', async () => {

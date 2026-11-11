@@ -452,21 +452,21 @@ export function noteWorkEvent(event: ChatEvent, now = Date.now()): void {
   }
 }
 
-/** The requests a work conversation owes an outcome, taken before Start fresh replaces it (#3240). */
+/** The requests a controller conversation owes an outcome, taken before Start fresh replaces it (#3240). */
 export interface WaitingRequests {
   ids: string[];
   /** Turns started by then: a later one is the new conversation's. */
   started: number;
 }
 
-/** Take before the work conversation is replaced; give to endWaitingRequests after. */
+/** Take before the controller conversation is replaced; give to endWaitingRequests after. */
 export function waitingRequests(now = Date.now()): WaitingRequests {
   const ids = load(now).filter((r) => r.status === 'under_way' && (r.turn === 'awaiting' || r.turn === 'in_turn')).map((r) => r.id);
   return { ids, started: turns.started };
 }
 
 /**
- * The work conversation was replaced by Start fresh (#3240): a request that
+ * The controller conversation was replaced by Start fresh (#3240): a request that
  * was waiting for a turn of it, or read by a turn it cut short, never gets an
  * outcome there. Each still under way ends as `ending`, and the chat is told.
  * A hand-off that landed after the snapshot is the new conversation's and
@@ -481,7 +481,7 @@ export function endWaitingRequests(ending: RequestEnding, waiting: WaitingReques
   }
   const owed = new Set(waiting.ids);
   const ended = all.filter((r) => owed.has(r.id) && r.status === 'under_way' && r.turn !== 'sending');
-  for (const r of ended) end(r, ending, now, 'The work conversation started fresh before this request had an outcome.');
+  for (const r of ended) end(r, ending, now, 'The controller conversation started fresh before this request had an outcome.');
   if (ended.length) changed(now);
   return ended.length;
 }
