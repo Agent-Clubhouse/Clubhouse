@@ -8,6 +8,7 @@ import { AgentDetails, BRANCH_REFRESH_MS, relativeFolder, useBranchChanges } fro
 import { DetailsToggle } from './DetailsToggle';
 import { useAgentDetailsStore } from './detailsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 
 const agent: Agent = {
   id: 'a1', projectId: 'p1', name: 'faithful-urchin', kind: 'durable', status: 'running', color: 'teal',
@@ -22,6 +23,9 @@ beforeEach(() => {
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
   useAgentDetailsStore.setState({ open: true, focus: null });
   useMcpBindingStore.setState({ bindings: [] });
+  getProjectCanvasStore('p1').setState({ canvases: [], loaded: false });
+  useAppCanvasStore.setState({ canvases: [], loaded: true });
+  window.clubhouse.canvas.getAgentCanvases = vi.fn(async () => []);
   window.clubhouse.git.branchChanges = vi.fn(async () => branch);
 });
 
@@ -113,6 +117,30 @@ describe('AgentDetails in the terminal', () => {
   });
 });
 
+describe('AgentDetails Canvases', () => {
+  it('hides empty Canvases and sends its focus requests to Session', async () => {
+    render(<AgentDetails agent={agent} />);
+    await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'canvases' }));
+    expect(screen.queryByTestId('details-card-canvases')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-session')).toHaveAttribute('data-open', 'true');
+  });
+
+  it('opens indexed memberships at the end and falls back when the last one is removed', async () => {
+    window.clubhouse.canvas.getAgentCanvases = vi.fn(async () => [
+      { scope: 'project', projectId: 'p1', canvasId: 'c1', name: 'Work board', viewId: 'v1' },
+    ]);
+    render(<AgentDetails agent={agent} />);
+    const card = await screen.findByTestId('details-card-canvases');
+    await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'canvases' }));
+    expect(card).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('details-canvas-row')).toHaveTextContent('Work board');
+    expect(card.nextElementSibling).toBeNull();
+    await act(async () => getProjectCanvasStore('p1').setState({ canvases: [], loaded: true }));
+    expect(screen.queryByTestId('details-card-canvases')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-session')).toHaveAttribute('data-open', 'true');
+  });
+});
+
 describe('AgentDetails for the Dispatcher', () => {
   const dispatcher: Agent = { id: 'disp', projectId: DISPATCHER_PROJECT_ID, name: 'Navi', kind: 'durable', status: 'running', color: 'indigo', orchestrator: 'claude-code' };
 
@@ -139,6 +167,12 @@ describe('AgentDetails for the Dispatcher', () => {
     render(<AgentDetails agent={{ ...dispatcher, status: 'sleeping' }} lastSession={null} />);
     expect(screen.queryByTestId('details-card-session')).not.toBeInTheDocument();
     expect(screen.queryByTestId('details-card-canvases')).not.toBeInTheDocument();
+  });
+
+  it('falls back from a missing Canvases target to its own Actions card', async () => {
+    render(<AgentDetails agent={dispatcher} />);
+    await act(async () => useAgentDetailsStore.getState().reveal({ agentId: dispatcher.id, card: 'canvases' }));
+    expect(screen.getByTestId('details-card-actions')).toHaveAttribute('data-open', 'true');
   });
 });
 

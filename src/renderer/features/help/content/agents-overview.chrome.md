@@ -55,3 +55,5 @@ Use **Details** beside the conversation or CLI view to open a column of collapsi
 **Settings** is always the first card, for both plain and Clubhouse managed agents. A managed agent shows its template, instructions, configured skills and MCP servers, runtime, model and context, with any changes waiting for its next start. **Open builder**, **Model and context** and **Restart** keep those controls within reach. Auto-sleep can change while a local chat agent is running or sleeping. Plain agents keep their own settings, and agents on another machine are read-only here.
 
 **Session** holds usage, plan limits, running time, folder and branch. **Context window** appears inside Session only when the runtime reports it, including whether the count covers input only. Sleeping agents show **Last session** instead, with no live context.
+
+**Canvases** appears at the end only when a canvas contains this agent. **Jump** opens its card on that canvas. A request to open an empty Canvases section opens Session instead, or Actions for the Dispatcher.

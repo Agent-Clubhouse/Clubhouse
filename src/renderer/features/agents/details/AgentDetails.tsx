@@ -197,16 +197,6 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
     return next;
   }), []);
 
-  // "Open in details" from elsewhere opens that card.
-  const handled = useRef<number | null>(null);
-  useEffect(() => {
-    if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
-    handled.current = focus.nonce;
-    const card = focus.card === 'helpers' ? 'orchestrate' : focus.card === 'context' ? 'session' : focus.card;
-    setOpenCards((s) => new Set(s).add(card));
-    if (focus.subagentId) setSelectedSub(focus.subagentId);
-  }, [focus, agent.id]);
-
   const projectPath = useProjectPath(agent.projectId);
   const cwd = agentCwd(agent, projectPath);
   const hook = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
@@ -228,6 +218,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
     [chat, items, subagents, capabilities, runState],
   );
   const canvases = useAgentCanvases(agent);
+  const showCanvases = !dispatcher && canvases.length > 0;
   const running = agent.status === 'running';
   // Asleep (#2281): the live-only cards go, and Session is the last one.
   const asleep = agent.status === 'sleeping' || agent.status === 'error';
@@ -278,6 +269,29 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
     lastSession && lastSession.costUsd > 0 ? formatUsd(lastSession.costUsd) : null,
   ].filter(Boolean).join(' · ');
   const limits = chat?.capabilities?.limits ? chat.usage.limits : [];
+
+  // A membership can arrive after the index read, or disappear while open.
+  const handled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focus || focus.agentId !== agent.id) return;
+    const card = focus.card === 'helpers' ? 'orchestrate' : focus.card === 'context' ? 'session'
+      : focus.card === 'canvases' && !showCanvases ? dispatcher ? 'actions' : 'session' : focus.card;
+    const key = `${focus.nonce}:${card}`;
+    if (handled.current === key) return;
+    handled.current = key;
+    setOpenCards((s) => new Set(s).add(card));
+    if (focus.subagentId) setSelectedSub(focus.subagentId);
+  }, [focus, agent.id, showCanvases, dispatcher]);
+  useEffect(() => {
+    if (showCanvases) return;
+    setOpenCards((s) => {
+      if (!s.has('canvases')) return s;
+      const next = new Set(s);
+      next.delete('canvases');
+      next.add(dispatcher ? 'actions' : 'session');
+      return next;
+    });
+  }, [showCanvases, dispatcher]);
 
   return (
     <aside
@@ -350,35 +364,6 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           />
         </DetailsCard>
       )}
-
-      {!dispatcher && <DetailsCard
-        id="canvases"
-        title="Canvases"
-        summary={canvases.length === 0 ? 'not on a canvas' : `on ${canvases.length} ${canvases.length === 1 ? 'board' : 'boards'}`}
-        open={open('canvases')}
-        onToggle={() => toggleCard('canvases')}
-      >
-        {canvases.length === 0 ? (
-          <CardNote>No canvas has a card for this agent.</CardNote>
-        ) : (
-          <ul className="flex flex-col">
-            {canvases.map((c) => (
-              <li key={`${c.scope}:${c.canvasId}`}>
-                <button
-                  type="button"
-                  onClick={() => jumpToCanvas(agent, c)}
-                  className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0"
-                  data-testid="details-canvas-row"
-                >
-                  <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
-                  <span className="text-xs text-ctp-overlay1 whitespace-nowrap">{c.scope === 'app' ? 'Home' : 'card'}</span>
-                  <span className="ml-auto text-xs text-ctp-accent">Jump</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </DetailsCard>}
 
       {showConnections && (
         <ConnectionsCard
@@ -462,6 +447,31 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         {runningFor && <CardRow label="Running">{runningFor}</CardRow>}
         {cwd && <CardRow label="Folder"><span className="font-mono text-[11.5px] break-all">{relativeFolder(agent.worktreePath, projectPath) ?? cwd}</span></CardRow>}
         {(branch?.branch || agent.branch) && <CardRow label="Branch"><span className="font-mono text-[11.5px] break-all">{branch?.branch ?? agent.branch}</span></CardRow>}
+      </DetailsCard>}
+
+      {showCanvases && <DetailsCard
+        id="canvases"
+        title="Canvases"
+        summary={`on ${canvases.length} ${canvases.length === 1 ? 'board' : 'boards'}`}
+        open={open('canvases')}
+        onToggle={() => toggleCard('canvases')}
+      >
+        <ul className="flex flex-col">
+          {canvases.map((c) => (
+            <li key={`${c.scope}:${c.canvasId}`}>
+              <button
+                type="button"
+                onClick={() => jumpToCanvas(agent, c)}
+                className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0"
+                data-testid="details-canvas-row"
+              >
+                <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
+                <span className="text-xs text-ctp-overlay1 whitespace-nowrap">{c.scope === 'app' ? 'Home' : 'card'}</span>
+                <span className="ml-auto text-xs text-ctp-accent">Jump</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       </DetailsCard>}
     </aside>
   );
