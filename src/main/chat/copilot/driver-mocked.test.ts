@@ -1,5 +1,7 @@
 /** Contract test: no CLI, socket, model, auth service, or real SDK is started. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as path from 'path';
+import type { ChatEventDraft } from '../../../shared/chat';
 
 const fake = vi.hoisted(() => ({ configs: [] as any[], launch: vi.fn(), create: vi.fn(), resume: vi.fn() }));
 vi.mock('./launch', () => ({
@@ -32,12 +34,54 @@ const sdkSession = () => ({
 
 beforeEach(() => {
   fake.configs.length = 0;
-  fake.launch.mockReset().mockResolvedValue({ uri: 'fake', connectionToken: 'fake', exited: new Promise(() => {}), kill: async () => {}, stderrTail: () => '', exitCode: () => null });
+  fake.launch.mockReset().mockImplementation(() => {
+    let exit!: () => void;
+    const exited = new Promise<void>((resolve) => { exit = resolve; });
+    return { uri: 'fake', connectionToken: 'fake', exited, kill: async () => exit(), stderrTail: () => '', exitCode: () => null };
+  });
   fake.create.mockReset().mockImplementation(async (config) => { fake.configs.push(config); return sdkSession(); });
   fake.resume.mockReset().mockImplementation(async (_id, config) => { fake.configs.push(config); return sdkSession(); });
 });
 
 describe('Copilot SDK callback wiring with fake transport', () => {
+  it.each([
+    { errorType: 'query', message: 'No response was returned. Send your message again to retry.' },
+    { errorType: 'empty_response', message: 'Empty answer' },
+    { errorType: 'query', errorCode: 'empty_response', message: 'Empty answer' },
+  ])('ends an empty acknowledgement normally with a quiet notice (%j)', async (data) => {
+    const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: path.resolve('synthetic'), binaryPath: 'fake', level: 'auto_edit' });
+    const config = fake.configs[0];
+    await session.send([{ type: 'text', text: '[TASK:sample] [FROM:sample-agent] TASK_RESULT:sample: Acknowledged; closed.' }], 'prompt');
+    config.onEvent({ type: 'session.error', data });
+    config.onEvent({ type: 'session.idle', data: {} });
+    // A later turn still works, and idle does not end the empty turn twice.
+    await session.send([{ type: 'text', text: 'next' }], 'prompt');
+    config.onEvent({ type: 'assistant.message', data: { messageId: 'reply', content: 'Ready' } });
+    config.onEvent({ type: 'session.idle', data: {} });
+    await session.close();
+    const events: ChatEventDraft[] = [];
+    for await (const event of session.events) events.push(event);
+    expect(events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(events.filter((event) => event.type === 'notice')).toContainEqual(expect.objectContaining({
+      turnId: 'turn-1', data: { level: 'info', code: 'empty_response', message: 'No response' },
+    }));
+    expect(events.filter((event) => event.type === 'turn_ended')).toMatchObject([
+      { turnId: 'turn-1', data: { stopReason: 'end_turn' } },
+      { turnId: 'turn-2', data: { stopReason: 'end_turn' } },
+    ]);
+  });
+
+  it('still fails a genuine provider error', async () => {
+    const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: path.resolve('synthetic'), binaryPath: 'fake', level: 'auto_edit' });
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    fake.configs[0].onEvent({ type: 'session.error', data: { errorType: 'query', message: 'Something broke' } });
+    await session.close();
+    const events: ChatEventDraft[] = [];
+    for await (const event of session.events) events.push(event);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'error', data: { code: 'unknown', message: 'Something broke', fatal: false } }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'turn_ended', data: { stopReason: 'error' } }));
+  });
+
   it.each([undefined, 'prior-session'])('registers callbacks once for create or resume (%s)', async (resumeNativeSessionId) => {
     const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit', resumeNativeSessionId });
     expect(fake.configs).toHaveLength(1);

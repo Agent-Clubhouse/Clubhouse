@@ -160,6 +160,7 @@ export const ERROR_TYPES = [
   'auth_required',
   'rate_limited',
   'context_overflow',
+  'empty_response',
   'tool_failed',
   // Agents (§4.4, Phase 4)
   'mcp_tool_error',

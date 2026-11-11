@@ -270,6 +270,8 @@ export type ChatErrorCode =
   /** The chosen model isn't offered: a setting to change, nothing about the session itself. */
   | 'model_not_found'
   | 'context_overflow'
+  /** The provider completed without an answer. Drivers report this as a neutral notice. */
+  | 'empty_response'
   | 'tool_failed'
   | 'unknown';
 

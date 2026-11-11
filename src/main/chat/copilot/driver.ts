@@ -919,13 +919,21 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       case 'abort':
         this.interrupting = true;
         return;
-      case 'session.error':
+      case 'session.error': {
         // An error during an interrupt is the interrupt. A subagent's failure arrives as subagent.failed.
         if (this.interrupting || fromSubagent) return;
+        const code = copilotErrorCode(event.data);
+        if (code === 'empty_response') {
+          this.log('info', 'Copilot returned no response', { agentId: this.opts.agentId, errorType: event.data.errorType, errorCode: event.data.errorCode, message: event.data.message });
+          this.push({ type: 'notice', data: { level: 'info', code, message: 'No response' } }, true);
+          this.endTurn('end_turn');
+          return;
+        }
         this.log('warn', 'Copilot session error', { agentId: this.opts.agentId, errorType: event.data.errorType, errorCode: event.data.errorCode, statusCode: event.data.statusCode, message: event.data.message });
-        this.push({ type: 'error', data: { code: copilotErrorCode(event.data), message: event.data.message, fatal: false } }, true);
+        this.push({ type: 'error', data: { code, message: event.data.message, fatal: false } }, true);
         this.endTurn('error');
         return;
+      }
       case 'session.warning':
         this.push({ type: 'notice', data: { level: 'warn', code: event.data.warningType, message: event.data.message } }, true);
         return;

@@ -33,6 +33,17 @@ beforeEach(() => {
 });
 
 describe('Dispatcher work health (#3240)', () => {
+  it('does not quarantine empty responses and resets preceding failures on their normal turn end (#3284)', () => {
+    for (let i = 0; i < REPEATED_TURN_FAILURES + 1; i++) {
+      turn('error', { code: 'protocol_error' });
+      noteWorkChatEvent(ev('turn_started', { trigger: 'prompt' }), deps);
+      noteWorkChatEvent(ev('notice', { level: 'info', code: 'empty_response', message: 'No response' }), deps);
+      noteWorkChatEvent(ev('turn_ended', { stopReason: 'end_turn' }), deps);
+    }
+    for (let i = 0; i < REPEATED_TURN_FAILURES + 1; i++) turn('error', { code: 'empty_response' });
+    expect(startFresh).not.toHaveBeenCalled();
+  });
+
   it('starts the work fresh once its conversation fails every turn', async () => {
     for (let i = 0; i < REPEATED_TURN_FAILURES - 1; i++) turn('error', { code: 'protocol_error' });
     expect(startFresh).not.toHaveBeenCalled();
