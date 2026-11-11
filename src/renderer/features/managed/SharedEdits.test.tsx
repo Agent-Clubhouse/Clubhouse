@@ -235,6 +235,35 @@ describe('a stale edit', () => {
         expect(onClose).toHaveBeenCalledTimes(1);
       });
     });
+
+    it('treats a reverted executable checkbox as pristine when the flag was omitted', async () => {
+      vi.spyOn(m(), 'getPart').mockResolvedValue({
+        ok: true,
+        value: {
+          ...part('review', { kind: 'skill' }),
+          content: { kind: 'skill', skillName: 'review', files: [{ path: 'SKILL.md', content: 'Review' }, { path: 'check.sh', content: 'echo check' }] },
+        },
+      });
+      const onClose = vi.fn();
+      render(<PartDialog open kind="skill" editId="review" onClose={onClose} />);
+      await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('review'));
+      const executable = screen.getByRole('checkbox', { name: 'Executable: check.sh' });
+      fireEvent.click(executable);
+      fireEvent.click(executable);
+      dismiss('Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a cleared optional MCP field as pristine after reverting the transport', () => {
+      const onClose = vi.fn();
+      render(<PartDialog open kind="mcp" onClose={onClose} />);
+      fireEvent.change(screen.getByLabelText('Transport'), { target: { value: 'http' } });
+      fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.com' } });
+      fireEvent.change(screen.getByLabelText('URL'), { target: { value: '' } });
+      fireEvent.change(screen.getByLabelText('Transport'), { target: { value: 'stdio' } });
+      dismiss('Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('in the part dialog, saves mine as a library copy and leaves the shared part alone', async () => {

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { Modal } from './Modal';
 
@@ -285,6 +287,45 @@ describe('Modal', () => {
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.getByRole('dialog', { name: 'Discard changes?' })).toBeInTheDocument();
       expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('traps keyboard focus in the discard prompt and restores the editor field on Escape', async () => {
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      render(editor(onClose, true));
+      const draft = screen.getByLabelText('Draft');
+      expect(draft).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(screen.getByRole('button', { name: 'Keep editing' })).toHaveFocus();
+      await user.tab();
+      expect(screen.getByRole('button', { name: 'Discard changes' })).toHaveFocus();
+      await user.tab();
+      expect(within(screen.getByRole('dialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Close' })).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(screen.getByRole('button', { name: 'Discard changes' })).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(draft).toHaveFocus();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('returns focus to the opener after confirming discard closes both dialogs', async () => {
+      const user = userEvent.setup();
+      function Harness() {
+        const [open, setOpen] = useState(false);
+        return <>
+          <button onClick={() => setOpen(true)}>Open editor</button>
+          <Modal open={open} onClose={() => setOpen(false)} dirty title="Editor">
+            <input aria-label="Draft" defaultValue="Unsaved work" />
+          </Modal>
+        </>;
+      }
+      render(<Harness />);
+      const opener = screen.getByRole('button', { name: 'Open editor' });
+      await user.click(opener);
+      await user.keyboard('{Escape}');
+      await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(opener).toHaveFocus();
     });
   });
 
