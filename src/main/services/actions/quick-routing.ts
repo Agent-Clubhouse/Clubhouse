@@ -27,7 +27,7 @@ export async function startActionQuickAgent(req: StartQuickAgentParams & { owner
     projectPath: req.project.path,
     auto: await autoState(),
   });
-  if (prepared.ok === false) throw new Error(prepared.message);
+  if (prepared.ok === false) throw new Error(prepared.userReason);
   if (!prepared.plan) throw new Error('Auto did not prepare a provider choice.');
   const pending = prepared.plan;
   const { currentHelperLoad, withStartLock } = await import('../clubhouse-mcp/tools/helper-tools');
@@ -35,10 +35,10 @@ export async function startActionQuickAgent(req: StartQuickAgentParams & { owner
     const auto = await autoState();
     if (!auto.effective) {
       const refusal = autoOffRefusal(auto);
-      if (refusal.ok === false) throw new Error(refusal.message);
+      throw new Error(refusal.userReason);
     }
     const decided = decideAutoPlan(pending, await currentHelperLoad(req.project.path));
-    if (decided.ok === false) throw new Error(decided.message);
+    if (decided.ok === false) throw new Error(decided.userReason);
     const plan = decided.plan;
     if (!plan?.provider || !plan.decision) throw new Error('Auto did not choose a provider.');
     const decisionId = plan.decision.decisionId;

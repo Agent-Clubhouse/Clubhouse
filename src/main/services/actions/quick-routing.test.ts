@@ -23,7 +23,7 @@ vi.mock('../agent-config', () => ({ getDurableConfig: vi.fn() }));
 vi.mock('../orchestration-policy', () => ({ getOrchestrationPolicy: vi.fn() }));
 
 import { startActionQuickAgent } from './quick-routing';
-import { decideAutoPlan, planHelperStart, readHelperAuto } from '../helper-routing';
+import { autoOffRefusal, decideAutoPlan, planHelperStart, readHelperAuto } from '../helper-routing';
 import { commitAutoDecision, settleAutoDecision } from '../helper-auto-state';
 import { startQuickAgent } from '../quick-agent-service';
 import { getDurableConfig } from '../agent-config';
@@ -105,8 +105,18 @@ describe('Action quick-agent routing', () => {
   });
 
   it('reports the plain refusal when no Auto candidate can run', async () => {
-    vi.mocked(decideAutoPlan).mockReturnValue({ ok: false, code: 'no_candidate', message: 'No provider is available now.', userReason: 'no provider is available now.' });
-    await expect(startActionQuickAgent(request)).rejects.toThrow('No provider is available now.');
+    vi.mocked(decideAutoPlan).mockReturnValue({ ok: false, code: 'no_candidate', message: 'No provider is available now. Tell the user, or name a CLI. Do not retry.', userReason: 'no provider is available now.' });
+    await expect(startActionQuickAgent(request)).rejects.toThrow(/^no provider is available now\.$/);
+    expect(startQuickAgent).not.toHaveBeenCalled();
+  });
+
+  it('uses the person-facing reason when preparation or the locked recheck refuses', async () => {
+    vi.mocked(planHelperStart).mockResolvedValueOnce({ ok: false, code: 'auto_off', message: 'Auto is off. Name a CLI.', userReason: 'Auto is off.' });
+    await expect(startActionQuickAgent(request)).rejects.toThrow(/^Auto is off\.$/);
+    vi.mocked(readHelperAuto).mockResolvedValueOnce({ effective: true } as Awaited<ReturnType<typeof readHelperAuto>>)
+      .mockResolvedValueOnce({ effective: false } as Awaited<ReturnType<typeof readHelperAuto>>);
+    vi.mocked(autoOffRefusal).mockReturnValueOnce({ ok: false, code: 'auto_off', message: 'Auto is off. Ask the user to turn it on.', userReason: 'Auto is off.' });
+    await expect(startActionQuickAgent(request)).rejects.toThrow(/^Auto is off\.$/);
     expect(startQuickAgent).not.toHaveBeenCalled();
   });
 
