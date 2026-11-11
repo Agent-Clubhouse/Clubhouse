@@ -232,6 +232,32 @@ describe('Stage 3 shadow forecasts', () => {
     });
     expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
   });
+
+  it.each(['cancelled', 'error', 'timeout', 'max_tokens', 'max_turns', 'refusal', 'unfinished'])(
+    'excludes a %s later turn without changing existing usage or outcome records',
+    (stopReason) => {
+      recordHelperDecision(decision());
+      started('helper-1', { driver: 'claude_agent_sdk' });
+      for (const turnId of ['complete', 'later']) {
+        handleHelperChatEvent(chat('turn_started', { trigger: 'prompt' }, { turnId }));
+        handleHelperChatEvent(chat('usage', { scope: 'turn', coverage: 'main', tokens: { input: 100, output: 10 } }, { turnId }));
+        if (turnId === 'later' && stopReason === 'unfinished') continue;
+        handleHelperChatEvent(chat('turn_ended', { stopReason: turnId === 'complete' ? 'end_turn' : stopReason }, { turnId }));
+      }
+      handleHelperChatEvent(chat('session_ended', { reason: 'process_exit', exitCode: 0 }, { ts: now + 4 }));
+      const turns = stopReason === 'unfinished' ? 1 : 2;
+      expect(events('clubhouse.helper.usage.sample')).toHaveLength(turns);
+      expect(events('clubhouse.helper.outcome')[0].attrs).toMatchObject({
+        'clubhouse.helper_run.outcome': 'completed', 'clubhouse.helper_run.turns': turns,
+        'clubhouse.helper_usage.turns_missing': 0,
+      });
+      recordQuotaSample('claude-code', {
+        state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+        weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
+      });
+      expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
+    },
+  );
 });
 
 describe('decisions', () => {

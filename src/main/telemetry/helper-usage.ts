@@ -550,7 +550,7 @@ function finishRun(helperId: string, endedMs: number, outcome: HelperRunOutcome)
     ledger.setForecastRun(helperId, {
       runId: ctx.run.runId, startedMs: ctx.run.startedMs, endedMs, usageSamples: ctx.forecastUsageSamples,
       usable: ctx.forecastUsable && outcome === 'completed' && !ctx.disposeRequested
-        && ctx.tracker.counts.turnsMissing === 0 && ctx.tracker.counts.samplesDropped === 0,
+        && !ctx.tracker.hasOpenTurns && ctx.tracker.counts.turnsMissing === 0 && ctx.tracker.counts.samplesDropped === 0,
     });
     emitOutcome(helperId, ctx, endedMs, ctx.disposeRequested ? 'disposed' : outcome);
   } finally {
@@ -632,6 +632,7 @@ export function handleHelperChatEvent(event: ChatEvent): void {
         ctx.tracker.subagentDeclared(event.data.subagentId);
         return;
       case 'turn_ended':
+        if (event.data.stopReason !== 'end_turn') ctx.forecastUsable = false;
         emitUsage(ctx, ctx.tracker.turnEnded(event.turnId, event.data, event.ts));
         return;
       case 'session_ended': {
