@@ -87,6 +87,17 @@ describe('Action presence', () => {
     expect(h.returned).toHaveBeenCalledTimes(2);
   });
 
+  it('collects an idle threshold between minute polls before return input resets OS idle', async () => {
+    const h = setup();
+    h.tracker.configure([{ id: 'a', absenceMinutes: 5 }]);
+    h.signal('blur');
+    await vi.advanceTimersByTimeAsync(20_000);
+    h.input();
+    await vi.advanceTimersByTimeAsync(5 * MIN + 1_000);
+    h.signal('focus', true);
+    expect(h.returned).toHaveBeenCalledExactlyOnceWith(['a']);
+  });
+
   it('does not count idle time while Clubhouse remains focused or ordinary window switching', async () => {
     const h = setup();
     h.tracker.configure([{ id: 'a', absenceMinutes: 5 }]);

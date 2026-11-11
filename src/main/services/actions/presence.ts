@@ -63,15 +63,19 @@ export class ActionPresence {
     this.qualified.clear();
   }
 
-  private collect(now: number, idle: number | null): void {
-    if (this.awaySince === null) return;
+  private collect(now: number, idle: number | null): number {
+    let nextSample = 60_000;
+    if (this.awaySince === null) return nextSample;
     for (const w of this.watches) {
+      if (this.qualified.has(w.id)) continue;
       const threshold = (w.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES) * 60_000;
-      const blockedLongEnough = this.blockedSince !== null && now - this.blockedSince >= threshold;
-      if (now - this.awaySince >= threshold && (blockedLongEnough || (idle !== null && idle * 1000 >= threshold))) {
-        this.qualified.add(w.id);
-      }
+      const blockedRemaining = this.blockedSince === null ? Infinity : threshold - (now - this.blockedSince);
+      const idleRemaining = idle === null ? Infinity : threshold - idle * 1000;
+      const remaining = Math.max(threshold - (now - this.awaySince), Math.min(blockedRemaining, idleRemaining));
+      if (remaining <= 0) this.qualified.add(w.id);
+      else nextSample = Math.min(nextSample, remaining);
     }
+    return nextSample;
   }
 
   private signal(signal: PresenceSignal): void {
@@ -97,7 +101,7 @@ export class ActionPresence {
     const idle = this.deps.signals.idleSeconds();
     const focused = this.deps.signals.focused() && !this.locked && !this.suspended;
     if (!focused && this.awaySince === null) this.awaySince = now;
-    this.collect(now, idle);
+    const nextSample = this.collect(now, idle);
     const minimum = Math.min(...this.watches.map((w) => w.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES));
     if (focused && (idle === null || idle < minimum * 60)) {
       const ids = this.watches.filter((w) => this.qualified.has(w.id)).map((w) => w.id);
@@ -109,7 +113,7 @@ export class ActionPresence {
       }
       if (ids.length) this.deps.returned(ids);
     }
-    if (this.unlisten) this.arm(60_000);
+    if (this.unlisten) this.arm(nextSample);
   }
 
   private arm(ms: number): void {
