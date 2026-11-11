@@ -53,6 +53,7 @@ export interface ActionDraft {
   /** datetime-local value. */
   onceAt: string;
   endsAt: string;
+  originalEndsAt?: number;
   maxRuns: string;
   steps: StepDraft[];
   overlap: OverlapRule;
@@ -110,7 +111,10 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
   const d = newDraft(now);
   if (input.name) d.name = input.name;
   if (input.overlap) d.overlap = input.overlap;
-  if (input.endsAt !== undefined) d.endsAt = toLocalInput(input.endsAt);
+  if (input.endsAt !== undefined) {
+    d.endsAt = toLocalInput(input.endsAt);
+    d.originalEndsAt = input.endsAt;
+  }
   if (input.maxRuns !== undefined) d.maxRuns = String(input.maxRuns);
   if (input.steps?.length) d.steps = input.steps.map(stepToDraft);
   const t = input.trigger;
@@ -177,9 +181,12 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
     if (delay !== undefined && !(Number.isInteger(delay) && delay >= 0)) return { ok: false, error: 'The wait must be a whole number of minutes.' };
     trigger = { kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }) };
   }
+  // Keep the exact instant when unchanged, including seconds and the repeated DST hour.
+  const endsAt = d.originalEndsAt !== undefined && d.endsAt === toLocalInput(d.originalEndsAt)
+    ? d.originalEndsAt : new Date(d.endsAt).getTime();
   const raw = {
     ...(d.name.trim() && { name: d.name.trim() }), trigger, steps: d.steps.map(stepFromDraft), overlap: d.overlap,
-    ...(d.when !== 'once' && d.endsAt && { endsAt: new Date(d.endsAt).getTime() }),
+    ...(d.when !== 'once' && d.endsAt && { endsAt }),
     ...(d.when !== 'once' && d.maxRuns.trim() && { maxRuns: Number(d.maxRuns) }),
   };
   const valid = validateActionInput(raw, { now });
