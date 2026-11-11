@@ -11,6 +11,7 @@ import { replaceWildcards } from '../../shared/wildcard-replacer';
 import { readLocalMcpJson, readProjectAgentDefaults, type SettingsConventions } from './agent-settings-service';
 import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from './agent-wildcards';
 import { appLog } from './log-service';
+import { isClubhouseMcpEntry } from './clubhouse-mcp/injection';
 
 /**
  * What an unmanaged Codex agent is told when its own .codex/config.toml lists
@@ -119,7 +120,7 @@ export async function resolveAgentMcpServers(
   const servers = raw === null ? undefined : parseMcpJson(raw);
   if (!servers) return fromProject();
   const { clubhouse: _clubhouse, ...rest } = servers;
-  if (_clubhouse) {
+  if (_clubhouse && !isClubhouseMcpEntry(_clubhouse)) {
     const message = 'Configured clubhouse entry is reserved; only the separately controlled live bridge is delivered.';
     appLog('core:mcp', 'warn', message);
     local.onNotice?.(message);

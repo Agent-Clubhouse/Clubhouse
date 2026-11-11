@@ -359,10 +359,8 @@ export function isClubhouseMcpEntry(entry: unknown): boolean {
   const obj = entry as Record<string, unknown>;
   if (obj.command !== 'node') return false;
   const args = obj.args;
-  if (!Array.isArray(args)) return false;
-  return args.some((a: unknown) =>
-    typeof a === 'string' && a.includes('clubhouse-mcp-bridge'),
-  );
+  return Array.isArray(args) && args.length === 1 && typeof args[0] === 'string'
+    && path.win32.basename(args[0]) === 'clubhouse-mcp-bridge.js';
 }
 
 /**

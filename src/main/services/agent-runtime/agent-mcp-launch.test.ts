@@ -17,7 +17,8 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../agent-registry', () => ({ agentRegistry: { setNonce: vi.fn(), setRuntime: vi.fn(), get: vi.fn(), setLaunchCap: vi.fn(), setUserLaunchAccess: vi.fn(), reportLaunchAccess: vi.fn() }, untrackAgent: vi.fn() }));
 vi.mock('../config-pipeline', () => ({ snapshotFile: vi.fn(), restoreForAgent: vi.fn() }));
 vi.mock('../clubhouse-mcp/bridge-server', () => ({ waitReady: vi.fn(async () => 4321), NONCE_HEADER: 'X-Clubhouse-Nonce', agentEndpointUrl: () => 'http://127.0.0.1:4321/mcp' }));
-vi.mock('../clubhouse-mcp/injection', () => ({
+vi.mock('../clubhouse-mcp/injection', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../clubhouse-mcp/injection')>(),
   // No server/process: simulate injection creating the previously absent file.
   injectClubhouseMcp: vi.fn(async (cwd: string, _id: string, _port: number, conv: { mcpConfigFile: string }) => {
     const file = path.join(cwd, conv.mcpConfigFile);

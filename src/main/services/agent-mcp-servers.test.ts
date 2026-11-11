@@ -17,6 +17,7 @@ vi.mock('./agent-settings-service', async (importOriginal) => ({
 
 import { appLog } from './log-service';
 import { PROJECT_MCP_JSON_INVALID_NOTICE, resolveAgentMcpServers, resolveProjectMcpServers, tomlMcpServerNames } from './agent-mcp-servers';
+import { snapshotFile, restoreForAgent } from './config-pipeline';
 
 const conventions = { configDir: '.claude', mcpConfigFile: '.mcp.json', localSettingsFile: 'settings.local.json' } as never;
 let worktree: string;
@@ -45,6 +46,42 @@ describe('managed agents MCP (#2896)', () => {
 });
 
 describe('unmanaged agents', () => {
+  it('silently ignores a leftover bridge alongside user servers, then removes it on restore', async () => {
+    const file = path.join(worktree, '.mcp.json');
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: {} }));
+    await snapshotFile('bridge-agent', file);
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: {
+      clubhouse: { command: 'node', args: [path.join(worktree, 'clubhouse-mcp-bridge.js')] },
+      own: { command: 'own' },
+    } }));
+    const onNotice = vi.fn();
+    vi.mocked(appLog).mockClear();
+    await expect(resolveAgentMcpServers(worktree, agent(), { cwd: worktree, conventions, onNotice }))
+      .resolves.toEqual({ own: { command: 'own' } });
+    expect(onNotice).not.toHaveBeenCalled();
+    expect(appLog).not.toHaveBeenCalled();
+    await restoreForAgent('bridge-agent');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ mcpServers: { own: { command: 'own' } } });
+    await expect(resolveAgentMcpServers(worktree, agent(), { cwd: worktree, conventions, onNotice }))
+      .resolves.toEqual({ own: { command: 'own' } });
+    expect(onNotice).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { command: 'user-server' },
+    { command: 'node', args: ['server.js', '--label', 'clubhouse-mcp-bridge'] },
+    { command: 'node', args: ['clubhouse-mcp-bridge-wrapper.js'] },
+  ])('still rejects a non-bridge server named clubhouse with a notice: %j', async (clubhouse) => {
+    fs.writeFileSync(path.join(worktree, '.mcp.json'), JSON.stringify({ mcpServers: {
+      clubhouse, own: { command: 'own' },
+    } }));
+    const onNotice = vi.fn();
+    await expect(resolveAgentMcpServers(worktree, agent(), { cwd: worktree, conventions, onNotice }))
+      .resolves.toEqual({ own: { command: 'own' } });
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('Configured clubhouse entry is reserved'));
+    expect(appLog).toHaveBeenCalledWith('core:mcp', 'warn', expect.stringContaining('Configured clubhouse entry is reserved'));
+  });
+
   it('get the project defaults with wildcards filled and the clubhouse entry left out when they have no MCP file', async () => {
     await expect(resolveAgentMcpServers('/project', agent(), { cwd: worktree, conventions })).resolves.toEqual({ linear: { command: 'npx', args: ['linear', 'ada'] } });
   });

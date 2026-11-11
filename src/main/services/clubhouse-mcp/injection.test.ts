@@ -298,6 +298,23 @@ describe('MCP Injection', () => {
   });
 
   describe('isClubhouseMcpEntry', () => {
+    it.each([
+      ['server.js', '--label', 'clubhouse-mcp-bridge'],
+      ['/custom/clubhouse-mcp-bridge-wrapper.js'],
+      ['/custom/clubhouse-mcp-bridge/server.js'],
+      ['clubhouse-mcp-bridge.js', '--custom'],
+    ])('preserves user servers whose arguments merely resemble the bridge: %j', (...args) => {
+      const entry = { command: 'node', args };
+      expect(isClubhouseMcpEntry(entry)).toBe(false);
+      expect(stripClubhouseMcp({ mcpServers: { own: entry } })).toEqual({ mcpServers: { own: entry } });
+    });
+
+    it('recognizes the generated Windows bridge script path', () => {
+      expect(isClubhouseMcpEntry({
+        command: 'node', args: ['C:\\Clubhouse\\bridge\\clubhouse-mcp-bridge.js'],
+      })).toBe(true);
+    });
+
     it('detects clubhouse bridge entries', () => {
       expect(isClubhouseMcpEntry({
         command: 'node',

@@ -1,9 +1,15 @@
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LEGACY_PERMISSIONS_BACKUP_SUFFIX, assertNoCopilotTerminalHooksForChat, readCopilotHooksConfig } from './copilot-hooks-config';
 import { CopilotCliProvider } from './copilot-cli-provider';
+import { appLog } from '../services/log-service';
+
+vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
+vi.mock('fs/promises', async (importOriginal) => ({
+  ...await importOriginal<typeof import('fs/promises')>(),
+}));
 
 const roots: string[] = [];
 async function fixture(content?: string) {
@@ -16,7 +22,11 @@ async function fixture(content?: string) {
   }
   return { root, file };
 }
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fsp.rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+  await Promise.all(roots.splice(0).map((root) => fsp.rm(root, { recursive: true, force: true })));
+});
 
 describe('Copilot hook document boundary', () => {
   it('accepts an absent file without creating it', async () => {
@@ -27,6 +37,12 @@ describe('Copilot hook document boundary', () => {
 
   it.each([
     '{',
+    JSON.stringify({}),
+    JSON.stringify({ version: 1, other: true }),
+    JSON.stringify({ version: 1, hooks: null }),
+    JSON.stringify({ version: 2 }),
+    JSON.stringify({ version: '1' }),
+    JSON.stringify([1]),
     JSON.stringify({ permissions: { allow: ['Read'] }, other: true }),
     JSON.stringify({ permissions: { allow: ['Read'], ask: ['Bash'] } }),
     JSON.stringify({ permissions: { allow: [42] } }),
@@ -51,7 +67,142 @@ describe('Copilot hook document boundary', () => {
     const { root, file } = await fixture(content);
     await expect(readCopilotHooksConfig(root)).rejects.toThrow(/repair.*restart/i);
     await expect(new CopilotCliProvider().writeHooksConfig(root, 'http://127.0.0.1:9999/hook')).rejects.toThrow(/repair.*restart/i);
+    await expect(assertNoCopilotTerminalHooksForChat(root)).rejects.toThrow(/repair.*restart/i);
     expect(await fsp.readFile(file, 'utf8')).toBe(content);
+  });
+
+  it('repairs version-only residue once across concurrent reads and leaves subsequent reads unchanged', async () => {
+    const { root, file } = await fixture('{\r\n  "version": 1\r\n}\r\n');
+    const write = vi.spyOn(fsp, 'writeFile');
+    const repaired = { version: 1, hooks: {} };
+    expect(await Promise.all(Array.from({ length: 8 }, () => readCopilotHooksConfig(root)))).toEqual(Array(8).fill(repaired));
+    const bytes = await fsp.readFile(file, 'utf8');
+    expect(JSON.parse(bytes)).toEqual(repaired);
+    expect(await readCopilotHooksConfig(root)).toEqual(repaired);
+    expect(await fsp.readFile(file, 'utf8')).toBe(bytes);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(appLog).toHaveBeenCalledExactlyOnceWith('core:orchestrator', 'warn', expect.stringContaining('version-only'), { meta: { file } });
+  });
+
+  it('re-reads a changed file before repair without overwriting custom hooks', async () => {
+    const { root, file } = await fixture('{"version":1}');
+    const custom = { version: 1, hooks: { sessionStart: [{ type: 'prompt', prompt: 'keep' }] } };
+    const read = fsp.readFile;
+    vi.spyOn(fsp, 'readFile').mockImplementationOnce(async (...args) => {
+      const original = await read(...args);
+      await fsp.writeFile(file, JSON.stringify(custom));
+      return original;
+    });
+    const write = vi.spyOn(fsp, 'writeFile');
+    expect(await readCopilotHooksConfig(root)).toEqual(custom);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(await read(file, 'utf8'))).toEqual(custom);
+    expect(appLog).not.toHaveBeenCalled();
+  });
+
+  it('keeps valid on-disk JSON while serializing readers through an atomic repair', async () => {
+    const { root, file } = await fixture('{"version":1}');
+    const write = fsp.writeFile;
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => { writing = resolve; });
+    let resume!: () => void;
+    const paused = new Promise<void>((resolve) => { resume = resolve; });
+    vi.spyOn(fsp, 'writeFile').mockImplementationOnce(async (...args) => {
+      await write(...args);
+      writing();
+      await paused;
+    });
+    const first = readCopilotHooksConfig(root);
+    await started;
+    expect(JSON.parse(await fsp.readFile(file, 'utf8'))).toEqual({ version: 1 });
+    const read = vi.spyOn(fsp, 'readFile');
+    const second = readCopilotHooksConfig(root).then((value) => value, (error: unknown) => error);
+    await Promise.resolve();
+    await Promise.resolve();
+    const readsDuringRepair = read.mock.calls.length;
+    resume();
+    expect(await first).toEqual({ version: 1, hooks: {} });
+    expect(await second).toEqual({ version: 1, hooks: {} });
+    expect(readsDuringRepair).toBe(0);
+    expect(await fsp.readdir(path.dirname(file))).toEqual(['hooks.json']);
+  });
+
+  it('serializes Windows case and separator aliases of the same hook file', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    let contents = '{"version":1}';
+    const read = vi.spyOn(fsp, 'readFile').mockImplementation(async () => contents);
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => { writing = resolve; });
+    let resume!: () => void;
+    const paused = new Promise<void>((resolve) => { resume = resolve; });
+    const write = vi.spyOn(fsp, 'writeFile').mockImplementation(async (_file, value) => {
+      writing();
+      await paused;
+      contents = String(value);
+    });
+    vi.spyOn(fsp, 'rename').mockResolvedValue(undefined);
+    const first = readCopilotHooksConfig('C:\\Project');
+    await started;
+    read.mockClear();
+    const second = readCopilotHooksConfig('c:/project');
+    await Promise.resolve();
+    await Promise.resolve();
+    const readsDuringRepair = read.mock.calls.length;
+    resume();
+    expect(await Promise.all([first, second])).toEqual([
+      { version: 1, hooks: {} }, { version: 1, hooks: {} },
+    ]);
+    expect(readsDuringRepair).toBe(0);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(appLog).toHaveBeenCalledTimes(1);
+  });
+
+  it('repairs changed formatting after releasing the per-file lock', async () => {
+    const { root, file } = await fixture('{"version":1}');
+    const read = fsp.readFile;
+    vi.spyOn(fsp, 'readFile').mockImplementationOnce(async (...args) => {
+      const original = await read(...args);
+      await fsp.writeFile(file, '{ "version": 1 }');
+      return original;
+    });
+    await expect(readCopilotHooksConfig(root)).resolves.toEqual({ version: 1, hooks: {} });
+    expect(appLog).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an unwritable residue file and allows a later repair retry', async () => {
+    const content = '{"version":1}';
+    const { root, file } = await fixture(content);
+    vi.spyOn(fsp, 'writeFile').mockRejectedValueOnce(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    await expect(readCopilotHooksConfig(root)).rejects.toThrow(`Cannot repair legacy version-only Copilot hooks at ${file}`);
+    expect(await fsp.readFile(file, 'utf8')).toBe(content);
+    expect(await fsp.readdir(path.dirname(file))).toEqual(['hooks.json']);
+    expect(appLog).not.toHaveBeenCalled();
+    await expect(readCopilotHooksConfig(root)).resolves.toEqual({ version: 1, hooks: {} });
+  });
+
+  it('preserves the original and cleans up the temporary file when repair rename fails', async () => {
+    const content = '{"version":1}';
+    const { root, file } = await fixture(content);
+    vi.spyOn(fsp, 'rename').mockRejectedValueOnce(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    await expect(readCopilotHooksConfig(root)).rejects.toThrow(`Cannot repair legacy version-only Copilot hooks at ${file}`);
+    expect(await fsp.readFile(file, 'utf8')).toBe(content);
+    expect(await fsp.readdir(path.dirname(file))).toEqual(['hooks.json']);
+    await expect(readCopilotHooksConfig(root)).resolves.toEqual({ version: 1, hooks: {} });
+  });
+
+  it('repairs version-only residue before terminal hook injection', async () => {
+    const { root, file } = await fixture('{"version":1}');
+    await new CopilotCliProvider().writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
+    const doc = await readCopilotHooksConfig(root);
+    expect(doc?.version).toBe(1);
+    expect(Object.keys(doc?.hooks ?? {})).not.toHaveLength(0);
+    expect(JSON.parse(await fsp.readFile(file, 'utf8'))).toEqual(doc);
+  });
+
+  it('repairs version-only residue during chat preparation without injecting terminal hooks', async () => {
+    const { root, file } = await fixture('{"version":1}');
+    await expect(assertNoCopilotTerminalHooksForChat(root)).resolves.toBeUndefined();
+    expect(JSON.parse(await fsp.readFile(file, 'utf8'))).toEqual({ version: 1, hooks: {} });
   });
 
   it.each([
