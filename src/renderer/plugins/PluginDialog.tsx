@@ -21,6 +21,10 @@ interface ApprovalDialogProps {
   onResolve: (value: string | null) => void;
 }
 
+function ownsEnter(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('button, a, input, select, textarea, [role="button"]') !== null;
+}
+
 // ── InputDialog ────────────────────────────────────────────────────────
 
 function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
@@ -110,7 +114,7 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
   // Keyboard support
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') resolve(true);
+      if (e.key === 'Enter' && !ownsEnter(e.target)) resolve(true);
       if (e.key === 'Escape') resolve(false);
     };
     document.addEventListener('keydown', handler);
@@ -249,7 +253,7 @@ function ApprovalDialog({ options, onResolve }: ApprovalDialogProps) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') resolve(null);
-      if (e.key === 'Enter' && primaryAction) resolve(primaryAction.value);
+      if (e.key === 'Enter' && primaryAction && !ownsEnter(e.target)) resolve(primaryAction.value);
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);

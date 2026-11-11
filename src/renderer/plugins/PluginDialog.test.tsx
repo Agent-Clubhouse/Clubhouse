@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { fireEvent, screen, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { showInputDialog, showConfirmDialog, showApprovalDialog } from './PluginDialog';
@@ -153,6 +154,28 @@ describe('showInputDialog', () => {
 });
 
 describe('showConfirmDialog', () => {
+  it('lets Enter activate the focused Cancel button', async () => {
+    let result!: ReturnType<typeof showConfirmDialog>;
+    act(() => { result = showConfirmDialog('Delete this file?'); });
+    screen.getByTestId('plugin-dialog-cancel').focus();
+    await userEvent.setup().keyboard('{Enter}');
+    expect(await result.promise).toBe(false);
+  });
+
+  it.each(['button', 'a', 'input', 'select', 'textarea', 'role-button'])('ignores Enter from inside a %s control', async (tag) => {
+    let result!: ReturnType<typeof showConfirmDialog>;
+    act(() => { result = showConfirmDialog('Proceed?'); });
+    const control = document.createElement(tag === 'role-button' ? 'div' : tag);
+    if (tag === 'role-button') control.setAttribute('role', 'button');
+    const child = document.createElement('span');
+    control.appendChild(child);
+    screen.getByTestId('plugin-dialog').appendChild(control);
+    fireEvent.keyDown(child, { key: 'Enter' });
+    expect(screen.getByTestId('plugin-dialog')).toBeInTheDocument();
+    act(() => { result.cleanup(); });
+    expect(await result.promise).toBe(false);
+  });
+
   it('renders a confirm dialog with the message', () => {
     act(() => {
       showConfirmDialog('Are you sure?');
@@ -299,6 +322,14 @@ describe('showApprovalDialog', () => {
       { value: 'approve', label: 'Approve', style: 'primary' as const },
     ],
   };
+
+  it('lets Enter activate the focused secondary action', async () => {
+    let result!: ReturnType<typeof showApprovalDialog>;
+    act(() => { result = showApprovalDialog(defaultOptions); });
+    screen.getByTestId('plugin-approval-action-reject').focus();
+    await userEvent.setup().keyboard('{Enter}');
+    expect(await result.promise).toBe('reject');
+  });
 
   it('renders with title and summary', () => {
     act(() => {
