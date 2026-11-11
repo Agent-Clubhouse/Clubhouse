@@ -185,10 +185,6 @@ interface SettingsCardProps {
   provider: string;
 }
 
-/**
- * Settings, or Setup for a Clubhouse-managed agent (#2896). An unmanaged
- * agent keeps Settings.
- */
 /** "Release template, plus Extra, minus Tone": names once the library loads. */
 function QuickTemplateLine({ templateId, changes }: { templateId: string; changes?: QuickRunChanges }) {
   const templates = useManagedTemplates();
@@ -206,6 +202,7 @@ function QuickTemplateLine({ templateId, changes }: { templateId: string; change
   );
 }
 
+/** One Settings card for managed, plain and remote agents. */
 export function SettingsCard(props: SettingsCardProps) {
   const { agent, chat, projectPath, provider } = props;
   const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;

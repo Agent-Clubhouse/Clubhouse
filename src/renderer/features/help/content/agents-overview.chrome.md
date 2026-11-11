@@ -47,3 +47,9 @@ Click a row, press `⌥⌘1` to `⌥⌘9` for the agents in sidebar order, or pr
 ## Models
 
 Models come from the project's orchestrator. Change a durable agent's model in its settings. The change takes effect the next time it starts or wakes.
+
+## Agent details
+
+Use **Details** beside the conversation or CLI view to open a column of collapsible cards. Several cards can be open at once.
+
+**Settings** is always the first card, for both plain and Clubhouse managed agents. A managed agent shows its template, instructions, configured skills and MCP servers, runtime, model and context, with any changes waiting for its next start. **Open builder**, **Model and context** and **Restart** keep those controls within reach. Auto-sleep can change while a local chat agent is running or sleeping. Plain agents keep their own settings, and agents on another machine are read-only here.

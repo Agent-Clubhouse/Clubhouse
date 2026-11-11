@@ -1,6 +1,5 @@
 /**
- * The Setup card (#2896): for a Clubhouse-managed agent, the Settings card
- * becomes Setup. It says what the agent is built from (template,
+ * The managed Settings card (#2896, #3286). It says what the agent is built from (template,
  * instruction blocks, skills, MCP servers, CLI and model) and, for a running
  * agent whose setup changed after its session started, what is waiting.
  * Open builder goes to the agent's Instructions page; Restart applies what
@@ -137,7 +136,7 @@ export function SetupCard({ agent, projectPath, setup, runsOn, context = null, a
   const summary = [setupSummary(templateName, changes ? Math.max(1, changes.length) : 0), autoSleep?.summary].filter(Boolean).join(' · ');
 
   return (
-    <DetailsCard id="settings" title="Setup" summary={summary} open={open} onToggle={() => setOpen(!open)}>
+    <DetailsCard id="settings" title="Settings" summary={summary} open={open} onToggle={() => setOpen(!open)}>
       <SetupRows setup={setup} templateName={templateName} templateChange={templateChange} runsOn={runsOn} context={context} changes={changes} />
       {autoSleep?.showAutoSleep && <AutoSleepRow idle={autoSleep.idle} onChange={autoSleep.onChange} />}
       {setup.updatedBy && <CardNote><span data-testid="details-setup-changed">{changedLine(setup.updatedAt, setup.updatedBy)}</span></CardNote>}

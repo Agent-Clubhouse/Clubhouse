@@ -111,10 +111,10 @@ describe('settings helpers', () => {
   });
 });
 
-describe('Managed Setup card auto-sleep (#3283)', () => {
+describe('Managed Settings card auto-sleep (#3283)', () => {
   afterEach(() => { vi.restoreAllMocks(); resetChatFlag(); });
 
-  it.each(['running', 'sleeping'] as const)('keeps auto-sleep editable in the managed %s agent Setup card', async (status) => {
+  it.each(['running', 'sleeping'] as const)('keeps one Settings card with editable auto-sleep for a managed %s agent', async (status) => {
     const projectPath = 'managed-project';
     resetChatFlag();
     vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ chat: true });
@@ -127,7 +127,9 @@ describe('Managed Setup card auto-sleep (#3283)', () => {
       ok: true, value: { managed: true, running: status === 'running', waiting: false, changes: [], cliChanged: false },
     });
     render(<SettingsCard agent={{ ...agent, status }} chat={status === 'running' ? chatState() : undefined} projectPath={projectPath} provider="Claude Code" />);
-    await screen.findByRole('region', { name: 'Setup' });
+    await waitFor(() => expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent(/^Managed/));
+    expect(screen.getAllByRole('region', { name: 'Settings' })).toHaveLength(1);
+    expect(screen.queryByRole('region', { name: 'Setup' })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Sleeps after 30 min'));
     const card = openSettings();
     const select = card.getByTestId('details-auto-sleep');
