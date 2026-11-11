@@ -656,11 +656,16 @@ export async function memoryWrite(
   page: string, text: string, reason: string, root: string = getDispatcherMemoryPath(), options: MemoryWriteOptions = {},
 ): Promise<string> {
   if (reason.length > 80) throw new Error('Memory write reason is too long.');
-  const { resolveMemoryPage } = await import('./dispatcher-memory-reader');
+  const { resolveMemoryPage, MemoryReadError } = await import('./dispatcher-memory-reader');
   await fsp.mkdir(root, { recursive: true });
   const file = await resolveMemoryPage(page, root, true);
   const relative = relativeMemoryPage(file, await fsp.realpath(root));
-  if (relative.startsWith(`${MEMORY_HISTORY_DIR}/`)) throw new Error('Memory history is read only.');
+  const kind = relative.toLowerCase();
+  if (kind.startsWith(`${MEMORY_HISTORY_DIR}/`)) throw new MemoryReadError('Memory history is read only.');
+  if (reason === 'agent tool' && kind.startsWith('archive/')) throw new MemoryReadError('Archived memory is read only.');
+  if (reason === 'agent tool' && kind.startsWith('topics/') && !parseTopicPage(text)) {
+    throw new MemoryReadError('Topic pages need Status and Source headers, then a blank line and the body.');
+  }
   return withPageLock(`write:${file}`, async () => {
     const previous = await readIfExists(file);
     const stat = previous === null ? null : await fsp.stat(file);
@@ -668,13 +673,13 @@ export async function memoryWrite(
     const entry = (await readMemoryAccess(root))[relative];
     const previousStamp = stat && previous !== null ? { mtimeMs: stat.mtimeMs, hash: hashMemory(previous) } : undefined;
     const direct = previousStamp && !sameStamp(entry?.observed ?? entry?.lastClubhouseWrite, previousStamp);
-    if (reason === 'agent tool' && relative.startsWith('agents/')) {
+    if (reason === 'agent tool' && kind.startsWith('agents/')) {
       const before = parseAgentPage(previous ?? '');
       const after = parseAgentPage(text);
       if (before.card !== after.card) throw new Error('Only the agent and the user may change its Card. Keep the card and edit only Notes.');
     }
-    let next = relative === 'index.md' ? capIndex(text) : text;
-    const topic = relative.startsWith('topics/') ? parseTopicPage(next) : null;
+    let next = kind === 'index.md' ? capIndex(text) : text;
+    const topic = kind.startsWith('topics/') ? parseTopicPage(next) : null;
     if (topic && !options.preserveFreshness) {
       const before = previous === null ? null : parseTopicPage(previous);
       const headerLines = [...(topic.headerLines ?? before?.headerLines ?? [])];
@@ -685,6 +690,12 @@ export async function memoryWrite(
       }
       next = renderTopicPage({ ...topic, headerLines, created: before?.created ?? topic.created ?? new Date(now).toISOString(),
         updated: new Date(now).toISOString(), body: boundConflictNotes(topic.body) });
+    } else if (kind.startsWith('agents/')) {
+      const notes = /^## Notes[ \t]*$/m.exec(next);
+      if (notes) {
+        const start = notes.index + notes[0].length;
+        next = next.slice(0, start) + boundConflictNotes(next.slice(start));
+      }
     } else next = boundConflictNotes(next);
     if (previous !== null) await rememberVersion(relative, previous, root, now);
     if (next !== previous) await writeFileAtomic(file, next, options.timestamps ?? (options.preserveFreshness && stat ? stat : undefined));

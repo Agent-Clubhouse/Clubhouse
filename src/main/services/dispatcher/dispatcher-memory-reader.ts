@@ -69,6 +69,10 @@ export async function resolveMemoryPage(page: string, root: string, writing = fa
   if (path.isAbsolute(wanted) || wanted.includes(':') || wanted.includes('\0') || wanted.split('/').includes('..')) {
     throw new MemoryReadError('Name a page inside memory, such as agents/webapp-lead.md.');
   }
+  if (wanted.split('/').some((part) => part !== '.' && (/[. ]$|[<>"|?*]/.test(part)
+    || /^(con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/i.test(part)))) {
+    throw new MemoryReadError('Memory page paths cannot contain reserved or ambiguous file names.');
+  }
   if (!wanted.endsWith('.md')) throw new MemoryReadError('Memory pages are .md files.');
   const realRoot = await fsp.realpath(root);
   const target = path.join(realRoot, ...wanted.split('/'));
@@ -79,15 +83,16 @@ export async function resolveMemoryPage(page: string, root: string, writing = fa
     current = path.join(current, parts[i]);
     let stat: import('fs').Stats;
     try { stat = await fsp.lstat(current); } catch (err) {
-      if (writing && (err as NodeJS.ErrnoException).code === 'ENOENT') return target;
+      if (writing && (err as NodeJS.ErrnoException).code === 'ENOENT') return path.join(current, ...parts.slice(i + 1));
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new MemoryReadError(`There is no memory page "${wanted}". Read memory with no page for the list.`);
       throw err;
     }
     if (stat.isSymbolicLink()) throw new MemoryReadError('Memory page paths cannot contain links.');
     if (i < parts.length - 1 && !stat.isDirectory()) throw new MemoryReadError(`"${wanted}" is not a page.`);
     if (i === parts.length - 1 && !stat.isFile()) throw new MemoryReadError(`"${wanted}" is not a page.`);
+    current = await fsp.realpath(current);
   }
-  return target;
+  return current;
 }
 
 /**

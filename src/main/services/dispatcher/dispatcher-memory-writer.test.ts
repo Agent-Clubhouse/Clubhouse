@@ -73,6 +73,41 @@ describe('write_memory and shared memory writes', () => {
     expect((await readDispatcherMemory('topics/release.md', root)).text).toContain('Ships.');
   });
 
+  it('applies protections after normalizing paths and ignores protected-folder casing', async () => {
+    await writeAgentCard('lead', 'Owns work', root);
+    for (const folder of ['AGENTS', 'Agents']) {
+      await expect(writeDispatcherMemory(`${folder}/lead.md`, renderAgentPage('lead', { card: 'Imposter', notes: '' }), root)).rejects.toThrow(/Card/);
+    }
+    expect(fs.readFileSync(path.join(root, 'agents', 'lead.md'), 'utf8')).toContain('Owns work');
+    for (const page of ['HISTORY/old.md', 'History/old.md', 'ARCHIVE/topics/old.md', './archive/topics/old.md']) {
+      await expect(writeDispatcherMemory(page, 'bad', root)).rejects.toThrow(/read only/);
+    }
+    await writeDispatcherMemory('topics/headers.md', topic('Keep these facts'), root);
+    const before = fs.readFileSync(path.join(root, 'topics', 'headers.md'), 'utf8');
+    for (const page of ['./topics/headers.md', 'topics//headers.md', 'TOPICS/headers.md']) {
+      await expect(writeDispatcherMemory(page, 'No headers', root)).rejects.toThrow(/Status and Source/);
+    }
+    expect(fs.readFileSync(path.join(root, 'topics', 'headers.md'), 'utf8')).toBe(before);
+  });
+
+  it('rejects Windows device names and ambiguous path components on every platform', async () => {
+    for (const page of ['CON.md', 'topics/AuX.md', 'COM1/page.md', 'LPT9.md', 'topics./page.md', 'topics /page.md', 'topics/a?.md', 'topics/a|b.md']) {
+      await expect(writeDispatcherMemory(page, topic('bad'), root), page).rejects.toThrow();
+    }
+    expect(fs.readdirSync(root)).toEqual([]);
+  });
+
+  it('keeps Card conflict lines untouched when bounding conflicts in Notes', async () => {
+    fs.mkdirSync(path.join(root, 'agents'));
+    const conflicts = Array.from({ length: 7 }, (_, i) => `Conflicting: 2026-11-0${i + 1} original fact`).join('\n');
+    const text = renderAgentPage('lead', { card: conflicts, notes: 'Old notes' });
+    fs.writeFileSync(path.join(root, 'agents', 'lead.md'), text);
+    await writeDispatcherMemory('agents/lead.md', renderAgentPage('lead', { card: conflicts, notes: conflicts }), root);
+    const written = fs.readFileSync(path.join(root, 'agents', 'lead.md'), 'utf8');
+    expect(written.split('## Notes')[0]).toBe(text.split('## Notes')[0]);
+    expect(written.split('## Notes')[1].match(/Conflicting:/g)).toHaveLength(5);
+  });
+
   it.skipIf(process.platform === 'win32')('rejects file and ancestor symlinks, including dangling links and the index', async () => {
     const outside = path.join(base, 'outside');
     fs.mkdirSync(outside);
