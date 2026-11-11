@@ -46,6 +46,8 @@ Tests: `dispatcher-service.test.ts` ("1.0 default"), `e2e/layout-default.spec.ts
 | Telemetry: usage split, memory health, triage outcomes | #3052 | `src/main/telemetry/dispatcher-telemetry.ts` |
 | Phone: the same group chat | #3043 | `mobile-dispatcher.ts` |
 
+**Memory upkeep freshness (part of #3218).** Mechanical link repairs preserve each page's modification time, so they neither trigger another agent review nor restart the 30-day staleness clock. Upkeep collects changed topics and agent notes after its repairs and saves a completion-time checkpoint. Actual agent edits still trigger review; only stale, unconfirmed, unreferenced topics are archived.
+
 ## Agents' news in the chat (#3193)
 
 What passes between the Dispatcher and an agent (progress, acknowledgements, an agent's questions to it) stays out of the chat. The agent's own chat keeps all of it. The chat shows only what is for the user:

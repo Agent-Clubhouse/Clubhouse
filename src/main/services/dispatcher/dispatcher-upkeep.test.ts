@@ -6,7 +6,7 @@ import * as path from 'path';
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => '/nonexistent-base-dir' }));
 
 import { renderAgentPage, renderTopicPage } from './dispatcher-memory';
-import { listMemoryPages, runMemoryUpkeep } from './dispatcher-upkeep';
+import { listMemoryPages, measureMemoryHealth, runMemoryUpkeep } from './dispatcher-upkeep';
 
 const DAY = 24 * 60 * 60 * 1000;
 /** Monday 2026-11-09, noon local. */
@@ -102,6 +102,43 @@ describe('runMemoryUpkeep: pruning keeps every page it shouldn’t prune', () =>
 });
 
 describe('runMemoryUpkeep: timeline and links', () => {
+  it.each(['topics/notes.md', 'agents/web.md', 'index.md'])('preserves the modification time when repairing links in %s (part of #3218)', async (page) => {
+    write('topics/checkout-fix.md', topic('confirmed', 'x\n'), 1);
+    const body = 'See [fix](topics/Checkout%20Fix.md).\n';
+    const text = page.startsWith('agents/') ? renderAgentPage('web', { card: 'Web work.', notes: body })
+      : page.startsWith('topics/') ? topic('unconfirmed', body) : body;
+    write(page, text, 29);
+    const file = path.join(root, page);
+    const before = fs.statSync(file).mtimeMs;
+    const report = await runMemoryUpkeep(NOW, { root });
+    expect(report.linksFixed).toHaveLength(1);
+    const target = page === 'index.md' ? 'topics/checkout-fix.md' : page.startsWith('agents/') ? '../topics/checkout-fix.md' : 'checkout-fix.md';
+    expect(read(page)).toContain(`](${target})`);
+    expect(Math.abs(fs.statSync(file).mtimeMs - before)).toBeLessThan(1);
+    expect(report.archived).toEqual([]);
+  });
+
+  it('still archives an unreferenced stale topic whose link was just repaired (part of #3218)', async () => {
+    write('topics/checkout-fix.md', topic('confirmed', 'x\n'), 1);
+    write('topics/stale.md', topic('unconfirmed', 'See [fix](Checkout%20Fix.md).\n'), 31);
+    const before = fs.statSync(path.join(root, 'topics', 'stale.md')).mtimeMs;
+    const report = await runMemoryUpkeep(NOW, { root });
+    expect(report.linksFixed).toHaveLength(1);
+    expect(report.archived).toEqual(['topics/stale.md']);
+    expect(read('archive/topics/stale.md')).toContain('](checkout-fix.md)');
+    expect(Math.abs(fs.statSync(path.join(root, 'archive', 'topics', 'stale.md')).mtimeMs - before)).toBeLessThan(1);
+  });
+
+  it('keeps a referenced stale topic stale in memory health after repairing its link (part of #3218)', async () => {
+    write('topics/checkout-fix.md', topic('confirmed', 'x\n'), 1);
+    write('topics/stale.md', topic('unconfirmed', 'See [fix](Checkout%20Fix.md).\n'), 31);
+    write('index.md', '[Kept](topics/stale.md)\n');
+    const report = await runMemoryUpkeep(NOW, { root });
+    expect(report.linksFixed).toHaveLength(1);
+    expect(report.archived).toEqual([]);
+    expect(await measureMemoryHealth(NOW, report, { root })).toMatchObject({ staleTopics: 1, unconfirmedTopics: 1 });
+  });
+
   it('rolls old days into their week and points links at the rolled section', async () => {
     write('timeline/2026-10-28.md', '# 2026-10-28\n\n- 09:00 Shipped ([transcript](/t/a.jsonl#L3))\n', 12);
     write('topics/release.md', topic('confirmed', 'See [the day](../timeline/2026-10-28.md).\n'), 1);

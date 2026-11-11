@@ -87,7 +87,7 @@ async function defaultFileExists(file: string): Promise<boolean> {
 
 /**
  * Every page in memory, not counting the archive, with when it last changed.
- * The upkeep's change check reads this before it runs.
+ * Mechanical link repairs preserve these times so only agent edits trigger review.
  */
 export async function listMemoryPages(root?: string): Promise<MemoryPage[]> {
   const base = memoryPaths(root).root;
@@ -355,7 +355,10 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
     if (!replacements.size) continue;
     const next = `${text.slice(0, range.start)}${replaceLinks(editable, replacements)}${text.slice(range.end)}`;
     if (next !== text) {
+      const stat = await fsp.stat(full);
       await writeFileAtomic(full, next);
+      // Link maintenance is not a new fact or a freshness signal.
+      await fsp.utimes(full, stat.atimeMs / 1000, stat.mtimeMs / 1000);
       report.changed = true;
     }
   }

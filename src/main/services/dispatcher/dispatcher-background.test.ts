@@ -196,6 +196,48 @@ describe('the upkeep gate', () => {
   it('sends nothing for an empty memory', async () => {
     expect(await runDispatcherUpkeep()).toHaveProperty('skip');
   });
+
+  it('does not review upkeep-only link repairs again and checkpoints completion (part of #3218)', async () => {
+    topic('topics/checkout-fix.md', 'confirmed', 120_000);
+    const notes = path.join(memory, 'topics', 'notes.md');
+    fs.writeFileSync(notes, renderTopicPage({ status: 'unconfirmed', source: 'pm', body: 'See [fix](Checkout%20Fix.md).\n' }));
+    const old = new Date(world.now - 24 * 60 * 60 * 1000);
+    fs.utimesSync(notes, old, old);
+    fs.writeFileSync(path.join(tmp, 'dispatcher-upkeep.json'), JSON.stringify({ lastCheckedAt: world.now - 60_000 }));
+    const completedAt = world.now + 10_000;
+    install({ now: vi.fn().mockReturnValueOnce(world.now).mockReturnValue(completedAt) });
+
+    expect(await runDispatcherUpkeep()).toHaveProperty('skip');
+    expect(fs.readFileSync(notes, 'utf-8')).toContain('](checkout-fix.md)');
+    expect(JSON.parse(fs.readFileSync(path.join(tmp, 'dispatcher-upkeep.json'), 'utf-8'))).toEqual({ lastCheckedAt: completedAt });
+
+    world.now = completedAt + 60_000;
+    install();
+    expect(await runDispatcherUpkeep()).toHaveProperty('skip');
+
+    // An actual agent edit after the checkpoint must still be reviewed.
+    world.now += 60_000;
+    topic('topics/notes.md', 'confirmed');
+    const next = await runDispatcherUpkeep();
+    expect('send' in next && next.send).toContain('topics/notes.md (confirmed)');
+    expect('send' in next && next.send).not.toContain('checkout-fix.md');
+  });
+
+  it('reviews agent edits made during upkeep before saving its completion checkpoint (part of #3218)', async () => {
+    topic('topics/notes.md', 'confirmed', 120_000);
+    fs.writeFileSync(path.join(tmp, 'dispatcher-upkeep.json'), JSON.stringify({ lastCheckedAt: world.now - 60_000 }));
+    const startedAt = world.now;
+    const now = vi.fn().mockReturnValueOnce(startedAt).mockImplementation(() => {
+      world.now = startedAt + 10_000;
+      topic('topics/notes.md', 'confirmed', 5_000);
+      return world.now;
+    });
+    install({ now });
+    const result = await runDispatcherUpkeep();
+    expect('send' in result && result.send).toContain('topics/notes.md (confirmed)');
+    install();
+    expect(await runDispatcherUpkeep()).toHaveProperty('skip');
+  });
 });
 
 describe('upkeep telemetry (#3052)', () => {
