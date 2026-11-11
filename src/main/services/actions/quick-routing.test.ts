@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HelperRouting } from '../../../shared/helper-routing';
 
+const h = vi.hoisted(() => ({ running: true, exits: new Set<(id: string) => void>() }));
+vi.mock('../agent-system', () => ({ isAgentRunning: () => h.running }));
+vi.mock('../agent-exit-broadcast', () => ({
+  onAgentExit: (fn: (id: string) => void) => { h.exits.add(fn); return () => { h.exits.delete(fn); }; },
+}));
 vi.mock('../clubhouse-mcp/tools/helper-tools', () => ({
   withStartLock: (fn: () => Promise<unknown>) => fn(),
   currentHelperLoad: vi.fn(async () => ({ 'codex-cli': { live: 1, reserved: 0 } })),
@@ -25,11 +30,13 @@ const routing: HelperRouting = {
   requested: { provider: 'auto', model: null, effort: null, difficulty: 'medium' },
   resolved: { provider: 'codex-cli', model: 'gpt-5.3-codex', effort: 'high', difficulty: 'medium' },
   source: { provider: 'auto', model: 'builtin_mapping', effort: 'builtin_mapping' },
-  reason: 'lowest_load', fallback: 'none', context: { status: 'none' },
+  reason: 'lower_load', fallback: 'none', context: { status: 'none' },
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.running = true;
+  h.exits.clear();
   vi.mocked(readHelperAuto).mockResolvedValue({ effective: true } as Awaited<ReturnType<typeof readHelperAuto>>);
   vi.mocked(planHelperStart).mockResolvedValue({ ok: true, plan: { routing } });
   vi.mocked(decideAutoPlan).mockReturnValue({
@@ -65,5 +72,21 @@ describe('Action quick-agent routing', () => {
     await expect(startActionQuickAgent({ ...request, difficulty: 'hard' })).rejects.toThrow('CLI missing');
     expect(planHelperStart).toHaveBeenCalledWith(expect.objectContaining({ difficulty: 'hard' }));
     expect(settleAutoDecision).toHaveBeenCalledWith('d1', 'spawn_failed');
+  });
+
+  it('releases a finished quick agent even if no later load read ever saw its transient registration', async () => {
+    await startActionQuickAgent(request);
+    for (const exit of h.exits) exit('unrelated');
+    expect(h.exits.size).toBe(1);
+    for (const exit of h.exits) exit('quick_1');
+    expect(settleAutoDecision).toHaveBeenLastCalledWith('d1', 'left_asleep');
+    expect(h.exits.size).toBe(0);
+  });
+
+  it('releases a quick agent that exited before its start returned', async () => {
+    h.running = false;
+    await startActionQuickAgent(request);
+    expect(settleAutoDecision).toHaveBeenLastCalledWith('d1', 'left_asleep');
+    expect(h.exits.size).toBe(0);
   });
 });

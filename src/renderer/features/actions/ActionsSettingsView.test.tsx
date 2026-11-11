@@ -23,6 +23,19 @@ beforeEach(() => {
 });
 
 describe('Settings > Actions', () => {
+  it('keeps an older quick step on the project provider until Auto is explicitly selected', () => {
+    render(<ActionForm open action={action({ steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review changes' }] })} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const form = screen.getByTestId('action-form');
+    expect((within(form).getByLabelText('Provider') as HTMLSelectElement).value).toBe('');
+    expect(within(form).queryByLabelText('Difficulty')).toBeNull();
+    fireEvent.change(within(form).getByLabelText('Provider'), { target: { value: 'auto' } });
+    expect((within(form).getByLabelText('Difficulty') as HTMLSelectElement).value).toBe('medium');
+    fireEvent.change(within(form).getByLabelText('Difficulty'), { target: { value: 'hard' } });
+    expect((within(form).getByLabelText('Difficulty') as HTMLSelectElement).value).toBe('hard');
+    fireEvent.change(within(form).getByLabelText('Provider'), { target: { value: '' } });
+    expect(within(form).queryByLabelText('Difficulty')).toBeNull();
+  });
+
   it('shows a plain owner list with recent runs, failures and links to saved Actions', async () => {
     list = [action({})];
     window.clubhouse.actions.usage = vi.fn(async () => [

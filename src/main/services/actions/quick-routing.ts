@@ -2,6 +2,8 @@ import type { HelperDifficulty, HelperRouting } from '../../../shared/helper-rou
 import { commitAutoDecision, settleAutoDecision } from '../helper-auto-state';
 import { autoOffRefusal, decideAutoPlan, planHelperStart, readHelperAuto } from '../helper-routing';
 import { startQuickAgent, type StartQuickAgentParams } from '../quick-agent-service';
+import { onAgentExit } from '../agent-exit-broadcast';
+import { isAgentRunning } from '../agent-system';
 
 /** Explicit and older steps keep the ordinary quick-agent start path. */
 export async function startActionQuickAgent(req: StartQuickAgentParams & { difficulty?: HelperDifficulty }): Promise<{ id: string; name: string; routing?: HelperRouting }> {
@@ -35,7 +37,17 @@ export async function startActionQuickAgent(req: StartQuickAgentParams & { diffi
         effort: plan.effort,
       });
       commitAutoDecision(decisionId, started.id);
-      settleAutoDecision(decisionId, 'started');
+      const off = onAgentExit((agentId) => {
+        if (agentId !== started.id) return;
+        off();
+        settleAutoDecision(decisionId, 'left_asleep');
+      });
+      // Unlike helpers, quick agents have no durable row to reconcile after exit.
+      if (isAgentRunning(started.id)) settleAutoDecision(decisionId, 'started');
+      else {
+        off();
+        settleAutoDecision(decisionId, 'left_asleep');
+      }
       return { id: started.id, name: started.name, routing: plan.routing };
     } catch (err) {
       settleAutoDecision(decisionId, 'spawn_failed');
