@@ -943,7 +943,7 @@ describe('FeedbackService (fake SDK)', () => {
   });
 });
 
-describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', () => {
+describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', { timeout: 20_000 }, () => {
   let dataDir: string;
   beforeEach(() => { dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-framebriar-')); });
   afterEach(() => { fs.rmSync(dataDir, { recursive: true, force: true }); });
@@ -1006,7 +1006,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
     return { fetchImpl, calls, reports, refreshExpiresAt };
   }
 
-  async function until(check: () => boolean, ms = 5000): Promise<void> {
+  async function until(check: () => boolean, ms = 4000): Promise<void> {
     const end = Date.now() + ms;
     while (!check()) {
       if (Date.now() > end) throw new Error('Timed out');

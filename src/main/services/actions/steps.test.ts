@@ -9,6 +9,7 @@ vi.mock('../agent-runtime', () => ({
 import { resetAppEventBus } from '../app-event-bus';
 import { createStepRunner, type StepDeps } from './steps';
 import type { StepContext } from './engine';
+import type { MessageDelivery } from '../../../shared/chat';
 
 const ctx: StepContext = {
   action: { id: 'a1', name: 'Morning', trigger: { kind: 'once', at: 1 }, steps: [], overlap: 'skip', owner: { kind: 'user' }, enabled: true, createdAt: 0, updatedAt: 0 },
@@ -45,14 +46,39 @@ describe('step runner', () => {
     expect(d.wake).toHaveBeenCalledWith(expect.objectContaining({ targetId: 'pm', mission: '[Clubhouse action “Morning”] Post the plan' }));
   });
 
-  it('queues a message for a busy chat agent', async () => {
+  it.each(['starting', 'running', 'waiting_permission', 'waiting_input'])('records queued acceptance for a chat agent that is %s', async (state) => {
     const sendMessage = vi.fn(async () => ({ delivery: 'queued' }));
-    runtimes.set('pm', { kind: 'chat', isRunning: () => true, getState: () => 'running', sendMessage, onStateChange: () => () => undefined });
+    runtimes.set('pm', { kind: 'chat', isRunning: () => true, getState: () => state, sendMessage, onStateChange: () => () => undefined });
     const d = deps();
     const r = await createStepRunner(d).run({ kind: 'message', agentId: 'pm', text: 'hi' }, ctx);
-    expect(r.outcome).toBe('done');
+    expect(r).toMatchObject({ outcome: 'done', detail: "Queued for pm's next turn", delivery: 'queued', agentId: 'pm' });
     expect(sendMessage).toHaveBeenCalledWith('[Clubhouse action “Morning”] hi', expect.objectContaining({ source: 'action', delivery: 'queued' }));
     expect(d.wake).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['running', 'prompt', 'delivered', 'Sent the message to pm'],
+    ['idle', 'queued', 'queued', "Queued for pm's next turn"],
+    ['idle', 'prompt', 'delivered', 'Sent the message to pm'],
+  ] as const)('records actual %s chat delivery of %s rather than the requested mode', async (state, actual, delivery, detail) => {
+    const sendMessage = vi.fn(async () => ({ delivery: actual }));
+    runtimes.set('pm', { kind: 'chat', isRunning: () => true, getState: () => state, sendMessage, onStateChange: () => () => undefined });
+    const r = await createStepRunner(deps()).run({ kind: 'message', agentId: 'pm', text: 'hi' }, ctx);
+    expect(r).toMatchObject({ outcome: 'done', detail, delivery });
+  });
+
+  it('records a wake prompt as queued when its awake target is busy', async () => {
+    runtimes.set('pm', { kind: 'chat', isRunning: () => true, getState: () => 'running', sendMessage: vi.fn(async () => ({ delivery: 'queued' })), onStateChange: () => () => undefined });
+    expect(await createStepRunner(deps()).run({ kind: 'wake', agentId: 'pm', prompt: 'hi' }, ctx))
+      .toMatchObject({ outcome: 'done', detail: "Queued for pm's next turn", delivery: 'queued' });
+  });
+
+  it('records a terminal message as delivered without requesting a queue', async () => {
+    const sendMessage = vi.fn(async () => ({ delivery: 'prompt' }));
+    runtimes.set('pm', { kind: 'pty', isRunning: () => true, getState: () => 'running', sendMessage, onStateChange: () => () => undefined });
+    expect(await createStepRunner(deps()).run({ kind: 'message', agentId: 'pm', text: 'hi' }, ctx))
+      .toMatchObject({ outcome: 'done', detail: 'Sent the message to pm', delivery: 'delivered' });
+    expect(sendMessage).toHaveBeenCalledWith(expect.any(String), expect.not.objectContaining({ delivery: expect.anything() }));
   });
 
   it('a message step wakes a sleeping agent only for an owner that may wake it (D131)', async () => {
@@ -124,7 +150,7 @@ describe('step runner', () => {
   });
 
   describe('the Dispatcher as a target (#3042)', () => {
-    const deliver = vi.fn(async (): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string; skipped?: boolean }> => ({ delivered: true, woke: true }));
+    const deliver = vi.fn(async (): Promise<{ delivered: true; woke: boolean; delivery?: MessageDelivery } | { delivered: false; text: string; skipped?: boolean }> => ({ delivered: true, woke: true }));
     const withDispatcher = (over: Partial<StepDeps> = {}) => deps({
       agentName: (id) => (id === 'disp' ? 'Rosie' : id),
       dispatcher: { is: (id) => id === 'disp', deliver },
@@ -163,6 +189,12 @@ describe('step runner', () => {
       deliver.mockRejectedValueOnce(new Error('pipe closed'));
       expect(await createStepRunner(withDispatcher()).run({ kind: 'message', agentId: 'disp', text: 'hi' }, owned({ kind: 'app' })))
         .toMatchObject({ outcome: 'failed', detail: 'Couldn’t deliver the message to Rosie: pipe closed' });
+    });
+
+    it('records queued acceptance from the Dispatcher delivery path', async () => {
+      deliver.mockResolvedValueOnce({ delivered: true, woke: false, delivery: 'queued' });
+      expect(await createStepRunner(withDispatcher()).run({ kind: 'message', agentId: 'disp', text: 'hi' }, owned({ kind: 'app' })))
+        .toMatchObject({ outcome: 'done', detail: "Queued for Rosie's next turn", delivery: 'queued', agentId: 'disp' });
     });
 
     it('a message Clubhouse found it didn’t need to send is a finished step, not a failure (#3040)', async () => {

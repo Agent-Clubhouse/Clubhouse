@@ -98,6 +98,21 @@ describe('Settings > Actions', () => {
     expect(await within(card).findByText('No runs yet.')).toBeTruthy();
   });
 
+  it('shows queued message acceptance without claiming confirmed delivery', async () => {
+    list = [action({ steps: [{ kind: 'message', agentId: 'pm', text: 'Plan the day' }] })];
+    window.clubhouse.actions.history = vi.fn(async () => [{
+      id: 'r1', actionId: 'a1', trigger: { kind: 'schedule' as const, at: 1 }, chain: [],
+      startedAt: 1, endedAt: 2, outcome: 'done' as const,
+      steps: [{ kind: 'message' as const, outcome: 'done' as const, detail: "Queued for pm's next turn", delivery: 'queued' as const, agentId: 'pm' }],
+    }]);
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByText('Morning plan'));
+    const run = await screen.findByTestId('action-run');
+    expect(within(run).getByText("Queued for pm's next turn")).toBeTruthy();
+    expect(within(run).getByText('The action fired. The message was queued, not confirmed delivered.')).toBeTruthy();
+    expect(within(run).queryByText('Sent the message to pm')).toBeNull();
+  });
+
   it('filters by owner and by turned off', () => {
     const all = [action({}), action({ id: 'b', owner: { kind: 'agent', agentId: 'x' } }), action({ id: 'c', enabled: false })];
     expect(filterActions(all, 'you').map((a) => a.id)).toEqual(['a1', 'c']);

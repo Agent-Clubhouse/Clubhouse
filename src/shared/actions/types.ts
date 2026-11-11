@@ -209,6 +209,8 @@ export interface ActionStepResult {
   outcome: 'done' | 'failed';
   /** One line in plain words. */
   detail: string;
+  /** Message handoff at step completion, not a receipt for later queue delivery. */
+  delivery?: 'queued' | 'delivered';
   /** The agent it woke, messaged, started or put to sleep, for a link. */
   agentId?: string;
   projectId?: string;

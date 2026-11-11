@@ -29,7 +29,7 @@ export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get it
 
 /** The help line under the "Cross-project helpers" switch (#2512). */
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
-export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Codex for a helper, from helper counts and plan limits. This balances counts, not cost.';
+export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit. This balances plan use, not cost.';
 
 /** The note under the access control: the live ceiling, or the rule when it isn't running. */
 export function accessNote(access: HelperAccessResolution | null, running: boolean, name: string): string {

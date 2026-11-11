@@ -21,7 +21,7 @@
  */
 
 import { QUICK_STEP_ACCESS, type ActionOwner, type ActionStep, type ActionStepResult } from '../../../shared/actions';
-import type { ChatSessionState, RoutedMessagePart } from '../../../shared/chat';
+import type { ChatSessionState, MessageDelivery, RoutedMessagePart } from '../../../shared/chat';
 import { setAgentChain } from '../app-event-bus';
 import { getAgentRuntime, isAgentStoppingError } from '../agent-runtime';
 import type { StepContext, StepRunner } from './engine';
@@ -45,7 +45,7 @@ export interface StepDeps {
      * `skipped`: the message wasn't needed this time (one of Clubhouse's own
      * actions found nothing to do, #3040). The step is done, with `text` as its detail.
      */
-    deliver(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string; skipped?: boolean }>;
+    deliver(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean; delivery?: MessageDelivery } | { delivered: false; text: string; skipped?: boolean }>;
   };
   /**
    * Why the owner may not wake this agent, or null. A message step finds its
@@ -73,7 +73,7 @@ export interface DispatcherStepDelivery {
 const BUSY: ReadonlySet<ChatSessionState> = new Set(['starting', 'running', 'waiting_permission', 'waiting_input']);
 const SLEEP_WAIT_MS = 10 * 60 * 1000;
 
-type Delivered = 'delivered' | 'not_running' | 'stopping';
+type Delivered = 'delivered' | 'queued' | 'not_running' | 'stopping';
 
 /** Send text to a running agent. A busy chat agent gets it queued for its next turn. */
 async function deliver(targetId: string, text: string, routed: RoutedMessagePart[]): Promise<Delivered> {
@@ -81,12 +81,12 @@ async function deliver(targetId: string, text: string, routed: RoutedMessagePart
   if (!runtime?.isRunning()) return 'not_running';
   const busy = runtime.kind === 'chat' && BUSY.has(runtime.getState());
   try {
-    await runtime.sendMessage(text, { source: 'action', routed, taskId: `action_${Date.now().toString(36)}`, ...(busy && { delivery: 'queued' }) });
+    const sent = await runtime.sendMessage(text, { source: 'action', routed, taskId: `action_${Date.now().toString(36)}`, ...(busy && { delivery: 'queued' }) });
+    return sent.delivery === 'queued' ? 'queued' : 'delivered';
   } catch (err) {
     if (isAgentStoppingError(err)) return 'stopping';
     throw err;
   }
-  return 'delivered';
 }
 
 /** Wait for a busy chat agent's turn to end, up to `ms`. Terminal agents' turn state is unknown: no wait. */
@@ -123,7 +123,7 @@ function happenedOf(ctx: StepContext): string | undefined {
 
 export function createStepRunner(deps: StepDeps): StepRunner {
   const fail = (step: ActionStep, detail: string, agentId?: string): ActionStepResult => ({ kind: step.kind, outcome: 'failed', detail, ...(agentId && { agentId }) });
-  const done = (step: ActionStep, detail: string, extra: { agentId?: string; projectId?: string } = {}): ActionStepResult => ({ kind: step.kind, outcome: 'done', detail, ...extra });
+  const done = (step: ActionStep, detail: string, extra: { agentId?: string; projectId?: string; delivery?: ActionStepResult['delivery'] } = {}): ActionStepResult => ({ kind: step.kind, outcome: 'done', detail, ...extra });
 
   async function wakeOrMessage(step: ActionStep & { agentId: string }, ctx: StepContext, text: string | undefined): Promise<ActionStepResult> {
     const id = step.agentId;
@@ -137,7 +137,8 @@ export function createStepRunner(deps: StepDeps): StepRunner {
     if (deps.isRunning(id)) {
       if (!msg) return done(step, `${name} was already awake`, { agentId: id });
       const delivery = await deliver(id, msg.text, msg.routed);
-      if (delivery === 'delivered') return done(step, `Sent the message to ${name}`, { agentId: id });
+      if (delivery === 'queued') return done(step, `Queued for ${name}'s next turn`, { agentId: id, delivery });
+      if (delivery === 'delivered') return done(step, `Sent the message to ${name}`, { agentId: id, delivery });
       if (delivery === 'stopping') return fail(step, `Couldn’t deliver the message: ${name} was going to sleep.`, id);
       // It went to sleep in between: wake it with the message below.
     }
@@ -173,7 +174,8 @@ export function createStepRunner(deps: StepDeps): StepRunner {
         return fail(step, `Couldn’t deliver the message: ${delivery.text}`, id);
       }
       if (!msg) return done(step, `Woke ${name}`, { agentId: id });
-      return done(step, delivery.woke ? `Woke ${name} with the message` : `Sent the message to ${name}`, { agentId: id });
+      if (delivery.delivery === 'queued') return done(step, `Queued for ${name}'s next turn`, { agentId: id, delivery: 'queued' });
+      return done(step, delivery.woke ? `Woke ${name} with the message` : `Sent the message to ${name}`, { agentId: id, delivery: 'delivered' });
     } catch (err) {
       // telemetry-exempt: the reason is the step's result, shown and toasted
       if (isAgentStoppingError(err)) return fail(step, `Couldn’t deliver the message: ${name} was going to sleep.`, id);
