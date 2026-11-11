@@ -33,6 +33,8 @@ Headless quick agents report one turn end per run, including empty output, proce
 
 **A quick agent finishes** (`agent.quick_finished`) fires once when its run ends, with a completed, failed or cancelled outcome. The app event includes its name, starter (you, an agent or an Action), parent when present, project and duration. It does not include prompts or output. Watching a quick agent uses `agent.read` on that quick agent, including for project sources. Its parent counts as the `my_helper` relation, as with durable helpers. Actions you create use your own access. Minimal quick-run identity and permission scope stay available locally for up to one week so delayed delivery can recheck access, and are not saved in actions.json. Delayed waits keep the source agent's id so the read check still applies after relaunch.
 
+Quick-source names in messages and missions are marked as untrusted event data, including when a wake step has no prompt. Names and event summaries lose control characters and line breaks before delivery.
+
 ### Event time filters
 
 Every event trigger can optionally run only **After local time**, in HH:MM on this computer, and **Once per calendar day**. Events before the set time are ignored, not held until later. Delayed and queued runs check the current time and date again before starting. The filters also apply to Run now.
