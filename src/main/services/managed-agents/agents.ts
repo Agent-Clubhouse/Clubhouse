@@ -61,6 +61,8 @@ export interface CreateManagedAgentInput {
    * no template or parts (create_managed_agent, #2900, D94).
    */
   managed?: false;
+  /** A Clubhouse MCP creation must use its separately authorized bootstrap. */
+  deferDispatcherConnection?: true;
 }
 
 /**
@@ -85,8 +87,17 @@ async function availableOrchestrator(projectPath: string, orchestrator: ManagedT
   return provider.id;
 }
 
-function creationArguments(requestId?: string): [undefined?, undefined?, undefined?, { creationRequestId: string }?] {
-  return requestId ? [undefined, undefined, undefined, { creationRequestId: requestId }] : [];
+function createAgentRecord(projectPath: string, input: CreateManagedAgentInput, settings: ManagedTemplateSettings): Promise<DurableAgentConfig> {
+  const args: Parameters<typeof agentConfig.createDurable> = [
+    projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode,
+  ];
+  if (input.deferDispatcherConnection || input.creationRequestId) {
+    args[10] = {
+      ...(input.deferDispatcherConnection && { connectToDispatcher: false }),
+      ...(input.creationRequestId && { creationRequestId: input.creationRequestId }),
+    };
+  }
+  return agentConfig.createDurable(...args);
 }
 
 /**
@@ -135,8 +146,7 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   settings.orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
   // Managed agents always get their own folder: a worktree in a git project, a plain folder otherwise.
   // Only the setup goes in it, delivered at start: never the project's legacy agent defaults (#3243).
-  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode,
-    ...creationArguments(input.creationRequestId));
+  const config = await createAgentRecord(projectPath, input, settings);
   try {
     await service.saveSetup(projectPath, config.id, setup);
     // What createDurable doesn't take: orchestration, effort, auto-sleep, the helper template and permissions.
@@ -167,8 +177,7 @@ async function createPlainAgent(projectPath: string, input: CreateManagedAgentIn
   if (settings.freeAgentMode !== undefined && typeof settings.freeAgentMode !== 'boolean') throw new ManagedError('invalid', 'freeAgentMode must be true or false.');
   checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(settings) ? 'settings' : 'default');
   const orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
-  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, orchestrator, settings.access ?? settings.freeAgentMode,
-    ...creationArguments(input.creationRequestId));
+  const config = await createAgentRecord(projectPath, input, { ...settings, orchestrator });
   if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
     try {
       await applyManagedSettings(projectPath, config.id, { orchestration: settings.orchestration });

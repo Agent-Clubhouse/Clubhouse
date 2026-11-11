@@ -69,6 +69,7 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   'agent.dispose': { group: 'agents', verb: 'delete', noun: 'agent' },
   'agent.create': { group: 'new', verb: 'create agents in', noun: 'project' },
   'connection.manage': { group: 'new', verb: 'make and remove connections for', noun: 'agent' },
+  'connection.bootstrap': { group: 'new', verb: 'connect', noun: 'agent', line: () => 'connect agents I create in the same call to me' },
   'library.read': { group: 'new', verb: 'see', noun: 'library' },
   'library.write': { group: 'new', verb: 'edit', noun: 'parts' },
   'template.write': { group: 'new', verb: 'edit', noun: 'templates' },

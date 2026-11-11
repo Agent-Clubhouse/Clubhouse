@@ -42,6 +42,9 @@ vi.mock('../../agent-config', () => ({
   },
   deleteUnregister: async (_p: string, id: string) => { state.agents.delete(id); },
   deleteDurable: async (_p: string, id: string) => { state.agents.delete(id); },
+  setOrchestrationConfig: async (_p: string, id: string, policy: DurableAgentConfig['orchestration']) => {
+    state.agents.get(id)!.orchestration = policy;
+  },
 }));
 const legacy = vi.hoisted(() => ({ notice: undefined as 'not_copied' | undefined }));
 vi.mock('../../legacy-defaults', () => ({ legacyDefaultsNotCopied: async () => legacy.notice }));
@@ -91,6 +94,7 @@ import { deleteAgent } from '../../agent-delete';
 import { agentRegistry } from '../../agent-registry';
 import { listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
 import { describeDeleteCall } from './managed-tools';
+import { _resetDispatcherBootstrapForTesting } from '../dispatcher-bootstrap';
 
 const call = async (name: string, args: Record<string, unknown>, caller = 'dispatcher') => {
   const r = await callTool(caller, name, args);
@@ -110,6 +114,7 @@ beforeEach(async () => {
   _resetSettingsAuditForTesting(false);
   _resetForTesting();
   _resetConfirmTokensForTesting();
+  _resetDispatcherBootstrapForTesting();
   registerManagedTools();
   await managedAgents().ensureBuiltins();
 });
@@ -526,7 +531,9 @@ describe('builder tools: filters, template delete, plain agents, stale edits (#2
 
   it('creates a managed agent attributed to the Dispatcher, or a plain one when asked', async () => {
     const managed = await call('create_managed_agent', { project: 'Clubhouse', name: 'builder-made' });
-    expect(managed.json).toMatchObject({ name: 'builder-made', managed: true, status: 'sleeping' });
+    expect(managed.json).toMatchObject({ name: 'builder-made', managed: true, status: 'sleeping', connectedToDispatcher: false });
+    expect(managed.json.nextStep).toContain('enable Connect to Dispatcher');
+    expect(state.agents.get(managed.json.id)?.orchestration?.connectToDispatcher).toBe(false);
     expect(state.agents.get(managed.json.id)!.managed).toMatchObject({ updatedBy: 'Dispatcher' });
     const plain = await call('create_managed_agent', { project: 'Clubhouse', name: 'plain-one', managed: false, settings: { model: 'opus' } });
     expect(plain.json).toMatchObject({ name: 'plain-one', managed: false, status: 'sleeping' });
@@ -543,6 +550,37 @@ describe('builder tools: filters, template delete, plain agents, stale edits (#2
     const mixed = await call('create_managed_agent', { project: 'Clubhouse', name: 'mixed', managed: false, templateId: 'builtin-template-helper' });
     expect(mixed.isError).toBe(true);
     expect(state.agents.has('new-mixed')).toBe(false);
+  });
+
+  it('refuses the untyped connection route and a non-boolean bootstrap option (#3281)', async () => {
+    for (const connectToDispatcher of [true, false, null]) {
+      const made = await call('create_managed_agent', {
+        project: 'Clubhouse', name: 'bypass', settings: { orchestration: { connectToDispatcher } },
+      });
+      expect(made.isError).toBe(true);
+      expect(made.content[0].text).toContain('top-level connectToDispatcher');
+      expect(state.agents.has('new-bypass')).toBe(false);
+    }
+    const invalid = await call('create_managed_agent', { project: 'Clubhouse', name: 'invalid-flag', connectToDispatcher: 'true' });
+    expect(invalid.isError).toBe(true);
+    expect(invalid.content[0].text).toContain('expected boolean');
+    for (const orchestration of [false, 1, 'invalid', [], null]) {
+      const malformed = await call('create_managed_agent', { project: 'Clubhouse', name: 'malformed', settings: { orchestration } });
+      expect(malformed.isError).toBe(true);
+      expect(malformed.content[0].text).toContain('settings.orchestration must be an object');
+      expect(state.agents.has('new-malformed')).toBe(false);
+    }
+  });
+
+  it('a template cannot implicitly connect a new agent without bootstrap (#3281)', async () => {
+    const template = await managedAgents().saveTemplate({
+      name: 'Connected template', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] },
+      settings: { orchestration: { orchestrate: true, connectToDispatcher: true } },
+    });
+    const made = await call('create_managed_agent', { project: 'Clubhouse', name: 'not-implicitly-connected', templateId: template.id });
+    expect(made.isError).toBeFalsy();
+    expect(made.json.connectedToDispatcher).toBe(false);
+    expect(state.agents.get(made.json.id)?.orchestration).toMatchObject({ orchestrate: true, connectToDispatcher: false });
   });
 });
 

@@ -790,7 +790,7 @@ export const ATTR = {
   auditSurface: enumAttr('clubhouse.audit.surface', ['ui', 'mcp', 'mobile', 'annex_desktop', 'dispatcher', 'persona', 'cli', 'system']),
   auditScope: enumAttr('clubhouse.audit.scope', ['app', 'project', 'agent']),
   auditOutcome: enumAttr('clubhouse.audit.outcome', ['ok', 'refused', 'error']),
-  auditTool: enumAttr('clubhouse.audit.tool', ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'set_connection_tools', 'change_provider', 'preview_provider']),
+  auditTool: enumAttr('clubhouse.audit.tool', ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'set_connection_tools', 'change_provider', 'preview_provider', 'create_managed_agent']),
   auditActorIdHash: hashAttr('clubhouse.audit.actor.id_hash'),
   // Clubhouse permissions (#2973, part of #2921): decisions, requests and changes. Enums only; ids hashed.
   grantAction: enumAttr('clubhouse.grant.action', GRANT_ACTIONS),

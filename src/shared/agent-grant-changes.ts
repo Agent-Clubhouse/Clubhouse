@@ -180,7 +180,7 @@ function isGrantTarget(t: unknown): t is GrantTarget {
   if (!t || typeof t !== 'object') return false;
   const target = t as { kind?: unknown; project?: unknown; role?: unknown };
   switch (target.kind) {
-    case 'self': case 'parent': case 'my_helpers': case 'connected': case 'group_members': case 'app': case 'any':
+    case 'self': case 'parent': case 'my_helpers': case 'created_by_me': case 'connected': case 'group_members': case 'app': case 'any':
       return true;
     case 'project':
       return target.project === 'own' || target.project === 'any'
@@ -297,6 +297,7 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'agent.dispose': 'Delete agents and remove helpers',
   'agent.grant': 'Change setup, Access and permissions',
   'connection.manage': 'Make and remove connections',
+  'connection.bootstrap': 'Connect a newly created agent to the Dispatcher',
   'group_project.read': 'Read the board',
   'group_project.post': 'Post to the board',
   'group_project.admin': 'Manage the group project',
@@ -328,6 +329,7 @@ export function grantTargetLabel(t: GrantTarget): string {
     case 'self': return 'Itself';
     case 'parent': return 'Its orchestrator';
     case 'my_helpers': return 'Its helpers';
+    case 'created_by_me': return 'Agents it creates in this call';
     case 'connected': return t.onlyDispatcher ? 'The Dispatcher, when connected' : t.wakeOn ? 'Connected agents with Wake it on' : t.excludeDispatcher ? 'Connected agents, except the Dispatcher' : 'Connected agents';
     case 'group_project': return t.role === 'admin' ? 'Group projects it runs' : 'Group projects it is in';
     case 'group_members': return 'Members of group projects it runs';

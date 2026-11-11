@@ -32,6 +32,8 @@ export const TOOL_GRANT_TARGETS = [
   'parent',
   /** The caller's direct helpers: the one named in the arguments, or all of them. */
   'my_helpers',
+  /** The new agent this creation call will make, not an id supplied by the caller. */
+  'created_by_me',
   /**
    * Every agent connected to the caller, as a set. For the Dispatcher, every
    * agent with Connect to Dispatcher on.
@@ -78,6 +80,8 @@ export interface ToolGrantDeclaration {
    * wake_agent's `message` (agent.message). Left out, it always applies.
    */
   ifArgs?: readonly string[];
+  /** Applies only when one of these boolean arguments is true. */
+  ifTrue?: readonly string[];
   /**
    * When one of these actions is Ask first, the tool decides itself whether
    * and how to ask, so the check lets the call reach it instead of asking
@@ -130,6 +134,6 @@ export function describeToolGrant(grant: ToolGrant | undefined): string {
   if (grant === undefined) return '(none)';
   if (isToolGrantPassThrough(grant)) return `(${grant})`;
   return toolGrantDeclarations(grant)
-    .map((d) => `${d.actions.join(', ')} on ${d.target}${d.ifArgs ? ` if ${d.ifArgs.join(' or ')}` : ''}`)
+    .map((d) => `${d.actions.join(', ')} on ${d.target}${d.ifArgs ? ` if ${d.ifArgs.join(' or ')}` : ''}${d.ifTrue ? ` if ${d.ifTrue.join(' or ')} is true` : ''}`)
     .join('; ');
 }

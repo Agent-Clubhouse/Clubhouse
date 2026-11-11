@@ -3,6 +3,7 @@
  * based on an agent's current bindings.
  */
 
+import { randomUUID } from 'crypto';
 import { withSettingsSurface } from '../settings-audit';
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { isToolGrantPassThrough, toolGrantDeclarations, type ToolGrant } from './tool-grants';
@@ -20,6 +21,7 @@ import { checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from
 import { askFirst } from './ask-first';
 import { resolveArgTargets } from './arg-targets';
 import { recordGrantDecision } from '../grant-telemetry';
+import { recordDispatcherControl } from '../../telemetry/dispatcher-telemetry';
 import { CONNECTION_TOOLS, WAKE_TOOL } from '../../../shared/connection-grants';
 import { localConnectionWakeOn } from '../connection-grants-store';
 import { localizeAgentArgs } from './agent-addresses';
@@ -822,6 +824,14 @@ async function grantRefusal(agentId: string, toolName: string, check: Extract<Gr
   }
   appLog('core:mcp', 'info', 'Tool call refused: no Clubhouse permission covers it', { meta: { agentId, toolName, reason: check.reason } });
   recordGrantDecision({ agentId, toolName, decision: 'refused', reason: check.reason, actions: check.action ? [check.action] : [], ...(check.targetKind && { targetKind: check.targetKind }) });
+  if (toolName === 'create_managed_agent' && args.connectToDispatcher === true) {
+    const receiptId = randomUUID();
+    const recorded = recordDispatcherControl({ tool: toolName, actorId: agentId, targets: [], requested: { receiptId }, outcome: 'refused', code: check.reason });
+    return refuse('no_grant', JSON.stringify({
+      status: 'refused', connectedToDispatcher: false, receipt: { id: receiptId, outcome: 'refused' }, error: check.message,
+      ...(!recorded && { audit_warning: 'Local telemetry recording is off, so this is not in the audit record.' }),
+    }));
+  }
   return refuse('no_grant', check.message);
 }
 
