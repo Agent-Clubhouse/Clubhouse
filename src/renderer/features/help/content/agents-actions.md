@@ -56,6 +56,8 @@ If Clubhouse was closed or the machine was asleep at a schedule time, the action
 
 Steps stop at the first one that couldn't run.
 
+A quick-agent step can use **Auto** with easy, medium or hard difficulty (medium by default). It uses the same provider selection, quota checks and model mappings as helpers in **Settings > Smart selection**. Its routing receipt appears in recent runs. If Auto is off or no provider can run it, the step says why and does not start. An explicit provider stays explicit. Steps saved without a provider still use the project's provider.
+
 ## When an action can't run
 
 You get a notice only when an action couldn't do its job: an agent couldn't wake or start, a provider isn't installed, a target is gone, or the action is no longer allowed to do a step. The reason shows on the action's row and card. There are no retries; the next run happens as usual.

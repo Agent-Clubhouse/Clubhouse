@@ -16,6 +16,16 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 import { sanitizeActions, settleInterruptedRuns } from './actions-store';
 
 describe('actions store', () => {
+  it('loads older quick steps unchanged and retains explicit Auto difficulty', () => {
+    const old = {
+      id: 'a1', name: 'Review', trigger: { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' },
+      steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review' }], overlap: 'skip', owner: { kind: 'user' }, enabled: true, createdAt: 1, updatedAt: 1,
+    };
+    expect(sanitizeActions([old])).toEqual([old]);
+    const auto = { ...old, steps: [{ ...old.steps[0], orchestrator: 'auto', difficulty: 'hard' }] };
+    expect(sanitizeActions([auto])).toEqual([auto]);
+  });
+
   it('loads persisted last use and keeps older engine state unchanged', () => {
     const migrate = migrations.get('actions.json')!;
     const state = { nextAt: {}, waits: [] };

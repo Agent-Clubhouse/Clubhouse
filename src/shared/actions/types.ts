@@ -6,6 +6,7 @@
  */
 
 import type { AccessLevel } from '../agent-access';
+import type { HelperDifficulty, HelperRouting } from '../helper-routing';
 
 // ── Triggers ────────────────────────────────────────────────────────────────
 
@@ -136,9 +137,11 @@ export interface QuickAgentStep {
   /** …or in this agent's worktree, when set. */
   worktreeAgentId?: string;
   prompt: string;
-  /** Overrides. Unset uses the project's provider and model. */
+  /** Overrides. Unset keeps the project's provider. "auto" uses helper routing. */
   orchestrator?: string;
   model?: string;
+  /** Auto only. Unset means medium. */
+  difficulty?: HelperDifficulty;
 }
 
 /**
@@ -239,6 +242,8 @@ export interface ActionStepResult {
   detail: string;
   /** Message handoff at step completion, not a receipt for later queue delivery. */
   delivery?: 'queued' | 'delivered';
+  /** Auto's start receipt, using the same shape as helper starts. */
+  routing?: HelperRouting;
   /** The agent it woke, messaged, started or put to sleep, for a link. */
   agentId?: string;
   projectId?: string;

@@ -286,7 +286,7 @@ const inflight = new Set<Promise<void>>();
  */
 let startChain: Promise<unknown> = Promise.resolve();
 
-async function withStartLock<T>(fn: () => Promise<T>): Promise<T> {
+export async function withStartLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = startChain.catch((): undefined => undefined).then(fn);
   startChain = run.catch((): undefined => undefined);
   return run;
@@ -306,7 +306,7 @@ async function autoStateFor(homePath: string, helperPath: string, orchestrator: 
  * with a live process, plus reservations. Sleeping, failed and disposed helpers
  * use nothing, and agents that aren't helpers aren't counted.
  */
-async function currentHelperLoad(homePath: string): Promise<Record<string, AutoLoad>> {
+export async function currentHelperLoad(homePath: string): Promise<Record<string, AutoLoad>> {
   const helpers = await listAllHelpers(homePath);
   // From here to the return nothing is awaited: statuses and reservations are read
   // in one pass, so a start settling elsewhere lands wholly before or after it.
@@ -322,7 +322,14 @@ async function currentHelperLoad(homePath: string): Promise<Record<string, AutoL
     live.add(config.id);
     (load[config.orchestrator] ??= { live: 0, reserved: 0 }).live++;
   }
-  // A reservation is left out only for a helper counted above: see helper-auto-state.
+  // Action quick agents share Auto's load and reservations with helper starts.
+  for (const [id, registration] of agentRegistry.getAllRegistrations()) {
+    if (!id.startsWith('quick_')) continue;
+    if (!agentSystem.isAgentRunning(id) || agentSystem.isAgentStopping(id)) { notRunning.add(id); continue; }
+    live.add(id);
+    (load[registration.orchestrator] ??= { live: 0, reserved: 0 }).live++;
+  }
+  // A reservation is left out only for an agent counted above: see helper-auto-state.
   for (const [provider, count] of Object.entries(reservedLoad({ live, notRunning }))) (load[provider] ??= { live: 0, reserved: 0 }).reserved += count;
   return load;
 }

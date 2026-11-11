@@ -4,6 +4,19 @@ import { draftFrom, draftToInput, newDraft, toLocalInput } from './action-draft'
 const NOW = new Date(2026, 10, 9, 8, 0).getTime();
 
 describe('action draft', () => {
+  it('round-trips Auto difficulty without changing older quick steps', () => {
+    const old = {
+      trigger: { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' } as const,
+      steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review' }] as import('../../../shared/actions').ActionStep[],
+    };
+    expect(draftToInput(draftFrom(old), NOW)).toMatchObject({ ok: true, input: old });
+    const draft = draftFrom(old);
+    draft.steps[0].orchestrator = 'auto';
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input: { steps: [{ ...old.steps[0], orchestrator: 'auto', difficulty: 'medium' }] } });
+    draft.steps[0].difficulty = 'hard';
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input: { steps: [{ difficulty: 'hard' }] } });
+  });
+
   it('round-trips an any-agent window, replacing Wait first and clearing grouping for other sources', () => {
     const input = {
       trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 } as const,

@@ -5,6 +5,7 @@
  */
 
 import { parseCron } from './cron';
+import { isHelperDifficulty } from '../helper-routing';
 import { cronToPresetFields, presetToCron } from './describe';
 import {
   ACTION_EVENT_KINDS,
@@ -190,6 +191,9 @@ export function validateStep(raw: unknown, index: number): Result<ActionStep> {
     case 'quick': {
       if (!nonEmpty(raw.projectId)) return { ok: false, error: `${label} needs a project to run in.` };
       const prompt = text(raw.prompt, `${label}’s prompt`, true); if (!prompt.ok) return fail(prompt);
+      if (raw.difficulty !== undefined && !isHelperDifficulty(raw.difficulty)) return { ok: false, error: `${label} needs a difficulty of easy, medium or hard.` };
+      if (raw.difficulty !== undefined && raw.orchestrator !== 'auto') return { ok: false, error: `${label} uses difficulty only with Auto.` };
+      if (raw.orchestrator === 'auto' && nonEmpty(raw.model)) return { ok: false, error: `${label} uses Auto's model mapping, not a model override.` };
       return {
         ok: true,
         value: {
@@ -199,6 +203,7 @@ export function validateStep(raw: unknown, index: number): Result<ActionStep> {
           ...(nonEmpty(raw.worktreeAgentId) && { worktreeAgentId: raw.worktreeAgentId }),
           ...(nonEmpty(raw.orchestrator) && { orchestrator: raw.orchestrator }),
           ...(nonEmpty(raw.model) && { model: raw.model }),
+          ...(isHelperDifficulty(raw.difficulty) && { difficulty: raw.difficulty }),
         },
       };
     }

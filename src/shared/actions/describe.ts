@@ -202,7 +202,7 @@ export function describeStep(step: ActionStep, names: ActionNames = NO_NAMES): s
       const where = step.worktreeAgentId
         ? `in ${agentName(names, step.worktreeAgentId)}’s worktree`
         : `in ${names.project(step.projectId) ?? 'a project'}`;
-      return `Start a quick agent ${where}`;
+      return `Start a quick agent ${where}${step.orchestrator === 'auto' ? ` using Auto (${step.difficulty ?? 'medium'})` : ''}`;
     }
   }
 }

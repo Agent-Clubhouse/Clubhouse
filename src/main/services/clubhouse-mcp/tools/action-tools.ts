@@ -451,7 +451,7 @@ const STEPS_SCHEMA = {
     '- {"kind":"wake","agentId":...,"prompt"?:...} wakes an agent, resuming its last session, with an optional first message.\n' +
     '- {"kind":"message","agentId":...,"text":...} messages an agent. A busy agent gets it on its next turn; a sleeping one is woken with it.\n' +
     '- {"kind":"quick","projectId"?:...,"worktreeAgentId"?:...,"prompt":...} starts a quick agent in a project\'s root, or in another agent\'s worktree. ' +
-    'Optional overrides: orchestrator, model. It runs headless with Full access, so only an agent that itself runs at Full access may have quick steps.\n' +
+    'Optional overrides: orchestrator, model. orchestrator "auto" uses helper routing with difficulty (default medium), without a model override. It runs headless with Full access.\n' +
     '- {"kind":"sleep","agentId":...} puts an agent to sleep.\n' +
     '- {"kind":"notify","text":...} sends the person a Clubhouse notification, following their notification settings.\n' +
     'agentId "self" means you. An agent\'s actions may act on itself, its helpers and agents it is connected to, and start quick agents ' +
@@ -466,7 +466,8 @@ const STEPS_SCHEMA = {
       text: { type: 'string', description: 'message: the message. notify: the notice text.' },
       projectId: { type: 'string', description: 'quick: the project to run in, by id, name or path. Left out: the worktree agent\'s project, or your own.' },
       worktreeAgentId: { type: 'string', description: 'quick: run in this agent\'s worktree instead of the project root.' },
-      orchestrator: { type: 'string', description: 'quick: which CLI to use. Default: the project\'s provider.' },
+      orchestrator: { type: 'string', description: 'quick: a CLI, or "auto" for helper routing. Left out: the project\'s provider, as before.' },
+      difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'], description: 'quick with orchestrator "auto": task difficulty. Default: medium.' },
       model: { type: 'string', description: 'quick: which model to use.' },
     },
     required: ['kind'],
