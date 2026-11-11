@@ -51,6 +51,7 @@ beforeEach(() => {
   local = [];
   exported = [];
   now = 1_700_000_000_000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'helper-usage-'));
   _resetHelperUsageForTests({ now: () => now });
   ledger.configureLedger({ file: path.join(dir, 'ledger.json'), now: () => now });
@@ -63,6 +64,7 @@ afterEach(async () => {
   setRuntime(null);
   setLocalSink(null);
   abortPending();
+  vi.restoreAllMocks();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -170,8 +172,12 @@ describe('Stage 3 shadow forecasts', () => {
     recordHelperDecision(decision());
     run('helper-1');
     const evidence = structuredClone(ledger.getEntry('helper-1')?.forecastRun);
+    const usage = structuredClone(events('clubhouse.helper.usage.sample'));
+    const outcomes = structuredClone(events('clubhouse.helper.outcome'));
     broadcastAgentExit('helper-1', 0);
     expect(ledger.getEntry('helper-1')?.forecastRun).toEqual(evidence);
+    expect(events('clubhouse.helper.usage.sample')).toEqual(usage);
+    expect(events('clubhouse.helper.outcome')).toEqual(outcomes);
     recordQuotaSample('claude-code', {
       state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
       weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
@@ -186,9 +192,50 @@ describe('Stage 3 shadow forecasts', () => {
     started('helper-1', { driver: 'claude_agent_sdk' });
     handleHelperChatEvent(chat('session_ended', { reason: 'fallback' }, { ts: now + 4 }));
     expect(ledger.getEntry('helper-1')?.forecastRun?.endedMs).toBeUndefined();
-    now += 10;
+    expect(ledger.getRun('helper-1')).toBeDefined();
+    expect(ledger.getRun('helper-1')?.endedMs).toBeUndefined();
+    now += HELPER_TELEMETRY_LIMITS.ledgerInactiveRetentionMs + 1;
+    recordHelperDecision(decision({ helperId: 'later' }));
+    expect(ledger.getEntry('helper-1')).toBeDefined();
     broadcastAgentExit('helper-1', 0);
     expect(ledger.getEntry('helper-1')?.forecastRun).toMatchObject({ endedMs: now, usable: false });
+    expect(ledger.getRun('helper-1')).toBeUndefined();
+    expect(events('clubhouse.helper.outcome')).toHaveLength(1);
+  });
+
+  it('excludes a terminal wake and still records its exit after a completed chat run', () => {
+    installHelperUsageTelemetry({ ledgerFile: path.join(dir, 'ledger.json') });
+    recordHelperDecision(decision());
+    run('helper-1');
+    broadcastAgentExit('helper-1', 0);
+    const forecast = structuredClone(ledger.getEntry('helper-1')?.forecast);
+    now += 10;
+    recordHelperReuse({ helperId: 'helper-1', kind: 'wake' });
+    expect(ledger.getRun('helper-1')).toBeDefined();
+    expect(ledger.getEntry('helper-1')?.forecastRun).toMatchObject({ usable: false });
+    expect(ledger.getEntry('helper-1')?.forecastRun?.endedMs).toBeUndefined();
+    now += 10;
+    broadcastAgentExit('helper-1', 0);
+    expect(events('clubhouse.helper.outcome')).toHaveLength(2);
+    expect(ledger.getRun('helper-1')).toBeUndefined();
+    expect(ledger.getEntry('helper-1')?.forecast).toEqual(forecast);
+    recordQuotaSample('claude-code', {
+      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
+    });
+    expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
+  });
+
+  it('releases fallback run pins when recording is disabled', () => {
+    recordHelperDecision(decision());
+    started('helper-1', { driver: 'claude_agent_sdk' });
+    handleHelperChatEvent(chat('session_ended', { reason: 'fallback' }, { ts: now + 4 }));
+    setLocalSink(null);
+    setRuntime(null);
+    handleHelperChatEvent(chat('notice', { level: 'info', code: 'off', message: 'not recorded' }));
+    expect(ledger.getRun('helper-1')).toBeUndefined();
+    expect(ledger.getEntry('helper-1')?.forecastRun?.usable).toBe(false);
+    expect(ledger.getEntry('helper-1')?.forecastRun?.endedMs).toBeDefined();
   });
 
   it.each(['reset', 'dropped_final'])('excludes %s evidence discovered only in the closing usage samples', (scenario) => {

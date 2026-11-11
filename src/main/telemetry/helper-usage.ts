@@ -339,8 +339,17 @@ export function recordHelperSpawnResult(rec: HelperSpawnResultRecord): void {
 /** A wake or resume of an existing helper: reuse of its earlier decision, never a new one. */
 export function recordHelperReuse(rec: HelperReuseRecord): void {
   guarded(() => {
-    if (!admit()) return;
     const entry = ledger.getEntry(rec.helperId);
+    const ctx = runs.get(rec.helperId);
+    if (ctx) {
+      ctx.forecastUsable = false;
+    } else if (entry) {
+      const run = ledger.getRun(rec.helperId) ?? ledger.beginRun(rec.helperId, clock(), rec.kind === 'resume');
+      ledger.setForecastRun(rec.helperId, {
+        runId: run.runId, startedMs: run.startedMs, usageSamples: 0, usable: false,
+      });
+    }
+    if (!admit()) return;
     emit('clubhouse.helper.reuse', [
       ATTR.helperSchemaVersion(HELPER_TELEMETRY_SCHEMA_VERSION),
       ATTR.agentIdHash(rec.helperId),
@@ -570,10 +579,8 @@ function outcomeOf(reason: ChatEventDataMap['session_ended']['reason'], exitCode
 export function handleHelperChatEvent(event: ChatEvent): void {
   try {
     if (!isTelemetryActive()) {
-      if (runs.size > 0) {
-        runs.clear();
-        ledger.clearRuns();
-      }
+      runs.clear();
+      ledger.clearRuns();
       return;
     }
     const agentId = event.agentId;
@@ -639,9 +646,7 @@ export function handleHelperChatEvent(event: ChatEvent): void {
         if (event.data.reason === 'fallback') {
           // Not a chat run: the helper dropped to the terminal.
           runs.delete(agentId);
-          ledger.endRun(agentId, event.ts);
           ledger.setForecastRun(agentId, { runId: ctx.run.runId, startedMs: ctx.run.startedMs, usageSamples: 0, usable: false });
-          ledger.forgetRun(agentId);
           return;
         }
         ctx.sessionIds.delete(event.sessionId);
@@ -666,13 +671,15 @@ function handleAgentExit(agentId: string, exitCode: number): void {
     // A helper that ran in the terminal: an outcome without usage.
     const entry = ledger.getEntry(agentId);
     if (entry) {
-      if (entry.forecastRun?.endedMs === undefined) {
-        ledger.setForecastRun(agentId, {
-          ...(entry.forecastRun?.runId && { runId: entry.forecastRun.runId }),
-          startedMs: entry.forecastRun?.startedMs ?? entry.decidedAtMs, endedMs: t, usageSamples: 0, usable: false,
-        });
-      }
+      // Chat end already emitted its outcome and closed the same process's evidence.
+      if (entry.forecastRun?.endedMs !== undefined) return;
+      ledger.endRun(agentId, t);
+      ledger.setForecastRun(agentId, {
+        ...(entry.forecastRun?.runId && { runId: entry.forecastRun.runId }),
+        startedMs: entry.forecastRun?.startedMs ?? entry.decidedAtMs, endedMs: t, usageSamples: 0, usable: false,
+      });
       emitOutcome(agentId, undefined, undefined, exitCode === 0 ? 'completed' : 'failed');
+      ledger.forgetRun(agentId);
     }
   });
 }
