@@ -163,6 +163,20 @@ A burst on equal readings spreads by load; a burst on unequal readings goes to t
 
 **No candidate:** an immediate refusal naming each provider's reason. Nothing is queued. Explicit starts are never blocked by quota or a cooldown, only warned: `start_helper` returns `quotaWarning`, from what is already known, without asking a CLI. A person sees the same words in Needs you, on the Helpers card and in the helper header, and a phone in `startWarning`, `warning` and `routing.warning`.
 
+### Stage 3 groundwork: recorded, not used
+
+The local decision ledger records an immutable shadow prediction for each fresh Auto decision (part of #2888). `helper-auto-forecast.ts` uses an exact provider, mapped model id, effort, difficulty, mapping revision and task-profile key. No model aliases or missing identities inherit another cohort. A revision change, including changing a mapping back, starts cold; the existing app-wide revision conservatively partitions every cohort on any mapping edit. Historical records remain queryable. There is no Settings switch. `AUTO_USE_BURN_FORECASTS` is false, production routing supplies no forecast inputs, and replay checks that decisions with shadow inputs are byte-for-byte unchanged.
+
+Each window's estimate is a recency-weighted median of at most the latest 32 eligible observations from the preceding 30 days, with a seven-day weight half-life. It requires five samples and an effective sample size of at least three. Otherwise the expected burn is unknown, not zero. Weekly and five-hour windows are separate, in basis points of that provider's own plan. Tokens and dollars are never converted to quota.
+
+**Measurement limit.** These estimates predict a **whole-login subscription interval proxy**, not measured per-helper consumption. They require a fresh, reset-qualified decision baseline, a successfully completed first run with complete scoped and deduplicated turn usage, an exact observed model/provider match, and a later successful quota timestamp after completion. Known overlapping helpers or pending starts, reuse, model changes, failed or cancelled runs, unfinished turns or turns stopped for anything other than normal completion, incomplete usage, reset crossings and decreasing readings are excluded. A restart invalidates unfinished measurement intervals, not recorded predictions or completed history. Outside and parent activity still cannot be separated, so every observation explicitly carries `attribution: whole_login_unknown`. An outside burst may increase proxy error; it is never assigned to the helper as measured burn.
+
+Later demand-driven quota reads append one observation and signed error (observed minus predicted) to the same ledger entry. They do not update a prediction, start a probe, poll, spend tokens or affect eligibility, reserves, load, rotation or routing. Additive counts and errors appear on the existing local-only decision event and a bounded local-only `clubhouse.helper.forecast` event, with the same consent gate, event budget and ledger retention. No prompt content is read or recorded. This extends the seven measurement events below with one shadow-calibration event; nothing new is exported or added to the phone contract.
+
+Chat completion keeps its existing usage and outcome record; a later process-exit notification does not emit another outcome. A chat-to-terminal fallback remains a live ledger join until the terminal exits. Terminal wakes reopen unusable interval evidence, never reuse a previous chat run's completed measurement, and recording-off clears these live pins without writing.
+
+The chronological replay harness orders quota samples by availability time, so future or delayed observations cannot train earlier decisions. Fixtures report unknown and evaluated counts, exclusions, mean absolute error and signed bias per exact key and window. Stationary simulated cohorts require zero held-out error after five cold starts; a simulated outside burst reports its full 600 bp proxy error. These are fixture tolerances, not live accuracy claims. Full in-flight remaining-burn forecasting, attribution confidence, plan-change detection, uncertainty coverage, admission/reserve experiments and rollout/rollback thresholds remain open in #2888. Do not enable the internal experiment on interval proxies.
+
 **One decision.** Routing never runs again for that helper. A wake reuses its saved CLI, model and effort and resumes its session. A quota change, rate limit or failure after the task is delivered never moves it. If a saved model has gone, the wake fails or falls to the CLI default as any agent does, and is reported.
 
 ## Failures
@@ -233,7 +247,7 @@ Stage 2 lists only `explicit` and `preset`, its three reasons and its fallbacks.
 
 ### Decision, outcome and usage records (#2747)
 
-Seven events, all `localOnly`: they go to the local recording (`~/.clubhouse/logs/telemetry-*.jsonl`) at the default level and are never handed to an export destination, whatever its level or preset. Exporting any of it later is a separate decision. `clubhouse.helper.routed` stays the one exportable summary. Nothing here reads a prompt, task text, path, account name or credential, changes routing, probes a provider or spends tokens.
+Eight events, all `localOnly`: they go to the local recording (`~/.clubhouse/logs/telemetry-*.jsonl`) at the default level and are never handed to an export destination, whatever its level or preset. Exporting any of it later is a separate decision. `clubhouse.helper.routed` stays the one exportable summary. Nothing here reads a prompt, task text, path, account name or credential, changes routing, probes a provider or spends tokens.
 
 | Event | Written when | Carries |
 | --- | --- | --- |
@@ -244,6 +258,7 @@ Seven events, all `localOnly`: they go to the local recording (`~/.clubhouse/log
 | `clubhouse.helper.usage.sample` | After each finished turn of a helper run, and once or twice at its end | Token figures with source, scope, dedup rule and completeness |
 | `clubhouse.helper.outcome` | The run ended, or the helper was disposed | Outcome, duration, turns, turns with no usage, auth, rate limit and exceeded-quota errors seen, samples dropped |
 | `clubhouse.helper_quota.sample` | A token-free plan-limit read finished | See below |
+| `clubhouse.helper.forecast` | A completed shadow prediction can be evaluated against a later quota read | Exact decision join, usage sample count, whole-login interval attribution, exclusion reason, observed interval delta and signed prediction error when available |
 
 Conventions that hold for every field:
 
@@ -254,13 +269,13 @@ Conventions that hold for every field:
 
 #### Local and export policy, per field
 
-Today every field of these seven events is local-only: written when local recording is on at the standard level or above (the default), never exported, and not tied to any destination's level or preset. They follow the same consent gate as every other signal: local recording off, nothing is produced (and the ledger is not written). The `localOnly` option on `tel.event` is what enforces it; it is tested against both the live and the start-up-buffered export paths.
+Today every field of these eight events is local-only: written when local recording is on at the standard level or above (the default), never exported, and not tied to any destination's level or preset. They follow the same consent gate as every other signal: local recording off, nothing is produced (and the ledger is not written). The `localOnly` option on `tel.event` is what enforces it; it is tested against both the live and the start-up-buffered export paths.
 
 If a field is ever exported, it is a deliberate per-field change, not a default. Closed-enum fields (mode, outcome, reason, exclusion code, spawn result, outcome class, completeness, dedup rule, scope) are the only candidates. These stay local: used percentages and reset times, the model hash, mapping revision and fingerprint, token counts, ids and their hashes, anything with a time, and every number a quota reading carries.
 
 #### Joining
 
-The base folder (`~/.clubhouse`, or `~/.clubhouse-dev` in development) keeps `helper-decisions.json`, a small ledger that maps a helper id to the decision that started it. It holds ids and the resolved provider, model and effort, nothing else. While the app runs, an entry whose helper has a run open, or whose start has no result yet, is never evicted. A start with no result is kept until routing reports one or a run begins (which proves it started); past 200 such starts the oldest are marked `orphaned`, which is an explicit unknown that still joins. Entries of helpers that are not running are kept 30 days, at most 500, oldest first. After a restart no run survives, so every entry is inactive and a start the previous run never resolved is `orphaned`. A helper missing from the ledger (evicted, started while telemetry was off, or the file lost) is an explicit unknown: its events say `helper_decision.known=false`. Writes are atomic, coalesced and serialized, a failed write is reported once without affecting anything, and a persisted entry with any field off its closed set is dropped on read.
+The base folder (`~/.clubhouse`, or `~/.clubhouse-dev` in development) keeps `helper-decisions.json`, a small ledger that maps a helper id to the decision that started it. It holds ids, resolved mapping inputs and additive shadow predictions, run evidence and interval observations, never content. While the app runs, an entry whose helper has a run open, or whose start has no result yet, is never evicted. A start with no result is kept until routing reports one or a run begins (which proves it started); past 200 such starts the oldest are marked `orphaned`, which is an explicit unknown that still joins. Entries of helpers that are not running are kept 30 days, at most 500, oldest first. After a restart no run survives, so every entry is inactive and a start the previous run never resolved is `orphaned`. A helper missing from the ledger (evicted, started while telemetry was off, or the file lost) is an explicit unknown: its events say `helper_decision.known=false`. Writes are atomic, coalesced and serialized, a failed write is reported once without affecting anything, and a persisted entry with any field off its closed set is dropped on read.
 
 Join on the hashes:
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AUTO_WEEK_MS, decideAutoProvider, tieSetKey, type AutoCandidate, type AutoPolicyInput } from './helper-auto-policy';
+import { AUTO_USE_BURN_FORECASTS, AUTO_WEEK_MS, decideAutoProvider, tieSetKey, type AutoCandidate, type AutoPolicyInput } from './helper-auto-policy';
 
 const NOW = 1_800_000_000_000;
 const A = 'claude-code:default';
@@ -23,6 +23,28 @@ function decide(candidates: AutoCandidate[], rest: Partial<AutoPolicyInput> = {}
 }
 
 describe('decideAutoProvider', () => {
+  it('ignores every forecast byte when the internal experiment is off, including by default', () => {
+    expect(AUTO_USE_BURN_FORECASTS).toBe(false);
+    const candidates = [cand(A, 10), cand(B, 20), cand(C, null, { quotaUnknownReason: 'not_supported' })];
+    const expected = JSON.stringify(decide(candidates));
+    const predicted = candidates.map((c, i) => ({ ...c, expectedBurnBp: i === 0 ? 9000 : 0 }));
+    expect(JSON.stringify(decide(predicted))).toBe(expected);
+    expect(JSON.stringify(decide(predicted, { options: { useBurnForecasts: false } }))).toBe(expected);
+    expect(decide(predicted, { options: { useBurnForecasts: true } })).toMatchObject({ ok: true, key: B });
+  });
+
+  it('does not even read forecast inputs when the internal experiment is off', () => {
+    const candidates = [cand(A, 10), cand(B, 20)];
+    const expected = JSON.stringify(decide(candidates));
+    for (const candidate of candidates) {
+      Object.defineProperty(candidate, 'expectedBurnBp', {
+        get: () => { throw new Error('Forecast read while disabled'); },
+      });
+    }
+    expect(JSON.stringify(decide(candidates))).toBe(expected);
+    expect(JSON.stringify(decide(candidates, { options: { useBurnForecasts: false } }))).toBe(expected);
+  });
+
   it('lower weekly use wins, whatever the order and the helper count', () => {
     for (const candidates of [[cand(A, 40, { load: 0 }), cand(B, 20, { load: 5 })], [cand(B, 20, { load: 5 }), cand(A, 40, { load: 0 })]]) {
       expect(decide(candidates)).toMatchObject({ ok: true, key: B, reason: 'lower_pressure', basis: 'weekly_used' });

@@ -135,6 +135,10 @@ export class RunUsageTracker {
     private readonly resumed = false,
   ) {}
 
+  get hasOpenTurns(): boolean {
+    return this.open.size > 0;
+  }
+
   turnStarted(turnId: string | undefined, atMs: number): void {
     this.open.set(turnId ?? '', { startMs: atMs });
   }

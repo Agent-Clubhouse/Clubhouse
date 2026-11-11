@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HELPER_TELEMETRY_LIMITS } from '../../shared/telemetry/helper-usage-contract';
 import * as ledger from './helper-decision-ledger';
+import { predictHelperBurn } from '../services/helper-auto-forecast';
 
 let dir: string;
 let file: string;
@@ -28,6 +29,30 @@ afterEach(async () => {
 });
 
 describe('join ledger', () => {
+  it('keeps old entries readable and preserves completed forecast history without evaluating interrupted intervals after restart', async () => {
+    const e = { ...entry('shadow'), mappingRevision: 'r1.0' };
+    const forecast = predictHelperBurn(e, [], clock);
+    ledger.putDecision({ ...e, forecast });
+    ledger.beginRun('shadow', clock, false);
+    ledger.setForecastRun('shadow', { startedMs: clock, usageSamples: 0, usable: true });
+    await ledger.flushLedger();
+    ledger.configureLedger({ file, now: () => clock + 1 });
+    expect(ledger.getEntry('shadow')).toMatchObject({
+      forecast,
+      burnObservation: { reason: 'restart', attribution: 'whole_login_unknown' },
+      forecastRun: { usable: false, endedMs: clock + 1 },
+    });
+  });
+
+  it('does not leave an interrupted unresolved start overlapping every future calibration interval', async () => {
+    ledger.putDecision(entry('pending'));
+    await ledger.flushLedger();
+    ledger.configureLedger({ file, now: () => clock + 1 });
+    expect(ledger.getEntry('pending')).toMatchObject({
+      spawn: 'orphaned', forecastRun: { startedMs: clock, endedMs: clock + 1, usable: false },
+    });
+  });
+
   it('joins a helper to the decision that started it, and survives a restart', async () => {
     ledger.putDecision(entry('h1'));
     ledger.setSpawn('h1', 'started');

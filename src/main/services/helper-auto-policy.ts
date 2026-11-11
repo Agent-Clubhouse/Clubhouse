@@ -29,6 +29,8 @@ export const AUTO_WEEK_MS = 7 * 24 * 60 * 60_000;
 
 /** Pressures this close (basis points) count as a tie. 0: only an equal reading ties. */
 export const AUTO_TIE_BAND_BP = 0;
+/** Internal experiment only. Stage 3 predictions are recorded, not used. No Settings switch. */
+export const AUTO_USE_BURN_FORECASTS = false;
 
 /**
  * - `weekly_used`: lower weekly percent used wins.
@@ -43,6 +45,7 @@ export type AutoScoreBasis = 'weekly_used' | 'reset_schedule';
 export interface AutoPolicyOptions {
   basis?: AutoScoreBasis;
   tieBandBp?: number;
+  useBurnForecasts?: boolean;
 }
 
 export type AutoSkipReason = 'cli_disabled' | 'cli_unavailable' | 'auto_disabled' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
@@ -75,6 +78,8 @@ export interface AutoCandidate {
   verified: boolean;
   /** Helpers on this provider now: live ones and reservations. Load, not consumption. */
   load: number;
+  /** An optional calibrated estimate supplied only by an internal experiment. Never populated by production routing. */
+  expectedBurnBp?: number;
 }
 
 export interface AutoPolicyInput {
@@ -147,15 +152,17 @@ function cyclePhaseBp(c: AutoCandidate, now: number): number | undefined {
   return Math.round(10_000 * (1 - left / AUTO_WEEK_MS));
 }
 
-function scoreOf(c: AutoCandidate, now: number, basis: AutoScoreBasis): AutoScore {
+function scoreOf(c: AutoCandidate, now: number, basis: AutoScoreBasis, useForecasts: boolean): AutoScore {
   const used = weeklyUsed(c);
   if (used === undefined) return { basis: 'unmeasured' };
   const weeklyUsedBp = Math.round(used * 100);
   // Excluded, or without a usable state: the reading is kept, but nothing ranks on it.
   if (tierOf(c) === 'unmeasured' || tierOf(c) === 'last_resort') return { basis: 'unmeasured', weeklyUsedBp };
-  if (basis === 'weekly_used') return { basis, weeklyUsedBp, pressureBp: weeklyUsedBp };
+  const expected = useForecasts ? c.expectedBurnBp : undefined;
+  const burn = useForecasts && typeof expected === 'number' && Number.isFinite(expected) && expected >= 0 && expected <= 10_000 ? Math.round(expected) : 0;
+  if (basis === 'weekly_used') return { basis, weeklyUsedBp, pressureBp: weeklyUsedBp + burn };
   const phase = cyclePhaseBp(c, now)!;
-  return { basis, weeklyUsedBp, cyclePhaseBp: phase, targetBp: phase, pressureBp: weeklyUsedBp - phase };
+  return { basis, weeklyUsedBp, cyclePhaseBp: phase, targetBp: phase, pressureBp: weeklyUsedBp - phase + burn };
 }
 
 /**
@@ -167,13 +174,14 @@ function scoreOf(c: AutoCandidate, now: number, basis: AutoScoreBasis): AutoScor
  */
 export function decideAutoProvider(input: AutoPolicyInput): AutoDecision {
   const { now, candidates, cursors } = input;
+  const useForecasts = input.options?.useBurnForecasts ?? AUTO_USE_BURN_FORECASTS;
   const bandBp = Math.max(0, input.options?.tieBandBp ?? AUTO_TIE_BAND_BP);
   const measured = candidates.filter((c) => tierOf(c) !== 'unmeasured' && tierOf(c) !== 'last_resort');
   const wanted = input.options?.basis ?? 'weekly_used';
   const basis: AutoScoreBasis = wanted === 'reset_schedule' && measured.every((c) => cyclePhaseBp(c, now) !== undefined) ? 'reset_schedule' : 'weekly_used';
 
   const evaluations: AutoEvaluation[] = candidates.map((c) => {
-    const base = { key: c.key, provider: c.provider, verified: c.verified, load: c.load, score: scoreOf(c, now, basis) };
+    const base = { key: c.key, provider: c.provider, verified: c.verified, load: c.load, score: scoreOf(c, now, basis, useForecasts) };
     if (c.quotaState === 'exhausted') return { ...base, excluded: 'quota_exhausted' as const };
     if (c.quotaState === 'near_limit') return { ...base, excluded: 'quota_near_limit' as const };
     return { ...base, tier: tierOf(c) };

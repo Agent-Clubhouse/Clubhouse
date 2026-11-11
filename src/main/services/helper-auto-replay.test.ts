@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { tieSetKey } from './helper-auto-policy';
-import { DAY, HOUR, runReplay, type SimConfig } from './__fixtures__/helper-auto-replay';
+import { DAY, HOUR, forecastReplayFixture, runForecastReplay, runReplay, type SimConfig } from './__fixtures__/helper-auto-replay';
 
 const T0 = 1_800_000_000_000;
 const A = 'claude-code:default';
@@ -28,6 +28,21 @@ const base = (over: Partial<SimConfig>): SimConfig => ({
 });
 
 describe('Auto replay', () => {
+  it('is byte-for-byte identical with shadow forecasts off across bursts, resets and outside use', () => {
+    const config = base({
+      subscriptions: [
+        { key: A, provider: 'claude-code', capacity: 100, resetsAt: T0 + DAY, outsidePerHour: 1 },
+        { key: B, provider: 'codex-cli', capacity: 300, resetsAt: T0 + 6 * DAY },
+        { key: C, provider: 'copilot-cli', capacity: 100, resetsAt: T0 + 7 * DAY, unreadable: true, unknownReason: 'not_supported' },
+      ],
+      arrivals: (t) => t === T0 ? 6 : 1,
+    });
+    const baseline = JSON.stringify(runReplay(config));
+    const withPredictions = { ...config, subscriptions: config.subscriptions.map((s, i) => ({ ...s, expectedBurnBp: i === 0 ? 9000 : 0 })) };
+    expect(JSON.stringify(runReplay(withPredictions))).toBe(baseline);
+    expect(JSON.stringify(runReplay({ ...withPredictions, options: { useBurnForecasts: false } }))).toBe(baseline);
+  });
+
   it('serial starts from zero on equal plans share evenly, and never settle on the first provider', () => {
     const r = runReplay(base({}));
     // A tie goes by the rotation; the one behind then catches up on lower use.
@@ -35,6 +50,57 @@ describe('Auto replay', () => {
     expect(Math.abs(r.picks[A] - r.picks[B])).toBeLessThanOrEqual(1);
     // Rounding to whole percent: the plans stay within one helper's step of each other.
     expect(r.maxSpreadBp).toBeLessThanOrEqual(100);
+  });
+
+  describe('Stage 3 chronological calibration replay', () => {
+    it('reports zero held-out error per exact provider/model/effort/revision key on stationary fixtures', () => {
+      const replay = runForecastReplay([
+        ...forecastReplayFixture(T0, Array(8).fill(100)),
+        ...forecastReplayFixture(T0, Array(8).fill(300), { provider: 'codex-cli', model: 'gpt-6.1-sol' }),
+      ].reverse());
+      expect(Object.keys(replay.calibration)).toHaveLength(4);
+      for (const report of Object.values(replay.calibration)) {
+        expect(report).toEqual({ decisions: 8, unknown: 5, evaluated: 3, excluded: 0, maeBp: 0, biasBp: 0 });
+      }
+    });
+
+    it('reports outside bursts as proxy error, not attributed helper consumption, with no future leakage', () => {
+      const replay = runForecastReplay(forecastReplayFixture(T0, [100, 100, 100, 100, 100, 700]));
+      for (const report of Object.values(replay.calibration)) {
+        expect(report).toMatchObject({ unknown: 5, evaluated: 1, maeBp: 600, biasBp: 600 });
+      }
+      expect(replay.entries[5].burnObservation?.attribution).toBe('whole_login_unknown');
+      expect(replay.entries.slice(0, 5).every((e) => e.forecast?.weekly.expectedBp === undefined)).toBe(true);
+    });
+
+    it('a delayed quota sample cannot train a decision already made, and sparse or changed mappings stay unknown', () => {
+      const fixture = forecastReplayFixture(T0, Array(6).fill(100));
+      const delayed = fixture.find((e) => e.type === 'quota' && e.atMs === T0 + 4.5 * HOUR)!;
+      delayed.atMs += HOUR;
+      const replay = runForecastReplay(fixture);
+      expect(replay.entries[5].forecast?.weekly.expectedBp).toBeUndefined();
+      const changed = runForecastReplay([
+        ...forecastReplayFixture(T0, Array(5).fill(100)),
+        ...forecastReplayFixture(T0 + 10 * HOUR, [100], { mappingRevision: 'r2.0' }),
+      ]);
+      expect(changed.entries.at(-1)?.forecast?.weekly).toEqual({ samples: 0 });
+    });
+
+    it('reports resets and incomplete usage as excluded intervals without inventing calibration errors', () => {
+      const fixture = forecastReplayFixture(T0, Array(7).fill(100));
+      const reset = fixture.find((e) => e.type === 'quota' && e.atMs === T0 + 5.5 * HOUR)!;
+      if (reset.type !== 'quota') throw new Error('Expected quota fixture');
+      reset.quota.weekly!.resetsAt = new Date(T0 + 14 * DAY).toISOString();
+      const incomplete = fixture.find((e) => e.type === 'decision' && e.atMs === T0 + 6 * HOUR)!;
+      if (incomplete.type !== 'decision') throw new Error('Expected decision fixture');
+      incomplete.entry.forecastRun!.usable = false;
+      const replay = runForecastReplay(fixture);
+      expect(replay.entries[5].burnObservation?.reason).toBe('reset');
+      expect(replay.entries[6].burnObservation?.reason).toBe('incomplete');
+      for (const report of Object.values(replay.calibration)) {
+        expect(report).toEqual({ decisions: 7, unknown: 5, evaluated: 0, excluded: 2 });
+      }
+    });
   });
 
   it('equal ties differ by at most one across every complete rotation', () => {
