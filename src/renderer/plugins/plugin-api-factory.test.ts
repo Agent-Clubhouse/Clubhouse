@@ -4598,7 +4598,8 @@ describe('plugin-api-factory', () => {
       };
       try {
         // Earlier permission-denial tests start this import without awaiting it.
-        // Exercise that overlap even when this test runs alone.
+        // Exercise that overlap even when this test runs alone. A cold import with the patched
+        // built-ins is slow on CI runners, hence this test's longer timeout.
         await import('./plugin-loader');
         const ctx = makeCtx();
         const api = createPluginAPI(ctx, undefined, mcpManifest());
@@ -4622,7 +4623,7 @@ describe('plugin-api-factory', () => {
         Promise.prototype.then = realThen;
         Map.prototype.get = realGet;
       }
-    });
+    }, 30_000);
 
     it("lets a plugin's deactivate() call removeTools after its token is gone, and gives the old context no new token", async () => {
       const ctx = makeCtx();
