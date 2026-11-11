@@ -10,6 +10,10 @@ import { useAgentDetailsStore } from '../details/detailsStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
 import { useDispatcherDebugStore } from '../../dispatcher/dispatcherDebug';
+import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
+import { useGrantRequestStore } from '../../../stores/grantRequestStore';
+import type { GrantRequest } from '../../../../shared/grant-requests';
+import { GrantRequestDialog } from '../GrantRequestDialog';
 
 const agent: Agent = {
   id: FIXTURE_AGENT_ID,
@@ -77,6 +81,82 @@ describe('sending from the composer', () => {
     expect(actions.send).toHaveBeenCalledWith('One more thing', 'auto');
     expect(top).toBe(1600);
     expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+});
+
+describe('Dispatcher Clubhouse approvals (#3282)', () => {
+  const dispatcher = { ...agent, id: 'dispatcher-chat', projectId: DISPATCHER_PROJECT_ID, name: 'Dispatcher' };
+  const request = (over: Partial<GrantRequest> = {}): GrantRequest => ({
+    requestId: 'approval-1', kind: 'call', agentId: 'dispatcher-controller', agentName: 'Dispatcher',
+    projectPath: 'dispatcher-controller-dir', actions: ['project.add'], where: 'a project',
+    toolName: 'add_project', argumentsText: '{"path":"project-dir"}', details: '{"path":"project-dir"}',
+    createdAt: new Date(0).toISOString(), expiresAt: new Date(86400000).toISOString(), ...over,
+  });
+  const view = (shown = dispatcher) => (
+    <>
+      <ChatViewBody agent={shown} state={fold(chatFixture('claude', 'conversation'))} actions={makeActions()} providerName="Provider" onSwitchToTerminal={vi.fn()} />
+      <GrantRequestDialog />
+    </>
+  );
+  beforeEach(() => {
+    useGrantRequestStore.setState({ requests: {}, reviewing: null });
+    useDispatcherStore.getState().setState({
+      enabled: true, flagOn: true, agentId: 'dispatcher-controller', path: 'dispatcher-controller-dir',
+      chatAgentId: dispatcher.id, chatPath: 'dispatcher-chat-dir', config: null,
+    });
+  });
+  afterEach(() => {
+    useGrantRequestStore.setState({ requests: {}, reviewing: null });
+    useDispatcherStore.getState().setState(null);
+  });
+
+  it('announces the controller request above the composer without taking focus, and reviews the exact call', () => {
+    render(view());
+    const composer = screen.getByTestId('chat-composer');
+    const input = within(composer).getByRole('textbox');
+    input.focus();
+    act(() => useGrantRequestStore.getState().add(request()));
+    const bar = screen.getByTestId('dispatcher-pending-approvals');
+    expect(bar).toHaveTextContent('Clubhouse approval: Add or open projects');
+    expect(bar.parentElement).toHaveAttribute('aria-live', 'polite');
+    expect(bar.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(input).toHaveFocus();
+    expect(screen.queryByTestId('grant-request-dialog')).not.toBeInTheDocument();
+    fireEvent.click(within(bar).getByRole('button', { name: 'Review' }));
+    expect(screen.getByTestId('grant-request-dialog')).toHaveTextContent('{"path":"project-dir"}');
+    expect(useGrantRequestStore.getState().reviewing).toBe('dispatcher-controller');
+  });
+
+  it('keeps requests queued while another agent or app view is shown', () => {
+    const { rerender } = render(view(agent));
+    act(() => useGrantRequestStore.getState().add(request()));
+    expect(screen.queryByTestId('dispatcher-pending-approvals')).not.toBeInTheDocument();
+    expect(useGrantRequestStore.getState().reviewing).toBeNull();
+    rerender(<GrantRequestDialog />);
+    act(() => useGrantRequestStore.getState().add(request({ requestId: 'approval-2' })));
+    expect(screen.queryByTestId('grant-request-dialog')).not.toBeInTheDocument();
+    rerender(view());
+    expect(screen.getByTestId('dispatcher-pending-approvals')).toHaveTextContent('2 requests');
+  });
+
+  it('counts both identities and stays in sync when requests close here or elsewhere', async () => {
+    useGrantRequestStore.getState().add(request());
+    useGrantRequestStore.getState().add(request({ requestId: 'approval-2', agentId: dispatcher.id, createdAt: new Date(1).toISOString() }));
+    useGrantRequestStore.getState().add(request({ requestId: 'unrelated', agentId: agent.id }));
+    render(view());
+    const bar = screen.getByTestId('dispatcher-pending-approvals');
+    expect(bar).toHaveTextContent('2 requests');
+    fireEvent.click(within(bar).getByRole('button', { name: 'Review' }));
+    fireEvent.click(screen.getByTestId('grant-request-decline'));
+    await waitFor(() => expect(useGrantRequestStore.getState().requests['approval-1']).toBeUndefined());
+    expect(bar).not.toHaveTextContent('2 requests');
+    expect(screen.queryByTestId('grant-request-dialog')).not.toBeInTheDocument();
+    fireEvent.click(within(bar).getByRole('button', { name: 'Review' }));
+    expect(useGrantRequestStore.getState().reviewing).toBe(dispatcher.id);
+    act(() => useGrantRequestStore.getState().remove(['approval-2']));
+    expect(screen.queryByTestId('dispatcher-pending-approvals')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('grant-request-dialog')).not.toBeInTheDocument();
+    expect(useGrantRequestStore.getState().requests.unrelated).toBeDefined();
   });
 });
 

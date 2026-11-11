@@ -96,6 +96,14 @@ export function visibleDispatcherAgentId(): string | null {
   return useDispatcherStore.getState().state?.chatAgentId ?? null;
 }
 
+/** Requests from the hidden controller belong to the visible Dispatcher. */
+export function visibleRequestAgentId(
+  agentId: string,
+  state: Pick<DispatcherState, 'agentId' | 'chatAgentId'> | null,
+): string {
+  return agentId === state?.agentId && state.chatAgentId ? state.chatAgentId : agentId;
+}
+
 /**
  * The id the Dispatcher's wires, links and grants are on, for an agent shown
  * as the Dispatcher. Any other agent's own id.

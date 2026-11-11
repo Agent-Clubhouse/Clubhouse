@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import type { GrantRequest } from '../../shared/grant-requests';
+import { grantRequestActionLabels } from '../../shared/grant-requests';
 
 /**
  * Clubhouse permission requests waiting on the user (#2970). Main holds each
  * one and sends it here; it shows under Needs you on the agent's row, and
- * selecting that opens the review dialog (`reviewing`). The agent's
- * permissions page lists them too. Main says when a request closes
+ * selecting that opens the review dialog (`reviewing`). The Dispatcher's
+ * chat dock and the agent's permissions page list them too. Main says when a request closes
  * (answered, expired or dropped).
  */
 interface GrantRequestState {
@@ -41,15 +42,20 @@ export function grantRequestsFor(requests: Record<string, GrantRequest>, agentId
 }
 
 /** Requests by agent, each list oldest first. */
-export function grantRequestsByAgent(requests: Record<string, GrantRequest>): Record<string, GrantRequest[]> {
+export function grantRequestsByAgent(
+  requests: Record<string, GrantRequest>,
+  shownId: (agentId: string) => string = (id) => id,
+): Record<string, GrantRequest[]> {
   const out: Record<string, GrantRequest[]> = {};
-  for (const r of Object.values(requests)) (out[r.agentId] ??= []).push(r);
+  for (const r of Object.values(requests)) (out[shownId(r.agentId)] ??= []).push(r);
   for (const list of Object.values(out)) list.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   return out;
 }
 
 /** The Needs you line for an agent's requests. */
 export function describeGrantRequests(list: readonly GrantRequest[]): string {
-  if (list.length > 1) return `Asks for ${list.length} permissions`;
-  return list[0]?.kind === 'call' ? 'Asks to make a call' : 'Asks for a permission';
+  const first = list[0];
+  if (!first) return 'Asks for a permission';
+  const label = grantRequestActionLabels(first).join(', ');
+  return list.length > 1 ? `${label} (${list.length} requests)` : label;
 }
