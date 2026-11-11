@@ -24,7 +24,10 @@ function setup(settings: object, extra: object = {}) {
 }
 
 describe('AnnexNetworkSettingsView (#3067)', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue(OFF);
+  });
 
   it('is one page with a switch at the top, and only devices and reset while off', () => {
     setup(OFF);
@@ -64,6 +67,19 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     render(<AnnexNetworkSettingsView />);
     fireEvent.click(screen.getByRole('switch', { name: 'Only accept connections from this computer' }));
     await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ ...ON, alias: 'Saved', loopbackOnly: true }));
+  });
+
+  it.each(['Only accept connections from this computer', 'Annex Network on this computer'])('does not save defaults when %s cannot load the saved settings', async (name) => {
+    window.clubhouse.annex.getSettings = vi.fn().mockRejectedValue(new Error('Settings unavailable'));
+    setup({ ...OFF, alias: '', deviceName: '' });
+    render(<AnnexNetworkSettingsView />);
+    fireEvent.click(screen.getByRole('switch', { name }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent("Couldn't load Annex settings"));
+    expect(saveSettings).not.toHaveBeenCalled();
+    window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue({ ...ON, alias: 'Saved' });
+    fireEvent.click(screen.getByRole('switch', { name }));
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ alias: 'Saved' })));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('builds on the saved settings, so a click before they load keeps the names', async () => {

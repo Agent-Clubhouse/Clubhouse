@@ -8,7 +8,7 @@ import { AnnexDeviceList } from './AnnexDeviceList';
 import { AnnexIdentitySection } from './AnnexIdentitySection';
 import { AnnexPairingQr } from './AnnexPairingQr';
 import { PairingWizard, type RepairTarget } from './PairingWizard';
-import { SettingsPage, SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, settingsInput, settingsError } from './SettingsLayout';
 import type { AnnexSettings } from '../../../shared/types';
 
 /**
@@ -32,6 +32,7 @@ export function AnnexNetworkSettingsView() {
   const [repairTarget, setRepairTarget] = useState<RepairTarget | undefined>(undefined);
   const [linkCopied, setLinkCopied] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
   // On while either half runs, so an older server-only or client-only setup still shows its tools.
   const on = settings.enableServer || settings.enableClient;
   const code = certificateCode(status.tlsCertificateFingerprint);
@@ -71,12 +72,16 @@ export function AnnexNetworkSettingsView() {
 
   // Built on what main has saved, so a click before the settings load (or after a reset) keeps the names.
   const saveCurrentSettings = async (changes: Partial<AnnexSettings>): Promise<void> => {
-    let current = settings;
+    let current: AnnexSettings;
     try {
-      current = (await window.clubhouse.annex.getSettings()) ?? settings;
+      current = await window.clubhouse.annex.getSettings();
+      if (!current) throw new Error('Annex settings unavailable');
     } catch {
-      // telemetry-exempt: falls back to the settings already shown.
+      // telemetry-exempt: shown on the page; never save potentially unloaded defaults.
+      setSettingsLoadFailed(true);
+      return;
     }
+    setSettingsLoadFailed(false);
     await saveSettings({ ...current, ...changes });
   };
   /** On: this machine answers and connects, and new pairings join the network. Off: nothing connects. */
@@ -107,6 +112,7 @@ export function AnnexNetworkSettingsView() {
           <Toggle aria-label="Only accept connections from this computer" checked={settings.loopbackOnly === true}
             onChange={(value) => { void saveCurrentSettings({ loopbackOnly: value }); }} />
         </SettingsField>
+        {settingsLoadFailed && <p className={settingsError} role="alert">Couldn&apos;t load Annex settings, so nothing was changed. Try again.</p>}
       </div>
 
       <SettingsSection
