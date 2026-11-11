@@ -40,33 +40,39 @@ const WakeGlyph = () => (
 
 export function PopoutAgentActions({ agentId, projectId }: { agentId: string; projectId?: string }) {
   const agent = useAgentStore((s) => s.agents[agentId]);
-  const projects = useProjectStore((s) => s.projects);
   // The Dispatcher (#3235) has its folder, not a registered project.
   const localProject = useLocalProject(agent?.projectId ?? projectId);
   const narrow = useWindowNarrow();
 
+  const resolveProject = useCallback(async () => {
+    if (localProject) return localProject;
+    await useProjectStore.getState().loadProjects();
+    const project = useProjectStore.getState().projects.find((p) => p.id === (agent?.projectId ?? projectId));
+    if (!project) throw new Error('Project not found');
+    return project;
+  }, [agent?.projectId, projectId, localProject]);
+
   const handleKill = useCallback(async () => {
     try {
-      if (projectId) await window.clubhouse.agent.killAgent(agentId, localProject?.path ?? projectId);
+      if (agent?.projectId ?? projectId) await window.clubhouse.agent.killAgent(agentId, (await resolveProject()).path);
       else await window.clubhouse.pty.kill(agentId);
     } catch (err) {
       useToastStore.getState().addToast(`Couldn't stop the agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
       reportChromeActionFailed('agent_stop', err);
     }
-  }, [agentId, projectId, localProject]);
+  }, [agentId, agent?.projectId, projectId, resolveProject]);
 
   const handleWake = useCallback(async () => {
     if (!agent || agent.kind !== 'durable') return;
     try {
-      const agentProject = projects.find((p) => p.id === agent.projectId) ?? localProject;
-      if (!agentProject) throw new Error('Project not found');
+      const agentProject = await resolveProject();
       // Resumes the last session when there is one, like every other Wake.
       await wakeDurableAgent(agentProject.id, agentProject.path, agent.id, 'resume');
     } catch (err) {
       useToastStore.getState().addToast(`Couldn't wake the agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
       reportChromeActionFailed('agent_wake', err);
     }
-  }, [agent, projects, localProject]);
+  }, [agent, resolveProject]);
 
   const handleView = useCallback(() => {
     window.clubhouse.window.focusMain(agentId);
