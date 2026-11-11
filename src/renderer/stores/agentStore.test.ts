@@ -46,7 +46,7 @@ vi.mock('./soundStore', () => ({
 }));
 
 import { useAgentStore } from './agentStore';
-import { Agent, AgentHookEvent } from '../../shared/types';
+import { Agent, AgentHookEvent, DurableAgentConfig } from '../../shared/types';
 
 function getState() {
   return useAgentStore.getState();
@@ -1452,6 +1452,25 @@ describe('agentStore', () => {
       const worktreePath = path.resolve('project', 'external');
       vi.mocked(mockAgent.listDurable).mockResolvedValue([config('external', { worktreePath, branch: 'external/standby' })]);
       await getState().syncDurableMembership('proj_1', path.resolve('project'));
+      expect(getState().agents.external).toMatchObject({ status: 'sleeping', worktreePath, branch: 'external/standby' });
+    });
+
+    it.each(['display', 'membership', 'load'] as const)('ignores a stale creating snapshot after an MCP creation is ready (%s)', async (sync) => {
+      seedAgent({ id: 'external', status: 'creating' });
+      let resolveList!: (configs: DurableAgentConfig[]) => void;
+      vi.mocked(window.clubhouse.agent.listDurable).mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve; }));
+      const projectPath = path.resolve('project');
+      const stale = sync === 'display' ? getState().syncDurableDisplay(projectPath)
+        : sync === 'membership' ? getState().syncDurableMembership('proj_1', projectPath)
+          : getState().loadDurableAgents('proj_1', projectPath);
+      const worktreePath = path.join(projectPath, 'external');
+      vi.mocked(window.clubhouse.agent.listDurable).mockResolvedValue([config('external', { worktreePath, branch: 'external/standby' })]);
+      await getState().syncDurableMembership('proj_1', projectPath);
+      expect(getState().agents.external.status).toBe('sleeping');
+
+      resolveList([config('external', { creation: { state: 'creating', startedAt: '2026-11-10T00:00:00Z' } })]);
+      await stale;
+
       expect(getState().agents.external).toMatchObject({ status: 'sleeping', worktreePath, branch: 'external/standby' });
     });
 

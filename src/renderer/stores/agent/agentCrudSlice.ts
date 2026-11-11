@@ -36,8 +36,8 @@ function durableAgentFromConfig(projectId: string, config: DurableAgentConfig): 
 }
 
 function refreshCreation(agent: Agent, config: DurableAgentConfig): Agent {
-  // A listing begun during creation must not overwrite a session that started meanwhile.
-  if (agent.status !== 'creating' && !agent.creationFailed && !(config.creation && agent.status === 'sleeping')) return agent;
+  // A stale creating snapshot must not undo readiness or a session that started meanwhile.
+  if (agent.status !== 'creating' && !agent.creationFailed) return agent;
   const updated = {
     ...agent,
     ...creationStatus(config),
