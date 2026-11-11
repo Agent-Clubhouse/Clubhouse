@@ -68,6 +68,8 @@ If an agent an action uses is deleted, the action turns off and says why.
 
 You, the Dispatcher and agents can all make actions. An action's usage counts toward whoever made it. Agents manage their own actions through Clubhouse, and a helper's actions are deleted with the helper.
 
+When the Dispatcher creates or changes an action through Clubhouse, its chat shows the name, trigger, steps and on or off state. **Open** opens it in Settings. **Turn off** is your control, using the same path as the switch in Settings.
+
 An agent's action can do only what the agent itself may. Its steps and what it watches follow the agent's Clubhouse permissions, so turning a permission off reaches its actions too. A permission set to Ask first counts as no, because nobody is there to ask when an action runs.
 
 ### Being told when something happens

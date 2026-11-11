@@ -220,6 +220,15 @@ export interface ActionInput {
   maxRuns?: number;
 }
 
+/** A successful Dispatcher MCP change, shown in its conversation without raw tool output. */
+export interface ActionChatSummary {
+  id: string;
+  name: string;
+  trigger: string;
+  steps: string;
+  enabled: boolean;
+}
+
 // ── Runs and history ────────────────────────────────────────────────────────
 
 export type ActionRunOutcome = 'running' | 'done' | 'failed' | 'cancelled' | 'skipped';

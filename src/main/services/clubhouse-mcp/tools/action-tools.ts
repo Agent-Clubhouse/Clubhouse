@@ -501,7 +501,21 @@ type Handler = (scope: ActionScope, args: Obj) => unknown;
 async function guarded(tool: ActionToolName, callerId: string, args: Obj, handler: Handler): Promise<McpToolResult> {
   try {
     const scope = actionScope(callerId);
-    const result = json(handler(scope, args));
+    const value = handler(scope, args);
+    const result = json(value);
+    if (scope.owner.kind === 'dispatcher' && (tool === 'create_action' || tool === 'update_action' || tool === 'subscribe')
+      && isObject(value) && isObject(value.action) && typeof value.action.id === 'string') {
+      const action = actions.getAction(value.action.id);
+      if (action) {
+        try {
+          const { showDispatcherActionSummary } = await import('../../dispatcher/dispatcher-action-summary');
+          await showDispatcherActionSummary(action, actions.actionNames());
+        } catch (err) {
+          // telemetry-exempt: the change already succeeded; a failed receipt must not invite a duplicate create.
+          appLog('core:dispatcher', 'warn', 'Could not show an Action summary', { meta: { error: err instanceof Error ? err.message : String(err) } });
+        }
+      }
+    }
     appLog('core:mcp', 'info', `${tool}: done`, { meta: { agentId: callerId, scope: scope.owner.kind } });
     return result;
   } catch (err) {
@@ -567,7 +581,7 @@ export function registerActionTools(): void {
     {
       description:
         'Create an action: a workflow Clubhouse runs on a schedule, when something happens, or once, whenever the app is open. ' +
-        'You own it, and its usage counts toward you. There is no notice to the person; it shows in Settings > Actions with you as owner. ' +
+        'You own it, and its usage counts toward you. It shows in Settings > Actions with you as owner. Dispatcher changes also show a summary in its chat. ' +
         'An agent may own up to 20 actions, a helper 5 and the Dispatcher 50. ' +
         RESULT_NOTE,
       inputSchema: schema(ACTION_FIELDS, ['trigger', 'steps']),

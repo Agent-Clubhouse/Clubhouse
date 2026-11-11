@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { RoutedMessagePart } from '../../../../shared/chat';
 import type { Agent } from '../../../../shared/types';
@@ -8,6 +8,7 @@ import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
 import { reduceChatEvent, type AgentMessageItem, type NoticeItem, type TurnEndItem, type UserMessageItem } from '../../../stores/chatStore';
 import { AgentMessage, isLongMessage, LONG_MESSAGE_CHARS, NoticeRow, TurnFooter, UserMessage } from './MessageBlocks';
 import { createTranscriptExpansionStore, TranscriptExpansionProvider } from './transcript-expansion';
+import { useActionsNav } from '../../actions/useActions';
 
 function item(over: Partial<UserMessageItem>): UserMessageItem {
   const text = over.text ?? '';
@@ -232,6 +233,44 @@ it('shows an empty response as a quiet notice rather than a failed turn (#3284)'
   expect(screen.getByTestId('chat-notice').className).toContain('text-ctp-overlay1');
   expect(screen.queryByRole('alert')).toBeNull();
   expect(screen.queryByText('Turn failed')).toBeNull();
+});
+
+it('restores an Action summary and uses Settings navigation and the user turn-off path', async () => {
+  let enabled = true;
+  window.clubhouse.actions.list = vi.fn(async () => [{ id: 'a1', enabled } as import('../../../../shared/actions').ActionView]);
+  window.clubhouse.actions.setEnabled = vi.fn(async () => { enabled = false; return { id: 'a1', enabled } as import('../../../../shared/actions').ActionView; });
+  const state = reduceChatEvent(undefined, {
+    v: 2, agentId: 'conversation', sessionId: 's', seq: 1, ts: 1, type: 'notice',
+    data: {
+      level: 'info', code: 'action_changed', message: 'raw fallback',
+      actionSummary: { id: 'a1', name: 'Morning', trigger: 'Every day at 9:00 AM', steps: 'Notify you', enabled: true },
+    },
+  });
+  render(<NoticeRow item={state.items[0] as NoticeItem} />);
+  expect(screen.getByTestId('chat-action-summary').textContent).toContain('Morning');
+  expect(screen.getByText('Every day at 9:00 AM')).toBeTruthy();
+  expect(screen.getByText('Notify you')).toBeTruthy();
+  expect(screen.queryByText('raw fallback')).toBeNull();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Open' })).not.toBeDisabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  expect(useActionsNav.getState().pending).toEqual({ cardId: 'a1' });
+  fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
+  await waitFor(() => expect(window.clubhouse.actions.setEnabled).toHaveBeenCalledWith('a1', false));
+  await waitFor(() => expect(screen.getByText('Off')).toBeTruthy());
+});
+
+it('shows a turn-off error without claiming the Action is off', async () => {
+  window.clubhouse.actions.list = vi.fn(async () => [{ id: 'a1', enabled: true } as import('../../../../shared/actions').ActionView]);
+  window.clubhouse.actions.setEnabled = vi.fn(async () => { throw new Error('Could not save'); });
+  const notice: NoticeItem = {
+    id: 'n', sessionId: 's', seq: 1, ts: 1, kind: 'notice', level: 'info', code: 'action_changed', message: '',
+    actionSummary: { id: 'a1', name: 'Morning', trigger: 'Every day', steps: 'Notify you', enabled: true },
+  };
+  render(<NoticeRow item={notice} />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Turn off' })).not.toBeDisabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('Could not save');
+  expect(screen.getByText('On')).toBeTruthy();
 });
 
 describe('AgentMessage', () => {

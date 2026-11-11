@@ -15,7 +15,7 @@ import { randomUUID } from 'crypto';
 import * as path from 'path';
 import type { OrchestratorProvider } from '../../orchestrators';
 import type { FreeAgentPermissionMode, DurableAgentConfig } from '../../../shared/types';
-import type { PermissionLevel, RoutedMessagePart, SessionEndReason } from '../../../shared/chat';
+import type { ChatEventDataMap, PermissionLevel, RoutedMessagePart, SessionEndReason } from '../../../shared/chat';
 import { agentRegistry, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
 import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
@@ -98,11 +98,7 @@ async function noteMcpStartProblems(agentId: string, problems: ReturnType<typeof
 }
 
 /** A chat runtime notice, also shown to the user when an agent falls back. */
-export interface ChatRuntimeNotice {
-  level: 'info' | 'warn';
-  code: string;
-  message: string;
-}
+export type ChatRuntimeNotice = ChatEventDataMap['notice'];
 
 const DRIVER_LABELS: Record<string, string> = {
   claude_agent_sdk: 'Agent SDK',
