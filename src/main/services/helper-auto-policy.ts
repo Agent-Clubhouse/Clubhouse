@@ -158,7 +158,7 @@ function scoreOf(c: AutoCandidate, now: number, basis: AutoScoreBasis, useForeca
   const weeklyUsedBp = Math.round(used * 100);
   // Excluded, or without a usable state: the reading is kept, but nothing ranks on it.
   if (tierOf(c) === 'unmeasured' || tierOf(c) === 'last_resort') return { basis: 'unmeasured', weeklyUsedBp };
-  const expected = c.expectedBurnBp;
+  const expected = useForecasts ? c.expectedBurnBp : undefined;
   const burn = useForecasts && typeof expected === 'number' && Number.isFinite(expected) && expected >= 0 && expected <= 10_000 ? Math.round(expected) : 0;
   if (basis === 'weekly_used') return { basis, weeklyUsedBp, pressureBp: weeklyUsedBp + burn };
   const phase = cyclePhaseBp(c, now)!;

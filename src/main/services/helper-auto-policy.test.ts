@@ -33,6 +33,18 @@ describe('decideAutoProvider', () => {
     expect(decide(predicted, { options: { useBurnForecasts: true } })).toMatchObject({ ok: true, key: B });
   });
 
+  it('does not even read forecast inputs when the internal experiment is off', () => {
+    const candidates = [cand(A, 10), cand(B, 20)];
+    const expected = JSON.stringify(decide(candidates));
+    for (const candidate of candidates) {
+      Object.defineProperty(candidate, 'expectedBurnBp', {
+        get: () => { throw new Error('Forecast read while disabled'); },
+      });
+    }
+    expect(JSON.stringify(decide(candidates))).toBe(expected);
+    expect(JSON.stringify(decide(candidates, { options: { useBurnForecasts: false } }))).toBe(expected);
+  });
+
   it('lower weekly use wins, whatever the order and the helper count', () => {
     for (const candidates of [[cand(A, 40, { load: 0 }), cand(B, 20, { load: 5 })], [cand(B, 20, { load: 5 }), cand(A, 40, { load: 0 })]]) {
       expect(decide(candidates)).toMatchObject({ ok: true, key: B, reason: 'lower_pressure', basis: 'weekly_used' });
