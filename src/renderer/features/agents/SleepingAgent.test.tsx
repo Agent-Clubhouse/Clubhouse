@@ -159,6 +159,17 @@ describe('SleepingAgent', () => {
       expect(openAgentSettings).toHaveBeenCalledWith('agent-1');
       expect(useAgentSettingsPages.getState().requestedPage).toEqual({ agentId: 'agent-1', page: 'runtime' });
     });
+
+    it('retries with the newly saved CLI and reset model rather than the failed launch config', async () => {
+      const saved = { id: 'agent-1', name: 'bold-falcon', orchestrator: 'codex-cli', model: 'default' };
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([saved]);
+      renderComponent({ status: 'error', orchestrator: 'claude-code', model: 'sonnet' });
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('wake-button'));
+      await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalledWith(
+        'proj-1', '/projects/test', saved, false, undefined,
+      ));
+    });
   });
 
   describe('last session', () => {

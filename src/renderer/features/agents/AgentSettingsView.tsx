@@ -163,6 +163,7 @@ export function AgentSettingsView({ agent }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const availability = useOrchestratorStore((s) => s.availability);
   // Resolve orchestrators the same way AddAgentDialog does, so the selector
   // behaves consistently with agent creation.
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
@@ -350,8 +351,16 @@ export function AgentSettingsView({ agent }: Props) {
 
   const handleOrchestratorChange = async (value: string) => {
     if (!projectPath) return;
-    // Main resets the model on a new CLI, as it can't run the old one's (#2593).
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value, model: 'default' });
+    try {
+      const result = await window.clubhouse.agent.checkOrchestrator(projectPath, value);
+      if (!result.available) throw new Error(result.error || 'This CLI is not installed.');
+      // Main resets the model on a new CLI, as it can't run the old one's (#2593).
+      await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value, model: 'default' });
+    } catch (err) {
+      reportChromeActionFailed('agent_settings_save', err);
+      useToastStore.getState().addToast(`Couldn't change the CLI: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      return;
+    }
     setSavedModel('default');
     useAgentStore.setState((s) => {
       const existing = s.agents[agent.id];
@@ -978,7 +987,9 @@ export function AgentSettingsView({ agent }: Props) {
             className={selectClass}
           >
             {orchestratorOptions.map((o) => (
-              <option key={o.id} value={o.id}>{o.displayName}</option>
+              <option key={o.id} value={o.id} disabled={availability[o.id]?.available === false}>
+                {o.displayName}{availability[o.id]?.available === false ? ' (unavailable)' : ''}
+              </option>
             ))}
           </select>
         </Field>

@@ -84,6 +84,7 @@ function resetStores() {
     activeProjectId: 'proj-1',
   });
   useOrchestratorStore.setState({
+    availability: {},
     enabled: ['claude-code'],
     allOrchestrators: [{
       id: 'claude-code',
@@ -113,9 +114,11 @@ describe('AgentSettingsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+    useToastStore.setState({ toasts: [] });
 
     // Setup IPC mocks
     window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
+    window.clubhouse.agent.checkOrchestrator = vi.fn().mockResolvedValue({ available: true });
     window.clubhouse.agentSettings.readInstructions = vi.fn().mockResolvedValue('Agent instructions');
     window.clubhouse.agentSettings.saveInstructions = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.agentSettings.readPermissions = vi.fn().mockResolvedValue({ allow: ['Read(**)'] });
@@ -1021,6 +1024,26 @@ describe('AgentSettingsView', () => {
         expect.any(String), defaultAgent.id, { orchestrator: 'codex-cli', model: 'default' },
       ));
       expect(useAgentStore.getState().agents[defaultAgent.id].orchestrator).toBe('codex-cli');
+    });
+
+    it.each([false, true])('does not save an unavailable recovery CLI (check rejects: %s)', async (rejects) => {
+      useOrchestratorStore.setState((s) => ({
+        allOrchestrators: [...s.allOrchestrators, { ...s.allOrchestrators[0], id: 'codex-cli', displayName: 'Codex' }],
+        enabled: ['claude-code', 'codex-cli'],
+        availability: { 'codex-cli': { available: true } },
+      }));
+      const check = vi.fn();
+      if (rejects) check.mockRejectedValue(new Error('Availability check failed.'));
+      else check.mockResolvedValue({ available: false, error: 'Codex is not installed.' });
+      window.clubhouse.agent.checkOrchestrator = check;
+      renderSettings({ status: 'error' });
+      fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'codex-cli' } });
+      await waitFor(() => expect(useToastStore.getState().toasts).toEqual([
+        expect.objectContaining({ type: 'error', message: expect.stringContaining("Couldn't change the CLI:") }),
+      ]));
+      expect(check).toHaveBeenCalledWith('/project', 'codex-cli');
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+      expect(useAgentStore.getState().agents[defaultAgent.id].orchestrator).toBeUndefined();
     });
 
     it('ignores a page requested for another agent', async () => {
