@@ -229,6 +229,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
     case 'stop':
       if (rawName && !TURN_END_HOOKS.has(rawName)) return;
       if (turnId && turn?.turnId && turnId !== turn.turnId) return;
+      // The first explicit end wins; a later failure cannot revise a published completion.
       if (turn?.ended) return;
       hookTurns.set(agentId, { lastAt: now, ended: true, turnId: turnId ?? turn?.turnId });
       {

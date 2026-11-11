@@ -118,6 +118,15 @@ describe('from terminal hooks', () => {
     expect(events.filter((event) => event.type === 'agent.error')).toHaveLength(outcome === 'failed' ? 1 : 0);
   });
 
+  it.each(['StopFailure', 'Interrupt'])('keeps the first completed ending when %s arrives later', (rawName) => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit', turnId: 'one' }, 0);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop', turnId: 'one' }, 1);
+    publishFromHookEvent('a1', { kind: 'stop', rawName, turnId: 'one', message: 'late failure' }, 2);
+    expect(events.map((event) => event.type)).toEqual(['turn.started', 'turn.ended']);
+    expect(events[1]).toMatchObject({ outcome: 'completed', at: 1 });
+  });
+
   it('deduplicates completion without a start and resets for the next process', () => {
     const events = collect();
     publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop' });
