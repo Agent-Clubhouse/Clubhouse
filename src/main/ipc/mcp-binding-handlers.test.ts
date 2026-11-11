@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+const { sendGrantEvent } = vi.hoisted(() => ({ sendGrantEvent: vi.fn() }));
+vi.mock('./window-handlers', () => ({
+  findMainWindow: () => ({ webContents: { send: sendGrantEvent } }),
+}));
+
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   app: { getPath: () => '/tmp/clubhouse-test' },
@@ -133,6 +138,7 @@ import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispat
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { applyConnectionTools, migrateAutomaticConnectionTools } from '../services/connection-grants';
+import { _resetGrantRequestsForTesting, dropGrantRequestsFor, recordGrantRequest } from '../services/grant-requests';
 import {
   registerMcpBindingHandlers,
   startMcpBridge,
@@ -155,6 +161,7 @@ beforeEach(() => {
     return undefined as any;
   });
   _resetHandlersForTesting();
+  _resetGrantRequestsForTesting();
   registerMcpBindingHandlers();
   mockGet.mockReset();
   mockFromWebContents.mockReset();
@@ -176,6 +183,21 @@ function getHandler(channel: string): HandlerFn {
 // ── Registration ──────────────────────────────────────────────────────
 
 describe('mcp-binding-handlers registration', () => {
+  it('notifies the renderer when grant requests for an agent are withdrawn', () => {
+    const result = recordGrantRequest('agent-grant', {
+      kind: 'grant', agentId: 'agent', agentName: 'Agent', projectPath: 'project',
+      actions: ['settings.app.write'], where: 'the app',
+    });
+    if (!result.ok) throw new Error('Grant request was not recorded');
+    sendGrantEvent.mockClear();
+
+    dropGrantRequestsFor('agent');
+
+    expect(sendGrantEvent).toHaveBeenCalledExactlyOnceWith(
+      IPC.AGENT.GRANT_REQUESTS_CLOSED, [result.request.requestId],
+    );
+  });
+
   it('registers all expected IPC handlers', () => {
     const expectedChannels = [
       IPC.MCP_BINDING.GET_BINDINGS,

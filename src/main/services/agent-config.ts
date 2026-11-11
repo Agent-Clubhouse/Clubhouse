@@ -33,6 +33,7 @@ import { forgetDelivery } from './managed-agents/delivery-records';
 import { removeAgentChatMedia } from './agent-runtime/chat-media-retention';
 import { legacyClubhouseModeEnabled } from './managed-agents/legacy-migration';
 import { trackOperation } from './main-stall-monitor';
+import { dropGrantRequestsFor } from './grant-requests';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -2726,6 +2727,7 @@ async function deleteDurableGuardedInner(projectPath: string, agentId: string): 
   const agents = await readAgents(projectPath);
   const released: string[] = [];
   await writeAgents(projectPath, releaseHelpersOf(agents.filter((a) => a.id !== agentId), agentId, released));
+  dropGrantRequestsFor(agentId);
   helpersEnded([agentId, ...released]);
   forgetDelivery(agentId);
   await releaseForeignHelpersOf(projectPath, agentId);
@@ -3090,6 +3092,7 @@ async function deleteUnregisterGuardedInner(projectPath: string, agentId: string
   const filtered = agents.filter((a) => a.id !== agentId);
   const released: string[] = [];
   await writeAgents(projectPath, releaseHelpersOf(filtered, agentId, released));
+  if (filtered.length < agents.length) dropGrantRequestsFor(agentId);
   helpersEnded([agentId, ...released]);
   forgetDelivery(agentId);
   await releaseForeignHelpersOf(projectPath, agentId);
@@ -3687,6 +3690,7 @@ async function disposeAgent(projectPath: string, agentId: string, options: { exp
   row.disposedAt = new Date().toISOString();
   delete row.worktreePath;
   await writeAgents(projectPath, agents);
+  dropGrantRequestsFor(agentId);
   helpersEnded([agentId]);
   // A disposed helper never starts again, and the next one gets a new id: free what its sessions kept.
   forgetDelivery(agentId);
