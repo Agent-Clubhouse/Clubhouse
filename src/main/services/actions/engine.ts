@@ -72,6 +72,8 @@ export interface EngineState {
   waits: PersistedWait[];
   /** Last observed app use. A relaunch never replays a return. */
   lastUse?: number;
+  /** Local-date high-water mark per action, consumed only by started event-action runs. */
+  lastFiredDate?: Record<string, string>;
 }
 
 export interface EngineStorage {
@@ -148,6 +150,7 @@ export type RunReasonCode =
   | 'overlap'
   | 'hourly_limit'
   | 'lifetime_limit'
+  | 'event_filter'
   | 'missed'
   | 'condition_changed'
   | 'turned_off'
@@ -308,7 +311,14 @@ export class ActionsEngine {
     this.started = true;
     const loaded = this.deps.storage.load();
     for (const a of loaded.actions) this.actions.set(a.id, a);
-    this.state = { ...loaded.state, nextAt: { ...loaded.state.nextAt }, waits: [...loaded.state.waits] };
+    this.state = {
+      ...loaded.state, nextAt: { ...loaded.state.nextAt }, waits: [...loaded.state.waits],
+      ...(loaded.state.lastFiredDate && { lastFiredDate: { ...loaded.state.lastFiredDate } }),
+    };
+    const dates = this.state.lastFiredDate;
+    for (const id of Object.keys(dates ?? {})) {
+      if (dates && !this.actions.has(id)) delete dates[id];
+    }
     // Waits for actions that are gone or off are dropped.
     this.state.waits = this.state.waits.filter((w) => this.actions.get(w.actionId)?.enabled);
     for (const id of Object.keys(this.state.nextAt)) {
@@ -543,6 +553,7 @@ export class ActionsEngine {
   remove(id: string): void {
     const action = this.require(id);
     this.actions.delete(id);
+    if (this.state.lastFiredDate) delete this.state.lastFiredDate[id];
     this.dropWaits(id);
     delete this.state.nextAt[id];
     // A run going now finishes; nothing queued behind it starts. The action is
@@ -602,6 +613,25 @@ export class ActionsEngine {
     return reason;
   }
 
+  private localDate(): string {
+    const date = new Date(this.now());
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  private eventFilterReason(action: Action): string | null {
+    const t = action.trigger;
+    if (t.kind !== 'event') return null;
+    if (t.afterLocalTime) {
+      const [hour, minute] = t.afterLocalTime.split(':').map(Number);
+      const now = new Date(this.now());
+      if (now.getHours() * 60 + now.getMinutes() < hour * 60 + minute) return `Before ${t.afterLocalTime} local time`;
+    }
+    const lastDate = this.state.lastFiredDate?.[action.id];
+    if (t.oncePerDay && lastDate && this.localDate() <= lastDate) return 'This calendar day or a later one already had a started run';
+    return null;
+  }
+
   // ── Persistence ──
 
   private persist(): void {
@@ -612,7 +642,10 @@ export class ActionsEngine {
   }
 
   private saveState(): void {
-    this.deps.storage.saveState({ ...this.state, nextAt: { ...this.state.nextAt }, waits: [...this.state.waits] });
+    this.deps.storage.saveState({
+      ...this.state, nextAt: { ...this.state.nextAt }, waits: [...this.state.waits],
+      ...(this.state.lastFiredDate && { lastFiredDate: { ...this.state.lastFiredDate } }),
+    });
   }
 
   // ── Clock ──
@@ -656,6 +689,7 @@ export class ActionsEngine {
       if (t.kind === 'once' && t.at <= now) {
         // One-time actions delete themselves as they fire; the run stays in history.
         this.actions.delete(action.id);
+        if (this.state.lastFiredDate) delete this.state.lastFiredDate[action.id];
         this.dropWaits(action.id);
         this.observe(action, { type: 'trigger', trigger: 'once' });
         this.fire(action, { kind: 'once', at: t.at, ...(now - t.at > SCHEDULE_GRACE_MS && { detail: 'Ran late: Clubhouse was closed or asleep at the set time' }) }, []);
@@ -804,6 +838,7 @@ export class ActionsEngine {
 
   private onMatch(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
     if (this.enforceLifetime(action)) return;
+    if (this.eventFilterReason(action)) return;
     const branchText = occ.branch === '*' ? 'many branches' : occ.branch;
     const detail = `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`;
     this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: !!trigger.delayMinutes });
@@ -928,6 +963,8 @@ export class ActionsEngine {
     action = this.actions.get(action.id) ?? action;
     const ended = this.enforceLifetime(action);
     if (ended) return this.recordOnly(action, trigger, chain, 'skipped', 'lifetime_limit', ended);
+    const filtered = this.eventFilterReason(action);
+    if (filtered) return this.recordOnly(action, trigger, chain, 'skipped', 'event_filter', filtered);
     if (chain.includes(action.id)) {
       this.observe(action, { type: 'limit', what: 'self', chainDepth: chain.length });
       return this.recordOnly(action, trigger, chain, 'skipped', 'self_trigger', 'It can’t set itself off');
@@ -979,6 +1016,17 @@ export class ActionsEngine {
       if (ended) {
         this.recordOnly(action, trigger, chain, 'cancelled', 'lifetime_limit', ended);
         return null;
+      }
+      const filtered = this.eventFilterReason(action);
+      if (filtered) {
+        this.recordOnly(action, trigger, chain, 'cancelled', 'event_filter', filtered);
+        this.cancelQueued(actionId, 'event_filter', filtered);
+        return null;
+      }
+      if (action.trigger.kind === 'event') {
+        const date = this.localDate();
+        const dates = this.state.lastFiredDate ??= {};
+        if (!dates[actionId] || date > dates[actionId]) dates[actionId] = date;
       }
       action = { ...action, runsUsed: (action.runsUsed ?? 0) + 1 };
       this.actions.set(actionId, action);

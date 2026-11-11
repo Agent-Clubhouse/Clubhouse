@@ -22,6 +22,14 @@ An event trigger can wait, for example 30 minutes after an agent goes to sleep. 
 
 **Goes idle for** works the same way: the time counts from the end of the agent's last turn, a new turn resets it, and the action runs once per idle stretch.
 
+### Event time filters
+
+Every event trigger can optionally run only **After local time**, in HH:MM on this computer, and **Once per calendar day**. Events before the set time are ignored, not held until later. Delayed and queued runs check the current time and date again before starting. The filters also apply to Run now.
+
+A started run uses the day, including failed runs and Run now. Skipped or cancelled runs that never started do not. The local date is saved independently of history and survives restart and edits.
+
+Once per calendar day; moving the clock back doesn't give an extra run. This includes a repeated hour at the end of daylight saving time and moving back to an earlier date after a timezone change. A later local date is needed for another run. A spring-forward jump past the set time allows the next qualifying event, without replaying missed events.
+
 ### Missed times
 
 If Clubhouse was closed or the machine was asleep at a schedule time, the action skips it by default. You can choose to run once when Clubhouse opens, or to run each missed time, up to 10.

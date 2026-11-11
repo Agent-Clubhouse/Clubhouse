@@ -23,6 +23,12 @@ describe('actions store', () => {
     expect(migrate({ actions: [], state: { ...state, lastUse: 1234 } })).toEqual({ version: 1, actions: [], state: { ...state, lastUse: 1234 } });
   });
 
+  it('keeps valid local-date high-water marks and drops malformed persisted dates', () => {
+    const migrate = migrations.get('actions.json')!;
+    expect(migrate({ state: { lastFiredDate: { a: '2026-11-09', b: '2026-99-99', c: '2026-02-30', d: 1 } } }))
+      .toEqual({ version: 1, actions: [], state: { nextAt: {}, waits: [], lastFiredDate: { a: '2026-11-09' } } });
+  });
+
   it('keeps expired actions and their lifetime counter on reload', () => {
     const a = {
       id: 'expired', name: 'Temporary', trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } },

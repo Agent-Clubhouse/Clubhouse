@@ -178,11 +178,15 @@ export function describeTrigger(trigger: ActionTrigger, names: ActionNames = NO_
   const branch = trigger.branch && trigger.event.startsWith('git.') ? ` (${trigger.branch})` : '';
   const absence = trigger.event === 'app.returned' ? ` after at least ${formatMinutes(trigger.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES)} away` : '';
   const what = `${subject} ${EVENT_PHRASES[trigger.event]}${branch}${absence}`;
-  if (trigger.event === 'agent.idle') {
-    return `${subject} goes idle for ${formatMinutes(trigger.delayMinutes ?? 0)}`;
+  let description = trigger.event === 'agent.idle'
+    ? `${subject} goes idle for ${formatMinutes(trigger.delayMinutes ?? 0)}`
+    : trigger.delayMinutes ? `${formatMinutes(trigger.delayMinutes)} after ${what}` : `When ${what}`;
+  if (trigger.afterLocalTime) {
+    const [hour, minute] = trigger.afterLocalTime.split(':').map(Number);
+    description += `, at or after ${formatClock(hour, minute)} local time`;
   }
-  if (trigger.delayMinutes) return `${formatMinutes(trigger.delayMinutes)} after ${what}`;
-  return `When ${what}`;
+  if (trigger.oncePerDay) description += ", once per calendar day; moving the clock back doesn't give an extra run";
+  return description;
 }
 
 /** One step in plain words, e.g. "Wake pm with a prompt". */

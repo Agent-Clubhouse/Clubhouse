@@ -56,6 +56,8 @@ export interface ActionDraft {
   originalEndsAt?: number;
   maxRuns: string;
   absenceMinutes: string;
+  afterLocalTime: string;
+  oncePerDay: boolean;
   steps: StepDraft[];
   overlap: OverlapRule;
 }
@@ -90,6 +92,8 @@ export function newDraft(now = Date.now()): ActionDraft {
     endsAt: '',
     maxRuns: '',
     absenceMinutes: '',
+    afterLocalTime: '',
+    oncePerDay: false,
     steps: [emptyStep()],
     overlap: 'skip',
   };
@@ -132,6 +136,8 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
     d.delay = t.delayMinutes ? String(t.delayMinutes) : '';
     d.branch = t.branch ?? '';
     d.absenceMinutes = t.absenceMinutes !== undefined ? String(t.absenceMinutes) : '';
+    d.afterLocalTime = t.afterLocalTime ?? '';
+    d.oncePerDay = t.oncePerDay ?? false;
   }
   return d;
 }
@@ -185,6 +191,8 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
     trigger = {
       kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }),
       ...(d.event === 'app.returned' && d.absenceMinutes.trim() && { absenceMinutes: Number(d.absenceMinutes) }),
+      ...(d.afterLocalTime && { afterLocalTime: d.afterLocalTime }),
+      ...(d.oncePerDay && { oncePerDay: true }),
     };
   }
   // Keep the exact instant when unchanged, including seconds and the repeated DST hour.

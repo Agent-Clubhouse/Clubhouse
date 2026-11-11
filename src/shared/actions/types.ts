@@ -95,6 +95,10 @@ export interface EventTrigger {
   branch?: string;
   /** app.returned only: required absence, default 30 minutes, minimum 5. */
   absenceMinutes?: number;
+  /** Events only at or after this wall-clock time on this computer, "HH:MM". */
+  afterLocalTime?: string;
+  /** At most one started run per local calendar day, including Run now and failures. */
+  oncePerDay?: boolean;
 }
 
 export const DEFAULT_ABSENCE_MINUTES = 30;

@@ -4,6 +4,19 @@ import { draftFrom, draftToInput, newDraft, toLocalInput } from './action-draft'
 const NOW = new Date(2026, 10, 9, 8, 0).getTime();
 
 describe('action draft', () => {
+  it('round-trips generic time filters and omits them after switching to a schedule', () => {
+    const input = {
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, afterLocalTime: '08:00', oncePerDay: true } as const,
+      steps: [{ kind: 'notify', text: 'hi' }] as const,
+    };
+    const draft = draftFrom({ ...input, steps: [...input.steps] }, NOW);
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input });
+    expect(draftToInput({ ...draft, afterLocalTime: '24:00' }, NOW).ok).toBe(false);
+    const schedule = draftToInput({ ...draft, when: 'schedule' }, NOW);
+    expect(schedule.ok && schedule.input.trigger).not.toHaveProperty('oncePerDay');
+    expect(schedule.ok && schedule.input.trigger).not.toHaveProperty('afterLocalTime');
+  });
+
   it('round-trips an app return threshold', () => {
     const input = {
       trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 15 } as const,

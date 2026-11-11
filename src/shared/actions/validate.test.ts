@@ -5,6 +5,16 @@ import { HISTORY_MAX_AGE_MS, type ActionRun } from './types';
 const schedule = { kind: 'schedule', preset: 'daily', cron: '0  9 * * *', missed: 'once' };
 
 describe('validateActionInput', () => {
+  it('validates generic event time filters as strict local HH:MM and a boolean', () => {
+    const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'a' }, afterLocalTime: '08:00', oncePerDay: true };
+    const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };
+    expect(validateActionInput(input)).toMatchObject({ ok: true, value: { trigger } });
+    for (const afterLocalTime of ['8:00', '24:00', '12:60', '', '08:00Z', 800, null]) {
+      expect(validateActionInput({ ...input, trigger: { ...trigger, afterLocalTime } }).ok).toBe(false);
+    }
+    for (const oncePerDay of [0, 'true', null]) expect(validateActionInput({ ...input, trigger: { ...trigger, oncePerDay } }).ok).toBe(false);
+  });
+
   it('validates a return threshold and keeps the optional default absent', () => {
     const trigger = { kind: 'event', event: 'app.returned', source: { kind: 'app' } };
     const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };

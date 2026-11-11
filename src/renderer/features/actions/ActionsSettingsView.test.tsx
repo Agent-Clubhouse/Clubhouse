@@ -22,6 +22,22 @@ beforeEach(() => {
 });
 
 describe('Settings > Actions', () => {
+  it('offers time and daily filters for all event kinds and shows them on the card', async () => {
+    list = [action({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, afterLocalTime: '08:00', oncePerDay: true },
+    })];
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByText('Morning plan'));
+    const card = await screen.findByTestId('action-card');
+    expect(within(card).getByText(/at or after 8:00 AM local time, once per calendar day/)).toBeTruthy();
+    fireEvent.click(within(card).getByRole('button', { name: 'Edit' }));
+    const form = await screen.findByTestId('action-form');
+    expect((within(form).getByLabelText('After local time (optional)') as HTMLInputElement).value).toBe('08:00');
+    expect((within(form).getByLabelText('Once per calendar day') as HTMLInputElement).checked).toBe(true);
+    fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.turn_ended' } });
+    expect((within(form).getByLabelText('Once per calendar day') as HTMLInputElement).checked).toBe(true);
+  });
+
   it('offers the return event with a configurable absence threshold', async () => {
     render(<ActionsSettingsView />);
     fireEvent.click(await screen.findByTestId('actions-new'));
