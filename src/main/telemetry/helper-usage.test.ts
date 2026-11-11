@@ -238,6 +238,23 @@ describe('Stage 3 shadow forecasts', () => {
     expect(ledger.getEntry('helper-1')?.forecastRun?.endedMs).toBeDefined();
   });
 
+  it('still records a terminal exit after recording-off invalidated its open evidence', () => {
+    installHelperUsageTelemetry({ ledgerFile: path.join(dir, 'ledger.json') });
+    recordHelperDecision(decision());
+    started('helper-1', { driver: 'claude_agent_sdk' });
+    handleHelperChatEvent(chat('session_ended', { reason: 'fallback' }, { ts: now + 4 }));
+    setLocalSink(null);
+    setRuntime(null);
+    handleHelperChatEvent(chat('notice', { level: 'info', code: 'off', message: 'not recorded' }));
+    install();
+    broadcastAgentExit('helper-1', 0);
+    expect(events('clubhouse.helper.outcome')).toHaveLength(1);
+    expect(events('clubhouse.helper.outcome')[0].attrs).toMatchObject({
+      'clubhouse.helper_run.outcome': 'completed', 'clubhouse.helper_decision.known': true,
+    });
+    expect(ledger.getEntry('helper-1')?.forecastRun?.usable).toBe(false);
+  });
+
   it.each(['reset', 'dropped_final'])('excludes %s evidence discovered only in the closing usage samples', (scenario) => {
     recordHelperDecision(decision());
     started('helper-1', { driver: 'claude_agent_sdk' });

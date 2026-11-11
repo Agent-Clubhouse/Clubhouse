@@ -34,6 +34,7 @@ export interface ForecastRun {
   endedMs?: number;
   usageSamples: number;
   usable: boolean;
+  outcomeHandled?: boolean;
 }
 
 export const BURN_OBSERVATION_REASONS = ['observed', 'missing_baseline', 'reset', 'decreased', 'overlap', 'incomplete', 'restart'] as const;
@@ -187,8 +188,10 @@ export function readForecastRun(value: unknown): ForecastRun | undefined {
   const r = value as Partial<ForecastRun>;
   if (!validTime(r.startedMs) || (r.endedMs !== undefined && (!validTime(r.endedMs) || r.endedMs < r.startedMs))
     || typeof r.usageSamples !== 'number' || !Number.isInteger(r.usageSamples) || r.usageSamples < 0 || r.usageSamples > 200
+    || (r.outcomeHandled !== undefined && typeof r.outcomeHandled !== 'boolean')
     || typeof r.usable !== 'boolean' || (r.runId !== undefined && (typeof r.runId !== 'string' || r.runId.length === 0 || r.runId.length > 200))) return undefined;
   return { startedMs: r.startedMs, ...(r.endedMs !== undefined && { endedMs: r.endedMs }), usageSamples: r.usageSamples, usable: r.usable,
+    ...(r.outcomeHandled !== undefined && { outcomeHandled: r.outcomeHandled }),
     ...(r.runId && { runId: r.runId }) };
 }
 

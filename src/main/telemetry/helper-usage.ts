@@ -558,6 +558,7 @@ function finishRun(helperId: string, endedMs: number, outcome: HelperRunOutcome)
     for (const sample of ctx.tracker.finalSamples(endedMs)) emitUsage(ctx, sample);
     ledger.setForecastRun(helperId, {
       runId: ctx.run.runId, startedMs: ctx.run.startedMs, endedMs, usageSamples: ctx.forecastUsageSamples,
+      outcomeHandled: true,
       usable: ctx.forecastUsable && outcome === 'completed' && !ctx.disposeRequested
         && !ctx.tracker.hasOpenTurns && ctx.tracker.counts.turnsMissing === 0 && ctx.tracker.counts.samplesDropped === 0,
     });
@@ -672,11 +673,11 @@ function handleAgentExit(agentId: string, exitCode: number): void {
     const entry = ledger.getEntry(agentId);
     if (entry) {
       // Chat end already emitted its outcome and closed the same process's evidence.
-      if (entry.forecastRun?.endedMs !== undefined) return;
+      if (entry.forecastRun?.outcomeHandled) return;
       ledger.endRun(agentId, t);
       ledger.setForecastRun(agentId, {
         ...(entry.forecastRun?.runId && { runId: entry.forecastRun.runId }),
-        startedMs: entry.forecastRun?.startedMs ?? entry.decidedAtMs, endedMs: t, usageSamples: 0, usable: false,
+        startedMs: entry.forecastRun?.startedMs ?? entry.decidedAtMs, endedMs: t, usageSamples: 0, usable: false, outcomeHandled: true,
       });
       emitOutcome(agentId, undefined, undefined, exitCode === 0 ? 'completed' : 'failed');
       ledger.forgetRun(agentId);
