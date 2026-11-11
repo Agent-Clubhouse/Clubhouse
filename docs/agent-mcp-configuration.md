@@ -26,7 +26,11 @@ JSON remains visible for deliberate valid repair in the editor.
 
 Chat reads its configured source before bridge injection. `clubhouse` is reserved
 for the live bridge; a configured entry cannot replace it. One in the agent's own
-file is dropped with a notice. The Clubhouse MCP always runs: every agent gets the bridge,
+file is dropped with a notice only when it is a user-authored, non-bridge server.
+Bridge-shaped leftovers from older releases or crashes are ignored silently.
+JSON restore removes injected bridge entries while preserving user servers and
+other settings, deleting a newly generated file if nothing remains.
+The Clubhouse MCP always runs: every agent gets the bridge,
 managed or not, helpers and quick agents included, and no app, project or agent
 setting turns it off (D69 in `managed-agents.md`). Clubhouse Mode is gone (D68),
 so nothing else decides which servers an agent gets.

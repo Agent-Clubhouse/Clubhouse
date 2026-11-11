@@ -222,8 +222,7 @@ describe('config-pipeline', () => {
 
       const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
       expect(written).not.toContain(STALE);
-      // A bridge entry's stored agent ID goes too: it would shadow the agent's own env.
-      expect(JSON.parse(written).mcpServers.clubhouse.env).toEqual({});
+      expect(JSON.parse(written).mcpServers).toEqual({});
     });
 
     it('scrubs the nonce from a TOML snapshot it writes back when the current file is unreadable', async () => {
@@ -241,6 +240,58 @@ describe('config-pipeline', () => {
   });
 
   describe('restoreForAgent', () => {
+    it.each([false, true])('removes JSON bridges and scrubs user-server nonces (original=%s)', async (existing) => {
+      const file = path.join('project', '.mcp.json');
+      if (existing) vi.mocked(fsp.readFile).mockResolvedValueOnce('{"mcpServers":{}}');
+      else vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+      await snapshotFile('agent-1', file);
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        mcpServers: {
+          clubhouse: { command: 'node', args: [path.join('app', 'clubhouse-mcp-bridge.js')] },
+          user: { command: 'user', env: { CLUBHOUSE_HOOK_NONCE: 'stale', KEEP: 'yes' } },
+        },
+        keep: true,
+      }));
+      await restoreForAgent('agent-1');
+      expect(JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string)).toEqual({
+        mcpServers: { user: { command: 'user', env: { KEEP: 'yes' } } }, keep: true,
+      });
+    });
+
+    it('deletes a newly created JSON file containing only the bridge', async () => {
+      const file = path.join('project', '.mcp.json');
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+      await snapshotFile('agent-1', file);
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        mcpServers: { clubhouse: { command: 'node', args: ['clubhouse-mcp-bridge.js'] } },
+      }));
+      await restoreForAgent('agent-1');
+      expect(fsp.unlink).toHaveBeenCalledWith(path.resolve(file));
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('preserves a user-authored reserved server through corrupt-file fallback', async () => {
+      const original = {
+        mcpServers: {
+          clubhouse: { command: 'user-server' },
+          staleBridge: { command: 'node', args: ['clubhouse-mcp-bridge.js'] },
+          user: { command: 'user', env: { CLUBHOUSE_HOOK_NONCE: 'stale', KEEP: 'yes' } },
+        },
+        keep: true,
+      };
+      const file = path.join('project', '.mcp.json');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify(original));
+      await snapshotFile('agent-1', file);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{broken');
+      await restoreForAgent('agent-1');
+      expect(JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string)).toEqual({
+        mcpServers: { clubhouse: { command: 'user-server' }, user: { command: 'user', env: { KEEP: 'yes' } } },
+        keep: true,
+      });
+    });
+
     it('strips Clubhouse hooks from current file when restoring (file existed before)', async () => {
       // Original file had user content
       vi.mocked(fsp.readFile).mockResolvedValueOnce('{"user": true}');
