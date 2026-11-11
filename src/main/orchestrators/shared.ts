@@ -547,7 +547,10 @@ export async function writeTerminalHooksConfig(
       ? value.replace(/(:\/\/(?:127\.0\.0\.1|localhost):)\d+(\/hook\/)/g,
         (_match, prefix, suffix) => `${prefix}${process.platform === 'win32' ? '%CLUBHOUSE_HOOK_PORT%' : '${CLUBHOUSE_HOOK_PORT}'}${suffix}`)
       : value));
-  const generated = Object.values(newHooks).flat().map(normalize);
+  const generated = [
+    ...Object.values(newHooks).flat(),
+    { hooks: [{ type: 'command', command: 'cat | curl -s -X POST http://127.0.0.1:1/hook/${CLUBHOUSE_AGENT_ID} || true' }] },
+  ].map(normalize);
   const mergedHooks = mergeHookEntries(settings, newHooks, (entry) => {
     if (!isOwnEntry(entry)) return false;
     if (!/CLUBHOUSE_AGENT_ID|CLUBHOUSE_HOOK_NONCE|X-Clubhouse-Nonce/.test(JSON.stringify(entry))) return false;
