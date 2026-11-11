@@ -82,8 +82,18 @@ export function QueueList({ queued, onRemove }: {
 }) {
   const long = queued.length > QUEUE_VISIBLE_ROWS;
   const [open, setOpen] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
+  const oldestAt = queued.reduce((oldest, item) => Math.min(oldest, item.ts), Infinity);
+  useEffect(() => {
+    if (!Number.isFinite(oldestAt)) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [oldestAt]);
   const shown = open || !long;
-  const summary = <span className="text-ctp-overlay1">{queued.length} · sent when this turn ends</span>;
+  const minutes = Math.max(0, Math.floor((now - oldestAt) / 60_000));
+  const age = minutes < 1 ? 'less than 1 min' : `${minutes} min`;
+  const summary = <span className="text-ctp-overlay1">{queued.length} {queued.length === 1 ? 'message' : 'messages'} waiting for this turn to finish (oldest {age}).</span>;
   const remove = (e: MouseEvent<HTMLButtonElement>, messageId: string) => {
     // The row goes once main confirms; keep focus in the list rather than losing it with the row.
     const row = e.currentTarget.closest('li');
@@ -97,12 +107,10 @@ export function QueueList({ queued, onRemove }: {
         {long ? (
           <button type="button" className="flex items-center gap-2 min-w-0 text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open} data-testid="chat-queue-toggle">
             <ChevronDown className={`text-ctp-overlay0 transition-transform ${open ? '' : '-rotate-90'}`} />
-            <span className="font-semibold text-ctp-text">Queued</span>
             {summary}
           </button>
         ) : (
           <>
-            <span className="font-semibold text-ctp-text">Queued</span>
             {summary}
           </>
         )}
