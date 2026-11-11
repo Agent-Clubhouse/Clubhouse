@@ -97,9 +97,11 @@ export interface EventTrigger {
   /**
    * Minutes to wait before running. When the wait ends the condition is
    * checked again, and the run is cancelled if it no longer holds. For
-   * `agent.idle` this is the idle time and is required.
+   * `agent.idle` this is the idle time; either minutes or seconds is required.
    */
   delayMinutes?: number;
+  /** Trailing debounce in seconds, instead of delayMinutes. Uses the same persisted wait and re-check. */
+  delaySeconds?: number;
   /** Git events only: run only for this branch, e.g. "main". */
   branch?: string;
   /** app.returned only: required absence, default 30 minutes, minimum 5. */
@@ -108,8 +110,10 @@ export interface EventTrigger {
   afterLocalTime?: string;
   /** At most one started run per local calendar day, including Run now and failures. */
   oncePerDay?: boolean;
-  /** Any-agent events only: fixed window from the first event, default 60 seconds. */
+  /** Fixed window from the first event. Any-agent events default to 60 seconds. */
   coalesceSeconds?: number;
+  /** Sliding window over started runs, including Run now. Skips do not consume it. */
+  throttle?: { maxRuns: number; perMinutes: number };
 }
 
 export const DEFAULT_ABSENCE_MINUTES = 30;
@@ -130,6 +134,10 @@ export interface MessageStep {
   kind: 'message';
   agentId: string;
   text: string;
+  /** A busy target queues by default; steer uses the same path as a user's mid-turn message. */
+  delivery?: 'queue' | 'steer';
+  latestOnly?: boolean;
+  maxWaitMinutes?: number;
 }
 
 export interface QuickAgentStep {
@@ -233,7 +241,7 @@ export interface ActionChatSummary {
 
 // ── Runs and history ────────────────────────────────────────────────────────
 
-export type ActionRunOutcome = 'running' | 'done' | 'failed' | 'cancelled' | 'skipped';
+export type ActionRunOutcome = 'running' | 'done' | 'failed' | 'cancelled' | 'skipped' | 'throttled' | 'expired';
 
 export interface ActionRunTrigger {
   /** schedule, once, event, catch_up (a missed schedule time), or manual (Run now). */
@@ -246,6 +254,15 @@ export interface ActionRunTrigger {
   agentIds?: string[];
   /** A quick source whose read permission is checked again before delivery. */
   sourceAgentId?: string;
+  /** Every occurrence in a coalesced event, rechecked before delivery. */
+  events?: ActionRunEvent[];
+}
+
+export interface ActionRunEvent {
+  at: number;
+  event: ActionEventKind;
+  source: Exclude<ActionEventSource, { kind: 'any' }>;
+  detail: string;
 }
 
 export interface ActionStepResult {
@@ -253,8 +270,8 @@ export interface ActionStepResult {
   outcome: 'done' | 'failed';
   /** One line in plain words. */
   detail: string;
-  /** Message handoff at step completion, not a receipt for later queue delivery. */
-  delivery?: 'queued' | 'delivered';
+  /** A queued handoff is updated when the runtime delivers, replaces or drops it. */
+  delivery?: 'queued' | 'delivered' | 'expired' | 'replaced' | 'dropped';
   /** Auto's start receipt, using the same shape as helper starts. */
   routing?: HelperRouting;
   /** The agent it woke, messaged, started or put to sleep, for a link. */
@@ -275,6 +292,8 @@ export interface ActionRun {
   chain: string[];
   startedAt: number;
   endedAt?: number;
+  /** A later queue receipt keeps delivery losses visible in retained history. */
+  deliveryUpdatedAt?: number;
   outcome: ActionRunOutcome;
   /** One line of reason for failed, cancelled and skipped runs. */
   reason?: string;

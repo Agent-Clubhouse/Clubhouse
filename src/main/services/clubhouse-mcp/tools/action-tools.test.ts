@@ -181,6 +181,35 @@ describe('action tools', () => {
     registerActionTools();
   });
 
+  it('round-trips timing, throttle and message policies through create, update and subscribe', async () => {
+    const throttle = { maxRuns: 2, perMinutes: 5 };
+    const step = { kind: 'message', agentId: 'self', text: 'Check', delivery: 'steer', latestOnly: true, maxWaitMinutes: 3 };
+    const trigger = { kind: 'event', event: 'git.commit', source: { kind: 'project', projectId: 'web' }, delaySeconds: 30, throttle };
+    const created = await call('agent-a', 'create_action', { trigger, steps: [step] });
+    expect(created).toMatchObject({ isError: false, body: { action: {
+      trigger: { delaySeconds: 30, throttle }, steps: [{ ...step, agentId: 'agent-a' }],
+      description: expect.stringContaining('30 seconds after'),
+    } } });
+    const { delaySeconds: _delaySeconds, ...base } = trigger;
+    const updated = await call('agent-a', 'update_action', { id: created.body.action.id, trigger: { ...base, coalesceSeconds: 15 } });
+    expect(updated).toMatchObject({ isError: false, body: { action: { trigger: { coalesceSeconds: 15, throttle }, steps: [{ ...step, agentId: 'agent-a' }] } } });
+    expect(updated.body.action.trigger).not.toHaveProperty('delaySeconds');
+    const subscribed = await call('agent-a', 'subscribe', { event: 'git.commit', source: trigger.source, delaySeconds: 2, throttle });
+    expect(subscribed).toMatchObject({ isError: false, body: { action: { subscription: true, trigger: { delaySeconds: 2, throttle } } } });
+  });
+
+  it('keeps every Action argument and nested argument description within 200 characters', () => {
+    vi.spyOn(agentRegistry, 'get').mockReturnValue({ projectPath: 'web-root', orchestrator: 'claude-code', runtime: 'chat' });
+    const tools = getScopedToolList('dispatcher').filter((tool) => tool.name in ACTION_TOOL_PERMISSIONS);
+    const visit = (raw: unknown, path: string): void => {
+      if (typeof raw !== 'object' || raw === null) return;
+      const obj = raw as Record<string, unknown>;
+      if (typeof obj.description === 'string') expect(obj.description.length, path).toBeLessThanOrEqual(200);
+      for (const [key, child] of Object.entries(obj)) visit(child, `${path}.${key}`);
+    };
+    for (const tool of tools) visit(tool.inputSchema, tool.name);
+  });
+
   it('shows successful Dispatcher creates, changes and subscriptions, but not other callers or refusals', async () => {
     const created = await call('dispatcher', 'create_action', { name: 'Morning', trigger: DAILY, steps: [NOTIFY] });
     expect(showDispatcherActionSummary).toHaveBeenCalledWith(expect.objectContaining({ id: created.body.action.id, name: 'Morning', enabled: true }), expect.anything());
@@ -716,7 +745,7 @@ describe('action tools', () => {
   describe('typed errors', () => {
     it('invalid input from the shared checks', async () => {
       const r = await call('agent-a', 'create_action', { trigger: { kind: 'event', event: 'agent.idle', source: { kind: 'agent', agentId: 'self' } }, steps: [NOTIFY] });
-      expect(r).toEqual({ isError: true, body: { error: { code: 'invalid_input', message: 'Say how many minutes of idle time to wait for.' } } });
+      expect(r).toEqual({ isError: true, body: { error: { code: 'invalid_input', message: 'Say how much idle time to wait for.' } } });
     });
 
     it('unavailable while Actions start', async () => {

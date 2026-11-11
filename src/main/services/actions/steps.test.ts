@@ -113,6 +113,17 @@ describe('step runner', () => {
     expect(d.wake).not.toHaveBeenCalled();
   });
 
+  it('uses the user mid-turn path for steer and passes Action queue controls and receipts', async () => {
+    const sendMessage = vi.fn(async () => ({ delivery: 'steer' }));
+    runtimes.set('pm', { kind: 'chat', isRunning: () => true, getState: () => 'running', sendMessage, onStateChange: () => () => undefined });
+    const deliveryChanged = vi.fn();
+    const result = await createStepRunner(deps()).run({ kind: 'message', agentId: 'pm', text: 'hi', delivery: 'steer', latestOnly: true, maxWaitMinutes: 2 }, { ...ctx, deliveryChanged });
+    expect(result).toMatchObject({ delivery: 'delivered' });
+    expect(sendMessage).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      delivery: 'auto', actionQueue: { actionId: 'a1', latestOnly: true, maxWaitMs: 120_000, onSettled: deliveryChanged },
+    }));
+  });
+
   it.each([
     ['running', 'prompt', 'delivered', 'Sent the message to pm'],
     ['idle', 'queued', 'queued', "Queued for pm's next turn"],
@@ -248,6 +259,7 @@ describe('step runner', () => {
         senderId: 'disp', targetId: 'disp', targetName: 'Rosie', actionId: 'a1', actionName: 'Morning', owner: { kind: 'dispatcher' },
         text: '[Clubhouse action “Morning”] Check its handoff.\nWhat happened: release-lead goes to sleep.',
         routed: [{ fromClubhouse: true, text: 'Action “Morning”: Check its handoff.\nWhat happened: release-lead goes to sleep.' }],
+        messageOptions: { actionQueue: { actionId: 'a1' } },
       });
     });
 

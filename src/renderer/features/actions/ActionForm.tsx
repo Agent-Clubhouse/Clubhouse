@@ -11,6 +11,7 @@ import {
   EVENT_LABELS,
   GIT_EVENT_KINDS,
   MAX_ACTION_STEPS,
+  MAX_DELAY_MINUTES,
   MIN_ABSENCE_MINUTES,
   DEFAULT_ABSENCE_MINUTES,
   DEFAULT_COALESCE_SECONDS,
@@ -173,11 +174,32 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
           label={step.kind === 'wake' ? 'Prompt (optional)' : step.kind === 'notify' ? 'Notice text' : step.kind === 'message' ? 'Message' : 'Prompt'}
           htmlFor={`${uid}-text`}
           help={step.kind === 'wake' ? 'It resumes its last session. If it’s already awake, it gets this as a message.'
-            : step.kind === 'message' ? 'If it’s busy, the message waits for its next turn. If it’s asleep, it’s woken with it.'
+            : step.kind === 'message' ? 'If it is asleep, it is woken with the message. Choose how a busy agent receives it below.'
               : step.kind === 'notify' ? 'Shown as a Clubhouse notification, following Settings > Notifications & alerts.' : undefined}
         >
           <textarea id={`${uid}-text`} rows={3} className={settingsTextArea} value={step.text} onChange={(e) => set({ text: e.target.value })} />
         </Field>
+      )}
+      {step.kind === 'message' && (
+        <>
+          <Field label="When the agent is busy" htmlFor={`${uid}-delivery`}
+            help="Queue waits for its next turn. Steer uses the same mid-turn path as your messages, falling back to queue when unsupported.">
+            <select id={`${uid}-delivery`} className={`${selectClass} w-full`} value={step.delivery || 'queue'}
+              onChange={(e) => set({ delivery: e.target.value as 'queue' | 'steer' })}>
+              <option value="queue">Queue for the next turn</option>
+              <option value="steer">Steer the current turn</option>
+            </select>
+          </Field>
+          <Field label="Keep only the latest queued message" htmlFor={`${uid}-latest`}
+            help="A newer queued message from this action replaces its older messages. Other actions and your messages are unchanged.">
+            <input id={`${uid}-latest`} type="checkbox" checked={step.latestOnly ?? false} onChange={(e) => set({ latestOnly: e.target.checked })} />
+          </Field>
+          <Field label="Maximum queue wait (minutes, optional)" htmlFor={`${uid}-max-wait`}
+            help="An undelivered message is removed when this time passes and recorded as expired in history. Applies if steering falls back to queue too.">
+            <input id={`${uid}-max-wait`} type="number" min={1} max={MAX_DELAY_MINUTES} step={1} className={`${settingsInput} w-32`}
+              value={step.maxWaitMinutes} onChange={(e) => set({ maxWaitMinutes: e.target.value })} />
+          </Field>
+        </>
       )}
     </div>
   );
@@ -263,7 +285,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
       {projects.map((p) => <option key={p.id} value={`project:${p.id}`}>{p.name}</option>)}
     </select>
   ) : eventIsApp ? null : (
-    <AgentSelect id={`${uid}-source`} value={draft.source} onChange={(source) => set({ source })} agents={agents} projects={projects}
+    <AgentSelect id={`${uid}-source`} value={draft.source} onChange={(source) => set({ source, ...(source === 'any' && { timing: 'coalesce' }) })} agents={agents} projects={projects}
       includeProjects includeAny={ANY_AGENT_EVENT_KINDS.includes(draft.event)} placeholder="Pick an agent or project" />
   );
 
@@ -360,7 +382,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
                 const event = e.target.value as ActionEventKind;
                 // App events take no agent; project events may name a project.
                 const keep = APP_EVENT_KINDS.includes(event) ? (event.startsWith('project.') && draft.source.startsWith('project:') ? draft.source : '') : draft.source.startsWith('project:') || draft.source.startsWith('agent:') || (draft.source === 'any' && ANY_AGENT_EVENT_KINDS.includes(event)) ? draft.source : '';
-                set({ event, source: keep });
+                set({ event, source: keep, ...(event === 'agent.idle' && { timing: 'delay' }) });
               }}>
                 <optgroup label="Agent">{AGENT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
                 <optgroup label="Git">{GIT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
@@ -385,22 +407,50 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
                   className={`${settingsInput} w-32`} value={draft.absenceMinutes} onChange={(e) => set({ absenceMinutes: e.target.value })} />
               </Field>
             )}
-            {draft.source === 'any' ? (
-              <Field label={draft.event === 'agent.quick_finished' ? 'Group finishes for (seconds)' : 'Group turns for (seconds)'} htmlFor={`${uid}-coalesce`}
-                help="Includes durable and quick agents that become readable later. A fixed window from the first event. Later events join without extending it. Excludes the subscriber and Dispatcher-owned agents. Watching activity is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents need agent.watch. Each agent must also be readable. Ask first does not allow unattended runs. Nothing replays after relaunch.">
+            <Field label="Timing" htmlFor={`${uid}-timing`} help="Choose no wait, a trailing delay with a re-check, or a fixed grouping window. Throttle is checked when a run starts.">
+              <select id={`${uid}-timing`} className={`${selectClass} w-full`} value={draft.source === 'any' ? 'coalesce' : draft.event === 'agent.idle' ? 'delay' : draft.timing}
+                disabled={draft.source === 'any' || draft.event === 'agent.idle'} onChange={(e) => set({ timing: e.target.value as ActionDraft['timing'] })}>
+                <option value="none">Run without waiting</option>
+                <option value="delay">Wait after the latest event</option>
+                <option value="coalesce">Group events from the first event</option>
+              </select>
+            </Field>
+            {(draft.source === 'any' || draft.timing === 'coalesce') && draft.event !== 'agent.idle' && (
+              <Field label={draft.source === 'any' ? draft.event === 'agent.quick_finished' ? 'Group finishes for (seconds)' : 'Group turns for (seconds)' : 'Group events for (seconds)'} htmlFor={`${uid}-coalesce`}
+                help={draft.source === 'any'
+                  ? 'Includes durable and quick agents that become readable later. A fixed window from the first event. Later events join without extending it. Excludes the subscriber and Dispatcher-owned agents. Watching activity is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents need agent.watch. Each agent must also be readable. Ask first does not allow unattended runs. Nothing replays after relaunch.'
+                  : 'A fixed window from the first event. Later events join without extending it. The run lists every readable event, with a shortened text summary. Nothing replays after relaunch.'}>
                 <input id={`${uid}-coalesce`} type="number" min={MIN_COALESCE_SECONDS} max={MAX_COALESCE_SECONDS} step={1}
                   placeholder={String(DEFAULT_COALESCE_SECONDS)} className={`${settingsInput} w-32`} value={draft.coalesceSeconds}
                   onChange={(e) => set({ coalesceSeconds: e.target.value })} />
               </Field>
-            ) : <Field
-              label={draft.event === 'agent.idle' ? 'Idle for (minutes)' : 'Wait first (minutes, optional)'}
+            )}
+            {draft.source !== 'any' && (draft.timing === 'delay' || draft.event === 'agent.idle') && <Field
+              label={draft.event === 'agent.idle' ? 'Idle for' : 'Wait first'}
               htmlFor={`${uid}-delay`}
               help={draft.event === 'agent.idle'
                 ? 'Counts from the end of its last turn. A new turn resets it, and it runs once per idle stretch.'
-                : 'When the wait ends, Clubhouse checks that what happened still holds, for example that the agent is still asleep. If not, this run is cancelled, and the wait starts again the next time it happens.'}
+                : 'Each matching event restarts the wait. When it ends, the condition is checked again. If it no longer holds, the run is cancelled. Waits survive relaunch.'}
             >
-              <input id={`${uid}-delay`} type="number" min={0} className={`${settingsInput} w-32`} value={draft.delay} onChange={(e) => set({ delay: e.target.value })} />
+              <div className="flex gap-2">
+                <input id={`${uid}-delay`} type="number" min={1} max={draft.delayUnit === 'seconds' ? MAX_DELAY_MINUTES * 60 : MAX_DELAY_MINUTES} step={1}
+                  className={`${settingsInput} w-32`} value={draft.delay} onChange={(e) => set({ delay: e.target.value })} />
+                <select aria-label="Wait unit" className={selectClass} value={draft.delayUnit}
+                  onChange={(e) => set({ delayUnit: e.target.value as ActionDraft['delayUnit'] })}>
+                  <option value="minutes">Minutes</option>
+                  <option value="seconds">Seconds</option>
+                </select>
+              </div>
             </Field>}
+            <Field label="Throttle maximum runs (optional)" htmlFor={`${uid}-throttle-runs`}
+              help="A sliding window over started runs, including Run now and failures. Throttled skips are recorded in history and do not consume the daily or lifetime run limit.">
+              <input id={`${uid}-throttle-runs`} type="number" min={1} step={1} className={`${settingsInput} w-32`}
+                value={draft.throttleMaxRuns} onChange={(e) => set({ throttleMaxRuns: e.target.value })} />
+            </Field>
+            <Field label="Throttle window (minutes)" htmlFor={`${uid}-throttle-window`}>
+              <input id={`${uid}-throttle-window`} type="number" min={1} max={MAX_DELAY_MINUTES} step={1} className={`${settingsInput} w-32`}
+                value={draft.throttlePerMinutes} onChange={(e) => set({ throttlePerMinutes: e.target.value })} />
+            </Field>
             <Field label="After local time (optional)" htmlFor={`${uid}-after-time`}
               help="Only events at or after this time on this computer can run. Queued and delayed runs check again when they start. This also applies to Run now.">
               <input id={`${uid}-after-time`} type="time" className={`${settingsInput} w-40`} value={draft.afterLocalTime} onChange={(e) => set({ afterLocalTime: e.target.value })} />

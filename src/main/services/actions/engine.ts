@@ -38,6 +38,7 @@ import {
   type ActionNames,
   type ActionOwner,
   type ActionRun,
+  type ActionRunEvent,
   type ActionRunTrigger,
   type ActionStep,
   type ActionStepKind,
@@ -47,6 +48,7 @@ import {
   type MissedRunRule,
 } from '../../../shared/actions';
 import type { AppEvent } from '../app-event-bus';
+import type { ActionQueueSettlement } from '../../../shared/chat';
 
 // ── Ports ───────────────────────────────────────────────────────────────────
 
@@ -77,6 +79,8 @@ export interface EngineState {
   lastUse?: number;
   /** Local-date high-water mark per action, consumed only by started event-action runs. */
   lastFiredDate?: Record<string, string>;
+  /** Started runs retained independently of the short run history, for per-action throttles. */
+  throttleStarts?: Record<string, number[]>;
 }
 
 export interface EngineStorage {
@@ -120,6 +124,7 @@ export interface StepContext {
   chain: string[];
   /** What set the run off. An event's detail ("web is pushed (main)") goes into messages. */
   trigger?: ActionRunTrigger;
+  deliveryChanged?: (delivery: ActionQueueSettlement) => void;
 }
 
 export interface StepRunner {
@@ -156,6 +161,7 @@ export type RunReasonCode =
   | 'chain_limit'
   | 'overlap'
   | 'hourly_limit'
+  | 'throttled'
   | 'lifetime_limit'
   | 'event_filter'
   | 'missed'
@@ -165,7 +171,10 @@ export type RunReasonCode =
   | 'deleted'
   | 'rights_refused'
   | 'step_failed'
-  | 'step_threw';
+  | 'step_threw'
+  | 'delivery_expired'
+  | 'delivery_replaced'
+  | 'delivery_dropped';
 
 /** Every observation names the action and its owner. */
 interface ObservedAction {
@@ -272,11 +281,11 @@ interface QueuedRun {
   runId: string;
 }
 
-interface TurnBatch {
+interface EventBatch {
   startedAt: number;
   dueAt: number;
   /** Keep each member's causes so revoking its read access also removes its causes. */
-  agents: Map<string, Set<string>>;
+  members: Map<string, { event: ActionRunEvent; causes: Set<string> }>;
 }
 
 export class ActionsEngine {
@@ -290,8 +299,8 @@ export class ActionsEngine {
   private recentStarts = new Map<string, number[]>();
   /** When each agent last started a turn, for the idle re-check. */
   private lastTurnStart = new Map<string, number>();
-  /** Live-only turn windows. Ordinary events are never replayed after relaunch. */
-  private turnBatches = new Map<string, TurnBatch>();
+  /** Live-only fixed windows. Ordinary events are never replayed after relaunch. */
+  private turnBatches = new Map<string, EventBatch>();
   private idCounter = 0;
 
   constructor(private readonly deps: EngineDeps) {}
@@ -330,10 +339,14 @@ export class ActionsEngine {
     this.state = {
       ...loaded.state, nextAt: { ...loaded.state.nextAt }, waits: [...loaded.state.waits],
       ...(loaded.state.lastFiredDate && { lastFiredDate: { ...loaded.state.lastFiredDate } }),
+      ...(loaded.state.throttleStarts && { throttleStarts: Object.fromEntries(Object.entries(loaded.state.throttleStarts).map(([id, times]) => [id, [...times]])) }),
     };
     const dates = this.state.lastFiredDate;
     for (const id of Object.keys(dates ?? {})) {
       if (dates && !this.actions.has(id)) delete dates[id];
+    }
+    for (const id of Object.keys(this.state.throttleStarts ?? {})) {
+      if (!this.actions.has(id)) delete this.state.throttleStarts![id];
     }
     // Waits for actions that are gone or off are dropped.
     this.state.waits = this.state.waits.filter((w) => this.actions.get(w.actionId)?.enabled);
@@ -383,6 +396,16 @@ export class ActionsEngine {
       if (run.trigger.sourceAgentId && this.deps.rights.checkSource(reader, {
         kind: 'event', event: 'agent.quick_finished', source: { kind: 'agent', agentId: run.trigger.sourceAgentId },
       })) return [];
+      if (run.trigger.events !== undefined) {
+        const events = run.trigger.events.filter((event) => this.readableEvent(reader, event));
+        if (!events.length) return [];
+        if (events.length === run.trigger.events.length) return [run];
+        const { reason: _reason, ...rest } = run;
+        const steps = run.steps.filter((step) => !step.agentId || this.readableEvent(reader, {
+          at: run.startedAt, event: 'agent.turn_ended', source: { kind: 'agent', agentId: step.agentId }, detail: '',
+        }));
+        return [{ ...rest, steps, chain: [], trigger: { ...run.trigger, at: run.startedAt, events, detail: this.eventDetail(events) } }];
+      }
       if (run.trigger.agentIds === undefined) return [run];
       if (!this.canWatchAgentActivity(reader)) return [];
       const canRead = (agentId: string) => this.deps.facts.agentExists(agentId)
@@ -598,6 +621,7 @@ export class ActionsEngine {
     const action = this.require(id);
     this.actions.delete(id);
     if (this.state.lastFiredDate) delete this.state.lastFiredDate[id];
+    if (this.state.throttleStarts) delete this.state.throttleStarts[id];
     this.dropWaits(id);
     delete this.state.nextAt[id];
     // A run going now finishes; nothing queued behind it starts. The action is
@@ -663,7 +687,7 @@ export class ActionsEngine {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
-  private eventFilterReason(action: Action): string | null {
+  private eventFilterReason(action: Action, includeDailyLimit = true): string | null {
     const t = action.trigger;
     if (t.kind !== 'event') return null;
     if (t.afterLocalTime) {
@@ -672,7 +696,7 @@ export class ActionsEngine {
       if (now.getHours() * 60 + now.getMinutes() < hour * 60 + minute) return `Before ${t.afterLocalTime} local time`;
     }
     const lastDate = this.state.lastFiredDate?.[action.id];
-    if (t.oncePerDay && lastDate && this.localDate() <= lastDate) return 'This calendar day or a later one already had a started run';
+    if (includeDailyLimit && t.oncePerDay && lastDate && this.localDate() <= lastDate) return 'This calendar day or a later one already had a started run';
     return null;
   }
 
@@ -689,6 +713,7 @@ export class ActionsEngine {
     this.deps.storage.saveState({
       ...this.state, nextAt: { ...this.state.nextAt }, waits: [...this.state.waits],
       ...(this.state.lastFiredDate && { lastFiredDate: { ...this.state.lastFiredDate } }),
+      ...(this.state.throttleStarts && { throttleStarts: Object.fromEntries(Object.entries(this.state.throttleStarts).map(([id, times]) => [id, [...times]])) }),
     });
   }
 
@@ -890,15 +915,16 @@ export class ActionsEngine {
   private onMatch(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
     if (occ.agentId && this.deps.facts.isQuickAgent?.(occ.agentId) && !this.canReadAgent(action.owner, occ.agentId)) return;
     if (this.enforceLifetime(action)) return;
-    if (this.eventFilterReason(action)) return;
-    if (trigger.source.kind === 'any') {
+    if (this.eventFilterReason(action, !trigger.throttle)) return;
+    if (trigger.source.kind === 'any' || trigger.coalesceSeconds !== undefined) {
       this.collectTurn(action, trigger, occ, chain);
       return;
     }
     const branchText = occ.branch === '*' ? 'many branches' : occ.branch;
     const detail = `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`;
-    this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: !!trigger.delayMinutes });
-    if (!trigger.delayMinutes) {
+    const delayMs = trigger.delaySeconds !== undefined ? trigger.delaySeconds * 1000 : (trigger.delayMinutes ?? 0) * 60_000;
+    this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: delayMs > 0 });
+    if (!delayMs) {
       this.fire(action, { kind: 'event', at: this.now(), detail,
         ...(occ.agentId && this.deps.facts.isQuickAgent?.(occ.agentId) && { sourceAgentId: occ.agentId }),
       }, chain);
@@ -911,7 +937,7 @@ export class ActionsEngine {
       ...(occ.agentId && { agentId: occ.agentId }),
       ...(occ.agentId && this.deps.facts.isQuickAgent?.(occ.agentId) && { sourceAgentId: occ.agentId }),
       startedAt: now,
-      dueAt: now + trigger.delayMinutes * 60_000,
+      dueAt: now + delayMs,
       chain,
       detail,
     };
@@ -942,9 +968,24 @@ export class ActionsEngine {
     return `${what}: ${names.join(', ')}${more}`;
   }
 
+  private eventDetail(events: ActionRunEvent[]): string {
+    const details = events.slice(0, 20).map((event) => event.detail.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').trim().slice(0, 80));
+    return `Events: ${details.join('; ')}${events.length > details.length ? ` and ${events.length - details.length} more events` : ''}`;
+  }
+
+  private readableEvent(owner: ActionOwner, event: ActionRunEvent): boolean {
+    if (event.source.kind === 'agent' && event.event !== 'agent.deleted' && !this.deps.facts.agentExists(event.source.agentId)) return false;
+    return this.deps.rights.checkSource(owner, { kind: 'event', event: event.event, source: event.source }) === null;
+  }
+
   /** Rebuild details from current rights, including after a queued handoff or an async step. */
   private readableTurnTrigger(action: Action, trigger: ActionRunTrigger): ActionRunTrigger | null {
     if (trigger.sourceAgentId && !this.canReadAgent(action.owner, trigger.sourceAgentId)) return null;
+    if (trigger.events !== undefined) {
+      if (this.deps.rights.checkSource(action.owner, action.trigger)) return null;
+      const events = trigger.events.filter((event) => this.readableEvent(action.owner, event));
+      return events.length ? { ...trigger, events, detail: this.eventDetail(events) } : null;
+    }
     if (trigger.kind !== 'event' || action.trigger.kind !== 'event' || action.trigger.source.kind !== 'any') return trigger;
     if (this.deps.rights.checkSource(action.owner, action.trigger)) return null;
     const agentIds = (trigger.agentIds ?? []).filter((id) => this.readableTurnAgent(action, id));
@@ -956,38 +997,54 @@ export class ActionsEngine {
     if (pending && pending.dueAt <= this.now()) {
       this.finishTurnBatch(action.id, pending);
       action = this.actions.get(action.id) ?? action;
-      if (!action.enabled || this.enforceLifetime(action) || this.eventFilterReason(action)) return;
+      if (!action.enabled || this.enforceLifetime(action) || this.eventFilterReason(action, !trigger.throttle)) return;
     }
     const refused = this.deps.rights.checkSource(action.owner, trigger);
     // Without the activity grant, even a per-turn skipped history entry would reveal activity.
     if (refused) return;
-    if (!occ.agentId || !this.readableTurnAgent(action, occ.agentId)) return;
+    const anyAgent = trigger.source.kind === 'any';
+    const branchText = occ.branch === '*' ? 'many branches' : occ.branch;
+    const event: ActionRunEvent = {
+      at: this.now(), event: occ.kind,
+      source: occ.agentId ? { kind: 'agent', agentId: occ.agentId }
+        : occ.projectId ? { kind: 'project', projectId: occ.projectId } : { kind: 'app' },
+      detail: `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`,
+    };
+    if (anyAgent ? !occ.agentId || !this.readableTurnAgent(action, occ.agentId) : !this.readableEvent(action.owner, event)) return;
     if (chain.includes(action.id) || chain.length >= MAX_CHAIN_DEPTH) {
-      this.fire(action, { kind: 'event', at: this.now(), agentIds: [occ.agentId] }, chain);
+      this.fire(action, { kind: 'event', at: this.now(), ...(anyAgent ? { agentIds: [occ.agentId!] } : { events: [event] }) }, chain);
       return;
     }
     let batch = this.turnBatches.get(action.id);
     if (!batch) {
-      batch = { startedAt: this.now(), dueAt: this.now() + (trigger.coalesceSeconds ?? DEFAULT_COALESCE_SECONDS) * 1000, agents: new Map() };
+      batch = { startedAt: this.now(), dueAt: this.now() + (trigger.coalesceSeconds ?? DEFAULT_COALESCE_SECONDS) * 1000, members: new Map() };
       this.turnBatches.set(action.id, batch);
     }
-    const causes = batch.agents.get(occ.agentId) ?? new Set<string>();
+    const key = anyAgent ? occ.agentId! : String(batch.members.size);
+    const causes = batch.members.get(key)?.causes ?? new Set<string>();
     for (const id of chain) {
       if (causes.size >= MAX_CHAIN_DEPTH) break;
       causes.add(id);
     }
-    batch.agents.set(occ.agentId, causes);
+    batch.members.set(key, { event, causes });
     this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: true });
     this.armTimer();
   }
 
-  private finishTurnBatch(id: string, batch: TurnBatch): void {
+  private finishTurnBatch(id: string, batch: EventBatch): void {
     this.turnBatches.delete(id);
     const action = this.actions.get(id);
-    if (!action?.enabled || action.trigger.kind !== 'event' || action.trigger.source.kind !== 'any') return;
-    const agentIds = [...batch.agents.keys()].filter((agentId) => this.readableTurnAgent(action, agentId));
-    const chain = [...new Set(agentIds.flatMap((agentId) => [...batch.agents.get(agentId)!]))];
-    this.fire(action, { kind: 'event', at: batch.startedAt, agentIds }, chain);
+    if (!action?.enabled || action.trigger.kind !== 'event') return;
+    const anyAgent = action.trigger.source.kind === 'any';
+    const members = [...batch.members.values()].filter(({ event }) => anyAgent
+      ? event.source.kind === 'agent' && this.readableTurnAgent(action, event.source.agentId)
+      : this.readableEvent(action.owner, event));
+    const chain = [...new Set(members.flatMap((member) => [...member.causes]))];
+    this.fire(action, {
+      kind: 'event', at: batch.startedAt,
+      ...(anyAgent ? { agentIds: members.flatMap(({ event }) => event.source.kind === 'agent' ? [event.source.agentId] : []) }
+        : { events: members.map((member) => member.event) }),
+    }, chain);
   }
 
   /** Whether a delayed trigger's condition still holds when its wait ends. */
@@ -1073,8 +1130,8 @@ export class ActionsEngine {
 
   // ── Runs ──
 
-  private recordOnly(action: Action, trigger: ActionRunTrigger, chain: string[], outcome: 'skipped' | 'cancelled', reasonCode: RunReasonCode, reason: string): string {
-    trigger = this.readableTurnTrigger(action, trigger) ?? { kind: trigger.kind, at: trigger.at, agentIds: [] };
+  private recordOnly(action: Action, trigger: ActionRunTrigger, chain: string[], outcome: 'skipped' | 'cancelled' | 'throttled', reasonCode: RunReasonCode, reason: string): string {
+    trigger = this.readableTurnTrigger(action, trigger) ?? this.redactedTrigger(trigger);
     const now = this.now();
     const run: ActionRun = { id: this.newId('run'), actionId: action.id, owner: action.owner, trigger, chain, startedAt: now, endedAt: now, outcome, reason, steps: [] };
     if (action.owner.kind !== 'app') this.deps.history.put(run);
@@ -1090,15 +1147,23 @@ export class ActionsEngine {
     return starts.length < MAX_RUNS_PER_HOUR;
   }
 
+  private redactedTrigger(trigger: ActionRunTrigger): ActionRunTrigger {
+    return { kind: trigger.kind, at: trigger.at, ...(trigger.events !== undefined ? { events: [] } : { agentIds: [] }) };
+  }
+
+  private throttleReason(action: Action): string | null {
+    if (action.trigger.kind !== 'event' || !action.trigger.throttle) return null;
+    const { maxRuns, perMinutes } = action.trigger.throttle;
+    const starts = this.state.throttleStarts ??= {};
+    starts[action.id] = (starts[action.id] ?? []).filter((at) => this.now() - at < perMinutes * 60_000);
+    return starts[action.id].length >= maxRuns ? `Throttled: started ${maxRuns} runs in the last ${perMinutes} minutes` : null;
+  }
+
   /** Start a run, or skip or queue it. Returns the run id. */
   private fire(action: Action, trigger: ActionRunTrigger, chain: string[], opts: { forceQueue?: boolean } = {}): string {
     action = this.actions.get(action.id) ?? action;
-    const ended = this.enforceLifetime(action);
-    if (ended) return this.recordOnly(action, trigger, chain, 'skipped', 'lifetime_limit', ended);
-    const filtered = this.eventFilterReason(action);
-    if (filtered) return this.recordOnly(action, trigger, chain, 'skipped', 'event_filter', filtered);
     const readable = this.readableTurnTrigger(action, trigger);
-    if (!readable) return this.recordOnly(action, { kind: trigger.kind, at: trigger.at, agentIds: [] }, [], 'skipped', 'rights_refused', 'The activity permission or read access is no longer available');
+    if (!readable) return this.recordOnly(action, this.redactedTrigger(trigger), [], 'skipped', 'rights_refused', 'The activity permission or read access is no longer available');
     trigger = readable;
     if (chain.includes(action.id)) {
       this.observe(action, { type: 'limit', what: 'self', chainDepth: chain.length });
@@ -1108,6 +1173,12 @@ export class ActionsEngine {
       this.observe(action, { type: 'limit', what: 'chain', chainDepth: chain.length });
       return this.recordOnly(action, trigger, chain, 'skipped', 'chain_limit', `Stopped a chain of ${MAX_CHAIN_DEPTH} actions setting each other off`);
     }
+    const throttled = this.throttleReason(action);
+    if (throttled) return this.recordOnly(action, trigger, chain, 'throttled', 'throttled', throttled);
+    const ended = this.enforceLifetime(action);
+    if (ended) return this.recordOnly(action, trigger, chain, 'skipped', 'lifetime_limit', ended);
+    const filtered = this.eventFilterReason(action);
+    if (filtered) return this.recordOnly(action, trigger, chain, 'skipped', 'event_filter', filtered);
     const runId = this.newId('run');
     const queue = this.running.get(action.id);
     if (queue) {
@@ -1148,13 +1219,18 @@ export class ActionsEngine {
     const readable = this.readableTurnTrigger(action, trigger);
     if (!readable) {
       const reason = 'The activity permission or read access is no longer available';
-      this.recordOnly(action, { kind: trigger.kind, at: trigger.at, agentIds: [] }, [], 'cancelled', 'rights_refused', reason);
+      this.recordOnly(action, this.redactedTrigger(trigger), [], 'cancelled', 'rights_refused', reason);
       return this.nextQueued(actionId);
     }
     trigger = readable;
     if (action.trigger.kind !== 'once' && this.actions.has(actionId)) {
       // A queued handoff crosses an await: edits and expiry can happen before it starts.
       action = this.require(actionId);
+      const throttled = this.throttleReason(action);
+      if (throttled) {
+        this.recordOnly(action, trigger, chain, 'throttled', 'throttled', throttled);
+        return this.nextQueued(actionId);
+      }
       const ended = this.enforceLifetime(action);
       if (ended) {
         this.recordOnly(action, trigger, chain, 'cancelled', 'lifetime_limit', ended);
@@ -1170,6 +1246,7 @@ export class ActionsEngine {
         const date = this.localDate();
         const dates = this.state.lastFiredDate ??= {};
         if (!dates[actionId] || date > dates[actionId]) dates[actionId] = date;
+        if (action.trigger.throttle) (this.state.throttleStarts![actionId] ??= []).push(this.now());
       }
       action = { ...action, runsUsed: (action.runsUsed ?? 0) + 1 };
       this.actions.set(actionId, action);
@@ -1185,6 +1262,7 @@ export class ActionsEngine {
 
     let failure: string | undefined;
     let failureCode: RunReasonCode | undefined;
+    let deliveryLoss: { outcome: 'expired' | 'cancelled'; reason: string; code: RunReasonCode } | undefined;
     // What it watches is checked again on every run too: a mechanical failure, like a step.
     const sourceRefused = this.deps.rights.checkSource(action.owner, action.trigger);
     if (sourceRefused) {
@@ -1194,7 +1272,7 @@ export class ActionsEngine {
     for (const step of sourceRefused ? [] : action.steps) {
       const currentTrigger = this.readableTurnTrigger(action, trigger);
       if (!currentTrigger) {
-        run.trigger = { kind: trigger.kind, at: trigger.at, agentIds: [] };
+        run.trigger = this.redactedTrigger(trigger);
         failure = 'The activity permission or read access is no longer available';
         failureCode = 'rights_refused';
         break;
@@ -1211,14 +1289,46 @@ export class ActionsEngine {
       }
       let result: ActionStepResult;
       let threw = false;
+      const stepIndex = run.steps.length;
+      let settlement: ActionQueueSettlement | undefined;
+      const deliveryChanged = (delivery: ActionQueueSettlement) => {
+        settlement = delivery;
+        const receipt = run.steps[stepIndex];
+        if (!receipt) return;
+        receipt.delivery = delivery;
+        receipt.detail = delivery === 'delivered' ? 'Delivered the queued message'
+          : delivery === 'expired' ? 'Queued message expired before delivery'
+            : delivery === 'replaced' ? 'Queued message replaced by a newer message from this action'
+              : 'Queued message dropped before delivery';
+        run.deliveryUpdatedAt = this.now();
+        if (delivery !== 'delivered') {
+          deliveryLoss = deliveryLoss?.outcome === 'expired' ? deliveryLoss : {
+            outcome: delivery === 'expired' ? 'expired' : 'cancelled',
+            reason: receipt.detail,
+            code: delivery === 'expired' ? 'delivery_expired' : delivery === 'replaced' ? 'delivery_replaced' : 'delivery_dropped',
+          };
+          if (run.outcome !== 'running' && run.outcome !== 'failed') {
+            run.outcome = deliveryLoss.outcome;
+            run.reason = deliveryLoss.reason;
+            this.observe(action, {
+              type: 'run', outcome: run.outcome, trigger: trigger.kind, steps: run.steps.length,
+              stepResults: run.steps.map((s) => ({ kind: s.kind, outcome: s.outcome })),
+              chainDepth: chain.length, durationMs: this.now() - run.startedAt, reasonCode: deliveryLoss.code,
+            });
+          }
+        }
+        if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });
+        this.deps.hooks?.changed?.();
+      };
       try {
-        result = await this.deps.steps.run(step, { action, runId, chain: [...chain, actionId], trigger });
+        result = await this.deps.steps.run(step, { action, runId, chain: [...chain, actionId], trigger, deliveryChanged });
       } catch (err) {
         // telemetry-exempt: recorded on the run and reported as a mechanical failure below
         threw = true;
         result = { kind: step.kind, outcome: 'failed', detail: err instanceof Error ? err.message : String(err) };
       }
       run.steps.push(result);
+      if (settlement) deliveryChanged(settlement);
       if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });
       if (result.outcome === 'failed') {
         failure = result.detail;
@@ -1228,8 +1338,9 @@ export class ActionsEngine {
     }
 
     run.endedAt = this.now();
-    run.outcome = failure ? 'failed' : 'done';
+    run.outcome = failure ? 'failed' : deliveryLoss?.outcome ?? 'done';
     if (failure) run.reason = failure;
+    else if (deliveryLoss) run.reason = deliveryLoss.reason;
     if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });
     this.observe(action, {
       type: 'run',
@@ -1240,7 +1351,7 @@ export class ActionsEngine {
       chainDepth: chain.length,
       durationMs: run.endedAt - run.startedAt,
       ...(failure && { reason: failure }),
-      ...(failureCode && { reasonCode: failureCode }),
+      ...((failureCode ?? deliveryLoss?.code) && { reasonCode: failureCode ?? deliveryLoss?.code }),
     });
 
     const current = this.actions.get(actionId);
@@ -1269,6 +1380,11 @@ export class ActionsEngine {
     const nextRun = queue?.shift();
     const latest = this.actions.get(actionId);
     if (!nextRun || !latest) return null;
+    const throttled = this.throttleReason(latest);
+    if (throttled) {
+      this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'throttled', 'throttled', throttled);
+      return this.nextQueued(actionId);
+    }
     const ended = this.enforceLifetime(latest);
     if (ended) {
       this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'cancelled', 'lifetime_limit', ended);

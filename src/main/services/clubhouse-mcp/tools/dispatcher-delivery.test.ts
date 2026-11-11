@@ -106,6 +106,16 @@ describe('messages to the Dispatcher (#3037)', () => {
     expect(mocks.decideGrant).not.toHaveBeenCalled();
   });
 
+  it('passes Action queue and steer policies through the shared Dispatcher delivery path', async () => {
+    running = true;
+    const actionQueue = { actionId: 'a', latestOnly: true, maxWaitMs: 60000, onSettled: vi.fn() };
+    const req = request({ fromAction: true, messageOptions: { actionQueue } });
+    await deliverToDispatcher(req);
+    expect(mocks.sendMessage).toHaveBeenLastCalledWith(req.text, expect.objectContaining({ source: 'action', delivery: 'queued', actionQueue }));
+    await deliverToDispatcher({ ...req, messageOptions: { delivery: 'auto', actionQueue } });
+    expect(mocks.sendMessage).toHaveBeenLastCalledWith(req.text, expect.objectContaining({ source: 'action', delivery: 'auto', actionQueue }));
+  });
+
   it('notes the agent that sent it, so the group chat can name it (#3043)', async () => {
     running = true;
     await deliverToDispatcher(request());

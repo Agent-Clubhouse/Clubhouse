@@ -93,7 +93,8 @@ describe('Settings > Actions', () => {
     const group = within(form).getByLabelText('Group turns for (seconds)') as HTMLInputElement;
     expect([group.min, group.max, group.value]).toEqual(['10', '600', '15']);
     expect(within(form).getByText(/allowed by default for the Dispatcher and can be turned off/)).toBeTruthy();
-    expect(within(form).queryByLabelText('Wait first (minutes, optional)')).toBeNull();
+    expect(within(form).queryByLabelText('Wait first')).toBeNull();
+    expect(within(form).getByLabelText('Timing')).toBeDisabled();
     fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.turn_failed' } });
     expect(within(form).getByRole('option', { name: 'Any readable agent' })).toBeTruthy();
     fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.quick_finished' } });
@@ -103,7 +104,37 @@ describe('Settings > Actions', () => {
     fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.slept' } });
     expect(within(form).queryByRole('option', { name: 'Any readable agent' })).toBeNull();
     expect(within(form).queryByLabelText('Group turns for (seconds)')).toBeNull();
-    expect(within(form).getByLabelText('Wait first (minutes, optional)')).toBeTruthy();
+    expect(within(form).getByLabelText('Group events for (seconds)')).toBeTruthy();
+    expect(within(form).getByLabelText('Timing')).not.toBeDisabled();
+  });
+
+  it('saves one timing mode with seconds, a throttle and per-message delivery settings', async () => {
+    const saved = action({
+      trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } },
+      steps: [{ kind: 'message', agentId: 'pm', text: 'Check' }],
+    });
+    window.clubhouse.actions.update = vi.fn(async () => saved);
+    render(<ActionForm open action={saved} onClose={vi.fn()} />);
+    const form = screen.getByTestId('action-form');
+    expect((within(form).getByLabelText('When the agent is busy') as HTMLSelectElement).value).toBe('queue');
+    expect(within(form).getByLabelText('Keep only the latest queued message')).not.toBeChecked();
+    fireEvent.change(within(form).getByLabelText('Timing'), { target: { value: 'coalesce' } });
+    fireEvent.change(within(form).getByLabelText('Group events for (seconds)'), { target: { value: '15' } });
+    fireEvent.change(within(form).getByLabelText('Timing'), { target: { value: 'delay' } });
+    expect(within(form).queryByLabelText('Group events for (seconds)')).toBeNull();
+    fireEvent.change(within(form).getByLabelText('Wait first'), { target: { value: '30' } });
+    fireEvent.change(within(form).getByLabelText('Wait unit'), { target: { value: 'seconds' } });
+    fireEvent.change(within(form).getByLabelText('Throttle maximum runs (optional)'), { target: { value: '2' } });
+    fireEvent.change(within(form).getByLabelText('Throttle window (minutes)'), { target: { value: '5' } });
+    fireEvent.change(within(form).getByLabelText('When the agent is busy'), { target: { value: 'steer' } });
+    fireEvent.click(within(form).getByLabelText('Keep only the latest queued message'));
+    fireEvent.change(within(form).getByLabelText('Maximum queue wait (minutes, optional)'), { target: { value: '3' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(window.clubhouse.actions.update).toHaveBeenCalledWith(saved.id, {
+      name: 'Morning plan', overlap: 'skip',
+      trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' }, delaySeconds: 30, throttle: { maxRuns: 2, perMinutes: 5 } },
+      steps: [{ kind: 'message', agentId: 'pm', text: 'Check', delivery: 'steer', latestOnly: true, maxWaitMinutes: 3 }],
+    }));
   });
 
   it('offers time and daily filters for all event kinds and shows them on the card', async () => {
