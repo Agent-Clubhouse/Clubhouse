@@ -7,7 +7,7 @@ Actions run whenever Clubhouse is open, even with no window or project open. The
 ## Triggers
 
 - **On a schedule:** every day, weekdays, every week or every hour at a time you pick. **Custom (cron)** takes a five-part schedule line for anything else. The form shows the schedule in plain words and lists the next three runs. Schedules use your local time.
-- **After something happens:** an agent wakes, goes to sleep, is created or deleted, finishes a turn, has a turn fail, goes idle for a while, waits on you, hits an error or compacts its context; one of its helpers finishes; a new commit, a branch switch, or a push, pull or fetch; Clubhouse starts; a project is added or removed. Pick one agent, or any agent in a project.
+- **After something happens:** an agent wakes, goes to sleep, is created or deleted, finishes a turn, has a turn fail, goes idle for a while, waits on you, hits an error or compacts its context; a quick agent finishes; one of its helpers finishes; a new commit, a branch switch, or a push, pull or fetch; Clubhouse starts; a project is added or removed. Pick one agent, or any agent in a project.
 - **Once, at a time:** runs at that time and then deletes itself. If Clubhouse is closed then, it runs when Clubhouse next opens.
 
 ### Waiting first
@@ -29,6 +29,9 @@ A turn reports one ending, the first the provider sends; a failure reported afte
 Claude failure events include only a recognized error category, not free-form provider details that could contain conversation content or credentials.
 
 Clubhouse preserves existing hook settings. Invalid or commented JSON and customized Clubhouse callback groups require manual review before the agent can start; they are not overwritten.
+Headless quick agents report one turn end per run, including empty output, process failures, stops and replacements. A provider failure is a failed turn even if the process exits successfully. Error events contain only a category, not prompts, output or error content.
+
+**A quick agent finishes** (`agent.quick_finished`) fires once when its run ends, with a completed, failed or cancelled outcome. The app event includes its name, starter (you, an agent or an Action), parent when present, project and duration. It does not include prompts or output. Watching a quick agent uses `agent.read` on that quick agent, including for project sources. Its parent counts as the `my_helper` relation, as with durable helpers. Actions you create use your own access. Minimal quick-run identity and permission scope stay available locally for up to one week so delayed delivery can recheck access, and are not saved in actions.json. Delayed waits keep the source agent's id so the read check still applies after relaunch.
 
 ### Event time filters
 
@@ -40,13 +43,13 @@ Once per calendar day; moving the clock back doesn't give an extra run. This inc
 
 ### Any readable agent
 
-For **Finishes a turn** and **Has a turn fail**, you can watch **Any readable agent** across projects. This means durable agents, including their durable helpers, matching other agent event sources. Quick agents are not included. It excludes the subscriber, both Dispatcher identities and Dispatcher-owned helpers. Each agent must be readable by the action's owner, using its existing `agent.read` permission.
+For **Finishes a turn**, **Has a turn fail** and **A quick agent finishes**, you can watch **Any readable agent** across projects. This includes durable agents, their durable helpers and quick agents. It excludes the subscriber, both Dispatcher identities and Dispatcher-owned helpers. Each agent must be readable by the action's owner, using its existing `agent.read` permission.
 
-An agent also needs `agent.watch` on the app to watch activity across agents. It is allowed by default for the Dispatcher and can be turned off on its Clubhouse permissions page. Other agents have no default grant. Set it to Allow on the owner's Clubhouse permissions page, or ask for that permission first. Ask first and Off do not allow unattended activity watching. Both this grant and each agent's read access are checked again before delivery, including queued runs. Membership is dynamic: durable agents that become readable later join without editing the action.
+An agent also needs `agent.watch` on the app to watch activity across agents. It is allowed by default for the Dispatcher and can be turned off on its Clubhouse permissions page. Other agents have no default grant. Set it to Allow on the owner's Clubhouse permissions page, or ask for that permission first. Ask first and Off do not allow unattended activity watching. Both this grant and each agent's read access are checked again before delivery, including queued runs. Membership is dynamic: agents that become readable later join without editing the action.
 
-Actions created by you in Settings use your access, not an agent's grants. They watch all eligible durable agents, with the same exclusions. Agents without an Allow grant for activity watching cannot see any-agent actions over MCP. Agents with that grant can see action status and remaining runs. Their last-run details and history use their current read permissions, even for actions you created and retained history from edited or deleted actions. Partially redacted runs omit merged causes and unreadable step-target results and reasons, and use the run's start time rather than the first member's turn time.
+Actions created by you in Settings use your access, not an agent's grants. They watch all eligible agents, with the same exclusions. Agents without an Allow grant for activity watching cannot see any-agent actions over MCP. Agents with that grant can see action status and remaining runs. Their last-run details and history use their current read permissions, even for actions you created and retained history from edited or deleted actions. Partially redacted runs omit merged causes and unreadable step-target results and reasons, and use the run's start time rather than the first member's turn time.
 
-Turns are grouped for 60 seconds by default, configurable from 10 seconds to 10 minutes. The first qualifying turn starts a fixed window. Later turns join it without extending the end time, and each involved agent appears once. The message names up to 20 agents and says how many more there are; the step context includes every involved readable agent. Agent names are length-limited and stripped of line breaks and control characters. Delivered messages and quick-agent prompts quote the summary as untrusted event data, separate from the action's instructions. This source uses its grouping window instead of Wait first, and cannot combine with `delayMinutes`.
+Turns or quick finishes are grouped for 60 seconds by default, configurable from 10 seconds to 10 minutes. The first qualifying event starts a fixed window. Later events join it without extending the end time, and each involved agent appears once. The message names up to 20 agents and says how many more there are; the step context includes every involved readable agent. Agent names are length-limited and stripped of line breaks and control characters. Delivered messages and quick-agent prompts quote the summary as untrusted event data, separate from the action's instructions. This source uses its grouping window instead of Wait first, and cannot combine with `delayMinutes`.
 
 Buffers are kept only while Clubhouse is running. Turning off, editing or deleting the action discards its pending group. Relaunching does not replay turns. The usual overlap, hourly, chain, time and daily limits still apply to the grouped run.
 
@@ -95,6 +98,8 @@ The lifetime count survives restarts, sleep and edits, independently of the shor
 One-time actions do not have these limits. Over MCP, create_action and update_action accept endsAt (epoch milliseconds or a date and time) and maxRuns (a positive whole number). list_actions returns them with runsUsed. Pass null to remove a limit.
 
 An action set off by another action carries that chain along. A chain stops after three actions, an action can't set itself off, and one action runs at most 60 times an hour.
+
+A quick agent started by an Action carries that Action's chain for its entire run, including completion and startup failure. Its finish cannot trigger the same Action again, even if the run lasts longer than 30 minutes.
 
 ## History
 

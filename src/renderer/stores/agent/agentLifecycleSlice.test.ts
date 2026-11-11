@@ -148,7 +148,9 @@ describe('agentLifecycleSlice – spawnQuickAgent', () => {
       const agentId = await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm', undefined, 'dur-1');
 
       expect(state().agents[agentId].runCwd).toBe(PARENT.worktreePath);
-      expect(window.clubhouse.agent.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ cwd: PARENT.worktreePath }));
+      expect(window.clubhouse.agent.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        cwd: PARENT.worktreePath, parentAgentId: 'dur-1', name: state().agents[agentId].name,
+      }));
     });
 
     it('prefers cwdOverride over the parent worktree', async () => {

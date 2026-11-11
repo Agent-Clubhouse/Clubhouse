@@ -38,6 +38,7 @@ export interface AgentOption {
   projectId: string;
   worktreePath?: string;
   parentAgentId?: string;
+  quick?: boolean;
 }
 
 export interface ProjectOption {
@@ -45,7 +46,7 @@ export interface ProjectOption {
   name: string;
 }
 
-/** Durable agents and projects, for pickers and plain-words lines. */
+/** Agents and projects for trigger pickers and plain-words lines. */
 export function useActionNames(): { names: ActionNames; agents: AgentOption[]; projects: ProjectOption[] } {
   const agentMap = useAgentStore((s) => s.agents);
   const projectList = useProjectStore((s) => s.projects);
@@ -54,11 +55,12 @@ export function useActionNames(): { names: ActionNames; agents: AgentOption[]; p
   return useMemo(() => {
     const projects: ProjectOption[] = projectList.map((p) => ({ id: p.id, name: p.displayName || p.name }));
     const agents: AgentOption[] = Object.values(agentMap)
-      .filter((a) => a.kind === 'durable')
+      .filter((a) => a.kind === 'durable' || a.kind === 'quick')
       .map((a) => ({
         id: a.id, name: a.name, projectId: a.projectId,
         ...(a.worktreePath && { worktreePath: a.worktreePath }),
         ...(a.parentAgentId && { parentAgentId: a.parentAgentId }),
+        ...(a.kind === 'quick' && { quick: true }),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     const projectNames = new Map(projects.map((p) => [p.id, p.name]));

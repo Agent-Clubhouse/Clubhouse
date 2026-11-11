@@ -194,6 +194,8 @@ export const agent = {
   // New orchestrator-based methods
   spawnAgent: (params: {
     agentId: string;
+    name?: string;
+    parentAgentId?: string;
     projectPath: string;
     cwd: string;
     kind: 'durable' | 'quick' | 'companion';

@@ -22,8 +22,9 @@ describe('presets', () => {
 describe('describeTrigger', () => {
   it('describes the any-readable-agent scope and fixed grouping window', () => {
     const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } } as const;
-    expect(describeTrigger(trigger)).toBe('When any readable durable agent finishes a turn, grouped for 60 seconds from the first turn');
+    expect(describeTrigger(trigger)).toBe('When any readable agent finishes a turn, grouped for 60 seconds from the first turn');
     expect(describeTrigger({ ...trigger, coalesceSeconds: 10 })).toContain('grouped for 10 seconds from the first turn');
+    expect(describeTrigger({ ...trigger, event: 'agent.quick_finished' })).toBe('When any readable agent finishes a quick run, grouped for 60 seconds from the first finish');
   });
 
   it('reads schedules in plain words', () => {

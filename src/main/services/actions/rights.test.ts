@@ -15,7 +15,7 @@ const projectPaths: Record<string, string> = { p1: '/p1', p2: '/p2' };
 const agentProject = (id: string) => (id === 'other' ? 'p2' : 'p1');
 const rights = createGrantRights({
   agentName: (id) => ({ lead: 'release-lead', h1: 'helper-1', qa: 'qa', pm: 'pm' } as Record<string, string>)[id],
-  parentOf: (id) => (id === 'h1' ? 'lead' : undefined),
+  parentOf: (id) => (id === 'h1' || id === 'quick-owned' ? 'lead' : undefined),
   isConnected: (from, to) => (from === 'lead' && (to === 'pm' || to === 'other')) || (from === 'disp' && (to === 'lead' || to === 'pm')),
   wakeOn: (from, to) => wakeOn.has(`${from}>${to}`),
   agentProjectId: agentProject,
@@ -156,6 +156,17 @@ describe('an action does what its owner may (#2960, D131): steps', () => {
 });
 
 describe('an action does what its owner may: what it watches', () => {
+  it('uses agent.read on quick identities with the existing parent relation, not the parent connection', () => {
+    const finish = (agentId: string): ActionTrigger => ({ kind: 'event', event: 'agent.quick_finished', source: { kind: 'agent', agentId } });
+    expect(rights.checkSource(user, finish('qa'))).toBeNull();
+    expect(rights.checkSource(lead, finish('quick-owned'))).toBeNull();
+    expect(rights.checkSource(pm, finish('quick-owned'))).toMatch(/agent\.read/);
+    expect(rights.checkSource(lead, finish('qa'))).toMatch(/agent\.read/);
+    saved.set('lead', { changes: [{ action: 'agent.read', target: { kind: 'my_helpers' }, mode: 'ask' }] });
+    expect(rights.checkSource(lead, finish('quick-owned'))).toMatch(/agent\.read.*Ask first/);
+    saved.set('lead', { changes: [{ action: 'agent.read', target: { kind: 'my_helpers' }, mode: 'off' }] });
+    expect(rights.checkSource(lead, finish('quick-owned'))).toMatch(/agent\.read/);
+  });
   it('requires an explicit activity grant independently of each watched agent read permission', () => {
     const any: ActionTrigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } };
     expect(rights.checkSource(user, any)).toBeNull();

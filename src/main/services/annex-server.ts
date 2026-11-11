@@ -4076,7 +4076,7 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     const starting = { cancelled: false };
     mobileStartingAgents.set(id, starting);
     try {
-      await spawnAgent({ agentId: id, projectPath: project.path, cwd: project.path, kind: 'quick',
+      await spawnAgent({ agentId: id, projectPath: project.path, cwd: project.path, kind: 'quick', name,
         // A phone starts an agent to follow and talk to: chat or terminal per the
         // provider setting, never a headless one-shot it couldn't see.
         mission: command.prompt, model: command.model, orchestrator, freeAgentMode: false, interactive: true });

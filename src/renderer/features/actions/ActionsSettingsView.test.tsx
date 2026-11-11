@@ -4,6 +4,7 @@ import type { ActionView } from '../../../shared/actions';
 import { ActionsSettingsView, filterActions } from './ActionsSettingsView';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { ActionForm } from './ActionForm';
+import { useAgentStore } from '../../stores/agentStore';
 
 function action(over: Partial<ActionView>): ActionView {
   return {
@@ -65,14 +66,28 @@ describe('Settings > Actions', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   });
 
-  it('offers any readable agent only for turns, replacing Wait first with the bounded grouping control', async () => {
+  it('offers quick agents as trigger sources without offering them as durable step targets', () => {
+    const previous = useAgentStore.getState().agents;
+    useAgentStore.setState({ agents: { ...previous, quick: { id: 'quick', name: 'Quick review', projectId: 'p1', kind: 'quick', status: 'running', color: 'gray' } } });
+    try {
+      render(<ActionForm open onClose={vi.fn()} initial={{
+        trigger: { kind: 'event', event: 'agent.quick_finished', source: { kind: 'agent', agentId: 'quick' } },
+        steps: [{ kind: 'wake', agentId: '' }],
+      }} />);
+      expect(screen.getByRole('option', { name: 'Quick review' })).toHaveValue('agent:quick');
+      expect(within(screen.getByTestId('action-step-0')).queryByRole('option', { name: 'Quick review' })).toBeNull();
+    } finally {
+      useAgentStore.setState({ agents: previous });
+    }
+  });
+  it('offers any readable agent for turns and quick finishes with bounded grouping', async () => {
     list = [action({
       trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 },
     })];
     render(<ActionsSettingsView />);
     fireEvent.click(await screen.findByText('Morning plan'));
     const card = await screen.findByTestId('action-card');
-    expect(within(card).getByText(/any readable durable agent finishes a turn, grouped for 15 seconds from the first turn/)).toBeTruthy();
+    expect(within(card).getByText(/any readable agent finishes a turn, grouped for 15 seconds from the first turn/)).toBeTruthy();
     fireEvent.click(within(card).getByRole('button', { name: 'Edit' }));
     const form = await screen.findByTestId('action-form');
     const group = within(form).getByLabelText('Group turns for (seconds)') as HTMLInputElement;
@@ -81,6 +96,10 @@ describe('Settings > Actions', () => {
     expect(within(form).queryByLabelText('Wait first (minutes, optional)')).toBeNull();
     fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.turn_failed' } });
     expect(within(form).getByRole('option', { name: 'Any readable agent' })).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.quick_finished' } });
+    expect(within(form).getByRole('option', { name: 'Any readable agent' })).toBeTruthy();
+    expect(within(form).getByLabelText('Group finishes for (seconds)')).toHaveValue(15);
+    expect(within(form).getByText(/Includes durable and quick agents/)).toBeTruthy();
     fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'agent.slept' } });
     expect(within(form).queryByRole('option', { name: 'Any readable agent' })).toBeNull();
     expect(within(form).queryByLabelText('Group turns for (seconds)')).toBeNull();

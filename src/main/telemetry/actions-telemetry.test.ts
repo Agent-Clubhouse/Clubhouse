@@ -70,6 +70,15 @@ afterEach(() => {
 });
 
 describe('actions telemetry', () => {
+  it('accepts the quick-finish event enum without emitting run metadata', () => {
+    setProducingRuntime(runtime());
+    recordActionObservation({ ...user, type: 'trigger', trigger: 'event', event: 'agent.quick_finished' });
+    expect(events).toHaveLength(1);
+    expect(events[0].attrs).toEqual({
+      'clubhouse.action.owner': 'user', 'clubhouse.action.trigger': 'event', 'clubhouse.action.event': 'agent.quick_finished',
+      'clubhouse.action.delayed': false,
+    });
+  });
   it('records nothing while telemetry is off', () => {
     recordActionObservation({ ...user, type: 'trigger', trigger: 'schedule' });
     recordActionObservation(run());

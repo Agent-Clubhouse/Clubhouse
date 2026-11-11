@@ -43,11 +43,23 @@ describe('actions store', () => {
     expect(sanitizeActions([auto])).toEqual([auto]);
   });
 
+  it('loads older any-turn actions unchanged alongside a new quick-finish trigger', () => {
+    const legacy = { id: 'legacy', name: 'Review', trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } }, steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review' }], overlap: 'skip', owner: { kind: 'user' }, enabled: true, createdAt: 1, updatedAt: 2 };
+    const quick = { ...legacy, id: 'quick', trigger: { kind: 'event', event: 'agent.quick_finished', source: { kind: 'project', projectId: 'p1' } } };
+    const raw = JSON.parse(JSON.stringify({ version: 1, actions: [legacy, quick], state: { nextAt: {}, waits: [] } }));
+    expect(migrations.get('actions.json')!(raw)).toEqual(raw);
+  });
   it('loads persisted last use and keeps older engine state unchanged', () => {
     const migrate = migrations.get('actions.json')!;
     const state = { nextAt: {}, waits: [] };
     expect(migrate({ actions: [], state })).toEqual({ version: 1, actions: [], state });
     expect(migrate({ actions: [], state: { ...state, lastUse: 1234 } })).toEqual({ version: 1, actions: [], state: { ...state, lastUse: 1234 } });
+  });
+
+  it('preserves quick-source read checks on delayed waits without changing older waits', () => {
+    const wait = { actionId: 'review', agentId: 'lead', startedAt: 1, dueAt: 60_001, chain: [], detail: 'A turn finished' };
+    const state = { nextAt: {}, waits: [wait, { ...wait, agentId: 'quick', sourceAgentId: 'quick' }] };
+    expect(migrations.get('actions.json')!({ actions: [], state })).toEqual({ version: 1, actions: [], state });
   });
 
   it('keeps valid local-date high-water marks and drops malformed persisted dates', () => {

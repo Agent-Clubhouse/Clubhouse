@@ -202,6 +202,23 @@ describe('action tools', () => {
     expect(engine().list().filter((a) => a.name === 'Morning')).toHaveLength(1);
   });
 
+  it('accepts quick finishes over MCP and advertises readable quick sources within property budgets', async () => {
+    const result = await call('dispatcher', 'create_action', {
+      trigger: { kind: 'event', event: 'agent.quick_finished', source: { kind: 'any' }, coalesceSeconds: 10 },
+      steps: [NOTIFY],
+    });
+    expect(result.isError).toBe(false);
+    expect(result.body.action.trigger).toMatchObject({ event: 'agent.quick_finished', source: { kind: 'any' } });
+    const tools = getScopedToolList('dispatcher');
+    const create = tools.find((tool) => tool.name === 'create_action')!;
+    const trigger = create.inputSchema.properties!.trigger as { description: string; properties: Record<string, { description?: string }> };
+    expect(trigger.description).toContain('readable durable and quick agents');
+    expect(trigger.description).not.toContain('Quick agents are not included');
+    for (const property of Object.values(trigger.properties)) {
+      if (property.description) expect(property.description.length).toBeLessThanOrEqual(200);
+    }
+  });
+
   it('requires an activity grant and round-trips any-agent windows through every MCP surface', async () => {
     const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 };
     h.activityModes.set('dispatcher', 'ask');

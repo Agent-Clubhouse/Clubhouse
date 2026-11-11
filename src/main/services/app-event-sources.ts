@@ -16,6 +16,7 @@ import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { forgetHookTurn, onAppEvent, publishAppEvent, publishFromChatEvent } from './app-event-bus';
 import { appLog } from './log-service';
 import * as projectStore from './project-store';
+import { clearQuickAgentRuns, finishQuickAgentExit, knownQuickAgents, noteQuickAgentTurn } from './quick-agent-events';
 
 export interface KnownAgent {
   projectPath: string;
@@ -29,6 +30,7 @@ export interface KnownAgent {
   /** While it orchestrates: its saved cross-project helpers switch and approval setting, as its permissions read them (#2960). */
   crossProject?: boolean;
   control?: OrchestrationControl;
+  quick?: boolean;
 }
 
 /** Agents that exist (created, not disposed), per project, from the last read. */
@@ -100,14 +102,17 @@ function forgetProject(projectPath: string): void {
   projectAgents.delete(projectPath);
 }
 
-/** A durable agent that exists, from the last read of its project. */
+/** Durable agents, plus quick-run identities retained for delayed event delivery. */
 export function knownAgent(agentId: string): KnownAgent | undefined {
-  return agents.get(agentId);
+  const quick = knownQuickAgents().get(agentId);
+  return agents.get(agentId) ?? (quick ? { ...quick, quick: true } : undefined);
 }
 
-/** Every durable agent that exists, by id. */
+/** All readable event sources, including quick agents and recent finishes. */
 export function knownAgents(): ReadonlyMap<string, KnownAgent> {
-  return agents;
+  const all = new Map(agents);
+  for (const [id, quick] of knownQuickAgents()) all.set(id, { ...quick, quick: true });
+  return all;
 }
 
 /** The parent of a helper, from the last read of its project. */
@@ -132,11 +137,16 @@ export async function startAppEventSources(): Promise<void> {
   const unsubs = [
     onChatEvent(publishFromChatEvent),
     onAgentExit((agentId, exitCode) => {
-      forgetHookTurn(agentId);
+      // Quick runs retain their ended state alongside their identity so a
+      // late CLI hook cannot end the same run again.
+      if (!knownQuickAgents().has(agentId)) forgetHookTurn(agentId);
       publishAppEvent({ type: 'agent.asleep', agentId, exitCode });
+      finishQuickAgentExit(agentId, exitCode);
     }),
     onAgentConfigChanged(queueDiff),
     onAppEvent((event) => {
+      if (event.type === 'turn.ended') noteQuickAgentTurn(event.agentId, event.outcome);
+      if (event.type === 'turn.started') noteQuickAgentTurn(event.agentId);
       // A project added later needs its own baseline, or its first agent goes unreported.
       if (event.type === 'project.added') { queueDiff(event.projectPath); return; }
       if (event.type === 'project.removed') { forgetProject(event.projectPath); return; }
@@ -171,4 +181,5 @@ export function stopAppEventSources(): void {
   stop = null;
   projectAgents.clear();
   agents.clear();
+  clearQuickAgentRuns();
 }

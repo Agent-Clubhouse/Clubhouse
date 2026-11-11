@@ -15,8 +15,9 @@ vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: vi.fn(() => () =
 vi.mock('./project-store', () => ({ list: vi.fn(async () => [{ id: 'p1', path: '/p1' }]) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
-import { onAppEvent, publishAppEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
-import { startAppEventSources, stopAppEventSources } from './app-event-sources';
+import { finishHeadlessTurn, onAppEvent, publishAppEvent, publishFromHookEvent, resetAppEventBus, startHeadlessTurn, type AppEvent } from './app-event-bus';
+import { knownAgent, knownAgents, startAppEventSources, stopAppEventSources } from './app-event-sources';
+import { beginQuickAgentRun } from './quick-agent-events';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -38,6 +39,41 @@ async function start() {
 }
 
 describe('app event sources', () => {
+  it('keeps headless dedup after exit and resets outcome for a replacement run', async () => {
+    await start();
+    const identity = { agentId: 'q1', name: 'Review', projectPath: '/p1' };
+    beginQuickAgentRun(identity);
+    const old = startHeadlessTurn('q1');
+    beginQuickAgentRun(identity);
+    finishHeadlessTurn(old, 'interrupted');
+    const next = startHeadlessTurn('q1');
+    finishHeadlessTurn(next, 'completed');
+    exitListeners[0]('q1', 0);
+    publishFromHookEvent('q1', { kind: 'stop', rawName: 'Stop' });
+    expect(events.filter((event) => event.type === 'turn.ended')).toMatchObject([
+      { outcome: 'interrupted' }, { outcome: 'completed' },
+    ]);
+    expect(events.filter((event) => event.type === 'agent.quick_finished')).toMatchObject([
+      { outcome: 'cancelled' }, { outcome: 'completed' },
+    ]);
+  });
+  it('knows quick agents during their turn and exactly-once finish, without treating them as durable helpers', async () => {
+    await start();
+    beginQuickAgentRun({ agentId: 'q1', name: 'Review', projectPath: '/p1', parentAgentId: 'a1' });
+    expect(knownAgent('q1')).toMatchObject({ name: 'Review', projectPath: '/p1', parentAgentId: 'a1', quick: true });
+    expect(knownAgents().has('q1')).toBe(true);
+    const knownAtFinish: boolean[] = [];
+    onAppEvent((event) => { if (event.type === 'agent.quick_finished') knownAtFinish.push(!!knownAgent(event.agentId)); });
+    publishAppEvent({ type: 'turn.ended', agentId: 'q1', via: 'headless', outcome: 'failed' });
+    exitListeners[0]('q1', 0);
+    exitListeners[0]('q1', 0);
+    expect(events.filter((event) => event.type === 'agent.quick_finished')).toMatchObject([
+      { agentId: 'q1', name: 'Review', outcome: 'failed', parentAgentId: 'a1', owner: { kind: 'user' }, durationMs: expect.any(Number) },
+    ]);
+    expect(knownAtFinish).toEqual([true]);
+    expect(events.filter((event) => event.type === 'helper.finished')).toHaveLength(0);
+    expect(knownAgent('q1')).toBeDefined();
+  });
   it('publishes nothing for the baseline, then created and deleted on changes', async () => {
     await start();
     expect(events).toEqual([]);

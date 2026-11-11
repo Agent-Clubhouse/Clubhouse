@@ -61,6 +61,8 @@ export interface PersistedWait {
   actionId: string;
   /** The agent the event was about, when any: each agent has its own wait. */
   agentId?: string;
+  /** Keep quick-source read checks after its in-memory identity expires. */
+  sourceAgentId?: string;
   startedAt: number;
   dueAt: number;
   chain: string[];
@@ -95,8 +97,9 @@ export interface EngineFacts {
   agentExists(agentId: string): boolean;
   isRunning(agentId: string): boolean;
   agentName(agentId: string): string | undefined;
-  /** A durable agent's project. */
+  /** An agent's project, including quick agents. */
   agentProjectId(agentId: string): string | undefined;
+  isQuickAgent?(agentId: string): boolean;
   projectName(projectId: string): string | undefined;
   projectIdForPath(projectPath: string): string | undefined;
   /** Which project and agent worktree a repo path belongs to. */
@@ -377,6 +380,9 @@ export class ActionsEngine {
     const runs = this.deps.history.list(id);
     if (!reader) return runs;
     return runs.flatMap((run) => {
+      if (run.trigger.sourceAgentId && this.deps.rights.checkSource(reader, {
+        kind: 'event', event: 'agent.quick_finished', source: { kind: 'agent', agentId: run.trigger.sourceAgentId },
+      })) return [];
       if (run.trigger.agentIds === undefined) return [run];
       if (!this.canWatchAgentActivity(reader)) return [];
       const canRead = (agentId: string) => this.deps.facts.agentExists(agentId)
@@ -391,7 +397,7 @@ export class ActionsEngine {
         ...(steps.length === run.steps.length && reason !== undefined && { reason }),
         trigger: {
           ...run.trigger, agentIds, ...(partial && { at: run.startedAt }),
-          detail: this.turnDetail(agentIds, run.trigger.detail?.startsWith('Failed turns:')),
+          detail: this.turnDetail(agentIds, run.trigger.detail?.startsWith('Failed turns:'), run.trigger.detail?.startsWith('Finished quick runs:')),
         },
       }];
     });
@@ -845,6 +851,8 @@ export class ActionsEngine {
         return f.agentExists(event.agentId) ? [agentOcc('agent.error', event.agentId)] : [];
       case 'agent.compacted':
         return f.agentExists(event.agentId) ? [agentOcc('agent.compacted', event.agentId)] : [];
+      case 'agent.quick_finished':
+        return f.agentExists(event.agentId) ? [agentOcc('agent.quick_finished', event.agentId, event.name)] : [];
       case 'helper.finished':
         // "A helper finishes" is about the parent.
         return f.agentExists(event.parentAgentId) ? [agentOcc('helper.finished', event.parentAgentId)] : [];
@@ -880,6 +888,7 @@ export class ActionsEngine {
   }
 
   private onMatch(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
+    if (occ.agentId && this.deps.facts.isQuickAgent?.(occ.agentId) && !this.canReadAgent(action.owner, occ.agentId)) return;
     if (this.enforceLifetime(action)) return;
     if (this.eventFilterReason(action)) return;
     if (trigger.source.kind === 'any') {
@@ -890,7 +899,9 @@ export class ActionsEngine {
     const detail = `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`;
     this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: !!trigger.delayMinutes });
     if (!trigger.delayMinutes) {
-      this.fire(action, { kind: 'event', at: this.now(), detail }, chain);
+      this.fire(action, { kind: 'event', at: this.now(), detail,
+        ...(occ.agentId && this.deps.facts.isQuickAgent?.(occ.agentId) && { sourceAgentId: occ.agentId }),
+      }, chain);
       return;
     }
     const now = this.now();
@@ -898,6 +909,7 @@ export class ActionsEngine {
     const wait: PersistedWait = {
       actionId: action.id,
       ...(occ.agentId && { agentId: occ.agentId }),
+      ...(occ.agentId && this.deps.facts.isQuickAgent?.(occ.agentId) && { sourceAgentId: occ.agentId }),
       startedAt: now,
       dueAt: now + trigger.delayMinutes * 60_000,
       chain,
@@ -914,24 +926,29 @@ export class ActionsEngine {
     const facts = this.deps.facts;
     if (!facts.agentExists(agentId) || agentId === this.subscriberOf(action.owner)) return false;
     if (agentId === facts.dispatcherAgentId?.() || facts.isDispatcherOwnedAgent?.(agentId)) return false;
-    return this.deps.rights.checkSource(action.owner, {
+    return this.canReadAgent(action.owner, agentId);
+  }
+
+  private canReadAgent(owner: ActionOwner, agentId: string): boolean {
+    return this.deps.rights.checkSource(owner, {
       kind: 'event', event: 'agent.turn_ended', source: { kind: 'agent', agentId },
     }) === null;
   }
 
-  private turnDetail(agentIds: string[], failed = false): string {
+  private turnDetail(agentIds: string[], failed = false, quick = false): string {
     const names = agentIds.slice(0, 20).map((id) => this.agentSubject(id).replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').trim().slice(0, 80));
     const more = agentIds.length > names.length ? ` and ${agentIds.length - names.length} more agents` : '';
-    const what = failed ? 'Failed turns' : 'Finished turns';
+    const what = quick ? 'Finished quick runs' : failed ? 'Failed turns' : 'Finished turns';
     return `${what}: ${names.join(', ')}${more}`;
   }
 
   /** Rebuild details from current rights, including after a queued handoff or an async step. */
   private readableTurnTrigger(action: Action, trigger: ActionRunTrigger): ActionRunTrigger | null {
+    if (trigger.sourceAgentId && !this.canReadAgent(action.owner, trigger.sourceAgentId)) return null;
     if (trigger.kind !== 'event' || action.trigger.kind !== 'event' || action.trigger.source.kind !== 'any') return trigger;
     if (this.deps.rights.checkSource(action.owner, action.trigger)) return null;
     const agentIds = (trigger.agentIds ?? []).filter((id) => this.readableTurnAgent(action, id));
-    return agentIds.length ? { ...trigger, agentIds, detail: this.turnDetail(agentIds, action.trigger.event === 'agent.turn_failed') } : null;
+    return agentIds.length ? { ...trigger, agentIds, detail: this.turnDetail(agentIds, action.trigger.event === 'agent.turn_failed', action.trigger.event === 'agent.quick_finished') } : null;
   }
 
   private collectTurn(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
@@ -992,18 +1009,21 @@ export class ActionsEngine {
     this.state.waits = this.state.waits.filter((w) => w !== wait);
     const action = this.actions.get(wait.actionId);
     if (!action?.enabled) return;
+    const trigger: ActionRunTrigger = { kind: 'event', at: wait.startedAt, detail: wait.detail,
+      ...(wait.sourceAgentId && { sourceAgentId: wait.sourceAgentId }),
+    };
     if (!this.conditionHolds(action, wait)) {
       if (atLaunch) {
         this.observe(action, { type: 'wait', what: 'dropped', ...(action.trigger.kind === 'event' && { event: action.trigger.event }) });
         return;
       }
       this.observe(action, { type: 'wait', what: 'cancelled', ...(action.trigger.kind === 'event' && { event: action.trigger.event }) });
-      this.recordOnly(action, { kind: 'event', at: wait.startedAt, detail: wait.detail }, wait.chain, 'cancelled', 'condition_changed',
+      this.recordOnly(action, trigger, wait.chain, 'cancelled', 'condition_changed',
         'What set it off no longer held when the wait ended');
       return;
     }
     this.observe(action, { type: 'wait', what: 'fired', ...(action.trigger.kind === 'event' && { event: action.trigger.event }) });
-    this.fire(action, { kind: 'event', at: wait.startedAt, detail: wait.detail }, wait.chain);
+    this.fire(action, trigger, wait.chain);
   }
 
   /** On launch: waits that ended while the app was closed run once if they still hold, else are dropped. */

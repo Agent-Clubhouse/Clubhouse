@@ -98,6 +98,7 @@ const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWork
   agentExists: (id) => !!knownAgent(id) || isDispatcherAgentId(id),
   isRunning: (id) => isAgentRunning(id),
   agentName: (id) => knownAgent(id)?.name ?? (isDispatcherAgentId(id) ? dispatcherName() : undefined),
+  isQuickAgent: (id) => knownAgent(id)?.quick === true,
   agentProjectId: (id) => {
     const a = knownAgent(id);
     return a ? projectIdForPath(a.projectPath) : undefined;

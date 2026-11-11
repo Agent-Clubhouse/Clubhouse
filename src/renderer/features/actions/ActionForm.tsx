@@ -16,7 +16,7 @@ import {
   DEFAULT_COALESCE_SECONDS,
   MIN_COALESCE_SECONDS,
   MAX_COALESCE_SECONDS,
-  TURN_EVENT_KINDS,
+  ANY_AGENT_EVENT_KINDS,
   MISSED_RUN_LABELS,
   OVERLAP_LABELS,
   PRESET_LABELS,
@@ -264,7 +264,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
     </select>
   ) : eventIsApp ? null : (
     <AgentSelect id={`${uid}-source`} value={draft.source} onChange={(source) => set({ source })} agents={agents} projects={projects}
-      includeProjects includeAny={TURN_EVENT_KINDS.includes(draft.event)} placeholder="Pick an agent or project" />
+      includeProjects includeAny={ANY_AGENT_EVENT_KINDS.includes(draft.event)} placeholder="Pick an agent or project" />
   );
 
   return (
@@ -359,7 +359,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
               <select id={`${uid}-event`} className={`${selectClass} w-full`} value={draft.event} onChange={(e) => {
                 const event = e.target.value as ActionEventKind;
                 // App events take no agent; project events may name a project.
-                const keep = APP_EVENT_KINDS.includes(event) ? (event.startsWith('project.') && draft.source.startsWith('project:') ? draft.source : '') : draft.source.startsWith('project:') || draft.source.startsWith('agent:') || (draft.source === 'any' && TURN_EVENT_KINDS.includes(event)) ? draft.source : '';
+                const keep = APP_EVENT_KINDS.includes(event) ? (event.startsWith('project.') && draft.source.startsWith('project:') ? draft.source : '') : draft.source.startsWith('project:') || draft.source.startsWith('agent:') || (draft.source === 'any' && ANY_AGENT_EVENT_KINDS.includes(event)) ? draft.source : '';
                 set({ event, source: keep });
               }}>
                 <optgroup label="Agent">{AGENT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
@@ -386,8 +386,8 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
               </Field>
             )}
             {draft.source === 'any' ? (
-              <Field label="Group turns for (seconds)" htmlFor={`${uid}-coalesce`}
-                help="Durable agents only, including agents that become readable later. A fixed window from the first turn. Later turns join without extending it. Excludes the subscriber and Dispatcher-owned agents. Watching activity is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents need a grant. Ask first does not allow unattended runs. Each agent must also be readable. Nothing replays after relaunch.">
+              <Field label={draft.event === 'agent.quick_finished' ? 'Group finishes for (seconds)' : 'Group turns for (seconds)'} htmlFor={`${uid}-coalesce`}
+                help="Includes durable and quick agents that become readable later. A fixed window from the first event. Later events join without extending it. Excludes the subscriber and Dispatcher-owned agents. Watching activity is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents need agent.watch. Each agent must also be readable. Ask first does not allow unattended runs. Nothing replays after relaunch.">
                 <input id={`${uid}-coalesce`} type="number" min={MIN_COALESCE_SECONDS} max={MAX_COALESCE_SECONDS} step={1}
                   placeholder={String(DEFAULT_COALESCE_SECONDS)} className={`${settingsInput} w-32`} value={draft.coalesceSeconds}
                   onChange={(e) => set({ coalesceSeconds: e.target.value })} />
@@ -434,7 +434,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
         <h3 className="text-[13px] font-semibold text-ctp-text mt-5">Then</h3>
         <div className={`${settingsHelp} mb-1`}>Steps run in order and stop at the first one that couldn’t run.</div>
         {draft.steps.map((s, i) => (
-          <StepEditor key={i} index={i} step={s} agents={agents} projects={projects} canRemove={draft.steps.length > 1}
+          <StepEditor key={i} index={i} step={s} agents={agents.filter((a) => !a.quick)} projects={projects} canRemove={draft.steps.length > 1}
             onChange={(next) => set({ steps: draft.steps.map((x, j) => (j === i ? next : x)) })}
             onRemove={() => set({ steps: draft.steps.filter((_, j) => j !== i) })} />
         ))}

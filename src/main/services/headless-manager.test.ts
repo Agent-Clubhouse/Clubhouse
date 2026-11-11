@@ -109,6 +109,7 @@ vi.mock('../orchestrators/adapters/structured-spawn', async (importOriginal) => 
 import { IPC } from '../../shared/ipc-channels';
 import { killStructuredChild } from '../orchestrators/adapters/structured-spawn';
 import { appLog } from './log-service';
+import { onAppEvent, publishFromHookEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../util/__fixtures__/host-session-env';
 import {
   spawnHeadless,
@@ -128,6 +129,7 @@ import {
 
 describe('headless-manager', () => {
   beforeEach(() => {
+    resetAppEventBus();
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-15T10:00:00Z'));
@@ -150,6 +152,92 @@ describe('headless-manager', () => {
     setMaxStderrBytes(64 * 1024);
     stopStaleSweep();
     vi.useRealTimers();
+  });
+
+  // ============================================================
+  describe('headless Action turn outcomes', () => {
+    it('ends a synchronous process creation failure and rethrows the original error', async () => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      const error = new Error('private spawn path');
+      mockCpSpawn.mockImplementationOnce(() => { throw error; });
+      await expect(spawnHeadless('test-agent', '/project', 'fake-cli', [])).rejects.toBe(error);
+      expect(events).toMatchObject([
+        { type: 'turn.started' }, { type: 'turn.ended', outcome: 'failed' }, { type: 'agent.error', message: 'process_error' },
+      ]);
+      expect(events).toHaveLength(3);
+      expect(JSON.stringify(events)).not.toContain('private');
+    });
+    it.each(['text', 'stream-json'] as const)('ends an empty %s run exactly once', async (kind) => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      await spawnHeadless('test-agent', '/project', 'fake-cli', [], undefined, kind);
+      mockProcess.emit('close', 0);
+      mockProcess.emit('close', 0);
+      mockProcess.emit('error', new Error('late private error'));
+      expect(events).toMatchObject([
+        { type: 'turn.started', via: 'headless', agentId: 'test-agent' },
+        { type: 'turn.ended', via: 'headless', outcome: 'completed', agentId: 'test-agent' },
+      ]);
+      expect(events).toHaveLength(2);
+    });
+
+    it.each([
+      [{ type: 'result', is_error: false, result: 'private output' }, 0, 'completed', undefined],
+      [{ type: 'result', is_error: true, result: 'private error' }, 0, 'failed', 'provider_error'],
+      [{ type: 'result', subtype: 'error_max_turns', result: 'private error' }, 0, 'failed', 'provider_error'],
+      [{ type: 'result', is_error: false, result: 'private output' }, 2, 'failed', 'process_exit'],
+    ] as const)('uses provider outcome and the final process exit %#', async (result, code, outcome, category) => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+      publishFromHookEvent('test-agent', { kind: 'notification', rawName: 'UserPromptSubmit' });
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(result) + '\n'));
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(result) + '\n'));
+      publishFromHookEvent('test-agent', { kind: 'stop', rawName: outcome === 'failed' ? 'StopFailure' : 'Stop', message: 'private hook error' });
+      expect(events.filter((event) => event.type === 'turn.ended')).toHaveLength(0);
+      mockProcess.emit('close', code);
+      publishFromHookEvent('test-agent', { kind: 'stop', rawName: 'Stop' });
+      expect(events.filter((event) => event.type === 'turn.started')).toHaveLength(1);
+      expect(events.filter((event) => event.type === 'turn.ended')).toMatchObject([{ outcome }]);
+      expect(events.filter((event) => event.type === 'agent.error')).toEqual(category
+        ? [expect.objectContaining({ message: category, via: 'headless' })] : []);
+      expect(JSON.stringify(events)).not.toContain('private');
+    });
+
+    it.each(['error', 'exit', 'signal', 'stop'] as const)('ends a run after %s without provider output', async (reason) => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+      if (reason === 'error') mockProcess.emit('error', new Error('private ENOENT path'));
+      else if (reason === 'exit') mockProcess.emit('close', 7);
+      else if (reason === 'signal') mockProcess.emit('close', null, 'SIGTERM');
+      else {
+        kill('test-agent');
+        mockProcess.emit('close', 1);
+      }
+      const ended = events.filter((event) => event.type === 'turn.ended');
+      expect(ended).toMatchObject([{ outcome: reason === 'stop' ? 'interrupted' : 'failed' }]);
+      expect(ended).toHaveLength(1);
+      expect(JSON.stringify(events)).not.toContain('private');
+    });
+
+    it('ends a replaced run as interrupted before the new run starts and ignores its late close', async () => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
+      await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+      const old = mockProcess;
+      mockProcess = createMockProcess();
+      await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+      old.stdout!.emit('data', Buffer.from('{"type":"result","is_error":true}\n'));
+      old.emit('close', 1);
+      mockProcess.emit('close', 0);
+      expect(events.filter((event) => event.type.startsWith('turn.'))).toMatchObject([
+        { type: 'turn.started' }, { type: 'turn.ended', outcome: 'interrupted' },
+        { type: 'turn.started' }, { type: 'turn.ended', outcome: 'completed' },
+      ]);
+      expect(events.filter((event) => event.type === 'turn.ended')).toHaveLength(2);
+    });
   });
 
   // ============================================================

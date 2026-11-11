@@ -399,14 +399,14 @@ const TRIGGER_SCHEMA = {
     '- When something happens: {"kind":"event","event":"agent.slept","source":{"kind":"agent","agentId":"self"},"delayMinutes":30}. ' +
     'source is one agent ({"kind":"agent","agentId":...}) or any agent in a project ({"kind":"project","projectId":...}); ' +
     'app events take no source, and project events may name one project. ' +
-    'Turn events also accept source {"kind":"any"}: readable durable agents except you and Dispatcher-owned agents. Quick agents are not included. ' +
+    'Turn events and agent.quick_finished also accept source {"kind":"any"}: readable durable and quick agents except you and Dispatcher-owned agents. ' +
     'Requires agent.watch on app plus agent.read on each agent. It is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents have no default grant. Ask first does not authorize unattended runs. ' +
-    'The member set is dynamic: durable agents that become readable later join. ' +
-    'coalesceSeconds groups turns in a fixed window from the first (default 60, range 10 to 600); later turns do not extend it. ' +
+    'The member set is dynamic: agents that become readable later join. Quick agents use agent.read on their own identity, with their parent as the my_helper relation. Project sources also check this permission for quick agents. ' +
+    'coalesceSeconds groups events in a fixed window from the first (default 60, range 10 to 600); later events do not extend it. ' +
     'Do not combine it with delayMinutes. Buffers are discarded at relaunch. Summaries name up to 20 agents; step context lists every involved readable agent. ' +
     'Agent events: agent.woke, agent.slept, agent.created, agent.deleted, agent.turn_ended, agent.turn_failed, ' +
     'agent.idle (needs delayMinutes: the idle time), agent.waiting (waits on the person), agent.error, agent.compacted, ' +
-    'helper.finished. Git events (local only, nothing is fetched): git.commit, git.branch_switched, ' +
+    'agent.quick_finished (once per quick run: completed, failed or cancelled, name, owner, parent, project and duration; no output), helper.finished. Git events (local only, nothing is fetched): git.commit, git.branch_switched, ' +
     'git.remote_updated (pushed, pulled or fetched), with an optional branch filter. ' +
     'App events: app.started, app.returned (Clubhouse returns to use after an absence, default 30 minutes, minimum 5; configure absenceMinutes), project.added, project.removed. ' +
     'Returning uses app focus plus screen lock, suspend or system idle, not focus alone. Relaunch does not count. Absence duration is never included in messages or history. ' +
@@ -426,12 +426,12 @@ const TRIGGER_SCHEMA = {
     absenceMinutes: { type: 'number', minimum: MIN_ABSENCE_MINUTES, description: 'app.returned only: required absence in whole minutes, at least 5. Default 30. Tracking runs only while an enabled action uses this event.' },
     afterLocalTime: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: 'Events only: run at or after this local wall-clock time, HH:MM. Events before it are ignored. Delayed and queued starts recheck the time. Also applies to Run now.' },
     oncePerDay: { type: 'boolean', description: 'Events only: once per calendar day; moving the clock back gives no extra run. Starts consume the day, including Run now and failures. Skips do not. Saved across restarts.' },
-    coalesceSeconds: { type: 'number', minimum: MIN_COALESCE_SECONDS, maximum: MAX_COALESCE_SECONDS, description: 'Any readable agent only: group turns for 10 to 600 whole seconds from the first turn. Default 60. Later turns do not extend it. No delayMinutes or offline replay. Requires agent.watch and agent.read.' },
+    coalesceSeconds: { type: 'number', minimum: MIN_COALESCE_SECONDS, maximum: MAX_COALESCE_SECONDS, description: 'Any readable agent: group turn or quick finish events for 10 to 600 seconds from the first. Default 60. No delayMinutes or offline replay. Requires agent.watch and agent.read.' },
     at: { type: ['string', 'number'], description: 'Once: a date and time like 2026-11-08T09:00 (local time when no zone is given; a date alone is local midnight), or epoch milliseconds. Must be in the future.' },
     event: { type: 'string', enum: [...ACTION_EVENT_KINDS], description: 'Events: what should happen.' },
     source: {
       type: 'object',
-      description: 'One agent: {"kind":"agent","agentId":"<id or self>"}. A project: {"kind":"project","projectId":"<id, name or path>"}. Turns: {"kind":"any"} watches readable durable agents with agent.watch.',
+      description: 'Agent: {"kind":"agent","agentId":"<id or self>"}. Project: {"kind":"project","projectId":"<id, name or path>"}. Turns and quick finishes: {"kind":"any"} needs agent.watch and agent.read.',
       properties: {
         kind: { type: 'string', enum: ['agent', 'project', 'app', 'any'] },
         agentId: { type: 'string' },
@@ -650,14 +650,14 @@ export function registerActionTools(): void {
     {
       description:
         'Subscribe to an event. Clubhouse messages you what happened with your note, waking you if needed. ' +
-        'Watching any readable durable agent is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. ' +
+        'Watching any readable agent, including quick agents, is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. ' +
         'You own the action in Settings > Actions. Stop it with delete_action, or pause it with update_action and enabled false. ' + RESULT_NOTE,
       inputSchema: schema({
         event: TRIGGER_SCHEMA.properties.event,
         source: {
           ...TRIGGER_SCHEMA.properties.source,
           description:
-            'One durable agent or project by id. Turns also accept {"kind":"any"}: readable durable agents, except you and Dispatcher-owned agents. Needs agent.watch. Default: your project or app events.',
+            'Agent or project by id. Turns and quick finishes accept {"kind":"any"}: readable agents except you and Dispatcher-owned agents. Needs agent.watch and agent.read. Default: your project or app events.',
         },
         branch: TRIGGER_SCHEMA.properties.branch,
         delayMinutes: TRIGGER_SCHEMA.properties.delayMinutes,

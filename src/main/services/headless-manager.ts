@@ -19,6 +19,8 @@ import { killStructuredChild, resolveStructuredSpawn } from '../orchestrators/ad
 import { validateSpawnCwd } from './pty-manager';
 import { readTranscriptChunk, type TranscriptChunk } from './transcript-cursor';
 import { agentKillRequested, agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
+import type { HookEventKind, TurnOutcome } from '../../shared/types';
+import { finishHeadlessTurn, publishFromHookEvent, startHeadlessTurn, type HeadlessTurn } from './app-event-bus';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
 let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
@@ -58,6 +60,8 @@ interface HeadlessSession {
   totalTranscriptBytesWritten: number;
   transcriptPath: string;
   startedAt: number;
+  turn: HeadlessTurn;
+  resultOutcome?: TurnOutcome;
   textBuffer?: string;
   /** Timer for force-kill escalation in kill(). */
   killTimer?: ReturnType<typeof setTimeout>;
@@ -332,6 +336,7 @@ function createSessionRecord(
   transcriptPath: string,
   onExit?: (agentId: string, exitCode: number) => void,
   createEventNormalizer?: () => (raw: StreamJsonEvent) => StreamJsonEvent[],
+  turn = startHeadlessTurn(agentId),
 ): HeadlessSession {
   const parser = outputKind === 'stream-json' ? new JsonlParser() : null;
   return {
@@ -349,6 +354,7 @@ function createSessionRecord(
     totalTranscriptBytesWritten: 0,
     transcriptPath,
     startedAt: Date.now(),
+    turn,
     onExitCallback: onExit,
     rawEventTypes: new Map(),
     nextLiveReportMs: LIVE_REPORT_QUIET_MS,
@@ -424,7 +430,12 @@ function handleTranscriptEvent(
   toolNamesById: Map<string, string>,
 ): void {
   appendTranscriptEvent(session, event, logStream);
-  if (event.type === 'result') session.resultSeenAt ??= Date.now();
+  if (event.type === 'result') {
+    session.resultSeenAt ??= Date.now();
+    // A provider can report failure with a successful process exit.
+    const outcome = resultOutcome(event);
+    if (session.resultOutcome !== 'failed') session.resultOutcome = outcome;
+  }
 
   // Log first event for diagnostics
   if (session.transcript.length === 1) {
@@ -443,7 +454,8 @@ function handleTranscriptEvent(
   const hookEvents = mapToHookEvent(event, activeToolBlocks, toolNamesById);
   for (const hookEvent of hookEvents) {
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
-    annexEventBus.emitHookEvent(agentId, hookEvent as any);
+    annexEventBus.emitHookEvent(agentId, hookEvent);
+    publishFromHookEvent(agentId, hookEvent);
   }
 }
 
@@ -631,11 +643,16 @@ function setupExitHandlers(
 
     runFinalizationStep(agentId, 'parser flush', () => { session.parser?.flush(); });
     runFinalizationStep(agentId, 'parser detach', detachParser);
+    const outcome: TurnOutcome = session.stopRequested || !canEmitSessionHooks(session) || session.turn.outcome === 'interrupted' ? 'interrupted'
+      : error || exitCode !== 0 || session.resultOutcome === 'failed' || session.turn.outcome === 'failed' ? 'failed' : 'completed';
+    const errorCategory = error ? 'process_error' : exitCode !== 0 ? 'process_exit' : 'provider_error';
+    runFinalizationStep(agentId, 'turn end', () => finishHeadlessTurn(session.turn, outcome, errorCategory));
 
     // For text mode, synthesize a result transcript entry from buffered output
     if (outputKind === 'text' && session.textBuffer) {
       const resultEvent: StreamJsonEvent = {
         type: 'result',
+        is_error: outcome === 'failed',
         result: session.textBuffer.trim(),
         duration_ms: Date.now() - session.startedAt,
         cost_usd: 0,
@@ -645,6 +662,7 @@ function setupExitHandlers(
       if (canEmitSessionHooks(session)) {
         const stopEvent = {
           kind: 'stop' as const,
+          outcome,
           message: session.textBuffer.trim().slice(0, 500),
           timestamp: Date.now(),
         };
@@ -704,6 +722,9 @@ export async function spawnHeadless(
   // Clean up any existing session
   if (sessions.has(agentId)) {
     kill(agentId);
+    // End the old turn before the replacement can start emitting. Its late
+    // close still flushes the transcript but cannot end the new turn.
+    finishHeadlessTurn(sessions.get(agentId)!.turn, 'interrupted');
   }
 
   await ensureLogsDir();
@@ -714,7 +735,14 @@ export async function spawnHeadless(
     meta: { agentId, binary, args: args.join(' '), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
   });
 
-  const proc = spawnProcess(binary, args, cwd, env, commandPrefix);
+  const turn = startHeadlessTurn(agentId);
+  let proc: ChildProcess;
+  try {
+    proc = spawnProcess(binary, args, cwd, env, commandPrefix);
+  } catch (error) {
+    finishHeadlessTurn(turn, 'failed', 'process_error');
+    throw error;
+  }
 
   // Close stdin immediately — `-p` mode uses the CLI argument, not stdin.
   // An open stdin pipe can cause Claude Code to wait for input.
@@ -728,7 +756,7 @@ export async function spawnHeadless(
     appLog('core:headless', 'info', `Process spawned`, { meta: { agentId, pid: proc.pid } });
   }
 
-  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer);
+  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer, turn);
   sessions.set(agentId, session);
   agentRunStarted(agentId, 'headless');
 
@@ -977,12 +1005,18 @@ export async function readTranscriptPage(
  *   content_block_start, content_block_delta, content_block_stop, result
  */
 interface MappedHookEvent {
-  kind: string;
+  kind: HookEventKind;
+  outcome?: TurnOutcome;
   toolName?: string;
   toolInput?: Record<string, unknown>;
   message?: string;
   toolUseId?: string;
   timestamp: number;
+}
+
+function resultOutcome(event: StreamJsonEvent): TurnOutcome {
+  return event.is_error === true || (typeof event.subtype === 'string' && event.subtype.startsWith('error'))
+    ? 'failed' : 'completed';
 }
 
 function mapToHookEvent(
@@ -1038,6 +1072,7 @@ function mapToHookEvent(
   if (event.type === 'result') {
     results.push({
       kind: 'stop',
+      outcome: resultOutcome(event),
       message: typeof event.result === 'string' ? event.result : undefined,
       timestamp,
     });

@@ -1713,6 +1713,11 @@ export type HookEventKind = 'pre_tool' | 'post_tool' | 'tool_error' | 'stop' | '
 
 export type TurnOutcome = 'completed' | 'failed' | 'interrupted';
 
+export type QuickAgentOwner =
+  | { kind: 'user' }
+  | { kind: 'agent'; agentId: string }
+  | { kind: 'action'; actionId: string };
+
 export interface AgentHookEvent {
   kind: HookEventKind;
   outcome?: TurnOutcome;
@@ -1731,6 +1736,9 @@ export interface SpawnAgentParams {
   projectPath: string;
   cwd: string;
   kind: AgentKind;
+  /** Quick-run identity, also used by Actions completion events. */
+  name?: string;
+  parentAgentId?: string;
   model?: string;
   mission?: string;
   systemPrompt?: string;

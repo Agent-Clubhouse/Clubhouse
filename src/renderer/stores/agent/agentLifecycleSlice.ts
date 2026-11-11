@@ -151,6 +151,8 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           projectPath,
           cwd,
           kind: 'quick',
+          name,
+          ...(parentAgentId && { parentAgentId }),
           model: resolvedModel,
           mission,
           systemPrompt,

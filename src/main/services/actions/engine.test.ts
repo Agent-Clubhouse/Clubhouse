@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Action, ActionRun, ActionStep, ActionStepResult } from '../../../shared/actions';
 import type { AppEvent, AppEventInput } from '../app-event-bus';
+import { CHAIN_WINDOW_MS, onAppEvent, resetAppEventBus } from '../app-event-bus';
+import { beginQuickAgentRun, clearQuickAgentRuns, finishQuickAgentRun } from '../quick-agent-events';
+import { createStepRunner, type StepDeps } from './steps';
 import {
   ActionsEngine,
   MAX_QUEUED_RUNS,
@@ -46,7 +49,7 @@ const MIN = 60_000;
 interface Setup {
   actions?: Action[];
   state?: EngineState;
-  agents?: Record<string, { name: string; projectId: string; worktree?: string }>;
+  agents?: Record<string, { name: string; projectId: string; worktree?: string; quick?: boolean }>;
   running?: Set<string>;
   stepImpl?: (step: ActionStep, ctx: StepContext) => Promise<ActionStepResult>;
   refuse?: (step: ActionStep) => string | null;
@@ -73,6 +76,7 @@ function setup(opts: Setup = {}) {
     isRunning: (id) => running.has(id),
     agentName: (id) => agents[id]?.name,
     agentProjectId: (id) => agents[id]?.projectId,
+    isQuickAgent: (id) => agents[id]?.quick === true,
     projectName: (id) => ({ p1: 'web', p2: 'api' } as Record<string, string>)[id],
     projectIdForPath: (p) => ({ '/p1': 'p1', '/p2': 'p2' } as Record<string, string>)[p],
     repoOwner: (repo) => {
@@ -116,12 +120,128 @@ function setup(opts: Setup = {}) {
   });
   const history = (id: string) => engine.history(id);
   const event = (e: AppEventInput) => engine.handleEvent({ at: clock.t, ...e } as AppEvent);
-  return { clock, engine, saved, history, stepCalls, hooks, running, event };
+  return { clock, engine, saved, history, stepCalls, hooks, running, event, agents };
 }
 
 const notify: ActionStep = { kind: 'notify', text: 'hi' };
 const weekdays9 = { kind: 'schedule', preset: 'weekdays', cron: '0 9 * * 1-5', missed: 'skip' } as const;
 const user = { kind: 'user' } as const;
+
+describe('quick agent Action sources', () => {
+  const finish = { type: 'agent.quick_finished', agentId: 'quick', name: 'Review', owner: { kind: 'user' }, projectPath: '/p1', durationMs: 2000, outcome: 'completed' } as const;
+
+  it('includes quick turns and finishes in any-readable sources after the run ends', async () => {
+    const h = setup({ agents: { quick: { name: 'Review', projectId: 'p1', quick: true } } });
+    h.engine.start();
+    const turns = h.engine.create({ trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 10 }, steps: [notify] }, user);
+    const finishes = h.engine.create({ trigger: { kind: 'event', event: 'agent.quick_finished', source: { kind: 'any' }, coalesceSeconds: 10 }, steps: [notify] }, user);
+    h.event({ type: 'turn.ended', agentId: 'quick', via: 'headless', outcome: 'completed' });
+    h.event(finish);
+    await h.clock.advance(10_000);
+    expect(h.history(turns.id)[0].trigger).toMatchObject({ agentIds: ['quick'], detail: 'Finished turns: Review' });
+    expect(h.history(finishes.id)[0].trigger).toMatchObject({ agentIds: ['quick'], detail: 'Finished quick runs: Review' });
+    expect(h.engine.history(finishes.id, user)[0].trigger.detail).toBe('Finished quick runs: Review');
+  });
+
+  it('requires agent.read even for a quick finish from a readable project, and checks again after delay', async () => {
+    let readable = false;
+    const h = setup({
+      agents: { quick: { name: 'Review', projectId: 'p1', quick: true } },
+      refuseSource: (trigger) => trigger.kind === 'event' && trigger.source.kind === 'agent' && !readable ? 'Missing agent.read' : null,
+    });
+    h.engine.start();
+    const action = h.engine.create({ trigger: { kind: 'event', event: 'agent.quick_finished', source: { kind: 'project', projectId: 'p1' }, delayMinutes: 1 }, steps: [notify] }, user);
+    h.event(finish);
+    await h.clock.advance(MIN);
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.history(action.id)).toHaveLength(0);
+    readable = true;
+    h.event(finish);
+    readable = false;
+    await h.clock.advance(MIN);
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.history(action.id)[0]).toMatchObject({ outcome: 'skipped', trigger: { agentIds: [] } });
+    readable = true;
+    h.event(finish);
+    await h.clock.advance(MIN);
+    expect(h.stepCalls).toHaveLength(1);
+    expect(h.history(action.id).at(-1)?.trigger.sourceAgentId).toBe('quick');
+    readable = false;
+    expect(h.engine.history(action.id, user).some((run) => run.trigger.sourceAgentId === 'quick')).toBe(false);
+  });
+
+  it.each(['agent.quick_finished', 'agent.turn_ended'] as const)('keeps quick-source read checks for delayed %s after relaunch', async (event) => {
+    const h = setup({ agents: { quick: { name: 'Review', projectId: 'p1', quick: true } } });
+    h.engine.start();
+    const action = h.engine.create({
+      trigger: { kind: 'event', event, source: { kind: 'project', projectId: 'p1' }, delayMinutes: 1 },
+      steps: [notify],
+    }, user);
+    h.event(event === 'agent.quick_finished' ? finish : { type: 'turn.ended', agentId: 'quick', via: 'headless', outcome: 'completed' });
+    expect(h.saved.state.waits[0].sourceAgentId).toBe('quick');
+    h.engine.stop();
+
+    const resumed = setup({
+      actions: h.saved.actions, state: h.saved.state, start: START + MIN, agents: {},
+      refuseSource: (trigger) => trigger.kind === 'event' && trigger.source.kind === 'agent' ? 'Missing agent.read' : null,
+    });
+    resumed.engine.start();
+    await flush();
+    expect(resumed.stepCalls).toHaveLength(0);
+    expect(resumed.history(action.id)[0]).toMatchObject({ outcome: 'skipped', trigger: { agentIds: [] } });
+    expect(resumed.history(action.id)[0].trigger.detail).toBeUndefined();
+    resumed.engine.stop();
+  });
+
+  it.each(['project', 'any'] as const)('does not re-trigger an Action through its own quick finish with a %s source', async (source) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(START);
+    resetAppEventBus();
+    const h = setup({ stepImpl: (step, ctx) => runner.run(step, ctx) });
+    const startQuick = vi.fn<StepDeps['startQuick']>(async (req) => {
+      h.agents.quick = { name: req.name, projectId: 'p1', quick: true };
+      const run = beginQuickAgentRun({ agentId: 'quick', projectPath: req.project.path, name: req.name, quickOwner: req.quickOwner, chain: req.chain });
+      // The completion occurs before startQuick resolves and after the
+      // ordinary causal window. Both used to lose loop protection.
+      vi.setSystemTime(Date.now() + CHAIN_WINDOW_MS + 1);
+      finishQuickAgentRun(run, 'completed');
+      return { id: 'quick', name: req.name };
+    });
+    const runner = createStepRunner({
+      agentExists: (id) => !!h.agents[id], agentName: (id) => h.agents[id]?.name,
+      agentWorktree: () => undefined, isRunning: () => false,
+      project: () => ({ id: 'p1', path: '/p1', name: 'web' }),
+      wake: async () => ({ ok: true, text: '' }), sleep: async () => ({ ok: true, text: '' }),
+      notify: () => ({ shown: true }), startQuick,
+    });
+    const off = onAppEvent((event) => h.engine.handleEvent(event));
+    try {
+      h.engine.start();
+      const action = h.engine.create({
+        trigger: { kind: 'event', event: 'agent.quick_finished', source: source === 'any' ? { kind: 'any' } : { kind: 'project', projectId: 'p1' } },
+        steps: [{ kind: 'quick', projectId: 'p1', prompt: 'Review' }], overlap: 'queue',
+      }, user);
+      h.agents.quick = { name: 'Review', projectId: 'p1', quick: true };
+      h.event(finish);
+      await h.clock.advance(source === 'any' ? MIN : 0);
+      await flush();
+      expect(startQuick).toHaveBeenCalledTimes(1);
+      expect(startQuick.mock.calls[0][0]).toMatchObject({ chain: [action.id], quickOwner: { kind: 'action', actionId: action.id } });
+      expect(h.history(action.id).some((run) => run.reason === 'It can’t set itself off')).toBe(true);
+      expect(h.hooks.observe).toHaveBeenCalledWith(expect.objectContaining({ type: 'limit', what: 'self' }));
+      const count = h.stepCalls.length;
+      h.event({ ...finish, chain: ['first', 'second', 'third'] });
+      expect(h.stepCalls).toHaveLength(count);
+      expect(h.hooks.observe).toHaveBeenCalledWith(expect.objectContaining({ type: 'limit', what: 'chain' }));
+    } finally {
+      off();
+      h.engine.stop();
+      clearQuickAgentRuns();
+      resetAppEventBus();
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe('any readable agent turn windows', () => {
   const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } } as const;

@@ -188,6 +188,9 @@ describe('step runner', () => {
     const calls = vi.mocked(d.startQuick).mock.calls.map((c) => c[0]);
     expect(calls.map((c) => c.access)).toEqual(['full_access', 'full_access']);
     expect(calls.map((c) => c.headless)).toEqual([true, true]);
+    expect(calls.map((c) => c.quickOwner)).toEqual([{ kind: 'action', actionId: 'a1' }, { kind: 'action', actionId: 'a1' }]);
+    expect(calls.map((c) => c.parentAgentId)).toEqual(['lead', undefined]);
+    expect(calls.map((c) => c.chain)).toEqual([['a1'], ['a1']]);
     expect(calls.some((c) => 'interactive' in c)).toBe(false);
   });
 

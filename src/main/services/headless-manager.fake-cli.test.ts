@@ -34,6 +34,7 @@ import { summarizeHeadlessTranscript } from '../../shared/headless-transcript';
 import { TimelineBuilder } from '../../renderer/features/agents/states/timeline';
 import { agentKillStage } from '../telemetry/agent-telemetry';
 import { appLog } from './log-service';
+import { onAppEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
 import { _internal, isHeadless, kill, spawnHeadless, startStaleSweep, stopStaleSweep } from './headless-manager';
 
 const FAKE_CLI = path.join(__dirname, '__fixtures__', 'fake-headless-cli.mjs');
@@ -91,6 +92,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
   let holderPidFile: string;
   const spawnedPids: number[] = [];
   const onExit = vi.fn();
+  let appEvents: AppEvent[];
 
   const start = (mode: string) => spawnHeadless(
     AGENT, hoisted.userData.dir, process.execPath, [FAKE_CLI, mode, holderPidFile], undefined, 'stream-json', onExit,
@@ -99,6 +101,9 @@ describe('headless-manager with a fake CLI (#2813)', () => {
   const holderStarted = () => fs.existsSync(holderPidFile) && fs.readFileSync(holderPidFile, 'utf-8') !== '';
 
   beforeEach(() => {
+    resetAppEventBus();
+    appEvents = [];
+    onAppEvent((event) => appEvents.push(event));
     hoisted.userData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-fake-cli-'));
     hoisted.sent.length = 0;
     holderPidFile = path.join(hoisted.userData.dir, 'holder.pid');
@@ -119,6 +124,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     // Everything is dead now, so close fires and ends the session.
     await until(() => !isHeadless(AGENT), 'the session to end');
     vi.useRealTimers();
+    resetAppEventBus();
     fs.rmSync(hoisted.userData.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
@@ -131,6 +137,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     expect(hookKinds()).toContain('stop');
     await until(() => transcriptEvents().length === 2, 'the transcript');
     expect(summarizeHeadlessTranscript(transcriptEvents()).summary).toBe('all done');
+    expect(appEvents.filter((event) => event.type === 'turn.ended')).toMatchObject([{ via: 'headless', outcome: 'completed' }]);
   });
 
   // Case (a). What the app does today; whether to act on a `result` is an open choice, see #2813.
@@ -143,6 +150,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     expect(isHeadless(AGENT)).toBe(true);
     expect(exits()).toEqual([]);
     expect(onExit).not.toHaveBeenCalled();
+    expect(appEvents.filter((event) => event.type === 'turn.ended')).toHaveLength(0);
     expect(isAlive(cliPid())).toBe(true);
     expect(logLines('Headless run still live and quiet').at(-1)).toMatchObject({
       pid: cliPid(),
@@ -153,6 +161,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
     kill(AGENT);
     await until(() => exits().length === 1, 'the exit broadcast');
     expect(exits()[0][1]).toBe(128 + os.constants.signals.SIGTERM);
+    expect(appEvents.filter((event) => event.type === 'turn.ended')).toMatchObject([{ outcome: 'interrupted' }]);
   });
 
   // Case (c).
@@ -244,6 +253,7 @@ describe('headless-manager with a fake CLI (#2813)', () => {
       expect(closed).toHaveBeenCalledExactlyOnceWith(0, null);
       expect(exits()).toHaveLength(1);
       expect(onExit).toHaveBeenCalledTimes(1);
+      expect(appEvents.filter((event) => event.type === 'turn.ended')).toHaveLength(1);
     });
 
     it('a CLI killed by a signal is recovered by the sweep too', async () => {

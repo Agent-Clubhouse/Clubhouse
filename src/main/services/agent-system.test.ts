@@ -354,6 +354,8 @@ import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { agentRegistry } from './agent-registry';
 import { resolveProjectMcpServers } from './agent-mcp-servers';
+import { onAppEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
+import { clearQuickAgentRuns, knownQuickAgents } from './quick-agent-events';
 
 /** Give a mock provider the SessionCapable surface, with the real CLIs' "resume <uuid>" pattern. */
 function sessionCapable(provider: Record<string, unknown>): void {
@@ -375,6 +377,8 @@ function notSessionCapable(provider: Record<string, unknown>): void {
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearQuickAgentRuns();
+    resetAppEventBus();
     mockPeekProjects.mockReset().mockResolvedValue([]);
     mockHeadlessSpawn.mockImplementation((agentId: string) => {
       mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
@@ -935,6 +939,8 @@ describe('agent-system', () => {
     });
 
     it('cleans up tracking maps when headless spawn fails', async () => {
+      const events: AppEvent[] = [];
+      onAppEvent((event) => events.push(event));
       mockGetSpawnMode.mockReturnValue('headless');
       mockProvider.buildHeadlessCommand = vi.fn(() =>
         Promise.resolve({
@@ -952,6 +958,9 @@ describe('agent-system', () => {
           projectPath: '/project',
           cwd: '/project',
           kind: 'quick',
+          name: 'Review',
+          quickOwner: { kind: 'action', actionId: 'review' },
+          chain: ['review'],
           mission: 'test',
         })
       ).rejects.toThrow('headless spawn failed');
@@ -959,6 +968,10 @@ describe('agent-system', () => {
       expect(getAgentProjectPath('test-headless')).toBeUndefined();
       expect(getAgentOrchestrator('test-headless')).toBeUndefined();
       expect(isHeadlessAgent('test-headless')).toBe(false);
+      expect(events.filter((event) => event.type === 'agent.quick_finished')).toMatchObject([{
+        agentId: 'test-headless', name: 'Review', outcome: 'failed',
+        owner: { kind: 'action', actionId: 'review' }, chain: ['review'],
+      }]);
 
       delete (mockProvider as any).buildHeadlessCommand;
     });
@@ -982,7 +995,12 @@ describe('agent-system', () => {
       mockProvider.buildHeadlessCommand = vi.fn(() =>
         Promise.resolve({ binary: '/usr/bin/claude', args: ['-p'], env: {}, outputKind: 'stream-json' as const }),
       ) as never;
-      await spawnAgent({ agentId: 'unattended', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'm', access: 'full_access', headless: true });
+      mockHeadlessSpawn.mockImplementationOnce(() => {
+        expect(knownQuickAgents().get('unattended')).toMatchObject({
+          name: 'Review', owner: { kind: 'action', actionId: 'review' }, chain: ['review'],
+        });
+      });
+      await spawnAgent({ agentId: 'unattended', projectPath: '/project', cwd: '/project', kind: 'quick', name: 'Review', quickOwner: { kind: 'action', actionId: 'review' }, chain: ['review'], mission: 'm', access: 'full_access', headless: true });
       expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'skip-all' }));
       expect(mockHeadlessSpawn).toHaveBeenCalled();
       expect(mockPtySpawn).not.toHaveBeenCalled();

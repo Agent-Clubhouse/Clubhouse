@@ -85,6 +85,7 @@ function sanitizeState(raw: unknown): EngineState {
         chain: Array.isArray(w.chain) ? w.chain.filter((c): c is string => typeof c === 'string') : [],
         detail: typeof w.detail === 'string' ? w.detail : '',
         ...(typeof w.agentId === 'string' && { agentId: w.agentId }),
+        ...(typeof w.sourceAgentId === 'string' && { sourceAgentId: w.sourceAgentId }),
       };
       state.waits.push(wait);
     }
