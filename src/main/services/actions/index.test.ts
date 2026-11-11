@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AppEvent, AppEventInput } from '../app-event-bus';
 
 // The Actions service over a real engine and step runner; everything around it is faked.
 const h = vi.hoisted(() => ({
@@ -7,13 +8,29 @@ const h = vi.hoisted(() => ({
   deliver: null as unknown as ReturnType<typeof vi.fn>,
   note: null as unknown as ReturnType<typeof vi.fn>,
   clear: null as unknown as ReturnType<typeof vi.fn>,
+  events: new Set<(event: AppEvent) => void>(),
+  focused: true,
+  idle: 0,
+  sleepSeconds: 0,
 }));
 
-vi.mock('electron', () => ({ powerMonitor: { on: vi.fn(), removeListener: vi.fn() } }));
+vi.mock('electron', async () => {
+  const { EventEmitter } = await import('node:events');
+  return {
+    app: new EventEmitter(),
+    powerMonitor: Object.assign(new EventEmitter(), { getSystemIdleTime: vi.fn(() => h.idle) }),
+    BrowserWindow: { getFocusedWindow: () => h.focused ? {} : null },
+  };
+});
+vi.mock('os', () => ({ uptime: () => performance.now() / 1000 + h.sleepSeconds }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../agent-system', () => ({ isAgentRunning: () => false }));
 vi.mock('../agent-runtime', () => ({ getAgentRuntime: () => undefined, isAgentStoppingError: () => false }));
-vi.mock('../app-event-bus', () => ({ onAppEvent: () => () => undefined, setAgentChain: vi.fn() }));
+vi.mock('../app-event-bus', () => ({
+  onAppEvent: (fn: (event: AppEvent) => void) => { h.events.add(fn); return () => { h.events.delete(fn); }; },
+  publishAppEvent: vi.fn((event: AppEventInput) => { for (const fn of h.events) fn({ at: Date.now(), ...event } as AppEvent); }),
+  setAgentChain: vi.fn(),
+}));
 vi.mock('../app-event-sources', () => ({ knownAgent: () => undefined, knownAgents: () => new Map() }));
 vi.mock('../clubhouse-mcp/binding-manager', () => ({ bindingManager: { getBindingsForAgent: () => [] } }));
 vi.mock('../clubhouse-mcp/orchestration-gate', () => ({ isCrossProjectEnabled: () => false, isOrchestrationEnabled: () => false, orchestrationControl: () => undefined }));
@@ -55,6 +72,7 @@ import {
   actionHistory,
   actionsReady,
   createAction,
+  deleteAction,
   ensureAppAction,
   ensureAppSubscription,
   getAction,
@@ -64,10 +82,13 @@ import {
   removeAppAction,
   runActionNow,
   setAppActionGate,
+  setActionEnabled,
   startActions,
   stopActions,
 } from './index';
 import { ActionError } from '../../../shared/actions';
+import { app, powerMonitor } from 'electron';
+import { publishAppEvent } from '../app-event-bus';
 
 const message = (text: string) => [{ kind: 'message', agentId: 'disp', text }];
 const nightly = { kind: 'schedule', preset: 'daily', cron: '30 3 * * *', missed: 'once' };
@@ -80,12 +101,132 @@ beforeEach(async () => {
   h.deliver.mockClear();
   h.note.mockClear();
   h.clear.mockClear();
+  h.focused = true;
+  h.idle = 0;
+  h.sleepSeconds = 0;
+  vi.mocked(powerMonitor.getSystemIdleTime).mockClear();
+  vi.mocked(publishAppEvent).mockClear();
   await startActions();
 });
 afterEach(() => {
   for (const stop of stops.splice(0)) stop();
   stopActions();
   setAppActionGate('Upkeep', null);
+});
+
+it('wires Electron presence only for enabled return actions and persists use without publishing absence details', async () => {
+  vi.useFakeTimers();
+  try {
+    expect(powerMonitor.listenerCount('lock-screen')).toBe(0);
+    expect(app.listenerCount('browser-window-focus')).toBe(0);
+    expect(powerMonitor.getSystemIdleTime).not.toHaveBeenCalled();
+    const a = createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    expect(powerMonitor.listenerCount('lock-screen')).toBe(1);
+    expect((h.saved.state as { lastUse?: number }).lastUse).toBe(Date.now());
+    powerMonitor.emit('lock-screen');
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    powerMonitor.emit('unlock-screen');
+    app.emit('browser-window-focus');
+    await flush();
+    expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
+    expect(getAction(a.id)?.runsUsed).toBe(1);
+    setActionEnabled(a.id, false);
+    expect(powerMonitor.listenerCount('lock-screen')).toBe(0);
+    expect(app.listenerCount('browser-window-focus')).toBe(0);
+  } finally {
+    stopActions();
+    vi.useRealTimers();
+  }
+});
+
+it.each([-1, 1])('ignores a %i-hour wall-clock adjustment during a short lock', async (direction) => {
+  vi.useFakeTimers();
+  try {
+    createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    powerMonitor.emit('lock-screen');
+    vi.setSystemTime(Date.now() + direction * 60 * 60_000);
+    await vi.advanceTimersByTimeAsync(60_000);
+    powerMonitor.emit('unlock-screen');
+    expect(publishAppEvent).not.toHaveBeenCalled();
+    powerMonitor.emit('lock-screen');
+    vi.setSystemTime(Date.now() + direction * 60 * 60_000);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    powerMonitor.emit('unlock-screen');
+    expect(publishAppEvent).toHaveBeenCalledTimes(1);
+  } finally {
+    stopActions();
+    vi.useRealTimers();
+  }
+});
+
+it.each([-1, 1])('never replays persisted last use %i day from launch or delays a newly observed absence', async (direction) => {
+  vi.useFakeTimers();
+  try {
+    const a = createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    stopActions();
+    h.saved.state = { nextAt: {}, waits: [], lastUse: Date.now() + direction * 24 * 60 * 60_000 };
+    h.focused = false;
+    await startActions();
+    expect(publishAppEvent).not.toHaveBeenCalled();
+    powerMonitor.emit('suspend');
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    powerMonitor.emit('resume');
+    h.focused = true;
+    app.emit('browser-window-focus');
+    expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
+    expect((h.saved.state as { lastUse?: number }).lastUse).toBe(Date.now());
+  } finally {
+    stopActions();
+    vi.useRealTimers();
+  }
+});
+
+it.each([1, 5])('measures %i minutes of suspend without running polling timers', (minutes) => {
+  vi.useFakeTimers();
+  try {
+    const a = createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    powerMonitor.emit('suspend');
+    h.sleepSeconds += minutes * 60;
+    vi.setSystemTime(Date.now() + minutes * 60_000);
+    powerMonitor.emit('resume');
+    app.emit('browser-window-focus');
+    if (minutes < 5) expect(publishAppEvent).not.toHaveBeenCalled();
+    else expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
+  } finally {
+    stopActions();
+    vi.useRealTimers();
+  }
+});
+
+it('cleans up presence listeners through repeated enable, disable and deletion', () => {
+  for (let i = 0; i < 10; i++) {
+    const a = createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' } },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    setActionEnabled(a.id, false);
+    setActionEnabled(a.id, true);
+    expect(powerMonitor.listenerCount('lock-screen')).toBe(1);
+    expect(powerMonitor.listenerCount('resume')).toBe(2);
+    expect(app.listenerCount('browser-window-focus')).toBe(1);
+    deleteAction(a.id);
+    for (const event of ['lock-screen', 'unlock-screen', 'suspend']) expect(powerMonitor.listenerCount(event)).toBe(0);
+    expect(powerMonitor.listenerCount('resume')).toBe(1);
+    expect(app.listenerCount('browser-window-focus')).toBe(0);
+    expect(app.listenerCount('browser-window-blur')).toBe(0);
+  }
 });
 
 describe('Clubhouse’s own actions (#3040)', () => {

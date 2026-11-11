@@ -55,6 +55,7 @@ export interface ActionDraft {
   endsAt: string;
   originalEndsAt?: number;
   maxRuns: string;
+  absenceMinutes: string;
   steps: StepDraft[];
   overlap: OverlapRule;
 }
@@ -88,6 +89,7 @@ export function newDraft(now = Date.now()): ActionDraft {
     onceAt: toLocalInput(now + 60 * 60 * 1000),
     endsAt: '',
     maxRuns: '',
+    absenceMinutes: '',
     steps: [emptyStep()],
     overlap: 'skip',
   };
@@ -129,6 +131,7 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
     d.source = t.source.kind === 'agent' ? `agent:${t.source.agentId}` : t.source.kind === 'project' ? `project:${t.source.projectId}` : '';
     d.delay = t.delayMinutes ? String(t.delayMinutes) : '';
     d.branch = t.branch ?? '';
+    d.absenceMinutes = t.absenceMinutes !== undefined ? String(t.absenceMinutes) : '';
   }
   return d;
 }
@@ -179,7 +182,10 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
   } else {
     const delay = d.delay.trim() === '' ? undefined : Number(d.delay);
     if (delay !== undefined && !(Number.isInteger(delay) && delay >= 0)) return { ok: false, error: 'The wait must be a whole number of minutes.' };
-    trigger = { kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }) };
+    trigger = {
+      kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }),
+      ...(d.event === 'app.returned' && d.absenceMinutes.trim() && { absenceMinutes: Number(d.absenceMinutes) }),
+    };
   }
   // Keep the exact instant when unchanged, including seconds and the repeated DST hour.
   const endsAt = d.originalEndsAt !== undefined && d.endsAt === toLocalInput(d.originalEndsAt)

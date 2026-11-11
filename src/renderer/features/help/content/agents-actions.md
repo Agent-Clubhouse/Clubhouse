@@ -12,6 +12,12 @@ Actions run whenever Clubhouse is open, even with no window or project open. The
 
 ### Waiting first
 
+**Clubhouse returns to use** fires once when you come back after at least 30 minutes away, or a threshold you set of at least 5 minutes. It combines app focus with screen lock, system sleep or OS input idle time. Switching windows alone does not count. Screen-lock and sleep signals work even if Clubhouse was frontmost. Relaunching the app does not count, and it does not replay returns from while the app was closed.
+
+Presence tracking is local and runs only while an enabled action uses this event. It does not claim system-wide human presence. If OS idle time is unavailable, only lock and sleep can qualify an absence. Absence duration and timestamps are not included in agent messages or run history.
+
+Lock and unlock are detected only on macOS and Windows; Linux relies on focus, suspend and resume, plus idle time where the system reports it.
+
 An event trigger can wait, for example 30 minutes after an agent goes to sleep. When the wait ends, Clubhouse checks that what happened still holds. If the agent woke up in the meantime, the run is cancelled, and the wait starts again the next time it goes to sleep.
 
 **Goes idle for** works the same way: the time counts from the end of the agent's last turn, a new turn resets it, and the action runs once per idle stretch.

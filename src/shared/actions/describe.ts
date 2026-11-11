@@ -6,6 +6,7 @@
  */
 
 import { describeCron, formatClock, parseCron } from './cron';
+import { DEFAULT_ABSENCE_MINUTES } from './types';
 import type {
   ActionEventKind,
   ActionEventSource,
@@ -110,6 +111,7 @@ const EVENT_PHRASES: Record<ActionEventKind, string> = {
   'git.branch_switched': 'switches branch',
   'git.remote_updated': 'is pushed, pulled or fetched',
   'app.started': 'starts',
+  'app.returned': 'returns to use',
   'project.added': 'is added',
   'project.removed': 'is removed',
 };
@@ -136,6 +138,7 @@ export const EVENT_LABELS: Record<ActionEventKind, string> = {
   'git.branch_switched': 'Branch switched',
   'git.remote_updated': 'Pushed, pulled or fetched',
   'app.started': 'Clubhouse starts',
+  'app.returned': 'Clubhouse returns to use',
   'project.added': 'A project is added',
   'project.removed': 'A project is removed',
 };
@@ -173,7 +176,8 @@ export function describeTrigger(trigger: ActionTrigger, names: ActionNames = NO_
       : src.kind === 'project' ? names.project(src.projectId) ?? 'a project' : 'a project';
   } else subject = sourceText(src, names);
   const branch = trigger.branch && trigger.event.startsWith('git.') ? ` (${trigger.branch})` : '';
-  const what = `${subject} ${EVENT_PHRASES[trigger.event]}${branch}`;
+  const absence = trigger.event === 'app.returned' ? ` after at least ${formatMinutes(trigger.absenceMinutes ?? DEFAULT_ABSENCE_MINUTES)} away` : '';
+  const what = `${subject} ${EVENT_PHRASES[trigger.event]}${branch}${absence}`;
   if (trigger.event === 'agent.idle') {
     return `${subject} goes idle for ${formatMinutes(trigger.delayMinutes ?? 0)}`;
   }

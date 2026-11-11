@@ -11,6 +11,8 @@ import {
   EVENT_LABELS,
   GIT_EVENT_KINDS,
   MAX_ACTION_STEPS,
+  MIN_ABSENCE_MINUTES,
+  DEFAULT_ABSENCE_MINUTES,
   MISSED_RUN_LABELS,
   OVERLAP_LABELS,
   PRESET_LABELS,
@@ -357,6 +359,13 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
             {eventIsGit && (
               <Field label="Branch (optional)" htmlFor={`${uid}-branch`} help="Only for this branch, e.g. main. Changes are seen locally; nothing is fetched.">
                 <input id={`${uid}-branch`} className={`${settingsInput} w-full`} value={draft.branch} onChange={(e) => set({ branch: e.target.value })} />
+              </Field>
+            )}
+            {draft.event === 'app.returned' && (
+              <Field label="Away for (minutes)" htmlFor={`${uid}-absence`}
+                help="Uses app focus, screen lock, sleep and system idle time. Relaunching Clubhouse does not count as returning.">
+                <input id={`${uid}-absence`} type="number" min={MIN_ABSENCE_MINUTES} step={1} placeholder={String(DEFAULT_ABSENCE_MINUTES)}
+                  className={`${settingsInput} w-32`} value={draft.absenceMinutes} onChange={(e) => set({ absenceMinutes: e.target.value })} />
               </Field>
             )}
             <Field

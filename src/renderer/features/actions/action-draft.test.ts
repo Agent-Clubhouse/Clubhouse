@@ -4,6 +4,16 @@ import { draftFrom, draftToInput, newDraft, toLocalInput } from './action-draft'
 const NOW = new Date(2026, 10, 9, 8, 0).getTime();
 
 describe('action draft', () => {
+  it('round-trips an app return threshold', () => {
+    const input = {
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 15 } as const,
+      steps: [{ kind: 'notify', text: 'hi' }] as const,
+    };
+    const draft = draftFrom({ ...input, steps: [...input.steps] }, NOW);
+    expect(draftToInput(draft, NOW)).toMatchObject({ ok: true, input });
+    expect(draftToInput({ ...draft, absenceMinutes: '4' }, NOW).ok).toBe(false);
+  });
+
   it('round-trips recurring limits and omits them when changed to once', () => {
     const input = {
       trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } } as const,

@@ -61,6 +61,7 @@ export function sanitizeActions(raw: unknown): Action[] {
 function sanitizeState(raw: unknown): EngineState {
   const state: EngineState = { nextAt: {}, waits: [] };
   if (!isObject(raw)) return state;
+  if (typeof raw.lastUse === 'number' && Number.isFinite(raw.lastUse) && raw.lastUse >= 0) state.lastUse = raw.lastUse;
   if (isObject(raw.nextAt)) {
     for (const [id, at] of Object.entries(raw.nextAt)) if (typeof at === 'number' && Number.isFinite(at)) state.nextAt[id] = at;
   }

@@ -15,6 +15,7 @@ import {
   HISTORY_MAX_RUNS,
   MAX_ACTION_STEPS,
   MAX_DELAY_MINUTES,
+  MIN_ABSENCE_MINUTES,
   MISSED_RUN_RULES,
   SCHEDULE_PRESETS,
   type ActionEventKind,
@@ -119,7 +120,15 @@ export function validateTrigger(raw: unknown): Result<ActionTrigger> {
     if (event === 'agent.idle' && !delayMinutes) return { ok: false, error: 'Say how many minutes of idle time to wait for.' };
     let branch: string | undefined;
     if (GIT_EVENT_KINDS.includes(event) && nonEmpty(raw.branch)) branch = raw.branch.trim();
-    return { ok: true, value: { kind: 'event', event, source: source.value, ...(delayMinutes && { delayMinutes }), ...(branch && { branch }) } };
+    let absenceMinutes: number | undefined;
+    if (raw.absenceMinutes !== undefined) {
+      if (event !== 'app.returned') return { ok: false, error: 'An absence threshold is only for Clubhouse returning to use.' };
+      if (typeof raw.absenceMinutes !== 'number' || !Number.isSafeInteger(raw.absenceMinutes) || raw.absenceMinutes < MIN_ABSENCE_MINUTES) {
+        return { ok: false, error: `The absence must be a whole number of minutes, at least ${MIN_ABSENCE_MINUTES}.` };
+      }
+      absenceMinutes = raw.absenceMinutes;
+    }
+    return { ok: true, value: { kind: 'event', event, source: source.value, ...(delayMinutes && { delayMinutes }), ...(branch && { branch }), ...(absenceMinutes !== undefined && { absenceMinutes }) } };
   }
   return { ok: false, error: 'The trigger must be a schedule, an event, or once.' };
 }

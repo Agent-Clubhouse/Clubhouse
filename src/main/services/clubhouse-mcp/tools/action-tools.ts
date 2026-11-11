@@ -31,6 +31,7 @@ import {
   ActionError,
   MAX_ACTION_STEPS,
   MAX_DELAY_MINUTES,
+  MIN_ABSENCE_MINUTES,
   MISSED_RUN_RULES,
   SCHEDULE_PRESETS,
   describeAction,
@@ -290,6 +291,7 @@ function subscriptionTrigger(args: Obj, ctx: InputContext): unknown {
     source,
     ...(args.branch !== undefined && { branch: args.branch }),
     ...(args.delayMinutes !== undefined && { delayMinutes: args.delayMinutes }),
+    ...(args.absenceMinutes !== undefined && { absenceMinutes: args.absenceMinutes }),
   }, ctx);
 }
 
@@ -389,7 +391,8 @@ const TRIGGER_SCHEMA = {
     'agent.idle (needs delayMinutes: the idle time), agent.waiting (waits on the person), agent.error, agent.compacted, ' +
     'helper.finished. Git events (local only, nothing is fetched): git.commit, git.branch_switched, ' +
     'git.remote_updated (pushed, pulled or fetched), with an optional branch filter. ' +
-    'App events: app.started, project.added, project.removed. ' +
+    'App events: app.started, app.returned (Clubhouse returns to use after an absence, default 30 minutes, minimum 5; configure absenceMinutes), project.added, project.removed. ' +
+    'Returning uses app focus plus screen lock, suspend or system idle, not focus alone. Relaunch does not count. Absence duration is never included in messages or history. ' +
     'What an action may watch follows the same rights as its steps: an agent may watch itself, its helpers, agents it is connected to ' +
     'and its own project; a helper only itself; the Dispatcher agents connected to it and app events. ' +
     `delayMinutes (up to ${MAX_DELAY_MINUTES}) waits before running; when the wait ends the condition is checked again, ` +
@@ -402,6 +405,7 @@ const TRIGGER_SCHEMA = {
     weekday: { type: 'number', description: 'Weekly schedules: 0 (Sunday) to 6 (Saturday). Default 1.' },
     cron: { type: 'string', description: 'Schedules: a 5-field cron line in local time. Required for preset "cron"; filled in from hour and minute for the others.' },
     missed: { type: 'string', enum: [...MISSED_RUN_RULES], description: 'Schedules: skip (default), once or each.' },
+    absenceMinutes: { type: 'number', minimum: MIN_ABSENCE_MINUTES, description: 'app.returned only: required absence in whole minutes, at least 5. Default 30. Tracking runs only while an enabled action uses this event.' },
     at: { type: ['string', 'number'], description: 'Once: a date and time like 2026-11-08T09:00 (local time when no zone is given; a date alone is local midnight), or epoch milliseconds. Must be in the future.' },
     event: { type: 'string', enum: [...ACTION_EVENT_KINDS], description: 'Events: what should happen.' },
     source: {
@@ -618,6 +622,7 @@ export function registerActionTools(): void {
         },
         branch: TRIGGER_SCHEMA.properties.branch,
         delayMinutes: TRIGGER_SCHEMA.properties.delayMinutes,
+        absenceMinutes: TRIGGER_SCHEMA.properties.absenceMinutes,
         note: { type: 'string', description: 'Optional. What the message should remind you of, e.g. "Tag the release." Left out, it says you asked to be told.' },
         name: ACTION_FIELDS.name,
       }, ['event']),

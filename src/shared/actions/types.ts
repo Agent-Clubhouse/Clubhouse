@@ -59,6 +59,7 @@ export type ActionEventKind =
   | 'git.remote_updated'
   // App
   | 'app.started'
+  | 'app.returned'
   | 'project.added'
   | 'project.removed';
 
@@ -67,7 +68,7 @@ export const AGENT_EVENT_KINDS: readonly ActionEventKind[] = [
   'agent.idle', 'agent.waiting', 'agent.error', 'agent.compacted', 'helper.finished',
 ];
 export const GIT_EVENT_KINDS: readonly ActionEventKind[] = ['git.commit', 'git.branch_switched', 'git.remote_updated'];
-export const APP_EVENT_KINDS: readonly ActionEventKind[] = ['app.started', 'project.added', 'project.removed'];
+export const APP_EVENT_KINDS: readonly ActionEventKind[] = ['app.started', 'app.returned', 'project.added', 'project.removed'];
 export const ACTION_EVENT_KINDS: readonly ActionEventKind[] = [...AGENT_EVENT_KINDS, ...GIT_EVENT_KINDS, ...APP_EVENT_KINDS];
 
 /**
@@ -92,7 +93,12 @@ export interface EventTrigger {
   delayMinutes?: number;
   /** Git events only: run only for this branch, e.g. "main". */
   branch?: string;
+  /** app.returned only: required absence, default 30 minutes, minimum 5. */
+  absenceMinutes?: number;
 }
+
+export const DEFAULT_ABSENCE_MINUTES = 30;
+export const MIN_ABSENCE_MINUTES = 5;
 
 export type ActionTrigger = ScheduleTrigger | OnceTrigger | EventTrigger;
 

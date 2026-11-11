@@ -211,6 +211,15 @@ describe('action tools', () => {
     expect(engine().get(id)).toMatchObject({ enabled: false, runsUsed: 3, offReason: 'Reached its 3-run limit' });
   });
 
+  it('round-trips a return trigger and its threshold over MCP', async () => {
+    const trigger = { kind: 'event', event: 'app.returned', absenceMinutes: 45 };
+    const result = await call('dispatcher', 'create_action', { trigger, steps: [NOTIFY] });
+    expect(result).toMatchObject({ isError: false, body: { action: { trigger: { ...trigger, source: { kind: 'app' } } } } });
+    expect(result.body.action.description).toContain('after at least 45 minutes away');
+    const sub = await call('dispatcher', 'subscribe', { event: 'app.returned', absenceMinutes: 5 });
+    expect(sub).toMatchObject({ isError: false, body: { action: { trigger: { absenceMinutes: 5 } } } });
+  });
+
   it('registers all seven tools, each mapped to an action.* permission', () => {
     expect(ACTION_TOOL_PERMISSIONS).toEqual({
       create_action: 'action.create', list_actions: 'action.list', update_action: 'action.update',
