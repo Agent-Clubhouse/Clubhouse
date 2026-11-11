@@ -9,6 +9,7 @@ import { AnnexIdentitySection } from './AnnexIdentitySection';
 import { AnnexPairingQr } from './AnnexPairingQr';
 import { PairingWizard, type RepairTarget } from './PairingWizard';
 import { SettingsPage, SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
+import type { AnnexSettings } from '../../../shared/types';
 
 /**
  * Settings > Annex Network (#3067): one page for the whole network, in place
@@ -68,17 +69,19 @@ export function AnnexNetworkSettingsView() {
     }
   }
 
-  /** On: this machine answers and connects, and new pairings join the network. Off: nothing connects. */
   // Built on what main has saved, so a click before the settings load (or after a reset) keeps the names.
-  const setOn = async (value: boolean): Promise<void> => {
+  const saveCurrentSettings = async (changes: Partial<AnnexSettings>): Promise<void> => {
     let current = settings;
     try {
       current = (await window.clubhouse.annex.getSettings()) ?? settings;
     } catch {
       // telemetry-exempt: falls back to the settings already shown.
     }
-    await saveSettings({ ...current, enableServer: value, enableClient: value, ...(value && { networkEnabled: true }) });
+    await saveSettings({ ...current, ...changes });
   };
+  /** On: this machine answers and connects, and new pairings join the network. Off: nothing connects. */
+  const setOn = (value: boolean): Promise<void> =>
+    saveCurrentSettings({ enableServer: value, enableClient: value, ...(value && { networkEnabled: true }) });
   const pairAgainHere = adding && !!repairTarget;
 
   return (
@@ -96,6 +99,13 @@ export function AnnexNetworkSettingsView() {
           <div data-testid="annex-network-toggle" className="flex">
             <Toggle aria-label="Annex Network on this computer" checked={on} onChange={(value) => { void setOn(value); }} />
           </div>
+        </SettingsField>
+        <SettingsField
+          label="Only accept connections from this computer"
+          help="Listen only on this computer and turn off local discovery. Other computers on your network and your phone can reach this computer only through a forward you set up."
+        >
+          <Toggle aria-label="Only accept connections from this computer" checked={settings.loopbackOnly === true}
+            onChange={(value) => { void saveCurrentSettings({ loopbackOnly: value }); }} />
         </SettingsField>
       </div>
 

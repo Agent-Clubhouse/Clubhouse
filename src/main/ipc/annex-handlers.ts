@@ -87,9 +87,11 @@ export function registerAnnexHandlers(): void {
     const previous = annexSettings.getSettings();
     await annexSettings.saveSettings(settings);
     settingsChanged('annex');
+    const bindingChanged = !!settings.loopbackOnly !== !!previous.loopbackOnly;
 
     // Server toggle (independent of client)
-    if (settings.enableServer && !previous.enableServer) {
+    if (settings.enableServer && (!previous.enableServer || bindingChanged)) {
+      if (previous.enableServer) annexServer.stop();
       try {
         annexServer.start();
         appLog('core:annex', 'info', 'Annex server started via settings');
@@ -110,6 +112,8 @@ export function registerAnnexHandlers(): void {
     } else if (!settings.enableClient && previous.enableClient) {
       annexClient.stopClient();
       appLog('core:annex', 'info', 'Annex client stopped via settings');
+    } else if (settings.enableClient && bindingChanged) {
+      annexClient.scan();
     }
 
     // Notify renderer of status change

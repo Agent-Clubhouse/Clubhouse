@@ -261,6 +261,41 @@ describe('annex-client', () => {
   // ---- startClient / stopClient ----
 
   describe('startClient', () => {
+    it('does not browse in loopback mode, even after a manual scan or wake', () => {
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+      annexClient.startClient();
+      annexClient.scan();
+      annexClient.resumeAllConnections();
+      expect(BonjourConstructor).not.toHaveBeenCalled();
+      expect(mockBonjourInstance.find).not.toHaveBeenCalled();
+    });
+
+    it('stops browsing when loopback is enabled and resumes when disabled without forgetting a paired connection', () => {
+      annexClient.startClient();
+      annexClient._addConnectedSatelliteForTesting('paired');
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+      annexClient.scan();
+      expect(mockBrowser.stop).toHaveBeenCalledOnce();
+      expect(mockBonjourInstance.destroy).toHaveBeenCalledOnce();
+      expect(mockBonjourInstance.find).toHaveBeenCalledTimes(1);
+      expect(annexClient.getSatellite('paired')?.state).toBe('connected');
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: false });
+      annexClient.scan();
+      expect(mockBonjourInstance.find).toHaveBeenCalledTimes(2);
+      expect(annexClient.getSatellite('paired')?.state).toBe('connected');
+      expect(annexPeers.removePeer).not.toHaveBeenCalled();
+    });
+
+    it('ignores a discovery result that finishes after loopback mode is enabled', async () => {
+      mockHttpGetIdentity({ fingerprint: 'remote', alias: 'Remote', publicKey: 'key' });
+      annexClient.startClient();
+      const pending = bonjourFindCallback!(makeService());
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+      annexClient.scan();
+      await pending;
+      expect(annexClient.getDiscoveredServices()).toEqual([]);
+    });
+
     it('starts Bonjour discovery', () => {
       annexClient.startClient();
       expect(mockBonjourInstance.find).toHaveBeenCalledWith(

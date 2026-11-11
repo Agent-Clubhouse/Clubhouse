@@ -1365,7 +1365,7 @@ let rediscoverTimer: ReturnType<typeof setTimeout> | null = null;
 const MDNS_RESTART_DELAY_MS = 30_000;
 
 function startDiscovery(): void {
-  if (bonjourBrowser) return;
+  if (bonjourBrowser || annexSettings.getSettings().loopbackOnly) return;
 
   try {
     // Socket errors are logged, never thrown (#1921).
@@ -1380,8 +1380,9 @@ function startDiscovery(): void {
       rediscoverTimer.unref?.();
     });
     bonjourBrowser = bonjourInstance.find({ type: 'clubhouse-annex' }, async (service) => {
+      if (annexSettings.getSettings().loopbackOnly) return;
       const identity = await identifyService(service);
-      if (!identity) return;
+      if (!identity || annexSettings.getSettings().loopbackOnly) return;
 
       const { fingerprint } = identity;
       const txt = service.txt || {};

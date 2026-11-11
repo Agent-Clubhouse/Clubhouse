@@ -5,6 +5,7 @@ import type { AnnexSettings } from '../../shared/types';
 const store = createSettingsStore<AnnexSettings>('annex-settings.json', {
   enableServer: false,
   enableClient: false,
+  loopbackOnly: false,
   deviceName: `Clubhouse on ${os.hostname()}`,
   alias: os.hostname(),
   icon: 'computer',

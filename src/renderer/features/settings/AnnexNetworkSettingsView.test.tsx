@@ -47,6 +47,25 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     await waitFor(() => expect(saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ enableServer: false, enableClient: false })));
   });
 
+  it.each([false, true])('shows and saves loopback mode (previously %s) without altering Annex or device settings', async (loopbackOnly) => {
+    window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue({ ...ON, loopbackOnly });
+    setup({ ...ON, loopbackOnly });
+    render(<AnnexNetworkSettingsView />);
+    const toggle = screen.getByRole('switch', { name: 'Only accept connections from this computer' });
+    expect(toggle).toHaveAttribute('aria-checked', String(loopbackOnly));
+    expect(screen.getByText(/Other computers on your network and your phone can reach this computer only through a forward you set up/)).toBeInTheDocument();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ ...ON, loopbackOnly: !loopbackOnly }));
+  });
+
+  it('changes loopback mode without overwriting settings that have not loaded yet', async () => {
+    window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue({ ...ON, alias: 'Saved' });
+    setup({ ...OFF, alias: '', deviceName: '' });
+    render(<AnnexNetworkSettingsView />);
+    fireEvent.click(screen.getByRole('switch', { name: 'Only accept connections from this computer' }));
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ ...ON, alias: 'Saved', loopbackOnly: true }));
+  });
+
   it('builds on the saved settings, so a click before they load keeps the names', async () => {
     window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue({ ...OFF, deviceName: 'Saved Mac', alias: 'Saved' });
     setup({ ...OFF, deviceName: '', alias: '' });

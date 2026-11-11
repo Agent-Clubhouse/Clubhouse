@@ -25,7 +25,7 @@ function getState() {
   return useAnnexStore.getState();
 }
 
-const DEFAULT_SETTINGS: AnnexSettings = { enableServer: false, enableClient: false, deviceName: '', alias: '', icon: 'computer', color: 'indigo', autoReconnect: true };
+const DEFAULT_SETTINGS: AnnexSettings = { enableServer: false, enableClient: false, loopbackOnly: false, deviceName: '', alias: '', icon: 'computer', color: 'indigo', autoReconnect: true };
 const DEFAULT_STATUS: AnnexStatus = { advertising: false, port: 0, pin: '', connectedCount: 0, fingerprint: '', alias: '', icon: 'computer', color: 'indigo' };
 
 // ---------- tests ----------

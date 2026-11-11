@@ -81,6 +81,19 @@ describe('annex-settings', () => {
   });
 
   describe('saveSettings', () => {
+    it('loads older settings with loopback off and persists each mode across a reload', async () => {
+      const older = { enableServer: true, enableClient: true, deviceName: 'Existing computer', reachableAs: 'studio.local' };
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(older));
+      expect(getSettings()).toMatchObject({ ...older, loopbackOnly: false });
+      for (const loopbackOnly of [true, false]) {
+        await saveSettings({ ...getSettings(), loopbackOnly });
+        const written = vi.mocked(fs.promises.writeFile).mock.calls.at(-1)![1] as string;
+        resetAllSettingsStoresForTests();
+        vi.mocked(fs.readFileSync).mockReturnValue(written);
+        expect(getSettings()).toMatchObject({ ...older, loopbackOnly });
+      }
+    });
+
     it('writes settings as JSON', async () => {
       await saveSettings({ enableServer: true, enableClient: true, deviceName: 'Test Device' });
       expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(

@@ -31,6 +31,7 @@ vi.mock('../services/annex-server', () => ({
 vi.mock('../services/annex-client', () => ({
   startClient: vi.fn(),
   stopClient: vi.fn(),
+  scan: vi.fn(),
   connect: vi.fn(),
   forgetSatellite: vi.fn(),
 }));
@@ -163,6 +164,30 @@ describe('annex-handlers', () => {
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enableServer: true, enableClient: false, deviceName: 'Mac' });
     expect(annexServer.start).toHaveBeenCalled();
+    expect(annexClient.startClient).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('SAVE_SETTINGS restarts the listener and refreshes discovery when loopback becomes %s, keeping pairings', async (loopbackOnly) => {
+    const previous = { enableServer: true, enableClient: true, deviceName: 'Mac', loopbackOnly: !loopbackOnly };
+    vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+    await handlers.get(IPC.ANNEX.SAVE_SETTINGS)!({}, { ...previous, loopbackOnly });
+    expect(annexSettings.saveSettings).toHaveBeenCalledWith({ ...previous, loopbackOnly });
+    expect(annexServer.stop).toHaveBeenCalledExactlyOnceWith();
+    expect(annexServer.start).toHaveBeenCalledExactlyOnceWith();
+    expect(vi.mocked(annexServer.stop).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(annexServer.start).mock.invocationCallOrder[0]);
+    expect(annexClient.scan).toHaveBeenCalledExactlyOnceWith();
+    expect(annexClient.stopClient).not.toHaveBeenCalled();
+    expect(annexPeers.removeAllPeers).not.toHaveBeenCalled();
+    expect(annexPeers.removePeer).not.toHaveBeenCalled();
+  });
+
+  it('SAVE_SETTINGS does not start Annex just because loopback mode changes while off', async () => {
+    const previous = { enableServer: false, enableClient: false, deviceName: 'Mac' };
+    vi.mocked(annexSettings.getSettings).mockReturnValue(previous);
+    await handlers.get(IPC.ANNEX.SAVE_SETTINGS)!({}, { ...previous, loopbackOnly: true });
+    expect(annexServer.start).not.toHaveBeenCalled();
+    expect(annexServer.stop).not.toHaveBeenCalled();
+    expect(annexClient.scan).not.toHaveBeenCalled();
     expect(annexClient.startClient).not.toHaveBeenCalled();
   });
 

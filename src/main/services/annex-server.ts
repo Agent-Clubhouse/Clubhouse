@@ -4936,7 +4936,7 @@ export function start(): void {
 
   appLog('core:annex', 'info', 'Annex server starting...');
   const serverStartMs = Date.now();
-  const networkProfile = annexNetworkProfile();
+  const networkProfile = annexNetworkProfile(process.env, annexSettings.getSettings().loopbackOnly);
   boundHost = networkProfile.host;
 
   // Generate identity on first enable (lazy creation)

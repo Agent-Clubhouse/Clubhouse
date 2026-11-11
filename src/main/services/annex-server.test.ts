@@ -105,10 +105,10 @@ vi.mock('./annex-network-membership', () => ({
 
 vi.mock('./annex-network-profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./annex-network-profile')>();
-  return { ...actual, annexNetworkProfile: () => ({ host: '127.0.0.1' as const, advertise: true }) };
+  return { ...actual, annexNetworkProfile: vi.fn(() => ({ host: '127.0.0.1', advertise: true })) };
 });
 
-const mockBonjourService = { stop: vi.fn() };
+const mockBonjourService = { stop: vi.fn(), on: vi.fn() };
 const mockBonjour = {
   publish: vi.fn().mockReturnValue(mockBonjourService),
   destroy: vi.fn(),
@@ -343,6 +343,7 @@ import * as annexSettings from './annex-settings';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
 import * as networkChannel from './annex-network-channel';
+import { annexNetworkProfile } from './annex-network-profile';
 
 /** A positive, minimally encoded certificate serial (first byte 0x01 to 0x7f). See #2992. */
 function positiveSerial(): string {
@@ -431,6 +432,9 @@ async function startAndPair(): Promise<{ port: number; token: string; pin: strin
   annexServer.start();
   await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
   const status = annexServer.getStatus();
+  const previousPorts = annexSettings.getLastPorts();
+  if (previousPorts.mainPort) expect(status.port).toBe(previousPorts.mainPort);
+  if (previousPorts.pairingPort) expect(status.pairingPort).toBe(previousPorts.pairingPort);
   // `token` is kept so call sites read the same; the server ignores Authorization headers.
   return { port: status.port, token: 'ignored-bearer', pin: status.pin };
 }
@@ -446,6 +450,7 @@ function authHeaders(token: string): Record<string, string> {
 
 describe('annex-server', () => {
   beforeEach(() => {
+    vi.mocked(annexNetworkProfile).mockImplementation((_env, loopbackOnly) => ({ host: '127.0.0.1', advertise: !loopbackOnly }));
     vi.mocked(agentSystem.waitForAgentStopped).mockResolvedValue(true);
     // Re-apply mock return values after mockReset clears them
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false });
@@ -484,7 +489,7 @@ describe('annex-server', () => {
     vi.mocked(pluginStorage.readKey).mockResolvedValue(null);
     vi.mocked(generateQuickName).mockReturnValue('swift-fox');
     mockBonjour.publish.mockReturnValue(mockBonjourService);
-    vi.mocked(Bonjour).mockImplementation(() => mockBonjour as any);
+    vi.mocked(Bonjour).mockImplementation(function () { return mockBonjour as any; });
 
     // Re-apply mocks for annex-identity, annex-tls, annex-peers, annex-event-bus
     vi.mocked(annexIdentity.getOrCreateIdentity).mockReturnValue({
@@ -518,6 +523,42 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('stable ports (#go-device-readiness)', () => {
+    it('rebinds both listeners in each mode, disables advertising, and still accepts a paired certificate after restart', async () => {
+      const actual = await vi.importActual<typeof import('./annex-network-profile')>('./annex-network-profile');
+      const requestedHosts: string[] = [];
+      const originalListen = net.Server.prototype.listen;
+      // Observe production bind addresses without exposing test listeners beyond loopback.
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (typeof args[0] !== 'number' || typeof args[1] !== 'string') throw new Error('Expected port and host');
+        requestedHosts.push(args[1]);
+        args[1] = '127.0.0.1';
+        Reflect.apply(originalListen, this, args);
+        return this;
+      });
+      try {
+        for (const loopbackOnly of [false, true, false]) {
+          annexServer.stop();
+          vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly });
+          vi.mocked(annexNetworkProfile).mockReturnValueOnce(actual.annexNetworkProfile({}, loopbackOnly));
+          annexServer.start();
+          await vi.waitFor(() => expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0));
+          const status = annexServer.getStatus();
+          expect(requestedHosts.slice(-2)).toEqual(loopbackOnly ? ['127.0.0.1', '127.0.0.1'] : ['::', '::']);
+          expect(status.advertising).toBe(!loopbackOnly);
+          const publishes = mockBonjour.publish.mock.calls.length;
+          annexServer.republishAdvertisement();
+          if (loopbackOnly) expect(mockBonjour.publish).toHaveBeenCalledTimes(publishes);
+          expect((await request(status.port, 'GET', '/api/v1/status')).status).toBe(200);
+          expect(annexPeers.getPeer(TEST_CONTROLLER.fingerprint)).toEqual(TEST_CONTROLLER);
+          expect(annexPeers.removeAllPeers).not.toHaveBeenCalled();
+          const saved = { mainPort: status.port, pairingPort: status.pairingPort };
+          vi.mocked(annexSettings.getLastPorts).mockReturnValue(saved);
+        }
+      } finally {
+        listen.mockRestore();
+      }
+    });
+
     async function freePort(): Promise<number> {
       const srv = net.createServer();
       await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
