@@ -87,6 +87,7 @@ export interface DispatcherMemoryHealth {
   unlinkedTopics: number;
   staleTopics: number;
   unconfirmedTopics: number;
+  conflictingPages: number;
   brokenLinks: number;
   missingSources: number;
 }
@@ -118,6 +119,7 @@ export function recordMemoryHealth(h: DispatcherMemoryHealth): void {
       ATTR.dispatcherMemoryUnlinkedTopics(count(h.unlinkedTopics)),
       ATTR.dispatcherMemoryStaleTopics(count(h.staleTopics)),
       ATTR.dispatcherMemoryUnconfirmedTopics(count(h.unconfirmedTopics)),
+      ATTR.dispatcherMemoryConflictingPages(count(h.conflictingPages)),
       ATTR.dispatcherMemoryBrokenLinks(count(h.brokenLinks)),
       ATTR.dispatcherMemoryMissingSources(count(h.missingSources)),
     ]);

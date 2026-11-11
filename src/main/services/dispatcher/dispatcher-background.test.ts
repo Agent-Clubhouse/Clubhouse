@@ -199,6 +199,21 @@ describe('the upkeep gate', () => {
     expect(await runDispatcherUpkeep()).toHaveProperty('skip');
   });
 
+  it('uses Updated rather than mtime to select topic reviews', async () => {
+    topic('topics/old-facts.md', 'confirmed');
+    topic('topics/new-facts.md', 'confirmed', 120_000);
+    for (const [name, updated] of [['old-facts', world.now - 120_000], ['new-facts', world.now - 1_000]] as const) {
+      const file = path.join(memory, 'topics', `${name}.md`);
+      const stat = fs.statSync(file);
+      fs.writeFileSync(file, renderTopicPage({ status: 'confirmed', source: 'pm', updated: new Date(updated).toISOString(), body: 'x\n' }));
+      fs.utimesSync(file, stat.atime, stat.mtime);
+    }
+    fs.writeFileSync(path.join(tmp, 'dispatcher-upkeep.json'), JSON.stringify({ lastCheckedAt: world.now - 60_000 }));
+    const result = await runDispatcherUpkeep();
+    expect('send' in result && result.send).toContain('topics/new-facts.md');
+    expect('send' in result && result.send).not.toContain('topics/old-facts.md');
+  });
+
   it('does not review upkeep-only link repairs again and checkpoints completion (part of #3218)', async () => {
     topic('topics/checkout-fix.md', 'confirmed', 120_000);
     const notes = path.join(memory, 'topics', 'notes.md');
@@ -355,8 +370,11 @@ describe('upkeep telemetry (#3052)', () => {
 });
 
 describe('upkeepReviewText', () => {
-  const empty = { rolledUp: { days: [], weeks: [] }, linksFixed: [], archived: [], brokenLinks: [], missingSources: [], changed: false };
+  const empty = { rolledUp: { days: [], weeks: [] }, linksFixed: [], archived: [], brokenLinks: [], missingSources: [], conflictingPages: [], changed: false };
 
+  it('surfaces conflicts even when a page has not changed', () => {
+    expect(upkeepReviewText([], { ...empty, conflictingPages: ['topics/conflict.md'] })).toContain('topics/conflict.md: dated Conflicting notes');
+  });
   it('is null when nothing changed and nothing is left to fix', () => {
     expect(upkeepReviewText([], { ...empty, rolledUp: { days: ['2026-11-01'], weeks: [] }, changed: true })).toBeNull();
   });

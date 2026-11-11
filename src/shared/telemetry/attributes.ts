@@ -1025,6 +1025,7 @@ export const ATTR = {
   dispatcherMemoryUnlinkedTopics: intAttr('clubhouse.dispatcher.memory.unlinked_topics'),
   /** Topics untouched for the upkeep's stale age (30 days), confirmed or not. */
   dispatcherMemoryStaleTopics: intAttr('clubhouse.dispatcher.memory.stale_topics'),
+  dispatcherMemoryConflictingPages: intAttr('clubhouse.dispatcher.memory.conflicting_pages'),
   dispatcherMemoryUnconfirmedTopics: intAttr('clubhouse.dispatcher.memory.unconfirmed_topics'),
   /** Links between memory pages that upkeep couldn't fix. */
   dispatcherMemoryBrokenLinks: intAttr('clubhouse.dispatcher.memory.broken_links'),

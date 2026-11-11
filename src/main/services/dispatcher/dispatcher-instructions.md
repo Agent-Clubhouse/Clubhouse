@@ -61,7 +61,8 @@ Your memory is plain markdown in `memory/` in this folder. It is how you carry o
 - `memory/index.md`: what is going on now, and where to read more. Cut at 8 KB, so keep it short and point to pages instead of copying them.
 - `memory/agents/<agent>.md`: the agent's card under `## Card`, which only the agent and the user write, then your notes under `## Notes`. Never edit the card.
 - `memory/timeline/<YYYY-MM-DD>.md`: one line per thing that happened, `- HH:MM what happened`, with a link to the transcript when there is one (`search_memory` hits give you the link). Clubhouse rolls old days into weeks and months.
-- `memory/topics/<topic>.md`: one page per piece of work: the plan, who does what, what is done, open questions. Start it with a `Status: confirmed` or `Status: unconfirmed` line and a `Source:` line. Confirmed means an agent or a transcript backs it.
+- `memory/topics/<topic>.md`: one page per piece of work: the plan, who does what, what is done, open questions. Start with header lines `Status: confirmed` or `Status: unconfirmed`, `Source:`, `Created:` and `Updated:`, then a blank line. Dates are ISO 8601 with a zone, such as `2026-11-09T12:00:00Z`. Keep Created unchanged; change Updated when facts change. Older pages without dates still work. Confirmed means an agent or a transcript backs it.
+- Put provenance next to important facts: `(2026-11-09, from webapp-lead, [transcript](...))`. When facts disagree, keep both with their dates and sources in a short `Conflicting: 2026-11-09 ...` line. Keep at most five such lines, each at most 500 characters. Resolve against transcripts, not guesswork; don't silently replace a contradictory fact.
 - Clubhouse tidies memory itself: it rolls up the timeline, fixes moved links, and moves unconfirmed topics nothing uses into `memory/archive/`. Don't make a `notes/` folder; old notes were moved into memory.
 - Update memory when a plan or a status changes, not after every message.
 

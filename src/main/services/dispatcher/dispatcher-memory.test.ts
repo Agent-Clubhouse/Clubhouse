@@ -21,6 +21,9 @@ import {
   loadIndex,
   memorySlug,
   parseAgentPage,
+  parseTopicPage,
+  renderTopicPage,
+  boundConflictNotes,
   readAgentPage,
   readIndex,
   readTopic,
@@ -59,7 +62,7 @@ describe('layout', () => {
     const fresh = await import('./dispatcher-memory');
     expect(await fresh.loadIndex(root)).toBe('Checkout is the priority.\n');
     expect((await fresh.readAgentPage('webapp-lead', root))?.card).toBe('Owns the web app.');
-    expect(await fresh.readTopic('checkout', root)).toEqual({ status: 'confirmed', source: 'webapp-lead, 2026-11-07', body: '# Checkout\n\nFixed in #412.\n' });
+    expect(await fresh.readTopic('checkout', root)).toMatchObject({ status: 'confirmed', source: 'webapp-lead, 2026-11-07', body: '# Checkout\n\nFixed in #412.\n' });
   });
 
   it('slugs names so a page never leaves its folder', () => {
@@ -147,7 +150,38 @@ describe('topic pages', () => {
     const body = 'Status: not a header\n\nbody kept as is';
     await writeTopic('Release 1.0', { status: 'unconfirmed', source: 'chat\nwith a newline', body }, root);
     expect(fs.existsSync(path.join(root, 'topics', 'release-1.0.md'))).toBe(true);
-    expect(await readTopic('Release 1.0', root)).toEqual({ status: 'unconfirmed', source: 'chat with a newline', body });
+    expect(await readTopic('Release 1.0', root)).toMatchObject({ status: 'unconfirmed', source: 'chat with a newline', body });
+  });
+
+  it.each([
+    'Status: confirmed\nSource: chat\n\nBody\n\nkept',
+    'Updated: 2026-11-09T12:00:00Z\nOwner: pm\nSource: chat\nCreated: 2026-11-08T10:00:00+02:00\nStatus: unconfirmed\nextra line\n\nBody\n',
+  ])('round-trips legacy and extended headers without loss', (text) => {
+    const parsed = parseTopicPage(text);
+    expect(parsed).not.toBeNull();
+    expect(renderTopicPage(parsed!)).toBe(text);
+    expect(parseTopicPage(renderTopicPage(parsed!))).toEqual(parsed);
+  });
+
+  it('updates known headers without dropping extensions or moving them into the body', () => {
+    const parsed = parseTopicPage('Owner: pm\nSource: chat\nStatus: unconfirmed\n\nBody')!;
+    const next = renderTopicPage({ ...parsed, status: 'confirmed', updated: '2026-11-09T12:00:00Z' });
+    expect(next).toBe('Owner: pm\nSource: chat\nStatus: confirmed\nUpdated: 2026-11-09T12:00:00Z\n\nBody');
+    expect(parseTopicPage('Status: nonsense\nSource: chat\n\nBody')).toBeNull();
+  });
+
+  it('stamps writes, preserves Created, and bounds explicit conflict notes', async () => {
+    const page = { status: 'confirmed' as const, source: 'chat', created: '2026-01-01T00:00:00Z', body: 'Fact\n' };
+    await writeTopic('dates', page, root);
+    await writeTopic('dates', { ...page, created: '2026-02-01T00:00:00Z', body: Array.from({ length: 8 }, (_, i) => `Conflicting: 2026-11-09 source-${i} ${'x'.repeat(600)}`).join('\n') }, root);
+    const next = (await readTopic('dates', root))!;
+    expect(next.created).toBe(page.created);
+    expect(Number.isFinite(Date.parse(next.updated!))).toBe(true);
+    expect(next.body.split('\n')).toHaveLength(5);
+    expect(next.body).not.toContain('source-2');
+    expect(next.body).toContain('source-3');
+    expect(next.body.split('\n').every((line) => line.length <= 500)).toBe(true);
+    expect(boundConflictNotes('Fact\n')).toBe('Fact\n');
   });
 });
 

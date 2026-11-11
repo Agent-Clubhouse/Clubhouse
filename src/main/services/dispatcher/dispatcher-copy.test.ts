@@ -56,6 +56,16 @@ function shownStrings(file: string): Array<{ line: number; text: string }> {
 }
 
 describe('the Dispatcher uses one identity and calls its controller by its current name (#3036)', () => {
+  it('keeps provenance and bounded conflict guidance in the controller instructions and upkeep skill', () => {
+    const dir = path.join(ROOT, 'src/main/services/dispatcher');
+    for (const file of ['dispatcher-instructions.md', 'skills/work/memory-upkeep/SKILL.md']) {
+      const text = fs.readFileSync(path.join(dir, file), 'utf-8');
+      for (const key of ['Status:', 'Source:', 'Created:', 'Updated:', 'Conflicting:', 'ISO 8601', '500 characters']) {
+        expect(text, file).toContain(key);
+      }
+      expect(text, file).toMatch(/five/);
+    }
+  });
   it('no string the app can show mentions a coordinator, a second session or the controller\'s old name', () => {
     const files = SOURCE_DIRS.flatMap((dir) => walk(path.join(ROOT, dir), (f) => /\.tsx?$/.test(f) && !f.endsWith('.d.ts') && !isTest(f)));
     expect(files.length).toBeGreaterThan(100);

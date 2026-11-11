@@ -362,6 +362,10 @@ export type TopicStatus = 'confirmed' | 'unconfirmed';
 export interface TopicPage {
   status: TopicStatus;
   source: string;
+  created?: string;
+  updated?: string;
+  /** Original header lines, including extensions and their order. */
+  headerLines?: string[];
   body: string;
 }
 
@@ -369,20 +373,65 @@ export function topicPagePath(topic: string, root?: string): string {
   return path.join(memoryPaths(root).topics, `${memorySlug(topic)}.md`);
 }
 
-/**
- * A topic page is a `Status:` line and a `Source:` line, a blank line, then the
- * body exactly as given.
- */
+const TOPIC_KEYS = ['Status', 'Source', 'Created', 'Updated'] as const;
+
+/** Header lines, a blank line, then the body exactly as given. */
 export function renderTopicPage(page: TopicPage): string {
-  const source = page.source.replace(/\s*\n\s*/g, ' ').trim();
-  return `Status: ${page.status}\nSource: ${source}\n\n${page.body}`;
+  const values: Record<string, string | undefined> = {
+    Status: page.status, Source: page.source, Created: page.created, Updated: page.updated,
+  };
+  const seen = new Set<string>();
+  const lines = (page.headerLines ?? []).flatMap((line) => {
+    const match = /^([^:]+):[ \t]*(.*)$/.exec(line);
+    if (!match || !TOPIC_KEYS.includes(match[1] as typeof TOPIC_KEYS[number])) return [line];
+    const key = match[1];
+    seen.add(key);
+    const value = values[key]?.replace(/\s*\n\s*/g, ' ').trim();
+    return value === undefined ? [] : [match[2] === value ? line : `${key}: ${value}`];
+  });
+  for (const key of TOPIC_KEYS) {
+    if (!seen.has(key) && values[key] !== undefined) lines.push(`${key}: ${values[key]!.replace(/\s*\n\s*/g, ' ').trim()}`);
+  }
+  return `${lines.join('\n')}\n\n${page.body}`;
 }
 
-/** Null when the text doesn't start with a `Status:` header. */
+/** Legacy pages need no dates; unknown header lines survive a round trip. */
 export function parseTopicPage(text: string): TopicPage | null {
-  const match = /^Status: (confirmed|unconfirmed)\nSource: ([^\n]*)\n\n/.exec(text);
-  if (!match) return null;
-  return { status: match[1] as TopicStatus, source: match[2], body: text.slice(match[0].length) };
+  const at = text.indexOf('\n\n');
+  if (at < 0) return null;
+  const lines = text.slice(0, at).split('\n');
+  const headers = new Map<string, string>();
+  for (const line of lines) {
+    const match = /^([^:]+):[ \t]*(.*)$/.exec(line);
+    if (match) headers.set(match[1], match[2]);
+  }
+  const status = headers.get('Status');
+  const source = headers.get('Source');
+  if ((status !== 'confirmed' && status !== 'unconfirmed') || source === undefined) return null;
+  const page: TopicPage = { status, source, body: text.slice(at + 2) };
+  if (headers.has('Created')) page.created = headers.get('Created');
+  if (headers.has('Updated')) page.updated = headers.get('Updated');
+  if (text.slice(0, at) !== `Status: ${status}\nSource: ${source}`) page.headerLines = lines;
+  return page;
+}
+
+/** Invalid dates never disable freshness checks on an older page. */
+export function topicUpdatedAt(page: TopicPage | null, mtimeMs: number): number {
+  const updated = page?.updated ? Date.parse(page.updated) : NaN;
+  return Number.isFinite(updated) ? updated : mtimeMs;
+}
+
+export const MAX_CONFLICT_NOTES = 5;
+
+export function hasConflictNotes(text: string): boolean {
+  return /^Conflicting:[ \t]*\S/m.test(text);
+}
+
+/** Explicit notes, not guessed contradictions: retain the newest five short entries. */
+export function boundConflictNotes(text: string): string {
+  let remaining = MAX_CONFLICT_NOTES;
+  return text.split('\n').reverse().filter((line) => !/^Conflicting:/.test(line) || remaining-- > 0)
+    .reverse().map((line) => /^Conflicting:/.test(line) ? line.slice(0, 500) : line).join('\n');
 }
 
 export async function readTopic(topic: string, root?: string): Promise<TopicPage | null> {
@@ -393,6 +442,10 @@ export async function readTopic(topic: string, root?: string): Promise<TopicPage
 export async function writeTopic(topic: string, page: TopicPage, root?: string): Promise<string> {
   await ensureMemoryLayout(root);
   const file = topicPagePath(topic, root);
-  await writeFileAtomic(file, renderTopicPage(page));
+  const previous = await readTopic(topic, root);
+  const now = new Date().toISOString();
+  await writeFileAtomic(file, renderTopicPage({
+    ...page, created: previous?.created ?? page.created ?? now, updated: now, body: boundConflictNotes(page.body),
+  }));
   return file;
 }

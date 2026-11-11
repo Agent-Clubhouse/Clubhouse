@@ -158,6 +158,7 @@ export function upkeepReviewText(changed: MemoryPage[], report: UpkeepReport): s
   const problems = [
     ...report.missingSources.map((m) => `${m.page}: the file it cites is gone (${m.source})`),
     ...report.brokenLinks.map((b) => `${b.page}: the link to ${b.target} goes nowhere`),
+    ...report.conflictingPages.map((page) => `${page}: dated Conflicting notes need checking against their sources`),
   ];
   if (!changed.length && !problems.length) return null;
   const done: string[] = [];
@@ -166,12 +167,12 @@ export function upkeepReviewText(changed: MemoryPage[], report: UpkeepReport): s
   if (report.archived.length) done.push(`moved ${report.archived.length === 1 ? 'an unconfirmed topic' : `${report.archived.length} unconfirmed topics`} nothing used into memory/archive/`);
   const parts = ['Memory upkeep.'];
   if (done.length) parts.push(`Clubhouse ${done.join(', ')}.`);
-  const order = [...changed].sort((a, b) => Number(b.status === 'unconfirmed') - Number(a.status === 'unconfirmed') || b.mtimeMs - a.mtimeMs);
+  const order = [...changed].sort((a, b) => Number(b.status === 'unconfirmed') - Number(a.status === 'unconfirmed') || (b.updatedAt ?? b.mtimeMs) - (a.updatedAt ?? a.mtimeMs));
   if (order.length) {
     parts.push(['These pages changed since the last upkeep. Check them against the transcripts they cite, using search_memory:', ...capped(order, (p) => (p.status ? `${p.page} (${p.status})` : p.page))].join('\n'));
   }
   if (problems.length) parts.push(['Clubhouse couldn’t fix these:', ...capped(problems, (p) => p)].join('\n'));
-  parts.push('Mark a topic confirmed when a transcript backs it, fix or remove what a transcript contradicts, and fix the links. Keep index.md short. This is for you, so don’t call tell_user for it. Your memory-upkeep skill has the steps.');
+  parts.push('Mark a topic confirmed when a transcript backs it. Keep a short dated Conflicting: note with both sources when facts disagree, then resolve against transcripts. Fix the links and keep index.md short. This is for you, so don’t call tell_user for it. Your memory-upkeep skill has the steps.');
   return parts.join('\n\n');
 }
 
@@ -212,7 +213,7 @@ export function runDispatcherUpkeep(): Promise<{ send: string } | { skip: string
     try {
       report = await runMemoryUpkeep(new Date(now), { root });
       const checkedAt = deps.now();
-      changed = (await listMemoryPages(root)).filter((p) => p.mtimeMs > since && reviewable(p));
+      changed = (await listMemoryPages(root)).filter((p) => (p.updatedAt ?? p.mtimeMs) > since && reviewable(p));
       await writeFileAtomic(deps.stateFile(), `${JSON.stringify({ lastCheckedAt: checkedAt } satisfies UpkeepState)}\n`);
     } catch (err) {
       recordMemoryUpkeep({ outcome: 'error' });

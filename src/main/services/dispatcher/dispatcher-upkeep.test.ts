@@ -52,6 +52,28 @@ function snapshot(): Record<string, string> {
 
 const topic = (status: 'confirmed' | 'unconfirmed', body: string, source = 'pm said so') => renderTopicPage({ status, source, body });
 
+describe('topic provenance freshness and conflicts', () => {
+  it('uses valid Updated dates before mtime, falling back for legacy and invalid dates', async () => {
+    const dated = (updated: string) => renderTopicPage({ status: 'unconfirmed', source: 'chat', updated, body: 'Fact' });
+    write('topics/old-content.md', dated(new Date(NOW.getTime() - 40 * DAY).toISOString()), 1);
+    write('topics/new-content.md', dated(NOW.toISOString()), 90);
+    write('topics/legacy.md', topic('unconfirmed', 'Legacy'), 90);
+    write('topics/invalid.md', dated('not a date'), 90);
+    const report = await runMemoryUpkeep(NOW, { root });
+    expect(report.archived.sort()).toEqual(['topics/invalid.md', 'topics/legacy.md', 'topics/old-content.md']);
+    expect(exists('topics/new-content.md')).toBe(true);
+    expect(await measureMemoryHealth(NOW, report, { root })).toMatchObject({ staleTopics: 0 });
+  });
+
+  it('keeps unresolved conflicts for review and counts pages, not facts or text', async () => {
+    write('topics/conflict.md', topic('unconfirmed', 'Conflicting: 2026-11-09 pm says A; lead says B, see sources.\nConflicting: 2026-11-09 another disagreement.'), 90);
+    const report = await runMemoryUpkeep(NOW, { root });
+    expect(report.archived).toEqual([]);
+    expect(report.conflictingPages).toEqual(['topics/conflict.md']);
+    expect(await measureMemoryHealth(NOW, report, { root })).toMatchObject({ conflictingPages: 1, staleTopics: 1 });
+  });
+});
+
 describe('runMemoryUpkeep: pruning keeps every page it shouldn’t prune', () => {
   beforeEach(() => {
     write('index.md', '# Index\n\n- Current work: [checkout](topics/checkout.md)\n', 90);
