@@ -529,13 +529,13 @@ describe('annex-server', () => {
       const staleAttempts: string[] = [];
       const originalListen = net.Server.prototype.listen;
       let stopped = false;
-      let failedServer: net.Server | undefined;
+      const failure: { server?: net.Server } = {};
       const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
         if (typeof args[0] !== 'number' || typeof args[1] !== 'string') throw new Error('Expected port and host');
         servers.add(this);
-        if (this === failedServer && stopped) staleAttempts.push(args[1]);
-        if (!failedServer && args[0] === 53123) {
-          failedServer = this;
+        if (this === failure.server && stopped) staleAttempts.push(args[1]);
+        if (!failure.server && args[0] === 53123) {
+          failure.server = this;
           process.nextTick(() => {
             this.emit('error', Object.assign(new Error('Port taken'), { code: 'EADDRINUSE' }));
             annexServer.stop();
@@ -560,7 +560,7 @@ describe('annex-server', () => {
           expect(annexServer.getStatus().port).toBeGreaterThan(0);
         });
         expect(staleAttempts).toEqual([]);
-        expect(failedServer?.listening).toBe(false);
+        expect(failure.server?.listening).toBe(false);
         expect(annexServer.getStatus().advertising).toBe(false);
         expect(mockBonjour.publish).not.toHaveBeenCalled();
         for (const server of servers) {
