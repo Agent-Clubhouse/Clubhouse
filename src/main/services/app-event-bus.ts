@@ -17,6 +17,12 @@ export type { TurnOutcome } from '../../shared/types';
 /** Where a turn event came from: chat, terminal hooks, or a headless run. */
 export type TurnVia = 'chat' | 'hook' | 'headless';
 
+export interface DevicePresence {
+  id: string;
+  name: string;
+  kind: 'computer' | 'phone';
+}
+
 interface Stamp {
   /** Epoch ms when it was published. */
   at: number;
@@ -43,6 +49,7 @@ export type AppEvent = Stamp & (
   | { type: 'git.branch_switched'; repoPath: string; branch: string; previousBranch?: string; agentId?: string }
   | { type: 'git.remote_updated'; repoPath: string; branch: string; remote: string; agentId?: string }
   | { type: 'app.started' }
+  | { type: 'device.online' | 'device.offline'; device: DevicePresence }
   /** Only qualifying subscriptions, never absence timestamps or duration. */
   | { type: 'app.returned'; actionIds: string[] }
   | { type: 'project.added'; projectId: string; projectPath: string }
