@@ -247,7 +247,7 @@
       "name": "grant_answer_failed (generic Allow from an older phone does not install)",
       "request": {
         "answer": "allow_once",
-        "commandId": "cmd_234",
+        "commandId": "cmd_235",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "grant_00000000-0000-4000-8000-000000000002",
         "type": "grant.answer",
@@ -255,7 +255,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_234",
+          "commandId": "cmd_235",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "grant_answer_failed",
@@ -271,7 +271,7 @@
       "name": "accepted update approval (wait for idle)",
       "request": {
         "answer": "allow_once",
-        "commandId": "cmd_235",
+        "commandId": "cmd_236",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "grant_00000000-0000-4000-8000-000000000002",
         "type": "grant.answer",
@@ -280,7 +280,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_235",
+          "commandId": "cmd_236",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "answer": "allow_once",
@@ -297,7 +297,7 @@
       "name": "accepted update approval (restart now)",
       "request": {
         "answer": "allow_once",
-        "commandId": "cmd_239",
+        "commandId": "cmd_240",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "grant_00000000-0000-4000-8000-000000000003",
         "type": "grant.answer",
@@ -306,7 +306,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_239",
+          "commandId": "cmd_240",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "answer": "allow_once",

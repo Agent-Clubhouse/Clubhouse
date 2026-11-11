@@ -3299,6 +3299,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.updateStatus = { ...W.updateStatus, state: 'ready', downloadProgress: 100 };
     W.updateWorking = [{ agentId: 'durable_chat', projectPath: APP, orchestrator: 'claude-code', runtime: 'chat', isWorking: true, lastActivity: null, resumeStrategy: 'auto' }];
     publish(); await status();
+    const working = W.updateWorking;
+    W.updateWorking = Array.from({ length: 600 }, (_, i) => ({ ...working[0], agentId: `durable_working_${String(i).padStart(3, '0')}` }));
+    await command('update_approval_capacity (too many working agents to review in one approval)', { type: 'app.update.request' });
+    W.updateWorking = working;
     const asked = await command('accepted request (only asks the person)', { type: 'app.update.request' });
     const id = asked.body.result.requestId;
     const pending = await status();

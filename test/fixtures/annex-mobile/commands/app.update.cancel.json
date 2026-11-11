@@ -3,7 +3,7 @@
     {
       "name": "accepted cancel (nothing interrupted)",
       "request": {
-        "commandId": "cmd_236",
+        "commandId": "cmd_237",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "grant_00000000-0000-4000-8000-000000000002",
         "type": "app.update.cancel",
@@ -11,7 +11,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_236",
+          "commandId": "cmd_237",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "error": null,
@@ -29,7 +29,7 @@
     {
       "name": "update_request_not_found",
       "request": {
-        "commandId": "cmd_237",
+        "commandId": "cmd_238",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "missing",
         "type": "app.update.cancel",
@@ -37,7 +37,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_237",
+          "commandId": "cmd_238",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "update_request_not_found",
@@ -52,7 +52,7 @@
     {
       "name": "update_restart_started",
       "request": {
-        "commandId": "cmd_240",
+        "commandId": "cmd_241",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "grant_00000000-0000-4000-8000-000000000003",
         "type": "app.update.cancel",
@@ -60,7 +60,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_240",
+          "commandId": "cmd_241",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "update_restart_started",
