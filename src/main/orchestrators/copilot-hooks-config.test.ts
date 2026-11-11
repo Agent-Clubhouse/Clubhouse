@@ -267,8 +267,12 @@ describe('Copilot hook document boundary', () => {
     const custom = { type: 'command', bash: 'echo custom', timeoutSec: 5 };
     const { root, file } = await fixture(JSON.stringify({ version: 1, hooks: { preToolUse: [custom], agentStop: [custom] }, other: { keep: true } }));
     const provider = new CopilotCliProvider();
+    const write = vi.spyOn(fsp, 'writeFile');
     await provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
-    await provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
+    const bytes = await fsp.readFile(file, 'utf8');
+    await provider.writeHooksConfig(root, 'http://127.0.0.1:10000/hook');
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(await fsp.readFile(file, 'utf8')).toBe(bytes);
     const result = JSON.parse(await fsp.readFile(file, 'utf8'));
     expect(result.other).toEqual({ keep: true });
     expect(result.hooks.preToolUse).toHaveLength(2);

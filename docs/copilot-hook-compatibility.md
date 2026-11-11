@@ -16,7 +16,7 @@ program writing the file at the same instant is not coordinated with.
 
 | Runtime | Clubhouse hook server | Callback path and limits |
 | --- | --- | --- |
-| Terminal | On | Clubhouse merges command hooks into the Copilot hook document, preserving custom entries and replacing its own entries on repeat writes. Hook changes require restart. |
+| Terminal | On | Clubhouse merges command hooks into the Copilot hook document, preserving custom entries and replacing its own entries. Repeat writes leave an unchanged document untouched. Hook changes require restart. |
 | Terminal | Off | Clubhouse does not inject command hooks. Existing custom hooks remain Copilot's configuration. |
 | SDK chat | On or off | Clubhouse uses the SDK event and permission callbacks, not its terminal hook injection. Configuration discovery remains enabled. |
 

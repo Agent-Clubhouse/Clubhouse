@@ -27,7 +27,8 @@ vi.mock('child_process', () => ({
   }),
 }));
 
-vi.mock('util', () => ({
+vi.mock('util', async (importOriginal) => ({
+  ...await importOriginal<typeof import('util')>(),
   promisify: vi.fn((fn: any) => vi.fn(async (...args: any[]) => fn(...args))),
 }));
 

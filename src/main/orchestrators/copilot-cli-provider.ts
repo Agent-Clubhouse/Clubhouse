@@ -3,7 +3,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { isDeepStrictEqual, promisify } from 'util';
 import {
   OrchestratorConventions,
   ProviderCapabilities,
@@ -319,7 +319,10 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     const existing = await readCopilotHooksConfig(cwd) ?? { version: 1, hooks: {} };
 
     const mergedHooks = mergeHookEntries(existing, ourHooks, isCopilotClubhouseHookEntry);
-    await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
+    const merged = { ...existing, hooks: mergedHooks };
+    if (!isDeepStrictEqual(existing, merged)) {
+      await fsp.writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
+    }
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {
