@@ -236,7 +236,10 @@ export function registerAgentHandlers(): void {
             mcpConfigs as Record<string, Record<string, string>> | undefined,
             worktreeOptions ? parseWorktreeOptions(worktreeOptions) : undefined,
             // Only the New agent page asks, and only with an explicit true (#3245).
-            creationOptions?.copyLegacyDefaults === true ? { copyLegacyDefaults: true } : {},
+            {
+              ...(creationOptions?.copyLegacyDefaults === true && { copyLegacyDefaults: true }),
+              ...(creationOptions?.creationRequestId !== undefined && { creationRequestId: stringArg({ maxLength: 128 })(creationOptions.creationRequestId, 'creationRequestId') }),
+            },
           );
         },
       ),

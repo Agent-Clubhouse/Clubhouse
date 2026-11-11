@@ -154,6 +154,20 @@ afterEach(() => {
 });
 
 describe('createDurable worktree options (#2226)', () => {
+  it('correlates a slow synchronous creation and clears the request id when ready', async () => {
+    const slow = slowWorktreeAdd();
+    const creating = createDurable(PROJECT_PATH, 'scout', 'indigo', undefined, true, undefined, undefined, undefined, undefined, undefined,
+      { creationRequestId: 'creating_scout' });
+    await slow.reached;
+    expect((await listDurable(PROJECT_PATH))[0].creation?.requestId).toBe('creating_scout');
+    expect(events[0]).toMatchObject({ stage: 'config_created', config: { creation: { requestId: 'creating_scout' } } });
+    slow.release();
+    const ready = await creating;
+    expect(ready.creation).toBeUndefined();
+    expect(diskAgents()[0].creation).toBeUndefined();
+    expect(events.at(-1)).toMatchObject({ stage: 'ready', agentId: ready.id });
+  });
+
   it('branches from the current commit into <name>/standby by default', async () => {
     const config = await createDurable(PROJECT_PATH, 'scout', 'indigo');
     expect(config.worktreePath).toBe(agentPath('scout'));

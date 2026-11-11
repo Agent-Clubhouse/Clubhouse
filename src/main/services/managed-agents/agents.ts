@@ -46,6 +46,8 @@ import { skillsFolderOf } from '../../../shared/skills-folder';
 import { applyTemplateGrants } from '../agent-grants-service';
 
 export interface CreateManagedAgentInput {
+  /** Temporary renderer row to replace when the durable record appears. */
+  creationRequestId?: string;
   name: string;
   color: string;
   /** Start from this template. Omit to build from scratch. */
@@ -73,6 +75,19 @@ function newAgentLevel(projectPath: string, access: boolean | AccessLevel | unde
 }
 
 const namesAccess = (s: ManagedTemplateSettings | undefined) => s?.access !== undefined || s?.freeAgentMode !== undefined;
+
+async function availableOrchestrator(projectPath: string, orchestrator: ManagedTemplateSettings['orchestrator']) {
+  const provider = await resolveOrchestrator(projectPath, orchestrator);
+  const availability = await provider.checkAvailability();
+  if (!availability.available) {
+    throw new ManagedError('invalid', `${provider.displayName} is unavailable. ${availability.error || 'Install it or choose an available CLI before creating the agent.'}`);
+  }
+  return provider.id;
+}
+
+function creationArguments(requestId?: string): [undefined?, undefined?, undefined?, { creationRequestId: string }?] {
+  return requestId ? [undefined, undefined, undefined, { creationRequestId: requestId }] : [];
+}
 
 /**
  * Apply settings a template or the builder carries, to the agent's own
@@ -117,9 +132,11 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
     ? { ...input.setup, ...(input.templateId && { templateId: input.templateId }) }
     : base?.setup ?? { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
   checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(input.settings) ? 'settings' : namesAccess(base?.settings) ? 'template' : 'default');
+  settings.orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
   // Managed agents always get their own folder: a worktree in a git project, a plain folder otherwise.
   // Only the setup goes in it, delivered at start: never the project's legacy agent defaults (#3243).
-  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
+  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode,
+    ...creationArguments(input.creationRequestId));
   try {
     await service.saveSetup(projectPath, config.id, setup);
     // What createDurable doesn't take: orchestration, effort, auto-sleep, the helper template and permissions.
@@ -149,7 +166,9 @@ async function createPlainAgent(projectPath: string, input: CreateManagedAgentIn
   if (settings.access !== undefined && !isAccessLevel(settings.access)) throw new ManagedError('invalid', 'access must be plan, ask, auto_edit, auto or full_access.');
   if (settings.freeAgentMode !== undefined && typeof settings.freeAgentMode !== 'boolean') throw new ManagedError('invalid', 'freeAgentMode must be true or false.');
   checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(settings) ? 'settings' : 'default');
-  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
+  const orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
+  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, orchestrator, settings.access ?? settings.freeAgentMode,
+    ...creationArguments(input.creationRequestId));
   if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
     try {
       await applyManagedSettings(projectPath, config.id, { orchestration: settings.orchestration });

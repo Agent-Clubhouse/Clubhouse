@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDurableAgent } from './create-agent';
 import { useAgentStore } from '../../stores/agentStore';
+import * as path from 'path';
+import { createManagedDurableAgent } from '../managed/create-managed-agent';
 
 const input = { name: 'plain-otter', color: 'emerald', model: 'default', useWorktree: false, orchestrator: 'claude-code' };
 const project = { id: 'p1', path: '/tmp/ch' };
@@ -49,6 +51,28 @@ describe('createDurableAgent with Clubhouse features off (#2893)', () => {
     expect(onError).toHaveBeenCalledWith('nope');
     expect(order).toEqual(['create']);
   });
+
+  it('reports the existing agent id separately when its first start fails', async () => {
+    useAgentStore.setState({ spawnDurableAgent: vi.fn().mockRejectedValue(new Error('Login expired.')) });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const remove = vi.spyOn(window.clubhouse.agent, 'deleteDurable');
+    const onError = vi.fn();
+    await expect(createDurableAgent(project, input, { onError })).resolves.toBeNull();
+    expect(onError).toHaveBeenCalledWith('Login expired.', 'a-new');
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('sends the plain worktree creation request id so membership sync can replace its row', async () => {
+    const create = vi.mocked(window.clubhouse.agent.createDurable);
+    create.mockImplementation(async (...args) => {
+      const requestId = args[10]?.creationRequestId;
+      expect(requestId).toMatch(/^creating_/);
+      expect(useAgentStore.getState().agents[requestId!]).toMatchObject({ orchestrator: input.orchestrator, status: 'creating' });
+      return { id: 'a-new', name: input.name, color: input.color, createdAt: '2026-11-10T00:00:00Z' };
+    });
+    await createDurableAgent({ id: project.id, path: path.resolve('project') }, { ...input, useWorktree: true });
+    expect(create.mock.lastCall?.[10]).toEqual({ creationRequestId: expect.stringMatching(/^creating_/) });
+  });
 });
 
 describe('createDurableAgent and the retired Clubhouse Mode (#2901)', () => {
@@ -62,5 +86,34 @@ describe('createDurableAgent and the retired Clubhouse Mode (#2901)', () => {
   it('writes nothing about Clubhouse Mode: main marks a new agent so the switch never takes it for a Clubhouse Mode one', async () => {
     await expect(createDurableAgent(project, input)).resolves.toBe('a-new');
     expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe('managed creation results', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useAgentStore.setState({ agents: {}, activeAgentId: null, projectActiveAgent: {} });
+  });
+
+  it.each([false, true])('returns the created id separately from a first-start failure (%s)', async (startFails) => {
+    const config = { id: 'managed-new', name: input.name, color: input.color, createdAt: '2026-11-10T00:00:00Z' };
+    vi.spyOn(window.clubhouse.managed, 'createAgent').mockResolvedValue({ ok: true, value: config });
+    const error = new Error('Login expired.');
+    const spawn = vi.fn().mockImplementation(async () => { if (startFails) throw error; return config.id; });
+    useAgentStore.setState({ spawnDurableAgent: spawn });
+    await expect(createManagedDurableAgent(project, input)).resolves.toEqual(
+      startFails ? { status: 'start_failed', agentId: config.id, error } : { status: 'started', agentId: config.id },
+    );
+    expect(window.clubhouse.managed.createAgent).toHaveBeenCalledWith(project.path, expect.objectContaining({ creationRequestId: expect.stringMatching(/^creating_/) }));
+    expect(Object.keys(useAgentStore.getState().agents)).toEqual([]);
+  });
+
+  it('rejects a creation failure without attempting the first start', async () => {
+    vi.spyOn(window.clubhouse.managed, 'createAgent').mockResolvedValue({ ok: false, code: 'failed', message: 'Disk full.' });
+    const spawn = vi.fn();
+    useAgentStore.setState({ spawnDurableAgent: spawn });
+    await expect(createManagedDurableAgent(project, input)).rejects.toThrow('Disk full.');
+    expect(spawn).not.toHaveBeenCalled();
+    expect(Object.keys(useAgentStore.getState().agents)).toEqual([]);
   });
 });

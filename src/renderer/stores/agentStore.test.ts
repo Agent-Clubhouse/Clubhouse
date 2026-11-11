@@ -46,7 +46,7 @@ vi.mock('./soundStore', () => ({
 }));
 
 import { useAgentStore } from './agentStore';
-import { Agent, AgentHookEvent } from '../../shared/types';
+import { Agent, AgentHookEvent, DurableAgentConfig } from '../../shared/types';
 
 function getState() {
   return useAgentStore.getState();
@@ -1327,6 +1327,22 @@ describe('agentStore', () => {
       expect(getState().agents).toBe(before);
     });
 
+    it('refreshes creation state without changing a running or first-start-failed agent', async () => {
+      seedAgent({ id: 'creating', status: 'creating' });
+      seedAgent({ id: 'failed', status: 'error', creationFailed: true, errorMessage: 'Old failure.' });
+      seedAgent({ id: 'running', status: 'running' });
+      seedAgent({ id: 'start_failed', status: 'error', errorMessage: 'Login expired.' });
+      const worktreePath = path.resolve('project', 'ready');
+      vi.mocked(window.clubhouse.agent.listDurable).mockResolvedValue(
+        ['creating', 'failed', 'running', 'start_failed'].map((id) => config(id, { worktreePath, branch: 'ready/standby' })),
+      );
+      await getState().syncDurableDisplay(path.resolve('project'));
+      expect(getState().agents.creating).toMatchObject({ status: 'sleeping', worktreePath, branch: 'ready/standby' });
+      expect(getState().agents.failed).toMatchObject({ status: 'sleeping', creationFailed: undefined, errorMessage: undefined });
+      expect(getState().agents.running.status).toBe('running');
+      expect(getState().agents.start_failed).toMatchObject({ status: 'error', errorMessage: 'Login expired.' });
+    });
+
     it('loads a new image and forgets a removed one', async () => {
       const mockAgent = window.clubhouse.agent as any;
       seedAgent({ id: 'swap', name: 'swap', color: 'indigo', icon: 'swap.1.png', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
@@ -1406,6 +1422,56 @@ describe('agentStore', () => {
 
       expect(getState().agents['creating_1_ab12']).toBeDefined();
       expect(getState().agents['just_made']).toBeDefined();
+    });
+
+    it.each(['managed', 'plain'])('replaces only the correlated placeholder during a slow %s creation', async (kind) => {
+      const placeholderId = getState().registerCreatingAgent('proj_1', 'scout', 'indigo', 'copilot-cli');
+      const otherId = getState().registerCreatingAgent('proj_2', 'scout', 'indigo', 'copilot-cli');
+      useAgentStore.setState({ activeAgentId: placeholderId });
+      const record = config('real_scout', {
+        name: 'scout', orchestrator: 'copilot-cli',
+        creation: { state: 'creating', startedAt: '2026-11-10T00:00:00Z', requestId: placeholderId },
+        ...(kind === 'managed' && { managed: { version: 1, blocks: [], skills: [], mcps: [] } }),
+      });
+      vi.mocked(window.clubhouse.agent.listDurable).mockResolvedValue([record]);
+      await getState().syncDurableMembership('proj_1', path.resolve('project'));
+      expect(Object.keys(getState().agents).sort()).toEqual([otherId, 'real_scout'].sort());
+      expect(getState().agents.real_scout).toMatchObject({ status: 'creating', orchestrator: 'copilot-cli' });
+      expect(getState().activeAgentId).toBe('real_scout');
+      expect(getState().projectActiveAgent.proj_1).toBe('real_scout');
+      expect(getState().projectActiveAgent.proj_2).toBe(otherId);
+    });
+
+    it('refreshes an MCP-created row after creation completes without creation events', async () => {
+      const mockAgent = window.clubhouse.agent;
+      mockAgent.listDurable = vi.fn().mockResolvedValue([config('external', {
+        creation: { state: 'creating', startedAt: '2026-11-10T00:00:00Z' },
+      })]);
+      await getState().syncDurableMembership('proj_1', path.resolve('project'));
+      expect(getState().agents.external.status).toBe('creating');
+      const worktreePath = path.resolve('project', 'external');
+      vi.mocked(mockAgent.listDurable).mockResolvedValue([config('external', { worktreePath, branch: 'external/standby' })]);
+      await getState().syncDurableMembership('proj_1', path.resolve('project'));
+      expect(getState().agents.external).toMatchObject({ status: 'sleeping', worktreePath, branch: 'external/standby' });
+    });
+
+    it.each(['display', 'membership', 'load'] as const)('ignores a stale creating snapshot after an MCP creation is ready (%s)', async (sync) => {
+      seedAgent({ id: 'external', status: 'creating' });
+      let resolveList!: (configs: DurableAgentConfig[]) => void;
+      vi.mocked(window.clubhouse.agent.listDurable).mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve; }));
+      const projectPath = path.resolve('project');
+      const stale = sync === 'display' ? getState().syncDurableDisplay(projectPath)
+        : sync === 'membership' ? getState().syncDurableMembership('proj_1', projectPath)
+          : getState().loadDurableAgents('proj_1', projectPath);
+      const worktreePath = path.join(projectPath, 'external');
+      vi.mocked(window.clubhouse.agent.listDurable).mockResolvedValue([config('external', { worktreePath, branch: 'external/standby' })]);
+      await getState().syncDurableMembership('proj_1', projectPath);
+      expect(getState().agents.external.status).toBe('sleeping');
+
+      resolveList([config('external', { creation: { state: 'creating', startedAt: '2026-11-10T00:00:00Z' } })]);
+      await stale;
+
+      expect(getState().agents.external).toMatchObject({ status: 'sleeping', worktreePath, branch: 'external/standby' });
     });
 
     it('drops a real id shown as creating once main no longer lists it, as after a failed creation rolled back (#3246)', async () => {

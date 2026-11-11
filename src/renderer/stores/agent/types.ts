@@ -64,7 +64,7 @@ export interface AgentCrudSlice {
   ) => Promise<void>;
   reorderAgents: (projectPath: string, orderedIds: string[]) => Promise<void>;
   loadDurableAgents: (projectId: string, projectPath: string) => Promise<void>;
-  /** Re-read how a project's loaded agents look: name, color, emoji and icon (#2597). */
+  /** Re-read loaded agents' display fields and unfinished creation status. */
   syncDurableDisplay: (projectPath: string) => Promise<void>;
   /**
    * Add a project's durable agents that are missing from the store and drop

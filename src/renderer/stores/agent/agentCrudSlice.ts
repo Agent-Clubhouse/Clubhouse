@@ -1,6 +1,6 @@
 import { Agent, DurableAgentConfig } from '../../../shared/types';
 import { isDisposedAgent } from '../../../shared/agent-helpers';
-import { AgentCrudSlice, GetAgentState, SetAgentState } from './types';
+import { AgentCrudSlice, AgentState, GetAgentState, SetAgentState } from './types';
 import { isCreatingPlaceholderId, removeAgentsFromState } from './agentUtils';
 import { clearPendingActivityTimer } from './activityTimers';
 import { parentLinkFields } from './parentLink';
@@ -32,6 +32,37 @@ function durableAgentFromConfig(projectId: string, config: DurableAgentConfig): 
     mcpIds: config.mcpIds,
     lastSleep: config.lastSleep,
     ...parentLinkFields(config),
+  };
+}
+
+function refreshCreation(agent: Agent, config: DurableAgentConfig): Agent {
+  // A stale creating snapshot must not undo readiness or a session that started meanwhile.
+  if (agent.status !== 'creating' && !agent.creationFailed) return agent;
+  const updated = {
+    ...agent,
+    ...creationStatus(config),
+    errorMessage: config.creation?.state === 'failed' ? config.creation.reason : undefined,
+    worktreePath: config.worktreePath,
+    branch: config.branch,
+  };
+  return updated.status === agent.status && updated.creationFailed === agent.creationFailed
+    && updated.errorMessage === agent.errorMessage && updated.worktreePath === agent.worktreePath
+    && updated.branch === agent.branch ? agent : updated;
+}
+
+/** Reconcile only the window and request that made this record, never another same-name agent. */
+export function replaceCreatingPlaceholder(state: AgentState, projectId: string, config: DurableAgentConfig): Partial<AgentState> | AgentState {
+  const id = config.creation?.requestId;
+  const placeholder = id ? state.agents[id] : undefined;
+  if (!id || !isCreatingPlaceholderId(id) || placeholder?.projectId !== projectId) return state;
+  const base = removeAgentsFromState(state, [id]);
+  return {
+    ...base,
+    agents: { ...(base.agents ?? state.agents), [config.id]: state.agents[config.id] ?? durableAgentFromConfig(projectId, config) },
+    activeAgentId: state.activeAgentId === id ? config.id : state.activeAgentId,
+    projectActiveAgent: state.projectActiveAgent[projectId] === id
+      ? { ...state.projectActiveAgent, [projectId]: config.id }
+      : base.projectActiveAgent ?? state.projectActiveAgent,
   };
 }
 
@@ -92,6 +123,9 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
 
     loadDurableAgents: async (projectId, projectPath) => {
       const allConfigs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
+      for (const config of allConfigs) {
+        if (config.creation?.requestId) set((s) => replaceCreatingPlaceholder(s, projectId, config));
+      }
       const agents = { ...get().agents };
       // A disposed helper (#2224) keeps its config row but has no worktree and
       // can't run, so the rail skips it.
@@ -120,16 +154,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           // An unfinished creation (#2226) is ground truth for status; a finished
           // one moves an agent still shown as creating or failed to asleep, and
           // drops the failed mark.
-          const existing = agents[config.id];
-          if (config.creation || existing.status === 'creating' || existing.creationFailed) {
-            agents[config.id] = {
-              ...existing,
-              ...creationStatus(config),
-              ...(config.creation ? {} : { errorMessage: undefined }),
-              worktreePath: config.worktreePath,
-              branch: config.branch,
-            };
-          }
+          agents[config.id] = refreshCreation(agents[config.id], config);
         }
       }
 
@@ -205,8 +230,9 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
         for (const config of configs) {
           const agent = s.agents[config.id];
           if (!agent || agent.kind !== 'durable') continue;
-          if (agent.name === config.name && agent.color === config.color && agent.emoji === config.emoji && agent.icon === config.icon) continue;
-          const patched = { ...agent, name: config.name, color: config.color, emoji: config.emoji, icon: config.icon };
+          const refreshed = refreshCreation(agent, config);
+          if (refreshed === agent && agent.name === config.name && agent.color === config.color && agent.emoji === config.emoji && agent.icon === config.icon) continue;
+          const patched = { ...refreshed, name: config.name, color: config.color, emoji: config.emoji, icon: config.icon };
           if (agents === s.agents) agents = { ...s.agents };
           agents[config.id] = patched;
           if (agent.icon !== config.icon) {
@@ -226,6 +252,9 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
       const before = new Set(Object.keys(get().agents));
       const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
       const live = new Map(configs.filter((config) => !isDisposedAgent(config)).map((config) => [config.id, config]));
+      for (const config of live.values()) {
+        if (config.creation?.requestId) set((s) => replaceCreatingPlaceholder(s, projectId, config));
+      }
       const added: Agent[] = [];
       let removed: string[] = [];
       set((s) => {
@@ -244,13 +273,21 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           .map((agent) => agent.id)];
         const base = removeAgentsFromState(s, removed);
         let agents = base.agents ?? s.agents;
+        let changed = false;
         for (const config of live.values()) {
-          if (agents[config.id]) continue;
+          if (agents[config.id]) {
+            const refreshed = refreshCreation(agents[config.id], config);
+            if (refreshed !== agents[config.id]) {
+              agents = { ...agents, [config.id]: refreshed };
+              changed = true;
+            }
+            continue;
+          }
           const agent = durableAgentFromConfig(projectId, config);
           added.push(agent);
           agents = { ...agents, [config.id]: agent };
         }
-        if (removed.length === 0 && added.length === 0) return s;
+        if (removed.length === 0 && added.length === 0 && !changed) return s;
         return { ...base, agents };
       });
       for (const id of removed) clearPendingActivityTimer(id);

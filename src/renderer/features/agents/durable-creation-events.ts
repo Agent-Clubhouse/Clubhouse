@@ -1,6 +1,7 @@
 import type { DurableCreationEvent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { replaceCreatingPlaceholder } from '../../stores/agent/agentCrudSlice';
 
 /**
  * Apply a stage of an asynchronous agent creation (#2226) to the agent store,
@@ -12,6 +13,11 @@ import { useProjectStore } from '../../stores/projectStore';
  *   Main sends these for every creation, so a row a config change brought in goes too.
  */
 export function applyDurableCreationEvent(event: DurableCreationEvent): void {
+  if (event.config?.creation?.requestId) {
+    const config = event.config;
+    const project = useProjectStore.getState().projects.find((p) => p.path === event.projectPath);
+    if (project) useAgentStore.setState((s) => replaceCreatingPlaceholder(s, project.id, config));
+  }
   const store = useAgentStore.getState();
   const agent = store.agents[event.agentId];
   if (event.stage === 'cancelled' || (event.stage === 'failed' && !event.config)) {
@@ -28,6 +34,7 @@ export function applyDurableCreationEvent(event: DurableCreationEvent): void {
   useAgentStore.setState((s) => {
     const current = s.agents[event.agentId];
     if (!current) return s;
+    if (event.stage === 'ready' && current.status !== 'creating' && !current.creationFailed) return s;
     const next = {
       ...current,
       ...(config ? { worktreePath: config.worktreePath, branch: config.branch } : {}),
