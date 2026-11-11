@@ -23,6 +23,12 @@ export function isLegacyClubhousePermissionsDocument(value: unknown): boolean {
     (key === 'allow' || key === 'deny') && Array.isArray(list) && list.every((rule) => typeof rule === 'string'));
 }
 
+/** Pre-0.43 cleanup could remove the last hooks object but leave its version. */
+function isLegacyVersionOnlyDocument(value: unknown): boolean {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).length === 1 && (value as Record<string, unknown>).version === 1;
+}
+
 /** Read the one hook document Clubhouse manages, without modifying ambiguous files. */
 export async function readCopilotHooksConfig(cwd: string): Promise<Record<string, unknown> | null> {
   const file = path.join(cwd, '.github', 'hooks', 'hooks.json');
@@ -40,10 +46,42 @@ export async function readCopilotHooksConfig(cwd: string): Promise<Record<string
     throw new Error(`Invalid JSON in Copilot hooks at ${file}. Review and repair the file, then restart the agent. Clubhouse did not modify it.`);
   }
   if (isLegacyClubhousePermissionsDocument(value)) return moveLegacyPermissionsAside(cwd, file, contents);
+  if (isLegacyVersionOnlyDocument(value)) return repairLegacyVersionOnlyDocument(cwd, file, contents);
   if (!isCopilotHooksDocument(value) || hasUnrecognizedCopilotCallback(value)) {
     throw new Error(`Invalid, unsupported, or conflicting Copilot hooks at ${file}. Review and repair the file, then restart the agent. Copilot hook documents require version 1 and a hooks object with valid event entries; Clubhouse allow/deny rules and unrecognized callback markers require manual review. Clubhouse did not modify it.`);
   }
   return value;
+}
+
+const repairing = new Map<string, Promise<void>>();
+
+async function repairLegacyVersionOnlyDocument(cwd: string, file: string, contents: string): Promise<Record<string, unknown> | null> {
+  const key = path.resolve(file);
+  const running = repairing.get(key);
+  if (running) {
+    await running;
+    return readCopilotHooksConfig(cwd);
+  }
+  const work = (async () => {
+    try {
+      const now = await fsp.readFile(file, 'utf-8').catch((err: NodeJS.ErrnoException): null => {
+        if (err.code === 'ENOENT') return null;
+        throw err;
+      });
+      if (now !== contents) return;
+      await fsp.writeFile(file, JSON.stringify({ version: 1, hooks: {} }, null, 2), 'utf-8');
+    } catch (err) {
+      throw new Error(`Cannot repair legacy version-only Copilot hooks at ${file}: ${err instanceof Error ? err.message : String(err)}. Fix file access or replace it with {"version":1,"hooks":{}}, then restart the agent.`);
+    }
+    appLog('core:orchestrator', 'warn', 'Repaired a version-only Copilot hook file left by pre-0.43 Clubhouse cleanup', { meta: { file } });
+  })();
+  repairing.set(key, work);
+  try {
+    await work;
+  } finally {
+    if (repairing.get(key) === work) repairing.delete(key);
+  }
+  return readCopilotHooksConfig(cwd);
 }
 
 const moving = new Map<string, Promise<Record<string, unknown> | null>>();

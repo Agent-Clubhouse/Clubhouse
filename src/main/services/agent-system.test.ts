@@ -177,8 +177,10 @@ vi.mock('../util/ipc-broadcast', () => ({
 
 // Mock fs/promises for readProjectOrchestrator
 const mockReadFile = vi.fn(() => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
+const mockWriteFile = vi.fn(async (_file: unknown, _content: unknown, _encoding?: unknown) => {});
 vi.mock('fs/promises', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
+  writeFile: (...args: Parameters<typeof mockWriteFile>) => mockWriteFile(...args),
 }));
 
 // The project list, where "Agents run on" is saved (#2975).
@@ -558,6 +560,30 @@ describe('agent-system', () => {
         kind: 'durable',
       });
       expect(getAgentOrchestrator('agent-1')).toBe('codex-cli');
+    });
+
+    it.each([false, true])('repairs version-only Copilot hooks before terminal launch with hook server %s', async (enabled) => {
+      mockIsHookServerEnabled.mockReturnValue(enabled);
+      const cwd = path.resolve('copilot-project');
+      const file = path.join(cwd, '.github', 'hooks', 'hooks.json');
+      let contents = '{"version":1}';
+      mockReadFile.mockImplementation(async (target: unknown) => {
+        if (target === file) return contents;
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      });
+      mockWriteFile.mockImplementation(async (target, value) => {
+        expect(target).toBe(file);
+        contents = String(value);
+      });
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: cwd, cwd, kind: 'durable', orchestrator: 'copilot-cli' });
+        expect(JSON.parse(contents)).toEqual({ version: 1, hooks: {} });
+        expect(mockWriteFile).toHaveBeenCalledTimes(1);
+        expect(mockPtySpawn).toHaveBeenCalled();
+      } finally {
+        mockReadFile.mockReset().mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+        mockWriteFile.mockReset();
+      }
     });
 
     it.each([false, true])('refuses an ambiguous Copilot hook document before launch with hook server %s', async (enabled) => {

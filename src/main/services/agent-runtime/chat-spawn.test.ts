@@ -519,6 +519,23 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
         return sdk;
       }
 
+      it('repairs version-only residue before starting the SDK chat session', async () => {
+        const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-chat-repair-'));
+        const file = path.join(cwd, '.github', 'hooks', 'hooks.json');
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, '{"version":1}');
+        const actual = await vi.importActual<typeof import('../../orchestrators/copilot-hooks-config')>('../../orchestrators/copilot-hooks-config');
+        checkCopilotHooks.mockImplementationOnce(actual.assertNoCopilotTerminalHooksForChat);
+        const sdk = copilotDriver();
+        try {
+          expect(await tryStartChatAgent({ ...params, cwd }, copilot, undefined, null)).toBe('chat');
+          expect(sdk.sessions).toHaveLength(1);
+          expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ version: 1, hooks: {} });
+        } finally {
+          fs.rmSync(cwd, { recursive: true, force: true });
+        }
+      });
+
       it('refuses duplicate terminal callbacks before starting', async () => {
         const sdk = copilotDriver();
         mode.value = { mode: 'chat', driver: 'copilot_sdk' };
