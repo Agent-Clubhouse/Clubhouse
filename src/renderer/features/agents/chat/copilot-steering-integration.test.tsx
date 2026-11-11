@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import type { ChatDriverId, ChatEvent } from '../../../../shared/chat';
@@ -24,6 +27,12 @@ import { ExperimentalSettingsView } from '../../../features/settings/Experimenta
 import { registerChatHandlers } from '../../../../main/ipc/chat-handlers';
 import { ChatAgentRuntime } from '../../../../main/services/agent-runtime/chat-runtime';
 import { FakeChatDriver } from '../../../../main/services/agent-runtime/fake-chat-driver';
+import { CopilotSdkChatDriver } from '../../../../main/chat/copilot/driver';
+import { fakeCopilotEnv } from '../../../../main/chat/copilot/test-env';
+import { buildChatScript, writeChatScript } from '../../../../main/orchestrators/adapters/testing/chat-script';
+import { createFakeCli, writeFakeCliShims } from '../../../../main/orchestrators/adapters/testing/fake-cli';
+import { _resetHelperDeliveryForTesting, deliverHelperUpdate, flushHelperUpdates } from '../../../../main/services/clubhouse-mcp/tools/helper-delivery';
+import { coalesceUpdateTexts } from '../../../../shared/chat';
 import { IPC } from '../../../../shared/ipc-channels';
 import { foldChatEvents, useChatStore } from '../../../stores/chatStore';
 import { ChatViewBody } from './ChatView';
@@ -162,5 +171,88 @@ describe('Copilot composer through renderer store, real IPC handlers and runtime
     const { runtime, operations } = await running(false);
     expect(await runtime.sendMessage('synthetic helper', { source: 'mcp' })).toMatchObject({ delivery: 'queued' });
     expect(operations).toEqual([]);
+  });
+});
+
+describe('Copilot helper steering through the SDK and fake CLI', () => {
+  it.each([false, true])('a helper burst is one MCP steer; waiting for the held tool keeps its bubble separate (wait=%s)', async (waitForTool) => {
+    const dir = await fs.promises.mkdtemp(path.join(fs.realpathSync(os.tmpdir()), 'copilot-helper-steer-'));
+    const originalEnv = process.env;
+    const updates = Array.from({ length: 10 }, (_, i) => `[FROM HELPER:helper-${i + 1} (durable_${i + 1})] Step ${i + 1} done.`);
+    const userSteer = 'Use tabs, not spaces.';
+    const { fixture } = await writeChatScript(dir, 'helpers', buildChatScript('copilot', {
+      description: 'a user steer and a merged helper burst during a held turn',
+      turns: [{ prompt: 'Start.', steps: [{ type: 'text', text: 'Working.' }], end: 'held', steers: [{ text: userSteer }, { text: coalesceUpdateTexts(updates) }] }],
+    }));
+    const fake = await createFakeCli(fixture);
+    let runtime: ChatAgentRuntime | undefined;
+    let releaseTool!: () => void;
+    const toolGate = new Promise<void>((resolve) => { releaseTool = resolve; });
+    try {
+      process.env = fakeCopilotEnv(originalEnv, dir);
+      const shims = await writeFakeCliShims(path.join(dir, 'bin'), { copilot: { fixture, report: fake.reportPath } });
+      const session = await new CopilotSdkChatDriver().start({
+        agentId: agent.id, provider: 'copilot-cli', cwd: dir, binaryPath: shims.copilot, level: 'ask',
+        env: { COPILOT_PROVIDER_BASE_URL: 'http://127.0.0.1:0/v1', COPILOT_MODEL: 'fake-model' },
+      });
+      const events = session.events;
+      // Pin the schedule where running is visible but the held command has not arrived yet.
+      vi.spyOn(session, 'events', 'get').mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          for await (const event of events) {
+            if (event.type === 'tool_call') await toolGate;
+            yield event;
+          }
+        },
+      });
+      runtime = new ChatAgentRuntime({
+        agentId: agent.id, provider: 'copilot-cli', driverId: 'copilot_sdk', cwd: dir, level: 'ask', idleTimeoutMs: 0,
+        startSession: async () => session,
+      });
+      bridge.runtime = runtime;
+      await runtime.start();
+      await runtime.sendMessage('Start.', { source: 'user' });
+      await waitFor(() => expect(runtime!.getState()).toBe('running'));
+      expect(bridge.events.some((event) => event.type === 'tool_call')).toBe(false);
+      if (waitForTool) {
+        releaseTool();
+        await waitFor(() => expect(bridge.events.some((event) => event.type === 'tool_call')).toBe(true));
+      }
+      expect(await runtime.sendMessage(userSteer, { source: 'user' })).toMatchObject({ delivery: 'steer' });
+      releaseTool();
+      await waitFor(() => expect(bridge.events.some((event) => event.type === 'tool_call')).toBe(true));
+
+      const deliveries = updates.map((text) => deliverHelperUpdate(agent.id, text));
+      await flushHelperUpdates(agent.id);
+      expect(await Promise.all(deliveries)).toEqual(Array(10).fill('delivered'));
+      const steers = bridge.events.filter((event) => event.type === 'user_message' && event.data.delivery === 'steer');
+      expect(steers.map((event) => event.type === 'user_message' && [event.data.source, event.data.content])).toEqual([
+        ['user', [{ type: 'text', text: userSteer }]],
+        ['mcp', [{ type: 'text', text: coalesceUpdateTexts(updates) }]],
+      ]);
+      const state = foldChatEvents(undefined, agent.id, bridge.events);
+      const view = render(<ChatViewBody agent={agent} state={state} actions={{ send: vi.fn(), interrupt: vi.fn(), respondPermission: vi.fn(), answerQuestion: vi.fn(), setLevel: vi.fn() }} providerName="Copilot" />);
+      expect(view.container.querySelectorAll('[data-testid="chat-user-message"][data-delivery="steer"][data-source="user"]')).toHaveLength(1);
+      expect(view.container.querySelectorAll('[data-testid="chat-user-message"][data-delivery="steer"][data-source="mcp"]')).toHaveLength(waitForTool ? 1 : 0);
+      if (!waitForTool) {
+        expect(screen.getByTestId('chat-group-toggle')).toHaveTextContent('10 messages');
+        fireEvent.click(screen.getByTestId('chat-group-toggle'));
+      }
+      const helperBubble = view.container.querySelector('[data-testid="chat-user-message"][data-delivery="steer"][data-source="mcp"]');
+      expect(helperBubble).not.toBeNull();
+      for (let i = 1; i <= 10; i++) expect(helperBubble).toHaveTextContent(`Step ${i} done.`);
+      expect(helperBubble).not.toHaveTextContent('[FROM HELPER');
+      expect(helperBubble).not.toHaveTextContent(userSteer);
+      await runtime.interrupt();
+      const report = await fake.waitForReport((r) => r.complete || r.mismatch !== null);
+      expect(report).toMatchObject({ complete: true, mismatch: null, unexpected: [] });
+    } finally {
+      releaseTool();
+      _resetHelperDeliveryForTesting();
+      await runtime?.stop();
+      await fake.dispose();
+      process.env = originalEnv;
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
   });
 });

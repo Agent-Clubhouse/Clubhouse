@@ -184,6 +184,8 @@ test('copilot: a burst of helper updates becomes one steer, and a user steer sta
   const dom = chatDom(window);
   await session.send('Start.');
   await expect(chat).toHaveAttribute('data-state', 'running', { timeout: TURN_TIMEOUT });
+  // Keep the held tool before the user steer, or the helper steer folds into its group.
+  await expect(window.getByTestId('chat-command-card')).toBeVisible({ timeout: TURN_TIMEOUT });
 
   const steered = dom.userMessages.and(window.locator('[data-delivery="steer"]'));
   await session.send(userSteer);
