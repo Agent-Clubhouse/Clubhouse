@@ -42,7 +42,7 @@ describe('Settings > Actions', () => {
       { owner: { kind: 'user' }, actions: [{ id: 'a1', name: 'Morning plan' }], runs24h: 2, runs7d: 3, failures24h: 1, failures7d: 1 },
       { owner: { kind: 'dispatcher' }, actions: [], runs24h: 1, runs7d: 4, failures24h: 0, failures7d: 2 },
     ]);
-    render(<ActionsSettingsView />);
+    const { rerender } = render(<ActionsSettingsView />);
     fireEvent.click(await screen.findByRole('tab', { name: 'By owner' }));
     const usage = await screen.findByTestId('actions-owner-usage');
     expect(await within(usage).findByText('You')).toBeTruthy();
@@ -50,6 +50,9 @@ describe('Settings > Actions', () => {
     expect(within(usage).getByText('Last 7 days: 3 recent runs, 1 failure.')).toBeTruthy();
     expect(within(usage).getByText(/last 7 days is not a full total/)).toBeTruthy();
     expect(within(usage).getAllByTestId('actions-owner')).toHaveLength(2);
+    rerender(<ActionsSettingsView />);
+    expect(window.clubhouse.actions.usage).toHaveBeenCalledTimes(1);
+    expect(window.clubhouse.actions.history).not.toHaveBeenCalled();
     fireEvent.click(within(usage).getByRole('button', { name: 'Morning plan' }));
     expect(await screen.findByTestId('action-card')).toBeTruthy();
   });
