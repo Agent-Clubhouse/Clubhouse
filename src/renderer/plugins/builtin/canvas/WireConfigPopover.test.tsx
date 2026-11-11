@@ -163,6 +163,20 @@ describe('WireConfigPopover', () => {
     await waitFor(() => expect(getByTestId('wire-connection-direction-agent-1-agent-2')).toBeInTheDocument());
   });
 
+  it('keeps the popout dialog open and reports a failed main-window navigation (#3213)', async () => {
+    useAgentStore.setState({ agents: {
+      'agent-1': { id: 'agent-1', name: 'A', projectId: 'p1', kind: 'durable', status: 'running', color: 'teal' },
+    } });
+    window.clubhouse.window.isPopout = vi.fn(() => true);
+    window.clubhouse.window.focusMain = vi.fn(async () => { throw new Error('The main window is not open.'); });
+    const onClose = vi.fn();
+    const { getByTestId, getByRole, findByRole } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={onClose} />);
+    fireEvent.click(getByTestId('wire-permissions-button'));
+    fireEvent.click(getByRole('button', { name: 'Edit connections' }));
+    expect(await findByRole('alert')).toHaveTextContent("Couldn't open this agent's Connections card.");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it.each(['helper', 'dispatcher'] as const)('matches the Connections card by omitting Wake it on a %s link (#3213)', async (kind) => {
     if (kind === 'dispatcher') useDispatcherStore.setState({ state: { ...DISPATCHER_OFF, agentId: agentBinding.targetId } });
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
