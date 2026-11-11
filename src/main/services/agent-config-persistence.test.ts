@@ -122,6 +122,63 @@ beforeEach(() => {
 });
 
 describe('agent-config persistence barrier', () => {
+  it('coalesces concurrent barriers before taking the write snapshot', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A, AGENT_B]));
+    await renameDurable(PROJECT_PATH, AGENT_A.id, 'alpha-1');
+    vi.mocked(fsp.writeFile).mockClear();
+    const gate = gateNextWrite();
+    let firstFinished = false;
+    const first = flushAgentConfig(PROJECT_PATH).then(() => { firstFinished = true; });
+    await renameDurable(PROJECT_PATH, AGENT_B.id, 'bravo-1');
+    let secondFinished = false;
+    const second = flushAgentConfig(PROJECT_PATH).then(() => { secondFinished = true; });
+    try {
+      await gate.inFlight;
+      expect(firstFinished).toBe(false);
+      expect(secondFinished).toBe(false);
+      expect((await listDurable(PROJECT_PATH)).map((agent) => agent.name)).toEqual(['alpha-1', 'bravo-1']);
+    } finally {
+      gate.release();
+    }
+    await Promise.all([first, second]);
+    expect(vi.mocked(fsp.writeFile).mock.calls.filter(([file]) => String(file).includes('agents.json.tmp.'))).toHaveLength(1);
+    expect((JSON.parse(files.get(CONFIG_PATH)!) as Array<{ name: string }>).map((agent) => agent.name)).toEqual(['alpha-1', 'bravo-1']);
+  });
+
+  it('rejects every queued waiter on write failure and preserves dirty state for retry', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    await renameDurable(PROJECT_PATH, AGENT_A.id, 'alpha-1');
+    vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('Write refused'));
+    const outcomes = await Promise.allSettled([flushAgentConfig(PROJECT_PATH), flushAgentConfig(PROJECT_PATH)]);
+    expect(outcomes).toEqual([
+      { status: 'rejected', reason: expect.objectContaining({ message: 'Write refused' }) },
+      { status: 'rejected', reason: expect.objectContaining({ message: 'Write refused' }) },
+    ]);
+    expect(JSON.parse(files.get(CONFIG_PATH)!)[0].name).toBe('alpha');
+    await flushAgentConfig(PROJECT_PATH);
+    expect(JSON.parse(files.get(CONFIG_PATH)!)[0].name).toBe('alpha-1');
+  });
+
+  it('does not block a different project behind a queued write', async () => {
+    const otherProject = path.resolve('other-project');
+    const otherConfig = path.join(otherProject, '.clubhouse', 'agents.json');
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    files.set(otherConfig, JSON.stringify([AGENT_B]));
+    await renameDurable(PROJECT_PATH, AGENT_A.id, 'alpha-1');
+    const gate = gateNextWrite();
+    const first = flushAgentConfig(PROJECT_PATH);
+    await gate.inFlight;
+    try {
+      await renameDurable(otherProject, AGENT_B.id, 'bravo-1');
+      await flushAgentConfig(otherProject);
+      expect(JSON.parse(files.get(otherConfig)!)[0].name).toBe('bravo-1');
+      expect(JSON.parse(files.get(CONFIG_PATH)!)[0].name).toBe('alpha');
+    } finally {
+      gate.release();
+      await first;
+    }
+  });
+
   it('persists a mutation made while an earlier write is in flight', async () => {
     files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
     await listDurable(PROJECT_PATH);
