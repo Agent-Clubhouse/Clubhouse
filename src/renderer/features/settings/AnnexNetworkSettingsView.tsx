@@ -8,7 +8,8 @@ import { AnnexDeviceList } from './AnnexDeviceList';
 import { AnnexIdentitySection } from './AnnexIdentitySection';
 import { AnnexPairingQr } from './AnnexPairingQr';
 import { PairingWizard, type RepairTarget } from './PairingWizard';
-import { SettingsPage, SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, settingsInput, settingsError } from './SettingsLayout';
+import type { AnnexSettings } from '../../../shared/types';
 
 /**
  * Settings > Annex Network (#3067): one page for the whole network, in place
@@ -31,6 +32,7 @@ export function AnnexNetworkSettingsView() {
   const [repairTarget, setRepairTarget] = useState<RepairTarget | undefined>(undefined);
   const [linkCopied, setLinkCopied] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
   // On while either half runs, so an older server-only or client-only setup still shows its tools.
   const on = settings.enableServer || settings.enableClient;
   const code = certificateCode(status.tlsCertificateFingerprint);
@@ -68,17 +70,23 @@ export function AnnexNetworkSettingsView() {
     }
   }
 
-  /** On: this machine answers and connects, and new pairings join the network. Off: nothing connects. */
   // Built on what main has saved, so a click before the settings load (or after a reset) keeps the names.
-  const setOn = async (value: boolean): Promise<void> => {
-    let current = settings;
+  const saveCurrentSettings = async (changes: Partial<AnnexSettings>): Promise<void> => {
+    let current: AnnexSettings;
     try {
-      current = (await window.clubhouse.annex.getSettings()) ?? settings;
+      current = await window.clubhouse.annex.getSettings();
+      if (!current) throw new Error('Annex settings unavailable');
     } catch {
-      // telemetry-exempt: falls back to the settings already shown.
+      // telemetry-exempt: shown on the page; never save potentially unloaded defaults.
+      setSettingsLoadFailed(true);
+      return;
     }
-    await saveSettings({ ...current, enableServer: value, enableClient: value, ...(value && { networkEnabled: true }) });
+    setSettingsLoadFailed(false);
+    await saveSettings({ ...current, ...changes });
   };
+  /** On: this machine answers and connects, and new pairings join the network. Off: nothing connects. */
+  const setOn = (value: boolean): Promise<void> =>
+    saveCurrentSettings({ enableServer: value, enableClient: value, ...(value && { networkEnabled: true }) });
   const pairAgainHere = adding && !!repairTarget;
 
   return (
@@ -97,6 +105,14 @@ export function AnnexNetworkSettingsView() {
             <Toggle aria-label="Annex Network on this computer" checked={on} onChange={(value) => { void setOn(value); }} />
           </div>
         </SettingsField>
+        <SettingsField
+          label="Only accept connections from this computer"
+          help="Listen only on this computer and turn off local discovery. Other computers on your network and your phone can reach this computer only through a forward you set up."
+        >
+          <Toggle aria-label="Only accept connections from this computer" checked={settings.loopbackOnly === true}
+            onChange={(value) => { void saveCurrentSettings({ loopbackOnly: value }); }} />
+        </SettingsField>
+        {settingsLoadFailed && <p className={settingsError} role="alert">Couldn&apos;t load Annex settings, so nothing was changed. Try again.</p>}
       </div>
 
       <SettingsSection

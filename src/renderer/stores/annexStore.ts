@@ -4,6 +4,7 @@ import type { AnnexDevice, AnnexPeerListing, AnnexSettings, AnnexStatus } from '
 const DEFAULT_SETTINGS: AnnexSettings = {
   enableServer: false,
   enableClient: false,
+  loopbackOnly: false,
   deviceName: '',
   alias: '',
   icon: 'computer',

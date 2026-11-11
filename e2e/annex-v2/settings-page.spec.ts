@@ -68,6 +68,25 @@ test('two desktops join from the page, and one renames and removes the other', a
     await expect(rowOn(w)).toContainText('In this network');
   }
 
+  // Changing the listener mode keeps the pairing and reconnects through loopback.
+  const loopback = a.window.getByRole('switch', { name: 'Only accept connections from this computer' });
+  await expect(loopback).toHaveAttribute('aria-checked', 'false');
+  for (const enabled of [true, false]) {
+    await loopback.click();
+    await expect(loopback).toHaveAttribute('aria-checked', String(enabled));
+    await expect.poll(() => a.window.evaluate(() => (window as any).clubhouse.annex.getSettings().then((s: { loopbackOnly?: boolean }) => s.loopbackOnly)))
+      .toBe(enabled);
+    await expect.poll(async () => !!(await status(a.window)).pairingUrl, { timeout: 15_000 }).toBe(true);
+    if (enabled) {
+      await expect(a.window.getByTestId('annex-reachable-hosts')).toContainText('127.0.0.1');
+      expect(await a.window.evaluate(() => (window as any).clubhouse.annex.getStatus().then((s: { advertising: boolean }) => s.advertising))).toBe(false);
+    }
+    for (const w of [a.window, b.window]) {
+      await expect(rowOn(w)).toHaveAttribute('data-state', 'connected', { timeout: 30_000 });
+      await expect(rowOn(w)).toHaveAttribute('data-role', 'member');
+    }
+  }
+
   // B renames A.
   await b.window.getByRole('button', { name: 'Rename' }).first().click();
   const name = b.window.getByTestId('annex-rename-editor').getByRole('textbox');

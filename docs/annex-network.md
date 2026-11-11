@@ -29,6 +29,14 @@ The reached address and its port are remembered alongside the link's direct addr
 
 Membership announcements keep saved loopback routes even when the remote computer lists many direct addresses. After using an older build, a direct address tries its saved per-address port first and the legacy default afterward if it differs; a successful connection updates the saved port. Loopback addresses never borrow that fallback port.
 
+### Only accept connections from this computer
+
+In Settings > Annex Network, **Only accept connections from this computer** binds the main TLS listener and the untrusted identity-hint listener to `127.0.0.1` and turns off mDNS advertising and browsing. Other computers on your network and your phone can reach this computer only through a byte-transparent forward you set up. Clubhouse does not manage that forward. Saved addresses still work for outgoing connections.
+
+The setting is off by default and is saved as `loopbackOnly` in `annex-settings.json`. Changing it restarts the listeners and refreshes discovery without removing paired devices or changing their certificates. Turning it off restores normal listening and discovery, unless an isolated test profile restricts networking. Existing settings without the field keep their current behavior. Annex settings are not mirrored to the phone, so the mobile contract and fixtures are unchanged.
+
+Restarting closes every incoming connection, including unfinished TLS handshakes and requests. A previously connected phone or computer needs a forward to reconnect while this setting is on. Existing outgoing connections stay open.
+
 ## Real-device checks
 
 Synthetic tests can't cover certificates under Electron or local network discovery, so each stage merged on green CI and these checks wait for real devices before a release. They're written as one script to run in order: each part says what it starts from, each step says what to do, then what you should see (✓). The issue in brackets is where the behaviour was built, for filing anything that fails.

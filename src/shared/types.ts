@@ -1090,6 +1090,8 @@ export interface AnnexSettings {
   enableServer: boolean;
   /** Connect to and control satellites (run annex client + Bonjour discovery) */
   enableClient: boolean;
+  /** Listen only on loopback and disable local discovery. Off when absent. */
+  loopbackOnly?: boolean;
   deviceName: string;
   /** Display alias for this instance (defaults to os.hostname()) */
   alias: string;

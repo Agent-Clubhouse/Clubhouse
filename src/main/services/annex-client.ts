@@ -570,9 +570,9 @@ export function bracketHost(host: string): string {
   return net.isIPv6(host) ? `[${host}]` : host;
 }
 
-function httpGet(host: string, port: number, path: string): Promise<{ status: number; body: string }> {
+function httpGet(host: string, port: number, path: string, signal: AbortSignal): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.get(`http://${bracketHost(host)}:${port}${path}`, (res) => {
+    const req = http.get(`http://${bracketHost(host)}:${port}${path}`, { signal }, (res) => {
       // Collect raw bytes and decode once — per-chunk string coercion corrupts
       // multi-byte UTF-8 characters split across chunk boundaries.
       const chunks: Buffer[] = [];
@@ -729,7 +729,7 @@ function serviceHost(service: RemoteService): string {
   return rankAddresses(service.addresses ?? [])[0] || service.referer?.address || service.host || '';
 }
 
-async function identifyService(service: RemoteService): Promise<RemoteIdentity | null> {
+async function identifyService(service: RemoteService, signal: AbortSignal): Promise<RemoteIdentity | null> {
   const discoverStartMs = Date.now();
   const txt = service.txt || {};
   // Prefer resolved IP addresses over hostname — on Linux os.hostname() returns a
@@ -743,7 +743,7 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
   if (!pPort) return null;
 
   try {
-    const res = await httpGet(host, pPort, '/api/v1/identity');
+    const res = await httpGet(host, pPort, '/api/v1/identity', signal);
     if (res.status !== 200) {
       appLog('core:annex-client', 'warn', 'Identity request failed', { meta: { host, port: pPort, status: res.status } });
       recordDiscover(discoverStartMs, host, 'identity_unreachable');
@@ -764,6 +764,7 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
       publicKey: identity.publicKey || '',
     };
   } catch (err) {
+    if (signal.aborted) return null; // discovery was stopped, not an unreachable device
     appLog('core:annex-client', 'warn', 'Identity request error', {
       meta: { host, port: pPort, error: err instanceof Error ? err.message : String(err) },
     });
@@ -1362,11 +1363,14 @@ function disconnectSatellite(sat: SatelliteConnectionInternal): void {
 
 /** Replaces a discovery socket that couldn't start, after a pause. */
 let rediscoverTimer: ReturnType<typeof setTimeout> | null = null;
+let discoveryController: AbortController | null = null;
 const MDNS_RESTART_DELAY_MS = 30_000;
 
 function startDiscovery(): void {
-  if (bonjourBrowser) return;
+  if (bonjourBrowser || annexSettings.getSettings().loopbackOnly) return;
 
+  const controller = new AbortController();
+  discoveryController = controller;
   try {
     // Socket errors are logged, never thrown (#1921).
     bonjourInstance = createBonjour('discover', ({ fatal }) => {
@@ -1380,8 +1384,9 @@ function startDiscovery(): void {
       rediscoverTimer.unref?.();
     });
     bonjourBrowser = bonjourInstance.find({ type: 'clubhouse-annex' }, async (service) => {
-      const identity = await identifyService(service);
-      if (!identity) return;
+      if (controller.signal.aborted || annexSettings.getSettings().loopbackOnly) return;
+      const identity = await identifyService(service, controller.signal);
+      if (!identity || controller.signal.aborted || annexSettings.getSettings().loopbackOnly) return;
 
       const { fingerprint } = identity;
       const txt = service.txt || {};
@@ -1496,6 +1501,8 @@ function startDiscovery(): void {
 }
 
 function stopDiscovery(): void {
+  discoveryController?.abort();
+  discoveryController = null;
   if (rediscoverTimer) { clearTimeout(rediscoverTimer); rediscoverTimer = null; }
   if (bonjourBrowser) {
     try { bonjourBrowser.stop(); } catch (err) {

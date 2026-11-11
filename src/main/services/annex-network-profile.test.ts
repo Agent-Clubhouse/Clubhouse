@@ -8,6 +8,14 @@ describe('isolated Annex network profile', () => {
   it('binds only IPv4 loopback and never advertises when explicitly enabled', () => {
     expect(annexNetworkProfile({ CLUBHOUSE_ANNEX_LOOPBACK_ONLY: '1' })).toEqual({ host: '127.0.0.1', advertise: false });
   });
+  it('applies the persisted loopback mode and restores normal binding when disabled', () => {
+    expect(annexNetworkProfile({}, true)).toEqual({ host: '127.0.0.1', advertise: false });
+    expect(annexNetworkProfile({}, false)).toEqual({ host: '0.0.0.0', advertise: true });
+    expect(annexNetworkProfile({ CLUBHOUSE_ANNEX_BIND_ADDRESS: '192.168.10.9' }, true))
+      .toEqual({ host: '127.0.0.1', advertise: false });
+    expect(annexNetworkProfile({ CLUBHOUSE_ANNEX_LOOPBACK_ONLY: '1' }, false))
+      .toEqual({ host: '127.0.0.1', advertise: false });
+  });
 });
 
 it('allows only an explicit local interface in an isolated memory-only profile without discovery', () => {

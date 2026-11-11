@@ -221,7 +221,7 @@ function makeMockSocket(peerFingerprint: string = LOCAL_IDENTITY.fingerprint) {
 
 /** Simulate httpGet returning an identity JSON */
 function mockHttpGetIdentity(identity: Record<string, any>) {
-  vi.mocked(http.get).mockImplementation((_url: any, cb: any) => {
+  vi.mocked(http.get).mockImplementation((_url: any, _options: any, cb: any) => {
     const res = {
       statusCode: 200,
       on: vi.fn().mockImplementation((event: string, handler: any) => {
@@ -261,6 +261,77 @@ describe('annex-client', () => {
   // ---- startClient / stopClient ----
 
   describe('startClient', () => {
+    it('aborts in-flight discovery identity requests when loopback mode is enabled', async () => {
+      const actualHttp = await vi.importActual<typeof import('http')>('http');
+      const sockets = new Set<import('net').Socket>();
+      let sawRequest!: () => void;
+      const requested = new Promise<void>((resolve) => { sawRequest = resolve; });
+      const server = actualHttp.createServer(() => sawRequest());
+      server.on('connection', (socket) => sockets.add(socket));
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Expected TCP address');
+      try {
+        await vi.mocked(http.get).withImplementation(actualHttp.get, async () => {
+          annexClient.startClient();
+          const discover = bonjourFindCallback!;
+          const pending = discover(makeService({
+            addresses: [], referer: { address: '127.0.0.1' }, txt: { pairingPort: String(address.port) },
+          }));
+          await requested;
+          vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+          annexClient.scan();
+          await vi.waitFor(() => expect([...sockets].every((socket) => socket.destroyed)).toBe(true));
+          await pending;
+          await discover(makeService());
+          annexClient.resumeAllConnections();
+          expect(http.get).toHaveBeenCalledTimes(1);
+          expect(annexClient.getDiscoveredServices()).toEqual([]);
+          expect(mockBrowser.stop).toHaveBeenCalledOnce();
+          expect(mockBonjourInstance.destroy).toHaveBeenCalledOnce();
+          expect(mockBonjourInstance.find).toHaveBeenCalledTimes(1);
+        });
+      } finally {
+        for (const socket of sockets) socket.destroy();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
+    it('does not browse in loopback mode, even after a manual scan or wake', () => {
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+      annexClient.startClient();
+      annexClient.scan();
+      annexClient.resumeAllConnections();
+      expect(BonjourConstructor).not.toHaveBeenCalled();
+      expect(mockBonjourInstance.find).not.toHaveBeenCalled();
+    });
+
+    it('stops browsing when loopback is enabled and resumes when disabled without forgetting a paired connection', () => {
+      annexClient.startClient();
+      annexClient._addConnectedSatelliteForTesting('paired');
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+      annexClient.scan();
+      expect(mockBrowser.stop).toHaveBeenCalledOnce();
+      expect(mockBonjourInstance.destroy).toHaveBeenCalledOnce();
+      expect(mockBonjourInstance.find).toHaveBeenCalledTimes(1);
+      expect(annexClient.getSatellite('paired')?.state).toBe('connected');
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: false });
+      annexClient.scan();
+      expect(mockBonjourInstance.find).toHaveBeenCalledTimes(2);
+      expect(annexClient.getSatellite('paired')?.state).toBe('connected');
+      expect(annexPeers.removePeer).not.toHaveBeenCalled();
+    });
+
+    it('ignores a discovery result that finishes after loopback mode is enabled', async () => {
+      mockHttpGetIdentity({ fingerprint: 'remote', alias: 'Remote', publicKey: 'key' });
+      annexClient.startClient();
+      const pending = bonjourFindCallback!(makeService());
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), loopbackOnly: true });
+      annexClient.scan();
+      await pending;
+      expect(annexClient.getDiscoveredServices()).toEqual([]);
+    });
+
     it('starts Bonjour discovery', () => {
       annexClient.startClient();
       expect(mockBonjourInstance.find).toHaveBeenCalledWith(

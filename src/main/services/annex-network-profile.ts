@@ -15,14 +15,12 @@ function selectedAddress(env: NodeJS.ProcessEnv): string | undefined {
   return address;
 }
 
-/** Process-local profile. Never saved to the user's settings. */
-export function annexNetworkProfile(env: NodeJS.ProcessEnv = process.env): { host: string; advertise: boolean } {
+/** Apply the saved loopback setting without weakening an isolated process profile. */
+export function annexNetworkProfile(env: NodeJS.ProcessEnv = process.env, loopbackOnly = false): { host: string; advertise: boolean } {
   const selected = selectedAddress(env);
   annexEphemeralSession(env);
-  if (selected) return { host: selected, advertise: false };
-  return env.CLUBHOUSE_ANNEX_LOOPBACK_ONLY === '1'
-    ? { host: '127.0.0.1', advertise: false }
-    : { host: '0.0.0.0', advertise: true };
+  if (loopbackOnly || env.CLUBHOUSE_ANNEX_LOOPBACK_ONLY === '1') return { host: '127.0.0.1', advertise: false };
+  return selected ? { host: selected, advertise: false } : { host: '0.0.0.0', advertise: true };
 }
 
 /** Explicit isolated integration mode: never load or save Annex credentials. */
