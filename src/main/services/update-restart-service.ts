@@ -1,7 +1,7 @@
 import { UPDATE_AGENT_ACTION_TIMEOUT_MS, type UpdateAgentAction, type UpdateAgentActionResult } from '../../shared/types';
 import * as autoUpdateService from './auto-update-service';
 import { captureSessionState, clearPendingResume, getLiveAgentsForUpdate, markAgentStoppedForUpdate } from './restart-session-service';
-import { closeLaunches } from './launch-gate';
+import { closeAgentWork, closeLaunches } from './launch-gate';
 import * as ptyManager from './pty-manager';
 import * as headlessManager from './headless-manager';
 import { cancelAppShutdown, runAppShutdown } from './app-shutdown';
@@ -16,7 +16,7 @@ export async function captureAndShutDown(data: RestartData, validate?: () => voi
   const agentMeta = data.agentMeta ? new Map(Object.entries(data.agentMeta)) as RestartAgentMeta : undefined;
   await captureSessionState(agentNames, agentMeta);
   validate?.();
-  await runAppShutdown('update');
+  await runAppShutdown('update', undefined, validate);
 }
 
 let updateRestart: Promise<void> | null = null;
@@ -27,9 +27,9 @@ export function applyUpdateRestart(data?: RestartData, validate?: () => void): P
   if (autoUpdateService.getStatus().state !== 'ready') return Promise.reject(new Error('No update ready to apply'));
   const run = (async () => {
     try {
-      if (validate) { closeLaunches('restarting'); validate(); }
+      if (validate) { closeLaunches('restarting'); closeAgentWork(); validate(); }
       if (data) await captureAndShutDown(data, validate);
-      else await runAppShutdown('update');
+      else await runAppShutdown('update', undefined, validate);
       validate?.();
       if (validate) {
         await autoUpdateService.applyUpdate(undefined, { requireApplied: true });

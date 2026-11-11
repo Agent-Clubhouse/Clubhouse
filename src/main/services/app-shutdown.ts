@@ -107,10 +107,10 @@ let quitRequested = false;
  * Run the shutdown, or join the one already running. `after` runs last,
  * inside the shutdown span (quit applies a pending update there).
  */
-export function runAppShutdown(why: ShutdownReason, after?: ShutdownTask[]): Promise<void> {
+export function runAppShutdown(why: ShutdownReason, after?: ShutdownTask[], beforeStop?: () => void): Promise<void> {
   if (!coordinator.started) reason = why;
   if (why === 'quit') quitRequested = true;
-  return coordinator.run(after);
+  return coordinator.run(after, beforeStop ? () => { if (!quitRequested) beforeStop(); } : undefined);
 }
 
 /**

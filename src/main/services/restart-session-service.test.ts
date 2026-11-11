@@ -68,6 +68,7 @@ import { getDurableConfig } from './agent-config';
 import * as headlessManager from './headless-manager';
 import { getAgentRuntime } from './agent-runtime';
 import type { AgentRuntime } from '../../shared/chat';
+import { runAgentWork } from './launch-gate';
 
 describe('restart-session-service', () => {
   const statePath = '/tmp/test-userdata/restart-session-state.json';
@@ -440,6 +441,25 @@ describe('restart-session-service', () => {
   });
 
   describe('getLiveAgentsForUpdate', () => {
+    it('counts queued and in-flight messages as work for remote approvals without changing the desktop gate', async () => {
+      agentRegistry.register('pending-chat', { projectPath: '/project', orchestrator: 'claude-code', runtime: 'chat' });
+      const runtime = {
+        kind: 'chat', isRunning: () => true, getState: () => 'idle',
+        getQueueState: () => ({ queuedMessageIds: ['queued'], queueStateSeq: 1, queueRemovalSupported: true }),
+      } as AgentRuntime;
+      vi.mocked(getAgentRuntime).mockReturnValue(runtime);
+      expect(getLiveAgentsForUpdate()[0].isWorking).toBe(false);
+      expect(getLiveAgentsForUpdate({ includePendingWork: true })[0].isWorking).toBe(true);
+      runtime.getQueueState = () => ({ queuedMessageIds: [], queueStateSeq: 2, queueRemovalSupported: true });
+      let finish!: () => void;
+      const sending = runAgentWork('pending-chat', () => new Promise<void>((resolve) => { finish = resolve; }));
+      expect(getLiveAgentsForUpdate({ includePendingWork: true })[0].isWorking).toBe(true);
+      finish();
+      await sending;
+      expect(getLiveAgentsForUpdate({ includePendingWork: true })[0].isWorking).toBe(false);
+      vi.mocked(getAgentRuntime).mockReset();
+    });
+
     it('returns empty array when no agents are registered', () => {
       const result = getLiveAgentsForUpdate();
       expect(result).toEqual([]);

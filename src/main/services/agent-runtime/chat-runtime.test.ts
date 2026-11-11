@@ -31,6 +31,7 @@ import * as permissionQueue from '../annex-permission-queue';
 import { agentRegistry } from '../agent-registry';
 import { accessLevelOf } from '../../../shared/orchestration-policy';
 import { appLog } from '../log-service';
+import { closeAgentWork, hasAgentWorkInFlight, reopenLaunches } from '../launch-gate';
 
 /** Let queued microtasks and the runtime's emit chain settle. */
 async function flush(times = 10): Promise<void> {
@@ -72,6 +73,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  reopenLaunches();
   vi.useRealTimers();
 });
 
@@ -145,6 +147,61 @@ describe('ChatAgentRuntime rich media', () => {
 });
 
 describe('ChatAgentRuntime', () => {
+  it('blocks new prompts during a remote restart and tracks delivery already in flight', async () => {
+    const driver = new FakeChatDriver();
+    let release!: () => void;
+    const { runtime } = makeRuntime(driver, { beforePrompt: () => new Promise((resolve) => { release = resolve; }) });
+    await runtime.start();
+    const sending = runtime.sendMessage('already admitted', { source: 'user' });
+    expect(hasAgentWorkInFlight('agent-1')).toBe(true);
+    closeAgentWork();
+    await expect(runtime.sendMessage('too late', { source: 'user' })).rejects.toThrow('not accepting new agent work');
+    expect(driver.last.sent).toEqual([]);
+    release();
+    await sending;
+    expect(driver.last.sent).toHaveLength(1);
+    expect(hasAgentWorkInFlight('agent-1')).toBe(false);
+    await runtime.stop();
+  });
+
+  it('holds queued turns during a remote restart and resumes them if restart is cancelled', async () => {
+    const driver = new FakeChatDriver('claude_stream_json', 'claude-code', STEERLESS);
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: {} });
+    await flush();
+    await runtime.sendMessage('queued work', { source: 'user', delivery: 'queued' });
+    closeAgentWork();
+    driver.last.emit({ type: 'turn_ended', data: { outcome: 'success' } });
+    await flush();
+    expect(driver.last.sent).toEqual([]);
+    expect(runtime.getQueueState().queuedMessageIds).toHaveLength(1);
+    reopenLaunches();
+    await flush();
+    expect(driver.last.sent).toHaveLength(1);
+    expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
+    await runtime.stop();
+  });
+
+  it('keeps native queued turns working across the idle gap before the driver starts them', async () => {
+    const driver = new FakeChatDriver('claude_stream_json', 'claude-code', { ...STEERLESS, queue: 'native' });
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    await runtime.sendMessage('first turn', { source: 'user' });
+    await runtime.sendMessage('next turn', { source: 'user', delivery: 'queued' });
+    expect(runtime.hasPendingWork()).toBe(true);
+    driver.last.emit({ type: 'turn_started', data: {} });
+    driver.last.emit({ type: 'turn_ended', data: { outcome: 'success' } });
+    await flush();
+    expect(runtime.getState()).toBe('idle');
+    expect(runtime.hasPendingWork()).toBe(true);
+    driver.last.emit({ type: 'turn_started', data: {} });
+    driver.last.emit({ type: 'turn_ended', data: { outcome: 'success' } });
+    await flush();
+    expect(runtime.hasPendingWork()).toBe(false);
+    await runtime.stop();
+  });
+
   it('joins a pending strict stop instead of ending a still-closing session on retry', async () => {
     const driver = new FakeChatDriver();
     const { runtime, onEnded } = makeRuntime(driver);

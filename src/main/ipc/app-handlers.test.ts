@@ -118,6 +118,7 @@ vi.mock('../services/log-settings', () => ({
 vi.mock('../services/agent-system', () => ({
   resolveOrchestrator: vi.fn(async () => ({})),
   spawnAgent: vi.fn(async () => {}),
+  whenSpawnsSettled: vi.fn(async () => {}),
 }));
 
 vi.mock('../services/pty-manager', () => ({
@@ -183,7 +184,8 @@ import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';
 import { applyUpdateRestart } from '../services/update-restart-service';
 import { resetAppShutdownForTests } from '../services/app-shutdown';
-import { launchesOpen } from '../services/launch-gate';
+import { agentWorkOpen, launchesOpen } from '../services/launch-gate';
+import { whenSpawnsSettled } from '../services/agent-system';
 import { captureSessionState, clearPendingResume, getLiveAgentsForUpdate, markAgentStoppedForUpdate } from '../services/restart-session-service';
 import { getAgentRuntime } from '../services/agent-runtime';
 import type { AgentRuntime } from '../../shared/chat';
@@ -944,9 +946,9 @@ describe('app-handlers', () => {
 
   it('a remote restart closes launches and rechecks the approved state across capture and shutdown', async () => {
     updateReady();
-    const validate = vi.fn(() => { expect(launchesOpen()).toBe(false); });
+    const validate = vi.fn(() => { expect(launchesOpen()).toBe(false); expect(agentWorkOpen()).toBe(false); });
     await applyUpdateRestart({ agentNames: {} }, validate);
-    expect(validate).toHaveBeenCalledTimes(3);
+    expect(validate).toHaveBeenCalledTimes(4);
     expect(autoUpdateService.applyUpdate).toHaveBeenCalledWith(undefined, { requireApplied: true });
     expect(clearPendingResume).toHaveBeenCalledOnce();
     expect(launchesOpen()).toBe(true);
@@ -963,6 +965,21 @@ describe('app-handlers', () => {
     expect(autoUpdateService.applyUpdate).not.toHaveBeenCalled();
     expect(clearPendingResume).toHaveBeenCalledOnce();
     expect(launchesOpen()).toBe(true);
+  });
+
+  it('refuses newly working agents after draining spawns without stopping or restoring their config', async () => {
+    updateReady();
+    let working = false;
+    vi.mocked(whenSpawnsSettled).mockImplementationOnce(async () => { working = true; });
+    await expect(applyUpdateRestart({ agentNames: {} }, () => {
+      if (working) throw new Error('An agent started working during the drain');
+    })).rejects.toThrow('started working during the drain');
+    expect(ptyManagerMock.killAll).not.toHaveBeenCalled();
+    expect(headlessManagerMock.stopAll).not.toHaveBeenCalled();
+    expect(autoUpdateService.applyUpdate).not.toHaveBeenCalled();
+    expect(clearPendingResume).toHaveBeenCalledOnce();
+    expect(launchesOpen()).toBe(true);
+    expect(agentWorkOpen()).toBe(true);
   });
 
   it('GET_PENDING_RELEASE_NOTES delegates to autoUpdateService', async () => {

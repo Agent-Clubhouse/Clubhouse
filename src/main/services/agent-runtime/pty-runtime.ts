@@ -22,6 +22,7 @@ import type {
 } from '../../../shared/chat';
 import { writeChunkedBracketedPaste, submitAfterPaste, sleep } from './pty-input';
 import { AgentStoppingError } from './agent-stopping';
+import { runAgentWork } from '../launch-gate';
 
 /** Fallback when the provider is unknown (matches the MCP send_message defaults). */
 export const DEFAULT_PASTE_TIMING: PasteSubmitTiming = {
@@ -70,6 +71,10 @@ export class PtyAgentRuntime implements AgentRuntime {
   }
 
   async sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
+    return runAgentWork(this.agentId, () => this.deliverMessage(content, opts));
+  }
+
+  private async deliverMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     // A process that is exiting (gracefulKill sent its exit command) would swallow the text.
     if (ptyManager.isStopping(this.agentId)) throw new AgentStoppingError(this.agentId);
     const text = contentToText(content);

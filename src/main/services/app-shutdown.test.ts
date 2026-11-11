@@ -63,6 +63,20 @@ afterEach(() => {
 });
 
 describe('app shutdown (#2053)', () => {
+  it('rejects a guarded update after the drain without stopping agents or restoring their live config', async () => {
+    const guard = vi.fn(() => {
+      expect(events).toEqual(['chat-starts-cancelled', 'spawns-settled']);
+      throw new Error('New work appeared');
+    });
+    await expect(runAppShutdown('update', undefined, guard)).rejects.toThrow('New work appeared');
+    expect(mocks.killAll).not.toHaveBeenCalled();
+    expect(mocks.stopAllChat).not.toHaveBeenCalled();
+    expect(mocks.stopAllHeadless).not.toHaveBeenCalled();
+    expect(mocks.restoreAll).not.toHaveBeenCalled();
+    cancelAppShutdown();
+    expect(launchesOpen()).toBe(true);
+  });
+
   it('lets spawns settle, stops terminals, chat and headless, saves session ids before the flush, then awaits the restore', async () => {
     await runAppShutdown('update');
     expect(events.slice(0, 2)).toEqual(['chat-starts-cancelled', 'spawns-settled']);

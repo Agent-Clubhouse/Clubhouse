@@ -57,9 +57,9 @@ export interface ShutdownCoordinator {
    * Run the plan once. Every caller (quit, update restart, app restart) gets
    * the same run: a repeated quit waits for it instead of starting another.
    * `after` runs last, inside the shutdown span; only the first caller's
-   * counts. Never rejects.
+   * counts. Only an explicit beforeStop guard can reject, before any stop.
    */
-  run(after?: ShutdownTask[]): Promise<void>;
+  run(after?: ShutdownTask[], beforeStop?: () => void): Promise<void>;
   readonly started: boolean;
   /**
    * Allow a new run after one that didn't end the app (a failed update
@@ -140,7 +140,7 @@ export function createShutdownCoordinator({
   let running: Promise<void> | undefined;
   let inProgress = false;
 
-  const execute = async (after: ShutdownTask[]): Promise<void> => {
+  const execute = async (after: ShutdownTask[], beforeStop?: () => void): Promise<void> => {
     inProgress = true;
     const deadlineAt = Date.now() + deadlineMs;
     /** `floorMs`: the least the step gets, even past the deadline (the restore's reserve). */
@@ -162,6 +162,7 @@ export function createShutdownCoordinator({
         onCleanupError('begin shutdown', error);
       }
       await Promise.all(drain.map((task) => bounded(task, restoreReserveMs)));
+      beforeStop?.();
       await Promise.all(stop.map((task) => bounded(task, restoreReserveMs)));
       for (const task of persist) await bounded(task, restoreReserveMs);
       for (const task of restore) await bounded(task, 0, restoreReserveMs);
@@ -173,7 +174,7 @@ export function createShutdownCoordinator({
   };
 
   return {
-    run: (after = []) => (running ??= execute(after)),
+    run: (after = [], beforeStop) => (running ??= execute(after, beforeStop)),
     get started() {
       return running !== undefined;
     },

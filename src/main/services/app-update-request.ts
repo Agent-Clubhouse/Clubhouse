@@ -98,7 +98,7 @@ export async function requestAppUpdate(assertAuthorized: () => void = () => {}):
   if (status.state !== 'ready' || !status.availableVersion) throw new MobileControlError('update_not_ready', 409, 'rejected', 'Wait until the update is ready to install.');
   creating = true;
   try {
-    const live = getLiveAgentsForUpdate().filter((agent) => agent.isWorking);
+    const live = getLiveAgentsForUpdate({ includePendingWork: true }).filter((agent) => agent.isWorking);
     const registrations = new Map(live.map((agent) => [agent.agentId, agentRegistry.get(agent.agentId)]));
     const workingAgents = await Promise.all(live.map(async (agent) => ({
       agentId: agent.agentId, name: (await getDurableConfig(agent.projectPath, agent.agentId))?.name ?? agent.agentId,
@@ -148,7 +148,7 @@ async function restart(mode: AppUpdateMode, id: string): Promise<void> {
   if (reason) { fail(reason); return; }
   if (mode === 'when_idle') {
     if (Date.now() >= Date.parse(request.expiresAt!)) { fail('Agents did not become idle within 30 minutes. Nothing was interrupted.'); return; }
-    if (getLiveAgentsForUpdate().some((agent) => agent.isWorking)) {
+    if (getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking)) {
       timer = setTimeout(() => { void restart(mode, id).catch((err: unknown) => fail(err instanceof Error ? err.message : String(err))); }, 1000);
       timer.unref?.();
       return;
@@ -158,7 +158,7 @@ async function restart(mode: AppUpdateMode, id: string): Promise<void> {
   emit();
   try {
     if (mode === 'now') {
-      for (const agent of getLiveAgentsForUpdate().filter((agent) => agent.isWorking)) {
+      for (const agent of getLiveAgentsForUpdate({ includePendingWork: true }).filter((agent) => agent.isWorking)) {
         if (!reviewed.has(agent.agentId) || reviewed.get(agent.agentId) !== agentRegistry.get(agent.agentId)) {
           throw new Error('Another agent started working after this request. Request the update again to review it.');
         }
@@ -170,14 +170,14 @@ async function restart(mode: AppUpdateMode, id: string): Promise<void> {
         }
       }
     }
-    if (getLiveAgentsForUpdate().some((agent) => agent.isWorking)) throw new Error('An agent is still working. Request the update again.');
+    if (getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking)) throw new Error('An agent is still working. Request the update again.');
     const changed = readyReason(request.version);
     if (changed) throw new Error(changed);
     const version = request.version;
     await applyUpdateRestart({ agentNames: {} }, () => {
       const reason = readyReason(version);
       if (reason) throw new Error(reason);
-      if (getLiveAgentsForUpdate().some((agent) => agent.isWorking)) throw new Error('An agent started working before shutdown. Request the update again.');
+      if (getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking)) throw new Error('An agent started working before shutdown. Request the update again.');
     });
     // A real successful apply exits. Returning means it failed or was cancelled locally.
     fail(updater.getStatus().error ?? 'The updater returned without restarting. Update Clubhouse from the desktop.');
@@ -197,7 +197,7 @@ export function answerAppUpdateRequest(requestId: string, allow: boolean, mode?:
   if (mode !== 'now' && mode !== 'when_idle') return { ok: false, error: 'Choose Restart now or Restart when idle to approve this update.' };
   const reason = readyReason(request.version);
   if (reason) { fail(reason); return { ok: false, error: reason }; }
-  if (mode === 'now' && getLiveAgentsForUpdate().some((agent) => agent.isWorking
+  if (mode === 'now' && getLiveAgentsForUpdate({ includePendingWork: true }).some((agent) => agent.isWorking
     && (!reviewed.has(agent.agentId) || reviewed.get(agent.agentId) !== agentRegistry.get(agent.agentId)))) {
     fail('Another agent started working after this request. Request the update again to review it.');
     return { ok: false, error: request.error! };

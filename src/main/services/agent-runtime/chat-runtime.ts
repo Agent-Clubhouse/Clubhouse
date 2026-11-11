@@ -59,6 +59,7 @@ import { ChatMediaPolicy } from './chat-media';
 import { isConcealedTool } from './concealed-tools';
 import { agentRegistry } from '../agent-registry';
 import { fiveLevelOf, launchAccessForChatLevel } from '../../../shared/orchestration-policy';
+import { agentWorkOpen, assertAgentWorkOpen, runAgentWork, whenAgentWorkOpen } from '../launch-gate';
 
 export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -197,6 +198,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private publishedQueueState = { queuedMessageIds: [] as string[], queueStateSeq: 0 };
   /** drainQueue is sending the next queued item: the turn it starts hasn't begun yet. */
   private draining = false;
+  private queueWaitingForWork = false;
+  private pendingTurns = new Set<symbol>();
   private readonly permissions = new Map<string, PendingPermission>();
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
   private readonly questions = new Set<string>();
@@ -402,6 +405,10 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async observe(draft: ChatEventDraft): Promise<void> {
     switch (draft.type) {
       case 'turn_started':
+        {
+          const pending = this.pendingTurns.values().next().value;
+          if (pending) this.pendingTurns.delete(pending);
+        }
         this.turnTrace = this.pendingTrace;
         this.pendingTrace = undefined;
         this.pendingTraceAssigned = false;
@@ -556,6 +563,14 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   async sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
+    return runAgentWork(this.agentId, () => this.deliverMessage(content, opts));
+  }
+
+  hasPendingWork(): boolean {
+    return this.turnId !== undefined || this.draining || this.queued.length > 0 || this.pendingTurns.size > 0;
+  }
+
+  private async deliverMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     const session = this.requireSession();
     const blocks: ContentBlock[] = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
     // While the queue drains, the state still reads idle; a prompt now would race the drained one.
@@ -620,11 +635,15 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.pendingTraceAssigned = true;
     }
     let delivered: MessageDelivery;
+    const pending = wanted === 'prompt' || wanted === 'queued' ? Symbol() : undefined;
+    if (pending) this.pendingTurns.add(pending);
     try { delivered = await session.send(outgoing, wanted); }
     catch (error) {
+      if (pending) this.pendingTurns.delete(pending);
       if (this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
       throw error;
     }
+    if (pending && delivered !== 'prompt' && delivered !== 'queued') this.pendingTurns.delete(pending);
     if (wanted === 'prompt' && delivered !== 'prompt' && this.pendingTrace === traceContext) {
       this.pendingTrace = undefined;
       this.pendingTraceAssigned = false;
@@ -678,11 +697,31 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   private async drainQueue(): Promise<void> {
+    if (!agentWorkOpen()) {
+      if (!this.queueWaitingForWork) {
+        this.queueWaitingForWork = true;
+        const session = this.session;
+        void whenAgentWorkOpen().then(async () => {
+          this.queueWaitingForWork = false;
+          if (this.session === session) await this.drainQueue();
+        }).catch(() => {
+          // telemetry-exempt: the queued item remains visible and can be retried.
+          appLog('core:chat', 'warn', 'Could not resume a queued message after cancelling restart', { meta: { agentId: this.agentId } });
+        });
+      }
+      return;
+    }
+    if (!this.session) return;
+    await runAgentWork(this.agentId, () => this.deliverQueuedMessage());
+  }
+
+  private async deliverQueuedMessage(): Promise<void> {
     const session = this.session;
     if (!session) return;
     const next = this.queued.shift();
     if (!next) return;
     let failed = false;
+    const pending = Symbol();
     this.draining = true;
     try {
       this.clearIdleTimer();
@@ -691,9 +730,11 @@ export class ChatAgentRuntime implements AgentRuntime {
       if (this.session !== session) return;
       this.pendingTrace = this.pendingTraceAssigned ? undefined : next.trace;
       this.pendingTraceAssigned = true;
+      this.pendingTurns.add(pending);
       await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
       if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
     } catch (err) {
+      this.pendingTurns.delete(pending);
       if (this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
       if (this.session !== session) return;
       // Like a failed plain send, this one message fails and the session stays (#3103).
@@ -789,6 +830,10 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   /** Starts a new conversation: new Clubhouse session id, fresh native session. */
   async clearContext(): Promise<void> {
+    return runAgentWork(this.agentId, () => this.replaceContext());
+  }
+
+  private async replaceContext(): Promise<void> {
     const old = this.session;
     this.session = undefined;
     // Between closing the old session and opening the new one, isRunning() is
@@ -800,6 +845,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.queued.length = 0;
       this.pendingTrace = undefined;
       this.pendingTraceAssigned = false;
+      this.pendingTurns.clear();
       this.turnTrace = undefined;
       this.turnId = undefined;
       if (old) await old.close();
@@ -818,7 +864,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   async compact(): Promise<void> {
-    await this.requireSession().compact();
+    return runAgentWork(this.agentId, () => this.requireSession().compact());
   }
 
   getPendingPermissionOptions(requestId: string): readonly PermissionOption[] | undefined {
@@ -827,6 +873,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   async respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> {
+    assertAgentWorkOpen();
     const session = this.requireSession();
     const pending = this.permissions.get(requestId);
     // Already answered (another view, the desktop prompt or Annex got there first): nothing to do.
@@ -851,6 +898,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
+    assertAgentWorkOpen();
     const session = this.requireSession();
     // Already answered from another view: nothing to do.
     if (!this.questions.delete(requestId)) return;

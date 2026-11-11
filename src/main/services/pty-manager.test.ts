@@ -97,6 +97,7 @@ import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferS
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { getShellCwd } from './pty-manager';
+import { closeAgentWork, reopenLaunches } from './launch-gate';
 import { onAgentExit } from './agent-exit-broadcast';
 import * as headlessTerminal from './pty-headless-terminal';
 import { appLog } from './log-service';
@@ -654,6 +655,21 @@ describe('pty-manager', () => {
   });
 
   describe('write', () => {
+    it('blocks terminal input during a remote restart, then accepts it again after cancellation', async () => {
+      await spawn('agent_update_gate', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      closeAgentWork();
+      try {
+        expect(() => write('agent_update_gate', 'build\r')).toThrow('not accepting new agent work');
+        expect(() => writeBinary('agent_update_gate', '\r')).toThrow('not accepting new agent work');
+        expect(mockProcess.write).not.toHaveBeenCalled();
+      } finally {
+        reopenLaunches();
+      }
+      write('agent_update_gate', 'build\r');
+      expect(mockProcess.write).toHaveBeenCalledWith('build\r');
+    });
+
     it('writes data to the PTY process', async () => {
       await spawn('agent_w', '/test', '/usr/local/bin/claude', []);
       write('agent_w', 'hello\n');
