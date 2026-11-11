@@ -24,7 +24,7 @@ import {
 } from './types';
 import { BaseProvider } from './base-provider';
 import { probeClaudeModels, type ModelProbeContext } from './model-probes';
-import { cliStateDir, homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
+import { cliStateDir, homePath, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 
@@ -262,15 +262,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     const settingsPath = path.join(claudeDir, 'settings.local.json');
 
-    let existing: Record<string, unknown> = {};
-    try {
-      existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
-    } catch {
-      // No existing file — expected on first run
-    }
-
-    const mergedHooks = mergeHookEntries(existing, hooks, isClubhouseHookEntry);
-    await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
+    await writeTerminalHooksConfig(settingsPath, hooks, isClubhouseHookEntry);
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {
@@ -287,7 +279,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
       message: eventName === 'StopFailure'
-        ? (typeof obj.error === 'string' && Object.hasOwn(STOP_FAILURE_MESSAGES, obj.error)
+        ? (typeof obj.error === 'string' && Object.prototype.hasOwnProperty.call(STOP_FAILURE_MESSAGES, obj.error)
           ? STOP_FAILURE_MESSAGES[obj.error as SDKAssistantMessageError]
           : STOP_FAILURE_MESSAGES.unknown)
         : obj.message as string | undefined,

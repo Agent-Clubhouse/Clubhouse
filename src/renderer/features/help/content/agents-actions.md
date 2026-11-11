@@ -26,6 +26,8 @@ Terminal turn events depend on the CLI's hooks. Claude reports prompt starts, co
 
 Claude failure events include only a recognized error category, not free-form provider details that could contain conversation content or credentials.
 
+Clubhouse preserves existing hook settings. Invalid or commented JSON and customized Clubhouse callback groups require manual review before the agent can start; they are not overwritten.
+
 ### Event time filters
 
 Every event trigger can optionally run only **After local time**, in HH:MM on this computer, and **Once per calendar day**. Events before the set time are ignored, not held until later. Delayed and queued runs check the current time and date again before starting. The filters also apply to Run now.

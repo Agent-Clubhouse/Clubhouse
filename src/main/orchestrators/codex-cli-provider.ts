@@ -26,7 +26,7 @@ import { codexContextWindowOptions, parseCodexContextCatalog, type ContextWindow
 import { probeCodexModels, type ModelProbeContext } from './model-probes';
 import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
-import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
+import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -547,15 +547,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
     const hooksPath = path.join(codexDir, 'hooks.json');
 
-    let existing: Record<string, unknown> = {};
-    try {
-      existing = JSON.parse(await fsp.readFile(hooksPath, 'utf-8'));
-    } catch {
-      // No existing file — expected on first run
-    }
-
-    const mergedHooks = mergeHookEntries(existing, hooks, isClubhouseHookEntry);
-    await fsp.writeFile(hooksPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
+    await writeTerminalHooksConfig(hooksPath, hooks, isClubhouseHookEntry);
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {

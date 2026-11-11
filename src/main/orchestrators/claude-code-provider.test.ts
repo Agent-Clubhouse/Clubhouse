@@ -10,7 +10,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   writeFile: vi.fn(async () => undefined),
 }));
 
@@ -538,6 +538,7 @@ describe('ClaudeCodeProvider', () => {
       expect(second.hooks.CustomEvent).toEqual([userHook]);
       expect(second.hooks.StopFailure).toHaveLength(1);
       expect(second.hooks.PostCompact).toHaveLength(1);
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
     });
 
     it('creates .claude dir and writes settings.local.json', async () => {

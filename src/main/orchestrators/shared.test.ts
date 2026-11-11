@@ -18,6 +18,7 @@ vi.mock('child_process', () => ({
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
+  writeFile: vi.fn(async () => undefined),
   open: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
 }));
 
@@ -32,7 +33,8 @@ import { execSync, execFileSync } from 'child_process';
 import { app } from 'electron';
 import { getShellEnvironment } from '../util/shell';
 import { resolveStructuredSpawn } from './adapters/structured-spawn';
-import { findBinaryInPath, testBinaryOverride, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile, validateWrapperConfig, clearBinaryCache } from './shared';
+import { findBinaryInPath, testBinaryOverride, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, writeTerminalHooksConfig, resolveEncodedPathDir, parseJsonlFile, validateWrapperConfig, clearBinaryCache } from './shared';
+import { isClubhouseHookEntry } from '../services/config-pipeline';
 import type { LaunchWrapperConfig } from '../../shared/types';
 import type { TranscriptReadStats } from './types';
 
@@ -735,6 +737,78 @@ Options:
       const existing = { hooks: { PreToolUse: [{ type: 'user' }] } };
       mergeHookEntries(existing, { PreToolUse: [{ type: 'ours', clubhouse: true }] }, isOwn);
       expect((existing.hooks as Record<string, unknown[]>).PreToolUse).toEqual([{ type: 'user' }]);
+    });
+  });
+
+  describe('writeTerminalHooksConfig', () => {
+    const file = path.join('project', '.claude', 'settings.local.json');
+    const managedEntry = () => ({
+      hooks: [{ type: 'command', command: buildHookCurlCommand('http://127.0.0.1:9999/hook'), async: true, timeout: 5 }],
+    });
+
+    it.each([
+      '{broken',
+      '{ // keep this comment\n "permissions": {} }',
+      'null',
+      '[]',
+      '{"hooks":null}',
+      '{"hooks":[]}',
+      '{"hooks":{"Stop":{}}}',
+    ])('leaves invalid or commented config unchanged: %s', async (contents) => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(contents);
+      await expect(writeTerminalHooksConfig(file, { Stop: [managedEntry()] }, isClubhouseHookEntry)).rejects.toThrow('Clubhouse did not modify it');
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('does not replace a config it cannot read', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(Object.assign(new Error('access denied'), { code: 'EACCES' }));
+      await expect(writeTerminalHooksConfig(file, { Stop: [managedEntry()] }, isClubhouseHookEntry)).rejects.toThrow('Cannot read hooks');
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('creates missing config and surfaces read-only write errors', async () => {
+      const error = Object.assign(new Error('read-only config'), { code: 'EACCES' });
+      vi.mocked(fsp.writeFile).mockRejectedValueOnce(error);
+      await expect(writeTerminalHooksConfig(file, { Stop: [managedEntry()] }, isClubhouseHookEntry)).rejects.toBe(error);
+    });
+
+    it('does not rewrite an already-current config, including its formatting', async () => {
+      const hooks = { Stop: [managedEntry()] };
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ customKey: 'keep', hooks }, null, '\t'));
+      await writeTerminalHooksConfig(file, hooks, isClubhouseHookEntry);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it.each(['win32', 'darwin'] as const)('migrates fixed-port %s callbacks while preserving user ordering and unknown settings', async (platform) => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue(platform);
+      try {
+        const target = platform === 'win32' ? path.win32.join('C:\\repo with spaces', '.claude', 'settings.local.json') : file;
+        const entry = managedEntry();
+        const old = JSON.parse(JSON.stringify(entry).replace(platform === 'win32' ? '%CLUBHOUSE_HOOK_PORT%' : '${CLUBHOUSE_HOOK_PORT}', '1111'));
+        const before = { hooks: [{ type: 'command', command: 'user-before' }], customMatcherKey: true };
+        const after = { hooks: [{ type: 'command', command: 'curl https://example.com/hook/user' }] };
+        vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+          permissions: { allow: ['Read'] }, hooks: { Stop: [before, old, after], FutureEvent: [before] },
+        }));
+        await writeTerminalHooksConfig(target, { Stop: [entry] }, isClubhouseHookEntry);
+        expect(fsp.readFile).toHaveBeenCalledWith(target, 'utf-8');
+        const written = JSON.parse(String(vi.mocked(fsp.writeFile).mock.calls[0][1]));
+        expect(written.permissions).toEqual({ allow: ['Read'] });
+        expect(written.hooks.Stop).toEqual([before, after, entry]);
+        expect(written.hooks.FutureEvent).toEqual([before]);
+      } finally {
+        platformSpy.mockRestore();
+      }
+    });
+
+    it.each(['mixed', 'metadata'])('refuses to delete a customized managed entry (%s)', async (customization) => {
+      const entry = managedEntry();
+      const customized = customization === 'mixed'
+        ? { ...entry, hooks: [...entry.hooks, { type: 'command', command: 'user-command', async: true, timeout: 5 }] }
+        : { ...entry, customKey: 'user metadata' };
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ hooks: { Stop: [customized] } }));
+      await expect(writeTerminalHooksConfig(file, { Stop: [entry] }, isClubhouseHookEntry)).rejects.toThrow('Ambiguous Clubhouse hook');
+      expect(fsp.writeFile).not.toHaveBeenCalled();
     });
   });
 

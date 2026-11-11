@@ -11,7 +11,7 @@ vi.mock('fs', () => ({
 }));
 
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   writeFile: vi.fn(async () => {}),
   mkdir: vi.fn(async () => {}),
   stat: vi.fn(async () => ({ isDirectory: () => true, birthtime: new Date('2026-04-01T10:00:00Z'), mtime: new Date('2026-04-01T12:00:00Z') })),
@@ -1055,6 +1055,7 @@ describe('CodexCliProvider', () => {
       expect(second.hooks.PostCompact).toHaveLength(2);
       expect(second.hooks.PostCompact[0]).toEqual(userHook);
       expect(second.hooks.Stop[0]).toEqual(userHook);
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
     });
 
     it('creates .codex dir and writes hooks.json', async () => {
