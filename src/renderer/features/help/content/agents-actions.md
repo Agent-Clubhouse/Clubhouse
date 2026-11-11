@@ -30,6 +30,18 @@ A started run uses the day, including failed runs and Run now. Skipped or cancel
 
 Once per calendar day; moving the clock back doesn't give an extra run. This includes a repeated hour at the end of daylight saving time and moving back to an earlier date after a timezone change. A later local date is needed for another run. A spring-forward jump past the set time allows the next qualifying event, without replaying missed events.
 
+### Any readable agent
+
+For **Finishes a turn** and **Has a turn fail**, you can watch **Any readable agent** across projects. This means durable agents, including their durable helpers, matching other agent event sources. Quick agents are not included. It excludes the subscriber, both Dispatcher identities and Dispatcher-owned helpers. Each agent must be readable by the action's owner, using its existing `agent.read` permission.
+
+An agent also needs `agent.watch` on the app to watch activity across agents. It is allowed by default for the Dispatcher and can be turned off on its Clubhouse permissions page. Other agents have no default grant. Set it to Allow on the owner's Clubhouse permissions page, or ask for that permission first. Ask first and Off do not allow unattended activity watching. Both this grant and each agent's read access are checked again before delivery, including queued runs. Membership is dynamic: durable agents that become readable later join without editing the action.
+
+Actions created by you in Settings use your access, not an agent's grants. They watch all eligible durable agents, with the same exclusions. Agents without an Allow grant for activity watching cannot see any-agent actions over MCP. Agents with that grant can see action status and remaining runs. Their last-run details and history use their current read permissions, even for actions you created and retained history from edited or deleted actions. Partially redacted runs omit merged causes and unreadable step-target results and reasons, and use the run's start time rather than the first member's turn time.
+
+Turns are grouped for 60 seconds by default, configurable from 10 seconds to 10 minutes. The first qualifying turn starts a fixed window. Later turns join it without extending the end time, and each involved agent appears once. The message names up to 20 agents and says how many more there are; the step context includes every involved readable agent. Agent names are length-limited and stripped of line breaks and control characters. Delivered messages and quick-agent prompts quote the summary as untrusted event data, separate from the action's instructions. This source uses its grouping window instead of Wait first, and cannot combine with `delayMinutes`.
+
+Buffers are kept only while Clubhouse is running. Turning off, editing or deleting the action discards its pending group. Relaunching does not replay turns. The usual overlap, hourly, chain, time and daily limits still apply to the grouped run.
+
 ### Missed times
 
 If Clubhouse was closed or the machine was asleep at a schedule time, the action skips it by default. You can choose to run once when Clubhouse opens, or to run each missed time, up to 10.

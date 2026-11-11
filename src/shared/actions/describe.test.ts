@@ -20,6 +20,12 @@ describe('presets', () => {
 });
 
 describe('describeTrigger', () => {
+  it('describes the any-readable-agent scope and fixed grouping window', () => {
+    const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } } as const;
+    expect(describeTrigger(trigger)).toBe('When any readable durable agent finishes a turn, grouped for 60 seconds from the first turn');
+    expect(describeTrigger({ ...trigger, coalesceSeconds: 10 })).toContain('grouped for 10 seconds from the first turn');
+  });
+
   it('reads schedules in plain words', () => {
     expect(describeTrigger({ kind: 'schedule', preset: 'weekdays', cron: '0 9 * * 1-5', missed: 'skip' })).toBe('Weekdays at 9:00 AM');
   });

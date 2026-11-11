@@ -82,6 +82,8 @@ export interface ToolGrantDeclaration {
   ifArgs?: readonly string[];
   /** Applies only when one of these boolean arguments is true. */
   ifTrue?: readonly string[];
+  /** Actions only: a flat source or trigger.source of {kind: 'any'}, including its default window. */
+  ifAnyAgentSource?: true;
   /**
    * When one of these actions is Ask first, the tool decides itself whether
    * and how to ask, so the check lets the call reach it instead of asking
@@ -134,6 +136,6 @@ export function describeToolGrant(grant: ToolGrant | undefined): string {
   if (grant === undefined) return '(none)';
   if (isToolGrantPassThrough(grant)) return `(${grant})`;
   return toolGrantDeclarations(grant)
-    .map((d) => `${d.actions.join(', ')} on ${d.target}${d.ifArgs ? ` if ${d.ifArgs.join(' or ')}` : ''}${d.ifTrue ? ` if ${d.ifTrue.join(' or ')} is true` : ''}`)
+    .map((d) => `${d.actions.join(', ')} on ${d.target}${d.ifArgs ? ` if ${d.ifArgs.join(' or ')}` : ''}${d.ifTrue ? ` if ${d.ifTrue.join(' or ')} is true` : ''}${d.ifAnyAgentSource ? ' if any-agent source' : ''}`)
     .join('; ');
 }

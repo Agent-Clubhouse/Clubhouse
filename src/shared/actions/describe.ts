@@ -6,7 +6,7 @@
  */
 
 import { describeCron, formatClock, parseCron } from './cron';
-import { DEFAULT_ABSENCE_MINUTES } from './types';
+import { DEFAULT_ABSENCE_MINUTES, DEFAULT_COALESCE_SECONDS } from './types';
 import type {
   ActionEventKind,
   ActionEventSource,
@@ -89,6 +89,7 @@ function agentName(names: ActionNames, id: string): string {
 }
 
 function sourceText(source: ActionEventSource, names: ActionNames): string {
+  if (source.kind === 'any') return 'any readable durable agent';
   if (source.kind === 'agent') return agentName(names, source.agentId);
   if (source.kind === 'project') return `any agent in ${names.project(source.projectId) ?? 'a project'}`;
   return 'Clubhouse';
@@ -181,6 +182,7 @@ export function describeTrigger(trigger: ActionTrigger, names: ActionNames = NO_
   let description = trigger.event === 'agent.idle'
     ? `${subject} goes idle for ${formatMinutes(trigger.delayMinutes ?? 0)}`
     : trigger.delayMinutes ? `${formatMinutes(trigger.delayMinutes)} after ${what}` : `When ${what}`;
+  if (src.kind === 'any') description += `, grouped for ${trigger.coalesceSeconds ?? DEFAULT_COALESCE_SECONDS} seconds from the first turn`;
   if (trigger.afterLocalTime) {
     const [hour, minute] = trigger.afterLocalTime.split(':').map(Number);
     description += `, at or after ${formatClock(hour, minute)} local time`;

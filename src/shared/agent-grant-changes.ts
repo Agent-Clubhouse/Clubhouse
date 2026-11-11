@@ -290,6 +290,7 @@ export interface AgentGrantsView {
 export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'memory.write': 'Write memory',
   'agent.read': 'See status, output and settings',
+  'agent.watch': 'Watch activity across readable agents',
   'agent.message': 'Send messages and files',
   'agent.wake': 'Wake',
   'agent.sleep': 'Put to sleep',

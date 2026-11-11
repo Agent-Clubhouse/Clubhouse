@@ -45,7 +45,7 @@ export interface ActionDraft {
   cron: string;
   missed: MissedRunRule;
   event: ActionEventKind;
-  /** 'agent:<id>', 'project:<id>', or '' for app events. */
+  /** 'agent:<id>', 'project:<id>', 'any', or '' for app events. */
   source: string;
   /** Minutes, as typed. */
   delay: string;
@@ -58,6 +58,7 @@ export interface ActionDraft {
   absenceMinutes: string;
   afterLocalTime: string;
   oncePerDay: boolean;
+  coalesceSeconds: string;
   steps: StepDraft[];
   overlap: OverlapRule;
 }
@@ -94,6 +95,7 @@ export function newDraft(now = Date.now()): ActionDraft {
     absenceMinutes: '',
     afterLocalTime: '',
     oncePerDay: false,
+    coalesceSeconds: '',
     steps: [emptyStep()],
     overlap: 'skip',
   };
@@ -132,12 +134,13 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
   } else if (t?.kind === 'event') {
     d.when = 'event';
     d.event = t.event;
-    d.source = t.source.kind === 'agent' ? `agent:${t.source.agentId}` : t.source.kind === 'project' ? `project:${t.source.projectId}` : '';
+    d.source = t.source.kind === 'agent' ? `agent:${t.source.agentId}` : t.source.kind === 'project' ? `project:${t.source.projectId}` : t.source.kind === 'any' ? 'any' : '';
     d.delay = t.delayMinutes ? String(t.delayMinutes) : '';
     d.branch = t.branch ?? '';
     d.absenceMinutes = t.absenceMinutes !== undefined ? String(t.absenceMinutes) : '';
     d.afterLocalTime = t.afterLocalTime ?? '';
     d.oncePerDay = t.oncePerDay ?? false;
+    d.coalesceSeconds = t.coalesceSeconds !== undefined ? String(t.coalesceSeconds) : '';
   }
   return d;
 }
@@ -169,6 +172,7 @@ function stepFromDraft(s: StepDraft): Record<string, unknown> {
 }
 
 function sourceFromDraft(source: string): Record<string, unknown> {
+  if (source === 'any') return { kind: 'any' };
   if (source.startsWith('agent:')) return { kind: 'agent', agentId: source.slice(6) };
   if (source.startsWith('project:')) return { kind: 'project', projectId: source.slice(8) };
   return { kind: 'app' };
@@ -186,13 +190,14 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
     if (at <= now) return { ok: false, error: 'Pick a time in the future.' };
     trigger = { kind: 'once', at };
   } else {
-    const delay = d.delay.trim() === '' ? undefined : Number(d.delay);
+    const delay = d.source === 'any' || d.delay.trim() === '' ? undefined : Number(d.delay);
     if (delay !== undefined && !(Number.isInteger(delay) && delay >= 0)) return { ok: false, error: 'The wait must be a whole number of minutes.' };
     trigger = {
-      kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }),
+      kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(d.source !== 'any' && delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }),
       ...(d.event === 'app.returned' && d.absenceMinutes.trim() && { absenceMinutes: Number(d.absenceMinutes) }),
       ...(d.afterLocalTime && { afterLocalTime: d.afterLocalTime }),
       ...(d.oncePerDay && { oncePerDay: true }),
+      ...(d.source === 'any' && d.coalesceSeconds.trim() && { coalesceSeconds: Number(d.coalesceSeconds) }),
     };
   }
   // Keep the exact instant when unchanged, including seconds and the repeated DST hour.

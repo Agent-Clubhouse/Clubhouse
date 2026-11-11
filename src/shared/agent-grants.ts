@@ -22,6 +22,7 @@ import { ACCESS_LEVELS, type AccessLevel } from './agent-access';
 export const GRANT_ACTIONS = [
   // Agents
   'agent.read', // status, output, settings, helper state
+  'agent.watch', // coalesced turn activity across readable agents; also needs agent.read on each
   'agent.message', // put text in front of an agent
   'agent.wake',
   'agent.sleep',

@@ -95,6 +95,7 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   'device.read': { group: 'projects', verb: 'see your devices', noun: 'app' },
   'device.manage': { group: 'projects', verb: 'rename, reconnect or remove your devices', noun: 'app' },
   'agent.read': { group: 'tracking', verb: 'see the status and output of', noun: 'agent' },
+  'agent.watch': { group: 'tracking', verb: 'watch turn activity across readable agents', noun: 'app' },
   'user.notify': { group: 'tracking', verb: 'send you notifications', noun: 'app' },
   // Plumbing, not something to offer: the model list feeds a picker, and asking for a permission is how any agent asks.
   'models.read': null,

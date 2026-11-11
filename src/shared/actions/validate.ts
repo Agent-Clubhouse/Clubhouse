@@ -15,9 +15,12 @@ import {
   HISTORY_MAX_RUNS,
   MAX_ACTION_STEPS,
   MAX_DELAY_MINUTES,
+  MAX_COALESCE_SECONDS,
+  MIN_COALESCE_SECONDS,
   MIN_ABSENCE_MINUTES,
   MISSED_RUN_RULES,
   SCHEDULE_PRESETS,
+  TURN_EVENT_KINDS,
   type ActionEventKind,
   type ActionEventSource,
   type ActionRun,
@@ -73,6 +76,11 @@ function text(v: unknown, field: string, required: boolean): Result<string | und
 }
 
 function validateSource(event: ActionEventKind, raw: unknown): Result<ActionEventSource> {
+  if (isObject(raw) && raw.kind === 'any') {
+    return TURN_EVENT_KINDS.includes(event)
+      ? { ok: true, value: { kind: 'any' } }
+      : { ok: false, error: 'Any readable agent is only for finished or failed turns.' };
+  }
   if (APP_EVENT_KINDS.includes(event)) {
     if (event.startsWith('project.') && isObject(raw) && raw.kind === 'project' && nonEmpty(raw.projectId)) {
       return { ok: true, value: { kind: 'project', projectId: raw.projectId } };
@@ -118,6 +126,17 @@ export function validateTrigger(raw: unknown): Result<ActionTrigger> {
       delayMinutes = raw.delayMinutes;
     }
     if (event === 'agent.idle' && !delayMinutes) return { ok: false, error: 'Say how many minutes of idle time to wait for.' };
+    if (source.value.kind === 'any' && raw.delayMinutes !== undefined) {
+      return { ok: false, error: 'Any readable agent uses its coalescing window instead of Wait first.' };
+    }
+    let coalesceSeconds: number | undefined;
+    if (raw.coalesceSeconds !== undefined) {
+      if (source.value.kind !== 'any') return { ok: false, error: 'A coalescing window is only for any readable agent.' };
+      if (typeof raw.coalesceSeconds !== 'number' || !Number.isInteger(raw.coalesceSeconds) || raw.coalesceSeconds < MIN_COALESCE_SECONDS || raw.coalesceSeconds > MAX_COALESCE_SECONDS) {
+        return { ok: false, error: `The coalescing window must be whole seconds, from ${MIN_COALESCE_SECONDS} to ${MAX_COALESCE_SECONDS}.` };
+      }
+      coalesceSeconds = raw.coalesceSeconds;
+    }
     let branch: string | undefined;
     if (GIT_EVENT_KINDS.includes(event) && nonEmpty(raw.branch)) branch = raw.branch.trim();
     let absenceMinutes: number | undefined;
@@ -138,6 +157,7 @@ export function validateTrigger(raw: unknown): Result<ActionTrigger> {
         ...(absenceMinutes !== undefined && { absenceMinutes }),
         ...(typeof raw.afterLocalTime === 'string' && { afterLocalTime: raw.afterLocalTime }),
         ...(typeof raw.oncePerDay === 'boolean' && { oncePerDay: raw.oncePerDay }),
+        ...(coalesceSeconds !== undefined && { coalesceSeconds }),
       },
     };
   }

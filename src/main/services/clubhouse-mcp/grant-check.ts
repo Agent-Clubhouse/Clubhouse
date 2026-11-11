@@ -201,9 +201,15 @@ export function callerGrants(agentId: string): Grant[] {
   }), getAgentGrantChanges(agentId));
 }
 
+function hasAnyAgentSource(args: Record<string, unknown>): boolean {
+  const isAny = (source: unknown) => !!source && typeof source === 'object' && 'kind' in source && source.kind === 'any';
+  const trigger = args.trigger;
+  return isAny(args.source) || (!!trigger && typeof trigger === 'object' && 'source' in trigger && isAny(trigger.source));
+}
+
 /**
- * Whether `agentId` may make this call. `args` decides which declarations
- * apply (`ifArgs`); a listing passes none, so it checks what every call
+ * Whether `agentId` may make this call. `args` decides which conditional
+ * declarations apply; a listing passes none, so it checks what every call
  * needs. A tool registered without a declaration (tests only; real tools
  * can't) is let through.
  */
@@ -211,7 +217,8 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
   if (!grant) return OK;
   const declarations = toolGrantDeclarations(grant)
     .filter((d) => (!d.ifArgs || d.ifArgs.some((a) => args[a] !== undefined && args[a] !== null))
-      && (!d.ifTrue || d.ifTrue.some((a) => args[a] === true)));
+      && (!d.ifTrue || d.ifTrue.some((a) => args[a] === true)))
+    .filter((d) => !d.ifAnyAgentSource || hasAnyAgentSource(args));
   if (declarations.length === 0) return OK;
   const caller = callerOf(agentId);
   const grants = callerGrants(agentId);

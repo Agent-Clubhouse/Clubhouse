@@ -13,6 +13,10 @@ import {
   MAX_ACTION_STEPS,
   MIN_ABSENCE_MINUTES,
   DEFAULT_ABSENCE_MINUTES,
+  DEFAULT_COALESCE_SECONDS,
+  MIN_COALESCE_SECONDS,
+  MAX_COALESCE_SECONDS,
+  TURN_EVENT_KINDS,
   MISSED_RUN_LABELS,
   OVERLAP_LABELS,
   PRESET_LABELS,
@@ -67,7 +71,7 @@ function formatRun(d: Date): string {
   return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function AgentSelect({ id, value, onChange, agents, projects, includeProjects, placeholder }: {
+function AgentSelect({ id, value, onChange, agents, projects, includeProjects, includeAny, placeholder }: {
   id: string;
   value: string;
   onChange: (v: string) => void;
@@ -75,6 +79,7 @@ function AgentSelect({ id, value, onChange, agents, projects, includeProjects, p
   projects: ProjectOption[];
   /** Offer "Any agent in <project>" (values 'project:<id>'), with agents as 'agent:<id>'. */
   includeProjects?: boolean;
+  includeAny?: boolean;
   placeholder: string;
 }) {
   const byProject = projects.map((p) => ({ project: p, agents: agents.filter((a) => a.projectId === p.id) }))
@@ -84,6 +89,7 @@ function AgentSelect({ id, value, onChange, agents, projects, includeProjects, p
   return (
     <select id={id} className={`${selectClass} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{placeholder}</option>
+      {includeAny && <option value="any">Any readable agent</option>}
       {byProject.map(({ project, agents: list }) => (
         <optgroup key={project.id} label={project.name}>
           {includeProjects && <option value={`project:${project.id}`}>Any agent in {project.name}</option>}
@@ -247,7 +253,8 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
       {projects.map((p) => <option key={p.id} value={`project:${p.id}`}>{p.name}</option>)}
     </select>
   ) : eventIsApp ? null : (
-    <AgentSelect id={`${uid}-source`} value={draft.source} onChange={(source) => set({ source })} agents={agents} projects={projects} includeProjects placeholder="Pick an agent or project" />
+    <AgentSelect id={`${uid}-source`} value={draft.source} onChange={(source) => set({ source })} agents={agents} projects={projects}
+      includeProjects includeAny={TURN_EVENT_KINDS.includes(draft.event)} placeholder="Pick an agent or project" />
   );
 
   return (
@@ -342,7 +349,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
               <select id={`${uid}-event`} className={`${selectClass} w-full`} value={draft.event} onChange={(e) => {
                 const event = e.target.value as ActionEventKind;
                 // App events take no agent; project events may name a project.
-                const keep = APP_EVENT_KINDS.includes(event) ? (event.startsWith('project.') && draft.source.startsWith('project:') ? draft.source : '') : draft.source.startsWith('project:') || draft.source.startsWith('agent:') ? draft.source : '';
+                const keep = APP_EVENT_KINDS.includes(event) ? (event.startsWith('project.') && draft.source.startsWith('project:') ? draft.source : '') : draft.source.startsWith('project:') || draft.source.startsWith('agent:') || (draft.source === 'any' && TURN_EVENT_KINDS.includes(event)) ? draft.source : '';
                 set({ event, source: keep });
               }}>
                 <optgroup label="Agent">{AGENT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
@@ -368,7 +375,14 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
                   className={`${settingsInput} w-32`} value={draft.absenceMinutes} onChange={(e) => set({ absenceMinutes: e.target.value })} />
               </Field>
             )}
-            <Field
+            {draft.source === 'any' ? (
+              <Field label="Group turns for (seconds)" htmlFor={`${uid}-coalesce`}
+                help="Durable agents only, including agents that become readable later. A fixed window from the first turn. Later turns join without extending it. Excludes the subscriber and Dispatcher-owned agents. Watching activity is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents need a grant. Ask first does not allow unattended runs. Each agent must also be readable. Nothing replays after relaunch.">
+                <input id={`${uid}-coalesce`} type="number" min={MIN_COALESCE_SECONDS} max={MAX_COALESCE_SECONDS} step={1}
+                  placeholder={String(DEFAULT_COALESCE_SECONDS)} className={`${settingsInput} w-32`} value={draft.coalesceSeconds}
+                  onChange={(e) => set({ coalesceSeconds: e.target.value })} />
+              </Field>
+            ) : <Field
               label={draft.event === 'agent.idle' ? 'Idle for (minutes)' : 'Wait first (minutes, optional)'}
               htmlFor={`${uid}-delay`}
               help={draft.event === 'agent.idle'
@@ -376,7 +390,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
                 : 'When the wait ends, Clubhouse checks that what happened still holds, for example that the agent is still asleep. If not, this run is cancelled, and the wait starts again the next time it happens.'}
             >
               <input id={`${uid}-delay`} type="number" min={0} className={`${settingsInput} w-32`} value={draft.delay} onChange={(e) => set({ delay: e.target.value })} />
-            </Field>
+            </Field>}
             <Field label="After local time (optional)" htmlFor={`${uid}-after-time`}
               help="Only events at or after this time on this computer can run. Queued and delayed runs check again when they start. This also applies to Run now.">
               <input id={`${uid}-after-time`} type="time" className={`${settingsInput} w-40`} value={draft.afterLocalTime} onChange={(e) => set({ afterLocalTime: e.target.value })} />

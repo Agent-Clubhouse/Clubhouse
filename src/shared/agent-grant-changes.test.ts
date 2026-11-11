@@ -10,6 +10,15 @@ const helperDefaults = defaultGrants({ dispatcher: false, helper: true, orchestr
 const has = (grants: Grant[], key: string) => grants.some((g) => grantKey(g) === key);
 
 describe('saved grant changes (#2971)', () => {
+  it('normalizes, saves and revokes an explicit cross-agent activity grant', () => {
+    const change = { action: 'agent.watch', target: { kind: 'app' }, mode: 'allow' } as const;
+    const saved = normalizeGrantChanges({ changes: [change] });
+    expect(saved).toEqual({ changes: [change] });
+    expect(applyGrantChanges(helperDefaults, saved)).toContainEqual({ ...change, source: 'user' });
+    const off = withGrantChange(saved, { ...change, mode: 'off' }, helperDefaults);
+    expect(applyGrantChanges(helperDefaults, off).some((g) => g.action === 'agent.watch')).toBe(false);
+  });
+
   it('Off removes a default, Allow and Ask first add or override one', () => {
     const changed = applyGrantChanges(helperDefaults, { changes: [
       { action: 'agent.read', target: { kind: 'connected' }, mode: 'off' },

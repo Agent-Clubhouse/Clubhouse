@@ -156,6 +156,23 @@ describe('an action does what its owner may (#2960, D131): steps', () => {
 });
 
 describe('an action does what its owner may: what it watches', () => {
+  it('requires an explicit activity grant independently of each watched agent read permission', () => {
+    const any: ActionTrigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' } };
+    expect(rights.checkSource(user, any)).toBeNull();
+    expect(rights.checkSource(dispatcher, any)).toBeNull();
+    saved.set('disp', { changes: [{ action: 'agent.watch', target: { kind: 'app' }, mode: 'ask' }] });
+    expect(rights.checkSource(dispatcher, any)).toMatch(/agent\.watch.*Ask first/);
+    saved.set('disp', { changes: [{ action: 'agent.watch', target: { kind: 'app' }, mode: 'off' }] });
+    expect(rights.checkSource(dispatcher, any)).toMatch(/agent\.watch/);
+    expect(rights.checkSource(lead, any)).toMatch(/agent\.watch/);
+    saved.set('lead', { changes: [{ action: 'agent.watch', target: { kind: 'app' }, mode: 'allow' }] });
+    expect(rights.checkSource(lead, any)).toBeNull();
+    expect(rights.checkSource(lead, watchAgent('qa'))).toMatch(/agent\.read/);
+    expect(rights.checkSource(lead, watchAgent('pm'))).toBeNull();
+    saved.set('lead', { changes: [{ action: 'agent.watch', target: { kind: 'app' }, mode: 'ask' }] });
+    expect(rights.checkSource(lead, any)).toMatch(/Ask first/);
+  });
+
   it('ignores schedules and one-time actions, and lets people watch anything', () => {
     expect(rights.checkSource(lead, daily)).toBeNull();
     expect(rights.checkSource(user, watchAgent('qa'))).toBeNull();

@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   wires: new Set<string>(),
   /** agent id to Access level; unset is Full access */
   access: new Map<string, string>(),
+  activityModes: new Map<string, 'allow' | 'ask' | 'off'>(),
   engine: null as unknown,
   history: new Map<string, unknown>(),
   /** Steps the engine ran, in order. */
@@ -42,6 +43,7 @@ vi.mock('../../actions', async () => {
   const { ActionsEngine } = await import('../../actions/engine');
   const { createGrantRights } = await import('../../actions/rights');
   const { defaultGrants } = await import('../../../../shared/default-grants');
+  const { applyGrantChanges } = await import('../../../../shared/agent-grant-changes');
   const { matchProjectRef } = await import('../../actions/project-ref');
   const projects = [
     { id: 'proj-1', name: 'web', path: 'web-root' },
@@ -82,12 +84,15 @@ vi.mock('../../actions', async () => {
         canStartAgents: () => true,
         agentAccess: (id) => (h.access.get(id) ?? 'full_access') as AccessLevel,
         // The default permissions for what each agent is; every agent here may start helpers.
-        grantsOf: (id) => defaultGrants({
-          dispatcher: h.dispatchers.has(id),
-          helper: !!h.known.get(id)?.parentAgentId,
-          orchestrates: !h.dispatchers.has(id),
-          crossProject: false,
-        }),
+        grantsOf: (id) => {
+          const mode = h.activityModes.get(id);
+          return applyGrantChanges(defaultGrants({
+            dispatcher: h.dispatchers.has(id),
+            helper: !!h.known.get(id)?.parentAgentId,
+            orchestrates: !h.dispatchers.has(id),
+            crossProject: false,
+          }), { changes: mode ? [{ action: 'agent.watch', target: { kind: 'app' }, mode }] : [] });
+        },
         agentProjectPath: (id) => projects.find((p) => p.id === agentProjectId(id))?.path,
         projectPath: (id) => projects.find((p) => p.id === id)?.path,
       }),
@@ -97,7 +102,7 @@ vi.mock('../../actions', async () => {
     if (h.unavailable) throw new shared.ActionError('unavailable', 'Actions are still starting. Try again in a moment.');
     return h.engine as ActionsEngine;
   };
-  const view = (a: Action) => ({ ...a, running: false });
+  const view = (a: Action) => ({ ...a, running: false, lastRun: e().history(a.id).sort((x, y) => y.startedAt - x.startedAt)[0] });
   const visible = (id: string) => {
     const a = e().get(id);
     if (!a || a.owner.kind === 'app') throw new shared.ActionError('not_found', 'No action with that id.');
@@ -112,7 +117,8 @@ vi.mock('../../actions', async () => {
     setActionEnabled: vi.fn((id: string, enabled: boolean) => { visible(id); return view(e().setEnabled(id, enabled)); }),
     deleteAction: vi.fn((id: string) => { visible(id); e().remove(id); }),
     runActionNow: vi.fn((id: string) => { visible(id); return { runId: e().runNow(id) }; }),
-    actionHistory: vi.fn((id: string) => (e().get(id)?.owner.kind === 'app' ? [] : e().history(id))),
+    actionHistory: vi.fn((id: string, reader?: ActionOwner) => (e().get(id)?.owner.kind === 'app' ? [] : e().history(id, reader).sort((x, y) => y.startedAt - x.startedAt))),
+    canWatchAgentActivity: (reader: ActionOwner) => e().canWatchAgentActivity(reader),
     actionNames: () => ({ agent: agentName, project: projectName }),
     projectIdOfAgent: agentProjectId,
     findProjectId: (ref: string, usable: (id: string) => boolean = () => true) =>
@@ -150,6 +156,7 @@ describe('action tools', () => {
     _resetForTesting();
     h.callerKinds.clear();
     h.access.clear();
+    h.activityModes.clear();
     h.dispatchers.clear();
     h.trackedDispatchers.clear();
     h.known.clear();
@@ -170,6 +177,213 @@ describe('action tools', () => {
     seed('by-dispatcher', { kind: 'dispatcher' });
     seed('hidden', { kind: 'app' });
     registerActionTools();
+  });
+
+  it('requires an activity grant and round-trips any-agent windows through every MCP surface', async () => {
+    const trigger = { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 15 };
+    h.activityModes.set('dispatcher', 'ask');
+    const refused = await call('dispatcher', 'create_action', { trigger, steps: [NOTIFY] });
+    expect(refused).toMatchObject({ isError: true, body: { error: { code: 'not_allowed', message: expect.stringContaining('agent.watch') } } });
+    expect(await call('agent-a', 'subscribe', { event: 'agent.turn_ended', source: { kind: 'any' } })).toMatchObject({
+      isError: true, body: { text: expect.stringContaining('agent.watch') },
+    });
+    h.activityModes.delete('dispatcher');
+    const created = await call('dispatcher', 'create_action', { trigger, steps: [NOTIFY] });
+    expect(created).toMatchObject({ isError: false, body: { action: { trigger } } });
+    const id = created.body.action.id;
+    const updatedTrigger = { ...trigger, coalesceSeconds: 10 };
+    expect((await call('dispatcher', 'update_action', { id, trigger: updatedTrigger })).body.action.trigger).toEqual(updatedTrigger);
+    const listed = await call('dispatcher', 'list_actions');
+    expect(listed.body.actions.find((a: Action) => a.id === id).trigger).toEqual(updatedTrigger);
+    const subscribed = await call('dispatcher', 'subscribe', { event: 'agent.turn_failed', source: { kind: 'any' }, coalesceSeconds: 20 });
+    expect(subscribed).toMatchObject({ isError: false, body: { action: { subscription: true, trigger: { coalesceSeconds: 20, source: { kind: 'any' } } } } });
+    const invalid = await call('dispatcher', 'create_action', { trigger: { ...trigger, delayMinutes: 1 }, steps: [NOTIFY] });
+    expect(invalid.body.error.code).toBe('invalid_input');
+  });
+
+  it('rechecks the real activity grant when buffered events run, without exposing names after revocation', async () => {
+    vi.useFakeTimers();
+    try {
+      engine().start();
+      const result = await call('dispatcher', 'subscribe', { event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 10 });
+      engine().handleEvent({ type: 'turn.ended', agentId: 'agent-a', via: 'chat', outcome: 'done', at: Date.now() });
+      h.activityModes.set('dispatcher', 'off');
+      vi.setSystemTime(Date.now() + 10_000);
+      engine().tick();
+      await flush();
+      expect(h.stepCalls).toHaveLength(0);
+      expect(engine().get(result.body.action.id)?.runsUsed).toBeUndefined();
+      expect(JSON.stringify(engine().history(result.body.action.id))).not.toContain('release-lead');
+    } finally {
+      engine().stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('filters grouped lastRun and history for each reader, including changed and deleted actions after revocation', async () => {
+    vi.useFakeTimers();
+    try {
+      engine().start();
+      const a = engine().create({
+        name: 'Watch turns',
+        trigger: { kind: 'event', event: 'agent.turn_failed', source: { kind: 'any' }, coalesceSeconds: 10 },
+        steps: [NOTIFY],
+      }, { kind: 'user' });
+      for (const agentId of ['agent-b', 'agent-c']) {
+        engine().handleEvent({ type: 'turn.ended', agentId, via: 'chat', outcome: 'failed', at: Date.now() });
+      }
+      vi.setSystemTime(Date.now() + 10_000);
+      engine().tick();
+      await flush();
+      expect(engine().history(a.id)[0].trigger.agentIds).toEqual(['agent-b', 'agent-c']);
+
+      const listed = async () => (await call('agent-a', 'list_actions')).body.actions.find((item: Action) => item.id === a.id);
+      expect(await listed()).toBeUndefined();
+      expect((await call('agent-a', 'action_history', { id: a.id })).body.error.code).toBe('not_found');
+      h.activityModes.set('agent-a', 'allow');
+      expect((await listed()).lastRun).toBeUndefined();
+      h.wires.add('agent-a>agent-b');
+      const first = await listed();
+      expect(first.lastRun.trigger).toMatchObject({ agentIds: ['agent-b'], detail: 'Failed turns: qa' });
+      expect(JSON.stringify(first)).not.toContain('api-lead');
+      h.wires.add('agent-a>agent-c');
+      expect((await listed()).lastRun.trigger.agentIds).toEqual(['agent-b', 'agent-c']);
+
+      h.wires.delete('agent-a>agent-b');
+      engine().update(a.id, { name: a.name, trigger: DAILY, steps: [NOTIFY] });
+      const retained = await call('agent-a', 'action_history', { id: a.id });
+      expect(retained.body.runs[0].trigger).toMatchObject({ agentIds: ['agent-c'], detail: 'Failed turns: api-lead' });
+      expect(JSON.stringify(retained.body)).not.toContain('qa');
+      for (const mode of ['ask', 'off'] as const) {
+        h.activityModes.set('agent-a', mode);
+        expect((await listed()).lastRun).toBeUndefined();
+        expect((await call('agent-a', 'action_history', { id: a.id })).body.runs).toEqual([]);
+      }
+
+      engine().remove(a.id);
+      expect((await call('agent-a', 'action_history', { id: a.id })).body.error.code).toBe('not_found');
+      h.activityModes.set('agent-a', 'allow');
+      expect((await call('agent-a', 'action_history', { id: a.id })).body.runs[0].trigger.agentIds).toEqual(['agent-c']);
+      h.wires.delete('agent-a>agent-c');
+      expect((await call('agent-a', 'action_history', { id: a.id })).body.error.code).toBe('not_found');
+    } finally {
+      engine().stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not expose redacted grouped activity records after their action is deleted', async () => {
+    vi.useFakeTimers();
+    try {
+      engine().start();
+      const created = await call('dispatcher', 'subscribe', { event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 10 });
+      const id = created.body.action.id;
+      engine().handleEvent({ type: 'turn.ended', agentId: 'agent-a', via: 'chat', outcome: 'done', at: Date.now() });
+      h.activityModes.set('dispatcher', 'off');
+      vi.setSystemTime(Date.now() + 10_000);
+      engine().tick();
+      await flush();
+      expect(engine().history(id)[0].trigger.agentIds).toEqual([]);
+      engine().remove(id);
+      h.activityModes.delete('dispatcher');
+      expect((await call('dispatcher', 'action_history', { id })).body.error.code).toBe('not_found');
+    } finally {
+      engine().stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('hides any-agent actions and their runtime status from readers without an Allow activity grant', async () => {
+    vi.useFakeTimers();
+    try {
+      engine().start();
+      h.activityModes.set('agent-a', 'allow');
+      const a = engine().create({
+        name: 'Private turns',
+        trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 10 },
+        steps: [NOTIFY], maxRuns: 1,
+      }, { kind: 'agent', agentId: 'agent-a' });
+      h.wires.add('agent-a>agent-b');
+      const listed = async () => (await call('agent-a', 'list_actions')).body.actions.find((item: Action) => item.id === a.id);
+      for (const mode of ['ask', 'off'] as const) {
+        h.activityModes.set('agent-a', mode);
+        const view = actions.getAction(a.id)!;
+        vi.mocked(actions.listActions).mockReturnValueOnce([{ ...view, running: true, problem: 'qa was asleep' }]);
+        expect(await listed()).toBeUndefined();
+        for (const [tool, args] of [
+          ['action_history', { id: a.id }],
+          ['update_action', { id: a.id, name: 'Changed' }],
+          ['run_action', { id: a.id }],
+        ] as const) {
+          expect((await call('agent-a', tool, args)).body.error.code).toBe('not_found');
+        }
+      }
+
+      h.activityModes.set('agent-a', 'allow');
+      engine().handleEvent({ type: 'turn.ended', agentId: 'agent-b', via: 'chat', outcome: 'done', at: Date.now() });
+      vi.setSystemTime(Date.now() + 10_000);
+      engine().tick();
+      await flush();
+      const completed = await listed();
+      expect(completed).toMatchObject({ enabled: false, runsUsed: 1, offReason: 'Reached its 1-run limit' });
+      expect(completed.description).toContain('0 of 1 runs remaining');
+      expect(completed.updatedAt).toBe(Date.now());
+      h.activityModes.set('agent-c', 'allow');
+      const watcher = (await call('agent-c', 'list_actions')).body.actions.find((item: Action) => item.id === a.id);
+      expect(watcher).toMatchObject({ enabled: false, runsUsed: 1, offReason: 'Reached its 1-run limit' });
+      expect(watcher.lastRun).toBeUndefined();
+      h.activityModes.set('agent-a', 'off');
+      expect(await listed()).toBeUndefined();
+      expect((await call('agent-a', 'action_history', { id: a.id })).body.error.code).toBe('not_found');
+      expect(actions.getAction(a.id)).toMatchObject({ runsUsed: 1, enabled: false });
+    } finally {
+      engine().stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('redacts partial-batch provenance, unreadable step states and copied reasons, and first-member time', async () => {
+    vi.useFakeTimers();
+    try {
+      engine().start();
+      const a = engine().create({
+        name: 'Watch turns',
+        trigger: { kind: 'event', event: 'agent.turn_ended', source: { kind: 'any' }, coalesceSeconds: 10 },
+        steps: [NOTIFY],
+      }, { kind: 'user' });
+      engine().handleEvent({ type: 'turn.ended', agentId: 'agent-b', via: 'chat', outcome: 'done', chain: ['cause-b'], at: Date.now() });
+      vi.setSystemTime(Date.now() + 5000);
+      engine().handleEvent({ type: 'turn.ended', agentId: 'agent-c', via: 'chat', outcome: 'done', at: Date.now() });
+      vi.setSystemTime(Date.now() + 5000);
+      engine().tick();
+      await flush();
+      const original = engine().history(a.id)[0];
+      h.history.set(original.id, {
+        ...original, outcome: 'failed', reason: 'qa was asleep',
+        steps: [
+          { kind: 'message', outcome: 'done', agentId: 'agent-a', detail: 'Queued for release-lead' },
+          { kind: 'message', outcome: 'failed', agentId: 'agent-b', detail: 'qa was asleep' },
+        ],
+      });
+      h.activityModes.set('agent-a', 'allow');
+      h.wires.add('agent-a>agent-c');
+      const result = await call('agent-a', 'action_history', { id: a.id });
+      const run = result.body.runs[0];
+      expect(run).toMatchObject({
+        chain: [], trigger: { at: original.startedAt, agentIds: ['agent-c'], detail: 'Finished turns: api-lead' },
+        steps: [{ agentId: 'agent-a', detail: 'Queued for release-lead' }],
+      });
+      expect(run.steps).toHaveLength(1);
+      expect(run.reason).toBeUndefined();
+      expect(JSON.stringify(result.body)).not.toContain('cause-b');
+      expect(JSON.stringify(result.body)).not.toContain('qa');
+      expect(result.body.action.lastRun).toEqual(run);
+      expect(original.trigger.at).toBeLessThan(run.trigger.at);
+      expect(engine().history(a.id)[0]).toMatchObject({ chain: ['cause-b'], trigger: { agentIds: ['agent-b', 'agent-c'], at: original.trigger.at } });
+    } finally {
+      engine().stop();
+      vi.useRealTimers();
+    }
   });
 
   it('round-trips optional lifetime limits through create, update and list', async () => {

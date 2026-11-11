@@ -144,6 +144,7 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
       // Deleting an agent (delete_agent, #3182) asks first: each call waits in Needs you.
       structural('agent.dispose', ANY, 'ask'),
       structural('connection.bootstrap', { kind: 'created_by_me' }, 'ask'),
+      structural('agent.watch', APP),
       // The Annex Network's devices (#3068): it sees them, and asks before it changes any.
       structural('device.read', APP), structural('device.manage', APP, 'ask'),
     );
