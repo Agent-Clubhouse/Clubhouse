@@ -214,6 +214,19 @@ describe('the upkeep gate', () => {
     expect('send' in result && result.send).not.toContain('topics/old-facts.md');
   });
 
+  it.each(['2099-01-01T00:00:00Z', 'garbage 1'])('reviews an unsafe Updated value once using mtime: %s', async (updated) => {
+    topic('topics/unsafe-date.md', 'confirmed', 1_000);
+    const file = path.join(memory, 'topics', 'unsafe-date.md');
+    const stat = fs.statSync(file);
+    fs.writeFileSync(file, renderTopicPage({ status: 'confirmed', source: 'pm', updated, body: 'Fact\n' }));
+    fs.utimesSync(file, stat.atime, stat.mtime);
+    fs.writeFileSync(path.join(tmp, 'dispatcher-upkeep.json'), JSON.stringify({ lastCheckedAt: world.now - 60_000 }));
+    const result = await runDispatcherUpkeep();
+    expect('send' in result && result.send).toContain('topics/unsafe-date.md');
+    world.now += 60_000;
+    expect(await runDispatcherUpkeep()).toHaveProperty('skip');
+  });
+
   it('does not review upkeep-only link repairs again and checkpoints completion (part of #3218)', async () => {
     topic('topics/checkout-fix.md', 'confirmed', 120_000);
     const notes = path.join(memory, 'topics', 'notes.md');
@@ -297,7 +310,7 @@ describe('upkeep telemetry (#3052)', () => {
   function secretMemory(): string {
     const index = 'Acme secret launch: see [release](topics/acme-release.md).\n';
     write('index.md', index);
-    write('topics/acme-checkout.md', renderTopicPage({ status: 'unconfirmed', source: 'pm', body: 'Acme checkout is broken for alice@example.com\n' }), 60_000);
+    write('topics/acme-checkout.md', renderTopicPage({ status: 'unconfirmed', source: 'pm', body: 'Acme checkout is broken for alice@example.com\nConflicting: 2026-11-09 Acme says Ships, alice@example.com says Quiet.\n' }), 60_000);
     write('topics/acme-release.md', renderTopicPage({ status: 'confirmed', source: 'pm', body: 'Ships Friday. See [gone](acme-gone.md).\n' }), 40 * DAY_MS);
     write('agents/acme-lead.md', '## Card\nOwns /Users/alice/acme\n\n## Notes\nQuiet.\n', 60_000);
     write('timeline/2026-11-09.md', '- 10:00 acme-lead pushed\n', 60_000);
@@ -331,6 +344,7 @@ describe('upkeep telemetry (#3052)', () => {
       'clubhouse.dispatcher.memory.unlinked_topics': 1,
       'clubhouse.dispatcher.memory.stale_topics': 1,
       'clubhouse.dispatcher.memory.unconfirmed_topics': 1,
+      'clubhouse.dispatcher.memory.conflicting_pages': 1,
       'clubhouse.dispatcher.memory.broken_links': 1,
       'clubhouse.dispatcher.memory.missing_sources': 0,
     });

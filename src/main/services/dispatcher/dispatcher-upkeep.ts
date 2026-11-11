@@ -93,7 +93,7 @@ async function defaultFileExists(file: string): Promise<boolean> {
  * Every page in memory, not counting the archive, with when it last changed.
  * Mechanical link repairs preserve these times so only agent edits trigger review.
  */
-export async function listMemoryPages(root?: string): Promise<MemoryPage[]> {
+export async function listMemoryPages(root?: string, nowMs: number = Date.now()): Promise<MemoryPage[]> {
   const base = memoryPaths(root).root;
   const out: MemoryPage[] = [];
   async function walk(dir: string): Promise<void> {
@@ -119,7 +119,7 @@ export async function listMemoryPages(root?: string): Promise<MemoryPage[]> {
         const parsed = parseTopicPage((await readIfExists(full)) ?? '');
         if (parsed) {
           item.status = parsed.status;
-          item.updatedAt = topicUpdatedAt(parsed, stat.mtimeMs);
+          item.updatedAt = topicUpdatedAt(parsed, stat.mtimeMs, nowMs);
         }
       }
       out.push(item);
@@ -334,7 +334,7 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
   // 2. Links between pages.
   const files = await snapshot(root);
   const resolver: Resolver = { exists: (f) => files.has(path.normalize(f)) };
-  let pages = await listMemoryPages(root);
+  let pages = await listMemoryPages(root, now.getTime());
   for (const { page } of pages) {
     const full = path.join(root, page);
     const text = (await readIfExists(full)) ?? '';
@@ -371,7 +371,7 @@ export async function runMemoryUpkeep(now: Date, options: UpkeepOptions = {}): P
 
   // 3. Stale topics, until nothing more is stale: a page only a pruned page named is stale too,
   //    so a second run finds nothing left to do.
-  pages = await listMemoryPages(root);
+  pages = await listMemoryPages(root, now.getTime());
   const texts = new Map<string, string>();
   for (const { page } of pages) texts.set(page, (await readIfExists(path.join(root, page))) ?? '');
   const kept = new Set(pages.map((p) => p.page));
@@ -423,7 +423,7 @@ export async function measureMemoryHealth(
 ): Promise<DispatcherMemoryHealth> {
   const root = memoryPaths(options.root).root;
   const staleMs = (options.staleDays ?? DEFAULT_STALE_DAYS) * DAY_MS;
-  const pages = await listMemoryPages(root);
+  const pages = await listMemoryPages(root, now.getTime());
   const texts = new Map<string, string>();
   let bytes = 0;
   for (const { page } of pages) {

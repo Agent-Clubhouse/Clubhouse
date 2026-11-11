@@ -10,7 +10,7 @@ Clubhouse has already rolled up the timeline, fixed links that moved and archive
 1. **Check each listed page,** unconfirmed ones first.
    - Search for its key facts with `search_memory`, scope `transcripts`.
    - A transcript backs it: set `Status: confirmed` and put the hit's link in `Source:`.
-   - A transcript contradicts it: keep a short `Conflicting: YYYY-MM-DD ...` line with both facts, dates and sources before resolving against transcripts. Keep the newer, better-sourced fact, not just the newest claim. Keep at most five conflict lines, each at most 500 characters; unresolved conflicts stay for review rather than being archived.
+   - A transcript contradicts it: keep a short `Conflicting: YYYY-MM-DD ...` line with both facts, dates and sources before resolving against transcripts. Keep the newer, better-sourced fact, not just the newest claim. Keep the five newest dated conflict lines, each at most 500 characters; unresolved conflicts stay for review rather than being archived.
    - Nothing backs it: leave it unconfirmed. Clubhouse archives it later if nothing uses it.
    - Preserve `Status:`, `Source:`, `Created:` and `Updated:` header lines and any unknown headers. Use ISO 8601 dates with a zone; keep Created unchanged and set Updated when facts change. Add inline dated source trailers to important facts. Old pages without dates remain valid; add dates when editing, not in a bulk rewrite.
 2. **Fix what Clubhouse couldn't,** listed at the end of the message: a cited file that is gone, or a link that goes nowhere. Point it at the right page or transcript, or remove it.

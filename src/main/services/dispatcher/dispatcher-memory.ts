@@ -380,14 +380,23 @@ export function renderTopicPage(page: TopicPage): string {
   const values: Record<string, string | undefined> = {
     Status: page.status, Source: page.source, Created: page.created, Updated: page.updated,
   };
-  const seen = new Set<string>();
-  const lines = (page.headerLines ?? []).flatMap((line) => {
+  const headers = page.headerLines ?? [];
+  const last = new Map<string, number>();
+  const matches = headers.map((line, index) => {
     const match = /^([^:]+):[ \t]*(.*)$/.exec(line);
+    if (match) last.set(match[1], index);
+    return match;
+  });
+  const seen = new Set<string>();
+  const lines = headers.flatMap((line, index) => {
+    const match = matches[index];
     if (!match || !TOPIC_KEYS.includes(match[1] as typeof TOPIC_KEYS[number])) return [line];
     const key = match[1];
     seen.add(key);
-    const value = values[key]?.replace(/\s*\n\s*/g, ' ').trim();
-    return value === undefined ? [] : [match[2] === value ? line : `${key}: ${value}`];
+    const value = values[key];
+    if (value === undefined) return [];
+    if (index !== last.get(key) || match[2] === value) return [line];
+    return [`${key}: ${value.replace(/\s*\n\s*/g, ' ').trim()}`];
   });
   for (const key of TOPIC_KEYS) {
     if (!seen.has(key) && values[key] !== undefined) lines.push(`${key}: ${values[key]!.replace(/\s*\n\s*/g, ' ').trim()}`);
@@ -411,27 +420,40 @@ export function parseTopicPage(text: string): TopicPage | null {
   const page: TopicPage = { status, source, body: text.slice(at + 2) };
   if (headers.has('Created')) page.created = headers.get('Created');
   if (headers.has('Updated')) page.updated = headers.get('Updated');
-  if (text.slice(0, at) !== `Status: ${status}\nSource: ${source}`) page.headerLines = lines;
+  if (text.slice(0, at) !== `Status: ${status}\nSource: ${source.trim()}`) page.headerLines = lines;
   return page;
 }
 
-/** Invalid dates never disable freshness checks on an older page. */
-export function topicUpdatedAt(page: TopicPage | null, mtimeMs: number): number {
-  const updated = page?.updated ? Date.parse(page.updated) : NaN;
-  return Number.isFinite(updated) ? updated : mtimeMs;
+/** Only zoned, real, nonfuture content dates override the file's timestamp. */
+export function topicUpdatedAt(page: TopicPage | null, mtimeMs: number, nowMs: number = Date.now()): number {
+  const value = page?.updated ?? '';
+  const match = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  const updated = match ? Date.parse(value) : NaN;
+  const day = match ? Date.parse(`${match[1]}T00:00:00Z`) : NaN;
+  return Number.isFinite(updated) && updated <= nowMs && Number.isFinite(day)
+    && new Date(day).toISOString().slice(0, 10) === match?.[1] ? updated : mtimeMs;
 }
 
 export const MAX_CONFLICT_NOTES = 5;
+const CONFLICT_NOTE = /^Conflicting:[ \t]*(\d{4}-\d{2}-\d{2})(?=[ \t]|$)/;
 
 export function hasConflictNotes(text: string): boolean {
-  return /^Conflicting:[ \t]*\S/m.test(text);
+  return text.split('\n').some((line) => CONFLICT_NOTE.test(line));
 }
 
 /** Explicit notes, not guessed contradictions: retain the newest five short entries. */
 export function boundConflictNotes(text: string): string {
-  let remaining = MAX_CONFLICT_NOTES;
-  return text.split('\n').reverse().filter((line) => !/^Conflicting:/.test(line) || remaining-- > 0)
-    .reverse().map((line) => /^Conflicting:/.test(line) ? line.slice(0, 500) : line).join('\n');
+  const lines = text.split('\n');
+  const notes = lines.flatMap((line, index) => {
+    const match = CONFLICT_NOTE.exec(line);
+    return match ? [{ index, date: match[1] }] : [];
+  });
+  notes.sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index);
+  const kept = new Set(notes.slice(0, MAX_CONFLICT_NOTES).map((note) => note.index));
+  return lines.flatMap((line, index) => {
+    if (!CONFLICT_NOTE.test(line)) return [line];
+    return kept.has(index) ? [[...line].slice(0, 500).join('')] : [];
+  }).join('\n');
 }
 
 export async function readTopic(topic: string, root?: string): Promise<TopicPage | null> {
@@ -445,7 +467,8 @@ export async function writeTopic(topic: string, page: TopicPage, root?: string):
   const previous = await readTopic(topic, root);
   const now = new Date().toISOString();
   await writeFileAtomic(file, renderTopicPage({
-    ...page, created: previous?.created ?? page.created ?? now, updated: now, body: boundConflictNotes(page.body),
+    ...page, headerLines: page.headerLines ?? previous?.headerLines,
+    created: previous?.created ?? page.created ?? now, updated: now, body: boundConflictNotes(page.body),
   }));
   return file;
 }

@@ -213,7 +213,7 @@ export function runDispatcherUpkeep(): Promise<{ send: string } | { skip: string
     try {
       report = await runMemoryUpkeep(new Date(now), { root });
       const checkedAt = deps.now();
-      changed = (await listMemoryPages(root)).filter((p) => (p.updatedAt ?? p.mtimeMs) > since && reviewable(p));
+      changed = (await listMemoryPages(root, checkedAt)).filter((p) => (p.updatedAt ?? p.mtimeMs) > since && reviewable(p));
       await writeFileAtomic(deps.stateFile(), `${JSON.stringify({ lastCheckedAt: checkedAt } satisfies UpkeepState)}\n`);
     } catch (err) {
       recordMemoryUpkeep({ outcome: 'error' });

@@ -72,6 +72,15 @@ describe('topic provenance freshness and conflicts', () => {
     expect(report.conflictingPages).toEqual(['topics/conflict.md']);
     expect(await measureMemoryHealth(NOW, report, { root })).toMatchObject({ conflictingPages: 1, staleTopics: 1 });
   });
+
+  it.each(['2099-01-01T00:00:00Z', 'garbage 1', '2026-02-30T12:00:00Z', '2026-11-09T12:00:00'])('falls back to mtime for an unsafe Updated value: %s', async (updated) => {
+    const dated = renderTopicPage({ status: 'unconfirmed', source: 'chat', updated, body: 'Fact' });
+    write('topics/stale.md', dated, 90);
+    write('topics/recent.md', dated, 1);
+    expect(await measureMemoryHealth(NOW, { brokenLinks: [], missingSources: [] }, { root })).toMatchObject({ staleTopics: 1 });
+    expect((await runMemoryUpkeep(NOW, { root })).archived).toEqual(['topics/stale.md']);
+    expect(exists('topics/recent.md')).toBe(true);
+  });
 });
 
 describe('runMemoryUpkeep: pruning keeps every page it shouldn’t prune', () => {
