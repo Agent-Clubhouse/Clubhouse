@@ -265,14 +265,22 @@ describe('Copilot hook document boundary', () => {
 
   it('preserves custom hooks and unrelated data across repeated enable writes', async () => {
     const custom = { type: 'command', bash: 'echo custom', timeoutSec: 5 };
-    const { root, file } = await fixture(JSON.stringify({ version: 1, hooks: { preToolUse: [custom] }, other: { keep: true } }));
+    const { root, file } = await fixture(JSON.stringify({ version: 1, hooks: { preToolUse: [custom], agentStop: [custom] }, other: { keep: true } }));
     const provider = new CopilotCliProvider();
+    const write = vi.spyOn(fsp, 'writeFile');
     await provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
-    await provider.writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
+    const bytes = await fsp.readFile(file, 'utf8');
+    await provider.writeHooksConfig(root, 'http://127.0.0.1:10000/hook');
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(await fsp.readFile(file, 'utf8')).toBe(bytes);
     const result = JSON.parse(await fsp.readFile(file, 'utf8'));
     expect(result.other).toEqual({ keep: true });
     expect(result.hooks.preToolUse).toHaveLength(2);
     expect(result.hooks.preToolUse[0]).toEqual(custom);
+    expect(result.hooks.agentStop).toHaveLength(2);
+    expect(result.hooks.agentStop[0]).toEqual(custom);
+    expect(result.hooks.agentStop[1]).toMatchObject({ type: 'command', timeoutSec: 5 });
+    expect(result.hooks.agentStop[1].bash).toContain('/agentStop ');
   });
 });
 
@@ -281,7 +289,7 @@ describe('Copilot generated callback ownership', () => {
   const posix = 'cat | curl -s -X POST http://127.0.0.1:9999/hook/${CLUBHOUSE_AGENT_ID}/preToolUse -H \'Content-Type: application/json\' -H "X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true';
   const windows = 'curl -s -X POST http://127.0.0.1:%CLUBHOUSE_HOOK_PORT%/hook/%CLUBHOUSE_AGENT_ID%/preToolUse -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)';
   const supported = [posix, posix.replace(':9999', ':${CLUBHOUSE_HOOK_PORT}'), windows, windows.replace('%CLUBHOUSE_HOOK_PORT%', '9999')]
-    .flatMap((command) => ['preToolUse', 'postToolUse', 'errorOccurred', 'permissionRequest', 'sessionStart', 'sessionEnd', 'userPromptSubmitted']
+    .flatMap((command) => ['preToolUse', 'postToolUse', 'errorOccurred', 'agentStop', 'permissionRequest', 'sessionStart', 'sessionEnd', 'userPromptSubmitted']
       .map((event) => ({ event, entry: { type: 'command', bash: command.replace('/preToolUse ', `/${event} `), timeoutSec: event === 'permissionRequest' ? 120 : 5 } })));
   it.each(supported)('recognizes supported generated entries for chat refusal: $event $entry.bash', async ({ event, entry }) => {
     const { root } = await fixture(JSON.stringify({ version: 1, hooks: { [event]: [entry] } }));

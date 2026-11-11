@@ -160,6 +160,9 @@ export function publishFromChatEvent(event: ChatEvent): void {
 /** Terminal agents whose turn is under way, as far as their hooks tell, and when they last reported. */
 const hookTurns = new Map<string, { lastAt: number; ended: boolean; turnId?: string }>();
 
+/** Copilot's stop hook has no turn ID; only a new prompt re-arms completion. */
+const completedCopilotHookTurns = new Set<string>();
+
 /**
  * A turn that has said nothing for this long is treated as over: Claude runs
  * no interruption hook when the person interrupts a turn. Silence alone is
@@ -170,7 +173,7 @@ const HOOK_TURN_STALE_MS = 5 * 60 * 1000;
 /** Raw hook names that mean the person (or Clubhouse) sent a prompt. */
 const PROMPT_HOOKS: ReadonlySet<string> = new Set(['UserPromptSubmit', 'userPromptSubmitted']);
 /** Raw hook names that mean a turn finished. Copilot's sessionEnd is the process ending, not a turn. */
-const TURN_END_HOOKS: ReadonlySet<string> = new Set(['Stop', 'StopFailure', 'Interrupt']);
+const TURN_END_HOOKS: ReadonlySet<string> = new Set(['Stop', 'StopFailure', 'Interrupt', 'agentStop']);
 /** Tools that put a question to the person. */
 const QUESTION_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion']);
 
@@ -194,8 +197,7 @@ function startHookTurn(agentId: string, at: number, turnId?: string): void {
  * Turn a terminal CLI hook into bus events. Terminal coverage is what the
  * CLIs' hooks allow:
  * - a turn starts at a prompt hook, or at the first tool without one;
- * - it ends at Stop, StopFailure (Claude) or Interrupt (Codex);
- *   Copilot has no per-turn end hook;
+ * - it ends at Stop, StopFailure (Claude), Interrupt (Codex) or agentStop (Copilot);
  * - waiting on you is a permission request, or a question tool;
  * - tool failures are not "hits an error" (a failed grep is routine), and
  *   session start and notification hooks publish nothing.
@@ -205,6 +207,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
   const turn = hookTurns.get(agentId);
   if (rawName && PROMPT_HOOKS.has(rawName)) {
     if (turnId && turn?.turnId === turnId) return;
+    if (rawName === 'userPromptSubmitted') completedCopilotHookTurns.delete(agentId);
     startHookTurn(agentId, now, turnId);
     return;
   }
@@ -215,6 +218,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
   switch (kind) {
     case 'pre_tool':
     case 'post_tool': {
+      if (completedCopilotHookTurns.has(agentId)) return;
       if (turnId && turn?.turnId) {
         if (turnId === turn.turnId && turn.ended) return;
         if (turnId !== turn.turnId) return;
@@ -231,6 +235,10 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
       if (turnId && turn?.turnId && turnId !== turn.turnId) return;
       // The first explicit end wins; a later failure cannot revise a published completion.
       if (turn?.ended) return;
+      if (rawName === 'agentStop') {
+        if (completedCopilotHookTurns.has(agentId)) return;
+        completedCopilotHookTurns.add(agentId);
+      }
       hookTurns.set(agentId, { lastAt: now, ended: true, turnId: turnId ?? turn?.turnId });
       {
         const outcome = facts.outcome ?? (rawName === 'Interrupt' ? 'interrupted' : rawName === 'StopFailure' ? 'failed' : 'completed');
@@ -251,6 +259,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
 /** An agent's process ended: its terminal turn state goes with it. */
 export function forgetHookTurn(agentId: string): void {
   hookTurns.delete(agentId);
+  completedCopilotHookTurns.delete(agentId);
 }
 
 /** For tests. */
@@ -258,4 +267,5 @@ export function resetAppEventBus(): void {
   listeners.clear();
   agentChains.clear();
   hookTurns.clear();
+  completedCopilotHookTurns.clear();
 }

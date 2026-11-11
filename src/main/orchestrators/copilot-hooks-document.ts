@@ -51,7 +51,7 @@ function generatedCallbackUrl(url: string, agentRef: string, portRef: string, ti
   const suffix = url.slice(hookPath);
   // Both the current writer and the supported fixed-port writer emit these
   // event-specific timeouts, never a timeout-less or millisecond-timeout entry.
-  return ['preToolUse', 'postToolUse', 'errorOccurred', 'permissionRequest', 'sessionStart', 'sessionEnd', 'userPromptSubmitted']
+  return ['preToolUse', 'postToolUse', 'errorOccurred', 'agentStop', 'permissionRequest', 'sessionStart', 'sessionEnd', 'userPromptSubmitted']
     .some((event) => suffix === `${endpoint}/${event}` && timeoutSec === (event === 'permissionRequest' ? 120 : 5));
 }
 

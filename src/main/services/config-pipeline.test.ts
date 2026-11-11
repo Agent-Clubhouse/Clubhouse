@@ -880,6 +880,7 @@ describe('config-pipeline', () => {
 describe('Copilot cleanup preservation boundary', () => {
   const file = path.resolve('/copilot/.github/hooks/hooks.json');
   const owned = COPILOT_OWNED_ENTRY;
+  const ownedStop = { ...owned, bash: owned.bash.replace('/preToolUse ', '/agentStop ') };
   const custom = { type: 'command', bash: 'curl https://example.invalid/hook/audit' };
   const original = JSON.stringify({ version: 1, hooks: {}, keep: 'original' });
   const ambiguous = [
@@ -954,7 +955,7 @@ describe('Copilot cleanup preservation boundary', () => {
       it(`keeps valid empty hooks readable on next start (original=${existing}, all=${all})`, async () => {
         const state = disk(existing ? original : undefined);
         await snapshotFile('copilot-agent', file);
-        state.bytes = JSON.stringify({ version: 1, hooks: { preToolUse: [owned] }, keep: 'current' });
+        state.bytes = JSON.stringify({ version: 1, hooks: { preToolUse: [owned], agentStop: [ownedStop] }, keep: 'current' });
         if (all) await restoreAll();
         else await restoreForAgent('copilot-agent');
         expect(JSON.parse(state.bytes!)).toEqual({ version: 1, hooks: {}, keep: 'current' });
@@ -964,10 +965,13 @@ describe('Copilot cleanup preservation boundary', () => {
     }
   }
 
-  it('preserves custom hook URLs while removing only generated callbacks', async () => {
-    const state = disk(JSON.stringify({ version: 1, hooks: { preToolUse: [custom, owned] }, keep: true }));
+  it.each([
+    ['preToolUse', owned],
+    ['agentStop', ownedStop],
+  ] as const)('preserves custom and child hooks while removing only generated %s callbacks', async (event, entry) => {
+    const state = disk(JSON.stringify({ version: 1, hooks: { [event]: [custom, entry], subagentStop: [custom] }, keep: true }));
     expect(await stripClubhouseHooksFromFile(file)).toBe(true);
-    expect(JSON.parse(state.bytes!)).toEqual({ version: 1, hooks: { preToolUse: [custom] }, keep: true });
+    expect(JSON.parse(state.bytes!)).toEqual({ version: 1, hooks: { [event]: [custom], subagentStop: [custom] }, keep: true });
   });
 
   it('leaves a custom URL-only document byte-exact', async () => {

@@ -3,7 +3,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { isDeepStrictEqual, promisify } from 'util';
 import {
   OrchestratorConventions,
   ProviderCapabilities,
@@ -73,6 +73,7 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   preToolUse: 'pre_tool',
   postToolUse: 'post_tool',
   errorOccurred: 'tool_error',
+  agentStop: 'stop',
   sessionEnd: 'stop',
   permissionRequest: 'permission_request',
   sessionStart: 'notification',
@@ -301,6 +302,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       preToolUse: [{ type: 'command', bash: makeCurl('preToolUse'), timeoutSec: 5 }],
       postToolUse: [{ type: 'command', bash: makeCurl('postToolUse'), timeoutSec: 5 }],
       errorOccurred: [{ type: 'command', bash: makeCurl('errorOccurred'), timeoutSec: 5 }],
+      agentStop: [{ type: 'command', bash: makeCurl('agentStop'), timeoutSec: 5 }],
       // PermissionRequest uses a long timeout to allow for remote approval via Annex
       permissionRequest: [{ type: 'command', bash: makeCurl('permissionRequest'), timeoutSec: PERMISSION_HOOK_TIMEOUT_SEC }],
       sessionStart: [{ type: 'command', bash: makeCurl('sessionStart'), timeoutSec: 5 }],
@@ -317,7 +319,10 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     const existing = await readCopilotHooksConfig(cwd) ?? { version: 1, hooks: {} };
 
     const mergedHooks = mergeHookEntries(existing, ourHooks, isCopilotClubhouseHookEntry);
-    await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
+    const merged = { ...existing, hooks: mergedHooks };
+    if (!isDeepStrictEqual(existing, merged)) {
+      await fsp.writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
+    }
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {

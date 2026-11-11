@@ -16,9 +16,11 @@ program writing the file at the same instant is not coordinated with.
 
 | Runtime | Clubhouse hook server | Callback path and limits |
 | --- | --- | --- |
-| Terminal | On | Clubhouse merges command hooks into the Copilot hook document, preserving custom entries and replacing its own entries on repeat writes. Hook changes require restart. |
+| Terminal | On | Clubhouse merges command hooks into the Copilot hook document, preserving custom entries and replacing its own entries. Repeat writes leave an unchanged document untouched. Hook changes require restart. |
 | Terminal | Off | Clubhouse does not inject command hooks. Existing custom hooks remain Copilot's configuration. |
 | SDK chat | On or off | Clubhouse uses the SDK event and permission callbacks, not its terminal hook injection. Configuration discovery remains enabled. |
+
+Terminal turn completion uses `agentStop`, defined by the shipped `@github/copilot-sdk` 1.0.29 as `SessionHooks.onAgentStop` / `AgentStopHookInput` in `dist/types.d.ts` and supported as a command hook in `.github/hooks/hooks.json`. It reports a natural top-level stop as `completed`, at most once until the next `userPromptSubmitted` boundary. The hook has no turn or prompt ID, so a delayed stop arriving after the next prompt cannot be correlated to its original turn: it completes the current prompt's slot, and that prompt's later stop is suppressed. Tool activity after completion neither starts another turn nor re-arms completion; only the next prompt does. `subagentStop` is child-only; `sessionEnd` and `errorOccurred` never imply turn completion, failure, or interruption. SDK stream events such as `assistant.turn_end` and `session.idle` are not terminal hook registrations. Chat mode is unchanged.
 
 Chat startup refuses a hook document containing marked Clubhouse terminal callbacks, because those callbacks can overlap chat's protocol events. Stop the terminal agent and remove those marked callbacks before restarting chat; custom hooks are left intact. Disabling the hook server removes recognized Clubhouse entries from stopped agents and preserves a valid empty Copilot hooks object when needed. Conflicting permission documents are not rewritten.
 

@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatEvent } from '../../shared/chat';
 import {
   CHAIN_WINDOW_MS,
+  forgetHookTurn,
   onAppEvent,
   publishAppEvent,
   publishFromChatEvent,
   publishFromHookEvent,
-  forgetHookTurn,
   resetAppEventBus,
   setAgentChain,
   turnOutcomeFromStopReason,
@@ -87,6 +87,62 @@ describe('from chat events', () => {
 });
 
 describe('from terminal hooks', () => {
+  it('publishes one completed Copilot end per prompt, including text-only turns', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 0);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 1);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 2);
+    publishFromHookEvent('a1', { kind: 'post_tool', rawName: 'postToolUse' }, 3);
+    publishFromHookEvent('a1', { kind: 'pre_tool', rawName: 'preToolUse', toolName: 'AskUserQuestion' }, 10 * 60_000);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 10 * 60_000);
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 10 * 60_000 + 1);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 10 * 60_000 + 2);
+    expect(events).toEqual([
+      { type: 'turn.started', agentId: 'a1', via: 'hook', at: 0 },
+      { type: 'turn.ended', agentId: 'a1', via: 'hook', outcome: 'completed', at: 1 },
+      { type: 'turn.started', agentId: 'a1', via: 'hook', at: 10 * 60_000 + 1 },
+      { type: 'turn.ended', agentId: 'a1', via: 'hook', outcome: 'completed', at: 10 * 60_000 + 2 },
+    ]);
+  });
+
+  it('attributes an uncorrelated late Copilot stop to the current prompt boundary', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 0);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 1);
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 2);
+    // The old stop has no turn ID to distinguish it from the current turn's stop.
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 3);
+    publishFromHookEvent('a1', { kind: 'pre_tool', rawName: 'preToolUse' }, 4);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 5);
+    expect(events.map((event) => [event.type, event.at])).toEqual([
+      ['turn.started', 0], ['turn.ended', 1], ['turn.started', 2], ['turn.ended', 3],
+    ]);
+  });
+
+  it('does not let child stops, errors, or session exits complete or re-arm a Copilot turn', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 0);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'subagentStop' }, 1);
+    publishFromHookEvent('a1', { kind: 'tool_error', rawName: 'errorOccurred' }, 2);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'sessionEnd' }, 3);
+    expect(events.map((e) => e.type)).toEqual(['turn.started']);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 4);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'sessionEnd' }, 5);
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'sessionStart' }, 6);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 7);
+    expect(events.map((e) => e.type)).toEqual(['turn.started', 'turn.ended']);
+  });
+
+  it('keeps Copilot completion dedup local to the agent and clears it on process exit', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 0);
+    publishFromHookEvent('a2', { kind: 'stop', rawName: 'agentStop' }, 1);
+    forgetHookTurn('a1');
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 2);
+    publishFromHookEvent('a2', { kind: 'stop', rawName: 'agentStop' }, 3);
+    expect(events.map((e) => 'agentId' in e && e.agentId)).toEqual(['a1', 'a2', 'a1']);
+  });
+
   it('starts a turn at a prompt hook or the first tool, and ends it at Stop', () => {
     const events = collect();
     publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit' }, 0);
