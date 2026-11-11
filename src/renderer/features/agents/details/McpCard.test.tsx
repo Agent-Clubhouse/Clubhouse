@@ -205,17 +205,38 @@ describe('MCP servers card', () => {
   });
 });
 
-describe('Context window card', () => {
+describe('Session context window', () => {
   beforeEach(() => {
+    useAgentDetailsStore.setState({ focus: null });
     useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
     window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: false, files: [] }));
   });
 
-  it('is left out until the agent reports its context, then shows it (#2094)', () => {
+  it('is left out until reported, then appears inside Session through the old focus target', async () => {
     const chat = { ...createChatViewState('a1'), capabilities: { ...MINIMAL_CHAT_CAPABILITIES, usage: 'tokens' as const } };
     const { rerender } = render(<AgentDetails agent={agent} chat={chat} />);
     expect(screen.queryByTestId('details-card-context')).not.toBeInTheDocument();
     rerender(<AgentDetails agent={agent} chat={{ ...chat, usage: { ...chat.usage, context: { used: 62_000, size: 100_000 } } }} />);
-    expect(screen.getByTestId('details-card-context-summary')).toHaveTextContent('62% of');
+    await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'context' }));
+    expect(screen.getByTestId('details-card-session')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('details-session-context')).toHaveTextContent('62% of 100k');
+    expect(screen.queryByTestId('details-card-context')).not.toBeInTheDocument();
+  });
+
+  it('keeps input-window provenance and hides live context asleep or when unsupported', async () => {
+    const chat = {
+      ...createChatViewState('a1'),
+      capabilities: { ...MINIMAL_CHAT_CAPABILITIES, usage: 'tokens' as const },
+      usage: { ...createChatViewState('a1').usage, context: { used: 25_000, size: 100_000, window: 'input' as const } },
+    };
+    const { rerender } = render(<AgentDetails agent={agent} chat={chat} />);
+    await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'context' }));
+    expect(screen.getByTestId('details-session-context')).toHaveTextContent('25% of 100k input');
+    expect(screen.getByTestId('details-session-context')).toHaveTextContent('after its output reserve');
+    rerender(<AgentDetails agent={agent} chat={{ ...chat, capabilities: MINIMAL_CHAT_CAPABILITIES }} />);
+    expect(screen.queryByTestId('details-session-context')).not.toBeInTheDocument();
+    rerender(<AgentDetails agent={{ ...agent, status: 'sleeping' }} chat={chat} />);
+    expect(screen.getByTestId('details-card-session')).toHaveAccessibleName('Last session');
+    expect(screen.queryByTestId('details-session-context')).not.toBeInTheDocument();
   });
 });

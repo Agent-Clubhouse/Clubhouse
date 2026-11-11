@@ -1076,7 +1076,7 @@ describe('ChatView agent details', () => {
     expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('agent-details-toggle'));
     const column = screen.getByTestId('agent-details');
-    for (const id of ['changes', 'subagents', 'canvases', 'context', 'mcp', 'session']) {
+    for (const id of ['changes', 'subagents', 'canvases', 'mcp', 'session']) {
       expect(within(column).getByTestId(`details-card-${id}`)).not.toHaveAttribute('data-open');
     }
     // The column sits beside the conversation, not over it.

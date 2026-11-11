@@ -202,7 +202,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   useEffect(() => {
     if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
     handled.current = focus.nonce;
-    setOpenCards((s) => new Set(s).add(focus.card === 'helpers' ? 'orchestrate' : focus.card));
+    const card = focus.card === 'helpers' ? 'orchestrate' : focus.card === 'context' ? 'session' : focus.card;
+    setOpenCards((s) => new Set(s).add(card));
     if (focus.subagentId) setSelectedSub(focus.subagentId);
   }, [focus, agent.id]);
 
@@ -260,7 +261,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const showSubagents = !dispatcher && !!map && map.mode !== 'none';
 
   // Context window: only once the agent has reported how full it is.
-  const ctx = !dispatcher && chat && chat.capabilities && chat.capabilities.usage !== 'none' ? chat.usage.context : null;
+  const ctx = !asleep && !dispatcher && chat && chat.capabilities && chat.capabilities.usage !== 'none' ? chat.usage.context : null;
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
 
   // Session: live stats only; the settings are in the Settings card.
@@ -394,26 +395,6 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         ? <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />
         : <AgentActionsCard agentId={agent.id} agentName={agent.name} projectId={agent.projectId} open={open('actions')} onToggle={() => toggleCard('actions')} />}
 
-      {ctx && ctxPct !== null && (
-        <DetailsCard
-          id="context"
-          title="Context window"
-          summary={`${ctxPct}% of ${formatTokens(ctx.size)}${ctx.window === 'input' ? ' input' : ''}`}
-          right={<UsageBar pct={ctxPct} className="w-14 h-[5px]" />}
-          open={open('context')}
-          onToggle={() => toggleCard('context')}
-        >
-          <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex flex-col gap-2 text-xs">
-            <UsageBar pct={ctxPct} />
-            <span className="text-ctp-text">{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</span>
-            {ctx.window === 'input' && (
-              <span className="text-ctp-overlay1">{provider} reports the room left for input after its output reserve, so its own total can be larger.</span>
-            )}
-            <span className="text-ctp-overlay1">{provider} compacts the conversation on its own near the limit.</span>
-          </div>
-        </DetailsCard>
-      )}
-
       {!asleep && !dispatcher && <McpCard
         agent={agent}
         projectPath={projectPath}
@@ -449,6 +430,21 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           {cost || tokens ? <>{cost}{cost && tokens ? <span className="text-ctp-overlay1"> · </span> : null}{tokens ? <span className={cost ? 'text-ctp-overlay1' : ''}>{formatTokens(tokens)} tokens</span> : null}</>
             : <span className="text-ctp-overlay1">{chat ? 'none yet' : 'not reported in the CLI view'}</span>}
         </CardRow>
+        {ctx && ctxPct !== null && (
+          <section aria-label="Context window" data-testid="details-session-context">
+            <CardRow label="Context window" labelWidth="wide">
+              <span>{ctxPct}% of {formatTokens(ctx.size)}{ctx.window === 'input' ? ' input' : ''}</span>
+            </CardRow>
+            <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex flex-col gap-2 text-xs">
+              <UsageBar pct={ctxPct} />
+              <span className="text-ctp-text">{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</span>
+              {ctx.window === 'input' && (
+                <span className="text-ctp-overlay1">{provider} reports the room left for input after its output reserve, so its own total can be larger.</span>
+              )}
+              <span className="text-ctp-overlay1">{provider} compacts the conversation on its own near the limit.</span>
+            </div>
+          </section>
+        )}
         {limits.length > 0 && (
           <CardRow label="Plan limits">
             <span className="flex flex-col gap-1">
