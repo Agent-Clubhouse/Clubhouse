@@ -57,7 +57,9 @@ describe('Clubhouse permissions page (#2971)', () => {
     expect(helpers.getByText('Wake')).toBeInTheDocument();
     expect(helpers.getByText('Put to sleep')).toBeInTheDocument();
     expect(helpers.getAllByText('Built in')).toHaveLength(2);
-    expect(within(screen.getByRole('region', { name: 'Itself' })).getByText('Every agent')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Itself' })).getByText('Default for all agents')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Connected agents' })).getByText('Default for all agents')).toBeInTheDocument();
+    expect(screen.queryByText('Every agent')).not.toBeInTheDocument();
     expect(radios('See status, output and settings (Itself)').getByRole('radio', { name: 'Allow' })).toBeChecked();
     // Nothing differs from its default yet.
     expect(screen.queryByRole('button', { name: 'Reset to defaults' })).not.toBeInTheDocument();

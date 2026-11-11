@@ -30,7 +30,7 @@ const TARGET_ORDER: ReadonlyArray<GrantTarget['kind']> = [
 ];
 
 export const SOURCE_LABEL: Record<GrantRow['source'], string | undefined> = {
-  every_agent: 'Every agent',
+  every_agent: 'Default for all agents',
   structural: 'Built in',
   template: 'From its template',
   user: 'Set by you',
