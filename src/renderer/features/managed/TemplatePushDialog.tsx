@@ -80,11 +80,12 @@ export function TemplatePushDialog({ templateName, changes, targets, busy, error
     <Modal
       open
       onClose={onCancel}
+      busy={busy}
       title={`Save ${templateName}?`}
       width="w-[560px]"
       testId="managed-template-push-dialog"
-      footer={<>
-        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+      footer={(dismiss) => <>
+        <Button onClick={dismiss} disabled={busy}>Cancel</Button>
         <Button onClick={onSaveOnly} disabled={busy} data-testid="managed-template-save-only">Save template only</Button>
         <Button kind="primary" onClick={() => onSaveAndApply(chosen)} disabled={busy || chosen.length === 0} data-testid="managed-template-save-apply">
           Save and apply to {chosen.length}

@@ -1,5 +1,6 @@
-import { ReactNode, RefObject, useEffect, useId, useRef } from 'react';
+import { ReactNode, RefObject, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Button } from './Button';
 import { isInLayerPortal, isTopModal, pushModal, removeModal } from './layers';
 
 /**
@@ -7,15 +8,21 @@ import { isInLayerPortal, isTopModal, pushModal, removeModal } from './layers';
  * button, the body, and footer actions on the right. `role="dialog"` with
  * `aria-modal`, focus moves in on open (to `initialFocusRef`, an autofocused
  * field, or the first focusable control), Tab stays inside, Esc closes the
- * topmost open modal, and focus returns to where it was on close.
+ * topmost open modal, and focus returns to where it was on close. All
+ * dismissal paths block while busy and ask before discarding dirty work.
+ * Footer/body render callbacks receive the same guard for Cancel controls.
  */
 
 interface Props {
   open: boolean;
-  /** The close button. Also Esc and the backdrop, unless `onDismiss` is given. */
+  /** Called after the dismissal guard allows closing. Successful actions may call it directly. */
   onClose: () => void;
-  /** Esc and the backdrop, for a dialog those mustn't close while it holds unsaved work. */
+  /** Legacy override for Esc and backdrop. Prefer `busy` and `dirty` for state-aware dismissal. */
   onDismiss?: () => void;
+  /** Blocks every dismissal path while an operation is pending. */
+  busy?: boolean;
+  /** Every dismissal path asks to discard unsaved changes before closing. */
+  dirty?: boolean;
   /** When provided, renders the 44px title row with the title and a close button. */
   title?: ReactNode;
   /** Accessible name when there's no title row. */
@@ -29,12 +36,12 @@ interface Props {
   /** Optional data-testid for the dialog panel. */
   testId?: string;
   /** Footer actions (usually `Button`s), right-aligned in a bar below the body. */
-  footer?: ReactNode;
+  footer?: ReactNode | ((dismiss: () => void) => ReactNode);
   /** `none` drops the body padding, for content that runs edge to edge. */
   padding?: 'default' | 'none';
   /** The element to focus on open. */
   initialFocusRef?: RefObject<HTMLElement | null>;
-  children: ReactNode;
+  children: ReactNode | ((dismiss: () => void) => ReactNode);
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
@@ -44,14 +51,23 @@ function focusables(root: HTMLElement): HTMLElement[] {
 }
 
 export function Modal({
-  open, onClose, onDismiss, title, 'aria-label': ariaLabel, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
+  open, onClose, onDismiss, busy = false, dirty = false, title, 'aria-label': ariaLabel, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
   footer, padding = 'default', initialFocusRef, children,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  const dismiss = onDismiss ?? onClose;
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const requestDismiss = (close: () => void) => {
+    if (busy) return;
+    if (dirty) setConfirmDiscard(true);
+    else close();
+  };
+  const requestClose = () => requestDismiss(onClose);
+  const dismiss = () => requestDismiss(onDismiss ?? onClose);
   const dismissRef = useRef(dismiss);
   dismissRef.current = dismiss;
+
+  useEffect(() => { if (!open) setConfirmDiscard(false); }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -94,7 +110,7 @@ export function Modal({
   return createPortal(
     <div
       className={`fixed inset-0 z-modal flex items-center justify-center ${backdrop === 'heavy' ? 'bg-ctp-crust/80' : 'bg-ctp-crust/55'}`}
-      onClick={dismiss}
+      onClick={(e) => { e.stopPropagation(); dismiss(); }}
       data-testid={backdropTestId}
     >
       <div
@@ -113,7 +129,8 @@ export function Modal({
             <h2 id={titleId} className="min-w-0 truncate text-[13px] font-semibold text-ctp-text">{title}</h2>
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
+              disabled={busy}
               data-modal-close=""
               className="ml-auto flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 transition-colors"
               aria-label="Close"
@@ -125,14 +142,32 @@ export function Modal({
           </div>
         )}
         <div className={`min-h-0 overflow-auto ${padding === 'none' ? '' : 'p-4'}`}>
-          {children}
+          {typeof children === 'function' ? children(requestClose) : children}
         </div>
         {footer && (
           <div className="flex-shrink-0 flex items-center justify-end gap-2 px-4 py-2.5 border-t border-surface-0 bg-ctp-mantle">
-            {footer}
+            {typeof footer === 'function' ? footer(requestClose) : footer}
           </div>
         )}
       </div>
+      {confirmDiscard && (
+        <Modal
+          open
+          onClose={() => setConfirmDiscard(false)}
+          busy={busy}
+          title="Discard changes?"
+          footer={<>
+            <Button onClick={() => setConfirmDiscard(false)} disabled={busy}>Keep editing</Button>
+            <Button kind="danger-solid" disabled={busy} onClick={() => {
+              if (busy) return;
+              setConfirmDiscard(false);
+              onClose();
+            }}>Discard changes</Button>
+          </>}
+        >
+          <p className="text-sm text-ctp-subtext1">Your unsaved changes will be lost.</p>
+        </Modal>
+      )}
     </div>,
     document.body,
   );

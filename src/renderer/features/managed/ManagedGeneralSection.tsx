@@ -171,11 +171,12 @@ function ConvertDialog({ projectPath, agentId, agentName, templates, busy, error
     <Modal
       open
       onClose={onCancel}
+      busy={busy}
       title={`Switch ${agentName} to Clubhouse managed`}
       width="w-[560px]"
       testId="managed-convert-dialog"
-      footer={<>
-        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+      footer={(dismiss) => <>
+        <Button onClick={dismiss} disabled={busy}>Cancel</Button>
         <Button kind="primary" disabled={busy || (keep ? !preview : !templateId)} onClick={() => onConvert(keep, keep ? undefined : templateId)}>Switch to managed</Button>
       </>}
     >
@@ -221,9 +222,11 @@ function SaveAsTemplateDialog({ agentName, busy, error, onCancel, onSave }: {
     <Modal
       open
       onClose={onCancel}
+      busy={busy}
+      dirty={name !== `${agentName} setup`}
       title="Save as template"
-      footer={<>
-        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+      footer={(dismiss) => <>
+        <Button onClick={dismiss} disabled={busy}>Cancel</Button>
         <Button kind="primary" disabled={busy || !name.trim()} onClick={() => onSave(name.trim())}>Save template</Button>
       </>}
     >
@@ -283,11 +286,12 @@ function SwitchToPlainDialog({ projectPath, agentId, agentName, onClose }: {
     <Modal
       open
       onClose={onClose}
+      busy={busy}
       title={`Switch ${agentName} to plain`}
       width="w-[560px]"
       testId="managed-plain-dialog"
-      footer={<>
-        <Button onClick={onClose} disabled={busy}>Cancel</Button>
+      footer={(dismiss) => <>
+        <Button onClick={dismiss} disabled={busy}>Cancel</Button>
         <Button kind="primary" disabled={busy || !preview} onClick={() => void submit()}>Switch to plain</Button>
       </>}
     >

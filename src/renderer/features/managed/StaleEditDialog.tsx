@@ -11,11 +11,12 @@ import { lineDiff, partAsText, type PartVersion } from './stale-edit';
  * save theirs over with yours (pinned to their revision, so a third change
  * is caught too), or fork.
  */
-export function StaleEditDialog({ theirs, mine, busy, error, onKeepMine, onTakeTheirs, onFork, forkLabel }: {
+export function StaleEditDialog({ theirs, mine, busy, error, onClose, onKeepMine, onTakeTheirs, onFork, forkLabel }: {
   theirs: ManagedPart;
   mine: PartVersion;
   busy?: boolean;
   error?: string | null;
+  onClose: () => void;
   onKeepMine: () => void;
   onTakeTheirs: () => void;
   onFork: () => void;
@@ -26,13 +27,14 @@ export function StaleEditDialog({ theirs, mine, busy, error, onKeepMine, onTakeT
   return (
     <Modal
       open
-      onClose={onTakeTheirs}
-      onDismiss={() => {}}
+      onClose={onClose}
+      busy={busy}
       title={`${theirs.name} changed since you opened it.`}
       width="w-[640px]"
       testId="managed-stale-dialog"
-      footer={<>
+      footer={(dismiss) => <>
         <Button kind="quiet" className="mr-auto" onClick={onFork} disabled={busy} data-testid="managed-stale-fork">{forkLabel}</Button>
+        <Button onClick={dismiss} disabled={busy}>Cancel</Button>
         <Button onClick={onTakeTheirs} disabled={busy} data-testid="managed-stale-theirs">Take theirs</Button>
         <Button kind="primary" onClick={onKeepMine} disabled={busy} data-testid="managed-stale-mine">Keep mine</Button>
       </>}
@@ -58,7 +60,7 @@ export function StaleEditDialog({ theirs, mine, busy, error, onKeepMine, onTakeT
           </div>
         ))}
       </pre>
-      <p className="mt-2 text-xs text-ctp-overlay1">Keep mine saves your version over theirs. Take theirs drops your edit. Nothing changes until you pick.</p>
+      <p className="mt-2 text-xs text-ctp-overlay1">Keep mine saves your version over theirs. Take theirs drops your edit. Cancel returns to your edit. Nothing changes until you pick.</p>
       {error && <p role="alert" className="mt-2 text-xs text-ctp-error">{error}</p>}
     </Modal>
   );

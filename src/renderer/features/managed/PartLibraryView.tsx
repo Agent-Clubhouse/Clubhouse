@@ -206,11 +206,12 @@ export function DeletePartDialog({ part, onClose }: { part: ManagedPartSummary; 
     <Modal
       open
       onClose={() => onClose(false)}
+      busy={busy}
       title={`Delete ${part.name}?`}
       width="w-[520px]"
       testId="managed-delete-dialog"
-      footer={<>
-        <Button onClick={() => onClose(false)} disabled={busy}>Cancel</Button>
+      footer={(dismiss) => <>
+        <Button onClick={dismiss} disabled={busy}>Cancel</Button>
         <Button kind="danger-solid" onClick={() => void confirm()} disabled={busy} data-testid="managed-delete-confirm">Delete</Button>
       </>}
     >

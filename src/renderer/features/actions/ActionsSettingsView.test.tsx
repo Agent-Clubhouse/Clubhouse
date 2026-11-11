@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { ActionView } from '../../../shared/actions';
 import { ActionsSettingsView, filterActions } from './ActionsSettingsView';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
+import { ActionForm } from './ActionForm';
 
 function action(over: Partial<ActionView>): ActionView {
   return {
@@ -27,6 +28,77 @@ describe('Settings > Actions', () => {
     expect(within(empty).getAllByRole('button', { name: 'Use' })).toHaveLength(3);
     fireEvent.click(within(empty).getAllByRole('button', { name: 'Use' })[0]);
     expect(await screen.findByTestId('action-form')).toBeTruthy();
+  });
+
+  describe('Action form dismissal', () => {
+    const ways = ['Escape', 'backdrop', 'Close', 'Cancel'];
+    const dismiss = (way: string) => {
+      const form = screen.getByTestId('action-form');
+      if (way === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+      else if (way === 'backdrop') fireEvent.click(form.parentElement!);
+      else fireEvent.click(within(form).getByRole('button', { name: way }));
+    };
+
+    it.each(ways)('closes a pristine new form via %s', (way) => {
+      const onClose = vi.fn();
+      render(<ActionForm open onClose={onClose} />);
+      dismiss(way);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(ways)('closes a pristine edit form via %s', (way) => {
+      const onClose = vi.fn();
+      render(<ActionForm open action={action({})} onClose={onClose} />);
+      dismiss(way);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a prefilled starter as pristine', () => {
+      const onClose = vi.fn();
+      render(<ActionForm open initial={action({})} onClose={onClose} />);
+      dismiss('Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(ways)('confirms dirty dismissal via %s', (way) => {
+      const onClose = vi.fn();
+      render(<ActionForm open action={action({})} onClose={onClose} />);
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My changed action' } });
+      dismiss(way);
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+      expect(screen.getByLabelText('Name')).toHaveValue('My changed action');
+      dismiss(way);
+      fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats reverted changes as pristine', () => {
+      const onClose = vi.fn();
+      render(<ActionForm open action={action({})} onClose={onClose} />);
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Changed' } });
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Morning plan' } });
+      dismiss('Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['Save', 'Run now'])('blocks every dismissal while %s is pending and shows its eventual error', async (operation) => {
+      let fail!: (reason: Error) => void;
+      const pending = new Promise<never>((_resolve, reject) => { fail = reject; });
+      const api = window.clubhouse.actions;
+      if (operation === 'Save') api.update = vi.fn(() => pending);
+      else api.runNow = vi.fn(() => pending);
+      const onClose = vi.fn();
+      render(<ActionForm open action={action({})} onClose={onClose} />);
+      fireEvent.click(within(screen.getByTestId('action-form')).getByRole('button', { name: operation }));
+      for (const way of ways) dismiss(way);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+      fail(new Error('Operation failed'));
+      expect(await screen.findByText('Operation failed')).toBeVisible();
+      dismiss('Close');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('says a quick agent step runs with Full access, with no Access choice', async () => {

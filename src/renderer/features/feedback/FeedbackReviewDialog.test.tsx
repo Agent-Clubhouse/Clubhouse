@@ -796,6 +796,25 @@ describe('dismissing the review (contract section 2)', () => {
   });
 
   describe('the explicit ways out', () => {
+    it('blocks Close and Cancel while sending and keeps the eventual failure visible', async () => {
+      let fail!: (reason: Error) => void;
+      send.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+      const onClose = vi.fn();
+      render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
+      write('my note');
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(onClose).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      await act(async () => { fail(new Error('Send failed')); });
+      expect(screen.getByRole('alert')).toHaveTextContent('Send failed');
+      expect(notesField()).toHaveValue('my note');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith(DRAFT.draftId);
+    });
+
     it('Cancel closes with a note and a drawing, and cancels the draft', () => {
       const onClose = vi.fn();
       render(<FeedbackReviewDialog draft={DRAFT} onClose={onClose} />);
