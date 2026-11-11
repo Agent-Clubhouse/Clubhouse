@@ -127,7 +127,7 @@ describe('config-pipeline', () => {
 
     it('removes only the managed callback inside a mixed group, retaining user order and metadata', async () => {
       const before = { type: 'command', command: 'user-before' };
-      const after = { type: 'command', command: 'user-after', customKey: true };
+      const after = { type: 'command', command: 'curl https://example.com/hook/user-after', customKey: true };
       const own = { type: 'command', command: CLUBHOUSE_HOOK_CMD };
       vi.mocked(pathExists).mockResolvedValueOnce(true);
       vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
@@ -822,11 +822,24 @@ describe('config-pipeline', () => {
       expect(isClubhouseHookEntry(42)).toBe(false);
     });
 
-    it('detects entries containing /hook/ URL pattern', () => {
+    it.each([
+      'curl http://127.0.0.1:8080/hook/some-agent',
+      'curl https://example.com/hook/user',
+      './scripts/hook/lint.sh',
+      'echo "${CLUBHOUSE_AGENT_ID}"',
+    ])('does not claim an unrelated user command: %s', (command) => {
       const entry = {
-        hooks: [{ type: 'command', command: 'curl http://127.0.0.1:8080/hook/some-agent' }],
+        hooks: [{ type: 'command', command }],
       };
-      expect(isClubhouseHookEntry(entry)).toBe(true);
+      expect(isClubhouseHookEntry(entry)).toBe(false);
+    });
+
+    it.each([
+      'cat | curl -s -X POST http://127.0.0.1:9999/hook/${CLUBHOUSE_AGENT_ID} || true',
+      'cat | curl -s -X POST http://localhost:${CLUBHOUSE_HOOK_PORT}/hook/${CLUBHOUSE_AGENT_ID} || true',
+      'curl -s -X POST http://127.0.0.1:%CLUBHOUSE_HOOK_PORT%/hook/%CLUBHOUSE_AGENT_ID% || (exit /b 0)',
+    ])('recognizes generated loopback callbacks without a nonce: %s', (command) => {
+      expect(isClubhouseHookEntry({ hooks: [{ type: 'command', command }] })).toBe(true);
     });
   });
 

@@ -182,8 +182,7 @@ export function getHooksConfigPath(provider: OrchestratorProvider, cwd: string):
 
 /**
  * Check if a hook entry was written by Clubhouse.
- * Detects our entries by looking for the CLUBHOUSE_AGENT_ID env var
- * or the /hook/ URL pattern in command/bash strings.
+ * Require a nonce marker or the generated loopback callback command shape.
  */
 export function isClubhouseHookEntry(entry: unknown): boolean {
   if (!entry || typeof entry !== 'object') return false;
@@ -212,7 +211,8 @@ export function isClubhouseHookEntry(entry: unknown): boolean {
 }
 
 function isClubhouseCommand(cmd: string): boolean {
-  return cmd.includes('CLUBHOUSE_AGENT_ID') || cmd.includes('/hook/');
+  if (cmd.includes('X-Clubhouse-Nonce') || cmd.includes('CLUBHOUSE_HOOK_NONCE')) return true;
+  return /^(?:cat \| )?curl -s -X POST http:\/\/(?:127\.0\.0\.1|localhost):(?:\d+|\$\{CLUBHOUSE_HOOK_PORT\}|%CLUBHOUSE_HOOK_PORT%)\/hook\/(?:\$\{CLUBHOUSE_AGENT_ID\}|%CLUBHOUSE_AGENT_ID%)(?: \|\| true| \|\| \(exit \/b 0\))?$/.test(cmd);
 }
 
 /**
