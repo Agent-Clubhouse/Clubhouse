@@ -178,9 +178,11 @@ vi.mock('../util/ipc-broadcast', () => ({
 // Mock fs/promises for readProjectOrchestrator
 const mockReadFile = vi.fn(() => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
 const mockWriteFile = vi.fn(async (_file: unknown, _content: unknown, _encoding?: unknown) => {});
+const mockRename = vi.fn(async (_from: unknown, _to: unknown) => {});
 vi.mock('fs/promises', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
   writeFile: (...args: Parameters<typeof mockWriteFile>) => mockWriteFile(...args),
+  rename: (...args: Parameters<typeof mockRename>) => mockRename(...args),
 }));
 
 // The project list, where "Agents run on" is saved (#2975).
@@ -567,22 +569,33 @@ describe('agent-system', () => {
       const cwd = path.resolve('copilot-project');
       const file = path.join(cwd, '.github', 'hooks', 'hooks.json');
       let contents = '{"version":1}';
+      let temporary = '';
+      let temporaryContents = '';
       mockReadFile.mockImplementation(async (target: unknown) => {
         if (target === file) return contents;
         throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
       mockWriteFile.mockImplementation(async (target, value) => {
-        expect(target).toBe(file);
-        contents = String(value);
+        temporary = String(target);
+        expect(path.dirname(temporary)).toBe(path.dirname(file));
+        expect(temporary).not.toBe(file);
+        temporaryContents = String(value);
+      });
+      mockRename.mockImplementation(async (from, to) => {
+        expect(from).toBe(temporary);
+        expect(to).toBe(file);
+        contents = temporaryContents;
       });
       try {
         await spawnAgent({ agentId: 'agent-1', projectPath: cwd, cwd, kind: 'durable', orchestrator: 'copilot-cli' });
         expect(JSON.parse(contents)).toEqual({ version: 1, hooks: {} });
         expect(mockWriteFile).toHaveBeenCalledTimes(1);
+        expect(mockRename).toHaveBeenCalledTimes(1);
         expect(mockPtySpawn).toHaveBeenCalled();
       } finally {
         mockReadFile.mockReset().mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
         mockWriteFile.mockReset();
+        mockRename.mockReset();
       }
     });
 

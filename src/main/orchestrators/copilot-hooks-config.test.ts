@@ -100,7 +100,7 @@ describe('Copilot hook document boundary', () => {
     expect(appLog).not.toHaveBeenCalled();
   });
 
-  it('waits for an in-progress repair before reading its temporarily truncated file', async () => {
+  it('keeps valid on-disk JSON while serializing readers through an atomic repair', async () => {
     const { root, file } = await fixture('{"version":1}');
     const write = fsp.writeFile;
     let writing!: () => void;
@@ -108,13 +108,13 @@ describe('Copilot hook document boundary', () => {
     let resume!: () => void;
     const paused = new Promise<void>((resolve) => { resume = resolve; });
     vi.spyOn(fsp, 'writeFile').mockImplementationOnce(async (...args) => {
-      await write(file, '');
+      await write(...args);
       writing();
       await paused;
-      return write(...args);
     });
     const first = readCopilotHooksConfig(root);
     await started;
+    expect(JSON.parse(await fsp.readFile(file, 'utf8'))).toEqual({ version: 1 });
     const read = vi.spyOn(fsp, 'readFile');
     const second = readCopilotHooksConfig(root).then((value) => value, (error: unknown) => error);
     await Promise.resolve();
@@ -124,6 +124,7 @@ describe('Copilot hook document boundary', () => {
     expect(await first).toEqual({ version: 1, hooks: {} });
     expect(await second).toEqual({ version: 1, hooks: {} });
     expect(readsDuringRepair).toBe(0);
+    expect(await fsp.readdir(path.dirname(file))).toEqual(['hooks.json']);
   });
 
   it('serializes Windows case and separator aliases of the same hook file', async () => {
@@ -139,6 +140,7 @@ describe('Copilot hook document boundary', () => {
       await paused;
       contents = String(value);
     });
+    vi.spyOn(fsp, 'rename').mockResolvedValue(undefined);
     const first = readCopilotHooksConfig('C:\\Project');
     await started;
     read.mockClear();
@@ -173,7 +175,18 @@ describe('Copilot hook document boundary', () => {
     vi.spyOn(fsp, 'writeFile').mockRejectedValueOnce(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
     await expect(readCopilotHooksConfig(root)).rejects.toThrow(`Cannot repair legacy version-only Copilot hooks at ${file}`);
     expect(await fsp.readFile(file, 'utf8')).toBe(content);
+    expect(await fsp.readdir(path.dirname(file))).toEqual(['hooks.json']);
     expect(appLog).not.toHaveBeenCalled();
+    await expect(readCopilotHooksConfig(root)).resolves.toEqual({ version: 1, hooks: {} });
+  });
+
+  it('preserves the original and cleans up the temporary file when repair rename fails', async () => {
+    const content = '{"version":1}';
+    const { root, file } = await fixture(content);
+    vi.spyOn(fsp, 'rename').mockRejectedValueOnce(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    await expect(readCopilotHooksConfig(root)).rejects.toThrow(`Cannot repair legacy version-only Copilot hooks at ${file}`);
+    expect(await fsp.readFile(file, 'utf8')).toBe(content);
+    expect(await fsp.readdir(path.dirname(file))).toEqual(['hooks.json']);
     await expect(readCopilotHooksConfig(root)).resolves.toEqual({ version: 1, hooks: {} });
   });
 

@@ -1,6 +1,7 @@
 import { isCopilotHooksDocument, isCopilotClubhouseHookEntry, hasUnrecognizedCopilotCallback } from './copilot-hooks-document';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { appLog } from '../services/log-service';
 
 /** Where a moved legacy permissions file goes. Not `.json`, so Copilot doesn't read it. */
@@ -65,14 +66,24 @@ async function readCopilotHooksConfigUnlocked(file: string): Promise<Record<stri
 }
 
 async function repairLegacyVersionOnlyDocument(file: string, contents: string): Promise<Record<string, unknown> | null> {
+  const temporary = `${file}.clubhouse-repair-${randomUUID()}.tmp`;
   try {
     const now = await fsp.readFile(file, 'utf-8').catch((err: NodeJS.ErrnoException): null => {
       if (err.code === 'ENOENT') return null;
       throw err;
     });
     if (now !== contents) return readCopilotHooksConfigUnlocked(file);
-    await fsp.writeFile(file, JSON.stringify({ version: 1, hooks: {} }, null, 2), 'utf-8');
+    // The queue coordinates Clubhouse starts, not edits from external programs.
+    await fsp.writeFile(temporary, JSON.stringify({ version: 1, hooks: {} }, null, 2), { encoding: 'utf-8', flag: 'wx' });
+    await fsp.rename(temporary, file);
   } catch (err) {
+    await fsp.unlink(temporary).catch((cleanupError: NodeJS.ErrnoException) => {
+      if (cleanupError.code !== 'ENOENT') {
+        appLog('core:orchestrator', 'warn', 'Could not remove temporary Copilot hook repair file', {
+          meta: { file: temporary, error: cleanupError.message },
+        });
+      }
+    });
     throw new Error(`Cannot repair legacy version-only Copilot hooks at ${file}: ${err instanceof Error ? err.message : String(err)}. Fix file access or replace it with {"version":1,"hooks":{}}, then restart the agent.`);
   }
   appLog('core:orchestrator', 'warn', 'Repaired a version-only Copilot hook file left by pre-0.43 Clubhouse cleanup', { meta: { file } });

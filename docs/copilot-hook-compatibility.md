@@ -10,6 +10,9 @@ The exact data-free residue `{"version":1}` is also recovered automatically (#32
 
 Reads share the recovery lock, so another start cannot read an incomplete repair.
 Windows paths differing only in case or slash direction share that lock.
+Repairs use a same-directory temporary file and rename, so readers never see
+partially written JSON. Serialization is within Clubhouse only; an external
+program writing the file at the same instant is not coordinated with.
 
 | Runtime | Clubhouse hook server | Callback path and limits |
 | --- | --- | --- |
