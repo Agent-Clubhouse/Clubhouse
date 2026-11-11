@@ -191,7 +191,7 @@ async function restart(mode: AppUpdateMode, id: string): Promise<void> {
 export function answerAppUpdateRequest(requestId: string, allow: boolean, mode?: AppUpdateMode): GrantRequestAnswer {
   const row = peekGrantRequest(requestId);
   if (!row?.update || !request || request.requestId !== requestId || request.state !== 'pending_approval') {
-    return { ok: false, error: 'This request has expired or was already answered.' };
+    return { ok: false, error: 'This request has expired or was already answered.', reason: 'request_not_found' };
   }
   if (!allow) { cancelAppUpdate(requestId); return { ok: true }; }
   if (mode !== 'now' && mode !== 'when_idle') return { ok: false, error: 'Choose Restart now or Restart when idle to approve this update.' };

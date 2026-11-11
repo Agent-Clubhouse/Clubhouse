@@ -143,6 +143,25 @@ describe('human-approved Clubhouse updates', () => {
     expect(() => cancelAppUpdate('missing')).toThrow('update_request_not_found');
   });
 
+  it('returns the documented not-found refusal for the losing concurrent update answer', async () => {
+    const pending = await requestAppUpdate();
+    const command = {
+      version: 1 as const, epoch: 'e', commandId: 'c', type: 'grant.answer' as const,
+      requestId: pending.requestId, answer: 'allow_once' as const, updateMode: 'when_idle' as const,
+    };
+    const deps = { viewer: 'phone', assertAuthorized: vi.fn() };
+    const results = await Promise.allSettled([
+      runGrantCommand(command, places, deps),
+      runGrantCommand({ ...command, commandId: 'other' }, places, deps),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+      reason: { code: 'grant_request_not_found', statusCode: 404 },
+    });
+    expect(getAppUpdateStatus().request?.state).toBe('waiting_for_idle');
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+
   it('does not consume an update approval if phone authorization is revoked while loading its answer', async () => {
     const pending = await requestAppUpdate();
     const assertAuthorized = vi.fn().mockImplementationOnce(() => {}).mockImplementationOnce(() => { throw new Error('revoked'); });

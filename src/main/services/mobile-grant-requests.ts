@@ -170,6 +170,7 @@ export async function runGrantCommand(command: GrantCommand, places: GrantReques
   deps.assertAuthorized();
   const result = await answerGrantRequest(requestId, answer !== 'decline', updateMode, deps.assertAuthorized);
   if (result.ok === false) {
+    if (result.reason === 'request_not_found') throw new MobileControlError('grant_request_not_found', 404, 'rejected', GONE);
     // Put back when saving the permission failed, unless its agent went or asked again meanwhile.
     if (request.update || peekGrantRequest(requestId)) throw new MobileControlError('grant_answer_failed', 409, 'rejected', result.error);
     throw new MobileControlError('grant_request_not_found', 404, 'rejected', GONE);

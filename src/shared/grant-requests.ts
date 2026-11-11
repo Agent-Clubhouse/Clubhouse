@@ -52,7 +52,7 @@ export const GRANT_REQUEST_REASON_MAX = 500;
  */
 export const GRANT_REQUEST_DETAILS_MAX = 20_000;
 
-export type GrantRequestAnswer = { ok: true } | { ok: false; error: string };
+export type GrantRequestAnswer = { ok: true } | { ok: false; error: string; reason?: 'request_not_found' };
 
 /** The labels of the permissions a request needs. */
 export function grantRequestActionLabels(request: Pick<GrantRequest, 'actions'>): string[] {
