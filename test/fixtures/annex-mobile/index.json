@@ -60,6 +60,7 @@
     "dispatcher-group-chat.json",
     "dispatcher-off-routes.json",
     "dispatcher-off-states.json",
+    "dispatcher-requests.json",
     "dispatcher-routes.json",
     "dispatcher-settings.json",
     "frames-over-limit.json",

@@ -1093,13 +1093,14 @@ A held start's helper request has `requestedRouting:{provider,model,effort,diffi
 The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestrators in every project. It lives in its own folder under the Clubhouse base dir, which is no git repo, and is in no project, so it never appears in `projects`, `agents{}`, `GET /api/v1/projects` or `GET /api/v1/projects/:id/agents`. It is on by default in the new layout, unless the switch in Settings > Dispatcher is saved off. In the classic layout it is on only if that switch was saved on. The Clubhouse MCP always runs, so it never turns the Dispatcher off. Gated on `dispatcher.version >= 1` in capabilities:
 
 ```json
-"dispatcher":{"version":1,"enabled":false,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__",
+"dispatcher":{"version":1,"enabled":false,"flagOn":true,"requestsUnderWay":0,"newLayout":true,"projectId":"__dispatcher__",
  "snapshotField":"dispatcher","event":"dispatcher:changed","commands":["dispatcher.setEnabled","dispatcher.update","dispatcher.setModels","dispatcher.clearChat","dispatcher.forgetEverything"],
  "settings":{"version":1,"path":"/api/v1/mobile/dispatcher/settings"}}
 ```
 
 - **enabled**: it is on now.
 - **flagOn**: always `true`. It was `false` while Clubhouse MCP was off at app level, which can no longer happen. The experimental flag it once reported is gone.
+- **requestsUnderWay**: optional non-negative count of user requests handed off from the chat with no outcome back yet (#3261). Present on capabilities, the snapshot's `dispatcher` (when non-null), `dispatcher:changed` and the `dispatcher.setEnabled` result, whether enabled or off. Older desktops omit it; treat absence as zero. Older phones can ignore it.
 - **newLayout**: the desktop runs the New layout this session. The Dispatcher's view is in the new layout only, so turning it on needs it; one that is still on can always be turned off.
 - **settings**: present when the desktop has the [Dispatcher settings](#dispatcher-settings) route and its four commands, which `commands` also lists. Gate them on `settings.version >= 1`.
 
@@ -1108,7 +1109,7 @@ The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestr
 The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never created). While it is on:
 
 ```json
-"dispatcher":{"enabled":true,"flagOn":true,"projectId":"__dispatcher__",
+"dispatcher":{"enabled":true,"flagOn":true,"requestsUnderWay":0,"projectId":"__dispatcher__",
  "agent":{"id":"durable_dispatcher","projectId":"__dispatcher__","name":"Dispatcher","kind":"durable","isDispatcher":true,"color":"indigo",
   "emoji":null,"branch":null,"model":null,"orchestrator":"claude-code","freeAgentMode":true,"access":"full_access","icon":null,"status":"sleeping",
   "detailedStatus":null,"executionMode":null,"hasSession":true,"lastActivityAt":1800000000000}}
@@ -1116,9 +1117,11 @@ The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never 
 
 `agent` is the `agents[projectId][]` shape with `projectId: "__dispatcher__"` and `isDispatcher: true`, and no `orchestration` (its orchestration settings are locked). It is the Dispatcher you talk to (#3036). Since that change its `id` is a new one, and its conversation starts fresh: work on agents happens out of sight under the Dispatcher's name, and only this agent is ever listed. Its chat, agent routes and commands take this `id`, and a phone should not keep an older one. It is in `agentIcons` when it has an image icon and in `agentsMeta` while it runs. `GET /api/v1/mobile/agents/state` has a row for it (`projectId: "__dispatcher__"`, `isDispatcher: true`) while it is on.
 
+For the Dispatcher's display status, **Needs you**, **Error** and **Starting** take priority. Otherwise show **Working** while `requestsUnderWay > 0`, even if the visible chat is between turns or says Done. When the count returns to zero, use the chat's usual status. This count does not change `agent.status` or reveal the hidden work agent.
+
 ### Live changes
 
-`dispatcher:changed` is broadcast and buffered for `mobile:replay` whenever `enabled`, `flagOn` or the agent id change, from the desktop or a phone: `{"enabled":bool,"flagOn":bool,"agentId":"id"|null}` (`agentId` is null while it is off). A fresh `snapshot` follows it, and also follows any change to its config (its CLI or model changed on the desktop). Add or drop the Dispatcher from that snapshot.
+`dispatcher:changed` is broadcast and buffered for `mobile:replay` whenever `enabled`, `flagOn`, the agent id or `requestsUnderWay` change, from the desktop or a phone: `{"enabled":bool,"flagOn":bool,"agentId":"id"|null,"requestsUnderWay":number}` (`agentId` is null while it is off). The count is additive and optional for compatibility; no protocol version bump is needed. A fresh `snapshot` follows it, and also follows any change to its config (its CLI or model changed on the desktop). Add or drop the Dispatcher from that snapshot. See `dispatcher-requests.json` for request-only transitions with a sleeping chat.
 
 ### While it is off
 
@@ -1146,7 +1149,7 @@ Fixtures: `dispatcher-off-states.json` and `dispatcher-off-routes.json` for ever
 
 ### dispatcher.setEnabled
 
-`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId}`, as `dispatcher:changed`. Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `dispatcher_layout_off` (turning it on while the desktop runs the classic layout, unless its switch is already saved on). Turning on one that is on, or off one that is off, succeeds with the current state.
+`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId, requestsUnderWay}`, as `dispatcher:changed` (`requestsUnderWay` is optional on older desktops). Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `dispatcher_layout_off` (turning it on while the desktop runs the classic layout, unless its switch is already saved on). Turning on one that is on, or off one that is off, succeeds with the current state.
 
 ### Its agent
 

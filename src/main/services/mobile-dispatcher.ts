@@ -105,7 +105,7 @@ export function dispatcherShellProject(projectId: unknown): Project | undefined 
 
 /** `dispatcher.setEnabled`'s result, and the part of `dispatcher:changed` every phone reads. The agent id only while it is on. */
 export function dispatcherChange(state: DispatcherState = dispatcher.getDispatcherState()) {
-  return { enabled: state.enabled, flagOn: state.flagOn, agentId: state.enabled ? state.chatAgentId : null };
+  return { ...dispatcherSnapshotFlags(state), agentId: state.enabled ? state.chatAgentId : null };
 }
 export type MobileDispatcherChange = ReturnType<typeof dispatcherChange>;
 
@@ -133,10 +133,10 @@ export function dispatcherOffFields(state: DispatcherState, view: AgentView) {
   };
 }
 
-/** The snapshot's `enabled` and `flagOn`. `flagOn` is always true: the Clubhouse MCP always runs. */
-export function dispatcherSnapshotFlags() {
-  const { enabled, flagOn } = dispatcher.getDispatcherState();
-  return { enabled, flagOn };
+/** State shared by snapshots, change events and capabilities. `flagOn` is always true: the Clubhouse MCP always runs. */
+export function dispatcherSnapshotFlags(state: DispatcherState = dispatcher.getDispatcherState()) {
+  const { enabled, flagOn, requestsUnderWay } = state;
+  return { enabled, flagOn, requestsUnderWay };
 }
 
 /** Settings > Dispatcher from a phone (#3206): its read route and commands, beside dispatcher.setEnabled. */
@@ -146,7 +146,7 @@ export const DISPATCHER_SETTINGS_COMMANDS = ['dispatcher.update', 'dispatcher.se
 export function dispatcherCapability(view: AgentView = (config) => config) {
   const state = dispatcher.getDispatcherState();
   return {
-    version: 1 as const, enabled: state.enabled, flagOn: state.flagOn, newLayout: newChromeEnabled(),
+    version: 1 as const, ...dispatcherSnapshotFlags(state), newLayout: newChromeEnabled(),
     projectId: DISPATCHER_PROJECT_ID, snapshotField: 'dispatcher', event: DISPATCHER_CHANGED_EVENT, commands: ['dispatcher.setEnabled', ...DISPATCHER_SETTINGS_COMMANDS],
     settings: { version: 1 as const, path: '/api/v1/mobile/dispatcher/settings' },
     ...dispatcherOffFields(state, view),

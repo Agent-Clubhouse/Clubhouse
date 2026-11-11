@@ -41,6 +41,7 @@
         "newLayout": false,
         "offReason": "classic_layout",
         "projectId": "__dispatcher__",
+        "requestsUnderWay": 0,
         "running": false,
         "settings": {
           "path": "/api/v1/mobile/dispatcher/settings",
@@ -79,6 +80,7 @@
         "enabled": false,
         "flagOn": true,
         "offReason": "classic_layout",
+        "requestsUnderWay": 0,
         "running": false,
         "status": "sleeping"
       },
@@ -111,6 +113,7 @@
         "flagOn": true,
         "offReason": "classic_layout",
         "projectId": "__dispatcher__",
+        "requestsUnderWay": 0,
         "running": false,
         "status": "sleeping"
       }
@@ -154,6 +157,7 @@
         "newLayout": true,
         "offReason": "switched_off",
         "projectId": "__dispatcher__",
+        "requestsUnderWay": 0,
         "running": false,
         "settings": {
           "path": "/api/v1/mobile/dispatcher/settings",
@@ -192,6 +196,7 @@
         "enabled": false,
         "flagOn": true,
         "offReason": "switched_off",
+        "requestsUnderWay": 0,
         "running": false,
         "status": "sleeping"
       },
@@ -224,6 +229,7 @@
         "flagOn": true,
         "offReason": "switched_off",
         "projectId": "__dispatcher__",
+        "requestsUnderWay": 0,
         "running": false,
         "status": "sleeping"
       }

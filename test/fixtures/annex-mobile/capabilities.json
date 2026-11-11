@@ -92,6 +92,7 @@
         "flagOn": true,
         "newLayout": true,
         "projectId": "__dispatcher__",
+        "requestsUnderWay": 0,
         "settings": {
           "path": "/api/v1/mobile/dispatcher/settings",
           "version": 1
