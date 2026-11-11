@@ -33,6 +33,9 @@ export function broadcastAgentExit(agentId: string, exitCode: number, lastOutput
   }
   annexEventBus.emitPtyExit(agentId, exitCode);
   for (const fn of exitListeners) {
-    try { fn(agentId, exitCode, quickRun); } catch { /* ignore */ }
+    try {
+      if (quickRun) fn(agentId, exitCode, quickRun);
+      else fn(agentId, exitCode);
+    } catch { /* ignore */ }
   }
 }
