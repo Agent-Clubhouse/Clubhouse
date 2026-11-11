@@ -22,6 +22,19 @@ beforeEach(() => {
 });
 
 describe('Settings > Actions', () => {
+  it('offers the return event with a configurable absence threshold', async () => {
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByTestId('actions-new'));
+    const form = await screen.findByTestId('action-form');
+    fireEvent.change(within(form).getByLabelText('Runs'), { target: { value: 'event' } });
+    fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'app.returned' } });
+    const absence = within(form).getByLabelText('Away for (minutes)') as HTMLInputElement;
+    expect(absence.min).toBe('5');
+    expect(absence.placeholder).toBe('30');
+    expect(within(form).getAllByLabelText('Agent')).toHaveLength(1);
+    expect(within(form).getByText(/Relaunching Clubhouse does not count/)).toBeTruthy();
+  });
+
   it('shows remaining runs and the end time on a bounded action card', async () => {
     list = [action({ maxRuns: 5, runsUsed: 2, endsAt: new Date(2027, 0, 5, 9).getTime() })];
     render(<ActionsSettingsView />);

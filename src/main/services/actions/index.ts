@@ -8,7 +8,7 @@
  */
 
 import * as path from 'path';
-import { powerMonitor } from 'electron';
+import { app, BrowserWindow, powerMonitor } from 'electron';
 import {
   ActionError,
   assertActionInput,
@@ -27,7 +27,7 @@ import type { Project } from '../../../shared/types';
 import type { MessageDelivery } from '../../../shared/chat';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { isAgentRunning } from '../agent-system';
-import { onAppEvent } from '../app-event-bus';
+import { onAppEvent, publishAppEvent } from '../app-event-bus';
 import { knownAgent, knownAgents } from '../app-event-sources';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
 import { localConnectionWakeOn } from '../connection-grants-store';
@@ -47,6 +47,7 @@ import { matchProjectRef } from './project-ref';
 import { createGrantRights } from './rights';
 import { grantsFromFacts } from '../agent-grants-service';
 import { actionMessage, createStepRunner, type DispatcherStepDelivery } from './steps';
+import { ActionPresence } from './presence';
 
 export { ActionError };
 
@@ -197,9 +198,64 @@ export function observeActions(fn: (o: EngineObservation) => void): () => void {
 }
 
 let engine: ActionsEngine | null = null;
+let presence: ActionPresence | null = null;
 let changeTimer: ReturnType<typeof setTimeout> | null = null;
 
+function syncPresence(): void {
+  presence?.configure(engine?.list().flatMap((a) =>
+    a.enabled && a.trigger.kind === 'event' && a.trigger.event === 'app.returned'
+      ? [{ id: a.id, absenceMinutes: a.trigger.absenceMinutes }] : []) ?? []);
+}
+
+function createPresence(): ActionPresence {
+  let idleFailed = false;
+  return new ActionPresence({
+    clock: { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) },
+    lastUse: () => engine?.lastUse(),
+    used: (at) => engine?.recordUse(at),
+    returned: (actionIds) => publishAppEvent({ type: 'app.returned', actionIds }),
+    signals: {
+      focused: () => BrowserWindow.getFocusedWindow() !== null,
+      idleSeconds: () => {
+        try {
+          const idle = powerMonitor.getSystemIdleTime();
+          idleFailed = false;
+          return idle;
+        } catch (err) {
+          // telemetry-exempt: logged; only explicit lock/suspend signals can qualify an absence
+          if (!idleFailed) appLog('core:actions', 'warn', 'Could not read system idle time for return actions', { meta: { error: err instanceof Error ? err.message : String(err) } });
+          idleFailed = true;
+          return null;
+        }
+      },
+      listen: (listener) => {
+        const focus = () => listener('focus');
+        const blur = () => listener('blur');
+        app.on('browser-window-focus', focus);
+        app.on('browser-window-blur', blur);
+        const lock = () => listener('lock');
+        const unlock = () => listener('unlock');
+        const suspend = () => listener('suspend');
+        const resume = () => listener('resume');
+        powerMonitor.on('lock-screen', lock);
+        powerMonitor.on('unlock-screen', unlock);
+        powerMonitor.on('suspend', suspend);
+        powerMonitor.on('resume', resume);
+        return () => {
+          app.removeListener('browser-window-focus', focus);
+          app.removeListener('browser-window-blur', blur);
+          powerMonitor.removeListener('lock-screen', lock);
+          powerMonitor.removeListener('unlock-screen', unlock);
+          powerMonitor.removeListener('suspend', suspend);
+          powerMonitor.removeListener('resume', resume);
+        };
+      },
+    },
+  });
+}
+
 function broadcastChanged(): void {
+  syncPresence();
   // Several changes in one tick reach the UI once.
   if (changeTimer) return;
   changeTimer = setTimeout(() => {
@@ -293,6 +349,7 @@ export async function startActions(): Promise<void> {
   if (engine) return;
   await refreshProjects();
   engine = createEngine();
+  presence = createPresence();
   unsubs.push(projectStore.onProjectsChanged(() => { void refreshProjects(); }));
   unsubs.push(onAppEvent((event) => {
     // Project events need the new list first, so names and ids resolve.
@@ -306,10 +363,13 @@ export async function startActions(): Promise<void> {
   powerMonitor.on('resume', onResume);
   unsubs.push(() => powerMonitor.removeListener('resume', onResume));
   engine.start();
+  syncPresence();
   appLog('core:actions', 'info', 'Actions started', { meta: { count: engine.list().length } });
 }
 
 export function stopActions(): void {
+  presence?.stop();
+  presence = null;
   for (const u of unsubs) u();
   unsubs = [];
   engine?.stop();

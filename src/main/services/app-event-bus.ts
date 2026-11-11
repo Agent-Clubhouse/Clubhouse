@@ -42,6 +42,8 @@ export type AppEvent = Stamp & (
   | { type: 'git.branch_switched'; repoPath: string; branch: string; previousBranch?: string; agentId?: string }
   | { type: 'git.remote_updated'; repoPath: string; branch: string; remote: string; agentId?: string }
   | { type: 'app.started' }
+  /** Only qualifying subscriptions, never absence timestamps or duration. */
+  | { type: 'app.returned'; actionIds: string[] }
   | { type: 'project.added'; projectId: string; projectPath: string }
   | { type: 'project.removed'; projectId: string; projectPath: string }
 );

@@ -383,6 +383,21 @@ describe('one-time actions', () => {
 });
 
 describe('events', () => {
+  it('delivers returns only to qualifying actions without absence details, persisting last use', async () => {
+    const { engine, event, history, saved } = setup({ state: { nextAt: {}, waits: [], lastUse: START - MIN } });
+    engine.start();
+    const a = engine.create({ trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' } }, steps: [notify] }, user);
+    const b = engine.create({ trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 60 }, steps: [notify] }, user);
+    engine.recordUse(START);
+    expect(engine.lastUse()).toBe(START);
+    expect(saved.state.lastUse).toBe(START);
+    event({ type: 'app.returned', actionIds: [a.id] });
+    await flush();
+    expect(history(a.id)).toMatchObject([{ trigger: { detail: 'Clubhouse returns to use' } }]);
+    expect(history(b.id)).toEqual([]);
+    expect(JSON.stringify(history(a.id))).not.toContain('absence');
+  });
+
   it('runs on a matching agent event, with a plain history line', async () => {
     const { engine, event, history } = setup();
     engine.start();

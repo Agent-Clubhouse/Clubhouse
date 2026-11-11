@@ -50,6 +50,7 @@ const ALLOWED_FILES: Record<string, string> = {
   // The health sampler (#2291) only asks whether any Clubhouse window has
   // focus, to pick its sampling mode; it sends nothing to a window.
   'telemetry/health.ts': 'getFocusedWindow checks whether any window is focused; no IPC',
+  'services/actions/index.ts': 'getFocusedWindow checks app focus for return triggers; it does not target IPC at one window',
 
   // getAllWindows()[0] used as dialog parent for user confirmation before
   // executing agent-supplied JavaScript in browser widgets (SEC-04).

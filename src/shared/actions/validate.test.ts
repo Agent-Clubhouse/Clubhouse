@@ -5,6 +5,17 @@ import { HISTORY_MAX_AGE_MS, type ActionRun } from './types';
 const schedule = { kind: 'schedule', preset: 'daily', cron: '0  9 * * *', missed: 'once' };
 
 describe('validateActionInput', () => {
+  it('validates a return threshold and keeps the optional default absent', () => {
+    const trigger = { kind: 'event', event: 'app.returned', source: { kind: 'app' } };
+    const input = { trigger, steps: [{ kind: 'notify', text: 'hi' }] };
+    expect(validateActionInput(input)).toMatchObject({ ok: true, value: { trigger } });
+    expect(validateActionInput({ ...input, trigger: { ...trigger, absenceMinutes: 5 } })).toMatchObject({ ok: true, value: { trigger: { absenceMinutes: 5 } } });
+    for (const absenceMinutes of [0, 4, 5.5, '30', null, NaN]) {
+      expect(validateActionInput({ ...input, trigger: { ...trigger, absenceMinutes } }).ok).toBe(false);
+    }
+    expect(validateActionInput({ ...input, trigger: { ...trigger, event: 'app.started', absenceMinutes: 30 } }).ok).toBe(false);
+  });
+
   it('accepts optional recurring limits and rejects invalid limits with invalid_input', () => {
     const input = { trigger: schedule, steps: [{ kind: 'notify', text: 'hi' }] };
     const now = 100_000;

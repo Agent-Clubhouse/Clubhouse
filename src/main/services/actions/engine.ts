@@ -70,6 +70,8 @@ export interface EngineState {
   /** The next schedule time per schedule action. */
   nextAt: Record<string, number>;
   waits: PersistedWait[];
+  /** Last observed app use. A relaunch never replays a return. */
+  lastUse?: number;
 }
 
 export interface EngineStorage {
@@ -216,6 +218,7 @@ interface Occurrence {
   branch?: string;
   /** For the history line: "release-lead goes to sleep". */
   subject: string;
+  actionIds?: string[];
 }
 
 /** Whether two owners are the same person, Dispatcher, agent or Clubhouse. */
@@ -305,7 +308,7 @@ export class ActionsEngine {
     this.started = true;
     const loaded = this.deps.storage.load();
     for (const a of loaded.actions) this.actions.set(a.id, a);
-    this.state = { nextAt: { ...loaded.state.nextAt }, waits: [...loaded.state.waits] };
+    this.state = { ...loaded.state, nextAt: { ...loaded.state.nextAt }, waits: [...loaded.state.waits] };
     // Waits for actions that are gone or off are dropped.
     this.state.waits = this.state.waits.filter((w) => this.actions.get(w.actionId)?.enabled);
     for (const id of Object.keys(this.state.nextAt)) {
@@ -356,6 +359,13 @@ export class ActionsEngine {
 
   isRunning(id: string): boolean {
     return this.running.has(id);
+  }
+
+  lastUse(): number | undefined { return this.state.lastUse; }
+
+  recordUse(at: number): void {
+    this.state.lastUse = at;
+    this.saveState();
   }
 
   // ── Writes ──
@@ -602,7 +612,7 @@ export class ActionsEngine {
   }
 
   private saveState(): void {
-    this.deps.storage.saveState({ nextAt: { ...this.state.nextAt }, waits: [...this.state.waits] });
+    this.deps.storage.saveState({ ...this.state, nextAt: { ...this.state.nextAt }, waits: [...this.state.waits] });
   }
 
   // ── Clock ──
@@ -715,6 +725,7 @@ export class ActionsEngine {
       for (const action of this.list()) {
         if (!action.enabled || action.trigger.kind !== 'event') continue;
         if (action.trigger.event !== occ.kind) continue;
+        if (occ.actionIds && !occ.actionIds.includes(action.id)) continue;
         if (!this.matchesSource(action.trigger, occ)) continue;
         this.onMatch(action, action.trigger, occ, chain);
       }
@@ -771,6 +782,8 @@ export class ActionsEngine {
       }
       case 'app.started':
         return [{ kind: 'app.started', subject: 'Clubhouse' }];
+      case 'app.returned':
+        return [{ kind: 'app.returned', subject: 'Clubhouse', actionIds: event.actionIds }];
       case 'project.added':
       case 'project.removed':
         return [{ kind: event.type, projectId: event.projectId, subject: f.projectName(event.projectId) ?? 'A project' }];
