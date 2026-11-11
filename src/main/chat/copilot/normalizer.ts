@@ -106,13 +106,15 @@ export function copilotPermissionView(request: PermissionRequest): CopilotPermis
 /** The contract code for a `session.error`. The "not logged in" message has no code of its own (docs/copilot-sdk-driver.md "Fallback"). */
 const COPILOT_UNREACHABLE = /\b(?:ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|ENETUNREACH)\b|fetch failed|socket hang up|network error|service unavailable|overloaded/i;
 
-export function copilotErrorCode(data: { errorType?: string; statusCode?: number; message?: string }): ChatErrorCode {
+export function copilotErrorCode(data: { errorType?: string; errorCode?: string; statusCode?: number; message?: string }): ChatErrorCode {
   const status = data.statusCode;
   if (status === 401 || status === 403 || /no github oauth token|not authenticated|not logged in/i.test(data.message ?? '')) return 'auth_required';
   if (status === 429 || /rate.?limit|quota/i.test(data.errorType ?? '')) return 'rate_limited';
   if (/context/i.test(data.errorType ?? '')) return 'context_overflow';
   // An outage or no network: the service, not the session.
   if ((status !== undefined && status >= 500) || COPILOT_UNREACHABLE.test(`${data.errorType ?? ''} ${data.message ?? ''}`)) return 'service_unavailable';
+  if (data.errorType === 'empty_response' || data.errorCode === 'empty_response'
+    || /^No response was returned\.(?: Send your message again to retry\.)?$/i.test(data.message?.trim() ?? '')) return 'empty_response';
   return 'unknown';
 }
 

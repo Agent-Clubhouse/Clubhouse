@@ -40,6 +40,20 @@ describe('copilot normalizer', () => {
     expect(copilotErrorCode({ message: 'boom' })).toBe('unknown');
   });
 
+  it('recognizes an empty response by its SDK type, code, or older message (#3284)', () => {
+    expect(copilotErrorCode({ errorType: 'empty_response', message: 'No answer' })).toBe('empty_response');
+    expect(copilotErrorCode({ errorCode: 'empty_response', errorType: 'query', message: 'No answer' })).toBe('empty_response');
+    expect(copilotErrorCode({ errorType: 'query', message: 'No response was returned. Send your message again to retry.' })).toBe('empty_response');
+    expect(copilotErrorCode({ message: 'No response was returned.' })).toBe('empty_response');
+    expect(copilotErrorCode({ message: 'No response from the server' })).toBe('unknown');
+    expect(copilotErrorCode({ message: 'Provider error: No response was returned.' })).toBe('unknown');
+    expect(copilotErrorCode({ message: 'No response was returned. Invalid provider configuration.' })).toBe('unknown');
+    expect(copilotErrorCode({ statusCode: 401, errorCode: 'empty_response' })).toBe('auth_required');
+    expect(copilotErrorCode({ statusCode: 429, errorType: 'empty_response' })).toBe('rate_limited');
+    expect(copilotErrorCode({ errorType: 'context_limit', message: 'No response was returned.' })).toBe('context_overflow');
+    expect(copilotErrorCode({ statusCode: 503, message: 'No response was returned.' })).toBe('service_unavailable');
+  });
+
   it('classifies an outage or no network as the service, not the session (#3240)', () => {
     expect(copilotErrorCode({ statusCode: 500 })).toBe('service_unavailable');
     expect(copilotErrorCode({ statusCode: 503, message: 'upstream' })).toBe('service_unavailable');

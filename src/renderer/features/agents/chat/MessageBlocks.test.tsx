@@ -5,8 +5,8 @@ import type { RoutedMessagePart } from '../../../../shared/chat';
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
-import { reduceChatEvent, type AgentMessageItem, type UserMessageItem } from '../../../stores/chatStore';
-import { AgentMessage, isLongMessage, LONG_MESSAGE_CHARS, UserMessage } from './MessageBlocks';
+import { reduceChatEvent, type AgentMessageItem, type NoticeItem, type TurnEndItem, type UserMessageItem } from '../../../stores/chatStore';
+import { AgentMessage, isLongMessage, LONG_MESSAGE_CHARS, NoticeRow, TurnFooter, UserMessage } from './MessageBlocks';
 import { createTranscriptExpansionStore, TranscriptExpansionProvider } from './transcript-expansion';
 
 function item(over: Partial<UserMessageItem>): UserMessageItem {
@@ -222,6 +222,16 @@ describe('isLongMessage', () => {
     expect(isLongMessage('one line\n')).toBe(false);
     expect(isLongMessage('two\nlines')).toBe(true);
   });
+});
+
+it('shows an empty response as a quiet notice rather than a failed turn (#3284)', () => {
+  const notice: NoticeItem = { id: 'notice:s:1', sessionId: 's', seq: 1, ts: 1, kind: 'notice', level: 'info', code: 'empty_response', message: 'No response' };
+  const end: TurnEndItem = { id: 'end:s:2', sessionId: 's', seq: 2, ts: 2, kind: 'turn_end', stopReason: 'end_turn' };
+  render(<><NoticeRow item={notice} /><TurnFooter item={end} turnNumber={1} capabilities={null} /></>);
+  expect(screen.getByTestId('chat-notice').textContent).toBe('No response');
+  expect(screen.getByTestId('chat-notice').className).toContain('text-ctp-overlay1');
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.queryByText('Turn failed')).toBeNull();
 });
 
 describe('AgentMessage', () => {

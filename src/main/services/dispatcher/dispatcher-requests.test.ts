@@ -160,6 +160,27 @@ describe('starting a request', () => {
 });
 
 describe('following the Dispatcher\'s turns (#3237)', () => {
+  it('leaves requests under way after an empty acknowledgement, including a hand-off still completing (#3284)', () => {
+    const active = handOff('have api-lead fix lint');
+    const begun = beginRequest('have ui-lead fix types', now);
+    if (begun.kind !== 'new') throw new Error(begun.kind);
+    const mark = workTurnMark();
+    started();
+    noteWorkEvent(event('notice', { level: 'info', code: 'empty_response', message: 'No response' }), now);
+    ended();
+    noteHandedOff(begun.request.id, 'prompt', mark, now);
+    for (const id of [active, begun.request.id]) {
+      expect(getRequest(id)).toMatchObject({ status: 'under_way', turn: 'past' });
+    }
+    expect(ended$).not.toHaveBeenCalled();
+    settleRequest(active, 'answer', now);
+    expect(getRequest(active)?.status).toBe('done');
+    checkRequestTimeouts(now + QUIET_TIMEOUT_MS);
+    expect(getRequest(begun.request.id)?.status).toBe('timed_out');
+    expect(getRequest(active)?.status).toBe('done');
+    expect(ended$).toHaveBeenCalledWith(expect.objectContaining({ id: begun.request.id }), 'timed_out', undefined);
+  });
+
   it('a request read in a turn that ends well stays under way until its outcome comes back', () => {
     const id = handOff('have api-lead fix lint');
     started();

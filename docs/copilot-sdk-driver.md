@@ -63,6 +63,7 @@ SDK 1.0.28 with CLI 1.0.105 and 1.0.106-2. "Since" is the oldest version where t
 
 These matter for the normalizer:
 
+- **An empty final answer is a neutral no-op (#3284).** Recognize `empty_response` in `session.error`'s string `errorType` or `errorCode`, or the older runtime message `No response was returned. Send your message again to retry.`. Emit an informational `empty_response` notice saying `No response` and end the turn normally, keeping the provider diagnostic in the log. Dispatcher requests stay under way and the turn does not count toward session quarantine. Task-result messages still start turns as before.
 - **A subagent's events carry `agentId`, and include its own `session.model_change` and `user.message`.** Without a filter, the chip shows the subagent's model. Tie them to the `task` call through `subagent.started`.
 - **A queued message arrives as `user.message` with `delivery: "queued"`.** No idle fires between it and the turn before.
 - **`exit_plan_mode` always offers `autopilot` among its actions**, whatever the model asked for. Approving picks `interactive`.

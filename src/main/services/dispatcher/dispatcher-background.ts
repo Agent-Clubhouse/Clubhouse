@@ -124,7 +124,7 @@ export function syncDispatcherBackground(): BackgroundActionSpec[] {
 // ── Upkeep ─────────────────────────────────────────────────────────────────
 
 interface UpkeepState {
-  /** When upkeep last ran. Pages changed after this are the next run's to check. */
+  /** When upkeep finished. Pages changed after this are the next run's to check. */
   lastCheckedAt?: number;
 }
 
@@ -210,11 +210,10 @@ export function runDispatcherUpkeep(): Promise<{ send: string } | { skip: string
     let report: UpkeepReport;
     let changed: MemoryPage[];
     try {
-      const before = await listMemoryPages(root);
       report = await runMemoryUpkeep(new Date(now), { root });
-      const after = new Set((await listMemoryPages(root)).map((p) => p.page));
-      changed = before.filter((p) => p.mtimeMs > since && reviewable(p) && after.has(p.page));
-      await writeFileAtomic(deps.stateFile(), `${JSON.stringify({ lastCheckedAt: now } satisfies UpkeepState)}\n`);
+      const checkedAt = deps.now();
+      changed = (await listMemoryPages(root)).filter((p) => p.mtimeMs > since && reviewable(p));
+      await writeFileAtomic(deps.stateFile(), `${JSON.stringify({ lastCheckedAt: checkedAt } satisfies UpkeepState)}\n`);
     } catch (err) {
       recordMemoryUpkeep({ outcome: 'error' });
       throw err;
