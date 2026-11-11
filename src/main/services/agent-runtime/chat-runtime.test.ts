@@ -77,6 +77,187 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('held message diagnostics (#3297)', () => {
+  const minute = 60_000;
+  const runtimes: ChatAgentRuntime[] = [];
+  const logs = (message: string) => vi.mocked(appLog).mock.calls
+    .filter(([ns, , text]) => ns === 'core:chat' && text === message)
+    .map(([, , , opts]) => opts?.meta);
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(0);
+    vi.mocked(appLog).mockClear();
+    runtimes.length = 0;
+  });
+
+  afterEach(async () => {
+    for (const runtime of runtimes) await runtime.stop();
+  });
+
+  async function running(extra: Partial<ConstructorParameters<typeof ChatAgentRuntime>[0]> = {}) {
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
+    const { runtime } = makeRuntime(driver, { now: Date.now, ...extra });
+    runtimes.push(runtime);
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', turnId: 'held-turn', data: {} });
+    await flush();
+    return { runtime, driver };
+  }
+
+  it('logs each enqueue with source, depth and turn age, then the actual dispatch wait', async () => {
+    const { runtime, driver } = await running();
+    await vi.advanceTimersByTimeAsync(2 * minute);
+    const action = await runtime.sendMessage('private action text', { source: 'action', delivery: 'queued' });
+    await runtime.sendMessage('private user text', { source: 'user' });
+    await runtime.sendMessage('private helper text', { source: 'mcp' });
+    await runtime.sendMessage('another private helper text', { source: 'mcp' });
+    expect(logs('Chat message queued')).toMatchObject([
+      { agentId: 'agent-1', source: 'action', queueDepth: 1, turnAgeMs: 2 * minute, state: 'running', turnRunning: true },
+      { source: 'user', queueDepth: 2 },
+      { source: 'mcp', queueDepth: 3, messageCount: 1 },
+      { source: 'mcp', queueDepth: 3, messageCount: 2 },
+    ]);
+    await vi.advanceTimersByTimeAsync(3 * minute);
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(logs('Queued chat message dispatched')).toEqual([expect.objectContaining({
+      messageId: action.messageId, source: 'action', queueDepth: 2, waitedMs: 3 * minute, state: 'idle',
+    })]);
+    expect(driver.last.sent).toHaveLength(1);
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('private');
+  });
+
+  it.each(['clearContext', 'stop', 'process_exit', 'abandon'] as const)('logs losses and cancels held timers on %s', async (how) => {
+    const { runtime, driver } = await running();
+    await runtime.sendMessage('private scheduled prompt', { source: 'action', delivery: 'queued' });
+    await runtime.sendMessage('private helper update', { source: 'mcp' });
+    await vi.advanceTimersByTimeAsync(minute);
+    await runtime.sendMessage('private merged helper update', { source: 'mcp' });
+    if (how === 'process_exit') driver.last.exit();
+    else await runtime[how]();
+    await flush();
+    expect(logs('Queued chat message dropped')).toMatchObject([
+      { source: 'action', waitedMs: minute, reason: how === 'clearContext' ? 'clearContext' : 'session_close' },
+      { source: 'mcp', waitedMs: minute, messageCount: 2, reason: how === 'clearContext' ? 'clearContext' : 'session_close' },
+    ]);
+    expect(logs('Chat session closed with held messages')).toEqual(how === 'clearContext' ? [] : [expect.objectContaining({
+      turnRunning: true, turnId: 'held-turn', turnAgeMs: minute, state: 'running',
+      queueDepth: 2, messageCount: 3, sources: ['action', 'mcp'], oldestAgeMs: minute,
+      reason: how === 'stop' ? 'stopped' : how === 'abandon' ? 'fallback' : 'process_exit',
+    })]);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('private');
+  });
+
+  it('warns at the oldest-message threshold with only active tool ids and names, never titles or inputs', async () => {
+    const { runtime, driver } = await running({ systemPrompt: 'private system prompt' });
+    driver.last.emit({ type: 'tool_call', data: {
+      toolCallId: 'shell-1', toolName: 'bash', kind: 'execute', status: 'in_progress',
+      title: 'private command title', rawInput: { command: 'private command arguments' },
+    } });
+    for (const status of ['completed', 'failed', 'cancelled'] as const) {
+      driver.last.emit({ type: 'tool_call', data: { toolCallId: status, toolName: 'finished_tool', kind: 'other', status: 'pending', title: 'private title' } });
+      driver.last.emit({ type: 'tool_call_update', data: { toolCallId: status, status } });
+    }
+    driver.last.emit({ type: 'tool_call', data: { toolCallId: 'unknown', kind: 'other', status: 'pending', title: 'private fallback title' } });
+    driver.last.emit({ type: 'session_state', data: { state: 'waiting_input' } });
+    await flush();
+    await runtime.sendMessage('private message content', { source: 'action', delivery: 'queued' });
+    await vi.advanceTimersByTimeAsync(10 * minute - 1);
+    expect(logs('Chat messages still held')).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(logs('Chat messages still held')).toEqual([expect.objectContaining({
+      queueDepth: 1, messageCount: 1, sources: ['action'], oldestAgeMs: 10 * minute,
+      turnAgeMs: 10 * minute, state: 'waiting_input',
+      inFlightTools: [{ toolCallId: 'shell-1', toolName: 'bash' }, { toolCallId: 'unknown' }],
+    })]);
+    expect(vi.mocked(appLog).mock.calls.find(([, , text]) => text === 'Chat messages still held')?.[1]).toBe('warn');
+    driver.last.emit({ type: 'tool_call_update', data: { toolCallId: 'shell-1', status: 'completed' } });
+    driver.last.emit({ type: 'tool_call_update', data: { toolCallId: 'unknown', status: 'cancelled' } });
+    await flush();
+    await vi.advanceTimersByTimeAsync(10 * minute);
+    expect(logs('Chat messages still held').at(-1)).toMatchObject({ inFlightTools: [] });
+    await runtime.stop();
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('private');
+  });
+
+  it('warns at the turn threshold even when the oldest item is younger, with no timer before enqueue', async () => {
+    const { runtime } = await running();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(25 * minute);
+    await runtime.sendMessage('private action text', { source: 'action', delivery: 'queued' });
+    await vi.advanceTimersByTimeAsync(5 * minute - 1);
+    expect(logs('Chat messages still held')).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(logs('Chat messages still held')).toMatchObject([{ turnAgeMs: 30 * minute, oldestAgeMs: 5 * minute }]);
+  });
+
+  it('rate limits across new enqueues and empty queues, and stops its timer after removal', async () => {
+    const { runtime } = await running();
+    await vi.advanceTimersByTimeAsync(31 * minute);
+    await runtime.sendMessage('private first', { source: 'action', delivery: 'queued' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(logs('Chat messages still held')).toHaveLength(1);
+    await runtime.removeQueued();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(logs('Queued chat message dropped')).toMatchObject([{ reason: 'removed', waitedMs: 0 }]);
+    await runtime.sendMessage('private second', { source: 'action', delivery: 'queued' });
+    await vi.advanceTimersByTimeAsync(9 * minute);
+    await runtime.sendMessage('private third', { source: 'user' });
+    expect(logs('Chat messages still held')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(minute);
+    expect(logs('Chat messages still held')).toHaveLength(2);
+    await runtime.removeQueued();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60 * minute);
+    expect(logs('Chat messages still held')).toHaveLength(2);
+  });
+
+  it('cancels the timer when the last queued item dispatches and forgets tools at turn end', async () => {
+    const { runtime, driver } = await running();
+    driver.last.emit({ type: 'tool_call', data: { toolCallId: 'old', toolName: 'bash', title: 'private', kind: 'execute', status: 'in_progress' } });
+    await flush();
+    await runtime.sendMessage('private first', { source: 'action', delivery: 'queued' });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(vi.getTimerCount()).toBe(0);
+    driver.last.emit({ type: 'turn_started', data: {} });
+    await flush();
+    await runtime.sendMessage('private second', { source: 'user' });
+    await vi.advanceTimersByTimeAsync(10 * minute);
+    expect(logs('Chat messages still held')).toMatchObject([{ inFlightTools: [] }]);
+  });
+
+  it('logs a failed dispatch without leaking an error containing prompt content', async () => {
+    const { runtime, driver } = await running();
+    await runtime.sendMessage('private message', { source: 'action', delivery: 'queued' });
+    vi.spyOn(driver.last, 'send').mockRejectedValueOnce(new Error('private prompt echoed by driver'));
+    await vi.advanceTimersByTimeAsync(minute);
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(logs('Queued chat message dropped')).toMatchObject([{ source: 'action', waitedMs: minute, reason: 'send_failed' }]);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('private');
+  });
+
+  it('logs a message discarded during the pre-prompt hook exactly once under its old session', async () => {
+    let release!: () => void;
+    const { runtime, driver } = await running({ beforePrompt: () => new Promise((resolve) => { release = resolve; }) });
+    const sessionId = runtime.getSessionId();
+    await runtime.sendMessage('private old prompt', { source: 'user' });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    await runtime.clearContext();
+    release();
+    await flush();
+    expect(logs('Queued chat message dropped')).toEqual([expect.objectContaining({ sessionId, reason: 'clearContext' })]);
+    expect(logs('Queued chat message dispatched')).toEqual([]);
+    expect(driver.last.sent).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
 describe('ChatAgentRuntime concealed tools (#3036)', () => {
   it('never writes or publishes a concealed call or its updates, with no gaps in seq', async () => {
     const remove = registerConcealedTools((id) => (id === 'agent-1' ? new Set(['start_work']) : null));

@@ -73,6 +73,9 @@ export function formatIdle(ms: number): string {
 const BEFORE_PROMPT_TIMEOUT_MS = 5000;
 /** Chat permission requests wait for the user; the queue entry only needs to outlive them. */
 const CHAT_PERMISSION_QUEUE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const HELD_MESSAGE_WARNING_MS = 10 * 60 * 1000;
+const HELD_TURN_WARNING_MS = 30 * 60 * 1000;
+const HELD_WARNING_INTERVAL_MS = 10 * 60 * 1000;
 
 const TURN_SCOPED: ReadonlySet<ChatEvent['type']> = new Set([
   'turn_started', 'turn_ended', 'user_message', 'agent_message_chunk', 'agent_message',
@@ -158,10 +161,13 @@ interface QueuedMessage {
   trace?: ChatTraceContext;
   messageId: string;
   source: MessageSource;
+  queuedAt: number;
   parts: ContentBlock[][];
   /** The system prompt, for a driver that can't pass it natively, sent ahead of the first message. */
   preamble: ContentBlock[];
 }
+
+type QueueDropReason = 'removed' | 'clearContext' | 'session_close' | 'replace' | 'send_failed';
 
 interface PendingPermission {
   chatRequestId: string;
@@ -195,6 +201,11 @@ export class ChatAgentRuntime implements AgentRuntime {
   private pendingTraceAssigned = false;
   private turnTrace?: ChatTraceContext;
   private readonly queued: QueuedMessage[] = [];
+  /** Shifted out of the queue, but still waiting for the pre-prompt hook. */
+  private pendingDispatch: QueuedMessage | undefined;
+  private heldWarningTimer: ReturnType<typeof setTimeout> | undefined;
+  private lastHeldWarningAt: number | undefined;
+  private readonly inFlightTools = new Map<string, string | undefined>();
   private publishedQueueState = { queuedMessageIds: [] as string[], queueStateSeq: 0 };
   /** drainQueue is sending the next queued item: the turn it starts hasn't begun yet. */
   private draining = false;
@@ -414,7 +425,21 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.pendingTraceAssigned = false;
         this.turnId = draft.turnId ?? this.newId();
         this.turnStartedAt = this.now();
+        this.inFlightTools.clear();
+        this.armHeldWarning();
         this.clearIdleTimer();
+        break;
+      case 'tool_call':
+        if (draft.data.status === 'pending' || draft.data.status === 'in_progress') {
+          this.inFlightTools.set(draft.data.toolCallId, draft.data.toolName);
+        } else {
+          this.inFlightTools.delete(draft.data.toolCallId);
+        }
+        break;
+      case 'tool_call_update':
+        if (draft.data.status === 'completed' || draft.data.status === 'failed' || draft.data.status === 'cancelled') {
+          this.inFlightTools.delete(draft.data.toolCallId);
+        }
         break;
       case 'session_state':
         this.state = draft.data.state;
@@ -448,6 +473,8 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.turnTrace = undefined;
         this.turnId = undefined;
         this.turnStartedAt = null;
+        this.inFlightTools.clear();
+        this.armHeldWarning();
         await this.setState('idle');
         await this.drainQueue();
         if (this.state === 'idle') this.armIdleTimer();
@@ -497,6 +524,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async end(reason: SessionEndReason, exitCode: number, message?: string): Promise<void> {
     if (this.ended) return;
     this.ended = true;
+    this.discardQueue('session_close', reason);
+    this.inFlightTools.clear();
     this.clearIdleTimer();
     this.settleAllPermissions();
     // Drivers that never echo leave their keys behind; nothing can echo after the end.
@@ -606,6 +635,8 @@ export class ChatAgentRuntime implements AgentRuntime {
       const tail = this.queued[this.queued.length - 1];
       if (opts.source === 'mcp' && tail?.source === 'mcp') {
         tail.parts.push(blocks);
+        this.logQueueChange('queued', tail);
+        this.armHeldWarning();
         await this.emit({
           type: 'user_message',
           data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued', queuedWith: tail.messageId },
@@ -613,7 +644,10 @@ export class ChatAgentRuntime implements AgentRuntime {
         return { delivery: 'queued', messageId: tail.messageId };
       }
       const preamble = this.withSystemPrompt([], caps);
-      this.queued.push({ messageId, source: opts.source, parts: [blocks], preamble, trace: traceContext });
+      const item: QueuedMessage = { messageId, source: opts.source, queuedAt: this.now(), parts: [blocks], preamble, trace: traceContext };
+      this.queued.push(item);
+      this.logQueueChange('queued', item);
+      this.armHeldWarning();
       // Written together, so no turn_started falls between the message and the event that says the runtime holds it.
       await Promise.all([
         this.emit({ type: 'user_message', data: { messageId, ...correlation, content: blocks, source: opts.source, delivery: 'queued' } }),
@@ -656,12 +690,15 @@ export class ChatAgentRuntime implements AgentRuntime {
     const wanted = messageIds ? new Set(messageIds) : undefined;
     const removed: string[] = [];
     for (let i = this.queued.length - 1; i >= 0; i--) {
-      const { messageId } = this.queued[i];
+      const item = this.queued[i];
+      const { messageId } = item;
       if (wanted && !wanted.has(messageId)) continue;
       this.queued.splice(i, 1);
+      this.logQueueChange('dropped', item, 'removed');
       removed.unshift(messageId);
     }
     if (removed.length) {
+      this.armHeldWarning();
       await this.emit({ type: 'queue_removed', data: { messageIds: removed } });
       await this.emitQueueState(removed, 'removed');
     }
@@ -675,6 +712,79 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   private emitQueueState(messageIds: string[], status: ChatEventDataMap['queue_state']['transition']['status']): Promise<void> {
     return this.emit({ type: 'queue_state', data: { queuedMessageIds: this.queued.map((item) => item.messageId), transition: { messageIds, status } } });
+  }
+
+  private heldTurnContext() {
+    return {
+      agentId: this.agentId,
+      sessionId: this.sessionId,
+      turnId: this.turnId ?? null,
+      turnRunning: this.turnId !== undefined,
+      turnAgeMs: this.turnStartedAt === null ? null : Math.max(0, this.now() - this.turnStartedAt),
+      state: this.state,
+    };
+  }
+
+  private logQueueChange(status: 'queued' | 'dispatched' | 'dropped', item: QueuedMessage, reason?: QueueDropReason): void {
+    const messages = {
+      queued: 'Chat message queued',
+      dispatched: 'Queued chat message dispatched',
+      dropped: 'Queued chat message dropped',
+    };
+    appLog('core:chat', status === 'dropped' ? 'warn' : 'info', messages[status], {
+      meta: {
+        ...this.heldTurnContext(),
+        messageId: item.messageId,
+        source: item.source,
+        queueDepth: this.queued.length,
+        messageCount: item.parts.length,
+        waitedMs: Math.max(0, this.now() - item.queuedAt),
+        ...(reason && { reason }),
+      },
+    });
+  }
+
+  private heldQueueSummary(items: readonly QueuedMessage[] = this.queued) {
+    return {
+      ...this.heldTurnContext(),
+      queueDepth: items.length,
+      messageCount: items.reduce((count, item) => count + item.parts.length, 0),
+      sources: [...new Set(items.map((item) => item.source))],
+      oldestAgeMs: Math.max(0, this.now() - items.reduce((oldest, item) => Math.min(oldest, item.queuedAt), this.now())),
+      inFlightTools: [...this.inFlightTools].map(([toolCallId, toolName]) => ({ toolCallId, ...(toolName && { toolName }) })),
+    };
+  }
+
+  private discardQueue(reason: QueueDropReason, sessionEndReason?: SessionEndReason): void {
+    const items = this.pendingDispatch ? [this.pendingDispatch, ...this.queued] : [...this.queued];
+    if (reason === 'session_close' && this.turnId !== undefined && items.length) {
+      appLog('core:chat', 'warn', 'Chat session closed with held messages', {
+        meta: { ...this.heldQueueSummary(items), reason: sessionEndReason },
+      });
+    }
+    this.queued.length = 0;
+    this.pendingDispatch = undefined;
+    for (const item of items) this.logQueueChange('dropped', item, reason);
+    this.armHeldWarning();
+  }
+
+  private armHeldWarning(): void {
+    if (this.heldWarningTimer) clearTimeout(this.heldWarningTimer);
+    this.heldWarningTimer = undefined;
+    const oldest = this.queued[0];
+    if (!oldest || this.ended) return;
+    const dueAt = Math.min(
+      oldest.queuedAt + HELD_MESSAGE_WARNING_MS,
+      this.turnStartedAt === null ? Infinity : this.turnStartedAt + HELD_TURN_WARNING_MS,
+    );
+    const rateLimitUntil = this.lastHeldWarningAt === undefined ? 0 : this.lastHeldWarningAt + HELD_WARNING_INTERVAL_MS;
+    this.heldWarningTimer = setTimeout(() => {
+      this.heldWarningTimer = undefined;
+      this.lastHeldWarningAt = this.now();
+      appLog('core:chat', 'warn', 'Chat messages still held', { meta: this.heldQueueSummary() });
+      this.armHeldWarning();
+    }, Math.max(0, dueAt - this.now(), rateLimitUntil - this.now()));
+    this.heldWarningTimer.unref?.();
   }
 
   private async runBeforePrompt(): Promise<void> {
@@ -720,6 +830,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     if (!session) return;
     const next = this.queued.shift();
     if (!next) return;
+    this.pendingDispatch = next;
+    this.armHeldWarning();
     let failed = false;
     const pending = Symbol();
     this.draining = true;
@@ -727,7 +839,12 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.clearIdleTimer();
       await this.emitQueueState([next.messageId], 'dispatching');
       await this.runBeforePrompt();
-      if (this.session !== session) return;
+      if (this.session !== session) {
+        if (this.pendingDispatch === next) this.logQueueChange('dropped', next, this.stopRequested ? 'session_close' : 'replace');
+        return;
+      }
+      this.pendingDispatch = undefined;
+      this.logQueueChange('dispatched', next);
       this.pendingTrace = this.pendingTraceAssigned ? undefined : next.trace;
       this.pendingTraceAssigned = true;
       this.pendingTurns.add(pending);
@@ -739,13 +856,14 @@ export class ChatAgentRuntime implements AgentRuntime {
       if (this.session !== session) return;
       // Like a failed plain send, this one message fails and the session stays (#3103).
       // telemetry-exempt: the user sees the notice; logged locally with the reason.
-      appLog('core:chat', 'warn', 'A queued chat message could not be sent', { meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) } });
+      this.logQueueChange('dropped', next, 'send_failed');
       // telemetry-exempt: shown to the user as a notice below.
       await this.emitQueueState([next.messageId], 'failed');
       const reason = err instanceof Error ? err.message : String(err);
       await this.emit({ type: 'notice', data: { level: 'warn', code: 'queued_send_failed', message: `A queued message could not be sent: ${reason}` } });
       failed = true;
     } finally {
+      if (this.pendingDispatch === next) this.pendingDispatch = undefined;
       this.draining = false;
     }
     // Nothing was sent, so no turn will end to drain the rest: go on with the next one.
@@ -773,6 +891,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     if (this.ended) return;
     appLog('core:chat', 'info', 'Abandoning chat start', { meta: { agentId: this.agentId, driver: this.opts.driverId, sessionOpen: !!this.session } });
     this.ended = true;
+    this.discardQueue('session_close', 'fallback');
+    this.inFlightTools.clear();
     this.clearIdleTimer();
     this.settleAllPermissions();
     const session = this.session;
@@ -842,12 +962,14 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.swapping = true;
     try {
       this.settleAllPermissions();
-      this.queued.length = 0;
+      this.discardQueue('clearContext');
       this.pendingTrace = undefined;
       this.pendingTraceAssigned = false;
       this.pendingTurns.clear();
       this.turnTrace = undefined;
       this.turnId = undefined;
+      this.turnStartedAt = null;
+      this.inFlightTools.clear();
       if (old) await old.close();
       // Finish queued writes under the old id before starting its replacement.
       await this.emitChain;

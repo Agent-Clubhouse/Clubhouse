@@ -437,7 +437,7 @@ describe('ChatView composer', () => {
     renderFixture('codex', 'steer');
     expect(screen.getByTestId('chat-tasks')).toHaveTextContent('3/4');
     const queue = screen.getByTestId('chat-queue');
-    expect(queue).toHaveTextContent('2 · sent when this turn ends');
+    expect(queue).toHaveTextContent('2 messages waiting for this turn to finish (oldest');
     expect(queue).toHaveTextContent('Then open a draft PR');
   });
 
@@ -448,6 +448,33 @@ describe('ChatView composer', () => {
         source: 'mcp' as const, sessionId: 's', seq: 100 + i, ts: 0,
       }));
     }
+
+    it('shows a live oldest age for Action messages in the existing composer queue', () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(12 * 60_000);
+        const state = fold(chatFixture('copilot', 'steer'));
+        const queued = queueOf(2).map((q, i) => ({ ...q, source: 'action' as const, ts: i * 60_000 }));
+        const { rerender, actions, unmount } = renderState({ ...state, queued });
+        expect(screen.getByTestId('chat-queue')).toHaveTextContent('2 messages waiting for this turn to finish (oldest 12 min).');
+        act(() => vi.advanceTimersByTime(60_000));
+        expect(screen.getByTestId('chat-queue')).toHaveTextContent('2 messages waiting for this turn to finish (oldest 13 min).');
+        rerender(<ChatViewBody agent={agent} state={{ ...state, queued: queued.slice(1) }} actions={actions} providerName="Provider" />);
+        expect(screen.getByTestId('chat-queue')).toHaveTextContent('1 message waiting for this turn to finish (oldest 12 min).');
+        rerender(<ChatViewBody agent={agent} state={{ ...state, queued: [] }} actions={actions} providerName="Provider" />);
+        expect(screen.queryByTestId('chat-queue')).not.toBeInTheDocument();
+        unmount();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('uses plain copy for a newly queued message instead of rounding its age up', () => {
+      const state = fold(chatFixture('copilot', 'steer'));
+      renderState({ ...state, queued: queueOf(1).map((q) => ({ ...q, ts: Date.now() })) });
+      expect(screen.getByTestId('chat-queue')).toHaveTextContent('1 message waiting for this turn to finish (oldest less than 1 min).');
+    });
 
     it('offers remove on a client queue without steering too', () => {
       renderFixture('copilot', 'steer', makeActions(), FEWER_CAPABILITIES);
@@ -485,14 +512,14 @@ describe('ChatView composer', () => {
       const list = screen.getByTestId('chat-queue-list');
       expect(list.className).toMatch(/max-h-\[155px\]/);
       expect(list.className).toContain('overflow-y-auto');
-      expect(screen.getByTestId('chat-queue')).toHaveTextContent('50 · sent when this turn ends');
+      expect(screen.getByTestId('chat-queue')).toHaveTextContent('50 messages waiting for this turn to finish (oldest');
 
       const toggle = screen.getByTestId('chat-queue-toggle');
       expect(toggle).toHaveAttribute('aria-expanded', 'true');
       fireEvent.click(toggle);
       expect(toggle).toHaveAttribute('aria-expanded', 'false');
       expect(screen.queryByTestId('chat-queue-list')).not.toBeInTheDocument();
-      expect(screen.getByTestId('chat-queue')).toHaveTextContent('50 · sent when this turn ends');
+      expect(screen.getByTestId('chat-queue')).toHaveTextContent('50 messages waiting for this turn to finish (oldest');
       expect(screen.getByLabelText('Message')).toBeInTheDocument();
     });
 
