@@ -1137,6 +1137,7 @@ export async function applyUpdate(updateStatus: UpdateStatus = status, options: 
         availableVersion: context.version,
         artifactUrl: context.artifactUrl,
       });
+      if (options.requireApplied) throw new Error('The installer could not be applied. Update Clubhouse from the desktop.');
       return;
     }
     setState('error', { error: `Update failed: ${msg}`, availableVersion: context.version, artifactUrl: context.artifactUrl });

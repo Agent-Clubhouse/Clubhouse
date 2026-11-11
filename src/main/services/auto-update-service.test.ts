@@ -411,6 +411,21 @@ describe('auto-update-service', () => {
       handler.mockRestore();
     });
 
+    it.each([false, true])('reports Linux installer failure without changing desktop fallback behavior (requireApplied: %s)', async (requireApplied) => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+      const handler = vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockRejectedValue(new Error('Elevation cancelled'));
+      try {
+        const applying = applyUpdate(readyStatus, { requireApplied });
+        if (requireApplied) await expect(applying).rejects.toThrow('installer could not be applied');
+        else await expect(applying).resolves.toBeUndefined();
+        expect(mockApp.relaunch).not.toHaveBeenCalled();
+        expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        handler.mockRestore();
+        platformSpy.mockRestore();
+      }
+    });
+
     it('applyMacUpdate runs beforeExit before flushing and exiting on relaunch', async () => {
       const tempDir = path.join(os.tmpdir(), `clubhouse-update-before-exit-${process.pid}`);
       fs.mkdirSync(tempDir, { recursive: true });
