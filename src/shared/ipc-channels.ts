@@ -533,6 +533,7 @@ export const IPC = {
     PAIR_WITH: 'annex-client:pair-with',
     PROBE_SERVICE: 'annex-client:probe-service',
     PAIR_WITH_LINK: 'annex-client:pair-with-link',
+    PAIR_WITH_ENDPOINT: 'annex-client:pair-with-endpoint',
     DISCOVERED_CHANGED: 'annex-client:discovered-changed',
     PTY_INPUT: 'annex-client:pty-input',
     PTY_RESIZE: 'annex-client:pty-resize',

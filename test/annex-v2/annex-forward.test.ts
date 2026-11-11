@@ -57,10 +57,10 @@ async function listen(server: net.Server, port = 0): Promise<number> {
 }
 
 /** No TLS handling: both directions carry exactly the bytes received. */
-async function forwardTo(port: number) {
+async function forwardTo(port: number | (() => number)) {
   const sockets = new Set<net.Socket>();
   const server = net.createServer((incoming) => {
-    const outgoing = net.connect(port, '127.0.0.1');
+    const outgoing = net.connect(typeof port === 'function' ? port() : port, '127.0.0.1');
     for (const socket of [incoming, outgoing]) {
       sockets.add(socket);
       socket.on('close', () => { sockets.delete(socket); });
@@ -80,7 +80,7 @@ async function forwardTo(port: number) {
   return { port: localPort, close, restore: () => listen(server, localPort) };
 }
 
-it('pairs, reloads the saved pairing without discovery, and reconnects after a remapped loopback forward returns', async () => {
+it.each(['link', 'manual'])('pairs, reloads without discovery, and reconnects after a remapped loopback forward returns (%s pairing)', async (mode) => {
   const root = mkdtempSync(join(tmpdir(), 'annex-forward-'));
   cleanups.push(() => rmSync(root, { recursive: true, force: true }));
   state.dir = join(root, 'satellite');
@@ -157,11 +157,15 @@ it('pairs, reloads the saved pairing without discovery, and reconnects after a r
   }, { timeout: 10_000, interval: 20 });
 
   client.startClient();
-  expect(await client.pairWithLink(link, `127.0.0.1:${forward.port}`)).toMatchObject({ success: true });
+  const result = mode === 'link'
+    ? await client.pairWithLink(link, `127.0.0.1:${forward.port}`)
+    : await client.pairWithEndpoint(`127.0.0.1:${forward.port}`, '123456', expectedCertificate);
+  expect(result).toMatchObject({ success: true });
   await connected(1);
   expect(peers.getPeer(satellite.fingerprint)).toMatchObject({
-    knownHosts: ['127.0.0.1', '::1'], mainPort: port,
-    hostPorts: { '127.0.0.1': forward.port, '::1': port },
+    knownHosts: mode === 'link' ? ['127.0.0.1', '::1'] : ['127.0.0.1'],
+    mainPort: mode === 'link' ? port : forward.port,
+    hostPorts: mode === 'link' ? { '127.0.0.1': forward.port, '::1': port } : { '127.0.0.1': forward.port },
   });
 
   client.stopClient();
@@ -184,7 +188,7 @@ it('pairs, reloads the saved pairing without discovery, and reconnects after a r
   expect(pairRequests).toBe(1);
 }, 20_000);
 
-it('rejects a TLS-terminating endpoint before sending any PIN or HTTP request', async () => {
+it.each(['link', 'manual'])('rejects a TLS-terminating endpoint before sending any PIN or HTTP request (%s pairing)', async (mode) => {
   const root = mkdtempSync(join(tmpdir(), 'annex-forward-mismatch-'));
   cleanups.push(() => rmSync(root, { recursive: true, force: true }));
   state.dir = join(root, 'satellite');
@@ -219,9 +223,84 @@ it('rejects a TLS-terminating endpoint before sending any PIN or HTTP request', 
     hosts: ['127.0.0.2'], port, fingerprint: satellite.fingerprint, certFingerprint: expectedCertificate,
     pin: '123456', name: 'Satellite',
   })!;
-  expect(await client.pairWithLink(link, `127.0.0.1:${port}`)).toMatchObject({
-    success: false, error: expect.stringMatching(/not the one in the link/),
+  const result = mode === 'link'
+    ? await client.pairWithLink(link, `127.0.0.1:${port}`)
+    : await client.pairWithEndpoint(`127.0.0.1:${port}`, '123456', expectedCertificate);
+  expect(result).toMatchObject({
+    success: false, error: expect.stringMatching(/not the one in the link|code was not sent/),
   });
   expect(requests).toBe(0);
   expect(peers.listPeers()).toEqual([]);
+}, 10_000);
+
+it.each([
+  ['link', 'certificate change'],
+  ['manual', 'certificate change'],
+  ['link', 'redirect'],
+  ['manual', 'redirect'],
+])('does not send a PIN to a replacement endpoint after a %s pairing %s, including retries', async (mode, scenario) => {
+  const root = mkdtempSync(join(tmpdir(), 'annex-forward-replacement-'));
+  cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+  state.dir = join(root, 'satellite');
+  mkdirSync(state.dir);
+  const satellite = identity.getOrCreateIdentity();
+  const credentials = tls.createTlsServerOptions(satellite);
+  const expectedCertificate = tls.certificateFingerprint(tls.getOrCreateCert(satellite).certPem);
+  identity.resetForTests();
+  tls.resetForTests();
+  state.dir = join(root, 'replacement');
+  mkdirSync(state.dir);
+
+  let replacementRequests = 0;
+  let replacementBytes = 0;
+  const replacement = https.createServer(tls.createTlsServerOptions(identity.getOrCreateIdentity()), (_req, res) => {
+    replacementRequests++;
+    res.end();
+  });
+  replacement.on('secureConnection', (socket) => {
+    socket.on('data', (chunk: Buffer) => { replacementBytes += chunk.length; });
+  });
+  const replacementPort = await listen(replacement);
+  let trustedRequests = 0;
+  const server = https.createServer(credentials, (_req, res) => {
+    trustedRequests++;
+    res.writeHead(307, { Location: `https://127.0.0.1:${replacementPort}/pair` }).end();
+  });
+  for (const endpoint of [replacement, server]) {
+    const sockets = new Set<net.Socket>();
+    endpoint.on('connection', (socket) => {
+      sockets.add(socket);
+      socket.on('close', () => sockets.delete(socket));
+    });
+    cleanups.push(async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => endpoint.close(() => resolve()));
+    });
+  }
+  const port = await listen(server);
+  let connections = 0;
+  const forward = await forwardTo(() => {
+    connections++;
+    // Each attempt probes the expected server, then reconnects for the POST.
+    return scenario === 'certificate change' && connections % 2 === 0 ? replacementPort : port;
+  });
+  identity.resetForTests();
+  tls.resetForTests();
+  state.dir = join(root, 'controller');
+  mkdirSync(state.dir);
+  const link = buildPairingUrl({
+    hosts: ['127.0.0.1'], port: forward.port, fingerprint: satellite.fingerprint,
+    certFingerprint: expectedCertificate, pin: '123456', name: 'Satellite',
+  })!;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = mode === 'link'
+      ? await client.pairWithLink(link)
+      : await client.pairWithEndpoint(`127.0.0.1:${forward.port}`, '123456', expectedCertificate);
+    expect(result.success).toBe(false);
+    expect(replacementRequests).toBe(0);
+    expect(replacementBytes).toBe(0);
+    expect(peers.listPeers()).toEqual([]);
+  }
+  expect(connections).toBe(4);
+  expect(trustedRequests).toBe(scenario === 'redirect' ? 2 : 0);
 }, 10_000);

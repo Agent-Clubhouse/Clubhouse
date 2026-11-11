@@ -81,6 +81,15 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
+  ipcMain.handle(IPC.ANNEX_CLIENT.PAIR_WITH_ENDPOINT, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, address, pin, certificateFingerprint) => {
+      const result = await annexClient.pairWithEndpoint(address, pin, certificateFingerprint);
+      if (result.success) noLongerController(result.fingerprint);
+      return result;
+    },
+  ));
+
   // Proxy IPC: send PTY input to a satellite's agent
   ipcMain.handle(IPC.ANNEX_CLIENT.PTY_INPUT, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],

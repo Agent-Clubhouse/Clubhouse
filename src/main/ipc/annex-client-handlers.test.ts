@@ -24,6 +24,7 @@ vi.mock('../services/annex-client', () => ({
   getDiscoveredServices: vi.fn(() => []),
   pairWithService: vi.fn(async () => ({ success: true })),
   pairWithLink: vi.fn(async () => ({ success: true })),
+  pairWithEndpoint: vi.fn(async () => ({ success: true, fingerprint: 'paired' })),
   connect: vi.fn(),
   disconnect: vi.fn(),
   retry: vi.fn(),
@@ -120,6 +121,14 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.SCAN)!;
     handler({});
     expect(annexClient.scan).toHaveBeenCalled();
+  });
+
+  it('PAIR_WITH_ENDPOINT validates arguments and applies the same pairing cleanup', async () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH_ENDPOINT)!;
+    await handler({}, 'localhost:7443', '123456', 'ab'.repeat(32));
+    expect(annexClient.pairWithEndpoint).toHaveBeenCalledWith('localhost:7443', '123456', 'ab'.repeat(32));
+    expect(annexServer.closeSocketsUnlessController).toHaveBeenCalledWith('paired');
+    expect(() => handler({}, 'localhost:7443', 123456, 'ab'.repeat(32))).toThrow();
   });
 
   it('CONNECT delegates to annexClient.connect, ignoring a token from older callers', () => {

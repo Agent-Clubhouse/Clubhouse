@@ -32,7 +32,7 @@ async function turnOn(w: Page): Promise<void> {
   await expect(w.getByText('Add a device')).toBeVisible({ timeout: 15_000 });
 }
 
-function status(w: Page): Promise<{ fingerprint: string; pairingUrl?: string }> {
+function status(w: Page): Promise<{ fingerprint: string; pairingUrl?: string; port: number; pin: string; tlsCertificateFingerprint: string }> {
   return w.evaluate(() => (window as any).clubhouse.annex.getStatus());
 }
 
@@ -48,13 +48,17 @@ test('two desktops join from the page, and one renames and removes the other', a
   await expect(a.window.getByTestId('annex-pairing-link')).toContainText('clubhousego://pair', { timeout: 15_000 });
   await expect(a.window.getByTestId('annex-certificate-code')).toBeVisible();
 
-  // B pairs with A's link (pointed at loopback).
-  let link: string | undefined;
-  await expect.poll(async () => { link = (await status(a.window)).pairingUrl; return !!link; }, { timeout: 15_000 }).toBe(true);
-  const url = new URL(link!);
-  url.searchParams.delete('host');
-  url.searchParams.append('host', '127.0.0.1');
-  expect(await b.window.evaluate((l) => (window as any).clubhouse.annexClient.pairWithLink(l), url.toString())).toMatchObject({ success: true });
+  // B pairs from manually supplied details, without a pairing link.
+  const details = await status(a.window);
+  await expect(a.window.getByLabel('Certificate fingerprint', { exact: true })).toHaveValue(details.tlsCertificateFingerprint);
+  await b.window.getByRole('button', { name: 'Pair with another computer' }).click();
+  await b.window.getByRole('button', { name: 'Pair without a link' }).click();
+  await b.window.getByLabel('Address and port', { exact: true }).fill(`127.0.0.1:${details.port}`);
+  await b.window.getByTestId('pairing-wizard').getByLabel('Certificate fingerprint', { exact: true }).fill(details.tlsCertificateFingerprint);
+  await b.window.getByLabel('One-time code', { exact: true }).fill(details.pin);
+  await b.window.getByRole('button', { name: 'Pair manually' }).click();
+  await expect(b.window.getByText(/^Paired with /)).toBeVisible({ timeout: 15_000 });
+  await b.window.getByRole('button', { name: 'Done', exact: true }).click();
 
   // Each page lists the other, connected, in its network.
   const rowOn = (w: Page) => w.getByTestId('annex-device-row').first();
