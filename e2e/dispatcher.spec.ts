@@ -479,7 +479,7 @@ test('an Ask-first call waits in Needs you, and goes through once the user allow
     await expect(w.locator(`[data-testid="needs-you-row-${dispatcherId}"]`)).toHaveCount(0);
     const needsRow = w.locator(`[data-testid="needs-you-row-${chatId}"]`);
     await expect(needsRow).toBeVisible({ timeout: 10_000 });
-    await expect(needsRow).toContainText('Asks to make a call');
+    await expect(needsRow).toContainText('Change app settings');
     await needsRow.click();
     const dialog = w.locator('[data-testid="grant-request-dialog"]');
     await expect(dialog).toContainText('set_helper_presets');

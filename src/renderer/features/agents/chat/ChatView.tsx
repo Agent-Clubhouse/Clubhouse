@@ -10,6 +10,7 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { DispatcherBehaviorChip } from '../../dispatcher/BehaviorChip';
+import { PendingApprovals } from '../../dispatcher/PendingApprovals';
 import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, useAnswering, type ChatViewState } from '../../../stores/chatStore';
@@ -399,6 +400,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
               )}
               {/* Managed agents (#2896): the setup changed after this session started. Main pane only, like the helper header. */}
               {context === 'main' && <SetupChangedBar agent={agent} variant="dock" />}
+              {dispatcher && <PendingApprovals agentId={agent.id} />}
               {dock}
             </div>
           </div>

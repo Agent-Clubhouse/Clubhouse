@@ -62,8 +62,8 @@ describe('permission requests (#2970)', () => {
   });
 
   it('describes an agent\'s requests for Needs you', () => {
-    expect(describeGrantRequests([request()])).toBe('Asks for a permission');
-    expect(describeGrantRequests([request({ kind: 'call' })])).toBe('Asks to make a call');
-    expect(describeGrantRequests([request(), request({ requestId: 'g2' })])).toBe('Asks for 2 permissions');
+    expect(describeGrantRequests([request()])).toBe('Change app settings');
+    expect(describeGrantRequests([request({ kind: 'call', actions: ['project.add'] })])).toBe('Add or open projects');
+    expect(describeGrantRequests([request(), request({ requestId: 'g2' })])).toBe('Change app settings (2 requests)');
   });
 });

@@ -517,7 +517,7 @@ describe('AgentListItem helper roll-up and requests (legacy layout)', () => {
     } });
     render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={onSelect} />);
     const line = screen.getByTestId('agent-helper-request');
-    expect(line).toHaveTextContent('Asks to make a call');
+    expect(line).toHaveTextContent('Change app settings');
     fireEvent.click(line);
     expect(onSelect).toHaveBeenCalledWith('agent-1');
     expect(useGrantRequestStore.getState().reviewing).toBe('agent-1');

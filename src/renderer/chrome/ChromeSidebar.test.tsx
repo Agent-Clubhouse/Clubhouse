@@ -844,10 +844,22 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
       const section = screen.getByTestId('needs-you');
       expect(within(section).queryByTestId('needs-you-row-disp-work')).toBeNull();
       const row = within(section).getByTestId('needs-you-row-disp');
-      expect(row.textContent).toContain('Asks to make a call');
+      expect(row.textContent).toContain('Change app settings');
       fireEvent.click(row);
       expect(useGrantRequestStore.getState().reviewing).toBe('disp-work');
       expect(useUIStore.getState().dispatcherOpen).toBe(true);
+      act(() => useGrantRequestStore.getState().add({
+        ...useGrantRequestStore.getState().requests.r1, requestId: 'r2', agentId: 'disp',
+        createdAt: '2026-11-08T00:00:01.000Z',
+      }));
+      expect(row).toHaveTextContent('2 requests');
+      act(() => useGrantRequestStore.getState().remove(['r1']));
+      expect(row).not.toHaveTextContent('2 requests');
+      fireEvent.click(row);
+      expect(useGrantRequestStore.getState().reviewing).toBe('disp');
+      act(() => useGrantRequestStore.getState().remove(['r2']));
+      expect(screen.queryByTestId('needs-you-row-disp')).not.toBeInTheDocument();
+      expect(useGrantRequestStore.getState().reviewing).toBeNull();
     } finally {
       useGrantRequestStore.setState({ requests: {}, reviewing: null });
     }
