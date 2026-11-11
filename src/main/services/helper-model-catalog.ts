@@ -4,6 +4,7 @@ import type { ModelInfo, ModelList, OrchestratorProvider } from '../orchestrator
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { appLog } from './log-service';
 import { getPresets } from './orchestration-settings';
+import { getSettings as getOrchestratorSettings } from './orchestrator-settings';
 import { createSettingsStore } from './settings-store';
 
 interface CatalogSnapshot {
@@ -17,6 +18,8 @@ interface CatalogFile {
   version: 1;
   providers: Record<string, CatalogSnapshot>;
 }
+
+const MAX_CATALOG_BYTES = 1024 * 1024;
 
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((v) => typeof v === 'string');
 
@@ -55,8 +58,10 @@ export async function observeHelperModelCatalog(provider: OrchestratorProvider, 
       const id = provider.id;
       const saved = getPresets();
       const mapped = isPresetProvider(id)
-        ? AUTO_LEVELS.map((level) => saved[id]?.[level]
-          ?? (level === 'minimum' || level === 'maximum' ? undefined : BUILTIN_PRESETS[id][level]))
+        ? AUTO_LEVELS.flatMap((level) => [
+          saved[id]?.[level],
+          ...(level === 'minimum' || level === 'maximum' ? [] : [BUILTIN_PRESETS[id][level]]),
+        ])
         : [];
       const missing = [...new Set(mapped.flatMap((cell) => {
         if (!cell || missingNotified.has(cell.model)) return [];
@@ -75,13 +80,20 @@ export async function observeHelperModelCatalog(provider: OrchestratorProvider, 
       }
       for (const id of Object.keys(models)) seen.add(id);
       for (const id of missing) missingNotified.add(id);
-      return {
+      const next: CatalogFile = {
         version: 1,
         providers: { ...file.providers, [provider.id]: { at: list.fetchedAt, models, seen: [...seen], missingNotified: [...missingNotified] } },
       };
+      // Keep exact dedupe history rather than evicting ids and rediscovering returning models.
+      if (Buffer.byteLength(JSON.stringify(next, null, 2), 'utf8') > MAX_CATALOG_BYTES) {
+        throw new RangeError('Model catalog storage limit reached');
+      }
+      return next;
     });
     // Save seen state before delivery, so dismissal and restart cannot rediscover the same model.
-    if (message) broadcastToAllWindows(IPC.APP.MODEL_CATALOG_NOTICE, message);
+    if (message && getOrchestratorSettings().enabled.includes(provider.id)) {
+      broadcastToAllWindows(IPC.APP.MODEL_CATALOG_NOTICE, message);
+    }
   } catch (err) {
     // telemetry-exempt: a failed notice must not turn a successful provider read into a fallback.
     appLog('core:mcp', 'warn', 'Could not save model catalog changes', { meta: { provider: provider.id, error: err instanceof Error ? err.name : 'unknown' } });

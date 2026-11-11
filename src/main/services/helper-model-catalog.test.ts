@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelList, OrchestratorProvider } from '../orchestrators/types';
 import type { SavedPresets } from '../../shared/helper-routing';
 
-const W = vi.hoisted(() => ({ dir: '', notices: vi.fn(), log: vi.fn(), presets: {} as SavedPresets }));
+const W = vi.hoisted(() => ({ dir: '', notices: vi.fn(), log: vi.fn(), presets: {} as SavedPresets, enabled: ['codex-cli', 'copilot-cli'] }));
 vi.mock('electron', () => ({ app: { getPath: () => W.dir } }));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: W.notices }));
 vi.mock('./log-service', () => ({ appLog: W.log }));
 vi.mock('./orchestration-settings', () => ({ getPresets: () => W.presets }));
+vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: W.enabled }) }));
 vi.mock('../telemetry/persist', () => ({ persist: { timed: (_key: string, fn: () => unknown) => fn(), recovery: vi.fn() } }));
 
 const provider = { id: 'codex-cli', displayName: 'Codex' } as OrchestratorProvider;
@@ -24,6 +25,7 @@ beforeEach(async () => {
   W.notices.mockClear();
   W.log.mockClear();
   W.presets = {};
+  W.enabled = ['codex-cli', 'copilot-cli'];
   observe = (await import('./helper-model-catalog')).observeHelperModelCatalog;
 });
 afterEach(() => fs.rmSync(W.dir, { recursive: true, force: true }));
@@ -77,6 +79,54 @@ describe('model catalog notices', () => {
     await observe(provider, catalog([], 2, { models: [
       { id: 'alias', label: 'Renamed', resolvedId: 'new-version' }, { id: 'hidden', label: 'Hidden', hidden: true },
     ] }));
+    expect(W.notices).not.toHaveBeenCalled();
+  });
+
+  it('updates disabled providers silently without replaying discoveries when enabled', async () => {
+    await observe(provider, catalog(['old'], 1));
+    W.enabled = [];
+    await observe(provider, catalog(['old', 'new'], 2));
+    expect(W.notices).not.toHaveBeenCalled();
+    W.enabled = [provider.id];
+    await observe(provider, catalog(['old', 'new'], 3));
+    expect(W.notices).not.toHaveBeenCalled();
+    await observe(provider, catalog(['old', 'new', 'newer'], 4));
+    expect(W.notices).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks built-in fallback mappings even when a saved override still exists', async () => {
+    W.presets = { 'codex-cli': { hard: { model: 'custom', effort: null } } };
+    await observe(provider, catalog(['custom', 'gpt-6.1-sol'], 1));
+    await observe(provider, catalog(['custom'], 2));
+    expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice',
+      'Models no longer offered for Codex: GPT-6.1-SOL. Review Smart selection');
+  });
+
+  it('bounds cumulative history without evicting returning ids or damaging the last snapshot', async () => {
+    const ids = Array.from({ length: 3200 }, (_, i) => `model-${i}-${'x'.repeat(64)}`);
+    await observe(provider, catalog(ids, 1));
+    const file = path.join(W.dir, 'helper-model-catalogs.json');
+    const before = fs.readFileSync(file, 'utf8');
+    expect(Buffer.byteLength(before)).toBeLessThanOrEqual(1024 * 1024);
+    await observe(provider, catalog(ids.map((id) => `${id}-next`), 2));
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+    expect(W.log).toHaveBeenCalled();
+    expect(W.notices).not.toHaveBeenCalled();
+    await observe(provider, catalog([ids[0]], 3));
+    expect(W.notices).not.toHaveBeenCalled();
+  });
+
+  it('bounds snapshot bytes and persists only model identity fields across concurrent providers', async () => {
+    await Promise.all([
+      observe(provider, catalog(['old'], 1, { models: [{ id: 'old', label: 'Old', description: 'private description', efforts: ['high'] }] })),
+      observe({ ...provider, id: 'copilot-cli' }, catalog(['copilot'], 1)),
+    ]);
+    const file = path.join(W.dir, 'helper-model-catalogs.json');
+    const before = fs.readFileSync(file, 'utf8');
+    expect(JSON.parse(before).providers['codex-cli'].models.old).toEqual({ label: 'Old' });
+    expect(JSON.parse(before).providers['copilot-cli'].seen).toEqual(['copilot']);
+    await observe(provider, catalog([], 2, { models: [{ id: 'large', label: 'x'.repeat(1024 * 1024) }] }));
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
     expect(W.notices).not.toHaveBeenCalled();
   });
 

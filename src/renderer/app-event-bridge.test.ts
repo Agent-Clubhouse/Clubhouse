@@ -7,6 +7,7 @@ type StoreSubscriber = (...args: unknown[]) => void;
 
 const mockRemovers = {
   onOpenSettings: vi.fn(),
+  onModelCatalogNotice: vi.fn(),
   onOpenAbout: vi.fn(),
   onNotificationClicked: vi.fn(),
   onAgentAttention: vi.fn(),
@@ -50,7 +51,7 @@ vi.stubGlobal('window', {
   clubhouse: {
     app: {
       onOpenSettings: vi.fn(() => mockRemovers.onOpenSettings),
-      onModelCatalogNotice: vi.fn(() => vi.fn()),
+      onModelCatalogNotice: vi.fn(() => mockRemovers.onModelCatalogNotice),
       onOpenAbout: vi.fn(() => mockRemovers.onOpenAbout),
       onNotificationClicked: vi.fn(() => mockRemovers.onNotificationClicked),
       onAgentAttention: vi.fn(() => mockRemovers.onAgentAttention),
@@ -408,6 +409,15 @@ describe('initAppEventBridge', () => {
     vi.mocked(window.clubhouse.window.isPopout).mockReturnValueOnce(true);
     handler('New models for Codex: New. Review Smart selection');
     expect(useToastStore.getState().addToast).not.toHaveBeenCalled();
+  });
+
+  it('replaces the catalog notice subscription on re-init and removes it on cleanup', () => {
+    expect(window.clubhouse.app.onModelCatalogNotice).toHaveBeenCalledOnce();
+    cleanup = initAppEventBridge();
+    expect(mockRemovers.onModelCatalogNotice).toHaveBeenCalledOnce();
+    expect(window.clubhouse.app.onModelCatalogNotice).toHaveBeenCalledTimes(2);
+    cleanup();
+    expect(mockRemovers.onModelCatalogNotice).toHaveBeenCalledTimes(2);
   });
 
   it('reveals Connections when a canvas popout asks the main window to edit them (#3213)', () => {
