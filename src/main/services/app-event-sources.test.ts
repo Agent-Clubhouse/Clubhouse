@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const configListeners: Array<(projectPath: string) => void> = [];
-const exitListeners: Array<(agentId: string, code: number) => void> = [];
+const exitListeners: Array<(agentId: string, code: number, run?: QuickAgentRun) => void> = [];
 let durables: Record<string, Array<Record<string, unknown>>> = {};
 
 vi.mock('./agent-config', () => ({
@@ -9,7 +9,7 @@ vi.mock('./agent-config', () => ({
   onAgentConfigChanged: vi.fn((l: (p: string) => void) => { configListeners.push(l); return () => undefined; }),
 }));
 vi.mock('./agent-exit-broadcast', () => ({
-  onAgentExit: vi.fn((l: (id: string, code: number) => void) => { exitListeners.push(l); return () => undefined; }),
+  onAgentExit: vi.fn((l: typeof exitListeners[number]) => { exitListeners.push(l); return () => undefined; }),
 }));
 vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: vi.fn(() => () => undefined) }));
 vi.mock('./project-store', () => ({ list: vi.fn(async () => [{ id: 'p1', path: '/p1' }]) }));
@@ -17,7 +17,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import { finishHeadlessTurn, onAppEvent, publishAppEvent, publishFromHookEvent, resetAppEventBus, startHeadlessTurn, type AppEvent } from './app-event-bus';
 import { knownAgent, knownAgents, startAppEventSources, stopAppEventSources } from './app-event-sources';
-import { beginQuickAgentRun } from './quick-agent-events';
+import { beginQuickAgentRun, type QuickAgentRun } from './quick-agent-events';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -39,6 +39,22 @@ async function start() {
 }
 
 describe('app event sources', () => {
+  it('does not let the old process exit finish a replacement identity that is still preparing', async () => {
+    await start();
+    const identity = { agentId: 'q1', name: 'Review', projectPath: '/p1' };
+    const old = beginQuickAgentRun(identity);
+    beginQuickAgentRun({ ...identity, name: 'Replacement' });
+    exitListeners[0]('q1', 1, old);
+    expect(events.filter((event) => event.type === 'agent.quick_finished')).toMatchObject([
+      { name: 'Review', outcome: 'cancelled' },
+    ]);
+    expect(events.filter((event) => event.type === 'agent.asleep')).toHaveLength(0);
+    exitListeners[0]('q1', 0);
+    expect(events.filter((event) => event.type === 'agent.quick_finished')).toMatchObject([
+      { name: 'Review', outcome: 'cancelled' }, { name: 'Replacement', outcome: 'completed' },
+    ]);
+  });
+
   it('keeps headless dedup after exit and resets outcome for a replacement run', async () => {
     await start();
     const identity = { agentId: 'q1', name: 'Review', projectPath: '/p1' };

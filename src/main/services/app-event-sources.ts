@@ -136,7 +136,8 @@ export async function startAppEventSources(): Promise<void> {
   };
   const unsubs = [
     onChatEvent(publishFromChatEvent),
-    onAgentExit((agentId, exitCode) => {
+    onAgentExit((agentId, exitCode, quickRun) => {
+      if (quickRun && knownQuickAgents().get(agentId) !== quickRun) return;
       // Quick runs retain their ended state alongside their identity so a
       // late CLI hook cannot end the same run again.
       if (!knownQuickAgents().has(agentId)) forgetHookTurn(agentId);

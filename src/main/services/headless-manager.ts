@@ -21,6 +21,7 @@ import { readTranscriptChunk, type TranscriptChunk } from './transcript-cursor';
 import { agentKillRequested, agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
 import type { HookEventKind, TurnOutcome } from '../../shared/types';
 import { finishHeadlessTurn, publishFromHookEvent, startHeadlessTurn, type HeadlessTurn } from './app-event-bus';
+import { knownQuickAgents, type QuickAgentRun } from './quick-agent-events';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
 let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
@@ -61,6 +62,7 @@ interface HeadlessSession {
   transcriptPath: string;
   startedAt: number;
   turn: HeadlessTurn;
+  quickRun?: QuickAgentRun;
   resultOutcome?: TurnOutcome;
   textBuffer?: string;
   /** Timer for force-kill escalation in kill(). */
@@ -337,6 +339,7 @@ function createSessionRecord(
   onExit?: (agentId: string, exitCode: number) => void,
   createEventNormalizer?: () => (raw: StreamJsonEvent) => StreamJsonEvent[],
   turn = startHeadlessTurn(agentId),
+  quickRun = knownQuickAgents().get(agentId),
 ): HeadlessSession {
   const parser = outputKind === 'stream-json' ? new JsonlParser() : null;
   return {
@@ -355,6 +358,7 @@ function createSessionRecord(
     transcriptPath,
     startedAt: Date.now(),
     turn,
+    quickRun,
     onExitCallback: onExit,
     rawEventTypes: new Map(),
     nextLiveReportMs: LIVE_REPORT_QUIET_MS,
@@ -691,7 +695,7 @@ function setupExitHandlers(
 
       runFinalizationStep(agentId, 'registry exit', () => session.onExitCallback?.(agentId, exitCode));
 
-      runFinalizationStep(agentId, 'exit broadcast', () => broadcastAgentExit(agentId, exitCode, error?.message || stderrTail(io)));
+      runFinalizationStep(agentId, 'exit broadcast', () => broadcastAgentExit(agentId, exitCode, error?.message || stderrTail(io), session.quickRun));
     } else {
       appLog('core:headless', 'info', `Old process exited after session replacement — skipping cleanup`, {
         meta: { agentId, exitCode, signal },
@@ -717,6 +721,7 @@ export async function spawnHeadless(
   commandPrefix?: string,
   createEventNormalizer?: () => (raw: StreamJsonEvent) => StreamJsonEvent[],
 ): Promise<void> {
+  const quickRun = knownQuickAgents().get(agentId);
   await validateSpawnCwd(cwd);
 
   // Clean up any existing session
@@ -756,7 +761,7 @@ export async function spawnHeadless(
     appLog('core:headless', 'info', `Process spawned`, { meta: { agentId, pid: proc.pid } });
   }
 
-  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer, turn);
+  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer, turn, quickRun);
   sessions.set(agentId, session);
   agentRunStarted(agentId, 'headless');
 

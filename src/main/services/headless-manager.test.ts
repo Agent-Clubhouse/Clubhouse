@@ -110,6 +110,8 @@ import { IPC } from '../../shared/ipc-channels';
 import { killStructuredChild } from '../orchestrators/adapters/structured-spawn';
 import { appLog } from './log-service';
 import { onAppEvent, publishFromHookEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
+import { onAgentExit } from './agent-exit-broadcast';
+import { beginQuickAgentRun, clearQuickAgentRuns } from './quick-agent-events';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../util/__fixtures__/host-session-env';
 import {
   spawnHeadless,
@@ -156,6 +158,22 @@ describe('headless-manager', () => {
 
   // ============================================================
   describe('headless Action turn outcomes', () => {
+    it('correlates an exit during replacement preparation with the run that actually spawned it', async () => {
+      const identity = { agentId: 'test-agent', projectPath: '/project', name: 'Old run' };
+      const old = beginQuickAgentRun(identity);
+      const exited = vi.fn();
+      const off = onAgentExit(exited);
+      try {
+        await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+        beginQuickAgentRun({ ...identity, name: 'Replacement' });
+        mockProcess.emit('close', 1);
+        expect(exited).toHaveBeenCalledExactlyOnceWith('test-agent', 1, old);
+      } finally {
+        off();
+        clearQuickAgentRuns();
+      }
+    });
+
     it('ends a synchronous process creation failure and rethrows the original error', async () => {
       const events: AppEvent[] = [];
       onAppEvent((event) => events.push(event));
