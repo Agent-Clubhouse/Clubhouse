@@ -4,7 +4,7 @@ import { ActionPresence, type PresenceSignal } from './presence';
 
 const MIN = 60_000;
 
-function setup(lastUse?: number) {
+function setup() {
   const powerMonitor = new EventEmitter();
   let focused = true;
   let inputAt = Date.now();
@@ -14,7 +14,6 @@ function setup(lastUse?: number) {
   const returned = vi.fn();
   const tracker = new ActionPresence({
     clock: { now: Date.now, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) },
-    lastUse: () => lastUse,
     used,
     returned,
     signals: {
@@ -100,7 +99,7 @@ describe('Action presence', () => {
   });
 
   it('does not infer an absence when tracking starts with an already-idle focused window', async () => {
-    const h = setup(Date.now() - 24 * 60 * MIN);
+    const h = setup();
     await vi.advanceTimersByTimeAsync(30 * MIN);
     h.tracker.configure([{ id: 'a', absenceMinutes: 5 }]);
     await vi.advanceTimersByTimeAsync(5 * MIN);
@@ -133,7 +132,7 @@ describe('Action presence', () => {
     h.signal('focus', true);
     h.signal('focus', true);
     expect(h.returned).toHaveBeenCalledExactlyOnceWith(['a']);
-    expect(h.used).toHaveBeenLastCalledWith(Date.now());
+    expect(h.used).toHaveBeenCalledTimes(2);
   });
 
   it('does not treat unattended resume or focus as a return', async () => {
@@ -145,17 +144,6 @@ describe('Action presence', () => {
     h.signal('focus');
     expect(h.returned).not.toHaveBeenCalled();
     h.signal('focus', true);
-    expect(h.returned).toHaveBeenCalledExactlyOnceWith(['a']);
-  });
-
-  it('does not infer a return on relaunch from a persisted lastUse', async () => {
-    const h = setup(Date.now() - 24 * 60 * MIN);
-    h.tracker.configure([{ id: 'a' }]);
-    h.signal('focus', true);
-    expect(h.returned).not.toHaveBeenCalled();
-    h.signal('lock');
-    await vi.advanceTimersByTimeAsync(30 * MIN);
-    h.signal('unlock', true);
     expect(h.returned).toHaveBeenCalledExactlyOnceWith(['a']);
   });
 

@@ -8,6 +8,7 @@
  */
 
 import * as path from 'path';
+import { uptime } from 'os';
 import { app, BrowserWindow, powerMonitor } from 'electron';
 import {
   ActionError,
@@ -210,9 +211,8 @@ function syncPresence(): void {
 function createPresence(): ActionPresence {
   let idleFailed = false;
   return new ActionPresence({
-    clock: { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) },
-    lastUse: () => engine?.lastUse(),
-    used: (at) => engine?.recordUse(at),
+    clock: { now: () => uptime() * 1000, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) },
+    used: () => engine?.recordUse(Date.now()),
     returned: (actionIds) => publishAppEvent({ type: 'app.returned', actionIds }),
     signals: {
       focused: () => BrowserWindow.getFocusedWindow() !== null,

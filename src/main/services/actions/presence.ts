@@ -28,10 +28,10 @@ export class ActionPresence {
   private qualified = new Set<string>();
 
   constructor(private readonly deps: {
+    /** Sleep-inclusive OS uptime, not wall-clock time. */
     clock: EngineClock;
     signals: PresenceSignals;
-    lastUse(): number | undefined;
-    used(at: number): void;
+    used(): void;
     returned(actionIds: string[]): void;
   }) {}
 
@@ -48,8 +48,7 @@ export class ActionPresence {
     this.suspended = false;
     this.blockedSince = null;
     this.qualified.clear();
-    const baseline = Math.max(this.deps.clock.now(), this.deps.lastUse() ?? 0);
-    this.awaySince = this.deps.signals.focused() ? null : baseline;
+    this.awaySince = this.deps.signals.focused() ? null : this.deps.clock.now();
     this.unlisten = this.deps.signals.listen((signal) => this.signal(signal));
     this.sample();
   }
@@ -106,7 +105,7 @@ export class ActionPresence {
       this.qualified.clear();
       if (this.recordedUseAt === null || now - this.recordedUseAt >= 60_000 || ids.length) {
         this.recordedUseAt = now;
-        this.deps.used(now);
+        this.deps.used();
       }
       if (ids.length) this.deps.returned(ids);
     }

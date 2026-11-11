@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   events: new Set<(event: AppEvent) => void>(),
   focused: true,
   idle: 0,
+  sleepSeconds: 0,
 }));
 
 vi.mock('electron', async () => {
@@ -21,6 +22,7 @@ vi.mock('electron', async () => {
     BrowserWindow: { getFocusedWindow: () => h.focused ? {} : null },
   };
 });
+vi.mock('os', () => ({ uptime: () => performance.now() / 1000 + h.sleepSeconds }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../agent-system', () => ({ isAgentRunning: () => false }));
 vi.mock('../agent-runtime', () => ({ getAgentRuntime: () => undefined, isAgentStoppingError: () => false }));
@@ -70,6 +72,7 @@ import {
   actionHistory,
   actionsReady,
   createAction,
+  deleteAction,
   ensureAppAction,
   ensureAppSubscription,
   getAction,
@@ -100,6 +103,7 @@ beforeEach(async () => {
   h.clear.mockClear();
   h.focused = true;
   h.idle = 0;
+  h.sleepSeconds = 0;
   vi.mocked(powerMonitor.getSystemIdleTime).mockClear();
   vi.mocked(publishAppEvent).mockClear();
   await startActions();
@@ -135,6 +139,93 @@ it('wires Electron presence only for enabled return actions and persists use wit
   } finally {
     stopActions();
     vi.useRealTimers();
+  }
+});
+
+it.each([-1, 1])('ignores a %i-hour wall-clock adjustment during a short lock', async (direction) => {
+  vi.useFakeTimers();
+  try {
+    createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    powerMonitor.emit('lock-screen');
+    vi.setSystemTime(Date.now() + direction * 60 * 60_000);
+    await vi.advanceTimersByTimeAsync(60_000);
+    powerMonitor.emit('unlock-screen');
+    expect(publishAppEvent).not.toHaveBeenCalled();
+    powerMonitor.emit('lock-screen');
+    vi.setSystemTime(Date.now() + direction * 60 * 60_000);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    powerMonitor.emit('unlock-screen');
+    expect(publishAppEvent).toHaveBeenCalledTimes(1);
+  } finally {
+    stopActions();
+    vi.useRealTimers();
+  }
+});
+
+it.each([-1, 1])('never replays persisted last use %i day from launch or delays a newly observed absence', async (direction) => {
+  vi.useFakeTimers();
+  try {
+    const a = createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    stopActions();
+    h.saved.state = { nextAt: {}, waits: [], lastUse: Date.now() + direction * 24 * 60 * 60_000 };
+    h.focused = false;
+    await startActions();
+    expect(publishAppEvent).not.toHaveBeenCalled();
+    powerMonitor.emit('suspend');
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    powerMonitor.emit('resume');
+    h.focused = true;
+    app.emit('browser-window-focus');
+    expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
+    expect((h.saved.state as { lastUse?: number }).lastUse).toBe(Date.now());
+  } finally {
+    stopActions();
+    vi.useRealTimers();
+  }
+});
+
+it.each([1, 5])('measures %i minutes of suspend without running polling timers', (minutes) => {
+  vi.useFakeTimers();
+  try {
+    const a = createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    powerMonitor.emit('suspend');
+    h.sleepSeconds += minutes * 60;
+    vi.setSystemTime(Date.now() + minutes * 60_000);
+    powerMonitor.emit('resume');
+    app.emit('browser-window-focus');
+    if (minutes < 5) expect(publishAppEvent).not.toHaveBeenCalled();
+    else expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
+  } finally {
+    stopActions();
+    vi.useRealTimers();
+  }
+});
+
+it('cleans up presence listeners through repeated enable, disable and deletion', () => {
+  for (let i = 0; i < 10; i++) {
+    const a = createAction({
+      trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' } },
+      steps: [{ kind: 'notify', text: 'Welcome back' }],
+    }, { kind: 'user' });
+    setActionEnabled(a.id, false);
+    setActionEnabled(a.id, true);
+    expect(powerMonitor.listenerCount('lock-screen')).toBe(1);
+    expect(powerMonitor.listenerCount('resume')).toBe(2);
+    expect(app.listenerCount('browser-window-focus')).toBe(1);
+    deleteAction(a.id);
+    for (const event of ['lock-screen', 'unlock-screen', 'suspend']) expect(powerMonitor.listenerCount(event)).toBe(0);
+    expect(powerMonitor.listenerCount('resume')).toBe(1);
+    expect(app.listenerCount('browser-window-focus')).toBe(0);
+    expect(app.listenerCount('browser-window-blur')).toBe(0);
   }
 });
 
