@@ -250,10 +250,10 @@ describe('CLI row (#2593)', () => {
 });
 
 describe('Agent details for a sleeping agent (#2281)', () => {
-  it('shows Settings, Changes, Canvases and the last session, and leaves out live-only cards', () => {
+  it('shows Settings, Changes, Actions and the last session, without empty or live-only cards', () => {
     render(<AgentDetails agent={sleeping} lastSession={last} />);
-    for (const id of ['settings', 'changes', 'canvases', 'session']) expect(screen.getByTestId(`details-card-${id}`)).toBeInTheDocument();
-    for (const id of ['subagents', 'context', 'mcp']) {
+    for (const id of ['settings', 'changes', 'actions', 'session']) expect(screen.getByTestId(`details-card-${id}`)).toBeInTheDocument();
+    for (const id of ['subagents', 'context', 'mcp', 'canvases', 'skills-mcp']) {
       expect(screen.queryByTestId(`details-card-${id}`)).not.toBeInTheDocument();
     }
   });

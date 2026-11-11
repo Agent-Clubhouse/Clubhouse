@@ -282,7 +282,7 @@ describe('⋯ menu restart while one is waiting', () => {
   });
 });
 
-describe('Setup card', () => {
+describe('Managed Settings card', () => {
   const setup: ManagedAgentSetup = {
     version: 1, blocks: ['b1', 'b2', 'b3'], skills: ['s1', 's2'], mcps: ['m1'], templateId: 'builtin-template-release',
   };
@@ -304,10 +304,11 @@ describe('Setup card', () => {
     }) as never);
   });
 
-  it('replaces Settings for a managed agent, with the setup rows and what is waiting', async () => {
+  it('keeps Settings for a managed agent, with the setup rows and what is waiting', async () => {
     mockStatus(status());
     render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
-    expect(await screen.findByRole('region', { name: 'Setup' })).toBeTruthy();
+    await screen.findByTestId('details-setup-managed');
+    expect(screen.getByRole('region', { name: 'Settings' })).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Managed · Release lead · 2 changes waiting'));
     expect(screen.getByTestId('details-setup-managed')).toHaveTextContent('By Clubhouse');
     expect(screen.getByTestId('details-setup-template')).toHaveTextContent('Release lead');
@@ -340,7 +341,8 @@ describe('Setup card', () => {
     const open = vi.fn();
     useAgentStore.setState({ openAgentSettings: open } as never);
     render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
-    expect(await screen.findByRole('region', { name: 'Setup' })).toBeTruthy();
+    await screen.findByTestId('details-setup-managed');
+    expect(screen.getByRole('region', { name: 'Settings' })).toBeTruthy();
     expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent(/^Managed$/);
     expect(screen.getByTestId('details-setup-template')).toHaveTextContent('None');
     expect(screen.getByTestId('details-setup-skills')).toHaveTextContent('None');

@@ -161,7 +161,7 @@ function ServerRow({ row }: { row: McpRow }) {
   );
 }
 
-export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open, onToggle }: {
+export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open, onToggle, embedded }: {
   agent: Agent;
   /** For a managed agent's start problems (missing variables), from its managed status. */
   projectPath?: string;
@@ -171,6 +171,7 @@ export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open,
   refreshKey: unknown;
   open: boolean;
   onToggle: () => void;
+  embedded?: boolean;
 }) {
   // Opening the card checks again, so a handshake since the last turn shows up.
   const clubhouse = useClubhouseMcpConnection(agent, spawnedAt, `${String(refreshKey)}:${open}`);
@@ -189,7 +190,7 @@ export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open,
   }
 
   return (
-    <DetailsCard id="mcp" title="MCP servers" summary={mcpSummary(rows, configuredOnly)} open={open} onToggle={onToggle}>
+    <DetailsCard id="mcp" title="MCP servers" summary={mcpSummary(rows, configuredOnly)} open={open} onToggle={onToggle} embedded={embedded}>
       {rows.length > 0 && (
         <ul className="flex flex-col">
           {rows.map((r) => <ServerRow key={r.name} row={r} />)}

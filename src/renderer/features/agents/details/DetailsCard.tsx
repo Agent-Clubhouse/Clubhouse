@@ -3,9 +3,9 @@ import { useId, type ReactNode } from 'react';
 /**
  * One Agent details card (#2032): a 30px header with a chevron, the card's
  * name and a one-line summary that already answers its question. Every card
- * starts collapsed; clicking the header opens it in place.
+ * follows the shared open-state policy; clicking the header toggles it in place.
  */
-export function DetailsCard({ id, title, summary, open, onToggle, right, action, children }: {
+export function DetailsCard({ id, title, summary, open, onToggle, right, action, children, embedded = false }: {
   id: string;
   title: string;
   /** The answer on one line, shown open or closed ("6 files +94 −51"). */
@@ -20,8 +20,20 @@ export function DetailsCard({ id, title, summary, open, onToggle, right, action,
    */
   action?: ReactNode;
   children?: ReactNode;
+  /** Evidence within a containing card, with a heading instead of an accordion. */
+  embedded?: boolean;
 }) {
   const bodyId = useId();
+  if (embedded) {
+    return (
+      <section aria-label={title} data-testid={`details-card-${id}`}>
+        <h3 className="pr-3.5 pl-[33px] pt-2 pb-1 text-xs font-semibold text-ctp-subtext1">
+          {title} <span className="font-normal text-ctp-overlay1" data-testid={`details-card-${id}-summary`}>{summary}</span>
+        </h3>
+        {children}
+      </section>
+    );
+  }
   const toggle = (
     <button
       type="button"

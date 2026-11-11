@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { Agent, AgentMcpConnection } from '../../../../shared/types';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { createChatViewState } from '../../../stores/chatStore';
@@ -55,7 +55,7 @@ describe('MCP servers card', () => {
       return () => { connectionListeners.delete(listener); };
     });
     useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
-    useAgentDetailsStore.setState({ open: true, focus: null });
+    useAgentDetailsStore.setState({ open: true, focus: { agentId: agent.id, card: 'mcp', nonce: 1 } });
     useAgentStore.setState({ agentSpawnedAt: { a1: SPAWNED } } as never);
     useMcpBindingStore.setState({
       bindings: [
@@ -84,7 +84,6 @@ describe('MCP servers card', () => {
     };
     render(<AgentDetails agent={{ ...agent, mcpIds: [] }} chat={chat} />);
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('3 connected · 1 not connected');
-    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     const card = screen.getByTestId('details-card-mcp');
     expect(card).not.toHaveTextContent('none configured');
     await waitFor(() => expect(card).toHaveTextContent('Connected · 9 tools'));
@@ -99,7 +98,6 @@ describe('MCP servers card', () => {
   it('shows a terminal agent\'s Clubhouse MCP connection and keeps configured servers apart', async () => {
     render(<AgentDetails agent={agent} />);
     await waitFor(() => expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('1 connected · 1 configured'));
-    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     expect(screen.getAllByTestId('details-mcp-row')[0]).toHaveTextContent('ClubhouseConnected · 9 tools');
     expect(screen.getByTestId('details-mcp-configured')).toHaveTextContent('githubConfigured');
     expect(window.clubhouse.mcpBinding.getAgentConnection).toHaveBeenCalledWith('a1');
@@ -110,7 +108,6 @@ describe('MCP servers card', () => {
     render(<AgentDetails agent={{ ...agent, mcpIds: [] }} />);
     await waitFor(() => expect(window.clubhouse.mcpBinding.getAgentConnection).toHaveBeenCalled());
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('none');
-    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     expect(screen.getByTestId('details-card-mcp')).toHaveTextContent('isn’t connected to any MCP servers');
   });
 
@@ -118,7 +115,6 @@ describe('MCP servers card', () => {
     const getConnection = vi.fn<() => Promise<AgentMcpConnection | null>>().mockResolvedValue(null);
     window.clubhouse.mcpBinding.getAgentConnection = getConnection;
     render(<AgentDetails agent={{ ...agent, orchestrator: 'copilot-cli', mcpIds: [] }} />);
-    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     await act(async () => {});
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('none');
 
@@ -205,17 +201,38 @@ describe('MCP servers card', () => {
   });
 });
 
-describe('Context window card', () => {
+describe('Session context window', () => {
   beforeEach(() => {
+    useAgentDetailsStore.setState({ focus: null });
     useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
     window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: false, files: [] }));
   });
 
-  it('is left out until the agent reports its context, then shows it (#2094)', () => {
+  it('is left out until reported, then appears inside Session through the old focus target', async () => {
     const chat = { ...createChatViewState('a1'), capabilities: { ...MINIMAL_CHAT_CAPABILITIES, usage: 'tokens' as const } };
     const { rerender } = render(<AgentDetails agent={agent} chat={chat} />);
     expect(screen.queryByTestId('details-card-context')).not.toBeInTheDocument();
     rerender(<AgentDetails agent={agent} chat={{ ...chat, usage: { ...chat.usage, context: { used: 62_000, size: 100_000 } } }} />);
-    expect(screen.getByTestId('details-card-context-summary')).toHaveTextContent('62% of');
+    await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'context' }));
+    expect(screen.getByTestId('details-card-session')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('details-session-context')).toHaveTextContent('62% of 100k');
+    expect(screen.queryByTestId('details-card-context')).not.toBeInTheDocument();
+  });
+
+  it('keeps input-window provenance and hides live context asleep or when unsupported', async () => {
+    const chat = {
+      ...createChatViewState('a1'),
+      capabilities: { ...MINIMAL_CHAT_CAPABILITIES, usage: 'tokens' as const },
+      usage: { ...createChatViewState('a1').usage, context: { used: 25_000, size: 100_000, window: 'input' as const } },
+    };
+    const { rerender } = render(<AgentDetails agent={agent} chat={chat} />);
+    await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'context' }));
+    expect(screen.getByTestId('details-session-context')).toHaveTextContent('25% of 100k input');
+    expect(screen.getByTestId('details-session-context')).toHaveTextContent('after its output reserve');
+    rerender(<AgentDetails agent={agent} chat={{ ...chat, capabilities: MINIMAL_CHAT_CAPABILITIES }} />);
+    expect(screen.queryByTestId('details-session-context')).not.toBeInTheDocument();
+    rerender(<AgentDetails agent={{ ...agent, status: 'sleeping' }} chat={chat} />);
+    expect(screen.getByTestId('details-card-session')).toHaveAccessibleName('Last session');
+    expect(screen.queryByTestId('details-session-context')).not.toBeInTheDocument();
   });
 });

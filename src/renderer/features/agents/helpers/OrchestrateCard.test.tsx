@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent, DurableAgentConfig, HelperCascadeResult } from '../../../../shared/types';
 import type { OrchestrationPolicy, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useHelperStartRequestStore } from '../../../stores/helperStartRequestStore';
 import { useProjectStore } from '../../../stores/projectStore';
+import { createChatViewState } from '../../../stores/chatStore';
+import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { useUIStore } from '../../../stores/uiStore';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { AgentDetails } from '../details/AgentDetails';
@@ -68,6 +71,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  useHelperStartRequestStore.setState({ requests: {} });
   useProjectStore.setState({ projects: [] });
   useAgentStore.setState({ agents: {} } as never);
   useUIStore.setState({ explorerTab: 'agents', previousExplorerTab: null, settingsContext: 'app', settingsSubPage: 'orchestrators' } as never);
@@ -131,7 +135,7 @@ describe('Orchestration card (#2232)', () => {
 
     fireEvent.change(screen.getByTestId('orchestrate-control'), { target: { value: 'ask-everything' } });
     await waitFor(() => expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { control: 'ask-everything' }));
-    expect(screen.getByTestId('details-card-orchestrate-summary')).toHaveTextContent('ask for everything · up to 5');
+    await waitFor(() => expect(screen.getByTestId('details-card-orchestrate-summary')).toHaveTextContent('ask for everything · up to 5'));
   });
 
   it('explains a clamped level', async () => {
@@ -471,7 +475,38 @@ describe('Turning orchestration off with helpers (#2232)', () => {
 });
 
 describe('Orchestration cards in Agent details', () => {
-  it('shows Orchestrate for a top-level agent, and Helpers and Connections once it orchestrates', async () => {
+  it('keeps provider Subagents immediately after Orchestration in the resolved card order', async () => {
+    stored.orchestrate = true;
+    dispatcherOn = true;
+    const chat = { ...createChatViewState(lead.id), capabilities: { ...MINIMAL_CHAT_CAPABILITIES, subagents: 'full' as const } };
+    render(<AgentDetails agent={{ ...lead, status: 'running' }} chat={chat} />);
+    await screen.findByTestId('details-card-orchestrate');
+    const cards = Array.from(screen.getByTestId('agent-details').children)
+      .map((el) => el.getAttribute('data-testid')).filter((id) => id?.startsWith('details-card-'));
+    expect(cards).toEqual([
+      'details-card-settings', 'details-card-changes', 'details-card-dispatcher', 'details-card-orchestrate',
+      'details-card-subagents', 'details-card-connections', 'details-card-actions', 'details-card-skills-mcp', 'details-card-session',
+    ]);
+  });
+
+  it('opens waiting approvals once beside an awake agent and respects closing the card', async () => {
+    stored.orchestrate = true;
+    useHelperStartRequestStore.setState({ requests: { waiting: {
+      requestId: 'waiting', orchestratorId: lead.id, orchestratorName: lead.name, projectPath: PROJECT,
+      args: { name: 'review', task: 'Review changes' }, createdAt: '2026-11-10T10:00:00Z', expiresAt: '2026-11-11T10:00:00Z',
+    } } });
+    const awake = { ...lead, status: 'running' as const };
+    const { rerender } = render(<AgentDetails agent={awake} />);
+    await screen.findByTestId('helper-request-waiting');
+    const card = screen.getByTestId('details-card-orchestrate');
+    expect(card).toHaveAttribute('data-open', 'true');
+    fireEvent.click(screen.getByTestId('details-card-orchestrate-toggle'));
+    rerender(<AgentDetails agent={awake} />);
+    expect(card).not.toHaveAttribute('data-open');
+    await act(async () => {});
+  });
+
+  it('opens the embedded helpers through the legacy focus target and keeps Connections separate', async () => {
     stored.orchestrate = true;
     configs = [config('lead', 'epic-lead'), config('h1', 'impl-ipc', { parentAgentId: 'lead', branch: 'impl-ipc/work' })];
     // The Helpers card lists helpers from every project through main (#2514).
@@ -480,8 +515,10 @@ describe('Orchestration cards in Agent details', () => {
       .map((config) => ({ projectId: 'p1', projectPath: PROJECT, config }))) as never;
     render(<AgentDetails agent={lead} />);
     expect(await screen.findByTestId('details-card-orchestrate')).toBeInTheDocument();
-    expect(await screen.findByTestId('details-card-helpers')).toBeInTheDocument();
-    expect(screen.getByTestId('details-card-helpers-summary')).toHaveTextContent('1 of 5');
+    expect(screen.queryByTestId('details-card-helpers')).not.toBeInTheDocument();
+    act(() => useAgentDetailsStore.getState().reveal({ agentId: lead.id, card: 'helpers' }));
+    expect(await screen.findByTestId('orchestration-helpers')).toHaveTextContent('1 of 5');
+    expect(within(screen.getByTestId('details-card-orchestrate')).getByTestId('helper-row-h1')).toBeInTheDocument();
     expect(screen.getByTestId('details-card-connections')).toBeInTheDocument();
   });
 

@@ -5,7 +5,7 @@
  * with helpers opens the keep / dispose / cancel dialog.
  */
 
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import { Toggle } from '../../../components/Toggle';
 import { CardNote, CardRow, DetailsCard } from '../details/DetailsCard';
@@ -28,12 +28,13 @@ export function orchestrateSummary(orch: Pick<OrchestrationState, 'policy'>): st
   return `${CONTROL_LABELS[p.control].toLowerCase()} · up to ${p.maxHelpers}`;
 }
 
-export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
+export function OrchestrateCard({ agent, projectPath, orch, open, onToggle, children }: {
   agent: Agent;
   projectPath: string;
   orch: OrchestrationState;
   open: boolean;
   onToggle: () => void;
+  children?: ReactNode;
 }) {
   const ids = { auto: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId() };
   // Connecting to the Dispatcher is its own Details card now (#3049).
@@ -156,6 +157,7 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
             <CardNote><span data-testid="orchestrate-note">The helper tools appear the next time {agent.name} starts.</span></CardNote>
           )}
         {orch.error && <p className="pr-3.5 pl-[33px] pb-1.5 text-xs text-ctp-error" role="alert" data-testid="orchestrate-error">{orch.error}</p>}
+        {children}
       </DetailsCard>
       {orch.turnOff && (
         <TurnOffOrchestrationDialog

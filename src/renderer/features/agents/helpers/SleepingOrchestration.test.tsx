@@ -60,18 +60,19 @@ afterEach(() => {
 });
 
 describe('Sleeping orchestrator view (#2232)', () => {
-  it('shows the Orchestration card with the next-start note and the Helpers card', async () => {
+  it('shows helpers inside Orchestration with the next-start note', async () => {
     render(<SleepingAgent agent={lead} />);
     const section = await screen.findByTestId('sleeping-orchestration');
-    expect(within(section).getByTestId('details-card-helpers')).toBeInTheDocument();
+    expect(within(section).queryByTestId('details-card-helpers')).not.toBeInTheDocument();
     fireEvent.click(within(section).getByTestId('details-card-orchestrate-toggle'));
+    expect(within(section).getByTestId('orchestration-helpers')).toBeInTheDocument();
     expect(within(section).getByTestId('orchestrate-note')).toHaveTextContent('The helper tools appear the next time epic-lead starts.');
   });
 
   it('shows a waiting start with Approve off, "Wake epic-lead to approve", and a working Decline', async () => {
     useHelperStartRequestStore.setState({ requests: { [request.requestId]: request } });
     render(<SleepingAgent agent={lead} />);
-    // A waiting start opens the Helpers card by itself.
+    // A waiting start opens its containing Orchestration card.
     const row = await screen.findByTestId('helper-request-hstart_a');
     expect(within(row).getByTestId('helper-approve')).toBeDisabled();
     expect(within(row).getByTestId('helper-approve-blocked')).toHaveTextContent('Wake epic-lead to approve');
@@ -80,12 +81,13 @@ describe('Sleeping orchestrator view (#2232)', () => {
     expect(window.clubhouse.agent.approveHelperStart).not.toHaveBeenCalled();
   });
 
-  it('opens the Helpers card when Needs you reveals it', async () => {
+  it('opens Orchestration when Needs you uses the legacy helpers target', async () => {
     render(<SleepingAgent agent={lead} />);
-    const card = await screen.findByTestId('details-card-helpers');
+    const card = await screen.findByTestId('details-card-orchestrate');
     expect(card).not.toHaveAttribute('data-open');
     act(() => useAgentDetailsStore.getState().reveal({ agentId: 'lead', card: 'helpers' }));
-    await waitFor(() => expect(screen.getByTestId('details-card-helpers')).toHaveAttribute('data-open', 'true'));
+    await waitFor(() => expect(card).toHaveAttribute('data-open', 'true'));
+    expect(within(card).getByTestId('orchestration-helpers')).toBeInTheDocument();
   });
 
   it('adds nothing for an agent that doesn’t orchestrate', async () => {

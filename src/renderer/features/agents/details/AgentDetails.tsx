@@ -4,16 +4,11 @@
  * replaces the old Agents and Changes side panels. There is no pane to pin or
  * resize; the chat column moves left so no card covers a message.
  *
- * The cards, each collapsed to a one-line answer until clicked: Settings
- * (#2280), Changes, Subagents, Canvases, the Dispatcher's card (#3049, titled
- * with its name, shown while the Dispatcher is on for an agent that can
- * connect to it), Orchestrate, Helpers, Connections,
- * Context window, MCP servers and Session. Cards the runtime can't fill
- * are left out (#2094): Subagents when the agent doesn't report them (the
- * terminal, or a driver without subagents) and Context window until the
- * agent reports how full it is. The orchestration cards (#2232) are for local durable agents:
- * Orchestrate for any that isn't itself a helper, Helpers once it
- * orchestrates or has helpers, Connections once it orchestrates or has wires.
+ * Settings, Changes, Dispatcher, Orchestration (including Clubhouse helpers),
+ * provider Subagents, Connections, Actions, Skills and MCP, Session (including
+ * reported context) and nonempty Canvases (#3286). Runtime evidence stays
+ * separate from configured content in Settings. Unsupported cards are omitted.
+ * Local durable agents have orchestration controls unless they are helpers.
  * A direct Connections link also opens that card for a local quick agent.
  *
  * The Dispatcher is an experience, not an agent to inspect (#3184): it shows
@@ -35,12 +30,12 @@ import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
 import { buildAgentMap, formatCost, formatDuration, formatTokens } from '../chat/view-model';
 import { ChangesCard, type ChangesScope } from './ChangesCard';
-import { DispatcherActionsCard } from '../../actions/AgentActionsPage';
+import { AgentActionsCard, DispatcherActionsCard } from '../../actions/AgentActionsPage';
 import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
 import { SettingsCard } from './SettingsCard';
 import { McpCard } from './McpCard';
 import { ProviderSkillsCard } from './ProviderSkillsCard';
-import { useAgentDetailsStore } from './detailsStore';
+import { containingDetailsCard, useAgentDetailsStore, useDetailsCardState, type CardId } from './detailsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import type { LastSessionInfo } from '../states/useLastSession';
 import { describeSleep, formatAgo, formatShortDuration, formatUsd } from '../states/format';
@@ -52,7 +47,7 @@ import { DispatcherCard } from './DispatcherCard';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { Button } from '../../../components/Button';
 
-export type CardId = 'changes' | 'subagents' | 'canvases' | 'dispatcher' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session' | 'actions';
+export type { CardId } from './detailsStore';
 
 /** A worktree inside the project, as a path relative to it; null when it lives elsewhere. */
 export function relativeFolder(worktree: string | undefined, projectPath: string | undefined): string | null {
@@ -188,23 +183,8 @@ export interface AgentDetailsProps {
 export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch, lastSession }: AgentDetailsProps) {
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
   const focus = useAgentDetailsStore((s) => s.focus);
-  const [openCards, setOpenCards] = useState<Set<CardId>>(() => new Set());
   const [scope, setScope] = useState<ChangesScope>('branch');
   const [selectedSub, setSelectedSub] = useState<string | null>(null);
-  const toggleCard = useCallback((id: CardId) => setOpenCards((s) => {
-    const next = new Set(s);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  }), []);
-
-  // "Open in details" from elsewhere opens that card.
-  const handled = useRef<number | null>(null);
-  useEffect(() => {
-    if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
-    handled.current = focus.nonce;
-    setOpenCards((s) => new Set(s).add(focus.card));
-    if (focus.subagentId) setSelectedSub(focus.subagentId);
-  }, [focus, agent.id]);
 
   const projectPath = useProjectPath(agent.projectId);
   const cwd = agentCwd(agent, projectPath);
@@ -227,13 +207,15 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
     [chat, items, subagents, capabilities, runState],
   );
   const canvases = useAgentCanvases(agent);
+  const showCanvases = !dispatcher && canvases.length > 0;
   const running = agent.status === 'running';
-  // Asleep (#2281): the live-only cards go, and Session is the last one.
+  // Asleep (#2281): live-only evidence goes, and Session becomes Last session.
   const asleep = agent.status === 'sleeping' || agent.status === 'error';
 
   // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
   const orchestration = useOrchestrationCards(agent, projectPath);
   const { orchestrationPath, ownConfig, helperIds, orchestrating } = orchestration;
+  const { openCards, setOpenCards, toggleCard } = useDetailsCardState(agent.id, orchestration.approvals.pending.length > 0);
   // The Dispatcher's card (#3049): while it's on, for the agents the Orchestration card is for. Helpers never connect.
   const { show: dispatcherOn } = useDispatcherConnection();
   const showDispatcherCard = dispatcherOn && orchestration.showOrchestrate;
@@ -260,7 +242,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const showSubagents = !dispatcher && !!map && map.mode !== 'none';
 
   // Context window: only once the agent has reported how full it is.
-  const ctx = !dispatcher && chat && chat.capabilities && chat.capabilities.usage !== 'none' ? chat.usage.context : null;
+  const ctx = !asleep && !dispatcher && chat && chat.capabilities && chat.capabilities.usage !== 'none' ? chat.usage.context : null;
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
 
   // Session: live stats only; the settings are in the Settings card.
@@ -277,6 +259,39 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
     lastSession && lastSession.costUsd > 0 ? formatUsd(lastSession.costUsd) : null,
   ].filter(Boolean).join(' · ');
   const limits = chat?.capabilities?.limits ? chat.usage.limits : [];
+  const showEvidence = !dispatcher && (!asleep || !!chat);
+  const available = new Set<CardId>(['settings', 'actions']);
+  if (!dispatcher) { available.add('changes'); available.add('session'); }
+  if (showCanvases) available.add('canvases');
+  if (showSubagents) available.add('subagents');
+  if (showDispatcherCard) available.add('dispatcher');
+  if (orchestration.showOrchestrate) available.add('orchestrate');
+  if (showConnections) available.add('connections');
+  if (showEvidence) available.add('skills-mcp');
+  const requested = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
+  const focusCard = requested && available.has(requested) ? requested : dispatcher ? 'actions' : 'session';
+
+  // Resolve aliases and unavailable targets again as capabilities or memberships load.
+  const handled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focus || focus.agentId !== agent.id) return;
+    const key = `${agent.id}:${focus.nonce}:${focusCard}`;
+    if (handled.current === key) return;
+    handled.current = key;
+    if (focusCard === 'settings') useAgentDetailsStore.getState().setSettingsOpen(true);
+    else setOpenCards((s) => new Set(s).add(focusCard));
+    if (focus.subagentId) setSelectedSub(focus.subagentId);
+  }, [focus, agent.id, focusCard, setOpenCards]);
+  useEffect(() => {
+    if (showCanvases) return;
+    setOpenCards((s) => {
+      if (!s.has('canvases')) return s;
+      const next = new Set(s);
+      next.delete('canvases');
+      next.add(dispatcher ? 'actions' : 'session');
+      return next;
+    });
+  }, [showCanvases, dispatcher, setOpenCards]);
 
   return (
     <aside
@@ -286,6 +301,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
       aria-label={`${agent.name} details`}
       onKeyDown={(e) => {
         if (e.key !== 'Escape' || e.defaultPrevented) return;
+        if (!(e.target instanceof Node) || !e.currentTarget.contains(e.target)) return;
         e.preventDefault();
         setOpen(false);
         // Focus goes back to this pane's toolbar button.
@@ -330,6 +346,12 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         onReviewAll={onReviewAll}
       />}
 
+      {showDispatcherCard && (
+        <DispatcherCard agent={agent} orch={orchestration.orch} open={open('dispatcher')} onToggle={() => toggleCard('dispatcher')} />
+      )}
+
+      <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
+
       {showSubagents && chat && map && (
         <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
           <SubagentList
@@ -344,43 +366,6 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         </DetailsCard>
       )}
 
-      {!dispatcher && <DetailsCard
-        id="canvases"
-        title="Canvases"
-        summary={canvases.length === 0 ? 'not on a canvas' : `on ${canvases.length} ${canvases.length === 1 ? 'board' : 'boards'}`}
-        open={open('canvases')}
-        onToggle={() => toggleCard('canvases')}
-      >
-        {canvases.length === 0 ? (
-          <CardNote>No canvas has a card for this agent.</CardNote>
-        ) : (
-          <ul className="flex flex-col">
-            {canvases.map((c) => (
-              <li key={`${c.scope}:${c.canvasId}`}>
-                <button
-                  type="button"
-                  onClick={() => jumpToCanvas(agent, c)}
-                  className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0"
-                  data-testid="details-canvas-row"
-                >
-                  <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
-                  <span className="text-xs text-ctp-overlay1 whitespace-nowrap">{c.scope === 'app' ? 'Home' : 'card'}</span>
-                  <span className="ml-auto text-xs text-ctp-accent">Jump</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </DetailsCard>}
-
-      {showDispatcherCard && (
-        <DispatcherCard agent={agent} orch={orchestration.orch} open={open('dispatcher')} onToggle={() => toggleCard('dispatcher')} />
-      )}
-
-      <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
-
-      {dispatcher && <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />}
-
       {showConnections && (
         <ConnectionsCard
           agent={wiresAgent}
@@ -392,37 +377,24 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         />
       )}
 
-      {ctx && ctxPct !== null && (
-        <DetailsCard
-          id="context"
-          title="Context window"
-          summary={`${ctxPct}% of ${formatTokens(ctx.size)}${ctx.window === 'input' ? ' input' : ''}`}
-          right={<UsageBar pct={ctxPct} className="w-14 h-[5px]" />}
-          open={open('context')}
-          onToggle={() => toggleCard('context')}
-        >
-          <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex flex-col gap-2 text-xs">
-            <UsageBar pct={ctxPct} />
-            <span className="text-ctp-text">{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</span>
-            {ctx.window === 'input' && (
-              <span className="text-ctp-overlay1">{provider} reports the room left for input after its output reserve, so its own total can be larger.</span>
-            )}
-            <span className="text-ctp-overlay1">{provider} compacts the conversation on its own near the limit.</span>
-          </div>
-        </DetailsCard>
-      )}
+      {dispatcher
+        ? <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />
+        : <AgentActionsCard key={agent.id} agentId={agent.id} agentName={agent.name} projectId={agent.projectId} open={open('actions')} onToggle={() => toggleCard('actions')} />}
 
-      {!asleep && !dispatcher && <McpCard
-        agent={agent}
-        projectPath={projectPath}
-        live={chat?.mcpServers ?? null}
-        spawnedAt={spawnedAt}
-        refreshKey={refreshKey}
-        open={open('mcp')}
-        onToggle={() => toggleCard('mcp')}
-      />}
-
-      {chat && !dispatcher && <ProviderSkillsCard agent={agent} chat={chat} open={open('provider-skills')} onToggle={() => toggleCard('provider-skills')} />}
+      {showEvidence && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
+        <CardNote>Configured skills and MCP servers are in Settings. These are connection status and provider-reported session evidence.</CardNote>
+        {!asleep && <McpCard
+          agent={agent}
+          projectPath={projectPath}
+          live={chat?.mcpServers ?? null}
+          spawnedAt={spawnedAt}
+          refreshKey={refreshKey}
+          open={open('skills-mcp')}
+          onToggle={() => toggleCard('skills-mcp')}
+          embedded
+        />}
+        {chat && <ProviderSkillsCard agent={agent} chat={chat} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')} embedded />}
+      </DetailsCard>}
 
       {asleep && !dispatcher && (
         <DetailsCard id="session" title="Last session" summary={lastSummary} open={open('session')} onToggle={() => toggleCard('session')}>
@@ -447,6 +419,21 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           {cost || tokens ? <>{cost}{cost && tokens ? <span className="text-ctp-overlay1"> · </span> : null}{tokens ? <span className={cost ? 'text-ctp-overlay1' : ''}>{formatTokens(tokens)} tokens</span> : null}</>
             : <span className="text-ctp-overlay1">{chat ? 'none yet' : 'not reported in the CLI view'}</span>}
         </CardRow>
+        {ctx && ctxPct !== null && (
+          <section aria-label="Context window" data-testid="details-session-context">
+            <CardRow label="Context window" labelWidth="wide">
+              <span>{ctxPct}% of {formatTokens(ctx.size)}{ctx.window === 'input' ? ' input' : ''}</span>
+            </CardRow>
+            <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex flex-col gap-2 text-xs">
+              <UsageBar pct={ctxPct} />
+              <span className="text-ctp-text">{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</span>
+              {ctx.window === 'input' && (
+                <span className="text-ctp-overlay1">{provider} reports the room left for input after its output reserve, so its own total can be larger.</span>
+              )}
+              <span className="text-ctp-overlay1">{provider} compacts the conversation on its own near the limit.</span>
+            </div>
+          </section>
+        )}
         {limits.length > 0 && (
           <CardRow label="Plan limits">
             <span className="flex flex-col gap-1">
@@ -464,6 +451,31 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         {runningFor && <CardRow label="Running">{runningFor}</CardRow>}
         {cwd && <CardRow label="Folder"><span className="font-mono text-[11.5px] break-all">{relativeFolder(agent.worktreePath, projectPath) ?? cwd}</span></CardRow>}
         {(branch?.branch || agent.branch) && <CardRow label="Branch"><span className="font-mono text-[11.5px] break-all">{branch?.branch ?? agent.branch}</span></CardRow>}
+      </DetailsCard>}
+
+      {showCanvases && <DetailsCard
+        id="canvases"
+        title="Canvases"
+        summary={`on ${canvases.length} ${canvases.length === 1 ? 'board' : 'boards'}`}
+        open={open('canvases')}
+        onToggle={() => toggleCard('canvases')}
+      >
+        <ul className="flex flex-col">
+          {canvases.map((c) => (
+            <li key={`${c.scope}:${c.canvasId}`}>
+              <button
+                type="button"
+                onClick={() => jumpToCanvas(agent, c)}
+                className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0"
+                data-testid="details-canvas-row"
+              >
+                <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
+                <span className="text-xs text-ctp-overlay1 whitespace-nowrap">{c.scope === 'app' ? 'Home' : 'card'}</span>
+                <span className="ml-auto text-xs text-ctp-accent">Jump</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       </DetailsCard>}
     </aside>
   );
