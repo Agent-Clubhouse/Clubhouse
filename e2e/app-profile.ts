@@ -12,7 +12,8 @@
  * creates a profile with `createDisposableProfile()`, passes it to each launch
  * and disposes it when done. Anything left over is removed when the worker
  * exits, and — locally — by the global-teardown sweep in `e2e-cleanup.ts`,
- * which recognises the same directory prefix.
+ * which recognises the same directory prefix. Neither path may dispose a
+ * profile until every registered launched process has observably exited.
  *
  * Kept free of Playwright imports so it can be unit-tested under vitest.
  */
@@ -20,6 +21,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { ChildProcess } from 'node:child_process';
 import { removeTempDir } from './e2e-cleanup';
 
 /** Must match the prefix `e2e-cleanup.ts` sweeps. */
@@ -34,7 +36,7 @@ export interface DisposableProfile {
   /** Temp root the profile was created under; disposal never leaves it. */
   readonly tmpDir: string;
   readonly disposed: boolean;
-  /** Remove the profile directory. Idempotent. */
+  /** Remove the profile directory. Refuses live/unknown launched processes; idempotent after disposal. */
   dispose(): void;
 }
 
@@ -46,7 +48,15 @@ export interface CreateProfileOptions {
 }
 
 const liveProfiles = new Set<DisposableProfile>();
+const profileProcesses = new WeakMap<DisposableProfile, Set<ChildProcess>>();
 let exitHookInstalled = false;
+
+/** Register the actual launch handle before renderer discovery or setup can fail. */
+export function registerProfileProcess(profile: DisposableProfile, child: ChildProcess): void {
+  let children = profileProcesses.get(profile);
+  if (!children) profileProcesses.set(profile, children = new Set());
+  children.add(child);
+}
 
 function installExitHook(): void {
   if (exitHookInstalled) return;
@@ -69,11 +79,15 @@ export function createDisposableProfile(opts: CreateProfileOptions = {}): Dispos
     get disposed() { return disposed; },
     dispose() {
       if (disposed) return;
+      for (const child of profileProcesses.get(profile) ?? []) {
+        const exited = Number.isInteger(child.exitCode) || (typeof child.signalCode === 'string' && child.signalCode.length > 0);
+        if (!exited) throw new Error('E2E profile retained: launched process exit has not been observed');
+      }
+      // Reusing a profile registers another handle; an old exit never clears a new live process.
+      if (!removeTempDir(userDataDir, { tmpDir })) throw new Error('E2E profile disposal failed; profile retained');
       disposed = true;
       liveProfiles.delete(profile);
-      // removeTempDir refuses anything that is not a prefixed direct child of
-      // the temp root, so a corrupted path can never delete outside it.
-      removeTempDir(userDataDir, { tmpDir });
+      profileProcesses.delete(profile);
     },
   };
   liveProfiles.add(profile);
@@ -87,7 +101,7 @@ export function disposeAllProfiles(): void {
     try {
       profile.dispose();
     } catch {
-      // Best-effort — never fail a run over cleanup.
+      console.warn('[e2e profile] disposal incomplete; profile retained');
     }
   }
 }

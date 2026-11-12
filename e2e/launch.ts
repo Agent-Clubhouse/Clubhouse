@@ -4,6 +4,7 @@ import {
   assertDisposableProfile,
   buildLaunchEnv,
   createDisposableProfile,
+  registerProfileProcess,
   seedProfile,
   type DisposableProfile,
 } from './app-profile';
@@ -95,8 +96,8 @@ export interface LaunchedApp {
  *
  * A profile created here is removed when the worker exits (and by the local
  * global-teardown sweep); specs that inspect it after quitting may also
- * remove it themselves. If the launch fails partway, the app is closed and an
- * owned profile is removed before the error propagates.
+ * remove it themselves. If launch setup fails, closing the app is attempted;
+ * an owned profile is retained unless the launched process has observably exited.
  */
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
   const launchStarted = Date.now();
@@ -114,6 +115,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
       cwd: APP_PATH,
       env,
     });
+    registerProfileProcess(profile, electronApp.process());
   } catch (err) {
     if (ownsProfile) profile.dispose();
     throw err;
