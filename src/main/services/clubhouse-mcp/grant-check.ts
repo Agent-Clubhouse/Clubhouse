@@ -57,6 +57,8 @@ export interface GrantCheckWire {
   binding: Pick<McpBinding, 'targetId' | 'targetKind'>;
   /** For a group project wire: the project's metadata, for its admins. */
   groupMetadata?: Record<string, unknown>;
+  /** Hypothetical switch state for the editor catalog; calls use the saved state. */
+  wakeOn?: boolean;
 }
 
 /** How the wire's target stands to the caller. The caller's orchestrator is its parent, not a connection. */
@@ -67,7 +69,7 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
       const isDispatcher = isTrackedDispatcher(binding.targetId);
       if (binding.targetId === agentId) return { kind: 'agent', relations: ['self'], isDispatcher };
       if (mcpCallerParent(agentId) === binding.targetId) return { kind: 'agent', relations: ['parent'], isDispatcher };
-      return { kind: 'agent', relations: ['connected'], isDispatcher, ...(localConnectionWakeOn(agentId, binding.targetId) && { wakeOn: true }) };
+      return { kind: 'agent', relations: ['connected'], isDispatcher, ...((wire.wakeOn ?? localConnectionWakeOn(agentId, binding.targetId)) && { wakeOn: true }) };
     }
     case 'browser':
       return { kind: 'browser', relations: ['connected'] };

@@ -175,6 +175,8 @@ describe('tool grant declarations (#2967)', () => {
       list_orchestrator_controls: agent.read on connected
       list_agent_parts: library.read on library
       get_agent_part: library.read on library
+      discover_agent_assets: agent.read on agent_arg
+      import_agent_asset: agent.read on agent_arg; library.read, library.write on library
       create_agent_part: library.write on library
       update_agent_part: library.write on library
       fork_agent_part: library.write on library; agent.grant on agent_arg if agent

@@ -12,7 +12,7 @@
 import { legacyDefaultsNotCopied } from '../../legacy-defaults';
 import { createHash, randomBytes } from 'crypto';
 import * as path from 'path';
-import { registerGlobalTool } from '../tool-registry';
+import { callGrantIsApproved, grantApprovalContext, registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import type { ToolGrant, ToolGrantDeclaration } from '../tool-grants';
 import { appLog } from '../../log-service';
@@ -22,7 +22,10 @@ import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
 import { managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
 import { applyManagedSettings, createManagedAgent } from '../../managed-agents/agents';
 import { previewManagedSetup } from '../../managed-agents/delivery';
-import { checkTemplateSettings, ManagedError } from '../../managed-agents/service';
+import { discoverManagedAssets } from '../../managed-agents/discovery';
+import { prepareManagedAssetImport, type ManagedAssetImportRequest } from '../../managed-agents/imports';
+import { checkTemplateSettings, ManagedError, ManagedPartCreationError } from '../../managed-agents/service';
+import { withAgentActivity } from '../../agent-transition';
 import { resolveOrchestrator } from '../../agent-system';
 import { getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
 import { callerAccess, withAccess, type AccessLevel } from '../../../../shared/agent-access';
@@ -33,7 +36,7 @@ import { optionalBoolean, optionalString, requireString } from './validation';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type ManagedPartContent, type ManagedPartKind, type ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
 import type { Project } from '../../../../shared/types';
 import { agentRegistry } from '../../agent-registry';
-import { capToHolder } from '../grant-check';
+import { capToHolder, checkToolGrant } from '../grant-check';
 import { describeCallsForAsk } from '../ask-first';
 import { resolveArgTargets } from '../arg-targets';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
@@ -220,6 +223,7 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
     } catch (err) {
       // telemetry-exempt: the error reaches the Dispatcher as the tool result
       if (err instanceof ArgError) return fail(err.message);
+      if (err instanceof ManagedPartCreationError) return { ...json({ status: 'partial', receipt: err.receipt, message: err.message, assigned: false, providerLoaded: 'not_confirmed' }), isError: true };
       if (err instanceof ManagedError) return fail(`${err.code}: ${err.message}`);
       appLog('core:mcp', 'warn', `${name} failed`, { meta: { callerId, error: err instanceof Error ? err.message : String(err) } });
       return fail(err instanceof Error ? err.message : String(err));
@@ -232,6 +236,10 @@ const CREATE_GRANTS: readonly ToolGrantDeclaration[] = [
   { actions: ['agent.create'], target: 'project_arg', from: { args: ['project'] } },
   { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['settings', 'templateId'], from: { args: ['project'] } },
   { actions: ['connection.bootstrap'], target: 'created_by_me', ifTrue: ['connectToDispatcher'] },
+];
+const IMPORT_GRANTS: readonly ToolGrantDeclaration[] = [
+  { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+  { actions: ['library.read', 'library.write'], target: 'library' },
 ];
 const HELPER_CHOICES = ['dispose', 'keep'] as const;
 const WORKTREE_CHOICES = ['delete', 'keep'] as const;
@@ -320,6 +328,64 @@ export function registerManagedTools(): void {
   tool('get_agent_part', { actions: ['library.read'], target: 'library' }, 'Read one agent part with its full content and revision.',
     { id: S }, ['id'],
     async (_c, args) => json(await svc().getPart(requireString(args, 'id'))));
+
+  tool('discover_agent_assets', { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+    'Discover skill folders and local MCP definitions in a registered agent\'s effective-provider folder, without executing anything or changing files. Plain agents remain plain. Only this agent folder is inspected, not global/inherited configuration. Discovered does not mean configured, desired, running or provider-confirmed loaded. Use import_agent_asset to preview a complete bundle.',
+    { project: PROJECT, agent: AGENT }, ['project', 'agent'],
+    async (_c, args) => {
+      const t = await resolveAgent(args);
+      const agent = await agentConfig.getDurableConfig(t.project.path, t.agentId);
+      if (!agent?.worktreePath) throw new ArgError('This agent has no own source folder. Import accepts only a registered agent folder, never an arbitrary path.');
+      const provider = await resolveOrchestrator(t.project.path, agent.orchestrator);
+      return json({ agentId: t.agentId, provider: provider.id, ...await discoverManagedAssets({ root: agent.worktreePath, conventions: provider.conventions }) });
+    });
+
+  tool('import_agent_asset', IMPORT_GRANTS,
+    'Preview, then explicitly confirm importing one discovered asset into the shared part library. project/agent name the source, not a target to change. candidateId comes from discover_agent_assets. mode copy requires name and makes an independent bundle; reuse requires an exactly matching partId and follows that shared part. No assignment, conversion, restart or probe. Supporting/binary files and executable flags are kept; links, unsafe paths, credentials and unsupported fields refuse the whole import. Preview returns no content or source paths. Confirm with identical arguments and the single-use token; source/library changes require a new preview.',
+    { project: PROJECT, agent: AGENT, candidateId: S, mode: { type: 'string', enum: ['copy', 'reuse'] }, partId: S, name: S, confirm: S },
+    ['project', 'agent', 'candidateId', 'mode'],
+    async (callerId, args) => {
+      const t = await resolveAgent(args);
+      let projectChanged = false;
+      const releaseProject = projectStore.onProjectsChanged(() => { projectChanged = true; });
+      try {
+        const agent = await agentConfig.getDurableConfig(t.project.path, t.agentId);
+        if (!agent?.worktreePath) throw new ArgError('The source agent has no own folder.');
+        const provider = await resolveOrchestrator(t.project.path, agent.orchestrator);
+        const mode = requireString(args, 'mode');
+        if (mode !== 'copy' && mode !== 'reuse') throw new ArgError('mode must be copy or reuse.');
+        const request: ManagedAssetImportRequest = { candidateId: requireString(args, 'candidateId'), mode,
+          partId: optionalString(args, 'partId'), name: optionalString(args, 'name') };
+        const source = { root: agent.worktreePath, conventions: provider.conventions };
+        const sourceOrchestrator = agent.orchestrator;
+        const plan = await prepareManagedAssetImport(svc(), source, request, t.project.id);
+        const digest = digestOf('import_agent_asset', t.project.id, t.agentId, provider.id, plan.fingerprint);
+        const confirm = optionalString(args, 'confirm');
+        if (!confirm) return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest), ...plan.preview });
+        redeemConfirm(callerId, confirm, digest);
+        const part = await withAgentActivity(t.agentId, () => asDispatcher(callerId, () => plan.commit(ACTOR, async (assertSnapshot) => {
+          const stableArgs = { ...args, project: t.project.path, agent: t.agentId };
+          const targets = await resolveArgTargets(callerId, IMPORT_GRANTS, stableArgs);
+          await assertSnapshot();
+          const current = await resolveAgent(stableArgs);
+          const currentAgent = await agentConfig.getDurableConfig(current.project.path, current.agentId);
+          const currentProvider = await resolveOrchestrator(current.project.path, currentAgent?.orchestrator);
+          return () => {
+            if (projectChanged || current.project.id !== t.project.id || currentAgent?.worktreePath !== source.root || currentAgent?.orchestrator !== sourceOrchestrator
+              || currentProvider.id !== provider.id || digestOf(currentProvider.conventions) !== digestOf(source.conventions)) {
+              throw new ManagedError('stale', 'The registered project, source folder or provider changed before import committed. Preview again; nothing was imported.');
+            }
+            if (!targets.get(IMPORT_GRANTS[0])?.length) throw new ManagedError('not_permitted', 'The source authorization target is no longer available. Preview again; nothing was imported.');
+            const check = checkToolGrant(callerId, IMPORT_GRANTS, stableArgs, undefined, targets);
+            const context = grantApprovalContext(callerId, 'import_agent_asset', args, IMPORT_GRANTS, targets);
+            if (!callGrantIsApproved(callerId, 'import_agent_asset', args, check, context)) {
+              throw new ManagedError('not_permitted', 'Import authorization changed before the library write. Nothing was imported; request permission and preview again.');
+            }
+          };
+        })));
+        return json({ status: mode === 'copy' ? 'imported' : 'reused', part, assigned: false, providerLoaded: 'not_confirmed' });
+      } finally { releaseProject(); }
+    });
 
   tool('create_agent_part', { actions: ['library.write'], target: 'library' },
     'Create a custom agent part in the library. It is not added to any agent; use set_agent_setup for that. content: block {content}, skill {skillName, files: [{path, content, encoding?, executable?}]}, mcp {serverKey, transport: stdio|http|sse, command?, args?, url?, envVars?: names only}. Never put secret values in parts.',

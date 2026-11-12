@@ -51,6 +51,21 @@ export class ManagedError extends Error {
   }
 }
 
+export interface ManagedPartCreationReceipt {
+  partId: string;
+  revision: number;
+  catalog: 'committed';
+  metadata: 'saved' | 'not_saved';
+  unfinishedStage: 'metadata' | 'readback';
+  recovery: string;
+}
+
+export class ManagedPartCreationError extends ManagedError {
+  constructor(readonly receipt: ManagedPartCreationReceipt) {
+    super('failed', `Library part ${receipt.partId} was created, but ${receipt.unfinishedStage} did not finish. Do not retry creation. ${receipt.recovery}`);
+  }
+}
+
 export interface ManagedAgentsDeps {
   catalog: AssetCatalogStore;
   state: ManagedStateStore;
@@ -615,7 +630,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return { ...(await summarize(entry)), content: await contentOf(entry) };
     },
 
-    async createPart(input: { name: string; description?: string; content: ManagedPartContent; actor?: string; source?: Extract<AssetSource, { kind: 'import' | 'plugin' }> }): Promise<ManagedPartSummary> {
+    async createPart(input: { name: string; description?: string; content: ManagedPartContent; actor?: string; source?: Extract<AssetSource, { kind: 'import' | 'plugin' }> }, beforeCommit?: () => Promise<void>): Promise<ManagedPartSummary> {
       const kind = input.content.kind;
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
@@ -626,18 +641,31 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       }
       let entry: CatalogEntry;
       try {
-        entry = await catalog.createAsset({ kind, name, payload: contentToPayload(input.content), ...(input.source && { source: input.source }) });
+        entry = await catalog.createAsset({ kind, name, payload: contentToPayload(input.content), ...(input.source && { source: input.source }) }, beforeCommit);
       } catch (err) {
         // telemetry-exempt: rethrown as a ManagedError with a code the caller shows.
         mapCatalogError(err);
       }
-      await state.update((s) => {
-        const actor = actorOf(input.actor);
-        s.parts[entry.id] = { ...(input.description?.trim() && { description: input.description.trim() }), ...(actor && { updatedBy: actor }) };
-      });
+      const partial = (metadata: ManagedPartCreationReceipt['metadata'], unfinishedStage: ManagedPartCreationReceipt['unfinishedStage']) => {
+        appLog('core:managed', 'warn', 'Library part creation is incomplete after catalog commit', { meta: { partId: entry.id, stage: unfinishedStage } });
+        return new ManagedPartCreationError({ partId: entry.id, revision: entry.headRevision, catalog: 'committed', metadata, unfinishedStage,
+          recovery: 'Read this existing part by id after repairing local storage, then finish its metadata with an update. No rollback was attempted; never create a second copy automatically.' });
+      };
+      try {
+        await state.update((s) => {
+          const actor = actorOf(input.actor);
+          s.parts[entry.id] = { ...(input.description?.trim() && { description: input.description.trim() }), ...(actor && { updatedBy: actor }) };
+        });
+      } catch {
+        await auditManaged('managed.part.created', entry.id);
+        changed();
+        throw partial('not_saved', 'metadata');
+      }
       await auditManaged('managed.part.created', entry.id);
       changed();
-      return summarize(entry);
+      try { return await summarize(entry); } catch {
+        throw partial('saved', 'readback');
+      }
     },
 
     /**

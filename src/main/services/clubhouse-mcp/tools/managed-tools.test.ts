@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
   /** Rows the grant check's peek doesn't see, as when it can't place a name. */
   hiddenFromPeek: new Set<string>(),
   available: true,
+  failMetadata: false,
+  projectListeners: new Set<() => void>(),
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -19,18 +21,21 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../agent-system', async (original) => ({
   ...await original<typeof import('../../agent-system')>(),
-  resolveOrchestrator: async (_projectPath: string, cli?: string) => ({
+  resolveOrchestrator: vi.fn(async (_projectPath: string, cli?: string) => ({
     id: cli ?? 'claude-code',
     displayName: 'Test CLI',
     checkAvailability: async () => ({ available: state.available }),
     conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md' },
-  }),
+  })),
 }));
 vi.mock('../dispatcher-gate', async (importOriginal) => ({
   ...await importOriginal<typeof import('../dispatcher-gate')>(),
   isDispatcherAgent: (id: string) => id === 'dispatcher',
 }));
-vi.mock('../../project-store', () => ({ peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }] }));
+vi.mock('../../project-store', () => ({
+  peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }],
+  onProjectsChanged: (listener: () => void) => { state.projectListeners.add(listener); return () => { state.projectListeners.delete(listener); }; },
+}));
 vi.mock('../../agent-config', () => ({
   listDurable: async () => [...state.agents.values()],
   peekDurableConfigs: async () => [...state.agents.values()].filter((a) => !state.hiddenFromPeek.has(a.id)),
@@ -64,9 +69,13 @@ vi.mock('../../managed-agents', async () => {
   let svc: ReturnType<typeof createManagedAgentsService> | null = null;
   return {
     managedAgents: () => {
+      const backing = createManagedStateStore(path.join(state.base, 'managed'));
       svc ??= createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(state.base, 'catalog') }),
-        state: createManagedStateStore(path.join(state.base, 'managed')),
+        state: { read: backing.read, update: async (fn) => {
+          if (state.failMetadata) throw new Error('password=private-value at /private/metadata');
+          return backing.update(fn);
+        } },
         listProjects: async () => [{ path: '/proj', name: 'Clubhouse' }],
         listAgents: async () => [...state.agents.values()],
         getAgent: async (_p, id) => state.agents.get(id) ?? null,
@@ -85,7 +94,7 @@ vi.mock('../../managed-agents', async () => {
   };
 });
 
-import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
+import { callTool, getScopedToolList, registerGlobalTool, _resetForTesting } from '../tool-registry';
 import { CONFIRM_TTL_MS, registerManagedTools, _resetConfirmTokensForTesting } from './managed-tools';
 import { managedAgents, restartManagedAgent } from '../../managed-agents';
 import { _resetSettingsAuditForTesting } from '../../settings-audit';
@@ -94,7 +103,8 @@ import { BUILTIN_BLOCK_IDS } from '../../managed-agents/builtins';
 import { getAgentGrantChanges, updateAgentGrantChanges } from '../../agent-grants-store';
 import { deleteAgent } from '../../agent-delete';
 import { agentRegistry } from '../../agent-registry';
-import { listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
+import { dropCallApprovalsFor, listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
+import { resolveOrchestrator } from '../../agent-system';
 import { describeDeleteCall } from './managed-tools';
 import { _resetDispatcherBootstrapForTesting } from '../dispatcher-bootstrap';
 import { getOrchestrationPolicy, setOrchestrationPolicy } from '../../orchestration-policy';
@@ -111,6 +121,9 @@ beforeEach(async () => {
   state.restartOrigins = [];
   state.hiddenFromPeek = new Set();
   state.available = true;
+  state.failMetadata = false;
+  state.projectListeners = new Set();
+  vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
   grantMock.granted = false;
@@ -284,6 +297,289 @@ describe('the builder tools', () => {
   it('are listed in the dispatcher group', () => {
     const names = getScopedToolList('dispatcher').map((t) => t.name);
     for (const name of ['list_agent_parts', 'update_agent_part', 'push_agent_template', 'restart_agent']) expect(names).toContain(name);
+  });
+});
+
+describe('discovery and confirmed library imports (#2855)', () => {
+  function sourceAgent() {
+    const folder = path.join(state.base, 'native-source');
+    const skill = path.join(folder, '.claude/skills/import-review');
+    fs.mkdirSync(skill, { recursive: true });
+    fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: import-review\n---\nReview without executing anything.\n');
+    state.agents.set('native-source', { id: 'native-source', name: 'native-source', color: 'indigo', createdAt: '', worktreePath: folder });
+    return { project: 'Clubhouse', agent: 'native-source' };
+  }
+
+  it('imports only after a bound confirmation and leaves a plain source untouched', async () => {
+    const source = sourceAgent();
+    const original = JSON.stringify(state.agents.get('native-source'));
+    const discovered = await call('discover_agent_assets', source);
+    expect(discovered.isError).toBeFalsy();
+    expect(discovered.json.providerLoaded).toBe('not_confirmed');
+    const args = { ...source, candidateId: discovered.json.candidates[0].id, mode: 'copy', name: 'Confirmed imported review 2855' };
+    const preview = await call('import_agent_asset', args);
+    expect(preview.json.status).toBe('needs_confirmation');
+    expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+    const imported = await call('import_agent_asset', { ...args, confirm: preview.json.confirm });
+    expect(imported.isError, imported.content[0].text).toBeFalsy();
+    expect(imported.json).toMatchObject({ status: 'imported', assigned: false, providerLoaded: 'not_confirmed', part: { name: args.name } });
+    expect(imported.json.part.content).toBeUndefined();
+    expect(JSON.stringify(state.agents.get('native-source'))).toBe(original);
+    expect((await call('import_agent_asset', { ...args, confirm: preview.json.confirm })).isError).toBe(true);
+
+    const reuse = { ...source, candidateId: args.candidateId, mode: 'reuse', partId: imported.json.part.id };
+    const shared = await call('import_agent_asset', reuse);
+    const reused = await call('import_agent_asset', { ...reuse, confirm: shared.json.confirm });
+    expect(reused.json).toMatchObject({ status: 'reused', part: { id: imported.json.part.id }, assigned: false });
+    expect(reused.json.part.content).toBeUndefined();
+  });
+
+  it('refuses source edits and worktree migration after the preview', async () => {
+    const source = sourceAgent();
+    const discovered = await call('discover_agent_assets', source);
+    const args = { ...source, candidateId: discovered.json.candidates[0].id, mode: 'copy', name: 'Stale imported review 2855' };
+    const before = await call('import_agent_asset', args);
+    const folder = state.agents.get('native-source')!.worktreePath!;
+    fs.writeFileSync(path.join(folder, '.claude/skills/import-review/SKILL.md'), 'Changed after preview.\n');
+    expect((await call('import_agent_asset', { ...args, confirm: before.json.confirm })).content[0].text).toContain('stale');
+    const next = await call('import_agent_asset', args);
+    const moved = path.join(state.base, 'moved-source');
+    fs.renameSync(folder, moved);
+    state.agents.get('native-source')!.worktreePath = moved;
+    expect((await call('import_agent_asset', { ...args, confirm: next.json.confirm })).content[0].text).toContain('stale');
+    expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+  });
+
+  it('rechecks source-read and library-write grants at confirmation', async () => {
+    const source = sourceAgent();
+    const discovered = await call('discover_agent_assets', source);
+    const args = { ...source, candidateId: discovered.json.candidates[0].id, mode: 'copy', name: 'Grant blocked review 2855' };
+    const before = await call('import_agent_asset', args);
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'library.write', target: { kind: 'any' }, mode: 'off' }] }));
+      expect((await call('import_agent_asset', { ...args, confirm: before.json.confirm })).isError).toBe(true);
+      expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.read', target: { kind: 'any' }, mode: 'off' }] }));
+      expect((await call('discover_agent_assets', source)).isError).toBe(true);
+      expect((await call('import_agent_asset', { ...args, confirm: before.json.confirm })).isError).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
+  });
+
+  async function importPreview(name: string) {
+    const source = sourceAgent();
+    const discovered = await call('discover_agent_assets', source);
+    const args = { ...source, candidateId: discovered.json.candidates[0].id, mode: 'copy', name };
+    const preview = await call('import_agent_asset', args);
+    expect(preview.json.status).toBe('needs_confirmation');
+    return { args, token: preview.json.confirm };
+  }
+
+  it.each(['library.write', 'agent.read'] as const)('refuses %s revoked during confirmation preparation at the effect boundary', async (action) => {
+    const { args, token } = await importPreview(`In-flight revoked ${action}`);
+    const service = managedAgents();
+    const entries = service.liveEntries.bind(service);
+    vi.spyOn(service, 'liveEntries').mockImplementationOnce(async () => {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action, target: { kind: 'any' }, mode: 'off' }] }));
+      return entries();
+    });
+    try {
+      expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+      expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
+  });
+
+  it.each(['move', 'retarget', 'provider'] as const)('refuses an in-flight registered source %s before the durable import', async (change) => {
+    const { args, token } = await importPreview(`In-flight source ${change}`);
+    const service = managedAgents();
+    const entries = service.liveEntries.bind(service);
+    vi.spyOn(service, 'liveEntries').mockImplementationOnce(async () => {
+      const source = state.agents.get('native-source')!;
+      if (change === 'provider') source.orchestrator = 'copilot-cli';
+      else {
+        const moved = path.join(state.base, 'moved-during-confirm');
+        if (change === 'move') fs.renameSync(source.worktreePath!, moved);
+        else fs.mkdirSync(moved);
+        source.worktreePath = moved;
+      }
+      return entries();
+    });
+    expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+    expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+  });
+
+  it('keeps real Ask-first approval separate from preview confirmation and valid through the effect check', async () => {
+    const { args, token } = await importPreview('Actually approved import');
+    const confirmed = { ...args, confirm: token };
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'library.write', target: { kind: 'any' }, mode: 'ask' }] }));
+      const asked = await call('import_agent_asset', confirmed);
+      expect(asked.isError).toBe(true);
+      expect(asked.content[0].text).toContain('approval');
+      expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+      expect(takeGrantRequest(listGrantRequests('dispatcher')[0].requestId, true)).toBeTruthy();
+      const imported = await call('import_agent_asset', confirmed);
+      expect(imported.isError, imported.content[0].text).toBeFalsy();
+      expect(imported.json).toMatchObject({ status: 'imported', part: { name: args.name } });
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it.each(['off', 'ask'] as const)('does not let a real approval cover source-read changed to %s in flight', async (mode) => {
+    const { args, token } = await importPreview(`Approval does not widen to ${mode}`);
+    const confirmed = { ...args, confirm: token };
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'library.write', target: { kind: 'any' }, mode: 'ask' }] }));
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+      expect(takeGrantRequest(listGrantRequests('dispatcher')[0].requestId, true)).toBeTruthy();
+      const service = managedAgents();
+      const entries = service.liveEntries.bind(service);
+      vi.spyOn(service, 'liveEntries').mockImplementationOnce(async () => {
+        await updateAgentGrantChanges('dispatcher', () => ({ changes: [
+          { action: 'library.write', target: { kind: 'any' }, mode: 'ask' },
+          { action: 'agent.read', target: { kind: 'any' }, mode },
+        ] }));
+        return entries();
+      });
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+      expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it('does not widen the original pending approval when source-read becomes Ask first before the user answers', async () => {
+    const { args, token } = await importPreview('Original pending approval scope');
+    const confirmed = { ...args, confirm: token };
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'library.write', target: { kind: 'any' }, mode: 'ask' }] }));
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+      const old = listGrantRequests('dispatcher')[0];
+      expect(old.actions).toEqual(['library.write']);
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [
+        { action: 'library.write', target: { kind: 'any' }, mode: 'ask' },
+        { action: 'agent.read', target: { kind: 'any' }, mode: 'ask' },
+      ] }));
+      dropCallApprovalsFor('dispatcher');
+      expect(takeGrantRequest(old.requestId, true)?.actions).toEqual(['library.write']);
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+      expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+      const current = listGrantRequests('dispatcher')[0];
+      expect(current.actions).toEqual(['agent.read', 'library.write']);
+      expect(takeGrantRequest(current.requestId, true)).toBeTruthy();
+      expect((await call('import_agent_asset', confirmed)).json.status).toBe('imported');
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it('refuses an inherited project provider changed during the final source/library snapshot', async () => {
+    let projectProvider: 'claude-code' | 'copilot-cli' = 'claude-code';
+    const provider = await resolveOrchestrator('/proj');
+    vi.mocked(resolveOrchestrator).mockImplementation(async (_p, cli) => ({ ...provider, id: cli ?? projectProvider }));
+    const { args, token } = await importPreview('Late inherited project provider');
+    const service = managedAgents();
+    const entries = service.liveEntries.bind(service);
+    let snapshots = 0;
+    vi.spyOn(service, 'liveEntries').mockImplementation(async () => {
+      if (++snapshots === 2) projectProvider = 'copilot-cli';
+      return entries();
+    });
+    expect(state.agents.get('native-source')?.orchestrator).toBeUndefined();
+    expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+    expect(projectProvider).toBe('copilot-cli');
+    expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+  });
+
+  it('re-asks when a name resolves to a different canonical agent despite identical actions and labels', async () => {
+    sourceAgent();
+    const original = state.agents.get('native-source')!;
+    original.name = 'Shared source name';
+    const handler = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'read' }] }));
+    registerGlobalTool('test_read_named_agent', { description: 'Read an agent', inputSchema: { type: 'object' } }, handler, {
+      grant: { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+    });
+    const args = { project: 'Clubhouse', agent: original.name };
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.read', target: { kind: 'any' }, mode: 'ask' }] }));
+      expect((await call('test_read_named_agent', args)).isError).toBe(true);
+      const old = listGrantRequests()[0];
+      original.name = 'Previous source';
+      state.agents.set('replacement', { ...original, id: 'replacement', name: args.agent });
+      expect(takeGrantRequest(old.requestId, true)).toBeTruthy();
+      expect((await call('test_read_named_agent', args)).isError).toBe(true);
+      expect(handler).not.toHaveBeenCalled();
+      const current = listGrantRequests()[0];
+      expect(current.actions).toEqual(old.actions);
+      expect(current.where).toBe(old.where);
+      expect(takeGrantRequest(current.requestId, true)).toBeTruthy();
+      expect((await call('test_read_named_agent', args)).isError).toBeFalsy();
+      expect(handler).toHaveBeenCalledTimes(1);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it('synchronously refuses a project generation change after the final provider resolution and releases its listener', async () => {
+    let projectProvider: 'claude-code' | 'copilot-cli' = 'claude-code';
+    const provider = await resolveOrchestrator('/proj');
+    vi.mocked(resolveOrchestrator).mockImplementation(async (_p, cli) => ({ ...provider, id: cli ?? projectProvider }));
+    const { args, token } = await importPreview('Project generation changed at final snapshot');
+    const service = managedAgents();
+    const entries = service.liveEntries.bind(service);
+    let snapshots = 0;
+    vi.spyOn(service, 'liveEntries').mockImplementation(async () => {
+      if (++snapshots === 3) {
+        projectProvider = 'copilot-cli';
+        for (const listener of state.projectListeners) listener();
+      }
+      return entries();
+    });
+    expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+    expect(projectProvider).toBe('copilot-cli');
+    expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+    expect(state.projectListeners.size).toBe(0);
+  });
+
+  it('returns an error-shaped durable partial receipt and can repair the existing part without creating again', async () => {
+    const { args, token } = await importPreview('Recoverable partial import');
+    let partial: Awaited<ReturnType<typeof call>>;
+    try {
+      state.failMetadata = true;
+      partial = await call('import_agent_asset', { ...args, confirm: token });
+    } finally { state.failMetadata = false; }
+    expect(partial.isError).toBe(true);
+    expect(partial.json).toMatchObject({ status: 'partial', assigned: false, providerLoaded: 'not_confirmed',
+      receipt: { catalog: 'committed', metadata: 'not_saved', unfinishedStage: 'metadata' } });
+    expect(partial.content[0].text).not.toMatch(/private-value|\/private\/metadata/);
+    const id = partial.json.receipt.partId;
+    expect((await call('get_agent_part', { id })).json).toMatchObject({ name: args.name, revision: 1 });
+    expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+    expect((await call('update_agent_part', { id, expectedRevision: 1, expectedDescription: '', description: 'Recovered metadata' })).json)
+      .toMatchObject({ id, description: 'Recovered metadata' });
+    expect((await managedAgents().listParts('skill')).filter((p) => p.name === args.name)).toHaveLength(1);
   });
 });
 

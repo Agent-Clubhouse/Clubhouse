@@ -9,7 +9,7 @@ import { GRANT_ACTION_LABELS } from '../../../shared/agent-grant-changes';
 import { GRANT_REQUEST_DETAILS_MAX, GRANT_REQUEST_REASON_MAX } from '../../../shared/grant-requests';
 import { getDurableConfig } from '../agent-config';
 import { agentRegistry } from '../agent-registry';
-import { callKey, consumeCallApproval, recordGrantRequest } from '../grant-requests';
+import { callKey, consumeCallApprovalScope, recordGrantRequest, type CallApprovalScope, type ConsumedCallApproval } from '../grant-requests';
 import { appLog } from '../log-service';
 import type { AskedAction } from './grant-check';
 
@@ -54,16 +54,19 @@ export async function agentNameOf(agentId: string, projectPath: string | undefin
 
 export type AskFirstOutcome =
   /** The user allowed this exact call: run it. */
-  | { kind: 'approved' }
+  | { kind: 'approved'; approval: ConsumedCallApproval }
   /** Not yet: tell the agent this. */
   /** Not yet: tell the agent this. `created`: a new request went to Needs you (only then is it recorded, #2973). */
   | { kind: 'asked'; text: string; created?: boolean };
 
-export async function askFirst(agentId: string, toolName: string, args: Record<string, unknown>, asks: AskedAction[]): Promise<AskFirstOutcome> {
+export async function askFirst(agentId: string, toolName: string, args: Record<string, unknown>, asks: AskedAction[], context?: string): Promise<AskFirstOutcome> {
   const key = callKey(agentId, toolName, args);
-  if (consumeCallApproval(key)) {
+  const scope: CallApprovalScope = { context: context ?? callKey(agentId, toolName, { args, asks }), asks: asks.map(({ action, where }) => ({ action, where })) };
+  const approval = consumeCallApprovalScope(key);
+  if (approval?.scope.context === scope.context
+    && asks.every((ask) => approval.scope.asks.some((original) => original.action === ask.action && original.where === ask.where))) {
     appLog('core:mcp', 'info', 'Ask-first call approved by the user', { meta: { agentId, toolName } });
-    return { kind: 'approved' };
+    return { kind: 'approved', approval };
   }
   const projectPath = agentRegistry.get(agentId)?.projectPath;
   if (!projectPath) {
@@ -85,7 +88,7 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
     toolName,
     ...(details && { details, ...described }),
     ...(reason && { reason }),
-  });
+  }, Date.now(), scope);
   if (recorded.ok === false) {
     return { kind: 'asked', text: `You already have ${recorded.waiting} requests waiting for the user. Wait for an answer before asking again.` };
   }
