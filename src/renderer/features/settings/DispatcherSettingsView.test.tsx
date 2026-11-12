@@ -211,7 +211,7 @@ describe('DispatcherSettingsView', () => {
       await renderOn();
       const name = screen.getByLabelText('Name') as HTMLInputElement;
       expect(name.value).toBe('Rosie');
-      expect(screen.getByText('Shows in the sidebar, in its chat, on your phone and to the agents connected to it.')).toBeInTheDocument();
+      expect(screen.getByText('Shows in the sidebar, in its chat and on your phone. Its internal agent appears as Dispatcher controller.')).toBeInTheDocument();
       fireEvent.change(name, { target: { value: '  Juniper ' } });
       await act(async () => { fireEvent.keyDown(name, { key: 'Enter' }); fireEvent.blur(name); });
       expect(window.clubhouse.agent.updateDurable).toHaveBeenCalledWith(FOLDER, 'disp', { name: 'Juniper' });
