@@ -2,6 +2,7 @@ import { unstable_batchedUpdates } from 'react-dom';
 import type { CanvasTargetIndex, CanvasTargetStore, GroupProjectNavigationIndex } from '../../../../shared/canvas-index-types';
 import { findTargetCanvasHits, isCanvasTargetView, type NavigableCanvasTargetKind, type TargetCanvasHit } from '../../../../shared/canvas-persistence';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
+import type { CanvasState } from '../../../plugins/builtin/canvas/canvas-store';
 import { consumeCanvasNavigationHandoff, prepareCanvasNavigation } from '../../../plugins/builtin/canvas/canvas-navigation-handoff';
 import { useAgentStore } from '../../../stores/agentStore';
 import { durableAgentFromConfig } from '../../../stores/agent/agentCrudSlice';
@@ -30,6 +31,10 @@ function assertCurrent(signal: AbortSignal): void {
   signal.throwIfAborted();
 }
 
+function localCanvasLoaded(state: CanvasState): boolean {
+  return state.loaded && state.dataOrigin === 'local';
+}
+
 /** Loaded stores replace disk hits AND disk failures, including unsaved deletions. */
 export function mergeTargetCanvasHits(kind: NavigableCanvasTargetKind, targetId: string, index: CanvasTargetIndex): {
   hits: ConnectionCanvasHit[]; errors: string[];
@@ -38,8 +43,9 @@ export function mergeTargetCanvasHits(kind: NavigableCanvasTargetKind, targetId:
   const hits = index.stores.flatMap((entry) => {
     const store = entry.scope === 'app' ? useAppCanvasStore : getProjectCanvasStore(entry.projectId ?? null);
     const state = store.getState();
-    const found = state.loaded ? findTargetCanvasHits(state.canvases, kind, targetId) : entry.hits;
-    if (!state.loaded && entry.error) errors.push(`${entry.projectName || 'Home'}: ${entry.error}`);
+    const local = localCanvasLoaded(state);
+    const found = local ? findTargetCanvasHits(state.canvases, kind, targetId) : entry.hits;
+    if (!local && entry.error) errors.push(`${entry.projectName || 'Home'}: ${entry.error}`);
     return found.map((hit) => ({
       ...hit, scope: entry.scope,
       ...(entry.projectId && { projectId: entry.projectId }),
@@ -100,14 +106,14 @@ export async function jumpToConnectionCanvas(
   if (hit.scope === 'project' && !project) throw new Error('This Canvas project was removed. Restore the project and retry Open.');
   const store = hit.scope === 'app' ? useAppCanvasStore : getProjectCanvasStore(hit.projectId ?? null);
   let groupProjects = index.groupProjects;
-  if (!store.getState().loaded) {
+  if (!localCanvasLoaded(store.getState())) {
     const snapshot = await window.clubhouse.canvas.readForNavigation(kind, targetId, hit.projectId);
     assertCurrent(signal);
     if (project && !useProjectStore.getState().projects.some((entry) => entry.id === project.id && entry.path === project.path)) {
       throw new Error('This Canvas project was removed while loading. Restore it and retry Open.');
     }
     // A concurrent load or unsaved edit wins over a disk read that started earlier.
-    if (!store.getState().loaded) store.getState().hydrateForNavigation(snapshot, hit.canvasId);
+    if (!localCanvasLoaded(store.getState())) store.getState().hydrateForNavigation(snapshot, hit.canvasId);
     groupProjects = snapshot.groupProjects;
   }
   assertCurrent(signal);

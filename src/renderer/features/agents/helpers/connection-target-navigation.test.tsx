@@ -85,7 +85,7 @@ beforeEach(() => {
   for (const store of [useAppCanvasStore, ...projects.map((project) => getProjectCanvasStore(project.id))]) {
     const handoff = getCanvasNavigationHandoff(store);
     if (handoff) consumeCanvasNavigationHandoff(store, handoff);
-    store.setState({ canvases: [], views: [], loaded: false, wiresLoaded: false, selectedViewId: null, wireDefinitions: [], zoneWireDefinitions: [] });
+    store.setState({ canvases: [], views: [], loaded: false, dataOrigin: null, wiresLoaded: false, selectedViewId: null, wireDefinitions: [], zoneWireDefinitions: [] });
   }
   window.clubhouse.canvas.getTargetCanvases = vi.fn(async () => indexed());
   window.clubhouse.canvas.readForNavigation = vi.fn(async () => snapshot());
@@ -211,7 +211,7 @@ describe('connection Open navigation', () => {
 
     const none = indexed();
     none.stores.forEach((entry) => { entry.hits = []; });
-    getProjectCanvasStore('nav-two').setState({ loaded: false });
+    getProjectCanvasStore('nav-two').setState({ loaded: false, dataOrigin: null });
     vi.mocked(window.clubhouse.canvas.getTargetCanvases).mockResolvedValue(none);
     render(<ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Renamed project" projectId="nav-one" />);
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
@@ -306,10 +306,44 @@ describe('connection Open navigation', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('uses the genuine local snapshot for remote-projected Home, never its same-ID remote board or an unreadable local copy', async () => {
+    const homeHit = { scope: 'app' as const, canvasId: 'home-board', viewId: 'home-node', name: 'Local saved board', nodeName: 'Local node' };
+    const index = indexed();
+    index.stores.forEach((entry) => { entry.hits = entry.scope === 'app' ? [homeHit] : []; });
+    const remoteBoard = board('home-board', [{ ...groupView('home-node'), title: 'Remote projected node', position: { x: 700, y: 900 } }]);
+    useAppCanvasStore.getState().hydrateFromRemote([remoteBoard], 'home-board', [], []);
+    useUIStore.setState({ activeHostId: 'satellite' });
+    const unreadable = { ...index, stores: [{ scope: 'app' as const, hits: [], error: 'Local saved copy unreadable' }] };
+    expect(mergeTargetCanvasHits('group-project', 'gp_actual', unreadable)).toEqual({ hits: [], errors: ['Home: Local saved copy unreadable'] });
+    vi.mocked(window.clubhouse.canvas.getTargetCanvases).mockResolvedValue(index);
+    vi.mocked(window.clubhouse.canvas.readForNavigation).mockRejectedValueOnce(new Error('Local Canvas primary is unavailable. Restore it and retry Open.'));
+    const create = vi.spyOn(useAppCanvasStore.getState(), 'addCanvas');
+    const bind = vi.spyOn(window.clubhouse.mcpBinding, 'bind');
+    const unbind = vi.spyOn(window.clubhouse.mcpBinding, 'unbind');
+    await expect(jumpToConnectionCanvas('group-project', 'gp_actual', homeHit, beginConnectionNavigationRequest().signal)).rejects.toThrow('Local Canvas primary is unavailable');
+    expect(useAppCanvasStore.getState().views[0].title).toBe('Remote projected node');
+    expect(useUIStore.getState().activeHostId).toBe('satellite');
+
+    const loading = deferred<CanvasNavigationSnapshot>();
+    vi.mocked(window.clubhouse.canvas.readForNavigation).mockReturnValue(loading.promise);
+    const opening = jumpToConnectionCanvas('group-project', 'gp_actual', homeHit, beginConnectionNavigationRequest().signal);
+    await waitFor(() => expect(window.clubhouse.canvas.readForNavigation).toHaveBeenCalledTimes(2));
+    expect(window.clubhouse.canvas.readForNavigation).toHaveBeenLastCalledWith('group-project', 'gp_actual', undefined);
+    expect(useAppCanvasStore.getState().views[0].title).toBe('Remote projected node');
+    loading.resolve({ ...snapshot(), canvases: [board('home-board', [groupView('home-node')])] });
+    await opening;
+    expect(useAppCanvasStore.getState().views[0].title).toBe('Renamed project');
+    expect(useAppCanvasStore.getState().views[0].position).toEqual({ x: 5000, y: 6000 });
+    expect(useAppCanvasStore.getState().selectedViewId).toBe('home-node');
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+    expect(useUIStore.getState().activeHostId).toBeNull();
+    for (const mutation of [create, bind, unbind]) expect(mutation).not.toHaveBeenCalled();
+  });
+
   it('lets loaded live deletions override saved hits and unreadable saved copies, but never hides an incomplete scope inventory', () => {
     const index = indexed();
     index.stores[2].error = 'Unreadable saved copy';
-    getProjectCanvasStore('nav-two').setState({ loaded: true, canvases: [] });
+    getProjectCanvasStore('nav-two').setState({ loaded: true, dataOrigin: 'local', canvases: [] });
     expect(mergeTargetCanvasHits('group-project', 'gp_actual', index)).toEqual({ hits: [], errors: [] });
     index.error = 'Project list unreadable';
     expect(mergeTargetCanvasHits('group-project', 'gp_actual', index).errors).toEqual(['Project list unreadable']);

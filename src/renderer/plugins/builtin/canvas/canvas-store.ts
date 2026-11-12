@@ -45,6 +45,8 @@ export interface CanvasState {
   canvases: CanvasInstance[];
   activeCanvasId: string;
   loaded: boolean;
+  /** In-memory provenance: Home can project a satellite's data into this store. */
+  dataOrigin: 'local' | 'remote' | null;
   /** True once wireDefinitions have been restored from storage.  The auto-save
    *  effect must not fire until this is set, otherwise a debounced save can
    *  overwrite persisted wires with the initial empty array. */
@@ -428,6 +430,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     elkDirection: 'RIGHT',
     layoutCenterId: null,
     loaded: false,
+    dataOrigin: null,
     wiresLoaded: false,
     loadError: null,
 
@@ -470,7 +473,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       _wiresPersistBlocked = false;
       _zoneWiresPersistBlocked = false;
       set({
-        canvases, activeCanvasId: canvasId, wireDefinitions, zoneWireDefinitions, loaded: true, wiresLoaded: true, loadError: null,
+        canvases, activeCanvasId: canvasId, wireDefinitions, zoneWireDefinitions, loaded: true, dataOrigin: 'local', wiresLoaded: true, loadError: null,
         ...syncDerivedState(canvases, canvasId),
       });
     },
@@ -530,7 +533,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
             rendererLog('canvas', 'error', 'Canvas data unreadable — not loading, saves blocked', {
               meta: { primary: primary.status, backup: backup.status, error: errorMessage(error) },
             });
-            set({ loaded: false, loadError: `Canvas data could not be read: ${errorMessage(error)}` });
+            set({ loaded: false, dataOrigin: null, loadError: `Canvas data could not be read: ${errorMessage(error)}` });
             loadResult = 'unreadable';
             span.set(ATTR.canvasLoadResult(loadResult));
             return loadResult;
@@ -580,7 +583,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
         _canvasPersist = nextPersist;
         _zoneWiresPersistBlocked = nextZoneWiresBlocked;
-        set({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, loadError: null, ...syncDerivedState(canvases, activeCanvasId) });
+        set({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, dataOrigin: 'local', loadError: null, ...syncDerivedState(canvases, activeCanvasId) });
         span.set(
           ATTR.canvasCount(canvases.length),
           ATTR.canvasViewCount(countBucket(canvases.reduce((n, c) => n + c.views.length, 0))),
@@ -593,7 +596,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         rendererLog('canvas', 'error', 'loadCanvas failed — not loading, saves blocked', {
           meta: { error: errorMessage(err) },
         });
-        set({ loaded: false, loadError: `Canvas failed to load: ${errorMessage(err)}` });
+        set({ loaded: false, dataOrigin: null, loadError: `Canvas failed to load: ${errorMessage(err)}` });
       }
       span.set(ATTR.canvasLoadResult(loadResult));
       return loadResult;
@@ -850,7 +853,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         ? { zoneWireDefinitions: remoteZoneWireDefinitions as ZoneWireDefinition[] }
         : {};
 
-      set({ canvases, activeCanvasId: resolvedActive, loaded: true, wiresLoaded: true, ...wireUpdate, ...zoneWireUpdate, ...syncDerivedState(canvases, resolvedActive) });
+      set({ canvases, activeCanvasId: resolvedActive, loaded: true, dataOrigin: 'remote', wiresLoaded: true, ...wireUpdate, ...zoneWireUpdate, ...syncDerivedState(canvases, resolvedActive) });
     },
 
     // ── Canvas tab management ────────────────────────────────────
