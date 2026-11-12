@@ -595,6 +595,76 @@ describe('annex-server', () => {
       } finally { listen.mockRestore(); }
     });
 
+    it.each([
+      { entry: 'direct', replace: false },
+      { entry: 'host', replace: false },
+      { entry: 'direct', replace: true },
+      { entry: 'host', replace: true },
+    ])('drains real OS bind errors after $entry cancellation (replacement=$replace)', async ({ entry, replace }) => {
+      if (entry === 'direct') annexServer.stop();
+      const occupied = net.createServer();
+      await new Promise<void>((resolve) => occupied.listen(0, '127.0.0.1', resolve));
+      const address = occupied.address();
+      if (!address || typeof address === 'string') throw new Error('Expected an occupied loopback port');
+      vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: address.port, pairingPort: 0 });
+      const errors: Array<{ code: string | undefined; listening: boolean; handlers: number }> = [];
+      const original = net.Server.prototype.listen;
+      let watched = false;
+      let attempts = 0;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        attempts++;
+        const first = !watched && this instanceof https.Server;
+        if (first) {
+          watched = true;
+          const monitor = (error: NodeJS.ErrnoException) => {
+            errors.push({
+              code: error.code,
+              listening: this.listening,
+              handlers: this.listeners('error').filter((listener) => listener !== monitor).length,
+            });
+          };
+          this.on('error', monitor);
+        }
+        const result = Reflect.apply(original, this, args);
+        if (first) process.nextTick(() => {
+          annexServer.stop();
+          if (replace) {
+            vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 0, pairingPort: 0 });
+            annexServer.start();
+          }
+        });
+        return result;
+      });
+      try {
+        const starting = (entry === 'direct' ? annexServer.startVerified() : networkToolHost.host!.applyLoopbackOnly(false, () => {})).then(
+          () => ({ state: 'ready' }),
+          (error: unknown) => ({ state: 'failed', error }),
+        );
+        expect(await Promise.race([
+          starting,
+          new Promise((resolve) => setTimeout(() => resolve({ state: 'pending' }), 150)),
+        ])).toMatchObject({ state: 'failed', error: expect.any(Error) });
+        await vi.waitFor(() => expect(errors).toEqual([{ code: 'EADDRINUSE', listening: false, handlers: 1 }]));
+        if (replace) {
+          await vi.waitFor(() => {
+            expect(annexServer.getStatus().port).toBeGreaterThan(0);
+            expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0);
+          });
+        }
+        expect(attempts).toBe(replace ? 4 : 2);
+        expect(annexServer.getStatus().tlsEnabled).toBe(replace);
+        expect(annexServer.getStatus().port > 0).toBe(replace);
+        expect(saved.loopbackOnly).toBe(entry === 'direct');
+        expect(appLog).toHaveBeenCalledWith('core:annex', 'debug', expect.any(String), {
+          meta: expect.objectContaining({ code: 'EADDRINUSE', current: false }),
+        });
+      } finally {
+        annexServer.stop();
+        listen.mockRestore();
+        await new Promise<void>((resolve, reject) => occupied.close((error) => error ? reject(error) : resolve()));
+      }
+    });
+
     it.each(['replacement', 'disable'])('settles the actual MCP host without undoing a concurrent %s', async (change) => {
       const original = net.Server.prototype.listen;
       const held = new Set<net.Server>();
