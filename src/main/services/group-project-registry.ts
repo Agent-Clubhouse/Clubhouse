@@ -79,8 +79,32 @@ class GroupProjectRegistry {
         throw err;
       }
     }
+    if ([...projects.values()].some((project) => project.scope === undefined)) {
+      const { collectLegacyGroupProjectScopes, GroupProjectScopeMigrationError } = await import('./group-project-scope-migration');
+      let scopes: Awaited<ReturnType<typeof collectLegacyGroupProjectScopes>> | undefined;
+      try {
+        scopes = await collectLegacyGroupProjectScopes([...projects.values()]);
+      } catch (error) {
+        if (!(error instanceof GroupProjectScopeMigrationError)) throw error;
+        appLog('core:group-project', 'warn', 'Group project scope migration deferred until a complete inventory is available', {
+          meta: { error: error.message, retryable: true, retry: 'next startup' },
+        });
+      }
+      if (scopes && scopes.size > 0) {
+        for (const project of projects.values()) {
+          const scope = scopes.get(project.id);
+          if (scope) project.scope = scope;
+        }
+        await this.writeSnapshot(JSON.stringify([...projects.values()], null, 2));
+      }
+    }
     this.projects = projects;
     this.loaded = true;
+  }
+
+  private async writeSnapshot(data: string): Promise<void> {
+    await ensureDir(groupProjectsDir());
+    await persist.timed('group_registry', () => replaceFile(registryPath(), data, undefined));
   }
 
   private scheduleFlush(): void {
@@ -109,8 +133,7 @@ class GroupProjectRegistry {
     const revision = this.revision;
     const data = JSON.stringify([...this.projects.values()], null, 2);
     const flushPromise = (async () => {
-      await ensureDir(groupProjectsDir());
-      await persist.timed('group_registry', () => replaceFile(registryPath(), data, undefined));
+      await this.writeSnapshot(data);
       if (this.revision === revision) this.dirty = false;
     })().finally(() => {
       if (this.pendingFlush === flushPromise) this.pendingFlush = null;
