@@ -3557,6 +3557,7 @@ async function handleNetworkAgentDeliveryCapabilitiesRoute(ctx: AnnexRouteContex
   if (!machine) { sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can negotiate delivery here.' }); return; }
   try { sendJson(ctx.res, 200, agentCalls.agentDeliveryCapabilities()); }
   catch (err) {
+    tel.exception(Object.assign(new Error('annex_delivery_capabilities_unavailable'), { stack: undefined }), { origin: 'main', handled: true });
     appLog('core:annex', 'warn', 'Durable delivery capabilities are unavailable', { meta: { error: err instanceof Error ? err.message : String(err) } });
     sendJson(ctx.res, 503, { error: 'delivery_store_unavailable' });
   }
@@ -5571,7 +5572,10 @@ function listenServer(server: http.Server | https.Server, host: string): ListenF
     server.once('error', onError);
     server.once('close', onClose);
     try { server.listen(port, address, onListening); }
-    catch (err) { onError(err instanceof Error ? err : new Error(String(err))); }
+    catch (err) {
+      // telemetry-exempt: onError rejects the pending bind promise; this does not swallow the failure.
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
   });
   // Every interface means IPv6 too (#3058): '::' takes IPv4 and IPv6 alike. Where the
   // system has no IPv6, fall back to IPv4 only.

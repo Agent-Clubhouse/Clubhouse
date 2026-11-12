@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tel } from '../telemetry/facade';
 
 const state = vi.hoisted(() => ({ base: '', pairing: 'self-epoch', peerPairing: 'peer-epoch' }));
 const SELF = Array(16).fill('aa').join(':');
@@ -472,10 +473,17 @@ describe('durable receipts and crash boundaries (#3334)', () => {
   });
 
   it('refuses old peers before input and waits safely when capability negotiation is unavailable', async () => {
+    const report = vi.spyOn(tel, 'exception').mockImplementation(() => {});
     const support = vi.spyOn(transport, 'supportsDurableDelivery').mockRejectedValueOnce(new Error('offline')).mockResolvedValue(false);
     await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'requires durable receiver' });
     const id = waitingFor(OTHER)[0].id;
     expect(getDelivery('here', id)).toMatchObject({ state: 'retry_later', reason: 'capability_check_unavailable' });
+    expect(report).toHaveBeenCalledTimes(1);
+    const [reported, options] = report.mock.calls[0];
+    expect(reported).toBeInstanceOf(Error);
+    expect(reported).toMatchObject({ message: 'annex_delivery_capability_failed', stack: undefined });
+    expect(Object.getOwnPropertyNames(reported)).toEqual(['stack', 'message']);
+    expect(options).toEqual({ origin: 'main', handled: true });
     expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
     nextRetry();
     await flushOutbox(OTHER);

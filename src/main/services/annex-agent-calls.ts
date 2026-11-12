@@ -21,6 +21,7 @@
  */
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
+import { tel } from '../telemetry/facade';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
 import { CONNECTION_TOOLS, WAKE_TOOL, type AgentAddress as ConnectionEnd, type ConnectionDirection } from '../../shared/connection-grants';
 import type { McpToolResult } from './clubhouse-mcp/types';
@@ -443,6 +444,7 @@ export async function flushOutbox(machine: string): Promise<void> {
       let supported: boolean;
       try { supported = await session.supportsDurableDelivery(machine); }
       catch (err) {
+        tel.exception(Object.assign(new Error('annex_delivery_capability_failed'), { stack: undefined }), { origin: 'main', handled: true });
         if (generation !== lifecycle) return;
         appLog('core:annex', 'warn', 'Could not negotiate durable agent delivery', { meta: { error: err instanceof Error ? err.message : String(err) } });
         await deliveries.update((file) => {
@@ -479,6 +481,7 @@ export async function flushOutbox(machine: string): Promise<void> {
       try {
         response = await session.post(machine, '/api/v1/network/agent-call', item.body as unknown as Record<string, unknown>);
       } catch (err) {
+        tel.exception(Object.assign(new Error('annex_delivery_transport_failed'), { stack: undefined }), { origin: 'main', handled: true });
         appLog('core:annex', 'warn', 'A durable agent delivery attempt failed', { meta: { callId: item.id, error: err instanceof Error ? err.message : String(err) } });
       }
       if (generation !== lifecycle) return;
@@ -588,7 +591,10 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   const hash = payloadHash(body);
   let saved: ReceiverDelivery | undefined;
   try { saved = store.get().inbox.find((r) => r.key === key); }
-  catch (err) { return receiverStoreFailure(err); }
+  catch (err) {
+    tel.exception(Object.assign(new Error('annex_delivery_receipt_store_failed'), { stack: undefined }), { origin: 'main', handled: true });
+    return receiverStoreFailure(err);
+  }
   if (saved && saved.payloadHash !== hash) return { status: 400, error: 'idempotency_conflict', message: 'This call id already names different content.' };
   const seen = seenCalls.get(key);
   if (seen) return seen.hash === hash ? seen.outcome : { status: 400, error: 'idempotency_conflict', message: 'This call id is already running with different content.' };
@@ -619,7 +625,10 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
         if (existing) { existing.state = 'claimed'; existing.updatedAt = at; delete existing.result; delete existing.reason; }
         else file.inbox.push({ key, payloadHash: hash, state: 'claimed', createdAt: at, updatedAt: at });
       });
-    } catch (err) { return receiverStoreFailure(err); }
+    } catch (err) {
+      tel.exception(Object.assign(new Error('annex_delivery_receipt_store_failed'), { stack: undefined }), { origin: 'main', handled: true });
+      return receiverStoreFailure(err);
+    }
     // Both the description lookup and the durable claim yielded: revocation
     // during either must stop the side effect, even for an in-flight call.
     const current = getConnectionDirection(from, { agentId: to.agentId });
@@ -634,6 +643,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
           : run!(body.tool, to.agentId, callerId, body.args));
       }
       catch (err) {
+        tel.exception(Object.assign(new Error('annex_delivery_receiver_tool_failed'), { stack: undefined }), { origin: 'main', handled: true });
         appLog('core:annex', 'error', 'A receiving agent tool failed after its durable claim', { meta: { callId: body.callId, error: err instanceof Error ? err.message : String(err) } });
         result = { ...text('The receiving tool failed after starting. Its side effect is unknown; this call will not be run again.', true), annexDelivery: { state: 'indeterminate', reason: 'tool_interrupted' } };
       }
@@ -649,7 +659,10 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
         const record = file.inbox.find((r) => r.key === key)!;
         Object.assign(record, { state, result: retained, updatedAt: new Date().toISOString(), ...(reason && { reason }) });
       });
-    } catch (err) { return receiverStoreFailure(err); }
+    } catch (err) {
+      tel.exception(Object.assign(new Error('annex_delivery_receipt_store_failed'), { stack: undefined }), { origin: 'main', handled: true });
+      return receiverStoreFailure(err);
+    }
     const outcome = replayReceipt(body, store.get().inbox.find((r) => r.key === key)!);
     return !QUEUED_TOOLS.has(body.tool) && 'result' in outcome ? { ...outcome, result: { content: result.content, ...(result.isError && { isError: true }) } } : outcome;
   })();

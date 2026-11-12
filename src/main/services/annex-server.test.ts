@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { tel } from '../telemetry/facade';
 import { EventEmitter } from 'events';
 import http from 'http';
 import https from 'https';
@@ -1704,6 +1705,7 @@ describe('annex-server', () => {
   });
 
   it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {
+    const report = vi.spyOn(tel, 'exception').mockImplementation(() => {});
     const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
     vi.mocked(annexPeers.getPeer).mockReturnValue(member);
     vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
@@ -1715,12 +1717,17 @@ describe('annex-server', () => {
     expect(JSON.parse(response.body)).toEqual({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted' });
     capabilities.mockImplementationOnce(() => { throw new Error('unreadable'); });
     expect((await request(port, 'POST', route, {})).status).toBe(503);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0][0]).toMatchObject({ message: 'annex_delivery_capabilities_unavailable', stack: undefined });
+    expect(Object.getOwnPropertyNames(report.mock.calls[0][0])).toEqual(['stack', 'message']);
+    expect(report.mock.calls[0][1]).toEqual({ origin: 'main', handled: true });
     vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
     expect((await request(port, 'POST', route, { deliveryVersion: 1 })).status).toBe(403);
     expect(capabilities).toHaveBeenCalledTimes(2);
     asUnpaired();
     expect((await request(port, 'POST', route, {})).status).toBe(401);
     capabilities.mockRestore();
+    report.mockRestore();
   });
 
   it('advertises agent.create, agent.update and their option and settings routes (#2451, #2452)', async () => {

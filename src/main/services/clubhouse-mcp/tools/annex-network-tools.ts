@@ -1,4 +1,5 @@
 import type { AnnexNetworkSettingsState } from '../../../../shared/annex-network-settings';
+import { tel } from '../../../telemetry/facade';
 import { getSettings, networkEnabled } from '../../annex-settings';
 import { annexNetworkProfile } from '../../annex-network-profile';
 import { deliveryHash } from '../../annex-delivery-store';
@@ -52,6 +53,7 @@ export function registerAnnexNetworkTools(): void {
     if (Object.keys(args).length) return text('This tool takes no arguments.', true);
     try { return text(JSON.stringify(readAnnexNetworkSettings())); }
     catch (err) {
+      tel.exception(Object.assign(new Error('annex_network_settings_read_failed'), { stack: undefined }), { origin: 'main', handled: true });
       appLog('core:annex', 'warn', 'Could not read Annex Network settings', { meta: { error: err instanceof Error ? err.message : String(err) } });
       return text('The Annex Network profile is invalid or unavailable. No settings state can be confirmed.', true);
     }
@@ -87,6 +89,7 @@ export function registerAnnexNetworkTools(): void {
         });
         return text(JSON.stringify({ changed: true, settings: readAnnexNetworkSettings() }));
       } catch (err) {
+        tel.exception(Object.assign(new Error('annex_network_settings_change_failed'), { stack: undefined }), { origin: 'main', handled: true });
         const message = err instanceof Error ? err.message : String(err);
         appLog('core:annex', 'warn', 'An Annex Network settings change failed or was refused', { meta: { agentId, error: message } });
         await appendSettingsAudit({ surface: 'mcp', actorId: agentId, scope: 'app', key: 'annex.loopbackOnly', outcome: 'refused', code: 'network_change_refused' });

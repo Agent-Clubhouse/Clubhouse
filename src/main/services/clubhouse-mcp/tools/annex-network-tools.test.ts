@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpToolHandler, McpToolResult } from '../types';
+import { tel } from '../../../telemetry/facade';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, McpToolHandler>(),
@@ -92,10 +93,16 @@ describe('authorized Annex Network settings (#3332)', () => {
   });
 
   it('reports application failure explicitly rather than claiming success', async () => {
+    const report = vi.spyOn(tel, 'exception').mockImplementation(() => {});
     mocks.approve = true;
     apply.mockRejectedValueOnce(new Error('Saved but server restart failed'));
     const result = await invoke('update_annex_network_settings', args());
     expect(result.isError).toBe(true);
     expect(text(result)).toBe('Saved but server restart failed');
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0][0]).toMatchObject({ message: 'annex_network_settings_change_failed', stack: undefined });
+    expect(Object.getOwnPropertyNames(report.mock.calls[0][0])).toEqual(['stack', 'message']);
+    expect(report.mock.calls[0][1]).toEqual({ origin: 'main', handled: true });
+    report.mockRestore();
   });
 });
