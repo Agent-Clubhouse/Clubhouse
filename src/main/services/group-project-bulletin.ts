@@ -24,7 +24,7 @@ function recordBulletinPost(result: BulletinPostResult): void {
 const MAX_BODY_BYTES = 100 * 1024;
 /** Default max messages per topic before pruning. */
 const DEFAULT_MAX_PER_TOPIC = 100;
-/** Default max messages per board before global pruning. */
+/** Default max unprotected messages per board before global pruning. */
 const DEFAULT_MAX_TOTAL = 500;
 
 const FLUSH_DELAY_MS = 500;
@@ -263,7 +263,7 @@ class BulletinBoard {
     }
 
     // Prune globally
-    const evictedBoard = this.pruneGlobal();
+    const evictedBoard = this.pruneGlobal(message.id);
     recordBulletinPost(evictedBoard > 0 ? 'evicted_topic' : evictedOwn > 0 ? 'evicted_message' : 'ok');
 
     this.dirty = true;
@@ -349,9 +349,10 @@ class BulletinBoard {
   }
 
   /** Returns how many messages were evicted to stay under the board-wide cap. */
-  private pruneGlobal(): number {
+  private pruneGlobal(retainMessageId?: string): number {
     let total = 0;
-    for (const messages of this.topics.values()) {
+    for (const [topic, messages] of this.topics) {
+      if (this.protectedTopics.has(topic)) continue;
       total += messages.length;
     }
     if (total <= this.maxTotal) return 0;
@@ -361,6 +362,8 @@ class BulletinBoard {
     for (const [topic, messages] of this.topics) {
       if (this.protectedTopics.has(topic)) continue;
       for (let i = 0; i < messages.length; i++) {
+        // A successful post must remain readable even if the clock moved backwards.
+        if (messages[i].id === retainMessageId) continue;
         all.push({ topic, index: i, timestamp: new Date(messages[i].timestamp).getTime() });
       }
     }
@@ -507,10 +510,7 @@ class BulletinBoard {
 
     // Estimate per-topic removals
     for (const [topic, messages] of this.topics) {
-      if (this.protectedTopics.has(topic)) {
-        remainingTotal += messages.length;
-        continue;
-      }
+      if (this.protectedTopics.has(topic)) continue;
       if (messages.length > maxPerTopic) {
         removed += messages.length - maxPerTopic;
         remainingTotal += maxPerTopic;

@@ -299,8 +299,58 @@ describe('BulletinBoard', () => {
       expect(safeMsgs).toHaveLength(4); // all protected messages survive
 
       const unsafeMsgs = await board.getTopicMessages('unsafe', undefined, 100);
-      // Global limit is 5, safe has 4 protected, so unsafe gets pruned to 1
-      expect(unsafeMsgs.length).toBeLessThanOrEqual(1);
+      expect(unsafeMsgs).toHaveLength(4);
+    });
+
+    it('keeps work channels readable and durable when protected history exceeds the global limit', async () => {
+      vi.mocked(fsp.access).mockImplementation(async (p: string) => {
+        if (!store.has(p)) throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: string) => {
+        const data = store.get(p);
+        if (data === undefined) throw new Error('ENOENT');
+        return data;
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: string, content: string) => {
+        store.set(p, content);
+      });
+      const projectId = 'gp_protected_over_budget';
+      const board = getBulletinBoard(projectId);
+      board.setLimits(100, 3);
+      for (const topic of ['general', 'control', 'inbox-agent']) {
+        board.setTopicProtected(topic, true);
+        for (let i = 0; i < 2; i++) {
+          await board.postMessage('a', topic, `${topic}-${i}`);
+        }
+      }
+
+      const posted = [];
+      for (let i = 0; i < 5; i++) {
+        const message = await board.postMessage('b', 'release', `work-${i}`);
+        expect(await board.getMessageById(message.id)).toEqual(message);
+        posted.push(message);
+      }
+      expect(await board.getTopicMessages('release')).toEqual(posted.slice(-3));
+      expect(board.totalMessageCount()).toBe(9);
+
+      await board.flush();
+      _resetAllBoardsForTesting();
+      const restored = getBulletinBoard(projectId);
+      expect(await restored.getTopicMessages('release')).toEqual(posted.slice(-3));
+      expect((await restored.getDigest()).map(topic => [topic.topic, topic.messageCount])).toEqual([
+        ['general', 2], ['control', 2], ['inbox-agent', 2], ['release', 3],
+      ]);
+    });
+
+    it('never evicts the just-posted message when the clock moves backwards', async () => {
+      const board = getBulletinBoard('gp_clock_backwards');
+      board.setLimits(100, 1);
+      const old = await board.postMessage('a', 'release', 'old post');
+      old.timestamp = '9999-01-01T00:00:00.000Z';
+
+      const message = await board.postMessage('b', 'release', 'new post');
+      expect(await board.getTopicMessages('release')).toEqual([message]);
+      expect(await board.getMessageById(old.id)).toBeNull();
     });
 
     it('digest includes isProtected field', async () => {
@@ -510,6 +560,28 @@ describe('BulletinBoard', () => {
   });
 
   describe('estimateTrimCount', () => {
+    it.each([0, 4])('matches trimming with protected history and %i work messages per topic', async (workMessages) => {
+      const board = getBulletinBoard('gp_est_protected');
+      board.setTopicProtected('general', true);
+      for (let i = 0; i < 6; i++) {
+        await board.postMessage('a', 'general', `protected-${i}`);
+      }
+      for (const topic of ['release', 'tests']) {
+        for (let i = 0; i < workMessages; i++) {
+          await board.postMessage('b', topic, `${topic}-${i}`);
+        }
+      }
+
+      const before = await board.getAllMessages();
+      const estimate = board.estimateTrimCount(3, 4);
+      expect(estimate).toBe(workMessages === 0 ? 0 : 4);
+      expect(await board.getAllMessages()).toEqual(before);
+      board.setLimits(3, 4);
+      expect(await board.trimToLimits()).toBe(estimate);
+      expect(await board.getTopicMessages('general')).toHaveLength(6);
+      expect(board.totalMessageCount()).toBe(before.length - estimate);
+    });
+
     it('estimates messages that would be removed', async () => {
       const board = getBulletinBoard('gp_est');
       for (let i = 0; i < 10; i++) {
