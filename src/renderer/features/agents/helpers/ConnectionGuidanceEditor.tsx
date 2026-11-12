@@ -91,7 +91,7 @@ export function ConnectionGuidanceEditor({ directions }: { directions: GuidanceD
   const toolLabel = (suffix: string) => {
     const entry = toolsBySuffix.get(suffix);
     return `${suffix}${entry ? entry.available ? '' : ' (unavailable now)'
-      : Object.hasOwn(draft?.instructions ?? {}, suffix) ? ' (saved; unavailable)' : ' (unavailable)'}`;
+      : Object.prototype.hasOwnProperty.call(draft?.instructions ?? {}, suffix) ? ' (saved; unavailable)' : ' (unavailable)'}`;
   };
   const update = (changes: Partial<Draft>) => {
     setDrafts((before) => ({ ...before, [key]: { ...before[key], ...changes } }));
@@ -224,7 +224,7 @@ export function ConnectionGuidanceEditor({ directions }: { directions: GuidanceD
               <details key={suffix} open={tool !== '*'}><summary>{suffix}</summary><pre className="whitespace-pre-wrap break-words">{text}</pre></details>
             ))}
             {Object.keys(preview).length === 0 && <p>No tools are registered for this target.</p>}
-            {tool !== '*' && !Object.hasOwn(preview, tool) && <p>No registered description is available for this tool. Its guidance is retained.</p>}
+            {tool !== '*' && !Object.prototype.hasOwnProperty.call(preview, tool) && <p>No registered description is available for this tool. Its guidance is retained.</p>}
           </div>}
           {message && <p role="status" className="mt-2 text-xs text-ctp-subtext1">{message}</p>}
         </>
