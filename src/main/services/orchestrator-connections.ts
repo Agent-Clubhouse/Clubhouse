@@ -54,6 +54,8 @@ export interface OrchestratorConnection {
   agentProjectPath?: string;
   /** The project holding agent `targetId`, set only when it isn't the store's project (#2513). */
   targetProjectPath?: string;
+  /** Grant-authorized ends need not be the owner's helpers (#3336). Older entries retain their helper scope. */
+  scope?: 'granted';
 }
 
 /** The store format this build writes. */
@@ -77,7 +79,8 @@ function isConnection(value: unknown): value is OrchestratorConnection {
   const optionalPath = (v: unknown) => v === undefined || typeof v === 'string';
   return typeof c.ownerId === 'string' && typeof c.agentId === 'string' && typeof c.targetId === 'string'
     && (c.targetKind === 'agent' || c.targetKind === 'group-project')
-    && optionalPath(c.agentProjectPath) && optionalPath(c.targetProjectPath);
+    && optionalPath(c.agentProjectPath) && optionalPath(c.targetProjectPath)
+    && (c.scope === undefined || c.scope === 'granted');
 }
 
 /** Move an unreadable store aside so the next write starts clean, and say so in the log. */
@@ -241,6 +244,8 @@ export interface ConnectionScope {
   foreign: ReadonlyMap<string, ReadonlyMap<string, ScopedAgent>>;
   /** Recorded end projects (agentProjectPath, targetProjectPath) that are gone or can't be read. */
   unreadable: ReadonlySet<string>;
+  /** Explicitly recorded, registered-project ends of grant-authorized links. */
+  granted?: ReadonlyMap<string, ScopedAgent>;
 }
 
 /** Whether a project's agents can be read now. A folder that is gone counts as unreadable. */
@@ -275,6 +280,11 @@ export async function loadConnectionScope(
   }
   const homeKey = await projectKey(projectPath);
   const names = new Map((await projectStore.list()).map((p) => [p.path, p.displayName || p.name]));
+  const granted = new Map<string, ScopedAgent>();
+  for (const p of endProjects) {
+    if (!names.has(p) || unreadable.has(p)) continue;
+    for (const config of await listDurable(p)) granted.set(config.id, { config, projectName: names.get(p) });
+  }
   const owners = new Set(connections.filter((c) => c.agentProjectPath || c.targetProjectPath).map((c) => c.ownerId));
   for (const ownerId of owners) {
     if (!local.has(ownerId)) continue;
@@ -285,7 +295,7 @@ export async function loadConnectionScope(
     }
     if (helpers.size > 0) foreign.set(ownerId, helpers);
   }
-  return { local, projectName, foreign, unreadable };
+  return { local, projectName, foreign, unreadable, granted };
 }
 
 /**
@@ -301,6 +311,11 @@ export function connectionStatus(c: OrchestratorConnection, scope: ConnectionSco
   if (!owner || isDisposedAgent(owner)) return 'out';
   const reach = (id: string, recordedProject: string | undefined): 'in' | 'out' | 'unknown' => {
     if (id === owner.id) return 'in';
+    if (c.scope === 'granted') {
+      const agent = recordedProject ? scope.granted?.get(id)?.config : scope.local.get(id);
+      if (agent) return isDisposedAgent(agent) ? 'out' : 'in';
+      return recordedProject && scope.unreadable.has(recordedProject) ? 'unknown' : 'out';
+    }
     if (!recordedProject) {
       const agent = scope.local.get(id);
       return agent && !isDisposedAgent(agent) && agent.parentAgentId === owner.id && !agent.parentProjectPath ? 'in' : 'out';
@@ -315,8 +330,8 @@ export function connectionStatus(c: OrchestratorConnection, scope: ConnectionSco
 }
 
 /** An agent in the scope, and the name of its project. */
-function scopedAgent(scope: ConnectionScope, ownerId: string, id: string, recordedProject: string | undefined): ScopedAgent | undefined {
-  if (recordedProject) return scope.foreign.get(ownerId)?.get(id);
+function scopedAgent(scope: ConnectionScope, ownerId: string, id: string, recordedProject: string | undefined, granted = false): ScopedAgent | undefined {
+  if (recordedProject) return granted ? scope.granted?.get(id) : scope.foreign.get(ownerId)?.get(id);
   const local = scope.local.get(id);
   return local ? { config: local, projectName: scope.projectName } : undefined;
 }
@@ -342,11 +357,11 @@ export function bindingsFromConnections(
     const status = connectionStatus(c, scope);
     if (status === 'unknown') unknown.push({ agentId: c.agentId, targetId: c.targetId });
     if (status !== 'in') continue;
-    const from = scopedAgent(scope, c.ownerId, c.agentId, c.agentProjectPath)!.config;
+    const from = scopedAgent(scope, c.ownerId, c.agentId, c.agentProjectPath, c.scope === 'granted')!.config;
     const pair = `${c.agentId}\u0000${c.targetId}`;
     if (seen.has(pair)) continue;
     if (c.targetKind === 'agent') {
-      const to = scopedAgent(scope, c.ownerId, c.targetId, c.targetProjectPath)!;
+      const to = scopedAgent(scope, c.ownerId, c.targetId, c.targetProjectPath, c.scope === 'granted')!;
       seen.add(pair);
       out.push({
         agentId: from.id, targetId: to.config.id, targetKind: 'agent', label: to.config.name,

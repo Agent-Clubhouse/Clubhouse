@@ -97,16 +97,16 @@ class Lookup {
    * Every agent a name matches is returned, so each is checked. Empty when
    * nothing matches.
    */
-  async candidates(ref: string, inProject: string | undefined, names: 'project' | 'self_and_helpers'): Promise<Array<{ config: DurableAgentConfig; projectPath: string }>> {
+  async candidates(ref: string, inProject: string | undefined, names: 'project' | 'self_and_helpers' | 'registered'): Promise<Array<{ config: DurableAgentConfig; projectPath: string }>> {
     const byId = await this.byId(ref, inProject);
     if (byId) return [byId];
     const pool: Array<{ config: DurableAgentConfig; projectPath: string }> = [];
     if (inProject) {
       for (const config of await this.agentsIn(inProject)) pool.push({ config, projectPath: inProject });
-    } else if (names === 'self_and_helpers') {
+    } else if (names === 'self_and_helpers' || names === 'registered') {
       for (const p of (await this.allProjects()).map((x) => x.path)) {
         for (const config of await this.agentsIn(p)) {
-          if (config.id === this.callerId || config.parentAgentId === this.callerId) pool.push({ config, projectPath: p });
+          if (names === 'registered' || config.id === this.callerId || config.parentAgentId === this.callerId) pool.push({ config, projectPath: p });
         }
       }
     } else if (this.callerProject) {

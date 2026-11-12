@@ -4,6 +4,17 @@ import { controlFromGrantModes, controlGrantModes, defaultGrants } from './defau
 import { evaluateGrant, type Grant, type GrantCallTarget } from './agent-grants';
 import { ORCHESTRATION_CONTROLS } from './orchestration-policy';
 
+describe('connection management (#3336)', () => {
+  it('asks before ordinary agents manage their own connections without widening their reach', () => {
+    for (const helper of [false, true]) {
+      const grants = defaultGrants({ dispatcher: false, helper, orchestrates: false, crossProject: false });
+      const caller = { kind: 'agent' as const, agentId: 'plain' };
+      expect(evaluateGrant({ caller, action: 'connection.manage', target: { kind: 'agent', relations: ['self'] } }, grants).outcome).toBe('ask');
+      expect(evaluateGrant({ caller, action: 'connection.manage', target: { kind: 'agent', relations: [] } }, grants).outcome).toBe('refuse');
+    }
+  });
+});
+
 describe('the approval setting as grant modes (#2970)', () => {
   it('maps each setting to start and dispose modes', () => {
     expect(controlGrantModes('hands-off')).toEqual({ create: 'allow', dispose: 'allow' });

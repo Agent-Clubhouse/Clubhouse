@@ -168,7 +168,6 @@ describe('tool grant declarations (#2967)', () => {
       set_orchestrator_helpers: agent.configure on agent_arg
       connect_orchestrators: connection.manage on agent_arg
       disconnect_orchestrators: connection.manage on agent_arg
-      set_connection_tools: connection.manage on agent_arg
       list_orchestrator_controls: agent.read on connected
       list_agent_parts: library.read on library
       get_agent_part: library.read on library
@@ -192,6 +191,8 @@ describe('tool grant declarations (#2967)', () => {
       remove_from_group_project: connection.manage on agent_arg
       connect_agents: connection.manage on agent_arg
       disconnect_agents: connection.manage on agent_arg
+      set_connection_tools: connection.manage on agent_arg
+      list_connections: connection.manage on agent_arg
       create_action: action.write on app; agent.watch on app if any-agent source
       list_actions: action.read on app
       update_action: action.write on action_arg; agent.watch on app if any-agent source

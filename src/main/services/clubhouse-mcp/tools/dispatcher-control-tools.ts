@@ -17,7 +17,6 @@ import {
   connectOrchestrators,
   disconnectOrchestrators,
   listOrchestratorControls,
-  setConnectionToolsForLink,
   setOrchestratorHelpers,
 } from '../../dispatcher-controls';
 
@@ -102,19 +101,6 @@ export function registerDispatcherControlTools(): void {
     },
     guarded('disconnect_orchestrators', disconnectOrchestrators),
     { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } },
-  );
-
-  registerGlobalTool(
-    'set_connection_tools',
-    {
-      description:
-        'Set the tools on a link you made with connect_orchestrators: each direction gets exactly the tools in allow. ' +
-        'Refused for a link you didn\'t make, and for a direction the user set tools on or also connects another way; ' +
-        'nothing changes then. Sleep is never a connection tool. Returns each direction read back.',
-      inputSchema: { type: 'object', properties: { ...LINK_PROPERTIES, ...ALLOW_PROPERTIES }, required: ['from', 'to', 'allow'] },
-    },
-    guarded('set_connection_tools', setConnectionToolsForLink),
-    { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'] } } },
   );
 
   registerGlobalTool(

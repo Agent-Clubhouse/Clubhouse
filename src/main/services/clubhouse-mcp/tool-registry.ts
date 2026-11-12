@@ -68,6 +68,8 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  * - `actions` (#2952): the Actions tools, on for every agent that can own an
  *   action: not for quick agents, which end with their task, not for the
  *   Dispatcher while it is turned off, and never for its chat.
+ * - `connections` (#3336): durable-agent connection management, never for the
+ *   Dispatcher's read-only chat or quick agents. Grants decide each endpoint.
  * - `dispatcherConnected` (#3041): tools for agents connected to the
  *   Dispatcher (update_my_card), on while the agent has its wire to the
  *   Dispatcher. Also listed for agents whose CLI keeps its first tool list,
@@ -76,7 +78,7 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  *
  * A tool may name several groups; it is available when any of them is on.
  */
-export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions' | 'dispatcherConnected';
+export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions' | 'connections' | 'dispatcherConnected';
 
 /**
  * Whether an agent has its wire to the Dispatcher. Set by the agent card tools
@@ -111,6 +113,10 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
   actions: {
     isEnabled: (agentId) => (isTrackedDispatcher(agentId) ? isDispatcherAgent(agentId) : mcpCallerKind(agentId) !== 'quick'),
     refusal: 'Actions aren’t available to you: quick agents can’t own actions, and the Dispatcher can’t use them while it is turned off.',
+  },
+  connections: {
+    isEnabled: (agentId) => (isTrackedDispatcher(agentId) ? isDispatcherAgent(agentId) : mcpCallerKind(agentId) !== 'quick'),
+    refusal: 'Connection management is only available to durable agents and the enabled Dispatcher.',
   },
   dispatcherConnected: {
     isEnabled: (agentId) => !isTrackedDispatcher(agentId) && (connectedToDispatcher(agentId) || keepsFirstToolList(agentId)),

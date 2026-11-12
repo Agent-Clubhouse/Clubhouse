@@ -111,6 +111,7 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     every('action.read', APP), every('action.write', APP),
     every('action.write', SELF), every('action.run', SELF),
   ];
+  if (!facts.orchestrates && !facts.dispatcher) out.push(every('connection.manage', SELF, 'ask'));
   if (facts.helper) out.push(structural('agent.message', { kind: 'parent' }));
   if (facts.orchestrates && !facts.dispatcher) {
     // The approval setting decides whether starts and disposes ask first (#2970).

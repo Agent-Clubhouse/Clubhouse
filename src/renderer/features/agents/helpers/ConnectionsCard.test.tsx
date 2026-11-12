@@ -91,7 +91,7 @@ describe('Connections card (#2232)', () => {
     await waitFor(() => expect(screen.getAllByTestId('connection-sources')).toHaveLength(3));
     const rows = screen.getAllByTestId('connection-row');
     expect(within(rows[0]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Helper');
-    expect(within(rows[4]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Made by an orchestrator, Canvas wire');
+    expect(within(rows[4]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Made by an agent, Canvas wire');
 
     fireEvent.click(within(rows[4]).getByTestId('connection-sources'));
     const dialog = screen.getByTestId('connection-sources-dialog');

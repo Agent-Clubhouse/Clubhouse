@@ -36,6 +36,8 @@ export interface ConnectionDirection {
    * them again. Any other write clears it: then they're the user's.
    */
   setBy?: 'dispatcher';
+  /** The agent that last set this direction's switches. A user edit clears it. */
+  setByAgent?: string;
   /**
    * The user made this direction here (Make two-way on the Connections card),
    * so the store keeps it connected itself, with no other source needed.
@@ -186,6 +188,7 @@ export function normalizeConnectionDirection(raw: unknown): ConnectionDirection 
     from, to, disabledTools,
     ...(enabledTools.length > 0 && { enabledTools }),
     ...(r.setBy === 'dispatcher' && { setBy: 'dispatcher' as const }),
+    ...(typeof r.setByAgent === 'string' && r.setByAgent.length > 0 && r.setByAgent.length <= 200 && { setByAgent: r.setByAgent }),
     ...(link && { link }),
     updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : new Date(0).toISOString(),
   };
