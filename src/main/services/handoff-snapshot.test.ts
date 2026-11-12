@@ -45,6 +45,10 @@ async function replacementFixture(): Promise<{ base: string; replacement: string
 }
 
 beforeEach(async () => {
+  // Model supported repositories without ambient runner filters; production still refuses them.
+  vi.stubEnv('GIT_CONFIG_GLOBAL', os.devNull);
+  vi.stubEnv('GIT_CONFIG_SYSTEM', os.devNull);
+  vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-snapshot-')));
   repo = path.join(root, 'repo');
   staging = path.join(root, 'staging');
@@ -270,6 +274,21 @@ describe('local secret-safe handoff snapshots', () => {
     await file('tracked.txt', 'edited\n');
     await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
     expect(fs.existsSync(path.join(repo, 'filter-marker'))).toBe(false);
+    expect(await fs.promises.readFile(config)).toEqual(original);
+  });
+
+  it.each([
+    ['global', 'GIT_CONFIG_GLOBAL'],
+    ['system', 'GIT_CONFIG_SYSTEM'],
+  ] as const)('refuses %s filter definitions even when no selected file uses the driver', async (scope, variable) => {
+    const config = path.join(root, `${scope}-config`);
+    await git('config', '--file', config, 'filter.qa.process', 'handoff-fixture-must-not-execute');
+    const original = await fs.promises.readFile(config);
+    vi.stubEnv(variable, config);
+    const observed = await exec('git', ['config', '--show-scope', '--name-only', '--get-regexp', '^filter\\.qa\\.process$'], { cwd: repo });
+    expect(observed.stdout.trim()).toBe(`${scope}\tfilter.qa.process`);
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository', cleanupFailed: false });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
     expect(await fs.promises.readFile(config)).toEqual(original);
   });
 
