@@ -1,6 +1,7 @@
 /** Original guidance retained by one source of a directed connection. */
 export interface ConnectionGuidanceSource {
   sourceId: string;
+  storeId?: string;
   label?: string;
   instructions: Record<string, string>;
 }
@@ -17,6 +18,8 @@ export interface ConnectionGuidanceSnapshot {
   readOnly: boolean;
   readOnlyReason?: string;
   revision: string;
+  /** The disk save committed, but changed live ownership prevented publication. */
+  notice?: string;
 }
 
 export interface SaveConnectionGuidance {

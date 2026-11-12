@@ -12,7 +12,8 @@ export interface GuidanceDirection {
 
 interface Draft {
   snapshot: ConnectionGuidanceSnapshot;
-  catalog: ConnectionToolCatalog;
+  catalog: ConnectionToolCatalog | undefined;
+  catalogError?: string;
   instructions: Record<string, string>;
   confirmed: boolean;
   dirty: boolean;
@@ -43,14 +44,22 @@ export function ConnectionGuidanceEditor({ directions }: { directions: GuidanceD
     setSelected((before) => before < (JSON.parse(directionKey) as Array<unknown>).length ? before : 0);
     for (const [from, to] of JSON.parse(directionKey) as Array<[string, string]>) {
       const key = JSON.stringify([from, to]);
-      Promise.all([
+      Promise.allSettled([
         window.clubhouse.mcpBinding.getConnectionGuidance(from, to),
         window.clubhouse.mcpBinding.getConnectionToolCatalog(from, to),
-      ]).then(([snapshot, catalog]) => {
+      ]).then(([guidance, tools]) => {
+        if (tools.status === 'rejected') reportChromeActionFailed('agent_settings_save', tools.reason);
+        if (guidance.status === 'rejected') {
+          reportChromeActionFailed('agent_settings_save', guidance.reason);
+          if (active) setErrors((before) => ({ ...before, [key]: errorText(guidance.reason) }));
+          return;
+        }
+        const snapshot = guidance.value;
         if (active) setDrafts((before) => ({
           ...before,
           [key]: {
-            snapshot, catalog,
+            snapshot, catalog: tools.status === 'fulfilled' ? tools.value : undefined,
+            catalogError: tools.status === 'rejected' ? errorText(tools.reason) : undefined,
             instructions: before[key]?.dirty ? before[key].instructions : { ...snapshot.instructions },
             confirmed: false, dirty: before[key]?.dirty ?? false,
           },
@@ -67,9 +76,10 @@ export function ConnectionGuidanceEditor({ directions }: { directions: GuidanceD
   if (!direction) return null;
   const key = keyOf(direction);
   const draft = drafts[key];
-  const catalogTools = draft?.catalog.state === 'available' ? draft.catalog.tools : [];
-  const readOnly = !draft || draft.snapshot.readOnly || draft.snapshot.unreadable.length > 0 || draft.catalog.state === 'unavailable';
-  const toolOptions = [...new Set([...(draft?.catalog.tools.map((entry) => entry.suffix) ?? []), ...Object.keys(draft?.instructions ?? {})])].filter((suffix) => suffix !== '*');
+  const catalogTools = draft?.catalog?.state === 'available' ? draft.catalog.tools : [];
+  const catalogUnavailable = draft?.catalog?.state !== 'available';
+  const readOnly = !draft || draft.snapshot.readOnly || draft.snapshot.unreadable.length > 0;
+  const toolOptions = [...new Set([...catalogTools.map((entry) => entry.suffix), ...Object.keys(draft?.instructions ?? {})])].filter((suffix) => suffix !== '*');
   const update = (changes: Partial<Draft>) => {
     setDrafts((before) => ({ ...before, [key]: { ...before[key], ...changes } }));
     setMessage('');
@@ -86,7 +96,7 @@ export function ConnectionGuidanceEditor({ directions }: { directions: GuidanceD
       });
       setDrafts((before) => ({ ...before, [key]: { ...before[key], snapshot, instructions: { ...snapshot.instructions }, dirty: false, confirmed: false } }));
       if (tool !== '*' && !snapshot.instructions[tool] && !catalogTools.some((entry) => entry.suffix === tool)) setTool('*');
-      setMessage(`Saved: ${direction.label}. Sessions were not restarted.`);
+      setMessage(snapshot.notice ?? `Saved: ${direction.label}. Sessions were not restarted.`);
     } catch (error) {
       reportChromeActionFailed('agent_settings_save', error);
       setErrors((before) => ({ ...before, [key]: `${errorText(error)} Your draft is still here.` }));
@@ -142,7 +152,7 @@ export function ConnectionGuidanceEditor({ directions }: { directions: GuidanceD
         <>
           {draft.snapshot.readOnlyReason && <p role="alert" className="text-xs text-ctp-overlay1 mb-2">{draft.snapshot.readOnlyReason}</p>}
           {draft.snapshot.unreadable.length > 0 && <p role="alert" className="text-xs text-ctp-error mb-2">Some sources could not be checked: {draft.snapshot.unreadable.join(', ')}. Reload before editing.</p>}
-          {draft.catalog.state === 'unavailable' && <p role="alert" className="text-xs text-ctp-error mb-2">Tool catalog unavailable. Saved guidance is retained; reload after tools are registered.</p>}
+          {catalogUnavailable && <p role="alert" className="text-xs text-ctp-error mb-2">Tool catalog unavailable{draft.catalogError ? `: ${draft.catalogError}` : ''}. Default and saved tool guidance can still be edited. Reload after tools are registered.</p>}
           <label htmlFor={selectId} className="block text-xs text-ctp-subtext1">Apply guidance to</label>
           <select id={selectId} value={tool} disabled={saving || previewing} onChange={(event) => { setTool(event.target.value); setPreview(null); }}
             className="mt-1 w-full h-7 bg-ctp-base border border-surface-1 rounded-md px-2 text-xs text-ctp-text focus-ring" data-testid="wire-instructions-tool-select">
@@ -161,7 +171,7 @@ export function ConnectionGuidanceEditor({ directions }: { directions: GuidanceD
               <summary>{draft.snapshot.conflictingSources ? 'Conflicting original guidance' : 'Original source guidance'} (retained)</summary>
               {draft.snapshot.sources.map((source, index) => (
                 <div key={`${source.sourceId}-${index}`} className="mt-2">
-                  <strong>{source.label ?? source.sourceId}</strong>
+                  <strong title={source.storeId}>{source.label ?? source.sourceId}</strong>
                   {Object.entries(source.instructions).map(([suffix, text]) => <pre key={suffix} className="whitespace-pre-wrap break-words">{suffix}: {text}</pre>)}
                   {Object.keys(source.instructions).length === 0 && <p>No original guidance.</p>}
                 </div>
@@ -176,9 +186,9 @@ export function ConnectionGuidanceEditor({ directions }: { directions: GuidanceD
           )}
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <Button kind="primary" disabled={readOnly || saving || previewing || !draft.dirty || (draft.snapshot.needsSourceConfirmation && !draft.confirmed)} onClick={() => void save()} data-testid="wire-instructions-save">{saving ? 'Saving...' : 'Save direction'}</Button>
-            <Button disabled={draft.catalog.state === 'unavailable' || saving || previewing} onClick={() => void showPreview()}>{previewing ? 'Loading preview...' : 'Preview descriptions'}</Button>
-            {reverse && <Button disabled={readOnly || reverse.snapshot.readOnly || reverse.snapshot.unreadable.length > 0 || reverse.catalog.state === 'unavailable' || saving || previewing} onClick={copyToReverse}>Copy guidance to reverse draft</Button>}
-            {(errors[key] || readOnly) && <Button disabled={saving || previewing} onClick={() => setReload((value) => value + 1)}>Reload sources and keep draft</Button>}
+            <Button disabled={catalogUnavailable || saving || previewing} onClick={() => void showPreview()}>{previewing ? 'Loading preview...' : 'Preview descriptions'}</Button>
+            {reverse && <Button disabled={readOnly || reverse.snapshot.readOnly || reverse.snapshot.unreadable.length > 0 || saving || previewing} onClick={copyToReverse}>Copy guidance to reverse draft</Button>}
+            {(errors[key] || readOnly || catalogUnavailable) && <Button disabled={saving || previewing} onClick={() => setReload((value) => value + 1)}>Reload sources and keep draft</Button>}
           </div>
           {preview && <div className="mt-3 text-xs text-ctp-subtext1" aria-label="Effective descriptions">
             {Object.entries(preview).filter(([suffix]) => tool === '*' || tool === suffix).map(([suffix, text]) => (

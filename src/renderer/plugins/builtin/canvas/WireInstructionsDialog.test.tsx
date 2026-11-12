@@ -111,15 +111,42 @@ describe('shared Canvas and card guidance editor', () => {
     expect(originals.map((source) => source.instructions['*'])).toEqual(['Original one', 'Original two']);
   });
 
-  it('reports an unavailable catalog without fabricating choices or allowing writes', async () => {
+  it('allows default and saved-override editing without fabricating unavailable catalog choices', async () => {
     window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'unavailable', reason: 'tools_not_registered', tools: [] }));
     const view = render(<WireInstructionsDialog binding={binding} onClose={vi.fn()} />);
     const textarea = await view.findByRole('textbox', { name: 'Instructions' });
-    expect(textarea).toBeDisabled();
+    expect(textarea).toBeEnabled();
     expect(view.getByRole('alert')).toHaveTextContent('Tool catalog unavailable');
     expect(view.queryByRole('option', { name: 'real_registered_tool' })).toBeNull();
     expect(view.getByRole('option', { name: 'absent_tool (saved; unavailable)' })).toBeInTheDocument();
-    expect(view.getByRole('button', { name: 'Save direction' })).toBeDisabled();
+    expect(view.getByRole('button', { name: 'Preview descriptions' })).toBeDisabled();
+    fireEvent.change(textarea, { target: { value: 'Save without tool discovery' } });
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Save direction' })); });
+    expect(window.clubhouse.mcpBinding.saveConnectionGuidance).toHaveBeenCalledWith('a', 'b', expect.objectContaining({
+      instructions: { '*': 'Save without tool discovery', absent_tool: 'Retain me' },
+    }));
+    fireEvent.change(view.getByLabelText('Apply guidance to'), { target: { value: 'absent_tool' } });
+    expect(textarea).toHaveValue('Retain me');
+    expect(textarea).toBeEnabled();
+    expect(view.getByRole('button', { name: 'Copy guidance to reverse draft' })).toBeEnabled();
+  });
+
+  it('retains a healthy editable snapshot when the catalog request rejects and permits a retry', async () => {
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn().mockRejectedValue(new Error('Tool index disconnected'));
+    const view = render(<WireInstructionsDialog binding={binding} onClose={vi.fn()} />);
+    const textarea = await view.findByRole('textbox', { name: 'Instructions' });
+    expect(view.getByRole('alert')).toHaveTextContent('Tool index disconnected');
+    expect(textarea).toHaveValue('a default');
+    expect(textarea).toBeEnabled();
+    fireEvent.change(textarea, { target: { value: 'Keep while retrying tools' } });
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools: [] }));
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Reload sources and keep draft' })); });
+    expect(textarea).toHaveValue('Keep while retrying tools');
+    expect(view.getByRole('button', { name: 'Preview descriptions' })).toBeEnabled();
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Save direction' })); });
+    expect(window.clubhouse.mcpBinding.saveConnectionGuidance).toHaveBeenCalledWith('a', 'b', expect.objectContaining({
+      instructions: expect.objectContaining({ '*': 'Keep while retrying tools' }),
+    }));
   });
 
   it('protects membership-owned guidance and reports read failures with an explicit retry', async () => {

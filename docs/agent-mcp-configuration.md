@@ -91,18 +91,30 @@ replaces it. Clearing an override restores the default; saved overrides for
 temporarily unavailable tools remain editable and retained. Description preview
 uses the registered base descriptions and the same sanitization and replacement
 rules as the runtime tool list. An unavailable catalog is reported, not replaced
-with a hardcoded list.
+with a hardcoded list. Default and saved per-tool guidance remain editable when
+the catalog is unavailable or its request fails; only discovery and description
+preview require the tool index.
 
 User guidance is saved atomically in `connection-instructions.json`, keyed by
 canonical direction and target kind, independently of Canvas placement. Original
-source text is retained in its original stores and shown with provenance;
-replacing effective source guidance requires explicit confirmation. Unreadable
-sources and membership-managed federation directions cannot be edited.
+source text is retained in its original stores and shown with provenance.
+Canvas provenance includes stable project/store identities, not just display
+names or private filesystem paths. Replacing effective source guidance requires
+explicit confirmation. Unreadable sources and membership-managed federation
+directions cannot be edited.
 Concurrent/stale saves fail explicitly, leaving the draft available; reloading
 sources retains unsaved text for review and another explicit save. Empty saved
 guidance deliberately suppresses original source guidance. Source restoration
 and later Canvas hydration cannot overwrite the saved directional choice.
 Saving does not restart a session or change any permission or reverse direction.
+
+Reads and source restoration use only committed guidance, never an in-flight
+save's cache. Malformed files and duplicate direction records fail closed and
+are not overwritten. Saves serialize source inspection through disk commit and
+live publication, rechecking binding identity and source ownership. If ownership
+or sources change during an otherwise successful disk commit, the save reports
+that it was committed but not applied to the live direction and requires a
+reload. Membership-owned directions never hydrate ordinary-direction overrides.
 
 ## Codex local TOML limitation
 
