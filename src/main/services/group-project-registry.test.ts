@@ -28,6 +28,12 @@ vi.mock('fs/promises', () => ({
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
+vi.mock('./project-store', () => ({
+  list: vi.fn(async () => [
+    { id: 'proj_a', name: 'A', path: '/projects/a' },
+    { id: 'proj_b', name: 'B', path: '/projects/b' },
+  ]),
+}));
 vi.mock('./settings-store', async (importOriginal) => ({
   ...await importOriginal<typeof import('./settings-store')>(),
   replaceFile: vi.fn(async (file: string, body: string) => {
@@ -54,6 +60,33 @@ describe('GroupProjectRegistry', () => {
     expect(p.instructions).toBe('');
     expect(p.createdAt).toBeTruthy();
     expect(p.metadata).toEqual({});
+    expect(p.scope).toEqual({ level: 'app', reach: 'local' });
+  });
+
+  it('persists the registered project default across a registry reload', async () => {
+    const project = await groupProjectRegistry.create('Project team', { projectId: 'proj_a' });
+    await groupProjectRegistry.flush();
+    groupProjectRegistry._resetForTesting();
+
+    expect((await groupProjectRegistry.get(project.id))?.scope).toEqual({
+      level: 'project', projectId: 'proj_a', reach: 'local',
+    });
+  });
+
+  it('honors explicit app scope over the supplied project context', async () => {
+    const project = await groupProjectRegistry.create('App team', {
+      projectId: 'proj_a', scope: { level: 'app', reach: 'local' },
+    });
+    expect(project.scope).toEqual({ level: 'app', reach: 'local' });
+  });
+
+  it.each([
+    { options: { projectId: 'unregistered' }, code: 'invalid_scope' },
+    { options: { projectId: 'proj_a', scope: { level: 'project', projectId: 'proj_b', reach: 'local' } }, code: 'invalid_scope' },
+    { options: { scope: { level: 'app', reach: 'network' } }, code: 'network_unavailable' },
+  ] as const)('refuses $code creation without adding a record', async ({ options, code }) => {
+    await expect(groupProjectRegistry.create('Must not create', options)).rejects.toMatchObject({ code });
+    expect(await groupProjectRegistry.list()).toEqual([]);
   });
 
   it('lists created projects', async () => {

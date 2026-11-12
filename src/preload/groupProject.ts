@@ -1,12 +1,13 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { GroupProjectCreateOptions } from '../shared/group-project-types';
 
 export const groupProject = {
   groupProject: {
   list: (): Promise<unknown[]> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.LIST),
-  create: (name: string): Promise<unknown> =>
-    ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE, name),
+  create: (name: string, options?: GroupProjectCreateOptions): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE, name, options),
   get: (id: string): Promise<unknown> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.GET, id),
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>

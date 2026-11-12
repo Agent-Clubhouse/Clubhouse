@@ -322,7 +322,8 @@ describe('GroupProjectTools', () => {
   });
 
   it('get_project_info returns project data with members', async () => {
-    const project = await groupProjectRegistry.create('InfoProj');
+    mockProjectList.mockResolvedValue([{ id: 'project-a', name: 'Project A', path: '/projects/a' }]);
+    const project = await groupProjectRegistry.create('InfoProj', { projectId: 'project-a' });
     await groupProjectRegistry.update(project.id, {
       description: 'A test project',
       instructions: 'Follow the rules',
@@ -345,8 +346,23 @@ describe('GroupProjectTools', () => {
     expect(parsed.name).toBe('InfoProj');
     expect(parsed.description).toBe('A test project');
     expect(parsed.instructions).toBe('Follow the rules');
+    expect(parsed.scope).toEqual({ level: 'project', projectId: 'project-a', reach: 'local' });
     expect(parsed.members).toHaveLength(1);
     expect(parsed.members[0].agentName).toBe('robin');
+  });
+
+  it('get_project_info explicitly leaves legacy scope unresolved without changing the saved record', async () => {
+    groupProjectRegistry._setForTesting({
+      id: 'gp_legacy', name: 'Legacy', description: '', instructions: '',
+      createdAt: '2020-01-01T00:00:00Z', metadata: {},
+    });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_legacy', targetName: 'Legacy' });
+    bindingManager.bind('agent-1', binding);
+
+    const result = await callTool('agent-1', buildToolName(binding, 'get_project_info'), {});
+
+    expect(JSON.parse(result.content[0].text!).scope).toBeNull();
+    expect((await groupProjectRegistry.get('gp_legacy'))?.scope).toBeUndefined();
   });
 
   it('get_project_info returns error for unknown project', async () => {
@@ -468,6 +484,7 @@ describe('GroupProjectTools', () => {
     const result = await callTool('agent-1', toolName, {});
 
     const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.scope).toEqual({ level: 'app', reach: 'local' });
     expect(parsed.members).toHaveLength(1);
     expect(parsed.members[0].status).toBe('connected'); // registered = alive
 
