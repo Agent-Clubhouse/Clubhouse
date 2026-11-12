@@ -109,6 +109,66 @@ describe('authorized, cached machine capacity', () => {
     await expect(state.service.probe('caller', other)).rejects.toThrow('unavailable');
   });
 
+  it('rechecks earlier peers after a later peer disconnects them', async () => {
+    const third = Array(16).fill('cc').join(':');
+    let connected = true;
+    const remote = vi.fn(async (machine: string) => { if (machine === third) connected = false; return online(machine); });
+    const service = new HandoffCapacityService({
+      machine: self, authorize: async () => true,
+      computers: () => [{ machine: other, online: connected, lastSeen: 99 }, { machine: third, online: true, lastSeen: 98 }],
+      sampleLocal: async () => online(),
+      probeRemote: remote,
+    });
+    expect((await service.probe('caller')).find((record) => record.machine === other)).toEqual({
+      machine: other, online: false, lastSeen: 99, accepting_handoffs: false,
+    });
+    connected = true;
+    expect(await service.probe('caller', other)).toEqual([online(other)]);
+    expect(remote).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not return a removed member after the final asynchronous grant check', async () => {
+    let present = true;
+    let checks = 0;
+    const service = new HandoffCapacityService({
+      machine: self, authorize: async () => { if (++checks === 2) present = false; return true; },
+      computers: () => present ? [{ machine: other, online: true, lastSeen: 99 }] : [],
+      sampleLocal: async () => online(), probeRemote: async () => online(other),
+    });
+    await expect(service.probe('caller', other)).rejects.toThrow('unavailable');
+  });
+
+  it('returns a fresh offline record when a transport rejection coincides with disconnect', async () => {
+    const state = fixture();
+    state.remote.mockImplementationOnce(async () => { state.connect(false); throw new Error('private transport diagnostic'); });
+    expect(await state.service.probe('caller', other)).toEqual([
+      { machine: other, online: false, lastSeen: 99, accepting_handoffs: false },
+    ]);
+  });
+
+  it('uses the final membership timestamps if the last grant check disconnects a peer', async () => {
+    let connected = true;
+    let checks = 0;
+    const service = new HandoffCapacityService({
+      machine: self, authorize: async () => { if (++checks === 2) connected = false; return true; },
+      computers: () => [{ machine: other, online: connected, lastSeen: connected ? 99 : 101 }],
+      sampleLocal: async () => online(), probeRemote: async () => online(other),
+    });
+    expect(await service.probe('caller', other)).toEqual([{ machine: other, online: false, lastSeen: 101, accepting_handoffs: false }]);
+  });
+
+  it('does not invent online bands if a disconnected failed probe reconnects during the final grant check', async () => {
+    let connected = true;
+    let checks = 0;
+    const service = new HandoffCapacityService({
+      machine: self, authorize: async () => { if (++checks === 2) connected = true; return true; },
+      computers: () => [{ machine: other, online: connected, lastSeen: 99 }],
+      sampleLocal: async () => online(),
+      probeRemote: async () => { connected = false; throw new Error('private transport diagnostic'); },
+    });
+    await expect(service.probe('caller', other)).rejects.toThrow('Capacity computer is unavailable.');
+  });
+
   it('rejects wrong-machine or detailed peer responses and sanitizes transport errors', async () => {
     const state = fixture();
     state.remote.mockResolvedValueOnce(online(self));

@@ -152,15 +152,39 @@ export class HandoffCapacityService {
         results.push(parseHandoffCapacity({ machine: target, online: false, lastSeen: computer.lastSeen, accepting_handoffs: false }));
         continue;
       }
-      const value = await this.sample(target);
+      let value: OnlineHandoffCapacity | undefined;
+      try {
+        value = await this.sample(target);
+      } catch (error) {
+        // telemetry-exempt: only fresh offline membership explains a failed transport.
+        const current = this.computer(target);
+        if (!current || current.online) throw error;
+      }
       const current = this.computer(target);
       if (!current) throw new Error('Capacity computer is unavailable.');
       if (!current.online) {
         this.cache.delete(target);
         results.push(parseHandoffCapacity({ machine: target, online: false, lastSeen: current.lastSeen, accepting_handoffs: false }));
-      } else results.push(value);
+      } else {
+        if (!value) throw new Error('Capacity probe is unavailable.');
+        results.push(value);
+      }
     }
     if (!await this.options.authorize(callerId)) throw new Error('Capacity probe is not authorized.');
-    return structuredClone(results);
+    const cohort = new Map(this.options.computers().map((computer) => [computer.machine, computer]));
+    return structuredClone(results.map((value) => {
+      if (value.machine === this.options.machine) return value;
+      const current = cohort.get(value.machine);
+      if (!current) {
+        this.cache.delete(value.machine);
+        throw new Error('Capacity computer is unavailable.');
+      }
+      if (!current.online) {
+        this.cache.delete(value.machine);
+        return parseHandoffCapacity({ machine: value.machine, online: false, lastSeen: current.lastSeen, accepting_handoffs: false });
+      }
+      if (!value.online) throw new Error('Capacity computer is unavailable.');
+      return value;
+    }));
   }
 }

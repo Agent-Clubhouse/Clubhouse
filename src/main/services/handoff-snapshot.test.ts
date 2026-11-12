@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { canonicalHandoffManifest, type HandoffWorktreeManifest } from '../../shared/handoff-manifest';
+import { canonicalHandoffManifest, HANDOFF_TRANSFER_DEFAULTS, type HandoffWorktreeManifest } from '../../shared/handoff-manifest';
 import { prepareHandoffSnapshot, verifyHandoffSnapshot, type HandoffSnapshot, type PrepareHandoffSnapshot } from './handoff-snapshot';
 
 const exec = promisify(execFile);
@@ -52,10 +52,87 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe('local secret-safe handoff snapshots', () => {
+  it('refuses configured filters before Git diff can execute their clean command', async () => {
+    await file('.gitattributes', 'tracked.txt filter=qa\n');
+    await git('config', 'filter.qa.clean', 'node -e "require(\'fs\').writeFileSync(\'filter-marker\',\'ran\');process.stdin.pipe(process.stdout)"');
+    await file('tracked.txt', 'edited\n');
+    const outcome: unknown = await prepareHandoffSnapshot(options()).catch((error: unknown) => error);
+    expect(fs.existsSync(path.join(repo, 'filter-marker'))).toBe(false);
+    expect(outcome).toMatchObject({ code: 'unsupported_repository' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it.each(['--skip-worktree', '--assume-unchanged'])('does not silently omit edited tracked files with %s', async (flag) => {
+    await git('update-index', flag, '--', 'tracked.txt');
+    await file('tracked.txt', 'edited but hidden from ordinary diff\n');
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+    expect(await fs.promises.readFile(path.join(repo, 'tracked.txt'), 'utf8')).toBe('edited but hidden from ordinary diff\n');
+  });
+
+  it('refuses global filters without running them or modifying the person-owned configuration', async () => {
+    const config = path.join(root, 'global-config');
+    const command = 'node -e "require(\'fs\').writeFileSync(\'filter-marker\',\'ran\');process.stdin.pipe(process.stdout)"';
+    await git('config', '--file', config, 'filter.qa.clean', command);
+    const original = await fs.promises.readFile(config);
+    vi.stubEnv('GIT_CONFIG_GLOBAL', config);
+    await file('.gitattributes', 'tracked.txt filter=qa\n');
+    await file('tracked.txt', 'edited\n');
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(fs.existsSync(path.join(repo, 'filter-marker'))).toBe(false);
+    expect(await fs.promises.readFile(config)).toEqual(original);
+  });
+
+  it('never executes a filter installed after the initial repository preflight', async () => {
+    await file('.gitattributes', 'tracked.txt filter=qa\n');
+    await file('tracked.txt', 'same\n');
+    const lstat = fs.promises.lstat;
+    let installed = false;
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
+      const stat = await lstat(...args);
+      if (args[0] === path.join(repo, 'tracked.txt') && !installed) {
+        installed = true;
+        await git('config', 'filter.qa.clean', 'node -e "require(\'fs\').writeFileSync(\'filter-marker\',\'ran\');process.stdin.pipe(process.stdout)"');
+      }
+      return stat;
+    });
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(installed).toBe(true);
+    expect(fs.existsSync(path.join(repo, 'filter-marker'))).toBe(false);
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it('compares raw tracked bytes rather than invoking filters or applying line-ending normalization', async () => {
+    await file('.gitattributes', 'tracked.txt text eol=lf\n');
+    await file('tracked.txt', 'base\r\n');
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['.gitattributes', 'tracked.txt']);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('base\r\n');
+  });
+
+  it('detects same-size raw tracked edits in a SHA-256-object-format repository', async () => {
+    repo = path.join(root, 'sha256-repo');
+    await fs.promises.mkdir(repo);
+    await git('init', '-q', '-b', 'main', '--object-format=sha256');
+    await git('config', 'user.name', 'Fixture');
+    await git('config', 'user.email', 'fixture@example.com');
+    await file('tracked.txt', 'base\n');
+    await file('unchanged.txt', 'unchanged\n');
+    await git('add', '.');
+    await git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'SHA256 fixture');
+    await file('tracked.txt', 'same\n');
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.repo.base).toMatch(/^[a-f0-9]{64}$/);
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['tracked.txt']);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('same\n');
+    expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
+  });
+
   it('preserves final tracked bytes, untracked and selected >512KiB ignored files, deletions and executable mode', async () => {
     await file('tracked.txt', 'staged\n');
     await git('add', 'tracked.txt');
@@ -129,6 +206,33 @@ describe('local secret-safe handoff snapshots', () => {
     ]) await expect(prepareHandoffSnapshot(options({ bounds }))).rejects.toMatchObject({ code: 'bounds_exceeded' });
     expect(await fs.promises.readdir(staging)).toEqual([]);
     expect((await prepareHandoffSnapshot(options({ bounds: { totalBytes: 11, perFileBytes: 10, maxFiles: 2 } }))).manifest.total_bytes).toBe(11);
+  });
+
+  it('enforces exact comparison read budgets independently of tighter output bounds (scaled budget fault injection)', async () => {
+    const sizes = await Promise.all(['.gitignore', 'deleted.txt', 'tracked.txt'].map(async (name) =>
+      (await fs.promises.stat(path.join(repo, name))).size));
+    const total = sizes.reduce((sum, size) => sum + size, 0);
+    const largest = Math.max(...sizes);
+    const original = { totalBytes: HANDOFF_TRANSFER_DEFAULTS.totalBytes, perFileBytes: HANDOFF_TRANSFER_DEFAULTS.perFileBytes };
+    const bounds = { totalBytes: 1, perFileBytes: 1, maxFiles: 1 };
+    try {
+      Object.defineProperties(HANDOFF_TRANSFER_DEFAULTS, { totalBytes: { value: total - 1 }, perFileBytes: { value: largest } });
+      await expect(prepareHandoffSnapshot(options({ bounds }))).rejects.toMatchObject({ code: 'unsupported_repository' });
+      expect(await fs.promises.readdir(staging)).toEqual([]);
+      Object.defineProperty(HANDOFF_TRANSFER_DEFAULTS, 'totalBytes', { value: total });
+      const exact = await prepareHandoffSnapshot(options({ bounds }));
+      expect(exact.manifest.files).toEqual([]);
+      expect(exact.manifest.total_bytes).toBe(0);
+      Object.defineProperty(HANDOFF_TRANSFER_DEFAULTS, 'perFileBytes', { value: largest - 1 });
+      await expect(prepareHandoffSnapshot(options({ bounds }))).rejects.toMatchObject({ code: 'unsupported_repository' });
+      expect(await fs.promises.readdir(staging)).toEqual([path.basename(exact.root)]);
+      const raised = await prepareHandoffSnapshot(options({ bounds: { totalBytes: total + 1, perFileBytes: largest + 1, maxFiles: 1 } }));
+      expect(raised.manifest.files).toEqual([]);
+    } finally {
+      Object.defineProperties(HANDOFF_TRANSFER_DEFAULTS, {
+        totalBytes: { value: original.totalBytes }, perFileBytes: { value: original.perFileBytes },
+      });
+    }
   });
 
   it('detects mutation between scan and copy and cleans only its owned staging folder', async () => {
@@ -209,6 +313,101 @@ describe('receiver byte and hash verification', () => {
     await fs.promises.symlink(path.join(root, 'outside-files'), path.join(snapshot.root, 'files'));
     await expect(verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).rejects.toMatchObject({ code: 'unsafe_entry' });
     expect(await fs.promises.readFile(path.join(root, 'outside-files/new.txt'), 'utf8')).toBe('safe file');
+  });
+
+  it('rejects a matching-byte parent symlink swapped after its lstat', async () => {
+    const files = path.join(snapshot.root, 'files');
+    const outside = path.join(root, 'outside-files');
+    await fs.promises.cp(files, outside, { recursive: true });
+    const lstat = fs.promises.lstat;
+    let swapped = false;
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
+      const stat = await lstat(...args);
+      if (args[0] === files && !swapped) {
+        swapped = true;
+        await fs.promises.rename(files, path.join(root, 'retained-files'));
+        await fs.promises.symlink(outside, files, 'junction');
+      }
+      return stat;
+    });
+    await expect(verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).rejects.toMatchObject({ code: 'source_changed' });
+    expect(swapped).toBe(true);
+    expect(await fs.promises.readFile(path.join(outside, 'new.txt'), 'utf8')).toBe('safe file');
+  });
+
+  it.each(['open', 'read'] as const)('rejects a parent swap after %s, closes the descriptor and never accepts matching outside bytes', async (boundary) => {
+    const files = path.join(snapshot.root, 'files');
+    const outside = path.join(root, 'outside-files');
+    await fs.promises.cp(files, outside, { recursive: true });
+    const open = fs.promises.open;
+    let swapped = false;
+    const swap = async () => {
+      if (swapped) return;
+      swapped = true;
+      await fs.promises.rename(files, path.join(root, 'retained-files'));
+      await fs.promises.symlink(outside, files, 'junction');
+    };
+    const reads = vi.fn();
+    const closes = vi.fn();
+    vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args);
+      if (args[0] === path.join(files, 'new.txt')) {
+        const read = handle.read.bind(handle);
+        const close = handle.close.bind(handle);
+        vi.spyOn(handle, 'read').mockImplementation(async (...args) => {
+          reads();
+          const result = await read(...args);
+          if (boundary === 'read') await swap();
+          return result;
+        });
+
+        vi.spyOn(handle, 'close').mockImplementation(async () => { closes(); return close(); });
+        if (boundary === 'open') await swap();
+      }
+      return handle;
+    });
+    await expect(verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).rejects.toMatchObject({ code: 'source_changed' });
+    expect(swapped).toBe(true);
+    if (boundary === 'open') expect(reads).not.toHaveBeenCalled();
+    else expect(reads).toHaveBeenCalledOnce();
+    expect(closes).toHaveBeenCalledOnce();
+    expect(await fs.promises.readFile(path.join(outside, 'new.txt'), 'utf8')).toBe('safe file');
+  });
+
+  it('pins nested ancestors through the post-read lookup, even when the moved leaf retains the same inode', async () => {
+    await file('a/b/nested.txt', 'nested bytes');
+    snapshot = await prepareHandoffSnapshot(options());
+    const parent = path.join(snapshot.root, 'files/a/b');
+    const nested = path.join(parent, 'nested.txt');
+    const outside = path.join(root, 'outside-nested');
+    const open = fs.promises.open;
+    const lstat = fs.promises.lstat;
+    let readFinished = false;
+    let swapped = false;
+    vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args);
+      if (args[0] === nested) {
+        const read = handle.read.bind(handle);
+        vi.spyOn(handle, 'read').mockImplementation(async (...args) => {
+          const result = await read(...args);
+          readFinished = true;
+          return result;
+        });
+      }
+      return handle;
+    });
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
+      const stat = await lstat(...args);
+      if (args[0] === parent && readFinished && !swapped) {
+        swapped = true;
+        await fs.promises.rename(parent, outside);
+        await fs.promises.symlink(outside, parent, 'junction');
+      }
+      return stat;
+    });
+    await expect(verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).rejects.toMatchObject({ code: 'source_changed' });
+    expect(swapped).toBe(true);
+    expect(await fs.promises.readFile(path.join(outside, 'nested.txt'), 'utf8')).toBe('nested bytes');
   });
 
   it('rejects a fully rehashed replacement manifest that differs from the agreed offer summary', async () => {
