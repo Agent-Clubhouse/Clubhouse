@@ -17,6 +17,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
 import { setDeviceToolHost } from '../services/clubhouse-mcp/tools/device-tools';
 import { setAnnexNetworkToolHost } from '../services/clubhouse-mcp/tools/annex-network-tools';
+import { deliveryHash } from '../services/annex-delivery-store';
 
 function broadcastStatusChanged(): void {
   const status = annexServer.getStatus();
@@ -27,7 +28,7 @@ function broadcastPeersChanged(): void {
   broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
 }
 
-function applyNetworkSettings(settings: AnnexSettings, previous: AnnexSettings, strict = false): void {
+function applyNetworkSettings(settings: AnnexSettings, previous: AnnexSettings): void {
   const bindingChanged = !!settings.loopbackOnly !== !!previous.loopbackOnly;
   if (settings.enableServer && (!previous.enableServer || bindingChanged)) {
     if (previous.enableServer) annexServer.stop();
@@ -36,7 +37,6 @@ function applyNetworkSettings(settings: AnnexSettings, previous: AnnexSettings, 
       appLog('core:annex', 'info', 'Annex server started via settings');
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to start Annex server', { meta: { error: err instanceof Error ? err.message : String(err) } });
-      if (strict) throw new Error('The Annex setting was saved, but its server could not apply it. Check Annex Network on the desktop before retrying.');
     }
   } else if (!settings.enableServer && previous.enableServer) {
     annexServer.stop();
@@ -63,7 +63,36 @@ export function registerAnnexHandlers(): void {
         return { ...current, loopbackOnly: value };
       });
       settingsChanged('annex');
-      applyNetworkSettings(settings, previous, true);
+      if (!!settings.loopbackOnly === !!previous.loopbackOnly) return;
+      try {
+        if (settings.enableServer) {
+          annexServer.stop();
+          await annexServer.startVerified();
+        }
+        if (settings.enableClient) annexClient.scan();
+        broadcastStatusChanged();
+      } catch (err) {
+        appLog('core:annex', 'error', 'An approved Annex scope change could not be applied securely', { meta: { error: err instanceof Error ? err.message : String(err) } });
+        if (deliveryHash(annexSettings.getSettings()) === deliveryHash(settings)) annexServer.stop();
+        let restored: AnnexSettings | undefined;
+        try {
+          restored = await annexSettings.updateSettings((current) => {
+            if (deliveryHash(current) !== deliveryHash(settings)) throw new Error('Annex settings changed again; a concurrent edit cannot be overwritten.');
+            return { ...current, loopbackOnly: previous.loopbackOnly };
+          });
+          if (restored.enableServer) await annexServer.startVerified();
+          if (restored.enableClient) annexClient.scan();
+        } catch (restoreError) {
+          appLog('core:annex', 'error', 'Annex scope rollback was incomplete', { meta: { error: restoreError instanceof Error ? restoreError.message : String(restoreError) } });
+          if (restored && deliveryHash(annexSettings.getSettings()) === deliveryHash(restored)) annexServer.stop();
+          broadcastStatusChanged();
+          throw new Error(restored
+            ? 'The Annex change failed. The previous setting was restored, but its secure runtime could not be restored; Annex is stopped. Check Annex Network on the desktop.'
+            : 'The Annex change failed and its previous setting could not be restored. Runtime readiness is unconfirmed; check Annex Network on the desktop before retrying.');
+        }
+        broadcastStatusChanged();
+        throw new Error('The Annex change failed to start its secure listeners. The previous setting and secure runtime were restored; no change was confirmed.');
+      }
     },
   });
   // See devices and Manage devices (#3068): what the agent tools act through.

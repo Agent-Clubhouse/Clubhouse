@@ -13,6 +13,13 @@ import { createHash } from 'crypto';
 import * as tlsLib from 'tls';
 import { readMobileChatContent } from './annex-chat-content';
 import * as agentCalls from './annex-agent-calls';
+import type { AnnexSettings } from '../../shared/types';
+const networkToolHost = vi.hoisted(() => ({ host: undefined as import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost | undefined }));
+vi.mock('./clubhouse-mcp/tools/annex-network-tools', () => ({
+  setAnnexNetworkToolHost: (host: import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost) => { networkToolHost.host = host; },
+}));
+vi.mock('./annex-client', () => ({ scan: vi.fn(), startClient: vi.fn(), stopClient: vi.fn(), connect: vi.fn(), forgetSatellite: vi.fn(), retry: vi.fn() }));
+vi.mock('./annex-devices', () => ({ listDevices: () => [], removeDevice: () => false }));
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: vi.fn() }));
 import { agentFolders } from './agent-runtime/chat-files';
 vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
@@ -91,6 +98,7 @@ vi.mock('./mobile-agents', () => ({
 // Membership has its own tests (annex-network-membership.test.ts).
 const membershipMock = vi.hoisted(() => ({ onChange: null as null | (() => void) }));
 vi.mock('./annex-network-membership', () => ({
+  initNetworkMembership: vi.fn(),
   noteLocalJoin: vi.fn(),
   // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
   ownPairing: vi.fn(() => undefined),
@@ -282,6 +290,7 @@ vi.mock('./annex-settings', () => ({
   networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false,
   getSettings: vi.fn().mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false }),
   saveSettings: vi.fn(),
+  updateSettings: vi.fn(),
   getLastPorts: vi.fn().mockReturnValue({ mainPort: 0, pairingPort: 0 }),
   saveLastPorts: vi.fn().mockResolvedValue(undefined),
 }));
@@ -517,6 +526,108 @@ describe('annex-server', () => {
   afterEach(() => {
     annexServer.stop();
     annexServer._testing.setPinReusable(false);
+  });
+
+  describe('verified MCP network host', () => {
+    let saved: AnnexSettings;
+    beforeEach(async () => {
+      saved = { ...annexSettings.getSettings(), enableServer: true, enableClient: false, loopbackOnly: true };
+      vi.mocked(annexSettings.getSettings).mockImplementation(() => ({ ...saved }));
+      vi.mocked(annexSettings.updateSettings).mockImplementation(async (change) => {
+        saved = change({ ...saved });
+        return { ...saved };
+      });
+      const { registerAnnexHandlers } = await import('../ipc/annex-handlers');
+      registerAnnexHandlers();
+      annexServer.start();
+      await vi.waitFor(() => {
+        expect(annexServer.getStatus().port).toBeGreaterThan(0);
+        expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0);
+      });
+    });
+
+    it('does not confirm a scope change before the actual secure listener is ready', async () => {
+      const original = net.Server.prototype.listen;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      let held = false;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (!held && this instanceof https.Server) {
+          held = true;
+          void gate.then(() => Reflect.apply(original, this, args));
+          return this;
+        }
+        return Reflect.apply(original, this, args);
+      });
+      let confirmed = false;
+      const changing = networkToolHost.host!.applyLoopbackOnly(false, () => {}).then(() => { confirmed = true; });
+      try {
+        await vi.waitFor(() => expect(held).toBe(true));
+        expect(confirmed).toBe(false);
+        release();
+        await changing;
+        expect(annexServer.getStatus()).toMatchObject({ tlsEnabled: true });
+        expect(annexServer.getStatus().port).toBeGreaterThan(0);
+      } finally { release(); await changing; listen.mockRestore(); }
+    });
+
+    it('rejects actual TLS creation failure and restores the previous secure runtime', async () => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => { throw new Error('injected TLS creation failure'); });
+      await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting and secure runtime were restored');
+      expect(saved.loopbackOnly).toBe(true);
+      expect(annexServer.getStatus().tlsEnabled).toBe(true);
+      expect(annexServer.getStatus().port).toBeGreaterThan(0);
+    });
+
+    it('reports partial rollback and leaves no listener when actual TLS restoration also fails', async () => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => { throw new Error('TLS remains unavailable'); });
+      await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting was restored, but its secure runtime could not be restored; Annex is stopped');
+      expect(saved.loopbackOnly).toBe(true);
+      expect(annexServer.getStatus()).toMatchObject({ port: 0, pairingPort: 0, tlsEnabled: false, advertising: false });
+    });
+
+    it('does not claim settings rollback when restoring the saved value fails', async () => {
+      const update = vi.mocked(annexSettings.updateSettings).getMockImplementation()!;
+      let writes = 0;
+      vi.mocked(annexSettings.updateSettings).mockImplementation(async (change) => {
+        if (++writes === 2) throw new Error('injected rollback write failure');
+        return update(change);
+      });
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => { throw new Error('injected TLS creation failure'); });
+      await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting could not be restored');
+      expect(saved.loopbackOnly).toBe(false);
+      expect(annexServer.getStatus()).toMatchObject({ port: 0, pairingPort: 0, tlsEnabled: false, advertising: false });
+    });
+
+    it('does not overwrite a concurrent settings edit while reporting an incomplete rollback', async () => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => {
+        saved = { ...saved, networkEnabled: false };
+        throw new Error('injected failure after concurrent edit');
+      });
+      await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting could not be restored');
+      expect(saved).toMatchObject({ loopbackOnly: false, networkEnabled: false });
+      expect(annexServer.getStatus()).toMatchObject({ port: 0, pairingPort: 0, tlsEnabled: false });
+    });
+
+    it.each(['main', 'pairing'])('awaits actual %s asynchronous listen errors and restores the previous secure runtime', async (listener) => {
+      const original = net.Server.prototype.listen;
+      let failed = false;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (!failed && (listener === 'main' ? this instanceof https.Server : !(this instanceof https.Server))) {
+          failed = true;
+          process.nextTick(() => this.emit('error', Object.assign(new Error('injected EACCES'), { code: 'EACCES' })));
+          return this;
+        }
+        return Reflect.apply(original, this, args);
+      });
+      try {
+        await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting and secure runtime were restored');
+        expect(failed).toBe(true);
+        expect(saved.loopbackOnly).toBe(true);
+        expect(annexServer.getStatus().tlsEnabled).toBe(true);
+        expect(annexServer.getStatus().port).toBeGreaterThan(0);
+      } finally { listen.mockRestore(); }
+    });
   });
 
   // -------------------------------------------------------------------------
