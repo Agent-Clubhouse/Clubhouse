@@ -25,6 +25,16 @@ Epic: #2819. Sub-issues: #2893 (New agent), #2894 (parts library), #2895 (builde
 
 The service remembers each running session's delivered fingerprint. `statusFor` compares it with the current setup to drive the "Setup changed" bar. `restartManagedAgent` stops the agent and resumes its last session, or starts a new conversation when asked or when the CLI changed.
 
+## Scoped discovery and import (#2855)
+
+The Dispatcher's `discover_agent_assets` reads only a registered source agent's own effective-provider folder: immediate skill folders with a regular `SKILL.md`, and its local JSON MCP definitions. It takes no filesystem path. Plain agents are read-only sources, never converted. Global, inherited and other-provider assets are explicitly outside this inventory; native TOML MCP configuration is reported unsupported and left untouched. Discovery is not effective configuration or provider-loaded evidence.
+
+`import_agent_asset` requires source `agent.read` and library read/write grants at every call. Its first call previews the complete selected bundle without returning content or absolute paths. Confirming with the caller-bound, single-use, ten-minute token re-reads the source and library; source bytes, worktree identity, copy choices or matching library metadata changing refuse confirmation. `mode: copy` with a new library name makes an independent bundle with path-free import provenance. `mode: reuse` with an explicitly chosen, exactly matching `partId` follows future shared edits; no part is silently selected, forked or edited. Existing `fork_agent_part` remains the way to make an independent copy of a library part.
+
+Imports preserve supporting/binary files and executable flags, never run scripts or MCP servers, reject the complete bundle for links, unsafe paths, credential files/content or unsupported native fields, and use bounded file/count/depth/byte reads. MCP duplicate fields are refused rather than resolved by last-write precedence. Literal environment values are omitted with their variable names reported for external setup. Dependency resolution, provider compatibility and model-visible loading remain **not confirmed**, not inferred from discovery, file writes or a handshake.
+
+Import changes only the library. Assignment/unassignment still uses `set_agent_setup`; restart still requires separate lifecycle authority. No provider, driver, access, conversation, wiring, credential ownership or plain-agent files are changed by discovery/import. This slice does not yet admit arbitrary shared folders, home/plugin scanning, native non-JSON MCP import, executable dependency checks or paid activation probes.
+
 ## Decision log
 
 Decisions made while building, for the maintainer to revisit. Newest last.

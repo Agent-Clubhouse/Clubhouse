@@ -287,6 +287,74 @@ describe('the builder tools', () => {
   });
 });
 
+describe('discovery and confirmed library imports (#2855)', () => {
+  function sourceAgent() {
+    const folder = path.join(state.base, 'native-source');
+    const skill = path.join(folder, '.claude/skills/import-review');
+    fs.mkdirSync(skill, { recursive: true });
+    fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: import-review\n---\nReview without executing anything.\n');
+    state.agents.set('native-source', { id: 'native-source', name: 'native-source', color: 'indigo', createdAt: '', worktreePath: folder });
+    return { project: 'Clubhouse', agent: 'native-source' };
+  }
+
+  it('imports only after a bound confirmation and leaves a plain source untouched', async () => {
+    const source = sourceAgent();
+    const original = JSON.stringify(state.agents.get('native-source'));
+    const discovered = await call('discover_agent_assets', source);
+    expect(discovered.isError).toBeFalsy();
+    expect(discovered.json.providerLoaded).toBe('not_confirmed');
+    const args = { ...source, candidateId: discovered.json.candidates[0].id, mode: 'copy', name: 'Confirmed imported review 2855' };
+    const preview = await call('import_agent_asset', args);
+    expect(preview.json.status).toBe('needs_confirmation');
+    expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+    const imported = await call('import_agent_asset', { ...args, confirm: preview.json.confirm });
+    expect(imported.isError, imported.content[0].text).toBeFalsy();
+    expect(imported.json).toMatchObject({ status: 'imported', assigned: false, providerLoaded: 'not_confirmed', part: { name: args.name } });
+    expect(imported.json.part.content).toBeUndefined();
+    expect(JSON.stringify(state.agents.get('native-source'))).toBe(original);
+    expect((await call('import_agent_asset', { ...args, confirm: preview.json.confirm })).isError).toBe(true);
+
+    const reuse = { ...source, candidateId: args.candidateId, mode: 'reuse', partId: imported.json.part.id };
+    const shared = await call('import_agent_asset', reuse);
+    const reused = await call('import_agent_asset', { ...reuse, confirm: shared.json.confirm });
+    expect(reused.json).toMatchObject({ status: 'reused', part: { id: imported.json.part.id }, assigned: false });
+    expect(reused.json.part.content).toBeUndefined();
+  });
+
+  it('refuses source edits and worktree migration after the preview', async () => {
+    const source = sourceAgent();
+    const discovered = await call('discover_agent_assets', source);
+    const args = { ...source, candidateId: discovered.json.candidates[0].id, mode: 'copy', name: 'Stale imported review 2855' };
+    const before = await call('import_agent_asset', args);
+    const folder = state.agents.get('native-source')!.worktreePath!;
+    fs.writeFileSync(path.join(folder, '.claude/skills/import-review/SKILL.md'), 'Changed after preview.\n');
+    expect((await call('import_agent_asset', { ...args, confirm: before.json.confirm })).content[0].text).toContain('stale');
+    const next = await call('import_agent_asset', args);
+    const moved = path.join(state.base, 'moved-source');
+    fs.renameSync(folder, moved);
+    state.agents.get('native-source')!.worktreePath = moved;
+    expect((await call('import_agent_asset', { ...args, confirm: next.json.confirm })).content[0].text).toContain('stale');
+    expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+  });
+
+  it('rechecks source-read and library-write grants at confirmation', async () => {
+    const source = sourceAgent();
+    const discovered = await call('discover_agent_assets', source);
+    const args = { ...source, candidateId: discovered.json.candidates[0].id, mode: 'copy', name: 'Grant blocked review 2855' };
+    const before = await call('import_agent_asset', args);
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'library.write', target: { kind: 'any' }, mode: 'off' }] }));
+      expect((await call('import_agent_asset', { ...args, confirm: before.json.confirm })).isError).toBe(true);
+      expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.read', target: { kind: 'any' }, mode: 'off' }] }));
+      expect((await call('discover_agent_assets', source)).isError).toBe(true);
+      expect((await call('import_agent_asset', { ...args, confirm: before.json.confirm })).isError).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
+  });
+});
+
 describe('confirm tokens (#2900)', () => {
   async function sharedPart(name: string) {
     const part = (await call('create_agent_part', { kind: 'block', name, content: { kind: 'block', content: 'one' } })).json;
