@@ -64,7 +64,6 @@ global:read_settings readOnly=true destructive=false openWorld=false
 global:set_orchestrator_helpers readOnly=false destructive=false openWorld=false
 global:connect_orchestrators readOnly=false destructive=false openWorld=false
 global:disconnect_orchestrators readOnly=false destructive=true openWorld=false
-global:set_connection_tools readOnly=false destructive=false openWorld=false
 global:list_orchestrator_controls readOnly=true destructive=false openWorld=false
 global:list_agent_parts readOnly=true destructive=false openWorld=false
 global:get_agent_part readOnly=true destructive=false openWorld=false
@@ -88,6 +87,8 @@ global:add_to_group_project readOnly=false destructive=false openWorld=false
 global:remove_from_group_project readOnly=false destructive=true openWorld=false
 global:connect_agents readOnly=false destructive=false openWorld=false
 global:disconnect_agents readOnly=false destructive=true openWorld=false
+global:set_connection_tools readOnly=false destructive=false openWorld=false
+global:list_connections readOnly=true destructive=false openWorld=false
 global:create_action readOnly=false destructive=false openWorld=false
 global:list_actions readOnly=true destructive=false openWorld=false
 global:update_action readOnly=false destructive=false openWorld=false

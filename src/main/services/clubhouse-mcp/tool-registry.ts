@@ -256,6 +256,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     connect_orchestrators: INTERNAL_WRITE,
     disconnect_orchestrators: INTERNAL_DESTRUCTIVE,
     set_connection_tools: INTERNAL_WRITE,
+    list_connections: INTERNAL_READ,
     list_orchestrator_controls: INTERNAL_READ,
     list_agent_parts: INTERNAL_READ,
     get_agent_part: INTERNAL_READ,
