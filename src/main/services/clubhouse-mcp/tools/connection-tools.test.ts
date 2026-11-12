@@ -31,6 +31,10 @@ const { configs, projects, configListeners, ptyWrite, postMessage, getBoard, gro
 const userData = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => userData.dir || os.tmpdir() } }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../../telemetry/dispatcher-telemetry', async (original) => ({
+  ...await original<typeof import('../../../telemetry/dispatcher-telemetry')>(),
+  recordDispatcherControl: vi.fn(),
+}));
 // Lets a test act between saving a connection and binding it.
 vi.mock('../../orchestrator-connections', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../orchestrator-connections')>();
@@ -43,11 +47,12 @@ vi.mock('../../orchestrator-connections', async (importOriginal) => {
     }),
   };
 });
-vi.mock('../../project-store', () => ({ list: vi.fn(async () => projects.list) }));
+vi.mock('../../project-store', () => ({ list: vi.fn(async () => projects.list), peekProjects: vi.fn(async () => projects.list) }));
 vi.mock('../../agent-config', () => {
   const isDisposed = (a: DurableAgentConfig) => !!a.disposedAt;
   return {
     listDurable: vi.fn(async (p: string) => configs.get(p) ?? []),
+    peekDurableConfigs: vi.fn(async (p: string) => configs.get(p) ?? []),
     projectKey: vi.fn(async (p: string) => p),
     getDurableConfig: vi.fn(async (p: string, id: string) => (configs.get(p) ?? []).find((a) => a.id === id) ?? null),
     listHelpers: vi.fn(async (p: string, id: string) =>
@@ -122,6 +127,9 @@ import {
 import { initGroupProjectLifecycle, _resetLifecycleForTesting } from '../../group-project-lifecycle';
 import { registerConnectionTools, GROUP_PROJECT_CREATOR_KEY } from './connection-tools';
 import { getConnectionDirection, removeConnectionDirections, setConnectionTools } from '../../connection-grants-store';
+import { updateAgentGrantChanges } from '../../agent-grants-store';
+import { dropGrantRequestsFor, listGrantRequests } from '../../grant-requests';
+import { recordDispatcherControl } from '../../../telemetry/dispatcher-telemetry';
 
 let root: string;
 let projectPath: string;
@@ -189,6 +197,7 @@ beforeEach(async () => {
   groupProjects.clear();
   gpCounter.n = 0;
   storeHooks.afterAdd = undefined;
+  vi.mocked(recordDispatcherControl).mockClear();
   ptyWrite.mockClear();
   postMessage.mockClear();
   getBoard.mockClear();
@@ -206,6 +215,8 @@ beforeEach(async () => {
     agent('durable_otherhelper', { parentAgentId: 'durable_other' }),
   ]);
   for (const id of ['durable_lead', 'durable_other']) {
+    await updateAgentGrantChanges(id, () => undefined);
+    dropGrantRequestsFor(id);
     agentRegistry.register(id, { projectPath, orchestrator: 'claude-code', runtime: 'pty' });
     setOrchestrationEnabled(id, true);
   }
@@ -220,17 +231,130 @@ afterEach(() => {
 });
 
 describe('gating', () => {
-  it('lists and runs the tools only for an agent with orchestration on', async () => {
+  it('keeps only group-project creation and legacy membership tools orchestration-gated', async () => {
     const names = getScopedToolList('durable_lead').map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining([
       'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     ]));
 
     setOrchestrationEnabled('durable_lead', false);
-    expect(getScopedToolList('durable_lead').map((t) => t.name)).not.toContain('connect_agents');
+    expect(getScopedToolList('durable_lead').map((t) => t.name)).toContain('connect_agents');
+    expect(getScopedToolList('durable_lead').map((t) => t.name)).not.toContain('create_group_project');
     const refused = await call('connect_agents', { from: 'h1', to: 'h2' });
     expect(refused.isError).toBe(true);
     expect(boundPairs()).toEqual([]);
+  });
+});
+
+describe('ordinary agents with connection.manage (#3336)', () => {
+  const grantConnections = () => updateAgentGrantChanges('durable_lead', () => ({
+    changes: [{ action: 'connection.manage', target: { kind: 'any' }, mode: 'allow' }],
+  }));
+
+  beforeEach(() => setOrchestrationEnabled('durable_lead', false));
+
+  it('connects, lists saved switches, changes one owned direction and disconnects without orchestration', async () => {
+    await grantConnections();
+    const connected = await call('connect_agents', { from: 'lead', to: 'other', twoWay: true });
+    expect(connected.isError).toBe(false);
+    expect(connected.text).toContain('wake_agent');
+    expect(boundPairs()).toEqual(['durable_lead->durable_other', 'durable_other->durable_lead']);
+    restart();
+    await rebuildPersistedBindings();
+    expect(boundPairs()).toHaveLength(2);
+    const listed = await call('list_connections', {});
+    expect(listed.isError).toBe(false);
+    expect(JSON.parse(listed.text)).toMatchObject({
+      connections: expect.arrayContaining([expect.objectContaining({
+        from: { agentId: 'durable_lead' }, to: { agentId: 'durable_other' },
+        tools: { allowed: expect.arrayContaining(['wake_agent', 'send_file']), disabled: ['clear_agent', 'compact_agent'] },
+        may_change: true,
+      })]),
+    });
+    const changed = await call('set_connection_tools', { from: 'lead', to: 'other', allow: ['send_message'] });
+    expect(changed.isError).toBe(false);
+    expect(getConnectionDirection({ agentId: 'durable_lead' }, { agentId: 'durable_other' })?.enabledTools).toBeUndefined();
+    expect(getConnectionDirection({ agentId: 'durable_other' }, { agentId: 'durable_lead' })?.enabledTools).toEqual(['wake_agent']);
+    expect((await call('disconnect_agents', { from: 'lead', to: 'other', twoWay: true })).isError).toBe(false);
+    expect(boundPairs()).toEqual([]);
+  });
+
+  it('refuses missing target grants and records an Ask-first request for its own management grant', async () => {
+    const refused = await call('connect_agents', { from: 'lead', to: 'other' });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain('connection.manage');
+    expect(boundPairs()).toEqual([]);
+    const asked = await call('list_connections', {});
+    expect(asked.isError).toBe(true);
+    expect(listGrantRequests().some((r) => r.agentId === 'durable_lead' && r.actions.includes('connection.manage'))).toBe(true);
+  });
+
+  it('cannot enable reset tools it does not hold, or change directions owned by another source', async () => {
+    await grantConnections();
+    const denied = await call('connect_agents', { from: 'lead', to: 'other', allow: ['send_message', 'clear_agent'] });
+    expect(denied.isError).toBe(true);
+    expect(denied.text).toContain('agent.reset');
+    expect(boundPairs()).toEqual([]);
+    expect(recordDispatcherControl).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'connect_agents', actorId: 'durable_lead', outcome: 'refused',
+    }));
+    bindingManager.bind('durable_lead', { targetId: 'durable_other', targetKind: 'agent', label: 'other' });
+    const edit = await call('set_connection_tools', { from: 'lead', to: 'other', allow: ['send_message'] });
+    expect(edit.isError).toBe(true);
+    expect(edit.text).toMatch(/did not make|not.*own/);
+    expect(getConnectionDirection({ agentId: 'durable_lead' }, { agentId: 'durable_other' })).toBeUndefined();
+  });
+
+  it('does not overwrite a user edit even while it still owns the connection source', async () => {
+    await grantConnections();
+    await call('connect_agents', { from: 'lead', to: 'other' });
+    await setConnectionTools({ agentId: 'durable_lead' }, { agentId: 'durable_other' }, ['send_file'], []);
+    const saved = getConnectionDirection({ agentId: 'durable_lead' }, { agentId: 'durable_other' });
+    const changed = await call('set_connection_tools', { from: 'lead', to: 'other', allow: ['send_message'] });
+    expect(changed.isError).toBe(true);
+    expect(changed.text).toContain('user owns');
+    expect(getConnectionDirection({ agentId: 'durable_lead' }, { agentId: 'durable_other' })).toEqual(saved);
+  });
+
+  it('preserves an authorized unrelated cross-project target after restart', async () => {
+    await grantConnections();
+    const otherPath = path.join(root, 'far');
+    fs.mkdirSync(otherPath);
+    projects.list.push({ id: 'far', name: 'Far', path: otherPath });
+    configs.set(otherPath, [agent('durable_far', { name: 'Colleague' })]);
+    expect((await call('connect_agents', { from: 'lead', to: 'Colleague', twoWay: true })).isError).toBe(false);
+    expect((await readConnections(projectPath)).every((c) => c.scope === 'granted')).toBe(true);
+    restart();
+    await rebuildPersistedBindings();
+    expect(boundPairs()).toEqual(['durable_far->durable_lead', 'durable_lead->durable_far']);
+  });
+
+  it('does not disconnect a source made by another agent even with management grants on both ends', async () => {
+    await updateAgentGrantChanges('durable_other', () => ({
+      changes: [{ action: 'connection.manage', target: { kind: 'any' }, mode: 'allow' }],
+    }));
+    await call('connect_agents', { from: 'lead', to: 'other' }, 'durable_other');
+    await grantConnections();
+    expect((await call('disconnect_agents', { from: 'lead', to: 'other' })).isError).toBe(true);
+    expect(boundPairs()).toEqual(['durable_lead->durable_other']);
+    expect((await readConnections(projectPath))[0].ownerId).toBe('durable_other');
+  });
+
+  it('reads an existing remote direction with its machine identity and saved remote switches', async () => {
+    await grantConnections();
+    const machineId = Array.from({ length: 16 }, () => 'ab').join(':');
+    const targetId = `durable_other@${machineId}`;
+    bindingManager.bind('durable_lead', { targetId, targetKind: 'agent', label: 'Remote colleague' });
+    await setConnectionTools({ agentId: 'durable_lead' }, { agentId: 'durable_other', machineId }, ['send_file', 'clear_agent']);
+    const listed = JSON.parse((await call('list_connections', {})).text);
+    expect(listed.connections).toEqual([expect.objectContaining({
+      from: { agentId: 'durable_lead' }, to: { agentId: 'durable_other', machineId },
+      tools: {
+        allowed: ['get_status', 'read_output', 'check_connectivity', 'send_message', 'compact_agent', 'wake_agent'],
+        disabled: ['send_file', 'clear_agent'],
+      },
+      may_change: false,
+    })]);
   });
 });
 
@@ -240,7 +364,7 @@ describe('scoping refusals', () => {
       const res = await call('connect_agents', { from, to });
       expect(res.isError).toBe(true);
       // The grant check refuses first (#2974): connection.manage covers only itself and its helpers.
-      expect(res.text).toMatch(/not you or one of your helpers|connection\.manage on that agent/);
+      expect(res.text).toMatch(/No available registered agent|connection\.manage on that agent/);
     }
     expect(boundPairs()).toEqual([]);
     expect(await readConnections(projectPath)).toEqual([]);
@@ -680,7 +804,7 @@ describe('a helper in another project (#2513)', () => {
   it('refuses an agent in another project that is not the caller\'s helper', async () => {
     const res = await call('connect_agents', { from: 'lead', to: 'local' });
     expect(res.isError).toBe(true);
-    expect(res.text).toMatch(/not you or one of your helpers/);
+    expect(res.text).toMatch(/connection\.manage on that agent/);
   });
 
   it('does not prune the connection when either project\'s agents change', async () => {

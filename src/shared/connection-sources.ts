@@ -10,7 +10,7 @@ export type ConnectionSourceKind =
   | 'helper'
   /** "Connect to Dispatcher" on the agent: the Dispatcher's automatic wire. */
   | 'dispatcher_auto'
-  /** A link an orchestrator made with connect_agents (or a group project it added to). */
+  /** A link an agent made with connect_agents (or a legacy group-project membership). */
   | 'tool_link'
   /** A link the Dispatcher made between two orchestrators. */
   | 'dispatcher_link'
@@ -69,7 +69,7 @@ export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, str
   canvas: 'Canvas wire',
   helper: 'Helper',
   dispatcher_auto: 'Connect to Dispatcher',
-  tool_link: 'Made by an orchestrator',
+  tool_link: 'Made by an agent',
   dispatcher_link: 'Made by the Dispatcher',
   user_link: 'Made by you',
   other: 'Other',

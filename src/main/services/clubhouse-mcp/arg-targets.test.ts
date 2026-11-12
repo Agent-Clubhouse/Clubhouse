@@ -160,6 +160,18 @@ describe('targets named in the arguments (#2974)', () => {
     expect(targets).toEqual([expect.objectContaining({ kind: 'agent', projectPath: '/far' })]);
   });
 
+  it('checks every registered-name match before a connection handler can resolve it', async () => {
+    state.agents.get('/home')!.find((a) => a.id === 'helper')!.name = 'Twin';
+    state.agents.get('/far')!.push(agent('other-helper', { name: 'Twin' }));
+    const registered: ToolGrant = { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['to'], names: 'registered' } };
+    expect(await check('orch', registered, { to: 'Twin' })).toMatchObject({ ok: false, reason: 'no_grant' });
+    const [targets] = [...(await resolveArgTargets('orch', registered, { to: 'Twin' })).values()];
+    expect(targets).toHaveLength(2);
+    state.agents.get('/far')!.push(agent('remote-name', { name: 'Remote colleague' }));
+    const [far] = [...(await resolveArgTargets('orch', registered, { to: 'remote colleague' })).values()];
+    expect(far).toEqual([expect.objectContaining({ projectPath: '/far' })]);
+  });
+
   it('a folder being added is checked by its path, even though it isn\'t a project yet (#3050)', async () => {
     const add: ToolGrant = { actions: ['project.add'], target: 'project_arg', from: { args: ['path'] } };
     // Resolved as main resolves it, so on Windows it is a drive path too.

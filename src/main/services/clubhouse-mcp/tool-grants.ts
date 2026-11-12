@@ -99,10 +99,11 @@ export interface ToolGrantDeclaration {
    * what a call that names none reaches, `caller` (itself, or its own project)
    * or nothing to check. `all`: a boolean argument meaning every agent or
    * every project. `names`: where a name is looked up, in a project (the
-   * default) or among the caller and its helpers. Without `from` the target
+   * default), among the caller and its helpers, or in every registered project.
+   * Without `from` the target
    * isn't resolved, and the tool's own checks stand alone.
    */
-  from?: { args: readonly string[]; project?: string; missing?: 'caller'; all?: string; names?: 'project' | 'self_and_helpers' };
+  from?: { args: readonly string[]; project?: string; missing?: 'caller'; all?: string; names?: 'project' | 'self_and_helpers' | 'registered' };
 }
 
 /**

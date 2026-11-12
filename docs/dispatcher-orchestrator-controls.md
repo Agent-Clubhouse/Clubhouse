@@ -4,7 +4,7 @@ The Dispatcher can change two helper settings on a connected orchestrator, and l
 
 ## Who and what
 
-The tools are in the `dispatcher` tool group: only the running Dispatcher sees or can call them, even with a stale tool list. The rules check the caller again. Nothing here is exposed over IPC, Annex or the CLI.
+Dispatcher-specific controls are in the `dispatcher` tool group: only the running Dispatcher sees or can call them, even with a stale tool list. The shared `set_connection_tools` tool instead uses `connection.manage` grants; Dispatcher callers still go through the rules below. Nothing here is exposed over IPC, Annex or the CLI.
 
 A link end must be a local durable agent now: not disposed, not a helper, not the Dispatcher, with `connectToDispatcher` resolving true. Whether it orchestrates doesn't matter (#3248), and turning orchestration on or off never creates, suspends or removes a link. What a link can do is the tools on each direction, not the agent's orchestration authority. The Dispatcher also needs its `connection.manage` grant on both ends.
 
@@ -60,6 +60,8 @@ The maintainer's link between two agents (status and output, messages, wake, and
 ```
 
 ### `set_connection_tools`
+
+This is also available to ordinary agents for connections they made with `connect_agents` (#3336). They need `connection.manage` on both endpoints, and cannot change another source's switches or a direction edited by the user. Changes affect only the named direction unless a reverse direction is explicitly requested. Reset switches additionally require an allowed `agent.reset` grant on the receiver. Ordinary agents start with Ask first for managing themselves, not permission to manage unrelated agents. `list_connections` reads sources, creator, saved switches and whether a direction is changeable. These general connection tools currently resolve local durable agents by id or unique name across registered projects; remote agent endpoints remain a separate follow-up.
 
 | Argument | Meaning |
 | --- | --- |

@@ -105,7 +105,7 @@ describe('WireConfigPopover', () => {
     expect(switchRow(bToA, 'Send messages')).toHaveTextContent('On');
     expect(switchRow(bToA, 'Clear its context')).toHaveTextContent('Off');
     expect(switchRow(bToA, 'Wake it')).toHaveTextContent('Off');
-    expect(aToB).toHaveTextContent('From: Canvas wire, Made by an orchestrator.');
+    expect(aToB).toHaveTextContent('From: Canvas wire, Made by an agent.');
     const dialog = within(getByTestId('wire-tool-permissions-dialog'));
     expect(dialog.queryByRole('switch')).toBeNull();
     expect(dialog.queryByTestId('wire-permissions-save')).toBeNull();

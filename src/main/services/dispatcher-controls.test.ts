@@ -142,6 +142,7 @@ vi.mock('./clubhouse-mcp/dispatcher-gate', async (importOriginal) => ({
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { callTool, getScopedToolList, _resetForTesting } from './clubhouse-mcp/tool-registry';
 import { registerDispatcherControlTools } from './clubhouse-mcp/tools/dispatcher-control-tools';
+import { registerConnectionTools } from './clubhouse-mcp/tools/connection-tools';
 import { agentRegistry } from './agent-registry';
 import { type AuditRow } from '../telemetry/dispatcher-telemetry';
 import { captureAuditEvents, type AuditCapture } from '../telemetry/__test-utils__/audit-capture';
@@ -343,6 +344,7 @@ beforeEach(async () => {
   for (const id of [...agentRegistry.getAllRegistrations().keys()]) agentRegistry.untrack(id);
   _resetForTesting();
   registerDispatcherControlTools();
+  registerConnectionTools();
   agentRegistry.register('a', { projectPath: P1, orchestrator: 'claude-code', runtime: 'chat' });
   agentRegistry.register('dispatcher', { projectPath: state.base, orchestrator: 'claude-code', runtime: 'chat' });
   // The connection store keeps its entries in memory between cases: start each with none.
@@ -369,10 +371,11 @@ afterEach(async () => {
 describe('callers', () => {
   const TOOLS = ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'set_connection_tools', 'list_orchestrator_controls'];
 
-  it('lists the tools for the Dispatcher and nobody else', () => {
+  it('keeps Dispatcher-only controls gated while connection switches use grants', () => {
     expect(getScopedToolList('dispatcher').map((t) => t.name)).toEqual(expect.arrayContaining(TOOLS));
     const others = getScopedToolList('a').map((t) => t.name);
-    for (const tool of TOOLS) expect(others).not.toContain(tool);
+    for (const tool of TOOLS.filter((t) => t !== 'set_connection_tools')) expect(others).not.toContain(tool);
+    expect(others).toContain('set_connection_tools');
   });
 
   it.each(TOOLS)('refuses %s from any other agent, changing nothing', async (tool) => {

@@ -1,12 +1,12 @@
 /**
- * Connection tools (#2230): let an orchestrator connect itself and its own
- * helpers without the canvas. All are in the `orchestration` tool group, so
- * only an agent with orchestration on sees them.
+ * Connection tools (#2230, #3336): any durable agent may manage connections
+ * covered by its connection.manage grants. Legacy group-project tools keep
+ * their orchestration scope until durable membership replaces them.
  *
- * Scope: every agent named must be the caller or one of its (live, direct)
- * helpers, in its project or another (#2513), and only group projects the caller created through these tools or
- * already belongs to can be changed. Group projects created here record the
- * caller as `metadata.createdByAgentId`.
+ * Agent connections resolve registered durable agents and check grants on
+ * both ends. Legacy group-project tools still name only the caller and its
+ * live direct helpers, and projects the caller created or belongs to.
+ * Group projects created here record the caller as `metadata.createdByAgentId`.
  *
  * Connections are written to the caller's project store first
  * (services/orchestrator-connections.ts), then bound live through
@@ -29,6 +29,7 @@ import { groupProjectRegistry } from '../../group-project-registry';
 import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
   claimSourceBinding,
+  collectSourcesByPair,
   isBindingRemovedByUser,
   isSourceRemovedByUser,
   rebuildPersistedBindings,
@@ -39,13 +40,21 @@ import {
   ORCHESTRATOR_CONNECTION_SOURCE_ID,
   addConnections,
   removeConnections,
+  readConnections,
   type OrchestratorConnection,
 } from '../../orchestrator-connections';
 import { appLog } from '../../log-service';
-import { getConnectionDirection, setConnectionTools } from '../../connection-grants-store';
-import { NEW_CONNECTION_DISABLED_TOOLS, NEW_CONNECTION_ENABLED_TOOLS } from '../../../../shared/connection-grants';
+import { getConnectionDirection, setConnectionDirections, type DirectionToolsChange } from '../../connection-grants-store';
+import { CONNECTION_SWITCHES, NEW_CONNECTION_DISABLED_TOOLS, NEW_CONNECTION_ENABLED_TOOLS, localToolsFromAllow } from '../../../../shared/connection-grants';
+import { isDisposedAgent } from '../../../../shared/agent-helpers';
+import { isDispatcherAgent, isDispatcherCoordinatorId, isTrackedDispatcher } from '../dispatcher-gate';
+import { holdsGrant } from '../grant-check';
+import { connectionEnd, readLocalDirectionTools } from '../../connection-grants';
+import { DispatcherControlError, setConnectionToolsForLink } from '../../dispatcher-controls';
+import { recordDispatcherControl } from '../../../telemetry/dispatcher-telemetry';
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { GroupProject } from '../../../../shared/group-project-types';
+import type { GrantCallTarget } from '../../../../shared/agent-grants';
 
 /** Metadata key naming the agent that created a group project through these tools. */
 export const GROUP_PROJECT_CREATOR_KEY = 'createdByAgentId';
@@ -72,25 +81,33 @@ interface CallerScope {
   projectNames: Map<string, string | undefined>;
   /** agent id → the project holding it, for helpers in other projects only. */
   otherProjects: Map<string, string>;
+  registered?: boolean;
+  helperIds: ReadonlySet<string>;
 }
 
-async function callerScope(callerId: string): Promise<CallerScope> {
+async function callerScope(callerId: string, registered = false): Promise<CallerScope> {
   const projectPath = getAgentProjectPath(callerId);
   if (!projectPath) throw new ConnectionScopeError('Could not find your project. Connection tools need a running durable agent.');
   const caller = await agentConfig.getDurableConfig(projectPath, callerId);
-  if (!caller) throw new ConnectionScopeError('Connection tools are only for durable agents.');
+  if (!caller || isDisposedAgent(caller)) throw new ConnectionScopeError('Connection tools are only for available durable agents.');
   const [helpers, projects] = await Promise.all([listHelpersEverywhere(projectPath, callerId), projectStore.list()]);
   const nameOf = (p: string) => {
     const project = projects.find((candidate) => candidate.path === p);
     return project ? project.displayName || project.name : undefined;
   };
   const projectName = nameOf(projectPath);
+  const entries = registered
+    ? (await Promise.all(projects.map(async (p) => (await agentConfig.listDurable(p.path))
+      .filter((a) => !isDisposedAgent(a)).map((config) => ({ projectPath: p.path, config }))))).flat()
+    : [{ projectPath, config: caller }, ...helpers];
   return {
     projectPath,
     caller,
-    agents: [caller, ...helpers.map((h) => h.config)],
-    projectNames: new Map([[caller.id, projectName], ...helpers.map((h) => [h.config.id, nameOf(h.projectPath)] as const)]),
-    otherProjects: new Map(helpers.filter((h) => h.projectPath !== projectPath).map((h) => [h.config.id, h.projectPath])),
+    agents: entries.map((h) => h.config),
+    projectNames: new Map([[caller.id, projectName], ...entries.map((h) => [h.config.id, nameOf(h.projectPath)] as const)]),
+    otherProjects: new Map(entries.filter((h) => h.projectPath !== projectPath).map((h) => [h.config.id, h.projectPath])),
+    registered,
+    helperIds: new Set(helpers.map((h) => h.config.id)),
   };
 }
 
@@ -102,11 +119,12 @@ function resolveAgent(scope: CallerScope, ref: string, field: string): DurableAg
   const exact = scope.agents.filter((a) => a.name === wanted);
   const candidates = exact.length > 0 ? exact : scope.agents.filter((a) => a.name.toLowerCase() === wanted.toLowerCase());
   if (candidates.length > 1) {
-    throw new ConnectionScopeError(`More than one of you and your helpers is named "${ref}". Use an id: ${candidates.map((a) => a.id).join(', ')}.`);
+    throw new ConnectionScopeError(`More than one ${scope.registered ? 'registered agent' : 'of you and your helpers'} is named "${ref}". Use an id: ${candidates.map((a) => a.id).join(', ')}.`);
   }
   if (candidates.length === 0) {
     throw new ConnectionScopeError(
-      `${field} "${ref}" is not you or one of your helpers. These tools only connect you and your own helpers.`,
+      scope.registered ? `No available registered agent matches ${field} "${ref}". Use its id from a registered project.`
+        : `${field} "${ref}" is not you or one of your helpers. These tools only connect you and your own helpers.`,
     );
   }
   return candidates[0];
@@ -163,6 +181,7 @@ function entryFor(callerId: string, scope: CallerScope, binding: PersistedBindin
     // An end in another project is recorded, so its entry is only pruned once that project says it's gone.
     ...(agentProjectPath ? { agentProjectPath } : {}),
     ...(targetProjectPath ? { targetProjectPath } : {}),
+    ...(scope.registered && [binding.agentId, binding.targetId].some((id) => id !== callerId && !scope.helperIds.has(id)) && { scope: 'granted' as const }),
   };
 }
 
@@ -170,20 +189,34 @@ function entryFor(callerId: string, scope: CallerScope, binding: PersistedBindin
  * Store the connections, then bind them live. Returns how each binding went.
  * A rebuild runs afterwards, so the source's view matches its store again.
  */
-async function connect(callerId: string, scope: CallerScope, bindings: PersistedBinding[]): Promise<Array<'created' | 'existing' | 'removed' | 'invalid'>> {
+async function connect(callerId: string, scope: CallerScope, bindings: PersistedBinding[], allow?: readonly (readonly string[] | undefined)[]): Promise<Array<'created' | 'existing' | 'removed' | 'invalid'>> {
   // A pair the user removed this session stays removed: only the user can draw it again.
   // Or one whose orchestrator link the user removed from the Connections card (#2744).
   const refused = bindings.find((b) => isBindingRemovedByUser(b.agentId, b.targetId) || isSourceRemovedByUser(ORCHESTRATOR_CONNECTION_SOURCE_ID, b.agentId, b.targetId));
   if (refused) {
     throw new ConnectionScopeError(`The user removed this connection. ${refused.agentName} → ${refused.targetName} stays disconnected until the user connects it again.`);
   }
-  await addConnections(scope.projectPath, bindings.map((b) => entryFor(callerId, scope, b)));
+  const added = await addConnections(scope.projectPath, bindings.map((b) => entryFor(callerId, scope, b)));
   // A new link between two agents starts like any new connection: send and wake, no clear or compact (#3215, #3214).
   // A pair already bound (a canvas wire, a helper link) or with tools saved keeps what it has.
-  for (const b of bindings) {
-    if (b.targetKind !== 'agent' || bindingManager.getBindingsForAgent(b.agentId).some((x) => x.targetId === b.targetId)) continue;
-    if (getConnectionDirection({ agentId: b.agentId }, { agentId: b.targetId })) continue;
-    await setConnectionTools({ agentId: b.agentId }, { agentId: b.targetId }, [...NEW_CONNECTION_DISABLED_TOOLS], [...NEW_CONNECTION_ENABLED_TOOLS]);
+  const changes = bindings.flatMap((b, i): DirectionToolsChange[] => {
+    if (b.targetKind !== 'agent' || bindingManager.getBindingsForAgent(b.agentId).some((x) => x.targetId === b.targetId)) return [];
+    return [{
+      from: { agentId: b.agentId }, to: { agentId: b.targetId },
+      ...(allow?.[i] ? localToolsFromAllow(allow[i]) : { disabledTools: NEW_CONNECTION_DISABLED_TOOLS, enabledTools: NEW_CONNECTION_ENABLED_TOOLS }),
+    }];
+  });
+  try {
+    if (changes.length > 0) await setConnectionDirections(changes, (current, change) => {
+      if (!current) return;
+      if (bindings.some((b, i) => allow?.[i] && b.agentId === change.from.agentId && b.targetId === change.to.agentId)) {
+        throw new ConnectionScopeError('That direction acquired saved switches meanwhile. Nothing was changed; inspect it before trying again.');
+      }
+      return false;
+    }, { agentId: callerId });
+  } catch (err) {
+    await removeConnections(scope.projectPath, callerId, (c) => added.some((b) => b.agentId === c.agentId && b.targetId === c.targetId));
+    throw err;
   }
   const outcomes = bindings.map((b) => {
     const outcome = claimSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, b);
@@ -214,6 +247,9 @@ async function disconnect(callerId: string, scope: CallerScope, pairs: Array<{ a
     (c) => pairs.some((p) => p.agentId === c.agentId && p.targetId === c.targetId),
   );
   const outcomes = pairs.map((p) => {
+    if (!removed.some((c) => c.agentId === p.agentId && c.targetId === p.targetId)) {
+      return bindingManager.getBindingsForAgent(p.agentId).some((b) => b.targetId === p.targetId) ? 'kept' as const : 'absent' as const;
+    }
     if (remaining.some((c) => c.agentId === p.agentId && c.targetId === p.targetId)) return 'kept' as const;
     return releaseSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, p.agentId, p.targetId);
   });
@@ -221,8 +257,16 @@ async function disconnect(callerId: string, scope: CallerScope, pairs: Array<{ a
   return { stored: removed.length, outcomes };
 }
 
-function errorResult(tool: string, callerId: string, err: unknown): McpToolResult {
-  if (err instanceof ConnectionScopeError || err instanceof McpArgError) return text(err.message, true);
+function errorResult(tool: string, callerId: string, err: unknown, args?: Record<string, unknown>): McpToolResult {
+  const expected = err instanceof ConnectionScopeError || err instanceof McpArgError || err instanceof DispatcherControlError;
+  if (args && (tool === 'connect_agents' || tool === 'disconnect_agents' || tool === 'set_connection_tools')) {
+    recordDispatcherControl({
+      tool, actorId: callerId,
+      targets: [args?.from, args?.to].filter((v): v is string => typeof v === 'string'),
+      outcome: expected ? 'refused' : 'error', code: expected ? err.name : 'error',
+    });
+  }
+  if (expected) return text(err.message, true);
   const message = err instanceof Error ? err.message : String(err);
   appLog('core:mcp', 'error', `${tool} failed`, { meta: { agentId: callerId, error: message } });
   return text(`${tool} failed: ${message}`, true);
@@ -311,15 +355,26 @@ function readPair(scope: CallerScope, args: Record<string, unknown>): { from: Du
   const from = resolveAgent(scope, requireString(args, 'from'), 'from');
   const to = resolveAgent(scope, requireString(args, 'to'), 'to');
   if (from.id === to.id) throw new McpArgError('from and to must be different agents');
-  return { from, to, twoWay: optionalBoolean(args, 'twoWay') ?? false };
+  return { from, to, twoWay: optionalBoolean(args, 'twoWay') ?? optionalBoolean(args, 'two_way') ?? false };
 }
 
 async function handleConnectAgents(callerId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   try {
-    const scope = await callerScope(callerId);
+    const scope = await callerScope(callerId, true);
     const { from, to, twoWay } = readPair(scope, args);
     const wires = [agentWire(scope, from, to), ...(twoWay ? [agentWire(scope, to, from)] : [])];
-    const outcomes = await connect(callerId, scope, wires);
+    const allow = readAllow(args, 'allow');
+    const allowBack = readAllow(args, 'allow_back') ?? allow;
+    for (const [i, wire] of wires.entries()) {
+      const tools = i === 0 ? allow : allowBack;
+      if (!tools) continue;
+      assertResetGrant(callerId, scope, i === 0 ? to : from, tools);
+      if (getConnectionDirection({ agentId: wire.agentId }, { agentId: wire.targetId })
+        || bindingManager.getBindingsForAgent(wire.agentId).some((b) => b.targetId === wire.targetId)) {
+        throw new ConnectionScopeError('Tools are already saved or another source connects that direction. Connect without allow to keep them, then edit only a direction you own.');
+      }
+    }
+    const outcomes = await connect(callerId, scope, wires, [allow, allowBack]);
     const lines = wires.map((w, i) => {
       const label = `${w.agentName} → ${w.targetName}`;
       if (outcomes[i] === 'created') return `Connected ${label}.`;
@@ -327,20 +382,27 @@ async function handleConnectAgents(callerId: string, args: Record<string, unknow
       if (outcomes[i] === 'removed') return `The user removed this connection (${label}).`;
       return `Could not connect ${label}.`;
     });
-    return text(lines.join('\n'), outcomes.some((o) => o === 'invalid' || o === 'removed'));
+    recordDispatcherControl({ tool: 'connect_agents', actorId: callerId, targets: [from.id, to.id], outcome: outcomes.some((o) => o === 'invalid' || o === 'removed') ? 'refused' : 'ok' });
+    return text([...lines, ...wires.map((w) => JSON.stringify({ from: { agentId: w.agentId }, to: { agentId: w.targetId }, tools: readLocalDirectionTools(w.agentId, w.targetId) }))].join('\n'), outcomes.some((o) => o === 'invalid' || o === 'removed'));
   } catch (err) {
     // telemetry-exempt: errorResult logs unexpected failures and returns them to the calling agent
-    return errorResult('connect_agents', callerId, err);
+    return errorResult('connect_agents', callerId, err, args);
   }
 }
 
 async function handleDisconnectAgents(callerId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   try {
-    const scope = await callerScope(callerId);
+    const scope = await callerScope(callerId, true);
     const { from, to, twoWay } = readPair(scope, args);
     const pairs = [{ agentId: from.id, targetId: to.id, label: `${from.name} → ${to.name}` }];
     if (twoWay) pairs.push({ agentId: to.id, targetId: from.id, label: `${to.name} → ${from.name}` });
+    const owned = (await readConnections(scope.projectPath)).filter((c) => c.ownerId === callerId);
+    if (pairs.some((p) => bindingManager.getBindingsForAgent(p.agentId).some((b) => b.targetId === p.targetId)
+      && !owned.some((c) => c.agentId === p.agentId && c.targetId === p.targetId))) {
+      throw new ConnectionScopeError('You did not make that connection source. Canvas, user, helper and other agents’ sources cannot be removed here.');
+    }
     const { outcomes } = await disconnect(callerId, scope, pairs);
+    recordDispatcherControl({ tool: 'disconnect_agents', actorId: callerId, targets: [from.id, to.id], outcome: 'ok' });
     const lines = pairs.map((p, i) => {
       if (outcomes[i] === 'unbound') return `Disconnected ${p.label}.`;
       if (outcomes[i] === 'kept') return `${p.label}: removed the saved connection. ${STAYS_NOTE}`;
@@ -349,16 +411,126 @@ async function handleDisconnectAgents(callerId: string, args: Record<string, unk
     return text(lines.join('\n'));
   } catch (err) {
     // telemetry-exempt: errorResult logs unexpected failures and returns them to the calling agent
-    return errorResult('disconnect_agents', callerId, err);
+    return errorResult('disconnect_agents', callerId, err, args);
+  }
+}
+
+function readAllow(args: Record<string, unknown>, key: string): string[] | undefined {
+  if (args[key] === undefined) return undefined;
+  const value = args[key];
+  if (!Array.isArray(value) || value.some((t) => typeof t !== 'string' || !CONNECTION_SWITCHES.some((s) => s.tool === t))) {
+    throw new McpArgError(`${key} must list connection tools: ${CONNECTION_SWITCHES.map((s) => s.tool).join(', ')}.`);
+  }
+  return [...new Set(value as string[])];
+}
+
+function agentGrantTarget(callerId: string, scope: CallerScope, receiver: DurableAgentConfig): GrantCallTarget {
+  const relations: Array<'self' | 'my_helper' | 'connected'> = [];
+  if (receiver.id === callerId) relations.push('self');
+  if (scope.helperIds.has(receiver.id)) relations.push('my_helper');
+  if (bindingManager.getBindingsForAgent(callerId).some((b) => b.targetKind === 'agent' && b.targetId === receiver.id)) relations.push('connected');
+  return {
+    kind: 'agent', relations, projectPath: scope.otherProjects.get(receiver.id) ?? scope.projectPath,
+    isDispatcher: isTrackedDispatcher(receiver.id) || isDispatcherCoordinatorId(receiver.id),
+  };
+}
+
+function assertResetGrant(callerId: string, scope: CallerScope, receiver: DurableAgentConfig, allow: readonly string[]): void {
+  if (!allow.some((tool) => tool === 'clear_agent' || tool === 'compact_agent')) return;
+  if (!holdsGrant(callerId, 'agent.reset', agentGrantTarget(callerId, scope, receiver))) {
+    throw new ConnectionScopeError('Turning on clear_agent or compact_agent requires an allowed agent.reset grant on the receiver. Ask the user to grant it first.');
+  }
+}
+
+async function handleSetConnectionTools(callerId: string, args: Record<string, unknown>): Promise<McpToolResult> {
+  let delegatedAudit = false;
+  try {
+    if (isDispatcherAgent(callerId)) {
+      const { twoWay, ...compat } = args;
+      if (twoWay !== undefined) compat.two_way = optionalBoolean(args, 'twoWay');
+      delegatedAudit = true;
+      return text(JSON.stringify(await setConnectionToolsForLink(callerId, compat)));
+    }
+    const scope = await callerScope(callerId, true);
+    const { from, to, twoWay } = readPair(scope, args);
+    const allow = readAllow(args, 'allow');
+    if (!allow) throw new McpArgError('allow is required');
+    const back = readAllow(args, 'allow_back') ?? allow;
+    const pairs = [{ from, to, allow }, ...(twoWay ? [{ from: to, to: from, allow: back }] : [])];
+    const stored = await readConnections(scope.projectPath);
+    const owned = stored.filter((c) => c.ownerId === callerId);
+    if (pairs.some((p) => !owned.some((c) => c.agentId === p.from.id && c.targetId === p.to.id && c.targetKind === 'agent'))) {
+      throw new ConnectionScopeError('You did not make that connection, so you cannot change its tools.');
+    }
+    const { bySource, failed } = await collectSourcesByPair();
+    if (failed.length > 0) throw new ConnectionScopeError('Connection ownership could not be read. Try again before changing its tools.');
+    for (const p of pairs) {
+      if ([...bySource].some(([id, keys]) => id !== ORCHESTRATOR_CONNECTION_SOURCE_ID && keys.has(`${p.from.id}\u0000${p.to.id}`))) {
+        throw new ConnectionScopeError('Another source also owns that direction. Ask the user to edit its tools in Connections.');
+      }
+      assertResetGrant(callerId, scope, p.to, p.allow);
+    }
+    await setConnectionDirections(pairs.map((p) => ({
+      from: { agentId: p.from.id }, to: { agentId: p.to.id }, ...localToolsFromAllow(p.allow),
+    })), (current) => {
+      if (current?.setByAgent !== callerId || current.link) throw new ConnectionScopeError('The user owns those switches now. Ask them to edit the direction in Connections.');
+    }, { agentId: callerId });
+    recordDispatcherControl({ tool: 'set_connection_tools', actorId: callerId, targets: [from.id, to.id], outcome: 'ok' });
+    return text(JSON.stringify({ connections: pairs.map((p) => ({ from: { agentId: p.from.id }, to: { agentId: p.to.id }, tools: readLocalDirectionTools(p.from.id, p.to.id) })) }));
+  } catch (err) {
+    // telemetry-exempt: unexpected failures are logged and surfaced by errorResult
+    return errorResult('set_connection_tools', callerId, err, delegatedAudit ? undefined : args);
+  }
+}
+
+async function handleListConnections(callerId: string, args: Record<string, unknown>): Promise<McpToolResult> {
+  try {
+    const scope = await callerScope(callerId, true);
+    const agent = args.agent === undefined ? scope.caller : resolveAgent(scope, requireString(args, 'agent'), 'agent');
+    const stored = await readConnections(scope.projectPath);
+    const owned = stored.filter((c) => c.ownerId === callerId);
+    const { bySource, failed } = await collectSourcesByPair();
+    const bindings = bindingManager.getAllBindings().filter((b) => b.agentId === agent.id || (b.targetKind === 'agent' && b.targetId === agent.id));
+    const connections = bindings.map((b) => {
+      const key = `${b.agentId}\u0000${b.targetId}`;
+      const sources = [...bySource].filter(([, keys]) => keys.has(key)).map(([id]) => id);
+      const managedEnds = [b.agentId, b.targetId].map((id) => scope.agents.find((a) => a.id === id));
+      const creator = stored.find((c) => c.agentId === b.agentId && c.targetId === b.targetId)?.ownerId;
+      const from = connectionEnd(b.agentId);
+      const to = connectionEnd(b.targetId);
+      const direction = b.targetKind === 'agent' ? getConnectionDirection(from, to) : undefined;
+      const disabled = direction?.disabledTools ?? b.disabledTools ?? [];
+      const tools = from.machineId || to.machineId
+        ? {
+          allowed: CONNECTION_SWITCHES.filter((s) => !disabled.includes(s.tool)).map((s) => s.tool),
+          disabled: CONNECTION_SWITCHES.filter((s) => disabled.includes(s.tool)).map((s) => s.tool),
+        }
+        : readLocalDirectionTools(b.agentId, b.targetId);
+      return {
+        from, to, target_kind: b.targetKind, sources,
+        ...(creator && { made_by_agent: creator }),
+        ...(b.targetKind === 'agent' && { tools }),
+        may_change: b.targetKind === 'agent' && failed.length === 0 && direction?.setByAgent === callerId && !direction.link
+          && managedEnds.every((end) => end && holdsGrant(callerId, 'connection.manage', agentGrantTarget(callerId, scope, end)))
+          && sources.length === 1 && sources[0] === ORCHESTRATOR_CONNECTION_SOURCE_ID
+          && owned.some((c) => c.agentId === b.agentId && c.targetId === b.targetId),
+      };
+    });
+    return text(JSON.stringify({ connections, unreadable: failed }));
+  } catch (err) {
+    // telemetry-exempt: unexpected failures are logged and surfaced by errorResult
+    return errorResult('list_connections', callerId, err);
   }
 }
 
 const AGENT_REF = 'An agent name or id: you or one of your helpers.';
+const CONNECTION_AGENT_REF = 'A durable agent id or unique name in any registered project. Requires connection.manage on both ends.';
 const PROJECT_REF = 'A group project name or id: one you created with create_group_project or already belong to.';
 
 /** Register the orchestrator connection tools. */
 export function registerConnectionTools(): void {
   const options = { group: 'orchestration' as const };
+  const connectionOptions = { group: 'connections' as const };
 
   registerGlobalTool('create_group_project', {
     description:
@@ -401,18 +573,21 @@ export function registerConnectionTools(): void {
 
   registerGlobalTool('connect_agents', {
     description:
-      'Connect two agents so `from` gets tools to message and check on `to`. Both must be you or your helpers. ' +
-      'Set twoWay to connect both directions. The connection is saved and comes back when Clubhouse restarts.',
+      'Connect two agents covered by your connection.manage grants. ' +
+      'New directions allow status, output, reachability, messages, files and wake; clear and compact stay off. ' +
+      'Set twoWay to connect both directions. Each direction is saved and read back; existing switches are kept.',
     inputSchema: {
       type: 'object',
       properties: {
-        from: { type: 'string', description: AGENT_REF },
-        to: { type: 'string', description: AGENT_REF },
+        from: { type: 'string', description: CONNECTION_AGENT_REF },
+        to: { type: 'string', description: CONNECTION_AGENT_REF },
         twoWay: { type: 'boolean', description: 'Also connect `to` back to `from`. Default false.' },
+        allow: { type: 'array', items: { type: 'string', enum: CONNECTION_SWITCHES.map((s) => s.tool) }, description: 'Optional tools to allow on a new outgoing direction. Reset tools require your agent.reset grant on the receiver.' },
+        allow_back: { type: 'array', items: { type: 'string', enum: CONNECTION_SWITCHES.map((s) => s.tool) }, description: 'Optional tools for the reverse direction; defaults to allow when given.' },
       },
       required: ['from', 'to'],
     },
-  }, handleConnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'], names: 'self_and_helpers' } } });
+  }, handleConnectAgents, { ...connectionOptions, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'], names: 'registered' } } });
 
   registerGlobalTool('disconnect_agents', {
     description:
@@ -421,11 +596,32 @@ export function registerConnectionTools(): void {
     inputSchema: {
       type: 'object',
       properties: {
-        from: { type: 'string', description: AGENT_REF },
-        to: { type: 'string', description: AGENT_REF },
+        from: { type: 'string', description: CONNECTION_AGENT_REF },
+        to: { type: 'string', description: CONNECTION_AGENT_REF },
         twoWay: { type: 'boolean', description: 'Also remove `to` → `from`. Default false.' },
       },
       required: ['from', 'to'],
     },
-  }, handleDisconnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'], names: 'self_and_helpers' } } });
+  }, handleDisconnectAgents, { ...connectionOptions, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'], names: 'registered' } } });
+
+  registerGlobalTool('set_connection_tools', {
+    description: 'Set one direction of a connection you made. Other sources and directions stay unchanged. Returns saved switches. Reset tools require your agent.reset grant on the receiver. Dispatcher-owned links keep their existing ownership rules.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: CONNECTION_AGENT_REF },
+        to: { type: 'string', description: CONNECTION_AGENT_REF },
+        allow: { type: 'array', items: { type: 'string', enum: CONNECTION_SWITCHES.map((s) => s.tool) } },
+        twoWay: { type: 'boolean', description: 'Also set the reverse direction. Default false.' },
+        two_way: { type: 'boolean', description: 'Compatibility spelling of twoWay for Dispatcher links.' },
+        allow_back: { type: 'array', items: { type: 'string', enum: CONNECTION_SWITCHES.map((s) => s.tool) } },
+      },
+      required: ['from', 'to', 'allow'],
+    },
+  }, handleSetConnectionTools, { ...connectionOptions, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'], names: 'registered' } } });
+
+  registerGlobalTool('list_connections', {
+    description: 'Read your saved connections, their sources, switches and whether you may change each direction. Naming another agent requires connection.manage on it.',
+    inputSchema: { type: 'object', properties: { agent: { type: 'string', description: CONNECTION_AGENT_REF } } },
+  }, handleListConnections, { ...connectionOptions, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['agent'], names: 'registered', missing: 'caller' } } });
 }

@@ -19,7 +19,7 @@ import { reportChromeActionFailed } from '../../../chrome/telemetry';
 /** What removing a source does, in a sentence. */
 export function removalEffect(kind: ConnectionSourceKind, names: { agent: string; other: string; dispatcherEnd?: string }): string {
   switch (kind) {
-    case 'tool_link': return `Removes the link an orchestrator made between ${names.agent} and ${names.other}. If nothing else connects them, it can't link them again this session.`;
+    case 'tool_link': return `Removes the link an agent made between ${names.agent} and ${names.other}. If nothing else connects them, it can't link them again this session.`;
     case 'dispatcher_link': return `Removes the link the Dispatcher made. It can't connect them again unless you draw the wire yourself.`;
     case 'user_link': return `Removes the link you made from ${names.agent} to ${names.other}.`;
     case 'dispatcher_auto': return `Turns off Connect to Dispatcher for ${names.dispatcherEnd ?? names.other}. The Dispatcher can no longer message it or get its reports.`;

@@ -176,7 +176,8 @@ export interface DirectionToolsChange {
 }
 
 /**
- * Replace several directions' lists in one write, as the Dispatcher's (#3215).
+ * Replace several directions' lists in one write, with their Dispatcher or
+ * agent author retained for subsequent ownership checks.
  * `guard` sees each direction's entry under the store's lock, so a user's
  * write that lands after the caller looked is seen too; it throws to refuse,
  * and then nothing is written. Returning false leaves that direction alone.
@@ -184,6 +185,7 @@ export interface DirectionToolsChange {
 export async function setConnectionDirections(
   changes: readonly DirectionToolsChange[],
   guard: (current: ConnectionDirection | undefined, change: DirectionToolsChange) => void | false,
+  options: { agentId?: string } = {},
 ): Promise<ConnectionDirection[]> {
   if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
   let written: ConnectionDirection[] = [];
@@ -196,7 +198,8 @@ export async function setConnectionDirections(
       return [{
         from: c.from, to: c.to, disabledTools: [...new Set(c.disabledTools)],
         ...(c.enabledTools.length > 0 && { enabledTools: [...new Set(c.enabledTools)] }),
-        setBy: 'dispatcher', ...(current?.link && { link: current.link }), updatedAt: now,
+        ...(options.agentId ? { setByAgent: options.agentId } : { setBy: 'dispatcher' as const }),
+        ...(current?.link && { link: current.link }), updatedAt: now,
       }];
     });
     const keys = new Set(next.map((d) => directionKey(d.from, d.to)));
