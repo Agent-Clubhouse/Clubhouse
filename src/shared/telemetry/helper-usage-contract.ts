@@ -61,6 +61,15 @@ export type HelperRefusalCode = (typeof HELPER_REFUSAL_CODES)[number];
 export const HELPER_TASK_PROFILES = ['unspecified', 'small', 'medium', 'large'] as const;
 export type HelperTaskProfile = (typeof HELPER_TASK_PROFILES)[number];
 
+export const HELPER_FORECAST_UNAVAILABLE_REASONS = ['missing_identity', 'missing_calibration_identity', 'insufficient_samples', 'insufficient_effective_samples'] as const;
+export const HELPER_FORECAST_BASELINE_UNAVAILABLE_REASONS = ['missing', 'not_fresh', 'missing_timestamp', 'future_timestamp', 'stale', 'missing_windows'] as const;
+
+/** Separate from the public settings revision: one exact mapped cell and its live catalog identity. */
+export interface HelperCalibrationIdentity {
+  revision: string;
+  model: string;
+}
+
 export const DECISION_QUOTA_WINDOW_NAMES = ['weekly', 'fiveHour', 'other', 'model'] as const;
 export const DECISION_QUOTA_QUALITIES = ['fresh', 'stale', 'unknown'] as const;
 
@@ -157,6 +166,8 @@ export interface HelperDecisionRecord {
   fallback?: HelperRoutingFallback;
   /** Identity of the effective mapping, bumped with each edit. Hashed on recording. */
   mappingRevision?: string;
+  /** Absent on legacy or unverified identities; those observations cannot train new cohorts. */
+  calibration?: HelperCalibrationIdentity;
   /** Fingerprint across the effective cells, so two runs on the same mapping compare equal. Hashed on recording. */
   mappingFingerprint?: string;
   /** The mapping came from the user's own cells, the built-ins, or neither. */

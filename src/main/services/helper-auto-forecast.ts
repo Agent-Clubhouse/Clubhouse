@@ -1,22 +1,25 @@
-import { QUOTA_STALE_MS, type HelperDifficulty, type QuotaView } from '../../shared/helper-routing';
-import type { DecisionQuota, HelperTaskProfile } from '../../shared/telemetry/helper-usage-contract';
+import { QUOTA_STALE_MS, isPresetModel, type HelperDifficulty, type QuotaView } from '../../shared/helper-routing';
+import {
+  HELPER_FORECAST_BASELINE_UNAVAILABLE_REASONS, HELPER_FORECAST_UNAVAILABLE_REASONS, HELPER_TELEMETRY_LIMITS,
+  type DecisionQuota, type HelperCalibrationIdentity, type HelperTaskProfile,
+} from '../../shared/telemetry/helper-usage-contract';
 
 export const AUTO_FORECAST_MIN_SAMPLES = 5;
 export const AUTO_FORECAST_MIN_EFFECTIVE_SAMPLES = 3;
 export const AUTO_FORECAST_HALF_LIFE_MS = 7 * 24 * 60 * 60_000;
 export const AUTO_FORECAST_RETENTION_MS = 30 * 24 * 60 * 60_000;
 export const AUTO_FORECAST_MAX_SAMPLES = 32;
-
-const ESTIMATE_UNAVAILABLE_REASONS = ['missing_identity', 'insufficient_samples', 'insufficient_effective_samples'] as const;
-const BASELINE_UNAVAILABLE_REASONS = ['missing', 'not_fresh', 'missing_timestamp', 'future_timestamp', 'stale', 'missing_windows'] as const;
+export const AUTO_FORECAST_EMPIRICAL_COVERAGE_BP = 8000;
 
 export interface BurnEstimate {
   samples: number;
   /** Recency-weighted effective sample size, not evidence of live calibration. */
   effectiveSamples?: number;
-  unavailableReason?: (typeof ESTIMATE_UNAVAILABLE_REASONS)[number];
+  unavailableReason?: (typeof HELPER_FORECAST_UNAVAILABLE_REASONS)[number];
   /** Absent is unknown, including cold starts. Basis points of this provider's own window. */
   expectedBp?: number;
+  /** Cohort quantiles, not a calibrated prediction or confidence interval. */
+  interval?: { method: 'weighted_empirical'; nominalCoverageBp: 8000; lowerBp: number; upperBp: number };
 }
 
 export interface BurnForecast {
@@ -27,7 +30,7 @@ export interface BurnForecast {
   basis: 'subscription_interval';
   weekly: BurnEstimate;
   fiveHour: BurnEstimate;
-  baselineUnavailableReason?: (typeof BASELINE_UNAVAILABLE_REASONS)[number];
+  baselineUnavailableReason?: (typeof HELPER_FORECAST_BASELINE_UNAVAILABLE_REASONS)[number];
   baseline?: {
     asOfMs: number;
     weekly?: { usedBp: number; resetsAtMs: number };
@@ -48,6 +51,8 @@ export const BURN_OBSERVATION_REASONS = ['observed', 'missing_baseline', 'reset'
 export interface BurnObservation {
   runId?: string;
   atMs: number;
+  /** Local arrival time can be later than the provider sample timestamp. */
+  availableAtMs?: number;
   /** Outside and parent activity cannot be separated from a whole-login quota interval. */
   attribution: 'whole_login_unknown';
   reason: (typeof BURN_OBSERVATION_REASONS)[number];
@@ -64,6 +69,7 @@ export interface ForecastEntry {
   effort: string | null;
   difficulty: HelperDifficulty | null;
   mappingRevision?: string;
+  calibration?: HelperCalibrationIdentity;
   taskProfile?: HelperTaskProfile;
   spawn?: string;
   forecast?: BurnForecast;
@@ -72,21 +78,31 @@ export interface ForecastEntry {
 }
 
 export function burnForecastKey(entry: ForecastEntry): string | null {
-  if (!entry.provider || !entry.model || !entry.difficulty || !entry.mappingRevision) return null;
-  return JSON.stringify([entry.provider, entry.model, entry.effort, entry.difficulty, entry.mappingRevision, entry.taskProfile ?? 'unspecified']);
+  const calibration = readBurnCalibrationIdentity(entry.calibration);
+  if (!entry.provider || !entry.model || !entry.difficulty || !calibration) return null;
+  return JSON.stringify(['cell-v1', entry.provider, entry.model, calibration.model, entry.effort, entry.difficulty, calibration.revision, entry.taskProfile ?? 'unspecified']);
+}
+
+export function readBurnCalibrationIdentity(value: unknown): HelperCalibrationIdentity | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const c = value as Partial<HelperCalibrationIdentity>;
+  if (!isPresetModel(c.model) || typeof c.revision !== 'string'
+    || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(c.revision)) return undefined;
+  return { model: c.model, revision: c.revision };
 }
 
 const validBp = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 10_000;
 const validTime = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 
 function estimate(key: string | null, history: readonly ForecastEntry[], window: 'weekly' | 'fiveHour', now: number): BurnEstimate {
-  if (!key) return { samples: 0, unavailableReason: 'missing_identity' };
+  if (!key) return { samples: 0, unavailableReason: 'missing_calibration_identity' };
   const decisions = new Set<string>();
   const samples = history.flatMap((entry) => {
     const observation = entry.burnObservation;
     const value = observation?.[window]?.observedBp;
     if (entry.forecast?.key !== key || burnForecastKey(entry) !== key || observation?.reason !== 'observed'
-      || observation.atMs >= now || now - observation.atMs > AUTO_FORECAST_RETENTION_MS || !validBp(value)
+      || !validTime(observation.atMs) || observation.atMs >= now || now - observation.atMs > AUTO_FORECAST_RETENTION_MS || !validBp(value)
+      || (observation.availableAtMs !== undefined && (!validTime(observation.availableAtMs) || observation.availableAtMs >= now))
       || decisions.has(entry.decisionId)) return [];
     decisions.add(entry.decisionId);
     return [{ value, at: observation.atMs, weight: 2 ** (-(now - observation.atMs) / AUTO_FORECAST_HALF_LIFE_MS) }];
@@ -96,10 +112,76 @@ function estimate(key: string | null, history: readonly ForecastEntry[], window:
   const result: BurnEstimate = { samples: samples.length, ...(effective !== undefined && { effectiveSamples: effective }) };
   if (samples.length < AUTO_FORECAST_MIN_SAMPLES) return { ...result, unavailableReason: 'insufficient_samples' };
   if (effective === undefined || effective < AUTO_FORECAST_MIN_EFFECTIVE_SAMPLES) return { ...result, unavailableReason: 'insufficient_effective_samples' };
-  let cumulative = 0;
-  for (const sample of samples.sort((a, b) => a.value - b.value)) {
-    cumulative += sample.weight;
-    if (cumulative >= weight / 2) return { ...result, expectedBp: sample.value };
+  samples.sort((a, b) => a.value - b.value);
+  const quantile = (fraction: number): number => {
+    let cumulative = 0;
+    for (const sample of samples) {
+      cumulative += sample.weight;
+      if (cumulative >= weight * fraction) return sample.value;
+    }
+    return samples[samples.length - 1].value;
+  };
+  return {
+    ...result, expectedBp: quantile(0.5),
+    interval: { method: 'weighted_empirical', nominalCoverageBp: AUTO_FORECAST_EMPIRICAL_COVERAGE_BP, lowerBp: quantile(0.1), upperBp: quantile(0.9) },
+  };
+}
+
+export interface BurnCalibration {
+  qualification: 'shadow_proxy_only';
+  decisions: number;
+  unknown: number;
+  pending: number;
+  excluded: number;
+  missingWindow: number;
+  evaluated: number;
+  maeBp?: number;
+  biasBp?: number;
+  intervalsEvaluated: number;
+  intervalCoverageBp?: number;
+  meanIntervalWidthBp?: number;
+  meanIntervalScoreBp?: number;
+}
+
+/** Score immutable predictions, never refit them on their later outcomes. All figures remain whole-login proxies. */
+export function summarizeHelperBurn(history: readonly ForecastEntry[], key: string | null, window: 'weekly' | 'fiveHour', now: number): BurnCalibration {
+  const entries = history.filter((e) => e.forecast?.key === key && burnForecastKey(e) === key
+    && e.decidedAtMs <= now && now - e.decidedAtMs <= AUTO_FORECAST_RETENTION_MS && e.forecast.atMs <= now)
+    .sort((a, b) => b.decidedAtMs - a.decidedAtMs).slice(0, HELPER_TELEMETRY_LIMITS.maxInactiveLedgerEntries);
+  const result: BurnCalibration = { qualification: 'shadow_proxy_only', decisions: entries.length, unknown: 0, pending: 0, excluded: 0, missingWindow: 0, evaluated: 0, intervalsEvaluated: 0 };
+  let errors = 0, absoluteErrors = 0, covered = 0, widths = 0, scores = 0;
+  for (const entry of entries) {
+    const prediction = entry.forecast![window];
+    if (prediction.expectedBp === undefined) result.unknown++;
+    const observation = entry.burnObservation;
+    if (!observation || observation.atMs > now || (observation.availableAtMs ?? observation.atMs) > now) { result.pending++; continue; }
+    if (observation.reason !== 'observed') { result.excluded++; continue; }
+    const observed = observation[window]?.observedBp;
+    if (!validBp(observed)) { result.missingWindow++; continue; }
+    if (prediction.expectedBp !== undefined) {
+      const error = observed - prediction.expectedBp;
+      result.evaluated++;
+      errors += error;
+      absoluteErrors += Math.abs(error);
+    }
+    const interval = prediction.interval;
+    if (!interval) continue;
+    result.intervalsEvaluated++;
+    const width = interval.upperBp - interval.lowerBp;
+    const outside = Math.max(interval.lowerBp - observed, observed - interval.upperBp, 0);
+    if (outside === 0) covered++;
+    widths += width;
+    // Winkler interval score: 2 / alpha, where this empirical band's nominal alpha is 0.2.
+    scores += width + 10 * outside;
+  }
+  if (result.evaluated > 0) {
+    result.maeBp = absoluteErrors / result.evaluated;
+    result.biasBp = errors / result.evaluated;
+  }
+  if (result.intervalsEvaluated > 0) {
+    result.intervalCoverageBp = 10_000 * covered / result.intervalsEvaluated;
+    result.meanIntervalWidthBp = widths / result.intervalsEvaluated;
+    result.meanIntervalScoreBp = scores / result.intervalsEvaluated;
   }
   return result;
 }
@@ -129,7 +211,8 @@ export function predictHelperBurn(entry: ForecastEntry, history: readonly Foreca
   }
   return {
     version: 1, atMs: now, key, basis: 'subscription_interval',
-    weekly: estimate(key, history, 'weekly', now), fiveHour: estimate(key, history, 'fiveHour', now),
+    weekly: !entry.provider || !entry.model || !entry.difficulty ? { samples: 0, unavailableReason: 'missing_identity' } : estimate(key, history, 'weekly', now),
+    fiveHour: !entry.provider || !entry.model || !entry.difficulty ? { samples: 0, unavailableReason: 'missing_identity' } : estimate(key, history, 'fiveHour', now),
     ...(savedBaseline && { baseline: savedBaseline }),
     ...(baselineUnavailableReason && { baselineUnavailableReason }),
   };
@@ -140,13 +223,15 @@ export function predictHelperBurn(entry: ForecastEntry, history: readonly Foreca
  * proxy, not attributed helper burn. Overlapping known helpers are not assigned
  * each other's consumption, and no token-to-quota conversion is made.
  */
-export function observeHelperBurn(entry: ForecastEntry, history: readonly ForecastEntry[], quota: QuotaView): BurnObservation | undefined {
+export function observeHelperBurn(entry: ForecastEntry, history: readonly ForecastEntry[], quota: QuotaView, availableAtMs?: number): BurnObservation | undefined {
   const forecast = entry.forecast;
   const run = entry.forecastRun;
   const atMs = quota.asOf ? Date.parse(quota.asOf) : NaN;
   if (!forecast || entry.burnObservation || !run || run.endedMs === undefined
-    || !validTime(atMs) || atMs < run.endedMs || quota.state === 'unknown') return undefined;
-  const observation: BurnObservation = { atMs, attribution: 'whole_login_unknown', reason: 'observed', ...(run.runId && { runId: run.runId }) };
+    || !validTime(atMs) || atMs < run.endedMs || quota.state === 'unknown'
+    || (availableAtMs !== undefined && (!validTime(availableAtMs) || availableAtMs < atMs))) return undefined;
+  const arrival = availableAtMs !== undefined ? { availableAtMs } : {};
+  const observation: BurnObservation = { atMs, ...arrival, attribution: 'whole_login_unknown', reason: 'observed', ...(run.runId && { runId: run.runId }) };
   if (!run.usable || run.usageSamples === 0) return { ...observation, reason: 'incomplete' };
   const baseline = forecast.baseline;
   const from = baseline?.asOfMs;
@@ -168,8 +253,8 @@ export function observeHelperBurn(entry: ForecastEntry, history: readonly Foreca
     const resets = Date.parse(after.resetsAt);
     const usedBp = Math.round(after.usedPercent * 100);
     if (!validBp(usedBp) || !validTime(resets)) continue;
-    if (resets !== before.resetsAtMs || resets <= atMs) return { atMs, attribution: observation.attribution, reason: 'reset', ...(run.runId && { runId: run.runId }) };
-    if (usedBp < before.usedBp) return { atMs, attribution: observation.attribution, reason: 'decreased', ...(run.runId && { runId: run.runId }) };
+    if (resets !== before.resetsAtMs || resets <= atMs) return { atMs, ...arrival, attribution: observation.attribution, reason: 'reset', ...(run.runId && { runId: run.runId }) };
+    if (usedBp < before.usedBp) return { atMs, ...arrival, attribution: observation.attribution, reason: 'decreased', ...(run.runId && { runId: run.runId }) };
     const observedBp = usedBp - before.usedBp;
     const expected = forecast[window].expectedBp;
     observation[window] = { observedBp, ...(expected !== undefined && { errorBp: observedBp - expected }) };
@@ -183,10 +268,13 @@ export function readBurnForecast(value: unknown): BurnForecast | undefined {
   const f = value as Partial<BurnForecast>;
   const estimateOk = (e: BurnEstimate | undefined): e is BurnEstimate => !!e && Number.isInteger(e.samples) && e.samples >= 0 && e.samples <= AUTO_FORECAST_MAX_SAMPLES
     && (e.effectiveSamples === undefined || (Number.isFinite(e.effectiveSamples) && e.effectiveSamples >= 1 && e.effectiveSamples <= e.samples))
-    && (e.unavailableReason === undefined || (ESTIMATE_UNAVAILABLE_REASONS.includes(e.unavailableReason) && e.expectedBp === undefined))
-    && (e.expectedBp === undefined || (e.samples >= AUTO_FORECAST_MIN_SAMPLES && validBp(e.expectedBp)));
+    && (e.unavailableReason === undefined || (HELPER_FORECAST_UNAVAILABLE_REASONS.includes(e.unavailableReason) && e.expectedBp === undefined))
+    && (e.expectedBp === undefined || (e.samples >= AUTO_FORECAST_MIN_SAMPLES && validBp(e.expectedBp)))
+    && (e.interval === undefined || (e.interval.method === 'weighted_empirical' && e.interval.nominalCoverageBp === AUTO_FORECAST_EMPIRICAL_COVERAGE_BP
+      && e.expectedBp !== undefined && validBp(e.interval.lowerBp) && validBp(e.interval.upperBp)
+      && e.interval.lowerBp <= e.expectedBp && e.expectedBp <= e.interval.upperBp));
   if (f.version !== 1 || !validTime(f.atMs) || f.basis !== 'subscription_interval'
-    || (f.baselineUnavailableReason !== undefined && (!BASELINE_UNAVAILABLE_REASONS.includes(f.baselineUnavailableReason) || f.baseline !== undefined))
+    || (f.baselineUnavailableReason !== undefined && (!HELPER_FORECAST_BASELINE_UNAVAILABLE_REASONS.includes(f.baselineUnavailableReason) || f.baseline !== undefined))
     || (f.key !== null && (typeof f.key !== 'string' || f.key.length > 1024)) || !estimateOk(f.weekly) || !estimateOk(f.fiveHour)) return undefined;
   let baseline: BurnForecast['baseline'];
   if (f.baseline !== undefined) {
@@ -203,6 +291,7 @@ export function readBurnForecast(value: unknown): BurnForecast | undefined {
     samples: e.samples, ...(e.expectedBp !== undefined && { expectedBp: e.expectedBp }),
     ...(e.effectiveSamples !== undefined && { effectiveSamples: e.effectiveSamples }),
     ...(e.unavailableReason && { unavailableReason: e.unavailableReason }),
+    ...(e.interval && { interval: { method: e.interval.method, nominalCoverageBp: e.interval.nominalCoverageBp, lowerBp: e.interval.lowerBp, upperBp: e.interval.upperBp } }),
   });
   return { version: 1, atMs: f.atMs, key: f.key, basis: f.basis,
     weekly: readEstimate(f.weekly), fiveHour: readEstimate(f.fiveHour),
@@ -225,8 +314,9 @@ export function readBurnObservation(value: unknown): BurnObservation | undefined
   if (!value || typeof value !== 'object') return undefined;
   const o = value as Partial<BurnObservation>;
   if (!validTime(o.atMs) || o.attribution !== 'whole_login_unknown' || !BURN_OBSERVATION_REASONS.includes(o.reason!)
+    || (o.availableAtMs !== undefined && (!validTime(o.availableAtMs) || o.availableAtMs < o.atMs))
     || (o.runId !== undefined && (typeof o.runId !== 'string' || o.runId.length === 0 || o.runId.length > 200))) return undefined;
-  const result: BurnObservation = { atMs: o.atMs, attribution: o.attribution, reason: o.reason!, ...(o.runId && { runId: o.runId }) };
+  const result: BurnObservation = { atMs: o.atMs, attribution: o.attribution, reason: o.reason!, ...(o.availableAtMs !== undefined && { availableAtMs: o.availableAtMs }), ...(o.runId && { runId: o.runId }) };
   for (const window of ['weekly', 'fiveHour'] as const) {
     const w = o[window];
     if (w === undefined) continue;

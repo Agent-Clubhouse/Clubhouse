@@ -1,6 +1,9 @@
+import { randomUUID } from 'crypto';
 import { createSettingsStore } from './settings-store';
 import { DEFAULT_GLOBAL_HELPER_CAP, MAX_HELPER_LIMIT } from '../../shared/orchestration-policy';
-import { normalizeSavedPresets, type SavedPresets } from '../../shared/helper-routing';
+import { AUTO_LEVEL_FOLLOWS, AUTO_LEVELS, BUILTIN_PRESETS, PRESET_PROVIDERS, isAutoBoundLevel, normalizeSavedPresets, type AutoLevel, type PresetCell, type PresetProvider, type SavedPresets } from '../../shared/helper-routing';
+
+type PresetCellGenerations = Partial<Record<PresetProvider, Partial<Record<AutoLevel, string>>>>;
 
 /** App-wide orchestration settings (#2228). Per-agent policy lives on the durable config. */
 export interface OrchestrationSettings {
@@ -10,6 +13,8 @@ export interface OrchestrationSettings {
   helperPresets?: SavedPresets;
   /** Moves on each presets write, so a stale edit can be refused. */
   helperPresetsRevision?: number;
+  /** Calibration-only identities. Public settings revisions keep their existing meaning. */
+  helperPresetCellGenerations?: PresetCellGenerations;
   /** "Auto provider" for orchestrators that don't set it themselves (#2671). Off unless the user turns it on. */
   autoHelpers?: boolean;
   /** Copilot is allowed as Auto's last resort unless explicitly turned off (#3279). */
@@ -24,6 +29,41 @@ function validCap(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_HELPER_LIMIT;
 }
 
+function readCellGenerations(raw: unknown): PresetCellGenerations {
+  const result: PresetCellGenerations = {};
+  if (!raw || typeof raw !== 'object') return result;
+  for (const provider of PRESET_PROVIDERS) {
+    const row = (raw as Record<string, unknown>)[provider];
+    if (!row || typeof row !== 'object') continue;
+    for (const level of AUTO_LEVELS) {
+      const value = (row as Record<string, unknown>)[level];
+      if (typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value)) {
+        (result[provider] ??= {})[level] = value;
+      }
+    }
+  }
+  return result;
+}
+
+function configuredCell(presets: SavedPresets, provider: PresetProvider, level: AutoLevel): PresetCell {
+  return presets[provider]?.[level] ?? (isAutoBoundLevel(level)
+    ? configuredCell(presets, provider, AUTO_LEVEL_FOLLOWS[level])
+    : BUILTIN_PRESETS[provider][level]);
+}
+
+function nextCellGenerations(current: OrchestrationSettings, presets: SavedPresets): PresetCellGenerations {
+  const result: PresetCellGenerations = {};
+  for (const provider of PRESET_PROVIDERS) {
+    for (const level of AUTO_LEVELS) {
+      const before = configuredCell(current.helperPresets ?? {}, provider, level);
+      const after = configuredCell(presets, provider, level);
+      const previous = current.helperPresetCellGenerations?.[provider]?.[level];
+      (result[provider] ??= {})[level] = previous && before.model === after.model && before.effort === after.effort ? previous : randomUUID();
+    }
+  }
+  return result;
+}
+
 const store = createSettingsStore<OrchestrationSettings>(
   'orchestration-settings.json',
   { globalHelperCap: DEFAULT_GLOBAL_HELPER_CAP },
@@ -31,11 +71,12 @@ const store = createSettingsStore<OrchestrationSettings>(
     globalHelperCap: validCap(raw.globalHelperCap) ? raw.globalHelperCap : DEFAULT_GLOBAL_HELPER_CAP,
     helperPresets: normalizeSavedPresets(raw.helperPresets),
     helperPresetsRevision: validRevision(raw.helperPresetsRevision),
+    helperPresetCellGenerations: readCellGenerations(raw.helperPresetCellGenerations),
     autoHelpers: raw.autoHelpers === true,
     copilotAuto: raw.copilotAuto !== false,
   }),
   // Presets and Auto have rows of their own, with reasons.
-  { audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'autoHelpers', 'copilotAuto'] } },
+  { audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'helperPresetCellGenerations', 'autoHelpers', 'copilotAuto'] } },
 );
 
 export const getSettings = store.get;
@@ -79,9 +120,22 @@ export function getPresetsRevision(): number {
   return getSettings().helperPresetsRevision ?? 0;
 }
 
+export function getPresetCellGeneration(provider: PresetProvider, level: AutoLevel): string | undefined {
+  return getSettings().helperPresetCellGenerations?.[provider]?.[level];
+}
+
+/** Once, outside the start lock. Missing or legacy metadata starts cold, never at a guessed revision. */
+export async function ensurePresetCellGenerations(): Promise<void> {
+  if (PRESET_PROVIDERS.every((provider) => AUTO_LEVELS.every((level) => getPresetCellGeneration(provider, level)))) return;
+  await store.update((current) => ({ ...current, helperPresetCellGenerations: nextCellGenerations(current, current.helperPresets ?? {}) }));
+}
+
 /** Save presets checked by services/helper-routing.ts, moving the revision. */
 export async function savePresets(presets: SavedPresets): Promise<void> {
-  await store.save({ ...getSettings(), helperPresets: presets, helperPresetsRevision: getPresetsRevision() + 1 });
+  await store.update((current) => ({
+    ...current, helperPresets: presets, helperPresetsRevision: (current.helperPresetsRevision ?? 0) + 1,
+    helperPresetCellGenerations: nextCellGenerations(current, presets),
+  }));
 }
 
 export function getGlobalHelperCap(): number {
