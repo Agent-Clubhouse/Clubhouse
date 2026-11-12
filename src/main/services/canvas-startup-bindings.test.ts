@@ -190,6 +190,28 @@ describe('canvas-store-reader', () => {
     expect(snapshotTree(root)).toEqual(before);
   });
 
+  it.each([
+    { key: 'canvas-instances', recovery: 'sibling' },
+    { key: 'canvas-wires', recovery: 'sibling' },
+    { key: 'canvas-instances', recovery: 'named' },
+    { key: 'canvas-wires', recovery: 'unreadable' },
+  ])('does not trust backup-only $key ($recovery) as a complete strict inventory', async ({ key, recovery }) => {
+    const dir = location().kvDir;
+    writeKv(dir, 'canvas-instances', [canvas('valid', 'Valid', [])]);
+    writeKv(dir, 'canvas-wires', []);
+    fs.unlinkSync(path.join(dir, `${key}.json`));
+    if (recovery === 'named') {
+      fs.unlinkSync(path.join(dir, `${key}.json.bak`));
+      writeKv(dir, 'canvas-instances-backup', [canvas('recovered', 'Recovered', [])]);
+    }
+    if (recovery === 'unreadable') fs.writeFileSync(path.join(dir, `${key}.json.bak`), '{torn');
+    const before = snapshotTree(root);
+
+    expect((await readCanvasStore(location(), { strict: true })).problems.length).toBeGreaterThan(0);
+    if (recovery !== 'unreadable') expect((await readCanvasStore(location())).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
   it('strictly recognizes valid, missing and known retired rows without writes', async () => {
     const dir = location().kvDir;
     writeKv(dir, 'canvas-instances', [canvas('valid', 'Valid', [

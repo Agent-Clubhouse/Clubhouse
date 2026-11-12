@@ -102,6 +102,7 @@ export async function readKvKey(kvDir: string, key: string, options: CanvasStore
   if (primary.status === 'ok') return primary;
   if (options.strict && primary.status === 'unreadable') return primary;
   const backup = await readJsonFile(`${file}.bak`, options.strict);
+  if (options.strict && backup.status === 'ok') return { status: 'unreadable', error: 'only a recovery copy is present' };
   if (backup.status === 'ok') return backup;
   if (primary.status === 'unreadable') return primary;
   if (backup.status === 'unreadable') return backup;
@@ -190,6 +191,7 @@ async function readInstances(kvDir: string, options: CanvasStoreReadOptions): Pr
   }
   const backup = await readKvKey(kvDir, KEY_INSTANCES_BACKUP, options);
   if (backup.status === 'ok') {
+    if (options.strict) return { canvases: null, problem: 'canvas instances unusable: only a recovery key is present' };
     const canvases = normalizeInstances(backup.value, options.strict);
     if (canvases) return { canvases };
   }
