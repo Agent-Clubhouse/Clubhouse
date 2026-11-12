@@ -83,9 +83,9 @@ export async function followRemappedSetup(agent: DurableAgentConfig, before: Man
   const record = delivered.get(agent.id);
   if (!record) return;
   const svc = managedAgents();
-  const was = setupFingerprint({ ...agent, managed: before }, await resolveManagedSetup(svc, before));
+  const was = setupFingerprint({ ...agent, managed: before }, await resolveManagedSetup(svc, before, agent.id));
   if (was.fingerprint !== record.fingerprint) return;
-  const now = setupFingerprint({ ...agent, managed: after }, await resolveManagedSetup(svc, after));
+  const now = setupFingerprint({ ...agent, managed: after }, await resolveManagedSetup(svc, after, agent.id));
   delivered.set(agent.id, { ...record, fingerprint: now.fingerprint, parts: now.parts, order: now.order });
 }
 
@@ -185,7 +185,7 @@ export async function quickLaunchFor(
 
 export async function managedMcpServersFor(agent: DurableAgentConfig): Promise<Record<string, McpServerDef>> {
   if (!agent.managed) return {};
-  return mcpServersOf(await resolveManagedSetup(managedAgents(), agent.managed));
+  return mcpServersOf(await resolveManagedSetup(managedAgents(), agent.managed, agent.id));
 }
 
 export async function statusFor(projectPath: string, agentId: string): Promise<ManagedAgentStatus> {
@@ -207,7 +207,7 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   }
   const record = delivered.get(agentId);
   if (!running || !record) return { managed: true, running, waiting: false, changes: [], cliChanged: false, ...notice };
-  const resolved = await resolveManagedSetup(managedAgents(), agent.managed);
+  const resolved = await resolveManagedSetup(managedAgents(), agent.managed, agent.id);
   const now = setupFingerprint(agent, resolved);
   if (now.fingerprint === record.fingerprint) {
     return { managed: true, running, waiting: false, changes: [], deliveredAt: record.deliveredAt, cliChanged: false, ...notice };

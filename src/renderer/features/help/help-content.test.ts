@@ -12,9 +12,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting']);
   });
 
-  it('has 24 total topics', () => {
+  it('has 25 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(24);
+    expect(total).toBe(25);
   });
 
   it('each section has at least 1 topic', () => {
@@ -46,9 +46,9 @@ describe('help-content', () => {
     expect(general?.topics).toHaveLength(5);
   });
 
-  it('Agents & Orchestrators section has 7 topics', () => {
+  it('Agents & Orchestrators section has 8 topics', () => {
     const agents = HELP_SECTIONS.find((s) => s.id === 'agents');
-    expect(agents?.topics).toHaveLength(7);
+    expect(agents?.topics).toHaveLength(8);
   });
 
   it('Settings section has 4 topics', () => {
@@ -83,6 +83,16 @@ describe('help-content', () => {
         const agents = sections.find((s) => s.id === 'agents')!.topics.map((t) => t.id);
         expect(agents.indexOf('agents-orchestrated-helpers')).toBe(agents.indexOf('agents-terminal') + 1);
         expect(find(sections, 'agents-orchestrated-helpers').title).toBe(title);
+      }
+    });
+
+    it('links the prepare-handoff guide in both shells without advertising an enabled transfer', () => {
+      for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
+        const article = sections.flatMap((section) => section.topics).find((topic) => topic.id === 'agents-handoffs')!;
+        expect(article.content).toContain('Handoffs are not enabled in this build.');
+        expect(article.content).toContain('[Read the prepare-handoff guide](https://github.com/Agent-Clubhouse/Clubhouse/blob/main/src/main/services/managed-agents/handoff-skill/SKILL.md)');
+        expect(article.content).toContain('`handoff.offer`');
+        expect(article.content).toContain('indeterminate');
       }
     });
 

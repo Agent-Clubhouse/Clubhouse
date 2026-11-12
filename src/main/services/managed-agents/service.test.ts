@@ -14,8 +14,8 @@ import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, diffTemplates, ManagedError, type ManagedAgentsService } from './service';
 import { updateAgentGrantChanges } from '../agent-grants-store';
-import { BUILTIN_BLOCK_IDS, BUILTIN_MANIFEST, BUILTIN_SKILL_IDS, builtinParts, builtinTemplates, DEFAULT_HELPER_TEMPLATE_ID } from './builtins';
-import { BUILTIN_SKILL_TEXT, BUILTIN_TEXT } from './builtin-text/index';
+import { BUILTIN_BLOCK_IDS, BUILTIN_MANIFEST, BUILTIN_SKILL_IDS, BUILTIN_SKILL_TEXT, builtinParts, builtinTemplates, DEFAULT_HELPER_TEMPLATE_ID } from './builtins';
+import { BUILTIN_TEXT } from './builtin-text/index';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 
@@ -148,7 +148,7 @@ describe('built-ins', () => {
   it('installs the built-in skills and lists them as built-in and read-only, forkable (#2902)', async () => {
     const skills = (await user(() => service.listParts('skill'))).filter((p) => p.builtin);
     expect(skills.filter(isListed).map((p) => p.name)).toEqual([
-      'Build', 'Lint', 'Post result to parent', 'Post result to the board', 'Post result to the pull request', 'Test', 'Validate',
+      'Build', 'Lint', 'Post result to parent', 'Post result to the board', 'Post result to the pull request', 'Prepare handoff', 'Test', 'Validate',
     ]);
     // The generic Post result was cut: retired in the manifest, not installed (D99).
     expect(skills.filter((p) => p.retired)).toEqual([]);

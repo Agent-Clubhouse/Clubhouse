@@ -51,6 +51,12 @@ The local sampler reads CPU counters over 100 ms, memory counters and `statfs` f
 
 The internal query service shares in-flight reads, caches for 30 seconds, limits callers to 30 queries per minute, checks `device.read` before and after the query, and rechecks online membership before releasing a remote result. Its membership, grant, cached-provider-signals and pinned-transport adapters remain integration work. No capacity tool/route or settings UI is enabled by this foundation.
 
+### Preparation guide foundation (delivery disabled)
+
+The product-owned `prepare-handoff` built-in is separate from generated maintainer/builder exports. Managed delivery and Preview resolve the same feature-and-grant-gated guide, independent of provider or orchestration role; a revoked guide is removed at the next session start only if Clubhouse still owns that folder. Project-tracked and configured person-owned skills keep precedence. The trusted runtime access source is not installed, so even an explicitly configured built-in is not delivered by default.
+
+The guide requires a real app-provided secret-safe preview, explicit ignored/large-file selection and immutable digest agreement, a concise goal/done/remaining/verification/questions brief, optional coarse capacity, an authorized agent/Dispatcher target and authoritative offer/query follow-through. Missing tools or preview capabilities stop preparation; shell/file-copy alternatives and fabricated manifests are prohibited. The Handoffs help article links the guide and states that transfers are not enabled. Runtime grant/availability wiring, plain/quick delivery and a scripted-provider end-to-end remain pending; this is not completion of #3344.
+
 ## Manual connect and user-managed forwards
 
 In **Add a device**, paste the other computer's unmodified pairing link. **Address override (optional)** accepts a host or `host:port`, for example `127.0.0.1:7443` for a local forward or `[::1]:7443` for IPv6. Omitting the port uses the main TLS port from the link. An override replaces the link's endpoints for that pairing attempt, not its expected identity, certificate or one-time PIN.

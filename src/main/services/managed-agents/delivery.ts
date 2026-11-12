@@ -1,8 +1,9 @@
 /**
  * Delivery for Clubhouse-managed agents (#2896). At each session start the
  * agent gets exactly its setup: its instruction blocks joined in order, its
- * skills copied into its own folder, and its MCP servers. Clubhouse adds no
- * instruction text of its own.
+ * skills copied into its own folder, and its MCP servers. The prepare-handoff
+ * skill is additionally gated by the runtime feature and offer permission.
+ * Clubhouse adds no instruction text of its own.
  *
  * Works for every CLI and both runtimes because it writes where each CLI
  * already reads (the provider's instructions file, skills folder and MCP
@@ -37,6 +38,7 @@ import { builtinPart, ManagedError, withClubhouseSetup, type ManagedAgentsServic
 import { BUILTIN_BLOCK_IDS, withWorkingIdentity } from './builtins';
 import { MANAGED_SKILLS_MANIFEST, skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
+import { canPrepareHandoff, PREPARE_HANDOFF_SKILL } from './handoff-skill';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
 export const SKILLS_MANIFEST = MANAGED_SKILLS_MANIFEST;
@@ -52,20 +54,29 @@ interface Resolved {
   missing: string[];
 }
 
-async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSetup): Promise<Resolved> {
+async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSetup, agentId?: string): Promise<Resolved> {
   // Both sides of the delivery fingerprint (delivered and current) resolve here,
   // so a setup saved before the Clubhouse part was required fingerprints the same.
   const setup = withClubhouseSetup(saved);
   const out: Resolved = { blocks: [], skills: [], mcps: [], missing: [] };
+  const handoff = canPrepareHandoff(agentId);
   for (const id of setup.blocks) {
     const head = await service.headContent(id);
     if (!head || head.content.kind !== 'block') { out.missing.push(id); continue; }
     out.blocks.push({ id, name: head.entry.name, builtin: head.entry.source.kind === 'builtin', revision: head.entry.headRevision, content: head.content.content });
   }
   for (const id of setup.skills) {
+    if (id === PREPARE_HANDOFF_SKILL.id && !handoff) continue;
     const head = await service.headContent(id);
     if (!head || head.content.kind !== 'skill') { out.missing.push(id); continue; }
     out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: head.entry.source.kind === 'builtin', ...(head.fromRetiredBuiltin && { retiredCopy: true as const }), content: head.content });
+  }
+  if (handoff && !out.skills.some((skill) => skill.content.skillName === PREPARE_HANDOFF_SKILL.skillName)) {
+    const head = await service.headContent(PREPARE_HANDOFF_SKILL.id);
+    if (!head || head.content.kind !== 'skill') out.missing.push(PREPARE_HANDOFF_SKILL.id);
+    else out.skills.push({
+      id: PREPARE_HANDOFF_SKILL.id, name: head.entry.name, revision: head.entry.headRevision, builtin: true, content: head.content,
+    });
   }
   for (const id of setup.mcps) {
     const head = await service.headContent(id);
@@ -152,7 +163,7 @@ export function mcpServersOf(resolved: Resolved): Record<string, McpServerDef> {
 
 export async function resolveManagedMcpServers(service: ManagedAgentsService, agent: DurableAgentConfig): Promise<Record<string, McpServerDef>> {
   if (!agent.managed) return {};
-  return mcpServersOf(await resolveSetup(service, agent.managed));
+  return mcpServersOf(await resolveSetup(service, agent.managed, agent.id));
 }
 
 function insideDir(dir: string, rel: string): string {
@@ -770,7 +781,7 @@ export async function deliverManagedSetup(params: {
 }): Promise<DeliveryRecord | null> {
   const { service, projectPath, agent, provider } = params;
   if (!agent.managed || !agent.worktreePath) return null;
-  const resolved = await resolveSetup(service, agent.managed);
+  const resolved = await resolveSetup(service, agent.managed, agent.id);
   if (resolved.missing.length > 0) {
     appLog('core:managed', 'warn', 'Managed setup lists parts that no longer exist; skipped', { meta: { agentId: agent.id, missing: resolved.missing.length } });
   }
@@ -941,7 +952,7 @@ export async function previewManagedSetup(params: {
 }): Promise<ManagedPreview> {
   const setup = params.setup ?? params.agent.managed;
   if (!setup) return { instructions: '', blocks: [], skills: [], mcps: [], missing: [] };
-  const resolved = await resolveSetup(params.service, setup);
+  const resolved = await resolveSetup(params.service, setup, params.agent.id);
   const rawInstructions = composeManagedText(resolved);
   // The same render delivery writes, so Preview matches the file byte for byte.
   const instructions = await renderManagedInstructions(params.projectPath, params.agent, resolved);

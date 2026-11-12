@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, isListed } from '../../../shared/managed-agents-types';
 
@@ -15,6 +15,8 @@ import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import { BUILTIN_BLOCK_IDS, BUILTIN_SKILL_IDS, builtinParts, builtinTemplates } from './builtins';
 import { BUILTIN_SKILL_TEXT } from './builtin-text/index';
+import { PREPARE_HANDOFF_SKILL_TEXT, setPrepareHandoffSkillAccess } from './handoff-skill';
+import { skillsFolderOf } from '../../../shared/skills-folder';
 import { appLog } from '../log-service';
 import {
   deliverManagedSetup,
@@ -70,6 +72,7 @@ beforeAll(async () => {
   await serviceAt(seed).ensureBuiltins();
 });
 afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+afterEach(() => setPrepareHandoffSkillAccess(null));
 
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-'));
@@ -125,6 +128,86 @@ describe('deliverManagedSetup', () => {
     expect(JSON.parse(fs.readFileSync(path.join(skills, '.clubhouse-managed-skills.json'), 'utf-8'))).toEqual({ skills: ['build', 'test', 'lint', 'validate'] });
     const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
     expect(preview.skills.map((sk) => sk.folder)).toEqual(['.claude/skills/build', '.claude/skills/test', '.claude/skills/lint', '.claude/skills/validate']);
+  });
+
+  it('does not deliver or preview prepare-handoff by default, even when it is explicitly configured', async () => {
+    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.prepareHandoff], mcps: [] };
+    const p = provider();
+    const delivered = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: p }));
+    expect(fs.existsSync(path.join(agent.worktreePath!, '.claude/skills/prepare-handoff'))).toBe(false);
+    expect(delivered?.snapshot?.skills).toEqual([]);
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: p }));
+    expect(preview.skills).toEqual([]);
+  });
+
+  it.each([[false, true], [true, false]])('requires feature availability %s and offer permission %s independently', async (available, granted) => {
+    setPrepareHandoffSkillAccess({ available, canOffer: () => granted });
+    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.prepareHandoff], mcps: [] };
+    const delivered = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(delivered?.snapshot?.skills).toEqual([]);
+    expect(fs.existsSync(path.join(agent.worktreePath!, '.claude/skills/prepare-handoff'))).toBe(false);
+  });
+
+  it.each([
+    ['claude-code', { configDir: '.claude', legacyInstructionsFile: 'CLAUDE.md' }],
+    ['copilot-cli', { configDir: '.github', legacyInstructionsFile: '.github/copilot-instructions.md', mcpConfigFile: '.github/mcp.json' }],
+    ['codex-cli', { configDir: '.codex', legacyInstructionsFile: 'AGENTS.md', skillsRoot: '.agents/skills', settingsFormat: 'toml', mcpConfigFile: '.codex/config.toml' }],
+  ] as const)('delivers prepare-handoff once for an eligible ordinary %s agent and matches Preview', async (id, conventions) => {
+    setPrepareHandoffSkillAccess({ available: true, canOffer: (agentId) => agentId === agent.id });
+    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.prepareHandoff], mcps: [] };
+    fs.mkdirSync(path.join(agent.worktreePath!, conventions.configDir), { recursive: true });
+    const p = provider(conventions, id);
+    const delivered = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: p }));
+    const folder = skillsFolderOf(p.conventions);
+    expect(fs.readFileSync(path.join(agent.worktreePath!, folder, 'prepare-handoff/SKILL.md'), 'utf8')).toBe(PREPARE_HANDOFF_SKILL_TEXT);
+    expect(delivered?.snapshot?.skills).toEqual(['Prepare handoff']);
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: p }));
+    expect(preview.skills.map((skill) => skill.folder)).toEqual([`${folder}/prepare-handoff`]);
+    expect(agent.orchestration).toBeUndefined();
+  });
+
+  it('injects only with access, then removes only its owned skill on the next revoked start', async () => {
+    execFileSync('git', ['init', '-q', agent.worktreePath!]);
+    agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    let allowed = true;
+    setPrepareHandoffSkillAccess({ available: true, canOffer: () => allowed });
+    const p = provider();
+    const skills = path.join(agent.worktreePath!, '.claude/skills');
+    fs.mkdirSync(path.join(skills, 'personal'), { recursive: true });
+    fs.writeFileSync(path.join(skills, 'personal/SKILL.md'), '# Person-owned guide');
+    const first = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: p }));
+    expect(fs.existsSync(path.join(skills, 'prepare-handoff/SKILL.md'))).toBe(true);
+    allowed = false;
+    const revoked = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: p }));
+    expect(fs.existsSync(path.join(skills, 'prepare-handoff'))).toBe(false);
+    expect(fs.readFileSync(path.join(skills, 'personal/SKILL.md'), 'utf8')).toBe('# Person-owned guide');
+    expect(revoked?.fingerprint).not.toBe(first?.fingerprint);
+    expect(JSON.parse(fs.readFileSync(path.join(skills, '.clubhouse-managed-skills.json'), 'utf8'))).toEqual({ skills: [] });
+  });
+
+  it('preserves a prepare-handoff folder the project took ownership of before revocation', async () => {
+    execFileSync('git', ['init', '-q', agent.worktreePath!]);
+    agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    setPrepareHandoffSkillAccess({ available: true, canOffer: () => true });
+    const p = provider();
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: p }));
+    const relative = '.claude/skills/prepare-handoff/SKILL.md';
+    fs.writeFileSync(path.join(agent.worktreePath!, relative), '# Project-owned guide');
+    execFileSync('git', ['add', '--', relative], { cwd: agent.worktreePath });
+    setPrepareHandoffSkillAccess({ available: true, canOffer: () => false });
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: p }));
+    expect(fs.readFileSync(path.join(agent.worktreePath!, relative), 'utf8')).toBe('# Project-owned guide');
+  });
+
+  it('does not overwrite a configured person-owned skill using the preparation folder', async () => {
+    const mine = await user(() => service.createPart({
+      name: 'My preparation', content: { kind: 'skill', skillName: 'prepare-handoff', files: [{ path: 'SKILL.md', content: '# My guide' }] },
+    }));
+    agent.managed = { version: 1, blocks: [], skills: [mine.id], mcps: [] };
+    setPrepareHandoffSkillAccess({ available: true, canOffer: () => true });
+    const delivered = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(delivered?.snapshot?.skills).toEqual(['My preparation']);
+    expect(fs.readFileSync(path.join(agent.worktreePath!, '.claude/skills/prepare-handoff/SKILL.md'), 'utf8')).toBe('# My guide');
   });
 
   it('leaves @@SourceControlProvider and the build, test and lint wildcards as written, in delivery and Preview (#2902)', async () => {

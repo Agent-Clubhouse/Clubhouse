@@ -18,9 +18,12 @@
  * come from the builder too: each is `builtin-text/skills/<name>/SKILL.md`,
  * delivered into the CLI's skills folder like any skill part. Like built-in
  * blocks they are read-only: people fork them in the library to make their own.
+ * The feature/grant-gated prepare-handoff guide is product-owned separately,
+ * so a builder export cannot retire that runtime capability's instructions.
  */
 import manifestJson from './builtin-text/manifest.json';
-import { BUILTIN_SKILL_TEXT, BUILTIN_TEXT } from './builtin-text/index';
+import { BUILTIN_SKILL_TEXT as BUILDER_SKILL_TEXT, BUILTIN_TEXT } from './builtin-text/index';
+import { PREPARE_HANDOFF_SKILL, PREPARE_HANDOFF_SKILL_TEXT } from './handoff-skill';
 import { CLUBHOUSE_MCP_PART_ID, IDENTITY_BLOCK_ID, WORKING_IDENTITY_BLOCK_ID, workingIdentityBlocks, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import type { BlockAssetPayload, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 
@@ -46,7 +49,13 @@ export interface BuiltinManifest {
   templates: Array<{ id: string; name: string; description: string; blocks: string[]; skills?: string[]; settings: ManagedTemplateSettings; retired?: boolean }>;
 }
 
-export const BUILTIN_MANIFEST = manifestJson as BuiltinManifest;
+const builderManifest = manifestJson as BuiltinManifest;
+export const BUILTIN_MANIFEST: BuiltinManifest = {
+  ...builderManifest, skills: [...builderManifest.skills.filter((skill) => skill.id !== PREPARE_HANDOFF_SKILL.id), PREPARE_HANDOFF_SKILL],
+};
+export const BUILTIN_SKILL_TEXT: Record<string, string> = {
+  ...BUILDER_SKILL_TEXT, [PREPARE_HANDOFF_SKILL.file]: PREPARE_HANDOFF_SKILL_TEXT,
+};
 
 /**
  * Ids code refers to. Ids are stable forever: agents and templates point at
@@ -83,6 +92,7 @@ export const BUILTIN_SKILL_IDS = {
   postResultParent: 'builtin-skill-post-result-parent',
   postResultBoard: 'builtin-skill-post-result-board',
   postResultPr: 'builtin-skill-post-result-pr',
+  prepareHandoff: PREPARE_HANDOFF_SKILL.id,
 } as const;
 
 /**
