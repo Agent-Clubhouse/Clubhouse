@@ -1,0 +1,316 @@
+import { execFile } from 'child_process';
+import { createHash, timingSafeEqual } from 'crypto';
+import * as fs from 'fs';
+import type { FileHandle } from 'fs/promises';
+import * as path from 'path';
+import { promisify } from 'util';
+import picomatch from 'picomatch';
+import {
+  canonicalHandoffManifest, HANDOFF_TRANSFER_DEFAULTS, isSafeHandoffPath, parseHandoffManifest, validateHandoffBounds,
+  type HandoffManifestFile, type HandoffTransferBounds, type HandoffWorktreeManifest,
+} from '../../shared/handoff-manifest';
+import {
+  HANDOFF_SECRET_CONTENT_MAX_BYTES, safeHandoffDiagnosticPath, scanHandoffSecrets, type HandoffSecretFinding,
+} from '../../shared/handoff-secrets';
+import type { HandoffManifestSummary } from '../../shared/handoffs';
+
+const exec = promisify(execFile);
+const CHUNK_BYTES = 64 * 1024;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
+
+export class HandoffSnapshotError extends Error {
+  cleanupFailed = false;
+  constructor(
+    readonly code: 'invalid_repository' | 'git_failed' | 'unsafe_entry' | 'source_changed' | 'bounds_exceeded'
+      | 'secret_blocked' | 'hash_mismatch' | 'filesystem_failed' | 'invalid_staging',
+    readonly file?: string,
+    readonly findings?: HandoffSecretFinding[],
+  ) {
+    super(`Handoff snapshot failed: ${code}${file ? ` (${safeHandoffDiagnosticPath(file)})` : ''}.`);
+    this.name = 'HandoffSnapshotError';
+    if (file) this.file = safeHandoffDiagnosticPath(file);
+  }
+}
+
+export interface HandoffSnapshot {
+  root: string;
+  manifest: HandoffWorktreeManifest;
+}
+
+export interface PrepareHandoffSnapshot {
+  worktreeRoot: string;
+  /** Existing app-owned staging directory, never a project path supplied by an agent. */
+  stagingRoot: string;
+  handoffId: string;
+  include?: Partial<HandoffWorktreeManifest['include']>;
+  exclude?: string[];
+  bounds?: HandoffTransferBounds;
+}
+
+interface SourceFile {
+  path: string;
+  stat: fs.BigIntStats;
+  sha256?: string;
+}
+
+function failure(error: unknown): HandoffSnapshotError {
+  if (error instanceof Error && error.message === 'Invalid handoff manifest.') return new HandoffSnapshotError('unsafe_entry');
+  if (error instanceof Error && error.message === 'Handoff manifest is too large.') return new HandoffSnapshotError('bounds_exceeded');
+  return error instanceof HandoffSnapshotError ? error : new HandoffSnapshotError('filesystem_failed');
+}
+
+/** Unlike UI Git helpers, never log Git stderr, URLs, paths or subprocess output. */
+async function git(root: string, args: string[], missingAllowed = false): Promise<string | null> {
+  try {
+    const result = await exec('git', ['-c', 'core.fsmonitor=false', ...args], {
+      cwd: root, encoding: 'buffer', timeout: 10_000, maxBuffer: 8 * 1024 ** 2,
+    });
+    return new TextDecoder('utf-8', { fatal: true }).decode(result.stdout);
+  } catch (error) {
+    if (missingAllowed && error !== null && typeof error === 'object' && 'code' in error && error.code === 1) return null;
+    throw new HandoffSnapshotError('git_failed');
+  }
+}
+
+async function directory(root: string): Promise<string> {
+  const stat = await fs.promises.lstat(root);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new HandoffSnapshotError('unsafe_entry');
+  return fs.promises.realpath(root);
+}
+
+async function repository(root: string): Promise<HandoffWorktreeManifest['repo']> {
+  const top = await git(root, ['rev-parse', '--show-toplevel']);
+  if (!top || await fs.promises.realpath(top.trimEnd()) !== root) throw new HandoffSnapshotError('invalid_repository');
+  if (await git(root, ['ls-files', '--unmerged', '-z'])) throw new HandoffSnapshotError('unsafe_entry');
+  const base = (await git(root, ['rev-parse', '--verify', 'HEAD^{commit}']))?.trim();
+  const branch = (await git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], true))?.trim();
+  const remote = (await git(root, ['config', '--get', 'remote.origin.url'], true))?.trim() ?? null;
+  if (!base || !branch) throw new HandoffSnapshotError('invalid_repository');
+  return { remote, base, branch };
+}
+
+function paths(output: string | null): string[] {
+  if (output === null) throw new HandoffSnapshotError('git_failed');
+  const entries = output.split('\0');
+  if (entries.pop() !== '') throw new HandoffSnapshotError('git_failed');
+  return entries.filter(Boolean);
+}
+
+async function selection(root: string, manifest: HandoffWorktreeManifest): Promise<{ tracked: Set<string>; all: string[] }> {
+  const tracked = new Set(manifest.include.tracked_changes
+    ? paths(await git(root, ['diff', '--name-only', '--no-renames', '--no-ext-diff', '--no-textconv', '-z', 'HEAD', '--'])) : []);
+  const untracked = manifest.include.untracked ? paths(await git(root, ['ls-files', '--others', '--exclude-standard', '-z'])) : [];
+  const ignored = manifest.include.ignored.length > 0
+    ? paths(await git(root, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])) : [];
+  const options = { dot: true, nonegate: true, noext: true, maxLength: 512 };
+  const included = picomatch(manifest.include.ignored, options);
+  const excluded = picomatch(manifest.exclude, options);
+  const all = [...new Set([...tracked, ...untracked, ...ignored.filter(included)])].filter((file) => !excluded(file)).sort(compare);
+  return { tracked, all };
+}
+
+function stamp(stat: fs.BigIntStats): string {
+  return [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+}
+
+/** Check every component, not only the final file, and never follow a link. */
+async function sourceStat(root: string, relative: string, missingAllowed = false): Promise<fs.BigIntStats | undefined> {
+  if (!isSafeHandoffPath(relative)) throw new HandoffSnapshotError('unsafe_entry');
+  await directory(root);
+  let current = root;
+  const parts = relative.split('/');
+  for (let index = 0; index < parts.length; index++) {
+    current = path.join(current, parts[index]);
+    let stat: fs.BigIntStats;
+    try {
+      stat = await fs.promises.lstat(current, { bigint: true });
+    } catch (error) {
+      if (missingAllowed && (error as NodeJS.ErrnoException)?.code === 'ENOENT') return undefined;
+      throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(relative));
+    }
+    if (stat.isSymbolicLink() || (index === parts.length - 1 ? !stat.isFile() : !stat.isDirectory())) {
+      throw new HandoffSnapshotError('unsafe_entry', safeHandoffDiagnosticPath(relative));
+    }
+    if (index === parts.length - 1) return stat;
+  }
+  throw new HandoffSnapshotError('unsafe_entry');
+}
+
+function block(findings: HandoffSecretFinding[]): void {
+  if (findings.length) throw new HandoffSnapshotError('secret_blocked', findings[0].path, findings);
+}
+
+function metadata(manifest: HandoffWorktreeManifest): void {
+  for (const value of [
+    manifest.repo.remote ?? '', manifest.repo.branch, ...manifest.include.ignored, ...manifest.exclude, ...manifest.deletions,
+  ]) block(scanHandoffSecrets('metadata/value.txt', new TextEncoder().encode(value)));
+  for (const file of manifest.files) block(scanHandoffSecrets(file.path, new Uint8Array()));
+}
+
+async function writeAll(handle: FileHandle, buffer: Uint8Array): Promise<void> {
+  let offset = 0;
+  while (offset < buffer.byteLength) {
+    const { bytesWritten } = await handle.write(buffer, offset, buffer.byteLength - offset);
+    if (!bytesWritten) throw new HandoffSnapshotError('filesystem_failed');
+    offset += bytesWritten;
+  }
+}
+
+async function inspect(root: string, source: SourceFile, sink?: (chunk: Uint8Array) => Promise<void>): Promise<string> {
+  const initial = await sourceStat(root, source.path);
+  if (!initial || stamp(initial) !== stamp(source.stat)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
+  const handle = await fs.promises.open(path.join(root, source.path), fs.constants.O_RDONLY
+    | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || stamp(opened) !== stamp(initial)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
+    const size = Number(opened.size);
+    const small = size <= HANDOFF_SECRET_CONTENT_MAX_BYTES;
+    const content = small ? Buffer.alloc(size) : undefined;
+    const buffer = Buffer.alloc(Math.min(CHUNK_BYTES, Math.max(1, size)));
+    const hash = createHash('sha256');
+    let position = 0;
+    while (position < size) {
+      const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, size - position), position);
+      if (!bytesRead) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
+      const chunk = buffer.subarray(0, bytesRead);
+      hash.update(chunk);
+      if (content) content.set(chunk, position);
+      else if (sink) await sink(chunk);
+      position += bytesRead;
+    }
+    block(scanHandoffSecrets(source.path, content));
+    const after = await sourceStat(root, source.path);
+    if (!after || stamp(after) !== stamp(initial) || stamp(await handle.stat({ bigint: true })) !== stamp(initial)) {
+      throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
+    }
+    if (content && sink) await sink(content);
+    return hash.digest('hex');
+  } finally {
+    await handle.close();
+  }
+}
+
+function digest(manifest: HandoffWorktreeManifest, bounds: HandoffTransferBounds): string {
+  return createHash('sha256').update(canonicalHandoffManifest(manifest, bounds), 'utf8').digest('hex');
+}
+
+/**
+ * Entirely local and unregistered. All name/content/bounds checks precede
+ * allocation; exact copied bytes are scanned again before a manifest is ready.
+ */
+export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): Promise<HandoffSnapshot> {
+  let allocated: string | undefined;
+  try {
+    if (!UUID.test(options.handoffId)) throw new HandoffSnapshotError('invalid_staging');
+    const bounds = validateHandoffBounds(options.bounds ?? HANDOFF_TRANSFER_DEFAULTS);
+    const root = await directory(options.worktreeRoot);
+    const staging = await directory(options.stagingRoot);
+    if (root === staging || staging.startsWith(`${root}${path.sep}`) || root.startsWith(`${staging}${path.sep}`)) throw new HandoffSnapshotError('invalid_staging');
+    const repo = await repository(root);
+    let manifest = parseHandoffManifest({
+      v: 1, repo, include: { tracked_changes: true, untracked: true, ignored: [], ...options.include },
+      exclude: options.exclude ?? ['**/node_modules/**'], files: [], deletions: [], total_bytes: 0, manifest_sha256: '0'.repeat(64),
+    }, bounds);
+    metadata(manifest);
+    const selected = await selection(root, manifest);
+    if (selected.all.length > bounds.maxFiles) throw new HandoffSnapshotError('bounds_exceeded');
+    const sources: SourceFile[] = [];
+    let total = 0;
+    for (const file of selected.all) {
+      const stat = await sourceStat(root, file, selected.tracked.has(file));
+      if (!stat) { manifest.deletions.push(file); continue; }
+      total += Number(stat.size);
+      if (stat.size > BigInt(bounds.perFileBytes) || !Number.isSafeInteger(total) || total > bounds.totalBytes) throw new HandoffSnapshotError('bounds_exceeded', safeHandoffDiagnosticPath(file));
+      const source: SourceFile = { path: file, stat };
+      if (stat.size <= BigInt(HANDOFF_SECRET_CONTENT_MAX_BYTES)) source.sha256 = await inspect(root, source);
+      else block(scanHandoffSecrets(file));
+      sources.push(source);
+    }
+    manifest = parseHandoffManifest({
+      ...manifest, total_bytes: total, files: sources.map((source) => ({
+        path: source.path, size: Number(source.stat.size), sha256: source.sha256 ?? '0'.repeat(64),
+        mode: source.stat.mode & 0o100n ? '100755' : '100644',
+      })),
+    }, bounds);
+    const snapshotRoot = path.join(staging, options.handoffId);
+    await fs.promises.mkdir(snapshotRoot, { mode: 0o700 });
+    allocated = snapshotRoot;
+    await fs.promises.mkdir(path.join(snapshotRoot, 'files'), { mode: 0o700 });
+    const files: HandoffManifestFile[] = [];
+    for (const source of sources) {
+      const destination = path.join(snapshotRoot, 'files', source.path);
+      await fs.promises.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+      const output = await fs.promises.open(destination, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+      let sha256: string;
+      try {
+        sha256 = await inspect(root, source, (chunk) => writeAll(output, chunk));
+        if (source.sha256 && source.sha256 !== sha256) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
+        await output.sync();
+      } finally {
+        await output.close();
+      }
+      files.push({ path: source.path, size: Number(source.stat.size), sha256, mode: source.stat.mode & 0o100n ? '100755' : '100644' });
+    }
+    for (const source of sources) {
+      const current = await sourceStat(root, source.path);
+      if (!current || stamp(current) !== stamp(source.stat)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
+    }
+    for (const deleted of manifest.deletions) {
+      if (await sourceStat(root, deleted, true)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(deleted));
+    }
+    if (JSON.stringify(await repository(root)) !== JSON.stringify(repo)
+      || JSON.stringify((await selection(root, manifest)).all) !== JSON.stringify(selected.all)) throw new HandoffSnapshotError('source_changed');
+    manifest = parseHandoffManifest({ ...manifest, files, total_bytes: total }, bounds);
+    manifest.manifest_sha256 = digest(manifest, bounds);
+    const manifestFile = await fs.promises.open(path.join(snapshotRoot, 'manifest.json'), 'wx', 0o600);
+    try {
+      await manifestFile.writeFile(JSON.stringify(manifest), 'utf8');
+      await manifestFile.sync();
+    } finally {
+      await manifestFile.close();
+    }
+    return { root: snapshotRoot, manifest };
+  } catch (error) {
+    const reported = failure(error);
+    if (allocated) {
+      try {
+        await fs.promises.rm(allocated, { recursive: true, force: true });
+      } catch {
+        // telemetry-exempt: surfaced on the explicit failure, never reported as successful cleanup
+        reported.cleanupFailed = true;
+        reported.message += ' Staging cleanup failed.';
+      }
+    }
+    throw reported;
+  }
+}
+
+/** Receiver defense in depth, before any apply or wake can be scheduled. */
+export async function verifyHandoffSnapshot(
+  snapshotRoot: string, rawManifest: unknown, expected: HandoffManifestSummary,
+  limits: HandoffTransferBounds = HANDOFF_TRANSFER_DEFAULTS,
+): Promise<HandoffSnapshot> {
+  try {
+    const bounds = validateHandoffBounds(limits);
+    const manifest = parseHandoffManifest(rawManifest, bounds);
+    if (!expected || expected.fileCount !== manifest.files.length + manifest.deletions.length || expected.totalBytes !== manifest.total_bytes
+      || expected.sha256 !== manifest.manifest_sha256
+      || !timingSafeEqual(Buffer.from(manifest.manifest_sha256, 'hex'), Buffer.from(digest(manifest, bounds), 'hex'))) {
+      throw new HandoffSnapshotError('hash_mismatch');
+    }
+    metadata(manifest);
+    const root = await directory(snapshotRoot);
+    const filesRoot = await directory(path.join(root, 'files'));
+    for (const file of manifest.files) {
+      const stat = await sourceStat(filesRoot, file.path);
+      if (!stat || stat.size !== BigInt(file.size)) throw new HandoffSnapshotError('hash_mismatch', safeHandoffDiagnosticPath(file.path));
+      const actual = await inspect(filesRoot, { path: file.path, stat });
+      if (!timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(file.sha256, 'hex'))) throw new HandoffSnapshotError('hash_mismatch', safeHandoffDiagnosticPath(file.path));
+    }
+    return { root, manifest };
+  } catch (error) {
+    throw failure(error);
+  }
+}

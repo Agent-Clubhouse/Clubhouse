@@ -35,7 +35,11 @@ Before entering `applying`, a worker must persist the registered project id, res
 
 `handoff-secrets.ts` contains fixed, case-insensitive sensitive-path rules and high-confidence credential-content rules. Findings contain only a redacted path, rule id and optional line number, never a matched value. Known credentials embedded in filenames are also blocked and redacted. UTF-8 text up to 1 MiB is scanned by content; binary and larger files receive name checks only. Auth configuration that cannot be inspected is blocked. `.env.example`, `.env.sample` and `.env.template` are exempt by name, not by content. Handoff records, including briefs and response reasons, are checked before persistence.
 
-These are internal safety primitives, not a complete transfer implementation. Project-owned audited allowlists, immutable file snapshots, receiver-side byte/hash verification, branch bundles, transfer routes and automatic fresh-worktree apply remain gated on subsequent reviewed slices. Agents cannot override a secret block.
+The unregistered `handoff-snapshot.ts` prepares private, local worktree snapshots. It resolves tracked changes against HEAD, non-ignored untracked files and explicitly selected ignored globs, preserving final file bytes, executable modes and deletions. It scans every selected file before allocating a snapshot, checks exact copied bytes again, detects source changes with open-file identity/stat checks, rejects symlinks, and removes only its newly allocated staging folder on failure. Cleanup failure is explicit; existing staging data and the source worktree are never deleted or overwritten.
+
+Receiver verification binds the canonical manifest digest, operation count and byte total to the immutable offer summary, then independently verifies each file's size/hash and reruns the secret rules. A self-consistent replacement manifest is not enough. This helper performs no network, apply or wake operation.
+
+These are internal safety primitives, not a complete transfer implementation. Project-owned audited allowlists, branch bundles, resumable transfer routes and automatic fresh-worktree apply remain gated on subsequent reviewed slices. Agents cannot override a secret block. All symlinks are currently refused, including inside-worktree links; there is no cross-platform link recreation yet.
 
 ## Manual connect and user-managed forwards
 
