@@ -327,6 +327,9 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     start_adding_device: INTERNAL_WRITE,
     add_project: INTERNAL_WRITE,
     request_app_update: INTERNAL_WRITE,
+    get_delivery: INTERNAL_READ,
+    get_annex_network_settings: INTERNAL_READ,
+    update_annex_network_settings: INTERNAL_WRITE,
   },
 };
 

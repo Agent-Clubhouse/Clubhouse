@@ -136,6 +136,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { dispatcherRoleDisplayName } from '../../shared/dispatcher-name';
 import { startAgentCalls } from '../services/annex-agent-calls';
 import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
+import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
@@ -214,7 +215,7 @@ describe('mcp-binding-handlers registration', () => {
     vi.spyOn(agentConfig, 'peekDurableConfigs').mockResolvedValue([{ id: 'ordinary', name: 'Builder', color: 'blue', createdAt: 'then' }]);
     await restorePersistedBindings();
     expect(startAgentCalls).toHaveBeenCalledTimes(1);
-    const { describeLocalAgent, nameOfLocalSender, runTool } = vi.mocked(startAgentCalls).mock.calls[0][0];
+    const { describeLocalAgent, nameOfLocalSender, runTool, authorizeQueuedCall, onDeliveryFailure } = vi.mocked(startAgentCalls).mock.calls[0][0];
     expect(nameOfLocalSender?.('dispatcher-work')).toBe('Dispatcher controller');
     expect(nameOfLocalSender?.('dispatcher-chat')).toBe(name);
     expect(projectStore.peekProjects).not.toHaveBeenCalled();
@@ -227,6 +228,8 @@ describe('mcp-binding-handlers registration', () => {
     expect(await describeLocalAgent('unknown')).toBeUndefined();
     expect(await describeLocalAgent('dispatcher-work@another-machine')).toBeUndefined();
     expect(runTool).toBe(runAgentToolForRemoteCaller);
+    expect(authorizeQueuedCall).toBe(authorizeQueuedAnnexCall);
+    expect(onDeliveryFailure).toBe(reportAnnexDeliveryFailure);
     expect(bindingManager.bind).not.toHaveBeenCalled();
     expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
   });

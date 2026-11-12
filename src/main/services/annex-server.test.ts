@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { tel } from '../telemetry/facade';
 import { EventEmitter } from 'events';
 import http from 'http';
 import https from 'https';
@@ -12,6 +13,14 @@ import * as nodeCrypto from 'crypto';
 import { createHash } from 'crypto';
 import * as tlsLib from 'tls';
 import { readMobileChatContent } from './annex-chat-content';
+import * as agentCalls from './annex-agent-calls';
+import type { AnnexSettings } from '../../shared/types';
+const networkToolHost = vi.hoisted(() => ({ host: undefined as import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost | undefined }));
+vi.mock('./clubhouse-mcp/tools/annex-network-tools', () => ({
+  setAnnexNetworkToolHost: (host: import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost) => { networkToolHost.host = host; },
+}));
+vi.mock('./annex-client', () => ({ scan: vi.fn(), startClient: vi.fn(), stopClient: vi.fn(), connect: vi.fn(), forgetSatellite: vi.fn(), retry: vi.fn() }));
+vi.mock('./annex-devices', () => ({ listDevices: () => [], removeDevice: () => false }));
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: vi.fn() }));
 import { agentFolders } from './agent-runtime/chat-files';
 vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
@@ -90,6 +99,7 @@ vi.mock('./mobile-agents', () => ({
 // Membership has its own tests (annex-network-membership.test.ts).
 const membershipMock = vi.hoisted(() => ({ onChange: null as null | (() => void) }));
 vi.mock('./annex-network-membership', () => ({
+  initNetworkMembership: vi.fn(),
   noteLocalJoin: vi.fn(),
   // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
   ownPairing: vi.fn(() => undefined),
@@ -281,6 +291,7 @@ vi.mock('./annex-settings', () => ({
   networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false,
   getSettings: vi.fn().mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false }),
   saveSettings: vi.fn(),
+  updateSettings: vi.fn(),
   getLastPorts: vi.fn().mockReturnValue({ mainPort: 0, pairingPort: 0 }),
   saveLastPorts: vi.fn().mockResolvedValue(undefined),
 }));
@@ -516,6 +527,264 @@ describe('annex-server', () => {
   afterEach(() => {
     annexServer.stop();
     annexServer._testing.setPinReusable(false);
+  });
+
+  describe('verified MCP network host', () => {
+    let saved: AnnexSettings;
+    beforeEach(async () => {
+      saved = { ...annexSettings.getSettings(), enableServer: true, enableClient: false, loopbackOnly: true };
+      vi.mocked(annexSettings.getSettings).mockImplementation(() => ({ ...saved }));
+      vi.mocked(annexSettings.updateSettings).mockImplementation(async (change) => {
+        saved = change({ ...saved });
+        return { ...saved };
+      });
+      const { registerAnnexHandlers } = await import('../ipc/annex-handlers');
+      registerAnnexHandlers();
+      annexServer.start();
+      await vi.waitFor(() => {
+        expect(annexServer.getStatus().port).toBeGreaterThan(0);
+        expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0);
+      });
+    });
+
+    it('does not confirm a scope change before the actual secure listener is ready', async () => {
+      const original = net.Server.prototype.listen;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      let held = false;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (!held && this instanceof https.Server) {
+          held = true;
+          void gate.then(() => Reflect.apply(original, this, args));
+          return this;
+        }
+        return Reflect.apply(original, this, args);
+      });
+      let confirmed = false;
+      const changing = networkToolHost.host!.applyLoopbackOnly(false, () => {}).then(() => { confirmed = true; });
+      try {
+        await vi.waitFor(() => expect(held).toBe(true));
+        expect(confirmed).toBe(false);
+        release();
+        await changing;
+        expect(annexServer.getStatus()).toMatchObject({ tlsEnabled: true });
+        expect(annexServer.getStatus().port).toBeGreaterThan(0);
+      } finally { release(); await changing; listen.mockRestore(); }
+    });
+
+    it.each(['stop', 'close'])('settles verified startup when %s cancels listen before its callback', async (cancel) => {
+      annexServer.stop();
+      const servers: net.Server[] = [];
+      const original = net.Server.prototype.listen;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        servers.push(this);
+        return Reflect.apply(original, this, args);
+      });
+      try {
+        const starting = annexServer.startVerified().then(
+          () => ({ state: 'ready' }),
+          (error: unknown) => ({ state: 'failed', error }),
+        );
+        if (cancel === 'stop') annexServer.stop();
+        else servers.find((server) => server instanceof https.Server)!.close();
+        expect(await Promise.race([
+          starting,
+          new Promise((resolve) => setTimeout(() => resolve({ state: 'pending' }), 150)),
+        ])).toMatchObject({ state: 'failed', error: expect.any(Error) });
+        expect(annexServer.getStatus()).toMatchObject({ port: 0, pairingPort: 0, tlsEnabled: false });
+        expect(servers.every((server) => !server.listening)).toBe(true);
+      } finally { listen.mockRestore(); }
+    });
+
+    it.each([
+      { entry: 'direct', replace: false },
+      { entry: 'host', replace: false },
+      { entry: 'direct', replace: true },
+      { entry: 'host', replace: true },
+    ])('drains real OS bind errors after $entry cancellation (replacement=$replace)', async ({ entry, replace }) => {
+      if (entry === 'direct') annexServer.stop();
+      const occupied = net.createServer();
+      await new Promise<void>((resolve) => occupied.listen(0, '127.0.0.1', resolve));
+      const address = occupied.address();
+      if (!address || typeof address === 'string') throw new Error('Expected an occupied loopback port');
+      vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: address.port, pairingPort: 0 });
+      const errors: Array<{ code: string | undefined; listening: boolean; handlers: number }> = [];
+      const original = net.Server.prototype.listen;
+      let watched = false;
+      let attempts = 0;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        attempts++;
+        const first = !watched && this instanceof https.Server;
+        if (first) {
+          watched = true;
+          const monitor = (error: NodeJS.ErrnoException) => {
+            errors.push({
+              code: error.code,
+              listening: this.listening,
+              handlers: this.listeners('error').filter((listener) => listener !== monitor).length,
+            });
+          };
+          this.on('error', monitor);
+        }
+        const result = Reflect.apply(original, this, args);
+        if (first) process.nextTick(() => {
+          annexServer.stop();
+          if (replace) {
+            vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 0, pairingPort: 0 });
+            annexServer.start();
+          }
+        });
+        return result;
+      });
+      try {
+        const starting = (entry === 'direct' ? annexServer.startVerified() : networkToolHost.host!.applyLoopbackOnly(false, () => {})).then(
+          () => ({ state: 'ready' }),
+          (error: unknown) => ({ state: 'failed', error }),
+        );
+        expect(await Promise.race([
+          starting,
+          new Promise((resolve) => setTimeout(() => resolve({ state: 'pending' }), 150)),
+        ])).toMatchObject({ state: 'failed', error: expect.any(Error) });
+        await vi.waitFor(() => expect(errors).toEqual([{ code: 'EADDRINUSE', listening: false, handlers: 1 }]));
+        if (replace) {
+          await vi.waitFor(() => {
+            expect(annexServer.getStatus().port).toBeGreaterThan(0);
+            expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0);
+          });
+        }
+        expect(attempts).toBe(replace ? 4 : 2);
+        expect(annexServer.getStatus().tlsEnabled).toBe(replace);
+        expect(annexServer.getStatus().port > 0).toBe(replace);
+        expect(saved.loopbackOnly).toBe(entry === 'direct');
+        expect(appLog).toHaveBeenCalledWith('core:annex', 'debug', expect.any(String), {
+          meta: expect.objectContaining({ code: 'EADDRINUSE', current: false }),
+        });
+      } finally {
+        annexServer.stop();
+        listen.mockRestore();
+        await new Promise<void>((resolve, reject) => occupied.close((error) => error ? reject(error) : resolve()));
+      }
+    });
+
+    it.each(['replacement', 'disable'])('settles the actual MCP host without undoing a concurrent %s', async (change) => {
+      const original = net.Server.prototype.listen;
+      const held = new Set<net.Server>();
+      let holding = true;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (holding) { held.add(this); return this; }
+        return Reflect.apply(original, this, args);
+      });
+      try {
+        const changing = networkToolHost.host!.applyLoopbackOnly(false, () => {}).then(
+          () => ({ state: 'ready', message: '' }),
+          (error: unknown) => ({ state: 'failed', message: error instanceof Error ? error.message : String(error) }),
+        );
+        await vi.waitFor(() => expect(held.size).toBe(2));
+        saved = { ...saved, enableServer: change !== 'disable', networkEnabled: false };
+        annexServer.stop();
+        holding = false;
+        if (change === 'replacement') await annexServer.startVerified();
+        const replacement = annexServer.getStatus();
+        expect(await Promise.race([
+          changing,
+          new Promise((resolve) => setTimeout(() => resolve({ state: 'pending' }), 150)),
+        ])).toMatchObject({ state: 'failed', message: expect.stringMatching(/concurrent|interrupted/) });
+        expect(saved).toMatchObject({ loopbackOnly: false, enableServer: change !== 'disable', networkEnabled: false });
+        expect(annexServer.getStatus()).toEqual(replacement);
+        expect(replacement.tlsEnabled).toBe(change === 'replacement');
+        expect(replacement.port > 0).toBe(change === 'replacement');
+        expect([...held].every((server) => !server.listening)).toBe(true);
+      } finally { holding = false; listen.mockRestore(); }
+    });
+
+    it.each([true, false])('does not claim restored settings or stopped Annex after rollback is replaced with loopback=%s', async (loopbackOnly) => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => { throw new Error('initial TLS failure'); });
+      const original = net.Server.prototype.listen;
+      let failed = false;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (!failed && this instanceof https.Server) {
+          failed = true;
+          process.nextTick(() => {
+            this.emit('error', Object.assign(new Error('rollback EACCES'), { code: 'EACCES' }));
+            saved = { ...saved, loopbackOnly };
+            annexServer.stop();
+            annexServer.start();
+          });
+          return this;
+        }
+        return Reflect.apply(original, this, args);
+      });
+      try {
+        const result = await networkToolHost.host!.applyLoopbackOnly(false, () => {}).then(
+          () => '',
+          (error: unknown) => error instanceof Error ? error.message : String(error),
+        );
+        expect(result).toMatch(/concurrent|interrupted/);
+        expect(result).not.toContain('previous setting was restored');
+        expect(result).not.toContain('Annex is stopped');
+        await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
+        expect(annexServer.getStatus().tlsEnabled).toBe(true);
+        expect(saved.loopbackOnly).toBe(loopbackOnly);
+      } finally { listen.mockRestore(); }
+    });
+
+    it('rejects actual TLS creation failure and restores the previous secure runtime', async () => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => { throw new Error('injected TLS creation failure'); });
+      await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting and secure runtime were restored');
+      expect(saved.loopbackOnly).toBe(true);
+      expect(annexServer.getStatus().tlsEnabled).toBe(true);
+      expect(annexServer.getStatus().port).toBeGreaterThan(0);
+    });
+
+    it('reports partial rollback and leaves no listener when actual TLS restoration also fails', async () => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => { throw new Error('TLS remains unavailable'); });
+      await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting was restored, but its secure runtime could not be restored; Annex is stopped');
+      expect(saved.loopbackOnly).toBe(true);
+      expect(annexServer.getStatus()).toMatchObject({ port: 0, pairingPort: 0, tlsEnabled: false, advertising: false });
+    });
+
+    it('does not claim settings rollback when restoring the saved value fails', async () => {
+      const update = vi.mocked(annexSettings.updateSettings).getMockImplementation()!;
+      let writes = 0;
+      vi.mocked(annexSettings.updateSettings).mockImplementation(async (change) => {
+        if (++writes === 2) throw new Error('injected rollback write failure');
+        return update(change);
+      });
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => { throw new Error('injected TLS creation failure'); });
+      await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting could not be restored');
+      expect(saved.loopbackOnly).toBe(false);
+      expect(annexServer.getStatus()).toMatchObject({ port: 0, pairingPort: 0, tlsEnabled: false, advertising: false });
+    });
+
+    it('does not overwrite a concurrent settings edit while reporting an incomplete rollback', async () => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => {
+        saved = { ...saved, networkEnabled: false };
+        throw new Error('injected failure after concurrent edit');
+      });
+      await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting could not be restored');
+      expect(saved).toMatchObject({ loopbackOnly: false, networkEnabled: false });
+      expect(annexServer.getStatus()).toMatchObject({ port: 0, pairingPort: 0, tlsEnabled: false });
+    });
+
+    it.each(['main', 'pairing'])('awaits actual %s asynchronous listen errors and restores the previous secure runtime', async (listener) => {
+      const original = net.Server.prototype.listen;
+      let failed = false;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (!failed && (listener === 'main' ? this instanceof https.Server : !(this instanceof https.Server))) {
+          failed = true;
+          process.nextTick(() => this.emit('error', Object.assign(new Error('injected EACCES'), { code: 'EACCES' })));
+          return this;
+        }
+        return Reflect.apply(original, this, args);
+      });
+      try {
+        await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting and secure runtime were restored');
+        expect(failed).toBe(true);
+        expect(saved.loopbackOnly).toBe(true);
+        expect(annexServer.getStatus().tlsEnabled).toBe(true);
+        expect(annexServer.getStatus().port).toBeGreaterThan(0);
+      } finally { listen.mockRestore(); }
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1433,6 +1702,32 @@ describe('annex-server', () => {
     const res = await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token));
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ version: 1, controlAuth: 'mtls-pinned-client', controlAvailable: true, commands: expect.arrayContaining(['chat.send', 'agent.stop']) });
+  });
+
+  it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {
+    const report = vi.spyOn(tel, 'exception').mockImplementation(() => {});
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    const capabilities = vi.spyOn(agentCalls, 'agentDeliveryCapabilities').mockReturnValue({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted' });
+    const { port } = await startAndPair();
+    const route = '/api/v1/network/agent-delivery-capabilities';
+    const response = await request(port, 'POST', route, {});
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted' });
+    capabilities.mockImplementationOnce(() => { throw new Error('unreadable'); });
+    expect((await request(port, 'POST', route, {})).status).toBe(503);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0][0]).toMatchObject({ message: 'annex_delivery_capabilities_unavailable', stack: undefined });
+    expect(Object.getOwnPropertyNames(report.mock.calls[0][0])).toEqual(['stack', 'message']);
+    expect(report.mock.calls[0][1]).toEqual({ origin: 'main', handled: true });
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
+    expect((await request(port, 'POST', route, { deliveryVersion: 1 })).status).toBe(403);
+    expect(capabilities).toHaveBeenCalledTimes(2);
+    asUnpaired();
+    expect((await request(port, 'POST', route, {})).status).toBe(401);
+    capabilities.mockRestore();
+    report.mockRestore();
   });
 
   it('advertises agent.create, agent.update and their option and settings routes (#2451, #2452)', async () => {

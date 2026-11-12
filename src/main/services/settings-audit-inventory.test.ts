@@ -34,6 +34,8 @@ const NOT_SETTINGS = new Set([
   'action-history.json',
   // Handoff lifecycle records and append-only history are operational state, not a person's settings.
   'handoffs.json',
+  // The parameterized Annex store holds operational outbox/inbox, receipt and status records.
+  path.join('services', 'annex-delivery-store.ts'),
   'annex-ports.json',
   // Annex Network membership state (removals, confirmations), kept by Clubhouse: not settings.
   'annex-network.json',

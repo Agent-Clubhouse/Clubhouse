@@ -21,13 +21,20 @@
  */
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
+import { tel } from '../telemetry/facade';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
 import { CONNECTION_TOOLS, WAKE_TOOL, type AgentAddress as ConnectionEnd, type ConnectionDirection } from '../../shared/connection-grants';
 import type { McpToolResult } from './clubhouse-mcp/types';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
+import { ownPairing } from './annex-network-membership';
 import { appLog } from './log-service';
 import { createSettingsStore } from './settings-store';
+import {
+  boundedDeliveryResult, createAnnexDeliveryStore, deliveryFailure, deliveryHash, DELIVERY_MAX_AGE_MS,
+  type AnnexDeliveryStore, type DeliveryOutboxItem, type DurableAgentCall, type ReceiverDelivery,
+} from './annex-delivery-store';
+import type { AnnexCallContext, AnnexDeliveryEpoch, AnnexDeliveryFailure, AnnexDeliveryReceipt, AnnexDeliveryStatus, AuthenticatedAnnexOrigin } from '../../shared/annex-delivery';
 import {
   getConnectionDirection, listAllConnectionDirections, onConnectionGrantsChanged, putConnectionDirection,
 } from './connection-grants-store';
@@ -50,17 +57,19 @@ export const RATE_LIMIT = { calls: 30, windowMs: 60_000 };
 /** Messages between one pair of agents, both ways, counted on both machines (D233). */
 export const LOOP_LIMIT = { messages: 40, windowMs: 10 * 60_000 };
 const OUTBOX_MAX_PER_MACHINE = 200;
-const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 const RETRY_MS = 60_000;
+const RETRY_MAX_MS = 60 * 60_000;
+const OUTBOX_MAX_TOTAL = 2000;
 /** Directions sent per request, and kept with any one other machine. */
 export const DIRECTIONS_PER_REQUEST = 200;
 const DIRECTIONS_PER_MACHINE = 1000;
 const NAMES_MAX = 2000;
 /** A copy dated further ahead than this is taken as made now: another machine's clock can't pin it forever. */
 const CLOCK_SKEW_MS = 5 * 60_000;
-const SEEN_CALLS_MAX = 2000;
 /** How long a queued message refused as "not connected" is tried again, in case the link hasn't arrived there yet. */
 const NOT_CONNECTED_GRACE_MS = 10 * 60_000;
+export const ANNEX_CALL_MAX_DEPTH = 8;
+const DISPATCHER_CALL_TOOLS = new Set(['get_status', 'check_connectivity', 'send_message', 'send_file', 'hand_off_request']);
 
 // ── Who is calling ──────────────────────────────────────────────────────────
 
@@ -71,6 +80,10 @@ export interface RemoteCaller {
   projectName?: string;
   /** The name of the agent here it's calling, for the tool's answer. */
   targetName?: string;
+  machineId: string;
+  agentId: string;
+  deliveryId: string;
+  context: AnnexCallContext;
 }
 
 const remoteCallers = new AsyncLocalStorage<RemoteCaller>();
@@ -86,6 +99,8 @@ export interface AgentCallTransport {
   /** Whether this machine has a connection to `machine` it can send on now. */
   connected(machine: string): boolean;
   post(machine: string, path: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }>;
+  /** Negotiated on the pinned peer before sending input; an old peer must not execute a retried durable call. */
+  supportsDurableDelivery(machine: string): Promise<boolean>;
   /** The name this machine knows `machine` by. */
   machineName(machine: string): string | undefined;
   /** Called each time a connection to a machine opens. */
@@ -93,7 +108,11 @@ export interface AgentCallTransport {
 }
 
 /** Runs one of this machine's agent tools for a caller, as a local wire call would. */
-export type AgentToolRunner = (tool: string, targetId: string, callerId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+export type AgentToolRunResult = McpToolResult & {
+  /** retry_later is safe only when the handler knows no input was accepted. */
+  annexDelivery?: { state: AnnexDeliveryReceipt['state']; reason?: string };
+};
+export type AgentToolRunner = (tool: string, targetId: string, callerId: string, args: Record<string, unknown>) => Promise<AgentToolRunResult>;
 
 type DescribeAgent = (agentId: string) => Promise<{ name: string; projectName?: string } | undefined>;
 const describeNothing: DescribeAgent = async () => undefined;
@@ -102,6 +121,13 @@ let transport: AgentCallTransport | null = null;
 let runTool: AgentToolRunner | null = null;
 let describeLocalAgent: DescribeAgent = describeNothing;
 let nameOfLocalSender: ((agentId: string) => string | undefined) | undefined;
+export interface DispatcherAgentCallReceiver {
+  isTarget(id: string): boolean;
+  isAvailable(id: string): boolean;
+  receive(request: { origin: AuthenticatedAnnexOrigin; targetId: string; deliveryId: string; cause: AnnexCallContext; tool: string; args: Record<string, unknown> }): Promise<AgentToolRunResult>;
+}
+let remoteDispatcher: DispatcherAgentCallReceiver | undefined;
+let lifecycle = 0;
 
 const selfFingerprint = (): string | undefined => annexIdentity.getIdentity()?.fingerprint.toLowerCase();
 
@@ -147,65 +173,93 @@ export function remoteMachineOf(targetId: string): string | null {
   return 'machine' in route ? route.machine : null;
 }
 
-interface OutboxItem {
-  id: string;
-  machine: string;
-  body: AgentCallBody;
-  queuedAt: string;
+let deliveries = createAnnexDeliveryStore();
+export type AgentCallBody = DurableAgentCall;
+type OutboxItem = DeliveryOutboxItem;
+type DeliveryAuthorization = { allowed: true } | { allowed: false; reason: string };
+let authorizeQueuedCall: ((item: OutboxItem) => Promise<DeliveryAuthorization>) | undefined;
+let onDeliveryFailure: ((notice: AnnexDeliveryFailure) => Promise<boolean | void>) | undefined;
+
+const payloadHash = (body: AgentCallBody): string => deliveryHash({ from: body.from.agentId, to: body.to, tool: body.tool, args: body.args, ...(body.context && { context: body.context }), ...(body.epoch && { epoch: body.epoch }) });
+const queuedResult = (callId: string, message: string): McpToolResult => text(`${message} delivery_id=${callId}. This confirms a durable queue, not model execution.`);
+
+function outgoingEpoch(machine: string): AnnexDeliveryEpoch {
+  return {
+    sender: ownPairing()?.id ?? 'legacy',
+    receiver: annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.pairingId ?? 'legacy',
+  };
 }
 
-const outbox = createSettingsStore<{ version: number; items: OutboxItem[] }>(
-  'annex-agent-outbox.json',
-  { version: 1, items: [] },
-  undefined,
-  { atomic: true, audit: { key: 'annex_agent_outbox' } },
-);
+/** Version 1 is the atomic claim/receipt protocol, not an assertion by the calling agent. */
+export function agentDeliveryCapabilities(): { deliveryVersion: 1; receiptBoundary: 'runtime-accepted' } {
+  deliveries.get();
+  return { deliveryVersion: 1, receiptBoundary: 'runtime-accepted' };
+}
 
-export interface AgentCallBody {
-  v: number;
-  callId: string;
-  from: { agentId: string; name: string; projectName?: string };
-  to: string;
-  tool: string;
-  args: Record<string, unknown>;
+/** A sender may inspect only its own delivery, never another agent's payload. */
+export function getDelivery(callerId: string, callId: string): AnnexDeliveryStatus | undefined {
+  const found = deliveries.get().deliveries.find((r) => r.callId === callId && r.callerId === callerId);
+  if (!found) return undefined;
+  const { payloadHash: _hash, result: _result, failureNotified: _notified, ...status } = found;
+  return status;
 }
 
 /**
  * A wire call to an agent on another machine. Called once this machine's checks
  * passed; the other machine checks it again against its own store.
  */
-export async function forwardAgentCall(callerId: string, targetId: string, targetName: string, tool: string, args: Record<string, unknown>, now = Date.now()): Promise<McpToolResult> {
+export async function forwardAgentCall(callerId: string, targetId: string, targetName: string, tool: string, args: Record<string, unknown>, now = Date.now(), context?: AnnexCallContext): Promise<McpToolResult> {
   const { agentId: to } = parseAgentAddress(targetId);
   const machine = remoteMachineOf(targetId);
   const self = selfFingerprint();
   if (!machine || !self || !transport) return text('That agent is on another machine, which this one is not connected to.', true);
   const machineName = transport.machineName(machine) ?? 'the other computer';
   if (!isNetworkComputer(machine)) return text(`${machineName} is not in this computer's Annex Network, so its agents can't be reached from here.`, true);
+  if (context !== undefined && !validContext(context)) return text('The trusted Annex causal context is invalid or exceeds its depth limit.', true);
+  args = structuredClone(args);
+  if (context) context = structuredClone(context);
   const sender = await describe(callerId);
+  const epoch = outgoingEpoch(machine);
   const body: AgentCallBody = {
     v: AGENT_CALL_VERSION,
-    callId: randomUUID(),
+    callId: QUEUED_TOOLS.has(tool) && (args.idempotency_key !== undefined || args.task_id !== undefined)
+      ? deliveryHash([self, callerId, machine, to, tool, args.idempotency_key ?? args.task_id, context?.rootId, epoch])
+      : randomUUID(),
     from: { agentId: callerId, name: nameOfLocalSender?.(callerId) ?? sender?.name ?? callerId, ...(sender?.projectName && { projectName: sender.projectName }) },
     to,
     tool,
     args,
+    epoch,
   };
+  body.context = context ?? { rootId: body.callId, depth: 0 };
+  if (args.idempotency_key !== undefined && (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim() || args.idempotency_key.length > 200)) {
+    return text('idempotency_key must be a non-empty string of at most 200 characters.', true);
+  }
   if (Buffer.byteLength(JSON.stringify(body)) > AGENT_CALL_MAX_BYTES) return text('That is too large to send to another computer. Send a shorter message, or a file it can read there.', true);
 
+  if (QUEUED_TOOLS.has(tool)) {
+    const previous = deliveries.get().deliveries.find((r) => r.callId === body.callId);
+    if (previous) {
+      if (previous.payloadHash !== payloadHash(body)) return text('idempotency_conflict: this delivery key already names different content. Use a new key for a new message.', true);
+      return previous.result ?? queuedResult(body.callId, `Delivery is ${previous.state}${previous.reason ? `: ${previous.reason}` : ''}.`);
+    }
+  }
   // Counted here too, so the limit holds for messages both ways (D233).
   if (LOOP_TOOLS.has(tool) && !hit(pairKey({ machine: self, agentId: callerId }, { machine, agentId: to }), LOOP_LIMIT.windowMs, LOOP_LIMIT.messages, now)) return text(LOOP_MESSAGE, true);
   if (QUEUED_TOOLS.has(tool)) {
     // Behind what's already waiting for that machine, so messages keep their order.
     const online = transport.connected(machine);
-    if (!online || waitingFor(machine).length > 0) {
-      const queued = await queue(machine, body);
-      if (!queued) return text(`Too many messages are already waiting for ${machineName}. Try again once it's back.`, true);
-      if (online) void flushOutbox(machine).catch(() => { /* telemetry-exempt: a failed flush retries on its own */ });
-      const taskId = typeof args.task_id === 'string' ? ` task_id=${args.task_id}.` : '';
-      return online
-        ? text(`Queued for ${targetName} on ${machineName}, behind messages already on their way.${taskId}`)
-        : text(`${targetName} is on ${machineName}, which is offline. The message waits here and is delivered when ${machineName} is back.${taskId}`);
-    }
+    const behind = waitingFor(machine).length > 0;
+    await queue(machine, body, targetId);
+    if (online && !behind) {
+      await flushOutbox(machine);
+      const finished = deliveries.get().deliveries.find((r) => r.callId === body.callId);
+      if (finished?.result) return finished.result;
+    } else if (online) void flushOutbox(machine).catch(logFlushError);
+    const taskId = typeof args.task_id === 'string' ? ` task_id=${args.task_id}.` : '';
+    return online
+      ? queuedResult(body.callId, `Queued for ${targetName} on ${machineName}, behind messages already on their way.${taskId}`)
+      : queuedResult(body.callId, `${targetName} is on ${machineName}, which is offline. The message waits here until ${machineName} is back.${taskId}`);
   } else if (!transport.connected(machine)) {
     if (READ_TOOLS.has(tool)) return text(JSON.stringify({ status: 'offline', running: false, message: `${targetName} is on ${machineName}, which is offline.` }, null, 2));
     return text(`${targetName} is on ${machineName}, which is offline, so this can't be done now.`, true);
@@ -226,26 +280,26 @@ async function send(machine: string, body: AgentCallBody, machineName: string): 
   }
 }
 
-async function queue(machine: string, body: AgentCallBody): Promise<boolean> {
-  let ok = false;
-  await outbox.update((file) => {
-    const items = fresh(file.items);
-    if (items.filter((i) => i.machine === machine).length >= OUTBOX_MAX_PER_MACHINE) return { version: 1, items };
-    ok = true;
-    return { version: 1, items: [...items, { id: body.callId, machine, body, queuedAt: new Date().toISOString() }] };
+async function queue(machine: string, body: AgentCallBody, targetId: string): Promise<void> {
+  await deliveries.update((file) => {
+    const existing = file.deliveries.find((r) => r.callId === body.callId);
+    if (existing) {
+      if (existing.payloadHash !== payloadHash(body)) throw new Error('idempotency_conflict: this delivery key already names different content.');
+      return;
+    }
+    if (file.outbox.length >= OUTBOX_MAX_TOTAL || file.outbox.filter((i) => i.machine === machine).length >= OUTBOX_MAX_PER_MACHINE) throw new Error('Too many messages are already waiting. Retry after earlier deliveries finish.');
+    const queuedAt = new Date().toISOString();
+    file.outbox.push({ id: body.callId, machine, body, queuedAt });
+    file.deliveries.push({
+      callId: body.callId, callerId: body.from.agentId, targetId, tool: body.tool,
+      state: 'queued', queuedAt, updatedAt: queuedAt, attempts: 0, payloadHash: payloadHash(body),
+    });
   });
-  return ok;
-}
-
-function fresh(items: unknown): OutboxItem[] {
-  const now = Date.now();
-  return (Array.isArray(items) ? items : []).filter((i: OutboxItem) =>
-    i && typeof i.machine === 'string' && i.body && now - Date.parse(i.queuedAt) < OUTBOX_MAX_AGE_MS);
 }
 
 /** Messages waiting for `machine`, in the order they were sent. */
 export function waitingFor(machine: string): OutboxItem[] {
-  return fresh(outbox.get()?.items).filter((i) => i.machine === machine);
+  return deliveries.get().outbox.filter((i) => i.machine === machine);
 }
 
 /**
@@ -262,12 +316,74 @@ function transient(status: number, body: unknown, queuedAt: string): boolean {
 const flushing = new Set<string>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function retryLater(machine: string): void {
+function retryLater(machine: string, delay = RETRY_MS): void {
   if (retryTimers.has(machine)) return;
   retryTimers.set(machine, setTimeout(() => {
     retryTimers.delete(machine);
     void syncThenFlush(machine);
-  }, RETRY_MS));
+  }, delay));
+}
+
+function logFlushError(err: unknown): void {
+  appLog('core:annex', 'error', 'Durable agent delivery failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+}
+
+let notifyingFailures: Promise<void> | undefined;
+let noticeRetryTimer: ReturnType<typeof setTimeout> | undefined;
+
+function notifyFailures(): Promise<void> {
+  if (notifyingFailures) return notifyingFailures;
+  const pending = deliverFailureNotices().finally(() => {
+    if (notifyingFailures !== pending) return;
+    notifyingFailures = undefined;
+    if (onDeliveryFailure && !noticeRetryTimer && deliveries.get().deliveries.some((r) => r.failureNotified === false)) {
+      noticeRetryTimer = setTimeout(() => {
+        noticeRetryTimer = undefined;
+        void notifyFailures().catch(logFlushError);
+      }, RETRY_MS);
+      noticeRetryTimer.unref?.();
+    }
+  });
+  notifyingFailures = pending;
+  return pending;
+}
+
+async function deliverFailureNotices(): Promise<void> {
+  const callback = onDeliveryFailure;
+  const store = deliveries;
+  if (!callback) return;
+  for (const status of store.get().deliveries.filter((r) => r.failureNotified === false)) {
+    const notice = deliveryFailure(status);
+    if (!notice) continue;
+    if (await callback(notice) === false) continue;
+    await store.update((file) => {
+      const saved = file.deliveries.find((r) => r.callId === status.callId);
+      if (saved) saved.failureNotified = true;
+    });
+  }
+}
+
+async function finishDelivery(item: OutboxItem, state: 'delivered' | 'refused' | 'expired' | 'indeterminate', result: McpToolResult, reason?: string): Promise<void> {
+  await deliveries.update((file) => {
+    const status = file.deliveries.find((r) => r.callId === item.id)!;
+    Object.assign(status, { state, result: boundedDeliveryResult(result), updatedAt: new Date().toISOString(), ...(reason && { reason }) });
+    delete status.nextAttemptAt;
+    if (state !== 'delivered') status.failureNotified = false;
+    file.outbox = file.outbox.filter((i) => i.id !== item.id);
+  });
+  if (state !== 'delivered') {
+    appLog('core:annex', 'warn', 'An agent delivery ended without confirmed delivery', { meta: { callId: item.id, targetAgent: item.body.to, state, reason } });
+    await notifyFailures();
+  }
+}
+
+function receiptOf(raw: unknown, callId: string): AnnexDeliveryReceipt | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const receipt = (raw as { delivery?: AnnexDeliveryReceipt }).delivery;
+  if (!receipt || receipt.callId !== callId || !['delivered', 'refused', 'retry_later', 'indeterminate'].includes(receipt.state)) return undefined;
+  if (receipt.reason !== undefined && (typeof receipt.reason !== 'string' || receipt.reason.length > 200)) return undefined;
+  if ((receipt.state === 'delivered' || receipt.state === 'refused') && !Number.isFinite(Date.parse(receipt.receiptAt ?? ''))) return undefined;
+  return receipt;
 }
 
 /** Connections first, so the other machine has the links its messages need; then what waited. */
@@ -278,46 +394,142 @@ async function syncThenFlush(machine: string): Promise<void> {
   } catch (err) {
     // telemetry-exempt: logged; the next connect or retry tries again.
     appLog('core:annex', 'warn', 'Could not catch up with another machine', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    if (waitingFor(machine).length > 0) retryLater(machine);
   }
 }
 
 /**
  * Sends what waited for `machine`, in order. A transient answer stops the
  * flush, keeping the rest, and tries again a minute later; a refusal is final.
- * The receiver ignores a call id it has run, so a retry after a lost answer
- * doesn't deliver twice.
+ * Only a durable receiving-tool receipt completes delivery. A transport ACK
+ * alone says nothing about either runtime acceptance or model execution.
  */
 export async function flushOutbox(machine: string): Promise<void> {
   if (flushing.has(machine) || !transport) return;
+  const generation = lifecycle;
+  const session = transport;
+  const authorize = authorizeQueuedCall;
   flushing.add(machine);
   try {
     for (;;) {
+      if (generation !== lifecycle) return;
       const item = waitingFor(machine)[0];
-      if (!item || !transport?.connected(machine)) return;
-      try {
-        const response = await transport.post(machine, '/api/v1/network/agent-call', item.body as unknown as Record<string, unknown>);
-        if (transient(response.status, response.body, item.queuedAt)) { retryLater(machine); return; }
-        if (response.status !== 200) {
-          appLog('core:annex', 'info', 'A waiting agent message was refused by the other machine', { meta: { tool: item.body.tool, status: response.status } });
-        }
-      } catch {
-        // telemetry-exempt: the connection dropped or timed out; the rest wait for a retry.
+      if (!item) return;
+      if (Date.now() - Date.parse(item.queuedAt) >= DELIVERY_MAX_AGE_MS) {
+        await finishDelivery(item, 'expired', text('Delivery expired after seven days without a receiving receipt.', true), 'expired');
+        continue;
+      }
+      if (!isNetworkComputer(machine)) {
+        await finishDelivery(item, 'refused', text('The target computer is no longer authorized in this Annex Network.', true), 'peer_revoked');
+        continue;
+      }
+      if (!item.body.epoch) {
+        await finishDelivery(item, 'indeterminate', text('This pending delivery predates durable claims and pairing-bound identities. Earlier input acceptance cannot be proven; automatic redelivery is disabled.', true), 'legacy_delivery_unverified');
+        continue;
+      }
+      if (item.body.epoch && deliveryHash(item.body.epoch) !== deliveryHash(outgoingEpoch(machine))) {
+        const attempted = deliveries.get().deliveries.find((r) => r.callId === item.id)!.attempts > 0;
+        await finishDelivery(item, attempted ? 'indeterminate' : 'refused', text('This delivery belongs to an earlier network pairing. No input was sent under the new authorization; any earlier acceptance is unconfirmed.', true), 'pairing_changed');
+        continue;
+      }
+      const authorization = authorize ? await authorize(item) : { allowed: false as const, reason: 'Sender authorization is unavailable; this delivery cannot be sent.' };
+      if (generation !== lifecycle) return;
+      if (authorization.allowed === false) {
+        await finishDelivery(item, 'refused', text(authorization.reason, true), 'authorization_revoked');
+        continue;
+      }
+      if (!session.connected(machine)) return;
+      const status = deliveries.get().deliveries.find((r) => r.callId === item.id)!;
+      const delay = Date.parse(status.nextAttemptAt ?? '') - Date.now();
+      if (delay > 0) { retryLater(machine, delay); return; }
+      let supported: boolean;
+      try { supported = await session.supportsDurableDelivery(machine); }
+      catch (err) {
+        tel.exception(Object.assign(new Error('annex_delivery_capability_failed'), { stack: undefined }), { origin: 'main', handled: true });
+        if (generation !== lifecycle) return;
+        appLog('core:annex', 'warn', 'Could not negotiate durable agent delivery', { meta: { error: err instanceof Error ? err.message : String(err) } });
+        await deliveries.update((file) => {
+          Object.assign(file.deliveries.find((r) => r.callId === item.id)!, { state: 'retry_later', reason: 'capability_check_unavailable', nextAttemptAt: new Date(Date.now() + RETRY_MS).toISOString() });
+        });
         retryLater(machine);
         return;
       }
-      await outbox.update((file) => ({ version: 1, items: fresh(file.items).filter((i) => i.id !== item.id) }));
+      if (generation !== lifecycle) return;
+      if (!supported) {
+        await finishDelivery(item, status.attempts ? 'indeterminate' : 'refused', text('The other computer does not support durable delivery. Update it before sending new work. No input was sent by this attempt; any earlier acceptance is unconfirmed.', true), 'durable_delivery_unsupported');
+        continue;
+      }
+      await deliveries.update((file) => {
+        const saved = file.deliveries.find((r) => r.callId === item.id)!;
+        saved.state = 'sending';
+        saved.attempts++;
+        saved.updatedAt = new Date().toISOString();
+      });
+      if (generation !== lifecycle) return;
+      const currentAuthorization = await authorize!(item);
+      if (generation !== lifecycle) return;
+      if (currentAuthorization.allowed === false) {
+        await finishDelivery(item, 'refused', text(currentAuthorization.reason, true), 'authorization_revoked');
+        continue;
+      }
+      if (!isNetworkComputer(machine) || deliveryHash(item.body.epoch) !== deliveryHash(outgoingEpoch(machine))) {
+        await finishDelivery(item, 'refused', text('The network pairing changed before input was sent.', true), 'pairing_changed');
+        continue;
+      }
+      if (!session.connected(machine)) return;
+      let reason = 'transport_unavailable';
+      let response: { status: number; body: unknown } | undefined;
+      try {
+        response = await session.post(machine, '/api/v1/network/agent-call', item.body as unknown as Record<string, unknown>);
+      } catch (err) {
+        tel.exception(Object.assign(new Error('annex_delivery_transport_failed'), { stack: undefined }), { origin: 'main', handled: true });
+        appLog('core:annex', 'warn', 'A durable agent delivery attempt failed', { meta: { callId: item.id, error: err instanceof Error ? err.message : String(err) } });
+      }
+      if (generation !== lifecycle) return;
+      if (response) {
+        const receipt = receiptOf(response.body, item.id);
+        const answer = (response.body as { result?: McpToolResult } | null)?.result;
+        if (receipt?.state === 'delivered' && response.status === 200 && answer && !answer.isError && Array.isArray(answer.content)) {
+          await finishDelivery(item, 'delivered', answer);
+          continue;
+        }
+        if (receipt?.state === 'indeterminate') {
+          await finishDelivery(item, 'indeterminate', text(receipt.reason ?? 'The receiver restarted during delivery. It will not run this call again; inspect the target before sending new work.', true), receipt.reason ?? 'receiver_interrupted');
+          continue;
+        }
+        if (response.status >= 200 && response.status < 300 && (!receipt || receipt.state === 'delivered')) {
+          await finishDelivery(item, 'indeterminate', text('The other computer answered without a valid durable receiving-tool receipt. Input may already have been accepted; automatic redelivery is disabled.', true), receipt ? 'invalid_durable_receipt' : 'missing_durable_receipt');
+          continue;
+        }
+        if (receipt?.state === 'refused' || (response.status !== 200 && receipt?.state !== 'retry_later' && !transient(response.status, response.body, item.queuedAt))) {
+          const message = (response.body as { message?: string } | null)?.message;
+          await finishDelivery(item, 'refused', answer ?? text(message ?? receipt?.reason ?? 'The other computer refused this delivery.', true), receipt?.reason ?? `http_${response.status}`);
+          continue;
+        }
+        reason = receipt?.reason ?? (answer?.isError ? 'tool_retry_later' : `http_${response.status}`);
+      }
+      const retry = Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** Math.min(status.attempts, 6));
+      await deliveries.update((file) => {
+        const saved = file.deliveries.find((r) => r.callId === item.id)!;
+        Object.assign(saved, { state: 'retry_later', reason, nextAttemptAt: new Date(Date.now() + retry).toISOString(), updatedAt: new Date().toISOString() });
+      });
+      if (generation !== lifecycle) return;
+      retryLater(machine, retry);
+      return;
     }
+
   } finally {
-    flushing.delete(machine);
+    if (generation === lifecycle) flushing.delete(machine);
   }
 }
 
 // ── Receiving ──────────────────────────────────────────────────────────────
 
-export type AgentCallRefusal = { status: 400 | 403 | 404 | 429; error: string; message: string };
+export type AgentCallRefusal = { status: 400 | 403 | 404 | 429 | 503; error: string; message: string; delivery?: AnnexDeliveryReceipt };
+export type AgentCallOutcome = { result: McpToolResult; delivery?: AnnexDeliveryReceipt } | AgentCallRefusal;
 
 /** Call ids run here lately, running or done, so a sender's retry after a lost answer isn't run twice. */
-const seenCalls = new Map<string, Promise<McpToolResult>>();
+const seenCalls = new Map<string, { hash: string; outcome: Promise<AgentCallOutcome> }>();
 
 function parseBody(raw: unknown): AgentCallBody | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -328,10 +540,24 @@ function parseBody(raw: unknown): AgentCallBody | null {
   if (!from || !str(from.agentId) || String(from.agentId).includes('@') || !str(from.name)) return null;
   if (from.projectName !== undefined && !str(from.projectName)) return null;
   if (!b.args || typeof b.args !== 'object' || Array.isArray(b.args)) return null;
+  if (b.context !== undefined && !validContext(b.context)) return null;
+  if (b.epoch !== undefined && (!b.epoch || typeof b.epoch !== 'object'
+    || !str((b.epoch as AnnexDeliveryEpoch).sender) || !str((b.epoch as AnnexDeliveryEpoch).receiver)
+    || Object.keys(b.epoch).some((k) => !['sender', 'receiver'].includes(k)))) return null;
   return {
     v: AGENT_CALL_VERSION, callId: b.callId as string, to: b.to as string, tool: b.tool as string, args: b.args as Record<string, unknown>,
     from: { agentId: from.agentId as string, name: from.name as string, ...(from.projectName !== undefined && { projectName: from.projectName as string }) },
+    ...(b.context !== undefined && { context: b.context as AnnexCallContext }),
+    ...(b.epoch !== undefined && { epoch: b.epoch as AnnexDeliveryEpoch }),
   };
+}
+
+function validContext(raw: unknown): raw is AnnexCallContext {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const c = raw as Record<string, unknown>;
+  const id = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 200;
+  return id(c.rootId) && Number.isSafeInteger(c.depth) && Number(c.depth) >= 0 && Number(c.depth) <= ANNEX_CALL_MAX_DEPTH
+    && (c.parentId === undefined || id(c.parentId)) && Object.keys(c).every((k) => ['rootId', 'depth', 'parentId'].includes(k));
 }
 
 /**
@@ -340,21 +566,40 @@ function parseBody(raw: unknown): AgentCallBody | null {
  * machine's store has the user's link for that direction and the tool isn't
  * turned off on it.
  */
-export async function receiveAgentCall(senderMachine: string, raw: unknown, now = Date.now()): Promise<{ result: McpToolResult } | AgentCallRefusal> {
+export async function receiveAgentCall(senderMachine: string, raw: unknown, now = Date.now()): Promise<AgentCallOutcome> {
+  const generation = lifecycle;
+  const store = deliveries;
   const body = parseBody(raw);
   if (!body) return { status: 400, error: 'invalid_call', message: 'The call was not in a form this computer reads.' };
   const machine = senderMachine.toLowerCase();
   const self = selfFingerprint();
+  if (!isNetworkComputer(machine)) return { status: 403, error: 'peer_revoked', message: 'That computer is not authorized in this Annex Network.' };
+  const currentEpoch = outgoingEpoch(machine);
+  if (body.epoch && (body.epoch.sender !== currentEpoch.receiver || body.epoch.receiver !== currentEpoch.sender)) {
+    return { status: 403, error: 'pairing_changed', message: 'That delivery belongs to an earlier network pairing.' };
+  }
   const to = parseAgentAddress(body.to);
   if (!self || !routeOf(to, self).local) return { status: 404, error: 'wrong_machine', message: 'That agent is not on this computer.' };
-  if (!AGENT_CALL_TOOLS.has(body.tool)) return { status: 403, error: 'tool_not_allowed', message: `${body.tool} can't be used from another computer.` };
-  const seen = seenCalls.get(`${machine}/${body.callId}`);
-  if (seen) return { result: await seen };
+  const dispatcher = remoteDispatcher?.isTarget(to.agentId) ? remoteDispatcher : undefined;
+  if (!(dispatcher ? DISPATCHER_CALL_TOOLS : AGENT_CALL_TOOLS).has(body.tool)) return { status: 403, error: 'tool_not_allowed', message: `${body.tool} can't be used from another computer for that target.` };
+  if (dispatcher && !dispatcher.isAvailable(to.agentId)) return { status: 403, error: 'dispatcher_unavailable', message: 'That Dispatcher is not available for federation calls.' };
   const from: ConnectionEnd = { agentId: body.from.agentId, machineId: machine };
   const direction = getConnectionDirection(from, { agentId: to.agentId });
   // The same answer whether or not the agent exists, as for local wires.
-  if (!direction?.link) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
-  if (direction.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: `${body.tool} is turned off on this connection.` };
+  if (!dispatcher && !direction?.link) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
+  if (!dispatcher && direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: `${body.tool} is turned off on this connection.` };
+  const key = `${machine}/${deliveryHash(currentEpoch)}/${body.callId}`;
+  const hash = payloadHash(body);
+  let saved: ReceiverDelivery | undefined;
+  try { saved = store.get().inbox.find((r) => r.key === key); }
+  catch (err) {
+    tel.exception(Object.assign(new Error('annex_delivery_receipt_store_failed'), { stack: undefined }), { origin: 'main', handled: true });
+    return receiverStoreFailure(err);
+  }
+  if (saved && saved.payloadHash !== hash) return { status: 400, error: 'idempotency_conflict', message: 'This call id already names different content.' };
+  const seen = seenCalls.get(key);
+  if (seen) return seen.hash === hash ? seen.outcome : { status: 400, error: 'idempotency_conflict', message: 'This call id is already running with different content.' };
+  if (saved && saved.state !== 'retry_later') return replayReceipt(body, saved);
   if (!hit(`rate:${machine}/${body.from.agentId}>${to.agentId}`, RATE_LIMIT.windowMs, RATE_LIMIT.calls, now)) {
     return { status: 429, error: 'rate_limited', message: 'Too many calls on this connection. Wait a minute and try again.' };
   }
@@ -362,23 +607,84 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
     return { status: 429, error: 'loop_limited', message: LOOP_MESSAGE };
   }
   const run = runTool;
-  if (!run) return { status: 404, error: 'unavailable', message: 'Agents on this computer can’t be reached yet.' };
+  if (!run && !dispatcher) return { status: 404, error: 'unavailable', message: 'Agents on this computer can’t be reached yet.' };
   const callerId = formatAgentAddress({ agentId: body.from.agentId, machine });
   appLog('core:annex', 'info', 'Agent call from another machine', { meta: { tool: body.tool, targetAgent: to.agentId } });
-  // Recorded before anything is awaited: a retry that arrives meanwhile waits for this run's answer.
-  const running = (async () => {
+  const running = (async (): Promise<AgentCallOutcome> => {
     const target = await describe(to.agentId);
     const caller: RemoteCaller = {
       name: body.from.name,
       machineName: annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.alias || 'another computer',
       ...(body.from.projectName && { projectName: body.from.projectName }),
       ...(target?.name && { targetName: target.name }),
+      machineId: machine, agentId: body.from.agentId, deliveryId: body.callId, context: body.context ?? { rootId: body.callId, depth: 0 },
     };
-    return remoteCallers.run(caller, () => run(body.tool, to.agentId, callerId, body.args));
+    try {
+      await store.update((file) => {
+        const existing = file.inbox.find((r) => r.key === key);
+        const at = new Date().toISOString();
+        if (existing) { existing.state = 'claimed'; existing.updatedAt = at; delete existing.result; delete existing.reason; }
+        else file.inbox.push({ key, payloadHash: hash, state: 'claimed', createdAt: at, updatedAt: at });
+      });
+    } catch (err) {
+      tel.exception(Object.assign(new Error('annex_delivery_receipt_store_failed'), { stack: undefined }), { origin: 'main', handled: true });
+      return receiverStoreFailure(err);
+    }
+    // Both the description lookup and the durable claim yielded: revocation
+    // during either must stop the side effect, even for an in-flight call.
+    const current = getConnectionDirection(from, { agentId: to.agentId });
+    let result: AgentToolRunResult;
+    if (generation !== lifecycle || !isNetworkComputer(machine) || deliveryHash(currentEpoch) !== deliveryHash(outgoingEpoch(machine))
+      || (dispatcher ? !dispatcher.isTarget(to.agentId) || !dispatcher.isAvailable(to.agentId) : !current?.link || current.disabledTools.includes(body.tool))) {
+      result = { ...text('The connection was revoked before this call ran.', true), annexDelivery: { state: 'refused', reason: 'authorization_revoked' } };
+    } else {
+      try {
+        result = await remoteCallers.run(caller, () => dispatcher
+          ? dispatcher.receive({ origin: { machineId: machine, machineName: caller.machineName, agentId: body.from.agentId, agentName: body.from.name }, targetId: to.agentId, deliveryId: body.callId, cause: caller.context, tool: body.tool, args: body.args })
+          : run!(body.tool, to.agentId, callerId, body.args));
+      }
+      catch (err) {
+        tel.exception(Object.assign(new Error('annex_delivery_receiver_tool_failed'), { stack: undefined }), { origin: 'main', handled: true });
+        appLog('core:annex', 'error', 'A receiving agent tool failed after its durable claim', { meta: { callId: body.callId, error: err instanceof Error ? err.message : String(err) } });
+        result = { ...text('The receiving tool failed after starting. Its side effect is unknown; this call will not be run again.', true), annexDelivery: { state: 'indeterminate', reason: 'tool_interrupted' } };
+      }
+    }
+    // Unclassified errors may follow a partial side effect. Only an explicit
+    // safe-to-retry marker can release the claim for another execution.
+    const classified = result.annexDelivery?.state ?? (result.isError ? 'indeterminate' : 'delivered');
+    const state = classified === 'delivered' && result.isError ? 'indeterminate' : classified;
+    const reason = result.annexDelivery?.reason ?? (result.isError ? 'unclassified_tool_error' : undefined);
+    const retained = boundedDeliveryResult({ content: result.content, ...(result.isError && { isError: true }) });
+    try {
+      await store.update((file) => {
+        const record = file.inbox.find((r) => r.key === key)!;
+        Object.assign(record, { state, result: retained, updatedAt: new Date().toISOString(), ...(reason && { reason }) });
+      });
+    } catch (err) {
+      tel.exception(Object.assign(new Error('annex_delivery_receipt_store_failed'), { stack: undefined }), { origin: 'main', handled: true });
+      return receiverStoreFailure(err);
+    }
+    const outcome = replayReceipt(body, store.get().inbox.find((r) => r.key === key)!);
+    return !QUEUED_TOOLS.has(body.tool) && 'result' in outcome ? { ...outcome, result: { content: result.content, ...(result.isError && { isError: true }) } } : outcome;
   })();
-  seenCalls.set(`${machine}/${body.callId}`, running);
-  if (seenCalls.size > SEEN_CALLS_MAX) seenCalls.delete(seenCalls.keys().next().value as string);
-  return { result: await running };
+  seenCalls.set(key, { hash, outcome: running });
+  try { return await running; }
+  finally { if (seenCalls.get(key)?.outcome === running) seenCalls.delete(key); }
+}
+
+function receiverStoreFailure(err: unknown): AgentCallRefusal {
+  logFlushError(err);
+  return { status: 503, error: 'delivery_store_unavailable', message: 'The receiving computer could not persist a delivery receipt. Retry only with the same call id.' };
+}
+
+function replayReceipt(body: AgentCallBody, record: ReceiverDelivery): AgentCallOutcome {
+  const state = record.state === 'claimed' ? 'indeterminate' : record.state;
+  const reason = record.state === 'claimed' ? 'receiver_interrupted' : record.reason;
+  const result = record.result ?? text('The receiver restarted during this call. It will not run it again because input may already have been accepted. Inspect the target before sending new work.', true);
+  return {
+    result,
+    delivery: { callId: body.callId, state, receiptAt: record.updatedAt, ...(reason && { reason }) },
+  };
 }
 
 // ── Keeping both machines' copies of a direction ───────────────────────────
@@ -573,13 +879,26 @@ export interface StartAgentCallsOptions {
   nameOfLocalSender?: (agentId: string) => string | undefined;
   /** Every direction in the store (tests pass their own). */
   listDirections?: () => ConnectionDirection[];
+  /** Recheck the sender's live grants and connection before every queued attempt. */
+  authorizeQueuedCall?: (item: OutboxItem) => Promise<DeliveryAuthorization>;
+  /** Idempotent by callId: queue a sender notice and record action history. */
+  onDeliveryFailure?: (notice: AnnexDeliveryFailure) => Promise<boolean | void>;
+  /** Tests may reopen the same persisted store to simulate another process. */
+  deliveryStore?: AnnexDeliveryStore;
+  /** Fixed controller capability; never selected by agent arguments or editable tool names. */
+  remoteDispatcher?: DispatcherAgentCallReceiver;
 }
 
 export function startAgentCalls(options: StartAgentCallsOptions): () => void {
+  const generation = ++lifecycle;
   transport = options.transport;
   runTool = options.runTool;
   describeLocalAgent = options.describeLocalAgent;
   nameOfLocalSender = options.nameOfLocalSender;
+  if (options.deliveryStore) deliveries = options.deliveryStore;
+  authorizeQueuedCall = options.authorizeQueuedCall;
+  onDeliveryFailure = options.onDeliveryFailure;
+  remoteDispatcher = options.remoteDispatcher;
   if (options.listDirections) listDirections = options.listDirections;
   const offConnected = options.transport.onConnected((machine) => { void syncThenFlush(machine); });
   // A change here to a direction with another machine is sent to it at once, when connected.
@@ -587,13 +906,22 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
     const machine = otherMachine({ from, to });
     if (machine) void syncDirectionsWith(machine);
   });
+  void (async () => {
+    await notifyFailures();
+    for (const machine of new Set(deliveries.get().outbox.map((i) => i.machine))) await syncThenFlush(machine);
+  })().catch(logFlushError);
   return () => {
+    if (generation !== lifecycle) return;
+    lifecycle++;
     offConnected();
     offChanged();
     transport = null;
     runTool = null;
     describeLocalAgent = describeNothing;
     nameOfLocalSender = undefined;
+    authorizeQueuedCall = undefined;
+    onDeliveryFailure = undefined;
+    remoteDispatcher = undefined;
     listDirections = () => listAllConnectionDirections();
     _resetAgentCallsForTesting();
   };
@@ -601,7 +929,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
 
 /** For tests: no messages waiting. */
 export async function _clearOutboxForTesting(): Promise<void> {
-  await outbox.update(() => ({ version: 1, items: [] }));
+  await deliveries.clearForTesting();
 }
 
 /** For tests. */
@@ -613,4 +941,7 @@ export function _resetAgentCallsForTesting(): void {
   syncAgain.clear();
   for (const timer of retryTimers.values()) clearTimeout(timer);
   retryTimers.clear();
+  if (noticeRetryTimer) clearTimeout(noticeRetryTimer);
+  noticeRetryTimer = undefined;
+  notifyingFailures = undefined;
 }

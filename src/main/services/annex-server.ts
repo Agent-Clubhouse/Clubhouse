@@ -215,6 +215,8 @@ let unsubMembership: (() => void) | null = null;
 const MDNS_RESTART_DELAY_MS = 30_000;
 let serverPort = 0; // Main TLS port
 let boundHost = ''; // networkProfile.host while running
+let serverGeneration = 0;
+const pendingListens = new Set<() => void>();
 let currentPin = '';
 let currentPinIssuedAt = 0;
 let pinRotationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -3544,8 +3546,21 @@ async function handleNetworkAgentCallRoute(ctx: AnnexRouteContext): Promise<void
   // Checked again once the body is here: the peer may have been removed meanwhile.
   if (ctx.requireMtls()) return;
   const outcome = await agentCalls.receiveAgentCall(machine, body);
-  if ('result' in outcome) sendJson(ctx.res, 200, { result: outcome.result });
-  else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
+  if ('result' in outcome) sendJson(ctx.res, 200, outcome);
+  else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message, ...(outcome.delivery && { delivery: outcome.delivery }) });
+}
+
+async function handleNetworkAgentDeliveryCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (ctx.requireMtls()) { ctx.req.resume(); return; }
+  const machine = agentCallPeer(ctx);
+  ctx.req.resume();
+  if (!machine) { sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can negotiate delivery here.' }); return; }
+  try { sendJson(ctx.res, 200, agentCalls.agentDeliveryCapabilities()); }
+  catch (err) {
+    tel.exception(Object.assign(new Error('annex_delivery_capabilities_unavailable'), { stack: undefined }), { origin: 'main', handled: true });
+    appLog('core:annex', 'warn', 'Durable delivery capabilities are unavailable', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    sendJson(ctx.res, 503, { error: 'delivery_store_unavailable' });
+  }
 }
 
 async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
@@ -4315,6 +4330,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/network$/, handler: handleMobileNetworkRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-call$/, handler: handleNetworkAgentCallRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/agent-delivery-capabilities$/, handler: handleNetworkAgentDeliveryCapabilitiesRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
@@ -4945,7 +4961,15 @@ function isCurrentServer(server: http.Server | https.Server): boolean {
   return server === tlsServer || server === httpServer || server === pairingServer;
 }
 
-function trackIncomingSockets(server: http.Server | https.Server): void {
+function trackServer(server: http.Server | https.Server): void {
+  const generation = serverGeneration;
+  // Keep this server-owned listener after close: an OS bind error may already be queued.
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    const current = generation === serverGeneration && isCurrentServer(server);
+    appLog('core:annex', current ? 'warn' : 'debug', 'Annex listener error', {
+      meta: { error: err.message, ...(err.code && { code: err.code }), generation, current },
+    });
+  });
   server.on('connection', (socket) => {
     if (!isCurrentServer(server)) {
       socket.destroy();
@@ -4957,10 +4981,38 @@ function trackIncomingSockets(server: http.Server | https.Server): void {
 }
 
 export function start(): void {
+  void startServer();
+}
+
+export class AnnexStartFailure extends Error {
+  constructor(readonly cause: unknown, private readonly generation: number, private readonly interrupted: boolean) {
+    super(cause instanceof Error ? cause.message : 'Annex secure listener startup failed.');
+    this.name = 'AnnexStartFailure';
+  }
+
+  wasSuperseded(): boolean {
+    return this.interrupted || serverGeneration !== this.generation;
+  }
+}
+
+/** MCP settings changes require actual secure readiness, not a scheduled listen. */
+export async function startVerified(): Promise<void> {
+  const generation = serverGeneration + 1;
+  try { await startServer(true); }
+  catch (err) {
+    const interrupted = serverGeneration !== generation;
+    if (!interrupted) stop();
+    throw new AnnexStartFailure(err, generation + (interrupted ? 0 : 1), interrupted);
+  }
+}
+
+function startServer(strict = false): Promise<void> {
   if (tlsServer || httpServer) {
     appLog('core:annex', 'debug', 'Annex server start() called but already running');
-    return;
+    if (strict) throw new Error('Annex is already starting or running; secure readiness for this change cannot be confirmed.');
+    return Promise.resolve();
   }
+  serverGeneration++;
 
   appLog('core:annex', 'info', 'Annex server starting...');
   const serverStartMs = Date.now();
@@ -4977,7 +5029,7 @@ export function start(): void {
 
   // --- Pairing server (plain HTTP): identity hint only; pairing itself is on the TLS port ---
   pairingServer = http.createServer(handlePairingRequest);
-  trackIncomingSockets(pairingServer);
+  trackServer(pairingServer);
 
   // --- Main server (TLS with mTLS) ---
   let tlsOptions: tls.TlsOptions;
@@ -4992,6 +5044,7 @@ export function start(): void {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
     tlsServer = null;
+    if (strict) throw err;
     recordTlsFallback();
   }
 
@@ -5000,7 +5053,7 @@ export function start(): void {
   if (!tlsServer) {
     httpServer = mainServer as http.Server;
   }
-  trackIncomingSockets(mainServer);
+  trackServer(mainServer);
 
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
   wss = websocketServer;
@@ -5407,32 +5460,50 @@ export function start(): void {
   const lastPorts = annexSettings.getLastPorts();
   const pairing = pairingServer;
 
-  listenPreferringPort(listenServer(mainServer, networkProfile.host), lastPorts.mainPort).then((port) => {
-    if (mainServer !== (tlsServer || httpServer)) return; // stopped while binding
+  const mainListening = listenPreferringPort(listenServer(mainServer, networkProfile.host), lastPorts.mainPort).then((port) => {
+    if (mainServer !== (tlsServer || httpServer)) {
+      if (strict) throw new Error('Annex stopped or changed while its main listener was binding.');
+      return;
+    }
     serverPort = port;
     appLog('core:annex', 'info', `Annex main server listening on ${networkProfile.host}:${serverPort} (${tlsServer ? 'TLS' : 'HTTP'})`);
     mainReady = true;
     if (pairingReady) recordServerStarted(serverStartMs, !!tlsServer);
     publishBonjour();
   }).catch((err) => {
-    if (!isCurrentServer(mainServer)) return; // stopped while binding or waiting to retry
-    appLog('core:annex', 'error', 'Annex main server failed to listen', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
+    if (isCurrentServer(mainServer)) {
+      appLog('core:annex', 'error', 'Annex main server failed to listen', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    if (strict) throw err;
   });
 
-  listenPreferringPort(listenServer(pairing, networkProfile.host), lastPorts.pairingPort).then((port) => {
-    if (pairing !== pairingServer) return; // stopped while binding
+  const pairingListening = listenPreferringPort(listenServer(pairing, networkProfile.host), lastPorts.pairingPort).then((port) => {
+    if (pairing !== pairingServer) {
+      if (strict) throw new Error('Annex stopped or changed while its pairing listener was binding.');
+      return;
+    }
     pairingPort = port;
     appLog('core:annex', 'info', `Annex pairing server listening on ${networkProfile.host}:${pairingPort} (HTTP)`);
     pairingReady = true;
     if (mainReady) recordServerStarted(serverStartMs, !!tlsServer);
     publishBonjour();
   }).catch((err) => {
-    if (!isCurrentServer(pairing)) return; // stopped while binding or waiting to retry
-    appLog('core:annex', 'error', 'Annex pairing server failed to listen', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
+    if (isCurrentServer(pairing)) {
+      appLog('core:annex', 'error', 'Annex pairing server failed to listen', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    if (strict) throw err;
+  });
+  return Promise.all([mainListening, pairingListening]).then(() => {
+    if (!strict) return;
+    const currentProfile = annexNetworkProfile(process.env, annexSettings.getSettings().loopbackOnly);
+    if (mainServer !== tlsServer || pairing !== pairingServer || !tlsServer.listening || !pairing.listening
+      || !serverPort || !pairingPort || boundHost !== currentProfile.host || currentProfile.advertise !== networkProfile.advertise) {
+      throw new Error('Annex secure listener readiness or network profile changed before confirmation.');
+    }
   });
 }
 
@@ -5472,22 +5543,39 @@ function listenServer(server: http.Server | https.Server, host: string): ListenF
       reject(new Error('Annex server stopped before listen'));
       return;
     }
-    const onError = (err: Error) => {
-      server.close();
-      reject(err);
-    };
-    server.once('error', onError);
-    server.listen(port, address, () => {
+    let settled = false;
+    const settle = (complete: () => void): void => {
+      if (settled) return;
+      settled = true;
+      pendingListens.delete(cancel);
       server.removeListener('error', onError);
+      server.removeListener('close', onClose);
+      server.removeListener('listening', onListening);
+      complete();
+    };
+    const cancel = () => settle(() => reject(new Error('Annex server stopped while binding')));
+    const onClose = () => settle(() => reject(new Error('Annex server closed before listen completed')));
+    const onError = (err: Error) => settle(() => {
+      server.close(() => reject(err));
+    });
+    const onListening = () => {
+      if (settled) return;
       if (!isCurrentServer(server)) {
-        server.close();
-        reject(new Error('Annex server stopped while binding'));
+        onError(new Error('Annex server stopped while binding'));
         return;
       }
       const addr = server.address();
-      if (addr && typeof addr === 'object') resolve(addr.port);
-      else reject(new Error('Annex server has no address after listen'));
-    });
+      if (addr && typeof addr === 'object') settle(() => resolve(addr.port));
+      else onError(new Error('Annex server has no address after listen'));
+    };
+    pendingListens.add(cancel);
+    server.once('error', onError);
+    server.once('close', onClose);
+    try { server.listen(port, address, onListening); }
+    catch (err) {
+      // telemetry-exempt: onError rejects the pending bind promise; this does not swallow the failure.
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
   });
   // Every interface means IPv6 too (#3058): '::' takes IPv4 and IPv6 alike. Where the
   // system has no IPv6, fall back to IPv4 only.
@@ -5517,6 +5605,8 @@ function rememberBoundPorts(): void {
 }
 
 export function stop(): void {
+  serverGeneration++;
+  for (const cancel of pendingListens) cancel();
   // Unsubscribe from event bus
   unsubscribeEventBus();
   if (refreshFollowUp) clearTimeout(refreshFollowUp);

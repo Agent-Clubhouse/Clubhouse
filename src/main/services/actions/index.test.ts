@@ -73,6 +73,7 @@ vi.mock('./actions-store', () => ({
   createRunHistory: () => ({
     put: (run: { id: string; actionId: string; startedAt: number }) => { h.runs.set(run.id, run); },
     list: (id?: string) => [...h.runs.values()].filter((r) => id === undefined || r.actionId === id),
+    flush: async () => {},
   }),
 }));
 
@@ -91,6 +92,7 @@ import {
   observeActions,
   removeAppAction,
   runActionNow,
+  recordExternalRun,
   setAppActionGate,
   setActionEnabled,
   startActions,
@@ -104,6 +106,23 @@ const message = (text: string) => [{ kind: 'message', agentId: 'disp', text }];
 const nightly = { kind: 'schedule', preset: 'daily', cron: '30 3 * * *', missed: 'once' };
 const idle = { kind: 'event', event: 'agent.idle', source: { kind: 'agent', agentId: 'disp' }, delayMinutes: 20 } as const;
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+it('retains one external Annex receipt across engine restart without creating executable work', async () => {
+  const at = Date.now();
+  const receipt = {
+    id: 'annex-delivery:c1', actionId: 'annex-delivery:c1', externalSource: 'annex_delivery' as const,
+    owner: { kind: 'agent' as const, agentId: 'sender' }, trigger: { kind: 'manual' as const, at },
+    chain: [], startedAt: at, endedAt: at, outcome: 'expired' as const, reason: 'Delivery expired', steps: [],
+  };
+  await recordExternalRun(receipt);
+  await recordExternalRun(receipt);
+  expect(actionHistory(receipt.actionId)).toHaveLength(1);
+  expect(listActions()).toEqual([]);
+  expect(() => runActionNow(receipt.actionId)).toThrow('No action');
+  stopActions();
+  await startActions();
+  expect(actionHistory(receipt.actionId)).toMatchObject([receipt]);
+});
 
 it('includes retained runs after an Action is deleted from the saved list', async () => {
   const action = createAction({ name: 'Once', trigger: { kind: 'once', at: Date.now() + 60_000 }, steps: [{ kind: 'notify', text: 'Ready' }] }, { kind: 'user' });
