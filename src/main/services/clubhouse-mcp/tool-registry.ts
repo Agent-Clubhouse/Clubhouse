@@ -5,7 +5,7 @@
 
 import { randomUUID } from 'crypto';
 import { withSettingsSurface } from '../settings-audit';
-import type { McpToolAnnotations, McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
+import type { McpToolAnnotations, McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind, ConnectionToolCatalog } from './types';
 import { isToolGrantPassThrough, toolGrantDeclarations, type ToolGrant } from './tool-grants';
 import type { GrantAction } from '../../../shared/agent-grants';
 import type { GrantToolMap } from '../../../shared/agent-grant-changes';
@@ -289,7 +289,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     reconnect_device: INTERNAL_WRITE,
     remove_device: INTERNAL_DESTRUCTIVE,
     start_adding_device: INTERNAL_WRITE,
-    add_project: OPEN_WRITE,
+    add_project: INTERNAL_WRITE,
     request_app_update: INTERNAL_WRITE,
   },
 };
@@ -676,6 +676,45 @@ function wakeKey(bindings: McpBinding[]): string {
   return bindings.map((b) => (b.targetKind !== 'agent' ? '-' : agentRegistry.get(b.targetId) ? '1' : '0')).join('');
 }
 
+function templateListable(
+  binding: McpBinding,
+  template: ToolTemplate,
+  deniedTools: ReadonlySet<string>,
+  wire = wireOf(binding),
+): boolean {
+  return groupAllows(template.group, binding.agentId)
+    && !deniedTools.has(template.nameSuffix)
+    && isListable(checkToolGrant(binding.agentId, template.grant, {}, wire));
+}
+
+/**
+ * Stable direction-editor choices from registered templates. Direction switches
+ * and transient target/session state are separate from role/group/grant eligibility.
+ */
+export function getConnectionToolCatalog(
+  agentId: string,
+  targetId: string,
+  targetKind: BindingTargetKind,
+): ConnectionToolCatalog {
+  const binding: McpBinding = { agentId, targetId, targetKind, label: targetId };
+  const templates = templatesFor(binding);
+  if (!templates || (targetKind === 'plugin' && !targetTemplates.get('plugin')?.has(targetId))) {
+    return { state: 'unavailable', reason: 'tools_not_registered', tools: [] };
+  }
+  const deniedTools = targetKind === 'group-project'
+    ? deniedGroupProjectTools(groupProjectRegistry.getSync(targetId)?.metadata, agentId)
+    : new Set<string>();
+  const wire: GrantCheckWire = { ...wireOf(binding), wakeOn: true };
+  return {
+    state: 'available',
+    tools: templates.map((template) => ({
+      suffix: template.nameSuffix,
+      description: template.definition.description,
+      available: templateListable(binding, template, deniedTools, wire),
+    })),
+  };
+}
+
 /**
  * Get the scoped tool list for an agent based on its current bindings.
  * Results are cached and invalidated when bindings change or a target wakes or sleeps.
@@ -726,15 +765,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
         continue;
       }
 
-      if (!groupAllows(template.group, agentId)) continue;
+      if (!templateListable(binding, template, deniedTools)) continue;
       if (isAgentWake(binding, template.nameSuffix) && !wakeOffered(agentId, binding)) continue;
-
-      // Skip tools disabled by role gating and/or at the wire level
-      if (deniedTools.has(template.nameSuffix)) {
-        continue;
-      }
-      // Listed only when a grant covers it or the agent can ask for it, as callTool checks (#2968, #2970).
-      if (!isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding)))) continue;
 
       let description = template.definition.description;
 
