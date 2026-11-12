@@ -2255,7 +2255,7 @@ describe('peekProjectsChecked (D99)', () => {
     expect(fsp.rename).not.toHaveBeenCalled();
   });
 
-  it('strictly accepts known schemas, empty stores and missing-primary backups without writes', async () => {
+  it('strictly accepts known schemas and empty stores but refuses backup-only data without writes', async () => {
     for (const payload of [[], [project], { version: 1, projects: [project] }]) {
       files({ [STORE_PATH]: JSON.stringify(payload) });
       expect((await peekProjectsChecked({ strict: true })).readable).toBe(true);
@@ -2263,7 +2263,10 @@ describe('peekProjectsChecked (D99)', () => {
     files({});
     expect(await peekProjectsChecked({ strict: true })).toEqual({ projects: [], readable: true });
     files({ [BAK_PATH]: JSON.stringify([project]) });
-    expect(await peekProjectsChecked({ strict: true })).toEqual({ projects: [project], readable: true });
+    expect(await peekProjectsChecked({ strict: true })).toEqual({ projects: [], readable: false });
+    expect(await peekProjectsChecked()).toEqual({ projects: [project], readable: true });
+    files({ [BAK_PATH]: errorWith('EACCES') });
+    expect(await peekProjectsChecked({ strict: true })).toEqual({ projects: [], readable: false });
     expect(fsp.writeFile).not.toHaveBeenCalled();
     expect(fsp.mkdir).not.toHaveBeenCalled();
     expect(fsp.rename).not.toHaveBeenCalled();
