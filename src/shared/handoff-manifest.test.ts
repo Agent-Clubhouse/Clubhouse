@@ -98,4 +98,20 @@ describe('portable bounded handoff manifest', () => {
     expect(new TextEncoder().encode(JSON.stringify(manifest)).byteLength).toBeGreaterThan(HANDOFF_MANIFEST_MAX_BYTES);
     expect(() => parseHandoffManifest(manifest)).toThrow('too large');
   });
+
+  it('rejects ill-formed UTF-16 paths before hashing or filesystem encoding, for files and deletions', () => {
+    const manifest = fixture();
+    expect(() => parseHandoffManifest({
+      ...manifest, files: [
+        { ...manifest.files[0], path: '\ud800.txt' }, { ...manifest.files[0], path: '\ud801.txt' },
+      ], total_bytes: 20,
+    })).toThrow('Invalid handoff manifest.');
+    expect(() => parseHandoffManifest({ ...manifest, deletions: ['\udc00.txt'] })).toThrow('Invalid handoff manifest.');
+    expect(isSafeHandoffPath('valid-\ud83d\ude00.txt')).toBe(true);
+  });
+
+  it.each(['.g\u200cit/config', '.git\ufeff/config', '\u200b.git/config', '.\u200c./outside'])('refuses HFS-ignorable internals/traversal aliases without rewriting %s', (path) => {
+    expect(isSafeHandoffPath(path)).toBe(false);
+    expect(() => parseHandoffManifest({ ...fixture(), files: [{ ...fixture().files[0], path }] })).toThrow('Invalid handoff manifest.');
+  });
 });

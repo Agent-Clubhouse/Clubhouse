@@ -14,6 +14,18 @@ const keys = (value: Record<string, unknown>, allowed: string[]) => Object.keys(
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const hasControl = (value: string) => [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
+const hasIgnorable = (value: string) => /\p{Default_Ignorable_Code_Point}/u.test(value);
+
+function isWellFormed(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(++index);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
 
 export interface HandoffTransferBounds {
   totalBytes: number;
@@ -46,7 +58,7 @@ function requireValid(condition: unknown): asserts condition {
 /** One portable relative regular-file path; no alternate Windows spellings. */
 export function isSafeHandoffPath(value: unknown): value is string {
   if (typeof value !== 'string' || value.length === 0 || value.length > HANDOFF_PATH_MAX_CHARS
-    || /[\\:<>"|?*]/.test(value) || hasControl(value)) return false;
+    || !isWellFormed(value) || hasIgnorable(value) || /[\\:<>"|?*]/.test(value) || hasControl(value)) return false;
   return value.split('/').every((part) => part.length > 0 && part !== '.' && part !== '..' && !/[. ]$/.test(part)
     && part.toLowerCase() !== '.git' && !/^\.?git~[0-9]+$/i.test(part)
     && !/^(?:con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\.|$)/i.test(part));
@@ -54,13 +66,14 @@ export function isSafeHandoffPath(value: unknown): value is string {
 
 export function isSafeHandoffBranch(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 256 && value !== '@' && value !== 'HEAD'
-    && !value.startsWith('-') && !/[\\\s~^:?*]/.test(value) && !hasControl(value) && !value.includes('[') && !value.includes('..') && !value.includes('@{')
+    && isWellFormed(value) && !hasIgnorable(value) && !value.startsWith('-')
+    && !/[\\\s~^:?*]/.test(value) && !hasControl(value) && !value.includes('[') && !value.includes('..') && !value.includes('@{')
     && value.split('/').every((part) => !!part && !part.startsWith('.') && !part.endsWith('.') && !part.endsWith('.lock'));
 }
 
 export function isSafeHandoffPattern(value: unknown): value is string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 512 || value.startsWith('!')
-    || /[\\:]/.test(value) || hasControl(value)) return false;
+    || !isWellFormed(value) || hasIgnorable(value) || /[\\:]/.test(value) || hasControl(value)) return false;
   return value.split('/').every((part) => !!part && part !== '.' && part !== '..' && part.toLowerCase() !== '.git');
 }
 
@@ -74,7 +87,7 @@ export function validateHandoffBounds(value: HandoffTransferBounds): HandoffTran
 
 function validRemote(value: unknown): value is string | null {
   if (value === null) return true;
-  if (typeof value !== 'string' || !value || value.length > 2048 || /\s/.test(value) || hasControl(value)) return false;
+  if (typeof value !== 'string' || !value || value.length > 2048 || !isWellFormed(value) || /\s/.test(value) || hasControl(value)) return false;
   if (/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^/].+$/.test(value)) return true;
   try {
     const url = new URL(value);

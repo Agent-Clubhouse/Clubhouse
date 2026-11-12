@@ -84,4 +84,13 @@ describe('fixed handoff secret rules', () => {
     expect(() => scanHandoffSecrets('../outside')).toThrow('Invalid handoff file path.');
     expect(scanHandoffSecrets('data.txt', bytes('not.a.jwt\ninvalid eyJbroken.broken.broken'))).toEqual([]);
   });
+
+  it.each([
+    ['content.connection_password', 'redis://:synthetic-password@cache.example:6379/0', 'redis://cache.example:6379/0'],
+    ['content.database_password', 'Password=synthetic-password;Server=db.example;User Id=example;', 'Password=;Server=db.example;User Id=example;'],
+  ] as const)('blocks %s regardless of username presence or connection-key order', (rule, positive, negative) => {
+    expect(scanHandoffSecrets('example.txt', bytes(positive))).toContainEqual({ path: 'example.txt', rule, line: 1 });
+    expect(scanHandoffSecrets('example.txt', bytes(negative))).toEqual([]);
+    expect(JSON.stringify(scanHandoffSecrets('example.txt', bytes(positive)))).not.toContain('synthetic-password');
+  });
 });
