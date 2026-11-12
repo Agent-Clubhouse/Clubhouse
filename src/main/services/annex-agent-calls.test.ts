@@ -306,6 +306,25 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     });
   }
 
+  it('accepts no queued or receiving effect from a raw-null store until explicit repair and restart', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    const filename = 'corrupt-recovery.json';
+    const filePath = path.join(state.base, filename);
+    fs.writeFileSync(filePath, 'null');
+    restart({ deliveryStore: createAnnexDeliveryStore(filename) });
+    const body = call({ callId: 'after-explicit-recovery' });
+    expect(await receiveAgentCall(OTHER, body, now)).toMatchObject({ status: 503, error: 'delivery_store_unavailable' });
+    await expect(forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'not queued into corrupt state' })).rejects.toMatchObject({ code: 'delivery_store_unreadable' });
+    expect(seen).toHaveLength(0);
+    expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
+    expect(fs.readFileSync(filePath, 'utf8')).toBe('null');
+    fs.writeFileSync(filePath, JSON.stringify({ version: 1, outbox: [], inbox: [], deliveries: [] }));
+    restart({ deliveryStore: createAnnexDeliveryStore(filename) });
+    expect(await receiveAgentCall(OTHER, body, now)).toMatchObject({ delivery: { state: 'delivered' } });
+    expect(seen).toHaveLength(1);
+    restart();
+  });
+
   it('replays a durable receiver answer after reload without another execution, and rejects changed content', async () => {
     await setConnectionLink(inbound.from, inbound.to, true);
     const body = call({ callId: 'restart-answer' });
