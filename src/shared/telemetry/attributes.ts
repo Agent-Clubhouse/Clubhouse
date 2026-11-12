@@ -564,6 +564,7 @@ export const ATTR = {
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
     'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
     'request_app_update',
+    'get_delivery', 'get_annex_network_settings', 'update_annex_network_settings',
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'set_connection_tools',
     // orchestration: connection tools (#2230)
@@ -929,6 +930,7 @@ export const ATTR = {
     'GET /api/v1/mobile/network',
     'POST /api/v1/mobile/network/members',
     'POST /api/v1/network/agent-call',
+    'POST /api/v1/network/agent-delivery-capabilities',
     'POST /api/v1/network/connections',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',
