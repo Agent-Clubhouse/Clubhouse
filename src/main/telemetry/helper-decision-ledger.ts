@@ -29,7 +29,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { HELPER_SPAWN_RESULTS, HELPER_TASK_PROFILES, HELPER_TELEMETRY_LIMITS, type HelperCalibrationIdentity, type HelperSpawnResult, type HelperTaskProfile } from '../../shared/telemetry/helper-usage-contract';
+import { HELPER_CALIBRATION_IDENTITY_REASONS, HELPER_SPAWN_RESULTS, HELPER_TASK_PROFILES, HELPER_TELEMETRY_LIMITS, type HelperCalibrationIdentity, type HelperCalibrationIdentityReason, type HelperSpawnResult, type HelperTaskProfile } from '../../shared/telemetry/helper-usage-contract';
 import { HELPER_DIFFICULTIES, HELPER_ROUTING_MODES, type HelperDifficulty } from '../../shared/helper-routing';
 import { readBurnCalibrationIdentity, readBurnForecast, readBurnObservation, readForecastRun, type BurnForecast, type BurnObservation, type ForecastRun } from '../services/helper-auto-forecast';
 
@@ -54,6 +54,7 @@ export interface LedgerEntry {
   difficulty: HelperDifficulty | null;
   mappingRevision?: string;
   calibration?: HelperCalibrationIdentity;
+  calibrationIdentityReason?: HelperCalibrationIdentityReason;
   mappingFingerprint?: string;
   taskProfile?: HelperTaskProfile;
   forecast?: BurnForecast;
@@ -110,6 +111,7 @@ function readEntry(v: unknown): LedgerEntry | undefined {
   if (!textOrNull(e.mappingRevision) || !textOrNull(e.mappingFingerprint)) return undefined;
   const forecast = readBurnForecast(e.forecast);
   const calibration = readBurnCalibrationIdentity(e.calibration);
+  const identityReason = HELPER_CALIBRATION_IDENTITY_REASONS.find((reason) => reason === e.calibrationIdentityReason);
   const observation = readBurnObservation(e.burnObservation);
   const forecastRun = readForecastRun(e.forecastRun);
   return {
@@ -119,6 +121,7 @@ function readEntry(v: unknown): LedgerEntry | undefined {
     difficulty: (e.difficulty as HelperDifficulty | null | undefined) ?? null,
     ...(typeof e.mappingRevision === 'string' && { mappingRevision: e.mappingRevision }),
     ...(calibration && { calibration }),
+    ...(identityReason && { calibrationIdentityReason: identityReason }),
     ...(typeof e.mappingFingerprint === 'string' && { mappingFingerprint: e.mappingFingerprint }),
     ...(e.spawn !== undefined && { spawn: e.spawn as LedgerSpawn }),
     ...(e.spawnInferred === true && { spawnInferred: true }),

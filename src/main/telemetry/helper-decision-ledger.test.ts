@@ -29,6 +29,31 @@ afterEach(async () => {
 });
 
 describe('join ledger', () => {
+  it('preserves closed cell/canonical identities and empirical bands on restart while legacy records remain cold', async () => {
+    const calibration = { revision: '11111111-1111-4111-8111-111111111111', model: 'claude-sonnet-5-5' };
+    const e = { ...entry('calibrated'), calibration };
+    const forecast = predictHelperBurn(e, [], clock);
+    forecast.weekly = {
+      samples: 5, effectiveSamples: 4.9, expectedBp: 100,
+      interval: { method: 'weighted_empirical', nominalCoverageBp: 8000, lowerBp: 0, upperBp: 200 },
+    };
+    ledger.putDecision({ ...e, calibrationIdentityReason: 'cached_catalog', forecast });
+    ledger.putDecision(entry('legacy'));
+    await ledger.flushLedger();
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    raw.entries[0].calibration.prompt = 'never retain content';
+    raw.entries[0].forecast.weekly.interval.path = '/private/path';
+    fs.writeFileSync(file, JSON.stringify(raw));
+    ledger.configureLedger({ file, now: () => clock + 1 });
+    expect(ledger.getEntry('calibrated')).toMatchObject({ calibration, calibrationIdentityReason: 'cached_catalog', forecast });
+    expect(ledger.getEntry('calibrated')?.calibration).toEqual(calibration);
+    expect(ledger.getEntry('calibrated')?.forecast?.weekly.interval).toEqual(forecast.weekly.interval);
+    expect(predictHelperBurn(ledger.getEntry('legacy')!, ledger.forecastHistory(), clock + 1).weekly)
+      .toEqual({ samples: 0, unavailableReason: 'missing_calibration_identity' });
+    expect(JSON.stringify(ledger.forecastHistory())).not.toContain('never retain content');
+    expect(JSON.stringify(ledger.forecastHistory())).not.toContain('/private/path');
+  });
+
   it('keeps old entries readable and preserves completed forecast history without evaluating interrupted intervals after restart', async () => {
     const e = { ...entry('shadow'), mappingRevision: 'r1.0' };
     const forecast = predictHelperBurn(e, [], clock);

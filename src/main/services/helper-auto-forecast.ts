@@ -145,9 +145,14 @@ export interface BurnCalibration {
 
 /** Score immutable predictions, never refit them on their later outcomes. All figures remain whole-login proxies. */
 export function summarizeHelperBurn(history: readonly ForecastEntry[], key: string | null, window: 'weekly' | 'fiveHour', now: number): BurnCalibration {
-  const entries = history.filter((e) => e.forecast?.key === key && burnForecastKey(e) === key
+  const decisions = new Set<string>();
+  const entries = history.filter((e) => key !== null && e.forecast?.key === key && burnForecastKey(e) === key
     && e.decidedAtMs <= now && now - e.decidedAtMs <= AUTO_FORECAST_RETENTION_MS && e.forecast.atMs <= now)
-    .sort((a, b) => b.decidedAtMs - a.decidedAtMs).slice(0, HELPER_TELEMETRY_LIMITS.maxInactiveLedgerEntries);
+    .sort((a, b) => b.decidedAtMs - a.decidedAtMs).filter((entry) => {
+      if (decisions.has(entry.decisionId)) return false;
+      decisions.add(entry.decisionId);
+      return true;
+    }).slice(0, HELPER_TELEMETRY_LIMITS.maxInactiveLedgerEntries);
   const result: BurnCalibration = { qualification: 'shadow_proxy_only', decisions: entries.length, unknown: 0, pending: 0, excluded: 0, missingWindow: 0, evaluated: 0, intervalsEvaluated: 0 };
   let errors = 0, absoluteErrors = 0, covered = 0, widths = 0, scores = 0;
   for (const entry of entries) {
@@ -269,8 +274,10 @@ export function readBurnForecast(value: unknown): BurnForecast | undefined {
   const estimateOk = (e: BurnEstimate | undefined): e is BurnEstimate => !!e && Number.isInteger(e.samples) && e.samples >= 0 && e.samples <= AUTO_FORECAST_MAX_SAMPLES
     && (e.effectiveSamples === undefined || (Number.isFinite(e.effectiveSamples) && e.effectiveSamples >= 1 && e.effectiveSamples <= e.samples))
     && (e.unavailableReason === undefined || (HELPER_FORECAST_UNAVAILABLE_REASONS.includes(e.unavailableReason) && e.expectedBp === undefined))
-    && (e.expectedBp === undefined || (e.samples >= AUTO_FORECAST_MIN_SAMPLES && validBp(e.expectedBp)))
-    && (e.interval === undefined || (e.interval.method === 'weighted_empirical' && e.interval.nominalCoverageBp === AUTO_FORECAST_EMPIRICAL_COVERAGE_BP
+    && (e.expectedBp === undefined || (e.samples >= AUTO_FORECAST_MIN_SAMPLES && validBp(e.expectedBp)
+      && (e.effectiveSamples === undefined || e.effectiveSamples >= AUTO_FORECAST_MIN_EFFECTIVE_SAMPLES)))
+    && (e.interval === undefined || (e.interval !== null && typeof e.interval === 'object'
+      && e.interval.method === 'weighted_empirical' && e.interval.nominalCoverageBp === AUTO_FORECAST_EMPIRICAL_COVERAGE_BP
       && e.expectedBp !== undefined && validBp(e.interval.lowerBp) && validBp(e.interval.upperBp)
       && e.interval.lowerBp <= e.expectedBp && e.expectedBp <= e.interval.upperBp));
   if (f.version !== 1 || !validTime(f.atMs) || f.basis !== 'subscription_interval'
