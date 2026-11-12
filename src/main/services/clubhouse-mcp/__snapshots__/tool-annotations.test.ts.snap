@@ -106,5 +106,8 @@ global:reconnect_device readOnly=false destructive=false openWorld=false
 global:remove_device readOnly=false destructive=true openWorld=false
 global:start_adding_device readOnly=false destructive=false openWorld=false
 global:add_project readOnly=false destructive=false openWorld=false
-global:request_app_update readOnly=false destructive=false openWorld=false"
+global:request_app_update readOnly=false destructive=false openWorld=false
+global:get_delivery readOnly=true destructive=false openWorld=false
+global:get_annex_network_settings readOnly=true destructive=false openWorld=false
+global:update_annex_network_settings readOnly=false destructive=false openWorld=false"
 `;
