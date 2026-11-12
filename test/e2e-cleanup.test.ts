@@ -111,19 +111,19 @@ describe('post-signal exit proof', () => {
     processes: [{ pid, ppid: 1, command: path.join(ELECTRON_DIST_DIR, 'Electron') }],
   });
 
-  function fixture() {
+  async function fixture() {
     const profile = path.join(paths.tmpDir!, 'clubhouse-e2e-recorded');
     const stray = path.join(paths.tmpDir!, 'clubhouse-e2e-stray');
     fs.mkdirSync(profile);
     fs.mkdirSync(stray);
     recordElectronApp(pid, profile, paths);
     const registry = path.join(paths.stateDir!, 'electron-pids.jsonl');
-    return { profile, stray, registry, bytes: fs.readFileSync(registry) };
+    return { profile, stray, registry, bytes: await fs.promises.readFile(registry) };
   }
 
   it.each(['unfinished', 'refused', 'unknown'] as const)('retains all directories and state when termination is %s', async (mode) => {
     vi.useFakeTimers();
-    const state = fixture();
+    const state = await fixture();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     let signalled = false;
     vi.spyOn(process, 'kill').mockImplementation((target, signal) => {
@@ -144,12 +144,12 @@ describe('post-signal exit proof', () => {
     expect(result).toMatchObject({ killed: mode === 'refused' ? 0 : 1, tempDirsRemoved: 0, processExit: expected });
     expect(fs.existsSync(state.profile)).toBe(true);
     expect(fs.existsSync(state.stray)).toBe(true);
-    expect(fs.readFileSync(state.registry)).toEqual(state.bytes);
+    expect(await fs.promises.readFile(state.registry)).toEqual(state.bytes);
     expect(warn).toHaveBeenCalledWith('[e2e cleanup] process exit unconfirmed; sweep/state retained', { state: expected });
   });
 
   it('retains all directories and state when initial liveness is unknown without querying or signalling', async () => {
-    const state = fixture();
+    const state = await fixture();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const queryMock = vi.fn(query);
     const signal = vi.spyOn(process, 'kill').mockImplementation((target, requested) => {
@@ -164,12 +164,12 @@ describe('post-signal exit proof', () => {
     expect(warn).toHaveBeenCalled();
     expect(fs.existsSync(state.profile)).toBe(true);
     expect(fs.existsSync(state.stray)).toBe(true);
-    expect(fs.readFileSync(state.registry)).toEqual(state.bytes);
+    expect(await fs.promises.readFile(state.registry)).toEqual(state.bytes);
   });
 
   it('waits for observed exit after accepted signals before deleting directories and state', async () => {
     vi.useFakeTimers();
-    const state = fixture();
+    const state = await fixture();
     let gone = false;
     vi.spyOn(process, 'kill').mockImplementation((target, signal) => {
       if (target !== pid) throw new Error('Unexpected mocked process target');
@@ -181,7 +181,7 @@ describe('post-signal exit proof', () => {
     try {
       await vi.advanceTimersByTimeAsync(0);
       expect(fs.existsSync(state.profile)).toBe(true);
-      expect(fs.readFileSync(state.registry)).toEqual(state.bytes);
+      expect(await fs.promises.readFile(state.registry)).toEqual(state.bytes);
       gone = true;
       await vi.runAllTimersAsync();
       expect((await pending).processExit).toBeUndefined();
@@ -197,7 +197,7 @@ describe('post-signal exit proof', () => {
 
   it('revalidates the exact launch snapshot after waiting for process exit', async () => {
     vi.useFakeTimers();
-    const state = fixture();
+    const state = await fixture();
     const signal = vi.spyOn(process, 'kill').mockImplementation((target) => {
       if (target !== pid) throw new Error('Unexpected mocked process target');
       return true;
@@ -207,12 +207,12 @@ describe('post-signal exit proof', () => {
     const pending = sweepE2EProcesses(paths, query);
     await vi.advanceTimersByTimeAsync(0);
     recordElectronApp(pid + 1, undefined, paths);
-    const appended = fs.readFileSync(state.registry);
+    const appended = await fs.promises.readFile(state.registry);
     await vi.runAllTimersAsync();
     expect(await pending).toMatchObject({ recordState: 'changed', tempDirsRemoved: 0 });
     expect(fs.existsSync(state.profile)).toBe(true);
     expect(fs.existsSync(state.stray)).toBe(true);
-    expect(fs.readFileSync(state.registry)).toEqual(appended);
+    expect(await fs.promises.readFile(state.registry)).toEqual(appended);
     expect(signal.mock.calls.every(([target]) => target === pid)).toBe(true);
   });
 });
