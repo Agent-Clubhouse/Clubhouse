@@ -135,6 +135,7 @@ const KIND_WORD: Record<McpBindingEntry['targetKind'], string> = {
   browser: 'browser',
   terminal: 'terminal',
   'group-project': 'group project',
+  plugin: 'plugin',
 };
 
 function StatusMark({ status }: { status: McpRowStatus }) {

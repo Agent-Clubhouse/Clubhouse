@@ -570,4 +570,26 @@ describe('durable directional connection guidance', () => {
     expect(fixed.readOnly).toBe(true);
     await expect(saveConnectionGuidance('a', 'b', { instructions: {}, revision: fixed.revision })).rejects.toThrow('membership');
   });
+
+  it('preserves durable helper guidance authority without granting writes to plugin bindings', async () => {
+    registerPersistedBindingSource({ id: 'helper-wires', prune: true, collect: async () => [wire({ '*': 'Helper original' })] });
+    await rebuildPersistedBindings();
+    const helper = await getConnectionGuidance('a', 'b');
+    expect(helper).toMatchObject({ readOnly: false, sources: [{ sourceId: 'helper-wires' }] });
+    await saveConnectionGuidance('a', 'b', {
+      instructions: { '*': 'Durable helper direction' }, revision: helper.revision, replaceAcrossSources: true,
+    });
+    expect(binding()?.instructions).toEqual({ '*': 'Durable helper direction' });
+    const file = path.join(userData.dir, 'connection-instructions.json');
+    const savedBytes = fs.readFileSync(file, 'utf8');
+    bindingManager.unbind('a', 'b');
+    bindingManager.bind('a', { targetId: 'b', targetKind: 'plugin', label: 'Plugin' });
+    const plugin = await getConnectionGuidance('a', 'b');
+    expect(plugin).toMatchObject({ readOnly: true, readOnlyReason: 'Plugin connection guidance cannot be changed from this window.' });
+    await expect(saveConnectionGuidance('a', 'b', {
+      instructions: { '*': 'Forbidden' }, revision: plugin.revision, replaceAcrossSources: true,
+    })).rejects.toThrow('Plugin connection guidance');
+    expect(fs.readFileSync(file, 'utf8')).toBe(savedBytes);
+    expect(binding()?.instructions).toBeUndefined();
+  });
 });

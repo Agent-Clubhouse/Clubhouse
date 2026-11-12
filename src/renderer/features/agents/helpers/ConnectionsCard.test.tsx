@@ -5,6 +5,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { ConnectionsCard, agentConnections, connectionMeta } from './ConnectionsCard';
 import type { ConnectionSourceKind } from '../../../../shared/connection-sources';
+import type { ConnectionGuidanceSnapshot } from '../../../../shared/connection-guidance';
 
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'running', color: 'teal' };
 
@@ -25,6 +26,11 @@ const bindings: McpBindingEntry[] = [
   // Not this agent's.
   wire('h1', 'rev', ['impl-ipc', 'reviewer']),
 ];
+
+const guidance = (agentId: string, targetId: string, changes: Partial<ConnectionGuidanceSnapshot> = {}): ConnectionGuidanceSnapshot => ({
+  agentId, targetId, instructions: { '*': 'Saved routing guidance' }, hasOverride: true, sources: [], unreadable: [],
+  conflictingSources: false, needsSourceConfirmation: false, readOnly: false, revision: 'r1', ...changes,
+});
 
 describe('agentConnections', () => {
   it('folds both directions into one two-way row and puts family first', () => {
@@ -75,7 +81,7 @@ describe('Connections card (#2232)', () => {
     expect(useAgentStore.getState().activeAgentId).toBe('h1');
   });
 
-  it('offers Sources for agent rows, and removes one source at a time, saying what keeps them connected (#2744)', async () => {
+  it('offers Edit for connection rows, and removes one source at a time, saying what keeps them connected (#2744)', async () => {
     const pair = (agentId: string, targetId: string, kinds: ConnectionSourceKind[]) => ({ agentId, targetId, bound: true, sources: kinds.map((kind) => ({ kind, sourceId: kind })) });
     let reviewerSources: ConnectionSourceKind[] = ['tool_link', 'canvas'];
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
@@ -88,7 +94,7 @@ describe('Connections card (#2232)', () => {
     });
     window.clubhouse.mcpBinding.removeConnectionSource = removeConnectionSource;
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={vi.fn()} />);
-    await waitFor(() => expect(screen.getAllByTestId('connection-sources')).toHaveLength(3));
+    await waitFor(() => expect(screen.getAllByTestId('connection-sources')).toHaveLength(5));
     const rows = screen.getAllByTestId('connection-row');
     expect(within(rows[0]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Helper');
     expect(within(rows[4]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Made by an agent, Canvas wire');
@@ -271,7 +277,7 @@ describe('Connections card (#2232)', () => {
       unreadable: [],
     }));
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('connection-sources'));
+    fireEvent.click(await within(screen.getAllByTestId('connection-row')[0]).findByRole('button', { name: 'Edit' }));
     expect(screen.getByTestId('connection-source-helper')).toHaveTextContent('dispose the helper from the Helpers card');
     expect(screen.queryByTestId('connection-source-remove-helper')).not.toBeInTheDocument();
   });
@@ -395,5 +401,81 @@ describe('Connections card (#2232)', () => {
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} />);
     expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('none');
     expect(screen.getByTestId('details-card-connections')).toHaveTextContent('No Clubhouse MCP wires.');
+  });
+
+  it.each(['browser', 'terminal', 'group-project'] as const)('offers Edit and guidance inspection for a %s row without requiring Canvas metadata', async (kind) => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'target', ['epic-lead', 'Target'], kind)] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs: [], unreadable: [] }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to));
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'unavailable', reason: 'tools_not_registered', tools: [] }));
+    window.clubhouse.mcpBinding.saveConnectionGuidance = vi.fn(async (from, to, request) => guidance(from, to, { instructions: request.instructions }));
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const textarea = await screen.findByRole('textbox', { name: 'Instructions' });
+    expect(textarea).toHaveValue('Saved routing guidance');
+    expect(textarea).toBeEnabled();
+    expect(screen.getByTestId('connection-sources-dialog')).toHaveTextContent('Connected now, but no saved source lists it.');
+    expect(screen.queryByTestId('connection-directions')).toBeNull();
+    fireEvent.change(textarea, { target: { value: 'Save without a running tool client' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save direction' }));
+    await waitFor(() => expect(window.clubhouse.mcpBinding.saveConnectionGuidance).toHaveBeenCalledExactlyOnceWith('lead', 'target', {
+      instructions: { '*': 'Save without a running tool client' }, revision: 'r1', replaceAcrossSources: false,
+    }));
+  });
+
+  it.each([false, true])('lets backend ownership decide helper guidance writability: readOnly=%s', async (readOnly) => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'h1', ['epic-lead', 'impl-ipc'])] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'lead', targetId: 'h1', bound: true, sources: [{ kind: 'helper' as const, sourceId: 'helper-wires' }] }], unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to, {
+      readOnly, ...(readOnly && { readOnlyReason: 'This derived connection is managed by its source.' }),
+    }));
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools: [] }));
+    render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    const row = await screen.findByTestId('connection-row');
+    expect(within(row).getByRole('button', { name: 'Open' })).toBeInTheDocument();
+    fireEvent.click(await within(row).findByRole('button', { name: 'Edit' }));
+    const textarea = await screen.findByRole('textbox', { name: 'Instructions' });
+    if (readOnly) {
+      expect(textarea).toBeDisabled();
+      expect(screen.getByRole('alert')).toHaveTextContent('managed by its source');
+    } else {
+      expect(textarea).toBeEnabled();
+    }
+    expect(screen.queryByTestId('connection-source-remove-helper')).toBeNull();
+  });
+
+  it('keeps guidance inspection available when source discovery fails and exposes retry instead of hiding Edit', async () => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'target', ['epic-lead', 'Target'], 'browser')] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn().mockRejectedValue(new Error('Source index offline'));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to, {
+      readOnly: true, readOnlyReason: 'Connection ownership could not be checked.',
+    }));
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('textbox', { name: 'Instructions' })).toBeDisabled();
+    expect(screen.getByText(/Couldn't refresh connection sources: Source index offline/)).toBeInTheDocument();
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs: [], unreadable: [] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByText(/Couldn't refresh connection sources/)).toBeNull());
+  });
+
+  it('inspects plugin guidance with its backend read-only reason and no connection permission controls', async () => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'plugin-target', ['epic-lead', 'Plugin tools'], 'plugin')] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs: [], unreadable: [] }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to, {
+      readOnly: true, readOnlyReason: 'Plugin connection guidance cannot be changed from this window.',
+    }));
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools: [] }));
+    window.clubhouse.mcpBinding.saveConnectionGuidance = vi.fn();
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    expect(await screen.findByTestId('connection-meta')).toHaveTextContent('plugin');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('textbox', { name: 'Instructions' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Plugin connection guidance cannot be changed');
+    expect(screen.getByRole('button', { name: 'Save direction' })).toBeDisabled();
+    expect(screen.queryByTestId('connection-directions')).toBeNull();
+    expect(window.clubhouse.mcpBinding.saveConnectionGuidance).not.toHaveBeenCalled();
   });
 });

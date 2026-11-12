@@ -29,6 +29,7 @@ import type { ConnectionDirection as SavedDirection } from '../../../../shared/c
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { parseAgentAddress } from '../../../../shared/agent-address';
 import { RemoteConnections, remoteConnections } from './RemoteConnections';
+import { reportChromeActionFailed } from '../../../chrome/telemetry';
 
 export type ConnectionDirection = 'two-way' | 'to' | 'from';
 
@@ -57,6 +58,7 @@ const KIND_WORD: Record<McpBindingEntry['targetKind'], string> = {
   browser: 'browser',
   terminal: 'terminal',
   'group-project': 'group project',
+  plugin: 'plugin',
 };
 
 /**
@@ -164,7 +166,8 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   );
   const [confirming, setConfirming] = useState<Connection | null>(null);
   // Where each connection comes from (#2744), re-read with the bindings and after a removal.
-  const sources = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
+  const sourceRead = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
+  const sources = sourceRead?.sources;
   const grants = useConnectionGrants(open && !!onDisconnect, agent.id, bindings, removals);
   // A connection another computer made or changed changes no binding here, so its change re-reads the store (#3064).
   useEffect(() => {
@@ -175,8 +178,16 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   // The row being managed, by the other end's id: looked up each render so a new direction shows (#2972).
   const [managingId, setManagingId] = useState<string | null>(null);
   const managing = managingId ? connections.find((c) => c.id === managingId) ?? null : null;
-  const pairSources = (c: Connection): ConnectionPairSources[] =>
-    c.pairs.map((p) => sources?.pairs.find((s) => s.agentId === p.agentId && s.targetId === p.targetId)).filter((s): s is ConnectionPairSources => !!s);
+  const pairSources = (c: Connection): ConnectionPairSources[] => {
+    const pairs = new Map((sources?.pairs ?? []).filter((p) => (p.agentId === agent.id && p.targetId === c.id)
+      || (c.kind === 'agent' && p.agentId === c.id && p.targetId === agent.id)).map((p) => [pairKey(p.agentId, p.targetId), p]));
+    for (const p of c.pairs) {
+      if (pairs.has(pairKey(p.agentId, p.targetId))) continue;
+      const bound = bindings.some((b) => b.agentId === p.agentId && b.targetId === p.targetId);
+      pairs.set(pairKey(p.agentId, p.targetId), { ...p, bound, sources: [], ...(bound && { unresolved: true }) });
+    }
+    return [...pairs.values()];
+  };
 
   return (
     <>
@@ -200,9 +211,9 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
                   <span className="w-[96px] flex-shrink-0 text-[12.5px] text-ctp-text truncate" title={c.name} data-testid="connection-name">{c.name}</span>
                   <span className="min-w-0 text-xs text-ctp-overlay1 whitespace-nowrap truncate" title={sourcesNote(pairSources(c)) ?? suspendedNote(c)} data-testid="connection-meta">{connectionMeta(c)}</span>
                   <span className="ml-auto flex-shrink-0 flex items-center gap-2.5">
-                    {onDisconnect && c.kind === 'agent' && pairSources(c).length > 0 && (
+                    {onDisconnect && sourceRead && (
                       <button type="button" onClick={() => setManagingId(c.id)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-sources">
-                        Manage
+                        Edit
                       </button>
                     )}
                     {onDisconnect && c.toolMade && c.kind !== 'agent' && (
@@ -228,15 +239,18 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
       <ConnectionSourcesDialog
         agentId={agent.id}
         otherId={managing.id}
+        targetKind={managing.kind}
         grants={grants}
-        liveTools={new Map(bindings.filter((b) => b.targetKind === 'agent').map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
-        liveEnabled={new Map(bindings.filter((b) => b.targetKind === 'agent').map((b) => [`${b.agentId}>${b.targetId}`, b.enabledTools ?? []]))}
+        liveTools={new Map(bindings.map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
+        liveEnabled={new Map(bindings.map((b) => [`${b.agentId}>${b.targetId}`, b.enabledTools ?? []]))}
         agentName={agent.name}
         otherName={rail[managing.id]?.name ?? managing.name}
         dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}
         familyLink={managing.family !== null}
-        pairs={(sources?.pairs ?? []).filter((p) => (p.agentId === agent.id && p.targetId === managing.id) || (p.agentId === managing.id && p.targetId === agent.id))}
+        pairs={pairSources(managing)}
         unreadable={sources?.unreadable ?? []}
+        readError={sourceRead?.error}
+        onRetry={() => setRemovals((n) => n + 1)}
         onClose={() => setManagingId(null)}
         onRemoved={() => setRemovals((n) => n + 1)}
       />
@@ -286,19 +300,21 @@ export function sourcesNote(pairs: readonly ConnectionPairSources[]): string | u
 }
 
 /** The sources behind the agent's connections, re-read like the tool pairs. Null until read, or when they can't be. */
-function useConnectionSources(active: boolean, agentId: string, bindings: readonly McpBindingEntry[], removals: number): AgentConnectionSources | null {
-  const [sources, setSources] = useState<AgentConnectionSources | null>(null);
+function useConnectionSources(active: boolean, agentId: string, bindings: readonly McpBindingEntry[], removals: number) {
+  const [read, setRead] = useState<{ sources: AgentConnectionSources | null; error?: string } | null>(null);
   useEffect(() => {
-    if (!active) { setSources(null); return; }
+    if (!active) { setRead(null); return; }
     let alive = true;
     Promise.resolve().then(() => window.clubhouse.mcpBinding.getConnectionSources(agentId)).then(
-      (list) => { if (alive) setSources(list ?? null); },
-      // telemetry-exempt: the card shows its rows without sources.
-      () => { if (alive) setSources(null); },
+      (list) => { if (alive) setRead({ sources: list }); },
+      (error: unknown) => {
+        reportChromeActionFailed('agent_settings_save', error);
+        if (alive) setRead((before) => ({ sources: before?.sources ?? null, error: error instanceof Error ? error.message : String(error) }));
+      },
     );
     return () => { alive = false; };
   }, [active, agentId, bindings, removals]);
-  return sources;
+  return read;
 }
 
 /** Saved per-direction permissions touching the agent (D129), re-read like the sources. */

@@ -80,8 +80,13 @@ direction switches and all existing checks.
 
 ## Directional connection guidance
 
-The Connections card's **Manage** and Canvas wire editors share the same
+The Connections card's **Edit** and Canvas wire editors share the same
 directional editor: connection switches, ownership/removal sources, and guidance.
+Edit also inspects browser, terminal, group-project and plugin rows without
+requiring a Canvas placement. Guidance writability comes from the backend
+ownership snapshot, not the row's helper or target kind. Plugin and
+membership-managed guidance remains read-only with its owning-source reason.
+Source-read failures remain visible and retryable; they do not hide Edit.
 Saving guidance changes only the selected sender-to-receiver direction. The
 explicit **Copy guidance to reverse draft** action copies text, not permissions,
 and still requires saving that reverse direction separately.

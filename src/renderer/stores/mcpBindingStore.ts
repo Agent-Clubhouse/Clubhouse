@@ -5,7 +5,7 @@ import { useToastStore } from './toastStore';
 export interface McpBindingEntry {
   agentId: string;
   targetId: string;
-  targetKind: 'browser' | 'agent' | 'terminal' | 'group-project';
+  targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'plugin';
   label: string;
   /** Human-readable name of the source agent (e.g. "scrappy-robin"). */
   agentName?: string;
