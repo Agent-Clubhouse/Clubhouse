@@ -60,6 +60,7 @@ const g = (source: GrantSource) => (action: GrantAction, target: GrantTarget, mo
 
 const SELF: GrantTarget = { kind: 'self' };
 const CONNECTED: GrantTarget = { kind: 'connected' };
+const REMOTE_DISPATCHER: GrantTarget = { kind: 'remote_dispatcher' };
 const HELPERS: GrantTarget = { kind: 'my_helpers' };
 const OWN_PROJECT: GrantTarget = { kind: 'project', project: 'own' };
 const ANY_PROJECT: GrantTarget = { kind: 'project', project: 'any' };
@@ -114,6 +115,12 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     every('action.write', SELF), every('action.run', SELF),
   ];
   if (!facts.orchestrates && !facts.dispatcher) out.push(every('connection.manage', SELF, 'ask'));
+  if (facts.dispatcher || facts.connectedToDispatcher) {
+    out.push(
+      structural('agent.read', REMOTE_DISPATCHER),
+      structural('agent.message', REMOTE_DISPATCHER, facts.dispatcher ? 'allow' : 'ask'),
+    );
+  }
   if (facts.helper) out.push(structural('agent.message', { kind: 'parent' }));
   if (facts.orchestrates && !facts.dispatcher) {
     // The approval setting decides whether starts and disposes ask first (#2970).

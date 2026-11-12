@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { grantKey } from './agent-grant-changes';
+import { applyGrantChanges, grantKey } from './agent-grant-changes';
 import { controlFromGrantModes, controlGrantModes, defaultGrants } from './default-grants';
 import { evaluateGrant, type Grant, type GrantCallTarget } from './agent-grants';
 import { ORCHESTRATION_CONTROLS } from './orchestration-policy';
@@ -12,6 +12,60 @@ describe('connection management (#3336)', () => {
       expect(evaluateGrant({ caller, action: 'connection.manage', target: { kind: 'agent', relations: ['self'] } }, grants).outcome).toBe('ask');
       expect(evaluateGrant({ caller, action: 'connection.manage', target: { kind: 'agent', relations: [] } }, grants).outcome).toBe('refuse');
     }
+  });
+});
+
+describe('remote Dispatcher sender defaults (#3348)', () => {
+  const base = { dispatcher: false, connectedToDispatcher: false, helper: false, orchestrates: false, crossProject: false };
+  const caller = { kind: 'agent' as const, agentId: 'sender', projectPath: '/project' };
+  const target: GrantCallTarget = {
+    kind: 'agent', agentId: 'remote-controller', projectPath: '/project',
+    relations: ['connected'], isDispatcher: true, isRemoteDispatcher: true,
+  };
+  const decision = (grants: Grant[], action: Grant['action']) => evaluateGrant({ caller, action, target }, grants).outcome;
+
+  it('lets the trusted Dispatcher read presence and send across the fixed remote surface', () => {
+    const grants = defaultGrants({ ...base, dispatcher: true });
+    expect(decision(grants, 'agent.read')).toBe('allow');
+    expect(decision(grants, 'agent.message')).toBe('allow');
+    expect(grants.filter((grant) => grant.target.kind === 'remote_dispatcher').map((grant) => grant.action).sort()).toEqual(['agent.message', 'agent.read']);
+  });
+
+  it('allows presence and asks before messages/files/requests only when connected to its own trusted Dispatcher', () => {
+    const grants = defaultGrants({ ...base, connectedToDispatcher: true });
+    expect(decision(grants, 'agent.read')).toBe('allow');
+    expect(decision(grants, 'agent.message')).toBe('ask');
+    for (const action of ['agent.wake', 'agent.sleep', 'agent.reset', 'agent.grant', 'connection.manage'] as const) {
+      expect(decision(grants, action), action).toBe('refuse');
+    }
+  });
+
+  it.each([
+    base,
+    { ...base, helper: true },
+    { ...base, orchestrates: true, crossProject: true },
+  ])('does not turn local connected/project/helper authority into remote grants: %j', (facts) => {
+    const grants = defaultGrants(facts);
+    expect(decision(grants, 'agent.read')).toBe('refuse');
+    expect(decision(grants, 'agent.message')).toBe('refuse');
+    expect(grants.some((grant) => grant.target.kind === 'remote_dispatcher')).toBe(false);
+  });
+
+  it('keeps explicit Off/Allow changes over the connected-agent defaults', () => {
+    const defaults = defaultGrants({ ...base, connectedToDispatcher: true });
+    const remote = { kind: 'remote_dispatcher' } as const;
+    const off = applyGrantChanges(defaults, { changes: [
+      { action: 'agent.read', target: remote, mode: 'off', by: 'user', at: 'now' },
+      { action: 'agent.message', target: remote, mode: 'allow', by: 'user', at: 'now' },
+    ] });
+    expect(decision(off, 'agent.read')).toBe('refuse');
+    expect(decision(off, 'agent.message')).toBe('allow');
+  });
+
+  it('adds no remote-target authority to Dispatcher chat, even with a connection fact', () => {
+    const grants = defaultGrants({ ...base, dispatcher: true, dispatcherChat: true, connectedToDispatcher: true });
+    expect(grants.some((grant) => grant.target.kind === 'remote_dispatcher')).toBe(false);
+    expect(decision(grants, 'agent.message')).toBe('refuse');
   });
 });
 
