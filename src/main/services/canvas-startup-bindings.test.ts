@@ -147,6 +147,72 @@ const key = (b: { agentId: string; targetId: string }) => `${b.agentId}->${b.tar
 // ── Reader ───────────────────────────────────────────────────────────
 
 describe('canvas-store-reader', () => {
+  const location = () => ({
+    scope: 'project' as const, projectId: 'proj_w', projectName: 'wardfall',
+    projectPath: wardfall, kvDir: projectCanvasKvDir(wardfall),
+  });
+
+  it.each([
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', []), { future: true }] },
+    { key: 'canvas-instances', value: [canvas('same', 'First', []), canvas('same', 'Second', [])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [{ future: true }])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [{ id: 'future', type: 'future' }])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [agentCard('same', 'a'), agentCard('same', 'b')])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [{ id: 'bad', type: 'agent', agentId: 7 }])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [{ ...gpCard('gp', 'gp_wardfall'), metadata: { groupProjectId: 7 } }])] },
+    { key: 'canvas-wires', value: [wire('a', 'gp_wardfall', 'group-project'), { future: true }] },
+    { key: 'canvas-wires', value: [wire('a', 'gp_wardfall', 'future')] },
+    { key: 'canvas-wires', value: [{ ...wire('a', 'gp_wardfall', 'agent'), targetKind: ['agent'] }] },
+    { key: 'canvas-wires', value: [wire('a', 'gp_wardfall', 'group-project'), wire('a', 'gp_wardfall', 'agent')] },
+  ])('strictly reports incomplete $key rows without changing any files', async ({ key, value }) => {
+    writeKv(location().kvDir, 'canvas-wires', []);
+    writeKv(location().kvDir, key, value);
+    const before = snapshotTree(root);
+
+    const strict = await readCanvasStore(location(), { strict: true });
+
+    expect(strict.problems.length).toBeGreaterThan(0);
+    expect(key === 'canvas-instances' ? strict.canvases : strict.wires).toBeNull();
+    expect((await readCanvasStore(location())).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it.each(['canvas-instances', 'canvas-wires'])('strictly refuses corrupt primary %s despite a healthy backup', async (key) => {
+    const dir = location().kvDir;
+    writeKv(dir, 'canvas-wires', []);
+    const saved = key === 'canvas-instances' ? [canvas('good', 'Good', [])] : [];
+    writeKv(dir, key, saved);
+    fs.writeFileSync(path.join(dir, `${key}.json`), '{torn');
+    const before = snapshotTree(root);
+
+    expect((await readCanvasStore(location(), { strict: true })).problems.length).toBeGreaterThan(0);
+    expect((await readCanvasStore(location())).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it('strictly recognizes valid, missing and known retired rows without writes', async () => {
+    const dir = location().kvDir;
+    writeKv(dir, 'canvas-instances', [canvas('valid', 'Valid', [
+      agentCard('a', 'a'), gpCard('gp', 'gp_wardfall'), { id: 'retired', type: 'terminal' },
+    ])]);
+    writeKv(dir, 'canvas-wires', [wire('a', 'gp_wardfall', 'group-project')]);
+    const before = snapshotTree(root);
+    expect((await readCanvasStore(location(), { strict: true })).problems).toEqual([]);
+    expect((await readCanvasStore({ scope: 'app', kvDir: path.join(root, 'absent') }, { strict: true }))).toMatchObject({
+      canvases: [], wires: [], problems: [],
+    });
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it('does not classify a non-directory store as known empty in strict mode', async () => {
+    const kvDir = path.join(root, 'not-a-directory');
+    fs.writeFileSync(kvDir, 'keep');
+    const before = snapshotTree(root);
+    expect((await readCanvasStore({ scope: 'app', kvDir }, { strict: true })).problems.length).toBeGreaterThan(0);
+    expect((await readCanvasStore({ scope: 'app', kvDir })).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
   it('falls back to the .bak sibling and never quarantines a corrupt primary', async () => {
     const dir = path.join(root, 'kv');
     writeKv(dir, 'k', null, { raw: '{torn', bak: false });
