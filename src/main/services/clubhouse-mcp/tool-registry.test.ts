@@ -25,7 +25,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
   isDispatcherEnabled: () => dispatcherState.enabled,
 }));
 
-import { registerToolTemplate, registerGlobalTool, setTargetToolTemplates, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, registerGlobalTool, setTargetToolTemplates, getConnectionToolCatalog, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { MCP_CALLER_UNKNOWN_MESSAGE } from '../../../shared/orchestration-policy';
 import { registerBuiltinProviders } from '../../orchestrators';
@@ -698,6 +698,110 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', 'browser__widget_1__navigate', { url: 'http://test' });
       expect(result.isError).toBeFalsy();
       expect(handler).toHaveBeenCalledWith('widget-1', 'agent-1', { url: 'http://test' });
+    });
+  });
+
+  describe('connection tool catalog', () => {
+    const definition = { description: 'Original tool description', inputSchema: { type: 'object' as const } };
+
+    it('uses base descriptions and stays stable without a client or awake target, ignoring wire toggles', () => {
+      const handler = vi.fn();
+      registerToolTemplate('agent', 'send_message', definition, handler, { grant: { actions: ['agent.message'], target: 'bound' } });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Target',
+        disabledTools: ['send_message'], instructions: { '*': 'Custom guidance' },
+      });
+      const expected = {
+        state: 'available',
+        tools: [{ suffix: 'send_message', description: definition.description, available: true }],
+      };
+      gate.access = 'closed';
+      try {
+        expect(getConnectionToolCatalog('agent-1', 'agent-2', 'agent')).toEqual(expected);
+        agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
+        expect(getConnectionToolCatalog('agent-1', 'agent-2', 'agent')).toEqual(expected);
+        agentRegistry.untrack('agent-2');
+        expect(getConnectionToolCatalog('agent-1', 'agent-2', 'agent')).toEqual(expected);
+        expect(handler).not.toHaveBeenCalled();
+      } finally {
+        gate.access = 'open';
+      }
+    });
+
+    it('includes group-gated and grant-denied templates with available false', () => {
+      registerToolTemplate('agent', 'orchestration_tool', definition, vi.fn(), {
+        group: 'orchestration', grant: { actions: ['agent.read'], target: 'bound' },
+      });
+      registerToolTemplate('agent', 'settings_write', definition, vi.fn(), { grant: { actions: ['settings.app.write'], target: 'app' } });
+      const entries = () => getConnectionToolCatalog('agent-1', 'agent-2', 'agent').tools.map(({ suffix, available }) => ({ suffix, available }));
+      expect(entries()).toEqual([
+        { suffix: 'orchestration_tool', available: false },
+        { suffix: 'settings_write', available: false },
+      ]);
+      setOrchestrationEnabled('agent-1', true);
+      expect(entries()).toEqual([
+        { suffix: 'orchestration_tool', available: true },
+        { suffix: 'settings_write', available: false },
+      ]);
+    });
+
+    it('keeps Ask-first tools available without asking or executing them', () => {
+      const handler = vi.fn();
+      registerToolTemplate('browser', 'settings_write', definition, handler, { grant: { actions: ['settings.app.write'], target: 'app' } });
+      setDispatcherAgent('agent-1', true);
+      expect(getConnectionToolCatalog('agent-1', 'page', 'browser').tools).toEqual([
+        { suffix: 'settings_write', description: definition.description, available: true },
+      ]);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('can offer a disabled wake switch without authorizing the corresponding call', async () => {
+      const handler = vi.fn();
+      registerToolTemplate('agent', 'wake_agent', definition, handler, { grant: { actions: ['agent.wake'], target: 'bound' } });
+      const binding = {
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent' as const, label: 'Target',
+        disabledTools: ['wake_agent'],
+      };
+      bindingManager.bind(binding.agentId, binding);
+      expect(getConnectionToolCatalog(binding.agentId, binding.targetId, binding.targetKind).tools).toEqual([
+        { suffix: 'wake_agent', description: definition.description, available: true },
+      ]);
+      const result = await callTool(binding.agentId, buildToolName(binding, 'wake_agent'), {});
+      expect(refusalReasonOf(result)).toBe('tool_denied');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('reuses group-project admin filtering without applying the direction switches', () => {
+      registerToolTemplate('group-project', 'list_members', definition, vi.fn(), { grant: { actions: ['group_project.read'], target: 'bound' } });
+      registerToolTemplate('group-project', 'clear_topic', definition, vi.fn(), { grant: { actions: ['group_project.admin'], target: 'bound' } });
+      const project = { id: 'catalog-board', name: 'Board', description: '', instructions: '', createdAt: '' };
+      groupProjectRegistry._setForTesting({ ...project, metadata: {} });
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'Board', disabledTools: ['list_members', 'clear_topic'],
+      });
+      const entries = () => getConnectionToolCatalog('agent-1', project.id, 'group-project').tools.map(({ suffix, available }) => ({ suffix, available }));
+      expect(entries()).toEqual([{ suffix: 'list_members', available: true }, { suffix: 'clear_topic', available: false }]);
+      groupProjectRegistry._setForTesting({ ...project, metadata: { admins: ['agent-1'] } });
+      expect(entries()).toEqual([{ suffix: 'list_members', available: true }, { suffix: 'clear_topic', available: true }]);
+    });
+
+    it('scopes contributed templates to their target and explicitly reports an unloaded plugin', () => {
+      registerToolTemplate('plugin', 'generic', definition, vi.fn(), { grant: 'plugin' });
+      expect(getConnectionToolCatalog('agent-1', 'missing', 'plugin')).toEqual({
+        state: 'unavailable', reason: 'tools_not_registered', tools: [],
+      });
+      setTargetToolTemplates('plugin', 'registered', [{
+        nameSuffix: 'lookup', definition, handler: vi.fn(), grant: 'plugin',
+      }]);
+      expect(getConnectionToolCatalog('agent-1', 'registered', 'plugin')).toEqual({
+        state: 'available',
+        tools: [{ suffix: 'lookup', description: definition.description, available: true }],
+      });
+      expect(getConnectionToolCatalog('agent-1', 'missing', 'plugin')).toEqual({
+        state: 'unavailable', reason: 'tools_not_registered', tools: [],
+      });
+      setTargetToolTemplates('plugin', 'empty', []);
+      expect(getConnectionToolCatalog('agent-1', 'empty', 'plugin')).toEqual({ state: 'available', tools: [] });
     });
   });
 
