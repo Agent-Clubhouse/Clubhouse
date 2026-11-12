@@ -222,8 +222,10 @@ describe('connection Open navigation', () => {
   });
 
   it('keeps a mounted Canvas navigation-only when another owning board is opened', async () => {
+    const activeWire = { agentId: 'active', targetId: 'gp_actual', targetKind: 'group-project' as const, label: 'Existing active pair' };
     const data: CanvasNavigationSnapshot = {
       ...snapshot(),
+      wires: [...snapshot().wires, activeWire],
       canvases: [
         board(),
         board('second', [
@@ -241,8 +243,19 @@ describe('connection Open navigation', () => {
       zoneWires: [{ id: 'second-zone-wire', sourceZoneId: 'second-zone', targetId: 'gp_actual', targetType: 'group-project' }],
     };
     vi.mocked(window.clubhouse.canvas.readForNavigation).mockResolvedValue(data);
-    await jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
     const store = getProjectCanvasStore('nav-two');
+    store.getState().hydrateForNavigation(data, 'board');
+    store.getState().renameCanvas('second', 'Unsaved board name');
+    store.setState((state) => ({
+      canvases: state.canvases.map((canvas) => canvas.id === 'second' ? {
+        ...canvas,
+        views: canvas.views.map((view) => view.id === 'second-node' ? {
+          ...view, position: { x: 9100, y: 10100 }, metadata: { ...view.metadata, draft: 'Unsaved node data' },
+        } : view),
+      } : canvas),
+    }));
+    useMcpBindingStore.setState({ bindings: [activeWire] });
+    await jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
     const load = vi.spyOn(store.getState(), 'loadCanvas');
     const loadWires = vi.spyOn(store.getState(), 'loadWires');
     const bind = vi.spyOn(window.clubhouse.mcpBinding, 'bind');
@@ -258,9 +271,13 @@ describe('connection Open navigation', () => {
     });
     expect(store.getState().activeCanvasId).toBe('second');
     expect(store.getState().selectedViewId).toBe('second-node');
-    expect(store.getState().viewport).toEqual({ panX: -8800, panY: -9850, zoom: 1 });
+    expect(store.getState().viewport).toEqual({ panX: -8900, panY: -9950, zoom: 1 });
+    expect(store.getState().canvases.find((canvas) => canvas.id === 'second')?.name).toBe('Unsaved board name');
+    expect(store.getState().views.find((view) => view.id === 'second-node')?.metadata.draft).toBe('Unsaved node data');
     await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
     for (const mutation of [bind, unbind, create, remove, policy, storage.write, load, loadWires]) expect(mutation).not.toHaveBeenCalled();
+    expect(window.clubhouse.canvas.readForNavigation).not.toHaveBeenCalled();
+    expect(useMcpBindingStore.getState().bindings).toEqual([activeWire]);
     expect(getCanvasNavigationHandoff(store)).toBeUndefined();
   });
 

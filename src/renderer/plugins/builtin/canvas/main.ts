@@ -174,7 +174,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const isAppMode = api.context.mode === 'app';
   const store = isAppMode ? useAppCanvasStore : getProjectCanvasStore(api.context.projectId ?? null);
   const storage = isAppMode ? api.storage.global : api.storage.projectLocal;
-  const navigationHandoff = useMemo(() => getCanvasNavigationHandoff(store), [store]);
+  const preparedNavigation = getCanvasNavigationHandoff(store);
+  const [navigation, setNavigation] = useState(() => ({ store, handoff: preparedNavigation }));
+  let navigationHandoff = navigation.store === store ? navigation.handoff : undefined;
+  // Embedded agent cards can Open another board without unmounting this panel.
+  if (navigation.store !== store || (preparedNavigation && preparedNavigation !== navigationHandoff)) {
+    navigationHandoff = preparedNavigation;
+    setNavigation({ store, handoff: navigationHandoff });
+  }
   const [reconciledNavigation, setReconciledNavigation] = useState<typeof navigationHandoff>();
 
   const canvases = store((s) => s.canvases);

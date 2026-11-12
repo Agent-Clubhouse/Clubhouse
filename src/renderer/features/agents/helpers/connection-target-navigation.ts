@@ -1,3 +1,4 @@
+import { unstable_batchedUpdates } from 'react-dom';
 import type { CanvasTargetIndex, CanvasTargetStore, GroupProjectNavigationIndex } from '../../../../shared/canvas-index-types';
 import { findTargetCanvasHits, isCanvasTargetView, type NavigableCanvasTargetKind, type TargetCanvasHit } from '../../../../shared/canvas-persistence';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
@@ -116,29 +117,32 @@ export async function jumpToConnectionCanvas(
   if (!view.position || !view.size || ![view.position.x, view.position.y, view.size.width, view.size.height].every(Number.isFinite)) {
     throw new Error('The target node has unreadable layout data. Repair the saved Canvas and retry Open.');
   }
-  if (groupProjects) useGroupProjectStore.setState({ projects: groupProjects, loaded: true, loadError: null });
-  store.getState().setActiveCanvas(hit.canvasId);
-  store.getState().zoomView(null);
-  store.getState().focusView(hit.viewId);
-  store.getState().selectView(hit.viewId);
   const handoff = prepareCanvasNavigation(store, { ...hit, kind, targetId });
-  const ui = useUIStore.getState();
-  ui.setActiveHost(null);
-  ui.setDispatcherOpen(false);
-  useProjectStore.getState().setActiveProject(hit.projectId ?? null);
-  ui.setExplorerTab('plugin:canvas', hit.projectId);
-  const cancelIfDeparted = () => {
-    if (useUIStore.getState().explorerTab !== 'plugin:canvas'
-      || useUIStore.getState().activeHostId !== null
-      || useProjectStore.getState().activeProjectId !== (hit.projectId ?? null)
-      || (hit.projectId && !useProjectStore.getState().projects.some((entry) => entry.id === hit.projectId))) {
-      consumeCanvasNavigationHandoff(store, handoff);
-    }
-  };
-  const offUI = useUIStore.subscribe(cancelIfDeparted);
-  const offProject = useProjectStore.subscribe(cancelIfDeparted);
-  handoff.dispose = () => { offUI(); offProject(); };
-  cancelIfDeparted();
+  unstable_batchedUpdates(() => {
+    if (groupProjects) useGroupProjectStore.setState({ projects: groupProjects, loaded: true, loadError: null });
+    store.getState().setActiveCanvas(hit.canvasId);
+    store.getState().zoomView(null);
+    store.getState().focusView(hit.viewId);
+    store.getState().selectView(hit.viewId);
+    handoff.state = store.getState();
+    const ui = useUIStore.getState();
+    ui.setActiveHost(null);
+    ui.setDispatcherOpen(false);
+    useProjectStore.getState().setActiveProject(hit.projectId ?? null);
+    ui.setExplorerTab('plugin:canvas', hit.projectId);
+    const cancelIfDeparted = () => {
+      if (useUIStore.getState().explorerTab !== 'plugin:canvas'
+        || useUIStore.getState().activeHostId !== null
+        || useProjectStore.getState().activeProjectId !== (hit.projectId ?? null)
+        || (hit.projectId && !useProjectStore.getState().projects.some((entry) => entry.id === hit.projectId))) {
+        consumeCanvasNavigationHandoff(store, handoff);
+      }
+    };
+    const offUI = useUIStore.subscribe(cancelIfDeparted);
+    const offProject = useProjectStore.subscribe(cancelIfDeparted);
+    handoff.dispose = () => { offUI(); offProject(); };
+    cancelIfDeparted();
+  });
 }
 
 /** Plugin IDs have a genuine tab only when that enabled plugin contributes one. */

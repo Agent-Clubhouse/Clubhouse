@@ -28,6 +28,9 @@ export function ConnectionOpenAction({ targetId, targetKind, name, projectId }: 
     request.current?.abort();
     const controller = beginConnectionNavigationRequest();
     request.current = controller;
+    controller.signal.addEventListener('abort', () => {
+      if (request.current === controller) setState({ kind: 'idle' });
+    }, { once: true });
     setState({ kind: 'loading' });
     try {
       if (targetKind === 'agent') {
