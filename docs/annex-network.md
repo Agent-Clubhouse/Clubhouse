@@ -29,6 +29,14 @@ Receiver snapshots must preserve the immutable offer and history prefix. They ar
 
 Before entering `applying`, a worker must persist the registered project id, reserved worktree/branch and staging UUID. Restart during `applying` records `failed` with `recovery/indeterminate_apply`, retaining that checkpoint. This does not claim rollback or absence of filesystem side effects, and never retries automatically. Earlier transfer states remain resumable, but worker transitions recheck both parties' grants and connection authorization.
 
+### Transfer safety foundation (not enabled)
+
+`handoff-manifest.ts` defines a canonical, SHA-256-ready worktree manifest with regular files, executable modes and explicit deletions. It rejects traversal, `.git` internals and aliases, symlink modes, Windows device/alternate-stream names, case/Unicode collisions, conflicting paths, invalid hashes, unsafe remote URLs and inconsistent byte totals. Complete manifests are capped at 2 MiB. Default bounds are 1 GiB total, 256 MiB per file and 10,000 file/deletion entries; the internal configurable ceiling cannot exceed 16 GiB. Configuration UI and byte transport are not wired.
+
+`handoff-secrets.ts` contains fixed, case-insensitive sensitive-path rules and high-confidence credential-content rules. Findings contain only a redacted path, rule id and optional line number, never a matched value. Known credentials embedded in filenames are also blocked and redacted. UTF-8 text up to 1 MiB is scanned by content; binary and larger files receive name checks only. Auth configuration that cannot be inspected is blocked. `.env.example`, `.env.sample` and `.env.template` are exempt by name, not by content. Handoff records, including briefs and response reasons, are checked before persistence.
+
+These are internal safety primitives, not a complete transfer implementation. Project-owned audited allowlists, immutable file snapshots, receiver-side byte/hash verification, branch bundles, transfer routes and automatic fresh-worktree apply remain gated on subsequent reviewed slices. Agents cannot override a secret block.
+
 ## Manual connect and user-managed forwards
 
 In **Add a device**, paste the other computer's unmodified pairing link. **Address override (optional)** accepts a host or `host:port`, for example `127.0.0.1:7443` for a local forward or `[::1]:7443` for IPv6. Omitting the port uses the main TLS port from the link. An override replaces the link's endpoints for that pairing attempt, not its expected identity, certificate or one-time PIN.

@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'util';
 import { HANDOFF_LIMITS, parseHandoff, type Handoff } from '../../shared/handoffs';
+import { scanHandoffSecrets } from '../../shared/handoff-secrets';
 import { createSettingsStore, type SettingsStore } from './settings-store';
 
 interface HandoffFile {
@@ -13,12 +14,20 @@ export interface HandoffStorage {
   transact(id: string, change: (current: Handoff | undefined) => Promise<Handoff> | Handoff): Promise<Handoff>;
 }
 
+function safeRecord(raw: unknown): Handoff {
+  const record = parseHandoff(raw);
+  if (scanHandoffSecrets('handoff-record.json', new TextEncoder().encode(JSON.stringify(record))).length > 0) {
+    throw new Error('Handoff metadata is blocked by secret rules.');
+  }
+  return record;
+}
+
 function parseFile(raw: unknown): HandoffFile {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)
     || !('schemaVersion' in raw) || raw.schemaVersion !== 1 || !('records' in raw)
     || !Array.isArray(raw.records) || raw.records.length > HANDOFF_LIMITS.records
     || Object.keys(raw).some((key) => key !== 'schemaVersion' && key !== 'records')) throw new Error('Invalid handoff store.');
-  const records = raw.records.map(parseHandoff);
+  const records = raw.records.map(safeRecord);
   if (new Set(records.map((record) => record.id)).size !== records.length) throw new Error('Invalid handoff store.');
   return { schemaVersion: 1, records };
 }
@@ -88,7 +97,7 @@ export class HandoffStore implements HandoffStorage {
     const work = async () => {
       const file = this.snapshot();
       const current = file.records.find((item) => item.id === id);
-      const next = parseHandoff(await change(current && structuredClone(current)));
+      const next = safeRecord(await change(current && structuredClone(current)));
       if (next.id !== id) throw new Error('Conflicting handoff id.');
       if (current) assertHandoffExtension(current, next);
       else if (file.records.length >= HANDOFF_LIMITS.records) throw new Error('Handoff store is full.');

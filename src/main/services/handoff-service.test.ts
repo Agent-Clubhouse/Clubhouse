@@ -71,6 +71,17 @@ describe('durable handoff agreement', () => {
     expect(new HandoffStore().get(offer.id)?.progress).toBeUndefined();
   });
 
+  it('blocks secrets in task metadata and response reasons without echoing values or persisting them', async () => {
+    const token = `ghp_${'a'.repeat(36)}`;
+    await expect(seed({ ...input, task: { ...input.task, brief: `Do not transmit ${token}` } })).rejects.toThrow('blocked by secret rules');
+    expect(await fs.promises.readdir(state.dir)).toEqual([]);
+    const offered = await seed();
+    const authority = service(receiver.machine);
+    await expect(authority.respond(offered.id, receiver, false, 1, undefined, token)).rejects.toThrow('blocked by secret rules');
+    expect(new HandoffStore().get(offered.id)).toEqual(offered);
+    expect(await fs.promises.readFile(path.join(state.dir, 'handoffs.json'), 'utf8')).not.toContain(token);
+  });
+
   it('lets only the machine Dispatcher select a local target, without authorizing unrelated responders', async () => {
     const offer = await seed({ ...input, to: { machine: receiver.machine, via: 'dispatcher' } });
     const instance = service(receiver.machine);
