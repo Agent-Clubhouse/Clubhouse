@@ -29,9 +29,9 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { HELPER_SPAWN_RESULTS, HELPER_TASK_PROFILES, HELPER_TELEMETRY_LIMITS, type HelperSpawnResult, type HelperTaskProfile } from '../../shared/telemetry/helper-usage-contract';
+import { HELPER_SPAWN_RESULTS, HELPER_TASK_PROFILES, HELPER_TELEMETRY_LIMITS, type HelperCalibrationIdentity, type HelperSpawnResult, type HelperTaskProfile } from '../../shared/telemetry/helper-usage-contract';
 import { HELPER_DIFFICULTIES, HELPER_ROUTING_MODES, type HelperDifficulty } from '../../shared/helper-routing';
-import { readBurnForecast, readBurnObservation, readForecastRun, type BurnForecast, type BurnObservation, type ForecastRun } from '../services/helper-auto-forecast';
+import { readBurnCalibrationIdentity, readBurnForecast, readBurnObservation, readForecastRun, type BurnForecast, type BurnObservation, type ForecastRun } from '../services/helper-auto-forecast';
 
 export const LEDGER_FORMAT_VERSION = 1;
 
@@ -53,6 +53,7 @@ export interface LedgerEntry {
   effort: string | null;
   difficulty: HelperDifficulty | null;
   mappingRevision?: string;
+  calibration?: HelperCalibrationIdentity;
   mappingFingerprint?: string;
   taskProfile?: HelperTaskProfile;
   forecast?: BurnForecast;
@@ -108,6 +109,7 @@ function readEntry(v: unknown): LedgerEntry | undefined {
   if (e.spawn !== undefined && !SPAWNS.includes(e.spawn as string)) return undefined;
   if (!textOrNull(e.mappingRevision) || !textOrNull(e.mappingFingerprint)) return undefined;
   const forecast = readBurnForecast(e.forecast);
+  const calibration = readBurnCalibrationIdentity(e.calibration);
   const observation = readBurnObservation(e.burnObservation);
   const forecastRun = readForecastRun(e.forecastRun);
   return {
@@ -116,6 +118,7 @@ function readEntry(v: unknown): LedgerEntry | undefined {
     provider: (e.provider as string | null | undefined) ?? null, model: (e.model as string | null | undefined) ?? null, effort: (e.effort as string | null | undefined) ?? null,
     difficulty: (e.difficulty as HelperDifficulty | null | undefined) ?? null,
     ...(typeof e.mappingRevision === 'string' && { mappingRevision: e.mappingRevision }),
+    ...(calibration && { calibration }),
     ...(typeof e.mappingFingerprint === 'string' && { mappingFingerprint: e.mappingFingerprint }),
     ...(e.spawn !== undefined && { spawn: e.spawn as LedgerSpawn }),
     ...(e.spawnInferred === true && { spawnInferred: true }),

@@ -38,7 +38,7 @@ import { isTelemetryActive, tel, telemetryLevel } from './facade';
 import { modelFamily, orchestratorAttr } from './spawn-telemetry';
 import * as ledger from './helper-decision-ledger';
 import { RunUsageTracker, type UsageSample } from './helper-usage-accounting';
-import { observeHelperBurn, predictHelperBurn, type BurnForecast } from '../services/helper-auto-forecast';
+import { observeHelperBurn, predictHelperBurn, readBurnCalibrationIdentity, summarizeHelperBurn, type BurnCalibration, type BurnForecast } from '../services/helper-auto-forecast';
 
 // --- Gate and budget -------------------------------------------------------------
 
@@ -188,6 +188,7 @@ export function bindHelperDecision(decisionId: string, helperId: string): void {
 export function recordHelperDecision(rec: HelperDecisionRecord): void {
   guarded(() => {
     let forecast: BurnForecast | undefined;
+    const calibration = readBurnCalibrationIdentity(rec.calibration);
     if (rec.outcome === 'chosen') {
       const decision: PendingDecision = {
         decisionId: rec.decisionId,
@@ -199,6 +200,7 @@ export function recordHelperDecision(rec: HelperDecisionRecord): void {
         effort: rec.resolved.effort,
         difficulty: rec.resolved.difficulty,
         mappingRevision: rec.mappingRevision,
+        ...(calibration && { calibration }),
         mappingFingerprint: rec.mappingFingerprint,
         ...(rec.taskProfile && { taskProfile: rec.taskProfile }),
       };
@@ -282,7 +284,7 @@ function evaluateForecasts(provider: string, quota: QuotaView): void {
   const history = ledger.forecastHistory();
   for (const entry of history) {
     if (entry.provider !== provider) continue;
-    const observation = observeHelperBurn(entry, history, quota);
+    const observation = observeHelperBurn(entry, history, quota, clock());
     if (!observation) continue;
     ledger.setBurnObservation(entry.helperId, observation);
     if (!admit()) continue;
