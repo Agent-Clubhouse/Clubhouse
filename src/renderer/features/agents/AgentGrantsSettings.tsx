@@ -25,9 +25,9 @@ const MODES: ReadonlyArray<{ mode: GrantChangeMode; label: string }> = [
   { mode: 'allow', label: 'Allow' },
 ];
 
-/** Groups go itself, its orchestrator, its helpers, connected agents, group projects, projects, the app, everything. */
+/** Groups go itself, its orchestrator, its helpers, connected agents, remote Dispatchers, group projects, projects, the app, everything. */
 const TARGET_ORDER: ReadonlyArray<GrantTarget['kind']> = [
-  'self', 'parent', 'my_helpers', 'connected', 'group_project', 'group_members', 'project', 'app', 'any',
+  'self', 'parent', 'my_helpers', 'connected', 'remote_dispatcher', 'group_project', 'group_members', 'project', 'app', 'any',
 ];
 
 export const SOURCE_LABEL: Record<GrantRow['source'], string | undefined> = {
@@ -259,7 +259,13 @@ export function GrantRowField({ row, targetLabel, coveredBy, note, tools, mode, 
   onChange: (mode: GrantChangeMode) => void;
 }) {
   const name = useId();
-  const actionLabel = GRANT_ACTION_LABELS[row.action];
+  const actionLabel = row.target.kind === 'remote_dispatcher' && row.action === 'agent.read'
+    ? 'See status and reachability'
+    : row.target.kind === 'remote_dispatcher' && row.action === 'agent.message'
+      ? 'Send messages, files and hand-off requests'
+      : GRANT_ACTION_LABELS[row.action];
+  // The action-only map includes local tools outside the fixed remote surface.
+  const shownTools = row.target.kind === 'remote_dispatcher' ? undefined : tools;
   const off = disabled || row.fixed || !!coveredBy || !!note;
   return (
     <div data-testid={`agent-grant-row-${grantKey(row)}`}>
@@ -287,14 +293,14 @@ export function GrantRowField({ row, targetLabel, coveredBy, note, tools, mode, 
           ))}
         </div>
       </Field>
-      {tools && (
+      {shownTools && (
         <details className="pb-2 text-xs text-ctp-overlay1">
           <summary className="cursor-pointer">MCP tools</summary>
-          {tools.length > 0 ? (
+          {shownTools.length > 0 ? (
             <>
               <p className="mt-1">Connection tool names include a target-specific prefix. Tools can require other permissions too.</p>
               <ul className="mt-1 space-y-0.5">
-                {tools.map((tool) => <li key={tool}><code>{tool}</code></li>)}
+                {shownTools.map((tool) => <li key={tool}><code>{tool}</code></li>)}
               </ul>
             </>
           ) : <p className="mt-1">No registered MCP tools use this permission.</p>}

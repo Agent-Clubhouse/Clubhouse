@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { grantRows, type AgentGrantsView, type GrantRow } from '../../../shared/agent-grant-changes';
+import { grantRows, withGrantChange, type AgentGrantChanges, type AgentGrantsView, type GrantRow } from '../../../shared/agent-grant-changes';
 import { defaultGrants } from '../../../shared/default-grants';
 import { AgentGrantsSettings, groupGrantRows } from './AgentGrantsSettings';
 import { useMcpBindingStore } from '../../stores/mcpBindingStore';
@@ -58,6 +58,52 @@ beforeEach(() => {
 });
 
 describe('Clubhouse permissions page (#2971)', () => {
+  it('offers unrelated agents remote Off rows and opts in only the chosen action', async () => {
+    const traits = { dispatcher: false, helper: false, orchestrates: false, crossProject: false };
+    const defaults = defaultGrants(traits);
+    let saved: AgentGrantChanges | undefined;
+    const view = () => ({ ...traits, rows: grantRows(defaults, saved) });
+    window.clubhouse.agent.getGrants = vi.fn(async () => view());
+    window.clubhouse.agent.setGrant = vi.fn(async (_projectPath, _agentId, change) => {
+      saved = withGrantChange(saved, change, defaults);
+      return view();
+    });
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    const read = await screen.findByTestId('agent-grant-row-agent.read@remote_dispatcher');
+    const message = screen.getByTestId('agent-grant-row-agent.message@remote_dispatcher');
+    expect(within(read).getByRole('radio', { name: 'Off' })).toBeChecked();
+    expect(within(message).getByRole('radio', { name: 'Off' })).toBeChecked();
+    expect(window.clubhouse.agent.setGrant).not.toHaveBeenCalled();
+    fireEvent.click(within(read).getByRole('radio', { name: 'Allow' }));
+    expect(window.clubhouse.agent.setGrant).toHaveBeenCalledWith(PROJECT, 'lead', {
+      action: 'agent.read', target: { kind: 'remote_dispatcher' }, mode: 'allow',
+    });
+    await waitFor(() => expect(within(read).getByText('Set by you')).toBeInTheDocument());
+    expect(within(read).getByRole('radio', { name: 'Allow' })).toBeChecked();
+    expect(within(message).getByRole('radio', { name: 'Off' })).toBeChecked();
+    expect(saved?.changes).toHaveLength(1);
+  });
+
+  it('describes the fixed remote surface without relabelling or hiding local tools', async () => {
+    const traits = { dispatcher: false, helper: false, orchestrates: false, crossProject: false, connectedToDispatcher: true };
+    window.clubhouse.agent.getGrants = vi.fn(async () => ({ ...traits, rows: grantRows(defaultGrants(traits), undefined) }));
+    window.clubhouse.agent.getGrantTools = vi.fn(async () => ({
+      'agent.read': ['get_status', 'check_connectivity', 'read_output'],
+      'agent.message': ['send_message', 'send_file', 'wake_agent'],
+    }));
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    await screen.findByTestId('agent-grant-row-agent.read@remote_dispatcher');
+    expect(radios("See status and reachability (Another machine's Dispatcher)").getByRole('radio', { name: 'Allow' })).toBeChecked();
+    expect(radios("Send messages, files and hand-off requests (Another machine's Dispatcher)").getByRole('radio', { name: 'Ask first' })).toBeChecked();
+    const read = screen.getByTestId('agent-grant-row-agent.read@remote_dispatcher');
+    const message = screen.getByTestId('agent-grant-row-agent.message@remote_dispatcher');
+    expect(read.querySelector('details')).toBeNull();
+    expect(message.querySelector('details')).toBeNull();
+    const local = screen.getByTestId('agent-grant-row-agent.read@connected');
+    expect(within(local).getByRole('radiogroup', { name: 'See status, output and settings (Connected agents)' })).toBeInTheDocument();
+    expect(within(local).getByText('read_output')).toBeInTheDocument();
+  });
+
   it.each([0, 1, 3])('explains a non-orchestrating template with %i outgoing connections (#3275)', async (count) => {
     const traits = { helper: false, dispatcher: false, orchestrates: false, crossProject: false };
     window.clubhouse.agent.getGrants = vi.fn(async () => ({
