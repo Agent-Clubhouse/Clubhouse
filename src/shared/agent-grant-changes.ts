@@ -276,6 +276,8 @@ export function grantRows(defaults: readonly Grant[], saved: AgentGrantChanges |
   return rows;
 }
 
+export const GRANT_OFF_PERSISTENCE_FAILED = 'Permission Off and existing-approval revocation could not both be persisted. Old saved permissions and approvals may remain after restart.';
+
 /** What the Clubhouse permissions page shows for one agent. */
 export interface AgentGrantsView {
   rows: GrantRow[];
@@ -284,6 +286,11 @@ export interface AgentGrantsView {
   helper: boolean;
   dispatcher: boolean;
   orchestrates: boolean;
+  partialFailure?: {
+    code: 'approval_revocation_failed';
+    effectiveOff: boolean;
+    message: string;
+  };
 }
 
 /** What each action lets an agent do, in plain words, for the permissions page. */

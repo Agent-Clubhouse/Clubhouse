@@ -9,17 +9,27 @@
  * and changes the Dispatcher's own grants, the ones every action runs under.
  */
 
-import { applyGrantChanges, carriedGrants, isHelperControlRow, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
+import { applyGrantChanges, carriedGrants, GRANT_OFF_PERSISTENCE_FAILED, isHelperControlRow, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
 import { controlFromGrantModes, controlGrantModes, defaultGrants, type GrantCallerFacts } from '../../shared/default-grants';
 import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
-import type { Grant } from '../../shared/agent-grants';
+import { evaluateGrant, type Grant, type GrantCallTarget } from '../../shared/agent-grants';
 import type { DurableAgentConfig } from '../../shared/types';
 import { getDurableConfig } from './agent-config';
 import { setOrchestrationPolicy } from './orchestration-policy';
-import { dropCallApprovalsFor } from './grant-requests';
-import { getAgentGrantChanges, updateAgentGrantChanges } from './agent-grants-store';
+import { invalidateCallApprovalsFor } from './durable-grant-approvals';
+import { agentGrantChangePending, getAgentGrantChanges, updateAgentGrantChanges, withAgentGrantChange } from './agent-grants-store';
 import { isDispatcherAgentId, resolveDispatcherIdentity } from './dispatcher/dispatcher-service';
 import { recordGrantChange } from './grant-telemetry';
+import { callerConnectedToLocalDispatcher } from './clubhouse-mcp/local-dispatcher-connections';
+
+class GrantPolicyPersistenceError extends Error {
+  readonly errors: readonly unknown[];
+  constructor(revocation: unknown, policy: unknown) {
+    super(GRANT_OFF_PERSISTENCE_FAILED);
+    this.name = 'GrantPolicyPersistenceError';
+    this.errors = [revocation, policy];
+  }
+}
 
 function factsOf(agentId: string, config: DurableAgentConfig) {
   const dispatcher = isDispatcherAgentId(agentId);
@@ -27,7 +37,7 @@ function factsOf(agentId: string, config: DurableAgentConfig) {
   const policy = resolveOrchestrationPolicy(config.orchestration, { helper });
   const orchestrates = !dispatcher && policy.orchestrate;
   const crossProject = orchestrates && policy.crossProjectHelpers;
-  return { dispatcher, helper, orchestrates, crossProject, control: policy.control };
+  return { dispatcher, connectedToDispatcher: callerConnectedToLocalDispatcher(agentId), helper, orchestrates, crossProject, control: policy.control };
 }
 
 /**
@@ -98,13 +108,16 @@ export async function readAgentGrants(projectPath: string, agentId: string): Pro
  * agent cache, #2960), synchronously: its defaults and saved changes.
  */
 export function grantsFromFacts(agentId: string, facts: GrantCallerFacts): Grant[] {
-  return applyGrantChanges(defaultGrants(facts), getAgentGrantChanges(agentId));
+  if (agentGrantChangePending(agentId)) return [];
+  return applyGrantChanges(defaultGrants({ ...facts, connectedToDispatcher: callerConnectedToLocalDispatcher(agentId) }), getAgentGrantChanges(agentId));
 }
 
 /** The grants an agent holds now, defaults and changes together. */
 export async function effectiveAgentGrants(projectPath: string, agentId: string): Promise<Grant[]> {
   ({ projectPath, agentId } = resolveDispatcherIdentity(projectPath, agentId));
+  if (agentGrantChangePending(agentId)) return [];
   const config = await configOf(projectPath, agentId);
+  if (agentGrantChangePending(agentId)) return [];
   return applyGrantChanges(defaultsFor(agentId, config), getAgentGrantChanges(agentId));
 }
 
@@ -118,36 +131,73 @@ export async function setAgentGrant(projectPath: string, agentId: string, change
   const checked = normalizeGrantChanges({ changes: [{ action: change?.action, target: change?.target, mode: change?.mode }] })?.changes[0];
   if (!checked) throw new Error('Not a Clubhouse permission: an action, a target, and off, ask or allow');
   if (isFixedGrant(checked)) throw new Error('This permission is always on.');
-  const config = await configOf(projectPath, agentId);
-  const facts = factsOf(agentId, config);
-  // A one-time approval was given under the old setting: it doesn't outlive a change (#2970).
-  dropCallApprovalsFor(agentId);
-  const row = controlRow(checked, facts);
-  if (row) {
-    await setControlRow(projectPath, agentId, row, checked.mode, facts.control);
-    recordGrantChange({ agentId, layer: 'control', mode: checked.mode, action: checked.action, target: checked.target });
-    return viewOf(agentId, await configOf(projectPath, agentId));
-  }
-  const defaults = defaultsFor(agentId, config);
-  const modeBefore = grantRows(defaults, getAgentGrantChanges(agentId)).find((r) => grantKey(r) === grantKey(checked))?.mode ?? 'off';
-  await updateAgentGrantChanges(agentId, (current) => {
-    const row = grantRows(defaults, current).find((r) => grantKey(r) === grantKey(checked));
-    if (row?.coveredBy) throw new Error('A wider permission for this allows it. Change that one instead.');
-    return withGrantChange(current, { ...checked, by: 'user', at: new Date().toISOString() }, defaults);
+  return withAgentGrantChange(agentId, async () => {
+    const config = await configOf(projectPath, agentId);
+    const facts = factsOf(agentId, config);
+    let revocationError: unknown;
+    try {
+      await invalidateCallApprovalsFor(agentId);
+    } catch (error) {
+      if (checked.mode !== 'off') throw error;
+      revocationError = error;
+    }
+    const row = controlRow(checked, facts);
+    if (row) {
+      await setControlRow(projectPath, agentId, row, checked.mode, facts.control);
+      recordGrantChange({ agentId, layer: 'control', mode: checked.mode, action: checked.action, target: checked.target });
+      return viewOf(agentId, await configOf(projectPath, agentId));
+    }
+    const defaults = defaultsFor(agentId, config);
+    const modeBefore = grantRows(defaults, getAgentGrantChanges(agentId)).find((r) => grantKey(r) === grantKey(checked))?.mode ?? 'off';
+    try {
+      await updateAgentGrantChanges(agentId, (current) => {
+        const row = grantRows(defaults, current).find((r) => grantKey(r) === grantKey(checked));
+        if (row?.coveredBy) throw new Error('A wider permission for this allows it. Change that one instead.');
+        return withGrantChange(current, { ...checked, by: 'user', at: new Date().toISOString() }, defaults);
+      });
+    } catch (policyError) {
+      if (revocationError) throw new GrantPolicyPersistenceError(revocationError, policyError);
+      throw policyError;
+    }
+    if (modeBefore !== checked.mode) recordGrantChange({ agentId, layer: 'own', mode: checked.mode, action: checked.action, target: checked.target });
+    const savedConfig = await configOf(projectPath, agentId);
+    const view = viewOf(agentId, savedConfig);
+    if (!revocationError) return view;
+    // Broader or overlapping grants must not be hidden behind a narrow Off row.
+    const targets: GrantCallTarget[] = [];
+    if (checked.target.kind === 'app') targets.push({ kind: 'app' });
+    // Ownership is not known here: both possible contexts must refuse.
+    else if (checked.target.kind === 'action') targets.push(
+      { kind: 'action', actionId: checked.target.id },
+      { kind: 'action', actionId: checked.target.id, relations: ['self'] },
+    );
+    const grants = applyGrantChanges(defaultsFor(agentId, savedConfig), getAgentGrantChanges(agentId));
+    const effectiveOff = targets.length > 0 && targets.every((target) => evaluateGrant({
+      caller: { kind: 'agent', agentId, projectPath }, action: checked.action, target,
+    }, grants).outcome === 'refuse');
+    return {
+      ...view,
+      partialFailure: {
+        code: 'approval_revocation_failed', effectiveOff,
+        message: effectiveOff
+          ? 'Permission is Off; existing-approval revocation could not be persisted. Repair storage before enabling it.'
+          : 'The restrictive setting was saved, but other matching permissions may still apply. Existing-approval revocation could not be persisted; old approvals may remain after restart. Repair storage before enabling it.',
+      },
+    };
   });
-  if (modeBefore !== checked.mode) recordGrantChange({ agentId, layer: 'own', mode: checked.mode, action: checked.action, target: checked.target });
-  return viewOf(agentId, config);
 }
 
 /** Reset to defaults: clears the person's changes, keeping what its template sets (#2971). */
 export async function resetAgentGrants(projectPath: string, agentId: string): Promise<AgentGrantsView> {
   ({ projectPath, agentId } = resolveDispatcherIdentity(projectPath, agentId));
-  const config = await configOf(projectPath, agentId);
-  dropCallApprovalsFor(agentId);
-  const hadOwn = (getAgentGrantChanges(agentId)?.changes.length ?? 0) > 0;
-  await updateAgentGrantChanges(agentId, withoutOwnChanges);
-  if (hadOwn) recordGrantChange({ agentId, layer: 'own', mode: 'reset' });
-  return viewOf(agentId, config);
+  return withAgentGrantChange(agentId, async () => {
+    const config = await configOf(projectPath, agentId);
+    await invalidateCallApprovalsFor(agentId);
+    const hadOwn = (getAgentGrantChanges(agentId)?.changes.length ?? 0) > 0;
+    await updateAgentGrantChanges(agentId, withoutOwnChanges);
+    if (hadOwn) recordGrantChange({ agentId, layer: 'own', mode: 'reset' });
+    return viewOf(agentId, config);
+  });
 }
 
 /**
@@ -158,11 +208,12 @@ export async function resetAgentGrants(projectPath: string, agentId: string): Pr
  */
 export async function applyTemplateGrants(agentId: string, grants: readonly TemplateGrant[]): Promise<void> {
   if (grants.length === 0) return;
-  dropCallApprovalsFor(agentId);
-  await updateAgentGrantChanges(agentId, (saved) => withTemplateGrants(saved, grants));
-  // One event per push or creation, for the rows the template layer actually took.
-  const applied = grants.filter((g) => !isFixedGrant(g) && !isHelperControlRow(g));
-  if (applied.length > 0) recordGrantChange({ agentId, layer: 'template', mode: applied.length === 1 ? applied[0].mode ?? 'reset' : 'allow', actions: applied.map((g) => g.action) });
+  await withAgentGrantChange(agentId, async () => {
+    await invalidateCallApprovalsFor(agentId);
+    await updateAgentGrantChanges(agentId, (saved) => withTemplateGrants(saved, grants));
+    const applied = grants.filter((g) => !isFixedGrant(g) && !isHelperControlRow(g));
+    if (applied.length > 0) recordGrantChange({ agentId, layer: 'template', mode: applied.length === 1 ? applied[0].mode ?? 'reset' : 'allow', actions: applied.map((g) => g.action) });
+  });
 }
 
 /** What an agent's template layer sets. */

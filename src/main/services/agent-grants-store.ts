@@ -19,11 +19,36 @@ interface AgentGrantsFile {
 }
 
 // Audited like other settings a person changes (#2973): which agents' permissions changed, not the targets (they can name project paths).
-const store = createSettingsStore<AgentGrantsFile>('agent-grants.json', { agents: {} }, undefined, { audit: { key: 'agent_grants' } });
+const store = createSettingsStore<AgentGrantsFile>('agent-grants.json', { agents: {} }, undefined, {
+  audit: { key: 'agent_grants' }, atomic: true, mode: 0o600, rollBackFailedSaves: true,
+});
+let committed: AgentGrantsFile | undefined;
+const currentFile = (): AgentGrantsFile => committed ??= structuredClone(store.get());
+const pending = new Map<string, number>();
+
+export function agentGrantChangePending(agentId: string): boolean {
+  return (pending.get(agentId) ?? 0) > 0;
+}
+
+export async function withAgentGrantChange<T>(agentId: string, change: () => Promise<T>): Promise<T> {
+  const before = pending.get(agentId) ?? 0;
+  pending.set(agentId, before + 1);
+  try {
+    if (before === 0) notifyToolGateChange(agentId);
+    return await change();
+  } finally {
+    const remaining = (pending.get(agentId) ?? 1) - 1;
+    if (remaining > 0) pending.set(agentId, remaining);
+    else {
+      pending.delete(agentId);
+      notifyToolGateChange(agentId);
+    }
+  }
+}
 
 /** An agent's saved changes, checked: anything malformed is dropped, never widened. */
 export function getAgentGrantChanges(agentId: string): AgentGrantChanges | undefined {
-  const agents = store.get().agents;
+  const agents = currentFile().agents;
   if (!agents || typeof agents !== 'object' || !Object.prototype.hasOwnProperty.call(agents, agentId)) return undefined;
   return normalizeGrantChanges(agents[agentId]);
 }
@@ -33,16 +58,18 @@ export async function updateAgentGrantChanges(
   agentId: string,
   fn: (current: AgentGrantChanges | undefined) => AgentGrantChanges | undefined,
 ): Promise<AgentGrantChanges | undefined> {
-  let next: AgentGrantChanges | undefined;
-  await store.update((file) => {
-    const agents = { ...(file.agents ?? {}) };
-    const current = Object.prototype.hasOwnProperty.call(agents, agentId) ? normalizeGrantChanges(agents[agentId]) : undefined;
-    next = normalizeGrantChanges(fn(current));
-    if (next) agents[agentId] = next;
-    else delete agents[agentId];
-    return { agents };
+  return withAgentGrantChange(agentId, async () => {
+    let next: AgentGrantChanges | undefined;
+    currentFile();
+    const saved = await store.update((file) => {
+      const agents = { ...(file.agents ?? {}) };
+      const current = Object.prototype.hasOwnProperty.call(agents, agentId) ? normalizeGrantChanges(agents[agentId]) : undefined;
+      next = normalizeGrantChanges(fn(current));
+      if (next) agents[agentId] = next;
+      else delete agents[agentId];
+      return { agents };
+    });
+    committed = structuredClone(saved);
+    return next;
   });
-  // The next call is checked against it; the CLI lists its tools again.
-  notifyToolGateChange(agentId);
-  return next;
 }

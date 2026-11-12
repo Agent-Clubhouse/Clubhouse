@@ -257,8 +257,41 @@ describe('the Dispatcher card (#3049)', () => {
     fireEvent.click(screen.getByTestId('dispatcher-card-permissions'));
     const wake = within(await screen.findByTestId('dispatcher-card-permission-agent.wake'));
     fireEvent.click(wake.getByRole('radio', { name: 'Off' }));
-    expect(await screen.findByText('Couldn’t save that change, so it wasn’t changed. Try again.')).toBeInTheDocument();
-    expect(wake.getByRole('radio', { name: 'Allow' })).toBeChecked();
+    expect(await screen.findByText('Couldn’t confirm that change. Reloading its saved permissions.')).toBeInTheDocument();
+    await waitFor(() => expect(within(screen.getByTestId('dispatcher-card-permission-agent.wake')).getByRole('radio', { name: 'Allow' })).toBeChecked());
+  });
+
+  it('keeps actual saved Off visible when approval revocation reports a partial failure', async () => {
+    const actual = grantsView([row('agent.wake', CONNECTED, 'off')]);
+    const message = 'The restrictive setting was saved; existing-approval revocation failed. Repair storage before enabling it.';
+    actual.partialFailure = { code: 'approval_revocation_failed', effectiveOff: false, message };
+    window.clubhouse.agent.setGrant = vi.fn(async () => actual);
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('dispatcher-card-reach')).toHaveTextContent('7 more'));
+    fireEvent.click(screen.getByTestId('dispatcher-card-permissions'));
+    const wake = within(await screen.findByTestId('dispatcher-card-permission-agent.wake'));
+    fireEvent.click(wake.getByRole('radio', { name: 'Off' }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(wake.getByRole('radio', { name: 'Off' })).toBeChecked();
+    expect(wake.getByRole('radio', { name: 'Allow' })).not.toBeChecked();
+  });
+
+  it('removes stale current permissions when a thrown change cannot read back saved policy', async () => {
+    window.clubhouse.agent.getGrants = vi.fn().mockResolvedValueOnce(grantsView()).mockRejectedValue(new Error('readback unavailable'));
+    window.clubhouse.agent.setGrant = vi.fn(async () => { throw new Error('save uncertain'); });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('dispatcher-card-reach')).toHaveTextContent('7 more'));
+    fireEvent.click(screen.getByTestId('dispatcher-card-permissions'));
+    fireEvent.click(within(await screen.findByTestId('dispatcher-card-permission-agent.wake')).getByRole('radio', { name: 'Off' }));
+    await screen.findByText('Couldn’t read Rosie’s permissions.');
+    expect(screen.queryByTestId('dispatcher-card-permission-agent.wake')).not.toBeInTheDocument();
+    expect(screen.getByTestId('dispatcher-card-reach')).not.toHaveTextContent('Message it');
+    expect(screen.getByText('Couldn’t confirm that change. Reloading its saved permissions.')).toBeInTheDocument();
+
+    vi.mocked(window.clubhouse.agent.getGrants).mockResolvedValue(grantsView([row('agent.wake', CONNECTED, 'ask')]));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByTestId('dispatcher-card-permissions'));
+    await waitFor(() => expect(within(screen.getByTestId('dispatcher-card-permission-agent.wake')).getByRole('radio', { name: 'Ask' })).toBeChecked());
   });
 
   it('Turned off: takes effect at once, with Undo in a toast, and the description is kept for turning back on', async () => {

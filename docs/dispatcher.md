@@ -174,8 +174,8 @@ All under the Clubhouse base folder (`~/.clubhouse`, or `.clubhouse-dev` in deve
 
 ## Staged original-click approval ledger
 
-`durable-call-approvals.ts` is an uninstalled local-only ledger for an exact
-original human decision. It does not enable remote Ask-first, register a tool or
+`durable-call-approvals.ts` is a staged local-only ledger for an exact original
+human decision. It does not enable remote Ask-first, register a tool or
 protocol, or start a transport. Its factory requires Main's original answered
 request source; a request id, current grant, Boolean or consumed local approval
 cannot manufacture a receipt. The command id and complete wire hash must come
@@ -187,4 +187,31 @@ command. Fresh refusal wins. A new invocation can find only unclaimed proof;
 bound proof belongs to its immutable queued command. Writes are atomic `0600`
 and publish only committed state, with 2,000-record and exact persisted 4 MiB
 limits. Capacity failure preserves every live proof and the old file unchanged.
-Native answer, policy and transport integration require separate review.
+The local answer bridge below installs it without a canonical call producer.
+Transport integration requires separate review.
+
+## Staged local answer and policy integration
+
+Native and controlling paired-mobile answers persist the original prepared
+decision before reporting success. Queued mobile writes recheck device
+authorization. A failure restores the original request; durable scope never
+becomes a Boolean or an ordinary ephemeral approval.
+
+Permission changes deny runtime authorization until the whole operation settles,
+including overlapping changes and configuration awaits. Readers use committed
+policy. If receipt revocation fails, restrictive Off still attempts its own
+atomic write and returns an explicit partial warning. It claims effective Off
+only when the fresh matcher refuses every applicable context; Action ownership
+is conservatively checked both with and without `self`, not guessed. Broader
+Ask or Allow prevents that claim. Failed or uncertain saves and resets reload
+actual policy; unavailable readback hides stale permission claims.
+
+Trusted local Dispatcher connection facts come only from an outgoing agent
+binding to this machine's coordinator, even while it sleeps or is off. Cached,
+configuration and caller-supplied flags are not authority. This stage adds no
+remote grant schema, new defaults, Off rows, tool registrations or protocol
+activation, and preserves the existing `connection.manage` Self Ask default.
+
+The original-answer tests use internal protocol-shaped identity fixtures, not a
+registered or sendable route. There is still no canonical pre-click prepared
+envelope consumer, remote Ask-first authorization or transport end-to-end claim.

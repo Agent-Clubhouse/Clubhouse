@@ -28,13 +28,16 @@ import { agentRegistry } from '../agent-registry';
 import { bindingManager } from './binding-manager';
 import { isDispatcherAgent, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
-import { getAgentGrantChanges } from '../agent-grants-store';
+import { agentGrantChangePending, getAgentGrantChanges } from '../agent-grants-store';
+import { callerConnectedToLocalDispatcher } from './local-dispatcher-connections';
 import { localConnectionWakeOn } from '../connection-grants-store';
 import { applyGrantChanges } from '../../../shared/agent-grant-changes';
 import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from './orchestration-gate';
 import { toolGrantDeclarations, type ToolGrant, type ToolGrantDeclaration, type ToolGrantTarget } from './tool-grants';
 import type { ArgTargets } from './arg-targets';
 import type { McpBinding } from './types';
+
+export { callerConnectedToLocalDispatcher } from './local-dispatcher-connections';
 
 /** One action a call needs that is set to Ask first, and where (in the caller's terms). */
 export interface AskedAction { action: GrantAction; where: string }
@@ -192,9 +195,11 @@ function callerOf(agentId: string): GrantCaller {
 
 /** A running agent's grants: its defaults, from what the gates know about it, with a person's changes (#2971). */
 export function callerGrants(agentId: string): Grant[] {
+  if (agentGrantChangePending(agentId)) return [];
   const tracked = isTrackedDispatcher(agentId);
   return applyGrantChanges(defaultGrants({
     dispatcher: isDispatcherAgent(agentId),
+    connectedToDispatcher: callerConnectedToLocalDispatcher(agentId),
     dispatcherChat: isTrackedDispatcherChat(agentId),
     helper: mcpCallerParent(agentId) !== undefined,
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
