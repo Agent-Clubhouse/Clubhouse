@@ -225,11 +225,15 @@ describe('canvas wire binding source', () => {
         ? { scope: 'app' as const, kvDir: '/a' }
         : { scope: 'project' as const, projectId: 'p', projectName: 'p', projectPath: '/p', kvDir: '/p' },
       canvases: [],
-      wires: [{ ...wire('a', 'b', 'agent'), label }],
+      wires: [{ ...wire('a', 'b', 'agent'), label, instructions: { '*': label } }],
       problems: [],
     });
     const out = bindingsFromCanvasStores([snap('app', 'from app'), snap('project', 'from project')], new Map());
     expect(out.map((b) => b.label)).toEqual(['from app']);
+    const originals = bindingsFromCanvasStores([snap('app', 'from app'), snap('project', 'from project')], new Map(), { inspect: true });
+    expect(originals.map((b) => [b.sourceLabel, b.instructions])).toEqual([
+      ['Home', { '*': 'from app' }], ['p', { '*': 'from project' }],
+    ]);
   });
 
   it('binds every wire of a store with no canvases yet (renderer rule)', () => {
@@ -240,6 +244,18 @@ describe('canvas wire binding source', () => {
       problems: [],
     }], new Map());
     expect(out.map(key)).toEqual(['a->b']);
+  });
+
+  it('retains stable store provenance for same-named projects without exposing private paths', () => {
+    const snapshots = ['p1', 'p2'].map((projectId) => ({
+      location: { scope: 'project' as const, projectId, projectName: 'Same name', projectPath: `/private/${projectId}`, kvDir: `/private/${projectId}/kv` },
+      canvases: [], wires: [wire('a', 'b', 'agent', { instructions: { '*': 'Same text' } })], problems: [],
+    }));
+    const originals = bindingsFromCanvasStores(snapshots, new Map(), { inspect: true });
+    expect(originals.map((binding) => binding.sourceStoreId)).toEqual(['project:p1', 'project:p2']);
+    expect(originals.map((binding) => binding.sourceLabel)).toEqual(['Same name', 'Same name']);
+    expect(JSON.stringify(originals)).not.toContain('/private/');
+    expect(bindingsFromCanvasStores(snapshots, new Map())).toHaveLength(1);
   });
 });
 
