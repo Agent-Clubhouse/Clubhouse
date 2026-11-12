@@ -26,7 +26,7 @@ import { codexContextWindowOptions, parseCodexContextCatalog, type ContextWindow
 import { probeCodexModels, type ModelProbeContext } from './model-probes';
 import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
-import { CLUBHOUSE_MCP_SERVER_NAME } from './adapters/codex-chat-events';
+import { isInjectedClubhouseBridge } from '../services/clubhouse-mcp/injection';
 import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry, preserveUnchangedSnapshot } from '../services/config-pipeline';
@@ -515,9 +515,9 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
         args.push('-c', `mcp_servers.${name}.env_vars=[${def.env_vars.map(tomlValue).join(', ')}]`);
       }
       // Clubhouse's own tools have no MCP annotations, so Codex would ask for
-      // approval and fail under approval policy `never` (#3366). Other servers
-      // keep Codex's default.
-      if (name === CLUBHOUSE_MCP_SERVER_NAME) {
+      // approval and fail under approval policy `never` (#3366). Only the injected
+      // bridge qualifies, not a project server that shares the name.
+      if (isInjectedClubhouseBridge(name, def)) {
         args.push('-c', `mcp_servers.${name}.default_tools_approval_mode="approve"`);
       }
     }
