@@ -27,6 +27,7 @@ import type { AgentRuntime } from '../../../shared/chat';
 import { agentRegistry } from '../agent-registry';
 import { getAgentRuntime } from '../agent-runtime';
 import { processIdentity } from '../pty-manager';
+import { isDeepStrictEqual } from 'node:util';
 import {
   deliverManagedSetup,
   managedSettingsRows,
@@ -318,9 +319,27 @@ export type RestartAuthorization = (() => void) & { refresh?: () => Promise<void
 async function restartConfig(projectPath: string, agentId: string) {
   const generation = agentConfig.agentConfigGeneration();
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-  if (generation !== agentConfig.agentConfigGeneration()) throw new ManagedError('stale', 'Agent configuration changed while restart was preparing.');
-  if (!agent?.managed) throw new ManagedError('not_managed', 'The managed agent is no longer available. It was not started.');
-  return { agent: structuredClone(agent), generation };
+  const current = agentConfig.peekCachedDurableConfig(projectPath, agentId);
+  if (!agent?.managed || !current?.managed) throw new ManagedError('not_managed', 'The managed agent is no longer available. It was not started.');
+  if (generation !== agentConfig.agentConfigGeneration()
+    && !isDeepStrictEqual(restartConfigSnapshot(agent), restartConfigSnapshot(current))) {
+    throw new ManagedError('stale', 'Agent configuration changed while restart was preparing.');
+  }
+  return { agent: { ...current } };
+}
+
+function restartConfigSnapshot(agent: Readonly<DurableAgentConfig>): DurableAgentConfig {
+  const snapshot = { ...agent };
+  // spawnAgent clears this exit annotation before opening the new runtime.
+  delete snapshot.lastSleep;
+  return snapshot;
+}
+
+function assertRestartConfig(projectPath: string, agentId: string, pinned: DurableAgentConfig): void {
+  const current = agentConfig.peekCachedDurableConfig(projectPath, agentId);
+  if (!current?.managed || !isDeepStrictEqual(restartConfigSnapshot(current), restartConfigSnapshot(pinned))) {
+    throw new ManagedError('stale', 'The pinned managed configuration is no longer current. No runtime effect was authorized.');
+  }
 }
 
 async function waitForTurnEnd(agentId: string, stillCurrent: () => boolean, timeoutMs = 30 * 60_000): Promise<boolean> {
@@ -377,13 +396,14 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
       }
       return withAgentTransition(agentId, async () => {
         const assertOriginal = () => {
-          if (!originalRuntime || !agentSystem.isAgentRunning(agentId) || restartRuntimeIdentity(agentId) !== originalRuntime) {
+          if (!originalProvider || !originalRuntime || !agentSystem.isAgentRunning(agentId) || restartRuntimeIdentity(agentId) !== originalRuntime) {
             throw new ManagedError('stale', 'The original runtime is no longer running. A replacement was not restarted.');
           }
         };
-        const assertStopped = () => {
+        const assertStopped = (candidate?: AgentRuntime) => {
           const current = restartRuntimeIdentity(agentId);
-          if (agentSystem.isAgentRunning(agentId) || (current !== undefined && current !== originalRuntime)) {
+          if (agentSystem.isAgentRunning(agentId) || (candidate && (current !== candidate || candidate.isRunning()))
+            || (!candidate && current !== undefined && current !== originalRuntime)) {
             throw new ManagedError('stale', 'Stopping the original runtime was not confirmed, or another runtime replaced it. Nothing was started.');
           }
         };
@@ -391,10 +411,13 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
         const authorizeStop = await options.authorize?.();
         const before = await restartConfig(projectPath, agentId);
         await authorizeStop?.refresh?.();
-        authorizeStop?.();
-        if (before.generation !== agentConfig.agentConfigGeneration()) throw new ManagedError('stale', 'Agent configuration changed before stopping.');
-        assertOriginal();
-        await agentSystem.killAgent(agentId, projectPath, before.agent.orchestrator, 'user', { waitForExit: true, throwOnFailure: true });
+        const beforeStop = () => {
+          authorizeStop?.();
+          assertRestartConfig(projectPath, agentId, before.agent);
+          assertOriginal();
+        };
+        beforeStop();
+        await agentSystem.killAgent(agentId, projectPath, originalProvider, 'user', { waitForExit: true, throwOnFailure: true, beforeStop });
         assertStopped();
         const authorizeStart = await options.authorize?.();
         const prepared = await restartConfig(projectPath, agentId);
@@ -402,24 +425,35 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
         if (projectVersion.pending) throw new ManagedError('stale', 'Project configuration is changing. Nothing was started.');
         const provider = await agentSystem.resolveOrchestrator(projectPath, prepared.agent.orchestrator);
         const latest = await restartConfig(projectPath, agentId);
-        if (JSON.stringify(prepared.agent) !== JSON.stringify(latest.agent)) throw new ManagedError('stale', 'Agent configuration changed during provider resolution. Nothing was started.');
+        if (!isDeepStrictEqual(restartConfigSnapshot(prepared.agent), restartConfigSnapshot(latest.agent))) throw new ManagedError('stale', 'Agent configuration changed during provider resolution. Nothing was started.');
         const agent = latest.agent;
         const cliChanged = originalProvider !== provider.id;
         const resume = !options.fresh && !cliChanged && !!agent.lastSessionId;
         await authorizeStart?.refresh?.();
         broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, agentId);
         try {
-          authorizeStart?.();
-          const currentProject = projectStore.projectRegistryMutationState();
-          if (latest.generation !== agentConfig.agentConfigGeneration() || currentProject.pending || currentProject.generation !== projectVersion.generation) {
-            throw new ManagedError('stale', 'Agent or project configuration changed before starting. Nothing was started.');
-          }
-          assertStopped();
+          let createdChat: AgentRuntime | undefined;
+          const beforeCreate = (candidate?: AgentRuntime) => {
+            authorizeStart?.();
+            const currentProject = projectStore.projectRegistryMutationState();
+            if (currentProject.pending || currentProject.generation !== projectVersion.generation) {
+              throw new ManagedError('stale', 'Project configuration changed before starting. Nothing was started.');
+            }
+            assertRestartConfig(projectPath, agentId, agent);
+            assertStopped(candidate);
+            createdChat = candidate;
+          };
+          beforeCreate();
           await agentSystem.spawnAgent({
             agentId, projectPath, cwd: agent.worktreePath || projectPath, kind: 'durable',
             model: agent.model, orchestrator: provider.id, freeAgentMode: agent.freeAgentMode,
             resume, sessionId: resume ? agent.lastSessionId : undefined,
+            beforeCreate,
           });
+          const started = restartRuntimeIdentity(agentId);
+          if (!agentSystem.isAgentRunning(agentId) || !started || started === originalRuntime || (createdChat && started !== createdChat)) {
+            throw new ManagedError('failed', 'A new running runtime was not confirmed after the start. Inspect the current target before retrying.');
+          }
         } catch (err) {
           broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, agentId, 'Managed restart failed. Inspect the lifecycle receipt and current target state before retrying.');
           throw err;

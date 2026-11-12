@@ -5,7 +5,10 @@ const state = vi.hoisted(() => ({
   agents: new Map<string, DurableAgentConfig>(), running: new Set<string>(),
   runtimes: new Map<string, { kind: 'chat'; getState(): string }>(),
 }));
-const spawnAgent = vi.hoisted(() => vi.fn(async ({ agentId }: { agentId: string }) => { state.running.add(agentId); }));
+const spawnAgent = vi.hoisted(() => vi.fn(async ({ agentId }: { agentId: string }) => {
+  state.runtimes.set(agentId, { kind: 'chat', getState: () => 'idle' });
+  state.running.add(agentId);
+}));
 const killAgent = vi.hoisted(() => vi.fn(async (agentId: string) => { state.running.delete(agentId); }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/tmp' } }));

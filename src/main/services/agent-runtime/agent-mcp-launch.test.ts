@@ -6,10 +6,10 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
 import type { AgentRuntime, ChatDriverStartOptions } from '../../../shared/chat';
 
-const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[], cacheAvailable: true }));
+const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[], cacheAvailable: true, configGeneration: 0 }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
 vi.mock('../agent-config', () => ({
-  agentConfigGeneration: () => 0,
+  agentConfigGeneration: () => fixture.configGeneration,
   peekCachedDurableConfig: (_p: string, id: string) => fixture.cacheAvailable ? structuredClone(fixture.agents.find((a) => a.id === id) ?? null) : null,
   peekDurableConfigs: vi.fn(async () => fixture.agents),
   getDurableConfig: vi.fn(async (_p: string, id: string) => fixture.agents.find((a) => a.id === id)),
@@ -19,12 +19,13 @@ vi.mock('../agent-system', () => ({
   resolveOrchestrator: vi.fn(async (_p: string, id?: string) => id === 'copilot-cli' ? copilot : claude),
   isAgentRunning: () => fixture.running,
   killAgent: vi.fn(async () => { await stopAllChatAgents(); fixture.running = false; }),
-  spawnAgent: vi.fn(async (options: { resume?: boolean; sessionId?: string }) => {
-    await deliverForSpawn(root, agent, copilot); await start(options); fixture.running = true;
+  spawnAgent: vi.fn(async (options: { resume?: boolean; sessionId?: string; orchestrator?: OrchestratorProvider['id'] }) => {
+    await deliverForSpawn(root, agent, options.orchestrator === 'claude-code' ? claude : copilot); await start(options); fixture.running = true;
   }),
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
-vi.mock('../agent-registry', () => ({ agentRegistry: { setNonce: vi.fn(), setRuntime: vi.fn(), get: vi.fn(), setLaunchCap: vi.fn(), setUserLaunchAccess: vi.fn(), reportLaunchAccess: vi.fn() }, untrackAgent: vi.fn() }));
+vi.mock('../mcp-bridge-starter', () => ({ ensureMcpBridge: vi.fn(async () => {}) }));
+vi.mock('../hook-server', () => ({ waitReady: vi.fn(async () => 1234), portEnv: () => ({ CLUBHOUSE_HOOK_PORT: '1234' }) }));
 vi.mock('../config-pipeline', () => ({ snapshotFile: vi.fn(), restoreForAgent: vi.fn() }));
 vi.mock('../clubhouse-mcp/bridge-server', () => ({ waitReady: vi.fn(async () => 4321), NONCE_HEADER: 'X-Clubhouse-Nonce', agentEndpointUrl: () => 'http://127.0.0.1:4321/mcp' }));
 vi.mock('../clubhouse-mcp/injection', async (importOriginal) => ({
@@ -71,6 +72,8 @@ import { withSettingsSurface } from '../settings-audit';
 import { spawnAgent, killAgent, resolveOrchestrator } from '../agent-system';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { agentRegistry } from '../agent-registry';
+import * as orchestrators from '../../orchestrators';
+import { updateDurableConfig } from '../agent-config';
 
 const conventions = { configDir: '.github', skillsDir: 'skills', agentTemplatesDir: 'agents', mcpConfigFile: '.github/mcp.json', localSettingsFile: 'hooks.json' };
 const copilot = { id: 'copilot-cli', conventions, getBinaryPath: () => '/synthetic/copilot', writeInstructions: vi.fn() } as unknown as OrchestratorProvider;
@@ -84,6 +87,7 @@ beforeEach(async () => {
   vi.clearAllMocks(); clearChatDrivers(); clearChatRuntimes(); clearDriverHealth();
   fixture.running = false;
   fixture.cacheAvailable = true;
+  fixture.configGeneration = 0;
   fixture.starts = [];
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-2849-'));
   cwd = path.join(root, 'agent'); localPath = path.join(cwd, conventions.mcpConfigFile);
@@ -91,22 +95,25 @@ beforeEach(async () => {
   await fs.mkdir(path.dirname(settingsPath), { recursive: true }); await fs.mkdir(cwd);
   await fs.writeFile(settingsPath, JSON.stringify({ orchestrator: 'claude-code', agentDefaults: { mcpJson: raw(projectMap) } }));
   agent = { id: 'synthetic-agent', name: 'synthetic', color: 'blue', createdAt: '', worktreePath: cwd, orchestrator: 'copilot-cli' };
-  vi.mocked(agentRegistry.get).mockReturnValue({ projectPath: root, orchestrator: 'copilot-cli', runtime: 'chat' });
+  agentRegistry.register(agent.id, { projectPath: root, orchestrator: 'copilot-cli', runtime: 'chat' });
   fixture.agents = [agent]; handlers = new Map();
   vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: never) => { handlers.set(channel, handler); });
   registerAgentSettingsHandlers();
 });
 afterEach(async () => {
   await stopAllChatAgents(); clearChatDrivers(); clearChatRuntimes();
+  agentRegistry.untrack(agent.id);
   forgetDelivery(agent.id); _setManagedAgentsForTesting(null);
   await fs.rm(root, { recursive: true, force: true });
 });
 
 async function save(content: string) { return handlers.get(IPC.AGENT.WRITE_MCP_RAW_JSON)!({}, cwd, content, root, agent.id); }
-async function start(options: { resume?: boolean; sessionId?: string; beforeCreate?: (runtime?: AgentRuntime) => void } = {}) {
+async function start(options: { resume?: boolean; sessionId?: string; orchestrator?: OrchestratorProvider['id']; beforeCreate?: (runtime?: AgentRuntime) => void } = {}) {
   // No explicit legacy selection: exercise the standard Copilot SDK adapter.
-  const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli'); registerChatDriver(driver);
-  expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto', ...options }, copilot, undefined, agent)).toBe('chat');
+  const provider = options.orchestrator === 'claude-code' ? claude : copilot;
+  agentRegistry.register(agent.id, { projectPath: root, cwd, orchestrator: provider.id, runtime: 'pty' });
+  const driver = new FakeChatDriver(provider.id === 'copilot-cli' ? 'copilot_sdk' : 'claude_stream_json', provider.id); registerChatDriver(driver);
+  expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto', ...options }, provider, undefined, agent)).toBe('chat');
   fixture.starts.push(driver.last.startOptions!);
   return driver.last.startOptions!.mcpServers;
 }
@@ -125,6 +132,50 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
   });
 
   describe('#2855 managed import → add → restart → remove (fixture SDK, no paid probe)', () => {
+    it('runs real stop and spawn with their owned sleep bookkeeping and no provider probe', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      agent.lastSessionId = 'original-native';
+      await deliverForSpawn(root, agent, copilot);
+      await start({ resume: true, sessionId: 'original-native' }); fixture.running = true;
+      const original = getAgentRuntime(agent.id);
+      const actual = await vi.importActual<typeof import('../agent-system')>('../agent-system');
+      const availability = vi.fn(async () => ({ available: true }));
+      const providerLookup = vi.spyOn(orchestrators, 'getProvider').mockImplementation((id) => {
+        if (id !== copilot.id) throw new Error('Unexpected provider in the synthetic restart');
+        return { ...copilot, checkAvailability: availability, getCapabilities: () => ({ headless: false, structuredOutput: false, hooks: false, sessionResume: false, permissions: true }) };
+      });
+      try {
+        await vi.mocked(updateDurableConfig).withImplementation(async (_p, _id, updates) => {
+          if (updates.lastSleep === null) delete agent.lastSleep;
+          else if (updates.lastSleep) agent.lastSleep = updates.lastSleep;
+          fixture.configGeneration++;
+        }, async () => {
+          await vi.mocked(killAgent).withImplementation(async (...args) => {
+            await actual.killAgent(...args); fixture.running = false;
+          }, async () => {
+            await vi.mocked(spawnAgent).withImplementation(async (options) => {
+              await actual.spawnAgent(options); fixture.running = true;
+            }, async () => {
+              expect(await restartManagedAgent(root, agent.id)).toEqual({ resumed: true });
+            });
+          });
+        });
+        expect(availability).toHaveBeenCalledOnce();
+        expect(updateDurableConfig).toHaveBeenCalledWith(root, agent.id, { lastSleep: null });
+        expect(getAgentRuntime(agent.id)).not.toBe(original);
+        expect(getAgentRuntime(agent.id)?.isRunning()).toBe(true);
+        expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'completed', resumed: true });
+      } finally { providerLookup.mockRestore(); }
+    });
+
     it.each(['model', 'access', 'provider', 'session', 'managed', 'cache'] as const)('refuses %s drift during the inner driver probe', async (field) => {
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
@@ -341,6 +392,23 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       vi.mocked(killAgent).mockImplementationOnce(async () => {});
       await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
       expect(spawnAgent).not.toHaveBeenCalled();
+      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+    });
+
+    it('does not record completion when a cancelled start returns without a new runtime', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      vi.mocked(spawnAgent).mockImplementationOnce(async () => {});
+      await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
       expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
     });
 
