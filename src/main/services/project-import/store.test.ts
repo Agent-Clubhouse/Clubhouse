@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { decodeImportState, encodeImportState, ImportStore, IMPORT_HISTORY_MAX, IMPORT_STATE_MAX_BYTES } from './store';
 import { IMPORT_EFFECTS, type ImportPlan, type ImportState } from './types';
+
+vi.mock('fs/promises', async (original) => ({ ...await original<typeof import('fs/promises')>() }));
 
 const roots: string[] = [];
 function temporary() {
@@ -102,5 +105,29 @@ describe('bounded fail-closed import lifecycle history', () => {
     fs.symlinkSync(target, file);
     await expect(new ImportStore(file).update(() => {})).rejects.toMatchObject({ reason: 'history_unavailable' });
     expect(fs.readFileSync(target, 'utf8')).toBe(encodeImportState(empty()));
+  });
+
+  it('refuses lifecycle symlinks even when the platform does not enforce O_NOFOLLOW, preserving the link and committed bytes', async () => {
+    const { root, file } = temporary();
+    const store = new ImportStore(file);
+    await store.update((state) => { state.plans.push(plan()); });
+    const committed = fs.readFileSync(file, 'utf8');
+    const backup = path.join(root, 'committed.json');
+    fs.renameSync(file, backup);
+    const target = path.join(root, 'user.json');
+    const external = encodeImportState(empty());
+    fs.writeFileSync(target, external);
+    fs.symlinkSync(target, file);
+    const open = fsp.open;
+    const withoutNofollow = vi.spyOn(fsp, 'open').mockImplementation((file, flags, mode) =>
+      open(file, typeof flags === 'number' ? flags & ~(fs.constants.O_NOFOLLOW ?? 0) : flags, mode));
+    try {
+      await expect(store.get()).rejects.toMatchObject({ reason: 'history_unavailable' });
+      await expect(store.update(() => {})).rejects.toMatchObject({ reason: 'history_unavailable' });
+      expect(fs.lstatSync(file).isSymbolicLink()).toBe(true);
+      expect(fs.readlinkSync(file)).toBe(target);
+      expect(fs.readFileSync(target, 'utf8')).toBe(external);
+      expect(fs.readFileSync(backup, 'utf8')).toBe(committed);
+    } finally { withoutNofollow.mockRestore(); }
   });
 });

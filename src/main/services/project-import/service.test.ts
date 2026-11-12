@@ -277,6 +277,47 @@ describe('approval and placement change invalidation', () => {
 });
 
 describe('QA engine regressions with real Git and harmless isolated markers', () => {
+  it('awaits actual terminal persistence while a completed Git status callback remains pending beyond 300 polling turns', async () => {
+    const f = fixture();
+    let release!: () => void;
+    let reached!: () => void;
+    let settled!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const statusCompleted = new Promise<void>((resolve) => { reached = resolve; });
+    const terminalSaved = new Promise<void>((resolve) => { settled = resolve; });
+    const update = f.store.update.bind(f.store);
+    vi.spyOn(f.store, 'update').mockImplementation(async (fn) => {
+      const state = await update(fn);
+      if (state.receipts.some((receipt) => ['completed', 'partial', 'failed', 'cancelled'].includes(receipt.phase))) settled();
+      return state;
+    });
+    const run = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await run(args, options);
+      if (args[0] === 'status') { reached(); await blocked; }
+      return result;
+    });
+    const { receipt } = await start(f);
+    await statusCompleted;
+    expect(await f.service.status('dispatcher', receipt.id)).toMatchObject({ phase: 'cloned', cloneCompleted: true });
+    vi.useFakeTimers();
+    let outcome = 'pending';
+    const waiting = finished(f.service, receipt.id).then(
+      (result) => { outcome = 'finished'; return result; },
+      (error: unknown) => { outcome = 'rejected'; return error; },
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(3_100);
+      expect(outcome).toBe('pending');
+    } finally {
+      vi.useRealTimers();
+      release();
+      await terminalSaved;
+    }
+    expect(await waiting).toMatchObject({ phase: 'completed', cloneCompleted: true });
+    expect(f.register).toHaveBeenCalledOnce();
+  });
+
   it('skips inherited script shims instead of treating an absolute wrapper path as a native Git pin', async () => {
     let wrapper = '';
     const f = fixture(() => ({ ...environment(), PATH: `${wrapper}${path.delimiter}${process.env.PATH ?? ''}` }));

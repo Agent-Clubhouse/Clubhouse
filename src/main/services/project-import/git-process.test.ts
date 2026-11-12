@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 const fake = vi.hoisted(() => ({
   outputs: [] as Array<{ stdout?: string; stderr?: string; code?: number; wait?: boolean }>,
   calls: [] as Array<{ command: string; args: string[]; env: NodeJS.ProcessEnv; cwd: string; shell: boolean; kills: string[] }>,
+  rejectDeviceConfig: false,
 }));
 vi.mock('child_process', async () => {
   const { EventEmitter } = await import('events');
@@ -27,7 +30,7 @@ vi.mock('child_process', async () => {
       queueMicrotask(() => {
         if (output.stdout) stdout.emit('data', Buffer.from(output.stdout));
         if (output.stderr) stderr.emit('data', Buffer.from(output.stderr));
-        if (!output.wait) child.emit('close', output.code ?? 0);
+        if (!output.wait) child.emit('close', fake.rejectDeviceConfig && options.env.GIT_CONFIG_GLOBAL === os.devNull ? 128 : output.code ?? 0);
       });
       return child;
     },
@@ -38,9 +41,33 @@ import { createImportGit } from './git';
 
 const sha = 'a'.repeat(40);
 const source = () => ({ PATH: process.env.PATH, HOME: '/fixture', GIT_TRACE: '/private/trace', GIT_DIR: '/untrusted', GIT_CONFIG_COUNT: '1' });
-beforeEach(() => { fake.outputs.length = 0; fake.calls.length = 0; });
+beforeEach(() => { fake.outputs.length = 0; fake.calls.length = 0; fake.rejectDeviceConfig = false; });
 
 describe('isolated credential-aware Git subprocess boundary', () => {
+  it('uses an owned empty regular config instead of a Git-incompatible null device and removes only its temporary state', async () => {
+    fake.rejectDeviceConfig = true;
+    const configFiles: Array<{ file: string; regular: boolean; linked: boolean; links: number; size: number }> = [];
+    const spawn = await import('child_process');
+    const original = spawn.spawn;
+    const inspect = vi.spyOn(spawn, 'spawn').mockImplementation((...args: Parameters<typeof original>) => {
+      const options = args[2];
+      if (options && 'env' in options && options.env?.GIT_CONFIG_GLOBAL) {
+        const file = options.env.GIT_CONFIG_GLOBAL;
+        const stat = fs.lstatSync(file);
+        configFiles.push({ file, regular: stat.isFile(), linked: stat.isSymbolicLink(), links: stat.nlink, size: stat.size });
+      }
+      return original(...args);
+    });
+    try {
+      await expect(createImportGit(source).run(['init'], { cwd: '/fixture' })).resolves.toBe('');
+      expect(configFiles).toEqual([{ file: expect.any(String), regular: true, linked: false, links: 1, size: 0 }]);
+      expect(fake.calls[2].env.GIT_CONFIG_SYSTEM).toBe(configFiles[0].file);
+      expect(fake.calls[2].args).toContain(`core.hooksPath=${configFiles[0].file}`);
+      expect(fs.existsSync(configFiles[0].file)).toBe(false);
+      expect(fs.existsSync(path.dirname(configFiles[0].file))).toBe(false);
+    } finally { inspect.mockRestore(); }
+  });
+
   it('carries only existing authorized credential config in environment, never argv, and disables unsafe inherited behavior', async () => {
     fake.outputs.push(
       { code: 1 },
