@@ -54,6 +54,15 @@ async function executableTrackedBase(): Promise<void> {
   expect((await fs.promises.stat(path.join(repo, 'tracked.txt'))).mode & 0o100).toBe(0);
 }
 
+async function unsupportedTrackedBase(mode: string): Promise<void> {
+  const oid = (await exec('git', ['rev-parse', mode === '120000' ? 'HEAD:tracked.txt' : 'HEAD'], { cwd: repo })).stdout.trim();
+  await file('unsupported.txt', 'base\n');
+  await git('update-index', '--add', '--cacheinfo', `${mode},${oid},unsupported.txt`);
+  await git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Unsupported tracked fixture');
+  await git('config', 'core.filemode', 'false');
+  expect((await exec('git', ['ls-tree', 'HEAD', 'unsupported.txt'], { cwd: repo })).stdout.startsWith(`${mode} `)).toBe(true);
+}
+
 beforeEach(async () => {
   root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-snapshot-')));
   // Isolate supported fixtures with regular config files; Git for Windows rejects null devices.
@@ -417,6 +426,44 @@ describe('local secret-safe handoff snapshots', () => {
     const snapshot = await prepareHandoffSnapshot(options({ include: { untracked: false } }));
     expect(snapshot.manifest.files).toMatchObject([{ path: 'tracked.txt', mode: '100755' }]);
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('edited after index removal\n');
+  });
+
+  it('retains the HEAD mode for an index-removed path selected only as untracked', async () => {
+    await executableTrackedBase();
+    await git('rm', '--cached', '--', 'tracked.txt');
+    await file('tracked.txt', 'selected as untracked\n');
+    const snapshot = await prepareHandoffSnapshot(options({ include: { tracked_changes: false } }));
+    expect(snapshot.manifest.files).toMatchObject([{ path: 'tracked.txt', mode: '100755' }]);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('selected as untracked\n');
+  });
+
+  it.each(['120000', '160000'])('retains excluded tracked kind %s compatibility while capturing an ordinary file', async (mode) => {
+    await unsupportedTrackedBase(mode);
+    await file('ordinary.txt', 'ordinary selected bytes\n');
+    const snapshot = await prepareHandoffSnapshot(options({ exclude: ['unsupported.txt'] }));
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['ordinary.txt']);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/ordinary.txt'), 'utf8')).toBe('ordinary selected bytes\n');
+    expect(await fs.promises.readFile(path.join(repo, 'unsupported.txt'), 'utf8')).toBe('base\n');
+  });
+
+  it.each(['120000', '160000'])('retains untracked-only compatibility with unselected HEAD kind %s', async (mode) => {
+    await unsupportedTrackedBase(mode);
+    await git('rm', '--cached', '--', 'unsupported.txt');
+    await fs.promises.rm(path.join(repo, 'unsupported.txt'));
+    expect((await exec('git', ['ls-files', '--stage', '--', 'unsupported.txt'], { cwd: repo })).stdout).toBe('');
+    await file('ordinary.txt', 'ordinary untracked bytes\n');
+    const snapshot = await prepareHandoffSnapshot(options({ include: { tracked_changes: false } }));
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['ordinary.txt']);
+    expect(snapshot.manifest.deletions).toEqual([]);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/ordinary.txt'), 'utf8')).toBe('ordinary untracked bytes\n');
+  });
+
+  it.each(['120000', '160000'])('still refuses unsupported HEAD kind %s when its index-removed path is selected as untracked', async (mode) => {
+    await unsupportedTrackedBase(mode);
+    await git('rm', '--cached', '--', 'unsupported.txt');
+    await expect(prepareHandoffSnapshot(options({ include: { tracked_changes: false } }))).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+    expect(await fs.promises.readFile(path.join(repo, 'unsupported.txt'), 'utf8')).toBe('base\n');
   });
 
   it('uses physical modes when Git trusts them and leaves raw untracked modes unchanged', async () => {

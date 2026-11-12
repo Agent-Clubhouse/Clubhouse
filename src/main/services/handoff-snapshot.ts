@@ -69,7 +69,7 @@ interface SnapshotGit {
 
 interface GitModeAuthority {
   trustFileMode: boolean;
-  indexModes: ReadonlyMap<string, HandoffManifestFile['mode']>;
+  indexModes: ReadonlyMap<string, string>;
 }
 
 function failure(error: unknown): HandoffSnapshotError {
@@ -185,14 +185,13 @@ async function gitModeAuthority(context: SnapshotGit): Promise<GitModeAuthority>
   if (policy !== 'true' && policy !== 'false') throw new HandoffSnapshotError('git_failed');
   const records = (await git(context, ['ls-files', '--stage', '-z']))?.split('\0');
   if (!records || records.pop() !== '') throw new HandoffSnapshotError('git_failed');
-  const indexModes = new Map<string, HandoffManifestFile['mode']>();
+  const indexModes = new Map<string, string>();
   for (const record of records) {
     const match = /^([0-7]{6}) ([0-9a-f]{40}|[0-9a-f]{64}) 0\t([\s\S]+)$/.exec(record);
     if (!match) throw new HandoffSnapshotError('unsupported_repository');
     const mode = match[1];
     const name = match[3];
-    if ((mode !== '100644' && mode !== '100755') || /^0+$/.test(match[2])
-      || !isSafeHandoffPath(name) || indexModes.has(name)) throw new HandoffSnapshotError('unsupported_repository');
+    if (/^0+$/.test(match[2]) || indexModes.has(name)) throw new HandoffSnapshotError('unsupported_repository');
     indexModes.set(name, mode);
   }
   return { trustFileMode: policy === 'true', indexModes };
@@ -208,14 +207,24 @@ async function selection(
   const options = { dot: true, nonegate: true, noext: true, maxLength: 512 };
   const included = picomatch(manifest.include.ignored, options);
   const excluded = picomatch(manifest.exclude, options);
+  const untracked = manifest.include.untracked ? paths(await git(context, ['ls-files', '--others', '--exclude-standard', '-z'])) : [];
+  const ignored = manifest.include.ignored.length > 0
+    ? paths(await git(context, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])) : [];
+  const others = new Set([...untracked, ...ignored.filter(included)].filter((name) => !excluded(name)));
   const tracked = new Set<string>();
-  const modes = new Map(authority.trustFileMode ? undefined : authority.indexModes);
+  const modes = new Map<string, HandoffManifestFile['mode']>();
+  for (const [name, mode] of authority.indexModes) {
+    if (excluded(name) || (!manifest.include.tracked_changes && !others.has(name))) continue;
+    if (!isSafeHandoffPath(name)) throw new HandoffSnapshotError('unsafe_entry');
+    if (mode !== '100644' && mode !== '100755') throw new HandoffSnapshotError('unsupported_repository');
+    if (!authority.trustFileMode) modes.set(name, mode);
+  }
   const base = new Map<string, { mode: HandoffManifestFile['mode']; oid: string; size: bigint }>();
-  if (manifest.include.tracked_changes || !authority.trustFileMode) {
+  if (manifest.include.tracked_changes || (!authority.trustFileMode && others.size > 0)) {
     for (const entry of paths(await git(context, ['ls-tree', '-r', '-l', '-z', '--full-tree', manifest.repo.base]))) {
       const match = /^([0-7]{6}) (?:blob|commit) ([0-9a-f]{40}|[0-9a-f]{64}) +([0-9]+|-)\t(.+)$/.exec(entry);
       if (!match) throw new HandoffSnapshotError('git_failed');
-      if (excluded(match[4])) continue;
+      if (excluded(match[4]) || (!manifest.include.tracked_changes && !others.has(match[4]))) continue;
       const mode = match[1];
       if (mode !== '100644' && mode !== '100755') throw new HandoffSnapshotError('unsupported_repository');
       base.set(match[4], { mode, oid: match[2], size: BigInt(match[3]) });
@@ -243,10 +252,7 @@ async function selection(
       if (actual !== original.oid) tracked.add(name);
     }
   }
-  const untracked = manifest.include.untracked ? paths(await git(context, ['ls-files', '--others', '--exclude-standard', '-z'])) : [];
-  const ignored = manifest.include.ignored.length > 0
-    ? paths(await git(context, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])) : [];
-  const all = [...new Set([...tracked, ...untracked, ...ignored.filter(included)])].filter((file) => !excluded(file)).sort(compare);
+  const all = [...new Set([...tracked, ...others])].sort(compare);
   return { tracked, all, modes };
 }
 
