@@ -101,6 +101,7 @@ const describeNothing: DescribeAgent = async () => undefined;
 let transport: AgentCallTransport | null = null;
 let runTool: AgentToolRunner | null = null;
 let describeLocalAgent: DescribeAgent = describeNothing;
+let nameOfLocalSender: ((agentId: string) => string | undefined) | undefined;
 
 const selfFingerprint = (): string | undefined => annexIdentity.getIdentity()?.fingerprint.toLowerCase();
 
@@ -184,7 +185,7 @@ export async function forwardAgentCall(callerId: string, targetId: string, targe
   const body: AgentCallBody = {
     v: AGENT_CALL_VERSION,
     callId: randomUUID(),
-    from: { agentId: callerId, name: sender?.name ?? callerId, ...(sender?.projectName && { projectName: sender.projectName }) },
+    from: { agentId: callerId, name: nameOfLocalSender?.(callerId) ?? sender?.name ?? callerId, ...(sender?.projectName && { projectName: sender.projectName }) },
     to,
     tool,
     args,
@@ -568,6 +569,8 @@ export interface StartAgentCallsOptions {
   transport: AgentCallTransport;
   runTool: AgentToolRunner;
   describeLocalAgent: DescribeAgent;
+  /** Outgoing display name only; never used to establish a local connection endpoint. */
+  nameOfLocalSender?: (agentId: string) => string | undefined;
   /** Every direction in the store (tests pass their own). */
   listDirections?: () => ConnectionDirection[];
 }
@@ -576,6 +579,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
   transport = options.transport;
   runTool = options.runTool;
   describeLocalAgent = options.describeLocalAgent;
+  nameOfLocalSender = options.nameOfLocalSender;
   if (options.listDirections) listDirections = options.listDirections;
   const offConnected = options.transport.onConnected((machine) => { void syncThenFlush(machine); });
   // A change here to a direction with another machine is sent to it at once, when connected.
@@ -589,6 +593,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
     transport = null;
     runTool = null;
     describeLocalAgent = describeNothing;
+    nameOfLocalSender = undefined;
     listDirections = () => listAllConnectionDirections();
     _resetAgentCallsForTesting();
   };

@@ -182,6 +182,42 @@ describe('only computers in the network (D238)', () => {
 });
 
 describe('sending a call to another machine', () => {
+  it.each(['Dispatcher', 'Rosie'])('serializes physical Dispatcher sender roles for chat named %s without expanding local endpoint eligibility', async (chatName) => {
+    stop();
+    const nameOfLocalSender = vi.fn((id: string) => id === 'dispatcher-work' ? 'Dispatcher controller' : id === 'dispatcher-chat' ? chatName : undefined);
+    stop = startAgentCalls({
+      transport,
+      runTool: async () => { throw new Error('No inbound call is eligible'); },
+      describeLocalAgent: async (id) => id === 'here' ? { name: 'Helper', projectName: 'Atlas' } : undefined,
+      nameOfLocalSender,
+    });
+    const args = { agentId: 'spoofed', name: 'Not the sender' };
+    for (const id of ['dispatcher-work', 'dispatcher-chat', 'here', 'unknown']) {
+      expect(await forwardAgentCall(id, `there@${OTHER}`, 'Far agent', 'get_status', args)).toEqual(ok('done there'));
+    }
+    expect(posts.map((p) => p.body.from)).toEqual([
+      { agentId: 'dispatcher-work', name: 'Dispatcher controller' },
+      { agentId: 'dispatcher-chat', name: chatName },
+      { agentId: 'here', name: 'Helper', projectName: 'Atlas' },
+      { agentId: 'unknown', name: 'unknown' },
+    ]);
+    for (const post of posts) {
+      expect(post).toMatchObject({ machine: OTHER, path: '/api/v1/network/agent-call', body: { to: 'there', tool: 'get_status', args } });
+    }
+
+    nameOfLocalSender.mockClear();
+    const at = new Date(now).toISOString();
+    expect(await receiveDirections(OTHER, { v: 1, directions: ['dispatcher-work', 'dispatcher-chat', 'unknown'].map((id) => ({
+      from: { agentId: 'there', machine: OTHER }, to: { agentId: id, machine: SELF },
+      disabledTools: [], link: true, updatedAt: at,
+    })) }, now)).toEqual({ applied: 0 });
+    for (const id of ['dispatcher-work', 'dispatcher-chat', 'unknown']) {
+      expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: id })).toBeUndefined();
+      expect(await receiveAgentCall(OTHER, call({ to: id }), now)).toMatchObject({ status: 403, error: 'not_connected' });
+    }
+    expect(nameOfLocalSender).not.toHaveBeenCalled();
+  });
+
   it('posts it with the sender\'s name and project, and returns the other machine\'s answer', async () => {
     const result = await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'hello' });
     expect(result).toEqual(ok('done there'));

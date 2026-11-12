@@ -53,8 +53,6 @@ import { dispatcherDisplayName, isDispatcherAgentId, isDispatcherChatAgentId } f
 
 /** An agent's name and project here, for another machine's view of a call or connection (#3064). */
 async function describeAgentHere(agentId: string): Promise<{ name: string; projectName?: string } | undefined> {
-  if (isDispatcherAgentId(agentId)) return { name: dispatcherDisplayName('work') };
-  if (isDispatcherChatAgentId(agentId)) return { name: dispatcherDisplayName() };
   for (const project of await projectStore.peekProjects()) {
     const agent = (await agentConfig.peekDurableConfigs(project.path)).find((a) => a.id === agentId);
     if (agent) return { name: agent.name, projectName: project.displayName || project.name };
@@ -454,6 +452,8 @@ export function restorePersistedBindings(): Promise<void> {
       },
       runTool: runAgentToolForRemoteCaller,
       describeLocalAgent: describeAgentHere,
+      nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work')
+        : isDispatcherChatAgentId(id) ? dispatcherDisplayName() : undefined,
     });
   }
   return rebuildPersistedBindings().then(async (): Promise<void> => {

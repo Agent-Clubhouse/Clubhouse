@@ -208,16 +208,21 @@ function getHandler(channel: string): HandlerFn {
 // ── Registration ──────────────────────────────────────────────────────
 
 describe('mcp-binding-handlers registration', () => {
-  it.each(['Dispatcher', 'Rosie'])('wires role-aware projectless remote sender descriptions for chat named %s without inventing agent availability', async (name) => {
+  it.each(['Dispatcher', 'Rosie'])('wires display-only remote sender names for chat named %s without inventing agent availability', async (name) => {
     dispatcherIdentity.name = name;
     vi.spyOn(projectStore, 'peekProjects').mockResolvedValue([{ id: 'p', name: 'Atlas', path: '/atlas' }]);
     vi.spyOn(agentConfig, 'peekDurableConfigs').mockResolvedValue([{ id: 'ordinary', name: 'Builder', color: 'blue', createdAt: 'then' }]);
     await restorePersistedBindings();
     expect(startAgentCalls).toHaveBeenCalledTimes(1);
-    const { describeLocalAgent, runTool } = vi.mocked(startAgentCalls).mock.calls[0][0];
-    expect(await describeLocalAgent('dispatcher-work')).toEqual({ name: 'Dispatcher controller' });
-    expect(await describeLocalAgent('dispatcher-chat')).toEqual({ name });
+    const { describeLocalAgent, nameOfLocalSender, runTool } = vi.mocked(startAgentCalls).mock.calls[0][0];
+    expect(nameOfLocalSender?.('dispatcher-work')).toBe('Dispatcher controller');
+    expect(nameOfLocalSender?.('dispatcher-chat')).toBe(name);
     expect(projectStore.peekProjects).not.toHaveBeenCalled();
+    expect(nameOfLocalSender?.('ordinary')).toBeUndefined();
+    expect(nameOfLocalSender?.('unknown')).toBeUndefined();
+    expect(nameOfLocalSender?.('dispatcher-work@another-machine')).toBeUndefined();
+    expect(await describeLocalAgent('dispatcher-work')).toBeUndefined();
+    expect(await describeLocalAgent('dispatcher-chat')).toBeUndefined();
     expect(await describeLocalAgent('ordinary')).toEqual({ name: 'Builder', projectName: 'Atlas' });
     expect(await describeLocalAgent('unknown')).toBeUndefined();
     expect(await describeLocalAgent('dispatcher-work@another-machine')).toBeUndefined();
