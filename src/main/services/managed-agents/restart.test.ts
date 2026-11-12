@@ -14,6 +14,7 @@ vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../project-store', () => ({ peekProjects: async () => [], projectRegistryMutationState: () => ({ generation: 0, pending: false }) }));
 vi.mock('../agent-config', () => ({
   agentConfigGeneration: () => 0,
+  peekCachedDurableConfig: (_p: string, id: string) => structuredClone(state.agents.get(id) ?? null),
   getDurableConfig: async (_p: string, id: string) => state.agents.get(id) ?? null,
   peekDurableConfigs: async () => [...state.agents.values()],
   setManagedSetup: async () => undefined,

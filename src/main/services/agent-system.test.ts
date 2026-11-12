@@ -105,11 +105,16 @@ vi.mock('./dispatcher/dispatcher-paths', async (importOriginal) => ({
 }));
 
 // Chat start runs for real unless a test stands in for it (to fail a chat resume).
-const { mockTryStartChatAgent } = vi.hoisted(() => ({ mockTryStartChatAgent: vi.fn() }));
+const { mockTryStartChatAgent, mockCancelChatStart } = vi.hoisted(() => ({ mockTryStartChatAgent: vi.fn(), mockCancelChatStart: vi.fn() }));
 vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./agent-runtime/chat-spawn')>();
   mockTryStartChatAgent.mockImplementation(actual.tryStartChatAgent);
-  return { ...actual, tryStartChatAgent: (...args: Parameters<typeof actual.tryStartChatAgent>) => mockTryStartChatAgent(...args) };
+  mockCancelChatStart.mockImplementation(actual.cancelChatStart);
+  return {
+    ...actual,
+    tryStartChatAgent: (...args: Parameters<typeof actual.tryStartChatAgent>) => mockTryStartChatAgent(...args),
+    cancelChatStart: (...args: Parameters<typeof actual.cancelChatStart>) => mockCancelChatStart(...args),
+  };
 });
 
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
@@ -430,6 +435,22 @@ describe('agent-system', () => {
   });
 
   describe('spawnAgent', () => {
+    it('rechecks the strict creation guard after the PTY preparation await', async () => {
+      let permitted = true;
+      const effect = vi.fn();
+      mockPtySpawn.mockImplementationOnce(async (...args: Parameters<typeof import('./pty-manager').spawn>) => {
+        await Promise.resolve();
+        permitted = false;
+        args[7]?.beforeCreate();
+        effect();
+      });
+      await expect(spawnAgent({
+        agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable',
+        beforeCreate: () => { if (!permitted) throw new Error('restart authority changed'); },
+      })).rejects.toThrow('restart authority changed');
+      expect(effect).not.toHaveBeenCalled();
+    });
+
     it('starts under its own transition reservation while refusing a competing activity', async () => {
       const { withAgentActivity, withAgentTransition } = await import('./agent-transition');
       let entered!: () => void;
@@ -1500,6 +1521,24 @@ describe('agent-system', () => {
   });
 
   describe('killAgent', () => {
+    it('refuses a strict stop at entry before cancelling a chat start', async () => {
+      await expect(killAgent('agent-1', '/project', undefined, 'user', {
+        throwOnFailure: true, beforeStop: () => { throw new Error('restart authority changed'); },
+      })).rejects.toThrow('restart authority changed');
+      expect(mockCancelChatStart).not.toHaveBeenCalled();
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+    });
+
+    it.each(['cancel', 'provider'] as const)('rechecks strict stop authority after the %s await', async (stage) => {
+      let permitted = true;
+      if (stage === 'cancel') mockCancelChatStart.mockImplementationOnce(async () => { await Promise.resolve(); permitted = false; return false; });
+      else mockPeekProjects.mockImplementationOnce(async () => { await Promise.resolve(); permitted = false; return []; });
+      await expect(killAgent('agent-1', '/project', undefined, 'user', {
+        throwOnFailure: true, beforeStop: () => { if (!permitted) throw new Error('restart authority changed'); },
+      })).rejects.toThrow('restart authority changed');
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+    });
+
     it('calls gracefulKill with provider exit command', async () => {
       await killAgent('agent-1', '/project');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/exit\r');

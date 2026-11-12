@@ -4,12 +4,13 @@ import * as os from 'os';
 import * as path from 'path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
-import type { ChatDriverStartOptions } from '../../../shared/chat';
+import type { AgentRuntime, ChatDriverStartOptions } from '../../../shared/chat';
 
-const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[] }));
+const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[], cacheAvailable: true }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
 vi.mock('../agent-config', () => ({
   agentConfigGeneration: () => 0,
+  peekCachedDurableConfig: (_p: string, id: string) => fixture.cacheAvailable ? structuredClone(fixture.agents.find((a) => a.id === id) ?? null) : null,
   peekDurableConfigs: vi.fn(async () => fixture.agents),
   getDurableConfig: vi.fn(async (_p: string, id: string) => fixture.agents.find((a) => a.id === id)),
   touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}),
@@ -82,6 +83,7 @@ const raw = (servers: object) => JSON.stringify({ mcpServers: servers });
 beforeEach(async () => {
   vi.clearAllMocks(); clearChatDrivers(); clearChatRuntimes(); clearDriverHealth();
   fixture.running = false;
+  fixture.cacheAvailable = true;
   fixture.starts = [];
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-2849-'));
   cwd = path.join(root, 'agent'); localPath = path.join(cwd, conventions.mcpConfigFile);
@@ -101,7 +103,7 @@ afterEach(async () => {
 });
 
 async function save(content: string) { return handlers.get(IPC.AGENT.WRITE_MCP_RAW_JSON)!({}, cwd, content, root, agent.id); }
-async function start(options: { resume?: boolean; sessionId?: string } = {}) {
+async function start(options: { resume?: boolean; sessionId?: string; beforeCreate?: (runtime?: AgentRuntime) => void } = {}) {
   // No explicit legacy selection: exercise the standard Copilot SDK adapter.
   const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli'); registerChatDriver(driver);
   expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto', ...options }, copilot, undefined, agent)).toBe('chat');
@@ -123,6 +125,61 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
   });
 
   describe('#2855 managed import → add → restart → remove (fixture SDK, no paid probe)', () => {
+    it.each(['model', 'access', 'provider', 'session', 'managed', 'cache'] as const)('refuses %s drift during the inner driver probe', async (field) => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      agent.lastSessionId = 'original-native';
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      const actualStart = vi.spyOn(FakeChatDriver.prototype, 'start');
+      const probe = vi.spyOn(FakeChatDriver.prototype, 'probe').mockImplementationOnce(async () => {
+        await Promise.resolve();
+        if (field === 'model') agent.model = 'changed-model';
+        if (field === 'access') agent.access = 'full_access';
+        if (field === 'provider') agent.orchestrator = 'claude-code';
+        if (field === 'session') agent.lastSessionId = 'replacement-native';
+        if (field === 'managed') delete agent.managed;
+        if (field === 'cache') fixture.cacheAvailable = false;
+        return { handshakeOk: true, capabilities: new FakeChatDriver().capabilities };
+      });
+      try {
+        await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
+        expect(actualStart).not.toHaveBeenCalled();
+        expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+      } finally { probe.mockRestore(); actualStart.mockRestore(); }
+    });
+
+    it('accepts only owned last-sleep bookkeeping across its actual chat stop and new driver start', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      agent.lastSessionId = 'original-native';
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      agent.lastSleep = { reason: 'user', at: new Date().toISOString() };
+      vi.mocked(spawnAgent).mockImplementationOnce(async (options) => {
+        delete agent.lastSleep;
+        await start(options);
+        fixture.running = true;
+      });
+      expect(await restartManagedAgent(root, agent.id)).toEqual({ resumed: true });
+      expect(fixture.starts.at(-1)?.resumeNativeSessionId).toBe('original-native');
+      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'completed' });
+    });
+
     it('keeps an unrelated MCP, conversation, identity and other-provider bytes through import, migration and removal', async () => {
       const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
       const service = createManagedAgentsService({
