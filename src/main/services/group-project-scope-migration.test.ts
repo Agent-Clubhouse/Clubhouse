@@ -33,7 +33,7 @@ import { globalCanvasKvDir, projectCanvasKvDir } from './canvas-store-reader';
 import { connectionsStorePath, _resetOrchestratorConnectionsForTesting } from './orchestrator-connections';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { appLog } from './log-service';
-import { peekDurableConfigsChecked } from './agent-config';
+import { peekDurableConfigsChecked, projectKey } from './agent-config';
 
 const registryFile = () => path.join(fixture.home, '.clubhouse-dev', 'group-projects', 'registry.json');
 const agent = (id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig => ({
@@ -100,6 +100,7 @@ describe('one-shot legacy group project scope migration', () => {
     expect(project?.metadata).toEqual({ admins: ['a'], subscriptions: { a: ['work'] }, pollingEnabled: true });
     expect(await fsp.readFile(canvasFile, 'utf-8')).toBe(before);
     expect(bindingManager.getAllBindings()).toEqual([]);
+    expect(peekDurableConfigsChecked).toHaveBeenCalledWith(fixture.projects[0].path, { strict: true });
     expect(JSON.parse(await fsp.readFile(registryFile(), 'utf-8'))[0].scope).toEqual(project?.scope);
   });
 
@@ -158,6 +159,7 @@ describe('one-shot legacy group project scope migration', () => {
   it.each([
     'unreadable project', 'unknown member', 'corrupt canvas', 'unsupported connections', 'changing inventory',
     'unknown canvas wire', 'unknown canvas instance', 'unknown canvas view', 'changing projects',
+    'ambiguous projects', 'ambiguous directories',
   ])(
     'defers %s without guessing or writing, and logs a retryable failure',
     async (kind) => {
@@ -178,6 +180,8 @@ describe('one-shot legacy group project scope migration', () => {
       if (kind === 'unknown canvas view') {
         await write(path.join(globalCanvasKvDir(), 'canvas-instances.json'), [{ id: 'canvas', views: [{ future: true }] }]);
       }
+      if (kind === 'ambiguous projects') fixture.projects[1].id = fixture.projects[0].id;
+      if (kind === 'ambiguous directories') vi.mocked(projectKey).mockResolvedValue('same-directory');
       if (kind === 'changing inventory') {
         vi.mocked(peekDurableConfigsChecked).mockImplementationOnce(async (projectPath) => {
           fixture.generation++;
@@ -234,6 +238,131 @@ describe('one-shot legacy group project scope migration', () => {
     expect((await groupProjectRegistry.get('gp_legacy'))?.scope).toEqual({
       level: 'project', projectId: 'p_a', reach: 'local',
     });
+  });
+
+  it.each(['projects', 'agents', 'connections', 'canvases', 'live registrations', 'live bindings'])(
+    'defers when %s change in place during the actual registry rename',
+    async (source) => {
+      await canvas(['a']);
+      fixture.registrations.set('quick', { projectPath: fixture.projects[0].path, orchestrator: 'claude-code', runtime: 'pty' });
+      const before = await fsp.readFile(registryFile(), 'utf-8');
+      let enter!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => { enter = resolve; });
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const rename = fs.promises.rename;
+      let first = true;
+      vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+        if (to === registryFile() && first) { first = false; enter(); await held; }
+        await rename(from, to);
+      });
+      const loading = groupProjectRegistry.list();
+      try {
+        expect(await Promise.race([entered.then(() => 'writing'), loading.then(() => 'loaded')])).toBe('writing');
+        if (source === 'projects') fixture.projects[0].path = path.join(fixture.home, 'moved');
+        if (source === 'agents') fixture.configs.get(fixture.projects[0].path)![0].id = 'changed';
+        if (source === 'connections') await connection(fixture.projects[1], 'b');
+        if (source === 'canvases') await canvas(['a', 'b']);
+        if (source === 'live registrations') fixture.registrations.get('quick')!.projectPath = fixture.projects[1].path;
+        if (source === 'live bindings') bindingManager.bind('b', wire('b'));
+        expect(groupProjectRegistry.getSync('gp_legacy')).toBeNull();
+      } finally {
+        release();
+        await loading;
+      }
+
+      expect((await groupProjectRegistry.get('gp_legacy'))?.scope).toBeUndefined();
+      expect(await fsp.readFile(registryFile(), 'utf-8')).toBe(before);
+      expect(appLog).toHaveBeenCalledWith(
+        'core:group-project', 'warn', expect.stringContaining('migration deferred'),
+        expect.objectContaining({ meta: expect.objectContaining({ retryable: true }) }),
+      );
+    },
+  );
+
+  it.each(['unchanged', 'changed', 'unreadable'])(
+    'revalidates an actual post-rename crash image with %s source inventory after fresh load',
+    async (source) => {
+      await canvas(['a']);
+      const rename = fs.promises.rename;
+      vi.spyOn(fs.promises, 'rename').mockImplementationOnce(async (from, to) => {
+        await rename(from, to);
+        throw new Error('simulated crash after native rename');
+      });
+
+      await expect(groupProjectRegistry.list()).rejects.toThrow('simulated crash after native rename');
+      expect(groupProjectRegistry.getSync('gp_legacy')).toBeNull();
+      const candidateBytes = await fsp.readFile(registryFile(), 'utf-8');
+      const stored = JSON.parse(candidateBytes)[0];
+      expect(stored.scope).toEqual({ level: 'project', projectId: 'p_a', reach: 'local' });
+      expect(stored._scopeInference).toBe('legacy-v1');
+      groupProjectRegistry._resetForTesting();
+      if (source === 'changed') await canvas(['b']);
+      if (source === 'unreadable') fixture.configs.delete(fixture.projects[1].path);
+
+      const project = await groupProjectRegistry.get('gp_legacy');
+
+      expect(project).not.toHaveProperty('_scopeInference');
+      expect(project?.metadata).toEqual({ admins: ['a'], subscriptions: { a: ['work'] }, pollingEnabled: true });
+      if (source === 'unchanged') {
+        expect(project?.scope).toEqual({ level: 'project', projectId: 'p_a', reach: 'local' });
+        await groupProjectRegistry.update('gp_legacy', { description: 'Updated purpose' });
+        await groupProjectRegistry.flush();
+        expect(JSON.parse(await fsp.readFile(registryFile(), 'utf-8'))[0]._scopeInference).toBe('legacy-v1');
+      } else {
+        expect(project?.scope).toBeUndefined();
+        expect(await fsp.readFile(registryFile(), 'utf-8')).toBe(candidateBytes);
+        expect(appLog).toHaveBeenCalledWith(
+          'core:group-project', 'warn', expect.stringContaining('migration deferred'),
+          expect.objectContaining({ meta: expect.objectContaining({ retryable: true }) }),
+        );
+      }
+    },
+  );
+
+  it('does not re-infer explicit creation scopes when the inventory is unavailable', async () => {
+    await write(registryFile(), [{
+      id: 'gp_explicit', name: 'Explicit', description: '', instructions: '', createdAt: '2026-11-12',
+      scope: { level: 'project', projectId: 'p_a', reach: 'local' }, metadata: {},
+    }]);
+    fixture.configs.clear();
+    expect((await groupProjectRegistry.get('gp_explicit'))?.scope).toEqual({
+      level: 'project', projectId: 'p_a', reach: 'local',
+    });
+    expect(peekDurableConfigsChecked).not.toHaveBeenCalled();
+  });
+
+  it('surfaces rollback failure without publishing and keeps the crash image untrusted on restart', async () => {
+    await canvas(['a']);
+    const rename = fs.promises.rename;
+    const rollbackError = new Error('rollback disk unavailable');
+    let writes = 0;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (to === registryFile()) {
+        writes++;
+        if (writes === 2) throw rollbackError;
+      }
+      await rename(from, to);
+      if (to === registryFile() && writes === 1) await canvas(['b']);
+    });
+
+    await expect(groupProjectRegistry.list()).rejects.toMatchObject({
+      message: expect.stringContaining('rollback disk unavailable'),
+      errors: [expect.objectContaining({ message: expect.stringContaining('inventory changed') }), rollbackError],
+    });
+    expect(groupProjectRegistry.getSync('gp_legacy')).toBeNull();
+    expect(JSON.parse(await fsp.readFile(registryFile(), 'utf-8'))[0]._scopeInference).toBe('legacy-v1');
+    groupProjectRegistry._resetForTesting();
+    expect((await groupProjectRegistry.get('gp_legacy'))?.scope).toBeUndefined();
+  });
+
+  it('refuses duplicate group-project identities without persisting a lossy migration', async () => {
+    const records = JSON.parse(await fsp.readFile(registryFile(), 'utf-8'));
+    await write(registryFile(), [...records, { ...records[0], name: 'Conflicting duplicate' }]);
+    const before = await fsp.readFile(registryFile(), 'utf-8');
+    await expect(groupProjectRegistry.list()).rejects.toThrow('duplicate group-project identity');
+    expect(await fsp.readFile(registryFile(), 'utf-8')).toBe(before);
+    expect(groupProjectRegistry.getSync('gp_legacy')).toBeNull();
   });
 
   it('leaves the old registry readable after a failed migration write and retries without losing data', async () => {

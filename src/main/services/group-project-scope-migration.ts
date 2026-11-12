@@ -36,29 +36,45 @@ interface Inventory {
   project: Project;
   key: string;
   agents: readonly DurableAgentConfig[];
+  agentsSignature: string;
   connections: OrchestratorConnection[];
+  connectionsSignature: string;
 }
 
 function projectSignature(projects: readonly Project[]): string {
-  return projects.map((project) => `${project.id}\0${project.path}`).sort().join('\n');
+  return JSON.stringify(projects.map((project) => [project.id, project.path]).sort());
+}
+
+export interface LegacyGroupProjectScopeInventory {
+  scopes: Map<string, GroupProjectScope>;
+  assertUnchanged(): Promise<void>;
 }
 
 /** Read every legacy membership source without drawing wires or repairing stores. */
-export async function collectLegacyGroupProjectScopes(projects: readonly GroupProject[]): Promise<Map<string, GroupProjectScope>> {
+export async function collectLegacyGroupProjectScopes(projects: readonly GroupProject[]): Promise<LegacyGroupProjectScopeInventory> {
   const legacy = projects.filter((project) => project.scope === undefined);
-  if (legacy.length === 0) return new Map();
+  if (legacy.length === 0) return { scopes: new Map(), assertUnchanged: async () => {} };
   const generation = agentConfig.agentConfigGeneration();
   const bindingsVersion = bindingManager.getVersion();
-  const registered = await checked('Cannot list registered projects', () => projectStore.list());
+  const liveBindingsSignature = JSON.stringify(bindingManager.getAllBindings());
+  const registrations = [...agentRegistry.getAllRegistrations()].map(([id, registration]) => [id, { ...registration }] as const);
+  const registrationsSignature = JSON.stringify(registrations);
+  const registered = (await checked('Cannot list registered projects', () => projectStore.list()))
+    .map((project) => ({ ...project }));
   const signature = projectSignature(registered);
+  if (new Set(registered.map((project) => project.id)).size !== registered.length) {
+    throw new GroupProjectScopeMigrationError('Registered projects contain ambiguous identities.');
+  }
   const inventory: Inventory[] = [];
   for (const project of registered) {
-    const config = await checked(`Cannot read agents in ${project.path}`, () => agentConfig.peekDurableConfigsChecked(project.path));
+    const config = await checked(`Cannot read agents in ${project.path}`, () => agentConfig.peekDurableConfigsChecked(project.path, { strict: true }));
     if (!config.readable) throw new GroupProjectScopeMigrationError(`Cannot read agents in ${project.path}.`);
+    const agentsSignature = JSON.stringify(config.agents);
+    const connections = await checked(`Cannot read connections in ${project.path}`, () => peekConnectionsChecked(project.path));
     inventory.push({
-      project, agents: config.agents,
+      project, agents: config.agents, agentsSignature, connections,
+      connectionsSignature: JSON.stringify(connections),
       key: await checked(`Cannot identify ${project.path}`, () => agentConfig.projectKey(project.path)),
-      connections: await checked(`Cannot read connections in ${project.path}`, () => peekConnectionsChecked(project.path)),
     });
   }
   const locations: CanvasStoreLocation[] = [
@@ -68,7 +84,8 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
       projectPath: project.path, kvDir: projectCanvasKvDir(project.path),
     })),
   ];
-  const snapshots = await Promise.all(locations.map((location) => readCanvasStore(location)));
+  const snapshots = await Promise.all(locations.map((location) => readCanvasStore(location, { strict: true })));
+  const canvasSignature = JSON.stringify(snapshots);
   for (const snapshot of snapshots) {
     if (snapshot.problems.length > 0) {
       throw new GroupProjectScopeMigrationError(`Cannot read canvas ${snapshot.location.kvDir}: ${snapshot.problems.join('; ')}`);
@@ -92,6 +109,7 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
     }
   }
   const keys = new Set(inventory.map((home) => home.key));
+  if (keys.size !== inventory.length) throw new GroupProjectScopeMigrationError('Registered projects share an ambiguous directory identity.');
   for (const home of inventory) {
     const foreign = new Map<string, Map<string, ScopedAgent>>();
     for (const row of rows) {
@@ -122,7 +140,7 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
     ids.add(projectId);
   };
   for (const row of rows) addAgent(row.config.id, row.home.project.id);
-  for (const [agentId, registration] of agentRegistry.getAllRegistrations()) {
+  for (const [agentId, registration] of registrations) {
     const key = await checked(`Cannot identify live agent ${agentId}`, () => agentConfig.projectKey(registration.projectPath));
     for (const home of inventory) if (home.key === key) addAgent(agentId, home.project.id);
   }
@@ -137,12 +155,32 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
     if (!members) memberProjects.set(binding.targetId, members = new Set());
     for (const id of ids) members.add(id);
   }
-  const after = await checked('Cannot recheck registered projects', () => projectStore.list());
-  if (generation !== agentConfig.agentConfigGeneration() || bindingsVersion !== bindingManager.getVersion()
-    || signature !== projectSignature(after)) {
-    throw new GroupProjectScopeMigrationError('Membership inventory changed during migration; retry at the next startup.');
-  }
-  return new Map(legacy.map((project) => [
-    project.id, inferLegacyGroupProjectScope([...(memberProjects.get(project.id) ?? [])]),
-  ]));
+  const removalsSignature = JSON.stringify(bindings.map((binding) => isBindingRemovedByUser(binding.agentId, binding.targetId)));
+  const assertUnchanged = async (): Promise<void> => {
+    let unchanged = true;
+    for (const home of inventory) {
+      const config = await checked(`Cannot recheck agents in ${home.project.path}`, () => agentConfig.peekDurableConfigsChecked(home.project.path, { strict: true }));
+      const connections = await checked(`Cannot recheck connections in ${home.project.path}`, () => peekConnectionsChecked(home.project.path));
+      const key = await checked(`Cannot recheck identity of ${home.project.path}`, () => agentConfig.projectKey(home.project.path));
+      unchanged &&= config.readable && home.agentsSignature === JSON.stringify(config.agents)
+        && home.connectionsSignature === JSON.stringify(connections) && home.key === key;
+    }
+    const canvases = await Promise.all(locations.map((location) => readCanvasStore(location, { strict: true })));
+    const after = await checked('Cannot recheck registered projects', () => projectStore.list());
+    if (!unchanged || canvasSignature !== JSON.stringify(canvases)
+      || generation !== agentConfig.agentConfigGeneration() || bindingsVersion !== bindingManager.getVersion()
+      || liveBindingsSignature !== JSON.stringify(bindingManager.getAllBindings())
+      || registrationsSignature !== JSON.stringify([...agentRegistry.getAllRegistrations()])
+      || removalsSignature !== JSON.stringify(bindings.map((binding) => isBindingRemovedByUser(binding.agentId, binding.targetId)))
+      || signature !== projectSignature(after)) {
+      throw new GroupProjectScopeMigrationError('Membership inventory changed during migration; retry at the next startup.');
+    }
+  };
+  await assertUnchanged();
+  return {
+    scopes: new Map(legacy.map((project) => [
+      project.id, inferLegacyGroupProjectScope([...(memberProjects.get(project.id) ?? [])]),
+    ])),
+    assertUnchanged,
+  };
 }
