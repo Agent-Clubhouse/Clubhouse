@@ -9,6 +9,8 @@ export type ProcessQueryLifecycle = Readonly<{
   closeObserved: boolean; closeAtMs?: number;
   deadlineObserved: boolean; deadlineAtMs?: number;
   cleanupRequested: boolean;
+  /** Receipt observation only: absence does not prove the interpreter never entered. */
+  scriptEntry?: Readonly<{ observed: boolean; atMs?: number; observationKnown: boolean }>;
 }>;
 type LifecycleObserver = (phase: 'deadline' | 'close-after-deadline', snapshot: ProcessQueryLifecycle) => void;
 export type ProcessTableResult = { ok: true; processes: ProcessInfo[]; elapsedMs: number }
@@ -16,6 +18,7 @@ export type ProcessTableResult = { ok: true; processes: ProcessInfo[]; elapsedMs
       /** Historical name: only the child's close event counts as observed cleanup. */
       exitObserved: boolean; lifecycle?: ProcessQueryLifecycle };
 export const PROCESS_TABLE_DEADLINE_MS = 10_000;
+const SCRIPT_ENTRY_MARKER = 'CLUBHOUSE_QUERY:script-enter';
 
 function parse(output: string, platform: NodeJS.Platform): ProcessInfo[] {
   if (platform === 'win32') {
@@ -52,6 +55,8 @@ export function createProcessTableReader(options: { execute?: typeof execFile; p
       let timingOut = false;
       let spawnAtMs: number | undefined, exitEventAtMs: number | undefined, callbackAtMs: number | undefined;
       let closeAtMs: number | undefined, deadlineAtMs: number | undefined;
+      let scriptEntryAtMs: number | undefined;
+      let scriptEntryObservationKnown = true;
       let deadlineSnapshot: ProcessQueryLifecycle | undefined;
       const elapsed = () => Math.round(performance.now() - started);
       const snapshot = (): ProcessQueryLifecycle => Object.freeze({
@@ -61,6 +66,8 @@ export function createProcessTableReader(options: { execute?: typeof execFile; p
         closeObserved: attempt.exitObserved, ...(closeAtMs !== undefined ? { closeAtMs } : {}),
         deadlineObserved: deadlineAtMs !== undefined, ...(deadlineAtMs !== undefined ? { deadlineAtMs } : {}),
         cleanupRequested: attempt.cleanupRequested,
+        ...(platform === 'win32' ? { scriptEntry: Object.freeze({ observed: scriptEntryAtMs !== undefined,
+          ...(scriptEntryAtMs !== undefined ? { atMs: scriptEntryAtMs } : {}), observationKnown: scriptEntryObservationKnown }) } : {}),
       });
       // At most two receipts per attempt. No payload, PID, path, exit code or raw error is retained.
       const observe: LifecycleObserver = (phase, receipt) => {
@@ -96,7 +103,7 @@ export function createProcessTableReader(options: { execute?: typeof execFile; p
       }, deadlineMs);
       try {
         attempt.child = execute(platform === 'win32' ? 'powershell.exe' : 'ps', platform === 'win32'
-          ? ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress']
+          ? ['-NoProfile', '-Command', `[Console]::Error.WriteLine('${SCRIPT_ENTRY_MARKER}'); Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress`]
           : ['-Ao', 'pid=,ppid=,command='], { encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (error, output) => {
           callbackAtMs ??= elapsed();
           if (settled || timingOut) return; // A late reply cannot turn an unknown snapshot into permission to sweep.
@@ -109,6 +116,27 @@ export function createProcessTableReader(options: { execute?: typeof execFile; p
         });
         attempt.child.once('spawn', () => { spawnAtMs = elapsed(); });
         attempt.child.once('exit', () => { exitEventAtMs = elapsed(); });
+        if (platform === 'win32') {
+          let line = '', discardLine = false;
+          try {
+            if (!attempt.child.stderr) scriptEntryObservationKnown = false;
+            else attempt.child.stderr.on('data', (chunk: unknown) => {
+              if (scriptEntryAtMs !== undefined) return;
+              try {
+                if (typeof chunk !== 'string' && !Buffer.isBuffer(chunk)) { scriptEntryObservationKnown = false; return; }
+                for (const char of typeof chunk === 'string' ? chunk : chunk.toString('utf8')) {
+                  if (char === '\n') {
+                    if (!discardLine && (line === SCRIPT_ENTRY_MARKER || line === `${SCRIPT_ENTRY_MARKER}\r`)) scriptEntryAtMs ??= elapsed();
+                    line = ''; discardLine = false;
+                  } else if (!discardLine) {
+                    if (line.length < 96) line += char;
+                    else { line = ''; discardLine = true; }
+                  }
+                }
+              } catch { scriptEntryObservationKnown = false; }
+            });
+          } catch { scriptEntryObservationKnown = false; }
+        }
         attempt.child.once('close', () => {
           attempt.exitObserved = true;
           closeAtMs = elapsed();

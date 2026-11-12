@@ -4,26 +4,21 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createProcessTableReader, PROCESS_TABLE_DEADLINE_MS, type ProcessTableResult } from '../e2e/cleanup-process-table';
+import { createProcessTableReader, PROCESS_TABLE_DEADLINE_MS, type ProcessQueryLifecycle, type ProcessTableResult } from '../e2e/cleanup-process-table';
 import { ELECTRON_DIST_DIR, recordElectronApp, sweepE2EProcesses } from '../e2e/e2e-cleanup';
 
+class QueryStream extends EventEmitter {
+  destroy = vi.fn();
+}
 class QueryChild extends EventEmitter {
   kill = vi.fn(() => true);
   stdin = { destroy: vi.fn() };
   stdout = { destroy: vi.fn() };
-  stderr = { destroy: vi.fn() };
+  stderr = new QueryStream();
   unref = vi.fn();
 }
 type Reply = (error: Error | null, output: string) => void;
-type Lifecycle = Readonly<{
-  spawnObserved: boolean; spawnAtMs?: number;
-  exitEventObserved: boolean; exitEventAtMs?: number;
-  callbackObserved: boolean; callbackAtMs?: number;
-  closeObserved: boolean; closeAtMs?: number;
-  deadlineObserved: boolean; deadlineAtMs?: number;
-  cleanupRequested: boolean;
-}>;
-type LifecycleObserver = (phase: 'deadline' | 'close-after-deadline', snapshot: Lifecycle) => void;
+type LifecycleObserver = (phase: 'deadline' | 'close-after-deadline', snapshot: ProcessQueryLifecycle) => void;
 function fixture(platform: NodeJS.Platform = 'win32', observe?: LifecycleObserver) {
   const children: QueryChild[] = [], replies: Reply[] = [];
   const execute = vi.fn((_file: string, _args: string[], _options: unknown, callback: Reply) => {
@@ -36,6 +31,68 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('query lifecycle diagnostics', () => {
+  it('accepts only one exact, bounded script-entry line, freezing its parent-observed time separately from late close', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(500);
+    const observe = vi.fn<LifecycleObserver>();
+    const { read, children, replies } = fixture('win32', observe);
+    const pending = read();
+    const stderr = children[0].stderr;
+    stderr.emit('data', `PRIVATE ${'x'.repeat(200)}CLUBHOUSE_QUERY:script-enter\n`);
+    stderr.emit('data', 'CLUBHOUSE_QUERY:script-enter PRIVATE\n');
+    stderr.emit('data', Buffer.from('CLUBHOUSE_QUERY:script-'));
+    clock.mockReturnValue(517); stderr.emit('data', Buffer.from('enter\r\n'));
+    clock.mockReturnValue(521); stderr.emit('data', 'CLUBHOUSE_QUERY:script-enter\n');
+    clock.mockReturnValue(10_500); await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS);
+    const result = await pending;
+    expect(result).toMatchObject({ ok: false, reason: 'timeout', lifecycle: {
+      scriptEntry: { observed: true, atMs: 17, observationKnown: true }, closeObserved: false } });
+    expect(Object.isFrozen(observe.mock.calls[0][1].scriptEntry)).toBe(true);
+    clock.mockReturnValue(10_507); replies[0](new Error('PRIVATE'), 'PRIVATE');
+    children[0].emit('exit'); children[0].emit('close');
+    expect(observe.mock.calls[1][1]).toMatchObject({ closeObserved: true, closeAtMs: 10_007,
+      scriptEntry: { observed: true, atMs: 17, observationKnown: true } });
+    expect(result).toMatchObject({ lifecycle: { closeObserved: false } });
+    expect(JSON.stringify(observe.mock.calls)).not.toContain('PRIVATE');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not backfill a frozen deadline with a later entry receipt or release its reservation before close', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const observe = vi.fn<LifecycleObserver>();
+    const { read, children, execute } = fixture('win32', observe);
+    const pending = read();
+    clock.mockReturnValue(10_000); await vi.advanceTimersByTimeAsync(PROCESS_TABLE_DEADLINE_MS);
+    const result = await pending;
+    expect(result).toMatchObject({ reason: 'timeout', lifecycle: { scriptEntry: { observed: false, observationKnown: true } } });
+    clock.mockReturnValue(10_002); children[0].stderr.emit('data', 'CLUBHOUSE_QUERY:script-enter\n');
+    expect(await read()).toMatchObject({ reason: 'unreconciled' });
+    expect(execute).toHaveBeenCalledOnce();
+    children[0].emit('close');
+    expect(observe.mock.calls[1][1].scriptEntry).toEqual({ observed: true, atMs: 10_002, observationKnown: true });
+    expect(observe.mock.calls[0][1].scriptEntry).toEqual({ observed: false, observationKnown: true });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('marks optional stderr observation failure without changing callback failure or close ownership', async () => {
+    const { read, execute, children, replies } = fixture();
+    const original = execute.getMockImplementation()!;
+    execute.mockImplementationOnce((...args) => {
+      const child = original(...args);
+      vi.spyOn(child.stderr, 'on').mockImplementation(() => { throw new Error('PRIVATE observer'); });
+      return child;
+    });
+    const pending = read();
+    replies[0](new Error('PRIVATE query'), '');
+    expect(await pending).toMatchObject({ ok: false, reason: 'error',
+      lifecycle: { scriptEntry: { observed: false, observationKnown: false } } });
+    expect(await read()).toMatchObject({ reason: 'unreconciled' });
+    expect(execute).toHaveBeenCalledOnce();
+    children[0].emit('close');
+    const next = read(); children[1].emit('close'); replies[1](null, '[]');
+    expect(await next).toMatchObject({ ok: true, processes: [] });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('freezes deadline evidence separately from late callback, exit and close receipts', async () => {
     const clock = vi.spyOn(performance, 'now').mockReturnValue(500);
     const observe = vi.fn<LifecycleObserver>();
@@ -47,6 +104,7 @@ describe('query lifecycle diagnostics', () => {
     const deadline = {
       spawnObserved: true, spawnAtMs: 7, exitEventObserved: false, callbackObserved: false,
       closeObserved: false, deadlineObserved: true, deadlineAtMs: 10_000, cleanupRequested: true,
+      scriptEntry: { observed: false, observationKnown: true },
     };
     expect(result).toEqual({ ok: false, reason: 'timeout', elapsedMs: 10_000,
       cleanupRequested: true, exitObserved: false, lifecycle: deadline });
@@ -207,7 +265,7 @@ it('uses existing PowerShell fields without shell/input expansion and validates 
   children[0].emit('close'); replies[0](null, '[{"ProcessId":123,"ParentProcessId":1,"CommandLine":"synthetic"}]');
   expect(await pending).toMatchObject({ ok: true, processes: [{ pid: 123, ppid: 1, command: 'synthetic' }] });
   expect(execute.mock.calls[0].slice(0, 3)).toEqual(['powershell.exe', ['-NoProfile', '-Command',
-    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress'],
+    "[Console]::Error.WriteLine('CLUBHOUSE_QUERY:script-enter'); Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress"],
   { encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024 }]);
   expect(children[0].kill).not.toHaveBeenCalled(); expect(vi.getTimerCount()).toBe(0);
 });

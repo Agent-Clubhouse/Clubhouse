@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CheckpointFixtureLifetime, ownCheckpointExecFile } from '../../../../test/checkpoint-fixture-lifetime';
 import { preservingFailure } from '../../../../test/dispatcher-work-owner';
 
@@ -29,6 +29,121 @@ async function enteredOrSettled(entry: Promise<void>, owner: Promise<Outcome<unk
 }
 
 describe('checkpoint fixture lifetime (fake producers only)', () => {
+  it('freezes per-phase timings and the pending Git lifecycle, retaining separate late receipts through retirement', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const owner = new CheckpointFixtureLifetime();
+    const child = new EventEmitter();
+    let reply: (() => void) | undefined;
+    const wrapped = ownCheckpointExecFile((_file: string, _args: string[], callback: () => void) => {
+      reply = callback;
+      return child;
+    }, () => owner);
+    try {
+      clock.mockReturnValue(1010); owner.phaseStarted('capture');
+      clock.mockReturnValue(1012); wrapped('git', ['rev-parse', 'PRIVATE_REF'], () => {});
+      clock.mockReturnValue(1013); child.emit('spawn', 'PRIVATE_PID');
+      clock.mockReturnValue(1018); child.emit('exit', 'PRIVATE_EXIT');
+      clock.mockReturnValue(1019); reply!();
+      clock.mockReturnValue(1020); child.emit('close', 'PRIVATE_CLOSE');
+      clock.mockReturnValue(1021); owner.phaseFinished();
+      clock.mockReturnValue(1030); owner.phaseStarted('revert');
+      clock.mockReturnValue(1032); wrapped('git', ['checkout-index', 'PRIVATE_PATH'], () => {});
+      clock.mockReturnValue(1033); child.emit('spawn');
+      clock.mockReturnValue(1040); owner.freezeFailure('abort');
+      const failure = owner.evidence().failure!;
+      const pending = { ordinal: 2, verb: 'checkout-index', phase: 'revert', createdAtMs: 32, spawnAtMs: 33, timingKnown: true };
+      expect(failure).toMatchObject({ elapsedMs: 40, phaseElapsedMs: 10, phaseComplete: false,
+        gitChildren: { started: 2, outstandingDropped: 0, outstanding: [pending], failureChildren: [pending],
+          recent: [{ ordinal: 1, verb: 'rev-parse', phase: 'capture', createdAtMs: 12, spawnAtMs: 13,
+            exitAtMs: 18, callbackAtMs: 19, closeAtMs: 20, timingKnown: true }] } });
+      expect(failure.phases).toContainEqual({ phase: 'capture', completedCount: 1, completedMs: 11,
+        childrenStarted: 1, childrenCompleted: 1 });
+      expect(failure.phases).toContainEqual({ phase: 'revert', completedCount: 0, completedMs: 0,
+        childrenStarted: 1, childrenCompleted: 0 });
+      for (const value of [failure.phases, ...failure.phases, failure.gitChildren, failure.gitChildren.outstanding,
+        ...failure.gitChildren.outstanding, failure.gitChildren.recent, ...failure.gitChildren.recent,
+        failure.gitChildren.failureChildren, ...failure.gitChildren.failureChildren]) expect(Object.isFrozen(value)).toBe(true);
+
+      clock.mockReturnValue(1042); child.emit('exit');
+      clock.mockReturnValue(1044); reply!();
+      expect(owner.evidence().teardown.childPending).toBe(1);
+      clock.mockReturnValue(1045); child.emit('close');
+      owner.phaseFinished();
+      clock.mockReturnValue(1050);
+      await owner.close(() => Promise.resolve(), () => {});
+      owner.assertRetired();
+      const evidence = owner.evidence();
+      expect(evidence.failure).toBe(failure);
+      expect(failure.gitChildren.outstanding).toEqual([pending]);
+      expect(evidence.teardown.gitChildren.outstanding).toEqual([]);
+      expect(evidence.teardown.gitChildren.failureChildren).toEqual([{ ...pending, exitAtMs: 42, callbackAtMs: 44, closeAtMs: 45 }]);
+      expect(evidence.teardown).toMatchObject({ childPending: 0, callbackPending: 0, closePending: 0, retired: true });
+      expect(JSON.stringify(evidence)).not.toContain('PRIVATE');
+    } finally {
+      try {
+        reply?.(); child.emit('close');
+        await owner.close(() => Promise.resolve(), () => {});
+      } finally { clock.mockRestore(); }
+    }
+  });
+
+  it('bounds child inventories without losing ownership or retaining unknown verbs and arguments', async () => {
+    const owner = new CheckpointFixtureLifetime();
+    const children: EventEmitter[] = [];
+    const callbacks: Array<() => void> = [];
+    const wrapped = ownCheckpointExecFile((_file: string, _args: string[], _options: object, callback: () => void) => {
+      const child = new EventEmitter(); children.push(child); callbacks.push(callback); return child;
+    }, () => owner);
+    try {
+      for (let i = 0; i < 20; i++) wrapped(i === 0 ? 'PRIVATE_EXECUTABLE' : 'git',
+        [i === 0 ? 'diff' : 'PRIVATE_VERB', 'PRIVATE_ARG'], { cwd: 'PRIVATE_CWD', env: { PRIVATE_SECRET: 'PRIVATE' } }, () => {});
+      owner.freezeFailure('abort');
+      const failure = owner.evidence().failure!;
+      expect(failure.gitChildren.outstanding).toHaveLength(16);
+      expect(failure.gitChildren.outstandingDropped).toBe(4);
+      expect(failure.gitChildren.outstanding.every((child) => child.verb === 'other')).toBe(true);
+      children.forEach((child) => child.emit('close'));
+      expect(owner.evidence().teardown).toMatchObject({ childPending: 20, callbackPending: 20, closePending: 0 });
+      expect(owner.evidence().teardown.gitChildren.outstandingDropped).toBe(4);
+      callbacks.forEach((callback) => callback());
+      await owner.close(() => Promise.resolve(), () => {});
+      owner.assertRetired();
+      const evidence = owner.evidence();
+      expect(evidence.failure).toBe(failure);
+      expect(evidence.teardown.gitChildren).toMatchObject({ started: 20, outstandingDropped: 0, outstanding: [] });
+      expect(evidence.teardown.gitChildren.recent).toHaveLength(16);
+      expect(evidence.teardown.gitChildren.failureChildren).toHaveLength(16);
+      expect(JSON.stringify(evidence)).not.toContain('PRIVATE');
+    } finally {
+      callbacks.forEach((callback) => callback());
+      children.forEach((child) => child.emit('close'));
+      await owner.close(() => Promise.resolve(), () => {});
+    }
+  });
+
+  it('does not turn optional timing-listener failure into lost close ownership', async () => {
+    const owner = new CheckpointFixtureLifetime();
+    const events = new EventEmitter();
+    const child = { once(event: string, listener: () => void) {
+      if (event !== 'close') throw new Error('PRIVATE_OBSERVER_ERROR');
+      events.once(event, listener);
+    } };
+    const wrapped = ownCheckpointExecFile(() => child, () => owner);
+    try {
+      expect(wrapped()).toBe(child);
+      owner.freezeFailure('abort');
+      expect(owner.evidence().failure).toMatchObject({ accountingKnown: true, childPending: 1,
+        gitChildren: { outstanding: [expect.objectContaining({ timingKnown: false })] } });
+      events.emit('close');
+      await owner.close(() => Promise.resolve(), () => {});
+      owner.assertRetired();
+      expect(JSON.stringify(owner.evidence())).not.toContain('PRIVATE');
+    } finally {
+      events.emit('close');
+      await owner.close(() => Promise.resolve(), () => {});
+    }
+  });
+
   it('retains late raw/direct/event admissions until callback AND close, before retiring the captured fixture', async () => {
     const owner = new CheckpointFixtureLifetime();
     const rawGate = gate();
@@ -326,7 +441,7 @@ describe('checkpoint fixture lifetime (fake producers only)', () => {
       expect(owner.evidence().failure).toBe(frozen);
       expect(frozen).toMatchObject({ reason: 'abort', phase: 'capture', phaseComplete: false, rawPending: 1 });
       expect(Object.isFrozen(frozen)).toBe(true);
-      expect(Object.keys(frozen ?? {}).sort()).toEqual(['accountingKnown', 'callbackPending', 'childPending', 'closePending', 'closing', 'directPending', 'elapsedMs', 'phase', 'phaseComplete', 'rawPending', 'reason', 'retired', 'teardownOutcome'].sort());
+      expect(Object.keys(frozen ?? {}).sort()).toEqual(['accountingKnown', 'callbackPending', 'childPending', 'closePending', 'closing', 'directPending', 'elapsedMs', 'phase', 'phaseComplete', 'phaseElapsedMs', 'phases', 'gitChildren', 'rawPending', 'reason', 'retired', 'teardownOutcome'].sort());
       hold.release();
       await raw;
       await closed;
