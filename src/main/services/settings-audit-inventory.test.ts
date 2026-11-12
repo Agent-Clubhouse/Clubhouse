@@ -43,6 +43,8 @@ const NOT_SETTINGS = new Set([
   // Auto's last fair-tie choice is internal scheduling history, not a person's setting.
   'helper-auto-rotation.json',
   'helper-model-catalogs.json',
+  // Import previews and per-operation progress/recovery receipts are lifecycle history, not user settings.
+  'project-imports.json',
 ]);
 
 describe('settings audit inventory', () => {

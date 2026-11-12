@@ -1,6 +1,7 @@
 import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
+import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
@@ -92,10 +93,8 @@ const GITIGNORE_BLOCK = `# Clubhouse agent manager
 .clubhouse/agents.json
 .clubhouse/settings.local.json`;
 
-/** Add Clubhouse's lines to the project's .gitignore. True when the file was written. */
-export async function ensureGitignore(projectPath: string): Promise<boolean> {
-  const gitignorePath = path.join(projectPath, '.gitignore');
-
+function gitignoreAddition(content?: string): string | undefined {
+  if (content === undefined) return `${GITIGNORE_BLOCK}\n`;
   const requiredLines = [
     '.clubhouse/agents/',
     '.clubhouse/.local/',
@@ -104,21 +103,67 @@ export async function ensureGitignore(projectPath: string): Promise<boolean> {
     '.clubhouse/settings.local.json',
   ];
 
-  if (await pathExists(gitignorePath)) {
-    const content = await fsp.readFile(gitignorePath, 'utf-8');
+  const missing = requiredLines.filter((line) => !content.includes(line));
+  if (missing.length === 0) return undefined;
+  const parts: string[] = [];
+  if (!content.includes('# Clubhouse agent manager')) parts.push('# Clubhouse agent manager');
+  parts.push(...missing);
+  return `\n${parts.join('\n')}\n`;
+}
 
-    // Check which lines are missing
-    const missing = requiredLines.filter((line) => !content.includes(line));
-    if (missing.length === 0) return false;
-
-    // Append only the missing lines under a header (if header isn't there yet)
-    const parts: string[] = [];
-    if (!content.includes('# Clubhouse agent manager')) {
-      parts.push('# Clubhouse agent manager');
+function ensureGuardedGitignore(projectPath: string, assertSafe: () => void): boolean {
+  const gitignorePath = path.join(projectPath, '.gitignore');
+  const limit = 1024 * 1024;
+  const unsafe = () => new Error('The import .gitignore changed or is not a bounded, singly linked regular file. It was preserved; inspect it before updating ignore rules.');
+  assertSafe();
+  const before = fs.lstatSync(gitignorePath, { throwIfNoEntry: false });
+  if (before && (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size > limit)) throw unsafe();
+  const flags = (before ? fs.constants.O_RDWR | fs.constants.O_APPEND : fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL)
+    | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0);
+  // The final guard and fd acquisition/write have no asynchronous gap.
+  assertSafe();
+  const fd = fs.openSync(gitignorePath, flags, 0o644);
+  try {
+    const opened = fs.fstatSync(fd);
+    const current = fs.lstatSync(gitignorePath);
+    if (!opened.isFile() || opened.nlink !== 1 || opened.size > limit || current.isSymbolicLink()
+      || current.dev !== opened.dev || current.ino !== opened.ino
+      || (before && (before.dev !== opened.dev || before.ino !== opened.ino))) throw unsafe();
+    let content: string | undefined;
+    if (before) {
+      const buffer = Buffer.alloc(limit + 1);
+      let length = 0;
+      while (length < buffer.length) {
+        const read = fs.readSync(fd, buffer, length, buffer.length - length, length);
+        if (!read) break;
+        length += read;
+      }
+      if (length > limit || length !== opened.size) throw unsafe();
+      content = buffer.subarray(0, length).toString('utf8');
+      assertSafe();
+      const latest = fs.lstatSync(gitignorePath);
+      const held = fs.fstatSync(fd);
+      if (!latest.isFile() || latest.isSymbolicLink() || latest.nlink !== 1 || latest.dev !== held.dev || latest.ino !== held.ino
+        || held.size !== opened.size || held.mtimeMs !== opened.mtimeMs || held.ctimeMs !== opened.ctimeMs) throw unsafe();
     }
-    parts.push(...missing);
+    const addition = gitignoreAddition(content);
+    if (addition === undefined) return false;
+    if (opened.size + Buffer.byteLength(addition) > limit) throw unsafe();
+    fs.writeFileSync(fd, addition, 'utf8');
+    return true;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 
-    await fsp.appendFile(gitignorePath, `\n${parts.join('\n')}\n`);
+/** Add Clubhouse's lines to the project's .gitignore. True when the file was written. */
+export async function ensureGitignore(projectPath: string, assertSafe?: () => void): Promise<boolean> {
+  if (assertSafe) return ensureGuardedGitignore(projectPath, assertSafe);
+  const gitignorePath = path.join(projectPath, '.gitignore');
+  if (await pathExists(gitignorePath)) {
+    const addition = gitignoreAddition(await fsp.readFile(gitignorePath, 'utf-8'));
+    if (addition === undefined) return false;
+    await fsp.appendFile(gitignorePath, addition);
   } else {
     await fsp.writeFile(gitignorePath, `${GITIGNORE_BLOCK}\n`);
   }
