@@ -129,8 +129,8 @@ describe('connections with agents on other machines (#3064)', () => {
 
   it('connects an agent here with one there: a link each way, new-connection tools, and a binding to its address with its name', async () => {
     await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true, name: 'Zed' });
-    expect(getConnectionDirection(A, far)).toMatchObject({ link: expect.anything(), disabledTools: ['clear_agent', 'compact_agent'] });
-    expect(getConnectionDirection(far, A)).toMatchObject({ link: expect.anything() });
+    expect(getConnectionDirection(A, far)).toMatchObject({ link: expect.anything(), disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
+    expect(getConnectionDirection(far, A)).toMatchObject({ link: expect.anything(), disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'] });
     const binding = bindingManager.getBindingsForAgent('a').find((b) => b.targetId === `z@${FAR}`);
     expect(binding).toMatchObject({ targetKind: 'agent', targetName: 'Zed', agentName: 'alpha', disabledTools: ['clear_agent', 'compact_agent'] });
     // The other machine's agent holds the way back: nothing is bound here for it.
@@ -224,18 +224,16 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
   });
   afterEach(() => { for (const u of unregister) u(); });
 
-  it('only orchestrator to helper starts with every tool; Dispatcher and other directions have clear and compact off', async () => {
+  it('starts every new direction, including parent to helper, with wake on and clear and compact off', async () => {
     unregister.push(registerPersistedBindingSource({
       id: 'orchestrator-connections', prune: true, collect: async () => [wire('a', 'b', startingTools(AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink))],
     }));
     await rebuildPersistedBindings();
-    expect(readLocalDirectionTools('a', 'h')).toEqual({ allowed: ALL, disabled: [] });
-    for (const [from, to] of [['h', 'a'], ['disp', 'a'], ['a', 'disp'], ['a', 'b']]) {
+    for (const [from, to] of [['a', 'h'], ['h', 'a'], ['disp', 'a'], ['a', 'disp'], ['a', 'b']]) {
       expect(readLocalDirectionTools(from, to)).toEqual({ allowed: SEND_AND_WAKE, disabled: CLEAR_COMPACT });
       expect(toolsOf(from, to)).toEqual(CLEAR_COMPACT);
       expect(localConnectionWakeOn(from, to)).toBe(true);
     }
-    expect(toolsOf('a', 'h')).toBeUndefined();
     // Live only until the one-time pass has run: it decides for older connections.
     expect(listConnectionDirections('a')).toEqual([]);
   });
@@ -243,12 +241,10 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
   it('the one-time pass keeps each older connection\'s starting lists, wake included, and only where nothing is saved', async () => {
     await rebuildPersistedBindings();
     expect(await migrate()).toBe('done');
-    for (const [from, to] of [[H, A], [DISP, A], [A, DISP]]) {
+    for (const [from, to] of [[A, H], [H, A], [DISP, A], [A, DISP]]) {
       expect(getConnectionDirection(from, to)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
       expect(getConnectionDirection(from, to)?.setBy).toBeUndefined();
     }
-    // Every tool on is only the parent's start: no entry needed, the binding says so.
-    expect(getConnectionDirection(A, H)).toBeUndefined();
     expect(localConnectionWakeOn('a', 'h')).toBe(true);
     expect(connectionMigrationDone(AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION)).toBe(true);
   });
@@ -278,8 +274,7 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
     const stored = getConnectionDirection(A, DISP);
     expect(await migrate()).toBe('done');
     expect(getConnectionDirection(H, A)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
-    // The parent's link to its helper decides over the canvas default: every tool, nothing saved.
-    expect(getConnectionDirection(A, H)).toBeUndefined();
+    expect(getConnectionDirection(A, H)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
     expect(getConnectionDirection(A, DISP)).toEqual(stored);
     // Restart: the canvas binds the pair first again, and the saved list applies.
     bindingManager._resetForTesting?.();
@@ -305,16 +300,15 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
     expect(getConnectionDirection({ agentId: 'z' }, B)).toBeUndefined();
   });
 
-  it('a direction saved exactly as a new connection started before (clear and compact off, nothing on, no link) gets wake on, keeping who set it', async () => {
+  it('preserves saved directions exactly, including the old new-connection defaults with wake off', async () => {
     // A canvas wire drawn since #2969, and a Dispatcher link #3216 saved.
     await setConnectionTools(H, B, CLEAR_COMPACT);
     await setConnectionDirections([{ from: A, to: B, disabledTools: CLEAR_COMPACT, enabledTools: [] }], () => {});
+    const before = [getConnectionDirection(H, B), getConnectionDirection(A, B)];
     await rebuildPersistedBindings();
     expect(await migrate()).toBe('done');
-    expect(getConnectionDirection(H, B)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
-    expect(getConnectionDirection(H, B)?.setBy).toBeUndefined();
-    expect(getConnectionDirection(A, B)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'], setBy: 'dispatcher' });
-    expect(localConnectionWakeOn('h', 'b')).toBe(true);
+    expect([getConnectionDirection(H, B), getConnectionDirection(A, B)]).toEqual(before);
+    expect(localConnectionWakeOn('h', 'b')).toBe(false);
   });
 
   it('leaves every other saved shape as it is', async () => {
@@ -345,17 +339,17 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
     expect(getConnectionDirection(H, A)).toMatchObject({ disabledTools: [] });
   });
 
-  it('the first source to give a direction its starting list decides: an orchestrator connection doesn\'t start a parent with less over its own helper', async () => {
+  it('uses the same starting switches when both helper and tool sources hold a direction', async () => {
     unregister.push(registerPersistedBindingSource({
       id: 'orchestrator-connections', prune: true, collect: async () => [wire('a', 'h', startingTools(AUTOMATIC_CONNECTION_SWITCHES.orchestratorLink))],
     }));
     await rebuildPersistedBindings();
-    expect(toolsOf('a', 'h')).toBeUndefined();
+    expect(toolsOf('a', 'h')).toEqual(CLEAR_COMPACT);
     expect(await migrateAutomaticConnectionTools([...AUTOMATIC, 'orchestrator-connections'], DRAWN)).toBe('done');
-    expect(getConnectionDirection(A, H)).toBeUndefined();
+    expect(getConnectionDirection(A, H)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
     await rebuildPersistedBindings();
-    expect(toolsOf('a', 'h')).toBeUndefined();
-    expect(readLocalDirectionTools('a', 'h')).toEqual({ allowed: ALL, disabled: [] });
+    expect(toolsOf('a', 'h')).toEqual(CLEAR_COMPACT);
+    expect(readLocalDirectionTools('a', 'h')).toEqual({ allowed: SEND_AND_WAKE, disabled: CLEAR_COMPACT });
   });
 
   it('a starting list that couldn\'t be saved is saved on a later rebuild, after a canvas wire is drawn over the pair', async () => {
@@ -376,7 +370,7 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
     canvas = [wire('h', 'a'), wire('a', 'h')];
     await rebuildPersistedBindings();
     await vi.waitFor(() => expect(getConnectionDirection(H, A)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] }));
-    expect(getConnectionDirection(A, H)).toBeUndefined();
+    expect(getConnectionDirection(A, H)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
   });
 
   it('waits while the file is a newer build\'s, saying so once, and runs once it isn\'t', async () => {
@@ -407,7 +401,7 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
     canvas = [wire('h', 'a'), wire('a', 'h')];
     await rebuildPersistedBindings();
     expect(toolsOf('h', 'a')).toEqual(['send_file']);
-    expect(getConnectionDirection(A, H)).toBeUndefined();
+    expect(getConnectionDirection(A, H)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] });
   });
 
   it('waits while a source can\'t be read, since it might list the pair, and runs once it can', async () => {
@@ -463,7 +457,7 @@ describe('connections start as the maintainer set them, 2026-11-09 (#3214)', () 
     bindingManager._resetForTesting?.();
     await rebuildPersistedBindings();
     await vi.waitFor(() => expect(getConnectionDirection(H, A)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] }));
-    expect(getConnectionDirection(A, H)).toBeUndefined();
+    await vi.waitFor(() => expect(getConnectionDirection(A, H)).toMatchObject({ disabledTools: CLEAR_COMPACT, enabledTools: ['wake_agent'] }));
     expect(getConnectionDirection(A, DISP)).toMatchObject({ disabledTools: [] });
     expect(getConnectionDirection(A, DISP)?.enabledTools).toBeUndefined();
     expect(toolsOf('a', 'disp')).toBeUndefined();
