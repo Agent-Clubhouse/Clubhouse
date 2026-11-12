@@ -124,6 +124,11 @@ not silently evicted. A full history refuses new imports. Only one import runs
 at a time; metadata output is capped at 1 MiB, remote checks at 30 seconds and
 each Git operation at ten minutes. Shallow download bounds history, not the
 repository's total byte size; there is no disk quota or repository-size promise.
+Ledger reads require a singly linked regular file, compare path and open-file
+identity/version before and after the bounded read, and check the observed path
+again before committing. Existing and dangling symlinks are refused even where
+`O_NOFOLLOW` is unavailable. These cooperative checks do not claim atomic
+confinement against other OS processes.
 
 Repeated starts of one plan return its existing receipt, not another checkout or
 project. After cancellation, failure or app interruption, no download is silently

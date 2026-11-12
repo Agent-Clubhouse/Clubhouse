@@ -11,6 +11,10 @@ const PHASES = new Set([...ACTIVE_PHASES, 'completed', 'partial', 'cancelled', '
 const ID = /^[a-f0-9-]{36}$/;
 const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
+function fileSignature(stat: fs.BigIntStats): string {
+  return `${stat.dev}:${stat.ino}:${stat.mode}:${stat.nlink}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+}
+
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -88,15 +92,27 @@ export class ImportStore {
 
   constructor(private readonly file = path.join(getBaseDirPath(), 'project-imports.json')) {}
 
-  private async read(): Promise<ImportState> {
+  private async read(): Promise<{ state: ImportState; signature?: string }> {
+    const unavailable = () => new ImportError('history_unavailable', 'Import history cannot be read safely. Existing state was not replaced.');
+    let before: fs.BigIntStats;
+    try {
+      before = await fsp.lstat(this.file, { bigint: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { state: { version: 1, plans: [], receipts: [] } };
+      throw unavailable();
+    }
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n) throw unavailable();
+    const signature = fileSignature(before);
     let handle: fsp.FileHandle;
     try {
-      handle = await fsp.open(this.file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, plans: [], receipts: [] };
-      throw new ImportError('history_unavailable', 'Import history cannot be read safely. Existing state was not replaced.');
+      handle = await fsp.open(this.file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+    } catch {
+      // telemetry-exempt: a previously observed ledger must not become an empty-store fallback.
+      throw unavailable();
     }
     try {
+      const opened = await handle.stat({ bigint: true });
+      if (!opened.isFile() || fileSignature(opened) !== signature) throw unavailable();
       const buffer = Buffer.alloc(IMPORT_STATE_MAX_BYTES + 1);
       let total = 0;
       while (total < buffer.length) {
@@ -105,7 +121,13 @@ export class ImportStore {
         total += bytesRead;
       }
       if (total > IMPORT_STATE_MAX_BYTES) throw new ImportError('history_corrupt', 'Import history exceeds its byte limit. Existing state was not replaced.');
-      return decodeImportState(buffer.subarray(0, total).toString('utf8'));
+      if (fileSignature(await handle.stat({ bigint: true })) !== signature
+        || fileSignature(await fsp.lstat(this.file, { bigint: true })) !== signature) throw unavailable();
+      return { state: decodeImportState(buffer.subarray(0, total).toString('utf8')), signature };
+    } catch (error) {
+      // telemetry-exempt: filesystem diagnostics and lifecycle paths stay private.
+      if (error instanceof ImportError) throw error;
+      throw unavailable();
     } finally {
       await handle.close();
     }
@@ -113,12 +135,12 @@ export class ImportStore {
 
   async get(): Promise<ImportState> {
     await this.queue;
-    return this.read();
+    return (await this.read()).state;
   }
 
   update(fn: (state: ImportState) => void): Promise<ImportState> {
     const operation = this.queue.then(async () => {
-      const state = await this.read();
+      const { state, signature } = await this.read();
       fn(state);
       const body = encodeImportState(state);
       // Revalidate our own encoding before committing, including the exact persisted byte bound.
@@ -133,6 +155,10 @@ export class ImportStore {
         await handle.close();
       }
       try {
+        const current = fs.lstatSync(this.file, { bigint: true, throwIfNoEntry: false });
+        if ((current ? fileSignature(current) : undefined) !== signature) {
+          throw new ImportError('history_unavailable', 'Import history changed before commit. Existing state was not replaced.');
+        }
         await fsp.rename(temp, this.file);
       } catch {
         // telemetry-exempt: a failed receipt write is explicit; only our exact temporary file is removed.
