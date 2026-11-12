@@ -26,8 +26,10 @@ startup binding cache or change existing members or subscriptions.
 
 Initial registry loading inventories registered projects, durable agents, saved
 connections, every app/project Canvas store, and live bindings/registrations.
-It reuses the existing wire and connection eligibility rules without creating
-memberships or changing subscriptions. A single known member project implies
+It reuses the existing wire and connection eligibility rules, including saved
+grant-authorized foreign endpoints, without creating memberships or changing
+subscriptions. Unknown live-agent directory identities defer inference rather
+than being ignored. A single known member project implies
 project/local; mixed or verified empty membership implies app/local.
 
 Strict read-only source readers refuse unknown or malformed rows, ambiguous
