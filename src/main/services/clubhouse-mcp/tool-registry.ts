@@ -279,6 +279,8 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     list_orchestrator_controls: INTERNAL_READ,
     list_agent_parts: INTERNAL_READ,
     get_agent_part: INTERNAL_READ,
+    discover_agent_assets: INTERNAL_READ,
+    import_agent_asset: INTERNAL_WRITE,
     create_agent_part: INTERNAL_WRITE,
     update_agent_part: INTERNAL_WRITE,
     fork_agent_part: INTERNAL_WRITE,
