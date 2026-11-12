@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "purpose": "diagnostic-only-not-release-validation",
+  "runnable": true,
+  "captureSha": "b3de51178f5e3adeed539ff92a47b98230b4fbca",
+  "captureTree": "c6d52854c25b1fd39a9c7f7d792a637ec95482d3",
+  "historicalMergeSha": "42fa968a879ad2382c4f9da9bf62003a857ee62c",
+  "historicalTree": "cab36a99d274127c0c42ba79c2cb9f0c54d68849",
+  "historicalHead": "0fcc7f8ccc46d36e30db6fcf6b4d1096e1e3b7aa",
+  "historicalBase": "d030e0111406b3aafa20cfb79d3926b033e97c65",
+  "reviewedD030Tree": "f136efe13bc6ab45b8a8dd7a10d5e80cabd95f22",
+  "historicalRun": 43205594961,
+  "historicalJob": 131139944650,
+  "deadlineMs": 10000,
+  "expectedImageVersion": "20261103.298.1",
+  "expectedOsRelease": "10.0.26100",
+  "expectedNodeVersion": "v22.23.4",
+  "expectedNpmVersion": "10.9.9",
+  "expectedRepository": "Agent-Clubhouse/Clubhouse",
+  "reviewedPaths": {
+    "e2e/cleanup-process-table.ts": {
+      "before": "6b05bebd4200019858247cda326f2460a22b1ce0",
+      "after": "402be60a23ef6a39468337f7ad8fa366b2f72541"
+    },
+    "test/e2e-process-table.test.ts": {
+      "before": "20889b3a785f7f74d7faae0f6dae04e604a0dc53",
+      "after": "5bed34691a6211acf4d12d82cf097512c455b2a5"
+    },
+    "test/checkpoint-fixture-lifetime.ts": {
+      "before": "0d37704e5ce2bd0ae895ea1e6c4da3ef483d5c13",
+      "after": "b503b68507c8d23d0a50e1fc6d654c45c5ab3ff3"
+    },
+    "src/main/services/agent-runtime/checkpoint-fixture-lifetime.test.ts": {
+      "before": "8f6a75091b0c34362a730db991001623ebd96129",
+      "after": "26c6383f166735707d3a1ed7d85d2f9239ad5d91"
+    }
+  },
+  "unchangedBlobs": {
+    ".github/workflows/validate.yml": "58147ae95b79b6af120e0fcabd8142b99d5935e1",
+    "vitest.config.ts": "e371e57159be74b4f5baf9aadcb0339fa6034025",
+    "package.json": "282aecade9f4987dc0d2aeb27bf3d5cb29755b89",
+    "package-lock.json": "223df579f8c731e96d736553f609fdbd666f4962"
+  },
+  "shippingAndCaptureBlockers": [
+    "Parent must approve final harness, workflow, and actual control commit SHA",
+    "Change runnable to true only in that separately reviewed control commit",
+    "CI owner must authorize exactly one dispatch; no PR, branch auto-run, or rerun",
+    "Genuine Windows parity must pass on a separate fresh VM before capture"
+  ]
+}

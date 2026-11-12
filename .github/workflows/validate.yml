@@ -1,826 +1,129 @@
-name: Validate
-
-# How this workflow spends runners, and why: docs/ci.md.
-#
-# macOS runners are capped at 5 concurrent jobs on this plan, while Linux and
-# Windows have ~60. Every PR is validated on Linux and Windows (lint,
-# typecheck, sharded unit tests, and E2E sharded over a single build per OS).
-# macOS gets at most two short jobs per PR, neither on the critical path:
-#
-# - macOS unit: every code PR. The unit tests for code that behaves
-#   differently on macOS, plus the tests related to the change, on a real Mac.
-# - macOS build: only when scripts/ci/classify-changes.mjs finds packaging,
-#   dependency or window/keyboard chrome changes. Packages the app for macOS
-#   and runs an E2E smoke set for the macOS-specific UI.
-#
-# Pushes to main and the daily schedule run the same two jobs (on main, the
-# build job only for macOS-relevant pushes). `full-ci` and manual runs add the
-# complete macOS matrix.
+# LOCALLY APPROVED CONTROL CANDIDATE. PUSH/DISPATCH NOT AUTHORIZED.
+# Proposed location on an isolated, non-main, no-PR control branch:
+# .github/workflows/validate.yml (already dispatchable on the default branch).
+# Manifest runnable=true; WAIT parent approval of actual CONTROL SHA/ref and ONE dispatch.
+name: Windows query observation (not release validation)
 
 on:
-  pull_request:
-    branches: [main, dev/*]
-    # `labeled` lets a maintainer opt a PR into the full matrix with the
-    # `full-ci` label without pushing a new commit.
-    types: [opened, synchronize, reopened, labeled]
-    # Docs-only PRs start no runners at all. A PR that also touches code runs
-    # normally (paths-ignore only skips when every file matches).
-    paths-ignore:
-      - 'docs/**'
-      - 'notes/**'
-      - '*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - 'LICENSE'
-  push:
-    branches: [main]
-  schedule:
-    # Daily (07:00 UTC): Linux/Windows in full and both macOS jobs, which catches
-    # runner-image and toolchain drift that no change would trigger.
-    - cron: '0 7 * * *'
   workflow_dispatch:
-
-# PRs: a newer push supersedes the running validation. main/nightly: let every
-# run finish so each merged commit gets a full result.
-#
-# Only the `full-ci` label should start a run. Any other label gets a group of
-# its own, so it can't cancel the real run, and stops at the `changes` job.
-concurrency:
-  group: validate-${{ github.ref }}-${{ github.event_name }}${{ github.event.action == 'labeled' && github.event.label.name != 'full-ci' && format('-label-{0}', github.run_id) || '' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    inputs:
+      expected_control_sha:
+        description: Reviewed immutable control commit SHA
+        required: true
+        type: string
+      expected_capture_sha:
+        description: Reviewed immutable historical-merge-plus-four-files commit SHA
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: windows-query-observation-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  dependency-preflight:
-    name: Dependency resolution preflight
-    if: ${{ github.actor == 'dependabot[bot]' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - name: Check the install graph resolves for Dependabot updates
-        run: node scripts/dependabot-preflight.mjs
-
-  # Decides what the rest of the run needs. Outputs:
-  #   complete     every job on every OS, macOS included (full-ci, manual)
-  #   full         Linux/Windows extras: the Linux package smoke test
-  #   e2e          build the app and run E2E (false for unit-test-only changes)
-  #   macos_build  run the macOS build job
-  changes:
-    needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
-    name: Plan the run
-    runs-on: ubuntu-latest
+  parity:
+    name: Native Windows stdout and exit parity (diagnostic only)
+    if: ${{ github.event_name == 'workflow_dispatch' && github.run_attempt == 1 }}
+    runs-on: windows-latest
     timeout-minutes: 5
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      EXPECTED_CONTROL_SHA: ${{ inputs.expected_control_sha }}
+      EXPECTED_CAPTURE_SHA: ${{ inputs.expected_capture_sha }}
     outputs:
-      complete: ${{ steps.plan.outputs.complete }}
-      full: ${{ steps.plan.outputs.full }}
-      e2e: ${{ steps.plan.outputs.e2e }}
-      macos_build: ${{ steps.plan.outputs.macos_build }}
+      capture_sha: ${{ steps.gate.outputs.capture_sha }}
+      capture_tree: ${{ steps.gate.outputs.capture_tree }}
+      reviewed_blobs: ${{ steps.gate.outputs.reviewed_blobs }}
+      unchanged_blobs: ${{ steps.gate.outputs.unchanged_blobs }}
+      image_version: ${{ steps.gate.outputs.image_version }}
+      os_release: ${{ steps.gate.outputs.os_release }}
+      node_version: ${{ steps.gate.outputs.node_version }}
+      npm_version: ${{ steps.gate.outputs.npm_version }}
     steps:
+      - name: Reject moved control ref or a rerun before checkout
+        run: |
+          node -e 'const e=process.env;const ok=e.GITHUB_REPOSITORY==="Agent-Clubhouse/Clubhouse"&&e.GITHUB_EVENT_NAME==="workflow_dispatch"&&e.GITHUB_RUN_ATTEMPT==="1"&&/^[a-f0-9]{40}$/.test(e.EXPECTED_CONTROL_SHA||"")&&e.EXPECTED_CONTROL_SHA===e.GITHUB_SHA&&/^[a-f0-9]{40}$/.test(e.EXPECTED_CAPTURE_SHA||"");if(!ok){console.error(JSON.stringify({ok:false,failure:"dispatch_guard_rejected"}));process.exit(1)}'
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '22.23.4'
-      # Before any Windows job: a path Windows can't create fails their checkout
-      # with no clear message (#2347).
-      - name: Check paths are valid on Windows
-        run: node scripts/ci/check-windows-paths.mjs
-      # Here because this job runs on every change, including one that edits only
-      # the list. docs/release-publishing.md, "Lifting an entry".
-      - name: Check the CLI kill switch list isn't reset
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+      - name: Validate approved manifest and control identity
+        id: gate
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: node scripts/ci/cli-denylist.mjs check-change --base "$BASE" --head "$HEAD"
-      - name: Classify the change
-        id: plan
+          PARITY_MODE: gate
+        run: node .diagnostics/windows-query-parity.cjs
+      - name: Checkout only the immutable source for private parity
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.gate.outputs.capture_sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Five native parity cases then private real-CIM sanity
+        id: parity
         env:
-          EVENT: ${{ github.event_name }}
-          ACTOR: ${{ github.actor }}
-          FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          out() { printf '%s\n' "$@" | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"; }
-          if [ "$EVENT" = "workflow_dispatch" ] || [ "$FULL_CI" = "true" ]; then
-            out complete=true full=true e2e=true macos_build=false
-          elif [ "$EVENT" = "schedule" ]; then
-            # Daily: everything on Linux/Windows, both macOS jobs (catches
-            # runner-image and toolchain drift that no change triggers).
-            out complete=false full=true e2e=true macos_build=true
-          else
-            if [ "$EVENT" = "push" ]; then
-              BASE="$PUSH_BEFORE"; HEAD="$GITHUB_SHA"; FULL=true
-            else
-              BASE="$PR_BASE"; HEAD="$PR_HEAD"
-              # Dependabot also gets the Linux package smoke test.
-              if [ "$ACTOR" = "dependabot[bot]" ]; then FULL=true; else FULL=false; fi
-            fi
-            out complete=false "full=$FULL"
-            # A new branch pushes with an all-zero `before`; a force-push can
-            # name a commit that's gone. Classify only against a real base.
-            if [ -n "$BASE" ] && [ "${BASE//0/}" != "" ] && git rev-parse --verify --quiet "$BASE^{commit}" > /dev/null; then
-              git diff -U0 "$BASE...$HEAD" | env -u GITHUB_OUTPUT node scripts/ci/classify-changes.mjs | grep -E '^(e2e|macos_build|macos_build_reason)=' | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
-            else
-              # No usable base (a new branch, or a force-push past history): run everything.
-              out e2e=true macos_build=true macos_build_reason=no-base
-            fi
-          fi
-
-  lint:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' }}
-    name: ESLint (errors only)
-    runs-on: ubuntu-latest
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+          PARITY_MODE: parity
+        run: node .diagnostics/windows-query-parity.cjs
+      - name: Retain sanitized parity receipt only
+        if: ${{ always() && steps.parity.outcome != 'skipped' && steps.parity.outcome != '' }}
+        uses: actions/upload-artifact@v7
         with:
-          node-version: '22.23.4'
-          cache: npm
-      - run: npm ci
-      # This repo currently has a large warning backlog; the gate is intentionally
-      # set to fail on ESLint errors only, not on warnings. This job is expected
-      # to be added to the repo's required status checks when #1599 lands so it is
-      # enforced on protected branches instead of remaining advisory.
-      - run: npm run lint
-
-  # Linux only, no npm ci, and nothing needs it, so it can't lengthen the long pole.
-  actionlint:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' }}
-    name: Workflow lint (actionlint)
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    env:
-      ACTIONLINT_VERSION: '1.7.12'
-      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-    steps:
-      - uses: actions/checkout@v7
-      # The release tarball, so a GitHub release outage doesn't fail the job.
-      # The checksum is checked whether it came from the cache or the download.
-      - uses: actions/cache@v6
-        with:
-          path: actionlint.tar.gz
-          key: actionlint-${{ env.ACTIONLINT_VERSION }}-${{ env.ACTIONLINT_SHA256 }}
-      - name: Download actionlint
-        run: |
-          if [ ! -f actionlint.tar.gz ]; then
-            curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          fi
-          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum --check
-          tar -xzf actionlint.tar.gz actionlint
-      # Workflow structure and expressions only. Passing no shellcheck keeps the
-      # result the same whatever the runner image has installed.
-      - run: ./actionlint -shellcheck= -pyflakes=
-
-  codex-schema-drift:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' }}
-    name: Codex app-server schema drift
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-      # Regenerates the vendored bindings from the version recorded in
-      # codex-protocol/generated-meta.ts (`codex app-server generate-ts`: no
-      # login, no model request) and fails if they differ from what is committed.
-      - run: npm run codex:check-types
-
-  # tsc is platform-independent, so it runs once, on Linux (case-sensitive
-  # paths catch more than Windows would). It also carries the API surface
-  # gate, which used to repeat the same tsc in a job of its own.
-  typecheck:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' }}
-    name: Typecheck + API surface
-    runs-on: ubuntu-latest
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - run: npm ci
-      # Includes the frozen v0.4 plugin-API snapshot.
-      - run: npx tsc --noEmit
-      # Baseline: 20 marker-bearing test files tracked by #1594.
-      - run: npm run check:test-coverage-ratchet
-      # The plugin-API compatibility gate, independent of the broader test suite.
-      - run: npx vitest run --project renderer plugin-api-version-contracts
-      - name: Check plugin-types changes
-        if: github.event_name == 'pull_request'
-        run: |
-          if git diff --name-only ${{ github.event.pull_request.base.sha }}..HEAD | grep -q 'plugin-types.ts'; then
-            echo "::warning file=src/shared/plugin-types.ts::plugin-types.ts was modified — verify API backward compatibility"
-          fi
-
-  unit-and-component:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' }}
-    name: Unit + Component Tests (${{ matrix.os }}, ${{ matrix.shard }}/2)
-    runs-on: ${{ matrix.os }}
-    env:
-      # vitest aliases `electron` to a mock; the binary is never launched.
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-latest","macos-latest"]' || '["ubuntu-latest","windows-latest"]') }}
-        shard: [1, 2]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - run: npm ci
-      - run: npm test -- --shard=${{ matrix.shard }}/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: test-results-${{ matrix.os }}-${{ matrix.shard }}
-          path: test-results.xml
-
-  # Builds the app once per OS; the E2E shards and Annex E2E reuse it. E2E
-  # launches .webpack/<arch>/main with Electron from node_modules (e2e/launch.ts),
-  # and forge rebuilds no native modules (rebuildConfig.onlyModules is empty),
-  # so .webpack/ is the whole artifact.
-  build:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.e2e == 'true' }}
-    name: Build app (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Pin Windows to windows-2022 (VS2022). windows-latest rolled to the
-        # windows-2025 image (VS2026), which @electron/node-gyp can't detect,
-        # breaking the node-pty rebuild during `electron-forge package`.
-        # Track this pin in #1652 and revisit when the upstream fix lands or
-        # GitHub announces windows-2022 deprecation, whichever comes first.
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - name: Exclude workspace from Windows Defender
-        if: runner.os == 'Windows'
-        # Best-effort perf optimization: the runner's Defender service
-        # intermittently rejects this with 0x800106ba. Don't fail the job.
-        continue-on-error: true
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-        shell: pwsh
-      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per
-      # OS. Packager finds the same zip there, so forge doesn't download it again.
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      # E2E only needs webpack output, not distributable installers.
-      # Packager still fetches Electron's SHASUMS256.txt from GitHub every run
-      # (@electron/get never caches it), so one retry when that gets a 5xx.
-      - name: Build app
-        if: runner.os != 'macOS'
-        shell: bash
-        run: |
-          log="$RUNNER_TEMP/forge-package.log"
-          for attempt in 1 2; do
-            if npx electron-forge package 2>&1 | tee "$log"; then exit 0; fi
-            grep -q 'HTTPError: Response code 5' "$log" || exit 1
-            echo "::warning::electron-forge package got a 5xx from GitHub (attempt $attempt)"
-          done
-          exit 1
-      - name: Build unsigned isolated macOS test artifact
-        if: runner.os == 'macOS'
-        run: node scripts/ci/package-integration.mjs
-      - name: Verify actual packaged Windows runtime
-        if: runner.os == 'Windows'
-        run: node scripts/ci/smoke-packaged.mjs
-      - uses: actions/upload-artifact@v7
-        if: always() && runner.os == 'Windows'
-        with:
-          name: packaged-runtime-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
-          path: packaged-runtime-evidence/
-          retention-days: 7
-      - uses: actions/upload-artifact@v7
-        if: runner.os == 'macOS'
-        with:
-          name: clubhouse-integration-${{ runner.arch }}-${{ github.sha }}
-          path: integration-artifact/
-          retention-days: 7
+          name: windows-query-parity-sanitized
+          path: diagnostic-receipts/parity.json
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
-        with:
-          name: webpack-${{ matrix.os }}
-          path: .webpack/
-          retention-days: 3
-          include-hidden-files: true
+          retention-days: 2
 
-  e2e:
-    needs: [changes, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/3)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
-        # One explicit list per shard (e2e/e2e-shards.mjs), balanced by hand
-        # from measured times. Playwright's own sharding splits by test count.
-        shard: [1, 2, 3]
-    env:
-      PLAYWRIGHT_E2E_SHARD: ${{ matrix.shard }}
-      PLAYWRIGHT_IGNORE_ANNEX: '1'
-      # e2e/chat-rich runs in the e2e-chat job (Linux and Windows only).
-      PLAYWRIGHT_IGNORE_CHAT_RICH: '1'
-      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - name: Exclude workspace from Windows Defender
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-        shell: pwsh
-      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - uses: actions/download-artifact@v8
-        with:
-          name: webpack-${{ matrix.os }}
-          path: .webpack/
-      - name: Run E2E tests (shard ${{ matrix.shard }}/3)
-        if: runner.os != 'Linux'
-        run: npx playwright test --config=playwright.config.ts --reporter=line,junit
-      - name: Run E2E tests (shard ${{ matrix.shard }}/3, Linux — requires virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test --config=playwright.config.ts --reporter=line,junit
-        env:
-          # chrome-sandbox is not SUID root on GitHub runners
-          ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: playwright-traces-${{ matrix.os }}-${{ matrix.shard }}
-          path: test-results/
-
-  e2e-annex:
-    needs: [changes, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Annex E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/2)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
-        # Every Annex spec launches two apps, so one job was the run's long
-        # pole. One explicit list per shard, in e2e/e2e-shards.mjs.
-        shard: [1, 2]
-    env:
-      PLAYWRIGHT_ANNEX_SHARD: ${{ matrix.shard }}
-      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - name: Exclude workspace from Windows Defender
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-        shell: pwsh
-      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - uses: actions/download-artifact@v8
-        with:
-          name: webpack-${{ matrix.os }}
-          path: .webpack/
-      - name: Run Annex E2E tests
-        if: runner.os != 'Linux'
-        run: npx playwright test --reporter=line,junit
-      - name: Run Annex E2E tests (Linux — requires virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test --reporter=line,junit
-        env:
-          # chrome-sandbox is not SUID root on GitHub runners
-          ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: annex-traces-${{ matrix.os }}-${{ matrix.shard }}
-          path: test-results/
-
-  # Rich chat content and chat UX specs (e2e/chat-rich, #2480), plus the
-  # Dispatcher spec (e2e/dispatcher.spec.ts, #2533, ~15 s), in a job of
-  # their own so they never lengthen the E2E shards, the run's long pole.
-  # Linux and Windows only, full-ci included: nothing in them differs on
-  # macOS (docs/testing/chat-e2e-plan.md).
-  e2e-chat:
-    needs: [changes, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Chat E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/3)
-    runs-on: ${{ matrix.os }}
-    # Three shards, each an explicit list of specs in e2e/chat-shards.mjs, balanced
-    # by hand from measured times (docs/testing/chat-e2e-plan.md, "Shard-time
-    # budget"). A new spec must be added to a list, and a unit test fails if it
-    # isn't. That needs no change here, so it doesn't run the macOS build.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022]
-        shard: [1, 2, 3]
-    env:
-      PLAYWRIGHT_CHAT_SHARD: ${{ matrix.shard }}
-      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - name: Exclude workspace from Windows Defender
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-        shell: pwsh
-      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - uses: actions/download-artifact@v8
-        with:
-          name: webpack-${{ matrix.os }}
-          path: .webpack/
-      - name: Run chat E2E tests
-        if: runner.os != 'Linux'
-        run: npx playwright test --reporter=line,junit
-      - name: Run chat E2E tests (Linux — requires virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test --reporter=line,junit
-        env:
-          # chrome-sandbox is not SUID root on GitHub runners
-          ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: chat-e2e-traces-${{ matrix.os }}-${{ matrix.shard }}
-          path: test-results/
-
-  # A build with Preview off and on, with the saved state a beta leaves behind
-  # (e2e/stable-mode.spec.ts), and which layout each saved state starts on
-  # (e2e/layout-default.spec.ts). A job of its own so it never lengthens the E2E
-  # shards, and Linux and Windows only: the gates are the same on macOS. It runs
-  # unpackaged through CLUBHOUSE_TEST_STABLE_BUILD, so it proves the gates and not
-  # a packaged build.
-  e2e-stable:
-    needs: [changes, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Stable-mode E2E Tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022]
-    env:
-      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - name: Exclude workspace from Windows Defender
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-        shell: pwsh
-      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - uses: actions/download-artifact@v8
-        with:
-          name: webpack-${{ matrix.os }}
-          path: .webpack/
-      - name: Run stable-mode E2E tests
-        if: runner.os != 'Linux'
-        run: npx playwright test e2e/stable-mode.spec.ts e2e/layout-default.spec.ts --reporter=line,junit
-      - name: Run stable-mode E2E tests (Linux — requires virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test e2e/stable-mode.spec.ts e2e/layout-default.spec.ts --reporter=line,junit
-        env:
-          # chrome-sandbox is not SUID root on GitHub runners
-          ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: stable-e2e-traces-${{ matrix.os }}
-          path: test-results/
-
-  # The classic layout (#2843): the specs for classic-only UI, and a few short
-  # journeys whose navigation differs on classic. CLUBHOUSE_E2E_LAYOUT=classic
-  # makes the config run one of e2e/classic-specs.mjs's lists and launches
-  # default to classic. Linux and Windows only, in a job of its own so it never
-  # lengthens the E2E shards.
-  e2e-classic:
-    needs: [changes, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Classic layout E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/1)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022]
-        # One explicit list per shard (e2e/classic-specs.mjs), balanced by hand
-        # from measured times so no shard outlasts the E2E shards.
-        shard: [1]
-    env:
-      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
-      CLUBHOUSE_E2E_LAYOUT: classic
-      PLAYWRIGHT_CLASSIC_SHARD: ${{ matrix.shard }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - name: Exclude workspace from Windows Defender
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-        shell: pwsh
-      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - uses: actions/download-artifact@v8
-        with:
-          name: webpack-${{ matrix.os }}
-          path: .webpack/
-      - name: Run classic layout E2E tests
-        if: runner.os != 'Linux'
-        run: npx playwright test --reporter=line,junit
-      - name: Run classic layout E2E tests (Linux — requires virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test --reporter=line,junit
-        env:
-          # chrome-sandbox is not SUID root on GitHub runners
-          ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: classic-e2e-traces-${{ matrix.os }}-${{ matrix.shard }}
-          path: test-results/
-
-  # Static packaging guard for the Copilot SDK on the CI matrix. The real
-  # runtime handshake requires separately authorized, sandboxed QA.
-  copilot-sdk-chunk:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.e2e == 'true' }}
-    name: Copilot SDK chunk (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      # The Electron binary (~100 MB), which the check downloads when it first requires
-      # `electron`, in its default cache dir per OS.
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      # Foreground, so the log shows what koffi's install script did.
-      - run: npm ci --foreground-scripts
-      # koffi isn't optional: its script falls back to a CMake build when the
-      # prebuilt binary doesn't load, and fails the install if it can't compile.
-      - name: Check koffi used its prebuilt binary
-        shell: bash
-        run: |
-          npm --version
-          ls node_modules/@koromix
-          node -e "require('koffi'); console.log('koffi loads')"
-          if [ -n "$(find node_modules/koffi -type d -name build)" ]; then echo "::error::koffi was compiled from source"; exit 1; fi
-      # Runtime handshake is separately authorized QA; CI checks the bundle statically.
-      - run: node scripts/check-copilot-sdk-chunk.mjs --static-only
-
-  # macOS job 1 of 2: every code PR, ~3 min. The unit tests for code that
-  # behaves differently on macOS (Squirrel.Mac apply, keychain, login shell,
-  # /opt/homebrew CLI paths, FSEvents watchers, window chrome and the app
-  # menu, Cmd shortcuts), plus the tests related to the change, on a real Mac. Everything else is platform-independent and runs on
-  # Linux and Windows.
-  macos-unit:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.complete != 'true' }}
-    name: macOS unit
-    runs-on: macos-latest
+  capture:
+    name: ONE fresh Windows1 observation (not release validation)
+    needs: parity
+    if: ${{ github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && needs.parity.result == 'success' }}
+    runs-on: windows-latest
     timeout-minutes: 15
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      EXPECTED_CONTROL_SHA: ${{ inputs.expected_control_sha }}
+      EXPECTED_CAPTURE_INPUT: ${{ inputs.expected_capture_sha }}
+      EXPECTED_CAPTURE_SHA: ${{ needs.parity.outputs.capture_sha }}
+      EXPECTED_CAPTURE_TREE: ${{ needs.parity.outputs.capture_tree }}
+      EXPECTED_REVIEWED_BLOBS: ${{ needs.parity.outputs.reviewed_blobs }}
+      EXPECTED_UNCHANGED_BLOBS: ${{ needs.parity.outputs.unchanged_blobs }}
+      EXPECTED_IMAGE_VERSION: ${{ needs.parity.outputs.image_version }}
+      EXPECTED_OS_RELEASE: ${{ needs.parity.outputs.os_release }}
+      EXPECTED_NODE_VERSION: ${{ needs.parity.outputs.node_version }}
+      EXPECTED_NPM_VERSION: ${{ needs.parity.outputs.npm_version }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - run: npm ci
-      - name: macOS-specific unit tests
+      - name: Reject moved control ref or invalid parity outputs before source checkout
+        shell: cmd
         run: >-
-          npx vitest run --reporter=default --reporter=junit --outputFile.junit=test-results/macos-unit.xml
-          src/main/services/auto-update
-          src/main/telemetry/secret-store
-          src/main/telemetry/install-kind
-          src/main/util/shell
-          src/main/ipc/window-handlers
-          src/main/ipc/app-handlers
-          src/main/orchestrators/shared
-          src/main/services/goobers-service
-          src/main/services/file-watch-service
-          src/main/menu
-          src/renderer/chrome
-          src/renderer/features/terminal/clipboard
-          src/renderer/stores/keyboardShortcutsStore
-      - name: Unit tests related to the change
-        env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-        run: |
-          if [ -n "$PR_BASE" ]; then RANGE="$PR_BASE...$PR_HEAD"; elif [ -n "$PUSH_BEFORE" ]; then RANGE="$PUSH_BEFORE...$GITHUB_SHA"; else echo "No change range"; exit 0; fi
-          FILES=$(git diff --name-only --diff-filter=d "$RANGE" -- src 2>/dev/null | grep -E '\.(ts|tsx)$' || true)
-          if [ -z "$FILES" ]; then echo "No source changes to relate tests to"; exit 0; fi
-          # shellcheck disable=SC2086
-          npx vitest related --run --passWithNoTests $FILES
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: macos-unit-results
-          path: test-results/
-
-  # macOS job 2 of 2: only for packaging, dependency and window/keyboard chrome
-  # changes (scripts/ci/classify-changes.mjs), ~9 min. Packages the app for
-  # macOS (asar, fuses, osxSign config, node-pty's darwin prebuild) and runs
-  # the specs whose behaviour differs on macOS: window chrome, Cmd shortcuts
-  # and the terminal's node-pty spawn helper.
-  macos-build:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.macos_build == 'true' && needs.changes.outputs.complete != 'true' }}
-    name: macOS build + E2E smoke
-    runs-on: macos-latest
-    timeout-minutes: 30
-    env:
-      PLAYWRIGHT_IGNORE_ANNEX: '1'
-      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
-    steps:
+          node -e "const e=process.env;const hex=/^[a-f0-9]{40}$/;const ok=e.GITHUB_REPOSITORY==='Agent-Clubhouse/Clubhouse'&&e.GITHUB_EVENT_NAME==='workflow_dispatch'&&e.GITHUB_RUN_ATTEMPT==='1'&&hex.test(e.EXPECTED_CONTROL_SHA||'')&&e.EXPECTED_CONTROL_SHA===e.GITHUB_SHA&&hex.test(e.EXPECTED_CAPTURE_SHA||'')&&hex.test(e.EXPECTED_CAPTURE_TREE||'')&&e.EXPECTED_CAPTURE_INPUT===e.EXPECTED_CAPTURE_SHA;if(ok===false){console.error(JSON.stringify({ok:false,failure:'capture_dispatch_guard_rejected'}));process.exit(1)}"
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.parity.outputs.capture_sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '22.23.4'
           cache: npm
-      - uses: actions/cache@v6
-        with:
-          path: ~/Library/Caches/electron
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Verify source tree and runtime with no additional PowerShell or CIM warmup
+        id: identity
+        shell: cmd
+        run: >-
+          node -e "const fs=require('node:fs'),os=require('node:os'),cp=require('node:child_process'),e=process.env;const out={purpose:'diagnostic-only',ok:false};function check(ok,code){if(ok===false)throw Object.assign(new Error(code),{fixedCode:code})}function git(args){return cp.execFileSync('git',args,{encoding:'utf8',windowsHide:true,stdio:['ignore','pipe','pipe']}).trim()}function config(key,allowed){const r=cp.spawnSync('git',['config','--get',key],{encoding:'utf8',windowsHide:true,stdio:['ignore','pipe','pipe']});check(r.error===undefined&&(r.status===0||r.status===1),'checkout_config_unreadable');if(r.status===1)return 'unset';const v=r.stdout.trim();check(allowed.includes(v),'checkout_config_rejected');return v}try{check(git(['rev-parse','HEAD'])===e.EXPECTED_CAPTURE_SHA,'source_sha_rejected');check(git(['rev-parse','HEAD^{tree}'])===e.EXPECTED_CAPTURE_TREE,'source_tree_rejected');const tables=[JSON.parse(e.EXPECTED_REVIEWED_BLOBS),JSON.parse(e.EXPECTED_UNCHANGED_BLOBS)],names=tables.flatMap(t=>Object.keys(t));check(names.length===8&&new Set(names).size===8,'source_conversion_rejected');const attrs=git(['check-attr','-z','filter','working-tree-encoding','--',...names]).split('\0');check(attrs.pop()===''&&attrs.length===names.length*6,'source_conversion_rejected');const seen=new Set();for(let i=0;i<attrs.length;i+=3){check(names.includes(attrs[i])&&['filter','working-tree-encoding'].includes(attrs[i+1])&&['unspecified','unset'].includes(attrs[i+2]),'source_conversion_rejected');const k=attrs[i]+'\0'+attrs[i+1];check(seen.has(k)===false,'source_conversion_rejected');seen.add(k)}for(const table of tables)for(const [name,sha]of Object.entries(table))check(git(['hash-object','--path='+name,'--',name])===sha,'source_blob_rejected');check(process.platform==='win32'&&os.release()===e.EXPECTED_OS_RELEASE,'os_drift');check(e.ImageVersion===e.EXPECTED_IMAGE_VERSION,'image_drift');check(process.version===e.EXPECTED_NODE_VERSION,'node_drift');const npm=cp.execFileSync('cmd.exe',['/d','/s','/c','npm --version'],{encoding:'utf8',windowsHide:true,stdio:['ignore','pipe','pipe']}).trim();check(npm===e.EXPECTED_NPM_VERSION,'npm_drift');Object.assign(out,{ok:true,sourceSha:e.EXPECTED_CAPTURE_SHA,sourceTree:e.EXPECTED_CAPTURE_TREE,imageVersion:e.ImageVersion,osRelease:os.release(),nodeVersion:process.version,npmVersion:npm,availableParallelism:os.availableParallelism(),checkoutProof:'git-clean-filtered-blobs',sourceConversionSafe:true,coreAutocrlf:config('core.autocrlf',['true','false','input']),coreEol:config('core.eol',['lf','crlf','native'])})}catch(error){const allowed=new Set(['source_sha_rejected','source_tree_rejected','source_blob_rejected','source_conversion_rejected','os_drift','image_drift','node_drift','npm_drift','checkout_config_unreadable','checkout_config_rejected']);out.failure=allowed.has(error.fixedCode)?error.fixedCode:'identity_internal_failure';process.exitCode=1}const summary=JSON.stringify(out);try{fs.mkdirSync('diagnostic-receipts',{recursive:true});fs.writeFileSync('diagnostic-receipts/capture-runtime.json',summary+'\n')}catch{console.error(JSON.stringify({ok:false,failure:'receipt_write_failed'}));process.exitCode=1}console.log(summary);"
       - run: npm ci
-      - name: Build unsigned isolated macOS test artifact
-        run: node scripts/ci/package-integration.mjs
-      - uses: actions/upload-artifact@v7
+      - name: Original Windows1 command ONCE with unchanged projects, workers, and deadlines
+        run: npm test -- --shard=1/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
+      - name: Retain fixed JUnit and sanitized runtime receipt only
+        if: ${{ always() && steps.identity.outcome != 'skipped' && steps.identity.outcome != '' }}
+        uses: actions/upload-artifact@v7
         with:
-          name: clubhouse-integration-${{ runner.arch }}-${{ github.sha }}
-          path: integration-artifact/
-          retention-days: 7
+          name: windows1-query-observation-not-release-validation
+          path: |
+            test-results.xml
+            diagnostic-receipts/capture-runtime.json
           if-no-files-found: error
-      - name: E2E smoke (window chrome, Cmd shortcuts, terminal)
-        run: >-
-          npx playwright test --reporter=line,junit
-          e2e/app-launch.spec.ts
-          e2e/default-shell-macos.spec.ts
-          e2e/smoke-blank-screen.spec.ts
-          e2e/popout-window.spec.ts
-          e2e/command-palette.spec.ts
-          e2e/find-replace.spec.ts
-          e2e/terminal.spec.ts
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: macos-build-results
-          path: test-results/
-
-  make-linux:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.full == 'true' }}
-    name: Linux Package Smoke Test
-    # build/rpm.spec.ejs copies from an absolute path, so rpm 4.20 works (#2549).
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.23.4'
-          cache: npm
-      - run: npm ci
-      - name: Build node-pty against glibc 2.36 (Debian 12)
-        # As the release does (#3080).
-        run: scripts/ci/build-linux-native.sh
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg fakeroot rpm
-      - name: Build .deb and .rpm packages
-        run: npx electron-forge make
-      - name: Verify packages were produced
-        run: |
-          DEB_COUNT=$(find out/make -name "*.deb" -type f | wc -l)
-          RPM_COUNT=$(find out/make -name "*.rpm" -type f | wc -l)
-          echo "Found ${DEB_COUNT} .deb and ${RPM_COUNT} .rpm packages"
-          if [ "$DEB_COUNT" -eq 0 ] && [ "$RPM_COUNT" -eq 0 ]; then
-            echo "::error::No Linux packages were produced"
-            exit 1
-          fi
-      - name: Check the .rpm holds the app (#2549)
-        run: |
-          RPM=$(find out/make -name "*.rpm" -type f | head -n 1)
-          if [ -z "$RPM" ]; then
-            echo "::error::No .rpm was produced"
-            exit 1
-          fi
-          rpm -qlp "$RPM" > rpm-files.txt
-          echo "$(wc -l < rpm-files.txt) files in $RPM"
-          for f in /usr/bin/clubhouse /usr/lib/clubhouse/clubhouse /usr/share/applications/clubhouse.desktop; do
-            if ! grep -qx "$f" rpm-files.txt; then
-              echo "::error::$f is missing from $RPM"
-              exit 1
-            fi
-          done
-      - name: Check the glibc floor of native modules
-        run: scripts/ci/check-linux-glibc.sh 2.36
+          retention-days: 2
