@@ -1332,7 +1332,8 @@ export async function peekDurableConfigsChecked(
     return { agents: [], readable: false };
   }
   let present = false;
-  for (const file of [agentsConfigPath(projectPath), agentsBackupPath(projectPath)]) {
+  const primary = agentsConfigPath(projectPath);
+  for (const file of [primary, agentsBackupPath(projectPath)]) {
     let raw: string;
     try {
       raw = await fsp.readFile(file, 'utf-8');
@@ -1346,6 +1347,7 @@ export async function peekDurableConfigsChecked(
       continue;
     }
     present = true;
+    if (options.strict && file !== primary) return { agents: [], readable: false };
     try {
       const parsed: unknown = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
