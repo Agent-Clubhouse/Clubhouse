@@ -176,7 +176,7 @@ async function existingMode(filePath: string): Promise<number | undefined> {
  * it over `filePath`. The flush keeps a power loss from committing the rename
  * before the data. The replacement gets `mode`, or the old file's permissions.
  */
-async function replaceFile(filePath: string, body: string, mode: number | undefined): Promise<void> {
+export async function replaceFile(filePath: string, body: string, mode: number | undefined): Promise<void> {
   const tmp = `${tempPrefix(filePath)}${process.pid}-${++tempFileCounter}`;
   const keep = mode ?? (process.platform === 'win32' ? undefined : await existingMode(filePath));
   try {

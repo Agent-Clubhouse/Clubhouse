@@ -10,6 +10,7 @@ import type { GroupProject } from '../../shared/group-project-types';
 import { appLog } from './log-service';
 import { ensureProjectChannels } from './group-project-bulletin';
 import { persist } from '../telemetry/persist';
+import { replaceFile } from './settings-store';
 
 function groupProjectsDir(): string {
   const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
@@ -28,8 +29,9 @@ async function pathExists(p: string): Promise<boolean> {
   try {
     await fsp.access(p);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
   }
 }
 
@@ -40,7 +42,9 @@ type ChangeListener = () => void;
 class GroupProjectRegistry {
   private projects = new Map<string, GroupProject>();
   private loaded = false;
+  private loadPromise: Promise<void> | null = null;
   private dirty = false;
+  private revision = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingFlush: Promise<void> | null = null;
   private listeners = new Set<ChangeListener>();
@@ -48,28 +52,44 @@ class GroupProjectRegistry {
   /** Load from disk if not already loaded. */
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
+    if (this.loadPromise) return this.loadPromise;
+    this.loadPromise = this.load().finally(() => { this.loadPromise = null; });
+    return this.loadPromise;
+  }
+
+  private async load(): Promise<void> {
+    const projects = new Map<string, GroupProject>();
     const rp = registryPath();
     if (await pathExists(rp)) {
       try {
         const data: GroupProject[] = JSON.parse(await fsp.readFile(rp, 'utf-8'));
+        if (!Array.isArray(data)) throw new Error('Invalid group-projects registry');
         for (const p of data) {
           // Normalize old entries missing new fields
           if (p.description === undefined) p.description = '';
           if (p.instructions === undefined) p.instructions = '';
-          this.projects.set(p.id, p);
+          projects.set(p.id, p);
         }
       } catch (err) {
         appLog('core:group-project', 'error', 'Failed to parse group-projects registry', {
           meta: { error: err instanceof Error ? err.message : String(err) },
         });
+        throw err;
       }
     }
+    this.projects = projects;
     this.loaded = true;
   }
 
   private scheduleFlush(): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
-    this.flushTimer = setTimeout(() => { void this.flush(); }, FLUSH_DELAY_MS);
+    this.flushTimer = setTimeout(() => {
+      void this.flush().catch((err) => {
+        appLog('core:group-project', 'error', 'Failed to write group-projects registry', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      });
+    }, FLUSH_DELAY_MS);
   }
 
   /** Flush pending changes to disk. */
@@ -78,28 +98,30 @@ class GroupProjectRegistry {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    if (this.pendingFlush) await this.pendingFlush;
+    if (this.pendingFlush) {
+      await this.pendingFlush;
+      return this.flush();
+    }
     if (!this.dirty) return;
 
-    const data = [...this.projects.values()];
+    const revision = this.revision;
+    const data = JSON.stringify([...this.projects.values()], null, 2);
     const flushPromise = (async () => {
       await ensureDir(groupProjectsDir());
-      await persist.timed('group_registry', () => fsp.writeFile(registryPath(), JSON.stringify(data, null, 2), 'utf-8'));
-      this.dirty = false;
-    })().catch((err) => {
-      appLog('core:group-project', 'error', 'Failed to write group-projects registry', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    }).finally(() => {
+      await persist.timed('group_registry', () => replaceFile(registryPath(), data, undefined));
+      if (this.revision === revision) this.dirty = false;
+    })().finally(() => {
       if (this.pendingFlush === flushPromise) this.pendingFlush = null;
     });
 
     this.pendingFlush = flushPromise;
     await flushPromise;
+    if (this.dirty) await this.flush();
   }
 
   private markDirty(): void {
     this.dirty = true;
+    this.revision++;
     this.scheduleFlush();
     this.notifyListeners();
   }
@@ -187,7 +209,9 @@ class GroupProjectRegistry {
     this.projects.clear();
     this.listeners.clear();
     this.loaded = false;
+    this.loadPromise = null;
     this.dirty = false;
+    this.revision = 0;
   }
 }
 
