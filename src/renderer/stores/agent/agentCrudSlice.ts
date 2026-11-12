@@ -13,7 +13,7 @@ function creationStatus(config: DurableAgentConfig): Pick<Agent, 'status' | 'err
 }
 
 /** A durable agent as loaded from its config, asleep unless its creation is unfinished. */
-function durableAgentFromConfig(projectId: string, config: DurableAgentConfig): Agent {
+export function durableAgentFromConfig(projectId: string, config: DurableAgentConfig): Agent {
   return {
     id: config.id,
     projectId,

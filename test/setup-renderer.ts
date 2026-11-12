@@ -513,6 +513,9 @@ vi.stubGlobal('clubhouse', {
   canvas: {
     layoutElk: vi.fn(async () => ({ nodes: [], edges: [] })),
     getAgentCanvases: vi.fn(async () => []),
+    getTargetCanvases: vi.fn(async () => ({ stores: [] })),
+    resolveAgentTarget: vi.fn(async () => ({ error: 'Target is unavailable in the test fixture.' })),
+    readForNavigation: vi.fn(async () => { throw new Error('Canvas is unavailable in the test fixture.'); }),
   },
   goobers: {
     getState: async () => null,

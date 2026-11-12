@@ -10,6 +10,7 @@ import { persist } from '../../../telemetry/persist';
 import { ATTR, tel } from '../../../telemetry';
 import { countBucket } from '../../../../shared/telemetry/attributes';
 import type { Classification } from '../../../telemetry/facade';
+import type { CanvasNavigationSnapshot } from '../../../../shared/canvas-index-types';
 
 type CanvasLoadResult = Parameters<typeof ATTR.canvasLoadResult>[0];
 
@@ -55,6 +56,7 @@ export interface CanvasState {
 
   // Lifecycle
   loadCanvas: (storage: ScopedStorage) => Promise<void>;
+  hydrateForNavigation: (snapshot: CanvasNavigationSnapshot, canvasId: string) => void;
   saveCanvas: (storage: ScopedStorage) => Promise<void>;
   hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[], zoneWireDefinitions?: unknown[]) => void;
 
@@ -435,6 +437,43 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     // ── Lifecycle ──────────────────────────────────────────────────
+
+    hydrateForNavigation: (snapshot, canvasId) => {
+      if (!snapshot.canvases.length || snapshot.canvases.some((raw) => {
+        if (!raw || typeof raw !== 'object') return true;
+        const canvas = raw as Partial<CanvasInstanceData>;
+        return typeof canvas.id !== 'string' || !canvas.id || typeof canvas.name !== 'string' || !Array.isArray(canvas.views);
+      })) throw new Error('The saved Canvas is incomplete. Repair it and retry Open.');
+      const issues: string[] = [];
+      const canvases = snapshot.canvases.map((raw) => normalizeCanvasInstance(raw, { source: 'disk', issues }));
+      if (issues.length || !canvases.some((canvas) => canvas.id === canvasId)) {
+        throw new Error('This Canvas is no longer available. Retry Open to refresh its representations.');
+      }
+      const wireDefinitions: McpBindingEntry[] = snapshot.wires.map((wire) => {
+        const kind = wire.targetKind;
+        if (kind !== 'agent' && kind !== 'browser' && kind !== 'terminal' && kind !== 'group-project') {
+          throw new Error('Canvas wires contain an unsupported target kind. Repair the saved Canvas and retry Open.');
+        }
+        return { ...wire, targetKind: kind };
+      });
+      const zoneWireDefinitions: ZoneWireDefinition[] = snapshot.zoneWires.map((raw) => {
+        if (!raw || typeof raw !== 'object') throw new Error('Canvas zone wires are incomplete. Repair them and retry Open.');
+        const wire = raw as Partial<ZoneWireDefinition>;
+        if (typeof wire.id !== 'string' || typeof wire.sourceZoneId !== 'string'
+          || typeof wire.targetId !== 'string' || (wire.targetType !== 'agent' && wire.targetType !== 'zone'
+            && wire.targetType !== 'group-project' && wire.targetType !== 'browser')) {
+          throw new Error('Canvas zone wires are incomplete. Repair them and retry Open.');
+        }
+        return { id: wire.id, sourceZoneId: wire.sourceZoneId, targetId: wire.targetId, targetType: wire.targetType };
+      });
+      _canvasPersist = 'ok';
+      _wiresPersistBlocked = false;
+      _zoneWiresPersistBlocked = false;
+      set({
+        canvases, activeCanvasId: canvasId, wireDefinitions, zoneWireDefinitions, loaded: true, wiresLoaded: true, loadError: null,
+        ...syncDerivedState(canvases, canvasId),
+      });
+    },
 
     // Measured as `clubhouse.canvas.load` (spec §4.10); `loadResult` records
     // which branch hydration took. Recovery details are persist telemetry.

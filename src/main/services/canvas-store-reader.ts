@@ -26,7 +26,7 @@ import {
   type CanvasInstanceLike,
   type CanvasViewLike,
 } from '../../shared/canvas-persistence';
-import type { CanvasMembership, CanvasTargetIndex, PersistedCanvasWire } from '../../shared/canvas-index-types';
+import type { CanvasMembership, CanvasNavigationSnapshot, CanvasTargetIndex, PersistedCanvasWire } from '../../shared/canvas-index-types';
 
 const CANVAS_PLUGIN_ID = 'canvas';
 const KEY_INSTANCES = 'canvas-instances';
@@ -239,7 +239,7 @@ async function readWires(kvDir: string, options: CanvasStoreReadOptions): Promis
     for (const entry of read.value) {
       const wire = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : null;
       if (!wire || !['agentId', 'targetId', 'label'].every((field) => typeof wire[field] === 'string' && wire[field])
-        || typeof wire.targetKind !== 'string' || !['agent', 'browser', 'group-project'].includes(wire.targetKind)
+        || typeof wire.targetKind !== 'string' || !['agent', 'browser', 'group-project', 'terminal'].includes(wire.targetKind)
         || ['agentName', 'targetName', 'projectName'].some((field) => wire[field] !== undefined && typeof wire[field] !== 'string')
         || (wire.disabledTools !== undefined && (!Array.isArray(wire.disabledTools) || !wire.disabledTools.every((tool) => typeof tool === 'string')))
         || (wire.instructions !== undefined && (!wire.instructions || typeof wire.instructions !== 'object'
@@ -344,5 +344,35 @@ export async function getTargetCanvasIndex(kind: NavigableCanvasTargetKind, targ
       hits: canvases ? findTargetCanvasHits(canvases, kind, targetId) : [],
       ...(!canvases && { error: problems.join('; ') || 'Canvas instances could not be read.' }),
     })),
+  };
+}
+
+/** Re-read the selected store at the load boundary, without recovery, quarantine or default creation. */
+export async function readCanvasForNavigation(projectId?: string): Promise<CanvasNavigationSnapshot> {
+  let kvDir = globalCanvasKvDir();
+  if (projectId !== undefined) {
+    const registered = await projectStore.peekProjectsChecked({ strict: true });
+    if (!registered.readable) throw new Error('Registered projects could not be read. Retry Open after repairing the project list.');
+    const project = registered.projects.find((entry) => entry.id === projectId);
+    if (!project) throw new Error('This Canvas project is no longer registered. Retry Open to find another representation.');
+    if (!(await fsp.stat(project.path)).isDirectory()) throw new Error('This Canvas project folder is unavailable.');
+    kvDir = projectCanvasKvDir(project.path);
+  }
+  const [instances, wires, zones] = await Promise.all([
+    readKvKey(kvDir, KEY_INSTANCES, { strict: true }),
+    readWires(kvDir, { strict: true }),
+    readKvKey(kvDir, 'canvas-zone-wires', { strict: true }),
+  ]);
+  if (instances.status !== 'ok' || !normalizeInstances(instances.value, true)) {
+    throw new Error('The saved Canvas is missing or unreadable. Retry Open to refresh its representations.');
+  }
+  if (!wires.wires) throw new Error(wires.problem || 'Canvas wires could not be read.');
+  if (zones.status === 'unreadable' || (zones.status === 'ok' && !Array.isArray(zones.value))) {
+    throw new Error('Canvas zone wires could not be read. Repair the saved Canvas and retry Open.');
+  }
+  return {
+    canvases: instances.value as unknown[],
+    wires: wires.wires,
+    zoneWires: zones.status === 'ok' ? zones.value as unknown[] : [],
   };
 }

@@ -1,5 +1,7 @@
 /** Types for the main-process canvas index (#1544), shared with the renderer. */
 import type { TargetCanvasHit } from './canvas-persistence';
+import type { DurableAgentConfig, Project } from './types';
+import type { GroupProject } from './group-project-types';
 
 /** One canvas that holds a card for an agent, read from the persisted stores. */
 export interface CanvasMembership {
@@ -26,6 +28,22 @@ export interface CanvasTargetIndex {
   stores: CanvasTargetStore[];
   /** A failed project inventory means even the list of scopes is incomplete. */
   error?: string;
+}
+
+export interface CanvasNavigationSnapshot {
+  canvases: unknown[];
+  wires: PersistedCanvasWire[];
+  zoneWires: unknown[];
+  groupProjects?: GroupProject[];
+}
+
+export type AgentNavigationTarget =
+  | { project: Project; config?: DurableAgentConfig }
+  | { error: string };
+
+export interface GroupProjectNavigationIndex extends CanvasTargetIndex {
+  /** A read-only registry snapshot also prevents widget mount from triggering migration. */
+  groupProjects?: GroupProject[];
 }
 
 /** A wire definition as the canvas plugin persists it in canvas-wires.json. */

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useRef, useState } from 'react';
+import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from '../../../../shared/plugin-types';
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
@@ -26,6 +26,7 @@ import { bindWireDefinition } from './wire-binding';
 import { createWireReconciler } from './wire-reconcile';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { syncWireTools } from './connection-grants-sync';
+import { completeCanvasNavigationReveal, consumeCanvasNavigationHandoff, getCanvasNavigationHandoff, isNavigationHydrationUnchanged, navigationTargetAvailable, navigationWireDefinitions, releaseNavigationWiresForAgent } from './canvas-navigation-handoff';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -173,6 +174,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const isAppMode = api.context.mode === 'app';
   const store = isAppMode ? useAppCanvasStore : getProjectCanvasStore(api.context.projectId ?? null);
   const storage = isAppMode ? api.storage.global : api.storage.projectLocal;
+  const navigationHandoff = useMemo(() => getCanvasNavigationHandoff(store), [store]);
+  const [navigationRuntimeChanged, setNavigationRuntimeChanged] = useState(false);
 
   const canvases = store((s) => s.canvases);
   const activeCanvasId = store((s) => s.activeCanvasId);
@@ -190,6 +193,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const elkAlgorithm = store((s) => s.elkAlgorithm);
   const elkDirection = store((s) => s.elkDirection);
   const layoutCenterId = store((s) => s.layoutCenterId);
+  const navigationUnavailable = !!navigationHandoff && !navigationHandoff.revealed
+    && !navigationTargetAvailable(store.getState(), navigationHandoff);
   const bindings = useMcpBindingStore((s) => s.bindings);
   const settingsKey = `${isAppMode ? 'app' : api.context.projectId}:canvas`;
   const bidirectionalWires = usePluginStore(
@@ -234,6 +239,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     let cancelled = false;
     setHydrated(false);
+    if (navigationHandoff) {
+      consumeCanvasNavigationHandoff(store, navigationHandoff);
+      setHydrated(true);
+      return;
+    }
     // App-mode with active satellite: hydrate from remote app canvas state
     if (isRemoteApp && activeHostId) {
       const remoteState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
@@ -267,7 +277,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       if (!cancelled) setHydrated(true);
     })();
     return () => { cancelled = true; };
-  }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId, flushSave]);
+  }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId, flushSave, navigationHandoff]);
 
   // Subscribe to live remote canvas state updates (project-level)
   useEffect(() => {
@@ -331,9 +341,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, storage, isRemote, isRemoteApp, flushSave]);
 
   useEffect(() => {
-    if (!loaded || !wiresLoaded) return;
+    if (!loaded || !wiresLoaded || navigationUnavailable) return;
+    if (navigationHandoff && isNavigationHydrationUnchanged(store.getState(), navigationHandoff)) return;
     scheduleSave();
-  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave, navigationHandoff, store, navigationUnavailable]);
 
   useEffect(() => () => flushSave(), [flushSave]);
 
@@ -349,7 +360,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const wireDefsRef = useRef(wireDefinitions);
   wireDefsRef.current = wireDefinitions;
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || navigationUnavailable) return;
 
     // Group-project targets are checked against the projects on this machine;
     // until those have loaded, such wires wait rather than bind blindly.
@@ -376,15 +387,26 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
     // Initial reconciliation + periodic re-check (avoids resetting timers
     // on every wireDefinitions/bindings state change)
-    const reconcile = () => reconciler.reconcile(wireDefsRef.current, bindingsRef.current);
+    const reconcile = () => reconciler.reconcile(
+      navigationHandoff ? navigationWireDefinitions(store.getState(), navigationHandoff) : wireDefsRef.current,
+      bindingsRef.current,
+    );
     reconcile();
     const interval = setInterval(reconcile, 2000);
+    const offAwoke = navigationHandoff ? window.clubhouse.agent.onAgentAwoke((agentId) => {
+      releaseNavigationWiresForAgent(navigationHandoff, agentId);
+      if (store.getState().views.some((view) => view.type === 'agent' && view.agentId === agentId)) {
+        setNavigationRuntimeChanged(true);
+      }
+      reconcile();
+    }) : undefined;
 
     return () => {
       clearInterval(interval);
       reconciler.dispose();
+      offAwoke?.();
     };
-  }, [loaded]);
+  }, [loaded, navigationHandoff, navigationUnavailable, store]);
 
   // Broadcast canvas state changes to pop-out windows and annex clients
   // (skip for remote projects/app — the satellite broadcasts its own state)
@@ -683,6 +705,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().updateZoneTheme(zoneId, themeId);
   }, [store, remoteForward]);
 
+  if (navigationUnavailable) {
+    return React.createElement('div', { role: 'alert', className: 'p-4 text-xs text-ctp-subtext0' },
+      'The Canvas or target node was deleted before it opened. Return to Connections and retry Open. No replacement Canvas was created.');
+  }
   if (!loaded) {
     // A failed load must not fall through to an empty, autosaving canvas —
     // the saved canvas is left untouched until it can be read.
@@ -745,6 +771,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onRemoveWireDefinition: (agentId: string, targetId: string) => store.getState().removeWireDefinition(agentId, targetId),
             onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => store.getState().updateWireDefinition(agentId, targetId, updates),
             zoneWireDefinitions,
+            navigationBaseline: navigationRuntimeChanged ? undefined : navigationHandoff?.state,
+            navigationFocus: navigationHandoff && !navigationHandoff.revealed ? {
+              viewId: navigationHandoff.target.viewId,
+              onRevealed: () => completeCanvasNavigationReveal(store, navigationHandoff),
+            } : undefined,
             onAddZoneWireDefinition: (wire) => store.getState().addZoneWireDefinition(wire),
             onRemoveZoneWireDefinition: (wireId: string) => store.getState().removeZoneWireDefinition(wireId),
             api,

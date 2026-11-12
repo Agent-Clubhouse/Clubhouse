@@ -5,6 +5,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { ConnectionsCard, agentConnections, connectionMeta } from './ConnectionsCard';
 import type { ConnectionSourceKind } from '../../../../shared/connection-sources';
+import { useProjectStore } from '../../../stores/projectStore';
 
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'running', color: 'teal' };
 
@@ -49,6 +50,8 @@ describe('agentConnections', () => {
 
 describe('Connections card (#2232)', () => {
   beforeEach(() => {
+    useProjectStore.setState({ projects: [{ id: 'p1', name: 'Project', path: '/project' }] });
+    window.clubhouse.canvas.resolveAgentTarget = vi.fn(async () => ({ project: { id: 'p1', name: 'Project', path: '/project' } }));
     useMcpBindingStore.setState({ bindings });
     useAgentStore.setState({
       agents: { lead, h1: { id: 'h1', projectId: 'p1', name: 'impl-ipc', kind: 'durable', status: 'running', color: 'teal' } },
@@ -60,7 +63,7 @@ describe('Connections card (#2232)', () => {
     useAgentStore.setState({ agents: {} } as never);
   });
 
-  it('lists the wires like the Canvases card, read-only without the connection tools', () => {
+  it('lists the wires like the Canvases card, read-only without the connection tools', async () => {
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} />);
     expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('5');
     const rows = screen.getAllByTestId('connection-row');
@@ -68,11 +71,11 @@ describe('Connections card (#2232)', () => {
     expect(rows[0]).toHaveTextContent('impl-ipc');
     expect(rows[0]).toHaveTextContent('helper, two-way');
     expect(screen.queryByTestId('connection-disconnect')).not.toBeInTheDocument();
-    // Only agents in the rail can be opened.
+    // Open resolves target IDs independently of whether a rail card is loaded.
     expect(within(rows[0]).getByTestId('connection-open')).toBeInTheDocument();
-    expect(within(rows[4]).queryByTestId('connection-open')).not.toBeInTheDocument();
+    expect(within(rows[4]).getByTestId('connection-open')).toBeInTheDocument();
     fireEvent.click(within(rows[0]).getByTestId('connection-open'));
-    expect(useAgentStore.getState().activeAgentId).toBe('h1');
+    await waitFor(() => expect(useAgentStore.getState().activeAgentId).toBe('h1'));
   });
 
   it('offers Sources for agent rows, and removes one source at a time, saying what keeps them connected (#2744)', async () => {

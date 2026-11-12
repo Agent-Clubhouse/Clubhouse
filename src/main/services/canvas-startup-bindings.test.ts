@@ -50,6 +50,7 @@ import { canvasWireBindingSource, bindingsFromCanvasStores } from './canvas-wire
 import {
   getAgentCanvasMemberships,
   getTargetCanvasIndex,
+  readCanvasForNavigation,
   globalCanvasKvDir,
   projectCanvasKvDir,
   readCanvasStore,
@@ -326,6 +327,20 @@ describe('canvas membership index', () => {
   });
 
   describe('connection target canvas index', () => {
+    it('re-reads primary data at the hydration boundary and refuses missing/stale/corrupt stores without recovery writes', async () => {
+      const before = snapshotTree(root);
+      const snapshot = await readCanvasForNavigation('proj_w');
+      expect(snapshot.canvases).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'cv_w1' })]));
+      expect(snapshot.wires.length).toBeGreaterThan(0);
+      expect(snapshotTree(root)).toEqual(before);
+      await expect(readCanvasForNavigation('unregistered')).rejects.toThrow(/no longer registered/);
+      await expect(readCanvasForNavigation('proj_o')).rejects.toThrow(/missing or unreadable/);
+      const kvDir = projectCanvasKvDir(wardfall);
+      fs.rmSync(path.join(kvDir, 'canvas-instances.json'));
+      // The healthy .bak must not be used by navigation to resurrect a deleted board.
+      await expect(readCanvasForNavigation('proj_w')).rejects.toThrow(/missing or unreadable/);
+    });
+
     it('indexes every persisted scope by actual GP identity and reports incomplete stores without writing', async () => {
       projects.list[0].displayName = 'Renamed project';
       const before = snapshotTree(root);

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import type { CanvasView, CanvasViewType, ZoneCanvasView, AgentCanvasView as AgentCanvasViewType, Viewport, Position, Size, CanvasViewAttention } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
 import type { ResizeDirection } from './CanvasView';
@@ -39,6 +39,7 @@ import { ZoomedViewOverlay } from './ZoomedViewOverlay';
 import { PinnedWidgetBar } from './PinnedWidgetBar';
 import { CANVAS_Z } from './canvas-chrome';
 import { PopupMenu } from '../../../components/PopupMenu';
+import { viewStructure } from './canvas-navigation-handoff';
 
 const LayoutCenterIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -99,6 +100,8 @@ interface CanvasWorkspaceProps {
   onSetLayoutCenterId: (value: string | null) => void;
   bidirectionalWires?: boolean;
   createBidirectionalWires?: boolean;
+  navigationBaseline?: { views: CanvasView[]; zoneWireDefinitions: ZoneWireDefinition[] };
+  navigationFocus?: { viewId: string; onRevealed: () => void };
 }
 
 interface CanvasViewCardProps {
@@ -246,6 +249,8 @@ export function CanvasWorkspace({
   onSetLayoutCenterId,
   bidirectionalWires,
   createBidirectionalWires,
+  navigationBaseline,
+  navigationFocus,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { scheduleViewportChange, flushViewportChange } = useBatchedViewportChange(onViewportChange, viewport);
@@ -276,6 +281,8 @@ export function CanvasWorkspace({
   // hydration, re-deriving runtime bindings from the persisted zone wires.
   const prevExpandedRef = useRef<ExpandedBinding[]>([]);
   useEffect(() => {
+    if (navigationBaseline && viewStructure(navigationBaseline.views) === viewStructure(views)
+      && navigationBaseline.zoneWireDefinitions === zoneWireDefinitions) return;
     const desired = expandZoneWires(zoneWireDefinitions, views);
     const currentKeys = new Set(
       useMcpBindingStore.getState().bindings.map((b) => `${b.agentId}:${b.targetId}`),
@@ -295,7 +302,7 @@ export function CanvasWorkspace({
       // A member leaving a zone is cleanup: main keeps helper wires (#2225).
       void useMcpBindingStore.getState().unbind(b.agentId, b.targetId, MCP_UNBIND_CANVAS_CLEANUP);
     }
-  }, [zoneWireDefinitions, views, mcpBind]);
+  }, [zoneWireDefinitions, views, mcpBind, navigationBaseline]);
 
   const handleAddWireDef = useCallback((entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => {
     onAddWireDefinition(entry as McpBindingEntry);
@@ -430,6 +437,16 @@ export function CanvasWorkspace({
     onUpdateWireDefinition,
     onFocusView,
   });
+
+  useLayoutEffect(() => {
+    if (!navigationFocus) return;
+    const view = views.find((entry) => entry.id === navigationFocus.viewId);
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!view || !rect || !rect.width || !rect.height) return;
+    onViewportChange(viewportToCenterView(view, rect.width, rect.height, viewport.zoom));
+    navigationFocus.onRevealed();
+    containerRef.current?.focus();
+  }, [navigationFocus, containerSize, views, viewport.zoom, onViewportChange]);
 
   // ── Selection manager hook ────────────────────────────────────
   const {
