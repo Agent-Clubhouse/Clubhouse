@@ -22,6 +22,7 @@ vi.mock('./delivery', async (importOriginal) => ({
 const queueExcludes = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('./git-excludes', () => ({ queueManagedExcludes: queueExcludes }));
 vi.mock('../agent-system', () => ({
+  resolveOrchestrator: async (_p: string, cli?: string) => ({ id: cli ?? 'claude-code' }),
   isAgentRunning: (id: string) => state.running.has(id),
   killAgent,
   spawnAgent,

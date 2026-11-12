@@ -39,6 +39,16 @@ Imports preserve supporting/binary files and executable flags, never run scripts
 
 Import changes only the library. Assignment/unassignment still uses `set_agent_setup`; restart still requires separate lifecycle authority. No provider, driver, access, conversation, wiring, credential ownership or plain-agent files are changed by discovery/import. This slice does not yet admit arbitrary shared folders, home/plugin scanning, native non-JSON MCP import, executable dependency checks or paid activation probes.
 
+## Passive activation and restart receipts (#2855)
+
+`get_agent_activation` requires target `agent.read`. It separates persisted configured references, resolved desired revisions, the last recorded materialization, the running launch setup and **provider-confirmed loaded** evidence. Materialization records the effective provider, including a project default, so a different current provider cannot appear up to date. Missing parts, duplicate MCP keys, failed delivery, missing MCP environment and a failed restart of a stopped target produce blocked diagnostics without raw provider errors. A live, matching launch remains partial: model-visible skills/tools are not confirmed, and verification is explicitly blocked with zero attempts when this API has no trusted current-session inventory. It neither prompts a model nor runs synthetic tools or paid probes.
+
+`restart_agent` requires `agent.restart`; `now: true` additionally requires the existing `agent.sleep` permission to interrupt. After waiting, authorization is rechecked against the original stable target id before stopping it. Plain/stopped targets are not started. A conversation is resumed when compatible; a changed effective provider, including a changed project default, cannot resume another provider's session.
+
+Restart intent is persisted before lifecycle work. The managed state store keeps the latest 100 lifecycle receipts across agents, with actor/target ids, requested part revisions, timestamps, explicit lifecycle choices and completed/failed outcomes only. Fixed `managed.restart.requested`, `.completed` and `.failed` audit keys carry no instruction, command, credential, source path or raw error. Completion means the restart operation returned, never that a model loaded the setup. Intent-write failure prevents restart; outcome-write failure is an error, not success. An interrupted or still-waiting intent remains unconfirmed and must not trigger an automatic retry. Older history outside the bound is not retained here.
+
+The fixture regression traverses full-bundle import, managed assignment, real delivery, default Copilot SDK preparation with a fake driver, restart, worktree migration, unassignment and a second restart. It preserves an unrelated managed MCP, the native conversation, identity, other-provider bytes and the read-only plain source; it also covers revoked authorization before stopping and restart failure. It does not claim real-provider login or model-visible activation.
+
 ## Decision log
 
 Decisions made while building, for the maintainer to revisit. Newest last.

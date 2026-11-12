@@ -840,19 +840,37 @@ describe('restart_agent', () => {
     managedAgent('worker');
     state.running.add('worker');
     expect((await call('restart_agent', { project: 'Clubhouse', agent: 'worker' })).json).toEqual({ status: 'restarted', resumed: true });
-    expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: undefined, whenTurnEnds: true });
+    expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: undefined, whenTurnEnds: true, authorize: expect.any(Function) });
+    grantMock.granted = true;
     await call('restart_agent', { project: 'Clubhouse', agent: 'worker', now: true, fresh: true });
-    expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: true, whenTurnEnds: false });
+    expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: true, whenTurnEnds: false, authorize: expect.any(Function) });
     expect(state.restartOrigins).toEqual(['mcp', 'mcp']);
   });
 
   it('says when there was no conversation to resume', async () => {
     managedAgent('newbie');
     state.running.add('newbie');
+    grantMock.granted = true;
     vi.mocked(restartManagedAgent).mockResolvedValueOnce({ resumed: false, noSession: true });
     expect((await call('restart_agent', { project: 'Clubhouse', agent: 'newbie', now: true })).json).toEqual({
       status: 'restarted', resumed: false, note: 'There was no conversation to resume, so it started a new one.',
     });
+  });
+
+  it('does not turn a restart-only grant into permission to interrupt, and rechecks authorization after waiting', async () => {
+    managedAgent('restart-only');
+    state.running.add('restart-only');
+    expect((await call('restart_agent', { project: 'Clubhouse', agent: 'restart-only', now: true })).isError).toBe(true);
+    expect(restartManagedAgent).not.toHaveBeenCalled();
+    expect((await call('restart_agent', { project: 'Clubhouse', agent: 'restart-only' })).json.status).toBe('restarted');
+    const authorize = vi.mocked(restartManagedAgent).mock.calls[0][2]?.authorize;
+    expect(authorize).toBeTypeOf('function');
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.restart', target: { kind: 'any' }, mode: 'off' }] }));
+      await expect(authorize!()).rejects.toMatchObject({ code: 'not_permitted' });
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
   });
 });
 
