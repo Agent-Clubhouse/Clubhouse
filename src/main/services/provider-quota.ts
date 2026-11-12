@@ -32,6 +32,7 @@ import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUO
 import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { agentRegistry } from './agent-registry';
 import { appLog } from './log-service';
+import type { ProviderCapacity } from '../../shared/handoff-capacity';
 
 /** These are tunable starting proposals, not measured values. */
 export const QUOTA_CACHE_MS = 5 * 60_000;
@@ -265,6 +266,17 @@ export async function noteProviderFailure(providerId: string, kind: StartFailure
 
 function activeCooldowns(entry: QuotaEntry, now: number): Cooldown[] {
   return Object.values(entry.cooldowns).filter((cooldown) => cooldown.until > now);
+}
+
+/** Capacity queries observe existing signals only, without even resolving a provider. */
+export function cachedProviderCapacity(providerId: string, now = Date.now()): ProviderCapacity {
+  const known = entries.get(providerId);
+  if (!known) return 'unknown';
+  if (activeCooldowns(known, now).length > 0) return 'unavailable';
+  const state = viewOf(known, now).state;
+  if (state === 'exhausted') return 'unavailable';
+  if (state === 'near_limit') return 'limited';
+  return state === 'known' || state === 'low' ? 'available' : 'unknown';
 }
 
 export async function isProviderCoolingDown(providerId: string): Promise<boolean> {

@@ -41,6 +41,14 @@ Receiver verification binds the canonical manifest digest, operation count and b
 
 These are internal safety primitives, not a complete transfer implementation. Project-owned audited allowlists, branch bundles, resumable transfer routes and automatic fresh-worktree apply remain gated on subsequent reviewed slices. Agents cannot override a secret block. All symlinks are currently refused, including inside-worktree links; there is no cross-platform link recreation yet.
 
+### Capacity foundation (not registered)
+
+`handoff-capacity.ts` exposes only machine fingerprints, presence/timestamps, agent counts, load/disk bands, per-provider availability and the accepting-handoffs flag. Unknown fields, hostnames, paths, process lists and exact utilization/disk counters are refused by the wire schema. Offline computers immediately return an offline record without probing or reusing an online cache entry.
+
+The local sampler reads CPU counters over 100 ms, memory counters and `statfs` for registered project volumes; it never creates files, benchmarks, lists processes or invokes a provider. Load is high at 90% CPU or memory pressure, medium at 65% CPU or 75% memory pressure. Disk is low below 2 GiB or 3% available, limited below 20 GiB or 10%, otherwise ample; multiple volumes use the worst band. Missing or invalid observations fail explicitly instead of claiming spare capacity.
+
+The internal query service shares in-flight reads, caches for 30 seconds, limits callers to 30 queries per minute, checks `device.read` before and after the query, and rechecks online membership before releasing a remote result. Its membership, grant, cached-provider-signals and pinned-transport adapters remain integration work. No capacity tool/route or settings UI is enabled by this foundation.
+
 ## Manual connect and user-managed forwards
 
 In **Add a device**, paste the other computer's unmodified pairing link. **Address override (optional)** accepts a host or `host:port`, for example `127.0.0.1:7443` for a local forward or `[::1]:7443` for IPv6. Omitting the port uses the main TLS port from the link. An override replaces the link's endpoints for that pairing attempt, not its expected identity, certificate or one-time PIN.

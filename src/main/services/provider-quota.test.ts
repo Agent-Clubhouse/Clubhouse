@@ -7,11 +7,13 @@ const W = vi.hoisted(() => ({
   telemetry: [] as unknown[][],
   cooldowns: [] as unknown[][],
   logs: [] as unknown[],
+  providerLookups: [] as string[],
   registrations: new Map<string, { projectPath: string; orchestrator: string }>(),
 }));
 
 vi.mock('../orchestrators', () => ({
   getProvider: (id: string) => {
+    W.providerLookups.push(id);
     if (id === 'copilot-cli') return { id };
     if (id === 'claude-code') return { id, readPlanQuota: (opts: { env?: Record<string, string> }) => W.read!(opts) };
     return undefined;
@@ -26,7 +28,7 @@ vi.mock('../telemetry/feature-events', () => ({
 }));
 
 import {
-  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, QUOTA_FORCED_READ_BUDGET_MS, _resetProviderQuotaForTesting, classifyStartFailure, forceProviderQuota, isProviderCoolingDown, noteProviderFailure, providerStartWarning, readProviderQuota, watchSessionQuota,
+  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, QUOTA_FORCED_READ_BUDGET_MS, _resetProviderQuotaForTesting, cachedProviderCapacity, classifyStartFailure, forceProviderQuota, isProviderCoolingDown, noteProviderFailure, providerStartWarning, readProviderQuota, watchSessionQuota,
 } from './provider-quota';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { QUOTA_STALE_MS } from '../../shared/helper-routing';
@@ -42,11 +44,59 @@ beforeEach(() => {
   W.telemetry = [];
   W.cooldowns = [];
   W.logs = [];
+  W.providerLookups = [];
   W.registrations = new Map();
   _resetProviderQuotaForTesting();
 });
 
 afterEach(() => { vi.useRealTimers(); });
+
+describe('observational cached capacity', () => {
+  it('does not resolve providers or invoke quota/login reads for known or unknown provider ids', () => {
+    W.read = vi.fn(async () => reading(41));
+    for (const id of ['claude-code', 'copilot-cli', 'unknown-provider']) expect(cachedProviderCapacity(id)).toBe('unknown');
+    expect(W.providerLookups).toEqual([]);
+    expect(W.read).not.toHaveBeenCalled();
+  });
+
+  it('uses prior evidence without resolving providers again, then keeps stale evidence unknown', async () => {
+    const read = vi.fn(async () => reading(41));
+    W.read = read;
+    await readProviderQuota('claude-code');
+    const lookups = [...W.providerLookups];
+    expect(cachedProviderCapacity('claude-code')).toBe('available');
+    vi.setSystemTime(NOW + QUOTA_STALE_MS + 1);
+    expect(cachedProviderCapacity('claude-code')).toBe('unknown');
+    expect(W.providerLookups).toEqual(lookups);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([[95, 'limited'], [100, 'unavailable']] as const)('maps cached utilization %s to %s without more reads', async (percent, expected) => {
+    const read = vi.fn(async () => reading(percent, percent === 100 ? { limitReached: true } : {}));
+    W.read = read;
+    await readProviderQuota('claude-code');
+    const lookups = [...W.providerLookups];
+    expect(cachedProviderCapacity('claude-code')).toBe(expected);
+    expect(W.providerLookups).toEqual(lookups);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('observes active and expired cooldowns and never claims capacity from not-applicable evidence', async () => {
+    const read = vi.fn(async (): Promise<PlanQuotaReading> => ({ kind: 'not_applicable' }));
+    W.read = read;
+    await noteProviderFailure('claude-code', 'auth');
+    expect(cachedProviderCapacity('claude-code')).toBe('unavailable');
+    vi.setSystemTime(NOW + AUTO_COOLDOWN_AUTH_MS + 1);
+    expect(cachedProviderCapacity('claude-code')).toBe('unknown');
+    expect(W.providerLookups).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+    await readProviderQuota('claude-code');
+    const lookups = [...W.providerLookups];
+    expect(cachedProviderCapacity('claude-code')).toBe('unknown');
+    expect(W.providerLookups).toEqual(lookups);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('readProviderQuota', () => {
   it('a provider that can\'t report is not_supported, and nothing is read', async () => {
