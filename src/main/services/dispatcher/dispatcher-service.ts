@@ -20,7 +20,8 @@
  *
  * Two agents, one identity (#3036): the agent in this folder keeps the id,
  * connections, links and grants it always had, and does the work. It is never
- * shown or named. The user talks to a chat agent in a sibling folder
+ * shown as a regular agent; diagnostic surfaces name it Dispatcher controller.
+ * The user talks to a chat agent in a sibling folder
  * (getDispatcherChatPath), created on top of it, which reads agents' state and
  * memory and hands every action to it (dispatcher-channel). Name, look and
  * settings are shared (dispatcher-identity). Code calls the first the
@@ -79,7 +80,7 @@ import type { DispatcherBehavior, DispatcherRole } from '../../../shared/dispatc
 import { cleanModelsUpdate, mergeRoleModel, type DispatcherModelsState, type DispatcherRoleModel } from '../../../shared/dispatcher-models';
 import { getDispatcherModels, getModelsBefore, modelsChosenByHand, saveDispatcherModels, saveModelsBefore } from './dispatcher-models';
 import { setDispatcherIdLookup } from '../clubhouse-mcp/dispatcher-gate';
-import { DEFAULT_DISPATCHER_NAME } from '../../../shared/dispatcher-name';
+import { DEFAULT_DISPATCHER_NAME, dispatcherRoleDisplayName } from '../../../shared/dispatcher-name';
 import { cleanDispatcherName, personalityInstructions } from '../../../shared/dispatcher-personality';
 import type { DispatcherSetupInput, DispatcherSetupStatus } from '../../../shared/dispatcher-setup';
 import {
@@ -120,11 +121,11 @@ let chatConfig: DurableAgentConfig | null = null;
 
 /**
  * The name the user gave it (#3053), cleaned, or the working name: what its
- * wires, agents' cards and hand-offs call it. A rename reaches the wires
- * through the state broadcast, which rebuilds them (dispatcher-handlers).
+ * chat and existing tool addresses call it. Explicit controller displays use
+ * the work role without changing the saved identity or tool names.
  */
-export function dispatcherDisplayName(): string {
-  return cleanDispatcherName(config?.name ?? '') || DEFAULT_DISPATCHER_NAME;
+export function dispatcherDisplayName(role: DispatcherRole = 'chat'): string {
+  return dispatcherRoleDisplayName(role, cleanDispatcherName(config?.name ?? ''));
 }
 /**
  * What each folder's instructions file was last written for (instructionsKey),

@@ -9,6 +9,8 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { AgentDetails } from './AgentDetails';
 import { useAgentDetailsStore } from './detailsStore';
 import { mcpRows, mcpSummary, useClubhouseMcpConnection } from './McpCard';
+import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
+import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
 
 const SPAWNED = 1_000;
 
@@ -49,6 +51,7 @@ describe('MCP servers card', () => {
   });
 
   beforeEach(() => {
+    useDispatcherStore.getState().setState(DISPATCHER_OFF);
     connectionListeners.clear();
     window.clubhouse.mcpBinding.onAgentConnectionChanged = vi.fn((listener) => {
       connectionListeners.add(listener);
@@ -68,6 +71,7 @@ describe('MCP servers card', () => {
   });
 
   afterEach(() => {
+    useDispatcherStore.getState().setState(DISPATCHER_OFF);
     useProjectStore.setState({ projects: [] });
     useMcpBindingStore.setState({ bindings: [] });
   });
@@ -93,6 +97,24 @@ describe('MCP servers card', () => {
     // The Clubhouse MCP's wires, and only this agent's.
     expect(screen.getByTestId('details-mcp-wires')).toHaveTextContent('Wired to curious-tapir');
     expect(screen.getByTestId('details-mcp-wires')).not.toHaveTextContent('not-mine');
+  });
+
+  it('displays the controller wire role while keeping the custom chat and ordinary target names', async () => {
+    useDispatcherStore.getState().setState({
+      ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat',
+      config: { id: 'work', name: 'Rosie', color: 'indigo', createdAt: 'then' },
+    });
+    useMcpBindingStore.setState({ bindings: [
+      { agentId: 'a1', targetId: 'work', targetKind: 'agent', label: 'Dispatcher controller', targetName: 'Rosie' },
+      { agentId: 'a1', targetId: 'chat', targetKind: 'agent', label: 'Rosie', targetName: 'Rosie' },
+      { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent', targetName: 'curious-tapir' },
+    ] });
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(screen.getByTestId('details-mcp-wires')).toBeInTheDocument());
+    expect(screen.getByText('Wired to Dispatcher controller')).toBeInTheDocument();
+    expect(screen.getByText('Wired to Rosie')).toBeInTheDocument();
+    expect(screen.getByText('Wired to curious-tapir')).toBeInTheDocument();
+    expect(useMcpBindingStore.getState().bindings[0].targetName).toBe('Rosie');
   });
 
   it('shows a terminal agent\'s Clubhouse MCP connection and keeps configured servers apart', async () => {

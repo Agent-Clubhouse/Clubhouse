@@ -4,6 +4,7 @@ import { ChatStream } from '../agents/chat/ChatStream';
 import { formatWhen } from '../agents/chat/MessageBlocks';
 import { useChatLoading, useChatState, useChatTranscript } from '../agents/chat/useChatSession';
 import { activeRunSince, startedFreshNotice } from './work-conversation';
+import { DISPATCHER_CONTROLLER_NAME } from '../../../shared/dispatcher-name';
 
 /**
  * The Dispatcher debug view's read-only chat of its controller (#3188): its
@@ -30,6 +31,7 @@ export function DispatcherWorkView({ agentId }: { agentId: string }) {
   return (
     <div className="h-full flex flex-col bg-ctp-base" data-testid="dispatcher-work-view" data-agent-id={agentId}>
       <div className="flex-shrink-0 px-7 py-2 flex flex-col gap-0.5 text-xs text-ctp-overlay1 border-b border-surface-0">
+        <h2 className="font-medium text-ctp-subtext0">{DISPATCHER_CONTROLLER_NAME}</h2>
         <p data-testid="dispatcher-work-note">Debug view of the Dispatcher&rsquo;s controller. Read only.</p>
         {state.sessionId && (
           <p data-testid="dispatcher-work-conversation" data-active={activeSince !== null}>
@@ -46,7 +48,7 @@ export function DispatcherWorkView({ agentId }: { agentId: string }) {
       <div className="flex-1 min-h-0 flex flex-col">
         <ChatStream
           state={state}
-          agentName="Dispatcher controller"
+          agentName={DISPATCHER_CONTROLLER_NAME}
           announce={false}
           emptyMessage={loading && !stored ? 'Loading' : 'Nothing here yet.'}
           runs={runs}

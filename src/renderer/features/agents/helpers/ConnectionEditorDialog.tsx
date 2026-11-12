@@ -5,13 +5,14 @@ import { Modal } from '../../../components/Modal';
 import { Button } from '../../../components/Button';
 import type { AgentConnectionSources } from '../../../../shared/connection-sources';
 import type { ConnectionDirection } from '../../../../shared/connection-grants';
-import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
+import { dispatcherAgentDisplayName, isDispatcherAgent, useDispatcherStore } from '../../dispatcher/dispatcherStore';
 import { ConnectionSourcesDialog } from './ConnectionSourcesDialog';
 import { reportChromeActionFailed } from '../../../chrome/telemetry';
 
 export function ConnectionEditorDialog({ binding, onClose, backdropTestId = 'wire-instructions-dialog' }: { binding: McpBindingEntry; onClose: () => void; backdropTestId?: string }) {
   const bindings = useMcpBindingStore((state) => state.bindings);
   const agents = useAgentStore((state) => state.agents);
+  const dispatcher = useDispatcherStore((state) => state.state);
   const [data, setData] = useState<{ sources: AgentConnectionSources; grants: ConnectionDirection[] } | null>(null);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
@@ -32,8 +33,9 @@ export function ConnectionEditorDialog({ binding, onClose, backdropTestId = 'wir
   }, [binding.agentId, bindings, reload]);
   const from = agents[binding.agentId];
   const to = agents[binding.targetId];
-  const agentName = from?.name ?? binding.agentName ?? binding.agentId;
-  const otherName = to?.name ?? binding.targetName ?? binding.label;
+  const agentName = dispatcherAgentDisplayName(binding.agentId, from?.name ?? binding.agentName ?? binding.agentId, dispatcher);
+  const targetName = to?.name ?? binding.targetName ?? binding.label;
+  const otherName = binding.targetKind === 'agent' ? dispatcherAgentDisplayName(binding.targetId, targetName, dispatcher) : targetName;
   const related = bindings.filter((entry) => (entry.agentId === binding.agentId && entry.targetId === binding.targetId)
     || (binding.targetKind === 'agent' && entry.agentId === binding.targetId && entry.targetId === binding.agentId));
   const pairs = data?.sources.pairs.filter((pair) => (pair.agentId === binding.agentId && pair.targetId === binding.targetId)

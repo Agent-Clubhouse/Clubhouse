@@ -44,16 +44,15 @@ type Pair = { agentId: string; targetId: string };
 
 /**
  * Both directions of one Dispatcher ↔ agent pair. The Dispatcher end carries
- * the name the user gave it, or "Dispatcher" (#3053), and both carry the
+ * controller display name, and both carry the
  * agent's project, so the Dispatcher's tool names read `<project>_<agent>` and
  * a message from the agent shows which project it came from. Controller
- * outbound messages use the canonical "Dispatcher controller" label in
- * agent-tools; binding names, IDs and routing remain unchanged. A rename
- * changes the signature, so the watcher below relabels the wires.
+ * targetName retains the user's base name because it also addresses existing
+ * wire tools. A rename changes that signature, so the watcher relabels it.
  */
 function pairBindings(dispatcherId: string, agent: DurableAgentConfig, projectName?: string): PersistedBinding[] {
   const project = projectName ? { projectName } : {};
-  const name = dispatcherDisplayName();
+  const name = dispatcherDisplayName('work');
   // Both directions use narrow defaults when no user-owned switches are saved (#3281).
   return [
     {
@@ -62,7 +61,7 @@ function pairBindings(dispatcherId: string, agent: DurableAgentConfig, projectNa
     },
     {
       agentId: agent.id, targetId: dispatcherId, targetKind: 'agent',
-      label: name, agentName: agent.name, targetName: name, ...project, ...startingTools(AUTOMATIC_CONNECTION_SWITCHES.agentToDispatcher),
+      label: name, agentName: agent.name, targetName: dispatcherDisplayName(), ...project, ...startingTools(AUTOMATIC_CONNECTION_SWITCHES.agentToDispatcher),
     },
   ];
 }

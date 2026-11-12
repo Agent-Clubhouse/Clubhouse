@@ -4,11 +4,13 @@ The Dispatcher is one agent for the whole app. You talk to it in plain words, an
 
 "Dispatcher" is its working name. You can give it your own name, look and personality.
 
+Your **chat** uses that name. **Dispatcher controller** is its internal agent that carries out hand-offs and holds its connections and permissions. That fixed label appears on connections, messages to other agents, Actions and diagnostic conversation titles. You still talk to it in one chat. In the restart dialog, interrupting the controller can interrupt hand-offs; it resumes when next needed.
+
 ## Getting started
 
 The first time you open it, a short setup walks you through three steps, with a preview of how it will look and sound:
 
-1. **Name and look.** A name, a color, and an image or emoji. The name shows in the sidebar, in its chat, on your phone and to the agents connected to it.
+1. **Name and look.** A name, a color, and an image or emoji. The name shows in the sidebar, in its chat and on your phone.
 2. **Behavior.** Light, Standard or Thorough, and **Runs on**, the provider it uses. If your Auto mapping doesn't cover that provider yet, **Set up Auto** opens it.
 3. **Personality.** Friendly, Concise or Detailed fill in the text it's told, or pick Custom and write your own. The text is always shown and you can edit it. **Try it out** asks the chosen model one sample question with that personality and shows the real reply. No agent is involved.
 

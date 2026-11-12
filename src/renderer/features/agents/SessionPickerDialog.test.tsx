@@ -1,6 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SessionPickerDialog } from './SessionPickerDialog';
+import { DISPATCHER_OFF } from '../../../shared/dispatcher-types';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 
 const mockSessions = [
   { sessionId: 'aaa-bbb-ccc-111', startedAt: '2024-06-15T10:00:00Z', lastActiveAt: '2024-06-15T12:00:00Z', friendlyName: 'Feature Work' },
@@ -14,6 +16,7 @@ describe('SessionPickerDialog', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useDispatcherStore.getState().setState(DISPATCHER_OFF);
     window.clubhouse.agent.listSessions = vi.fn().mockResolvedValue(mockSessions);
     window.clubhouse.agent.updateSessionName = vi.fn().mockResolvedValue(undefined);
   });
@@ -50,6 +53,24 @@ describe('SessionPickerDialog', () => {
     // Session without name shows truncated ID
     expect(screen.getByText(/Session ddd-eee-/)).toBeInTheDocument();
     expect(screen.getByText('Bug Fix')).toBeInTheDocument();
+  });
+
+  it.each(['copilot-cli', 'codex-cli', 'claude-code'])('projects fixed controller titles for %s without renaming sessions or changing resume IDs', async (orchestrator) => {
+    useDispatcherStore.getState().setState({
+      ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat',
+      config: { id: 'work', name: 'Rosie', color: 'indigo', createdAt: 'then' },
+    });
+    const { rerender } = render(<SessionPickerDialog agentId="work" projectPath="/dispatcher" orchestrator={orchestrator} onResume={onResume} onClose={onClose} />);
+    expect(await screen.findAllByText('Dispatcher controller')).toHaveLength(3);
+    expect(screen.queryByText('Feature Work')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('resume-session-0'));
+    expect(onResume).toHaveBeenCalledWith('aaa-bbb-ccc-111');
+    expect(window.clubhouse.agent.listSessions).toHaveBeenCalledWith('/dispatcher', 'work', orchestrator);
+    expect(window.clubhouse.agent.updateSessionName).not.toHaveBeenCalled();
+    expect(mockSessions[0].friendlyName).toBe('Feature Work');
+    rerender(<SessionPickerDialog agentId="chat" projectPath="/dispatcher-chat" orchestrator={orchestrator} onResume={onResume} onClose={onClose} />);
+    expect(await screen.findByText('Feature Work')).toBeInTheDocument();
+    expect(screen.queryByText('Dispatcher controller')).not.toBeInTheDocument();
   });
 
   it('shows latest badge on first session', async () => {
