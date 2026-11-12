@@ -324,7 +324,7 @@ describe('Dispatcher wire rebuild', () => {
       `${DISPATCHER}->durable_lead`, `${DISPATCHER}->durable_o1`,
       `durable_lead->${DISPATCHER}`, `durable_o1->${DISPATCHER}`,
     ].sort());
-    expect(bindingManager.getBindingsForAgent('durable_o1')[0]).toMatchObject({ label: 'Dispatcher', projectName: 'other' });
+    expect(bindingManager.getBindingsForAgent('durable_o1')[0]).toMatchObject({ label: 'Dispatcher controller', targetName: 'Dispatcher', projectName: 'other' });
   });
 
   it('comes back after a restart, with nothing but the policy to go on', async () => {

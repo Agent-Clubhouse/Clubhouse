@@ -49,9 +49,12 @@ import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
 import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
+import { dispatcherDisplayName, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
 
 /** An agent's name and project here, for another machine's view of a call or connection (#3064). */
 async function describeAgentHere(agentId: string): Promise<{ name: string; projectName?: string } | undefined> {
+  if (isDispatcherAgentId(agentId)) return { name: dispatcherDisplayName('work') };
+  if (isDispatcherChatAgentId(agentId)) return { name: dispatcherDisplayName() };
   for (const project of await projectStore.peekProjects()) {
     const agent = (await agentConfig.peekDurableConfigs(project.path)).find((a) => a.id === agentId);
     if (agent) return { name: agent.name, projectName: project.displayName || project.name };
