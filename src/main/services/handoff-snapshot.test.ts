@@ -34,6 +34,16 @@ function rehash(manifest: HandoffWorktreeManifest): HandoffWorktreeManifest {
   return { ...manifest, manifest_sha256: hash(canonicalHandoffManifest(manifest)) };
 }
 
+async function replacementFixture(): Promise<{ base: string; replacement: string }> {
+  const base = (await exec('git', ['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim();
+  await file('tracked.txt', 'changed final bytes\n');
+  await git('add', 'tracked.txt');
+  await git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Replacement fixture');
+  const replacement = (await exec('git', ['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim();
+  await git('update-ref', 'refs/heads/main', base);
+  return { base, replacement };
+}
+
 beforeEach(async () => {
   root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-snapshot-')));
   repo = path.join(root, 'repo');
@@ -57,6 +67,181 @@ afterEach(() => {
 });
 
 describe('local secret-safe handoff snapshots', () => {
+  it.each(['loose', 'packed'])('refuses %s replacement refs without binding their tree to the original base', async (storage) => {
+    const { base, replacement } = await replacementFixture();
+    await git('replace', base, replacement);
+    if (storage === 'packed') {
+      await git('pack-refs', '--all');
+      expect((await fs.promises.readFile(path.join(repo, '.git/packed-refs'), 'utf8'))).toContain(`refs/replace/${base}`);
+      expect(fs.existsSync(path.join(repo, '.git/refs/replace', base))).toBe(false);
+    }
+    expect((await exec('git', ['--no-replace-objects', 'show', `${base}:tracked.txt`], { cwd: repo })).stdout).toBe('base\n');
+    expect((await exec('git', ['show', `${base}:tracked.txt`], { cwd: repo })).stdout).toBe('changed final bytes\n');
+    const index = await fs.promises.readFile(path.join(repo, '.git/index'));
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository', cleanupFailed: false });
+    expect(await fs.promises.readFile(path.join(repo, '.git/index'))).toEqual(index);
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+    expect(await fs.promises.readFile(path.join(repo, 'tracked.txt'), 'utf8')).toBe('changed final bytes\n');
+  });
+
+  it('refuses replacement refs appearing after preflight instead of changing the advertised base interpretation', async () => {
+    const { base, replacement } = await replacementFixture();
+    const lstat = fs.promises.lstat;
+    let installed = false;
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
+      const stat = await lstat(...args);
+      if (args[0] === path.join(repo, 'tracked.txt') && !installed) {
+        installed = true;
+        await git('replace', base, replacement);
+      }
+      return stat;
+    });
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository', cleanupFailed: false });
+    expect(installed).toBe(true);
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it.each(['info/grafts', 'objects/info/alternates'])('refuses repository indirection in %s without rewriting it', async (relative) => {
+    const { base, replacement } = await replacementFixture();
+    const control = path.join(repo, '.git', relative);
+    const alternateObjects = path.join(root, 'alternate-objects');
+    await fs.promises.mkdir(alternateObjects);
+    const content = relative === 'info/grafts' ? `${base} ${replacement}\n` : `${alternateObjects}\n`;
+    await fs.promises.mkdir(path.dirname(control), { recursive: true });
+    await fs.promises.writeFile(control, content);
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(await fs.promises.readFile(control, 'utf8')).toBe(content);
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it('does not inherit a custom replacement namespace as authority over the approved base', async () => {
+    const { base, replacement } = await replacementFixture();
+    vi.stubEnv('GIT_REPLACE_REF_BASE', 'refs/handoff-test-replacements');
+    await git('replace', base, replacement);
+    expect((await exec('git', ['show', `${base}:tracked.txt`], { cwd: repo })).stdout).toBe('changed final bytes\n');
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.repo.base).toBe(base);
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['tracked.txt']);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('changed final bytes\n');
+  });
+
+  it('ignores inherited repository and worktree overrides rather than advertising a foreign base', async () => {
+    const { base, replacement } = await replacementFixture();
+    const foreign = path.join(root, 'foreign-repo');
+    await git('-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '-q', '-b', 'foreign-fixture', foreign, replacement);
+    const foreignGit = (await exec('git', ['rev-parse', '--absolute-git-dir'], { cwd: foreign })).stdout.trim();
+    vi.stubEnv('GIT_DIR', foreignGit);
+    vi.stubEnv('GIT_WORK_TREE', repo);
+    expect((await exec('git', ['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim()).toBe(replacement);
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.repo.base).toBe(base);
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['tracked.txt']);
+  });
+
+  it('retains ordinary linked-worktree support while checking shared Git metadata', async () => {
+    const linked = path.join(root, 'linked-worktree');
+    await git('-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '-q', '-b', 'handoff-fixture', linked);
+    repo = linked;
+    await file('tracked.txt', 'same\n');
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.repo.branch).toBe('handoff-fixture');
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['tracked.txt']);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('same\n');
+  });
+
+  it('still rejects a branch-base change during raw comparison', async () => {
+    const { replacement } = await replacementFixture();
+    const lstat = fs.promises.lstat;
+    let moved = false;
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
+      const stat = await lstat(...args);
+      if (args[0] === path.join(repo, 'tracked.txt') && !moved) {
+        moved = true;
+        await git('update-ref', 'refs/heads/main', replacement);
+      }
+      return stat;
+    });
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'source_changed', cleanupFailed: false });
+    expect(moved).toBe(true);
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it.each(['replacement', 'HEAD', 'graft', 'alternate'])('rechecks %s changes at the final manifest-publication boundary', async (change) => {
+    const { base, replacement } = await replacementFixture();
+    const open = fs.promises.open;
+    let changed = false;
+    vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args);
+      if (String(args[0]).startsWith(staging) && path.basename(String(args[0])) === 'manifest.json') {
+        changed = true;
+        if (change === 'replacement') await git('replace', base, replacement);
+        else if (change === 'HEAD') await git('update-ref', 'refs/heads/main', replacement);
+        else {
+          const alternate = path.join(root, 'late-alternate-objects');
+          await fs.promises.mkdir(alternate);
+          const relative = change === 'graft' ? 'info/grafts' : 'objects/info/alternates';
+          await fs.promises.mkdir(path.dirname(path.join(repo, '.git', relative)), { recursive: true });
+          await fs.promises.writeFile(path.join(repo, '.git', relative), change === 'graft' ? `${base} ${replacement}\n` : `${alternate}\n`);
+        }
+      }
+      return handle;
+    });
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({
+      code: change === 'HEAD' ? 'source_changed' : 'unsupported_repository', cleanupFailed: false,
+    });
+    expect(changed).toBe(true);
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it.each(['private', 'common'])('rejects a changed %s Git directory identity even when base/branch/remote remain the same', async (changedDirectory) => {
+    const linked = path.join(root, 'linked-worktree');
+    await git('-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '-q', '-b', 'handoff-fixture', linked);
+    repo = linked;
+    const privateDir = (await exec('git', ['rev-parse', '--absolute-git-dir'], { cwd: repo })).stdout.trim();
+    const commonDir = path.resolve(repo, (await exec('git', ['rev-parse', '--git-common-dir'], { cwd: repo })).stdout.trim());
+    const copied = path.join(root, 'copied-git-directory');
+    await fs.promises.cp(changedDirectory === 'private' ? privateDir : commonDir, copied, { recursive: true });
+    if (changedDirectory === 'private') await fs.promises.writeFile(path.join(copied, 'commondir'), `${commonDir}\n`);
+    await file('tracked.txt', 'same\n');
+    const lstat = fs.promises.lstat;
+    let changed = false;
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
+      const stat = await lstat(...args);
+      if (args[0] === path.join(repo, 'tracked.txt') && !changed) {
+        changed = true;
+        if (changedDirectory === 'private') await fs.promises.writeFile(path.join(repo, '.git'), `gitdir: ${copied}\n`);
+        else await fs.promises.writeFile(path.join(privateDir, 'commondir'), `${copied}\n`);
+      }
+      return stat;
+    });
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'source_changed', cleanupFailed: false });
+    expect(changed).toBe(true);
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it('pins the environment source once without losing global configuration filter checks', async () => {
+    const global = path.join(root, 'initial-global-config');
+    const other = path.join(root, 'other-global-config');
+    await git('config', '--file', global, 'remote.origin.url', 'https://example.com/initial.git');
+    await git('config', '--file', other, 'remote.origin.url', 'https://example.com/other.git');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', global);
+    await file('tracked.txt', 'same\n');
+    const lstat = fs.promises.lstat;
+    let changed = false;
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
+      const stat = await lstat(...args);
+      if (args[0] === path.join(repo, 'tracked.txt') && !changed) {
+        changed = true;
+        vi.stubEnv('GIT_CONFIG_GLOBAL', other);
+      }
+      return stat;
+    });
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(changed).toBe(true);
+    expect(snapshot.manifest.repo.remote).toBe('https://example.com/initial.git');
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['tracked.txt']);
+  });
+
   it('refuses configured filters before Git diff can execute their clean command', async () => {
     await file('.gitattributes', 'tracked.txt filter=qa\n');
     await git('config', 'filter.qa.clean', 'node -e "require(\'fs\').writeFileSync(\'filter-marker\',\'ran\');process.stdin.pipe(process.stdout)"');

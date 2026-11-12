@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import * as fs from 'fs';
 import type { FileHandle } from 'fs/promises';
+import { devNull } from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import picomatch from 'picomatch';
@@ -60,23 +61,64 @@ interface SourceRoot {
   directories: Map<string, fs.BigIntStats>;
 }
 
+interface SnapshotGit {
+  root: string;
+  env: NodeJS.ProcessEnv;
+  identity?: string;
+}
+
 function failure(error: unknown): HandoffSnapshotError {
   if (error instanceof Error && error.message === 'Invalid handoff manifest.') return new HandoffSnapshotError('unsafe_entry');
   if (error instanceof Error && error.message === 'Handoff manifest is too large.') return new HandoffSnapshotError('bounds_exceeded');
   return error instanceof HandoffSnapshotError ? error : new HandoffSnapshotError('filesystem_failed');
 }
 
+function gitEnvironment(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (/^GIT_/i.test(key) && !/^GIT_CONFIG_(?:GLOBAL|SYSTEM|NOSYSTEM)$/i.test(key)) delete env[key];
+  }
+  return { ...env, GIT_OPTIONAL_LOCKS: '0', GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: devNull };
+}
+
 /** Unlike UI Git helpers, never log Git stderr, URLs, paths or subprocess output. */
-async function git(root: string, args: string[], missingAllowed = false): Promise<string | null> {
+async function git(context: SnapshotGit, args: string[], missingAllowed = false): Promise<string | null> {
   try {
-    const result = await exec('git', ['-c', 'core.fsmonitor=false', ...args], {
-      cwd: root, encoding: 'buffer', timeout: 10_000, maxBuffer: 8 * 1024 ** 2,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+    const result = await exec('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...args], {
+      cwd: context.root, encoding: 'buffer', timeout: 10_000, maxBuffer: 8 * 1024 ** 2, env: context.env,
     });
     return new TextDecoder('utf-8', { fatal: true }).decode(result.stdout);
   } catch (error) {
     if (missingAllowed && error !== null && typeof error === 'object' && 'code' in error && error.code === 1) return null;
     throw new HandoffSnapshotError('git_failed');
+  }
+}
+
+async function gitControls(context: SnapshotGit): Promise<void> {
+  const gitDir = (await git(context, ['rev-parse', '--absolute-git-dir']))?.trimEnd();
+  const commonDir = (await git(context, ['rev-parse', '--git-common-dir']))?.trimEnd();
+  if (!gitDir || !commonDir) throw new HandoffSnapshotError('invalid_repository');
+  const directories = [...new Set([gitDir, commonDir].map((name) => path.resolve(context.root, name)))];
+  const identities: string[][] = [];
+  for (const name of directories) {
+    const stat = await fs.promises.lstat(name, { bigint: true });
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new HandoffSnapshotError('unsupported_repository');
+    identities.push([await fs.promises.realpath(name), stat.dev.toString(), stat.ino.toString()]);
+    for (const relative of ['info/grafts', 'objects/info/alternates']) {
+      try {
+        await fs.promises.lstat(path.join(name, relative));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') continue;
+        throw error;
+      }
+      throw new HandoffSnapshotError('unsupported_repository');
+    }
+  }
+  const identity = JSON.stringify(identities);
+  if (context.identity !== undefined && context.identity !== identity) throw new HandoffSnapshotError('source_changed');
+  context.identity = identity;
+  if (await git(context, ['for-each-ref', '--format=%(refname)', 'refs/replace/'])) {
+    throw new HandoffSnapshotError('unsupported_repository');
   }
 }
 
@@ -106,20 +148,22 @@ async function directory(root: string, parent?: SourceRoot): Promise<SourceRoot>
   return source;
 }
 
-async function repository(root: string): Promise<HandoffWorktreeManifest['repo']> {
-  if (await git(root, ['config', '--null', '--name-only', '--get-regexp', '^filter\\.'], true)) {
+async function repository(context: SnapshotGit): Promise<HandoffWorktreeManifest['repo']> {
+  await gitControls(context);
+  if (await git(context, ['config', '--null', '--name-only', '--get-regexp', '^filter\\.'], true)) {
     throw new HandoffSnapshotError('unsupported_repository');
   }
-  if (paths(await git(root, ['ls-files', '-v', '-z'])).some((entry) => /^[a-zS] /.test(entry))) {
+  if (paths(await git(context, ['ls-files', '-v', '-z'])).some((entry) => /^[a-zS] /.test(entry))) {
     throw new HandoffSnapshotError('unsupported_repository');
   }
-  const top = await git(root, ['rev-parse', '--show-toplevel']);
-  if (!top || await fs.promises.realpath(top.trimEnd()) !== root) throw new HandoffSnapshotError('invalid_repository');
-  if (await git(root, ['ls-files', '--unmerged', '-z'])) throw new HandoffSnapshotError('unsafe_entry');
-  const base = (await git(root, ['rev-parse', '--verify', 'HEAD^{commit}']))?.trim();
-  const branch = (await git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], true))?.trim();
-  const remote = (await git(root, ['config', '--get', 'remote.origin.url'], true))?.trim() ?? null;
+  const top = await git(context, ['rev-parse', '--show-toplevel']);
+  if (!top || await fs.promises.realpath(top.trimEnd()) !== context.root) throw new HandoffSnapshotError('invalid_repository');
+  if (await git(context, ['ls-files', '--unmerged', '-z'])) throw new HandoffSnapshotError('unsafe_entry');
+  const base = (await git(context, ['rev-parse', '--verify', 'HEAD^{commit}']))?.trim();
+  const branch = (await git(context, ['symbolic-ref', '--quiet', '--short', 'HEAD'], true))?.trim();
+  const remote = (await git(context, ['config', '--get', 'remote.origin.url'], true))?.trim() ?? null;
   if (!base || !branch) throw new HandoffSnapshotError('invalid_repository');
+  await gitControls(context);
   return { remote, base, branch };
 }
 
@@ -130,22 +174,21 @@ function paths(output: string | null): string[] {
   return entries.filter(Boolean);
 }
 
-async function selection(source: SourceRoot, manifest: HandoffWorktreeManifest, bounds: HandoffTransferBounds): Promise<{ tracked: Set<string>; all: string[] }> {
-  const root = source.root;
+async function selection(source: SourceRoot, manifest: HandoffWorktreeManifest, bounds: HandoffTransferBounds, context: SnapshotGit): Promise<{ tracked: Set<string>; all: string[] }> {
   const options = { dot: true, nonegate: true, noext: true, maxLength: 512 };
   const included = picomatch(manifest.include.ignored, options);
   const excluded = picomatch(manifest.exclude, options);
   const tracked = new Set<string>();
   if (manifest.include.tracked_changes) {
     const base = new Map<string, { mode: string; oid: string; size: bigint }>();
-    for (const entry of paths(await git(root, ['ls-tree', '-r', '-l', '-z', '--full-tree', manifest.repo.base]))) {
+    for (const entry of paths(await git(context, ['ls-tree', '-r', '-l', '-z', '--full-tree', manifest.repo.base]))) {
       const match = /^([0-7]{6}) (?:blob|commit) ([0-9a-f]{40}|[0-9a-f]{64}) +([0-9]+|-)\t(.+)$/.exec(entry);
       if (!match) throw new HandoffSnapshotError('git_failed');
       if (excluded(match[4])) continue;
       if (!['100644', '100755'].includes(match[1])) throw new HandoffSnapshotError('unsupported_repository');
       base.set(match[4], { mode: match[1], oid: match[2], size: BigInt(match[3]) });
     }
-    const candidates = new Set([...base.keys(), ...paths(await git(root, ['ls-files', '--cached', '-z']))]);
+    const candidates = new Set([...base.keys(), ...paths(await git(context, ['ls-files', '--cached', '-z']))]);
     let comparedBytes = 0n;
     for (const name of candidates) {
       if (excluded(name)) continue;
@@ -165,9 +208,9 @@ async function selection(source: SourceRoot, manifest: HandoffWorktreeManifest, 
       if (actual !== original.oid) tracked.add(name);
     }
   }
-  const untracked = manifest.include.untracked ? paths(await git(root, ['ls-files', '--others', '--exclude-standard', '-z'])) : [];
+  const untracked = manifest.include.untracked ? paths(await git(context, ['ls-files', '--others', '--exclude-standard', '-z'])) : [];
   const ignored = manifest.include.ignored.length > 0
-    ? paths(await git(root, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])) : [];
+    ? paths(await git(context, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])) : [];
   const all = [...new Set([...tracked, ...untracked, ...ignored.filter(included)])].filter((file) => !excluded(file)).sort(compare);
   return { tracked, all };
 }
@@ -286,17 +329,19 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
   try {
     if (!UUID.test(options.handoffId)) throw new HandoffSnapshotError('invalid_staging');
     const bounds = validateHandoffBounds(options.bounds ?? HANDOFF_TRANSFER_DEFAULTS);
+    const env = gitEnvironment();
     const sourceRoot = await directory(options.worktreeRoot);
     const root = sourceRoot.root;
+    const context: SnapshotGit = { root, env };
     const staging = (await directory(options.stagingRoot)).root;
     if (root === staging || staging.startsWith(`${root}${path.sep}`) || root.startsWith(`${staging}${path.sep}`)) throw new HandoffSnapshotError('invalid_staging');
-    const repo = await repository(root);
+    const repo = await repository(context);
     let manifest = parseHandoffManifest({
       v: 1, repo, include: { tracked_changes: true, untracked: true, ignored: [], ...options.include },
       exclude: options.exclude ?? ['**/node_modules/**'], files: [], deletions: [], total_bytes: 0, manifest_sha256: '0'.repeat(64),
     }, bounds);
     metadata(manifest);
-    const selected = await selection(sourceRoot, manifest, bounds);
+    const selected = await selection(sourceRoot, manifest, bounds, context);
     if (selected.all.length > bounds.maxFiles) throw new HandoffSnapshotError('bounds_exceeded');
     const sources: SourceFile[] = [];
     let total = 0;
@@ -342,8 +387,9 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
     for (const deleted of manifest.deletions) {
       if (await sourceStat(sourceRoot, deleted, true)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(deleted));
     }
-    if (JSON.stringify(await repository(root)) !== JSON.stringify(repo)
-      || JSON.stringify((await selection(sourceRoot, manifest, bounds)).all) !== JSON.stringify(selected.all)) throw new HandoffSnapshotError('source_changed');
+    if (JSON.stringify((await selection(sourceRoot, manifest, bounds, context)).all) !== JSON.stringify(selected.all)) {
+      throw new HandoffSnapshotError('source_changed');
+    }
     await checkDirectories(sourceRoot, [...sourceRoot.directories.keys()]);
     manifest = parseHandoffManifest({ ...manifest, files, total_bytes: total }, bounds);
     manifest.manifest_sha256 = digest(manifest, bounds);
@@ -354,6 +400,8 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
     } finally {
       await manifestFile.close();
     }
+    if (JSON.stringify(await repository(context)) !== JSON.stringify(repo)) throw new HandoffSnapshotError('source_changed');
+    await checkDirectories(sourceRoot, [...sourceRoot.directories.keys()]);
     return { root: snapshotRoot, manifest };
   } catch (error) {
     const reported = failure(error);
