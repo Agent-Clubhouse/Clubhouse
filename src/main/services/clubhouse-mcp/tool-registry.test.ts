@@ -766,8 +766,27 @@ describe('ToolRegistry', () => {
       expect(getConnectionToolCatalog(binding.agentId, binding.targetId, binding.targetKind).tools).toEqual([
         { suffix: 'wake_agent', description: definition.description, available: true },
       ]);
-      const result = await callTool(binding.agentId, buildToolName(binding, 'wake_agent'), {});
-      expect(refusalReasonOf(result)).toBe('tool_denied');
+      for (const args of [{}, { wakeOn: true }, { wakeOn: true, binding: { wakeOn: true }, wire: { wakeOn: true } }]) {
+        const result = await callTool(binding.agentId, buildToolName(binding, 'wake_agent'), args);
+        expect(refusalReasonOf(result)).toBe('tool_denied');
+      }
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('never promotes a client or binding wakeOn property into the trusted grant context', async () => {
+      const handler = vi.fn();
+      // Avoid wake_agent's earlier switch gate so this exercises the grant check itself.
+      registerToolTemplate('agent', 'get_status', definition, handler, { grant: { actions: ['agent.wake'], target: 'bound' } });
+      const binding = {
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent' as const, label: 'Target',
+        disabledTools: ['wake_agent'], wakeOn: true,
+      };
+      bindingManager.bind(binding.agentId, binding);
+      expect(getConnectionToolCatalog(binding.agentId, binding.targetId, binding.targetKind).tools[0].available).toBe(true);
+      const result = await callTool(binding.agentId, buildToolName(binding, 'get_status'), {
+        wakeOn: true, binding: { wakeOn: true }, wire: { wakeOn: true },
+      });
+      expect(refusalReasonOf(result)).toBe('no_grant');
       expect(handler).not.toHaveBeenCalled();
     });
 
