@@ -13,13 +13,16 @@ import {
   QUIET_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
   REQUEST_TTL_MS,
+  REMOTE_REQUESTS_MAX,
   STEPS_MAX,
   STEP_MAX,
   _resetDispatcherRequestsForTesting,
   _whenRequestsSavedForTesting,
   beginRequest,
+  beginRemoteRequest,
   checkRequestTimeouts,
   doneList,
+  findRequestFor,
   getRequest,
   getRequests,
   getRequestsPath,
@@ -35,10 +38,12 @@ import {
   requestsUnderWay,
   setRequestEndedHandler,
   settleRequest,
+  triageRemoteRequest,
   withdrawRequest,
   workTurnMark,
   type DispatcherRequest,
 } from './dispatcher-requests';
+import type { DispatcherRemoteRequestOrigin } from '../../../shared/dispatcher-federation';
 
 const T0 = 1_700_000_000_000;
 let now = T0;
@@ -126,6 +131,73 @@ describe('starting a request', () => {
     expect(begun).toMatchObject({ kind: 'new', request: { id: expect.stringMatching(/^req_/), status: 'under_way', turn: 'sending' } });
     expect(requestsUnderWay()).toBe(1);
     expect(changed).toHaveBeenCalled();
+  });
+
+  describe('remote request records', () => {
+    const origin: DispatcherRemoteRequestOrigin = {
+      machineId: 'aa:'.repeat(15) + 'aa', machineName: 'Desk', agentId: 'docs', agentName: 'Docs',
+      requestId: 'desk-1', cause: { rootId: 'root-1', depth: 3, parentId: 'delivery-2' },
+    };
+
+    it('keeps authenticated provenance and causal depth through restart and cannot share a local text-match id', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      const local = beginRequest('build docs', now);
+      const remote = beginRemoteRequest('build docs', origin, now);
+      if (remote.kind !== 'new' || local.kind !== 'new') throw new Error('Expected two new requests');
+      expect(remote.request.id).not.toBe(local.request.id);
+      expect(remote.request.remote).toEqual(origin);
+      remote.request.remote!.cause.depth = 0;
+      expect(getRequest(remote.request.id)?.remote?.cause.depth).toBe(3);
+      await _whenRequestsSavedForTesting();
+      await _resetDispatcherRequestsForTesting();
+      expect(getRequest(remote.request.id)?.remote).toEqual(origin);
+      expect(beginRequest('build docs', now)).toMatchObject({ kind: 'already', request: { id: local.request.id } });
+    });
+
+    it('deduplicates by machine, agent and origin request id without reopening completed work', () => {
+      const first = beginRemoteRequest('build docs', origin, now);
+      if (first.kind !== 'new') throw new Error('Expected new remote request');
+      expect(beginRemoteRequest('build docs', origin, now + 1)).toMatchObject({ kind: 'already', request: { id: first.request.id } });
+      settleRequest(first.request.id, 'answer', now + 2);
+      expect(beginRemoteRequest('build docs', origin, now + 3)).toMatchObject({ kind: 'already', request: { status: 'done' } });
+      expect(beginRemoteRequest('changed', origin, now + 4).kind).toBe('conflict');
+      expect(beginRemoteRequest('build docs', { ...origin, cause: { ...origin.cause, depth: 0 } }, now + 4).kind).toBe('conflict');
+      expect(beginRemoteRequest('build docs', { ...origin, agentId: 'another-agent' }, now + 4).kind).toBe('new');
+      expect(beginRemoteRequest('build docs', { ...origin, machineId: 'bb:'.repeat(15) + 'bb' }, now + 4).kind).toBe('new');
+    });
+
+    it('does not heuristically settle remote work from an unrelated local answer', () => {
+      const remote = beginRemoteRequest('build docs', origin, now);
+      if (remote.kind !== 'new') throw new Error('Expected new remote request');
+      expect(findRequestFor({ kind: 'answer' }, now)).toBeUndefined();
+      expect(findRequestFor({ kind: 'answer', request: remote.request.id }, now)?.id).toBe(remote.request.id);
+    });
+
+    it.each([
+      ['now', 'under_way'], ['next_check_in', 'held'], ['needs_user', 'waiting_user'], ['decline', 'declined'],
+    ] as const)('records local triage %s without importing any remote grant', (decision, status) => {
+      const begun = beginRemoteRequest('build docs', origin, now);
+      if (begun.kind !== 'new') throw new Error('Expected new remote request');
+      expect(triageRemoteRequest(begun.request.id, decision, 'Local reason', now + 1)).toMatchObject({
+        status, remote: origin, remoteTriage: { decision, at: now + 1, reason: 'Local reason' },
+      });
+      if (decision === 'decline') expect(triageRemoteRequest(begun.request.id, 'now', undefined, now + 2)).toBeNull();
+    });
+
+    it('refuses overflow without discarding open remote provenance or the newest local request', () => {
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      for (let i = 0; i < REMOTE_REQUESTS_MAX; i++) {
+        expect(beginRemoteRequest(`Remote ${i}`, { ...origin, requestId: `remote-${i}` }, now).kind).toBe('new');
+      }
+      expect(beginRemoteRequest('Overflow', { ...origin, requestId: 'overflow' }, now).kind).toBe('full');
+      beginRequest('Local first', now);
+      const local = beginRequest('Local newest', now);
+      expect(getRequests().filter((r) => r.remote)).toHaveLength(REMOTE_REQUESTS_MAX);
+      expect(getRequests()).toHaveLength(50);
+      if (local.kind !== 'new') throw new Error('Expected local request');
+      expect(getRequest(local.request.id)?.text).toBe('Local newest');
+      expect(beginRemoteRequest('Remote 0', { ...origin, requestId: 'remote-0' }, now).kind).toBe('already');
+    });
   });
 
   it('doesn\'t start the same words twice while they are under way', () => {

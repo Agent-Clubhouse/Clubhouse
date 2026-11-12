@@ -28,10 +28,11 @@ import { appLog } from '../log-service';
 import { writeFileAtomic } from './dispatcher-memory';
 import type { ChatEvent, MessageDelivery, TurnStopReason } from '../../../shared/chat';
 import type { NewsKind } from './dispatcher-triage';
+import { isDispatcherRemoteRequestOrigin, type DispatcherRemoteRequestOrigin, type DispatcherRemoteTriage } from '../../../shared/dispatcher-federation';
 
 const NS = 'core:dispatcher';
 
-export type RequestStatus = 'under_way' | 'waiting_user' | 'done' | 'failed' | 'cancelled' | 'timed_out';
+export type RequestStatus = 'under_way' | 'waiting_user' | 'held' | 'declined' | 'done' | 'failed' | 'cancelled' | 'timed_out';
 
 /** How a request ended without an answer: what the chat is told. */
 export type RequestEnding = 'failed' | 'cancelled' | 'timed_out';
@@ -62,6 +63,10 @@ export interface DispatcherRequest {
   endedAt?: number;
   /** Steps of it already done, oldest first, so a retry doesn't repeat them (#3241). */
   done?: string[];
+  /** A hand-off from another computer, never inferred from the request's text. */
+  remote?: DispatcherRemoteRequestOrigin;
+  remoteDelivery?: 'pending' | 'accepted';
+  remoteTriage?: { decision: DispatcherRemoteTriage; at: number; reason?: string };
 }
 
 /** A request nobody answered in a week is no longer one an answer can be for. */
@@ -71,6 +76,8 @@ export const REQUEST_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 /** Its turn ended and no agent was reached for it: nothing is left to wait on for long. */
 export const QUIET_TIMEOUT_MS = 10 * 60 * 1000;
 const REQUESTS_MAX = 50;
+/** Keep at least one slot for local work; remote arrivals cannot evict each other's open provenance. */
+export const REMOTE_REQUESTS_MAX = REQUESTS_MAX - 1;
 const TEXT_MAX = 1_000;
 const DETAIL_MAX = 300;
 /** A finished step: one short line. */
@@ -101,7 +108,7 @@ export interface RequestQuery {
   fromName?: string;
 }
 
-const isOpen = (r: DispatcherRequest) => r.status === 'under_way' || r.status === 'waiting_user';
+const isOpen = (r: DispatcherRequest) => r.status === 'under_way' || r.status === 'waiting_user' || r.status === 'held';
 
 /**
  * The request a report is for, if any. Only answers and questions are for a
@@ -127,7 +134,9 @@ export function matchRequest(requests: readonly DispatcherRequest[], q: RequestQ
     const reached = live.filter((r) => isOpen(r) && r.agents.includes(q.fromAgentId!));
     if (reached.length) return [...reached].sort((a, b) => b.handedOffAt - a.handedOffAt)[0];
   }
-  const underWay = live.filter((r) => r.status === 'under_way');
+  // Remote requests require their explicit id (or an agent reached for them).
+  // A local report with no id must not accidentally settle another machine's work.
+  const underWay = live.filter((r) => r.status === 'under_way' && !r.remote);
   const ownWords = !q.fromAgentId && !q.fromName;
   if (ownWords) {
     const reading = underWay.find((r) => r.turn === 'in_turn');
@@ -141,6 +150,7 @@ export function matchRequest(requests: readonly DispatcherRequest[], q: RequestQ
 
 let requests: DispatcherRequest[] | null = null;
 let saving: Promise<void> = Promise.resolve();
+let lastWrite: Promise<void> = Promise.resolve();
 let timer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
 
@@ -154,7 +164,9 @@ export function getRequestsPath(): string {
 function validRequest(r: unknown): r is DispatcherRequest {
   const v = r as DispatcherRequest | null;
   return !!v && typeof v.id === 'string' && typeof v.text === 'string' && typeof v.at === 'number'
-    && typeof v.handedOffAt === 'number' && typeof v.status === 'string' && Array.isArray(v.agents);
+    && typeof v.handedOffAt === 'number' && typeof v.status === 'string' && Array.isArray(v.agents)
+    && (v.remote === undefined || isDispatcherRemoteRequestOrigin(v.remote))
+    && (v.remoteDelivery === undefined || v.remoteDelivery === 'pending' || v.remoteDelivery === 'accepted');
 }
 
 function load(now = Date.now()): DispatcherRequest[] {
@@ -194,19 +206,26 @@ function load(now = Date.now()): DispatcherRequest[] {
 function save(): void {
   const body = JSON.stringify({ requests }, null, 2);
   const file = getRequestsPath();
-  saving = saving.then(async () => {
-    try {
-      await writeFileAtomic(file, body);
-    } catch (err) {
-      // telemetry-exempt: the requests stay in memory for this run; logged
-      appLog(NS, 'warn', 'Dispatcher requests not saved', { meta: { error: err instanceof Error ? err.message : String(err) } });
-    }
+  lastWrite = saving.then(() => writeFileAtomic(file, body));
+  saving = lastWrite.catch((err: unknown) => {
+    // telemetry-exempt: local requests stay in memory; remote intake also awaits lastWrite and fails closed.
+    appLog(NS, 'warn', 'Dispatcher requests not saved', { meta: { error: err instanceof Error ? err.message : String(err) } });
   });
+}
+
+/** Remote intake must save its provenance before allowing controller side effects. Throws on failure. */
+export function whenDispatcherRequestsSaved(): Promise<void> {
+  return lastWrite;
 }
 
 function changed(now = Date.now()): void {
   if (!requests) return;
-  requests = requests.filter((r) => now - r.handedOffAt < REQUEST_TTL_MS).slice(-REQUESTS_MAX);
+  const live = requests.filter((r) => now - r.handedOffAt < REQUEST_TTL_MS);
+  const protectedRequests = live.filter((r) => r.remote && isOpen(r));
+  const otherSlots = Math.max(0, REQUESTS_MAX - protectedRequests.length);
+  const other = otherSlots ? live.filter((r) => !protectedRequests.includes(r)).slice(-otherSlots) : [];
+  const retained = new Set([...protectedRequests, ...other]);
+  requests = live.filter((r) => retained.has(r));
   save();
   schedule();
   for (const listener of listeners) {
@@ -220,7 +239,11 @@ function changed(now = Date.now()): void {
 }
 
 function copy(r: DispatcherRequest): DispatcherRequest {
-  return { ...r, agents: [...r.agents], ...(r.done && { done: [...r.done] }), ...(r.reachedAt && { reachedAt: { ...r.reachedAt } }) };
+  return {
+    ...r, agents: [...r.agents], ...(r.done && { done: [...r.done] }), ...(r.reachedAt && { reachedAt: { ...r.reachedAt } }),
+    ...(r.remote && { remote: { ...r.remote, cause: { ...r.remote.cause } } }),
+    ...(r.remoteTriage && { remoteTriage: { ...r.remoteTriage } }),
+  };
 }
 
 function find(id: string): DispatcherRequest | undefined {
@@ -310,7 +333,7 @@ export function beginRequest(text: string, now = Date.now(), id?: string): Begin
     return named ? reopen(named, now) : { kind: 'unknown' };
   }
   const key = sameRequestKey(text);
-  const same = all.filter((r) => sameRequestKey(r.text) === key);
+  const same = all.filter((r) => !r.remote && sameRequestKey(r.text) === key);
   const underWay = same.find((r) => r.status === 'under_way');
   if (underWay) return { kind: 'already', request: copy(underWay) };
   const ended = same.filter((r) => r.status === 'failed' || r.status === 'cancelled' || r.status === 'timed_out').pop();
@@ -321,6 +344,64 @@ export function beginRequest(text: string, now = Date.now(), id?: string): Begin
   all.push(request);
   changed(now);
   return { kind: 'new', request: copy(request) };
+}
+
+export type BeginRemoteResult =
+  | { kind: 'new' | 'already'; request: DispatcherRequest }
+  | { kind: 'conflict'; request: DispatcherRequest }
+  | { kind: 'full' };
+
+/** Transport duplicates never reopen a remote request, even after it has ended. */
+export function beginRemoteRequest(text: string, origin: DispatcherRemoteRequestOrigin, now = Date.now()): BeginRemoteResult {
+  const all = load(now);
+  const machineId = origin.machineId.toLowerCase();
+  const previous = all.find((r) => r.remote?.machineId.toLowerCase() === machineId
+    && r.remote.agentId === origin.agentId && r.remote.requestId === origin.requestId);
+  if (previous) {
+    const same = previous.text === text && previous.remote?.cause.rootId === origin.cause.rootId
+      && previous.remote.cause.depth === origin.cause.depth && previous.remote.cause.parentId === origin.cause.parentId;
+    return { kind: same ? 'already' : 'conflict', request: copy(previous) };
+  }
+  if (all.filter((r) => r.remote && isOpen(r)).length >= REMOTE_REQUESTS_MAX) return { kind: 'full' };
+  const request: DispatcherRequest = {
+    id: newId(now), text, at: now, handedOffAt: now, status: 'under_way', turn: 'sending', agents: [],
+    remote: { ...origin, machineId, cause: { ...origin.cause } }, remoteDelivery: 'pending',
+  };
+  all.push(request);
+  changed(now);
+  return { kind: 'new', request: copy(request) };
+}
+
+export function markRemoteRequestAccepted(id: string, now = Date.now()): void {
+  const r = find(id);
+  if (!r?.remote) throw new Error('Remote request disappeared before its delivery was recorded');
+  r.remoteDelivery = 'accepted';
+  changed(now);
+}
+
+/** Only the local controller's triage calls this; an incoming message never supplies the decision. */
+export function triageRemoteRequest(id: string, decision: DispatcherRemoteTriage, reason?: string, now = Date.now()): DispatcherRequest | null {
+  const r = find(id);
+  if (!r?.remote || !isOpen(r)) return null;
+  const clean = reason?.trim().slice(0, DETAIL_MAX);
+  r.remoteTriage = { decision, at: now, ...(clean && { reason: clean }) };
+  switch (decision) {
+    case 'now':
+      r.status = 'under_way';
+      break;
+    case 'next_check_in':
+      r.status = 'held';
+      break;
+    case 'needs_user':
+      r.status = 'waiting_user';
+      break;
+    case 'decline':
+      r.status = 'declined';
+      r.endedAt = now;
+      break;
+  }
+  changed(now);
+  return copy(r);
 }
 
 /** The hand-off didn't go: forget a new request, and put back one handed off again. */
@@ -608,6 +689,7 @@ export async function _resetDispatcherRequestsForTesting(): Promise<void> {
   timer = null;
   requests = null;
   saving = Promise.resolve();
+  lastWrite = Promise.resolve();
   listeners.clear();
   endedHandler = null;
   Object.assign(turns, { started: 0, ended: 0, open: false, openSeq: 0, error: undefined, last: null });

@@ -6,6 +6,7 @@ import { captureEvents, type EventCapture } from './__test-utils__/event-capture
 import {
   dispatcherTelemetryActive,
   recordDispatcherControl,
+  recordDispatcherFederation,
   recordDispatcherTurn,
   recordMemoryHealth,
   recordMemoryUpkeep,
@@ -19,6 +20,7 @@ const DISPATCHER_EVENTS = [
   'clubhouse.dispatcher.memory_health',
   'clubhouse.dispatcher.memory_upkeep',
   'clubhouse.dispatcher.news_triage',
+  'clubhouse.dispatcher.federation',
 ] as const;
 
 const HEALTH: DispatcherMemoryHealth = {
@@ -32,6 +34,7 @@ function recordOneOfEach(): void {
   recordMemoryHealth(HEALTH);
   recordMemoryUpkeep({ outcome: 'ok', rolledDays: 2, rolledWeeks: 1, linksFixed: 4, pruned: 1, toCheck: 3, review: true });
   recordNewsTriage({ kind: 'answer', show: 'now', reason: 'answer', fromAgent: true });
+  recordDispatcherFederation({ kind: 'delivery', state: 'delivered', originMachineId: 'desk', targetId: 'laptop', requestId: 'request-1', depth: 2 });
 }
 
 let capture: EventCapture | null = null;
@@ -53,6 +56,22 @@ describe('Dispatcher telemetry with telemetry off', () => {
 });
 
 describe('Dispatcher telemetry with telemetry on', () => {
+  it('marks federation correlation ids for salting by the facade, with no free-text fields', () => {
+    capture = captureEvents();
+    recordDispatcherFederation({
+      kind: 'triage', state: 'needs_user', originMachineId: 'machine-secret', targetId: 'controller-secret', requestId: 'request-secret', depth: 3,
+    });
+    const [event] = capture.named('clubhouse.dispatcher.federation');
+    expect(event.attrs).toMatchObject({
+      'clubhouse.dispatcher.federation.kind': 'triage',
+      'clubhouse.dispatcher.federation.state': 'needs_user',
+      'clubhouse.dispatcher.federation.depth': 3,
+    });
+    expect(event.kinds['clubhouse.dispatcher.federation.origin_hash']).toBe('hash');
+    expect(event.kinds['clubhouse.dispatcher.federation.target_hash']).toBe('hash');
+    expect(event.kinds['clubhouse.dispatcher.federation.request_hash']).toBe('hash');
+    expect(Object.keys(event.attrs)).toHaveLength(7);
+  });
   it('records a turn with its side of the split, tokens and cost', () => {
     capture = captureEvents();
     expect(dispatcherTelemetryActive()).toBe(true);
@@ -165,7 +184,7 @@ describe('Dispatcher telemetry with telemetry on', () => {
     ]);
   });
 
-  it('carries no content: only registered counts, flags and closed codes, no ids', () => {
+  it('carries only registered counts, flags, closed codes and federation-only opaque hashes', () => {
     capture = captureEvents();
     recordOneOfEach();
     expect(capture.events.map((e) => e.name).sort()).toEqual([...DISPATCHER_EVENTS].sort());
@@ -173,7 +192,8 @@ describe('Dispatcher telemetry with telemetry on', () => {
       for (const [key, value] of Object.entries(event.attrs)) {
         const spec = getAttributeSpec(key);
         expect(spec, key).toBeDefined();
-        expect(['int', 'bool', 'enum'], key).toContain(spec!.kind);
+        const kinds = event.name === 'clubhouse.dispatcher.federation' ? ['int', 'bool', 'enum', 'hash'] : ['int', 'bool', 'enum'];
+        expect(kinds, key).toContain(spec!.kind);
         if (spec!.kind === 'enum') expect(spec!.values, key).toContain(value);
       }
     }

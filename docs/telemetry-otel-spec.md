@@ -650,7 +650,7 @@ Event records from `telemetry/actions-telemetry.ts`, which subscribes to the eng
 
 Event records from `telemetry/dispatcher-telemetry.ts`: the usage split, memory health, and what happens to news on its way to the chat. Like every event they are recorded and exported only while telemetry is on (§6.12), and callers skip measuring when it's off (`dispatcherTelemetryActive()`), so memory isn't read for nothing. A recorder never throws and never changes what the Dispatcher does.
 
-**What is never sent.** Counts, sizes and closed codes only. Never message text, a page's contents, a page, topic or agent name, a path, or any id. The Dispatcher is one identity with two agents (the chat and the work behind it); no event says which agent did what, and the usage split is only conversations versus background work, as in Settings and Details › Today. The `appLog` lines `Dispatcher memory upkeep` and `Dispatcher news triage` stay as local diagnostics.
+**What is never sent.** Counts, sizes and closed codes only, plus salted opaque correlation hashes for federation. Never message text, a page's contents, a page, topic, machine or agent name, a path, or a raw id. The Dispatcher is one identity with two agents (the chat and the work behind it); the usage split is only conversations versus background work, as in Settings and Details › Today. The `appLog` lines `Dispatcher memory upkeep` and `Dispatcher news triage` stay as local diagnostics.
 
 | Event | When | Attributes | Level |
 |---|---|---|---|
@@ -658,8 +658,9 @@ Event records from `telemetry/dispatcher-telemetry.ts`: the usage split, memory 
 | `c.dispatcher.memory_upkeep` | each memory upkeep run (nightly, and after idle stretches per Behavior) | `c.outcome` (`ok`, or `error` when the run threw), `c.dispatcher.upkeep.rolled_days`, `.rolled_weeks`, `.links_fixed`, `.pruned` (stale unconfirmed topics moved to the archive), `.to_check` (changed pages handed to the Dispatcher), `.review` (whether it was asked to check anything, so a background turn follows) | S |
 | `c.dispatcher.memory_health` | after each successful upkeep run, memory as upkeep left it (`measureMemoryHealth` in `dispatcher-upkeep.ts`; archive and history aren't counted) | `c.dispatcher.memory.pages`, `.bytes` (UTF-8), `.topics`, `.agent_pages`, `.timeline_pages`, `.index_bytes` (index.md on disk; the agent edits it directly, so it can be over the cap), `.index_cap_bytes`, `.index_over_cap`, `.unlinked_topics` (no other page, the index included, links to or names it), `.stale_topics` (Updated date, else mtime, at least 30 days old, confirmed or not), `.unconfirmed_topics`, `.conflicting_pages` (pages with open dated conflict notes), `.neglected_pages` (neither read nor updated by the controller in 30 days, including old never-read pages), `.broken_links` (links between pages upkeep couldn't fix), `.missing_sources` (cited files that are gone) | S |
 | `c.dispatcher.news_triage` | each report on its way to the chat (`dispatcher-news.ts`) | `c.dispatcher.news.kind` (`needs_user`/`answer`/`routine`/`check_in`), `.show` (`now`/`check_in`/`later`/`never`), `.reason` (`needs_user`, `answer`, `routine`, `nothing_asked`, `empty`, `duplicate`, `nothing_changed`, or `none` for a check-in shown), `.from_agent`, `.held` (check-ins shown only: held items it took), `.rewrite` and `.rewrite_reason` (always `none` since #3193, which removed the rewrite step; kept so the event's attributes don't change) | S |
+| `c.dispatcher.federation` | controller link lifecycle, request triage, delivery, explicit outcome, duplicate or tripped bound (#2834); never a delivery receipt promoted to completion | `c.dispatcher.federation.kind` (`link`/`triage`/`delivery`/`outcome`/`duplicate`/`limit`), `.state` (closed link, delivery, triage or request-outcome code), `.reason` (closed refusal/limit code or `none`), `.origin_hash`, `.target_hash`, `.request_hash` (opaque ids salted by the facade; request omitted when not applicable), `.depth` (internal causal depth when known) | S |
 
-**Volume.** One event per Dispatcher turn, two per upkeep run and one per report. All three are bounded by what the Dispatcher does, which costs tokens, so they aren't capped further.
+**Volume.** One event per Dispatcher turn, two per upkeep run and one per report. Federation crossings follow the fixed per-link rate/queue/causal bounds; read-only presence snapshots do not create extra polling.
 
 **Control audit.** The Dispatcher's controls over orchestrators stay `clubhouse.audit.dispatcher_control` (§6.13). Its recorder and reader moved into the same file (`recordDispatcherControl`, `readDispatcherControls`); `dispatcher-audit.ts` is gone.
 
@@ -1748,7 +1749,7 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 
 **Actions events (§4.17):** `c.action.triggered`, `c.action.wait`, `c.action.overlap`, `c.action.limit_hit`, `c.action.catch_up`, `c.action.run`, `c.action.step`, `c.action.run_detail` (D).
 
-**Dispatcher events (§4.18):** `c.dispatcher.turn`, `c.dispatcher.memory_upkeep`, `c.dispatcher.memory_health`, `c.dispatcher.news_triage`.
+**Dispatcher events (§4.18):** `c.dispatcher.turn`, `c.dispatcher.memory_upkeep`, `c.dispatcher.memory_health`, `c.dispatcher.news_triage`, `c.dispatcher.federation`.
 
 **Metrics:**
 

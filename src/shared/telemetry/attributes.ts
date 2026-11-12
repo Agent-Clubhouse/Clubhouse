@@ -1062,6 +1062,21 @@ export const ATTR = {
   ]),
   /** The report is an agent's news rather than the Dispatcher's own words. */
   dispatcherNewsFromAgent: boolAttr('clubhouse.dispatcher.news.from_agent'),
+  dispatcherFederationKind: enumAttr('clubhouse.dispatcher.federation.kind', ['link', 'triage', 'delivery', 'outcome', 'duplicate', 'limit']),
+  dispatcherFederationState: enumAttr('clubhouse.dispatcher.federation.state', [
+    'active', 'paused', 'tripped', 'unavailable', 'removed',
+    'accepted', 'delivered', 'refused', 'expired', 'indeterminate',
+    'now', 'next_check_in', 'needs_user', 'decline',
+    'under_way', 'waiting_user', 'answered', 'declined', 'failed', 'completed',
+  ]),
+  dispatcherFederationReason: enumAttr('clubhouse.dispatcher.federation.reason', [
+    'none', 'not_member', 'dispatcher_off', 'wrong_target', 'tool_not_allowed', 'invalid_args',
+    'causal_depth', 'link_paused', 'request_conflict', 'intake_indeterminate', 'undelivered', 'reply_not_supported', 'rate_limit', 'queue_limit', 'removed',
+  ]),
+  dispatcherFederationOriginHash: hashAttr('clubhouse.dispatcher.federation.origin_hash'),
+  dispatcherFederationTargetHash: hashAttr('clubhouse.dispatcher.federation.target_hash'),
+  dispatcherFederationRequestHash: hashAttr('clubhouse.dispatcher.federation.request_hash'),
+  dispatcherFederationDepth: intAttr('clubhouse.dispatcher.federation.depth'),
   /** Held items a check-in summary took with it. */
   dispatcherNewsHeld: intAttr('clubhouse.dispatcher.news.held'),
   /** How an agent's news shown now was put into the chat: the rewrite step, its fallback, or neither. */
@@ -1881,6 +1896,8 @@ export const EVENTS = {
   'clubhouse.dispatcher.memory_upkeep': { level: 'standard' },
   /** One report on its way to the Dispatcher's chat: its kind, what triage did and why, whether it was an agent's, held items a check-in took, and the rewrite outcome. */
   'clubhouse.dispatcher.news_triage': { level: 'standard' },
+  /** Cross-machine controller metadata only. Never message text, names, files or approval answers. */
+  'clubhouse.dispatcher.federation': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

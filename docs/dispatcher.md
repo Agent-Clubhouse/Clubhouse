@@ -129,6 +129,16 @@ known remote controller for sender grant and catalog caps. Both read memory only
 Safety trips use a persisted ten-minute cooldown, independent of grants; this
 does not elect a lead or move work between machines.
 
+The staged receiving adapter routes every hand-off through this machine's
+controller and records the pinned machine, asserted agent identity, origin
+request and causal context before accepting controller input. A remote message
+or file is news, not a local user's request or approval. The request store
+reserves one of its 50 slots for local work and refuses a 50th open remote
+request rather than evicting open provenance. Accepted input is recorded
+separately from work outcome; an interrupted intake with no accepted-input
+record is indeterminate and is never rerun automatically. Reply delivery and
+controller-only triage/report tool registration remain a separate adapter.
+
 ## What connections start with (#3214)
 
 The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". A connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off, except for a parent's direction to its own helper. Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).

@@ -15,7 +15,8 @@
  * Safety:
  * - The Dispatcher events carry counts, sizes and closed codes only. Never
  *   message text, page contents, page or agent names, paths or ids, and never
- *   which of the Dispatcher's agents did the work.
+ *   which of the Dispatcher's agents did the work. Federation additionally
+ *   carries opaque machine, target and request correlation ids, hashed by the facade.
  * - With telemetry off nothing is built or recorded, and callers can skip
  *   measuring with `dispatcherTelemetryActive()`.
  * - Nothing here changes what the Dispatcher does: every recorder returns void
@@ -177,6 +178,33 @@ export function recordNewsTriage(n: DispatcherNewsOutcome): void {
     ]);
   } catch {
     // telemetry-exempt: telemetry never affects the chat
+  }
+}
+
+export interface DispatcherFederationEvent {
+  kind: Parameters<typeof ATTR.dispatcherFederationKind>[0];
+  state: Parameters<typeof ATTR.dispatcherFederationState>[0];
+  reason?: Parameters<typeof ATTR.dispatcherFederationReason>[0];
+  originMachineId: string;
+  targetId: string;
+  requestId?: string;
+  depth?: number;
+}
+
+/** Structured crossing/triage metadata, with opaque ids hashed by the telemetry facade. */
+export function recordDispatcherFederation(event: DispatcherFederationEvent): void {
+  try {
+    if (!isTelemetryActive()) return;
+    tel.event('clubhouse.dispatcher.federation', [
+      ATTR.dispatcherFederationKind(event.kind), ATTR.dispatcherFederationState(event.state),
+      ATTR.dispatcherFederationReason(event.reason ?? 'none'),
+      ATTR.dispatcherFederationOriginHash(event.originMachineId),
+      ATTR.dispatcherFederationTargetHash(event.targetId),
+      ...(event.requestId ? [ATTR.dispatcherFederationRequestHash(event.requestId)] : []),
+      ...(event.depth !== undefined ? [ATTR.dispatcherFederationDepth(count(event.depth))] : []),
+    ]);
+  } catch {
+    // telemetry-exempt: telemetry cannot change controller routing or local authority
   }
 }
 
