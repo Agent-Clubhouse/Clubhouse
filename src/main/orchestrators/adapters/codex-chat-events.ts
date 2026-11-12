@@ -920,8 +920,16 @@ export function toCodexInput(content: ContentBlock[]): UserInput[] {
 
 /** One `mcp_servers` entry as Codex's config reads it. */
 export type CodexMcpServer =
-  | { command: string; args?: string[]; env?: Record<string, string>; env_vars?: string[]; cwd?: string }
-  | { url: string; http_headers?: Record<string, string>; bearer_token_env_var?: string };
+  | { command: string; args?: string[]; env?: Record<string, string>; env_vars?: string[]; cwd?: string; default_tools_approval_mode?: 'approve' }
+  | { url: string; http_headers?: Record<string, string>; bearer_token_env_var?: string; default_tools_approval_mode?: 'approve' };
+
+/**
+ * The Clubhouse bridge's name in `mcp_servers`. Its tools carry no MCP
+ * annotations, so Codex treats each as needing approval and, under approval
+ * policy `never` (free agent mode), fails the call (#3366). Only this server
+ * is pre-approved; every other server keeps Codex's default.
+ */
+export const CLUBHOUSE_MCP_SERVER_NAME = 'clubhouse';
 
 /**
  * Clubhouse MCP server definitions (the bridge, and project servers as
@@ -962,6 +970,7 @@ export function toCodexMcpServers(servers: Record<string, unknown> | undefined, 
         // Codex keeps a relative cwd as written; resolve it against the
         // agent's directory so it doesn't depend on Codex's own cwd.
         ...(typeof s.cwd === 'string' && { cwd: baseDir && !path.isAbsolute(s.cwd) ? path.resolve(baseDir, s.cwd) : s.cwd }),
+        ...(name === CLUBHOUSE_MCP_SERVER_NAME && { default_tools_approval_mode: 'approve' as const }),
       };
     } else if (typeof s.url === 'string' && (type === undefined || HTTP_TYPES.has(type))) {
       const headers = stringRecord(s.headers) ?? stringRecord(s.http_headers);
@@ -969,6 +978,7 @@ export function toCodexMcpServers(servers: Record<string, unknown> | undefined, 
         url: s.url,
         ...(headers && { http_headers: headers }),
         ...(typeof s.bearer_token_env_var === 'string' && { bearer_token_env_var: s.bearer_token_env_var }),
+        ...(name === CLUBHOUSE_MCP_SERVER_NAME && { default_tools_approval_mode: 'approve' as const }),
       };
     } else {
       skipped.push({ name, reason: type === 'sse' ? 'Codex has no SSE transport' : 'not a stdio or HTTP server' });

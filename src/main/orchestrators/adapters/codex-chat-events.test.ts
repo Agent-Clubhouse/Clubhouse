@@ -636,7 +636,7 @@ describe('toCodexMcpServers', () => {
       plain: { url: 'https://other.example.test/mcp', bearer_token_env_var: 'OTHER_TOKEN' },
     })).toEqual({
       servers: {
-        clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_PORT: '4123' } },
+        clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_PORT: '4123' }, default_tools_approval_mode: 'approve' },
         local: { command: 'uvx', cwd: 'tools' },
         remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer x' } },
         plain: { url: 'https://other.example.test/mcp', bearer_token_env_var: 'OTHER_TOKEN' },
@@ -667,7 +667,7 @@ describe('toCodexMcpServers', () => {
   it('passes env_vars through so Codex forwards the bridge nonce from its own env (#2222)', () => {
     expect(toCodexMcpServers({
       clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env_vars: ['CLUBHOUSE_HOOK_NONCE', 7] },
-    }).servers.clubhouse).toEqual({ command: 'node', args: ['bridge.js'], env_vars: ['CLUBHOUSE_HOOK_NONCE'] });
+    }).servers.clubhouse).toEqual({ command: 'node', args: ['bridge.js'], env_vars: ['CLUBHOUSE_HOOK_NONCE'], default_tools_approval_mode: 'approve' });
   });
 
   it('accepts the streamable-http spelling and leaves disabled servers out', () => {
@@ -675,6 +675,19 @@ describe('toCodexMcpServers', () => {
       dashed: { type: 'streamable-http', url: 'https://a.example.test/mcp' },
       off: { command: 'node', disabled: true },
     })).toEqual({ servers: { dashed: { url: 'https://a.example.test/mcp' } }, skipped: [] });
+  });
+
+  it('pre-approves only the clubhouse server, stdio or HTTP (#3366)', () => {
+    const { servers } = toCodexMcpServers({
+      clubhouse: { command: 'node' },
+      other: { command: 'node' },
+      remote: { type: 'http', url: 'https://a.example.test/mcp' },
+    });
+    expect(servers.clubhouse).toHaveProperty('default_tools_approval_mode', 'approve');
+    expect(servers.other).not.toHaveProperty('default_tools_approval_mode');
+    expect(servers.remote).not.toHaveProperty('default_tools_approval_mode');
+    expect(toCodexMcpServers({ clubhouse: { url: 'https://c.example.test/mcp' } }).servers.clubhouse)
+      .toHaveProperty('default_tools_approval_mode', 'approve');
   });
 
   it('resolves a relative cwd against the agent directory and keeps an absolute one', () => {

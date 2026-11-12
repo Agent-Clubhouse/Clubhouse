@@ -857,6 +857,16 @@ describe('CodexCliProvider', () => {
       expect(args.some(a => a.includes('mcp_servers.linear.env.TOKEN="abc"'))).toBe(true);
     });
 
+    it('pre-approves the clubhouse server\'s tools and no other server\'s (#3366)', () => {
+      const args = provider.buildMcpArgs({
+        clubhouse: mockServerDef,
+        linear: { command: 'npx', args: ['linear-mcp'] },
+        docs: { type: 'http', url: 'https://example.com/mcp' },
+      });
+      expect(args).toContain('mcp_servers.clubhouse.default_tools_approval_mode="approve"');
+      expect(args.filter((a) => a.includes('default_tools_approval_mode'))).toHaveLength(1);
+    });
+
     it('emits type and url for remote servers', () => {
       const args = provider.buildMcpArgs({
         docs: { type: 'http', url: 'https://example.com/mcp' },

@@ -187,7 +187,7 @@ describe('CodexChatDriver', () => {
       approvalPolicy: 'on-request',
       sandbox: 'workspace-write',
       developerInstructions: 'Be brief',
-      config: { mcp_servers: { clubhouse: { url: 'http://127.0.0.1:1/mcp' } } },
+      config: { mcp_servers: { clubhouse: { url: 'http://127.0.0.1:1/mcp', default_tools_approval_mode: 'approve' } } },
     });
     expect(session.nativeSessionId).toBe(fx.THREAD_ID);
     expect(await next()).toEqual({
@@ -243,7 +243,7 @@ describe('CodexChatDriver', () => {
     expect(server.requests('thread/start')[0].params).toMatchObject({
       config: {
         mcp_servers: {
-          clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+          clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' }, default_tools_approval_mode: 'approve' },
           remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer x' } },
         },
       },
@@ -274,7 +274,7 @@ describe('CodexChatDriver', () => {
     });
     expect(mockSpawn.mock.calls[0][2].env).toMatchObject({ CLUBHOUSE_HOOK_NONCE: nonce });
     expect(server.requests('thread/start')[0].params).toMatchObject({
-      config: { mcp_servers: { clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'] } } },
+      config: { mcp_servers: { clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'], default_tools_approval_mode: 'approve' } } },
     });
     expect(JSON.stringify(server.received)).not.toContain(nonce);
     await session.close();
