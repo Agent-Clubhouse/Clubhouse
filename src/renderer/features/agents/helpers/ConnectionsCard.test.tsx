@@ -9,7 +9,9 @@ import type { ConnectionGuidanceSnapshot } from '../../../../shared/connection-g
 import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
 import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
 import { ConnectionEditorDialog } from './ConnectionEditorDialog';
-import * as fs from 'fs';
+import fs, * as fsExports from 'fs';
+import * as fspExports from 'fs/promises';
+import { syncBuiltinESMExports } from 'module';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -618,6 +620,11 @@ describe('Connections card (#2232)', () => {
         vi.spyOn(mainProjects, 'list'), vi.spyOn(mainAgentConfig, 'listDurable'),
         vi.spyOn(mainPolicies, 'resolveOrchestrationPolicies'), vi.spyOn(groupProjectRegistry, 'list'),
       ];
+      syncBuiltinESMExports();
+      expect(fsExports.renameSync).toBe(fs.renameSync);
+      expect(fsExports.watch).toBe(fs.watch);
+      expect(fspExports.open).toBe(fs.promises.open);
+      expect(fspExports.rename).toBe(fs.promises.rename);
       window.clubhouse.mcpBinding.getConnectionSources = vi.fn(listConnectionSources);
       window.clubhouse.mcpBinding.getDispatcherLinks = vi.fn(async () => listDispatcherLinksForUser({ strict: true }));
       window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => mainSources.listSoleOwnedPairs('orchestrator-connections'));
@@ -672,6 +679,7 @@ describe('Connections card (#2232)', () => {
     } finally {
       view?.unmount();
       vi.restoreAllMocks();
+      syncBuiltinESMExports();
       Object.assign(window.clubhouse.mcpBinding, bridge);
       mainBindings.setConnectionInstructionsSource(null);
       mainBindings._resetForTesting();

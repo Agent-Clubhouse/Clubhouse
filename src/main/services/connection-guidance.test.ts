@@ -1,5 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import * as fs from 'fs';
+import fs, * as fsExports from 'fs';
+import * as fspExports from 'fs/promises';
+import { syncBuiltinESMExports } from 'module';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -79,6 +81,10 @@ async function rawOfflineFixture(source: 'manual' | 'automatic') {
     vi.spyOn(fs.promises, 'rm'), vi.spyOn(fs.promises, 'unlink'), vi.spyOn(fs.promises, 'copyFile'),
   ];
   const watches = [vi.spyOn(fs, 'watch'), vi.spyOn(fs, 'watchFile'), vi.spyOn(fs.promises, 'watch')];
+  syncBuiltinESMExports();
+  expect(fsExports.watch).toBe(watches[0]);
+  expect(fspExports.rename).toBe(mutations[0]);
+  expect(fspExports.watch).toBe(watches[2]);
   return { agentsFile, collect, bind, lifecycleReads, mutations, watches };
 }
 
@@ -95,6 +101,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  syncBuiltinESMExports();
   bindingManager.setConnectionInstructionsSource(null);
   bindingManager._resetForTesting();
   _resetPersistedBindingSourcesForTesting();
@@ -181,6 +188,8 @@ describe('durable directional connection guidance', () => {
     fs.writeFileSync(temp, 'Uncommitted bytes');
     resetAllSettingsStoresForTests();
     const remove = vi.spyOn(fs, 'rmSync');
+    syncBuiltinESMExports();
+    expect(fsExports.rmSync).toBe(remove);
     expect(listConnectionDirectionsForInspection('a')).toEqual([direction]);
     expect(remove).not.toHaveBeenCalled();
     expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
@@ -195,6 +204,8 @@ describe('durable directional connection guidance', () => {
     fs.writeFileSync(`${file}.tmp-0-retained`, 'Uncommitted bytes');
     resetAllSettingsStoresForTests();
     const remove = vi.spyOn(fs, 'rmSync');
+    syncBuiltinESMExports();
+    expect(fsExports.rmSync).toBe(remove);
     expect(() => listConnectionDirectionsForInspection('a')).toThrow(/metadata.*(read|ambiguous)/);
     expect(remove).not.toHaveBeenCalled();
     expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
