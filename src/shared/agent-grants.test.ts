@@ -36,6 +36,12 @@ describe('agent grants (#2966)', () => {
       [{ kind: 'connected', wakeOn: true }, { kind: 'agent', relations: ['connected'] }, false],
       [{ kind: 'connected', wakeOn: true }, { kind: 'agent', relations: ['parent'], wakeOn: true }, false],
       [{ kind: 'connected' }, { kind: 'agent', relations: ['connected'], wakeOn: true }, true],
+      [{ kind: 'remote_dispatcher' }, { kind: 'agent', isDispatcher: true, isRemoteDispatcher: true }, true],
+      [{ kind: 'remote_dispatcher' }, { kind: 'agent', isDispatcher: true }, false],
+      [{ kind: 'remote_dispatcher' }, { kind: 'agent', isRemoteDispatcher: true }, false],
+      [{ kind: 'remote_dispatcher' }, { kind: 'project', isDispatcher: true, isRemoteDispatcher: true }, false],
+      [{ kind: 'connected', onlyDispatcher: true }, { kind: 'agent', relations: ['connected'], isDispatcher: true, isRemoteDispatcher: true }, false],
+      [{ kind: 'project', project: 'any' }, { kind: 'agent', isDispatcher: true, isRemoteDispatcher: true }, false],
       [{ kind: 'group_members' }, { kind: 'agent', relations: ['group_member'] }, true],
       [{ kind: 'project', project: 'own' }, { kind: 'project', projectPath: '/p/' }, true],
       [{ kind: 'project', project: 'own' }, { kind: 'project', projectPath: '/q' }, false],
@@ -59,6 +65,19 @@ describe('agent grants (#2966)', () => {
     ];
     it.each(cases)('%j covers %j: %s', (grant, target, covered) => {
       expect(targetCovers(grant, agent, target)).toBe(covered);
+    });
+
+    describe('another machine\'s Dispatcher grants', () => {
+      const remote: GrantCallTarget = { kind: 'agent', isDispatcher: true, isRemoteDispatcher: true };
+      it('keeps sender Allow, Ask first and Off distinct without changing receiver grants', () => {
+        expect(evaluateGrant(call('agent.message', remote), [allow('agent.message', { kind: 'remote_dispatcher' })]).outcome).toBe('allow');
+        expect(evaluateGrant(call('agent.message', remote), [ask('agent.message', { kind: 'remote_dispatcher' })]).outcome).toBe('ask');
+        expect(evaluateGrant(call('agent.message', remote), []).outcome).toBe('refuse');
+        expect(evaluateGrant(call('agent.message', { kind: 'agent', relations: ['connected'] }), [allow('agent.message', { kind: 'remote_dispatcher' })]).outcome).toBe('refuse');
+      });
+      it.each(['agent.wake', 'agent.reset', 'agent.configure', 'agent.grant'] as const)('does not authorize %s on a remote Dispatcher', (action) => {
+        expect(evaluateGrant(call(action, remote), [allow(action, { kind: 'remote_dispatcher' })]).outcome).toBe('refuse');
+      });
     });
   });
 

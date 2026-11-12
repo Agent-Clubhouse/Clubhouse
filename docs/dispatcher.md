@@ -99,6 +99,13 @@ staged federation implementation. This contract alone does not enable federation
 the authenticated Annex delivery and local controller adapters must be installed.
 It does not add a queue, elect a lead, share memory or replace Annex chat.
 
+The sender's `remote_dispatcher` grant target (#3348) is separate from local
+`connected` and project targets. Main resolves `isRemoteDispatcher` from known
+membership/controller identity, never from a tool argument. Only read and message
+actions match this target; the fixed tool surface still applies. A sender's
+Allow/Ask first/Off choice survives save/read and does not change any grant on
+the receiving machine.
+
 | Boundary | Rule |
 |---|---|
 | Membership | Only other computer members get links; phones and one-to-one pairings do not. Reconcile from current membership, including after reconnect. |

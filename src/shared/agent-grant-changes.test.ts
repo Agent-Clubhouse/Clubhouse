@@ -159,6 +159,21 @@ describe('the Dispatcher-only target (#3037)', () => {
     expect(grantTargetLabel(target)).toBe('The Dispatcher, when connected');
   });
 
+  describe('another machine\'s Dispatcher target (#3348)', () => {
+    it('has a separate permission row and preserves a user choice through save/read/apply', () => {
+      const target = { kind: 'remote_dispatcher' as const };
+      const defaults = [{ action: 'agent.message' as const, target, mode: 'ask' as const }];
+      expect(grantKey(defaults[0])).toBe('agent.message@remote_dispatcher');
+      expect(grantTargetLabel(target)).toBe('Another machine\'s Dispatcher');
+      for (const mode of ['allow', 'ask', 'off'] as const) {
+        const saved = normalizeGrantChanges({ changes: [{ action: 'agent.message', target: { ...target, approved: true }, mode }] });
+        expect(saved?.changes[0]).toEqual({ action: 'agent.message', target, mode });
+        const grants = applyGrantChanges(defaults, saved);
+        expect(grants.find((grant) => grantKey(grant) === 'agent.message@remote_dispatcher')?.mode).toBe(mode === 'off' ? undefined : mode);
+      }
+    });
+  });
+
   it('survives a save and read back, and Off removes the default', () => {
     const saved = normalizeGrantChanges({ changes: [{ action: 'agent.wake', target, mode: 'off' }] });
     expect(saved?.changes[0].target).toEqual(target);
