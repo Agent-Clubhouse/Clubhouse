@@ -221,6 +221,74 @@ describe('connection Open navigation', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('lookup is incomplete');
   });
 
+  it('keeps a mounted Canvas navigation-only when another owning board is opened', async () => {
+    const data: CanvasNavigationSnapshot = {
+      ...snapshot(),
+      canvases: [
+        board(),
+        board('second', [
+          { ...groupView('second-node'), position: { x: 9000, y: 10000 } },
+          {
+            id: 'second-zone', type: 'zone', title: 'Zone', displayName: 'Zone', metadata: {}, themeId: 'catppuccin-mocha',
+            position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 0, containedViewIds: ['second-agent'],
+          },
+          {
+            id: 'second-agent', type: 'agent', agentId: 'zone-sleeper', title: 'Zone member', displayName: 'Zone member', metadata: {},
+            position: { x: 50, y: 50 }, size: { width: 200, height: 200 }, zIndex: 1,
+          },
+        ]),
+      ],
+      zoneWires: [{ id: 'second-zone-wire', sourceZoneId: 'second-zone', targetId: 'gp_actual', targetType: 'group-project' }],
+    };
+    vi.mocked(window.clubhouse.canvas.readForNavigation).mockResolvedValue(data);
+    await jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
+    const store = getProjectCanvasStore('nav-two');
+    const load = vi.spyOn(store.getState(), 'loadCanvas');
+    const loadWires = vi.spyOn(store.getState(), 'loadWires');
+    const bind = vi.spyOn(window.clubhouse.mcpBinding, 'bind');
+    const unbind = vi.spyOn(window.clubhouse.mcpBinding, 'unbind');
+    const create = vi.spyOn(store.getState(), 'addCanvas');
+    const remove = vi.spyOn(store.getState(), 'removeCanvas');
+    const policy = vi.spyOn(window.clubhouse.agent, 'setOrchestrationPolicy');
+    const { api, storage } = panelApi(data);
+    vi.useFakeTimers();
+    render(<MainPanel api={api} />);
+    await act(async () => {
+      await jumpToConnectionCanvas('group-project', 'gp_actual', { ...hit, canvasId: 'second', viewId: 'second-node' }, beginConnectionNavigationRequest().signal);
+    });
+    expect(store.getState().activeCanvasId).toBe('second');
+    expect(store.getState().selectedViewId).toBe('second-node');
+    expect(store.getState().viewport).toEqual({ panX: -8800, panY: -9850, zoom: 1 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
+    for (const mutation of [bind, unbind, create, remove, policy, storage.write, load, loadWires]) expect(mutation).not.toHaveBeenCalled();
+    expect(getCanvasNavigationHandoff(store)).toBeUndefined();
+  });
+
+  it('releases a superseded Open row immediately without waiting for its canceled hydration', async () => {
+    const loading = deferred<CanvasNavigationSnapshot>();
+    vi.mocked(window.clubhouse.canvas.readForNavigation).mockReturnValue(loading.promise);
+    render(
+      <>
+        <div data-testid="pending-open">
+          <ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Group project" projectId="nav-one" />
+        </div>
+        <div data-testid="replacement-open">
+          <ConnectionOpenAction targetId="actual-agent" targetKind="agent" name="Agent" projectId="nav-one" />
+        </div>
+      </>,
+    );
+    const pending = within(screen.getByTestId('pending-open')).getByRole('button', { name: 'Open' });
+    fireEvent.click(pending);
+    await waitFor(() => expect(window.clubhouse.canvas.readForNavigation).toHaveBeenCalled());
+    expect(pending).toBeDisabled();
+    fireEvent.click(within(screen.getByTestId('replacement-open')).getByRole('button', { name: 'Open' }));
+    await waitFor(() => expect(useAgentStore.getState().activeAgentId).toBe('actual-agent'));
+    expect(pending).toBeEnabled();
+    await act(async () => { loading.resolve(snapshot()); });
+    expect(getProjectCanvasStore('nav-two').getState().loaded).toBe(false);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('lets loaded live deletions override saved hits and unreadable saved copies, but never hides an incomplete scope inventory', () => {
     const index = indexed();
     index.stores[2].error = 'Unreadable saved copy';
