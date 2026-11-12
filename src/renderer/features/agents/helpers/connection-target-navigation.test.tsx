@@ -127,6 +127,7 @@ describe('connection Open navigation', () => {
   it('waits for unvisited persisted hydration, then focuses/reveals the real node without writes or reconnecting inactive wires; explicit edits and manual reopening still work', async () => {
     const data: CanvasNavigationSnapshot = {
       ...snapshot(),
+      wires: [...snapshot().wires, { agentId: 'edit-sleeper', targetId: 'gp_actual', targetKind: 'group-project', label: 'Edited board wire' }],
       canvases: [board('other', []), board('board', [
         groupView(),
         {
@@ -186,7 +187,7 @@ describe('connection Open navigation', () => {
     act(() => { store.getState().moveView('node', { x: 5200, y: 6200 }); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
     expect(storage.write).toHaveBeenCalledWith('canvas-instances', expect.any(Array));
-    expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }));
+    expect(bind).toHaveBeenCalledWith('edit-sleeper', expect.objectContaining({ targetId: 'gp_actual' }));
     expect(bind).toHaveBeenCalledWith('zone-sleeper', expect.objectContaining({ targetId: 'gp_actual' }));
     panel.unmount();
     const manualLoad = vi.spyOn(store.getState(), 'loadCanvas');
