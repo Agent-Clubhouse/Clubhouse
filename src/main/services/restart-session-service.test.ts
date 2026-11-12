@@ -72,6 +72,7 @@ import * as headlessManager from './headless-manager';
 import { getAgentRuntime } from './agent-runtime';
 import type { AgentRuntime } from '../../shared/chat';
 import { runAgentWork } from './launch-gate';
+import { getDispatcherChatPath, getDispatcherPath } from './dispatcher/dispatcher-paths';
 
 describe('restart-session-service', () => {
   let userDataPath: string;
@@ -381,6 +382,32 @@ describe('restart-session-service', () => {
   });
 
   describe('loadPendingResume', () => {
+    it('keeps the visible Dispatcher chat but skips the work agent on resume', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(getDurableConfig).mockResolvedValueOnce({ id: 'chat', name: 'Sage', color: 'blue', createdAt: '' });
+      await fsp.writeFile(statePath, JSON.stringify({
+        version: 1, capturedAt: new Date().toISOString(), appVersion: '0.38.0',
+        sessions: [
+          { agentId: 'work', projectPath: getDispatcherPath(), resumeStrategy: 'auto' },
+          { agentId: 'chat', projectPath: getDispatcherChatPath(), resumeStrategy: 'auto' },
+          { agentId: 'project', projectPath: '/projects/dispatcher', resumeStrategy: 'auto' },
+        ],
+      }));
+      const state = await loadPendingResume();
+      expect(state?.sessions.map((session) => session.agentId)).toEqual(['chat', 'project']);
+      expect(state?.sessions[0].agentName).toBe('Sage');
+    });
+
+    it('uses the Dispatcher role if a legacy chat name cannot be looked up', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(getDurableConfig).mockRejectedValueOnce(new Error('unavailable'));
+      await fsp.writeFile(statePath, JSON.stringify({
+        version: 1, capturedAt: new Date().toISOString(), appVersion: '0.38.0',
+        sessions: [{ agentId: 'chat', agentName: 'chat', projectPath: getDispatcherChatPath(), resumeStrategy: 'manual' }],
+      }));
+      expect((await loadPendingResume())?.sessions[0].agentName).toBe('Dispatcher');
+    });
+
     it('returns null when file does not exist', async () => {
       const result = await loadPendingResume();
       expect(result).toBeNull();
@@ -448,6 +475,18 @@ describe('restart-session-service', () => {
   });
 
   describe('getLiveAgentsForUpdate', () => {
+    it('identifies Dispatcher roles without dropping either from the live set', () => {
+      for (const [id, projectPath] of [
+        ['work', getDispatcherPath()],
+        ['chat', getDispatcherChatPath()],
+        ['project', '/projects/dispatcher'],
+      ]) agentRegistry.register(id, { projectPath, orchestrator: 'claude-code', runtime: 'pty' });
+      const byId = Object.fromEntries(getLiveAgentsForUpdate().map((agent) => [agent.agentId, agent]));
+      expect(byId.work.dispatcherRole).toBe('work');
+      expect(byId.chat.dispatcherRole).toBe('chat');
+      expect(byId.project.dispatcherRole).toBeUndefined();
+    });
+
     it('counts queued and in-flight messages as work for remote approvals without changing the desktop gate', async () => {
       agentRegistry.register('pending-chat', { projectPath: '/project', orchestrator: 'claude-code', runtime: 'chat' });
       const runtime = {

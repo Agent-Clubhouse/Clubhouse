@@ -14,15 +14,17 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
     cancelledAgentIds: {},
 
     resumingAgents: {},
+    resumeAgentNames: {},
 
-    setResumeStatus: (agentId, status) => {
+    setResumeStatus: (agentId, status, name) => {
       set((s) => ({
         resumingAgents: { ...s.resumingAgents, [agentId]: status },
+        ...(name ? { resumeAgentNames: { ...s.resumeAgentNames, [agentId]: name } } : {}),
       }));
     },
 
     clearResumingAgents: () => {
-      set({ resumingAgents: {} });
+      set({ resumingAgents: {}, resumeAgentNames: {} });
     },
 
     spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, accessRequest, pluginMetadata, cwdOverride, options) => {
