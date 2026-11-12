@@ -19,7 +19,7 @@ import { appLog } from '../../log-service';
 import * as projectStore from '../../project-store';
 import * as agentConfig from '../../agent-config';
 import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
-import { managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
+import { activationFor, managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
 import { applyManagedSettings, createManagedAgent } from '../../managed-agents/agents';
 import { previewManagedSetup } from '../../managed-agents/delivery';
 import { discoverManagedAssets } from '../../managed-agents/discovery';
@@ -38,7 +38,7 @@ import type { Project } from '../../../../shared/types';
 import { agentRegistry } from '../../agent-registry';
 import { capToHolder, checkToolGrant } from '../grant-check';
 import { describeCallsForAsk } from '../ask-first';
-import { resolveArgTargets } from '../arg-targets';
+import { resolveArgTargets, type ArgTargets } from '../arg-targets';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import { deleteAgent } from '../../agent-delete';
 import type { AgentDeleteResult, HelperDeleteChoice } from '../../../../shared/types';
@@ -240,6 +240,10 @@ const CREATE_GRANTS: readonly ToolGrantDeclaration[] = [
 const IMPORT_GRANTS: readonly ToolGrantDeclaration[] = [
   { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
   { actions: ['library.read', 'library.write'], target: 'library' },
+];
+const RESTART_GRANTS: readonly ToolGrantDeclaration[] = [
+  { actions: ['agent.restart'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+  { actions: ['agent.sleep'], target: 'agent_arg', ifTrue: ['now'], from: { args: ['agent'], project: 'project' } },
 ];
 const HELPER_CHOICES = ['dispose', 'keep'] as const;
 const WORKTREE_CHOICES = ['delete', 'keep'] as const;
@@ -478,6 +482,14 @@ export function registerManagedTools(): void {
       return json({ setup: await svc().getSetup(t.project.path, t.agentId), status: await statusFor(t.project.path, t.agentId) });
     });
 
+  tool('get_agent_activation', { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+    'Read passive activation evidence and the latest restart receipt: configured references, desired revisions, recorded materialization and running launch setup are separate. Provider-confirmed loaded skills/tools remain not confirmed without trusted current-session evidence. Never treats file writes, session creation or MCP handshakes as verification; runs no paid probe. A pending/failed restart is not success and must not be blindly retried.',
+    { project: PROJECT, agent: AGENT }, ['project', 'agent'],
+    async (_c, args) => {
+      const t = await resolveAgent(args);
+      return json(await activationFor(t.project.path, t.agentId));
+    });
+
   tool('set_agent_setup', { actions: ['agent.grant'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
     'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. The Clubhouse MCP part always stays in the setup. Applies at its next start; use restart_agent for a running one.',
     { project: PROJECT, agent: AGENT, blocks: IDS, skills: IDS, mcps: IDS }, ['project', 'agent', 'blocks', 'skills', 'mcps'],
@@ -690,29 +702,84 @@ export function registerManagedTools(): void {
         legacy ? { legacyDefaults: legacy, note: 'This project has legacy agent defaults. They weren\'t copied into the new agent; the user can copy them from the project\'s settings.' } : {});
     });
 
-  tool('restart_agent', { actions: ['agent.restart'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
-    'Restart a running managed agent so it picks up its setup. By default it waits for the agent\'s current turn to end first; now: true restarts it at once, cutting the turn off. It resumes the same conversation unless fresh is true, or the CLI changed. Only running managed agents, and never yourself: a sleeping agent gets its setup when it next starts (wake_agent).',
+  tool('restart_agent', RESTART_GRANTS,
+    'Restart a running managed agent so it picks up its setup. By default it waits for the agent\'s current turn to end first; now: true restarts it at once, cutting the turn off, and separately requires agent.sleep permission. Authorization is checked again after waiting. It resumes the same conversation unless fresh is true, or the CLI changed. Only running managed agents, and never yourself: a sleeping agent gets its setup when it next starts (wake_agent). A persisted lifecycle receipt is available with get_agent_activation; restart completion is not provider-loaded proof.',
     { project: PROJECT, agent: AGENT, fresh: { type: 'boolean' }, now: { type: 'boolean', description: 'Restart at once instead of after the current turn.' } }, ['project', 'agent'],
     async (callerId, args) => {
-      const t = await resolveAgent(args);
-      if (t.agentId === callerId) throw new ArgError('You can\'t restart yourself.');
-      const status = await statusFor(t.project.path, t.agentId);
-      if (!status.managed) throw new ArgError(`${t.agentName} isn't Clubhouse managed. restart_agent only restarts managed agents.`);
-      if (!status.running) throw new ArgError(`${t.agentName} isn't running. It gets its setup when it next starts; restart_agent never wakes an agent.`);
-      const now = optionalBoolean(args, 'now') === true;
-      // No catalog grant: a restart writes no parts, and the spawn must not inherit one.
-      const restart = restartManagedAgent(t.project.path, t.agentId, { fresh: optionalBoolean(args, 'fresh'), whenTurnEnds: !now });
-      const answer = (r: { resumed: boolean; noSession?: boolean }) => json({ status: 'restarted', resumed: r.resumed,
-        ...(r.noSession && { note: 'There was no conversation to resume, so it started a new one.' }) });
-      if (now) return answer(await restart);
-      // Waiting for a turn can take long: answer after a short wait, and let the restart finish behind it.
-      const done = await settleWithin(restart, RESTART_ANSWER_MS);
-      if (done) return answer(done);
-      restart.catch((err: unknown) => {
-        // telemetry-exempt: the Dispatcher already has its answer; the failure is logged
-        appLog('core:mcp', 'warn', 'restart_agent: restart after the turn failed', { meta: { callerId, agentId: t.agentId, error: err instanceof Error ? err.message : String(err) } });
-      });
-      return json({ status: 'waiting_for_turn_end', note: `${t.agentName} is mid-turn. It restarts when the turn ends, or not at all if it is still working after 30 minutes. Check with get_agent_setup.` });
+      const originalCaller = agentRegistry.get(callerId);
+      if (!originalCaller) throw new ManagedError('not_permitted', 'The original restart caller is no longer registered.');
+      const callerScope = { ...originalCaller };
+      let callerChanged = false;
+      const stopListening = agentRegistry.onAuthChange((id) => { if (id === callerId) callerChanged = true; });
+      const assertOriginalCaller = () => {
+        const current = agentRegistry.get(callerId);
+        if (callerChanged || current !== originalCaller || current.nonce !== callerScope.nonce
+          || current.runtime !== callerScope.runtime || current.orchestrator !== callerScope.orchestrator
+          || current.projectPath !== callerScope.projectPath || current.cwd !== callerScope.cwd) {
+          throw new ManagedError('not_permitted', 'The original restart caller changed. Request permission again from its current runtime.');
+        }
+      };
+      let delegated = false;
+      try {
+        const t = await resolveAgent(args);
+        if (t.agentId === callerId) throw new ArgError('You can\'t restart yourself.');
+        const status = await statusFor(t.project.path, t.agentId);
+        if (!status.managed) throw new ArgError(`${t.agentName} isn't Clubhouse managed. restart_agent only restarts managed agents.`);
+        if (!status.running) throw new ArgError(`${t.agentName} isn't running. It gets its setup when it next starts; restart_agent never wakes an agent.`);
+        const now = optionalBoolean(args, 'now') === true;
+        // No catalog grant: a restart writes no parts, and the spawn must not inherit one.
+        const restart = restartManagedAgent(t.project.path, t.agentId, {
+          fresh: optionalBoolean(args, 'fresh'), whenTurnEnds: !now,
+          authorize: async () => {
+            const stableArgs = { ...args, project: t.project.path, agent: t.agentId };
+            let targets: ArgTargets = new Map();
+            let projectVersion = projectStore.projectRegistryMutationState();
+            let registeredProject = false;
+            const refresh = async () => {
+              assertOriginalCaller();
+              const before = projectStore.projectRegistryMutationState();
+              if (before.pending) throw new ManagedError('not_permitted', 'The restart project is changing. No lifecycle effect was authorized.');
+              const freshTargets = await resolveArgTargets(callerId, RESTART_GRANTS, stableArgs);
+              const projects = await projectStore.peekProjects();
+              const after = projectStore.projectRegistryMutationState();
+              assertOriginalCaller();
+              if (after.pending || before.generation !== after.generation) throw new ManagedError('not_permitted', 'The restart project changed during authorization.');
+              targets = freshTargets;
+              registeredProject = projects.some((project) => project.id === t.project.id && path.resolve(project.path) === path.resolve(t.project.path));
+              projectVersion = after;
+            };
+            await refresh();
+            return Object.assign(() => {
+              assertOriginalCaller();
+              const currentProject = projectStore.projectRegistryMutationState();
+              const required = now ? RESTART_GRANTS : [RESTART_GRANTS[0]];
+              if (!registeredProject || currentProject.pending || currentProject.generation !== projectVersion.generation
+                || required.some((declaration) => !targets.get(declaration)?.some((target) =>
+                  target.kind === 'agent' && target.agentId === t.agentId && target.projectPath
+                    && path.resolve(target.projectPath) === path.resolve(t.project.path)))) {
+                throw new ManagedError('not_permitted', 'The restart authorization target is no longer available. Inspect the lifecycle receipt and current target state before retrying.');
+              }
+              const grant = checkToolGrant(callerId, RESTART_GRANTS, stableArgs, undefined, targets);
+              const context = grantApprovalContext(callerId, 'restart_agent', args, RESTART_GRANTS, targets);
+              if (!callGrantIsApproved(callerId, 'restart_agent', args, grant, context)) {
+                throw new ManagedError('not_permitted', 'Restart authorization changed before a lifecycle effect. Inspect the lifecycle receipt and current target state before requesting permission and retrying.');
+              }
+            }, { refresh });
+          },
+        }).finally(stopListening);
+        delegated = true;
+        const answer = (r: { resumed: boolean; noSession?: boolean }) => json({ status: 'restarted', resumed: r.resumed,
+          ...(r.noSession && { note: 'There was no conversation to resume, so it started a new one.' }) });
+        if (now) return answer(await restart);
+        // Waiting for a turn can take long: answer after a short wait, and let the restart finish behind it.
+        const done = await settleWithin(restart, RESTART_ANSWER_MS);
+        if (done) return answer(done);
+        restart.catch((err: unknown) => {
+          // telemetry-exempt: the persisted lifecycle receipt exposes failure after the tool answered.
+          appLog('core:mcp', 'warn', 'restart_agent: restart after the turn failed', { meta: { callerId, agentId: t.agentId, code: err instanceof ManagedError ? err.code : 'restart_failed' } });
+        });
+        return json({ status: 'waiting_for_turn_end', note: `${t.agentName} is mid-turn. It restarts when the turn ends, or not at all if it is still working after 30 minutes. Check the lifecycle outcome with get_agent_activation; waiting is not completion or activation proof.` });
+      } finally { if (!delegated) stopListening(); }
     });
 
   describeCallsForAsk('delete_agent', describeDeleteCall);

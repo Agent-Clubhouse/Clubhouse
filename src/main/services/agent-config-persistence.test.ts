@@ -86,6 +86,7 @@ import {
   isSameProject,
   isChatTipAgentReadUncertain,
   listDurable,
+  peekCachedDurableConfig,
   peekDurableConfigsChecked,
   projectKey,
   renameDurable,
@@ -186,6 +187,26 @@ describe('strict read-only durable inventory', () => {
 });
 
 describe('agent-config persistence barrier', () => {
+  it('keeps lifecycle snapshots cache-only and detached from mutable authority state', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([{ ...AGENT_A, managed: { version: 1, blocks: [], skills: [], mcps: [] } }]));
+    vi.mocked(fsp.readFile).mockClear();
+    vi.mocked(fsp.writeFile).mockClear();
+    expect(peekCachedDurableConfig(PROJECT_PATH, AGENT_A.id)).toBeNull();
+    expect(fsp.readFile).not.toHaveBeenCalled();
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    await listDurable(PROJECT_PATH);
+    const snapshot = peekCachedDurableConfig(PROJECT_PATH, AGENT_A.id);
+    if (!snapshot?.managed) throw new Error('Expected the loaded managed fixture');
+    snapshot.managed.skills.push('caller-mutated');
+    expect(peekCachedDurableConfig(PROJECT_PATH, AGENT_A.id)?.managed?.skills).toEqual([]);
+    await renameDurable(PROJECT_PATH, AGENT_A.id, 'current-name');
+    expect(peekCachedDurableConfig(PROJECT_PATH, AGENT_A.id)?.name).toBe('current-name');
+    clearAgentConfigCache(PROJECT_PATH);
+    const reads = vi.mocked(fsp.readFile).mock.calls.length;
+    expect(peekCachedDurableConfig(PROJECT_PATH, AGENT_A.id)).toBeNull();
+    expect(fsp.readFile).toHaveBeenCalledTimes(reads);
+  });
+
   it('coalesces concurrent barriers before taking the write snapshot', async () => {
     files.set(CONFIG_PATH, JSON.stringify([AGENT_A, AGENT_B]));
     await renameDurable(PROJECT_PATH, AGENT_A.id, 'alpha-1');

@@ -4,17 +4,28 @@ import * as os from 'os';
 import * as path from 'path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
+import type { AgentRuntime, ChatDriverStartOptions } from '../../../shared/chat';
 
-const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[] }));
+const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[], cacheAvailable: true, configGeneration: 0 }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
 vi.mock('../agent-config', () => ({
+  agentConfigGeneration: () => fixture.configGeneration,
+  peekCachedDurableConfig: (_p: string, id: string) => fixture.cacheAvailable ? structuredClone(fixture.agents.find((a) => a.id === id) ?? null) : null,
   peekDurableConfigs: vi.fn(async () => fixture.agents),
   getDurableConfig: vi.fn(async (_p: string, id: string) => fixture.agents.find((a) => a.id === id)),
   touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}),
 }));
-vi.mock('../agent-system', () => ({ resolveOrchestrator: vi.fn(async (_p: string, id?: string) => id === 'copilot-cli' ? copilot : claude) }));
+vi.mock('../agent-system', () => ({
+  resolveOrchestrator: vi.fn(async (_p: string, id?: string) => id === 'copilot-cli' ? copilot : claude),
+  isAgentRunning: () => fixture.running,
+  killAgent: vi.fn(async () => { await stopAllChatAgents(); fixture.running = false; }),
+  spawnAgent: vi.fn(async (options: { resume?: boolean; sessionId?: string; orchestrator?: OrchestratorProvider['id'] }) => {
+    await deliverForSpawn(root, agent, options.orchestrator === 'claude-code' ? claude : copilot); await start(options); fixture.running = true;
+  }),
+}));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
-vi.mock('../agent-registry', () => ({ agentRegistry: { setNonce: vi.fn(), setRuntime: vi.fn(), get: vi.fn(), setLaunchCap: vi.fn(), setUserLaunchAccess: vi.fn(), reportLaunchAccess: vi.fn() }, untrackAgent: vi.fn() }));
+vi.mock('../mcp-bridge-starter', () => ({ ensureMcpBridge: vi.fn(async () => {}) }));
+vi.mock('../hook-server', () => ({ waitReady: vi.fn(async () => 1234), portEnv: () => ({ CLUBHOUSE_HOOK_PORT: '1234' }) }));
 vi.mock('../config-pipeline', () => ({ snapshotFile: vi.fn(), restoreForAgent: vi.fn() }));
 vi.mock('../clubhouse-mcp/bridge-server', () => ({ waitReady: vi.fn(async () => 4321), NONCE_HEADER: 'X-Clubhouse-Nonce', agentEndpointUrl: () => 'http://127.0.0.1:4321/mcp' }));
 vi.mock('../clubhouse-mcp/injection', async (importOriginal) => ({
@@ -35,7 +46,7 @@ vi.mock('../../util/shell', async (actual) => ({ ...await actual<typeof import('
 vi.mock('./chat-transcript', () => ({ appendChatEvent: vi.fn(async () => {}), listChatSessions: vi.fn(async () => []), readChatTranscript: vi.fn(async () => []) }));
 vi.mock('../agent-exit-broadcast', () => ({ broadcastAgentExit: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
-vi.mock('../pty-manager', () => ({ isRunning: () => false }));
+vi.mock('../pty-manager', () => ({ isRunning: () => false, processIdentity: () => undefined }));
 
 import { peekDurableConfigs } from '../agent-config';
 import { withAgentActivity, withAgentTransition } from '../agent-transition';
@@ -45,12 +56,24 @@ import { registerAgentSettingsHandlers } from '../../ipc/agent-settings-handlers
 import { tryStartChatAgent, stopAllChatAgents } from './chat-spawn';
 import { FakeChatDriver } from './fake-chat-driver';
 import { registerChatDriver, clearChatDrivers } from './chat-drivers';
-import { clearChatRuntimes } from './index';
+import { clearChatRuntimes, getAgentRuntime } from './index';
 import { appendChatEvent } from './chat-transcript';
 import { clearDriverHealth } from './chat-driver-health';
 import { injectClubhouseMcp } from '../clubhouse-mcp/injection';
 import { localTomlMcpNotice } from '../agent-mcp-servers';
 import { jsonMcpToToml } from '../toml-utils';
+import { _setManagedAgentsForTesting, activationFor, deliverForSpawn, forgetDelivery, restartManagedAgent } from '../managed-agents';
+import { createManagedAgentsService } from '../managed-agents/service';
+import { createManagedStateStore } from '../managed-agents/state-store';
+import { createAssetCatalogStore } from '../asset-catalog/store';
+import { discoverManagedAssets } from '../managed-agents/discovery';
+import { prepareManagedAssetImport } from '../managed-agents/imports';
+import { withSettingsSurface } from '../settings-audit';
+import { spawnAgent, killAgent, resolveOrchestrator } from '../agent-system';
+import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { agentRegistry } from '../agent-registry';
+import * as orchestrators from '../../orchestrators';
+import { updateDurableConfig } from '../agent-config';
 
 const conventions = { configDir: '.github', skillsDir: 'skills', agentTemplatesDir: 'agents', mcpConfigFile: '.github/mcp.json', localSettingsFile: 'hooks.json' };
 const copilot = { id: 'copilot-cli', conventions, getBinaryPath: () => '/synthetic/copilot', writeInstructions: vi.fn() } as unknown as OrchestratorProvider;
@@ -62,23 +85,36 @@ const raw = (servers: object) => JSON.stringify({ mcpServers: servers });
 
 beforeEach(async () => {
   vi.clearAllMocks(); clearChatDrivers(); clearChatRuntimes(); clearDriverHealth();
+  fixture.running = false;
+  fixture.cacheAvailable = true;
+  fixture.configGeneration = 0;
+  fixture.starts = [];
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-2849-'));
   cwd = path.join(root, 'agent'); localPath = path.join(cwd, conventions.mcpConfigFile);
   settingsPath = path.join(root, '.clubhouse/settings.json');
   await fs.mkdir(path.dirname(settingsPath), { recursive: true }); await fs.mkdir(cwd);
   await fs.writeFile(settingsPath, JSON.stringify({ orchestrator: 'claude-code', agentDefaults: { mcpJson: raw(projectMap) } }));
   agent = { id: 'synthetic-agent', name: 'synthetic', color: 'blue', createdAt: '', worktreePath: cwd, orchestrator: 'copilot-cli' };
+  agentRegistry.register(agent.id, { projectPath: root, orchestrator: 'copilot-cli', runtime: 'chat' });
   fixture.agents = [agent]; handlers = new Map();
   vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: never) => { handlers.set(channel, handler); });
   registerAgentSettingsHandlers();
 });
-afterEach(async () => { await stopAllChatAgents(); clearChatDrivers(); clearChatRuntimes(); await fs.rm(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  await stopAllChatAgents(); clearChatDrivers(); clearChatRuntimes();
+  agentRegistry.untrack(agent.id);
+  forgetDelivery(agent.id); _setManagedAgentsForTesting(null);
+  await fs.rm(root, { recursive: true, force: true });
+});
 
 async function save(content: string) { return handlers.get(IPC.AGENT.WRITE_MCP_RAW_JSON)!({}, cwd, content, root, agent.id); }
-async function start() {
+async function start(options: { resume?: boolean; sessionId?: string; orchestrator?: OrchestratorProvider['id']; beforeCreate?: (runtime?: AgentRuntime) => void } = {}) {
   // No explicit legacy selection: exercise the standard Copilot SDK adapter.
-  const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli'); registerChatDriver(driver);
-  expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, copilot, undefined, agent)).toBe('chat');
+  const provider = options.orchestrator === 'claude-code' ? claude : copilot;
+  agentRegistry.register(agent.id, { projectPath: root, cwd, orchestrator: provider.id, runtime: 'pty' });
+  const driver = new FakeChatDriver(provider.id === 'copilot-cli' ? 'copilot_sdk' : 'claude_stream_json', provider.id); registerChatDriver(driver);
+  expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto', ...options }, provider, undefined, agent)).toBe('chat');
+  fixture.starts.push(driver.last.startOptions!);
   return driver.last.startOptions!.mcpServers;
 }
 
@@ -93,6 +129,330 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     expect(await start()).toEqual({ ...servers, clubhouse: { command: 'synthetic-live-bridge' } });
     expect(await fs.readFile(settingsPath, 'utf8')).toBe(projectBefore);
     expect(await fs.readFile(claudeFile, 'utf8')).toBe(claudeBefore);
+  });
+
+  describe('#2855 managed import → add → restart → remove (fixture SDK, no paid probe)', () => {
+    it('runs real stop and spawn with their owned sleep bookkeeping and no provider probe', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      agent.lastSessionId = 'original-native';
+      await deliverForSpawn(root, agent, copilot);
+      await start({ resume: true, sessionId: 'original-native' }); fixture.running = true;
+      const original = getAgentRuntime(agent.id);
+      const actual = await vi.importActual<typeof import('../agent-system')>('../agent-system');
+      const availability = vi.fn(async () => ({ available: true }));
+      const providerLookup = vi.spyOn(orchestrators, 'getProvider').mockImplementation((id) => {
+        if (id !== copilot.id) throw new Error('Unexpected provider in the synthetic restart');
+        return { ...copilot, checkAvailability: availability, getCapabilities: () => ({ headless: false, structuredOutput: false, hooks: false, sessionResume: false, permissions: true }) };
+      });
+      try {
+        await vi.mocked(updateDurableConfig).withImplementation(async (_p, _id, updates) => {
+          if (updates.lastSleep === null) delete agent.lastSleep;
+          else if (updates.lastSleep) agent.lastSleep = updates.lastSleep;
+          fixture.configGeneration++;
+        }, async () => {
+          await vi.mocked(killAgent).withImplementation(async (...args) => {
+            await actual.killAgent(...args); fixture.running = false;
+          }, async () => {
+            await vi.mocked(spawnAgent).withImplementation(async (options) => {
+              await actual.spawnAgent(options); fixture.running = true;
+            }, async () => {
+              expect(await restartManagedAgent(root, agent.id)).toEqual({ resumed: true });
+            });
+          });
+        });
+        expect(availability).toHaveBeenCalledOnce();
+        expect(updateDurableConfig).toHaveBeenCalledWith(root, agent.id, { lastSleep: null });
+        expect(getAgentRuntime(agent.id)).not.toBe(original);
+        expect(getAgentRuntime(agent.id)?.isRunning()).toBe(true);
+        expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'completed', resumed: true });
+      } finally { providerLookup.mockRestore(); }
+    });
+
+    it.each(['model', 'access', 'provider', 'session', 'managed', 'cache'] as const)('refuses %s drift during the inner driver probe', async (field) => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      agent.lastSessionId = 'original-native';
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      const actualStart = vi.spyOn(FakeChatDriver.prototype, 'start');
+      const probe = vi.spyOn(FakeChatDriver.prototype, 'probe').mockImplementationOnce(async () => {
+        await Promise.resolve();
+        if (field === 'model') agent.model = 'changed-model';
+        if (field === 'access') agent.access = 'full_access';
+        if (field === 'provider') agent.orchestrator = 'claude-code';
+        if (field === 'session') agent.lastSessionId = 'replacement-native';
+        if (field === 'managed') delete agent.managed;
+        if (field === 'cache') fixture.cacheAvailable = false;
+        return { handshakeOk: true, capabilities: new FakeChatDriver().capabilities };
+      });
+      try {
+        await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
+        expect(actualStart).not.toHaveBeenCalled();
+        expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+      } finally { probe.mockRestore(); actualStart.mockRestore(); }
+    });
+
+    it('accepts only owned last-sleep bookkeeping across its actual chat stop and new driver start', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      agent.lastSessionId = 'original-native';
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      agent.lastSleep = { reason: 'user', at: new Date().toISOString() };
+      vi.mocked(spawnAgent).mockImplementationOnce(async (options) => {
+        delete agent.lastSleep;
+        await start(options);
+        fixture.running = true;
+      });
+      expect(await restartManagedAgent(root, agent.id)).toEqual({ resumed: true });
+      expect(fixture.starts.at(-1)?.resumeNativeSessionId).toBe('original-native');
+      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'completed' });
+    });
+
+    it('keeps an unrelated MCP, conversation, identity and other-provider bytes through import, migration and removal', async () => {
+      const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [{ path: root, name: 'Project' }],
+        listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async (_p, _id, setup) => { if (setup) agent.managed = setup; },
+        isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      const unrelated = await user(() => service.createPart({ name: 'Unrelated fixture server',
+        content: { kind: 'mcp', serverKey: 'unrelated', transport: 'stdio', command: 'never-run-unrelated' } }));
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [unrelated.id] };
+      agent.lastSessionId = 'same-native-conversation';
+      const identity = { id: agent.id, name: agent.name, orchestrator: agent.orchestrator, session: agent.lastSessionId };
+      const otherProviderFile = path.join(cwd, '.mcp.json');
+      await fs.writeFile(otherProviderFile, raw({ otherProvider: { command: 'never-run-other-provider' } }));
+      const otherProviderBytes = await fs.readFile(otherProviderFile, 'utf8');
+      await deliverForSpawn(root, agent, copilot);
+      expect(await start()).toMatchObject({ unrelated: { command: 'never-run-unrelated' }, clubhouse: { command: 'synthetic-live-bridge' } });
+      fixture.running = true;
+
+      const sourceRoot = path.join(root, 'plain-source');
+      const sourceSkill = path.join(sourceRoot, '.github/skills/imported-review');
+      await fs.mkdir(path.join(sourceSkill, 'scripts'), { recursive: true });
+      await fs.writeFile(path.join(sourceSkill, 'SKILL.md'), '---\nname: imported-review\n---\nReview it without running scripts.\n');
+      await fs.writeFile(path.join(sourceSkill, 'scripts/check.sh'), '#!/bin/sh\nexit 0\n');
+      await fs.writeFile(path.join(sourceRoot, '.github/mcp.json'), raw({ imported: { command: 'never-run-imported' } }));
+      const native = { root: sourceRoot, conventions: copilot.conventions };
+      const discovered = await discoverManagedAssets(native);
+      const imports: string[] = [];
+      for (const candidate of discovered.candidates) {
+        const plan = await prepareManagedAssetImport(service, native, { candidateId: candidate.id, mode: 'copy', name: `Fixture ${candidate.kind}` }, 'project-fixture');
+        imports.push((await user(() => plan.commit('Dispatcher'))).id);
+      }
+      const [skill, mcp] = imports;
+      await user(() => service.saveSetup(root, agent.id, { blocks: [], skills: [skill], mcps: [unrelated.id, mcp] }));
+      expect(await activationFor(root, agent.id)).toMatchObject({ materialized: { matchesDesired: false }, providerConfirmedLoaded: { mcpTools: 'not_confirmed' } });
+      await withSettingsSurface('mcp', 'dispatcher', () => restartManagedAgent(root, agent.id, { whenTurnEnds: true }));
+      expect(getAgentRuntime(agent.id)?.kind).toBe('chat');
+      const first = await activationFor(root, agent.id);
+      expect(first).toMatchObject({ status: 'partial', lastRestart: { outcome: 'completed', resumed: true }, materialized: { matchesDesired: true }, verification: { status: 'blocked', attempts: 0 } });
+      expect(await fs.readFile(path.join(cwd, '.github/skills/imported-review/scripts/check.sh'), 'utf8')).toContain('exit 0');
+      const afterAdd = JSON.parse(await fs.readFile(path.join(cwd, conventions.mcpConfigFile), 'utf8'));
+      expect(afterAdd.mcpServers).toMatchObject({ unrelated: { command: 'never-run-unrelated' }, imported: { command: 'never-run-imported' } });
+      expect(fixture.starts[fixture.starts.length - 1]).toMatchObject({
+        resumeNativeSessionId: identity.session,
+        mcpServers: { unrelated: { command: 'never-run-unrelated' }, imported: { command: 'never-run-imported' }, clubhouse: { command: 'synthetic-live-bridge' } },
+      });
+      expect(spawnAgent).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: identity.id, orchestrator: 'copilot-cli', resume: true, sessionId: identity.session }));
+
+      const moved = path.join(root, 'moved-agent');
+      await fs.rename(cwd, moved);
+      cwd = moved; agent.worktreePath = moved;
+      await user(() => service.saveSetup(root, agent.id, { blocks: [], skills: [], mcps: [unrelated.id] }));
+      await restartManagedAgent(root, agent.id, { whenTurnEnds: true });
+      const afterRemove = JSON.parse(await fs.readFile(path.join(cwd, conventions.mcpConfigFile), 'utf8'));
+      expect(afterRemove.mcpServers).toEqual({ unrelated: { command: 'never-run-unrelated' }, clubhouse: { command: 'synthetic-bridge' } });
+      expect(fixture.starts[fixture.starts.length - 1]).toMatchObject({ resumeNativeSessionId: identity.session,
+        mcpServers: { unrelated: { command: 'never-run-unrelated' }, clubhouse: { command: 'synthetic-live-bridge' } } });
+      expect(fixture.starts[fixture.starts.length - 1].mcpServers).not.toHaveProperty('imported');
+      await expect(fs.stat(path.join(cwd, '.github/skills/imported-review'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await fs.readFile(path.join(cwd, '.mcp.json'), 'utf8')).toBe(otherProviderBytes);
+      expect({ id: agent.id, name: agent.name, orchestrator: agent.orchestrator, session: agent.lastSessionId }).toEqual(identity);
+      expect(await activationFor(root, agent.id)).toMatchObject({ status: 'partial', materialized: { matchesDesired: true }, providerConfirmedLoaded: { skills: 'not_confirmed', mcpTools: 'not_confirmed' } });
+      expect(await fs.readFile(path.join(sourceRoot, '.github/mcp.json'), 'utf8')).toBe(raw({ imported: { command: 'never-run-imported' } }));
+    });
+
+    it('records a restart failure and refuses revoked authorization before stopping the live fixture', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      await expect(restartManagedAgent(root, agent.id, { whenTurnEnds: true, authorize: async () => { throw new Error('revoked'); } })).rejects.toThrow('Managed restart failed');
+      expect(killAgent).not.toHaveBeenCalled();
+      expect(fixture.running).toBe(true);
+      vi.mocked(spawnAgent).mockRejectedValueOnce(new Error('password=must-not-appear'));
+      await expect(restartManagedAgent(root, agent.id, { whenTurnEnds: true })).rejects.toThrow('Managed restart failed');
+      expect(await activationFor(root, agent.id)).toMatchObject({ status: 'blocked', lastRestart: { outcome: 'failed' }, running: { status: 'stopped' } });
+      expect(JSON.stringify(await activationFor(root, agent.id))).not.toContain('must-not-appear');
+      expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_WAKE_FAILED, agent.id, expect.stringContaining('lifecycle receipt'));
+      expect(JSON.stringify(vi.mocked(broadcastToAllWindows).mock.calls)).not.toContain('must-not-appear');
+    });
+
+    it.each(['stop', 'start'] as const)('checks current authorization synchronously before the %s lifecycle effect', async (stage) => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      let checks = 0;
+      await expect(restartManagedAgent(root, agent.id, {
+        whenTurnEnds: true,
+        authorize: async () => () => {
+          if (++checks === (stage === 'stop' ? 1 : 2)) throw new Error('revoked before effect');
+        },
+      })).rejects.toThrow('Managed restart failed');
+      expect(killAgent).toHaveBeenCalledTimes(stage === 'stop' ? 0 : 1);
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(fixture.running).toBe(stage === 'stop');
+      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+    });
+
+    it.each(['stop', 'start'] as const)('does not replace a runtime recreated during %s authorization', async (stage) => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      let prepares = 0;
+      await expect(restartManagedAgent(root, agent.id, {
+        authorize: async () => {
+          if (++prepares === (stage === 'stop' ? 1 : 2)) {
+            await stopAllChatAgents();
+            await start();
+            fixture.running = true;
+          }
+          return () => {};
+        },
+      })).rejects.toThrow('Managed restart failed');
+      expect(killAgent).toHaveBeenCalledTimes(stage === 'stop' ? 0 : 1);
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(fixture.running).toBe(true);
+    });
+
+    it('does not spawn or record completion when stop returns without stopping its runtime', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      vi.mocked(killAgent).mockImplementationOnce(async () => {});
+      await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+    });
+
+    it('does not record completion when a cancelled start returns without a new runtime', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      vi.mocked(spawnAgent).mockImplementationOnce(async () => {});
+      await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
+      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+    });
+
+    it('does not start a target made plain during the provider lookup', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      vi.mocked(resolveOrchestrator).mockImplementationOnce(async () => { await Promise.resolve(); delete agent.managed; return copilot; });
+      await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
+      expect(spawnAgent).not.toHaveBeenCalled();
+    });
+
+    it.each(['before restart', 'during authorization preparation'] as const)('does not resume another provider conversation when the effective default changes %s', async (stage) => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      if (stage === 'before restart') delete agent.orchestrator;
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      agent.lastSessionId = 'previous-copilot-conversation';
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      let preparations = 0;
+      expect(await restartManagedAgent(root, agent.id, {
+        authorize: async () => {
+          if (stage === 'during authorization preparation' && ++preparations === 2) delete agent.orchestrator;
+          return () => {};
+        },
+      })).toEqual({ resumed: false });
+      expect(spawnAgent).toHaveBeenLastCalledWith(expect.objectContaining({ orchestrator: 'claude-code', resume: false, sessionId: undefined }));
+      expect(fixture.starts[fixture.starts.length - 1].resumeNativeSessionId).toBeUndefined();
+    });
   });
   it('saves an agent\'s own MCP file whatever the old Clubhouse Mode setting says (#2901)', async () => {
     agent.clubhouseModeOverride = undefined;

@@ -1285,6 +1285,12 @@ export async function getDurableConfig(projectPath: string, agentId: string): Pr
   return agentsById.get(agentId) ?? null;
 }
 
+/** A detached, already-loaded snapshot for synchronous lifecycle effect fences. Never loads or writes. */
+export function peekCachedDurableConfig(projectPath: string, agentId: string): Readonly<DurableAgentConfig> | null {
+  const agent = configCache.get(projectPath)?.agentsById.get(agentId);
+  return agent ? structuredClone(agent) : null;
+}
+
 /**
  * A project's agents, for reads that must change nothing (#2653). getDurableConfig
  * and listDurable load a project on first use, and loading can write: it repairs

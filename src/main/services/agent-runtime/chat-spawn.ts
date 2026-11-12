@@ -15,7 +15,7 @@ import { randomUUID } from 'crypto';
 import * as path from 'path';
 import type { OrchestratorProvider } from '../../orchestrators';
 import type { FreeAgentPermissionMode, DurableAgentConfig } from '../../../shared/types';
-import type { ChatEventDataMap, PermissionLevel, RoutedMessagePart, SessionEndReason } from '../../../shared/chat';
+import type { AgentRuntime, ChatEventDataMap, PermissionLevel, RoutedMessagePart, SessionEndReason } from '../../../shared/chat';
 import { agentRegistry, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
 import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
@@ -35,7 +35,7 @@ import { listChatDrivers, resolveChatDriver } from './chat-drivers';
 import { driverHealthKey, driverPausedReason, probeDriver, recordDriverFailure, recordDriverSuccess } from './chat-driver-health';
 import { cliLabel, evaluateCliVersion, type CliVersionStatus } from './chat-version-policy';
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
-import { listChatRuntimes, registerChatRuntime, unregisterChatRuntime } from './index';
+import { getAgentRuntime, listChatRuntimes, registerChatRuntime, unregisterChatRuntime } from './index';
 import { trackSessionCapture, noteSessionCaptureFailure } from '../session-capture-barrier';
 import { listChatSessions } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
@@ -74,6 +74,8 @@ export interface ChatSpawnParams {
   extraArgs?: string[];
   /** A quick agent someone will talk to (started from a phone) gets chat like a durable one. */
   interactive?: boolean;
+  /** Main-only; a refusal fails this launch, never another driver or CLI fallback. */
+  beforeCreate?: (runtime?: AgentRuntime) => void;
 }
 
 /** Free Agent Mode maps onto the permission ladder; otherwise ask first. */
@@ -607,6 +609,8 @@ async function runChatStart(
     { env, mcpServers, mcpHttpEndpoints, continued }: NonNullable<typeof prepared>,
   ): Promise<{ ok: true } | { ok: false; error: string; errorCode?: string; sessionStarted: boolean }> {
     let sessionStarted = false;
+    let guardPending = true;
+    let guardFailed = false;
     /** Recorded once the start succeeds: a start that fails falls back to the terminal, which records its own. */
     let resumeResult: ReturnType<typeof chatResumeResult> | undefined;
     /** `exitCode` marks the session's end, the one write recorded as its capture (#2305). */
@@ -659,6 +663,16 @@ async function runChatStart(
       idleTimeoutMs: () => chatIdleTimeoutMs(params.agentId),
       shouldIdleSleep: () => !waitsOnPollingGroupProject(params.agentId),
       startSession: async (resumeId, startSignal) => {
+        if (guardPending && params.beforeCreate) {
+          try {
+            params.beforeCreate(runtime);
+            if (getAgentRuntime(params.agentId) !== runtime) throw new Error('The chat runtime changed before process creation.');
+          } catch (error) {
+            guardFailed = true;
+            throw error;
+          }
+        }
+        guardPending = false;
         const session = await driver.start({
         agentId: params.agentId,
         provider: provider.id,
@@ -726,12 +740,14 @@ async function runChatStart(
         // a replaced start is abandoned here, without onEnded.
         await runtime.abandon();
         unregisterChatRuntime(params.agentId, runtime);
+        if (guardFailed) throw err;
         throw new ChatStartCancelledError();
       }
       // Close the chat CLI without firing onEnded: a fallback reuses this
       // agent id, and a late untrack/exit broadcast would hit it.
       await runtime.abandon();
       unregisterChatRuntime(params.agentId, runtime);
+      if (guardFailed) throw err;
       const message = err instanceof Error ? err.message : String(err);
       appLog('core:chat', 'warn', 'Chat start failed', { meta: { agentId: params.agentId, driver: driver.id, error: message, sessionStarted } });
       recordBreadcrumb('error', `chat.start_failed.${codePart(driver.id)}`);

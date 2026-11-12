@@ -62,9 +62,9 @@ import { takeChatStartFailure } from './stale-session';
 import { untrackAgent } from '../agent-registry';
 import { appLog } from '../log-service';
 import { registerChatDriver, clearChatDrivers } from './chat-drivers';
-import { getAgentRuntime, clearChatRuntimes, isChatAgent } from './index';
+import { getAgentRuntime, clearChatRuntimes, isChatAgent, registerChatRuntime } from './index';
 import { FakeChatDriver } from './fake-chat-driver';
-import type { ChatAgentRuntime } from './chat-runtime';
+import { ChatAgentRuntime } from './chat-runtime';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { chatIdleTimeoutMs, clearAgentIdleSleep, setAgentIdleSleep } from '../chat-idle-settings';
 import { clearDriverHealth, DRIVER_FAILURE_THRESHOLD } from './chat-driver-health';
@@ -115,6 +115,64 @@ beforeEach(() => {
 });
 
 describe('chat spawn', () => {
+  it.each(['probe', 'mcp', 'transcript', 'bridge'] as const)('refuses driver and CLI fallback when strict authority changes during %s preparation', async (stage) => {
+    const driver = new FakeChatDriver();
+    const fallback = new FakeChatDriver('claude_agent_sdk');
+    registerChatDriver(driver); registerChatDriver(fallback);
+    mode.value = { mode: 'chat', driver: driver.id };
+    const actualStart = vi.spyOn(driver, 'start');
+    const fallbackStart = vi.spyOn(fallback, 'start');
+    let permitted = true;
+    if (stage === 'probe') vi.spyOn(driver, 'probe').mockImplementationOnce(async () => {
+      await Promise.resolve(); permitted = false; return { handshakeOk: true, capabilities: driver.capabilities };
+    });
+    if (stage === 'mcp') vi.mocked(resolveAgentMcpServers).mockImplementationOnce(async () => { await Promise.resolve(); permitted = false; return {}; });
+    if (stage === 'transcript') vi.mocked(listChatSessions).mockImplementationOnce(async () => { await Promise.resolve(); permitted = false; return []; });
+    if (stage === 'bridge') vi.mocked(waitMcpBridgeReady).mockImplementationOnce(async () => { await Promise.resolve(); permitted = false; return 4321; });
+    await expect(tryStartChatAgent({
+      ...params, resume: stage === 'transcript', sessionId: 'native-original',
+      beforeCreate: () => { if (!permitted) throw new Error('restart authority changed'); },
+    }, provider, undefined, null)).rejects.toThrow('restart authority changed');
+    expect(actualStart).not.toHaveBeenCalled();
+    expect(fallbackStart).not.toHaveBeenCalled();
+    expect(getAgentRuntime(params.agentId)).toBeUndefined();
+    expect(hasChatStartInFlight(params.agentId)).toBe(false);
+  });
+
+  it('does not create through a replacement of its exact candidate runtime', async () => {
+    const driver = new FakeChatDriver();
+    registerChatDriver(driver);
+    await tryStartChatAgent({ ...params, mission: undefined }, provider, undefined, null);
+    const original = getAgentRuntime(params.agentId)!;
+    const actualStart = vi.spyOn(driver, 'start');
+    const realStart = ChatAgentRuntime.prototype.start;
+    let stopCandidate: (() => Promise<void>) | undefined;
+    const window = vi.spyOn(ChatAgentRuntime.prototype, 'start').mockImplementationOnce(function (this: ChatAgentRuntime, ...args) {
+      stopCandidate = () => this.stop();
+      const pending = realStart.apply(this, args);
+      registerChatRuntime(original);
+      return pending;
+    });
+    try {
+      await expect(tryStartChatAgent({ ...params, beforeCreate: () => {} }, provider, undefined, null)).rejects.toThrow();
+      expect(actualStart).not.toHaveBeenCalled();
+      expect(getAgentRuntime(params.agentId)).toBe(original);
+      expect(original.isRunning()).toBe(true);
+    } finally { window.mockRestore(); await stopCandidate?.(); await original.stop(); }
+  });
+
+  it('does not retain an initial creation guard as authority for later clear-context sessions', async () => {
+    const driver = new FakeChatDriver();
+    registerChatDriver(driver);
+    let permitted = true;
+    const beforeCreate = vi.fn(() => { if (!permitted) throw new Error('old restart authority'); });
+    expect(await tryStartChatAgent({ ...params, beforeCreate }, provider, undefined, null)).toBe('chat');
+    permitted = false;
+    await getAgentRuntime(params.agentId)!.clearContext();
+    expect(beforeCreate).toHaveBeenCalledOnce();
+    expect(driver.sessions).toHaveLength(2);
+  });
+
   it.each([undefined, { PATH: '/launch/bin', CODEX_HOME: '/launch/codex' }])(
     'uses the launch environment, CLI config dirs included, for both probe and start (%j)', async (launch) => {
       vi.mocked(getShellEnvironment).mockReturnValue({

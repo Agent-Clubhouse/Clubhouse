@@ -83,6 +83,7 @@ async function readFile(root: string, relative: string, limit: number): Promise<
   try {
     const before = await file.stat();
     if (!before.isFile()) throw new SourceError('A source member is not an ordinary file.');
+    if (before.nlink !== 1) throw new SourceError('A source member has multiple hard links; the complete import was refused.');
     if (before.size > limit) throw new SourceError('The source exceeds the import size limit.');
     const bytes = Buffer.alloc(Math.min(before.size + 1, limit + 1));
     let length = 0;
