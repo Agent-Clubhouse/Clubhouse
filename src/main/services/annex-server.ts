@@ -216,6 +216,7 @@ const MDNS_RESTART_DELAY_MS = 30_000;
 let serverPort = 0; // Main TLS port
 let boundHost = ''; // networkProfile.host while running
 let serverGeneration = 0;
+const pendingListens = new Set<() => void>();
 let currentPin = '';
 let currentPinIssuedAt = 0;
 let pinRotationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -4974,13 +4975,25 @@ export function start(): void {
   void startServer();
 }
 
+export class AnnexStartFailure extends Error {
+  constructor(readonly cause: unknown, private readonly generation: number, private readonly interrupted: boolean) {
+    super(cause instanceof Error ? cause.message : 'Annex secure listener startup failed.');
+    this.name = 'AnnexStartFailure';
+  }
+
+  wasSuperseded(): boolean {
+    return this.interrupted || serverGeneration !== this.generation;
+  }
+}
+
 /** MCP settings changes require actual secure readiness, not a scheduled listen. */
 export async function startVerified(): Promise<void> {
   const generation = serverGeneration + 1;
   try { await startServer(true); }
   catch (err) {
-    if (serverGeneration === generation) stop();
-    throw err;
+    const interrupted = serverGeneration !== generation;
+    if (!interrupted) stop();
+    throw new AnnexStartFailure(err, generation + (interrupted ? 0 : 1), interrupted);
   }
 }
 
@@ -5521,22 +5534,36 @@ function listenServer(server: http.Server | https.Server, host: string): ListenF
       reject(new Error('Annex server stopped before listen'));
       return;
     }
-    const onError = (err: Error) => {
-      server.close();
-      reject(err);
-    };
-    server.once('error', onError);
-    server.listen(port, address, () => {
+    let settled = false;
+    const settle = (complete: () => void): void => {
+      if (settled) return;
+      settled = true;
+      pendingListens.delete(cancel);
       server.removeListener('error', onError);
+      server.removeListener('close', onClose);
+      server.removeListener('listening', onListening);
+      complete();
+    };
+    const cancel = () => settle(() => reject(new Error('Annex server stopped while binding')));
+    const onClose = () => settle(() => reject(new Error('Annex server closed before listen completed')));
+    const onError = (err: Error) => settle(() => {
+      server.close(() => reject(err));
+    });
+    const onListening = () => {
+      if (settled) return;
       if (!isCurrentServer(server)) {
-        server.close();
-        reject(new Error('Annex server stopped while binding'));
+        onError(new Error('Annex server stopped while binding'));
         return;
       }
       const addr = server.address();
-      if (addr && typeof addr === 'object') resolve(addr.port);
-      else reject(new Error('Annex server has no address after listen'));
-    });
+      if (addr && typeof addr === 'object') settle(() => resolve(addr.port));
+      else onError(new Error('Annex server has no address after listen'));
+    };
+    pendingListens.add(cancel);
+    server.once('error', onError);
+    server.once('close', onClose);
+    try { server.listen(port, address, onListening); }
+    catch (err) { onError(err instanceof Error ? err : new Error(String(err))); }
   });
   // Every interface means IPv6 too (#3058): '::' takes IPv4 and IPv6 alike. Where the
   // system has no IPv6, fall back to IPv4 only.
@@ -5567,6 +5594,7 @@ function rememberBoundPorts(): void {
 
 export function stop(): void {
   serverGeneration++;
+  for (const cancel of pendingListens) cancel();
   // Unsubscribe from event bus
   unsubscribeEventBus();
   if (refreshFollowUp) clearTimeout(refreshFollowUp);
