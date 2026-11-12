@@ -132,6 +132,35 @@ describe('add_project (#3239)', () => {
     expect(ensureGitignore).not.toHaveBeenCalled();
   });
 
+  it('reports the registered project when saving its display name fails, so a retry can reuse it', async () => {
+    const dir = folder();
+    const update = vi.spyOn(projectStore, 'update').mockRejectedValueOnce(new Error('Name could not be saved.'));
+    try {
+      const { body, isError } = await call({ path: dir, displayName: 'Shop' });
+      expect(isError).toBe(false);
+      expect(body).toMatchObject({
+        status: 'added', path: dir, name: path.basename(dir),
+        partial: true, displayNameError: 'Name could not be saved.',
+        warning: 'The project was added, but its display name could not be saved. Use update_project to rename it.',
+      });
+      expect(body.projectId).toMatch(/^proj_/);
+      expect(await registeredFor(dir)).toBe(1);
+      const retry = await call({ path: dir, displayName: 'Shop' });
+      expect(retry.body).toMatchObject({ status: 'already_registered', projectId: body.projectId });
+    } finally {
+      update.mockRestore();
+    }
+  });
+
+  it('reports a failed gitignore update separately from successful registration', async () => {
+    const dir = folder();
+    vi.mocked(ensureGitignore).mockRejectedValueOnce(new Error('Read-only file.'));
+    const { body, isError } = await call({ path: dir });
+    expect(isError).toBe(false);
+    expect(body).toMatchObject({ status: 'added', path: dir, gitignore: 'failed', partial: true });
+    expect(await registeredFor(dir)).toBe(1);
+  });
+
   it('refuses a relative path, a missing folder, a file, an agent worktree and Clubhouse\'s own folders', async () => {
     const dir = folder();
     const file = path.join(dir, 'notes.txt');

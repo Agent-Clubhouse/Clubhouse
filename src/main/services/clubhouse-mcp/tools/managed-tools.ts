@@ -561,9 +561,29 @@ export function registerManagedTools(): void {
 
   describeCallsForAsk('create_managed_agent', (args) => `Create ${String(args.name)} in ${String(args.project)}.${args.connectToDispatcher === true ? ' Connect only that new agent to the Dispatcher controller in both directions. Each direction can read, message and wake, with clear and compact off. Existing user switches stay as they are.' : ''}`);
   tool('create_managed_agent', CREATE_GRANTS.map((g) => ({ ...g, askHandledByTool: true })),
-    'Create a durable agent, asleep. connectToDispatcher: true asks for the separate connection.bootstrap permission on only this new agent, Ask first by default. Once connected, its generated wake_agent and send_message tools become available. Without it, ask the user to enable Connect to Dispatcher; an unconnected agent cannot be woken or messaged here. Both connection directions start with read, message and wake on, clear and compact off. Retrying the same connected creation in this app session returns its receipt, not another agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts. settings.orchestration.connectToDispatcher is not accepted.',
-    { project: PROJECT, name: S, color: S, connectToDispatcher: { type: 'boolean', description: 'Connect only the agent created by this call, with separate approval. Default false.' }, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
+    'Create a durable agent, asleep. connectToDispatcher: true asks for the separate connection.bootstrap permission on only this new agent, Ask first by default. Once connected, its generated wake_agent and send_message tools become available. Without it, ask the user to enable Connect to Dispatcher; an unconnected agent cannot be woken or messaged here. Both connection directions start with read, message and wake on, clear and compact off. Retrying the same connected creation in this app session returns its receipt, not another agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). Explicit settings override the template field by field; omitted settings inherit it. The CLI is settings.orchestrator and its model is settings.model, not top-level arguments or settings.provider. With no CLI in either, the project CLI then the app default applies. managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts. settings.orchestration.connectToDispatcher is not accepted.',
+    { project: PROJECT, name: S, color: S, connectToDispatcher: { type: 'boolean', description: 'Connect only the agent created by this call, with separate approval. Default false.' }, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: {
+      type: 'object',
+      description: 'Explicit settings override the template field by field. Confirm the CLI, model, access and orchestration with the user before creation.',
+      properties: {
+        orchestrator: { type: 'string', description: 'CLI id, for example copilot-cli, codex-cli or claude-code. Overrides the template CLI.' },
+        model: { type: 'string', description: 'Model id for the chosen CLI, or "default" for its default model. Overrides the template model.' },
+        effort: { type: ['string', 'null'] }, access: { type: 'string', enum: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'] },
+        freeAgentMode: { type: 'boolean', description: 'Legacy access toggle; prefer access.' },
+        orchestration: OBJ, idleSleep: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'string', enum: ['never'] }, { type: 'null' }] },
+        helperTemplateId: { type: ['string', 'null'] },
+      },
+    } }, ['project', 'name'],
     async (callerId, args) => {
+      if (['provider', 'orchestrator', 'model'].some((key) => key in args)) {
+        throw new ArgError('Set the CLI with settings.orchestrator and its model with settings.model, not top-level provider, orchestrator or model. Nothing was created.');
+      }
+      const settings = settingsArg(args);
+      if (settings && 'provider' in settings) {
+        throw new ArgError('settings.provider is not accepted. Use settings.orchestrator for the CLI and settings.model for its model. Nothing was created.');
+      }
+      // Validate without normalizing: callerAccess must still resolve legacy access against the template.
+      checkTemplateSettings(settings);
       const project = await resolveProject(requireString(args, 'project'));
       const hasSetup = ['blocks', 'skills', 'mcps'].some((k) => args[k] !== undefined);
       const plain = optionalBoolean(args, 'managed') === false;
@@ -575,7 +595,7 @@ export function registerManagedTools(): void {
         ...(plain && { managed: false as const }),
         templateId: optionalString(args, 'templateId'),
         ...(hasSetup && { setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') } }),
-        settings: settingsArg(args),
+        settings,
       };
       // A template's Clubhouse permissions pass only as far as the caller holds them (#2971, fixed rule 2).
       if (input.templateId) {

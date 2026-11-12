@@ -55,9 +55,20 @@ async function addProject(agentId: string, args: Record<string, unknown>): Promi
 
   const result = await registerProjectFolder(folder.path);
   let project = result.project;
+  let warning: string | undefined;
+  let displayNameError: string | undefined;
   if (result.created && displayName) {
-    const updated = await projectStore.update(project.id, { displayName });
-    project = updated.find((p) => p.id === project.id) ?? project;
+    try {
+      const updated = await projectStore.update(project.id, { displayName });
+      project = updated.find((p) => p.id === project.id) ?? project;
+    } catch (err) {
+      // telemetry-exempt: registration succeeded; report the remaining naming step separately.
+      displayNameError = err instanceof Error ? err.message : String(err);
+      appLog('core:mcp', 'warn', 'add_project display name failed', {
+        meta: { agentId, projectId: project.id, error: displayNameError },
+      });
+      warning = 'The project was added, but its display name could not be saved. Use update_project to rename it.';
+    }
   }
   appLog('core:mcp', 'info', 'An agent added a project', { meta: { agentId, projectId: project.id, created: result.created } });
   return json({
@@ -68,6 +79,8 @@ async function addProject(agentId: string, args: Record<string, unknown>): Promi
     canonicalPath: folder.canonicalPath,
     ...git,
     ...(result.gitignore && { gitignore: result.gitignore }),
+    ...((warning || result.gitignore === 'failed') && { partial: true }),
+    ...(warning && { warning, displayNameError }),
   });
 }
 
@@ -86,6 +99,7 @@ export function registerProjectAddTools(): void {
         'A folder that is already a project (by its real path, through links or another spelling) returns "already_registered" and adds nothing. ' +
         'Returns the project id, path, canonical path, whether it is a git repository, its default branch and origin. ' +
         'A new project gets Clubhouse\'s lines in its .gitignore, reported as "gitignore". ' +
+        'If naming or .gitignore updates fail after registration, partial: true keeps the registered project id and reports the unfinished step; reuse that project rather than cloning again. ' +
         'Agent worktrees and Clubhouse\'s own folders are refused. dryRun checks without changing anything.',
       inputSchema: {
         type: 'object',
