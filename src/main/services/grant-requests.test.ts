@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GRANT_REQUEST_TTL_MS, MAX_PENDING_GRANT_REQUESTS_PER_AGENT } from '../../shared/grant-requests';
 import {
-  callKey, consumeCallApproval, dropGrantRequestsFor, listGrantRequests, onGrantRequestsChanged,
-  peekGrantRequest, recordGrantRequest, takeGrantRequest, _resetGrantRequestsForTesting,
+  callKey, consumeCallApproval, consumeCallApprovalScope, dropGrantRequestsFor, listGrantRequests, onGrantRequestsChanged,
+  peekGrantRequest, recordGrantRequest, restoreGrantRequest, takeGrantRequest, _resetGrantRequestsForTesting,
 } from './grant-requests';
 
 const base = { kind: 'call' as const, agentId: 'a1', agentName: 'Ada', projectPath: '/p', actions: ['settings.app.write' as const], where: 'the app', toolName: 'set_helper_presets' };
@@ -66,6 +66,52 @@ describe('permission requests (#2970)', () => {
     if (!r.ok) throw new Error('not recorded');
     takeGrantRequest(r.request.requestId, true, 10);
     expect(consumeCallApproval(key, GRANT_REQUEST_TTL_MS + 1)).toBe(false);
+  });
+
+  it('consumes only the original cloned private scope once, not later caller mutations', () => {
+    const key = callKey('a1', 't', {});
+    const scope = { context: 'original-policy-and-target', asks: [{ action: 'settings.app.write' as const, where: 'the app' }] };
+    const r = recordGrantRequest(key, base, 0, scope);
+    if (!r.ok) throw new Error('not recorded');
+    scope.context = 'a-different-target';
+    scope.asks[0].where = 'another scope';
+    takeGrantRequest(r.request.requestId, true, 10);
+    expect(consumeCallApprovalScope(key, 20)).toEqual({
+      requestId: r.request.requestId,
+      scope: { context: 'original-policy-and-target', asks: [{ action: 'settings.app.write', where: 'the app' }] },
+    });
+    expect(consumeCallApprovalScope(key, 20)).toBeNull();
+    expect(consumeCallApproval(key, 20)).toBe(false);
+  });
+
+  it('withdraws an old pending request when the exact same call has a new private scope', () => {
+    const key = callKey('a1', 't', {});
+    const asks = [{ action: 'settings.app.write' as const, where: 'the app' }];
+    const old = recordGrantRequest(key, base, 0, { context: 'old-target', asks });
+    const current = recordGrantRequest(key, base, 10, { context: 'new-target', asks });
+    if (!old.ok || !current.ok) throw new Error('not recorded');
+    expect(current.reused).toBe(false);
+    expect(takeGrantRequest(old.request.requestId, true, 20)).toBeNull();
+    expect(listGrantRequests(20)).toEqual([current.request]);
+    takeGrantRequest(current.request.requestId, true, 20);
+    expect(consumeCallApprovalScope(key, 30)?.scope.context).toBe('new-target');
+  });
+
+  it('restores original private scope after an answer save fails and rejects legacy key-only scope', () => {
+    const key = callKey('a1', 't', {});
+    const scope = { context: 'original', asks: [{ action: 'settings.app.write' as const, where: 'the app' }] };
+    const r = recordGrantRequest(key, base, 0, scope);
+    if (!r.ok) throw new Error('not recorded');
+    takeGrantRequest(r.request.requestId, false, 10);
+    scope.context = 'changed-after-take';
+    expect(restoreGrantRequest(r.request, key, 20)).toBe(true);
+    takeGrantRequest(r.request.requestId, true, 30);
+    expect(consumeCallApprovalScope(key, 40)?.scope.context).toBe('original');
+    const legacy = recordGrantRequest(key, base, 50);
+    if (!legacy.ok) throw new Error('not recorded');
+    takeGrantRequest(legacy.request.requestId, true, 60);
+    expect(consumeCallApprovalScope(key, 70)).toBeNull();
+    expect(consumeCallApproval(key, 70)).toBe(false);
   });
 
   it('an allowed permission request leaves no call approval', () => {

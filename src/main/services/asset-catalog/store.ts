@@ -142,8 +142,9 @@ const RENAME_ATTEMPTS = 5;
 const RENAME_BACKOFF_MS = 50;
 
 /** Windows refuses a rename while something, often a virus scanner, holds the target open for a moment. */
-async function renameWithRetry(rename: (from: string, to: string) => Promise<void>, from: string, to: string): Promise<void> {
+async function renameWithRetry(rename: (from: string, to: string) => Promise<void>, from: string, to: string, beforeCommit?: () => Promise<void>): Promise<void> {
   for (let attempt = 1; ; attempt++) {
+    if (beforeCommit) await beforeCommit();
     try {
       await rename(from, to);
       return;
@@ -331,7 +332,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     return run;
   };
 
-  async function writeAtomically(file: string, body: string): Promise<void> {
+  async function writeAtomically(file: string, body: string, beforeCommit?: () => Promise<void>): Promise<void> {
     await fsp.mkdir(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp.${randomUUID().slice(0, 8)}`;
     try {
@@ -342,7 +343,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       } finally {
         await handle.close();
       }
-      await renameWithRetry(rename, tmp, file);
+      await renameWithRetry(rename, tmp, file, beforeCommit);
     } catch (err) {
       await fsp.rm(tmp, { force: true }).catch((): void => undefined);
       throw err;
@@ -378,8 +379,8 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     return parsed as unknown as CatalogIndex;
   }
 
-  async function commitIndex(index: CatalogIndex): Promise<void> {
-    await persist.timed('asset_catalog', () => writeAtomically(indexPath, JSON.stringify(index, null, 2)));
+  async function commitIndex(index: CatalogIndex, beforeCommit?: () => Promise<void>): Promise<void> {
+    await persist.timed('asset_catalog', () => writeAtomically(indexPath, JSON.stringify(index, null, 2), beforeCommit));
   }
 
   async function writeRevisionFile(entry: Pick<CatalogEntry, 'id' | 'kind'>, record: AssetRevisionRecord, payload: AssetPayload): Promise<void> {
@@ -944,8 +945,8 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       return newId();
     },
 
-    /** Save a new asset, unassigned. */
-    createAsset(input: { kind: AssetKind; name: string; payload: unknown; source?: AssetSource; owner?: AssetOwner }): Promise<CatalogEntry> {
+    /** Save a new asset, unassigned. A main-only guard runs after queued/payload work, before every index rename attempt. */
+    createAsset(input: { kind: AssetKind; name: string; payload: unknown; source?: AssetSource; owner?: AssetOwner }, beforeCommit?: () => Promise<void>): Promise<CatalogEntry> {
       return guarded({ scope: 'app', key: `assetCatalog.${input.kind}` }, () => serial(async () => {
         const source = input.source ?? { kind: 'user' as const };
         const owner = input.owner ?? { kind: 'library' as const };
@@ -968,7 +969,7 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
           revisions: [record],
         };
         await writeRevisionFile(entry, record, payload);
-        await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: entry } });
+        await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: entry } }, beforeCommit);
         await auditCommitted('app', `assetCatalog.${entry.kind}.created`, entry.id);
         return entry;
       }));

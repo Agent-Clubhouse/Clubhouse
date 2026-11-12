@@ -29,7 +29,8 @@ const ask = vi.hoisted(() => ({ askFirst: vi.fn() }));
 vi.mock('./ask-first', () => ask);
 
 import { registerAgentTools } from './tools/agent-tools';
-import { buildToolName, callTool, getScopedToolList, refusalReasonOf, _resetForTesting as resetTools } from './tool-registry';
+import { buildToolName, callTool, getScopedToolList, grantApprovalContext, listToolGrants, refusalReasonOf, _resetForTesting as resetTools } from './tool-registry';
+import { resolveArgTargets } from './arg-targets';
 import { mcpAdapter } from './mcp-adapter';
 import { bindingManager } from './binding-manager';
 import { setDispatcherAgent, setDispatcherChatAgent, _resetDispatcherGateForTesting } from './dispatcher-gate';
@@ -128,7 +129,14 @@ describe('wake on a local connection (#3215)', () => {
     expect(suffixes('a', 'b')).toContain('wake_agent');
     const asked = await call('a', 'b', 'wake_agent');
     expect(refusalReasonOf(asked)).toBe('ask_first');
-    expect(ask.askFirst).toHaveBeenCalledWith('a', expect.stringMatching(/__wake_agent$/), {}, [{ action: 'agent.wake', where: 'an agent you are connected to' }]);
+    const wake = listToolGrants().find((tool) => tool.kind === 'agent' && tool.name === 'wake_agent');
+    if (!wake?.grant || wake.grant === 'plugin') throw new Error('Wake grant unavailable');
+    const name = buildToolName(wire('a', 'b'), 'wake_agent');
+    const targets = await resolveArgTargets('a', wake.grant, {});
+    const context = grantApprovalContext('a', name, {}, wake.grant, targets, { binding: wire('a', 'b') });
+    expect(ask.askFirst).toHaveBeenCalledWith('a', name, {}, [{ action: 'agent.wake', where: 'an agent you are connected to' }], context);
+    expect(context).not.toBe(grantApprovalContext('a', name, { message: 'another intent' }, wake.grant, targets, { binding: wire('a', 'b') }));
+    expect(context).not.toBe(grantApprovalContext('a', name, {}, wake.grant, targets, { binding: wire('a', 'other') }));
     expect(lifecycle.wakeWiredAgent).not.toHaveBeenCalled();
 
     await updateAgentGrantChanges('a', () => ({ changes: [{ action: 'agent.wake', target: WAKE_ON, mode: 'off' }] }));
@@ -136,6 +144,7 @@ describe('wake on a local connection (#3215)', () => {
     const refused = await call('a', 'b', 'wake_agent');
     expect(refusalReasonOf(refused)).toBe('no_grant');
     expect(refused.content[0].text).toContain('agent.wake');
+    expect(ask.askFirst).toHaveBeenCalledTimes(1);
     expect(lifecycle.wakeWiredAgent).not.toHaveBeenCalled();
   });
 

@@ -25,6 +25,20 @@ Epic: #2819. Sub-issues: #2893 (New agent), #2894 (parts library), #2895 (builde
 
 The service remembers each running session's delivered fingerprint. `statusFor` compares it with the current setup to drive the "Setup changed" bar. `restartManagedAgent` stops the agent and resumes its last session, or starts a new conversation when asked or when the CLI changed.
 
+## Scoped discovery and import (#2855)
+
+The Dispatcher's `discover_agent_assets` reads only a registered source agent's own effective-provider folder: immediate skill folders with a regular `SKILL.md`, and its local JSON MCP definitions. It takes no filesystem path. Plain agents are read-only sources, never converted. Global, inherited and other-provider assets are explicitly outside this inventory; native TOML MCP configuration is reported unsupported and left untouched. Discovery is not effective configuration or provider-loaded evidence.
+
+`import_agent_asset` requires source `agent.read` and library read/write grants at every call and checks them freshly at the catalog's serialized commit boundary. The first call previews the complete selected bundle without returning content or absolute paths. The caller-bound, single-use, ten-minute confirmation token is not user permission: an Ask-first call still requires its separate, exact one-time approval. Confirmation re-reads source bytes, the registered worktree/provider and the library snapshot immediately before committing; changes require a new preview. Registered source transitions are held off while the import commits. `mode: copy` with a new library name makes an independent bundle with path-free import provenance. `mode: reuse` with an explicitly chosen, exactly matching `partId` follows future shared edits; no part is silently selected, forked or edited. Existing `fork_agent_part` remains the way to make an independent copy of a library part.
+
+Ask-first retains the original request's private caller/policy/canonical-target context and actions through the user's answer; it never reconstructs approved scope from current permissions. Changed context requires a new request, including a display name resolving to another agent. This proof is memory-local and one-use, not durable or remote authority. Imports also refresh inherited provider defaults between snapshots and synchronously reject project-registry changes before commit. Conservatively, any project-registry update during the operation requires a fresh preview, even for an unrelated project.
+
+A library create commits its catalog entry before supplementary metadata. If metadata or readback then fails, the tool returns an explicit error-shaped `partial` receipt with the durable part id/revision and unfinished stage, never a full-failure or rollback claim. Read that existing part and repair its metadata after fixing storage; do not retry creation automatically. The catalog entry remains durable recovery evidence even when metadata could not be saved.
+
+Imports preserve supporting/binary files and executable flags, never run scripts or MCP servers, reject the complete bundle for links, unsafe paths, credential files/content or unsupported native fields, and use bounded file/count/depth/byte reads. MCP duplicate fields are refused rather than resolved by last-write precedence. Literal environment values are omitted with their variable names reported for external setup. Dependency resolution, provider compatibility and model-visible loading remain **not confirmed**, not inferred from discovery, file writes or a handshake.
+
+Import changes only the library. Assignment/unassignment still uses `set_agent_setup`; restart still requires separate lifecycle authority. No provider, driver, access, conversation, wiring, credential ownership or plain-agent files are changed by discovery/import. This slice does not yet admit arbitrary shared folders, home/plugin scanning, native non-JSON MCP import, executable dependency checks or paid activation probes.
+
 ## Decision log
 
 Decisions made while building, for the maintainer to revisit. Newest last.

@@ -140,7 +140,7 @@ async function agentTarget(lookup: Lookup, config: DurableAgentConfig, projectPa
   const connected = await isConnected(lookup, config, projectPath);
   if (connected) relations.push('connected');
   const wakeOn = connected && localConnectionWakeOn(caller, config.id);
-  return { kind: 'agent', relations, projectPath, isDispatcher: isTrackedDispatcher(config.id), ...(wakeOn && { wakeOn: true }) };
+  return { kind: 'agent', agentId: config.id, relations, projectPath, isDispatcher: isTrackedDispatcher(config.id), ...(wakeOn && { wakeOn: true }) };
 }
 
 /**
@@ -191,7 +191,7 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
   // agent_arg
   if (refs.length === 0) {
     if (from.missing !== 'caller') return null;
-    return [{ kind: 'agent', relations: ['self'], ...(lookup.callerProject && { projectPath: lookup.callerProject }), isDispatcher: isTrackedDispatcher(lookup.callerId) }];
+    return [{ kind: 'agent', agentId: lookup.callerId, relations: ['self'], ...(lookup.callerProject && { projectPath: lookup.callerProject }), isDispatcher: isTrackedDispatcher(lookup.callerId) }];
   }
   // Each reference on its own: one that matches nothing is left to the tool; one that matches
   // several agents (a shared name) is checked against every one of them.
