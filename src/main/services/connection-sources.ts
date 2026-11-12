@@ -27,7 +27,7 @@ import { appLog } from './log-service';
 import { forgetDispatcherDirection, removeUserLink } from './connection-grants';
 import type { DispatcherLink } from '../../shared/types';
 import { removeStoredPair } from './orchestrator-connections';
-import { collectSourcesByPair, markBindingRemovedByUser, markSourceRemovedByUser, persistedPairKey, rebuildPersistedBindings, releaseSourceBinding } from './persisted-bindings';
+import { collectSourcesByPair, inspectPersistedBindingSource, isBindingRemovedByUser, markBindingRemovedByUser, markSourceRemovedByUser, persistedPairKey, rebuildPersistedBindings, releaseSourceBinding, type PersistedBinding } from './persisted-bindings';
 
 // The persisted sources' ids (persisted-bindings registrations), stable across releases.
 const ORCHESTRATOR_CONNECTION_SOURCE_ID = 'orchestrator-connections';
@@ -49,12 +49,48 @@ const SUSPENDED_WHY: Readonly<Record<string, string>> = {
 
 /** Every pair touching the agent, in both directions, with the sources holding each. */
 export async function listConnectionSources(agentId: string): Promise<AgentConnectionSources> {
-  const { bySource, failed } = await collectSourcesByPair();
-  const links = await listDispatcherLinksForUser().catch((): DispatcherLink[] => []);
+  const { bySource, failed } = await collectSourcesByPair({ cachedOnly: true });
+  const unreadable = new Set(failed);
+  const inspectedPairs = new Map<string, Map<string, PersistedBinding>>();
+  for (const sourceId of ['canvas-wires', 'dispatcher-wires', DISPATCHER_CONNECTION_SOURCE_ID]) {
+    try {
+      const inspected = await inspectPersistedBindingSource(sourceId);
+      if (!inspected) continue;
+      const bindings = Array.isArray(inspected) ? inspected : inspected.bindings;
+      if ((!Array.isArray(inspected) && inspected.unverified?.length)
+        || bindings.some((b) => !b.agentId || !b.targetId || !b.label?.trim()
+          || (sourceId !== 'canvas-wires' && (b.targetKind !== 'agent' || !b.agentName?.trim() || !b.targetName?.trim())))) {
+        throw new Error('Saved connection source metadata is unknown.');
+      }
+      const saved = new Map(bindings.filter((binding) => !isBindingRemovedByUser(binding.agentId, binding.targetId))
+        .map((binding) => [persistedPairKey(binding.agentId, binding.targetId), binding]));
+      inspectedPairs.set(sourceId, saved);
+      bySource.set(sourceId, new Set(saved.keys()));
+      unreadable.delete(sourceId);
+    } catch (error) {
+      // telemetry-exempt: appLog reports the error and the returned unreadable marker reaches the UI
+      bySource.delete(sourceId);
+      unreadable.add(sourceId);
+      appLog('core:mcp', 'warn', 'Could not inspect saved connections', { meta: { sourceId, error: String(error) } });
+    }
+  }
+  const automatic = inspectedPairs.get('dispatcher-wires');
+  let links: DispatcherLink[];
+  try {
+    links = await listDispatcherLinksForUser({ strict: true });
+  } catch (error) {
+    // telemetry-exempt: appLog reports the error and the Dispatcher unreadable marker reaches the UI
+    links = [];
+    bySource.delete(DISPATCHER_CONNECTION_SOURCE_ID);
+    unreadable.add(DISPATCHER_CONNECTION_SOURCE_ID);
+    appLog('core:mcp', 'warn', 'Could not inspect saved Dispatcher links', { meta: { error: String(error) } });
+  }
   const linkStatus = new Map(links.map((l) => [persistedPairKey(l.agentId, l.targetId), l]));
+  const liveBindings = bindingManager.getAllBindings();
+  const boundPairs = new Set(liveBindings.map((binding) => persistedPairKey(binding.agentId, binding.targetId)));
   const pairs = new Map<string, { agentId: string; targetId: string }>();
   const touches = (a: string, t: string) => a === agentId || t === agentId;
-  for (const b of bindingManager.getAllBindings()) {
+  for (const b of liveBindings) {
     if (b.targetKind === 'agent' && touches(b.agentId, b.targetId)) pairs.set(persistedPairKey(b.agentId, b.targetId), { agentId: b.agentId, targetId: b.targetId });
   }
   // A suspended Dispatcher link has no binding and isn't collected, but it is saved.
@@ -72,17 +108,21 @@ export async function listConnectionSources(agentId: string): Promise<AgentConne
       if (!keys.has(key)) continue;
       const kind = KIND_BY_SOURCE[sourceId] ?? 'other';
       const link = kind === 'dispatcher_link' ? linkStatus.get(key) : undefined;
-      sources.push({ kind, sourceId, ...(link && link.status === 'suspended' && { suspended: SUSPENDED_WHY[link.reason ?? ''] ?? 'Suspended.' }) });
+      const savedOnly = kind === 'dispatcher_auto' && automatic?.has(key) && !boundPairs.has(key);
+      sources.push({ kind, sourceId, ...(savedOnly && { suspended: 'Configured, but not connected now.' }),
+        ...(link && link.status === 'suspended' && { suspended: SUSPENDED_WHY[link.reason ?? ''] ?? 'Suspended.' }) });
     }
     // A suspended Dispatcher link isn't collected (no binding), but it is still saved.
     const link = linkStatus.get(key);
     if (link && !sources.some((s) => s.kind === 'dispatcher_link')) {
       sources.push({ kind: 'dispatcher_link', sourceId: DISPATCHER_CONNECTION_SOURCE_ID, ...(link.status === 'suspended' && { suspended: SUSPENDED_WHY[link.reason ?? ''] ?? 'Suspended.' }) });
     }
-    const bound = bindingManager.getBindingsForAgent(pair.agentId).some((b) => b.targetId === pair.targetId);
-    out.push({ ...pair, bound, sources, ...(bound && sources.length === 0 && { unresolved: true }) });
+    const bound = boundPairs.has(key);
+    const saved = automatic?.get(key);
+    out.push({ ...pair, bound, sources, ...(bound && sources.length === 0 && { unresolved: true }),
+      ...(!bound && saved?.agentName && saved.targetName && { inspection: { targetKind: 'agent' as const, agentName: saved.agentName, targetName: saved.targetName } }) });
   }
-  return { pairs: out, unreadable: failed };
+  return { pairs: out, unreadable: [...unreadable] };
 }
 
 /** The agent at the other end of a Dispatcher wire. */

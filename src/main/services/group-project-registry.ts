@@ -250,6 +250,47 @@ class GroupProjectRegistry {
     return [...this.projects.values()];
   }
 
+  /** Navigation and inspection must not load/migrate the registry or schedule a write. */
+  async peek(options: { strict?: boolean } = {}): Promise<GroupProject[]> {
+    if (this.loaded && !options.strict) return [...this.projects.values()];
+    let raw: string;
+    try {
+      raw = await fsp.readFile(registryPath(), 'utf-8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+    let records: unknown;
+    try {
+      records = JSON.parse(raw);
+    } catch (error) {
+      if (options.strict) throw new Error('Group-project registry could not be read. Its file was left unchanged.');
+      throw error;
+    }
+    if (!Array.isArray(records)) throw new Error('Group-project registry is not a list. Repair it and retry Open.');
+    const ids = new Set<string>();
+    return records.map((record: unknown): GroupProject => {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) {
+        throw new Error('Group-project registry contains an invalid entry. Repair it and retry Open.');
+      }
+      const value = record as Record<string, unknown>;
+      if (typeof value.id !== 'string' || !value.id || ids.has(value.id)
+        || typeof value.name !== 'string' || typeof value.createdAt !== 'string'
+        || !value.metadata || typeof value.metadata !== 'object' || Array.isArray(value.metadata)
+        || (value.description !== undefined && typeof value.description !== 'string')
+        || (value.instructions !== undefined && typeof value.instructions !== 'string')) {
+        throw new Error('Group-project registry contains invalid or ambiguous identities. Repair it and retry Open.');
+      }
+      ids.add(value.id);
+      return {
+        id: value.id, name: value.name, createdAt: value.createdAt,
+        description: typeof value.description === 'string' ? value.description : '',
+        instructions: typeof value.instructions === 'string' ? value.instructions : '',
+        metadata: value.metadata as Record<string, unknown>,
+      };
+    });
+  }
+
   async update(id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<GroupProject | null> {
     await this.ensureLoaded();
     const project = this.projects.get(id);

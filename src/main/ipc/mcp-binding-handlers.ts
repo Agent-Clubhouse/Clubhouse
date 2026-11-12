@@ -41,7 +41,7 @@ import { migrateDispatcherLinkTools } from '../services/dispatcher-controls';
 import {
   applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
 } from '../services/connection-grants';
-import { listConnectionDirections } from '../services/connection-grants-store';
+import { listConnectionDirectionsForInspection } from '../services/connection-grants-store';
 import { startAgentCalls } from '../services/annex-agent-calls';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexClient from '../services/annex-client';
@@ -215,7 +215,7 @@ export function registerMcpBindingHandlers(): void {
 
   ipcMain.handle(IPC.MCP_BINDING.GET_DISPATCHER_LINKS, (event) => {
     assertCallerIsAppWindow(event);
-    return listDispatcherLinksForUser();
+    return listDispatcherLinksForUser({ strict: true });
   });
 
   // Agents across machines (#3064): the user connects an agent here with one on another machine.
@@ -245,7 +245,7 @@ export function registerMcpBindingHandlers(): void {
   // Connection permissions (D129, #2972): the user's own surface.
   ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_GRANTS, withValidatedArgs([stringArg({ maxLength: 200 })], (event, agentId) => {
     assertCallerIsAppWindow(event);
-    return listConnectionDirections(agentId as string);
+    return listConnectionDirectionsForInspection(agentId as string);
   }));
   ipcMain.handle(IPC.MCP_BINDING.MAKE_TWO_WAY, withValidatedArgs([stringArg({ maxLength: 200 }), stringArg({ maxLength: 200 })], async (event, fromId, toId) => {
     assertCallerIsAppWindow(event);

@@ -70,6 +70,7 @@ beforeEach(async () => {
     { id: 'p_a', name: 'A', path: path.join(fixture.home, 'a') },
     { id: 'p_b', name: 'B', path: path.join(fixture.home, 'b') },
   ];
+  await Promise.all(fixture.projects.map((project) => fsp.mkdir(project.path, { recursive: true })));
   fixture.configs.clear();
   fixture.configs.set(fixture.projects[0].path, [agent('a')]);
   fixture.configs.set(fixture.projects[1].path, [agent('b')]);

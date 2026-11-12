@@ -1,10 +1,13 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import * as fs from 'fs';
+import fs, * as fsExports from 'fs';
+import * as fspExports from 'fs/promises';
+import { syncBuiltinESMExports } from 'module';
 import * as os from 'os';
 import * as path from 'path';
 
 const userData = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => userData.dir } }));
+vi.mock('./base-dir', () => ({ getBaseDirPath: () => userData.dir }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => null }));
 vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({ ...await original<typeof import('./clubhouse-mcp/mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -12,12 +15,22 @@ vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({ ...await origina
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   _resetPersistedBindingSourcesForTesting, applyPersistedBinding,
-  rebuildPersistedBindings, registerPersistedBindingSource, type PersistedBinding,
+  rebuildPersistedBindings, registerPersistedBindingSource, markBindingRemovedByUser, type PersistedBinding,
 } from './persisted-bindings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from './connection-guidance';
 import { _resetForTesting as resetTools, getScopedToolList, registerToolTemplate } from './clubhouse-mcp/tool-registry';
 import { agentRegistry } from './agent-registry';
+import { registerBuiltinProviders } from '../orchestrators';
+import { dispatcherConnectionSource, dispatcherConnectionsPath, dispatcherPendingRemovalsPath, listDispatcherLinksForUser } from './dispatcher-connections';
+import { dispatcherWireBindingSource } from './dispatcher-wire-source';
+import * as projectStore from './project-store';
+import * as agentConfig from './agent-config';
+import * as orchestrationPolicy from './orchestration-policy';
+import * as dispatcherService from './dispatcher/dispatcher-service';
+import { listConnectionSources } from './connection-sources';
+import { listConnectionDirections, listConnectionDirectionsForInspection } from './connection-grants-store';
+import { groupProjectRegistry } from './group-project-registry';
 
 const wire = (instructions: Record<string, string>, extra: Partial<PersistedBinding> = {}): PersistedBinding => ({
   agentId: 'a', targetId: 'b', targetKind: 'agent', label: 'B', instructions, ...extra,
@@ -29,6 +42,52 @@ function deferred() {
   return { promise, resolve };
 }
 
+async function rawOfflineFixture(source: 'manual' | 'automatic') {
+  const projectPath = path.join(userData.dir, 'project');
+  const agentsFile = path.join(projectPath, '.clubhouse', 'agents.json');
+  fs.mkdirSync(path.dirname(agentsFile), { recursive: true });
+  fs.writeFileSync(path.join(userData.dir, 'projects.json'), JSON.stringify({
+    version: 1, projects: [{ id: 'project', name: 'Project', path: projectPath }],
+  }));
+  fs.writeFileSync(agentsFile, JSON.stringify(['a', 'b'].map((id) => ({
+    id, name: id.toUpperCase(), color: 'emerald', createdAt: '2026-11-07',
+    orchestration: { orchestrate: true, connectToDispatcher: true },
+  }))));
+  if (source === 'manual') fs.writeFileSync(dispatcherConnectionsPath(), JSON.stringify({
+    version: 1, removedByUser: [], connections: [{
+      agentId: 'a', targetId: 'b', agentProjectPath: projectPath, targetProjectPath: projectPath,
+      createdAt: '2026-11-07', createdBy: 'dispatcher',
+    }],
+  }));
+  applyPersistedBinding(wire({}));
+  const before = await getConnectionGuidance('a', 'b');
+  await saveConnectionGuidance('a', 'b', {
+    instructions: { '*': 'Committed offline guidance', absent_tool: 'Retained replacement' }, revision: before.revision,
+  });
+  bindingManager.unbind('a', 'b');
+  vi.spyOn(dispatcherService, 'getDispatcherAgentId').mockReturnValue('b');
+  vi.spyOn(dispatcherService, 'isDispatcherEnabled').mockReturnValue(false);
+  vi.spyOn(dispatcherService, 'isDispatcherPath').mockReturnValue(false);
+  const actualSource = source === 'manual' ? dispatcherConnectionSource : dispatcherWireBindingSource;
+  registerPersistedBindingSource(actualSource);
+  const collect = vi.spyOn(actualSource, 'collect');
+  const bind = vi.spyOn(bindingManager, 'bind');
+  const lifecycleReads = [
+    vi.spyOn(projectStore, 'list'), vi.spyOn(agentConfig, 'listDurable'),
+    vi.spyOn(orchestrationPolicy, 'resolveOrchestrationPolicies'),
+  ];
+  const mutations = [
+    vi.spyOn(fs.promises, 'rename'), vi.spyOn(fs.promises, 'writeFile'), vi.spyOn(fs.promises, 'mkdir'),
+    vi.spyOn(fs.promises, 'rm'), vi.spyOn(fs.promises, 'unlink'), vi.spyOn(fs.promises, 'copyFile'),
+  ];
+  const watches = [vi.spyOn(fs, 'watch'), vi.spyOn(fs, 'watchFile'), vi.spyOn(fs.promises, 'watch')];
+  syncBuiltinESMExports();
+  expect(fsExports.watch).toBe(watches[0]);
+  expect(fspExports.rename).toBe(mutations[0]);
+  expect(fspExports.watch).toBe(watches[2]);
+  return { agentsFile, collect, bind, lifecycleReads, mutations, watches };
+}
+
 beforeEach(() => {
   userData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-guidance-'));
   resetAllSettingsStoresForTests();
@@ -37,18 +96,234 @@ beforeEach(() => {
   _resetPersistedBindingSourcesForTesting();
   resetTools();
   startConnectionGuidance();
+  registerBuiltinProviders();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  syncBuiltinESMExports();
   bindingManager.setConnectionInstructionsSource(null);
   bindingManager._resetForTesting();
   _resetPersistedBindingSourcesForTesting();
   agentRegistry.untrack('b');
+  agentRegistry.untrack('a');
   fs.rmSync(userData.dir, { recursive: true, force: true });
 });
 
 describe('durable directional connection guidance', () => {
+  it.each(['manual', 'automatic'] as const)('reads real %s saved source files offline without lifecycle loading, recovery, writes or binding', async (source) => {
+    const fixture = await rawOfflineFixture(source);
+    const files = [path.join(userData.dir, 'projects.json'), fixture.agentsFile, path.join(userData.dir, 'connection-instructions.json'),
+      ...(source === 'manual' ? [dispatcherConnectionsPath()] : [])];
+    const bytes = files.map((file) => fs.readFileSync(file, 'utf8'));
+    const names = fs.readdirSync(userData.dir, { recursive: true }).sort();
+    const offline = await getConnectionGuidance('a', 'b');
+    expect(offline).toMatchObject({
+      offline: true, readOnly: true, hasOverride: true,
+      instructions: { '*': 'Committed offline guidance', absent_tool: 'Retained replacement' },
+    });
+    expect(offline.notice).toContain('No session or tool client was started');
+    const listed = await listConnectionSources('a');
+    expect(listed.unreadable).toEqual([]);
+    expect(listed.pairs.find((pair) => pair.agentId === 'a' && pair.targetId === 'b')).toMatchObject({
+      bound: false, sources: [{ kind: source === 'manual' ? 'dispatcher_link' : 'dispatcher_auto' }],
+      ...(source === 'automatic' && { inspection: { targetKind: 'agent' } }),
+    });
+    await listDispatcherLinksForUser({ strict: true });
+    await expect(saveConnectionGuidance('a', 'b', { instructions: {}, revision: offline.revision })).rejects.toThrow('no longer connected');
+    expect(() => previewConnectionGuidance('a', 'b', {})).toThrow('no longer connected');
+    expect(fixture.collect).not.toHaveBeenCalled();
+    expect(fixture.bind).not.toHaveBeenCalled();
+    for (const read of fixture.lifecycleReads) expect(read).not.toHaveBeenCalled();
+    for (const mutation of fixture.mutations) expect(mutation).not.toHaveBeenCalled();
+    for (const watch of fixture.watches) expect(watch).not.toHaveBeenCalled();
+    expect(files.map((file) => fs.readFileSync(file, 'utf8'))).toEqual(bytes);
+    expect(fs.readdirSync(userData.dir, { recursive: true }).sort()).toEqual(names);
+    expect(agentRegistry.get('a')).toBeUndefined();
+    expect(agentRegistry.get('b')).toBeUndefined();
+  });
+
+  it.each([
+    ['manual', 'store-json'], ['manual', 'store-shape'], ['manual', 'store-missing-time'], ['manual', 'pending-json'], ['manual', 'pending-shape'],
+    ['manual', 'projects-json'], ['automatic', 'projects-json'],
+    ['manual', 'agents-json'], ['automatic', 'agents-json'],
+    ['automatic', 'agents-duplicate'], ['automatic', 'projects-missing'], ['automatic', 'agents-missing'],
+  ] as const)('rejects real %s %s source data without quarantining, restoring a backup or changing any bytes', async (source, failure) => {
+    const fixture = await rawOfflineFixture(source);
+    const file = failure.startsWith('projects') ? path.join(userData.dir, 'projects.json')
+      : failure.startsWith('agents') ? fixture.agentsFile
+        : failure.startsWith('pending') ? dispatcherPendingRemovalsPath() : dispatcherConnectionsPath();
+    const previous = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '{"version":1,"removals":[]}';
+    fs.writeFileSync(`${file}.bak`, previous);
+    if (failure.endsWith('missing')) fs.unlinkSync(file);
+    else {
+      const data = JSON.parse(previous);
+      if (failure === 'store-missing-time') delete data.connections[0].createdAt;
+      fs.writeFileSync(file, failure === 'store-shape' ? '{}' : failure === 'agents-duplicate'
+        ? JSON.stringify([...data, data[0]]) : failure === 'store-missing-time' ? JSON.stringify(data)
+          : failure === 'pending-shape' ? '{"version":1,"removals":[{"agentId":"a","targetId":"b"}]}' : '{malformed');
+    }
+    const guidanceFile = path.join(userData.dir, 'connection-instructions.json');
+    const guidanceBytes = fs.readFileSync(guidanceFile, 'utf8');
+    const sourceBytes = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+    const names = fs.readdirSync(userData.dir, { recursive: true }).sort();
+    await expect(getConnectionGuidance('a', 'b')).rejects.toThrow(/source.*could not be checked/i);
+    expect(fixture.collect).not.toHaveBeenCalled();
+    expect(fixture.bind).not.toHaveBeenCalled();
+    for (const read of fixture.lifecycleReads) expect(read).not.toHaveBeenCalled();
+    for (const mutation of fixture.mutations) expect(mutation).not.toHaveBeenCalled();
+    for (const watch of fixture.watches) expect(watch).not.toHaveBeenCalled();
+    expect(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null).toBe(sourceBytes);
+    expect(fs.readFileSync(`${file}.bak`, 'utf8')).toBe(previous);
+    expect(fs.readFileSync(guidanceFile, 'utf8')).toBe(guidanceBytes);
+    expect(fs.readdirSync(userData.dir, { recursive: true }).sort()).toEqual(names);
+  });
+
+  it('observes and blocks actual legacy grant-temp cleanup, restores real imports, and leaves strict inspection untouched', () => {
+    const file = path.join(userData.dir, 'connection-grants.json');
+    const temp = `${file}.tmp-0-retained`;
+    const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: ['send_message'], updatedAt: '2026-11-07' };
+    const bytes = JSON.stringify({ version: 1, directions: [direction] });
+    fs.writeFileSync(file, bytes);
+    fs.writeFileSync(temp, 'Protected uncommitted bytes');
+    resetAllSettingsStoresForTests();
+    const originalRemove = fs.rmSync;
+    const blocked = vi.spyOn(fs, 'rmSync').mockImplementation(() => { throw new Error('Protected test temp deletion'); });
+    try {
+      syncBuiltinESMExports();
+      expect(fsExports.rmSync).toBe(blocked);
+      expect(listConnectionDirections('a')).toEqual([direction]);
+      expect(blocked).toHaveBeenCalledWith(temp, { force: true });
+      expect(fs.readFileSync(temp, 'utf8')).toBe('Protected uncommitted bytes');
+    } finally {
+      blocked.mockRestore();
+      syncBuiltinESMExports();
+    }
+    expect(fs.rmSync).toBe(originalRemove);
+    expect(fsExports.rmSync).toBe(originalRemove);
+    resetAllSettingsStoresForTests();
+    const observed = vi.spyOn(fs, 'rmSync');
+    try {
+      syncBuiltinESMExports();
+      expect(fsExports.rmSync).toBe(observed);
+      expect(listConnectionDirectionsForInspection('a')).toEqual([direction]);
+      expect(observed).not.toHaveBeenCalled();
+      expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+      expect(fs.readFileSync(temp, 'utf8')).toBe('Protected uncommitted bytes');
+    } finally {
+      observed.mockRestore();
+      syncBuiltinESMExports();
+    }
+    expect(fsExports.rmSync).toBe(originalRemove);
+  });
+
+  it('reads committed direction metadata without loading or sweeping the permission store after a cold reset', () => {
+    const file = path.join(userData.dir, 'connection-grants.json');
+    const temp = `${file}.tmp-0-retained`;
+    const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: ['send_message'], updatedAt: '2026-11-07' };
+    const bytes = JSON.stringify({ version: 1, directions: [direction] });
+    fs.writeFileSync(file, bytes);
+    fs.writeFileSync(temp, 'Uncommitted bytes');
+    resetAllSettingsStoresForTests();
+    const remove = vi.spyOn(fs, 'rmSync');
+    syncBuiltinESMExports();
+    expect(fsExports.rmSync).toBe(remove);
+    expect(listConnectionDirectionsForInspection('a')).toEqual([direction]);
+    expect(remove).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+    expect(fs.readFileSync(temp, 'utf8')).toBe('Uncommitted bytes');
+  });
+
+  it.each(['malformed', 'duplicate'] as const)('refuses %s committed direction metadata without defaulting or cleaning its files', (failure) => {
+    const file = path.join(userData.dir, 'connection-grants.json');
+    const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: [] };
+    const bytes = failure === 'malformed' ? '{malformed' : JSON.stringify({ version: 1, directions: [direction, direction] });
+    fs.writeFileSync(file, bytes);
+    fs.writeFileSync(`${file}.tmp-0-retained`, 'Uncommitted bytes');
+    resetAllSettingsStoresForTests();
+    const remove = vi.spyOn(fs, 'rmSync');
+    syncBuiltinESMExports();
+    expect(fsExports.rmSync).toBe(remove);
+    expect(() => listConnectionDirectionsForInspection('a')).toThrow(/metadata.*(read|ambiguous)/);
+    expect(remove).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+    expect(fs.readFileSync(`${file}.tmp-0-retained`, 'utf8')).toBe('Uncommitted bytes');
+  });
+
+  it('strictly peeks committed group-project metadata past a loaded cache without migration or cache changes', async () => {
+    const file = path.join(userData.dir, '.clubhouse-dev', 'group-projects', 'registry.json');
+    const cached = { id: 'gp', name: 'Cached', description: '', instructions: '', metadata: {}, createdAt: '2026-11-07' };
+    const committed = { ...cached, name: 'Committed' };
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify([committed]));
+    groupProjectRegistry._setForTesting(cached);
+    const load = vi.spyOn(groupProjectRegistry, 'list');
+    const rename = vi.spyOn(fs.promises, 'rename');
+    try {
+      expect(await groupProjectRegistry.peek()).toEqual([cached]);
+      expect(await groupProjectRegistry.peek({ strict: true })).toEqual([committed]);
+      fs.writeFileSync(file, '{malformed');
+      await expect(groupProjectRegistry.peek({ strict: true })).rejects.toThrow('registry could not be read');
+      expect(groupProjectRegistry.getSync('gp')).toEqual(cached);
+      expect(load).not.toHaveBeenCalled();
+      expect(rename).not.toHaveBeenCalled();
+      expect(fs.readFileSync(file, 'utf8')).toBe('{malformed');
+    } finally {
+      groupProjectRegistry._resetForTesting();
+    }
+  });
+
+  it('rejects old inspection metadata when its registered source is replaced during the actual source-list read', async () => {
+    const entered = deferred();
+    const release = deferred();
+    const collect = vi.fn(async () => []);
+    registerPersistedBindingSource({
+      id: 'dispatcher-wires', collect,
+      inspect: async () => {
+        entered.resolve();
+        await release.promise;
+        return [wire({}, { agentName: 'A', targetName: 'B' })];
+      },
+    });
+    const pending = listConnectionSources('a');
+    await entered.promise;
+    registerPersistedBindingSource({ id: 'dispatcher-wires', collect, inspect: async () => [] });
+    release.resolve();
+    expect(await pending).toEqual({ pairs: [], unreadable: ['dispatcher-wires'] });
+    expect(collect).not.toHaveBeenCalled();
+    expect(bindingManager.getAllBindings()).toEqual([]);
+  });
+
+  it.each(['pty', 'headless'] as const)('reports a required restart for the actual fixed-tool-list %s provider after updating server descriptions', async (runtime) => {
+    registerToolTemplate('agent', 'get_status', { description: 'Read status', inputSchema: { type: 'object' } }, vi.fn(), {
+      grant: { actions: ['agent.read'], target: 'bound' },
+    });
+    applyPersistedBinding(wire({}));
+    agentRegistry.register('a', { runtime, projectPath: userData.dir, orchestrator: 'codex-cli' });
+    const oldDescription = getScopedToolList('a')[0].description;
+    const before = await getConnectionGuidance('a', 'b');
+    const saved = await saveConnectionGuidance('a', 'b', { instructions: { '*': 'New default' }, revision: before.revision });
+    expect(getScopedToolList('a')[0].description).not.toBe(oldDescription);
+    expect(getScopedToolList('a')[0].description).toContain('New default');
+    expect(saved.notice).toMatch(/keeps its first tool list.*restart/i);
+    expect(saved.notice).toContain('Sessions were not restarted.');
+    expect(agentRegistry.get('a')?.runtime).toBe(runtime);
+  });
+
+  it.each([
+    ['chat', 'codex-cli'], ['chat', 'copilot-cli'], ['pty', 'claude-code'], ['pty', 'unknown-provider'],
+  ] as const)('does not claim client refresh for %s / %s after a real durable save', async (runtime, orchestrator) => {
+    applyPersistedBinding(wire({}));
+    agentRegistry.register('a', { runtime, projectPath: userData.dir, orchestrator });
+    const before = await getConnectionGuidance('a', 'b');
+    const saved = await saveConnectionGuidance('a', 'b', { instructions: { '*': 'Persisted' }, revision: before.revision });
+    expect(saved.notice).toMatch(/server tool descriptions.*updated/i);
+    expect(saved.notice).toMatch(/live.*refresh.*not confirmed/i);
+    expect(saved.notice).toMatch(/reload.*restart/i);
+    expect(saved.notice).not.toContain('keeps its first tool list');
+    expect((await getConnectionGuidance('a', 'b')).instructions).toEqual({ '*': 'Persisted' });
+  });
+
   it.each([
     'null', '42', '"text"', 'true', '[]', '{}', '{invalid',
     '{"version":1,"entries":[null]}',
@@ -93,6 +368,7 @@ describe('durable directional connection guidance', () => {
   });
 
   it('never exposes an uncommitted attempt to reads or a newly restored binding', async () => {
+    registerPersistedBindingSource({ id: 'saved-source', readOnlyCollect: true, collect: async () => [wire({})] });
     applyPersistedBinding(wire({}));
     const initial = await getConnectionGuidance('a', 'b');
     const previous = await saveConnectionGuidance('a', 'b', { instructions: { '*': 'Committed' }, revision: initial.revision });
@@ -114,6 +390,7 @@ describe('durable directional connection guidance', () => {
     try {
       during = await getConnectionGuidance('a', 'b');
       bindingManager.unbind('a', 'b');
+      expect(await getConnectionGuidance('a', 'b')).toMatchObject({ offline: true, readOnly: true, instructions: { '*': 'Committed' } });
       applyPersistedBinding(wire({ '*': 'Source' }));
       restored = binding()?.instructions;
     } finally {
@@ -411,6 +688,111 @@ describe('durable directional connection guidance', () => {
     expect((await getConnectionGuidance('a', 'b')).sources[0].instructions).toEqual({ '*': 'Original' });
   });
 
+  it('restores automatic Dispatcher guidance across pruning, reconnect and restart without live clients', async () => {
+    let connected = true;
+    const originals = [
+      wire({ '*': 'Agent to Dispatcher' }),
+      wire({ '*': 'Dispatcher to agent' }, { agentId: 'b', targetId: 'a', label: 'A' }),
+    ];
+    const collect = vi.fn(async () => connected ? originals : []);
+    const source = { id: 'dispatcher-wires', prune: true, collect, inspect: async () => originals };
+    registerPersistedBindingSource(source);
+    await rebuildPersistedBindings();
+    const before = await getConnectionGuidance('a', 'b');
+    expect(before.sources).toMatchObject([{ sourceId: 'dispatcher-wires' }]);
+    await saveConnectionGuidance('a', 'b', {
+      instructions: { '*': 'Route only focused work', future_tool: 'Retained while absent' },
+      revision: before.revision, replaceAcrossSources: true,
+    });
+    expect(collect).toHaveBeenCalledTimes(1);
+    connected = false;
+    await rebuildPersistedBindings();
+    expect(bindingManager.getAllBindings()).toEqual([]);
+    const file = path.join(userData.dir, 'connection-instructions.json');
+    const bytes = fs.readFileSync(file, 'utf8');
+    const bind = vi.spyOn(bindingManager, 'bind');
+    const rename = vi.spyOn(fs.promises, 'rename');
+    const offline = await getConnectionGuidance('a', 'b');
+    expect(offline).toMatchObject({
+      offline: true, readOnly: true, instructions: { '*': 'Route only focused work', future_tool: 'Retained while absent' },
+      sources: [{ sourceId: 'dispatcher-wires', instructions: { '*': 'Agent to Dispatcher' } }],
+    });
+    expect((await getConnectionGuidance('b', 'a')).instructions).toEqual({ '*': 'Dispatcher to agent' });
+    await expect(saveConnectionGuidance('a', 'b', { instructions: { '*': 'Forbidden' }, revision: offline.revision })).rejects.toThrow('no longer connected');
+    expect(() => previewConnectionGuidance('a', 'b', {})).toThrow('no longer connected');
+    expect(() => getConnectionGuidanceCatalog('a', 'b')).toThrow('no longer connected');
+    expect(collect).toHaveBeenCalledTimes(2);
+    expect(bind).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+    expect(bindingManager.getAllBindings()).toEqual([]);
+    bind.mockRestore();
+    rename.mockRestore();
+    connected = true;
+    await rebuildPersistedBindings();
+    expect(binding()?.instructions).toEqual({ '*': 'Route only focused work', future_tool: 'Retained while absent' });
+    expect(bindingManager.getBindingsForAgent('b')[0].instructions).toEqual({ '*': 'Dispatcher to agent' });
+    bindingManager._resetForTesting();
+    _resetPersistedBindingSourcesForTesting();
+    resetAllSettingsStoresForTests();
+    startConnectionGuidance();
+    registerPersistedBindingSource(source);
+    expect(await getConnectionGuidance('a', 'b')).toMatchObject({ offline: true, readOnly: true, instructions: { '*': 'Route only focused work', future_tool: 'Retained while absent' } });
+    expect(bindingManager.getAllBindings()).toEqual([]);
+    expect(collect).toHaveBeenCalledTimes(3);
+    await rebuildPersistedBindings();
+    expect((await getConnectionGuidance('a', 'b')).instructions).toEqual({ '*': 'Route only focused work', future_tool: 'Retained while absent' });
+    expect((await getConnectionGuidance('b', 'a')).instructions).toEqual({ '*': 'Dispatcher to agent' });
+    expect(agentRegistry.get('a')).toBeUndefined();
+    expect(agentRegistry.get('b')).toBeUndefined();
+  });
+
+  it.each(['missing source', 'ambiguous kind', 'unknown kind', 'unreadable source', 'corrupt source', 'corrupt guidance', 'removed direction'] as const)(
+    'refuses offline saved-entry authority when its proof is invalid: %s', async (failure) => {
+      let originals = [wire({ '*': 'Source' })];
+      let unreadable = false;
+      registerPersistedBindingSource({ id: 'saved-source', collect: async () => originals, inspect: async () => {
+        if (unreadable) throw new Error('Source unavailable');
+        return originals;
+      } });
+      applyPersistedBinding(originals[0]);
+      const before = await getConnectionGuidance('a', 'b');
+      await saveConnectionGuidance('a', 'b', { instructions: { '*': 'Committed' }, revision: before.revision, replaceAcrossSources: true });
+      bindingManager.unbind('a', 'b');
+      if (failure === 'missing source') originals = [];
+      if (failure === 'ambiguous kind') originals.push(wire({}, { targetKind: 'terminal' }));
+      if (failure === 'unknown kind') originals = [JSON.parse('{"agentId":"a","targetId":"b","targetKind":"unknown","label":"B"}')];
+      if (failure === 'unreadable source') unreadable = true;
+      if (failure === 'corrupt source') originals = [JSON.parse('{"agentId":"a","targetId":"b","targetKind":"agent","label":"B","instructions":"corrupt"}')];
+      if (failure === 'corrupt guidance') fs.writeFileSync(path.join(userData.dir, 'connection-instructions.json'), '{invalid');
+      if (failure === 'removed direction') markBindingRemovedByUser('a', 'b');
+      const file = path.join(userData.dir, 'connection-instructions.json');
+      const bytes = fs.readFileSync(file, 'utf8');
+      await expect(getConnectionGuidance('a', 'b')).rejects.toThrow(/source|kind|guidance|ownership/i);
+      expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+      expect(bindingManager.getAllBindings()).toEqual([]);
+    },
+  );
+
+  it('rejects stale source registration during offline inspection without collecting or binding', async () => {
+    const entered = deferred();
+    const release = deferred();
+    const collect = vi.fn(async () => []);
+    const unregister = registerPersistedBindingSource({ id: 'saved-source', collect, inspect: async () => {
+      entered.resolve();
+      await release.promise;
+      return [wire({ '*': 'Stale' })];
+    } });
+    const pending = getConnectionGuidance('a', 'b');
+    await entered.promise;
+    unregister();
+    release.resolve();
+    await expect(pending).rejects.toThrow('ownership changed');
+    expect(collect).not.toHaveBeenCalled();
+    expect(bindingManager.getAllBindings()).toEqual([]);
+    expect(fs.existsSync(path.join(userData.dir, 'connection-instructions.json'))).toBe(false);
+  });
+
   it('requires explicit replacement across conflicting source copies and preserves all originals', async () => {
     const originals = [wire({ '*': 'One' }, { sourceLabel: 'Home' }), wire({ '*': 'Two' }, { sourceLabel: 'Project' })];
     registerPersistedBindingSource({ id: 'canvas', readOnlyCollect: true, inspect: async () => originals, collect: async () => originals.slice(0, 1) });
@@ -464,6 +846,8 @@ describe('durable directional connection guidance', () => {
     try {
       const saved = await saveConnectionGuidance('a', 'b', { instructions: { '*': 'Committed' }, revision: before.revision });
       expect(saved).toMatchObject({ hasOverride: true, instructions: { '*': 'Committed' } });
+      expect(saved.notice).toMatch(/not applied to this live direction/i);
+      expect(saved.notice).not.toContain('Server tool descriptions are updated');
       expect(binding()).toBeUndefined();
     } finally {
       stop();
@@ -499,5 +883,27 @@ describe('durable directional connection guidance', () => {
     const fixed = await getConnectionGuidance('a', 'b');
     expect(fixed.readOnly).toBe(true);
     await expect(saveConnectionGuidance('a', 'b', { instructions: {}, revision: fixed.revision })).rejects.toThrow('membership');
+  });
+
+  it('preserves durable helper guidance authority without granting writes to plugin bindings', async () => {
+    registerPersistedBindingSource({ id: 'helper-wires', prune: true, collect: async () => [wire({ '*': 'Helper original' })] });
+    await rebuildPersistedBindings();
+    const helper = await getConnectionGuidance('a', 'b');
+    expect(helper).toMatchObject({ readOnly: false, sources: [{ sourceId: 'helper-wires' }] });
+    await saveConnectionGuidance('a', 'b', {
+      instructions: { '*': 'Durable helper direction' }, revision: helper.revision, replaceAcrossSources: true,
+    });
+    expect(binding()?.instructions).toEqual({ '*': 'Durable helper direction' });
+    const file = path.join(userData.dir, 'connection-instructions.json');
+    const savedBytes = fs.readFileSync(file, 'utf8');
+    bindingManager.unbind('a', 'b');
+    bindingManager.bind('a', { targetId: 'b', targetKind: 'plugin', label: 'Plugin' });
+    const plugin = await getConnectionGuidance('a', 'b');
+    expect(plugin).toMatchObject({ readOnly: true, readOnlyReason: 'Plugin connection guidance cannot be changed from this window.' });
+    await expect(saveConnectionGuidance('a', 'b', {
+      instructions: { '*': 'Forbidden' }, revision: plugin.revision, replaceAcrossSources: true,
+    })).rejects.toThrow('Plugin connection guidance');
+    expect(fs.readFileSync(file, 'utf8')).toBe(savedBytes);
+    expect(binding()?.instructions).toBeUndefined();
   });
 });

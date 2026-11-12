@@ -30,6 +30,7 @@ import { dispatcherAgentDisplayName, isDispatcherAgent, useDispatcherStore } fro
 import type { DispatcherState } from '../../../../shared/dispatcher-types';
 import { parseAgentAddress } from '../../../../shared/agent-address';
 import { RemoteConnections, remoteConnections } from './RemoteConnections';
+import { reportChromeActionFailed } from '../../../chrome/telemetry';
 
 export type ConnectionDirection = 'two-way' | 'to' | 'from';
 
@@ -49,6 +50,8 @@ export interface Connection {
   dispatcherMade?: boolean;
   /** Set when the Dispatcher's link is saved but not bound now. */
   suspended?: DispatcherLink['reason'] | true;
+  /** An unbound, proven saved automatic direction. No runtime or tool authority. */
+  inspectionOnly?: true;
 }
 
 const pairKey = (agentId: string, targetId: string) => `${agentId}\u0000${targetId}`;
@@ -58,6 +61,7 @@ const KIND_WORD: Record<McpBindingEntry['targetKind'], string> = {
   browser: 'browser',
   terminal: 'terminal',
   'group-project': 'group project',
+  plugin: 'plugin',
 };
 
 /**
@@ -71,6 +75,7 @@ export function agentConnections(
   toolPairs: ReadonlySet<string> = new Set(),
   dispatcherLinks: readonly DispatcherLink[] = [],
   dispatcher: DispatcherState | null = useDispatcherStore.getState().state,
+  inspectionPairs: readonly ConnectionPairSources[] = [],
 ): Connection[] {
   const rows = new Map<string, Connection>();
   const links = new Map(dispatcherLinks.map((l) => [pairKey(l.agentId, l.targetId), l]));
@@ -112,7 +117,29 @@ export function agentConnections(
       });
     }
   }
+  const listed = new Set([...rows.values()].flatMap((row) => row.pairs.map((pair) => pairKey(pair.agentId, pair.targetId))));
+  for (const pair of inspectionPairs) {
+    if (!pair.inspection || pair.bound || listed.has(pairKey(pair.agentId, pair.targetId))
+      || !pair.sources.some((source) => source.kind === 'dispatcher_auto') || parseAgentAddress(pair.targetId).machine) continue;
+    const outgoing = pair.agentId === agentId;
+    if (!outgoing && pair.targetId !== agentId) continue;
+    const id = outgoing ? pair.targetId : pair.agentId;
+    const direction = outgoing ? 'to' : 'from';
+    const existing = rows.get(id);
+    if (existing) {
+      if (existing.direction !== direction) existing.direction = 'two-way';
+      existing.pairs.push({ agentId: pair.agentId, targetId: pair.targetId });
+    } else {
+      rows.set(id, {
+        id, name: dispatcherAgentDisplayName(id, outgoing ? pair.inspection.targetName : pair.inspection.agentName, dispatcher),
+        kind: 'agent', direction, family: familyOf(id), pairs: [{ agentId: pair.agentId, targetId: pair.targetId }],
+        toolMade: false, inspectionOnly: true,
+      });
+    }
+    listed.add(pairKey(pair.agentId, pair.targetId));
+  }
   for (const row of rows.values()) {
+    if (row.inspectionOnly) continue;
     const rowLinks = row.pairs.map((p) => links.get(pairKey(p.agentId, p.targetId)));
     row.dispatcherMade = row.family === null && rowLinks.every((l) => !!l);
     row.toolMade = row.dispatcherMade || (row.family === null && row.pairs.every((p) => toolPairs.has(pairKey(p.agentId, p.targetId))));
@@ -125,6 +152,7 @@ export function agentConnections(
 
 /** The meta text after a connection's name. */
 export function connectionMeta(c: Connection): string {
+  if (c.inspectionOnly) return `configured ${c.direction === 'two-way' ? 'two-way' : c.direction === 'to' ? 'outgoing' : 'incoming'}, suspended, not connected`;
   if (c.kind !== 'agent') return KIND_WORD[c.kind];
   const dir = c.direction === 'two-way' ? 'two-way' : c.direction === 'to' ? 'sends to it' : 'sends to this agent';
   if (c.family === 'helper') return `helper, ${dir}`;
@@ -162,13 +190,14 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   // Removing a suspended link changes no binding, so that re-reads the list itself.
   const [removals, setRemovals] = useState(0);
   const dispatcherLinks = useDispatcherLinks(open && !!onDisconnect, bindings, removals);
+  // Where each connection comes from (#2744), re-read with the bindings and after a removal.
+  const sourceRead = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
+  const sources = sourceRead?.sources;
   const connections = useMemo(
-    () => agentConnections(bindings, agent.id, { helperIds, parentId }, toolPairs, dispatcherLinks, dispatcher),
-    [bindings, agent.id, helperIds, parentId, toolPairs, dispatcherLinks, dispatcher],
+    () => agentConnections(bindings, agent.id, { helperIds, parentId }, toolPairs, dispatcherLinks, dispatcher, sources?.pairs),
+    [bindings, agent.id, helperIds, parentId, toolPairs, dispatcherLinks, dispatcher, sources],
   );
   const [confirming, setConfirming] = useState<Connection | null>(null);
-  // Where each connection comes from (#2744), re-read with the bindings and after a removal.
-  const sources = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
   const grants = useConnectionGrants(open && !!onDisconnect, agent.id, bindings, removals);
   // A connection another computer made or changed changes no binding here, so its change re-reads the store (#3064).
   useEffect(() => {
@@ -179,8 +208,16 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   // The row being managed, by the other end's id: looked up each render so a new direction shows (#2972).
   const [managingId, setManagingId] = useState<string | null>(null);
   const managing = managingId ? connections.find((c) => c.id === managingId) ?? null : null;
-  const pairSources = (c: Connection): ConnectionPairSources[] =>
-    c.pairs.map((p) => sources?.pairs.find((s) => s.agentId === p.agentId && s.targetId === p.targetId)).filter((s): s is ConnectionPairSources => !!s);
+  const pairSources = (c: Connection): ConnectionPairSources[] => {
+    const pairs = new Map((sources?.pairs ?? []).filter((p) => (p.agentId === agent.id && p.targetId === c.id)
+      || (c.kind === 'agent' && p.agentId === c.id && p.targetId === agent.id)).map((p) => [pairKey(p.agentId, p.targetId), p]));
+    for (const p of c.pairs) {
+      if (pairs.has(pairKey(p.agentId, p.targetId))) continue;
+      const bound = bindings.some((b) => b.agentId === p.agentId && b.targetId === p.targetId);
+      pairs.set(pairKey(p.agentId, p.targetId), { ...p, bound, sources: [], ...(bound && { unresolved: true }) });
+    }
+    return [...pairs.values()];
+  };
 
   return (
     <>
@@ -191,6 +228,12 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
       open={open}
       onToggle={onToggle}
     >
+      {!managingId && (sourceRead?.error || (sources && sources.unreadable.length > 0 && connections.length === 0)) && (
+        <p role="alert" className="text-xs text-ctp-error mb-3">
+          Couldn't check saved connection sources: {sourceRead?.error ?? sources?.unreadable.map((id) => CONNECTION_SOURCE_LABELS[id === 'dispatcher-wires' ? 'dispatcher_auto' : id === 'dispatcher-connections' ? 'dispatcher_link' : 'other']).join(', ')}.
+          {' '}<button type="button" onClick={() => setRemovals((n) => n + 1)} className="underline">Try again</button>
+        </p>
+      )}
       {connections.length === 0 && remoteCount > 0 ? null : connections.length === 0 ? (
         <CardNote>No Clubhouse MCP wires. Wires drawn on a canvas, and the ones between an orchestrator and its helpers, show here.</CardNote>
       ) : (
@@ -204,9 +247,9 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
                   <span className="w-[96px] flex-shrink-0 text-[12.5px] text-ctp-text truncate" title={c.name} data-testid="connection-name">{c.name}</span>
                   <span className="min-w-0 text-xs text-ctp-overlay1 whitespace-nowrap truncate" title={sourcesNote(pairSources(c)) ?? suspendedNote(c)} data-testid="connection-meta">{connectionMeta(c)}</span>
                   <span className="ml-auto flex-shrink-0 flex items-center gap-2.5">
-                    {onDisconnect && c.kind === 'agent' && pairSources(c).length > 0 && (
+                    {onDisconnect && sourceRead && (
                       <button type="button" onClick={() => setManagingId(c.id)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-sources">
-                        Manage
+                        Edit
                       </button>
                     )}
                     {onDisconnect && c.toolMade && c.kind !== 'agent' && (
@@ -232,15 +275,19 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
       <ConnectionSourcesDialog
         agentId={agent.id}
         otherId={managing.id}
+        targetKind={managing.kind}
         grants={grants}
-        liveTools={new Map(bindings.filter((b) => b.targetKind === 'agent').map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
-        liveEnabled={new Map(bindings.filter((b) => b.targetKind === 'agent').map((b) => [`${b.agentId}>${b.targetId}`, b.enabledTools ?? []]))}
+        liveTools={new Map(bindings.map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
+        liveEnabled={new Map(bindings.map((b) => [`${b.agentId}>${b.targetId}`, b.enabledTools ?? []]))}
         agentName={dispatcherAgentDisplayName(agent.id, agent.name, dispatcher)}
         otherName={dispatcherAgentDisplayName(managing.id, rail[managing.id]?.name ?? managing.name, dispatcher)}
-        dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}
+        dispatcherEnd={isDispatcherAgent(agent) ? managing.name : managing.id === dispatcher?.agentId || managing.id === dispatcher?.chatAgentId
+          || (rail[managing.id] && isDispatcherAgent(rail[managing.id])) ? agent.name : undefined}
         familyLink={managing.family !== null}
-        pairs={(sources?.pairs ?? []).filter((p) => (p.agentId === agent.id && p.targetId === managing.id) || (p.agentId === managing.id && p.targetId === agent.id))}
+        pairs={pairSources(managing)}
         unreadable={sources?.unreadable ?? []}
+        readError={sourceRead?.error}
+        onRetry={() => setRemovals((n) => n + 1)}
         onClose={() => setManagingId(null)}
         onRemoved={() => setRemovals((n) => n + 1)}
       />
@@ -289,20 +336,22 @@ export function sourcesNote(pairs: readonly ConnectionPairSources[]): string | u
   return `From: ${kinds.map((k) => CONNECTION_SOURCE_LABELS[k]).join(', ')}`;
 }
 
-/** The sources behind the agent's connections, re-read like the tool pairs. Null until read, or when they can't be. */
-function useConnectionSources(active: boolean, agentId: string, bindings: readonly McpBindingEntry[], removals: number): AgentConnectionSources | null {
-  const [sources, setSources] = useState<AgentConnectionSources | null>(null);
+/** Last-known sources and explicit read errors; null until the first read settles. */
+function useConnectionSources(active: boolean, agentId: string, bindings: readonly McpBindingEntry[], removals: number) {
+  const [read, setRead] = useState<{ sources: AgentConnectionSources | null; error?: string } | null>(null);
   useEffect(() => {
-    if (!active) { setSources(null); return; }
+    if (!active) { setRead(null); return; }
     let alive = true;
     Promise.resolve().then(() => window.clubhouse.mcpBinding.getConnectionSources(agentId)).then(
-      (list) => { if (alive) setSources(list ?? null); },
-      // telemetry-exempt: the card shows its rows without sources.
-      () => { if (alive) setSources(null); },
+      (list) => { if (alive) setRead({ sources: list }); },
+      (error: unknown) => {
+        reportChromeActionFailed('agent_settings_save', error);
+        if (alive) setRead((before) => ({ sources: before?.sources ?? null, error: error instanceof Error ? error.message : String(error) }));
+      },
     );
     return () => { alive = false; };
   }, [active, agentId, bindings, removals]);
-  return sources;
+  return read;
 }
 
 /** Saved per-direction permissions touching the agent (D129), re-read like the sources. */

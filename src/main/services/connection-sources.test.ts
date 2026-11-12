@@ -8,10 +8,13 @@ const state = vi.hoisted(() => ({
   links: [] as Array<{ agentId: string; targetId: string; agentName: string; targetName: string; status: 'active' | 'suspended'; reason?: string }>,
   calls: [] as string[],
   unsaved: false,
+  automatic: [] as Array<{ agentId: string; targetId: string; targetKind: 'agent'; label: string; agentName: string; targetName: string }>,
 }));
 
 vi.mock('./persisted-bindings', () => ({
   collectSourcesByPair: async () => ({ bySource: state.bySource, failed: state.failed }),
+  inspectPersistedBindingSource: async (id: string) => id === 'dispatcher-wires' && state.automatic.length > 0 ? state.automatic : undefined,
+  isBindingRemovedByUser: () => false,
   persistedPairKey: key,
   releaseSourceBinding: (sourceId: string, a: string, t: string) => { state.calls.push(`release:${sourceId}:${a}>${t}`); return 'unbound'; },
   rebuildPersistedBindings: async () => { state.calls.push('rebuild'); },
@@ -69,6 +72,7 @@ beforeEach(() => {
   state.links = [];
   state.calls = [];
   state.unsaved = false;
+  state.automatic = [];
 });
 
 describe('the sources behind a connection (#2744)', () => {
@@ -97,6 +101,25 @@ describe('the sources behind a connection (#2744)', () => {
   it('reports sources it couldn\'t read', async () => {
     state.failed = ['canvas-wires'];
     expect((await listConnectionSources('lead')).unreadable).toEqual(['canvas-wires']);
+  });
+
+  it('lists proven automatic saved-only directions separately from manual links without changing runtime ownership', async () => {
+    state.failed = ['dispatcher-wires'];
+    state.automatic = [
+      { agentId: 'disp', targetId: 'lead', targetKind: 'agent', label: 'Lead', agentName: 'Dispatcher controller', targetName: 'Lead' },
+      { agentId: 'lead', targetId: 'disp', targetKind: 'agent', label: 'Dispatcher', agentName: 'Lead', targetName: 'Dispatcher' },
+    ];
+    const listed = await listConnectionSources('lead');
+    expect(listed.unreadable).toEqual([]);
+    expect(listed.pairs).toHaveLength(2);
+    for (const pair of listed.pairs) {
+      expect(pair).toMatchObject({
+        bound: false, inspection: { targetKind: 'agent' },
+        sources: [{ kind: 'dispatcher_auto', sourceId: 'dispatcher-wires', suspended: 'Configured, but not connected now.' }],
+      });
+    }
+    expect(state.bound.size).toBe(0);
+    expect(state.calls).toEqual([]);
   });
 });
 
