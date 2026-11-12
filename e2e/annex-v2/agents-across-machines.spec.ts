@@ -22,7 +22,7 @@ import { buildChatScript, writeChatScript } from '../../src/main/orchestrators/a
 import type { DeliveryFile } from '../../src/main/services/annex-delivery-store';
 import type { McpToolResult } from '../../src/main/services/clubhouse-mcp/types';
 import { launchApp, type LaunchedApp } from '../launch';
-import { assertDisposableProfile, type DisposableProfile } from '../app-profile';
+import { assertDisposableProfile, createDisposableProfile, type DisposableProfile } from '../app-profile';
 import { untrackOpenApp } from '../e2e-cleanup';
 import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helpers';
 import { isNewLayout } from '../layout';
@@ -123,16 +123,24 @@ test.afterEach(async () => {
     if ([here, there].some((app) => app && !exited(app.electronApp.process()))) {
       errors.push(new Error('Fixture cleanup withheld because an owned desktop has not exited'));
     } else {
-      here = undefined;
-      there = undefined;
-      const disposed = await Promise.allSettled([
-        ...profiles.splice(0).map(async (profile) => profile.dispose()),
-        fakesHere?.cleanup(),
-        fakesThere?.cleanup(),
-        ...(scratch ? [fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })] : []),
-      ]);
+      const disposed = await Promise.allSettled(profiles.map(async (profile) => profile.dispose()));
       for (const result of disposed) {
         if (result.status === 'rejected') errors.push(result.reason);
+      }
+      if (disposed.some((result) => result.status === 'rejected') || profiles.some((profile) => !profile.disposed)) {
+        errors.push(new Error('Fixture cleanup withheld because an owned profile could not be disposed; retaining the remaining cohort'));
+      } else {
+        profiles.length = 0;
+        here = undefined;
+        there = undefined;
+        const cleaned = await Promise.allSettled([
+          fakesHere?.cleanup(),
+          fakesThere?.cleanup(),
+          ...(scratch ? [fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })] : []),
+        ]);
+        for (const result of cleaned) {
+          if (result.status === 'rejected') errors.push(result.reason);
+        }
       }
     }
   }
@@ -176,7 +184,10 @@ async function connectMcp(env: Record<string, string | null>) {
 }
 
 async function launchDesktop(label: string, fakes: FakeClis, deviceName: string, orchestrator = 'claude-code'): Promise<LaunchedApp> {
+  const profile = createDisposableProfile({ label });
+  profiles.push(profile);
   const app = await launchApp({
+    profile,
     label,
     args: ['--disable-gpu'],
     userDataFiles: {
@@ -186,7 +197,6 @@ async function launchDesktop(label: string, fakes: FakeClis, deviceName: string,
     },
     env: fakes.env,
   });
-  profiles.push(app.profile);
   try {
     await assertRunLayout(app.window);
   } catch (err) {
