@@ -212,7 +212,10 @@ describe('tool grant declarations (#2967)', () => {
       remove_device: device.manage on app
       start_adding_device: device.manage on app
       add_project: project.add on project_arg
-      request_app_update: app.update on app"
+      request_app_update: app.update on app
+      get_delivery: agent.read on self
+      get_annex_network_settings: settings.app.read on app
+      update_annex_network_settings: settings.app.write on app"
     `);
   });
 });

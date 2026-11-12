@@ -12,6 +12,7 @@ import * as nodeCrypto from 'crypto';
 import { createHash } from 'crypto';
 import * as tlsLib from 'tls';
 import { readMobileChatContent } from './annex-chat-content';
+import * as agentCalls from './annex-agent-calls';
 vi.mock('./annex-chat-content', () => ({ readMobileChatContent: vi.fn() }));
 import { agentFolders } from './agent-runtime/chat-files';
 vi.mock('./agent-runtime/chat-files', async (importOriginal) => ({
@@ -1433,6 +1434,26 @@ describe('annex-server', () => {
     const res = await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token));
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ version: 1, controlAuth: 'mtls-pinned-client', controlAvailable: true, commands: expect.arrayContaining(['chat.send', 'agent.stop']) });
+  });
+
+  it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    const capabilities = vi.spyOn(agentCalls, 'agentDeliveryCapabilities').mockReturnValue({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted' });
+    const { port } = await startAndPair();
+    const route = '/api/v1/network/agent-delivery-capabilities';
+    const response = await request(port, 'POST', route, {});
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted' });
+    capabilities.mockImplementationOnce(() => { throw new Error('unreadable'); });
+    expect((await request(port, 'POST', route, {})).status).toBe(503);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
+    expect((await request(port, 'POST', route, { deliveryVersion: 1 })).status).toBe(403);
+    expect(capabilities).toHaveBeenCalledTimes(2);
+    asUnpaired();
+    expect((await request(port, 'POST', route, {})).status).toBe(401);
+    capabilities.mockRestore();
   });
 
   it('advertises agent.create, agent.update and their option and settings routes (#2451, #2452)', async () => {

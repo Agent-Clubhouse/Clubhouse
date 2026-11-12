@@ -3546,8 +3546,20 @@ async function handleNetworkAgentCallRoute(ctx: AnnexRouteContext): Promise<void
   // Checked again once the body is here: the peer may have been removed meanwhile.
   if (ctx.requireMtls()) return;
   const outcome = await agentCalls.receiveAgentCall(machine, body);
-  if ('result' in outcome) sendJson(ctx.res, 200, { result: outcome.result });
-  else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
+  if ('result' in outcome) sendJson(ctx.res, 200, outcome);
+  else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message, ...(outcome.delivery && { delivery: outcome.delivery }) });
+}
+
+async function handleNetworkAgentDeliveryCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (ctx.requireMtls()) { ctx.req.resume(); return; }
+  const machine = agentCallPeer(ctx);
+  ctx.req.resume();
+  if (!machine) { sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can negotiate delivery here.' }); return; }
+  try { sendJson(ctx.res, 200, agentCalls.agentDeliveryCapabilities()); }
+  catch (err) {
+    appLog('core:annex', 'warn', 'Durable delivery capabilities are unavailable', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    sendJson(ctx.res, 503, { error: 'delivery_store_unavailable' });
+  }
 }
 
 async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
@@ -4317,6 +4329,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/network$/, handler: handleMobileNetworkRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-call$/, handler: handleNetworkAgentCallRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/agent-delivery-capabilities$/, handler: handleNetworkAgentDeliveryCapabilitiesRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
