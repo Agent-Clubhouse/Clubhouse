@@ -43,9 +43,12 @@ type ChangeListener = () => void;
 
 type StoredGroupProject = GroupProject & { _scopeInference?: 'legacy-v1' };
 
-function serializeProjects(projects: Map<string, GroupProject>, inferredIds: ReadonlySet<string>): string {
+function serializeProjects(
+  projects: Map<string, GroupProject>, inferredIds: ReadonlySet<string>, priorCandidates: ReadonlyMap<string, GroupProjectScope>,
+): string {
   return JSON.stringify([...projects.values()].map((project): StoredGroupProject => ({
-    ...project, ...(inferredIds.has(project.id) ? { _scopeInference: 'legacy-v1' as const } : {}),
+    ...project,
+    ...(inferredIds.has(project.id) ? { scope: project.scope ?? priorCandidates.get(project.id), _scopeInference: 'legacy-v1' as const } : {}),
   })), null, 2);
 }
 
@@ -57,6 +60,7 @@ function sameScope(left: GroupProjectScope | undefined, right: GroupProjectScope
 class GroupProjectRegistry {
   private projects = new Map<string, GroupProject>();
   private inferredScopeIds = new Set<string>();
+  private inferredScopeCandidates = new Map<string, GroupProjectScope>();
   private loaded = false;
   private loadPromise: Promise<void> | null = null;
   private dirty = false;
@@ -120,7 +124,7 @@ class GroupProjectRegistry {
           ]));
           const candidateIds = new Set([...inferredIds, ...inventory.scopes.keys()]);
           await inventory.assertUnchanged();
-          await this.writeSnapshot(serializeProjects(candidates, candidateIds));
+          await this.writeSnapshot(serializeProjects(candidates, candidateIds, priorCandidates));
           try {
             await inventory.assertUnchanged();
           } catch (error) {
@@ -135,6 +139,7 @@ class GroupProjectRegistry {
           }
           projects = candidates;
           inferredIds = candidateIds;
+          for (const [id, scope] of inventory.scopes) priorCandidates.set(id, { ...scope });
         }
       } catch (error) {
         if (!(error instanceof GroupProjectScopeMigrationError)) throw error;
@@ -145,6 +150,7 @@ class GroupProjectRegistry {
     }
     this.projects = projects;
     this.inferredScopeIds = inferredIds;
+    this.inferredScopeCandidates = priorCandidates;
     this.loaded = true;
   }
 
@@ -177,7 +183,7 @@ class GroupProjectRegistry {
     if (!this.dirty) return;
 
     const revision = this.revision;
-    const data = serializeProjects(this.projects, this.inferredScopeIds);
+    const data = serializeProjects(this.projects, this.inferredScopeIds, this.inferredScopeCandidates);
     const flushPromise = (async () => {
       await this.writeSnapshot(data);
       if (this.revision === revision) this.dirty = false;
@@ -260,6 +266,7 @@ class GroupProjectRegistry {
     await this.ensureLoaded();
     const existed = this.projects.delete(id);
     this.inferredScopeIds.delete(id);
+    this.inferredScopeCandidates.delete(id);
     if (existed) this.markDirty();
     return existed;
   }
@@ -283,6 +290,7 @@ class GroupProjectRegistry {
     this.pendingFlush = null;
     this.projects.clear();
     this.inferredScopeIds.clear();
+    this.inferredScopeCandidates.clear();
     this.listeners.clear();
     this.loaded = false;
     this.loadPromise = null;
