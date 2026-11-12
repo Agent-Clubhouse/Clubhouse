@@ -313,6 +313,7 @@ export async function linkConnectionDirections(pairs: readonly Pick<ConnectionDi
       try {
         listener(d.from, d.to);
       } catch {
+        // telemetry-exempt: the fixed appLog warning reports failure without exposing listener details
         appLog('core:mcp', 'warn', 'Could not notify a connection-permissions listener after saving grants');
       }
     }
