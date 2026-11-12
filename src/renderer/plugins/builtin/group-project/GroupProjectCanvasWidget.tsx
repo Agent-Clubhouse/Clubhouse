@@ -1270,6 +1270,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
         />
         in total
       </label>
+      <span className="text-xs text-ctp-overlay1">Protected topics do not count toward these limits.</span>
       {trimEstimate != null && trimEstimate > 0 && (
         <span className="text-xs text-ctp-error">
           {trimEstimate} {trimEstimate === 1 ? 'message' : 'messages'} will be removed
