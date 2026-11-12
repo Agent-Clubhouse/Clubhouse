@@ -139,6 +139,15 @@ separately from work outcome; an interrupted intake with no accepted-input
 record is indeterminate and is never rerun automatically. Reply delivery and
 controller-only triage/report tool registration remain a separate adapter.
 
+Registry listing, editor-catalog eligibility and by-name invocation all intersect
+the fixed set independently of saved switches or wider grants. Disallowed
+registered tools remain in the editor catalog as unavailable. Remote targets
+are resolved from cached membership identity, not editable binding names; the
+own-Dispatcher default fact requires a connection to the exact local controller,
+even while it is off. Sending uses a separately installed adapter, never generic
+editable-direction forwarding. Durable Ask-first calls remain disabled until
+canonical pre-click approval receipts and their end-to-end checks are installed.
+
 ## What connections start with (#3214)
 
 The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". A connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off, except for a parent's direction to its own helper. Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).

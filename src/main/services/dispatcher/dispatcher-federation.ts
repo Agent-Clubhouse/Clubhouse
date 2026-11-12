@@ -7,6 +7,7 @@ import {
 } from '../../../shared/dispatcher-federation';
 import type { RoutedMessagePart } from '../../../shared/chat';
 import type { McpToolResult } from '../clubhouse-mcp/types';
+import type { AgentToolRunResult } from '../annex-agent-calls';
 import { deliverToDispatcher } from '../clubhouse-mcp/tools/dispatcher-delivery';
 import { listPeers } from '../annex-peers';
 import { appLog } from '../log-service';
@@ -35,13 +36,16 @@ function result(value: Record<string, unknown>, isError = false): McpToolResult 
   return { content: [{ type: 'text', text: JSON.stringify(value) }], ...(isError && { isError }) };
 }
 
-function refuse(code: DispatcherFederationRefusal, message: string, call: DispatcherFederationCall): McpToolResult {
+function refuse(code: DispatcherFederationRefusal, message: string, call: DispatcherFederationCall): AgentToolRunResult {
   appLog('core:dispatcher', 'info', 'Remote Dispatcher call refused', { meta: { code } });
   recordDispatcherFederation({
     kind: code === 'causal_depth' ? 'limit' : 'delivery', state: 'refused', reason: code,
     originMachineId: call.origin.machineId, targetId: call.targetId, requestId: call.deliveryId, depth: call.cause?.depth,
   });
-  return result({ status: 'refused', code, message }, true);
+  return {
+    ...result({ status: 'refused', code, message }, true),
+    annexDelivery: { state: code === 'link_paused' || code === 'queue_limit' || code === 'undelivered' ? 'retry_later' : 'refused', reason: code },
+  };
 }
 
 async function pause(origin: DispatcherFederationOrigin, reason: 'causal_depth' | 'queue_limit'): Promise<void> {
@@ -71,7 +75,7 @@ export function isDispatcherFederationAvailable(targetId: string): boolean {
  * receipts; this adapter owns controller routing and never executes a remote
  * tool as the local user or transfers a sender's grants.
  */
-export async function receiveDispatcherFederationCall(call: DispatcherFederationCall): Promise<McpToolResult> {
+export async function receiveDispatcherFederationCall(call: DispatcherFederationCall): Promise<AgentToolRunResult> {
   if (!isDispatcherRemoteRequestOrigin({ ...call.origin, requestId: call.deliveryId, cause: call.cause })) {
     return refuse('invalid_args', 'The remote origin or causal metadata is not valid.', call);
   }
@@ -129,7 +133,10 @@ export async function receiveDispatcherFederationCall(call: DispatcherFederation
     if (begun.request.remoteDelivery !== 'accepted') {
       appLog('core:dispatcher', 'warn', 'Remote request delivery is uncertain; it will not be run again');
       recordDispatcherFederation({ kind: 'duplicate', state: 'indeterminate', reason: 'intake_indeterminate', originMachineId: origin.machineId, targetId: controllerId, requestId: begun.request.id, depth: call.cause.depth });
-      return result({ status: 'indeterminate', code: 'intake_indeterminate', message: 'A prior intake has no durable accepted-input record. It will not be run again automatically.' }, true);
+      return {
+        ...result({ status: 'indeterminate', code: 'intake_indeterminate', message: 'A prior intake has no durable accepted-input record. It will not be run again automatically.' }, true),
+        annexDelivery: { state: 'indeterminate', reason: 'intake_indeterminate' },
+      };
     }
     recordDispatcherFederation({ kind: 'duplicate', state: 'delivered', originMachineId: origin.machineId, targetId: controllerId, requestId: begun.request.id, depth: call.cause.depth });
     return result({ status: 'delivered', requestId: begun.request.id, duplicate: true });

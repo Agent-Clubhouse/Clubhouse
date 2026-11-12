@@ -28,6 +28,10 @@ import { localConnectionWakeOn } from '../connection-grants-store';
 import { localizeAgentArgs } from './agent-addresses';
 import { forwardAgentCall, remoteMachineOf } from '../annex-agent-calls';
 import { getProvider } from '../../orchestrators';
+import { isDispatcherFederationTool } from '../../../shared/dispatcher-federation';
+import {
+  dispatcherFederationPolicyVersion, fixedDispatcherFederationTools, remoteDispatcherFederationPeer,
+} from '../dispatcher/dispatcher-federation-presence';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
 export const DISPATCHER_ONLY_MESSAGE = 'Only the Dispatcher can use this tool.';
@@ -161,6 +165,7 @@ export interface ToolRegistrationOptions {
   grant: ToolGrant;
   /** Gate the tool behind a tool group, or several. */
   group?: ToolGroups;
+  targetScope?: 'remote_dispatcher';
 }
 
 const INTERNAL_READ: Readonly<McpToolAnnotations> = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -316,6 +321,22 @@ export interface ToolTemplate {
   /** What a call needs, as in {@link ToolRegistrationOptions.grant}. */
   grant: ToolGrant;
   group?: ToolGroups;
+  targetScope?: 'remote_dispatcher';
+}
+
+export type DispatcherFederationSender = (call: {
+  callerId: string; targetId: string; tool: string; args: Record<string, unknown>;
+}) => Promise<McpToolResult>;
+let dispatcherFederationSender: DispatcherFederationSender | undefined;
+export function setDispatcherFederationSender(sender: DispatcherFederationSender | undefined): void {
+  dispatcherFederationSender = sender;
+}
+
+function federationAllows(binding: McpBinding, suffix: string, targetScope?: 'remote_dispatcher'): boolean {
+  const peer = binding.targetKind === 'agent' ? remoteDispatcherFederationPeer(binding.targetId) : undefined;
+  if (targetScope === 'remote_dispatcher' && !peer) return false;
+  const fixed = binding.targetKind === 'agent' && fixedDispatcherFederationTools(binding.agentId, binding.targetId);
+  return (!peer && !fixed) || isDispatcherFederationTool(suffix);
 }
 
 /**
@@ -397,7 +418,7 @@ function wakeOffered(agentId: string, binding: McpBinding): boolean {
 export function canCallWake(agentId: string, targetId: string): boolean {
   const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetKind === 'agent' && b.targetId === targetId);
   const template = toolTemplates.get('agent')?.find((t) => t.nameSuffix === WAKE_TOOL);
-  if (!binding || !template || binding.disabledTools?.includes(WAKE_TOOL) || !wakeOffered(agentId, binding)) return false;
+  if (!binding || !template || !federationAllows(binding, WAKE_TOOL) || binding.disabledTools?.includes(WAKE_TOOL) || !wakeOffered(agentId, binding)) return false;
   return isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding)));
 }
 
@@ -477,6 +498,7 @@ export function registerToolTemplate(
     nameSuffix, definition: annotatedDefinition(targetKind, nameSuffix, definition), handler,
     grant: options?.grant,
     ...(options?.group && { group: options.group }),
+    ...(options?.targetScope && { targetScope: options.targetScope }),
   });
 }
 
@@ -587,7 +609,7 @@ export function dispatcherToolActions(): Set<GrantAction> {
 
 /** Part of the cache key: which agents are the Dispatcher, since a wire to it lists no reset tools (#2968). */
 function conditionsKey(): string {
-  return `d${dispatcherGateVersion()}`;
+  return `d${dispatcherGateVersion()}f${dispatcherFederationPolicyVersion()}`;
 }
 
 /** True if `name` is a registered global tool. */
@@ -685,7 +707,8 @@ function templateListable(
   deniedTools: ReadonlySet<string>,
   wire = wireOf(binding),
 ): boolean {
-  return groupAllows(template.group, binding.agentId)
+  return federationAllows(binding, template.nameSuffix, template.targetScope)
+    && groupAllows(template.group, binding.agentId)
     && !deniedTools.has(template.nameSuffix)
     && isListable(checkToolGrant(binding.agentId, template.grant, {}, wire));
 }
@@ -904,6 +927,9 @@ export async function callTool(
   if (!template) {
     return refuse('unknown_tool', `Unknown tool action: ${parsed.suffix}`);
   }
+  if (!federationAllows(binding, parsed.suffix, template.targetScope)) {
+    return refuse('tool_denied', 'This controller link has a fixed safe tool set; output, wake, settings, approvals and other tools are never available.');
+  }
 
   if (template.group && !groupAllows(template.group, agentId)) {
     appLog('core:mcp', 'info', 'Tool call refused: tool group is off for this agent', {
@@ -965,6 +991,9 @@ export async function callTool(
   if ('message' in localized) return refuse('other_machine', localized.message);
   args = localized.args;
   const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), await resolveArgTargets(agentId, template.grant, args));
+  if (remoteDispatcherFederationPeer(binding.targetId) && granted.ok === false && granted.reason === 'ask_first') {
+    return refuse('tool_denied', 'Durable Ask-first Dispatcher calls are not available yet. Nothing was queued or sent.');
+  }
   if (granted.ok === false) {
     const refused = await grantRefusal(agentId, toolName, granted, args);
     if (refused) return refused;
@@ -972,6 +1001,10 @@ export async function callTool(
 
   // A wire to an agent on another machine runs there, which checks it again against its own store (#3064).
   if (binding.targetKind === 'agent' && remoteMachineOf(binding.targetId)) {
+    if (remoteDispatcherFederationPeer(binding.targetId)) {
+      if (!dispatcherFederationSender) return refuse('tool_denied', 'Durable Dispatcher federation sending is not available on this machine.');
+      return dispatcherFederationSender({ callerId: agentId, targetId: binding.targetId, tool: parsed.suffix, args });
+    }
     return forwardAgentCall(agentId, binding.targetId, binding.targetName || binding.label || 'That agent', parsed.suffix, args);
   }
 
@@ -986,6 +1019,7 @@ export async function callTool(
 export async function runAgentToolForRemoteCaller(tool: string, targetId: string, callerId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   const template = toolTemplates.get('agent')?.find((t) => t.nameSuffix === tool);
   if (!template) return refuse('unknown_tool', `Unknown tool action: ${tool}`);
+  if (template.targetScope === 'remote_dispatcher') return refuse('tool_denied', 'This controller operation requires the dedicated federation receiver.');
   const schema = template.definition.inputSchema as Record<string, unknown> | undefined;
   const required = (schema?.required as string[]) || [];
   for (const field of required) {
@@ -1064,6 +1098,7 @@ onOrchestrationGateChange((agentId) => { toolListCache.delete(agentId); });
 
 /** For testing: clear all registered templates and global tools. */
 export function _resetForTesting(): void {
+  dispatcherFederationSender = undefined;
   connectedToDispatcher = () => false;
   toolTemplates.clear();
   targetTemplates.clear();

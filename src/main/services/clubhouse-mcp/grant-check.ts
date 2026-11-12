@@ -26,7 +26,7 @@ import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { CROSS_PROJECT_OFF_MESSAGE, fiveLevelOf } from '../../../shared/orchestration-policy';
 import { agentRegistry } from '../agent-registry';
 import { bindingManager } from './binding-manager';
-import { isDispatcherAgent, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
+import { isDispatcherAgent, isDispatcherCoordinatorId, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
 import { getAgentGrantChanges } from '../agent-grants-store';
 import { localConnectionWakeOn } from '../connection-grants-store';
@@ -35,6 +35,7 @@ import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } f
 import { toolGrantDeclarations, type ToolGrant, type ToolGrantDeclaration, type ToolGrantTarget } from './tool-grants';
 import type { ArgTargets } from './arg-targets';
 import type { McpBinding } from './types';
+import { remoteDispatcherFederationMachine, remoteDispatcherFederationPeer } from '../dispatcher/dispatcher-federation-presence';
 
 /** One action a call needs that is set to Ask first, and where (in the caller's terms). */
 export interface AskedAction { action: GrantAction; where: string }
@@ -66,6 +67,9 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
   const { binding } = wire;
   switch (binding.targetKind) {
     case 'agent': {
+      if (remoteDispatcherFederationPeer(binding.targetId)) {
+        return { kind: 'agent', isDispatcher: true, isRemoteDispatcher: true };
+      }
       const isDispatcher = isTrackedDispatcher(binding.targetId);
       if (binding.targetId === agentId) return { kind: 'agent', relations: ['self'], isDispatcher };
       if (mcpCallerParent(agentId) === binding.targetId) return { kind: 'agent', relations: ['parent'], isDispatcher };
@@ -106,6 +110,7 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     case 'my_helpers': return { kind: 'agent', relations: ['my_helper'] };
     case 'created_by_me': return { kind: 'agent', relations: ['created_by_me'] };
     case 'connected': return { kind: 'agent', relations: ['connected'] };
+    case 'remote_dispatcher': return { kind: 'agent', isDispatcher: true, isRemoteDispatcher: true };
     case 'app': return { kind: 'app' };
     case 'library': return { kind: 'library' };
     case 'all_projects': return { kind: 'project' };
@@ -142,6 +147,7 @@ export function registerActionOwnerLookup(lookup: ActionOwnerLookup | null): voi
 /** Where a refused call was aimed, in the caller's terms. Never says whether a target exists. */
 export function whereText(target: GrantCallTarget): string {
   const rel = target.relations ?? [];
+  if (target.isRemoteDispatcher) return 'another machine\'s Dispatcher';
   if (target.isDispatcher && rel.includes('connected')) return 'the Dispatcher';
   if (rel.includes('parent')) return 'your orchestrator';
   if (rel.includes('my_helper')) return 'your helpers';
@@ -200,7 +206,13 @@ export function callerGrants(agentId: string): Grant[] {
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
     crossProject: !tracked && isCrossProjectEnabled(agentId),
     control: orchestrationControl(agentId),
+    connectedToDispatcher: callerConnectedToLocalDispatcher(agentId),
   }), getAgentGrantChanges(agentId));
+}
+
+export function callerConnectedToLocalDispatcher(agentId: string): boolean {
+  return bindingManager.getBindingsForAgent(agentId).some((binding) =>
+    binding.targetKind === 'agent' && isDispatcherCoordinatorId(binding.targetId));
 }
 
 function hasAnyAgentSource(args: Record<string, unknown>): boolean {
@@ -231,7 +243,11 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
       for (const action of d.actions) {
         const decision = evaluateGrant({ caller, action, target }, grants);
         if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target), action, targetKind: target.kind };
-        if (decision.outcome === 'ask' && !d.askHandledByTool) asks.push({ action, where: whereText(target) });
+        if (decision.outcome === 'ask' && !d.askHandledByTool) {
+          const peer = target.isRemoteDispatcher ? (wire ? remoteDispatcherFederationPeer(wire.binding.targetId)
+            : typeof args.machine === 'string' ? remoteDispatcherFederationMachine(args.machine) : undefined) : undefined;
+          asks.push({ action, where: peer ? `${peer.name} on ${peer.machineName}` : whereText(target) });
+        }
       }
     }
   }

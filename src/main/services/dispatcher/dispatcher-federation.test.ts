@@ -109,7 +109,7 @@ describe('the receiving machine controller boundary', () => {
     await _whenRequestsSavedForTesting();
     await _resetDispatcherRequestsForTesting();
     const response = await receiveDispatcherFederationCall(request);
-    expect(response).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('"status":"indeterminate"') }] });
+    expect(response).toMatchObject({ isError: true, annexDelivery: { state: 'indeterminate' }, content: [{ text: expect.stringContaining('"status":"indeterminate"') }] });
     expect(deliverToDispatcher).not.toHaveBeenCalled();
     expect(getRequests()).toHaveLength(1);
   });
@@ -117,7 +117,7 @@ describe('the receiving machine controller boundary', () => {
   it('refuses reuse of a hand-off id for different work', async () => {
     await receiveDispatcherFederationCall(call());
     const response = await receiveDispatcherFederationCall(call({ args: { request: 'Delete project', origin_request_id: 'desk-1' } }));
-    expect(response).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('"code":"request_conflict"') }] });
+    expect(response).toMatchObject({ isError: true, annexDelivery: { state: 'refused' }, content: [{ text: expect.stringContaining('"code":"request_conflict"') }] });
     expect(deliverToDispatcher).toHaveBeenCalledTimes(1);
   });
 
@@ -188,7 +188,7 @@ describe('the receiving machine controller boundary', () => {
 
   it('does not retain an actionable request when the runtime explicitly refuses delivery', async () => {
     vi.mocked(deliverToDispatcher).mockResolvedValueOnce({ delivered: false, text: 'Controller is stopping.' });
-    expect(await receiveDispatcherFederationCall(call())).toMatchObject({ isError: true });
+    expect(await receiveDispatcherFederationCall(call())).toMatchObject({ isError: true, annexDelivery: { state: 'retry_later' } });
     expect(getRequests()).toEqual([]);
   });
 

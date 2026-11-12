@@ -4,6 +4,7 @@ import { appLog } from '../log-service';
 
 let peers: DispatcherFederationPeer[] = [];
 let localControllerId: string | null = null;
+let policyVersion = 0;
 const listeners = new Set<() => void>();
 
 export function getDispatcherFederationPeers(): DispatcherFederationPeer[] {
@@ -14,6 +15,7 @@ export function getDispatcherFederationPeers(): DispatcherFederationPeer[] {
 export function setDispatcherFederationPeers(next: readonly DispatcherFederationPeer[]): void {
   if (JSON.stringify(peers) === JSON.stringify(next)) return;
   peers = next.map((peer) => ({ ...peer }));
+  policyVersion++;
   for (const listener of listeners) {
     try { listener(); } catch (error) {
       // telemetry-exempt: logged; one subscriber cannot hide presence from the others.
@@ -30,7 +32,12 @@ export function onDispatcherFederationPeersChanged(listener: () => void): () => 
 }
 
 export function setDispatcherFederationControllerId(id: string | null): void {
+  if (localControllerId !== id) policyVersion++;
   localControllerId = id;
+}
+
+export function dispatcherFederationPolicyVersion(): number {
+  return policyVersion;
 }
 
 export function remoteDispatcherFederationPeer(address: string): DispatcherFederationPeer | undefined {
@@ -39,6 +46,11 @@ export function remoteDispatcherFederationPeer(address: string): DispatcherFeder
   const qualified = formatAgentAddress(parsed);
   const peer = peers.find((entry) => entry.address === qualified);
   return peer && { ...peer };
+}
+
+export function remoteDispatcherFederationMachine(name: string): DispatcherFederationPeer | undefined {
+  const matches = peers.filter((peer) => peer.address && peer.machineName.trim().toLowerCase() === name.trim().toLowerCase());
+  return matches.length === 1 ? { ...matches[0] } : undefined;
 }
 
 /** Source ownership, independent of editable connection switches and current availability. */
