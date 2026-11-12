@@ -95,9 +95,10 @@ async function quarantine(file: string, reason: string): Promise<void> {
 /**
  * Read the store. Call under the project's lock. A missing file is empty; a
  * file that can't be parsed is moved aside (`.corrupt-<ts>`) and read as
- * empty. Other read errors throw.
+ * empty. Strict inventory reads refuse incomplete data without quarantining.
+ * Other read errors throw.
  */
-async function loadStore(projectPath: string): Promise<StoreState> {
+async function loadStore(projectPath: string, strict = false): Promise<StoreState> {
   const empty: StoreState = { connections: [], unknown: [], writable: true };
   const file = connectionsStorePath(projectPath);
   let raw: string;
@@ -111,7 +112,8 @@ async function loadStore(projectPath: string): Promise<StoreState> {
   try {
     data = JSON.parse(raw);
   } catch (err) {
-    // telemetry-exempt: logged by quarantine; the store continues empty
+    // telemetry-exempt: strict reads propagate; ordinary reads log quarantine
+    if (strict) throw err;
     await quarantine(file, err instanceof Error ? err.message : String(err));
     return empty;
   }
@@ -119,17 +121,21 @@ async function loadStore(projectPath: string): Promise<StoreState> {
   const version = record?.version;
   // A newer Clubhouse wrote it: read what this build recognizes, never rewrite or move it.
   if (typeof version === 'number' && version > CONNECTION_STORE_VERSION) {
+    if (strict) throw new Error('Cannot inventory connections written by a newer version of Clubhouse.');
     const entries = Array.isArray(record!.connections) ? record!.connections as unknown[] : [];
     return { connections: entries.filter(isConnection), unknown: entries.filter((e) => !isConnection(e)), writable: false };
   }
   if (!record || !Array.isArray(record.connections) || typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
+    if (strict) throw new Error('Cannot inventory an invalid orchestrator connections store.');
     await quarantine(file, 'not a connections store');
     return empty;
   }
   const entries = record.connections as unknown[];
+  const unknown = entries.filter((entry) => !isConnection(entry));
+  if (strict && unknown.length > 0) throw new Error('Cannot inventory unrecognized orchestrator connections entries.');
   return {
     connections: entries.filter(isConnection),
-    unknown: entries.filter((e) => !isConnection(e)),
+    unknown,
     writable: true,
   };
 }
@@ -169,6 +175,11 @@ function withStoreLock<T>(projectPath: string, fn: () => Promise<T>): Promise<T>
 /** The project's connections, read under the store lock; empty when it has none. */
 export function readConnections(projectPath: string): Promise<OrchestratorConnection[]> {
   return withStoreLock(projectPath, async () => (await loadStore(projectPath)).connections);
+}
+
+/** A complete, read-only inventory for migrations. */
+export function peekConnectionsChecked(projectPath: string): Promise<OrchestratorConnection[]> {
+  return withStoreLock(projectPath, async () => (await loadStore(projectPath, true)).connections);
 }
 
 const sameConnection = (a: Pick<OrchestratorConnection, 'agentId' | 'targetId'>, b: Pick<OrchestratorConnection, 'agentId' | 'targetId'>) =>
