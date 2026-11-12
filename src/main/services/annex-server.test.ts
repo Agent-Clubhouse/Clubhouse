@@ -571,6 +571,92 @@ describe('annex-server', () => {
       } finally { release(); await changing; listen.mockRestore(); }
     });
 
+    it.each(['stop', 'close'])('settles verified startup when %s cancels listen before its callback', async (cancel) => {
+      annexServer.stop();
+      const servers: net.Server[] = [];
+      const original = net.Server.prototype.listen;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        servers.push(this);
+        return Reflect.apply(original, this, args);
+      });
+      try {
+        const starting = annexServer.startVerified().then(
+          () => ({ state: 'ready' }),
+          (error: unknown) => ({ state: 'failed', error }),
+        );
+        if (cancel === 'stop') annexServer.stop();
+        else servers.find((server) => server instanceof https.Server)!.close();
+        expect(await Promise.race([
+          starting,
+          new Promise((resolve) => setTimeout(() => resolve({ state: 'pending' }), 150)),
+        ])).toMatchObject({ state: 'failed', error: expect.any(Error) });
+        expect(annexServer.getStatus()).toMatchObject({ port: 0, pairingPort: 0, tlsEnabled: false });
+        expect(servers.every((server) => !server.listening)).toBe(true);
+      } finally { listen.mockRestore(); }
+    });
+
+    it.each(['replacement', 'disable'])('settles the actual MCP host without undoing a concurrent %s', async (change) => {
+      const original = net.Server.prototype.listen;
+      const held = new Set<net.Server>();
+      let holding = true;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (holding) { held.add(this); return this; }
+        return Reflect.apply(original, this, args);
+      });
+      try {
+        const changing = networkToolHost.host!.applyLoopbackOnly(false, () => {}).then(
+          () => ({ state: 'ready', message: '' }),
+          (error: unknown) => ({ state: 'failed', message: error instanceof Error ? error.message : String(error) }),
+        );
+        await vi.waitFor(() => expect(held.size).toBe(2));
+        saved = { ...saved, enableServer: change !== 'disable', networkEnabled: false };
+        annexServer.stop();
+        holding = false;
+        if (change === 'replacement') await annexServer.startVerified();
+        const replacement = annexServer.getStatus();
+        expect(await Promise.race([
+          changing,
+          new Promise((resolve) => setTimeout(() => resolve({ state: 'pending' }), 150)),
+        ])).toMatchObject({ state: 'failed', message: expect.stringMatching(/concurrent|interrupted/) });
+        expect(saved).toMatchObject({ loopbackOnly: false, enableServer: change !== 'disable', networkEnabled: false });
+        expect(annexServer.getStatus()).toEqual(replacement);
+        expect(replacement.tlsEnabled).toBe(change === 'replacement');
+        expect(replacement.port > 0).toBe(change === 'replacement');
+        expect([...held].every((server) => !server.listening)).toBe(true);
+      } finally { holding = false; listen.mockRestore(); }
+    });
+
+    it.each([true, false])('does not claim restored settings or stopped Annex after rollback is replaced with loopback=%s', async (loopbackOnly) => {
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => { throw new Error('initial TLS failure'); });
+      const original = net.Server.prototype.listen;
+      let failed = false;
+      const listen = vi.spyOn(net.Server.prototype, 'listen').mockImplementation(function (this: net.Server, ...args: unknown[]) {
+        if (!failed && this instanceof https.Server) {
+          failed = true;
+          process.nextTick(() => {
+            this.emit('error', Object.assign(new Error('rollback EACCES'), { code: 'EACCES' }));
+            saved = { ...saved, loopbackOnly };
+            annexServer.stop();
+            annexServer.start();
+          });
+          return this;
+        }
+        return Reflect.apply(original, this, args);
+      });
+      try {
+        const result = await networkToolHost.host!.applyLoopbackOnly(false, () => {}).then(
+          () => '',
+          (error: unknown) => error instanceof Error ? error.message : String(error),
+        );
+        expect(result).toMatch(/concurrent|interrupted/);
+        expect(result).not.toContain('previous setting was restored');
+        expect(result).not.toContain('Annex is stopped');
+        await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
+        expect(annexServer.getStatus().tlsEnabled).toBe(true);
+        expect(saved.loopbackOnly).toBe(loopbackOnly);
+      } finally { listen.mockRestore(); }
+    });
+
     it('rejects actual TLS creation failure and restores the previous secure runtime', async () => {
       vi.mocked(annexTls.createTlsServerOptions).mockImplementationOnce(() => { throw new Error('injected TLS creation failure'); });
       await expect(networkToolHost.host!.applyLoopbackOnly(false, () => {})).rejects.toThrow('previous setting and secure runtime were restored');
