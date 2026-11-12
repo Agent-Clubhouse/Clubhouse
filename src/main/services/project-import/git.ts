@@ -89,6 +89,7 @@ export function importGitEnvironment(source: Record<string, string | undefined>)
     GIT_LFS_SKIP_SMUDGE: '1',
     GIT_ATTR_NOSYSTEM: '1',
     GIT_PROTOCOL_FROM_USER: '0',
+    GIT_OPTIONAL_LOCKS: '0',
   };
 }
 

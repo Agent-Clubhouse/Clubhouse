@@ -3,11 +3,12 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import type { Project } from '../../../shared/types';
-import { checkProjectFolder, registerProjectFolder, type RegisterProjectResult } from '../project-add';
+import { checkProjectFolder, registerProjectFolder } from '../project-add';
 import * as projectStore from '../project-store';
 import { getOriginUrl } from '../git-service';
 import { appLog } from '../log-service';
 import { createImportGit, type ImportGit } from './git';
+import { checkoutFingerprint, protectedRuntimeName } from './checkout';
 import { ImportStore, IMPORT_HISTORY_MAX } from './store';
 import {
   ACTIVE_PHASES, IMPORT_EFFECTS, ImportError, containsControlCharacters, directoryIdentity, validateGithubUrl, validateImportBranch,
@@ -22,6 +23,21 @@ interface GitSeal {
   core: string;
   origin: boolean;
   directories: Map<string, string>;
+  files: Map<string, string>;
+}
+
+function controlFiles(destination: string, branch: string): Map<string, string> {
+  const files = new Map<string, string>();
+  const references = [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`];
+  for (const relative of ['config', 'HEAD', 'index', 'shallow', 'packed-refs', 'FETCH_HEAD', 'ORIG_HEAD', 'logs/HEAD', ...references, ...references.map((ref) => `logs/${ref}`)]) {
+    const stat = fs.lstatSync(path.join(destination, '.git', relative), { throwIfNoEntry: false, bigint: true });
+    if (!stat) continue;
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n) {
+      throw new ImportError('owned_directory_changed', 'A Git control file is not a singly linked regular file. No further Git command was attempted; inspect the preserved state.');
+    }
+    files.set(relative, `${stat.dev}:${stat.ino}:${stat.mode}:${stat.nlink}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`);
+  }
+  return files;
 }
 
 function readControlFile(file: string, limit: number): Buffer {
@@ -102,7 +118,7 @@ interface Dependencies {
   now: () => number;
   listProjects: () => Promise<Project[]>;
   origin: (folder: string) => Promise<string | null>;
-  register: (folder: string) => Promise<RegisterProjectResult>;
+  register: typeof registerProjectFolder;
 }
 
 function inside(child: string, parent: string): boolean {
@@ -273,7 +289,7 @@ export class ProjectImportService {
     }
   }
 
-  private verifyOwned(receipt: ImportReceipt, initialized: boolean, seal?: GitSeal): void {
+  private verifyOwned(receipt: ImportReceipt, initialized: boolean, seal?: GitSeal, expectedWrites?: ReadonlySet<string>): void {
     this.verifyParent(receipt.plan);
     const target = fs.lstatSync(receipt.plan.destination);
     if (target.isSymbolicLink() || !target.isDirectory() || directoryIdentity(target) !== receipt.directoryIdentity) {
@@ -305,7 +321,7 @@ export class ProjectImportService {
         }
         if (stat && !prior) seal.directories.set(relative, directoryIdentity(stat));
       }
-      for (const relative of ['commondir', 'objects/info/alternates', 'info/grafts', 'refs/replace']) {
+      for (const relative of ['commondir', 'objects/info/alternates', 'info/grafts', 'refs/replace', 'config.worktree']) {
         if (fs.lstatSync(path.join(gitPath, relative), { throwIfNoEntry: false })) {
           throw new ImportError('checkout_changed', 'Import Git indirection appeared. No further Git command was attempted; inspect the preserved state.');
         }
@@ -314,6 +330,13 @@ export class ProjectImportService {
       if (current.config !== seal.config || current.core !== seal.core) {
         throw new ImportError('checkout_changed', 'Import Git configuration changed. No further Git command or registration was attempted; inspect the preserved state.');
       }
+      const files = controlFiles(receipt.plan.destination, receipt.plan.branch);
+      for (const file of new Set([...seal.files.keys(), ...files.keys()])) {
+        if (seal.files.get(file) !== files.get(file) && !expectedWrites?.has(file)) {
+          throw new ImportError('checkout_changed', 'A Git control file changed outside the current owned Git operation. Inspect the preserved state before reusing it.');
+        }
+      }
+      if (expectedWrites) seal.files = files;
     }
   }
 
@@ -342,14 +365,34 @@ export class ProjectImportService {
     const checkpoint = async () => {
       signal.throwIfAborted();
       await assertCurrent();
+      signal.throwIfAborted();
       this.verifyOwned(receipt, initialized, seal);
     };
-    const run = (args: string[]) => this.deps.git.run(args, {
-      cwd: destination, signal,
-      assertCurrent,
-      beforeSpawn: () => { signal.throwIfAborted(); this.verifyOwned(receipt, initialized, seal); },
-      onProgress: (progress) => { receipt.progress = progress; },
-    });
+    const run = async (args: string[]) => {
+      const result = await this.deps.git.run(args, {
+        cwd: destination, signal, assertCurrent,
+        beforeSpawn: () => { signal.throwIfAborted(); this.verifyOwned(receipt, initialized, seal); },
+        onProgress: (progress) => { receipt.progress = progress; },
+      });
+      if (args[0] === 'checkout') receipt.cloneCompleted = true;
+      signal.throwIfAborted();
+      if (seal) {
+        let writes: string[] = [];
+        if (args[0] === 'remote' && args[1] === 'add') {
+          this.verifyOwned(receipt, initialized);
+          const configured = inspectConfig(destination, url);
+          if (configured.core !== seal.core) throw new ImportError('checkout_changed', 'Git core configuration changed while adding the approved origin. Inspect the preserved state.');
+          seal = { ...seal, ...configured, origin: true };
+          writes = ['config'];
+        } else if (args[0] === 'fetch') {
+          writes = ['FETCH_HEAD', 'shallow', `refs/remotes/origin/${branch}`, `logs/refs/remotes/origin/${branch}`];
+        } else if (args[0] === 'checkout') {
+          writes = ['HEAD', 'index', 'ORIG_HEAD', 'logs/HEAD', `refs/heads/${branch}`, `logs/refs/heads/${branch}`];
+        }
+        this.verifyOwned(receipt, initialized, seal, new Set(writes));
+      }
+      return result;
+    };
     try {
       signal.throwIfAborted();
       const currentPlacement = await this.placement(destination);
@@ -368,12 +411,12 @@ export class ProjectImportService {
       await run(['init', '--quiet', '--template=', '--', '.']);
       initialized = true;
       this.verifyOwned(receipt, initialized);
-      seal = { directoryIdentity: directoryIdentity(fs.lstatSync(path.join(destination, '.git'))), ...inspectConfig(destination), origin: false, directories: new Map() };
+      seal = {
+        directoryIdentity: directoryIdentity(fs.lstatSync(path.join(destination, '.git'))),
+        ...inspectConfig(destination), origin: false, directories: new Map(), files: controlFiles(destination, branch),
+      };
       await checkpoint();
       await run(['remote', 'add', '--', 'origin', url]);
-      const configured = inspectConfig(destination, url);
-      if (configured.core !== seal.core) throw new ImportError('checkout_changed', 'Git core configuration changed while adding the approved origin. Inspect the preserved state.');
-      seal = { ...seal, ...configured, origin: true };
       await this.save(receipt, 'fetching');
       await checkpoint();
       await run(['fetch', '--progress', '--no-tags', '--no-recurse-submodules', '--depth=1', '--', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
@@ -382,19 +425,19 @@ export class ProjectImportService {
       if (downloaded !== commit) throw new ImportError('remote_changed', 'The branch changed while downloading. Objects were preserved but no checkout or registration was performed; preview again after inspecting the partial import.');
       await this.validateRemote(receipt.plan, signal);
       const rootNames = (await run(['ls-tree', '-z', '--name-only', commit])).split('\0');
-      if (rootNames.some((name) => ['.clubhouse', '.clubhouse-dev'].includes(name.split(':')[0].replace(/[. ]+$/, '').toLowerCase()))) {
+      if (rootNames.some(protectedRuntimeName)) {
         throw new ImportError('repository_app_state', 'The repository contains Clubhouse runtime state. Downloaded objects are preserved but were not checked out or registered; inspect and remove repository-provided runtime state before importing.');
       }
       await this.save(receipt, 'checking_out');
       await checkpoint();
       await run(['checkout', '--no-recurse-submodules', '--no-track', '-b', branch, commit, '--']);
-      receipt.cloneCompleted = true;
       await checkpoint();
       await this.save(receipt, 'cloned');
       // Registration appends to .gitignore. Never follow a user-replaced symlink or special file.
       const ignore = await lstatOrMissing(path.join(destination, '.gitignore'));
       if (ignore && (!ignore.isFile() || ignore.isSymbolicLink())) throw new ImportError('unsafe_gitignore', 'Checkout finished, but .gitignore is not a regular file. It was not changed; inspect it before explicitly registering this checkout.');
       if (ignore && ignore.size > 1024 * 1024) throw new ImportError('gitignore_limit', 'Checkout finished, but .gitignore is too large for bounded registration. It was not changed; inspect it before explicit local registration.');
+      const fingerprint = checkoutFingerprint(destination);
       if ((await run(['status', '--porcelain=v1', '--untracked-files=all', '--ignore-submodules=none'])).trim()) {
         throw new ImportError('checkout_changed', 'Checkout finished, but local files changed before registration. They were preserved; inspect the checkout and explicitly register it with add_project.');
       }
@@ -402,13 +445,24 @@ export class ProjectImportService {
       await checkpoint();
       await this.validateRemote(receipt.plan, signal);
       await checkpoint();
-      // Re-read actual local identity after all authority awaits, immediately before registration.
-      this.verifyCheckout(receipt, seal);
-      const result = await this.deps.register(destination);
+      const registrationSeal = seal;
+      const assertSafe = () => {
+        signal.throwIfAborted();
+        this.verifyCheckout(receipt, registrationSeal);
+        if (checkoutFingerprint(destination) !== fingerprint) {
+          throw new ImportError('checkout_changed', 'Checkout content changed across registration checks. Files were preserved; inspect and explicitly register this checkout.');
+        }
+      };
+      assertSafe();
+      const result = await this.deps.register(destination, {
+        beforeGitignore: async () => { await checkpoint(); assertSafe(); },
+        assertSafe,
+      });
       receipt.projectId = result.project.id;
       receipt.gitignore = result.gitignore;
-      if (result.gitignore === 'failed') receipt.reason = 'gitignore_failed';
-      await this.save(receipt, result.gitignore === 'failed' ? 'partial' : 'completed');
+      if (signal.aborted) receipt.reason = 'cancelled';
+      else if (result.gitignore === 'failed') receipt.reason = 'gitignore_failed';
+      await this.save(receipt, signal.aborted || result.gitignore === 'failed' ? 'partial' : 'completed');
     } catch (error) {
       // telemetry-exempt: raw Git/credential/filesystem errors never leave this boundary.
       receipt.failedAt = receipt.phase;

@@ -536,6 +536,158 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
       spy.mockRestore();
     }
   });
+
+  it('registers a normal checkout through real addProject and guarded creation of its missing gitignore', async () => {
+    const f = fixture();
+    fs.rmSync(temp.base, { recursive: true, force: true });
+    const actualConfig = await vi.importActual<typeof import('../agent-config')>('../agent-config');
+    vi.mocked(ensureGitignore).mockImplementationOnce(actualConfig.ensureGitignore);
+    f.service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: async () => [], register: registerProjectFolder });
+    const { receipt } = await start(f);
+    const result = await finished(f.service, receipt.id);
+    expect(result).toMatchObject({ phase: 'completed', cloneCompleted: true, gitignore: 'updated' });
+    expect(await projectStore.findByPath(f.destination)).toMatchObject({ id: result.projectId });
+    expect(fs.readFileSync(path.join(f.destination, '.gitignore'), 'utf8')).toContain('.clubhouse/agents/');
+  });
+
+  it('retains the real project id and reports partial cancellation after the actual registry commit', async () => {
+    const f = fixture();
+    fs.rmSync(temp.base, { recursive: true, force: true });
+    const actualConfig = await vi.importActual<typeof import('../agent-config')>('../agent-config');
+    vi.mocked(ensureGitignore).mockImplementationOnce(actualConfig.ensureGitignore);
+    let importId = '';
+    const addProject = projectStore.addProject;
+    const spy = vi.spyOn(projectStore, 'addProject').mockImplementation(async (folder) => {
+      const result = await addProject(folder);
+      expect(await f.service.cancel('dispatcher', importId, folder)).toMatchObject({ status: 'cancellation_requested' });
+      return result;
+    });
+    f.service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: async () => [], register: registerProjectFolder });
+    try {
+      const { receipt } = await start(f);
+      importId = receipt.id;
+      const result = await finished(f.service, receipt.id);
+      expect(result).toMatchObject({ phase: 'partial', reason: 'cancelled', gitignore: 'failed', cloneCompleted: true });
+      expect(result.projectId).toBeDefined();
+      expect(await projectStore.findByPath(f.destination)).toMatchObject({ id: result.projectId });
+      expect(fs.existsSync(path.join(f.destination, '.gitignore'))).toBe(false);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('rejects index replacement during read-only status rather than accepting it as an optional index refresh', async () => {
+    const f = fixture();
+    const run = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await run(args, options);
+      if (args[0] === 'status') {
+        const index = path.join(f.destination, '.git', 'index');
+        fs.renameSync(index, `${index}-original`);
+        fs.copyFileSync(`${index}-original`, index);
+      }
+      return result;
+    });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'partial', cloneCompleted: true, reason: 'checkout_changed' });
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it('rejects regular control-file replacement not written by fetch instead of adopting its new identity', async () => {
+    const f = fixture();
+    const run = f.runner.run;
+    let replaced = '';
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await run(args, options);
+      if (args[0] === 'fetch') {
+        const head = path.join(f.destination, '.git', 'HEAD');
+        replaced = fs.readFileSync(head, 'utf8');
+        fs.renameSync(head, `${head}-original`);
+        fs.writeFileSync(head, replaced);
+      }
+      return result;
+    });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', cloneCompleted: false, reason: 'checkout_changed' });
+    expect(fs.readFileSync(path.join(f.destination, '.git', 'HEAD'), 'utf8')).toBe(replaced);
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it.each(['HEAD', 'index', 'shallow', 'packed-refs'])('rejects a post-fetch %s symlink without modifying its outside target', async (relative) => {
+    const f = fixture();
+    const outside = path.join(f.work, 'outside-user-file');
+    fs.writeFileSync(outside, 'keep\n');
+    const run = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await run(args, options);
+      if (args[0] === 'fetch') {
+        const target = path.join(f.destination, '.git', relative);
+        if (fs.existsSync(target)) fs.renameSync(target, `${target}-original`);
+        fs.symlinkSync(outside, target);
+      }
+      return result;
+    });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', cloneCompleted: false, reason: 'owned_directory_changed' });
+    expect(fs.readFileSync(outside, 'utf8')).toBe('keep\n');
+    expect(f.register).not.toHaveBeenCalled();
+  });
+});
+
+describe('guarded standard ignore writes', () => {
+  it.each([false, true])('preserves ordinary formatting with an initially existing gitignore: %s', async (exists) => {
+    const f = fixture();
+    const ordinary = path.join(f.work, 'ordinary');
+    const guarded = path.join(f.work, 'guarded');
+    fs.mkdirSync(ordinary);
+    fs.mkdirSync(guarded);
+    if (exists) {
+      fs.writeFileSync(path.join(ordinary, '.gitignore'), '# existing\nnode_modules/\n');
+      fs.writeFileSync(path.join(guarded, '.gitignore'), '# existing\nnode_modules/\n');
+    }
+    const actual = await vi.importActual<typeof import('../agent-config')>('../agent-config');
+    expect(await actual.ensureGitignore(guarded, () => {})).toBe(await actual.ensureGitignore(ordinary));
+    expect(fs.readFileSync(path.join(guarded, '.gitignore'), 'utf8')).toBe(fs.readFileSync(path.join(ordinary, '.gitignore'), 'utf8'));
+  });
+
+  it.each(['symlink', 'hardlink'])('refuses a gitignore %s without modifying either target', async (kind) => {
+    const f = fixture();
+    const outside = path.join(f.work, 'outside');
+    const ignore = path.join(f.source, '.gitignore');
+    fs.writeFileSync(outside, 'keep\n');
+    if (kind === 'symlink') fs.symlinkSync(outside, ignore);
+    else fs.linkSync(outside, ignore);
+    const actual = await vi.importActual<typeof import('../agent-config')>('../agent-config');
+    await expect(actual.ensureGitignore(f.source, () => {})).rejects.toThrow('singly linked regular file');
+    expect(fs.readFileSync(outside, 'utf8')).toBe('keep\n');
+  });
+
+  it('accepts a complete 1 MiB ignore file, rejects one more byte and refuses an append past the same bound', async () => {
+    const f = fixture();
+    const actual = await vi.importActual<typeof import('../agent-config')>('../agent-config');
+    await actual.ensureGitignore(f.source);
+    await actual.ensureGitignore(f.source);
+    const ignore = path.join(f.source, '.gitignore');
+    const content = fs.readFileSync(ignore, 'utf8');
+    const limit = 1024 * 1024;
+    fs.writeFileSync(ignore, `${content}${'x'.repeat(limit - Buffer.byteLength(content))}`);
+    expect(await actual.ensureGitignore(f.source, () => {})).toBe(false);
+    fs.appendFileSync(ignore, 'x');
+    await expect(actual.ensureGitignore(f.source, () => {})).rejects.toThrow('bounded');
+    expect(fs.statSync(ignore).size).toBe(limit + 1);
+    fs.writeFileSync(ignore, 'x'.repeat(limit));
+    await expect(actual.ensureGitignore(f.source, () => {})).rejects.toThrow('bounded');
+    expect(fs.readFileSync(ignore, 'utf8')).toBe('x'.repeat(limit));
+  });
+
+  it('exclusively creates a missing ignore file and preserves a user file appearing at the final guard', async () => {
+    const f = fixture();
+    const ignore = path.join(f.source, '.gitignore');
+    const actual = await vi.importActual<typeof import('../agent-config')>('../agent-config');
+    let checks = 0;
+    await expect(actual.ensureGitignore(f.source, () => {
+      if (++checks === 2) fs.writeFileSync(ignore, 'keep\n');
+    })).rejects.toMatchObject({ code: 'EEXIST' });
+    expect(fs.readFileSync(ignore, 'utf8')).toBe('keep\n');
+  });
 });
 
 describe('cancellation, interruption and unsafe incidental execution', () => {

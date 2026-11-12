@@ -71,6 +71,31 @@ directory identity and ignore-file safety are rechecked. Final parent checks
 and exclusive directory creation have no intervening asynchronous await.
 These guards do not isolate the filesystem from other OS processes.
 
+Known Git control files, including both selected-branch reflogs, must remain
+singly linked regular files. Their identity/version may change only for the
+specific files the current owned Git operation writes; symlinks, hardlinks and
+unexpected replacements stop before the next subprocess. Optional Git locks are
+disabled, so a status inspection cannot silently refresh/adopt a changed index.
+
+A clean Git status is bound to a whole-working-tree byte/metadata fingerprint
+(excluding `.git`), checked again after the last authority await and at the real
+registration ignore-write boundary. Cancellation is rechecked after authority
+awaits. Ignored content changes and newly appeared runtime-state aliases are not
+silently accepted. Inspection never follows symlinks or runs filters. Each walk
+allows at most 20,000 entries, 64 MiB of file contents and depth 128, with a
+250 ms elapsed budget checked between filesystem operations. A single filesystem
+call is not time-isolated. Over-bound checkouts remain preserved partial imports
+for inspection and explicit local registration; these are registration-inspection
+bounds, not a clone disk quota.
+
+Import passes a main-private guard through the existing `registerProjectFolder`
+path. After the actual registry await, its guarded ignore writer uses bounded
+no-follow file descriptors and exclusive creation, without an await between the
+last safety check and write. Existing and resulting ignore files are capped at
+1 MiB. Ordinary no-options registration retains its existing behavior and line
+format. A refused write after registry commit reports a partial outcome with the
+real project id; no registration or user content is rolled back or deleted.
+
 Git/credential-helper stderr is never returned, persisted or logged. Progress
 contains only phase and numeric percentage. Cancellation signals only the
 tracked import child process, never a process name or unrelated process group.
