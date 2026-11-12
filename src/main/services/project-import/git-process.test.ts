@@ -8,6 +8,8 @@ const fake = vi.hoisted(() => ({
   calls: [] as Array<{ command: string; args: string[]; env: NodeJS.ProcessEnv; cwd: string; shell: boolean; kills: string[] }>,
   rejectDeviceConfig: false,
 }));
+vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('fs', async (original) => ({ ...await original<typeof import('fs')>() }));
 vi.mock('child_process', async () => {
   const { EventEmitter } = await import('events');
   const { PassThrough } = await import('stream');
@@ -68,6 +70,30 @@ describe('isolated credential-aware Git subprocess boundary', () => {
     } finally { inspect.mockRestore(); }
   });
 
+  it('refuses changed isolation bytes after the authority await, preserving them without spawning the owned command', async () => {
+    let file = '';
+    const open = fs.openSync;
+    const capture = vi.spyOn(fs, 'openSync').mockImplementation((name, flags, mode) => {
+      const descriptor = open(name, flags, mode);
+      if (typeof name === 'string' && flags === 'wx') file = name;
+      return descriptor;
+    });
+    try {
+      await expect(createImportGit(source).run(['checkout'], {
+        cwd: '/fixture',
+        assertCurrent: async () => {
+          expect(file).not.toBe('');
+          fs.writeFileSync(file, '[include]\npath = private-changed-config\n');
+        },
+      })).rejects.toMatchObject({ reason: 'git_config_unavailable' });
+      expect(fake.calls).toHaveLength(2);
+      expect(fs.readFileSync(file, 'utf8')).toContain('private-changed-config');
+    } finally {
+      capture.mockRestore();
+      if (file) { fs.unlinkSync(file); fs.rmdirSync(path.dirname(file)); }
+    }
+  });
+
   it('carries only existing authorized credential config in environment, never argv, and disables unsafe inherited behavior', async () => {
     fake.outputs.push(
       { code: 1 },
@@ -116,6 +142,8 @@ describe('isolated credential-aware Git subprocess boundary', () => {
     controller.abort();
     await expect(running).rejects.toMatchObject({ reason: 'cancelled' });
     expect(fake.calls.map((call) => call.kills)).toEqual([[], [], ['SIGTERM']]);
+    expect(fs.existsSync(fake.calls[2].env.GIT_CONFIG_GLOBAL!)).toBe(false);
+    expect(fs.existsSync(path.dirname(fake.calls[2].env.GIT_CONFIG_GLOBAL!))).toBe(false);
   });
 
   it('refuses oversized stdout instead of exposing or retaining unbounded metadata', async () => {

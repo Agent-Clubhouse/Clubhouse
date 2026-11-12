@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { getShellEnvironment } from '../../util/shell';
-import { ImportError, validateImportBranch, type RemoteIdentity } from './types';
+import { appLog } from '../log-service';
+import { directoryIdentity, ImportError, validateImportBranch, type RemoteIdentity } from './types';
 
 export interface GitRunOptions {
   cwd: string;
@@ -73,7 +74,61 @@ function trustedGitRuntime(source: Record<string, string | undefined>): { binary
   throw new ImportError('git_unavailable', 'No native Git executable exists in the existing absolute PATH directories. Install/repair Git outside agent messages; relative paths and shell shims are not used for repository import.');
 }
 
-export function importGitEnvironment(source: Record<string, string | undefined>): NodeJS.ProcessEnv {
+function emptyGitConfig() {
+  let directory: string | undefined;
+  let fd: number | undefined;
+  try {
+    directory = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'clubhouse-import-git-'));
+    const root = directory;
+    const rootIdentity = directoryIdentity(fs.lstatSync(root));
+    const file = path.join(root, 'empty.config');
+    fd = fs.openSync(file, 'wx', 0o600);
+    const descriptor = fd;
+    const identity = directoryIdentity(fs.fstatSync(descriptor));
+    const assertSafe = () => {
+      try {
+        const parent = fs.lstatSync(root);
+        const stat = fs.lstatSync(file);
+        const opened = fs.fstatSync(descriptor);
+        if (!parent.isDirectory() || parent.isSymbolicLink() || directoryIdentity(parent) !== rootIdentity
+          || !stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size !== 0
+          || directoryIdentity(stat) !== identity || opened.size !== 0 || opened.nlink !== 1) throw new Error('changed');
+      } catch {
+        // telemetry-exempt: temporary paths and raw filesystem errors stay private.
+        throw new ImportError('git_config_unavailable', 'Git isolation configuration changed. No further Git command was started.');
+      }
+    };
+    return {
+      file,
+      assertSafe,
+      close: () => {
+        try {
+          assertSafe();
+          fs.closeSync(descriptor);
+          fd = undefined;
+          fs.unlinkSync(file);
+          fs.rmdirSync(root);
+        } catch {
+          // telemetry-exempt: preserve unexpected files; report without paths or raw errors.
+          appLog('core:project', 'warn', 'Temporary import Git isolation state could not be safely removed; unexpected state was preserved');
+        } finally {
+          if (fd !== undefined) { fs.closeSync(fd); fd = undefined; }
+        }
+      },
+    };
+  } catch {
+    // telemetry-exempt: setup failure is sanitized and removes only an owned empty directory.
+    if (fd !== undefined) fs.closeSync(fd);
+    if (directory) {
+      try { fs.rmdirSync(directory); } catch {
+        appLog('core:project', 'warn', 'Temporary import Git isolation setup failed; unexpected state was preserved');
+      }
+    }
+    throw new ImportError('git_config_unavailable', 'An empty regular Git isolation file could not be created. Repair temporary-directory access outside agent messages.');
+  }
+}
+
+export function importGitEnvironment(source: Record<string, string | undefined>, emptyConfig: string): NodeJS.ProcessEnv {
   const env = { ...source };
   for (const key of Object.keys(env)) {
     if (/^(?:GIT_|GCM_|SSH_ASKPASS|GH_DEBUG|GITHUB_DEBUG|LD_PRELOAD|DYLD_|NODE_OPTIONS)/i.test(key)) delete env[key];
@@ -81,10 +136,10 @@ export function importGitEnvironment(source: Record<string, string | undefined>)
   return {
     ...env,
     GIT_CONFIG_NOSYSTEM: '1',
-    GIT_CONFIG_SYSTEM: os.devNull,
-    GIT_CONFIG_GLOBAL: os.devNull,
+    GIT_CONFIG_SYSTEM: emptyConfig,
+    GIT_CONFIG_GLOBAL: emptyConfig,
     GIT_TERMINAL_PROMPT: '0',
-    GIT_ASKPASS: os.devNull,
+    GIT_ASKPASS: '',
     GCM_INTERACTIVE: 'Never',
     GIT_LFS_SKIP_SMUDGE: '1',
     GIT_ATTR_NOSYSTEM: '1',
@@ -178,10 +233,10 @@ export function parseRemoteIdentity(url: string, raw: string, requested?: string
 
 export function createImportGit(sourceEnvironment: () => Record<string, string | undefined> = getShellEnvironment): ImportGit {
   let runtime: ReturnType<typeof trustedGitRuntime> | undefined;
-  async function environment(signal?: AbortSignal): Promise<{ env: NodeJS.ProcessEnv; binary: string }> {
+  async function environment(config: ReturnType<typeof emptyGitConfig>, signal?: AbortSignal): Promise<{ env: NodeJS.ProcessEnv; binary: string }> {
     const source = sourceEnvironment();
     runtime ??= trustedGitRuntime(source);
-    const env = importGitEnvironment(source);
+    const env = importGitEnvironment(source, config.file);
     for (const key of Object.keys(env)) if (key.toUpperCase() === 'PATH') delete env[key];
     env.PATH = runtime.searchPath;
     // Read only existing system/global credential configuration, never a nearby repository's config.
@@ -192,7 +247,7 @@ export function createImportGit(sourceEnvironment: () => Record<string, string |
       delete readEnv.GIT_CONFIG_NOSYSTEM;
       delete readEnv.GIT_CONFIG_SYSTEM;
       delete readEnv.GIT_CONFIG_GLOBAL;
-      const raw = await execute(runtime.binary, ['config', scope, '--includes', '--null', '--get-regexp', '^credential\\.'], readEnv, { cwd: os.homedir(), signal }, 10_000, true);
+      const raw = await execute(runtime.binary, ['config', scope, '--includes', '--null', '--get-regexp', '^credential\\.'], readEnv, { cwd: os.homedir(), signal, beforeSpawn: config.assertSafe }, 10_000, true);
       for (const item of raw.split('\0')) {
         const split = item.indexOf('\n');
         if (split < 0) continue;
@@ -210,7 +265,7 @@ export function createImportGit(sourceEnvironment: () => Record<string, string |
   const safe = [
     '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always',
     '-c', 'http.followRedirects=false', '-c', 'http.sslVerify=true',
-    '-c', `core.hooksPath=${os.devNull}`, '-c', 'init.templateDir=',
+    '-c', 'init.templateDir=',
     '-c', 'core.fsmonitor=false', '-c', 'core.symlinks=false',
     '-c', 'core.attributesFile=', '-c', 'submodule.recurse=false',
     '-c', 'fetch.recurseSubmodules=false', '-c', 'credential.interactive=false',
@@ -220,14 +275,23 @@ export function createImportGit(sourceEnvironment: () => Record<string, string |
 
   return {
     async remote(url, branch, signal) {
-      const { env, binary } = await environment(signal);
-      const raw = await execute(binary, [...safe, 'ls-remote', '--symref', '--', url, 'HEAD', 'refs/heads/*'], env, { cwd: os.homedir(), signal }, 30_000);
-      return parseRemoteIdentity(url, raw, branch);
+      const config = emptyGitConfig();
+      try {
+        const { env, binary } = await environment(config, signal);
+        const raw = await execute(binary, [...safe, '-c', `core.hooksPath=${config.file}`, 'ls-remote', '--symref', '--', url, 'HEAD', 'refs/heads/*'], env, { cwd: os.homedir(), signal, beforeSpawn: config.assertSafe }, 30_000);
+        return parseRemoteIdentity(url, raw, branch);
+      } finally { config.close(); }
     },
     async run(args, options) {
-      const { env, binary } = await environment(options.signal);
-      await options.assertCurrent?.();
-      return execute(binary, [...safe, ...args], env, options, 10 * 60_000);
+      const config = emptyGitConfig();
+      try {
+        const { env, binary } = await environment(config, options.signal);
+        await options.assertCurrent?.();
+        return await execute(binary, [...safe, '-c', `core.hooksPath=${config.file}`, ...args], env, {
+          ...options,
+          beforeSpawn: () => { config.assertSafe(); options.beforeSpawn?.(); },
+        }, 10 * 60_000);
+      } finally { config.close(); }
     },
   };
 }

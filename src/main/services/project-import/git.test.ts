@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { importGitEnvironment, parseRemoteIdentity } from './git';
 import { validateGithubUrl, validateImportBranch } from './types';
+
+vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 
 const sha = 'a'.repeat(40);
 const metadata = `ref: refs/heads/trunk\tHEAD\n${sha}\tHEAD\n${sha}\trefs/heads/trunk\n`;
@@ -52,8 +54,11 @@ describe('actual advertised default branch and access metadata', () => {
       GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'filter.x.smudge', GIT_CONFIG_VALUE_0: 'command',
       GIT_TRACE: '/secret/log', GIT_SSL_NO_VERIFY: '1', GIT_EXEC_PATH: '/other/bin',
       GIT_ASKPASS: 'command', SSH_ASKPASS: 'command', NODE_OPTIONS: '--require=command', GH_DEBUG: 'api',
+    }, '/owned/empty.config');
+    expect(env).toMatchObject({
+      HOME: '/home/user', PATH: '/bin', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GCM_INTERACTIVE: 'Never',
+      GIT_CONFIG_GLOBAL: '/owned/empty.config', GIT_CONFIG_SYSTEM: '/owned/empty.config', GIT_ASKPASS: '',
     });
-    expect(env).toMatchObject({ HOME: '/home/user', PATH: '/bin', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GCM_INTERACTIVE: 'Never' });
     for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_TRACE', 'GIT_SSL_NO_VERIFY', 'GIT_EXEC_PATH', 'SSH_ASKPASS', 'NODE_OPTIONS', 'GH_DEBUG']) expect(env[key]).toBeUndefined();
     expect(env.GIT_ASKPASS).not.toBe('command');
   });

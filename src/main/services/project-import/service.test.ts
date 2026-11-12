@@ -28,7 +28,9 @@ import { ensureGitignore } from '../agent-config';
 
 let n = 0;
 const environment = () => ({ PATH: process.env.PATH, HOME: temp.root, USERPROFILE: temp.root, XDG_CONFIG_HOME: path.join(temp.root, 'xdg') });
-const fixtureEnv = importGitEnvironment(environment());
+const fixtureConfig = path.join(temp.root, 'empty.config');
+fs.writeFileSync(fixtureConfig, '', { flag: 'wx', mode: 0o600 });
+const fixtureEnv = importGitEnvironment(environment(), fixtureConfig);
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'protocol.file.allow=always', ...args], { cwd, env: fixtureEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const assertCurrent = async (): Promise<void> => {};
 const authorized: ImportAuthorization = vi.fn(async () => ({ kind: 'approved', assertCurrent }));
