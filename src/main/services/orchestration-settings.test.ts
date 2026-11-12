@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   app: { getPath: () => userData },
 }));
 
-import { getCopilotAuto, getGlobalHelperCap, getPresets, getPresetsRevision, getSettings, saveCopilotAuto, savePresets, saveSettings } from './orchestration-settings';
+import { ensurePresetCellGenerations, getCopilotAuto, getGlobalHelperCap, getPresetCellGeneration, getPresets, getPresetsRevision, getSettings, saveAutoHelpers, saveCopilotAuto, savePresets, saveSettings } from './orchestration-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 
 const file = path.join(userData, 'orchestration-settings.json');
@@ -73,6 +73,71 @@ describe('helper presets (#2671)', () => {
   it('starts with none, at revision zero', () => {
     expect(getPresets()).toEqual({});
     expect(getPresetsRevision()).toBe(0);
+  });
+
+  describe('Auto calibration cell generations', () => {
+    it('initializes bounded cell identities durably without changing mappings or the public revision', async () => {
+      expect(getPresetCellGeneration('copilot-cli', 'hard')).toBeUndefined();
+      await ensurePresetCellGenerations();
+      const generation = getPresetCellGeneration('copilot-cli', 'hard');
+      expect(generation).toMatch(/^[a-f0-9-]{36}$/);
+      expect(getPresets()).toEqual({});
+      expect(getPresetsRevision()).toBe(0);
+      resetAllSettingsStoresForTests();
+      expect(getPresetCellGeneration('copilot-cli', 'hard')).toBe(generation);
+    });
+
+    it('invalidates only changed effective cells and bounds that follow them, including changing back', async () => {
+      await ensurePresetCellGenerations();
+      const easy = getPresetCellGeneration('copilot-cli', 'easy');
+      const minimum = getPresetCellGeneration('copilot-cli', 'minimum');
+      const medium = getPresetCellGeneration('copilot-cli', 'medium');
+      const other = getPresetCellGeneration('codex-cli', 'easy');
+      await savePresets({ 'copilot-cli': { easy: { model: 'gpt-6.1-sol', effort: 'low' } } });
+      const changed = getPresetCellGeneration('copilot-cli', 'easy');
+      expect(changed).not.toBe(easy);
+      expect(getPresetCellGeneration('copilot-cli', 'minimum')).not.toBe(minimum);
+      expect(getPresetCellGeneration('copilot-cli', 'medium')).toBe(medium);
+      expect(getPresetCellGeneration('codex-cli', 'easy')).toBe(other);
+      await savePresets({});
+      expect(getPresetCellGeneration('copilot-cli', 'easy')).not.toBe(easy);
+      expect(getPresetCellGeneration('copilot-cli', 'easy')).not.toBe(changed);
+      resetAllSettingsStoresForTests();
+      expect(getPresetCellGeneration('copilot-cli', 'medium')).toBe(medium);
+      expect(getPresetCellGeneration('codex-cli', 'easy')).toBe(other);
+    });
+
+    it('partitions same-model effort changes while unrelated switches and explicit bounds preserve their cohorts', async () => {
+      const before = { 'copilot-cli': {
+        hard: { model: 'gpt-6.1-sol', effort: 'high' },
+        maximum: { model: 'gpt-6.1-sol', effort: 'max' },
+      } };
+      await savePresets(before);
+      const hard = getPresetCellGeneration('copilot-cli', 'hard');
+      const maximum = getPresetCellGeneration('copilot-cli', 'maximum');
+      await saveAutoHelpers(true);
+      await saveCopilotAuto(false);
+      await saveSettings({ globalHelperCap: 8 });
+      expect(getPresetCellGeneration('copilot-cli', 'hard')).toBe(hard);
+      await savePresets({ 'copilot-cli': { ...before['copilot-cli'], hard: { model: 'gpt-6.1-sol', effort: 'xhigh' } } });
+      expect(getPresetCellGeneration('copilot-cli', 'hard')).not.toBe(hard);
+      expect(getPresetCellGeneration('copilot-cli', 'maximum')).toBe(maximum);
+    });
+
+    it('replaces missing or malformed metadata without importing arbitrary fields or requalifying legacy cohorts', async () => {
+      await ensurePresetCellGenerations();
+      const valid = getPresetCellGeneration('copilot-cli', 'easy');
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      raw.helperPresetCellGenerations['copilot-cli'].hard = '/arbitrary/private/path';
+      raw.helperPresetCellGenerations['other-provider'] = { hard: 'secret' };
+      fs.writeFileSync(file, JSON.stringify(raw));
+      resetAllSettingsStoresForTests();
+      expect(getPresetCellGeneration('copilot-cli', 'hard')).toBeUndefined();
+      await ensurePresetCellGenerations();
+      expect(getPresetCellGeneration('copilot-cli', 'easy')).toBe(valid);
+      expect(getPresetCellGeneration('copilot-cli', 'hard')).toMatch(/^[a-f0-9-]{36}$/);
+      expect(JSON.stringify(getSettings().helperPresetCellGenerations)).not.toMatch(/arbitrary|secret|other-provider/);
+    });
   });
 
   it('moves the revision on each write, and keeps them on disk', async () => {

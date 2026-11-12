@@ -3,14 +3,15 @@ import type { DecisionQuota } from '../../shared/telemetry/helper-usage-contract
 import type { QuotaView } from '../../shared/helper-routing';
 import {
   AUTO_FORECAST_HALF_LIFE_MS, AUTO_FORECAST_RETENTION_MS, burnForecastKey, observeHelperBurn, predictHelperBurn,
-  readBurnForecast, readBurnObservation, type ForecastEntry,
+  readBurnForecast, readBurnObservation, summarizeHelperBurn, type ForecastEntry,
 } from './helper-auto-forecast';
 
 const NOW = 1_800_000_000_000;
 const RESET = NOW + 86_400_000;
 const entry = (over: Partial<ForecastEntry> = {}): ForecastEntry => ({
   decisionId: 'd', decidedAtMs: NOW, provider: 'claude-code', model: 'opus', effort: 'high',
-  difficulty: 'hard', mappingRevision: 'r1.0', spawn: 'started', ...over,
+  difficulty: 'hard', mappingRevision: 'r1.0',
+  calibration: { revision: '11111111-1111-4111-8111-111111111111', model: 'claude-opus-5-5' }, spawn: 'started', ...over,
 });
 const baseline = (over: Partial<DecisionQuota> = {}): DecisionQuota => ({
   state: 'known', source: 'cli_query', quality: 'fresh', asOfMs: NOW - 1000,
@@ -43,11 +44,47 @@ describe('recorded burn forecasts', () => {
     expect(predictHelperBurn(entry(), history([0, 0, 0, 0, 0]), NOW).weekly.expectedBp).toBe(0);
   });
 
+  it('records bounded empirical 10th/90th quantiles, not a calibrated confidence interval', () => {
+    const prediction = predictHelperBurn(entry(), history([100, 200, 300, 400, 900]), NOW);
+    expect(prediction.weekly).toMatchObject({
+      expectedBp: 300, interval: { method: 'weighted_empirical', nominalCoverageBp: 8000, lowerBp: 100, upperBp: 900 },
+    });
+    expect(prediction.fiveHour).not.toHaveProperty('interval');
+    expect(readBurnForecast(prediction)).toEqual(prediction);
+    expect(predictHelperBurn(entry(), history([0, 0, 0, 0, 0]), NOW).weekly.interval).toMatchObject({ lowerBp: 0, upperBp: 0 });
+    expect(predictHelperBurn(entry(), history([10_000, 10_000, 10_000, 10_000, 10_000]), NOW).weekly.interval)
+      .toMatchObject({ lowerBp: 10_000, upperBp: 10_000 });
+  });
+
+  it('reports chronological proxy error, interval coverage and width without qualifying production', () => {
+    const e = completed();
+    e.forecast = predictHelperBurn(e, history([100, 100, 100, 100, 100]), NOW, baseline());
+    e.burnObservation = observeHelperBurn(e, [e], quota());
+    const key = e.forecast.key;
+    expect(summarizeHelperBurn([e], key, 'weekly', NOW + 1000)).toMatchObject({
+      qualification: 'shadow_proxy_only', decisions: 1, pending: 1, evaluated: 0, intervalsEvaluated: 0,
+    });
+    expect(summarizeHelperBurn([e], key, 'weekly', NOW + 2000)).toMatchObject({
+      qualification: 'shadow_proxy_only', evaluated: 1, maeBp: 100, biasBp: 100,
+      intervalsEvaluated: 1, intervalCoverageBp: 0, meanIntervalWidthBp: 0, meanIntervalScoreBp: 1000,
+    });
+    expect(summarizeHelperBurn([e], key, 'fiveHour', NOW + 2000)).toMatchObject({ unknown: 1, evaluated: 0, intervalsEvaluated: 0 });
+    expect(summarizeHelperBurn([entry({ ...e, effort: 'low' })], key, 'weekly', NOW + 2000)).toMatchObject({ decisions: 0 });
+  });
+
   it.each([
     { provider: 'codex-cli' }, { model: 'claude-opus-5-5' }, { effort: 'medium' }, { difficulty: 'easy' as const },
-    { mappingRevision: 'r2.0' }, { taskProfile: 'small' as const }, { model: null }, { mappingRevision: undefined },
+    { calibration: { revision: '22222222-2222-4222-8222-222222222222', model: 'claude-opus-5-5' } },
+    { calibration: { revision: '11111111-1111-4111-8111-111111111111', model: 'claude-opus-6' } },
+    { taskProfile: 'small' as const }, { model: null }, { calibration: undefined },
   ])('does not transfer calibration across changed or missing identities: %j', (change) => {
     expect(predictHelperBurn(entry(change), history([100, 100, 100, 100, 100]), NOW).weekly).toMatchObject({ samples: 0 });
+  });
+
+  it('keeps global revision changes separate and leaves legacy global-revision cohorts explicitly cold', () => {
+    expect(predictHelperBurn(entry({ mappingRevision: 'r2.0' }), history([100, 100, 100, 100, 100]), NOW).weekly.expectedBp).toBe(100);
+    expect(predictHelperBurn(entry({ calibration: undefined }), history([100, 100, 100, 100, 100]), NOW).weekly)
+      .toEqual({ samples: 0, unavailableReason: 'missing_calibration_identity' });
   });
 
   it('keeps observations chronological, bounded and recent, with a recency-weighted median', () => {
@@ -68,6 +105,17 @@ describe('recorded burn forecasts', () => {
     const thin = [...old.slice(0, 4), ...recent.slice(0, 1)];
     expect(predictHelperBurn(entry(), thin, NOW).weekly).toMatchObject({ samples: 5, unavailableReason: 'insufficient_effective_samples' });
     expect(predictHelperBurn(entry(), thin, NOW).weekly.effectiveSamples).toBeLessThan(3);
+  });
+
+  it('does not train on a delayed observation until strictly after its local arrival time', () => {
+    const samples = history([100, 100, 100, 100, 100]).map((e) => ({
+      ...e, burnObservation: { ...e.burnObservation!, availableAtMs: NOW },
+    }));
+    expect(predictHelperBurn(entry(), samples, NOW).weekly).toMatchObject({ samples: 0 });
+    expect(predictHelperBurn(entry(), samples, NOW + 1).weekly).toMatchObject({ samples: 5, expectedBp: 100 });
+    const e = completed();
+    expect(observeHelperBurn(e, [e], quota(), NOW + 3000)).toMatchObject({ atMs: NOW + 2000, availableAtMs: NOW + 3000 });
+    expect(observeHelperBurn(e, [e], quota(), NOW + 1000)).toBeUndefined();
   });
 
   it('explains unavailable identity and baseline evidence without substituting zero', () => {
@@ -137,6 +185,13 @@ describe('recorded burn forecasts', () => {
     expect(readBurnForecast({ ...e.forecast, weekly: { samples: 5, effectiveSamples: Infinity } })).toBeUndefined();
     expect(readBurnForecast({ ...e.forecast, weekly: { samples: 0, unavailableReason: 'arbitrary text' } })).toBeUndefined();
     expect(readBurnForecast({ ...e.forecast, baselineUnavailableReason: 'arbitrary text' })).toBeUndefined();
+    const forecast = predictHelperBurn(entry(), history([100, 200, 300, 400, 900]), NOW);
+    for (const interval of [
+      { method: 'calibrated', nominalCoverageBp: 8000, lowerBp: 100, upperBp: 900 },
+      { method: 'weighted_empirical', nominalCoverageBp: 9500, lowerBp: 100, upperBp: 900 },
+      { method: 'weighted_empirical', nominalCoverageBp: 8000, lowerBp: 400, upperBp: 100 },
+      { method: 'weighted_empirical', nominalCoverageBp: 8000, lowerBp: -1, upperBp: 900 },
+    ]) expect(readBurnForecast({ ...forecast, weekly: { ...forecast.weekly, interval } })).toBeUndefined();
     expect(readBurnObservation({ atMs: NOW, attribution: 'whole_login_unknown', reason: 'invented' })).toBeUndefined();
     expect(burnForecastKey(entry({ model: null }))).toBeNull();
   });

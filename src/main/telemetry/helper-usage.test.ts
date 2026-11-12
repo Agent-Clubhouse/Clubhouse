@@ -85,6 +85,7 @@ function decision(over: Partial<HelperDecisionRecord> = {}): HelperDecisionRecor
     resolved: { provider: 'claude-code', model: 'claude-sonnet-5-5', effort: 'medium', difficulty: 'medium' },
     source: { model: 'builtin_mapping' }, reason: 'lower_load', fallback: 'none',
     mappingRevision: 'rev-7', mappingFingerprint: 'fp-abc', mappingKind: 'builtin',
+    calibration: { revision: '11111111-1111-4111-8111-111111111111', model: 'claude-sonnet-5-5' },
     settings: { autoEnabled: true, enabledProviders: 2 },
     candidates: [candidate('claude-code', { chosen: true }), candidate('codex-cli', { eligible: false, excluded: 'quota_near_limit' })],
     tie: { setSize: 2, bandBp: 0, reason: 'lower_load', byLoad: true },
