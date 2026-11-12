@@ -4,8 +4,9 @@ import * as os from 'os';
 import * as path from 'path';
 
 const fake = vi.hoisted(() => ({
-  outputs: [] as Array<{ stdout?: string; stderr?: string; code?: number; wait?: boolean }>,
+  outputs: [] as Array<{ stdout?: string; stderr?: string; code?: number; wait?: boolean; error?: boolean }>,
   calls: [] as Array<{ command: string; args: string[]; env: NodeJS.ProcessEnv; cwd: string; shell: boolean; kills: string[] }>,
+  pendingCloses: [] as Array<() => void>,
   rejectDeviceConfig: false,
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -21,6 +22,7 @@ vi.mock('child_process', async () => {
       const kills: string[] = [];
       fake.calls.push({ command, args, ...options, kills });
       const output = fake.outputs.shift() ?? { code: 0 };
+      if (output.wait) fake.pendingCloses.push(() => child.emit('close', output.code ?? 0));
       Object.assign(child, {
         stdout, stderr,
         kill: (signal: string) => {
@@ -30,6 +32,7 @@ vi.mock('child_process', async () => {
         },
       });
       queueMicrotask(() => {
+        if (output.error) child.emit('error', new Error('private spawn diagnostic'));
         if (output.stdout) stdout.emit('data', Buffer.from(output.stdout));
         if (output.stderr) stderr.emit('data', Buffer.from(output.stderr));
         if (!output.wait) child.emit('close', fake.rejectDeviceConfig && options.env.GIT_CONFIG_GLOBAL === os.devNull ? 128 : output.code ?? 0);
@@ -43,7 +46,7 @@ import { createImportGit } from './git';
 
 const sha = 'a'.repeat(40);
 const source = () => ({ PATH: process.env.PATH, HOME: '/fixture', GIT_TRACE: '/private/trace', GIT_DIR: '/untrusted', GIT_CONFIG_COUNT: '1' });
-beforeEach(() => { fake.outputs.length = 0; fake.calls.length = 0; fake.rejectDeviceConfig = false; });
+beforeEach(() => { fake.outputs.length = 0; fake.calls.length = 0; fake.pendingCloses.length = 0; fake.rejectDeviceConfig = false; });
 
 describe('isolated credential-aware Git subprocess boundary', () => {
   it('uses an owned empty regular config instead of a Git-incompatible null device and removes only its temporary state', async () => {
@@ -92,6 +95,24 @@ describe('isolated credential-aware Git subprocess boundary', () => {
       capture.mockRestore();
       if (file) { fs.unlinkSync(file); fs.rmdirSync(path.dirname(file)); }
     }
+  });
+
+  it('retains the owned empty config through a spawn error until the tracked close callback, then cleans it', async () => {
+    fake.outputs.push({ code: 1 }, { code: 1 }, { error: true, wait: true });
+    let settled = false;
+    const outcome = createImportGit(source).run(['init'], { cwd: '/fixture' }).then(
+      () => { settled = true; return { status: 'succeeded' }; },
+      (error: unknown) => { settled = true; return { status: 'failed', error }; },
+    );
+    await vi.waitFor(() => expect(fake.pendingCloses).toHaveLength(1));
+    const file = fake.calls[2].env.GIT_CONFIG_GLOBAL!;
+    try {
+      expect(settled).toBe(false);
+      expect(fs.existsSync(file)).toBe(true);
+    } finally { fake.pendingCloses[0](); }
+    expect(await outcome).toMatchObject({ status: 'failed', error: { reason: 'git_unavailable' } });
+    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.existsSync(path.dirname(file))).toBe(false);
   });
 
   it('carries only existing authorized credential config in environment, never argv, and disables unsafe inherited behavior', async () => {
@@ -170,13 +191,18 @@ describe('isolated credential-aware Git subprocess boundary', () => {
   });
 
   it('runs the final synchronous safety check after credential and authority awaits, before spawning the owned Git command', async () => {
+    const directories = vi.spyOn(fs, 'mkdtempSync');
     const assertCurrent = vi.fn(async () => {});
     const beforeSpawn = vi.fn(() => {
       expect(assertCurrent).toHaveBeenCalledOnce();
       expect(fake.calls).toHaveLength(2);
       throw new Error('test-only final safety refusal');
     });
-    await expect(createImportGit(source).run(['checkout'], { cwd: '/fixture', assertCurrent, beforeSpawn })).rejects.toThrow('test-only final safety refusal');
-    expect(fake.calls).toHaveLength(2);
+    try {
+      await expect(createImportGit(source).run(['checkout'], { cwd: '/fixture', assertCurrent, beforeSpawn })).rejects.toThrow('test-only final safety refusal');
+      expect(fake.calls).toHaveLength(2);
+      expect(directories).toHaveBeenCalledOnce();
+      expect(fs.existsSync(directories.mock.results[0].value)).toBe(false);
+    } finally { directories.mockRestore(); }
   });
 });

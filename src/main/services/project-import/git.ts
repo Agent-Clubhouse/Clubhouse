@@ -167,6 +167,7 @@ function execute(binary: string, args: string[], env: NodeJS.ProcessEnv, options
     let stdout = '';
     let exceeded = false;
     let timedOut = false;
+    let failedToStart = false;
     const stop = () => { child.kill('SIGTERM'); };
     const timer = setTimeout(() => { timedOut = true; abort(); }, timeout);
     // Escalation targets the same tracked child, never a process name or unrelated process group.
@@ -197,14 +198,15 @@ function execute(binary: string, args: string[], env: NodeJS.ProcessEnv, options
       options.signal?.removeEventListener('abort', abort);
     };
     child.on('error', () => {
-      finish();
-      reject(new ImportError('git_unavailable', 'Git could not be started. Install or repair Git, then preview again.'));
+      // Retain isolation files until close has also drained the tracked child's stdio.
+      failedToStart = true;
     });
     child.on('close', (code) => {
       finish();
       if (options.signal?.aborted) reject(new ImportError('cancelled', 'Import cancelled; any files already created are preserved.'));
       else if (exceeded) reject(new ImportError('metadata_limit', 'Repository metadata exceeded the bounded import limit. No further work was attempted.'));
       else if (timedOut) reject(new ImportError('git_timeout', 'Git timed out. Check connectivity and existing Git authentication before retrying; partial files are preserved.'));
+      else if (failedToStart) reject(new ImportError('git_unavailable', 'Git could not be started. Install or repair Git, then preview again.'));
       else if (allowNoMatch && code === 1) resolve('');
       else if (code !== 0) reject(new ImportError('git_failed', 'Git could not complete this operation. Restore GitHub access using your existing Git credential helper or GitHub sign-in outside agent messages, and check repository/branch access. Do not send credentials here.'));
       else resolve(stdout);

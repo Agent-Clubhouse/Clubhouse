@@ -61,6 +61,7 @@ Each operation exclusively creates a temporary empty regular configuration file;
 it never passes a platform null-device pathname to Git as a config file.
 Its identity, type, link count and empty bytes are rechecked before Git starts.
 The same regular file disables hooks by being a non-directory hooks path.
+It remains alive through the tracked child's close callback, including spawn errors.
 Owned temporary state is removed on success, failure and cancellation; unexpected
 replacement/content is preserved with a sanitized warning, never recursively deleted.
 Inherited transport rewrites, Git environment injection, hooks, templates,
