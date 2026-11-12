@@ -53,6 +53,11 @@ export interface CanvasStoreSnapshot {
   problems: string[];
 }
 
+export interface CanvasStoreReadOptions {
+  /** Refuse incomplete primary data or unverified directories instead of normalizing or recovering. */
+  strict?: boolean;
+}
+
 export function globalCanvasKvDir(): string {
   return path.join(getGlobalPluginDataDir(), CANVAS_PLUGIN_ID, 'kv');
 }
@@ -70,13 +75,35 @@ function isMissingFileError(err: unknown): boolean {
   return code === 'ENOENT' || code === 'ENOTDIR';
 }
 
-async function readJsonFile(file: string): Promise<KvRead> {
+async function missingFileParentProblem(file: string): Promise<string | undefined> {
+  // Windows can return ENOENT for a child of a regular file.
+  for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+    let entryPresent = false;
+    try {
+      const entry = await fsp.lstat(dir);
+      entryPresent = true;
+      const stats = entry.isSymbolicLink() ? await fsp.stat(dir) : entry;
+      return stats.isDirectory() ? undefined : `not a directory: ${dir}`;
+    } catch (err) {
+      // telemetry-exempt: returned as unreadable; the caller reports the incomplete store
+      if (!entryPresent && (err as NodeJS.ErrnoException)?.code === 'ENOENT' && path.dirname(dir) !== dir) continue;
+      return errorMessage(err);
+    }
+  }
+}
+
+async function readJsonFile(file: string, strict = false): Promise<KvRead> {
   let raw: string;
   try {
     raw = await fsp.readFile(file, 'utf-8');
   } catch (err) {
     // telemetry-exempt: returned as missing/unreadable; the caller logs a skipped store
-    return isMissingFileError(err) ? { status: 'missing' } : { status: 'unreadable', error: errorMessage(err) };
+    const missing = strict ? (err as NodeJS.ErrnoException)?.code === 'ENOENT' : isMissingFileError(err);
+    if (strict && missing) {
+      const problem = await missingFileParentProblem(file);
+      if (problem !== undefined) return { status: 'unreadable', error: problem };
+    }
+    return missing ? { status: 'missing' } : { status: 'unreadable', error: errorMessage(err) };
   }
   try {
     return { status: 'ok', value: JSON.parse(raw) };
@@ -90,24 +117,46 @@ async function readJsonFile(file: string): Promise<KvRead> {
  * Read one plugin-storage key the way plugin-storage's readKey does (primary,
  * then its `.bak` sibling) but without quarantining anything.
  */
-export async function readKvKey(kvDir: string, key: string): Promise<KvRead> {
+export async function readKvKey(kvDir: string, key: string, options: CanvasStoreReadOptions = {}): Promise<KvRead> {
   const file = path.join(kvDir, `${key}.json`);
-  const primary = await readJsonFile(file);
+  const primary = await readJsonFile(file, options.strict);
   if (primary.status === 'ok') return primary;
-  const backup = await readJsonFile(`${file}.bak`);
+  if (options.strict && primary.status === 'unreadable') return primary;
+  const backup = await readJsonFile(`${file}.bak`, options.strict);
+  if (options.strict && backup.status === 'ok') return { status: 'unreadable', error: 'only a recovery copy is present' };
   if (backup.status === 'ok') return backup;
   if (primary.status === 'unreadable') return primary;
   if (backup.status === 'unreadable') return backup;
   return { status: 'missing' };
 }
 
-function normalizeViews(raw: unknown): CanvasViewLike[] {
-  if (!Array.isArray(raw)) return [];
+function normalizeViews(raw: unknown, strict = false): CanvasViewLike[] | null {
+  if (!Array.isArray(raw)) return strict ? null : [];
   const views: CanvasViewLike[] = [];
+  const ids = new Set<string>();
   for (const v of raw) {
-    if (!v || typeof v !== 'object') continue;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) {
+      if (strict) return null;
+      continue;
+    }
     const view = v as Record<string, unknown>;
-    if (typeof view.id !== 'string') continue;
+    if (typeof view.id !== 'string') {
+      if (strict) return null;
+      continue;
+    }
+    if (strict) {
+      if (!view.id || ids.has(view.id)) return null;
+      ids.add(view.id);
+      if (typeof view.type !== 'string') return null;
+      if (!REMOVED_CANVAS_VIEW_TYPES.has(view.type)
+        && !['agent', 'anchor', 'plugin', 'sticky-note', 'zone'].includes(view.type)) return null;
+      if (view.type === 'agent' && view.agentId !== null
+        && (typeof view.agentId !== 'string' || !view.agentId)) return null;
+      if (view.metadata !== undefined && view.metadata !== null
+        && (typeof view.metadata !== 'object' || Array.isArray(view.metadata))) return null;
+      const gpId = (view.metadata as Record<string, unknown> | null | undefined)?.groupProjectId;
+      if (gpId !== undefined && gpId !== null && typeof gpId !== 'string') return null;
+    }
     if (typeof view.type === 'string' && REMOVED_CANVAS_VIEW_TYPES.has(view.type)) continue;
     views.push({
       id: view.id,
@@ -119,18 +168,29 @@ function normalizeViews(raw: unknown): CanvasViewLike[] {
   return views;
 }
 
-function normalizeInstances(raw: unknown): CanvasInstanceLike[] | null {
+function normalizeInstances(raw: unknown, strict = false): CanvasInstanceLike[] | null {
   // A saved canvas is always a non-empty array of instances.
   if (!Array.isArray(raw) || raw.length === 0) return null;
   const out: CanvasInstanceLike[] = [];
+  const ids = new Set<string>();
   for (const c of raw) {
-    if (!c || typeof c !== 'object') continue;
+    if (!c || typeof c !== 'object' || Array.isArray(c)) {
+      if (strict) return null;
+      continue;
+    }
     const inst = c as Record<string, unknown>;
-    if (typeof inst.id !== 'string') continue;
+    if (typeof inst.id !== 'string') {
+      if (strict) return null;
+      continue;
+    }
+    if (strict && (!inst.id || ids.has(inst.id))) return null;
+    ids.add(inst.id);
+    const views = normalizeViews(inst.views, strict);
+    if (!views) return null;
     out.push({
       id: inst.id,
       name: typeof inst.name === 'string' ? inst.name : inst.id,
-      views: normalizeViews(inst.views),
+      views,
     });
   }
   return out;
@@ -141,15 +201,19 @@ function normalizeInstances(raw: unknown): CanvasInstanceLike[] | null {
  * canvas plugin writes alongside it. An empty list means the store has no
  * canvases yet; null means the data is there but could not be used.
  */
-async function readInstances(kvDir: string): Promise<{ canvases: CanvasInstanceLike[] | null; problem?: string }> {
-  const primary = await readKvKey(kvDir, KEY_INSTANCES);
+async function readInstances(kvDir: string, options: CanvasStoreReadOptions): Promise<{ canvases: CanvasInstanceLike[] | null; problem?: string }> {
+  const primary = await readKvKey(kvDir, KEY_INSTANCES, options);
   if (primary.status === 'ok') {
-    const canvases = normalizeInstances(primary.value);
+    const canvases = normalizeInstances(primary.value, options.strict);
     if (canvases) return { canvases };
   }
-  const backup = await readKvKey(kvDir, KEY_INSTANCES_BACKUP);
+  if (options.strict && primary.status !== 'missing') {
+    return { canvases: null, problem: `canvas instances unusable: ${primary.status === 'unreadable' ? primary.error : 'invalid or ambiguous instance/view rows'}` };
+  }
+  const backup = await readKvKey(kvDir, KEY_INSTANCES_BACKUP, options);
   if (backup.status === 'ok') {
-    const canvases = normalizeInstances(backup.value);
+    if (options.strict) return { canvases: null, problem: 'canvas instances unusable: only a recovery key is present' };
+    const canvases = normalizeInstances(backup.value, options.strict);
     if (canvases) return { canvases };
   }
   if (primary.status === 'missing' && backup.status === 'missing') return { canvases: [] };
@@ -159,17 +223,34 @@ async function readInstances(kvDir: string): Promise<{ canvases: CanvasInstanceL
   return { canvases: null, problem: `canvas instances unusable: ${why}` };
 }
 
-async function readWires(kvDir: string): Promise<{ wires: PersistedCanvasWire[] | null; problem?: string }> {
-  const read = await readKvKey(kvDir, KEY_WIRES);
+async function readWires(kvDir: string, options: CanvasStoreReadOptions): Promise<{ wires: PersistedCanvasWire[] | null; problem?: string }> {
+  const read = await readKvKey(kvDir, KEY_WIRES, options);
   if (read.status === 'missing') return { wires: [] };
   if (read.status === 'unreadable') return { wires: null, problem: `canvas wires unreadable: ${read.error}` };
   if (!Array.isArray(read.value)) return { wires: null, problem: 'canvas wires are not an array' };
+  if (options.strict) {
+    const pairs = new Set<string>();
+    for (const entry of read.value) {
+      const wire = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : null;
+      if (!wire || !['agentId', 'targetId', 'label'].every((field) => typeof wire[field] === 'string' && wire[field])
+        || typeof wire.targetKind !== 'string' || !['agent', 'browser', 'group-project'].includes(wire.targetKind)
+        || ['agentName', 'targetName', 'projectName'].some((field) => wire[field] !== undefined && typeof wire[field] !== 'string')
+        || (wire.disabledTools !== undefined && (!Array.isArray(wire.disabledTools) || !wire.disabledTools.every((tool) => typeof tool === 'string')))
+        || (wire.instructions !== undefined && (!wire.instructions || typeof wire.instructions !== 'object'
+          || Array.isArray(wire.instructions) || !Object.values(wire.instructions).every((value) => typeof value === 'string')))) {
+        return { wires: null, problem: 'canvas wires contain invalid or unknown rows' };
+      }
+      const pair = JSON.stringify([wire.agentId, wire.targetId]);
+      if (pairs.has(pair)) return { wires: null, problem: 'canvas wires contain duplicate endpoint identities' };
+      pairs.add(pair);
+    }
+  }
   return { wires: read.value as PersistedCanvasWire[] };
 }
 
 /** Read one canvas store. Never throws and never writes. */
-export async function readCanvasStore(location: CanvasStoreLocation): Promise<CanvasStoreSnapshot> {
-  const [instances, wires] = await Promise.all([readInstances(location.kvDir), readWires(location.kvDir)]);
+export async function readCanvasStore(location: CanvasStoreLocation, options: CanvasStoreReadOptions = {}): Promise<CanvasStoreSnapshot> {
+  const [instances, wires] = await Promise.all([readInstances(location.kvDir, options), readWires(location.kvDir, options)]);
   const problems = [instances.problem, wires.problem].filter((p): p is string => !!p);
   return { location, canvases: instances.canvases, wires: wires.wires, problems };
 }
@@ -202,7 +283,7 @@ export async function listCanvasStoreLocations(): Promise<CanvasStoreLocation[]>
 /** Read every canvas store on this machine. */
 export async function readAllCanvasStores(): Promise<CanvasStoreSnapshot[]> {
   const locations = await listCanvasStoreLocations();
-  return Promise.all(locations.map(readCanvasStore));
+  return Promise.all(locations.map((location) => readCanvasStore(location)));
 }
 
 function toMemberships(snapshot: CanvasStoreSnapshot, agentId: string): CanvasMembership[] {
@@ -225,6 +306,6 @@ function toMemberships(snapshot: CanvasStoreSnapshot, agentId: string): CanvasMe
 export async function getAgentCanvasMemberships(agentId: string, projectId?: string | null): Promise<CanvasMembership[]> {
   const locations = await listCanvasStoreLocations();
   const wanted = locations.filter((l) => l.scope === 'app' || (!!projectId && l.projectId === projectId));
-  const snapshots = await Promise.all(wanted.map(readCanvasStore));
+  const snapshots = await Promise.all(wanted.map((location) => readCanvasStore(location)));
   return snapshots.flatMap((s) => toMemberships(s, agentId));
 }

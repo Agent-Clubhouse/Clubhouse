@@ -625,9 +625,10 @@ export async function peekProjects(): Promise<Project[]> {
 /**
  * peekProjects, also saying whether the list could be read (D99): not when
  * projects.json or its backup is there but neither reads and parses. With
- * neither file there are no projects. Changes nothing.
+ * neither file there are no projects. Strict reads refuse unknown or ambiguous
+ * primary data instead of filtering, merging or recovering it. Changes nothing.
  */
-export async function peekProjectsChecked(): Promise<{ projects: Project[]; readable: boolean }> {
+export async function peekProjectsChecked(options: { strict?: boolean } = {}): Promise<{ projects: Project[]; readable: boolean }> {
   let present = false;
   for (const name of ['projects.json', 'projects.json.bak']) {
     let raw: string;
@@ -635,14 +636,33 @@ export async function peekProjectsChecked(): Promise<{ projects: Project[]; read
       raw = await fsp.readFile(path.join(getBaseDirPath(), name), 'utf-8');
     } catch (err) {
       // telemetry-exempt: no file is no projects; any other error means it couldn't be read, which the caller is told
-      if ((err as NodeJS.ErrnoException | null)?.code !== 'ENOENT') present = true;
+      if ((err as NodeJS.ErrnoException | null)?.code !== 'ENOENT') {
+        if (options.strict) return { projects: [], readable: false };
+        present = true;
+      }
       continue;
     }
     present = true;
+    if (options.strict && name !== 'projects.json') return { projects: [], readable: false };
     try {
-      return { projects: migrate(JSON.parse(raw)).store.projects, readable: true };
+      const parsed: unknown = JSON.parse(raw);
+      const result = migrate(parsed);
+      if (options.strict) {
+        if (result.dropped > 0 || result.merged.length > 0
+          || (!Array.isArray(parsed) && (parsed as { version?: unknown }).version !== CURRENT_VERSION)
+          || new Set(result.store.projects.map((project) => project.id)).size !== result.store.projects.length) {
+          return { projects: [], readable: false };
+        }
+        const seen: Project[] = [];
+        for (const project of result.store.projects) {
+          if (seen.length > 0 && await findByCanonicalPath(seen, project.path)) return { projects: [], readable: false };
+          seen.push(project);
+        }
+      }
+      return { projects: result.store.projects, readable: true };
     } catch {
       // telemetry-exempt: a file that doesn't parse; the caller is told it couldn't be read
+      if (options.strict) return { projects: [], readable: false };
     }
   }
   return { projects: [], readable: !present };
