@@ -40,15 +40,26 @@ test.setTimeout(300_000);
 
 async function close(app: LaunchedApp | undefined): Promise<void> {
   if (!app) return;
+  const errors: unknown[] = [];
+  const child = app.electronApp.process();
   try {
-    if (app.electronApp.process().exitCode === null && app.electronApp.process().signalCode === null) await restoreDeliveryInstrumentation(app);
+    if (child.exitCode === null && child.signalCode === null) await restoreDeliveryInstrumentation(app);
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    await app.electronApp.close();
+  } catch (error) {
+    if (child.exitCode === null && child.signalCode === null) errors.push(error);
   } finally {
-    try { await app.electronApp.close(); } catch { /* already gone */ }
     untrackOpenApp(app.electronApp);
   }
+  if (errors.length) throw new AggregateError(errors, 'Owned Annex desktop cleanup failed');
 }
 
-test.afterEach(async ({}, info) => {
+test.afterEach(async () => {
+  const info = test.info();
+  const errors: unknown[] = [];
   try {
     if (scratch) {
       for (const name of ['delivery-boundary.json', 'received-call-ids.jsonl']) {
@@ -67,16 +78,23 @@ test.afterEach(async ({}, info) => {
         deliveries: saved.deliveries.map(({ callId, state, attempts }) => ({ callId, state, attempts })),
       }), contentType: 'application/json' });
     }
+  } catch (error) {
+    errors.push(error);
   } finally {
-    await close(here);
-    await close(there);
+    const closed = await Promise.allSettled([close(here), close(there)]);
     here = undefined;
     there = undefined;
-    for (const profile of profiles.splice(0)) profile.dispose();
-    await fakesHere?.cleanup();
-    await fakesThere?.cleanup();
-    if (scratch) await fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    const disposed = await Promise.allSettled([
+      ...profiles.splice(0).map(async (profile) => profile.dispose()),
+      fakesHere?.cleanup(),
+      fakesThere?.cleanup(),
+      ...(scratch ? [fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })] : []),
+    ]);
+    for (const result of [...closed, ...disposed]) {
+      if (result.status === 'rejected') errors.push(result.reason);
+    }
   }
+  if (errors.length) throw new AggregateError(errors, 'Owned Annex cleanup failed after preserving test evidence');
 });
 
 /** A fixture that opens a session and then goes quiet: a prompt is recorded as `unexpected`. */
@@ -230,7 +248,8 @@ test('an agent messages an agent on another computer through the connection the 
   }, { timeout: 30_000 }).toBe(true);
 });
 
-test('a sender crash after a durable200 replays the same identity once, then preserves FIFO and file bytes', async ({}, info) => {
+test('a sender crash after a durable200 replays the same identity once, then preserves FIFO and file bytes', async () => {
+  const info = test.info();
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clubhouse-e2e-delivery-crash-'));
   const quiet = await quietFixture(scratch);
   const receiverFixture = await writeChatScript(scratch, 'receiver', buildChatScript('claude', {
@@ -352,7 +371,8 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   await info.attach('durable-replay-witness', { body: JSON.stringify({ firstId, secondId, attempts: [2, 1], actualRequestIds: ids, runtimeInputs: 3, fileBytes: Buffer.byteLength(content), fileHash: createHash('sha256').update(content).digest('hex') }), contentType: 'application/json' });
 });
 
-test('default native Copilot SDK fixtures accept one remote input and replay a stable delivery without a second input', async ({}, info) => {
+test('default native Copilot SDK fixtures accept one remote input and replay a stable delivery without a second input', async () => {
+  const info = test.info();
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clubhouse-e2e-delivery-sdk-'));
   const senderFixture = await writeChatScript(scratch, 'sdk-sender', buildChatScript('copilot', { description: 'Native SDK sender with no model turns.', turns: [] }));
   const receiverFixture = await writeChatScript(scratch, 'sdk-receiver', buildChatScript('copilot', {
