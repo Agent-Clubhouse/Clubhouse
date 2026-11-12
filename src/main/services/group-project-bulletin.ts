@@ -104,6 +104,7 @@ class BulletinBoard {
   private projectId: string;
   private topics = new Map<string, BulletinMessage[]>();
   private protectedTopics = new Set<string>();
+  private pendingProtectionChanges = new Map<string, boolean>();
   private loaded = false;
   private loadPromise: Promise<void> | null = null;
   private dirty = false;
@@ -184,6 +185,10 @@ class BulletinBoard {
               protectedTopics.add(key);
             }
           }
+          for (const [topic, isProtected] of this.pendingProtectionChanges) {
+            if (isProtected) protectedTopics.add(topic);
+            else protectedTopics.delete(topic);
+          }
           this.topics = topics;
           this.protectedTopics = protectedTopics;
           // Persist the canonical form once so the migration is durable rather than
@@ -198,6 +203,7 @@ class BulletinBoard {
           throw err;
         }
       }
+      this.pendingProtectionChanges.clear();
       this.loaded = true;
     })().finally(() => { this.loadPromise = null; });
 
@@ -422,6 +428,7 @@ class BulletinBoard {
   /** Mark a topic as protected (skip pruning) or unprotected. */
   setTopicProtected(topic: string, isProtected: boolean): void {
     const canonicalTopic = normalizeChannelName(topic);
+    if (!this.loaded) this.pendingProtectionChanges.set(canonicalTopic, isProtected);
     if (isProtected) {
       this.protectedTopics.add(canonicalTopic);
     } else {
@@ -572,6 +579,7 @@ class BulletinBoard {
     this.pendingFlush = null;
     this.topics.clear();
     this.protectedTopics.clear();
+    this.pendingProtectionChanges.clear();
     this.loaded = false;
     this.loadPromise = null;
     this.dirty = false;

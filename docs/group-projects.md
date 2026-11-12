@@ -17,6 +17,8 @@ Shutdown flushes drain mutations that arrived while an earlier write was pending
 Only a missing file initializes an empty store. An unreadable or corrupt store
 refuses reads and mutations rather than overwriting history with an empty
 fallback. Repairing the file permits a later load to retry.
+Protection changes made before the first board read are applied after loading
+the saved history, rather than replacing that history or ignoring the change.
 
 Protected bulletin topics are exempt from both retention limits. The global
 budget and trim preview count only unprotected messages. Posting retains the

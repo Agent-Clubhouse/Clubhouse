@@ -168,4 +168,22 @@ describe('group project durable storage', () => {
     expect((await board.getDigest()).map(topic => topic.topic)).toEqual(['repaired']);
     expect(await fsp.readFile(file, 'utf-8')).not.toContain('Unverified');
   });
+
+  it('preserves history and applies protection changes made before the first board read', async () => {
+    const project = await groupProjectRegistry.create('Existing');
+    const board = getBulletinBoard(project.id);
+    await board.flush();
+    const before = await board.getAllMessages();
+    board._resetForTesting();
+
+    board.setTopicProtected('general', false);
+    board.setTopicProtected('new-topic', true);
+    await board.flush();
+    board._resetForTesting();
+
+    expect(await board.getAllMessages()).toEqual(before);
+    expect(board.isTopicProtected('general')).toBe(false);
+    expect(board.isTopicProtected('control')).toBe(true);
+    expect(board.isTopicProtected('new-topic')).toBe(true);
+  });
 });
