@@ -98,6 +98,18 @@ The rewrite step that put agents' news into their own voice under their own name
 
 A separate thread per agent was considered instead. It would keep the clutter out of the main chat but leave the user two places to watch, put questions that need them out of sight, and need new UI on desktop and phone. The fix in place keeps one conversation.
 
+## Remote Dispatcher grant target (#3348)
+
+The sender's `remote_dispatcher` grant target (#3348) is separate from local
+`connected` and project targets. Main resolves `isRemoteDispatcher` from known
+membership/controller identity, never from a tool argument. Only read and message
+actions match this target; the fixed tool surface still applies. A sender's
+Allow/Ask first/Off choice survives save/read and does not change any grant on
+the receiving machine.
+
+The grant schema alone does not enable federation; transport and controller
+integration are separate prerequisites.
+
 ## What connections start with (#3214)
 
 The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". Every new connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off (#3333). Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).

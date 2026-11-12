@@ -94,6 +94,8 @@ export type GrantTarget =
    * `wakeOn`: only agents the caller's connection has Wake it turned on for (#3215).
    */
   | { kind: 'connected'; excludeDispatcher?: boolean; onlyDispatcher?: boolean; wakeOn?: boolean }
+  /** The fixed safe surface of a Dispatcher on another computer in this Annex Network. */
+  | { kind: 'remote_dispatcher' }
   | { kind: 'project'; project: 'own' | 'any' | { path: string } }
   | { kind: 'group_project'; role: 'member' | 'admin' }
   | { kind: 'group_members' }
@@ -135,6 +137,8 @@ export interface GrantCallTarget {
   relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member' | 'created_by_me'>;
   /** The target agent is the Dispatcher. */
   isDispatcher?: boolean;
+  /** Resolved by main from authenticated membership/controller discovery, never a tool argument. */
+  isRemoteDispatcher?: boolean;
   /** The caller's connection to the target agent, on this computer, has Wake it on (#3215). */
   wakeOn?: boolean;
   /** The project the target agent lives in, or the project itself. */
@@ -178,6 +182,8 @@ export function isGrantAction(value: unknown): value is GrantAction {
 /** Whether a grant's target covers what a call reaches. */
 export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: GrantCallTarget, action?: GrantAction): boolean {
   const rel = target.relations ?? [];
+  // Existing local connections/projects must not silently authorize another machine's Dispatcher.
+  if (target.isRemoteDispatcher && grant.kind !== 'remote_dispatcher' && grant.kind !== 'any') return false;
   switch (grant.kind) {
     case 'any': return true;
     case 'self': return rel.includes('self');
@@ -187,6 +193,9 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
     case 'connected':
       return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher) && !(grant.onlyDispatcher && !target.isDispatcher)
         && !(grant.wakeOn && !target.wakeOn);
+    case 'remote_dispatcher':
+      return target.kind === 'agent' && target.isDispatcher === true && target.isRemoteDispatcher === true
+        && (action === undefined || action === 'agent.read' || action === 'agent.message');
     case 'group_members': return rel.includes('group_member');
     case 'app': return target.kind === 'app';
     case 'action': return target.kind === 'action' && target.actionId === grant.id;
