@@ -140,3 +140,7 @@ pre-existing or user-modified content.
 
 Fixtures use isolated local Git repositories and mocked authentication/approval
 boundaries, without private credentials, login probes or paid agent calls.
+The entry-limit fixture uses stream-mocked directory enumeration over one owned
+real file: the real walker counts 20,000 entries and reads/hashes their bytes,
+then rejects entry 20,001 before file opens. Separate real-filesystem fixtures
+retain byte, metadata, symlink, depth and elapsed-budget checks.
