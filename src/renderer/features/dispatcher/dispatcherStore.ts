@@ -4,6 +4,7 @@ import { findSenderAgent, type MessageSender } from '../../../shared/chat';
 import { DISPATCHER_PROJECT_ID, type DispatcherState } from '../../../shared/dispatcher-types';
 import { DEFAULT_DISPATCHER_BEHAVIOR, type DispatcherBehavior, type DispatcherBehaviorState } from '../../../shared/dispatcher-behavior';
 import { useProjectStore } from '../../stores/projectStore';
+import { dispatcherRoleDisplayName } from '../../../shared/dispatcher-name';
 
 /**
  * The renderer's copy of the Dispatcher's state (#2538), kept by
@@ -72,6 +73,17 @@ export function isDispatcherAgent(agent: Pick<Agent, 'id' | 'projectId'> | null 
   if (agent.projectId === DISPATCHER_PROJECT_ID) return true;
   const state = useDispatcherStore.getState().state;
   return !!state && (agent.id === state.chatAgentId || agent.id === state.agentId);
+}
+
+/** Physical role labels outside the intentionally unified Dispatcher chat. */
+export function dispatcherAgentDisplayName(
+  agentId: string,
+  name: string,
+  state: DispatcherState | null = useDispatcherStore.getState().state,
+): string {
+  if (agentId === state?.agentId) return dispatcherRoleDisplayName('work');
+  if (agentId === state?.chatAgentId) return dispatcherRoleDisplayName('chat', state.config?.name || name);
+  return name;
 }
 
 /**

@@ -1119,6 +1119,8 @@ describe('AgentTools', () => {
       // Two-way pairs add reply instructions, so the message goes as a bracketed paste.
       expect(mockPtyWrite.mock.calls[0][0]).toBe('dispatcher-1');
       expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d2] [FROM:boss@myapp] hi');
+      expect(result.content[0].text).toContain('Message sent to Dispatcher controller.');
+      expect(agentToolName(toDispatcher, 'send_message')).toMatch(/^clubhouse__myapp_Dispatcher_[a-z0-9]+__send_message$/);
     });
 
     it('labels controller file notices', async () => {

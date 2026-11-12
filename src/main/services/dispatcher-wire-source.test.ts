@@ -57,8 +57,8 @@ vi.mock('./orchestration-policy', async () => {
     }),
   };
 });
-vi.mock('./dispatcher/dispatcher-service', () => ({
-  dispatcherDisplayName: () => dispatcher.name,
+vi.mock('./dispatcher/dispatcher-service', async () => ({
+  dispatcherDisplayName: (role: 'chat' | 'work' = 'chat') => dispatcherRoleDisplayName(role, dispatcher.name),
   getDispatcherAgentId: () => dispatcher.id,
   isDispatcherEnabled: () => dispatcher.enabled,
   isDispatcherPath: (p: string) => p === dispatcher.path,
@@ -67,10 +67,11 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
     return () => dispatcher.listeners.delete(listener);
   },
 }));
+import { dispatcherRoleDisplayName } from '../../shared/dispatcher-name';
 vi.mock('./pty-manager', () => ({ write: vi.fn(), isRunning: vi.fn(() => true) }));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { buildToolKey } from './clubhouse-mcp/tool-registry';
+import { buildToolKey, buildToolName } from './clubhouse-mcp/tool-registry';
 import {
   rebuildPersistedBindings,
   registerPersistedBindingSource,
@@ -159,13 +160,15 @@ afterEach(() => {
 });
 
 describe('dispatcherWiresForProject', () => {
-  it('wires an orchestrator with the switch on both ways, named Dispatcher at its end', async () => {
+  it('labels the controller in both directions without changing agent names, IDs or tool addresses', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!, 'Wardfall');
     const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true };
     expect(out).toEqual([
-      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName: 'Wardfall', ...starting },
-      { agentId: 'durable_lead', targetId: DISPATCHER, targetKind: 'agent', label: 'Dispatcher', agentName: 'lead', targetName: 'Dispatcher', projectName: 'Wardfall', ...starting },
+      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher controller', targetName: 'lead', projectName: 'Wardfall', ...starting },
+      { agentId: 'durable_lead', targetId: DISPATCHER, targetKind: 'agent', label: 'Dispatcher controller', agentName: 'lead', targetName: 'Dispatcher', projectName: 'Wardfall', ...starting },
     ]);
+    expect(buildToolName(out[1], 'send_message')).toBe(buildToolName({ ...out[1], label: 'Dispatcher' }, 'send_message'));
+    expect(buildToolName(out[1], 'send_message')).toMatch(/^clubhouse__Wardfall_Dispatcher_[a-z0-9]+__send_message$/);
   });
 
   it('starts both directions with read, message and wake but no clear or compact without saved bootstrap switches (#3281)', async () => {
@@ -234,7 +237,7 @@ describe('Dispatcher wire rebuild', () => {
     await rebuild();
     const toLead = () => bindingManager.getBindingsForAgent(DISPATCHER).find((b) => b.targetId === 'durable_lead')!;
     const fromLead = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)!;
-    expect(fromLead()).toMatchObject({ label: 'Dispatcher', targetName: 'Dispatcher' });
+    expect(fromLead()).toMatchObject({ label: 'Dispatcher controller', targetName: 'Dispatcher' });
     const before = fromLead();
 
     dispatcher.name = 'Rosie';
@@ -242,8 +245,11 @@ describe('Dispatcher wire rebuild', () => {
     expect(result.sources.find((s) => s.id === 'dispatcher-wires')).toMatchObject({ created: 0, existing: 2, pruned: 0 });
     // The same binding, relabelled: the agent's wire to it never dropped.
     expect(fromLead()).toBe(before);
-    expect(fromLead()).toMatchObject({ label: 'Rosie', agentName: 'lead', targetName: 'Rosie' });
-    expect(toLead()).toMatchObject({ agentName: 'Rosie' });
+    expect(fromLead()).toMatchObject({ label: 'Dispatcher controller', agentName: 'lead', targetName: 'Rosie' });
+    expect(toLead()).toMatchObject({ agentName: 'Dispatcher controller' });
+    expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
+    expect(buildToolName(fromLead(), 'send_message')).toBe(buildToolName({ ...fromLead(), label: 'Rosie' }, 'send_message'));
+    expect(buildToolName(fromLead(), 'send_message')).toMatch(/^clubhouse__Wardfall_Rosie_[a-z0-9]+__send_message$/);
   });
 
   it('a rename alone makes the watcher rebuild the wires (#3053)', async () => {
@@ -254,7 +260,7 @@ describe('Dispatcher wire rebuild', () => {
       dispatcher.name = 'Rosie';
       for (const listener of dispatcher.listeners) listener();
       await vi.waitFor(() => expect(onWiresChanged).toHaveBeenCalledTimes(1));
-      expect(bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)?.label).toBe('Rosie');
+      expect(bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)).toMatchObject({ label: 'Dispatcher controller', targetName: 'Rosie' });
     } finally {
       stop();
     }
