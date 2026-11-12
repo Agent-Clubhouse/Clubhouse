@@ -286,6 +286,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     fork_agent_part: INTERNAL_WRITE,
     delete_agent_part: INTERNAL_DESTRUCTIVE,
     get_agent_setup: INTERNAL_READ,
+    get_agent_activation: INTERNAL_READ,
     set_agent_setup: INTERNAL_WRITE,
     preview_agent_setup: INTERNAL_READ,
     list_agent_templates: INTERNAL_READ,

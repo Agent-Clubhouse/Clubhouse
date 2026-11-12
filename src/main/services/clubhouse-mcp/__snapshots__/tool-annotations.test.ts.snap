@@ -75,6 +75,7 @@ global:update_agent_part readOnly=false destructive=false openWorld=false
 global:fork_agent_part readOnly=false destructive=false openWorld=false
 global:delete_agent_part readOnly=false destructive=true openWorld=false
 global:get_agent_setup readOnly=true destructive=false openWorld=false
+global:get_agent_activation readOnly=true destructive=false openWorld=false
 global:set_agent_setup readOnly=false destructive=false openWorld=false
 global:preview_agent_setup readOnly=true destructive=false openWorld=false
 global:list_agent_templates readOnly=true destructive=false openWorld=false
