@@ -23,7 +23,7 @@ import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode, QuickTemplateChoice } from '../../shared/types';
-import type { RoutedMessagePart } from '../../shared/chat';
+import type { AgentRuntime, RoutedMessagePart } from '../../shared/chat';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
@@ -148,6 +148,8 @@ export interface SpawnAgentParams {
    * the launch flags; nothing is written into the folder it runs in.
    */
   managedTemplate?: QuickTemplateChoice;
+  /** Main-only, synchronous authorization fence immediately before runtime creation. */
+  beforeCreate?: (runtime?: AgentRuntime) => void;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -449,6 +451,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     orchestrator: provider.id as OrchestratorId,
     runtime: 'pty',
   });
+  const spawnRegistration = agentRegistry.get(params.agentId);
 
   try {
     // Clean up stale JSON in TOML config files (e.g. Codex .codex/config.toml)
@@ -710,6 +713,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           sessionId: p.sessionId,
           interactive: p.interactive,
           ...(desktopControlOff.length > 0 && { extraArgs: desktopControlOff }),
+          beforeCreate: p.beforeCreate,
         }, provider, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
         recordChatStart(chatStartMs, result, chatFacts, chatContext);
         return result;
@@ -882,7 +886,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
     if (!managed || ptyManager.isRunning(params.agentId)) announceAwake(params.agentId);
   } catch (err) {
-    if (!(err instanceof ProcessStartedReceiptError)) untrackAgent(params.agentId);
+    if (!(err instanceof ProcessStartedReceiptError)
+      && (!params.beforeCreate || (agentRegistry.get(params.agentId) === spawnRegistration
+        && !isAgentRunning(params.agentId) && getAgentRuntime(params.agentId)?.kind !== 'chat'))) untrackAgent(params.agentId);
     throw err;
   }
 }
@@ -1125,7 +1131,11 @@ async function spawnPtyAgent(
       if (capture) trackSessionCapture(exitAgentId, capture);
     }
   }, commandPrefix];
-  if (managed) spawnArgs.push({ beforeCreate: () => { assertLaunchesOpen(); managed.assertCanCreate(); }, onCreated: (identity: string) => { createdIdentity = identity; }, onObservedExit: () => { managedExitConfirmed = true; } });
+  if (managed || params.beforeCreate) spawnArgs.push({
+    beforeCreate: () => { assertLaunchesOpen(); managed?.assertCanCreate(); params.beforeCreate?.(); },
+    onCreated: (identity: string) => { createdIdentity = identity; },
+    onObservedExit: () => { managedExitConfirmed = true; },
+  });
   try {
     assertLaunchesOpen();
     assertDispatcherCanStart(params);
@@ -1344,6 +1354,8 @@ export interface KillAgentOptions {
   exitCommand?: string;
   /** For an agent_tool kill: the name of the agent that asked, shown as the sleep reason. */
   by?: string;
+  /** Main-only, synchronous authorization fence before any stop and after asynchronous preparation. */
+  beforeStop?: () => void;
 }
 
 export async function killAgent(
@@ -1353,6 +1365,7 @@ export async function killAgent(
   trigger: 'user' | 'agent_tool' = 'user',
   opts: KillAgentOptions = {},
 ): Promise<void> {
+  opts.beforeStop?.();
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId, trigger, waitForExit: opts.waitForExit === true } });
   agentKillRequested(agentId, trigger);
   noteKillRequest(agentId, { trigger, ...(opts.by ? { by: opts.by } : {}) });
@@ -1362,15 +1375,18 @@ export async function killAgent(
   try {
     // A chat start in progress is cancelled (and its runtime stopped) here.
     if (await cancelChatStart(agentId, { throwOnFailure: opts.throwOnFailure })) return;
+    opts.beforeStop?.();
     const tracked = agentRegistry.get(agentId);
 
     if (tracked?.runtime === 'chat' || isChatAgent(agentId)) {
       const runtime = getAgentRuntime(agentId);
+      opts.beforeStop?.();
       if (opts.throwOnFailure) await runtime?.stop({ throwOnFailure: true });
       else await runtime?.stop();
       return;
     }
     if (tracked?.runtime === 'headless' || (!tracked && headlessManager.isHeadless(agentId))) {
+      opts.beforeStop?.();
       const exited = opts.waitForExit && headlessManager.isHeadless(agentId) ? waitForAgentExit(agentId) : undefined;
       if (!exited) untrackAgent(agentId);
       headlessManager.kill(agentId);
@@ -1382,6 +1398,7 @@ export async function killAgent(
       return;
     }
     const exitCmd = opts.exitCommand ?? (await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator)).getExitCommand();
+    opts.beforeStop?.();
     const exited = opts.waitForExit && ptyManager.isRunning(agentId) ? waitForAgentExit(agentId) : undefined;
     ptyManager.gracefulKill(agentId, exitCmd);
     if (exited) {
@@ -1392,7 +1409,7 @@ export async function killAgent(
     appLog('core:agent', 'warn', 'killAgent failed (process may already be dead)', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
-    if (opts.throwOnFailure) throw err;
+    if (opts.throwOnFailure || opts.beforeStop) throw err;
   }
 }
 
