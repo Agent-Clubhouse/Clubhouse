@@ -107,7 +107,7 @@ describe('bounded fail-closed import lifecycle history', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe(encodeImportState(empty()));
   });
 
-  it('refuses lifecycle symlinks even when the platform does not enforce O_NOFOLLOW, preserving the link and committed bytes', async () => {
+  it.each(['existing', 'dangling'] as const)('refuses %s lifecycle symlinks even when the platform does not enforce O_NOFOLLOW, preserving the link and committed bytes', async (kind) => {
     const { root, file } = temporary();
     const store = new ImportStore(file);
     await store.update((state) => { state.plans.push(plan()); });
@@ -116,18 +116,76 @@ describe('bounded fail-closed import lifecycle history', () => {
     fs.renameSync(file, backup);
     const target = path.join(root, 'user.json');
     const external = encodeImportState(empty());
-    fs.writeFileSync(target, external);
+    if (kind === 'existing') fs.writeFileSync(target, external);
     fs.symlinkSync(target, file);
     const open = fsp.open;
     const withoutNofollow = vi.spyOn(fsp, 'open').mockImplementation((file, flags, mode) =>
       open(file, typeof flags === 'number' ? flags & ~(fs.constants.O_NOFOLLOW ?? 0) : flags, mode));
     try {
-      await expect(store.get()).rejects.toMatchObject({ reason: 'history_unavailable' });
-      await expect(store.update(() => {})).rejects.toMatchObject({ reason: 'history_unavailable' });
+      const read = await Promise.allSettled([store.get()]);
+      const write = await Promise.allSettled([store.update(() => {})]);
+      expect([...read, ...write]).toMatchObject([
+        { status: 'rejected', reason: { reason: 'history_unavailable' } },
+        { status: 'rejected', reason: { reason: 'history_unavailable' } },
+      ]);
       expect(fs.lstatSync(file).isSymbolicLink()).toBe(true);
       expect(fs.readlinkSync(file)).toBe(target);
-      expect(fs.readFileSync(target, 'utf8')).toBe(external);
+      if (kind === 'existing') expect(fs.readFileSync(target, 'utf8')).toBe(external);
+      else expect(fs.existsSync(target)).toBe(false);
       expect(fs.readFileSync(backup, 'utf8')).toBe(committed);
     } finally { withoutNofollow.mockRestore(); }
+  });
+
+  it('refuses a different regular ledger opened after its path inspection without adopting the replacement', async () => {
+    const { root, file } = temporary();
+    const store = new ImportStore(file);
+    await store.update((state) => { state.plans.push(plan()); });
+    const committed = fs.readFileSync(file, 'utf8');
+    const backup = path.join(root, 'committed.json');
+    const replacement = encodeImportState(empty());
+    const open = fsp.open;
+    const replace = vi.spyOn(fsp, 'open').mockImplementation(async (name, flags, mode) => {
+      if (name === file) {
+        fs.renameSync(file, backup);
+        fs.writeFileSync(file, replacement);
+      }
+      return open(name, flags, mode);
+    });
+    try {
+      await expect(store.get()).rejects.toMatchObject({ reason: 'history_unavailable' });
+      expect(fs.readFileSync(file, 'utf8')).toBe(replacement);
+      expect(fs.readFileSync(backup, 'utf8')).toBe(committed);
+    } finally { replace.mockRestore(); }
+  });
+
+  it('refuses a lifecycle symlink introduced during the temporary-write await without replacing it', async () => {
+    const { root, file } = temporary();
+    const store = new ImportStore(file);
+    await store.update((state) => { state.plans.push(plan()); });
+    const committed = fs.readFileSync(file, 'utf8');
+    const backup = path.join(root, 'committed.json');
+    const target = path.join(root, 'user.json');
+    const external = encodeImportState(empty());
+    fs.writeFileSync(target, external);
+    const open = fsp.open;
+    const replace = vi.spyOn(fsp, 'open').mockImplementation(async (name, flags, mode) => {
+      const handle = await open(name, flags, mode);
+      if (typeof name === 'string' && name.endsWith('.tmp')) {
+        const sync = handle.sync.bind(handle);
+        vi.spyOn(handle, 'sync').mockImplementation(async () => {
+          await sync();
+          fs.renameSync(file, backup);
+          fs.symlinkSync(target, file);
+        });
+      }
+      return handle;
+    });
+    try {
+      await expect(store.update((state) => { state.plans.push(plan()); })).rejects.toMatchObject({ reason: 'history_unavailable' });
+      expect(fs.lstatSync(file).isSymbolicLink()).toBe(true);
+      expect(fs.readFileSync(target, 'utf8')).toBe(external);
+      expect(fs.readFileSync(backup, 'utf8')).toBe(committed);
+      expect(fs.readdirSync(root).sort()).toEqual(['committed.json', 'history.json', 'user.json']);
+    } finally { replace.mockRestore(); }
   });
 });
