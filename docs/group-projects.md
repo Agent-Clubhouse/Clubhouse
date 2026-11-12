@@ -41,7 +41,8 @@ Inference persists atomically before publication, retaining an internal
 The marker is not part of the public Group Project object. On every fresh load,
 marked scopes are untrusted until a complete inventory reproduces the recorded
 candidate and passes drift checks. A different candidate is never silently
-adopted. Explicit scopes from new creation remain authoritative and are not
+adopted. Unrelated edits retain the recorded candidate even while its public
+scope is unresolved. Explicit scopes from new creation remain authoritative and are not
 re-inferred.
 
 Immutable inventory signatures are rechecked before and after persistence.

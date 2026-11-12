@@ -326,6 +326,15 @@ describe('one-shot legacy group project scope migration', () => {
           'core:group-project', 'warn', expect.stringContaining('migration deferred'),
           expect.objectContaining({ meta: expect.objectContaining({ retryable: true }) }),
         );
+        if (source === 'changed') {
+          await groupProjectRegistry.update('gp_legacy', { description: 'Unrelated edit while unresolved' });
+          await groupProjectRegistry.flush();
+          expect(JSON.parse(await fsp.readFile(registryFile(), 'utf-8'))[0]).toMatchObject({
+            scope: stored.scope, _scopeInference: 'legacy-v1', description: 'Unrelated edit while unresolved',
+          });
+          groupProjectRegistry._resetForTesting();
+          expect((await groupProjectRegistry.get('gp_legacy'))?.scope).toBeUndefined();
+        }
       }
     },
   );
