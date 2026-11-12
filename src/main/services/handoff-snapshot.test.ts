@@ -44,6 +44,16 @@ async function replacementFixture(): Promise<{ base: string; replacement: string
   return { base, replacement };
 }
 
+async function executableTrackedBase(): Promise<void> {
+  await git('update-index', '--chmod=+x', '--', 'tracked.txt');
+  await git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Executable base');
+  await git('config', 'core.filemode', 'false');
+  await fs.promises.chmod(path.join(repo, 'tracked.txt'), 0o644);
+  expect((await exec('git', ['ls-tree', 'HEAD', 'tracked.txt'], { cwd: repo })).stdout.startsWith('100755 ')).toBe(true);
+  expect((await exec('git', ['ls-files', '--stage', '--', 'tracked.txt'], { cwd: repo })).stdout.startsWith('100755 ')).toBe(true);
+  expect((await fs.promises.stat(path.join(repo, 'tracked.txt'))).mode & 0o100).toBe(0);
+}
+
 beforeEach(async () => {
   root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-snapshot-')));
   // Isolate supported fixtures with regular config files; Git for Windows rejects null devices.
@@ -122,8 +132,10 @@ describe('local secret-safe handoff snapshots', () => {
 
   it('does not inherit a custom replacement namespace as authority over the approved base', async () => {
     const { base, replacement } = await replacementFixture();
-    vi.stubEnv('GIT_REPLACE_REF_BASE', 'refs/handoff-test-replacements');
+    vi.stubEnv('GIT_REPLACE_REF_BASE', 'refs/handoff-test-replacements/');
     await git('replace', base, replacement);
+    const refs = await exec('git', ['for-each-ref', '--format=%(refname):%(objectname)', 'refs/'], { cwd: repo });
+    expect(refs.stdout.split(/\r?\n/)).toContain(`refs/handoff-test-replacements/${base}:${replacement}`);
     expect((await exec('git', ['show', `${base}:tracked.txt`], { cwd: repo })).stdout).toBe('changed final bytes\n');
     const snapshot = await prepareHandoffSnapshot(options());
     expect(snapshot.manifest.repo.base).toBe(base);
@@ -344,19 +356,27 @@ describe('local secret-safe handoff snapshots', () => {
     await git('add', 'tracked.txt');
     await file('tracked.txt', 'final unstaged\n');
     await fs.promises.rm(path.join(repo, 'deleted.txt'));
-    await file('new.txt', 'untracked\n');
-    await fs.promises.chmod(path.join(repo, 'new.txt'), 0o755);
+    await file('new.txt', 'new executable\n');
+    await git('add', '--', 'new.txt');
+    await git('update-index', '--chmod=+x', '--', 'new.txt');
+    await git('config', 'core.filemode', 'false');
+    await fs.promises.chmod(path.join(repo, 'new.txt'), 0o644);
+    expect((await exec('git', ['ls-files', '--stage', '--', 'new.txt'], { cwd: repo })).stdout.startsWith('100755 ')).toBe(true);
+    expect((await fs.promises.stat(path.join(repo, 'new.txt'))).mode & 0o100).toBe(0);
+    await file('untracked.txt', 'untracked\n');
     const large = Buffer.alloc(600 * 1024, 17);
     await file('models/selected.bin', large);
     await file('models/unselected.dat', 'not selected\n');
     await file('ignored-unselected.txt', 'not selected\n');
     await file('node_modules/example/index.js', 'not selected\n');
     const snapshot = await prepareHandoffSnapshot(options({ include: { ignored: ['models/*.bin'] } }));
-    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['models/selected.bin', 'new.txt', 'tracked.txt']);
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['models/selected.bin', 'new.txt', 'tracked.txt', 'untracked.txt']);
     expect(snapshot.manifest.deletions).toEqual(['deleted.txt']);
     expect(snapshot.manifest.files.find((entry) => entry.path === 'new.txt')?.mode).toBe('100755');
+    expect(snapshot.manifest.files.find((entry) => entry.path === 'untracked.txt')?.mode).toBe('100644');
     expect(snapshot.manifest.files.find((entry) => entry.path === 'models/selected.bin')?.sha256).toBe(hash(large));
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('final unstaged\n');
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/untracked.txt'), 'utf8')).toBe('untracked\n');
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/models/selected.bin'))).toEqual(large);
     expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
     if (process.platform !== 'win32') {
@@ -366,6 +386,115 @@ describe('local secret-safe handoff snapshots', () => {
     await file('tracked.txt', 'sender changed after snapshot\n');
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('final unstaged\n');
     expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
+  });
+
+  it.each(['edited', 'unchanged'] as const)('preserves canonical tracked Git mode with core.filemode=false (%s bytes)', async (bytes) => {
+    await executableTrackedBase();
+    if (bytes === 'edited') await file('tracked.txt', 'edited tracked bytes\n');
+    const snapshot = await prepareHandoffSnapshot(options());
+    if (bytes === 'edited') {
+      expect(snapshot.manifest.files).toMatchObject([{ path: 'tracked.txt', mode: '100755' }]);
+      expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('edited tracked bytes\n');
+    } else {
+      expect(snapshot.manifest.files).toEqual([]);
+      expect(snapshot.manifest.total_bytes).toBe(0);
+    }
+  });
+
+  it('includes an index-only executable-mode change when Git ignores physical mode bits', async () => {
+    await git('config', 'core.filemode', 'false');
+    await git('update-index', '--chmod=+x', '--', 'tracked.txt');
+    expect((await fs.promises.stat(path.join(repo, 'tracked.txt'))).mode & 0o100).toBe(0);
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.files).toMatchObject([{ path: 'tracked.txt', mode: '100755' }]);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('base\n');
+  });
+
+  it('falls back to the canonical HEAD mode for a tracked path missing from the index', async () => {
+    await executableTrackedBase();
+    await git('rm', '--cached', '--', 'tracked.txt');
+    await file('tracked.txt', 'edited after index removal\n');
+    const snapshot = await prepareHandoffSnapshot(options({ include: { untracked: false } }));
+    expect(snapshot.manifest.files).toMatchObject([{ path: 'tracked.txt', mode: '100755' }]);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('edited after index removal\n');
+  });
+
+  it('uses physical modes when Git trusts them and leaves raw untracked modes unchanged', async () => {
+    await executableTrackedBase();
+    await git('config', 'core.filemode', 'true');
+    await file('untracked.txt', 'raw untracked bytes\n');
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.files).toMatchObject([
+      { path: 'tracked.txt', mode: '100644' }, { path: 'untracked.txt', mode: '100644' },
+    ]);
+  });
+
+  it('uses the documented true default only when core.filemode is absent', async () => {
+    await git('config', '--unset', 'core.filemode');
+    await git('update-index', '--chmod=+x', '--', 'tracked.txt');
+    await expect(exec('git', ['config', '--get', 'core.filemode'], { cwd: repo })).rejects.toMatchObject({ code: 1 });
+    expect((await prepareHandoffSnapshot(options())).manifest.files).toEqual([]);
+  });
+
+  it('refuses invalid core.filemode instead of guessing a mode policy', async () => {
+    await git('config', 'core.filemode', 'not-a-boolean');
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'git_failed' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it.each(['120000', '160000'])('refuses unsupported index mode %s even when the working path is a regular file', async (mode) => {
+    const oid = (await exec('git', ['rev-parse', mode === '120000' ? 'HEAD:tracked.txt' : 'HEAD'], { cwd: repo })).stdout.trim();
+    await file('indexed.txt', 'regular working file\n');
+    await git('update-index', '--add', '--cacheinfo', `${mode},${oid},indexed.txt`);
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it.each([
+    ['index mode', 'manifest sync'], ['core.filemode', 'manifest sync'],
+    ['index mode', 'final repository validation'], ['core.filemode', 'final repository validation'],
+  ] as const)('rejects %s mutation during real %s without changing source bytes', async (authority, boundary) => {
+    await executableTrackedBase();
+    await file('tracked.txt', 'edited tracked bytes\n');
+    const before = await fs.promises.stat(path.join(repo, 'tracked.txt'), { bigint: true });
+    await fs.promises.mkdir(path.join(staging, 'existing-data'));
+    await fs.promises.writeFile(path.join(staging, 'existing-data/keep.txt'), 'keep');
+    const request = options();
+    const open = fs.promises.open;
+    const lstat = fs.promises.lstat;
+    let synced = false;
+    let mutated = false;
+    const mutate = async () => {
+      if (authority === 'index mode') await git('update-index', '--chmod=-x', '--', 'tracked.txt');
+      else await git('config', 'core.filemode', 'true');
+      mutated = true;
+    };
+    vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args);
+      if (args[0] === path.join(staging, request.handoffId, 'manifest.json')) {
+        const sync = handle.sync.bind(handle);
+        vi.spyOn(handle, 'sync').mockImplementation(async () => {
+          await sync();
+          synced = true;
+          if (boundary === 'manifest sync') await mutate();
+        });
+      }
+      return handle;
+    });
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
+      const stat = await lstat(...args);
+      if (boundary === 'final repository validation' && synced && !mutated && args[0] === path.join(repo, '.git')) await mutate();
+      return stat;
+    });
+    await expect(prepareHandoffSnapshot(request)).rejects.toMatchObject({ code: 'source_changed', cleanupFailed: false });
+    expect(synced).toBe(true);
+    expect(mutated).toBe(true);
+    expect(await fs.promises.readdir(staging)).toEqual(['existing-data']);
+    expect(await fs.promises.readFile(path.join(staging, 'existing-data/keep.txt'), 'utf8')).toBe('keep');
+    expect(await fs.promises.readFile(path.join(repo, 'tracked.txt'), 'utf8')).toBe('edited tracked bytes\n');
+    expect(await fs.promises.stat(path.join(repo, 'tracked.txt'), { bigint: true })).toMatchObject({
+      dev: before.dev, ino: before.ino, mode: before.mode, size: before.size, mtimeNs: before.mtimeNs, ctimeNs: before.ctimeNs,
+    });
   });
 
   it.each([
@@ -414,26 +543,32 @@ describe('local secret-safe handoff snapshots', () => {
     expect((await prepareHandoffSnapshot(options({ bounds: { totalBytes: 11, perFileBytes: 10, maxFiles: 2 } }))).manifest.total_bytes).toBe(11);
   });
 
-  it('enforces exact comparison read budgets independently of tighter output bounds (scaled budget fault injection)', async () => {
+  it.each(['below total', 'exact total', 'below per-file', 'raised bounds'] as const)('enforces exact comparison read budgets independently of output bounds (%s; scaled fault injection)', async (scenario) => {
     const sizes = await Promise.all(['.gitignore', 'deleted.txt', 'tracked.txt'].map(async (name) =>
       (await fs.promises.stat(path.join(repo, name))).size));
     const total = sizes.reduce((sum, size) => sum + size, 0);
     const largest = Math.max(...sizes);
     const original = { totalBytes: HANDOFF_TRANSFER_DEFAULTS.totalBytes, perFileBytes: HANDOFF_TRANSFER_DEFAULTS.perFileBytes };
     const bounds = { totalBytes: 1, perFileBytes: 1, maxFiles: 1 };
+    const protectedDirectory = path.join(staging, 'existing-data');
+    await fs.promises.mkdir(protectedDirectory);
+    await fs.promises.writeFile(path.join(protectedDirectory, 'keep.txt'), 'keep');
     try {
-      Object.defineProperties(HANDOFF_TRANSFER_DEFAULTS, { totalBytes: { value: total - 1 }, perFileBytes: { value: largest } });
-      await expect(prepareHandoffSnapshot(options({ bounds }))).rejects.toMatchObject({ code: 'unsupported_repository' });
-      expect(await fs.promises.readdir(staging)).toEqual([]);
-      Object.defineProperty(HANDOFF_TRANSFER_DEFAULTS, 'totalBytes', { value: total });
-      const exact = await prepareHandoffSnapshot(options({ bounds }));
-      expect(exact.manifest.files).toEqual([]);
-      expect(exact.manifest.total_bytes).toBe(0);
-      Object.defineProperty(HANDOFF_TRANSFER_DEFAULTS, 'perFileBytes', { value: largest - 1 });
-      await expect(prepareHandoffSnapshot(options({ bounds }))).rejects.toMatchObject({ code: 'unsupported_repository' });
-      expect(await fs.promises.readdir(staging)).toEqual([path.basename(exact.root)]);
-      const raised = await prepareHandoffSnapshot(options({ bounds: { totalBytes: total + 1, perFileBytes: largest + 1, maxFiles: 1 } }));
-      expect(raised.manifest.files).toEqual([]);
+      Object.defineProperties(HANDOFF_TRANSFER_DEFAULTS, {
+        totalBytes: { value: scenario === 'below total' || scenario === 'raised bounds' ? total - 1 : total },
+        perFileBytes: { value: scenario === 'below per-file' || scenario === 'raised bounds' ? largest - 1 : largest },
+      });
+      if (scenario === 'below total' || scenario === 'below per-file') {
+        await expect(prepareHandoffSnapshot(options({ bounds }))).rejects.toMatchObject({ code: 'unsupported_repository' });
+        expect(await fs.promises.readdir(staging)).toEqual(['existing-data']);
+      } else {
+        const selectedBounds = scenario === 'raised bounds' ? { totalBytes: total + 1, perFileBytes: largest + 1, maxFiles: 1 } : bounds;
+        const prepared = await prepareHandoffSnapshot(options({ bounds: selectedBounds }));
+        expect(prepared.manifest.files).toEqual([]);
+        expect(prepared.manifest.total_bytes).toBe(0);
+        expect((await fs.promises.readdir(staging)).sort()).toEqual([path.basename(prepared.root), 'existing-data'].sort());
+      }
+      expect(await fs.promises.readFile(path.join(protectedDirectory, 'keep.txt'), 'utf8')).toBe('keep');
     } finally {
       Object.defineProperties(HANDOFF_TRANSFER_DEFAULTS, {
         totalBytes: { value: original.totalBytes }, perFileBytes: { value: original.perFileBytes },
@@ -541,18 +676,18 @@ describe('receiver byte and hash verification', () => {
     expect(await fs.promises.readFile(path.join(outside, 'new.txt'), 'utf8')).toBe('safe file');
   });
 
-  it.each(['open', 'read'] as const)('rejects a parent swap after %s, closes the descriptor and never accepts matching outside bytes', async (boundary) => {
+  it.each(['open', 'read'] as const)('rejects an observed parent identity replacement after %s despite matching file bytes, and closes the descriptor', async (boundary) => {
     const files = path.join(snapshot.root, 'files');
     const outside = path.join(root, 'outside-files');
     await fs.promises.cp(files, outside, { recursive: true });
     const open = fs.promises.open;
+    const lstat = fs.promises.lstat;
+    const original = await lstat(files, { bigint: true });
+    const replacement = await lstat(outside, { bigint: true });
+    expect([replacement.ino, replacement.ctimeNs]).not.toEqual([original.ino, original.ctimeNs]);
     let swapped = false;
-    const swap = async () => {
-      if (swapped) return;
-      swapped = true;
-      await fs.promises.rename(files, path.join(root, 'retained-files'));
-      await fs.promises.symlink(outside, files, 'junction');
-    };
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) =>
+      swapped && args[0] === files ? replacement : lstat(...args));
     const reads = vi.fn();
     const closes = vi.fn();
     vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
@@ -563,12 +698,12 @@ describe('receiver byte and hash verification', () => {
         vi.spyOn(handle, 'read').mockImplementation(async (...args) => {
           reads();
           const result = await read(...args);
-          if (boundary === 'read') await swap();
+          if (boundary === 'read') swapped = true;
           return result;
         });
 
         vi.spyOn(handle, 'close').mockImplementation(async () => { closes(); return close(); });
-        if (boundary === 'open') await swap();
+        if (boundary === 'open') swapped = true;
       }
       return handle;
     });
@@ -580,39 +715,60 @@ describe('receiver byte and hash verification', () => {
     expect(await fs.promises.readFile(path.join(outside, 'new.txt'), 'utf8')).toBe('safe file');
   });
 
-  it('pins nested ancestors through the post-read lookup, even when the moved leaf retains the same inode', async () => {
+  it('pins nested ancestors through the post-read lookup despite a matching leaf inode (identity fault injection)', async () => {
     await file('a/b/nested.txt', 'nested bytes');
     snapshot = await prepareHandoffSnapshot(options());
     const parent = path.join(snapshot.root, 'files/a/b');
     const nested = path.join(parent, 'nested.txt');
     const outside = path.join(root, 'outside-nested');
+    await fs.promises.cp(parent, outside, { recursive: true });
     const open = fs.promises.open;
     const lstat = fs.promises.lstat;
+    const original = await lstat(parent, { bigint: true });
+    const replacement = await lstat(outside, { bigint: true });
+    const leaf = await lstat(nested, { bigint: true });
+    expect([replacement.ino, replacement.ctimeNs]).not.toEqual([original.ino, original.ctimeNs]);
     let readFinished = false;
     let swapped = false;
+    let postReadLeafLookups = 0;
+    const reads = vi.fn();
+    const stats = vi.fn();
+    const closes = vi.fn();
     vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
       const handle = await open(...args);
       if (args[0] === nested) {
         const read = handle.read.bind(handle);
+        const stat = handle.stat.bind(handle);
+        const close = handle.close.bind(handle);
         vi.spyOn(handle, 'read').mockImplementation(async (...args) => {
+          reads();
           const result = await read(...args);
           readFinished = true;
           return result;
         });
+        vi.spyOn(handle, 'stat').mockImplementation(async (...args) => { stats(); return stat(...args); });
+        vi.spyOn(handle, 'close').mockImplementation(async () => { closes(); return close(); });
       }
       return handle;
     });
     vi.spyOn(fs.promises, 'lstat').mockImplementation(async (...args) => {
       const stat = await lstat(...args);
-      if (args[0] === parent && readFinished && !swapped) {
-        swapped = true;
-        await fs.promises.rename(parent, outside);
-        await fs.promises.symlink(outside, parent, 'junction');
+      if (args[0] === parent) {
+        if (swapped) return replacement;
+        // Keep the first lookup stale, as a directory replacement after lstat would.
+        if (readFinished) swapped = true;
+      } else if (args[0] === nested && readFinished) {
+        postReadLeafLookups++;
+        expect(stat).toMatchObject({ dev: leaf.dev, ino: leaf.ino, mode: leaf.mode, size: leaf.size, mtimeNs: leaf.mtimeNs, ctimeNs: leaf.ctimeNs });
       }
       return stat;
     });
     await expect(verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).rejects.toMatchObject({ code: 'source_changed' });
     expect(swapped).toBe(true);
+    expect(postReadLeafLookups).toBe(1);
+    expect(reads).toHaveBeenCalledOnce();
+    expect(stats).toHaveBeenCalledOnce();
+    expect(closes).toHaveBeenCalledOnce();
     expect(await fs.promises.readFile(path.join(outside, 'nested.txt'), 'utf8')).toBe('nested bytes');
   });
 

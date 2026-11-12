@@ -67,6 +67,11 @@ interface SnapshotGit {
   identity?: string;
 }
 
+interface GitModeAuthority {
+  trustFileMode: boolean;
+  indexModes: ReadonlyMap<string, HandoffManifestFile['mode']>;
+}
+
 function failure(error: unknown): HandoffSnapshotError {
   if (error instanceof Error && error.message === 'Invalid handoff manifest.') return new HandoffSnapshotError('unsafe_entry');
   if (error instanceof Error && error.message === 'Handoff manifest is too large.') return new HandoffSnapshotError('bounds_exceeded');
@@ -174,28 +179,58 @@ function paths(output: string | null): string[] {
   return entries.filter(Boolean);
 }
 
-async function selection(source: SourceRoot, manifest: HandoffWorktreeManifest, bounds: HandoffTransferBounds, context: SnapshotGit): Promise<{ tracked: Set<string>; all: string[] }> {
+async function gitModeAuthority(context: SnapshotGit): Promise<GitModeAuthority> {
+  const configured = await git(context, ['config', '--type=bool', '--get', 'core.filemode'], true);
+  const policy = configured === null ? 'true' : configured.trim();
+  if (policy !== 'true' && policy !== 'false') throw new HandoffSnapshotError('git_failed');
+  const records = (await git(context, ['ls-files', '--stage', '-z']))?.split('\0');
+  if (!records || records.pop() !== '') throw new HandoffSnapshotError('git_failed');
+  const indexModes = new Map<string, HandoffManifestFile['mode']>();
+  for (const record of records) {
+    const match = /^([0-7]{6}) ([0-9a-f]{40}|[0-9a-f]{64}) 0\t([\s\S]+)$/.exec(record);
+    if (!match) throw new HandoffSnapshotError('unsupported_repository');
+    const mode = match[1];
+    const name = match[3];
+    if ((mode !== '100644' && mode !== '100755') || /^0+$/.test(match[2])
+      || !isSafeHandoffPath(name) || indexModes.has(name)) throw new HandoffSnapshotError('unsupported_repository');
+    indexModes.set(name, mode);
+  }
+  return { trustFileMode: policy === 'true', indexModes };
+}
+
+function physicalMode(stat: fs.BigIntStats): HandoffManifestFile['mode'] {
+  return stat.mode & 0o100n ? '100755' : '100644';
+}
+
+async function selection(
+  source: SourceRoot, manifest: HandoffWorktreeManifest, bounds: HandoffTransferBounds, context: SnapshotGit, authority: GitModeAuthority,
+): Promise<{ tracked: Set<string>; all: string[]; modes: ReadonlyMap<string, HandoffManifestFile['mode']> }> {
   const options = { dot: true, nonegate: true, noext: true, maxLength: 512 };
   const included = picomatch(manifest.include.ignored, options);
   const excluded = picomatch(manifest.exclude, options);
   const tracked = new Set<string>();
-  if (manifest.include.tracked_changes) {
-    const base = new Map<string, { mode: string; oid: string; size: bigint }>();
+  const modes = new Map(authority.trustFileMode ? undefined : authority.indexModes);
+  const base = new Map<string, { mode: HandoffManifestFile['mode']; oid: string; size: bigint }>();
+  if (manifest.include.tracked_changes || !authority.trustFileMode) {
     for (const entry of paths(await git(context, ['ls-tree', '-r', '-l', '-z', '--full-tree', manifest.repo.base]))) {
       const match = /^([0-7]{6}) (?:blob|commit) ([0-9a-f]{40}|[0-9a-f]{64}) +([0-9]+|-)\t(.+)$/.exec(entry);
       if (!match) throw new HandoffSnapshotError('git_failed');
       if (excluded(match[4])) continue;
-      if (!['100644', '100755'].includes(match[1])) throw new HandoffSnapshotError('unsupported_repository');
-      base.set(match[4], { mode: match[1], oid: match[2], size: BigInt(match[3]) });
+      const mode = match[1];
+      if (mode !== '100644' && mode !== '100755') throw new HandoffSnapshotError('unsupported_repository');
+      base.set(match[4], { mode, oid: match[2], size: BigInt(match[3]) });
+      if (!authority.trustFileMode && !modes.has(match[4])) modes.set(match[4], mode);
     }
-    const candidates = new Set([...base.keys(), ...paths(await git(context, ['ls-files', '--cached', '-z']))]);
+  }
+  if (manifest.include.tracked_changes) {
+    const candidates = new Set([...base.keys(), ...authority.indexModes.keys()]);
     let comparedBytes = 0n;
     for (const name of candidates) {
       if (excluded(name)) continue;
       const stat = await sourceStat(source, name, true);
       const original = base.get(name);
       if (!stat) { if (original) tracked.add(name); continue; }
-      if (!original || stat.size !== original.size || (stat.mode & 0o100n ? '100755' : '100644') !== original.mode) {
+      if (!original || stat.size !== original.size || (modes.get(name) ?? physicalMode(stat)) !== original.mode) {
         tracked.add(name);
         continue;
       }
@@ -212,7 +247,7 @@ async function selection(source: SourceRoot, manifest: HandoffWorktreeManifest, 
   const ignored = manifest.include.ignored.length > 0
     ? paths(await git(context, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])) : [];
   const all = [...new Set([...tracked, ...untracked, ...ignored.filter(included)])].filter((file) => !excluded(file)).sort(compare);
-  return { tracked, all };
+  return { tracked, all, modes };
 }
 
 function stamp(stat: fs.BigIntStats): string {
@@ -336,12 +371,13 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
     const staging = (await directory(options.stagingRoot)).root;
     if (root === staging || staging.startsWith(`${root}${path.sep}`) || root.startsWith(`${staging}${path.sep}`)) throw new HandoffSnapshotError('invalid_staging');
     const repo = await repository(context);
+    const authority = await gitModeAuthority(context);
     let manifest = parseHandoffManifest({
       v: 1, repo, include: { tracked_changes: true, untracked: true, ignored: [], ...options.include },
       exclude: options.exclude ?? ['**/node_modules/**'], files: [], deletions: [], total_bytes: 0, manifest_sha256: '0'.repeat(64),
     }, bounds);
     metadata(manifest);
-    const selected = await selection(sourceRoot, manifest, bounds, context);
+    const selected = await selection(sourceRoot, manifest, bounds, context, authority);
     if (selected.all.length > bounds.maxFiles) throw new HandoffSnapshotError('bounds_exceeded');
     const sources: SourceFile[] = [];
     let total = 0;
@@ -358,7 +394,7 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
     manifest = parseHandoffManifest({
       ...manifest, total_bytes: total, files: sources.map((source) => ({
         path: source.path, size: Number(source.stat.size), sha256: source.sha256 ?? '0'.repeat(64),
-        mode: source.stat.mode & 0o100n ? '100755' : '100644',
+        mode: selected.modes.get(source.path) ?? physicalMode(source.stat),
       })),
     }, bounds);
     const snapshotRoot = path.join(staging, options.handoffId);
@@ -378,7 +414,7 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
       } finally {
         await output.close();
       }
-      files.push({ path: source.path, size: Number(source.stat.size), sha256, mode: source.stat.mode & 0o100n ? '100755' : '100644' });
+      files.push({ path: source.path, size: Number(source.stat.size), sha256, mode: selected.modes.get(source.path) ?? physicalMode(source.stat) });
     }
     for (const source of sources) {
       const current = await sourceStat(sourceRoot, source.path);
@@ -387,7 +423,7 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
     for (const deleted of manifest.deletions) {
       if (await sourceStat(sourceRoot, deleted, true)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(deleted));
     }
-    if (JSON.stringify((await selection(sourceRoot, manifest, bounds, context)).all) !== JSON.stringify(selected.all)) {
+    if (JSON.stringify((await selection(sourceRoot, manifest, bounds, context, authority)).all) !== JSON.stringify(selected.all)) {
       throw new HandoffSnapshotError('source_changed');
     }
     await checkDirectories(sourceRoot, [...sourceRoot.directories.keys()]);
@@ -401,6 +437,11 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
       await manifestFile.close();
     }
     if (JSON.stringify(await repository(context)) !== JSON.stringify(repo)) throw new HandoffSnapshotError('source_changed');
+    const currentAuthority = await gitModeAuthority(context);
+    if (currentAuthority.trustFileMode !== authority.trustFileMode || currentAuthority.indexModes.size !== authority.indexModes.size
+      || [...authority.indexModes].some(([name, mode]) => currentAuthority.indexModes.get(name) !== mode)) {
+      throw new HandoffSnapshotError('source_changed');
+    }
     await checkDirectories(sourceRoot, [...sourceRoot.directories.keys()]);
     return { root: snapshotRoot, manifest };
   } catch (error) {
