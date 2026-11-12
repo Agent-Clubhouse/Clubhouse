@@ -133,8 +133,23 @@ async function loadStore(projectPath: string, strict = false): Promise<StoreStat
   const entries = record.connections as unknown[];
   const unknown = entries.filter((entry) => !isConnection(entry));
   if (strict && unknown.length > 0) throw new Error('Cannot inventory unrecognized orchestrator connections entries.');
+  const connections = entries.filter(isConnection);
+  if (strict) {
+    const pairs = new Set<string>();
+    for (const connection of connections) {
+      if ([connection.ownerId, connection.agentId, connection.targetId, connection.createdAt]
+        .some((value) => typeof value !== 'string' || !value.trim())
+        || [connection.agentProjectPath, connection.targetProjectPath].some((value) => value !== undefined && !value.trim())
+        || !Number.isFinite(Date.parse(connection.createdAt))) {
+        throw new Error('Cannot inventory malformed orchestrator connection identities, paths or timestamps.');
+      }
+      const pair = JSON.stringify([connection.agentId, connection.targetId]);
+      if (pairs.has(pair)) throw new Error('Cannot inventory duplicate orchestrator connection endpoint identities.');
+      pairs.add(pair);
+    }
+  }
   return {
-    connections: entries.filter(isConnection),
+    connections,
     unknown,
     writable: true,
   };

@@ -100,6 +100,41 @@ afterEach(() => {
 
 describe('strict read-only connection inventory', () => {
   it.each([
+    { name: 'empty owner', change: { ownerId: '' } },
+    { name: 'empty source', change: { agentId: '' } },
+    { name: 'empty target', change: { targetId: '' } },
+    { name: 'object timestamp', change: { createdAt: { future: true } } },
+    { name: 'missing timestamp', change: { createdAt: undefined } },
+    { name: 'invalid timestamp', change: { createdAt: 'not-a-date' } },
+    { name: 'empty source path', change: { agentProjectPath: '' } },
+    { name: 'empty target path', change: { targetProjectPath: '' } },
+  ])('refuses $name without changing permissive ordinary reads or disk bytes', async ({ change }) => {
+    const file = connectionsStorePath(home);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const raw = JSON.stringify({ version: 1, connections: [{ ...entry('durable_h1', 'gp_saved', { targetKind: 'group-project' }), ...change }] });
+    fs.writeFileSync(file, raw);
+
+    await expect(peekConnectionsChecked(home)).rejects.toThrow();
+    expect(await readConnections(home)).toEqual(JSON.parse(raw).connections);
+    expect(fs.readFileSync(file, 'utf-8')).toBe(raw);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['orchestrator-connections.json']);
+  });
+
+  it('refuses duplicate endpoint identities rather than accepting a lossy deduplicated inventory', async () => {
+    const file = connectionsStorePath(home);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const connections = [
+      entry('durable_h1', 'gp_saved', { targetKind: 'group-project' }),
+      entry('durable_h1', 'gp_saved', { targetKind: 'group-project', ownerId: 'other_owner' }),
+    ];
+    const raw = JSON.stringify({ version: 1, connections });
+    fs.writeFileSync(file, raw);
+    await expect(peekConnectionsChecked(home)).rejects.toThrow();
+    expect(await readConnections(home)).toEqual(connections);
+    expect(fs.readFileSync(file, 'utf-8')).toBe(raw);
+  });
+
+  it.each([
     { name: 'corrupt JSON', raw: '{corrupt' },
     { name: 'invalid schema', raw: '[]' },
     { name: 'missing connections', raw: '{"version":1}' },
