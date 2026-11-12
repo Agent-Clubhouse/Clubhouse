@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
@@ -21,7 +21,7 @@ vi.mock('../agent-config', () => ({ ensureGitignore: vi.fn(async () => true) }))
 import { ProjectImportService, type ImportAuthorization } from './service';
 import { ImportStore } from './store';
 import { createImportGit, importGitEnvironment, parseRemoteIdentity, type ImportGit } from './git';
-import { ImportError, type ImportReceipt } from './types';
+import { ACTIVE_PHASES, ImportError, type ImportReceipt } from './types';
 import * as projectStore from '../project-store';
 import { registerProjectFolder } from '../project-add';
 import { ensureGitignore } from '../agent-config';
@@ -35,6 +35,7 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'prot
 const assertCurrent = async (): Promise<void> => {};
 const authorized: ImportAuthorization = vi.fn(async () => ({ kind: 'approved', assertCurrent }));
 const projects: Project[] = [];
+const terminalUpdates = new Map<string, { promise: Promise<void>; resolve: () => void }>();
 
 function fixture(sourceEnvironment = environment) {
   const work = path.join(temp.root, `case-${++n}`);
@@ -59,6 +60,21 @@ function fixture(sourceEnvironment = environment) {
     }),
   };
   const store = new ImportStore(path.join(work, 'state.json'));
+  const update = store.update.bind(store);
+  vi.spyOn(store, 'update').mockImplementation(async (fn) => {
+    const state = await update(fn);
+    for (const receipt of state.receipts) {
+      let terminal = terminalUpdates.get(receipt.id);
+      if (!terminal) {
+        let resolve!: () => void;
+        const promise = new Promise<void>((complete) => { resolve = complete; });
+        terminal = { promise, resolve };
+        terminalUpdates.set(receipt.id, terminal);
+      }
+      if (!ACTIVE_PHASES.has(receipt.phase)) terminal.resolve();
+    }
+    return state;
+  });
   const register = vi.fn(async (folder: string) => {
     const project: Project = { id: `proj_${n}`, name: path.basename(folder), path: folder };
     projects.push(project);
@@ -83,16 +99,22 @@ async function start(f: ReturnType<typeof fixture>, approval = authorized) {
 }
 
 async function finished(service: ProjectImportService, id: string): Promise<Awaited<ReturnType<ProjectImportService['status']>>> {
-  for (let i = 0; i < 300; i++) {
+  const terminal = terminalUpdates.get(id);
+  if (!terminal) throw new Error('Import has no persisted receipt/completion observable');
+  let persisted = false;
+  onTestFailed(async () => {
+    if (persisted) return;
     const receipt = await service.status('dispatcher', id);
-    if (['completed', 'partial', 'failed', 'cancelled', 'interrupted'].includes(receipt.phase)) return receipt;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error('import did not finish');
+    console.error(`Import did not persist a terminal outcome before the test deadline: phase=${receipt.phase}, reason=${receipt.reason ?? 'none'}`);
+  });
+  await terminal.promise;
+  persisted = true;
+  return service.status('dispatcher', id);
 }
 
 beforeEach(() => {
   projects.length = 0;
+  terminalUpdates.clear();
   vi.mocked(authorized).mockResolvedValue({ kind: 'approved', assertCurrent });
 });
 
@@ -283,16 +305,8 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     const f = fixture();
     let release!: () => void;
     let reached!: () => void;
-    let settled!: () => void;
     const blocked = new Promise<void>((resolve) => { release = resolve; });
     const statusCompleted = new Promise<void>((resolve) => { reached = resolve; });
-    const terminalSaved = new Promise<void>((resolve) => { settled = resolve; });
-    const update = f.store.update.bind(f.store);
-    vi.spyOn(f.store, 'update').mockImplementation(async (fn) => {
-      const state = await update(fn);
-      if (state.receipts.some((receipt) => ['completed', 'partial', 'failed', 'cancelled'].includes(receipt.phase))) settled();
-      return state;
-    });
     const run = f.runner.run;
     f.runner.run = vi.fn(async (args, options) => {
       const result = await run(args, options);
@@ -300,6 +314,8 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
       return result;
     });
     const { receipt } = await start(f);
+    const terminalSaved = terminalUpdates.get(receipt.id);
+    if (!terminalSaved) throw new Error('Import has no persisted receipt/completion observable');
     await statusCompleted;
     expect(await f.service.status('dispatcher', receipt.id)).toMatchObject({ phase: 'cloned', cloneCompleted: true });
     vi.useFakeTimers();
@@ -314,7 +330,7 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     } finally {
       vi.useRealTimers();
       release();
-      await terminalSaved;
+      await terminalSaved.promise;
     }
     expect(await waiting).toMatchObject({ phase: 'completed', cloneCompleted: true });
     expect(f.register).toHaveBeenCalledOnce();
@@ -325,16 +341,16 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     const f = fixture(() => ({ ...environment(), PATH: `${wrapper}${path.delimiter}${process.env.PATH ?? ''}` }));
     wrapper = f.source;
     const marker = path.join(f.work, 'executed-wrapper');
-    fs.writeFileSync(path.join(wrapper, 'git'), `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(wrapper, process.platform === 'win32' ? 'git.exe' : 'git'), `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
     const { receipt } = await start(f);
     expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'completed', cloneCompleted: true });
     expect(fs.existsSync(marker)).toBe(false);
   });
 
   it('does not execute a checked-out git program through a cwd-relative inherited PATH', async () => {
-    const f = fixture(() => ({ ...environment(), PATH: `.${path.delimiter}/usr/bin${path.delimiter}/bin` }));
+    const f = fixture(() => ({ ...environment(), PATH: `.${path.delimiter}${fixtureEnv.PATH ?? ''}` }));
     const marker = path.join(f.work, 'executed-git');
-    fs.writeFileSync(path.join(f.source, 'git'), `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(f.source, process.platform === 'win32' ? 'git.exe' : 'git'), `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
     git(f.source, 'add', '.');
     git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'untrusted git executable');
     const { receipt } = await start(f);
