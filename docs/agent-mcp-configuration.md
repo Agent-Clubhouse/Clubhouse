@@ -87,6 +87,10 @@ requiring a Canvas placement. Guidance writability comes from the backend
 ownership snapshot, not the row's helper or target kind. Plugin and
 membership-managed guidance remains read-only with its owning-source reason.
 Source-read failures remain visible and retryable; they do not hide Edit.
+Suspended connections without an active binding still show their saved source
+metadata and removal controls, with an explicit explanation that guidance
+inspection is unavailable until they reconnect. No running tool client is needed
+to inspect a bound connection's guidance, even when its sender or target sleeps.
 Saving guidance changes only the selected sender-to-receiver direction. The
 explicit **Copy guidance to reverse draft** action copies text, not permissions,
 and still requires saving that reverse direction separately.

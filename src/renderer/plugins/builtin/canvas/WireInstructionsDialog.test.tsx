@@ -307,10 +307,25 @@ describe('shared Canvas and card guidance editor', () => {
     expect(await view.findByTestId('connection-source-dispatcher_link')).toHaveTextContent('Not connected now: Dispatcher off');
     expect(window.clubhouse.mcpBinding.getConnectionGuidance).not.toHaveBeenCalled();
     expect(view.queryByRole('textbox', { name: 'Instructions' })).toBeNull();
+    expect(view.getByText(/Guidance inspection and editing are unavailable until this connection is active again/)).toBeInTheDocument();
     fireEvent.click(view.getByTestId('connection-source-remove-dispatcher_link'));
     await act(async () => { fireEvent.click(view.getByTestId('connection-source-confirm-dispatcher_link')); });
     expect(window.clubhouse.mcpBinding.removeConnectionSource).toHaveBeenCalledTimes(2);
     expect(window.clubhouse.mcpBinding.removeConnectionSource).toHaveBeenCalledWith('a', 'b', 'dispatcher_link');
     expect(window.clubhouse.mcpBinding.removeConnectionSource).toHaveBeenCalledWith('b', 'a', 'dispatcher_link');
+  });
+
+  it('retains a dirty direction draft when a saved connection temporarily suspends and reconnects', async () => {
+    const props = { agentId: 'a', otherId: 'b', agentName: 'A', otherName: 'B', onClose: vi.fn(), onRemoved: vi.fn() };
+    const view = render(<ConnectionSourcesDialog {...props} pairs={pairs} />);
+    const textarea = await view.findByRole('textbox', { name: 'Instructions' });
+    fireEvent.change(textarea, { target: { value: 'Keep across temporary suspension' } });
+    view.rerender(<ConnectionSourcesDialog {...props} pairs={pairs.map((pair) => ({
+      ...pair, bound: false, sources: [{ kind: 'dispatcher_link' as const, sourceId: 'dispatcher-connections', suspended: 'Dispatcher off' }],
+    }))} />);
+    expect(view.queryByRole('textbox', { name: 'Instructions' })).toBeNull();
+    expect(view.getByText(/Guidance inspection and editing are unavailable/)).toBeInTheDocument();
+    view.rerender(<ConnectionSourcesDialog {...props} pairs={pairs} />);
+    expect(await view.findByRole('textbox', { name: 'Instructions' })).toHaveValue('Keep across temporary suspension');
   });
 });

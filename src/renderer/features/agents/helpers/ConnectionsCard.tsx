@@ -299,7 +299,7 @@ export function sourcesNote(pairs: readonly ConnectionPairSources[]): string | u
   return `From: ${kinds.map((k) => CONNECTION_SOURCE_LABELS[k]).join(', ')}`;
 }
 
-/** The sources behind the agent's connections, re-read like the tool pairs. Null until read, or when they can't be. */
+/** Last-known sources and explicit read errors; null until the first read settles. */
 function useConnectionSources(active: boolean, agentId: string, bindings: readonly McpBindingEntry[], removals: number) {
   const [read, setRead] = useState<{ sources: AgentConnectionSources | null; error?: string } | null>(null);
   useEffect(() => {

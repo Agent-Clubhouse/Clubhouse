@@ -236,6 +236,9 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
   const savedOf = (from: string, to: string) => grants.find((g) => g.from.agentId === from && g.to.agentId === to && !g.from.machineId && !g.to.machineId);
   const toolsOf = (from: string, to: string): readonly string[] => savedOf(from, to)?.disabledTools ?? liveTools?.get(`${from}>${to}`) ?? [];
   const connectedWay = (from: string, to: string) => pairs.some((p) => p.agentId === from && p.targetId === to && (p.bound || p.sources.length > 0));
+  const guidanceDirections = directions.filter((d, index) => (targetKind === 'agent' || index === 0)
+    && (pairs.some((pair) => pair.agentId === d.from && pair.targetId === d.to && pair.bound) || liveTools?.has(`${d.from}>${d.to}`)))
+    .map((d) => ({ from: d.from, to: d.to, label: `${d.fromName} to ${d.toName}` }));
 
   return (
     <Modal open onClose={onClose} title={`${agentName} and ${otherName}`} width="w-[640px]" testId="connection-sources-dialog" backdropTestId={backdropTestId}
@@ -303,9 +306,10 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
           </li>
         )}
       </ul>
-      <ConnectionGuidanceEditor directions={directions.filter((d, index) => (targetKind === 'agent' || index === 0)
-        && (pairs.some((pair) => pair.agentId === d.from && pair.targetId === d.to && pair.bound) || liveTools?.has(`${d.from}>${d.to}`)))
-        .map((d) => ({ from: d.from, to: d.to, label: `${d.fromName} to ${d.toName}` }))} />
+      <ConnectionGuidanceEditor directions={guidanceDirections} />
+      {guidanceDirections.length === 0 && (
+        <p className="mt-4 text-xs text-ctp-overlay1">Saved source metadata is shown above. Guidance inspection and editing are unavailable until this connection is active again; no session was started.</p>
+      )}
     </Modal>
   );
 }
