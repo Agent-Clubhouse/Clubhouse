@@ -3,6 +3,7 @@ import type { McpToolResult } from '../types';
 import { projectImportService } from '../../project-import/service';
 import { ImportError } from '../../project-import/types';
 import { appLog } from '../../log-service';
+import { IMPORT_GRANT, importAuthorization, previewAuthorization } from '../../project-import/approval';
 
 function json(value: unknown, isError = false): McpToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value) }], ...(isError && { isError: true }) };
@@ -45,10 +46,10 @@ export function registerProjectImportTools(): void {
   }, safe(['url', 'destination', 'branch'], (agentId, args) => projectImportService.preview(agentId, {
     url: string(args, 'url'), destination: string(args, 'destination'),
     ...(args.branch !== undefined && { branch: string(args, 'branch') }),
-  })), { group: 'dispatcher', grant: { actions: ['project.read'], target: 'all_projects' } });
+  }, previewAuthorization(agentId))), { group: 'dispatcher', grant: IMPORT_GRANT });
 
   registerGlobalTool('import_github_repository', {
-    description: 'Import exactly the reviewed GitHub preview into its canonical new destination after genuine fresh per-import human approval, even when project.add is Allow. Downloads only the reviewed branch/tip, checks out without hooks/filters/submodules/setup, then uses normal project registration and .gitignore rules. Returns a tracked receipt, never creates/starts an agent. Changed identity/placement/branch requires a new preview and approval. Repeated calls return the original receipt; partial files are preserved. Activation is fail-closed until the exact approval boundary is available.',
+    description: 'Import exactly the reviewed GitHub preview into its canonical new destination after genuine fresh per-import human approval, even when project.add is Allow. Downloads only the reviewed branch/tip, checks out without hooks/filters/submodules/setup, then uses normal project registration and .gitignore rules. Returns a tracked receipt, never creates/starts an agent. Changed identity/placement/branch requires a new preview and approval. Repeated calls return the original receipt; partial files are preserved.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -57,16 +58,9 @@ export function registerProjectImportTools(): void {
       },
       required: ['planId', 'destination'],
     },
-  }, safe(['planId', 'destination'], async (_agentId, args) => {
-    string(args, 'planId');
-    string(args, 'destination');
-    // The central original-scope human-approval repair is independently reviewed before this activates.
-    // No model boolean, preview token, generic Allow grant or permission callback is an approval substitute.
-    throw new ImportError('approval_boundary_unavailable', 'Repository import is not activated until exact current human-approval verification is available. Preview and status are available; nothing was cloned, registered or started.');
-  }), {
-    group: 'dispatcher',
-    grant: { actions: ['project.add'], target: 'project_arg', from: { args: ['destination'] }, askHandledByTool: true },
-  });
+  }, safe(['planId', 'destination'], (agentId, args) => projectImportService.start(
+    agentId, string(args, 'planId'), string(args, 'destination'), importAuthorization(agentId),
+  )), { group: 'dispatcher', grant: IMPORT_GRANT });
 
   registerGlobalTool('get_github_import', {
     description: 'Read this caller\'s import receipt, current sanitized progress, separate checkout/project/agent outcomes and safe recovery instructions. A stopped app produces an interrupted outcome, never an automatic restart or duplicate clone.',

@@ -7,10 +7,11 @@ export interface GitRunOptions {
   cwd: string;
   signal?: AbortSignal;
   onProgress?: (percent: number) => void;
+  beforeSpawn?: () => Promise<void>;
 }
 
 export interface ImportGit {
-  remote(url: string, branch: string | undefined, signal?: AbortSignal): Promise<RemoteIdentity>;
+  remote(url: string, branch: string | undefined, signal?: AbortSignal, beforeSpawn?: () => Promise<void>): Promise<RemoteIdentity>;
   run(args: string[], options: GitRunOptions): Promise<string>;
 }
 
@@ -156,13 +157,17 @@ export function createImportGit(sourceEnvironment: () => Record<string, string |
   ];
 
   return {
-    async remote(url, branch, signal) {
+    async remote(url, branch, signal, beforeSpawn) {
+      await beforeSpawn?.();
       const env = await environment(signal);
+      await beforeSpawn?.();
       const raw = await execute([...safe, 'ls-remote', '--symref', '--', url, 'HEAD', 'refs/heads/*'], env, { cwd: os.homedir(), signal }, 30_000);
       return parseRemoteIdentity(url, raw, branch);
     },
     async run(args, options) {
-      return execute([...safe, ...args], await environment(options.signal), options, 10 * 60_000);
+      const env = await environment(options.signal);
+      await options.beforeSpawn?.();
+      return execute([...safe, ...args], env, options, 10 * 60_000);
     },
   };
 }

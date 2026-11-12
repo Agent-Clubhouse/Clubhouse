@@ -213,6 +213,10 @@ describe('tool grant declarations (#2967)', () => {
       reconnect_device: device.manage on app
       remove_device: device.manage on app
       start_adding_device: device.manage on app
+      preview_github_import: project.add on project_arg
+      import_github_repository: project.add on project_arg
+      get_github_import: project.read on all_projects
+      cancel_github_import: project.add on project_arg
       add_project: project.add on project_arg
       request_app_update: app.update on app"
     `);

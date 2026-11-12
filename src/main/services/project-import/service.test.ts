@@ -17,14 +17,23 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../badge-settings', () => ({ getSettings: () => ({}), saveSettings: vi.fn() }));
 vi.mock('../sound-service', () => ({ getSettings: () => ({}), saveSettings: vi.fn() }));
 vi.mock('../agent-config', () => ({ ensureGitignore: vi.fn(async () => true) }));
+vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
+  ...await original<typeof import('../dispatcher/dispatcher-settings')>(),
+  isDispatcherEnabled: () => true,
+}));
 
-import { ProjectImportService, type ImportAuthorization } from './service';
+import { ProjectImportService, type ImportAuthorization, type PreviewAuthorization } from './service';
 import { ImportStore } from './store';
 import { createImportGit, importGitEnvironment, parseRemoteIdentity, type ImportGit } from './git';
 import { ImportError, type ImportReceipt } from './types';
 import * as projectStore from '../project-store';
 import { registerProjectFolder } from '../project-add';
 import { ensureGitignore } from '../agent-config';
+import { importAuthorization, previewAuthorization } from './approval';
+import { agentRegistry } from '../agent-registry';
+import { setDispatcherAgent } from '../clubhouse-mcp/dispatcher-gate';
+import { setMcpCaller } from '../clubhouse-mcp/mcp-call-gate';
+import { _resetGrantRequestsForTesting, listGrantRequests, takeGrantRequest, finishGrantAnswer } from '../grant-requests';
 
 let n = 0;
 const environment = () => ({ PATH: process.env.PATH, HOME: temp.root, USERPROFILE: temp.root, XDG_CONFIG_HOME: path.join(temp.root, 'xdg') });
@@ -32,6 +41,7 @@ const fixtureEnv = importGitEnvironment(environment());
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'protocol.file.allow=always', ...args], { cwd, env: fixtureEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const assertCurrent = async (): Promise<void> => {};
 const authorized: ImportAuthorization = vi.fn(async () => ({ kind: 'approved', assertCurrent }));
+const previewAllowed: PreviewAuthorization = async () => ({ kind: 'approved', assertCurrent });
 const projects: Project[] = [];
 
 function fixture() {
@@ -68,7 +78,7 @@ function fixture() {
 }
 
 async function preview(f: ReturnType<typeof fixture>) {
-  const result = await f.service.preview('dispatcher', { url: f.url, destination: f.destination });
+  const result = await f.service.preview('dispatcher', { url: f.url, destination: f.destination }, previewAllowed);
   if (result.status !== 'ready') throw new Error('expected ready');
   return result.plan;
 }
@@ -97,6 +107,40 @@ beforeEach(() => {
 afterAll(() => { fs.rmSync(temp.root, { recursive: true, force: true }); });
 
 describe('bounded import user flow using isolated real Git fixtures', () => {
+  it('runs end to end through real separate human preview/import decisions, local Git acquisition and project registration', async () => {
+    const f = fixture();
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: path.join(f.work, 'dispatcher'), orchestrator: 'claude-code', runtime: 'headless', nonce: 'isolated-import-fixture-session' });
+    setDispatcherAgent('dispatcher', true);
+    setMcpCaller('dispatcher', path.join(f.work, 'dispatcher'), {});
+    const input = { url: f.url, destination: f.destination };
+    expect(await f.service.preview('dispatcher', input, previewAuthorization('dispatcher'))).toMatchObject({ status: 'approval_required' });
+    expect(f.runner.remote).not.toHaveBeenCalled();
+    const [metadataApproval] = listGrantRequests();
+    expect(metadataApproval.detail).toContain('Preview only');
+    takeGrantRequest(metadataApproval.requestId, true);
+    finishGrantAnswer(metadataApproval.requestId);
+    const reviewed = await f.service.preview('dispatcher', input, previewAuthorization('dispatcher'));
+    if (reviewed.status !== 'ready') throw new Error('expected reviewed plan');
+    const authorize = importAuthorization('dispatcher');
+    expect(await f.service.start('dispatcher', reviewed.plan.id, f.destination, authorize)).toMatchObject({ status: 'approval_required' });
+    expect(fs.existsSync(f.destination)).toBe(false);
+    const [importApproval] = listGrantRequests();
+    expect(importApproval.detail).toContain(f.commit);
+    expect(importApproval.detail).toContain('No agent creation');
+    takeGrantRequest(importApproval.requestId, true);
+    finishGrantAnswer(importApproval.requestId);
+    const started = await f.service.start('dispatcher', reviewed.plan.id, f.destination, authorize);
+    if (!('receipt' in started)) throw new Error('expected tracked import');
+    expect(await finished(f.service, started.receipt.id)).toMatchObject({
+      phase: 'completed', cloneCompleted: true, projectId: `proj_${n}`, agentCreated: false, agentStarted: false,
+    });
+    expect(f.register).toHaveBeenCalledTimes(1);
+    expect(listGrantRequests()).toEqual([]);
+    agentRegistry.untrack('dispatcher');
+    _resetGrantRequestsForTesting();
+  });
+
   it('previews actual trunk/tip without a checkout, reuses the same preview and requires a real approval decision', async () => {
     const f = fixture();
     const first = await preview(f);
@@ -133,7 +177,7 @@ describe('bounded import user flow using isolated real Git fixtures', () => {
     fs.rmSync(temp.base, { recursive: true, force: true });
     vi.mocked(ensureGitignore).mockRejectedValueOnce(new Error('unwritable'));
     const service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: projectStore.list, register: registerProjectFolder });
-    const planResult = await service.preview('dispatcher', { url: f.url, destination: f.destination });
+    const planResult = await service.preview('dispatcher', { url: f.url, destination: f.destination }, previewAllowed);
     if (planResult.status !== 'ready') throw new Error('expected ready');
     const started = await service.start('dispatcher', planResult.plan.id, f.destination, authorized);
     if (!('receipt' in started)) throw new Error('expected receipt');
@@ -160,7 +204,7 @@ describe('bounded import user flow using isolated real Git fixtures', () => {
   it('uses an explicitly chosen existing branch without changing the advertised default', async () => {
     const f = fixture();
     git(f.source, 'branch', 'release');
-    const result = await f.service.preview('dispatcher', { url: f.url, destination: f.destination, branch: 'release' });
+    const result = await f.service.preview('dispatcher', { url: f.url, destination: f.destination, branch: 'release' }, previewAllowed);
     expect(result.status === 'ready' && result.plan).toMatchObject({ branch: 'release', defaultBranch: 'trunk' });
   });
 
@@ -175,6 +219,39 @@ describe('bounded import user flow using isolated real Git fixtures', () => {
 });
 
 describe('approval and placement change invalidation', () => {
+  it('does not contact GitHub or save a plan until preview account authority is approved', async () => {
+    const f = fixture();
+    const wait: PreviewAuthorization = async () => ({ kind: 'asked', text: 'Needs you for metadata access' });
+    expect(await f.service.preview('dispatcher', { url: f.url, destination: f.destination }, wait)).toMatchObject({ status: 'approval_required' });
+    expect(f.runner.remote).not.toHaveBeenCalled();
+    expect((await f.store.get()).plans).toEqual([]);
+  });
+
+  it('refuses private metadata and plan persistence when preview permission is revoked during remote access', async () => {
+    const f = fixture();
+    let revoked = false;
+    const original = f.runner.remote;
+    f.runner.remote = vi.fn(async (...args) => { const result = await original(...args); revoked = true; return result; });
+    const policy: PreviewAuthorization = async () => ({
+      kind: 'approved',
+      assertCurrent: async () => { if (revoked) throw new ImportError('permission_denied', 'Current access was revoked.'); },
+    });
+    await expect(f.service.preview('dispatcher', { url: f.url, destination: f.destination }, policy)).rejects.toMatchObject({ reason: 'permission_denied' });
+    expect((await f.store.get()).plans).toEqual([]);
+    expect(fs.existsSync(f.destination)).toBe(false);
+  });
+
+  it('rechecks the original approval after all remote awaits before any owned target is created', async () => {
+    const f = fixture();
+    const plan = await preview(f);
+    const decision: ImportAuthorization = async () => ({
+      kind: 'approved', assertCurrent: async () => { throw new ImportError('approval_changed', 'Scope changed.'); },
+    });
+    await expect(f.service.start('dispatcher', plan.id, f.destination, decision)).rejects.toMatchObject({ reason: 'approval_changed' });
+    expect(fs.existsSync(f.destination)).toBe(false);
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
   it('refuses model-changed destination and another caller before approval', async () => {
     const f = fixture();
     const plan = await preview(f);
@@ -216,7 +293,7 @@ describe('approval and placement change invalidation', () => {
     git(f.source, 'branch', 'next');
     git(f.source, 'symbolic-ref', 'HEAD', 'refs/heads/next');
     await expect(f.service.start('dispatcher', plan.id, f.destination, authorized)).rejects.toMatchObject({ reason: 'remote_changed' });
-    expect(authorized).not.toHaveBeenCalled();
+    expect(authorized).toHaveBeenCalledTimes(1);
     expect(fs.existsSync(f.destination)).toBe(false);
   });
 
@@ -232,7 +309,7 @@ describe('approval and placement change invalidation', () => {
     const f = fixture();
     const parent = path.join(f.work, 'parent');
     fs.mkdirSync(parent);
-    const result = await f.service.preview('dispatcher', { url: f.url, destination: path.join(parent, 'repo') });
+    const result = await f.service.preview('dispatcher', { url: f.url, destination: path.join(parent, 'repo') }, previewAllowed);
     if (result.status !== 'ready') throw new Error('expected ready');
     const approval: ImportAuthorization = async () => {
       fs.renameSync(parent, `${parent}-old`);
@@ -246,7 +323,7 @@ describe('approval and placement change invalidation', () => {
   it('reuses an existing registered repository instead of cloning another copy', async () => {
     const f = fixture();
     projects.push({ id: 'proj_existing', name: 'Existing', path: f.source });
-    const result = await f.service.preview('dispatcher', { url: f.url, destination: f.destination });
+    const result = await f.service.preview('dispatcher', { url: f.url, destination: f.destination }, previewAllowed);
     expect(result).toMatchObject({ status: 'existing_project', projectId: 'proj_existing' });
     expect(f.runner.remote).not.toHaveBeenCalled();
     expect(fs.existsSync(f.destination)).toBe(false);
@@ -266,12 +343,65 @@ describe('approval and placement change invalidation', () => {
 
   it.each(['relative/path', '/tmp/.clubhouse/agents/repo', '/tmp/.clubhouse-dev/repo'])('refuses unsafe placement %s before network access', async (destination) => {
     const f = fixture();
-    await expect(f.service.preview('dispatcher', { url: f.url, destination })).rejects.toBeInstanceOf(ImportError);
+    await expect(f.service.preview('dispatcher', { url: f.url, destination }, previewAllowed)).rejects.toBeInstanceOf(ImportError);
     expect(f.runner.remote).not.toHaveBeenCalled();
   });
 });
 
 describe('cancellation, interruption and unsafe incidental execution', () => {
+  it('refuses user-changed local Git configuration before any incidental checkout filter can execute', async () => {
+    const f = fixture();
+    const marker = path.join(f.work, 'executed');
+    const original = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await original(args, options);
+      if (args[0] === 'fetch') fs.appendFileSync(path.join(f.destination, '.git', 'config'), `\n[filter "danger"]\n smudge = touch '${marker}'\n`);
+      return result;
+    });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', reason: 'checkout_changed', cloneCompleted: false });
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(fs.existsSync(path.join(f.destination, 'readme.txt'))).toBe(false);
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it('stops before checkout if the advertised default changes while downloading the selected branch', async () => {
+    const f = fixture();
+    const original = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await original(args, options);
+      if (args[0] === 'fetch') {
+        git(f.source, 'branch', 'new-default');
+        git(f.source, 'symbolic-ref', 'HEAD', 'refs/heads/new-default');
+      }
+      return result;
+    });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', reason: 'remote_changed', cloneCompleted: false });
+    expect(fs.existsSync(path.join(f.destination, 'readme.txt'))).toBe(false);
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it('preserves a completed checkout without registering when import policy changes during checkout', async () => {
+    const f = fixture();
+    let revoked = false;
+    const original = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await original(args, options);
+      if (args[0] === 'checkout') revoked = true;
+      return result;
+    });
+    const policy: ImportAuthorization = async () => ({
+      kind: 'approved',
+      assertCurrent: async () => { if (revoked) throw new ImportError('permission_denied', 'Access revoked.'); },
+    });
+    const { receipt } = await start(f, policy);
+    const result = await finished(f.service, receipt.id);
+    expect(result).toMatchObject({ phase: 'partial', reason: 'permission_denied', failedAt: 'cloned', cloneCompleted: true });
+    expect(fs.readFileSync(path.join(f.destination, 'readme.txt'), 'utf8')).toBe('hello\n');
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
   it('cancels only the tracked owned import, preserves partial state and does not re-clone on retry', async () => {
     const f = fixture();
     const original = f.runner.run;

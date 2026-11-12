@@ -18,6 +18,10 @@ with authorized HTTPS Git metadata; it never assumes `main`. Empty repositories,
 missing default branches and missing selected branches are explicit refusals.
 Existing GitHub credential helpers are reused, not replaced. Restore missing or
 expired access outside agent messages; never send passwords/tokens to an agent.
+Remote metadata access and preview persistence require `project.add` on the exact
+canonical destination, not just local project-read permission. Ask first requests
+a metadata-only human decision before network access; Allow permits preview only.
+Policy is checked again after remote access and before saving/exposing the plan.
 
 ## Approval and separate outcomes
 
@@ -26,8 +30,11 @@ approval of the immutable server plan, including repository, canonical path,
 parent identity, default/selected branch and commit, and actual effects. A generic
 Allow grant or model/repository text cannot substitute. Inputs, placement, access
 and remote metadata are revalidated around approval and before exclusive target
-creation. The effect handler remains explicitly fail-closed until the separately
-reviewed original-scope human-approval API is integrated.
+creation. The effect handler uses the existing reviewed `askFirst` original-scope
+consumption API even under Allow, and requires the actual one-shot request id and
+original immutable scope. Its main-private freshness assertion rechecks canonical
+targets, caller session/provider/access and current grants after awaits and before
+owned stages/registration. No proof is persisted, exposed as a token or forwarded.
 
 Import downloads a shallow single-branch checkout into its exclusively created
 directory, then calls the same `registerProjectFolder` path as the app and
@@ -79,6 +86,12 @@ same path with `add_project`. A registered project is reused by its id. Incomple
 downloads stay at their recorded destination for inspection; choose another new
 destination only explicitly. No recovery path resets, overwrites or deletes
 pre-existing or user-modified content.
+
+Cancellation names the receipt's exact destination as well as its id, so current
+destination-scoped permission still applies. Stopping one's own already-approved
+tracked process does not ask for a second human decision; Off still refuses the
+tool. Expired previews cannot use a later approval; obsolete Needs you rows can
+be declined rather than treated as authorization for a replacement plan.
 
 Fixtures use isolated local Git repositories and mocked authentication/approval
 boundaries, without private credentials, login probes or paid agent calls.

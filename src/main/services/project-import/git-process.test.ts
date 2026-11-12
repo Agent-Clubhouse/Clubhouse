@@ -83,11 +83,22 @@ describe('isolated credential-aware Git subprocess boundary', () => {
     fake.outputs.push({ code: 1 }, { code: 1 }, { wait: true });
     const controller = new AbortController();
     const running = createImportGit(source).run(['fetch', '--', 'origin'], { cwd: '/fixture', signal: controller.signal });
-    for (let i = 0; i < 10 && fake.calls.length < 3; i++) await Promise.resolve();
+    for (let i = 0; i < 20 && fake.calls.length < 3; i++) await Promise.resolve();
     expect(fake.calls).toHaveLength(3);
     controller.abort();
     await expect(running).rejects.toMatchObject({ reason: 'cancelled' });
     expect(fake.calls.map((call) => call.kills)).toEqual([[], [], ['SIGTERM']]);
+  });
+
+  it('rechecks authority after asynchronous credential configuration and before remote contact', async () => {
+    fake.outputs.push({ code: 1 }, { code: 1 });
+    let checks = 0;
+    const beforeSpawn = async () => {
+      if (++checks === 2) throw new Error('policy revoked');
+    };
+    await expect(createImportGit(source).remote('https://github.com/example/repo.git', undefined, undefined, beforeSpawn)).rejects.toThrow('policy revoked');
+    expect(fake.calls).toHaveLength(2);
+    expect(fake.calls.every((call) => call.args[0] === 'config')).toBe(true);
   });
 
   it('refuses oversized stdout instead of exposing or retaining unbounded metadata', async () => {

@@ -34,15 +34,16 @@ describe('Dispatcher bounded import tool integration', () => {
   it('routes explicit URL/destination/branch to the bounded preview service without initiating import', async () => {
     service.preview.mockResolvedValue({ status: 'ready', plan: { id: 'preview', branch: 'trunk' }, agentCreated: false, agentStarted: false });
     expect(await call('preview_github_import', { url: 'https://github.com/example/repo', destination: '/work/repo', branch: 'trunk' })).toMatchObject({ body: { status: 'ready', agentCreated: false }, isError: false });
-    expect(service.preview).toHaveBeenCalledWith('dispatcher', { url: 'https://github.com/example/repo', destination: '/work/repo', branch: 'trunk' });
+    expect(service.preview).toHaveBeenCalledWith('dispatcher', { url: 'https://github.com/example/repo', destination: '/work/repo', branch: 'trunk' }, expect.any(Function));
     expect(service.start).not.toHaveBeenCalled();
   });
 
-  it('keeps real effects disabled until the reviewed human-approval proof API is integrated, even with a preview id', async () => {
+  it('wires the actual import service to a main-private exact human-approval callback, never a model argument', async () => {
+    service.start.mockResolvedValue({ status: 'approval_required', message: 'Needs you' });
     expect(await call('import_github_repository', { planId: 'preview', destination: '/work/repo' })).toMatchObject({
-      isError: true, body: { reason: 'approval_boundary_unavailable' },
+      isError: false, body: { status: 'approval_required', message: 'Needs you' },
     });
-    expect(service.start).not.toHaveBeenCalled();
+    expect(service.start).toHaveBeenCalledWith('dispatcher', 'preview', '/work/repo', expect.any(Function));
   });
 
   it.each([{ approved: true }, { approvalToken: 'model-text' }, { grantAllow: true }])('never accepts model-manufactured approval fields %j', async (extra) => {

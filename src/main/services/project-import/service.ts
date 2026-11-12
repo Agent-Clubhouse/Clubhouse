@@ -1,6 +1,7 @@
 import * as fsp from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { Project } from '../../../shared/types';
 import { checkProjectFolder, registerProjectFolder, type RegisterProjectResult } from '../project-add';
 import * as projectStore from '../project-store';
@@ -18,6 +19,16 @@ const PLAN_TTL_MS = 10 * 60_000;
 export type ImportAuthorization = (scope: Readonly<ImportPlan>) => Promise<
   { kind: 'approved'; assertCurrent: () => Promise<void> } | { kind: 'asked'; text: string }
 >;
+
+export interface PreviewScope {
+  url: string;
+  destination: string;
+  parent: string;
+  parentIdentity: string;
+  branch?: string;
+}
+
+export type PreviewAuthorization = (scope: Readonly<PreviewScope>) => ReturnType<ImportAuthorization>;
 
 interface Dependencies {
   store: ImportStore;
@@ -85,11 +96,15 @@ export class ProjectImportService {
     return undefined;
   }
 
-  async preview(agentId: string, input: ImportInput) {
+  async preview(agentId: string, input: ImportInput, authorize: PreviewAuthorization) {
     const url = validateGithubUrl(input.url);
     const requested = input.branch === undefined ? undefined : validateImportBranch(input.branch);
     const placement = await this.placement(input.destination);
+    const decision = await authorize({ url, ...placement, ...(requested !== undefined && { branch: requested }) });
+    if (decision.kind !== 'approved') return { status: 'approval_required' as const, message: decision.text };
+    await decision.assertCurrent();
     const existing = await this.existingProject(url, placement.destination);
+    await decision.assertCurrent();
     if (existing) {
       return {
         status: 'existing_project' as const, projectId: existing.id, destination: existing.path,
@@ -99,11 +114,16 @@ export class ProjectImportService {
     }
     const state = await this.deps.store.get();
     const prior = state.receipts.find((r) => projectStore.projectPathKey(r.plan.destination) === projectStore.projectPathKey(placement.destination));
-    if (prior) return { status: 'existing_import' as const, receipt: await this.status(agentId, prior.id) };
+    if (prior) {
+      const receipt = await this.status(agentId, prior.id);
+      await decision.assertCurrent();
+      return { status: 'existing_import' as const, receipt };
+    }
     if (await lstatOrMissing(placement.destination)) {
       throw new ImportError('destination_exists', 'The destination already exists, even if it is empty. Nothing was changed. Inspect and explicitly reuse it with add_project, or choose another new destination; imports never overwrite or delete it.');
     }
-    const remote = await this.deps.git.remote(url, requested);
+    const remote = await this.deps.git.remote(url, requested, undefined, decision.assertCurrent);
+    await decision.assertCurrent();
     const now = this.deps.now();
     let plan: ImportPlan = {
       ...remote, ...placement, id: randomUUID(), agentId,
@@ -118,6 +138,7 @@ export class ProjectImportService {
       if (current.plans.length >= IMPORT_HISTORY_MAX) throw new ImportError('history_limit', 'Too many import plans are retained. Nothing was cloned; let unused previews expire before trying again.');
       current.plans.push(plan);
     });
+    await decision.assertCurrent();
     return {
       status: 'ready' as const, plan,
       message: 'Preview only. The import needs exact current human approval in Needs you, including when project.add is set to Allow. No repository files or agents were created.',
@@ -125,15 +146,18 @@ export class ProjectImportService {
     };
   }
 
-  private async validateRemote(plan: ImportPlan, signal?: AbortSignal): Promise<void> {
-    const remote = await this.deps.git.remote(plan.url, plan.branch, signal);
+  private async validateRemote(plan: ImportPlan, signal?: AbortSignal, assertCurrent?: () => Promise<void>): Promise<void> {
+    await assertCurrent?.();
+    const remote = await this.deps.git.remote(plan.url, plan.branch, signal, assertCurrent);
+    await assertCurrent?.();
     if (remote.url !== plan.url || remote.branch !== plan.branch || remote.commit !== plan.commit
       || remote.defaultBranch !== plan.defaultBranch || remote.headCommit !== plan.headCommit) {
       throw new ImportError('remote_changed', 'Repository access, default branch or selected commit changed after preview. Preview again and obtain fresh human approval.');
     }
   }
 
-  private async validate(plan: ImportPlan): Promise<void> {
+  private async validate(plan: ImportPlan, assertCurrent: () => Promise<void>): Promise<void> {
+    await assertCurrent();
     if (this.deps.now() >= plan.expiresAt) throw new ImportError('plan_expired', 'The preview expired. Preview again and obtain fresh approval; nothing was created.');
     if (validateGithubUrl(plan.url) !== plan.url) throw new ImportError('plan_changed', 'Repository identity changed. Preview and approve again.');
     const placement = await this.placement(plan.destination);
@@ -142,7 +166,7 @@ export class ProjectImportService {
     }
     if (await this.existingProject(plan.url, plan.destination)) throw new ImportError('project_changed', 'A matching project appeared after preview. Open/reuse it instead; no import was started.');
     if (await lstatOrMissing(plan.destination)) throw new ImportError('destination_exists', 'The destination appeared after preview. Nothing was overwritten; inspect/reuse it or preview a different new location.');
-    await this.validateRemote(plan);
+    await this.validateRemote(plan, undefined, assertCurrent);
   }
 
   async start(agentId: string, planId: string, destination: string, authorize: ImportAuthorization) {
@@ -155,11 +179,11 @@ export class ProjectImportService {
       const plan = state.plans.find((p) => p.id === planId && p.agentId === agentId);
       if (!plan || plan.destination !== destination) throw new ImportError('plan_mismatch', 'Use your current preview id and its exact canonical destination. Changed inputs require a new preview and human approval.');
       if (this.running.size) throw new ImportError('import_busy', 'One bounded import is already running. Check or cancel it before starting another.');
-      await this.validate(plan);
+      if (this.deps.now() >= plan.expiresAt) throw new ImportError('plan_expired', 'The preview expired. Preview again and obtain fresh approval; nothing was created.');
       const decision = await authorize(structuredClone(plan));
       if (decision.kind !== 'approved') return { status: 'approval_required' as const, message: decision.text };
       // Approval never substitutes for current filesystem, access and remote-identity checks.
-      await this.validate(plan);
+      await this.validate(plan, decision.assertCurrent);
       await decision.assertCurrent();
       const receipt: ImportReceipt = {
         id: randomUUID(), plan, phase: 'reserved', updatedAt: this.deps.now(), cloneCompleted: false,
@@ -180,13 +204,14 @@ export class ProjectImportService {
   }
 
   private async save(receipt: ImportReceipt, phase: ImportReceipt['phase']): Promise<void> {
-    receipt.phase = phase;
-    receipt.updatedAt = this.deps.now();
+    const saved = { ...structuredClone(receipt), phase, updatedAt: this.deps.now() };
     await this.deps.store.update((state) => {
       const index = state.receipts.findIndex((r) => r.id === receipt.id);
       if (index < 0) throw new ImportError('history_corrupt', 'The import receipt disappeared. Files were preserved; inspect before retrying.');
-      state.receipts[index] = structuredClone(receipt);
+      state.receipts[index] = saved;
     });
+    receipt.phase = phase;
+    receipt.updatedAt = saved.updatedAt;
   }
 
   private async verifyOwned(receipt: ImportReceipt, initialized: boolean): Promise<void> {
@@ -198,10 +223,12 @@ export class ProjectImportService {
       throw new ImportError('owned_directory_changed', 'The import directory or its parent was replaced. No further writes were attempted. Inspect the preserved state before reusing it.');
     }
     const gitDir = await lstatOrMissing(path.join(receipt.plan.destination, '.git'));
-    const config = await lstatOrMissing(path.join(receipt.plan.destination, '.git', 'config'));
-    if ((initialized && !gitDir) || (gitDir && (!gitDir.isDirectory() || gitDir.isSymbolicLink()))
-      || (config && (!config.isFile() || config.isSymbolicLink()))) {
+    if ((initialized && !gitDir) || (gitDir && (!gitDir.isDirectory() || gitDir.isSymbolicLink()))) {
       throw new ImportError('owned_directory_changed', 'The import Git directory/configuration was replaced. No further writes were attempted; inspect the preserved state.');
+    }
+    const config = gitDir && await lstatOrMissing(path.join(receipt.plan.destination, '.git', 'config'));
+    if (config && (!config.isFile() || config.isSymbolicLink())) {
+      throw new ImportError('owned_directory_changed', 'The import Git configuration was replaced. No further writes were attempted; inspect the preserved state.');
     }
   }
 
@@ -209,14 +236,40 @@ export class ProjectImportService {
     const { destination, url, branch, commit } = receipt.plan;
     const signal = controller.signal;
     let initialized = false;
+    let expectedConfig: string | undefined;
+    const configFingerprint = async () => {
+      const handle = await fsp.open(path.join(destination, '.git', 'config'), fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+      try {
+        const buffer = Buffer.alloc(64 * 1024 + 1);
+        let total = 0;
+        while (total < buffer.length) {
+          const { bytesRead } = await handle.read(buffer, total, buffer.length - total, total);
+          if (!bytesRead) break;
+          total += bytesRead;
+        }
+        if (total === buffer.length) throw new ImportError('checkout_changed', 'Owned Git configuration exceeded its bound. No further Git operation was attempted.');
+        return createHash('sha256').update(buffer.subarray(0, total)).digest('hex');
+      } finally {
+        await handle.close();
+      }
+    };
     const checkpoint = async () => {
       signal.throwIfAborted();
       await assertCurrent();
       await this.verifyOwned(receipt, initialized);
+      if (expectedConfig && await configFingerprint() !== expectedConfig) {
+        throw new ImportError('checkout_changed', 'Owned Git configuration changed during import. It was preserved; no further Git command or registration was attempted.');
+      }
     };
     const run = (args: string[]) => this.deps.git.run(args, {
       cwd: destination, signal,
       onProgress: (progress) => { receipt.progress = progress; },
+      beforeSpawn: async () => {
+        await checkpoint();
+        if (!initialized && (await fsp.readdir(destination)).length) {
+          throw new ImportError('checkout_changed', 'Content appeared in the new import directory before initialization. It was preserved; inspect it before reusing this location.');
+        }
+      },
     });
     try {
       signal.throwIfAborted();
@@ -233,15 +286,17 @@ export class ProjectImportService {
       if ((await fsp.readdir(destination)).length) throw new ImportError('checkout_changed', 'Content appeared in the new import directory before initialization. It was preserved; inspect it before reusing this location.');
       await run(['init', '--quiet', '--template=', '--', '.']);
       initialized = true;
+      expectedConfig = await configFingerprint();
       await checkpoint();
       await run(['remote', 'add', '--', 'origin', url]);
+      expectedConfig = await configFingerprint();
       await this.save(receipt, 'fetching');
       await checkpoint();
       await run(['fetch', '--progress', '--no-tags', '--no-recurse-submodules', '--depth=1', '--', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
       await checkpoint();
       const downloaded = (await run(['rev-parse', '--verify', `refs/remotes/origin/${branch}^{commit}`])).trim();
       if (downloaded !== commit) throw new ImportError('remote_changed', 'The branch changed while downloading. Objects were preserved but no checkout or registration was performed; preview again after inspecting the partial import.');
-      await this.validateRemote(receipt.plan, signal);
+      await this.validateRemote(receipt.plan, signal, assertCurrent);
       const rootNames = (await run(['ls-tree', '-z', '--name-only', commit])).split('\0');
       if (rootNames.some((name) => ['.clubhouse', '.clubhouse-dev'].includes(name.split(':')[0].replace(/[. ]+$/, '').toLowerCase()))) {
         throw new ImportError('repository_app_state', 'The repository contains Clubhouse runtime state. Downloaded objects are preserved but were not checked out or registered; inspect and remove repository-provided runtime state before importing.');
@@ -249,9 +304,10 @@ export class ProjectImportService {
       await this.save(receipt, 'checking_out');
       await checkpoint();
       await run(['checkout', '--no-recurse-submodules', '-b', branch, '--track', `origin/${branch}`, '--']);
-      await checkpoint();
       receipt.cloneCompleted = true;
+      expectedConfig = await configFingerprint();
       await this.save(receipt, 'cloned');
+      await checkpoint();
       // Registration appends to .gitignore. Never follow a user-replaced symlink or special file.
       const ignore = await lstatOrMissing(path.join(destination, '.gitignore'));
       if (ignore && (!ignore.isFile() || ignore.isSymbolicLink())) throw new ImportError('unsafe_gitignore', 'Checkout finished, but .gitignore is not a regular file. It was not changed; inspect it before explicitly registering this checkout.');

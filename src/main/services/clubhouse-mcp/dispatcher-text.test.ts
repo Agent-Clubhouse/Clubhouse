@@ -249,13 +249,15 @@ describe('how the Dispatcher speaks and acts (#3185)', () => {
     expect(routing).toContain('start it only when requested');
   });
 
-  it('requires import validation and separate partial outcomes without adding another clone tool (#2808)', () => {
+  it('routes import to bounded tools with genuine approval and separate partial/agent outcomes (#2808)', () => {
     const routing = dispatcherSkills('work').find((s) => s.name === 'delegating-work')!.text;
-    expect(routing).toContain('there is no separate clone tool');
-    expect(routing).toContain('read-only remote metadata checks');
-    expect(routing).toContain('Changed repository, placement or branch choices need renewed validation and approval');
-    expect(routing).toContain('Report clone, project registration, agent creation and start separately in `done`');
-    expect(routing).toContain('inspect what already exists before retrying');
+    const importing = dispatcherSkills('work').find((s) => s.name === 'importing-repository')!.text;
+    expect(routing).toContain('bounded import tools, not a shell clone');
+    expect(importing).toContain('preview_github_import');
+    expect(importing).toContain('Only the user\'s current exact approval in Needs you authorizes the effect');
+    expect(importing).toContain('Changed repository, destination, branch, remote commit or policy needs a fresh preview and approval');
+    expect(importing).toContain('Report checkout, project registration, agent creation and start separately in `done`');
+    expect(importing).toContain('inspect the preserved destination before retrying');
     expect(DISPATCHER_INSTRUCTIONS).toContain('A token is not user approval');
     expect(DISPATCHER_INSTRUCTIONS).toContain('`now: true` cuts off a turn: ask first');
   });
