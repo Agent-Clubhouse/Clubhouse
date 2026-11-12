@@ -94,6 +94,10 @@ rules as the runtime tool list. An unavailable catalog is reported, not replaced
 with a hardcoded list. Default and saved per-tool guidance remain editable when
 the catalog is unavailable or its request fails; only discovery and description
 preview require the tool index.
+Search filters registered tool suffixes and base descriptions without changing
+the selected tool or discarding saved overrides. **Configured overrides** lists
+nonempty per-tool replacements, including currently gated or absent tools,
+independently of the search.
 
 User guidance is saved atomically in `connection-instructions.json`, keyed by
 canonical direction and target kind, independently of Canvas placement. Original
@@ -107,6 +111,12 @@ sources retains unsaved text for review and another explicit save. Empty saved
 guidance deliberately suppresses original source guidance. Source restoration
 and later Canvas hydration cannot overwrite the saved directional choice.
 Saving does not restart a session or change any permission or reverse direction.
+Save feedback distinguishes updated server definitions from descriptions loaded
+by the sender's client. A CLI known to keep its first tool list requires a
+session restart. For other runtimes, including native chat, client refresh is
+not confirmed: reload tools or restart the sender's session to ensure it loads
+the saved descriptions. A tool-list change notification or connected-server
+status alone is not proof of client-visible refresh.
 
 Reads and source restoration use only committed guidance, never an in-flight
 save's cache. Malformed files and duplicate direction records fail closed and

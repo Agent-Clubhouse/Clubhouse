@@ -6,8 +6,9 @@ import type { BindingTargetKind, McpBinding } from './clubhouse-mcp/types';
 import { connectionEnd } from './connection-grants';
 import { connectionGuidanceOwnership, getConnectionGuidanceSourceVersion, inspectConnectionGuidance, setConnectionGuidanceRestore } from './persisted-bindings';
 import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
-import { getConnectionToolCatalog, sanitizeWireInstruction } from './clubhouse-mcp/tool-registry';
+import { getConnectionToolCatalog, keepsFirstToolList, sanitizeWireInstruction } from './clubhouse-mcp/tool-registry';
 import { appLog } from './log-service';
+import { agentRegistry } from './agent-registry';
 
 interface GuidanceEntry {
   key: string;
@@ -167,6 +168,14 @@ export function saveConnectionGuidance(agentId: string, targetId: string, reques
   return result;
 }
 
+function runtimeNotice(agentId: string): string {
+  const sender = agentRegistry.get(agentId);
+  const refresh = sender && sender.runtime !== 'chat' && keepsFirstToolList(agentId)
+    ? "The sender's CLI keeps its first tool list; restart its session to load these descriptions."
+    : "Live tool-description refresh in the sender's client is not confirmed. Reload tools or restart the sender's session to ensure the new descriptions are loaded.";
+  return `Guidance saved. Server tool descriptions are updated. ${refresh} Sessions were not restarted.`;
+}
+
 async function saveLocked(agentId: string, targetId: string, request: SaveConnectionGuidance): Promise<ConnectionGuidanceSnapshot> {
   const instructions = instructionsOf(request.instructions);
   if (typeof request.revision !== 'string' || !request.revision) throw new Error('Reload connection guidance before saving it.');
@@ -215,7 +224,11 @@ async function saveLocked(agentId: string, targetId: string, request: SaveConnec
       stillOwned = false;
     }
   }
-  if (stillOwned) bindingManager.setInstructions(binding.agentId, binding.targetId, instructions);
+  if (stillOwned) {
+    bindingManager.setInstructions(binding.agentId, binding.targetId, instructions);
+    stillOwned = sameBinding(binding, kind) && sourceVersion === getConnectionGuidanceSourceVersion(binding.agentId, binding.targetId)
+      && !connectionGuidanceOwnership(binding.agentId, binding.targetId).managed;
+  }
   const notice = `Guidance was saved, but it was not applied to this live direction. ${applicationError} Reload Connections before editing.`;
   if (!stillOwned) appLog('core:mcp', 'warn', 'Committed connection guidance was not applied to changed live ownership or sources', {
     meta: { agentId: binding.agentId, targetId: binding.targetId, reason: applicationError },
@@ -223,7 +236,8 @@ async function saveLocked(agentId: string, targetId: string, request: SaveConnec
   return {
     ...snapshot, instructions, hasOverride: true, needsSourceConfirmation: false,
     revision: hash([revision, sourceRevision, bindingRevision(binding), sourceVersion]),
-    ...(!stillOwned && { notice, readOnly: true, readOnlyReason: notice }),
+    notice: stillOwned ? runtimeNotice(binding.agentId) : notice,
+    ...(!stillOwned && { readOnly: true, readOnlyReason: notice }),
   };
 }
 

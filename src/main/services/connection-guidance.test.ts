@@ -18,6 +18,7 @@ import { resetAllSettingsStoresForTests } from './settings-store';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from './connection-guidance';
 import { _resetForTesting as resetTools, getScopedToolList, registerToolTemplate } from './clubhouse-mcp/tool-registry';
 import { agentRegistry } from './agent-registry';
+import { registerBuiltinProviders } from '../orchestrators';
 
 const wire = (instructions: Record<string, string>, extra: Partial<PersistedBinding> = {}): PersistedBinding => ({
   agentId: 'a', targetId: 'b', targetKind: 'agent', label: 'B', instructions, ...extra,
@@ -37,6 +38,7 @@ beforeEach(() => {
   _resetPersistedBindingSourcesForTesting();
   resetTools();
   startConnectionGuidance();
+  registerBuiltinProviders();
 });
 
 afterEach(() => {
@@ -45,10 +47,41 @@ afterEach(() => {
   bindingManager._resetForTesting();
   _resetPersistedBindingSourcesForTesting();
   agentRegistry.untrack('b');
+  agentRegistry.untrack('a');
   fs.rmSync(userData.dir, { recursive: true, force: true });
 });
 
 describe('durable directional connection guidance', () => {
+  it.each(['pty', 'headless'] as const)('reports a required restart for the actual fixed-tool-list %s provider after updating server descriptions', async (runtime) => {
+    registerToolTemplate('agent', 'get_status', { description: 'Read status', inputSchema: { type: 'object' } }, vi.fn(), {
+      grant: { actions: ['agent.read'], target: 'bound' },
+    });
+    applyPersistedBinding(wire({}));
+    agentRegistry.register('a', { runtime, projectPath: userData.dir, orchestrator: 'codex-cli' });
+    const oldDescription = getScopedToolList('a')[0].description;
+    const before = await getConnectionGuidance('a', 'b');
+    const saved = await saveConnectionGuidance('a', 'b', { instructions: { '*': 'New default' }, revision: before.revision });
+    expect(getScopedToolList('a')[0].description).not.toBe(oldDescription);
+    expect(getScopedToolList('a')[0].description).toContain('New default');
+    expect(saved.notice).toMatch(/keeps its first tool list.*restart/i);
+    expect(saved.notice).toContain('Sessions were not restarted.');
+    expect(agentRegistry.get('a')?.runtime).toBe(runtime);
+  });
+
+  it.each([
+    ['chat', 'codex-cli'], ['chat', 'copilot-cli'], ['pty', 'claude-code'], ['pty', 'unknown-provider'],
+  ] as const)('does not claim client refresh for %s / %s after a real durable save', async (runtime, orchestrator) => {
+    applyPersistedBinding(wire({}));
+    agentRegistry.register('a', { runtime, projectPath: userData.dir, orchestrator });
+    const before = await getConnectionGuidance('a', 'b');
+    const saved = await saveConnectionGuidance('a', 'b', { instructions: { '*': 'Persisted' }, revision: before.revision });
+    expect(saved.notice).toMatch(/server tool descriptions.*updated/i);
+    expect(saved.notice).toMatch(/live.*refresh.*not confirmed/i);
+    expect(saved.notice).toMatch(/reload.*restart/i);
+    expect(saved.notice).not.toContain('keeps its first tool list');
+    expect((await getConnectionGuidance('a', 'b')).instructions).toEqual({ '*': 'Persisted' });
+  });
+
   it.each([
     'null', '42', '"text"', 'true', '[]', '{}', '{invalid',
     '{"version":1,"entries":[null]}',
@@ -464,6 +497,8 @@ describe('durable directional connection guidance', () => {
     try {
       const saved = await saveConnectionGuidance('a', 'b', { instructions: { '*': 'Committed' }, revision: before.revision });
       expect(saved).toMatchObject({ hasOverride: true, instructions: { '*': 'Committed' } });
+      expect(saved.notice).toMatch(/not applied to this live direction/i);
+      expect(saved.notice).not.toContain('Server tool descriptions are updated');
       expect(binding()).toBeUndefined();
     } finally {
       stop();

@@ -18,7 +18,7 @@ export interface ConnectionGuidanceSnapshot {
   readOnly: boolean;
   readOnlyReason?: string;
   revision: string;
-  /** The disk save committed, but changed live ownership prevented publication. */
+  /** Save outcome and runtime reload advice; never proof of client-loaded descriptions. */
   notice?: string;
 }
 
