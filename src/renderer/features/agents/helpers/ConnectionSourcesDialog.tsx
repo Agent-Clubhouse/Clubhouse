@@ -15,6 +15,8 @@ import {
 import { Button } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
 import { reportChromeActionFailed } from '../../../chrome/telemetry';
+import { ConnectionGuidanceEditor } from './ConnectionGuidanceEditor';
+import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 
 /** What removing a source does, in a sentence. */
 export function removalEffect(kind: ConnectionSourceKind, names: { agent: string; other: string; dispatcherEnd?: string }): string {
@@ -160,7 +162,7 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
   );
 }
 
-export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName, dispatcherEnd, familyLink = false, pairs, grants = [], liveTools, liveEnabled, unreadable = [], onClose, onRemoved }: {
+export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName, dispatcherEnd, familyLink = false, targetKind = 'agent', pairs, grants = [], liveTools, liveEnabled, unreadable = [], onClose, onRemoved, backdropTestId, readError, onRetry }: {
   /** This agent and the other end, for the directions (#2972). */
   agentId?: string;
   otherId?: string;
@@ -176,6 +178,10 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
   dispatcherEnd?: string;
   /** The other end is this agent's helper or orchestrator: they wake each other with their helper tools, so no Wake it. */
   familyLink?: boolean;
+  targetKind?: McpBindingEntry['targetKind'];
+  backdropTestId?: string;
+  readError?: string;
+  onRetry?: () => void;
   pairs: ConnectionPairSources[];
   /** Sources that couldn't be read: they may hold it too. */
   unreadable?: readonly string[];
@@ -232,8 +238,11 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
   const connectedWay = (from: string, to: string) => pairs.some((p) => p.agentId === from && p.targetId === to && (p.bound || p.sources.length > 0));
 
   return (
-    <Modal open onClose={onClose} title={`${agentName} and ${otherName}`} width="w-[520px]" testId="connection-sources-dialog">
-      {directions.length > 0 && (
+    <Modal open onClose={onClose} title={`${agentName} and ${otherName}`} width="w-[640px]" testId="connection-sources-dialog" backdropTestId={backdropTestId}
+      footer={<Button kind="quiet" onClick={onClose} data-testid="wire-instructions-cancel">Close</Button>}>
+      {readError && <p role="alert" className="text-xs text-ctp-error mb-3">Couldn't refresh connection sources: {readError}. Showing the last known sources. <Button onClick={onRetry}>Try again</Button></p>}
+      <p className="text-xs text-ctp-overlay1 mb-3">On describes the connection switch. The sender's Clubhouse permissions can still turn a tool off or require Ask first.</p>
+      {targetKind === 'agent' && directions.length > 0 && (
         <div className="flex gap-4 mb-4" data-testid="connection-directions">
           {directions.map((d) => (
             <DirectionColumn
@@ -249,6 +258,7 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
           ))}
         </div>
       )}
+      {targetKind === 'agent' && (dispatcherEnd || familyLink) && <p className="text-xs text-ctp-overlay1 mb-3">This connection has no Wake it switch. The Dispatcher and helpers use their own wake tools.</p>}
       <p className="text-xs text-ctp-overlay1 mb-3">
         {entries.length === 0
           ? (pairs.some((p) => p.unresolved) ? 'Connected now, but no saved source lists it.' : 'Nothing connects them now.')
@@ -293,6 +303,9 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
           </li>
         )}
       </ul>
+      <ConnectionGuidanceEditor directions={directions.filter((d, index) => (targetKind === 'agent' || index === 0)
+        && (pairs.some((pair) => pair.agentId === d.from && pair.targetId === d.to && pair.bound) || liveTools?.has(`${d.from}>${d.to}`)))
+        .map((d) => ({ from: d.from, to: d.to, label: `${d.fromName} to ${d.toName}` }))} />
     </Modal>
   );
 }

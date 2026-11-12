@@ -47,6 +47,8 @@ import * as annexClient from '../services/annex-client';
 import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
+import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
+import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
 
 /** An agent's name and project here, for another machine's view of a call or connection (#3064). */
 async function describeAgentHere(agentId: string): Promise<{ name: string; projectName?: string } | undefined> {
@@ -109,6 +111,7 @@ export function registerMcpBindingHandlers(): void {
 
   // Register every Clubhouse MCP tool
   registerClubhouseMcpTools();
+  startConnectionGuidance();
   // Running chat sessions report plan limits between reads (#2671).
   watchSessionQuota();
   // Held helper starts (#2234) go to the main window only, for Needs you.
@@ -284,8 +287,42 @@ export function registerMcpBindingHandlers(): void {
       if (!agentRegistry.get(agentId as string)) {
         appLog('core:mcp', 'debug', 'Setting instructions for sleeping agent binding', { meta: { agentId, targetId } });
       }
-      bindingManager.setInstructions(agentId as string, targetId as string, instructions as Record<string, string>);
+      // Canvas hydration cannot replace the shared editor's saved directional override.
+      bindingManager.restoreInstructions(agentId as string, targetId as string, instructions as Record<string, string>);
       appLog('core:mcp', 'info', 'Binding instructions updated', { meta: { agentId, targetId } });
+    },
+  ));
+
+  ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_GUIDANCE, withValidatedArgs(
+    [stringArg(), stringArg()],
+    (event, agentId, targetId) => {
+      assertCallerIsAppWindow(event);
+      return getConnectionGuidance(agentId as string, targetId as string);
+    },
+  ));
+
+  ipcMain.handle(IPC.MCP_BINDING.SAVE_CONNECTION_GUIDANCE, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg<SaveConnectionGuidance>()],
+    (event, agentId, targetId, request) => {
+      assertCallerIsAppWindow(event);
+      assertNotPluginBinding(agentId as string, targetId as string);
+      return saveConnectionGuidance(agentId as string, targetId as string, request as SaveConnectionGuidance);
+    },
+  ));
+
+  ipcMain.handle(IPC.MCP_BINDING.PREVIEW_CONNECTION_GUIDANCE, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg<Record<string, string>>()],
+    (event, agentId, targetId, instructions) => {
+      assertCallerIsAppWindow(event);
+      return previewConnectionGuidance(agentId as string, targetId as string, instructions as Record<string, string>);
+    },
+  ));
+
+  ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_TOOL_CATALOG, withValidatedArgs(
+    [stringArg(), stringArg()],
+    (event, agentId, targetId) => {
+      assertCallerIsAppWindow(event);
+      return getConnectionGuidanceCatalog(agentId as string, targetId as string);
     },
   ));
 

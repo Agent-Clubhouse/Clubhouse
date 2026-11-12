@@ -78,6 +78,32 @@ catalog is explicitly unavailable rather than an apparently empty tool list.
 Catalog availability is not authorization: calls still enforce the saved
 direction switches and all existing checks.
 
+## Directional connection guidance
+
+The Connections card's **Manage** and Canvas wire editors share the same
+directional editor: connection switches, ownership/removal sources, and guidance.
+Saving guidance changes only the selected sender-to-receiver direction. The
+explicit **Copy guidance to reverse draft** action copies text, not permissions,
+and still requires saving that reverse direction separately.
+
+The default applies to each registered tool unless a nonempty per-tool override
+replaces it. Clearing an override restores the default; saved overrides for
+temporarily unavailable tools remain editable and retained. Description preview
+uses the registered base descriptions and the same sanitization and replacement
+rules as the runtime tool list. An unavailable catalog is reported, not replaced
+with a hardcoded list.
+
+User guidance is saved atomically in `connection-instructions.json`, keyed by
+canonical direction and target kind, independently of Canvas placement. Original
+source text is retained in its original stores and shown with provenance;
+replacing effective source guidance requires explicit confirmation. Unreadable
+sources and membership-managed federation directions cannot be edited.
+Concurrent/stale saves fail explicitly, leaving the draft available; reloading
+sources retains unsaved text for review and another explicit save. Empty saved
+guidance deliberately suppresses original source guidance. Source restoration
+and later Canvas hydration cannot overwrite the saved directional choice.
+Saving does not restart a session or change any permission or reverse direction.
+
 ## Codex local TOML limitation
 
 The JSON editor does not read or write `.codex/config.toml`. Existing TOML helpers

@@ -225,11 +225,15 @@ describe('canvas wire binding source', () => {
         ? { scope: 'app' as const, kvDir: '/a' }
         : { scope: 'project' as const, projectId: 'p', projectName: 'p', projectPath: '/p', kvDir: '/p' },
       canvases: [],
-      wires: [{ ...wire('a', 'b', 'agent'), label }],
+      wires: [{ ...wire('a', 'b', 'agent'), label, instructions: { '*': label } }],
       problems: [],
     });
     const out = bindingsFromCanvasStores([snap('app', 'from app'), snap('project', 'from project')], new Map());
     expect(out.map((b) => b.label)).toEqual(['from app']);
+    const originals = bindingsFromCanvasStores([snap('app', 'from app'), snap('project', 'from project')], new Map(), { inspect: true });
+    expect(originals.map((b) => [b.sourceLabel, b.instructions])).toEqual([
+      ['Home', { '*': 'from app' }], ['p', { '*': 'from project' }],
+    ]);
   });
 
   it('binds every wire of a store with no canvases yet (renderer rule)', () => {

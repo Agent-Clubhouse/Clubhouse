@@ -4,6 +4,8 @@ import type { AgentMcpConnection, DispatcherLink } from '../shared/types';
 import type { McpUnbindCause, McpUnbindResult } from '../shared/mcp-unbind';
 import type { AgentConnectionSources, ConnectionSourceKind, RemoveConnectionSourceResult } from '../shared/connection-sources';
 import type { ConnectionDirection } from '../shared/connection-grants';
+import type { ConnectionGuidanceSnapshot, SaveConnectionGuidance } from '../shared/connection-guidance';
+import type { ConnectionToolCatalog } from '../main/services/clubhouse-mcp/types';
 
 export const mcpBinding = {
   mcpBinding: {
@@ -21,6 +23,14 @@ export const mcpBinding = {
     ipcRenderer.invoke(IPC.MCP_BINDING.UNREGISTER_WEBVIEW, widgetId),
   setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) =>
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
+  getConnectionGuidance: (agentId: string, targetId: string): Promise<ConnectionGuidanceSnapshot> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.GET_CONNECTION_GUIDANCE, agentId, targetId),
+  saveConnectionGuidance: (agentId: string, targetId: string, request: SaveConnectionGuidance): Promise<ConnectionGuidanceSnapshot> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.SAVE_CONNECTION_GUIDANCE, agentId, targetId, request),
+  previewConnectionGuidance: (agentId: string, targetId: string, instructions: Record<string, string>): Promise<Record<string, string>> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.PREVIEW_CONNECTION_GUIDANCE, agentId, targetId, instructions),
+  getConnectionToolCatalog: (agentId: string, targetId: string): Promise<ConnectionToolCatalog> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.GET_CONNECTION_TOOL_CATALOG, agentId, targetId),
   /**
    * One direction's disabled tools; agent-to-agent ones are saved in the connection store (D129).
    * `restore`: a canvas wire bound again. `start`: a wire just drawn, which starts with wake on too.

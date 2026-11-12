@@ -44,6 +44,7 @@ import type { BindingTargetKind } from './clubhouse-mcp/types';
 import type { StartingSwitches } from '../../shared/connection-grants';
 import { appLog } from './log-service';
 import { trackOperation } from './main-stall-monitor';
+import type { ConnectionGuidanceSource } from '../../shared/connection-guidance';
 
 /** 'plugin' is left out (#2082): no source persists plugin wires, and one that does is skipped. */
 const VALID_TARGET_KINDS: ReadonlySet<string> = new Set<BindingTargetKind>([
@@ -60,6 +61,8 @@ export interface PersistedBinding {
   targetName?: string;
   projectName?: string;
   instructions?: Record<string, string>;
+  /** Read-only provenance, when one source has copies in several stores. */
+  sourceLabel?: string;
   disabledTools?: string[];
   /** With `startingTools`: the switches the connection starts with on (wake, #3215). */
   enabledTools?: string[];
@@ -104,6 +107,8 @@ export interface PersistedBindingSource {
    * it, the card uses what the source listed at the last rebuild.
    */
   readOnlyCollect?: true;
+  /** Read-only originals, including copies collect intentionally folds into one binding. */
+  inspect?(): Promise<PersistedBinding[] | CollectedBindings>;
 }
 
 /** A collect that could only check part of its store. */
@@ -155,6 +160,11 @@ const heldBySource = new Map<string, Set<string>>();
  * claims and releases; null when that collect failed (#2744).
  */
 const lastListedBySource = new Map<string, Set<string> | null>();
+const guidanceBySource = new Map<string, Map<string, PersistedBinding[]>>();
+
+function copyGuidance(binding: PersistedBinding): PersistedBinding {
+  return { ...binding, ...(binding.instructions && { instructions: { ...binding.instructions } }) };
+}
 /** One direction's starting list, as a source gave it (#3214). */
 export interface StartingTools {
   agentId: string;
@@ -335,6 +345,46 @@ export async function collectSourcesByPair(): Promise<{ bySource: Map<string, Se
   return { bySource, failed };
 }
 
+/** Inspect originals without calling stateful collectors outside a rebuild. */
+export async function inspectConnectionGuidance(agentId: string, targetId: string): Promise<{ sources: ConnectionGuidanceSource[]; unreadable: string[] }> {
+  const key = pairKey(agentId, targetId);
+  const originals: ConnectionGuidanceSource[] = [];
+  const unreadable: string[] = [];
+  for (const source of [...sources.values()]) {
+    let bindings: PersistedBinding[];
+    if (source.inspect || source.readOnlyCollect) {
+      try {
+        const collected = await (source.inspect ? source.inspect() : source.collect());
+        bindings = Array.isArray(collected) ? collected : collected.bindings;
+        if (!Array.isArray(collected) && collected.unverified?.some((p) => pairKey(p.agentId, p.targetId) === key)) {
+          unreadable.push(source.id);
+        }
+      } catch {
+        // telemetry-exempt: returned as unreadable; guidance cannot be saved while ownership is uncertain
+        unreadable.push(source.id);
+        continue;
+      }
+    } else {
+      const listed = lastListedBySource.get(source.id);
+      const cached = guidanceBySource.get(source.id)?.get(key);
+      if (!listed || (listed.has(key) && !cached)) {
+        unreadable.push(source.id);
+        continue;
+      }
+      bindings = cached ?? [];
+    }
+    for (const binding of bindings) {
+      if (pairKey(binding.agentId, binding.targetId) !== key) continue;
+      originals.push({
+        sourceId: source.id,
+        ...(binding.sourceLabel && { label: binding.sourceLabel }),
+        instructions: { ...binding.instructions },
+      });
+    }
+  }
+  return { sources: originals, unreadable: [...new Set(unreadable)] };
+}
+
 /** The key collectSourcesByPair uses for a pair. */
 export function persistedPairKey(agentId: string, targetId: string): string {
   return pairKey(agentId, targetId);
@@ -457,7 +507,7 @@ export function applyPersistedBinding(binding: PersistedBinding, options: { rela
     return 'existing';
   }
   if (binding.instructions && Object.keys(binding.instructions).length > 0) {
-    bindingManager.setInstructions(binding.agentId, binding.targetId, binding.instructions);
+    bindingManager.restoreInstructions(binding.agentId, binding.targetId, binding.instructions);
   }
   if (binding.startingTools) {
     // A starting list applies where nothing is saved, everything on and wake included (#3214).
@@ -488,6 +538,12 @@ export function claimSourceBinding(sourceId: string, binding: PersistedBinding):
   const key = pairKey(binding.agentId, binding.targetId);
   if (removedByUser.has(key)) return 'removed';
   const source = sources.get(sourceId);
+  let guidance = guidanceBySource.get(sourceId);
+  if (!guidance) {
+    guidance = new Map();
+    guidanceBySource.set(sourceId, guidance);
+  }
+  guidance.set(key, [copyGuidance(binding)]);
   if (source?.prune) {
     let held = heldBySource.get(sourceId);
     if (!held) {
@@ -534,6 +590,7 @@ export function releaseSourceBinding(sourceId: string, agentId: string, targetId
   const key = pairKey(agentId, targetId);
   heldBySource.get(sourceId)?.delete(key);
   lastListedBySource.get(sourceId)?.delete(key);
+  guidanceBySource.get(sourceId)?.delete(key);
   startingBySource.get(sourceId)?.delete(key);
   listlessBySource.get(sourceId)?.delete(key);
   claimedDuringRun.get(sourceId)?.delete(key);
@@ -618,6 +675,16 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
     heldBySource.set(source.id, new Set([...listed, ...unverified, ...(claimedDuringRun.get(source.id) ?? [])]));
   }
   lastListedBySource.set(source.id, new Set([...listed, ...unverified, ...(claimedDuringRun.get(source.id) ?? [])]));
+  const guidance = new Map<string, PersistedBinding[]>();
+  for (const binding of bindings) {
+    const key = pairKey(binding.agentId, binding.targetId);
+    guidance.set(key, [...(guidance.get(key) ?? []), copyGuidance(binding)]);
+  }
+  for (const key of claimedDuringRun.get(source.id) ?? []) {
+    const claimed = guidanceBySource.get(source.id)?.get(key);
+    if (claimed && !guidance.has(key)) guidance.set(key, claimed);
+  }
+  guidanceBySource.set(source.id, guidance);
   startingBySource.set(source.id, starting);
   listlessBySource.set(source.id, listless);
   return { source, result, listed, unverified };
@@ -720,6 +787,7 @@ export function _resetPersistedBindingSourcesForTesting(): void {
   ownedBySource.clear();
   heldBySource.clear();
   lastListedBySource.clear();
+  guidanceBySource.clear();
   removedFromSource.clear();
   claimedDuringRun.clear();
   removedByUser.clear();

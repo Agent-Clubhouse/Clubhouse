@@ -30,6 +30,7 @@ function storeLabel(snapshot: CanvasStoreSnapshot): string {
 export function bindingsFromCanvasStores(
   snapshots: readonly CanvasStoreSnapshot[],
   groupProjects: ReadonlyMap<string, string> | null,
+  options: { inspect?: boolean } = {},
 ): PersistedBinding[] {
   const out: PersistedBinding[] = [];
   /** pair → the store it was taken from; the first store wins (app store first). */
@@ -56,7 +57,7 @@ export function bindingsFromCanvasStores(
       }
       const key = `${wire.agentId}\u0000${wire.targetId}`;
       const firstStore = seen.get(key);
-      if (firstStore !== undefined) {
+      if (firstStore !== undefined && !options.inspect) {
         appLog('core:mcp', 'debug', 'Canvas wire is in more than one store; keeping the first', {
           meta: { agentId: wire.agentId, targetId: wire.targetId, kept: firstStore, ignored: storeLabel(snapshot) },
         });
@@ -71,6 +72,7 @@ export function bindingsFromCanvasStores(
         agentName: wire.agentName,
         targetName: wire.targetName,
         projectName,
+        ...(options.inspect && { sourceLabel: snapshot.location.scope === 'app' ? 'Home' : snapshot.location.projectName }),
         ...(wire.instructions && typeof wire.instructions === 'object' ? { instructions: wire.instructions } : {}),
         ...(Array.isArray(wire.disabledTools) ? { disabledTools: wire.disabledTools } : {}),
       });
@@ -96,5 +98,10 @@ export const canvasWireBindingSource: PersistedBindingSource = {
   async collect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores(), readGroupProjectNames()]);
     return bindingsFromCanvasStores(snapshots, groupProjects);
+  },
+  async inspect() {
+    const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores(), readGroupProjectNames()]);
+    if (snapshots.some((s) => s.problems.length > 0)) throw new Error('Some Canvas guidance could not be read. Open the affected Canvas and try again.');
+    return bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true });
   },
 };

@@ -8,6 +8,12 @@ import { useAgentDetailsStore } from '../../../features/agents/details/detailsSt
 import { WAKE_TOOL } from '../../../../shared/connection-grants';
 import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
 import { useDispatcherStore } from '../../../features/dispatcher/dispatcherStore';
+import type { ConnectionGuidanceSnapshot } from '../../../../shared/connection-guidance';
+
+const guidance = (agentId: string, targetId: string): ConnectionGuidanceSnapshot => ({
+  agentId, targetId, instructions: {}, hasOverride: false, sources: [], unreadable: [],
+  conflictingSources: false, needsSourceConfirmation: false, readOnly: false, revision: 'test',
+});
 
 describe('WireConfigPopover', () => {
   const browserBinding: McpBindingEntry = {
@@ -31,6 +37,8 @@ describe('WireConfigPopover', () => {
     useDispatcherStore.setState({ state: null });
     window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs: [], unreadable: [] }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to));
+    window.clubhouse.mcpBinding.saveConnectionGuidance = vi.fn(async (from, to, request) => ({ ...guidance(from, to), instructions: request.instructions }));
     vi.clearAllMocks();
   });
 
@@ -73,7 +81,7 @@ describe('WireConfigPopover', () => {
     expect(getByTestId('wire-bidirectional-toggle')).toBeTruthy();
   });
 
-  it('summarizes both saved directions and opens the sender Connections card without rewriting tools (#3213)', async () => {
+  it('opens the shared card editor with independent switches and source ownership without automatic writes', async () => {
     const forward = { ...agentBinding, disabledTools: ['read_output', 'future_tool'], enabledTools: [WAKE_TOOL] };
     const reverse = { ...agentBinding, agentId: 'agent-2', targetId: 'agent-1', label: 'Agent 1', disabledTools: ['clear_agent'] };
     const setDisabledTools = vi.fn();
@@ -94,25 +102,22 @@ describe('WireConfigPopover', () => {
     const onUpdateWireDefinition = vi.fn();
     const { getByTestId } = render(<WireConfigPopover binding={forward} x={100} y={200} onClose={onClose} onUpdateWireDefinition={onUpdateWireDefinition} />);
     fireEvent.click(getByTestId('wire-permissions-button'));
-    const aToB = await waitFor(() => getByTestId('wire-connection-direction-agent-1-agent-2'));
-    const bToA = getByTestId('wire-connection-direction-agent-2-agent-1');
-    expect(aToB).toHaveTextContent('A \u2192 B');
-    expect(bToA).toHaveTextContent('B \u2192 A');
-    const switchRow = (section: HTMLElement, label: string) => within(section).getByText(label).closest('li');
-    expect(switchRow(aToB, 'Send messages')).toHaveTextContent('Off');
-    expect(switchRow(aToB, 'Read output')).toHaveTextContent('On');
-    expect(switchRow(aToB, 'Wake it')).toHaveTextContent('On');
-    expect(switchRow(bToA, 'Send messages')).toHaveTextContent('On');
-    expect(switchRow(bToA, 'Clear its context')).toHaveTextContent('Off');
-    expect(switchRow(bToA, 'Wake it')).toHaveTextContent('Off');
-    expect(aToB).toHaveTextContent('From: Canvas wire, Made by an orchestrator.');
+    const aToB = await waitFor(() => getByTestId('connection-direction-agent-1-agent-2'));
+    const bToA = getByTestId('connection-direction-agent-2-agent-1');
+    expect(aToB).toHaveTextContent('A to B');
+    expect(bToA).toHaveTextContent('B to A');
+    expect(within(aToB).getByRole('switch', { name: 'Send messages (A to B)' })).toHaveAttribute('aria-checked', 'false');
+    expect(within(aToB).getByRole('switch', { name: 'Read output (A to B)' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(aToB).getByRole('switch', { name: 'Wake it (A to B)' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(bToA).getByRole('switch', { name: 'Send messages (B to A)' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(bToA).getByRole('switch', { name: 'Clear its context (B to A)' })).toHaveAttribute('aria-checked', 'false');
+    expect(within(bToA).getByRole('switch', { name: 'Wake it (B to A)' })).toHaveAttribute('aria-checked', 'false');
     const dialog = within(getByTestId('wire-tool-permissions-dialog'));
-    expect(dialog.queryByRole('switch')).toBeNull();
-    expect(dialog.queryByTestId('wire-permissions-save')).toBeNull();
+    expect(dialog.getByTestId('connection-source-canvas')).toHaveTextContent('Canvas wire');
+    expect(dialog.getByTestId('connection-source-tool_link')).toHaveTextContent('Made by an orchestrator');
+    expect(dialog.getByTestId('connection-guidance-editor')).toBeInTheDocument();
     expect(dialog.getByText(/sender's Clubhouse permissions can still turn a tool off or require Ask first/)).toBeInTheDocument();
-    fireEvent.click(dialog.getByRole('button', { name: 'Edit connections' }));
-    expect(useAgentDetailsStore.getState().focus).toMatchObject({ agentId: 'agent-1', card: 'connections' });
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
     expect(setDisabledTools).not.toHaveBeenCalled();
     expect(onUpdateWireDefinition).not.toHaveBeenCalled();
     expect(useMcpBindingStore.getState().bindings).toEqual([forward, reverse]);
@@ -126,30 +131,30 @@ describe('WireConfigPopover', () => {
     window.clubhouse.mcpBinding.onConnectionGrantsChanged = vi.fn((cb) => { changed = () => cb('agent-1', 'agent-2', []); return unsubscribe; });
     const { getByTestId, unmount } = render(<WireConfigPopover binding={forward} x={100} y={200} onClose={vi.fn()} />);
     fireEvent.click(getByTestId('wire-permissions-button'));
-    const aToB = await waitFor(() => getByTestId('wire-connection-direction-agent-1-agent-2'));
-    expect(within(aToB).getByText('Wake it').closest('li')).toHaveTextContent('On');
-    expect(getByTestId('wire-connection-direction-agent-2-agent-1')).toHaveTextContent('Not connected this way.');
+    const aToB = await waitFor(() => getByTestId('connection-direction-agent-1-agent-2'));
+    expect(within(aToB).getByRole('switch', { name: 'Wake it (A to B)' })).toHaveAttribute('aria-checked', 'true');
+    expect(getByTestId('connection-direction-agent-2-agent-1')).toHaveTextContent('Not connected this way.');
     window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => [
       { from: { agentId: 'agent-1' }, to: { agentId: 'agent-2' }, disabledTools: ['read_output'], updatedAt: '' },
     ]);
     act(() => changed());
-    await waitFor(() => expect(within(getByTestId('wire-connection-direction-agent-1-agent-2')).getByText('Wake it').closest('li')).toHaveTextContent('Off'));
+    await waitFor(() => expect(within(getByTestId('connection-direction-agent-1-agent-2')).getByRole('switch', { name: 'Wake it (A to B)' })).toHaveAttribute('aria-checked', 'false'));
     unmount();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
-  it('opens the Connections card in the main window from a canvas popout (#3213)', async () => {
+  it('edits directly in a canvas popout rather than navigating to a second editor', async () => {
     useAgentStore.setState({ agents: {
       'agent-1': { id: 'agent-1', name: 'A', projectId: 'p1', kind: 'durable', status: 'running', color: 'teal' },
     } });
     window.clubhouse.window.isPopout = vi.fn(() => true);
     window.clubhouse.window.focusMain = vi.fn(async () => {});
     const onClose = vi.fn();
-    const { getByTestId, getByRole } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={onClose} />);
+    const { getByTestId, findByTestId } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={onClose} />);
     fireEvent.click(getByTestId('wire-permissions-button'));
-    fireEvent.click(getByRole('button', { name: 'Edit connections' }));
-    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
-    expect(window.clubhouse.window.focusMain).toHaveBeenCalledWith('agent-1', 'connections');
+    expect(await findByTestId('connection-guidance-editor')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(window.clubhouse.window.focusMain).not.toHaveBeenCalled();
     expect(useAgentDetailsStore.getState().focus).toBeNull();
   });
 
@@ -157,23 +162,24 @@ describe('WireConfigPopover', () => {
     window.clubhouse.mcpBinding.getConnectionGrants = vi.fn().mockRejectedValueOnce(new Error('unreadable')).mockResolvedValueOnce([]);
     const { getByTestId, findByRole, getByRole, queryByTestId } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />);
     fireEvent.click(getByTestId('wire-permissions-button'));
-    expect(await findByRole('alert')).toHaveTextContent("Couldn't read the connection permissions.");
-    expect(queryByTestId('wire-connection-direction-agent-1-agent-2')).toBeNull();
+    expect(await findByRole('alert')).toHaveTextContent("Couldn't read this connection: unreadable");
+    expect(queryByTestId('connection-direction-agent-1-agent-2')).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Try again' }));
-    await waitFor(() => expect(getByTestId('wire-connection-direction-agent-1-agent-2')).toBeInTheDocument());
+    await waitFor(() => expect(getByTestId('connection-direction-agent-1-agent-2')).toBeInTheDocument());
   });
 
-  it('keeps the popout dialog open and reports a failed main-window navigation (#3213)', async () => {
-    useAgentStore.setState({ agents: {
-      'agent-1': { id: 'agent-1', name: 'A', projectId: 'p1', kind: 'durable', status: 'running', color: 'teal' },
-    } });
-    window.clubhouse.window.isPopout = vi.fn(() => true);
-    window.clubhouse.window.focusMain = vi.fn(async () => { throw new Error('The main window is not open.'); });
+  it('preserves guidance drafts when a later connection-source refresh fails', async () => {
+    let changed!: () => void;
+    window.clubhouse.mcpBinding.onConnectionGrantsChanged = vi.fn((cb) => { changed = () => cb('agent-1', 'agent-2', []); return () => {}; });
     const onClose = vi.fn();
-    const { getByTestId, getByRole, findByRole } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={onClose} />);
+    const { getByTestId, findByRole } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={onClose} />);
     fireEvent.click(getByTestId('wire-permissions-button'));
-    fireEvent.click(getByRole('button', { name: 'Edit connections' }));
-    expect(await findByRole('alert')).toHaveTextContent("Couldn't open this agent's Connections card.");
+    const textarea = await findByRole('textbox', { name: 'Instructions' });
+    fireEvent.change(textarea, { target: { value: 'Keep this draft' } });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => { throw new Error('Unreadable sources'); });
+    act(() => changed());
+    expect(await findByRole('alert')).toHaveTextContent("Couldn't refresh connection sources");
+    expect(textarea).toHaveValue('Keep this draft');
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -185,7 +191,7 @@ describe('WireConfigPopover', () => {
     }));
     const { getByTestId, findByText, queryByText } = render(<WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />);
     fireEvent.click(getByTestId('wire-permissions-button'));
-    await waitFor(() => expect(getByTestId('wire-connection-direction-agent-1-agent-2')).toBeInTheDocument());
+    await waitFor(() => expect(getByTestId('connection-direction-agent-1-agent-2')).toBeInTheDocument());
     expect(await findByText(/This connection has no Wake it switch/)).toBeInTheDocument();
     expect(queryByText('Wake it')).toBeNull();
   });
@@ -263,7 +269,7 @@ describe('WireConfigPopover', () => {
   it('dismisses immediately on outside click after closing the instructions dialog', () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
-    const { getByTestId, queryByTestId } = render(
+    const { getByTestId, getByRole, queryByTestId } = render(
       <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={onClose} />,
     );
 
@@ -272,7 +278,7 @@ describe('WireConfigPopover', () => {
     });
 
     fireEvent.click(getByTestId('wire-instructions-button'));
-    fireEvent.click(getByTestId('wire-instructions-cancel'));
+    fireEvent.click(getByRole('button', { name: 'Close', exact: true }));
 
     expect(queryByTestId('wire-instructions-dialog')).toBeNull();
 
@@ -303,7 +309,7 @@ describe('WireConfigPopover', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('sets instructions on both bindings for bidirectional agent-to-agent wires', async () => {
+  it('does not mirror instruction writes for bidirectional agent-to-agent wires', async () => {
     const setInstructionsMock = vi.fn().mockResolvedValue(undefined);
     const reverseBinding: McpBindingEntry = {
       agentId: 'agent-2',
@@ -316,8 +322,9 @@ describe('WireConfigPopover', () => {
       setInstructions: setInstructionsMock,
     } as any);
 
-    const { getByTestId } = render(
-      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    const onUpdateWireDefinition = vi.fn();
+    const { getByTestId, findByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} onUpdateWireDefinition={onUpdateWireDefinition} />,
     );
 
     // Wait for useEffect to detect reverse binding and set bidirectional=true
@@ -329,18 +336,17 @@ describe('WireConfigPopover', () => {
 
     // Open instructions dialog
     fireEvent.click(getByTestId('wire-instructions-button'));
-    const textarea = getByTestId('wire-instructions-textarea') as HTMLTextAreaElement;
+    const textarea = await findByTestId('wire-instructions-textarea');
     fireEvent.change(textarea, { target: { value: 'Be concise' } });
-    fireEvent.click(getByTestId('wire-instructions-save'));
+    await act(async () => { fireEvent.click(getByTestId('wire-instructions-save')); });
 
-    // handleSaveInstructions is async — wait for both calls to complete
     await waitFor(() => {
-      // Should set on forward binding (agent-1 → agent-2)
-      expect(setInstructionsMock).toHaveBeenCalledWith('agent-1', 'agent-2', { '*': 'Be concise' });
-      // Should also set on reverse binding (agent-2 → agent-1)
-      expect(setInstructionsMock).toHaveBeenCalledWith('agent-2', 'agent-1', { '*': 'Be concise' });
-      expect(setInstructionsMock).toHaveBeenCalledTimes(2);
+      expect(window.clubhouse.mcpBinding.saveConnectionGuidance).toHaveBeenCalledExactlyOnceWith('agent-1', 'agent-2', {
+        instructions: { '*': 'Be concise' }, revision: 'test', replaceAcrossSources: false,
+      });
     });
+    expect(setInstructionsMock).not.toHaveBeenCalled();
+    expect(onUpdateWireDefinition).not.toHaveBeenCalled();
   });
 
   it('calls onRemoveWireDefinition before unbind resolves in handleDisconnect', async () => {
@@ -451,19 +457,20 @@ describe('WireConfigPopover', () => {
       setInstructions: setInstructionsMock,
     } as any);
 
-    const { getByTestId } = render(
+    const { getByTestId, findByTestId } = render(
       <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
     );
 
     fireEvent.click(getByTestId('wire-instructions-button'));
-    const textarea = getByTestId('wire-instructions-textarea') as HTMLTextAreaElement;
+    const textarea = await findByTestId('wire-instructions-textarea');
     fireEvent.change(textarea, { target: { value: 'Be concise' } });
     fireEvent.click(getByTestId('wire-instructions-save'));
 
-    // handleSaveInstructions is async — wait for it to complete
     await waitFor(() => {
-      expect(setInstructionsMock).toHaveBeenCalledWith('agent-1', 'agent-2', { '*': 'Be concise' });
-      expect(setInstructionsMock).toHaveBeenCalledTimes(1);
+      expect(window.clubhouse.mcpBinding.saveConnectionGuidance).toHaveBeenCalledExactlyOnceWith('agent-1', 'agent-2', {
+        instructions: { '*': 'Be concise' }, revision: 'test', replaceAcrossSources: false,
+      });
     });
+    expect(setInstructionsMock).not.toHaveBeenCalled();
   });
 });

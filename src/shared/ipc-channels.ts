@@ -615,6 +615,10 @@ export const IPC = {
     REGISTER_WEBVIEW: 'mcp-binding:register-webview',
     UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
     SET_INSTRUCTIONS: 'mcp-binding:set-instructions',
+    GET_CONNECTION_GUIDANCE: 'mcp-binding:get-connection-guidance',
+    SAVE_CONNECTION_GUIDANCE: 'mcp-binding:save-connection-guidance',
+    PREVIEW_CONNECTION_GUIDANCE: 'mcp-binding:preview-connection-guidance',
+    GET_CONNECTION_TOOL_CATALOG: 'mcp-binding:get-connection-tool-catalog',
     SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
     /** Renderer→main: the agent's Clubhouse MCP connection (AgentMcpConnection | null). */
     GET_AGENT_CONNECTION: 'mcp-binding:get-agent-connection',
