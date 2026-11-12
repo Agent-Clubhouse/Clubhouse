@@ -13,6 +13,7 @@ import * as tls from 'tls';
 import type Bonjour from 'bonjour-service';
 import type { Browser, Service as RemoteService } from 'bonjour-service';
 import { createBonjour } from './annex-mdns';
+import { annexNetworkProfile } from './annex-network-profile';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
 import { formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, type ReachAddress } from './annex-reach';
@@ -1366,8 +1367,12 @@ let rediscoverTimer: ReturnType<typeof setTimeout> | null = null;
 let discoveryController: AbortController | null = null;
 const MDNS_RESTART_DELAY_MS = 30_000;
 
+function discoveryAllowed(): boolean {
+  return annexNetworkProfile(process.env, annexSettings.getSettings().loopbackOnly).advertise;
+}
+
 function startDiscovery(): void {
-  if (bonjourBrowser || annexSettings.getSettings().loopbackOnly) return;
+  if (bonjourBrowser || !discoveryAllowed()) return;
 
   const controller = new AbortController();
   discoveryController = controller;
@@ -1384,9 +1389,9 @@ function startDiscovery(): void {
       rediscoverTimer.unref?.();
     });
     bonjourBrowser = bonjourInstance.find({ type: 'clubhouse-annex' }, async (service) => {
-      if (controller.signal.aborted || annexSettings.getSettings().loopbackOnly) return;
+      if (controller.signal.aborted || !discoveryAllowed()) return;
       const identity = await identifyService(service, controller.signal);
-      if (!identity || controller.signal.aborted || annexSettings.getSettings().loopbackOnly) return;
+      if (!identity || controller.signal.aborted || !discoveryAllowed()) return;
 
       const { fingerprint } = identity;
       const txt = service.txt || {};

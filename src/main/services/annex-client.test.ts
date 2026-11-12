@@ -6,6 +6,7 @@
  * never called, unpaired services dropped, no pairing flow) are each covered.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { networkInterfaces } from 'node:os';
 
 // ---------------------------------------------------------------------------
 // Mocks — set up before importing the module under test
@@ -39,6 +40,11 @@ function resetBonjourMocks() {
 vi.mock('bonjour-service', () => ({
   default: BonjourConstructor,
 }));
+
+vi.mock('node:os', async (original) => {
+  const actual = await original<typeof import('node:os')>();
+  return { ...actual, networkInterfaces: vi.fn(actual.networkInterfaces) };
+});
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
 vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
@@ -163,6 +169,7 @@ describe('bracketHost', () => {
 
 /** Reset all mock implementations after vi.clearAllMocks() */
 function resetAllMocks() {
+  vi.mocked(networkInterfaces).mockReset();
   resetBonjourMocks();
   vi.mocked(annexIdentity.getOrCreateIdentity).mockReturnValue(LOCAL_IDENTITY);
   vi.mocked(annexIdentity.getIdentity).mockReturnValue(LOCAL_IDENTITY);
@@ -256,11 +263,45 @@ describe('annex-client', () => {
     else await new Promise((resolve) => setTimeout(resolve, 0));
     annexClient.stopClient();
     vi.useRealTimers();
+    vi.unstubAllEnvs();
   });
 
   // ---- startClient / stopClient ----
 
   describe('startClient', () => {
+    it.each([
+      ['loopback', 'CLUBHOUSE_ANNEX_LOOPBACK_ONLY', '1'],
+      ['selected interface', 'CLUBHOUSE_ANNEX_BIND_ADDRESS', '192.0.2.10'],
+    ])('does not browse in an environment-selected %s profile, including scan and wake', (_profile, variable, value) => {
+      vi.mocked(networkInterfaces).mockReturnValue({
+        en0: [{ address: '192.0.2.10', internal: false, family: 'IPv4', netmask: '255.255.255.0', mac: '00:00:00:00:00:01', cidr: '192.0.2.10/24' }],
+      });
+      vi.stubEnv(variable, value);
+      annexClient.startClient();
+      annexClient.scan();
+      annexClient.resumeAllConnections();
+      expect(BonjourConstructor).not.toHaveBeenCalled();
+      expect(mockBonjourInstance.find).not.toHaveBeenCalled();
+    });
+
+    it('does not identify a service after an environment isolation profile is enabled', async () => {
+      mockHttpGetIdentity({ fingerprint: 'remote', alias: 'Remote', publicKey: 'key' });
+      annexClient.startClient();
+      vi.stubEnv('CLUBHOUSE_ANNEX_LOOPBACK_ONLY', '1');
+      await bonjourFindCallback!(makeService());
+      expect(http.get).not.toHaveBeenCalled();
+      expect(annexClient.getDiscoveredServices()).toEqual([]);
+    });
+
+    it('ignores an identity response when the environment becomes isolated while it is pending', async () => {
+      mockHttpGetIdentity({ fingerprint: 'remote', alias: 'Remote', publicKey: 'key' });
+      annexClient.startClient();
+      const pending = bonjourFindCallback!(makeService());
+      vi.stubEnv('CLUBHOUSE_ANNEX_LOOPBACK_ONLY', '1');
+      await pending;
+      expect(annexClient.getDiscoveredServices()).toEqual([]);
+    });
+
     it('aborts in-flight discovery identity requests when loopback mode is enabled', async () => {
       const actualHttp = await vi.importActual<typeof import('http')>('http');
       const sockets = new Set<import('net').Socket>();
