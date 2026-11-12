@@ -26,7 +26,8 @@ import { openAgent } from './orchestration-hooks';
 import { CONNECTION_SOURCE_LABELS, type AgentConnectionSources, type ConnectionPairSources } from '../../../../shared/connection-sources';
 import { ConnectionSourcesDialog } from './ConnectionSourcesDialog';
 import type { ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
-import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
+import { dispatcherAgentDisplayName, isDispatcherAgent, useDispatcherStore } from '../../dispatcher/dispatcherStore';
+import type { DispatcherState } from '../../../../shared/dispatcher-types';
 import { parseAgentAddress } from '../../../../shared/agent-address';
 import { RemoteConnections, remoteConnections } from './RemoteConnections';
 import { reportChromeActionFailed } from '../../../chrome/telemetry';
@@ -71,6 +72,7 @@ export function agentConnections(
   family: { helperIds: ReadonlySet<string>; parentId?: string },
   toolPairs: ReadonlySet<string> = new Set(),
   dispatcherLinks: readonly DispatcherLink[] = [],
+  dispatcher: DispatcherState | null = useDispatcherStore.getState().state,
 ): Connection[] {
   const rows = new Map<string, Connection>();
   const links = new Map(dispatcherLinks.map((l) => [pairKey(l.agentId, l.targetId), l]));
@@ -93,7 +95,8 @@ export function agentConnections(
         pairs: [{ agentId: b.agentId, targetId: b.targetId }],
         toolMade: false,
         id: b.targetId,
-        name: b.targetKind === 'group-project' ? (b.projectName || b.targetName || b.label) : (b.targetName || b.label),
+        name: b.targetKind === 'group-project' ? (b.projectName || b.targetName || b.label)
+          : b.targetKind === 'agent' ? dispatcherAgentDisplayName(b.targetId, b.targetName || b.label, dispatcher) : (b.targetName || b.label),
         kind: b.targetKind,
         direction: 'to',
         family: b.targetKind === 'agent' ? familyOf(b.targetId) : null,
@@ -106,7 +109,7 @@ export function agentConnections(
         continue;
       }
       rows.set(b.agentId, {
-        id: b.agentId, name: b.agentName || b.agentId, kind: 'agent', direction: 'from', family: familyOf(b.agentId),
+        id: b.agentId, name: dispatcherAgentDisplayName(b.agentId, b.agentName || b.agentId, dispatcher), kind: 'agent', direction: 'from', family: familyOf(b.agentId),
         pairs: [{ agentId: b.agentId, targetId: b.targetId }], toolMade: false,
       });
     }
@@ -156,13 +159,14 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
 }) {
   const bindings = useMcpBindingStore((s) => s.bindings);
   const rail = useAgentStore((s) => s.agents);
+  const dispatcher = useDispatcherStore((s) => s.state);
   const toolPairs = useToolConnectionPairs(open && !!onDisconnect, bindings);
   // Removing a suspended link changes no binding, so that re-reads the list itself.
   const [removals, setRemovals] = useState(0);
   const dispatcherLinks = useDispatcherLinks(open && !!onDisconnect, bindings, removals);
   const connections = useMemo(
-    () => agentConnections(bindings, agent.id, { helperIds, parentId }, toolPairs, dispatcherLinks),
-    [bindings, agent.id, helperIds, parentId, toolPairs, dispatcherLinks],
+    () => agentConnections(bindings, agent.id, { helperIds, parentId }, toolPairs, dispatcherLinks, dispatcher),
+    [bindings, agent.id, helperIds, parentId, toolPairs, dispatcherLinks, dispatcher],
   );
   const [confirming, setConfirming] = useState<Connection | null>(null);
   // Where each connection comes from (#2744), re-read with the bindings and after a removal.
@@ -243,8 +247,8 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
         grants={grants}
         liveTools={new Map(bindings.map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
         liveEnabled={new Map(bindings.map((b) => [`${b.agentId}>${b.targetId}`, b.enabledTools ?? []]))}
-        agentName={agent.name}
-        otherName={rail[managing.id]?.name ?? managing.name}
+        agentName={dispatcherAgentDisplayName(agent.id, agent.name, dispatcher)}
+        otherName={dispatcherAgentDisplayName(managing.id, rail[managing.id]?.name ?? managing.name, dispatcher)}
         dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}
         familyLink={managing.family !== null}
         pairs={pairSources(managing)}

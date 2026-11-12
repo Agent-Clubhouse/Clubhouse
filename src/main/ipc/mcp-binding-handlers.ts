@@ -43,12 +43,14 @@ import {
 } from '../services/connection-grants';
 import { listConnectionDirections } from '../services/connection-grants-store';
 import { startAgentCalls } from '../services/annex-agent-calls';
+import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexClient from '../services/annex-client';
 import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
 import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
+import { dispatcherDisplayName, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
 
 /** An agent's name and project here, for another machine's view of a call or connection (#3064). */
 async function describeAgentHere(agentId: string): Promise<{ name: string; projectName?: string } | undefined> {
@@ -446,11 +448,23 @@ export function restorePersistedBindings(): Promise<void> {
       transport: {
         connected: (machine) => annexClient.isMachineConnected(machine),
         post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
+        supportsDurableDelivery: async (machine) => {
+          const response = await annexClient.postToMachine(machine, '/api/v1/network/agent-delivery-capabilities', {});
+          if (response.status === 404) return false;
+          if (response.status !== 200) throw new Error(`Durable delivery negotiation failed (${response.status}).`);
+          return !!response.body && typeof response.body === 'object'
+            && 'deliveryVersion' in response.body && response.body.deliveryVersion === 1
+            && 'receiptBoundary' in response.body && response.body.receiptBoundary === 'runtime-accepted';
+        },
         machineName: (machine) => annexClient.machineAlias(machine),
         onConnected: (listener) => annexClient.onSatelliteConnected(listener),
       },
       runTool: runAgentToolForRemoteCaller,
       describeLocalAgent: describeAgentHere,
+      nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work')
+        : isDispatcherChatAgentId(id) ? dispatcherDisplayName() : undefined,
+      authorizeQueuedCall: authorizeQueuedAnnexCall,
+      onDeliveryFailure: reportAnnexDeliveryFailure,
     });
   }
   return rebuildPersistedBindings().then(async (): Promise<void> => {

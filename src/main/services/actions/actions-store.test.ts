@@ -86,6 +86,15 @@ describe('actions store', () => {
     expect(migrate({ runs: { deleted: runs } })).toEqual({ version: 1, runs: { deleted: runs } });
   });
 
+  it('retains external Annex receipt source and deterministic identity across reload', () => {
+    const run = {
+      id: 'annex-delivery:c1', actionId: 'annex-delivery:c1', externalSource: 'annex_delivery',
+      owner: { kind: 'agent', agentId: 'sender' }, trigger: { kind: 'manual', at: 5, detail: 'Annex delivery receipt' },
+      chain: [], startedAt: 5, endedAt: 5, outcome: 'expired', reason: 'Delivery expired', steps: [],
+    };
+    expect(migrations.get('action-history.json')!({ runs: { [run.actionId]: [run] } })).toEqual({ version: 1, runs: { [run.actionId]: [run] } });
+  });
+
   it('reads all retained history across actions without losing each action’s trim', async () => {
     const history = createRunHistory(() => 100);
     const run = { id: 'r1', actionId: 'deleted', trigger: { kind: 'manual', at: 5 }, chain: [], startedAt: 5, outcome: 'done', steps: [] } as const;

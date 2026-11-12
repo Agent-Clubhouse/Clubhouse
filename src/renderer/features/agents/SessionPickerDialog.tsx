@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef, RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { DISPATCHER_CONTROLLER_NAME } from '../../../shared/dispatcher-name';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 
 const RECENT_COUNT = 5;
 
@@ -36,10 +38,11 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 function SessionRow({
-  session, idx, isLatest, editingId, editValue, editInputRef,
+  session, displayTitle, idx, isLatest, editingId, editValue, editInputRef,
   setEditValue, handleRename, setEditingId, startEditing, onResume,
 }: {
   session: SessionEntry;
+  displayTitle?: string;
   idx: number;
   isLatest: boolean;
   editingId: string | null;
@@ -77,7 +80,7 @@ function SessionRow({
           <>
             <div className="flex items-center gap-2">
               <span className="text-sm text-ctp-text truncate">
-                {session.friendlyName || `Session ${session.sessionId.slice(0, 8)}`}
+                {displayTitle ?? (session.friendlyName || `Session ${session.sessionId.slice(0, 8)}`)}
               </span>
               {isLatest && (
                 <span className="text-xs px-1.5 py-0.5 rounded-full bg-ctp-accent/20 text-ctp-accent shrink-0">
@@ -126,6 +129,7 @@ function SessionRow({
 }
 
 export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResume, onClose }: SessionPickerDialogProps) {
+  const controller = useDispatcherStore((s) => s.state?.agentId === agentId);
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -240,6 +244,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
                 <SessionRow
                   key={session.sessionId}
                   session={session}
+                  displayTitle={controller ? DISPATCHER_CONTROLLER_NAME : undefined}
                   idx={idx}
                   isLatest={idx === 0}
                   editingId={editingId}
@@ -265,6 +270,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
                 <SessionRow
                   key={session.sessionId}
                   session={session}
+                  displayTitle={controller ? DISPATCHER_CONTROLLER_NAME : undefined}
                   idx={idx + RECENT_COUNT}
                   isLatest={false}
                   editingId={editingId}

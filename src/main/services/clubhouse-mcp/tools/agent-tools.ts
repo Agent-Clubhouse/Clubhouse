@@ -11,7 +11,7 @@ import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { isTrackedDispatcher } from '../dispatcher-gate';
 import { agentRegistry } from '../../agent-registry';
-import { currentRemoteCaller } from '../../annex-agent-calls';
+import { currentRemoteCaller, type AgentToolRunResult } from '../../annex-agent-calls';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { requireString, optionalString, numberWithDefault } from './validation';
@@ -25,7 +25,8 @@ import { sleepAgent, wakeWiredAgent } from './agent-lifecycle';
 import { deliverToDispatcher, isDispatcherTarget, sleepingDispatcherHint } from './dispatcher-delivery';
 import { isDispatcherAgentId } from '../../dispatcher/dispatcher-service';
 import { noteAgentReached } from '../../dispatcher/dispatcher-requests';
-import type { RoutedMessagePart } from '../../../../shared/chat';
+import type { RoutedMessagePart, RuntimeSendResult } from '../../../../shared/chat';
+import { DISPATCHER_CONTROLLER_NAME } from '../../../../shared/dispatcher-name';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
 export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfterPaste } from '../../agent-runtime/pty-input';
@@ -56,11 +57,12 @@ function senderOf(agentId: string, targetId: string): { senderName: string; send
   const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
   const remote = currentRemoteCaller();
   const senderName = remote ? `${remote.name} on ${remote.machineName}`
-    : isDispatcherAgentId(agentId) ? 'Dispatcher controller' : sourceBinding?.agentName || agentId;
+    : isDispatcherAgentId(agentId) ? DISPATCHER_CONTROLLER_NAME : sourceBinding?.agentName || agentId;
   const senderLabel = remote
     ? (remote.projectName ? `${remote.name}@${remote.projectName} on ${remote.machineName}` : senderName)
     : buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
-  return { senderName, senderLabel, targetName: sourceBinding?.targetName || remote?.targetName || targetId };
+  const targetName = isDispatcherAgentId(targetId) ? DISPATCHER_CONTROLLER_NAME : sourceBinding?.targetName || remote?.targetName || targetId;
+  return { senderName, senderLabel, targetName };
 }
 
 /**
@@ -93,7 +95,29 @@ function buildTaggedMessage(agentId: string, targetId: string, message: string, 
 function sleepingError(agentId: string, targetId: string, action: string): McpToolResult {
   // Only a caller that has wake_agent on this wire is pointed at it (#3215).
   const hint = canCallWake(agentId, targetId) ? `Call its wake_agent tool before ${action}.` : `Start it from Clubhouse before ${action}.`;
-  return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. ${hint}` }], isError: true };
+  return remoteDelivery({ content: [{ type: 'text', text: `Agent ${targetId} is sleeping. ${hint}` }], isError: true }, 'retry_later', 'sleeping');
+}
+
+function remoteDelivery(result: McpToolResult, state: NonNullable<AgentToolRunResult['annexDelivery']>['state'], reason?: string): AgentToolRunResult {
+  return currentRemoteCaller() ? { ...result, annexDelivery: { state, ...(reason && { reason }) } } : result;
+}
+
+/** Leave remote work in its durable sender queue, not the volatile chat queue. */
+function remoteInputPreflight(targetId: string): AgentToolRunResult | undefined {
+  if (!currentRemoteCaller()) return undefined;
+  const runtime = getAgentRuntime(targetId);
+  if (!runtime || (runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.()))) {
+    return remoteDelivery({ content: [{ type: 'text', text: 'The target is busy, starting or asleep. Input was not accepted; this delivery will retry later.' }], isError: true }, 'retry_later', 'target_not_ready');
+  }
+  return undefined;
+}
+
+function remoteInputReceipt(result: McpToolResult, sent?: RuntimeSendResult): AgentToolRunResult {
+  if (!currentRemoteCaller()) return result;
+  if (sent?.delivery === 'queued') {
+    return remoteDelivery({ content: [{ type: 'text', text: 'Input was queued by the receiving runtime during a readiness race. Delivery is indeterminate; it will not be automatically resent. Inspect the target before sending new work.' }], isError: true }, 'indeterminate', 'runtime_queued');
+  }
+  return remoteDelivery(result, 'delivered');
 }
 
 // ── File-backed message helpers ─────────────────────────────────────────────
@@ -174,6 +198,10 @@ export function registerAgentTools(): void {
             'so the target agent knows to tag its response with TASK_RESULT:<task_id>. ' +
             'If omitted, one is auto-generated and returned.',
         },
+        idempotency_key: {
+          type: 'string',
+          description: 'For cross-machine delivery: a stable key (up to 200 characters). Retry the exact same content with the same key; task_id is the fallback key. Receipts confirm runtime acceptance, not model execution.',
+        },
         force_submit: {
           type: 'boolean',
           description:
@@ -202,6 +230,8 @@ export function registerAgentTools(): void {
           : `Message sent to ${targetName}. task_id=${taskId} — ` +
             `poll read_output for TASK_RESULT:${taskId}.${wokeNote}${submitNote}`;
       };
+      const notReady = remoteInputPreflight(targetId);
+      if (notReady) return notReady;
 
       // The Dispatcher, asleep or awake: a sleeping one is woken to take the message (#3037).
       if (isDispatcherTarget(targetId)) {
@@ -215,7 +245,7 @@ export function registerAgentTools(): void {
             taskId, submit: forceSubmit, toolName, args,
           });
           if (delivery.delivered === false) return { content: [{ type: 'text', text: delivery.text }], isError: true };
-          return { content: [{ type: 'text', text: sentText(tagged.targetName, tagged.isBidirectional, delivery.woke) }] };
+          return remoteInputReceipt({ content: [{ type: 'text', text: sentText(tagged.targetName, tagged.isBidirectional, delivery.woke) }] }, delivery.delivery ? { delivery: delivery.delivery } : undefined);
         } catch (err) {
           // telemetry-exempt: logged, and the error reaches the sender as the tool result
           if (isAgentStoppingError(err)) {
@@ -250,10 +280,10 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'info', 'send_message: delivering', {
           meta: { targetAgent: targetId, taskId, runtime: runtime.kind, forceSubmit, messageLength: taggedMessage.length },
         });
-        await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit, routed });
+        const sent = await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit, routed });
         noteDispatcherReached(agentId, targetId);
 
-        return { content: [{ type: 'text', text: sentText(targetName, isBidirectional) }] };
+        return remoteInputReceipt({ content: [{ type: 'text', text: sentText(targetName, isBidirectional) }] }, sent);
       } catch (err) {
         if (isAgentStoppingError(err)) {
           appLog('core:mcp', 'info', 'send_message: target is shutting down', { meta: { sourceAgent: agentId, targetAgent: targetId, taskId } });
@@ -454,6 +484,10 @@ export function registerAgentTools(): void {
           description:
             'Optional correlation ID. Works the same as send_message task_id.',
         },
+        idempotency_key: {
+          type: 'string',
+          description: 'For cross-machine delivery: a stable key (up to 200 characters). Retry only the same content with the same key; task_id is the fallback key.',
+        },
         filename: {
           type: 'string',
           description:
@@ -477,6 +511,8 @@ export function registerAgentTools(): void {
       if (!reg) {
         return sleepingError(agentId, targetId, 'sending files');
       }
+      const notReady = remoteInputPreflight(targetId);
+      if (notReady) return notReady;
 
       const { senderName, senderLabel, targetName } = senderOf(agentId, targetId);
 
@@ -496,23 +532,24 @@ export function registerAgentTools(): void {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }
         const notice = `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath} — read this file for content from ${senderLabel}.`;
+        let sent: RuntimeSendResult | undefined;
         if (runtime.kind === 'pty') {
           // Terminals keep the single fixed-delay Enter this tool has always sent.
           const timing = getProvider(reg.orchestrator)?.getPasteSubmitTiming() ?? DEFAULT_PASTE_TIMING;
           await writeLineThenEnter(targetId, notice, timing.initialDelayMs);
         } else {
-          await runtime.sendMessage(notice, {
+          sent = await runtime.sendMessage(notice, {
             source: 'mcp', taskId,
             routed: [{ sender: { agentId, name: senderName }, text: `File delivered: ${filePath}` }],
           });
         }
 
-        return {
+        return remoteInputReceipt({
           content: [{
             type: 'text',
             text: `File delivered to ${targetName}. task_id=${taskId}, path=${filePath}`,
           }],
-        };
+        }, sent);
       } catch (err) {
         if (isAgentStoppingError(err)) {
           appLog('core:mcp', 'info', 'send_file: target is shutting down', { meta: { sourceAgent: agentId, targetAgent: targetId, taskId } });
@@ -650,7 +687,7 @@ export function registerAgentTools(): void {
       },
     },
     handler: async (targetId, agentId, args): Promise<McpToolResult> => {
-      const targetName = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId)?.targetName || targetId;
+      const targetName = senderOf(agentId, targetId).targetName;
       return sleepAgent({ callerId: agentId, targetId, targetName, force: args.force === true });
     },
   });
@@ -676,7 +713,7 @@ export function registerAgentTools(): void {
       const bindings = bindingManager.getBindingsForAgent(agentId);
       const binding = bindings.find((b) => b.targetId === args.target);
       if (!binding) {
-        const wires = bindings.map((b) => `${b.targetName || b.label} (${b.targetId})`).join(', ') || 'none';
+        const wires = bindings.map((b) => `${isDispatcherAgentId(b.targetId) ? DISPATCHER_CONTROLLER_NAME : b.targetName || b.label} (${b.targetId})`).join(', ') || 'none';
         return { content: [{ type: 'text', text: `You have no wire to ${String(args.target)}. Your wires: ${wires}.` }], isError: true };
       }
       return callTool(agentId, buildToolName(binding, String(args.tool)), (args.arguments as Record<string, unknown>) ?? {});

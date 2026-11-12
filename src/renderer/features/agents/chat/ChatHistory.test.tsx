@@ -1,8 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ChatEvent } from '../../../../shared/chat';
+import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { ChatHistory } from './ChatHistory';
 import { useChatStore } from '../../../stores/chatStore';
+import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
+import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
 
 function message(seq: number, sessionId: string, text: string): ChatEvent {
   return { v: 2, agentId: 'a1', sessionId, seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text } };
@@ -13,9 +16,40 @@ const sessions = [
 ];
 
 describe('ChatHistory', () => {
+  beforeEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
+
   const emptySessions = ['d4708bba', '39d32489'].map((sessionId, i) => ({
     sessionId, startedAt: 4_000 + i, lastActiveAt: 4_000 + i, lastSeq: 2,
   }));
+
+  it.each([
+    ['copilot_sdk', 'copilot-cli'],
+    ['codex_app_server', 'codex-cli'],
+    ['claude_agent_sdk', 'claude-code'],
+  ] as const)('uses a fixed controller display title for %s history without changing saved titles or chat history', async (driver, provider) => {
+    useDispatcherStore.getState().setState({
+      ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat',
+      config: { id: 'work', name: 'Rosie', color: 'indigo', createdAt: 'then' },
+    });
+    window.clubhouse.chat.listSessions = vi.fn(async () => sessions);
+    window.clubhouse.chat.readTranscript = vi.fn(async (agentId: string, _tail?: number, sessionId?: string): Promise<ChatEvent[]> => [
+      { v: 2, agentId, sessionId: sessionId!, seq: 1, ts: 1, type: 'session_started', data: { driver, provider, cwd: '/dispatcher', resumed: true, capabilities: MINIMAL_CHAT_CAPABILITIES } },
+      { v: 2, agentId, sessionId: sessionId!, seq: 2, ts: 2, type: 'session_info', data: { title: 'Provider auto-title', nativeSessionId: 'native-controller' } },
+    ]);
+    const { rerender } = render(<ChatHistory agentId="work" currentSessionId="current" onClose={vi.fn()} />);
+    await screen.findByText('This session has no messages.');
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      expect.stringContaining('Dispatcher controller (current)'), expect.stringContaining('Dispatcher controller'),
+    ]);
+    expect(window.clubhouse.chat.readTranscript).toHaveBeenLastCalledWith('work', 500, 'old');
+    expect(screen.queryByText(/Provider auto-title/)).not.toBeInTheDocument();
+    expect(sessions.map((s) => s.title)).toEqual(['Current task', 'Earlier task']);
+    rerender(<ChatHistory agentId="chat" currentSessionId="current" onClose={vi.fn()} />);
+    await waitFor(() => expect(window.clubhouse.chat.readTranscript).toHaveBeenLastCalledWith('chat', 500, 'old'));
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      expect.stringContaining('Current task (current)'), expect.stringContaining('Earlier task'),
+    ]);
+  });
 
   it('defaults to the most recent non-current conversation and groups sessions without user messages last', async () => {
     window.clubhouse.chat.listSessions = vi.fn(async () => [

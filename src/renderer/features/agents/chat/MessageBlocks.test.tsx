@@ -9,6 +9,7 @@ import { reduceChatEvent, type AgentMessageItem, type NoticeItem, type TurnEndIt
 import { AgentMessage, isLongMessage, LONG_MESSAGE_CHARS, NoticeRow, TurnFooter, UserMessage } from './MessageBlocks';
 import { createTranscriptExpansionStore, TranscriptExpansionProvider } from './transcript-expansion';
 import { useActionsNav } from '../../actions/useActions';
+import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
 
 function item(over: Partial<UserMessageItem>): UserMessageItem {
   const text = over.text ?? '';
@@ -91,19 +92,19 @@ describe('UserMessage', () => {
     expect(screen.getByTestId('chat-sent-avatar').querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
   });
 
-  it('shows the Dispatcher\'s controller, or its chat, as the Dispatcher', () => {
-    useDispatcherStore.setState({ state: { agentId: 'dispatcher_work', chatAgentId: 'dispatcher_chat' } as never });
+  it.each(['Dispatcher', 'Sage'])('keeps controller sender metadata unified under chat name %s and its avatar', (name) => {
+    useDispatcherStore.setState({ state: { ...DISPATCHER_OFF, agentId: 'dispatcher_work', chatAgentId: 'dispatcher_chat' } });
     useAgentStore.setState({
       agents: {
-        dispatcher_chat: agent({ id: 'dispatcher_chat', name: 'Dispatcher', icon: 'd.png' }),
+        dispatcher_chat: agent({ id: 'dispatcher_chat', name, icon: 'd.png' }),
         // In the debug view (#3188) the controller is loaded too, with no picture of its own.
         dispatcher_work: agent({ id: 'dispatcher_work', name: 'Navi' }),
       },
       agentIcons: { dispatcher_chat: 'data:image/png;base64,DDDD' },
     });
-    for (const id of ['dispatcher_work', 'dispatcher_chat']) {
-      const { unmount } = render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed('Short', id, 'Navi') })} />);
-      expect(screen.getByTestId('chat-sent-name').textContent).toBe('Dispatcher');
+    for (const [id, senderName] of [['dispatcher_work', 'Navi'], ['dispatcher_work', 'Dispatcher controller'], ['dispatcher_chat', name]]) {
+      const { unmount } = render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed('Short', id, senderName) })} />);
+      expect(screen.getByTestId('chat-sent-name').textContent).toBe(name);
       expect(screen.getByTestId('chat-sent-avatar').querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,DDDD');
       expect(screen.getByTestId('chat-sent-avatar').textContent).not.toBe('N');
       unmount();

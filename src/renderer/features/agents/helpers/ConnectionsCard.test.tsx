@@ -6,6 +6,9 @@ import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBin
 import { ConnectionsCard, agentConnections, connectionMeta } from './ConnectionsCard';
 import type { ConnectionSourceKind } from '../../../../shared/connection-sources';
 import type { ConnectionGuidanceSnapshot } from '../../../../shared/connection-guidance';
+import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
+import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
+import { ConnectionEditorDialog } from './ConnectionEditorDialog';
 
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'running', color: 'teal' };
 
@@ -55,6 +58,7 @@ describe('agentConnections', () => {
 
 describe('Connections card (#2232)', () => {
   beforeEach(() => {
+    useDispatcherStore.getState().setState(DISPATCHER_OFF);
     useMcpBindingStore.setState({ bindings });
     useAgentStore.setState({
       agents: { lead, h1: { id: 'h1', projectId: 'p1', name: 'impl-ipc', kind: 'durable', status: 'running', color: 'teal' } },
@@ -62,6 +66,7 @@ describe('Connections card (#2232)', () => {
     } as never);
   });
   afterEach(() => {
+    useDispatcherStore.getState().setState(DISPATCHER_OFF);
     useMcpBindingStore.setState({ bindings: [] });
     useAgentStore.setState({ agents: {} } as never);
   });
@@ -79,6 +84,53 @@ describe('Connections card (#2232)', () => {
     expect(within(rows[4]).queryByTestId('connection-open')).not.toBeInTheDocument();
     fireEvent.click(within(rows[0]).getByTestId('connection-open'));
     expect(useAgentStore.getState().activeAgentId).toBe('h1');
+  });
+
+  it.each(['Dispatcher', 'Rosie'])('distinguishes controller and chat connections named %s without changing ordinary rows or directions', (name) => {
+    useDispatcherStore.getState().setState({
+      ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat',
+      config: { id: 'work', name, color: 'indigo', createdAt: 'then' },
+    });
+    const wires = [
+      wire('lead', 'work', ['epic-lead', name]),
+      wire('work', 'lead', [name, 'epic-lead']),
+      wire('lead', 'chat', ['epic-lead', name]),
+      wire('lead', 'rev', ['epic-lead', 'reviewer']),
+    ];
+    useMcpBindingStore.setState({ bindings: wires });
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} />);
+    expect(screen.getAllByTestId('connection-name').map((node) => node.textContent).sort()).toEqual(['Dispatcher controller', name, 'reviewer'].sort());
+    expect(screen.getAllByTestId('connection-row').find((row) => row.textContent?.includes('Dispatcher controller'))).toHaveTextContent('two-way');
+    const controller = agentConnections(wires, 'lead', { helperIds: new Set() }).find((row) => row.id === 'work');
+    expect(controller).toMatchObject({ id: 'work', pairs: [{ agentId: 'lead', targetId: 'work' }, { agentId: 'work', targetId: 'lead' }] });
+    expect(wires[0].targetName).toBe(name);
+  });
+
+  it('uses physical controller labels in the connection editor even if a stale agent record has the chat name', async () => {
+    useDispatcherStore.getState().setState({
+      ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat',
+      config: { id: 'work', name: 'Rosie', color: 'indigo', createdAt: 'then' },
+    });
+    useAgentStore.setState({ agents: { lead, work: { ...lead, id: 'work', name: 'Rosie' } } });
+    const binding = wire('lead', 'work', ['epic-lead', 'Rosie']);
+    useMcpBindingStore.setState({ bindings: [binding] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'lead', targetId: 'work', bound: true, sources: [{ kind: 'dispatcher_auto' as const, sourceId: 'dispatcher-wires' }] }],
+      unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to));
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools: [] }));
+    const canvas = render(<ConnectionEditorDialog binding={binding} onClose={vi.fn()} />);
+    expect(await screen.findByRole('region', { name: 'epic-lead to Dispatcher controller' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Dispatcher controller to epic-lead' })).toBeInTheDocument();
+    expect(window.clubhouse.mcpBinding.getConnectionSources).toHaveBeenCalledWith('lead');
+    canvas.unmount();
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('region', { name: 'epic-lead to Dispatcher controller' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Dispatcher controller to epic-lead' })).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'Instructions' })).toHaveValue('Saved routing guidance');
   });
 
   it('offers Edit for connection rows, and removes one source at a time, saying what keeps them connected (#2744)', async () => {
