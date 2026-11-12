@@ -11,7 +11,7 @@ const store = createSettingsStore<AnnexSettings>('annex-settings.json', {
   icon: 'computer',
   color: 'indigo',
   autoReconnect: true,
-}, undefined, { audit: { key: 'annex' } });
+}, undefined, { rollBackFailedSaves: true, audit: { key: 'annex' } });
 
 /** Migrate legacy `enabled` field to `enableServer` + `enableClient`. */
 function migrateSettings(settings: AnnexSettings): AnnexSettings {
@@ -39,7 +39,14 @@ export async function saveSettings(settings: AnnexSettings): Promise<void> {
   return store.save(clean);
 }
 
-export const updateSettings = store.update;
+export async function updateSettings(change: (current: AnnexSettings) => AnnexSettings): Promise<AnnexSettings> {
+  return store.update((current) => {
+    const updated = change(migrateSettings(current));
+    const clean = { ...updated };
+    delete clean.enabled;
+    return clean;
+  });
+}
 
 /** Whether Annex Network is on for this machine (#3061). On unless turned off. */
 export function networkEnabled(settings: AnnexSettings = getSettings()): boolean {
