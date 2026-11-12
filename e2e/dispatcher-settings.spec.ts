@@ -218,5 +218,5 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   await expect(w.locator('[data-testid="dispatcher-setup"]')).toHaveAttribute('data-step', 'look');
 
   // Nothing ever started the CLI.
-  expect((await fakes.report('claude').catch(() => undefined))?.consumed ?? 0).toBe(0);
+  expect((await fakes.report('claude').catch((): undefined => undefined))?.consumed ?? 0).toBe(0);
 });
