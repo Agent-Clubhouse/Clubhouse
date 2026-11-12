@@ -643,6 +643,7 @@ export async function peekProjectsChecked(options: { strict?: boolean } = {}): P
       continue;
     }
     present = true;
+    if (options.strict && name !== 'projects.json') return { projects: [], readable: false };
     try {
       const parsed: unknown = JSON.parse(raw);
       const result = migrate(parsed);
