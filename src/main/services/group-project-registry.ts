@@ -6,11 +6,13 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
-import type { GroupProject } from '../../shared/group-project-types';
+import type { GroupProject, GroupProjectCreateOptions } from '../../shared/group-project-types';
+import { resolveGroupProjectScope } from '../../shared/group-project-scope';
 import { appLog } from './log-service';
 import { ensureProjectChannels } from './group-project-bulletin';
 import { persist } from '../telemetry/persist';
 import { replaceFile } from './settings-store';
+import * as projectStore from './project-store';
 
 function groupProjectsDir(): string {
   const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
@@ -132,8 +134,10 @@ class GroupProjectRegistry {
     }
   }
 
-  async create(name: string): Promise<GroupProject> {
+  async create(name: string, options?: GroupProjectCreateOptions): Promise<GroupProject> {
     await this.ensureLoaded();
+    const registered = new Set(options === undefined ? [] : (await projectStore.list()).map((project) => project.id));
+    const scope = resolveGroupProjectScope(options, registered);
     const id = `gp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const project: GroupProject = {
       id,
@@ -141,6 +145,7 @@ class GroupProjectRegistry {
       description: '',
       instructions: '',
       createdAt: new Date().toISOString(),
+      scope,
       metadata: {},
     };
     this.projects.set(id, project);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Agent } from '../../../../shared/types';
@@ -59,16 +59,20 @@ vi.mock('../../PluginDialog', () => ({
 
 import { GroupProjectCanvasWidget, POLLING_HINT } from './GroupProjectCanvasWidget';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { DOT_LABEL, type AgentDot } from '../../../features/agents/agent-status';
 
 const tapir: Agent = { id: 'a1', projectId: 'p1', name: 'curious-tapir', kind: 'durable', status: 'running', color: 'teal' };
 
-function renderWidget() {
+function renderWidget(
+  metadata: Record<string, unknown> = { groupProjectId: 'gp1' },
+  context: { mode: 'app' | 'project'; projectId?: string } = { mode: 'app' },
+) {
   return render(
     <GroupProjectCanvasWidget
       widgetId="w1"
-      api={{ context: { mode: 'app', projectId: undefined }, annex: {} } as never}
-      metadata={{ groupProjectId: 'gp1' }}
+      api={{ context, annex: {} } as never}
+      metadata={metadata}
       onUpdateMetadata={vi.fn()}
       size={{ width: widgetWidth, height: 600 }}
       {...({} as never)}
@@ -82,6 +86,33 @@ beforeEach(() => {
   confirmAnswer = true;
   vi.clearAllMocks();
   useAgentStore.setState({ agents: { a1: tapir }, agentDetailedStatus: {} } as never);
+});
+
+describe('group project creation context', () => {
+  beforeEach(() => {
+    useGroupProjectStore.setState({ projects: [], loaded: true, loadError: null });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it.each([
+    { mode: 'project' as const, projectId: 'p1', metadata: {}, options: { projectId: 'p1' } },
+    { mode: 'app' as const, projectId: undefined, metadata: {}, options: undefined },
+    { mode: 'app' as const, projectId: undefined, metadata: { projectId: 'p2' }, options: { projectId: 'p2' } },
+  ])('forwards the $mode entry point context without choosing another project', async ({ mode, projectId, metadata, options }) => {
+    const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ id: 'gp_new', name: 'Team' });
+    renderWidget(metadata, { mode, projectId });
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Project name' }), 'Team');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Team', options));
+  });
+
+  it('refuses a project entry point without its current project instead of defaulting to app scope', () => {
+    renderWidget({}, { mode: 'project' });
+    expect(screen.getByRole('alert')).toHaveTextContent('No current project');
+    expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument();
+  });
 });
 
 describe('group project card (compact)', () => {

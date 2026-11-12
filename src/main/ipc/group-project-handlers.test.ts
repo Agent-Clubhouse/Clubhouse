@@ -204,9 +204,20 @@ describe('group-project-handlers', () => {
     it('creates project and emits event', async () => {
       const handler = getHandler(IPC.GROUP_PROJECT.CREATE);
       const result = await handler(fakeEvent, 'My Project');
-      expect(groupProjectRegistry.create).toHaveBeenCalledWith('My Project');
+      expect(groupProjectRegistry.create).toHaveBeenCalledWith('My Project', undefined);
       expect(annexEventBus.emitGroupProjectChanged).toHaveBeenCalledWith('created', { id: 'gp-1', name: 'My Project' });
       expect(result).toEqual({ id: 'gp-1', name: 'My Project' });
+    });
+
+    it('forwards explicit scope and project context to the authoritative registry validator', async () => {
+      const options = { projectId: 'p1', scope: { level: 'app', reach: 'local' } };
+      await getHandler(IPC.GROUP_PROJECT.CREATE)(fakeEvent, 'App team', options);
+      expect(groupProjectRegistry.create).toHaveBeenCalledWith('App team', options);
+    });
+
+    it.each([{ options: null }, { options: 'p1' }, { options: [] }])('rejects malformed creation options $options', ({ options }) => {
+      expect(() => getHandler(IPC.GROUP_PROJECT.CREATE)(fakeEvent, 'Team', options)).toThrow();
+      expect(groupProjectRegistry.create).not.toHaveBeenCalled();
     });
 
     it('rejects missing name argument', () => {
