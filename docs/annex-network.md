@@ -41,6 +41,10 @@ The unregistered `handoff-snapshot.ts` prepares private, local worktree snapshot
 
 Receiver verification binds the canonical manifest digest, operation count and byte total to the immutable offer summary, then independently verifies each file's size/hash and reruns the secret rules. A self-consistent replacement manifest is not enough. This helper performs no network, apply or wake operation.
 
+The unregistered sender chunk reader first verifies that complete snapshot, then preflights each file into a private fixed-64-KiB hash index bound to its full manifest SHA-256. A second pinned-file read verifies each exact chunk against that index before yielding it, so post-scan source mutation cannot publish changed bytes. The index is at most 8 MiB even at the 16 GiB hard file ceiling; payload buffers are at most 64 KiB. Current authorization is rechecked throughout; failure or consumer cancellation closes descriptors without deleting or modifying the source. Resume offsets must be unique known paths at chunk boundaries (or exact EOF); even a fully skipped file is reverified.
+
+These are internal source frames, not wire messages or delivery receipts. The manifest may be 2 MiB and must not be queued through the 512 KiB agent-call envelope. Dedicated pinned transport framing, durable receiver resume/prefix verification, terminal acknowledgements and receiver full-hash/secret verification still need integration before any real transfer.
+
 These are internal safety primitives, not a complete transfer implementation. Project-owned audited allowlists, branch bundles, resumable transfer routes and automatic fresh-worktree apply remain gated on subsequent reviewed slices. Agents cannot override a secret block. All symlinks are currently refused, including inside-worktree links; there is no cross-platform link recreation yet.
 
 ### Capacity foundation (not registered)

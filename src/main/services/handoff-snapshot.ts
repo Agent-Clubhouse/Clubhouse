@@ -23,7 +23,7 @@ export class HandoffSnapshotError extends Error {
   cleanupFailed = false;
   constructor(
     readonly code: 'invalid_repository' | 'git_failed' | 'unsafe_entry' | 'source_changed' | 'bounds_exceeded'
-      | 'secret_blocked' | 'hash_mismatch' | 'filesystem_failed' | 'invalid_staging',
+      | 'secret_blocked' | 'hash_mismatch' | 'filesystem_failed' | 'invalid_staging' | 'authorization_changed',
     readonly file?: string,
     readonly findings?: HandoffSecretFinding[],
   ) {
@@ -287,11 +287,11 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
   }
 }
 
-/** Receiver defense in depth, before any apply or wake can be scheduled. */
-export async function verifyHandoffSnapshot(
-  snapshotRoot: string, rawManifest: unknown, expected: HandoffManifestSummary,
+/** Validate agreed metadata before allocating, reading or receiving file bytes. */
+export function verifyHandoffManifest(
+  rawManifest: unknown, expected: HandoffManifestSummary,
   limits: HandoffTransferBounds = HANDOFF_TRANSFER_DEFAULTS,
-): Promise<HandoffSnapshot> {
+): HandoffWorktreeManifest {
   try {
     const bounds = validateHandoffBounds(limits);
     const manifest = parseHandoffManifest(rawManifest, bounds);
@@ -301,6 +301,19 @@ export async function verifyHandoffSnapshot(
       throw new HandoffSnapshotError('hash_mismatch');
     }
     metadata(manifest);
+    return manifest;
+  } catch (error) {
+    throw failure(error);
+  }
+}
+
+/** Receiver defense in depth, before any apply or wake can be scheduled. */
+export async function verifyHandoffSnapshot(
+  snapshotRoot: string, rawManifest: unknown, expected: HandoffManifestSummary,
+  limits: HandoffTransferBounds = HANDOFF_TRANSFER_DEFAULTS,
+): Promise<HandoffSnapshot> {
+  try {
+    const manifest = verifyHandoffManifest(rawManifest, expected, limits);
     const root = await directory(snapshotRoot);
     const filesRoot = await directory(path.join(root, 'files'));
     for (const file of manifest.files) {
@@ -314,3 +327,6 @@ export async function verifyHandoffSnapshot(
     throw failure(error);
   }
 }
+
+/** Internal tentative reads: a sink must not publish bytes before content/hash validation finishes. */
+export { inspect as inspectHandoffSource, sourceStat as statHandoffSource, stamp as stampHandoffSource };
