@@ -29,6 +29,7 @@ import { agentRegistry, DEFAULT_ORCHESTRATOR, readProjectOrchestrator } from './
 import { readDefaultMcps, readProjectAgentDefaults } from './agent-settings-service';
 import { getAvailableOrchestrators } from './agent-system';
 import * as annexSettings from './annex-settings';
+import { annexNetworkProfile } from './annex-network-profile';
 import { AppearanceError, findOwnProject, findProject } from './appearance-service';
 import { chatIdleSettings } from './chat-idle-settings';
 import * as chatRuntimeSettings from './chat-runtime-settings';
@@ -417,6 +418,14 @@ const APP_SECTIONS: ReadonlyArray<Section<AppContext>> = [
       ['experimental_copilot_legacy_acp', retired],
       ['annex_server_enabled', ({ files }) => appValue(files.annex, ['enableServer', 'enabled'], annexSettings.getSettings().enableServer)],
       ['annex_client_enabled', ({ files }) => appValue(files.annex, ['enableClient', 'enabled'], annexSettings.getSettings().enableClient)],
+      ['annex_network_enabled', ({ files }) => appValue(files.annex, 'networkEnabled', annexSettings.networkEnabled())],
+      ['annex_loopback_only', ({ files }) => appValue(files.annex, 'loopbackOnly', !!annexSettings.getSettings().loopbackOnly)],
+      ['annex_discovery_enabled', ({ files }) => {
+        const loopback = appValue(files.annex, 'loopbackOnly', !!annexSettings.getSettings().loopbackOnly);
+        const enabled = !!appValue(files.annex, ['enableServer', 'enabled'], annexSettings.getSettings().enableServer).effective
+          || !!appValue(files.annex, ['enableClient', 'enabled'], annexSettings.getSettings().enableClient).effective;
+        return { ...loopback, stored: null, effective: enabled && annexNetworkProfile(process.env, loopback.effective === true).advertise };
+      }],
     ],
   },
 ];

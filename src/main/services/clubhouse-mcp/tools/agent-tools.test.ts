@@ -69,6 +69,8 @@ import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { setDispatcherAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
 import type { McpBinding } from '../types';
+import * as runtimes from '../../agent-runtime';
+import type { AgentRuntime, ChatSessionState } from '../../../../shared/chat';
 
 function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string; targetKind: McpBinding['targetKind'] }): McpBinding {
   return { label: 'Test', ...overrides };
@@ -181,6 +183,45 @@ describe('AgentTools', () => {
       } finally {
         remoteCaller.value = undefined;
       }
+    });
+
+    describe('remote native input receipts (#3334)', () => {
+      function runtime(state: ChatSessionState, queued = false): AgentRuntime {
+        return {
+          kind: 'chat', agentId: 'agent-2', isRunning: () => true, getState: () => state,
+          sendMessage: vi.fn(async () => ({ delivery: queued ? 'queued' : 'prompt', messageId: 'm1' })),
+          interrupt: vi.fn(async () => {}), stop: vi.fn(async () => {}), clearContext: vi.fn(async () => {}), compact: vi.fn(async () => {}),
+          respondPermission: vi.fn(async () => {}), answerQuestion: vi.fn(async () => {}),
+          readTranscript: vi.fn(async () => ({ kind: 'chat' as const })), getNativeSessionId: () => 's1',
+          onStateChange: () => () => {}, onExit: () => () => {},
+        };
+      }
+
+      it.each(['starting', 'running', 'waiting_permission'] as const)('leaves %s targets untouched for a safe durable retry', async (state) => {
+        const target = runtime(state);
+        const lookup = vi.spyOn(runtimes, 'getAgentRuntime').mockReturnValue(target);
+        remoteCaller.value = { name: 'Scout', machineName: 'Studio' };
+        try {
+          for (const [tool, args] of [['send_message', { message: 'hi' }], ['send_file', { content: 'hi' }]] as const) {
+            expect(await runAgentToolForRemoteCaller(tool, 'agent-2', 'sender@peer', args)).toMatchObject({ isError: true, annexDelivery: { state: 'retry_later' } });
+          }
+          expect(target.sendMessage).not.toHaveBeenCalled();
+          expect(mockWriteFile).not.toHaveBeenCalled();
+        } finally { lookup.mockRestore(); remoteCaller.value = undefined; }
+      });
+
+      it.each(['send_message', 'send_file'])('does not call an already queued %s truly delivered after a readiness race', async (tool) => {
+        const target = runtime('idle', true);
+        const lookup = vi.spyOn(runtimes, 'getAgentRuntime').mockReturnValue(target);
+        remoteCaller.value = { name: 'Scout', machineName: 'Studio' };
+        try {
+          const args = tool === 'send_file' ? { content: 'hi' } : { message: 'hi' };
+          expect(await runAgentToolForRemoteCaller(tool, 'agent-2', 'sender@peer', args)).toMatchObject({
+            isError: true, annexDelivery: { state: 'indeterminate', reason: 'runtime_queued' },
+          });
+          expect(target.sendMessage).toHaveBeenCalledTimes(1);
+        } finally { lookup.mockRestore(); remoteCaller.value = undefined; }
+      });
     });
 
     it('a call from another machine is checked against the tool\'s schema', async () => {
