@@ -444,6 +444,41 @@ describe('durable directional connection guidance', () => {
     expect((await getConnectionGuidance('a', 'b')).sources[0].instructions).toEqual({ '*': 'Original' });
   });
 
+  it('restores automatic Dispatcher guidance across pruning, reconnect and restart without live clients', async () => {
+    let connected = true;
+    const collect = vi.fn(async () => connected ? [
+      wire({ '*': 'Agent to Dispatcher' }),
+      wire({ '*': 'Dispatcher to agent' }, { agentId: 'b', targetId: 'a', label: 'A' }),
+    ] : []);
+    const source = { id: 'dispatcher-wires', prune: true, collect };
+    registerPersistedBindingSource(source);
+    await rebuildPersistedBindings();
+    const before = await getConnectionGuidance('a', 'b');
+    expect(before.sources).toMatchObject([{ sourceId: 'dispatcher-wires' }]);
+    await saveConnectionGuidance('a', 'b', {
+      instructions: { '*': 'Route only focused work', future_tool: 'Retained while absent' },
+      revision: before.revision, replaceAcrossSources: true,
+    });
+    expect(collect).toHaveBeenCalledTimes(1);
+    connected = false;
+    await rebuildPersistedBindings();
+    expect(bindingManager.getAllBindings()).toEqual([]);
+    connected = true;
+    await rebuildPersistedBindings();
+    expect(binding()?.instructions).toEqual({ '*': 'Route only focused work', future_tool: 'Retained while absent' });
+    expect(bindingManager.getBindingsForAgent('b')[0].instructions).toEqual({ '*': 'Dispatcher to agent' });
+    bindingManager._resetForTesting();
+    _resetPersistedBindingSourcesForTesting();
+    resetAllSettingsStoresForTests();
+    startConnectionGuidance();
+    registerPersistedBindingSource(source);
+    await rebuildPersistedBindings();
+    expect((await getConnectionGuidance('a', 'b')).instructions).toEqual({ '*': 'Route only focused work', future_tool: 'Retained while absent' });
+    expect((await getConnectionGuidance('b', 'a')).instructions).toEqual({ '*': 'Dispatcher to agent' });
+    expect(agentRegistry.get('a')).toBeUndefined();
+    expect(agentRegistry.get('b')).toBeUndefined();
+  });
+
   it('requires explicit replacement across conflicting source copies and preserves all originals', async () => {
     const originals = [wire({ '*': 'One' }, { sourceLabel: 'Home' }), wire({ '*': 'Two' }, { sourceLabel: 'Project' })];
     registerPersistedBindingSource({ id: 'canvas', readOnlyCollect: true, inspect: async () => originals, collect: async () => originals.slice(0, 1) });
