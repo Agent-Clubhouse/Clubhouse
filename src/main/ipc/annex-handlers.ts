@@ -54,6 +54,16 @@ function applyNetworkSettings(settings: AnnexSettings, previous: AnnexSettings):
   broadcastStatusChanged();
 }
 
+function assertNetworkSettingsReady(settings: AnnexSettings): void {
+  if (deliveryHash(annexSettings.getSettings()) !== deliveryHash(settings)) {
+    throw new Error('Annex settings changed again before secure readiness could be confirmed.');
+  }
+  const status = annexServer.getStatus();
+  if (settings.enableServer && (!status.tlsEnabled || !status.port || !status.pairingPort)) {
+    throw new Error('Annex secure listeners stopped before readiness could be confirmed.');
+  }
+}
+
 export function registerAnnexHandlers(): void {
   setAnnexNetworkToolHost({
     applyLoopbackOnly: async (value, assertAuthorized) => {
@@ -70,22 +80,33 @@ export function registerAnnexHandlers(): void {
           await annexServer.startVerified();
         }
         if (settings.enableClient) annexClient.scan();
+        assertNetworkSettingsReady(settings);
         broadcastStatusChanged();
       } catch (err) {
         appLog('core:annex', 'error', 'An approved Annex scope change could not be applied securely', { meta: { error: err instanceof Error ? err.message : String(err) } });
-        if (deliveryHash(annexSettings.getSettings()) === deliveryHash(settings)) annexServer.stop();
+        if (err instanceof annexServer.AnnexStartFailure && err.wasSuperseded()) {
+          broadcastStatusChanged();
+          throw new Error('The Annex change was interrupted by a concurrent runtime change. No rollback was attempted; current settings and runtime readiness are unconfirmed. Check Annex Network on the desktop.');
+        }
+        if (!(err instanceof annexServer.AnnexStartFailure) && deliveryHash(annexSettings.getSettings()) === deliveryHash(settings)) annexServer.stop();
         let restored: AnnexSettings | undefined;
         try {
           restored = await annexSettings.updateSettings((current) => {
+            if (err instanceof annexServer.AnnexStartFailure && err.wasSuperseded()) throw err;
             if (deliveryHash(current) !== deliveryHash(settings)) throw new Error('Annex settings changed again; a concurrent edit cannot be overwritten.');
             return { ...current, loopbackOnly: previous.loopbackOnly };
           });
+          if (err instanceof annexServer.AnnexStartFailure && err.wasSuperseded()) throw err;
           if (restored.enableServer) await annexServer.startVerified();
           if (restored.enableClient) annexClient.scan();
+          assertNetworkSettingsReady(restored);
         } catch (restoreError) {
           appLog('core:annex', 'error', 'Annex scope rollback was incomplete', { meta: { error: restoreError instanceof Error ? restoreError.message : String(restoreError) } });
-          if (restored && deliveryHash(annexSettings.getSettings()) === deliveryHash(restored)) annexServer.stop();
+          const concurrent = (restoreError instanceof annexServer.AnnexStartFailure && restoreError.wasSuperseded())
+            || (restored && deliveryHash(annexSettings.getSettings()) !== deliveryHash(restored));
+          if (!concurrent && restored && !(restoreError instanceof annexServer.AnnexStartFailure)) annexServer.stop();
           broadcastStatusChanged();
+          if (concurrent) throw new Error('The Annex change failed and rollback was interrupted by a concurrent change. The replacement runtime was not stopped; current settings and runtime readiness are unconfirmed. Check Annex Network on the desktop.');
           throw new Error(restored
             ? 'The Annex change failed. The previous setting was restored, but its secure runtime could not be restored; Annex is stopped. Check Annex Network on the desktop.'
             : 'The Annex change failed and its previous setting could not be restored. Runtime readiness is unconfirmed; check Annex Network on the desktop before retrying.');
