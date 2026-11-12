@@ -13,6 +13,9 @@ file, flush its contents, then rename it over the previous file. Failed writes
 leave the previous file readable and the in-memory changes available for retry.
 An explicit `flush()` rejects on failure; deferred flush failures are logged.
 Shutdown flushes drain mutations that arrived while an earlier write was pending.
+The all-board flush awaits every board before reporting failures, so one failed
+board does not bypass other pending board writes. The existing shutdown timeout
+still applies.
 
 Only a missing file initializes an empty store. An unreadable or corrupt store
 refuses reads and mutations rather than overwriting history with an empty

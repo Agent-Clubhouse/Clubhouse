@@ -14,7 +14,8 @@ vi.mock('fs/promises', async (importOriginal) => {
 });
 
 import { groupProjectRegistry } from './group-project-registry';
-import { _resetAllBoardsForTesting, getBulletinBoard } from './group-project-bulletin';
+import { _resetAllBoardsForTesting, flushAllBulletinBoards, getBulletinBoard } from './group-project-bulletin';
+import { createShutdownCoordinator } from '../shutdown-guard';
 
 const dataDir = () => path.join(fixture.home, '.clubhouse-dev', 'group-projects');
 const registryFile = () => path.join(dataDir(), 'registry.json');
@@ -42,6 +43,99 @@ afterEach(async () => {
 });
 
 describe('group project durable storage', () => {
+  it('keeps shutdown waiting for a healthy board after another board fails, then reports the failure and permits retry', async () => {
+    const failed = getBulletinBoard('gp_failed');
+    const healthy = getBulletinBoard('gp_healthy');
+    await failed.postMessage('a', 'work', 'Saved failed-board history');
+    await healthy.postMessage('b', 'work', 'Saved healthy-board history');
+    await flushAllBulletinBoards();
+    await failed.postMessage('a', 'work', 'Retry this mutation');
+    await healthy.postMessage('b', 'work', 'Drain this mutation');
+
+    const entered = deferred();
+    const release = deferred();
+    const diskError = new Error('failed-board disk unavailable');
+    const rename = fs.promises.rename;
+    let rejectRename = true;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (to === boardFile('gp_failed') && rejectRename) {
+        rejectRename = false;
+        throw diskError;
+      }
+      if (to === boardFile('gp_healthy')) {
+        entered.resolve();
+        await release.promise;
+      }
+      await rename(from, to);
+    });
+    const failedFlush = vi.spyOn(failed, 'flush');
+    const onCleanupError = vi.fn();
+    const restore = vi.fn(async () => {});
+    const coordinator = createShutdownCoordinator({
+      plan: () => ({
+        stop: [],
+        persist: [
+          { step: 'group_project_flush', label: 'flush group projects', run: () => groupProjectRegistry.flush(), timeoutMs: 5_000 },
+          { step: 'bulletin_flush', label: 'flush bulletin boards', run: flushAllBulletinBoards, timeoutMs: 5_000 },
+        ],
+        restore: [{ step: 'config_restore', label: 'restore agent configs', run: restore, timeoutMs: 5_000 }],
+      }),
+      onCleanupError,
+    });
+    let completed = false;
+    const shutdown = coordinator.run().then(() => { completed = true; });
+    try {
+      await entered.promise;
+      await expect(failedFlush.mock.results[0].value).rejects.toBe(diskError);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(completed).toBe(false);
+      expect(restore).not.toHaveBeenCalled();
+      expect(onCleanupError).not.toHaveBeenCalled();
+      expect(await fsp.readFile(boardFile('gp_healthy'), 'utf-8')).not.toContain('Drain this mutation');
+    } finally {
+      release.resolve();
+      await shutdown;
+    }
+
+    expect(await fsp.readFile(boardFile('gp_healthy'), 'utf-8')).toContain('Drain this mutation');
+    expect(onCleanupError).toHaveBeenCalledExactlyOnceWith('flush bulletin boards', diskError);
+    expect(restore).toHaveBeenCalledOnce();
+    expect(await fsp.readFile(boardFile('gp_failed'), 'utf-8')).not.toContain('Retry this mutation');
+    await flushAllBulletinBoards();
+    expect(await fsp.readFile(boardFile('gp_failed'), 'utf-8')).toContain('Retry this mutation');
+  });
+
+  it('reports all failed board writes and keeps each mutation retryable', async () => {
+    const first = getBulletinBoard('gp_first');
+    const second = getBulletinBoard('gp_second');
+    await first.postMessage('a', 'work', 'First mutation');
+    await second.postMessage('b', 'work', 'Second mutation');
+    const firstError = new Error('first disk failure');
+    const secondError = new Error('second disk failure');
+    const rename = vi.spyOn(fs.promises, 'rename').mockImplementation(async (_from, to) => {
+      throw to === boardFile('gp_first') ? firstError : secondError;
+    });
+    const firstFlush = vi.spyOn(first, 'flush');
+    const secondFlush = vi.spyOn(second, 'flush');
+
+    const flush = flushAllBulletinBoards();
+    try {
+      await expect(flush).rejects.toBeInstanceOf(Error);
+      await expect(flush).rejects.toMatchObject({
+        errors: [firstError, secondError],
+        message: expect.stringContaining(firstError.message),
+      });
+      await expect(flush).rejects.toThrow(secondError.message);
+    } finally {
+      await Promise.allSettled([firstFlush.mock.results[0].value, secondFlush.mock.results[0].value]);
+      rename.mockRestore();
+    }
+
+    await flushAllBulletinBoards();
+    expect(await fsp.readFile(boardFile('gp_first'), 'utf-8')).toContain('First mutation');
+    expect(await fsp.readFile(boardFile('gp_second'), 'utf-8')).toContain('Second mutation');
+  });
+
   it.each(['registry', 'board'] as const)('atomically replaces the %s, reports failure and preserves a retryable snapshot', async (kind) => {
     const project = await groupProjectRegistry.create('Release');
     const board = getBulletinBoard(project.id);

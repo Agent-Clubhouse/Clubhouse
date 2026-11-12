@@ -605,7 +605,14 @@ export function getBulletinBoard(projectId: string): BulletinBoard {
 
 /** Flush all live bulletin boards before shutdown so pending writes hit disk. */
 export async function flushAllBulletinBoards(): Promise<void> {
-  await Promise.all([...boards.values()].map((board) => board.flush()));
+  const results = await Promise.allSettled([...boards.values()].map((board) => board.flush()));
+  const failures: unknown[] = results.flatMap((result) => result.status === 'rejected' ? [result.reason] : []);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw Object.assign(new Error(`Failed to flush bulletin boards: ${
+      failures.map((error) => error instanceof Error ? error.message : String(error)).join('; ')
+    }`), { errors: failures });
+  }
 }
 
 /** Destroy a bulletin board instance and remove its data directory from disk. */
