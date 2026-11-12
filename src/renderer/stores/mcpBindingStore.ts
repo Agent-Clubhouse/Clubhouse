@@ -137,7 +137,7 @@ export function initMcpBindingListener(
         typeof b.agentId === 'string' &&
         typeof b.targetId === 'string' &&
         typeof b.label === 'string' &&
-        (b.targetKind === 'browser' || b.targetKind === 'agent' || b.targetKind === 'terminal' || b.targetKind === 'group-project'),
+        (b.targetKind === 'browser' || b.targetKind === 'agent' || b.targetKind === 'terminal' || b.targetKind === 'group-project' || b.targetKind === 'plugin'),
     );
 
     if (onProjectNameChanged) {
