@@ -148,6 +148,21 @@ even while it is off. Sending uses a separately installed adapter, never generic
 editable-direction forwarding. Durable Ask-first calls remain disabled until
 canonical pre-click approval receipts and their end-to-end checks are installed.
 
+`durable-call-approvals.ts` is an uninstalled local-only receipt ledger, not
+permission to enable those paths. Transport must prepare the same final envelope
+it will enqueue before the human is asked; its command id and complete wire hash
+are bound with canonical caller/target/machine, pairing, labels, policy and the
+original requested actions. An actual original answer can persist that existing
+snapshot; neither a retry, preview, model argument nor current approval context
+can create it after the click. A reference never crosses machines. Claim and
+every replay require an exact current match and fresh local grants; Off wins.
+The atomic `0600` ledger retains at most 2,000 receipts / 4 MiB without evicting
+live proof. Unclaimed approval expires with the original request; a bound command
+has at most seven days of authority and an eight-day retained tombstone.
+Answer-path, policy-revocation and transport integration still require independent
+end-to-end review. Persistence errors must be surfaced, not acknowledged as a
+successful approval or revocation.
+
 ## What connections start with (#3214)
 
 The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". A connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off, except for a parent's direction to its own helper. Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).
