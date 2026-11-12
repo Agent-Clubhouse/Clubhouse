@@ -65,6 +65,17 @@ export interface McpToolAnnotations {
   openWorldHint: boolean;
 }
 
+export interface ConnectionToolCatalogEntry {
+  suffix: string;
+  description: string;
+  available: boolean;
+}
+
+/** Editor metadata, not a session's current tools/list or permission to call. */
+export type ConnectionToolCatalog =
+  | { state: 'available'; tools: ConnectionToolCatalogEntry[] }
+  | { state: 'unavailable'; reason: 'tools_not_registered'; tools: [] };
+
 /** MCP tool definition as returned by tools/list. */
 export interface McpToolDefinition {
   name: string;
