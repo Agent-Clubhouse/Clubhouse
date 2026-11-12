@@ -15,6 +15,8 @@ import type { OrchestrationControl } from './orchestration-policy';
  */
 export interface GrantCallerFacts {
   dispatcher: boolean;
+  /** Exact connection to this machine's trusted coordinator, even while it is off. */
+  connectedToDispatcher?: boolean;
   /**
    * The Dispatcher's chat (#3036). It has no permissions of its own: it reads,
    * and hands every action to the Dispatcher. Its grants replace all others.
