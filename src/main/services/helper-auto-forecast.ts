@@ -7,8 +7,14 @@ export const AUTO_FORECAST_HALF_LIFE_MS = 7 * 24 * 60 * 60_000;
 export const AUTO_FORECAST_RETENTION_MS = 30 * 24 * 60 * 60_000;
 export const AUTO_FORECAST_MAX_SAMPLES = 32;
 
+const ESTIMATE_UNAVAILABLE_REASONS = ['missing_identity', 'insufficient_samples', 'insufficient_effective_samples'] as const;
+const BASELINE_UNAVAILABLE_REASONS = ['missing', 'not_fresh', 'missing_timestamp', 'future_timestamp', 'stale', 'missing_windows'] as const;
+
 export interface BurnEstimate {
   samples: number;
+  /** Recency-weighted effective sample size, not evidence of live calibration. */
+  effectiveSamples?: number;
+  unavailableReason?: (typeof ESTIMATE_UNAVAILABLE_REASONS)[number];
   /** Absent is unknown, including cold starts. Basis points of this provider's own window. */
   expectedBp?: number;
 }
@@ -21,6 +27,7 @@ export interface BurnForecast {
   basis: 'subscription_interval';
   weekly: BurnEstimate;
   fiveHour: BurnEstimate;
+  baselineUnavailableReason?: (typeof BASELINE_UNAVAILABLE_REASONS)[number];
   baseline?: {
     asOfMs: number;
     weekly?: { usedBp: number; resetsAtMs: number };
@@ -73,21 +80,22 @@ const validBp = (n: unknown): n is number => typeof n === 'number' && Number.isI
 const validTime = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 
 function estimate(key: string | null, history: readonly ForecastEntry[], window: 'weekly' | 'fiveHour', now: number): BurnEstimate {
+  if (!key) return { samples: 0, unavailableReason: 'missing_identity' };
   const decisions = new Set<string>();
   const samples = history.flatMap((entry) => {
     const observation = entry.burnObservation;
     const value = observation?.[window]?.observedBp;
-    if (!key || entry.forecast?.key !== key || burnForecastKey(entry) !== key || observation?.reason !== 'observed'
+    if (entry.forecast?.key !== key || burnForecastKey(entry) !== key || observation?.reason !== 'observed'
       || observation.atMs >= now || now - observation.atMs > AUTO_FORECAST_RETENTION_MS || !validBp(value)
       || decisions.has(entry.decisionId)) return [];
     decisions.add(entry.decisionId);
     return [{ value, at: observation.atMs, weight: 2 ** (-(now - observation.atMs) / AUTO_FORECAST_HALF_LIFE_MS) }];
   }).sort((a, b) => b.at - a.at).slice(0, AUTO_FORECAST_MAX_SAMPLES);
-  const result: BurnEstimate = { samples: samples.length };
-  if (samples.length < AUTO_FORECAST_MIN_SAMPLES) return result;
   const weight = samples.reduce((sum, s) => sum + s.weight, 0);
-  const effective = weight ** 2 / samples.reduce((sum, s) => sum + s.weight ** 2, 0);
-  if (effective < AUTO_FORECAST_MIN_EFFECTIVE_SAMPLES) return result;
+  const effective = samples.length > 0 ? Math.min(samples.length, weight ** 2 / samples.reduce((sum, s) => sum + s.weight ** 2, 0)) : undefined;
+  const result: BurnEstimate = { samples: samples.length, ...(effective !== undefined && { effectiveSamples: effective }) };
+  if (samples.length < AUTO_FORECAST_MIN_SAMPLES) return { ...result, unavailableReason: 'insufficient_samples' };
+  if (effective === undefined || effective < AUTO_FORECAST_MIN_EFFECTIVE_SAMPLES) return { ...result, unavailableReason: 'insufficient_effective_samples' };
   let cumulative = 0;
   for (const sample of samples.sort((a, b) => a.value - b.value)) {
     cumulative += sample.weight;
@@ -100,19 +108,30 @@ function estimate(key: string | null, history: readonly ForecastEntry[], window:
 export function predictHelperBurn(entry: ForecastEntry, history: readonly ForecastEntry[], now: number, baseline?: DecisionQuota): BurnForecast {
   const key = burnForecastKey(entry);
   let savedBaseline: BurnForecast['baseline'];
-  if (baseline?.quality === 'fresh' && validTime(baseline.asOfMs)) {
+  let baselineUnavailableReason: BurnForecast['baselineUnavailableReason'];
+  if (!baseline) baselineUnavailableReason = 'missing';
+  else if (baseline.quality !== 'fresh' || baseline.state === 'unknown') baselineUnavailableReason = 'not_fresh';
+  else if (!validTime(baseline.asOfMs)) baselineUnavailableReason = 'missing_timestamp';
+  else if (baseline.asOfMs > now) baselineUnavailableReason = 'future_timestamp';
+  else if (now - baseline.asOfMs > QUOTA_STALE_MS) baselineUnavailableReason = 'stale';
+  else {
     savedBaseline = { asOfMs: baseline.asOfMs };
     for (const window of ['weekly', 'fiveHour'] as const) {
       const value = baseline.windows?.find((w) => w.name === window);
-      if (value && validBp(value.usedBp) && validTime(value.resetsAtMs)) {
+      if (value && validBp(value.usedBp) && validTime(value.resetsAtMs) && value.resetsAtMs > now) {
         savedBaseline[window] = { usedBp: value.usedBp, resetsAtMs: value.resetsAtMs };
       }
+    }
+    if (!savedBaseline.weekly && !savedBaseline.fiveHour) {
+      savedBaseline = undefined;
+      baselineUnavailableReason = 'missing_windows';
     }
   }
   return {
     version: 1, atMs: now, key, basis: 'subscription_interval',
     weekly: estimate(key, history, 'weekly', now), fiveHour: estimate(key, history, 'fiveHour', now),
     ...(savedBaseline && { baseline: savedBaseline }),
+    ...(baselineUnavailableReason && { baselineUnavailableReason }),
   };
 }
 
@@ -163,8 +182,11 @@ export function readBurnForecast(value: unknown): BurnForecast | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const f = value as Partial<BurnForecast>;
   const estimateOk = (e: BurnEstimate | undefined): e is BurnEstimate => !!e && Number.isInteger(e.samples) && e.samples >= 0 && e.samples <= AUTO_FORECAST_MAX_SAMPLES
+    && (e.effectiveSamples === undefined || (Number.isFinite(e.effectiveSamples) && e.effectiveSamples >= 1 && e.effectiveSamples <= e.samples))
+    && (e.unavailableReason === undefined || (ESTIMATE_UNAVAILABLE_REASONS.includes(e.unavailableReason) && e.expectedBp === undefined))
     && (e.expectedBp === undefined || (e.samples >= AUTO_FORECAST_MIN_SAMPLES && validBp(e.expectedBp)));
   if (f.version !== 1 || !validTime(f.atMs) || f.basis !== 'subscription_interval'
+    || (f.baselineUnavailableReason !== undefined && (!BASELINE_UNAVAILABLE_REASONS.includes(f.baselineUnavailableReason) || f.baseline !== undefined))
     || (f.key !== null && (typeof f.key !== 'string' || f.key.length > 1024)) || !estimateOk(f.weekly) || !estimateOk(f.fiveHour)) return undefined;
   let baseline: BurnForecast['baseline'];
   if (f.baseline !== undefined) {
@@ -177,10 +199,14 @@ export function readBurnForecast(value: unknown): BurnForecast | undefined {
       baseline[window] = { usedBp: w.usedBp, resetsAtMs: w.resetsAtMs };
     }
   }
+  const readEstimate = (e: BurnEstimate): BurnEstimate => ({
+    samples: e.samples, ...(e.expectedBp !== undefined && { expectedBp: e.expectedBp }),
+    ...(e.effectiveSamples !== undefined && { effectiveSamples: e.effectiveSamples }),
+    ...(e.unavailableReason && { unavailableReason: e.unavailableReason }),
+  });
   return { version: 1, atMs: f.atMs, key: f.key, basis: f.basis,
-    weekly: { samples: f.weekly.samples, ...(f.weekly.expectedBp !== undefined && { expectedBp: f.weekly.expectedBp }) },
-    fiveHour: { samples: f.fiveHour.samples, ...(f.fiveHour.expectedBp !== undefined && { expectedBp: f.fiveHour.expectedBp }) },
-    ...(baseline && { baseline }) };
+    weekly: readEstimate(f.weekly), fiveHour: readEstimate(f.fiveHour),
+    ...(baseline && { baseline }), ...(f.baselineUnavailableReason && { baselineUnavailableReason: f.baselineUnavailableReason }) };
 }
 
 export function readForecastRun(value: unknown): ForecastRun | undefined {

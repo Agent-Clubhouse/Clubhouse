@@ -94,11 +94,13 @@ vi.mock('./agent-settings-service', () => {
 });
 vi.mock('./provider-quota', () => ({
   readProviderQuota: async (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
+  peekProviderQuota: (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
   forceProviderQuota: async (provider: string) => {
     W.forcedQuota.push(provider);
     return { quota: W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null }, outcome: W.forcedOutcome };
   },
   isProviderCoolingDown: async (provider: string) => W.cooling.has(provider),
+  isProviderCoolingDownNow: (provider: string) => W.cooling.has(provider),
 }));
 vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: () => () => undefined }));
 vi.mock('./settings-audit', async (importOriginal) => ({
@@ -407,10 +409,11 @@ describe('readHelperRouting with refresh (#2786)', () => {
   });
 
   it('a list that can\'t be read doesn\'t fail the page, and the other CLI still answers', async () => {
-    W.lists.set('codex-cli', new Error('probe blew up'));
+    W.lists.set('codex-cli', new Error('private-account /private/local/project secret-token'));
     const settings = await readHelperRouting({ refresh: true });
     expect(settings.providers['codex-cli']).toMatchObject({ autoEligible: true, choices: { source: 'fallback', models: [] } });
     expect(settings.providers['claude-code']).toMatchObject({ autoEligible: true, choices: { source: 'live' } });
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toMatch(/private-account|\/private\/local\/project|secret-token/);
   });
 
   it('logs one line per provider, with its source, a count and the outcome, and no model names', async () => {
@@ -882,6 +885,66 @@ describe('Auto (#2671)', () => {
     expect(prepared.plan!.provider).toBeUndefined();
   });
 
+  it('honors Copilot-only settings changed while waiting for the lock, retaining the OpenAI mapping and unknown quota', async () => {
+    W.saved = { 'copilot-cli': { hard: { model: 'gpt-6.1-sol', effort: 'xhigh' } } };
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    W.enabled = ['copilot-cli'];
+    const result = decideAutoPlan(prepared.plan!, {});
+    expect(result).toMatchObject({
+      ok: true, plan: {
+        provider: 'copilot-cli', model: 'gpt-6.1-sol', effort: 'xhigh',
+        routing: { reason: 'last_resort_unmeasured', quotaBasis: 'unknown_fallback', skipped: { 'claude-code': 'cli_disabled', 'codex-cli': 'cli_disabled' } },
+        decision: { candidates: expect.arrayContaining([
+          expect.objectContaining({ provider: 'copilot-cli', chosen: true, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', quality: 'unknown' } }),
+        ]) },
+      },
+    });
+    expect(reservedLoad({ live: new Set(), notRunning: new Set() })).toEqual({ 'copilot-cli': 1 });
+    if (result.ok) {
+      const copilot = result.plan!.decision!.candidates.find((c) => c.provider === 'copilot-cli')!;
+      expect(copilot.score).not.toHaveProperty('pressureBp');
+      expect(copilot.quota).not.toHaveProperty('windows');
+    }
+  });
+
+  it.each(['cooldown', 'quota'] as const)('uses current %s evidence, not the pre-lock snapshot', async (change) => {
+    W.enabled = ['claude-code', 'codex-cli'];
+    W.quota.set('claude-code', { ...known, weekly: { ...known.weekly, usedPercent: 1 } });
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    if (change === 'cooldown') W.cooling.add('claude-code');
+    else W.quota.set('claude-code', { ...known, state: 'exhausted' });
+    const result = decideAutoPlan(prepared.plan!, {});
+    expect(result).toMatchObject({
+      ok: true, plan: { provider: 'codex-cli', routing: { skipped: { 'claude-code': change === 'cooldown' ? 'cooling_down' : 'quota_exhausted' } } },
+    });
+  });
+
+  it('refuses a changed prepared mapping without reserving or launching the old cell under the new revision', async () => {
+    W.enabled = ['copilot-cli'];
+    W.saved = { 'copilot-cli': { hard: { model: 'gpt-6.1-sol', effort: 'high' } } };
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    W.saved = { 'copilot-cli': { hard: { model: 'gpt-6.1-sol', effort: 'xhigh' } } };
+    W.revision++;
+    const decidedAtMs = Date.now() + 1000;
+    const result = decideAutoPlan(prepared.plan!, {}, decidedAtMs);
+    expect(result).toMatchObject({
+      ok: false, code: 'no_candidate', decision: {
+        decidedAtMs, outcome: 'refused', resolved: { provider: null, model: null, effort: null },
+        candidates: expect.arrayContaining([expect.objectContaining({ provider: 'copilot-cli', eligible: false, excluded: 'mapping_changed' })]),
+      },
+    });
+    expect(reservedLoad({ live: new Set(), notRunning: new Set() })).toEqual({});
+    if (!result.ok) expect(result.message).toContain('fresh Auto request');
+    const fresh = await decided();
+    expect(fresh).toMatchObject({
+      provider: 'copilot-cli', model: 'gpt-6.1-sol', effort: 'xhigh',
+      decision: { mappingRevision: helperRoutingRevision(), resolved: { model: 'gpt-6.1-sol', effort: 'xhigh' } },
+    });
+  });
+
   it('records the whole decision', async () => {
     const plan = await decided({ 'claude-code': 2 });
     expect(plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
@@ -928,6 +991,23 @@ describe('Auto (#2671)', () => {
     expect(plan.decision!.candidates[0]).toMatchObject({ quota: { state: 'unknown', unknownReason: 'read_failed', quality: 'unknown' }, score: { basis: 'unmeasured' } });
     expect(plan.decision!.candidates[0].quota!.asOfMs).toBeUndefined();
     expect(plan.decision!.candidates[0].score!.pressureBp).toBeUndefined();
+  });
+
+  it('records other and applicable model constraints, never an unrelated model limit as candidate exhaustion', async () => {
+    W.quota.set('claude-code', {
+      ...known, state: 'low', limitingWindow: 'other',
+      otherWindows: [{ usedPercent: 85, resetsAt: known.weekly.resetsAt }],
+      modelWindows: [
+        { name: 'OPUS', usedPercent: null, resetsAt: null },
+        { name: 'sonnet', usedPercent: 20, resetsAt: null, limitReached: true },
+      ],
+    });
+    const result = await decided();
+    expect(result.decision!.candidates[0].quota!.windows).toEqual([
+      { name: 'weekly', usedBp: 2000, resetsAtMs: Date.parse(known.weekly.resetsAt) },
+      { name: 'other', usedBp: 8500, resetsAtMs: Date.parse(known.weekly.resetsAt) },
+      { name: 'model' },
+    ]);
   });
 
   it('unknown quota is used once the measured ones are past the low mark, and says so', async () => {

@@ -83,7 +83,7 @@ describe('Auto replay', () => {
         ...forecastReplayFixture(T0, Array(5).fill(100)),
         ...forecastReplayFixture(T0 + 10 * HOUR, [100], { mappingRevision: 'r2.0' }),
       ]);
-      expect(changed.entries.at(-1)?.forecast?.weekly).toEqual({ samples: 0 });
+      expect(changed.entries.at(-1)?.forecast?.weekly).toEqual({ samples: 0, unavailableReason: 'insufficient_samples' });
     });
 
     it('reports resets and incomplete usage as excluded intervals without inventing calibration errors', () => {

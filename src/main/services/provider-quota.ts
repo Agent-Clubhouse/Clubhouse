@@ -135,6 +135,13 @@ function viewOf(entry: QuotaEntry, now: number, model?: string): QuotaView {
   };
 }
 
+/** Reclassify cached evidence at decision time without starting or waiting for a provider read. */
+export function peekProviderQuota(providerId: string, options: { model?: string; now?: number } = {}): QuotaView {
+  const provider = getProvider(providerId as OrchestratorId);
+  if (!provider?.readPlanQuota) return { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null };
+  return viewOf(entryFor(providerId), options.now ?? Date.now(), options.model);
+}
+
 /**
  * What a provider's limits look like now. Never throws. A provider that can't
  * report is `not_supported`.
@@ -268,8 +275,12 @@ function activeCooldowns(entry: QuotaEntry, now: number): Cooldown[] {
 }
 
 export async function isProviderCoolingDown(providerId: string): Promise<boolean> {
-  const entry = entryFor(providerId);
-  return activeCooldowns(entry, Date.now()).length > 0;
+  return isProviderCoolingDownNow(providerId);
+}
+
+/** Synchronous with the reservation/load pass under the helper start lock. */
+export function isProviderCoolingDownNow(providerId: string, now = Date.now()): boolean {
+  return activeCooldowns(entryFor(providerId), now).length > 0;
 }
 
 /**

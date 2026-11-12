@@ -56,7 +56,7 @@ import { getAllProviders, getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 import { helperPresetsChanged } from '../telemetry/feature-events';
 import { appLog } from './log-service';
-import { forceProviderQuota, isProviderCoolingDown, readProviderQuota } from './provider-quota';
+import { forceProviderQuota, isProviderCoolingDown, isProviderCoolingDownNow, peekProviderQuota, readProviderQuota } from './provider-quota';
 import { setRoutingPolicyListener } from './helper-routing-changes';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
 import * as orchestrationSettings from './orchestration-settings';
@@ -69,8 +69,8 @@ import { readProjectAgentDefaults, updateProjectAgentDefaults } from './agent-se
 import type { DurableAgentConfig } from '../../shared/types';
 import { decideHelperAuto, type ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
 
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function errorType(err: unknown): string {
+  return err instanceof Error ? err.name : 'unknown';
 }
 
 // ── Checking a cell ──────────────────────────────────────────────────────
@@ -282,6 +282,7 @@ export interface StartPlanRequest {
 interface AutoOption {
   provider: AutoCandidateProvider;
   cell: ResolvedCell;
+  configuredCell: PresetCell;
   quota: QuotaView;
   /** Provider: see candidateKey. */
   key: string;
@@ -408,14 +409,14 @@ function decisionQuota(quota: QuotaView): QuotaDecisionView {
   };
 }
 
-async function providerUsable(provider: string, projectPath: string): Promise<boolean> {
+async function providerUsable(provider: string): Promise<boolean> {
   try {
     const instance = getProvider(provider as OrchestratorId);
     if (!instance) return false;
     return (await instance.checkAvailability()).available;
   } catch (err) {
     // telemetry-exempt: logged; a provider that can't be checked isn't a candidate.
-    appLog('core:mcp', 'warn', 'Auto: could not check a provider', { meta: { provider, projectPath, error: err instanceof Error ? err.name : 'unknown' } });
+    appLog('core:mcp', 'warn', 'Auto: could not check a provider', { meta: { provider, error: err instanceof Error ? err.name : 'unknown' } });
     return false;
   }
 }
@@ -435,7 +436,7 @@ function candidateKey(provider: string): string {
  * of starts sees each other's.
  */
 async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> {
-  const { projectPath, orchestratorCli } = request;
+  const { orchestratorCli } = request;
   const difficulty = request.difficulty as HelperDifficulty;
   const enabled = getOrchestratorSettings().enabled ?? [];
   const skipped: Record<string, HelperRoutingSkip> = {};
@@ -446,12 +447,13 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
   await Promise.all(AUTO_CANDIDATE_PROVIDERS.map(async (provider) => {
     if (enabled.length > 0 && !enabled.includes(provider)) { skipped[provider] = 'cli_disabled'; return; }
     if (provider === 'copilot-cli' && !orchestrationSettings.getCopilotAuto()) { skipped[provider] = 'auto_disabled'; return; }
-    if (!(await providerUsable(provider, projectPath))) { skipped[provider] = 'cli_unavailable'; return; }
+    if (!(await providerUsable(provider))) { skipped[provider] = 'cli_unavailable'; return; }
     if (await isProviderCoolingDown(provider)) { skipped[provider] = 'cooling_down'; return; }
+    const configuredCell = { ...(orchestrationSettings.getPresets()[provider]?.[difficulty] ?? BUILTIN_PRESETS[provider][difficulty]) };
     const { resolved } = await resolveCell(provider, difficulty);
     if (!resolved) { skipped[provider] = 'no_valid_mapping'; return; }
     const quota = await readProviderQuota(provider, { model: resolved.cell.model });
-    options.push({ provider, cell: resolved, quota, key: candidateKey(provider) });
+    options.push({ provider, cell: resolved, configuredCell, quota, key: candidateKey(provider) });
   }));
   // A stable order for what's shown. The choice doesn't depend on it.
   options.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -471,20 +473,22 @@ function noCandidate(
   skipped: Record<string, HelperRoutingSkip>,
   options: readonly AutoOption[],
   orchestratorCli: string | undefined,
-  context: { load?: Readonly<Record<string, AutoLoad>>; decision?: AutoDecision } = {},
+  context: { now?: number; load?: Readonly<Record<string, AutoLoad>>; decision?: AutoDecision } = {},
 ): Extract<StartPlanResult, { ok: false }> {
   const all = { ...skipped };
   for (const option of options) {
+    if (all[option.provider]) continue;
     if (option.quota.state === 'exhausted') all[option.provider] = 'quota_exhausted';
     else if (option.quota.state === 'near_limit') all[option.provider] = 'quota_near_limit';
   }
   const reasons = Object.entries(all).map(([provider, code]) => `${provider}: ${routingLabel('skipped', code)}`).join('; ');
+  const mappingAdvice = Object.values(all).includes('mapping_changed') ? ' Read the current mappings and make one fresh Auto request.' : '';
   return {
     ok: false,
     code: 'no_candidate',
-    message: `Auto has no provider for a ${difficulty} task right now (${reasons}). Tell the user, or name a CLI. Don't retry in a loop.`,
+    message: `Auto has no provider for a ${difficulty} task right now (${reasons}). Tell the user, or name a CLI.${mappingAdvice} Don't retry in a loop.`,
     userReason: `no provider can take a ${difficulty} task right now (${reasons}).`,
-    decision: autoDecisionRecord({ decisionId: randomUUID(), now: Date.now(), difficulty, orchestratorCli, options, skipped: all, load: context.load ?? {}, ...(context.decision && { decision: context.decision }) }),
+    decision: autoDecisionRecord({ decisionId: randomUUID(), now: context.now ?? Date.now(), difficulty, orchestratorCli, options, skipped: all, load: context.load ?? {}, ...(context.decision && { decision: context.decision }) }),
   };
 }
 
@@ -503,16 +507,17 @@ const epochOf = (iso: string | null | undefined): number | undefined => {
 function decisionWindow(name: DecisionQuotaWindow['name'], window: QuotaWindowView): DecisionQuotaWindow {
   const usedBp = percentBp(window.usedPercent);
   const resetsAtMs = epochOf(window.resetsAt);
-  return { name, ...(usedBp !== undefined && { usedBp }), ...(resetsAtMs !== undefined && { resetsAtMs }) };
+  return { name, ...(usedBp !== undefined && { usedBp }), ...(resetsAtMs !== undefined && { resetsAtMs }), ...(window.limitReached && { limitReached: true }) };
 }
 
 /** A quota view as the decision record keeps it: basis points and epoch ms, with nothing unavailable filled in. */
-function recordQuota(quota: QuotaView): DecisionQuota {
+function recordQuota(quota: QuotaView, model: string): DecisionQuota {
   const asOfMs = epochOf(quota.asOf);
   const windows = [
     ...(quota.weekly ? [decisionWindow('weekly', quota.weekly)] : []),
     ...(quota.fiveHour ? [decisionWindow('fiveHour', quota.fiveHour)] : []),
-    ...(quota.modelWindows ?? []).map((w) => decisionWindow('model', w)),
+    ...(quota.otherWindows ?? []).map((w) => decisionWindow('other', w)),
+    ...(quota.modelWindows ?? []).filter((w) => w.name.toLowerCase() === model.toLowerCase()).map((w) => decisionWindow('model', w)),
   ];
   return {
     state: quota.state,
@@ -561,7 +566,7 @@ function autoDecisionRecord(args: {
       ...(excluded && { excluded }),
       mapped: { model: option.cell.cell.model, effort, source: option.cell.source, verified: option.cell.fallback !== 'model_unverified' },
       load: loadOf(id),
-      quota: recordQuota(option.quota),
+      quota: recordQuota(option.quota, option.cell.cell.model),
       accountKnown: false,
       ...(evaluation?.tier && { tier: AUTO_TIERS.indexOf(evaluation.tier) }),
       ...(evaluation && {
@@ -649,14 +654,22 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
   if (!pending) return { ok: true, plan };
   const { difficulty, orchestratorCli } = pending;
   const skipped = { ...pending.skipped };
-  // The opt-out may have changed while model lists were read or the start waited for the lock.
-  const options = pending.options.filter((option) => {
-    if (option.provider !== 'copilot-cli' || orchestrationSettings.getCopilotAuto()) return true;
-    skipped[option.provider] = 'auto_disabled';
+  const enabled = getOrchestratorSettings().enabled ?? [];
+  // Reads happened outside the lock. Recheck mutable eligibility and cached evidence synchronously with load and reservations.
+  const options = pending.options.map((option) => ({
+    ...option,
+    quota: peekProviderQuota(option.provider, { model: option.cell.cell.model, now }),
+  }));
+  const eligible = options.filter((option) => {
+    if (enabled.length > 0 && !enabled.includes(option.provider)) skipped[option.provider] = 'cli_disabled';
+    else if (option.provider === 'copilot-cli' && !orchestrationSettings.getCopilotAuto()) skipped[option.provider] = 'auto_disabled';
+    else if (isProviderCoolingDownNow(option.provider, now)) skipped[option.provider] = 'cooling_down';
+    else if (!sameCell(option.configuredCell, orchestrationSettings.getPresets()[option.provider]?.[difficulty] ?? BUILTIN_PRESETS[option.provider][difficulty])) skipped[option.provider] = 'mapping_changed';
+    else return true;
     return false;
   });
   const total = (provider: string) => (load[provider]?.live ?? 0) + (load[provider]?.reserved ?? 0);
-  const candidates: AutoCandidate[] = options.map((o) => {
+  const candidates: AutoCandidate[] = eligible.map((o) => {
     const weekly = o.quota.weekly;
     return {
       key: o.key,
@@ -669,7 +682,7 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
     };
   });
   const decision = decideAutoProvider({ now, candidates, cursors: rotationCursors() });
-  if (decision.ok === false) return noCandidate(difficulty, skipped, options, orchestratorCli, { load, decision });
+  if (decision.ok === false) return noCandidate(difficulty, skipped, options, orchestratorCli, { now, load, decision });
   const chosen = options.find((o) => o.key === decision.key)!;
   const allSkipped: Record<string, HelperRoutingSkip> = { ...skipped };
   for (const e of decision.evaluations) if (e.excluded) allSkipped[e.provider] = e.excluded;
@@ -773,7 +786,7 @@ function emitChanged(): void {
       listener(revision);
     } catch (err) {
       // telemetry-exempt: logged; one listener doesn't stop the others
-      appLog('core:mcp', 'warn', 'A helper routing listener failed', { meta: { error: errorText(err) } });
+      appLog('core:mcp', 'warn', 'A helper routing listener failed', { meta: { error: errorType(err) } });
     }
   }
 }
@@ -865,7 +878,7 @@ async function viewProvider(provider: PresetProvider, refresh: boolean): Promise
     } catch (err) {
       // telemetry-exempt: logged; the page shows the saved choices as unverified
       listFailed = true;
-      appLog('core:mcp', 'warn', 'Helper presets: could not list models', { meta: { provider, error: errorText(err) } });
+      appLog('core:mcp', 'warn', 'Helper presets: could not list models', { meta: { provider, error: errorType(err) } });
     }
   }
   const [cells, quota] = await Promise.all([
@@ -1118,7 +1131,7 @@ setRoutingPolicyListener(() => {
     emitChanged();
   }).catch((err: unknown) => {
     // telemetry-exempt: logged; the next read still shows what is true now.
-    appLog('core:orchestration', 'warn', 'Could not move the helper routing revision', { meta: { error: errorText(err) } });
+    appLog('core:orchestration', 'warn', 'Could not move the helper routing revision', { meta: { error: errorType(err) } });
   });
 });
 
