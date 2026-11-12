@@ -94,7 +94,7 @@ A separate thread per agent was considered instead. It would keep the clutter ou
 
 ## What connections start with (#3214)
 
-The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". A connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off, except for a parent's direction to its own helper. Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).
+The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". Every new connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off (#3333). Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).
 
 | Direction | Starts with |
 |---|---|
