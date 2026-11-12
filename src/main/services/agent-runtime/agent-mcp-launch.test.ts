@@ -44,7 +44,7 @@ vi.mock('../../util/shell', async (actual) => ({ ...await actual<typeof import('
 vi.mock('./chat-transcript', () => ({ appendChatEvent: vi.fn(async () => {}), listChatSessions: vi.fn(async () => []), readChatTranscript: vi.fn(async () => []) }));
 vi.mock('../agent-exit-broadcast', () => ({ broadcastAgentExit: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
-vi.mock('../pty-manager', () => ({ isRunning: () => false }));
+vi.mock('../pty-manager', () => ({ isRunning: () => false, processIdentity: () => undefined }));
 
 import { peekDurableConfigs } from '../agent-config';
 import { withAgentActivity, withAgentTransition } from '../agent-transition';
@@ -69,6 +69,7 @@ import { prepareManagedAssetImport } from '../managed-agents/imports';
 import { withSettingsSurface } from '../settings-audit';
 import { spawnAgent, killAgent, resolveOrchestrator } from '../agent-system';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { agentRegistry } from '../agent-registry';
 
 const conventions = { configDir: '.github', skillsDir: 'skills', agentTemplatesDir: 'agents', mcpConfigFile: '.github/mcp.json', localSettingsFile: 'hooks.json' };
 const copilot = { id: 'copilot-cli', conventions, getBinaryPath: () => '/synthetic/copilot', writeInstructions: vi.fn() } as unknown as OrchestratorProvider;
@@ -88,6 +89,7 @@ beforeEach(async () => {
   await fs.mkdir(path.dirname(settingsPath), { recursive: true }); await fs.mkdir(cwd);
   await fs.writeFile(settingsPath, JSON.stringify({ orchestrator: 'claude-code', agentDefaults: { mcpJson: raw(projectMap) } }));
   agent = { id: 'synthetic-agent', name: 'synthetic', color: 'blue', createdAt: '', worktreePath: cwd, orchestrator: 'copilot-cli' };
+  vi.mocked(agentRegistry.get).mockReturnValue({ projectPath: root, orchestrator: 'copilot-cli', runtime: 'chat' });
   fixture.agents = [agent]; handlers = new Map();
   vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: never) => { handlers.set(channel, handler); });
   registerAgentSettingsHandlers();

@@ -113,10 +113,11 @@ describe('restartManagedAgent', () => {
     vi.useFakeTimers();
     try {
       const restart = restartManagedAgent('/p', 'waiting', { whenTurnEnds: true });
-      await atWait;
+      const observed = restart.then(() => undefined, (error: unknown) => error);
+      await Promise.race([atWait, observed.then(() => { throw new Error('Restart ended before waiting for its turn'); })]);
       state.runtimes.set('waiting', { kind: 'chat', getState: () => 'idle' });
       await vi.advanceTimersByTimeAsync(2000);
-      await expect(restart).rejects.toThrow('Managed restart failed');
+      expect(await observed).toMatchObject({ message: expect.stringContaining('Managed restart failed') });
       expect(killAgent).not.toHaveBeenCalled();
       expect(spawnAgent).not.toHaveBeenCalled();
     } finally { vi.useRealTimers(); }
