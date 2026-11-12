@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -18,6 +19,10 @@ vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => home.dir },
 }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile), lstat: vi.fn(actual.lstat) };
+});
 vi.mock('./project-store', () => ({ list: vi.fn(async () => projects.list) }));
 vi.mock('./group-project-registry', () => ({
   groupProjectRegistry: {
@@ -147,6 +152,137 @@ const key = (b: { agentId: string; targetId: string }) => `${b.agentId}->${b.tar
 // ── Reader ───────────────────────────────────────────────────────────
 
 describe('canvas-store-reader', () => {
+  const location = () => ({
+    scope: 'project' as const, projectId: 'proj_w', projectName: 'wardfall',
+    projectPath: wardfall, kvDir: projectCanvasKvDir(wardfall),
+  });
+
+  it.each([
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', []), { future: true }] },
+    { key: 'canvas-instances', value: [canvas('same', 'First', []), canvas('same', 'Second', [])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [{ future: true }])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [{ id: 'future', type: 'future' }])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [agentCard('same', 'a'), agentCard('same', 'b')])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [{ id: 'bad', type: 'agent', agentId: 7 }])] },
+    { key: 'canvas-instances', value: [canvas('valid', 'Valid', [{ ...gpCard('gp', 'gp_wardfall'), metadata: { groupProjectId: 7 } }])] },
+    { key: 'canvas-wires', value: [wire('a', 'gp_wardfall', 'group-project'), { future: true }] },
+    { key: 'canvas-wires', value: [wire('a', 'gp_wardfall', 'future')] },
+    { key: 'canvas-wires', value: [{ ...wire('a', 'gp_wardfall', 'agent'), targetKind: ['agent'] }] },
+    { key: 'canvas-wires', value: [wire('a', 'gp_wardfall', 'group-project'), wire('a', 'gp_wardfall', 'agent')] },
+  ])('strictly reports incomplete $key rows without changing any files', async ({ key, value }) => {
+    writeKv(location().kvDir, 'canvas-wires', []);
+    writeKv(location().kvDir, key, value);
+    const before = snapshotTree(root);
+
+    const strict = await readCanvasStore(location(), { strict: true });
+
+    expect(strict.problems.length).toBeGreaterThan(0);
+    expect(key === 'canvas-instances' ? strict.canvases : strict.wires).toBeNull();
+    expect((await readCanvasStore(location())).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it.each(['canvas-instances', 'canvas-wires'])('strictly refuses corrupt primary %s despite a healthy backup', async (key) => {
+    const dir = location().kvDir;
+    writeKv(dir, 'canvas-wires', []);
+    const saved = key === 'canvas-instances' ? [canvas('good', 'Good', [])] : [];
+    writeKv(dir, key, saved);
+    fs.writeFileSync(path.join(dir, `${key}.json`), '{torn');
+    const before = snapshotTree(root);
+
+    expect((await readCanvasStore(location(), { strict: true })).problems.length).toBeGreaterThan(0);
+    expect((await readCanvasStore(location())).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it.each([
+    { key: 'canvas-instances', recovery: 'sibling' },
+    { key: 'canvas-wires', recovery: 'sibling' },
+    { key: 'canvas-instances', recovery: 'named' },
+    { key: 'canvas-wires', recovery: 'unreadable' },
+  ])('does not trust backup-only $key ($recovery) as a complete strict inventory', async ({ key, recovery }) => {
+    const dir = location().kvDir;
+    writeKv(dir, 'canvas-instances', [canvas('valid', 'Valid', [])]);
+    writeKv(dir, 'canvas-wires', []);
+    fs.unlinkSync(path.join(dir, `${key}.json`));
+    if (recovery === 'named') {
+      fs.unlinkSync(path.join(dir, `${key}.json.bak`));
+      writeKv(dir, 'canvas-instances-backup', [canvas('recovered', 'Recovered', [])]);
+    }
+    if (recovery === 'unreadable') fs.writeFileSync(path.join(dir, `${key}.json.bak`), '{torn');
+    const before = snapshotTree(root);
+
+    expect((await readCanvasStore(location(), { strict: true })).problems.length).toBeGreaterThan(0);
+    if (recovery !== 'unreadable') expect((await readCanvasStore(location())).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it('strictly recognizes valid, missing and known retired rows without writes', async () => {
+    const dir = location().kvDir;
+    writeKv(dir, 'canvas-instances', [canvas('valid', 'Valid', [
+      agentCard('a', 'a'), gpCard('gp', 'gp_wardfall'), { id: 'retired', type: 'terminal' },
+    ])]);
+    writeKv(dir, 'canvas-wires', [wire('a', 'gp_wardfall', 'group-project')]);
+    const before = snapshotTree(root);
+    expect((await readCanvasStore(location(), { strict: true })).problems).toEqual([]);
+    expect((await readCanvasStore({ scope: 'app', kvDir: path.join(root, 'absent') }, { strict: true }))).toMatchObject({
+      canvases: [], wires: [], problems: [],
+    });
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it('does not classify a non-directory store as known empty in strict mode', async () => {
+    const kvDir = path.join(root, 'not-a-directory');
+    fs.writeFileSync(kvDir, 'keep');
+    const before = snapshotTree(root);
+    expect((await readCanvasStore({ scope: 'app', kvDir }, { strict: true })).problems.length).toBeGreaterThan(0);
+    expect((await readCanvasStore({ scope: 'app', kvDir })).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it.each(['store', 'ancestor'])('rejects Windows-shaped missing child reads under a non-directory %s', async (position) => {
+    const file = path.join(root, 'not-a-directory');
+    fs.writeFileSync(file, 'keep');
+    const kvDir = position === 'store' ? file : path.join(file, 'kv');
+    const missing = Object.assign(new Error('missing child'), { code: 'ENOENT' });
+    vi.mocked(fsp.readFile).mockRejectedValue(missing);
+    vi.mocked(fsp.lstat).mockImplementation((candidate, ...args) => {
+      if (position === 'ancestor' && String(candidate) === kvDir) return Promise.reject(missing);
+      return fs.promises.lstat(candidate, ...args);
+    });
+    const before = snapshotTree(root);
+
+    const strict = await readCanvasStore({ scope: 'app', kvDir }, { strict: true });
+
+    expect(strict.problems.length).toBeGreaterThan(0);
+    expect(strict).toMatchObject({ canvases: null, wires: null });
+    expect((await readCanvasStore({ scope: 'app', kvDir })).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it.each(['EACCES', 'ENOENT'])('refuses missing strict data when surrounding directories cannot be verified (%s)', async (code) => {
+    const kvDir = path.join(root, 'unverified', 'kv');
+    vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('missing child'), { code: 'ENOENT' }));
+    vi.mocked(fsp.lstat).mockRejectedValue(Object.assign(new Error('directory unavailable'), { code }));
+    const before = snapshotTree(root);
+
+    const strict = await readCanvasStore({ scope: 'app', kvDir }, { strict: true });
+
+    expect(strict.problems.length).toBeGreaterThan(0);
+    expect(strict).toMatchObject({ canvases: null, wires: null });
+    expect((await readCanvasStore({ scope: 'app', kvDir })).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it('accepts a genuinely absent nested store beneath a verified directory without writes', async () => {
+    const kvDir = path.join(root, 'absent', 'nested', 'kv');
+    const before = snapshotTree(root);
+    expect(await readCanvasStore({ scope: 'app', kvDir }, { strict: true })).toMatchObject({
+      canvases: [], wires: [], problems: [],
+    });
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
   it('falls back to the .bak sibling and never quarantines a corrupt primary', async () => {
     const dir = path.join(root, 'kv');
     writeKv(dir, 'k', null, { raw: '{torn', bak: false });
@@ -225,11 +361,15 @@ describe('canvas wire binding source', () => {
         ? { scope: 'app' as const, kvDir: '/a' }
         : { scope: 'project' as const, projectId: 'p', projectName: 'p', projectPath: '/p', kvDir: '/p' },
       canvases: [],
-      wires: [{ ...wire('a', 'b', 'agent'), label }],
+      wires: [{ ...wire('a', 'b', 'agent'), label, instructions: { '*': label } }],
       problems: [],
     });
     const out = bindingsFromCanvasStores([snap('app', 'from app'), snap('project', 'from project')], new Map());
     expect(out.map((b) => b.label)).toEqual(['from app']);
+    const originals = bindingsFromCanvasStores([snap('app', 'from app'), snap('project', 'from project')], new Map(), { inspect: true });
+    expect(originals.map((b) => [b.sourceLabel, b.instructions])).toEqual([
+      ['Home', { '*': 'from app' }], ['p', { '*': 'from project' }],
+    ]);
   });
 
   it('binds every wire of a store with no canvases yet (renderer rule)', () => {
@@ -240,6 +380,18 @@ describe('canvas wire binding source', () => {
       problems: [],
     }], new Map());
     expect(out.map(key)).toEqual(['a->b']);
+  });
+
+  it('retains stable store provenance for same-named projects without exposing private paths', () => {
+    const snapshots = ['p1', 'p2'].map((projectId) => ({
+      location: { scope: 'project' as const, projectId, projectName: 'Same name', projectPath: `/private/${projectId}`, kvDir: `/private/${projectId}/kv` },
+      canvases: [], wires: [wire('a', 'b', 'agent', { instructions: { '*': 'Same text' } })], problems: [],
+    }));
+    const originals = bindingsFromCanvasStores(snapshots, new Map(), { inspect: true });
+    expect(originals.map((binding) => binding.sourceStoreId)).toEqual(['project:p1', 'project:p2']);
+    expect(originals.map((binding) => binding.sourceLabel)).toEqual(['Same name', 'Same name']);
+    expect(JSON.stringify(originals)).not.toContain('/private/');
+    expect(bindingsFromCanvasStores(snapshots, new Map())).toHaveLength(1);
   });
 });
 

@@ -41,6 +41,7 @@ import { AnnexDisabledView } from './AnnexDisabledView';
 import { SatelliteDisconnectedOverlay } from './SatelliteDisconnectedOverlay';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 import { FeedbackSettingsView } from '../features/settings/FeedbackSettingsView';
+import { GroupProjectsSettingsView } from '../features/settings/GroupProjectsSettingsView';
 
 export function MainContentView() {
   const explorerTab = useUIStore((s) => s.explorerTab);
@@ -285,6 +286,7 @@ export function MainContentView() {
     if (settingsSubPage === 'smart-selection') return <SmartSelectionSettingsView />;
     if (settingsSubPage === 'dispatcher') return <DispatcherSettingsView />;
     if (settingsSubPage === 'actions') return <ActionsSettingsView />;
+    if (settingsSubPage === 'group-projects') return <GroupProjectsSettingsView />;
     if (settingsSubPage === 'managed-blocks') return <PartLibraryView key="block" kind="block" />;
     if (settingsSubPage === 'managed-skills') return <PartLibraryView key="skill" kind="skill" />;
     if (settingsSubPage === 'managed-mcp') return <PartLibraryView key="mcp" kind="mcp" />;

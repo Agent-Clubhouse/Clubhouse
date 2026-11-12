@@ -13,7 +13,7 @@ import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestSinceArg } from './validation';
-import type { DigestSince } from '../../shared/group-project-types';
+import type { DigestSince, GroupProjectCreateOptions } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
 import { getAgentRuntime } from '../services/agent-runtime';
 import { injectPtyText } from '../services/agent-runtime/pty-input';
@@ -63,9 +63,9 @@ export function registerGroupProjectHandlers(): void {
   });
 
   ipcMain.handle(IPC.GROUP_PROJECT.CREATE, withValidatedArgs(
-    [stringArg()],
-    async (_event, name) => {
-      const project = await groupProjectRegistry.create(name as string);
+    [stringArg(), objectArg<GroupProjectCreateOptions>({ optional: true })],
+    async (_event, name, options) => {
+      const project = await groupProjectRegistry.create(name as string, options as GroupProjectCreateOptions | undefined);
       annexEventBus.emitGroupProjectChanged('created', project);
       appLog('core:group-project', 'info', 'Group project created', { meta: { id: project.id, name: project.name } });
       return project;

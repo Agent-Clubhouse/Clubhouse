@@ -43,6 +43,16 @@ afterEach(() => {
 const items = () => renderHook(() => useCommandSource()).result.current;
 
 describe('palette in the new shell', () => {
+  it('derives Group Projects from the real settings categories and opens the app directory', () => {
+    useUIStore.setState({ settingsContext: 'project' });
+    const item = items().find((entry) => entry.id === 'settings:group-projects')!;
+    expect(item).toMatchObject({ label: 'Group Projects', category: 'Settings', detail: 'App' });
+    act(() => item.execute());
+    expect(useUIStore.getState()).toMatchObject({
+      explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'group-projects',
+    });
+  });
+
   it('lists hosts, and a satellite’s projects and agents with their host', () => {
     const list = items();
     expect(list.find((i) => i.id === 'host:local')?.label).toBe('Switch to Local');

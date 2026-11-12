@@ -291,7 +291,8 @@ export function registerGroupProjectTools(): void {
         'Get full project information including name, description, instructions, and members.\n\n' +
         'Call this when you first join a group project. The instructions field contains ' +
         'directives you MUST follow. The description explains the purpose of the group.\n\n' +
-        'Returns a JSON object with { id, name, description, instructions, members[] }.',
+        'Returns a JSON object with { id, name, scope, description, instructions, members[] }. ' +
+        'Scope is null for a legacy group project awaiting migration.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -314,6 +315,7 @@ export function registerGroupProjectTools(): void {
       const result: Record<string, unknown> = {
         id: project.id,
         name: project.name,
+        scope: project.scope ?? null,
         description: project.description,
         instructions: project.instructions,
         systemInstructions:

@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -18,6 +19,10 @@ const { configs, projects } = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 vi.mock('./project-store', () => ({ list: vi.fn(async () => projects.list) }));
 vi.mock('./group-project-registry', () => ({ groupProjectRegistry: { list: vi.fn(async () => []), onChange: vi.fn(() => () => undefined) } }));
 vi.mock('./agent-config', () => ({
@@ -45,9 +50,11 @@ import {
   addConnections,
   bindingsFromConnections,
   connectionStatus,
+  connectionsStorePath,
   loadConnectionScope,
   pruneOutOfScopeConnections,
   readConnections,
+  peekConnectionsChecked,
   _resetOrchestratorConnectionsForTesting,
   type OrchestratorConnection,
 } from './orchestrator-connections';
@@ -89,6 +96,85 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe('strict read-only connection inventory', () => {
+  it.each([
+    { name: 'empty owner', change: { ownerId: '' } },
+    { name: 'empty source', change: { agentId: '' } },
+    { name: 'empty target', change: { targetId: '' } },
+    { name: 'object timestamp', change: { createdAt: { future: true } } },
+    { name: 'missing timestamp', change: { createdAt: undefined } },
+    { name: 'invalid timestamp', change: { createdAt: 'not-a-date' } },
+    { name: 'empty source path', change: { agentProjectPath: '' } },
+    { name: 'empty target path', change: { targetProjectPath: '' } },
+  ])('refuses $name without changing permissive ordinary reads or disk bytes', async ({ change }) => {
+    const file = connectionsStorePath(home);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const raw = JSON.stringify({ version: 1, connections: [{ ...entry('durable_h1', 'gp_saved', { targetKind: 'group-project' }), ...change }] });
+    fs.writeFileSync(file, raw);
+
+    await expect(peekConnectionsChecked(home)).rejects.toThrow();
+    expect(await readConnections(home)).toEqual(JSON.parse(raw).connections);
+    expect(fs.readFileSync(file, 'utf-8')).toBe(raw);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['orchestrator-connections.json']);
+  });
+
+  it('refuses duplicate endpoint identities rather than accepting a lossy deduplicated inventory', async () => {
+    const file = connectionsStorePath(home);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const connections = [
+      entry('durable_h1', 'gp_saved', { targetKind: 'group-project' }),
+      entry('durable_h1', 'gp_saved', { targetKind: 'group-project', ownerId: 'other_owner' }),
+    ];
+    const raw = JSON.stringify({ version: 1, connections });
+    fs.writeFileSync(file, raw);
+    await expect(peekConnectionsChecked(home)).rejects.toThrow();
+    expect(await readConnections(home)).toEqual(connections);
+    expect(fs.readFileSync(file, 'utf-8')).toBe(raw);
+  });
+
+  it.each([
+    { name: 'corrupt JSON', raw: '{corrupt' },
+    { name: 'invalid schema', raw: '[]' },
+    { name: 'missing connections', raw: '{"version":1}' },
+    { name: 'unrecognized entries', raw: '{"version":1,"connections":[{"future":true}]}' },
+    { name: 'newer version', raw: '{"version":2,"connections":[]}' },
+  ])('refuses $name without quarantining or changing its bytes', async ({ raw }) => {
+    const file = connectionsStorePath(home);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, raw);
+
+    await expect(peekConnectionsChecked(home)).rejects.toThrow();
+
+    expect(fs.readFileSync(file, 'utf-8')).toBe(raw);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['orchestrator-connections.json']);
+  });
+
+  it('propagates read failures rather than accepting an empty inventory', async () => {
+    const error = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    vi.mocked(fsp.readFile).mockRejectedValueOnce(error);
+    await expect(peekConnectionsChecked(home)).rejects.toBe(error);
+    expect(fs.existsSync(path.join(home, '.clubhouse'))).toBe(false);
+  });
+
+  it('accepts known absence without creating a directory or a store', async () => {
+    expect(await peekConnectionsChecked(home)).toEqual([]);
+    expect(fs.existsSync(path.join(home, '.clubhouse'))).toBe(false);
+  });
+
+  it('reads recognized connections unchanged and preserves the ordinary reader contract', async () => {
+    const connection = entry('durable_h1', 'gp_saved', { targetKind: 'group-project' });
+    await addConnections(home, [connection]);
+    const file = connectionsStorePath(home);
+    const before = fs.readFileSync(file, 'utf-8');
+    expect(await peekConnectionsChecked(home)).toEqual([connection]);
+    expect(fs.readFileSync(file, 'utf-8')).toBe(before);
+
+    fs.writeFileSync(file, JSON.stringify({ version: 2, connections: [connection, { future: true }] }));
+    expect(await readConnections(home)).toEqual([connection]);
+    await expect(peekConnectionsChecked(home)).rejects.toThrow();
+  });
 });
 
 describe('connectionStatus across projects', () => {

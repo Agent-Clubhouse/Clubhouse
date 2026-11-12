@@ -23,12 +23,21 @@ vi.mock('../services/clubhouse-mcp', () => ({
     bind: vi.fn(),
     unbind: vi.fn(),
     setInstructions: vi.fn(),
+    restoreInstructions: vi.fn(),
     setDisabledTools: vi.fn(),
     getAllBindings: vi.fn(() => []),
     getBindingsForAgent: vi.fn(() => []),
     onChange: vi.fn(),
   },
   bridgeServer: { start: vi.fn(async () => 0), stop: vi.fn(), getAgentConnection: vi.fn(() => null) },
+}));
+
+vi.mock('../services/connection-guidance', () => ({
+  startConnectionGuidance: vi.fn(),
+  getConnectionGuidance: vi.fn(async () => ({ instructions: {} })),
+  saveConnectionGuidance: vi.fn(async () => ({ instructions: {} })),
+  previewConnectionGuidance: vi.fn(() => ({})),
+  getConnectionGuidanceCatalog: vi.fn(() => ({ state: 'available', tools: [] })),
 }));
 
 vi.mock('../services/clubhouse-mcp/tools/agent-tools', () => ({
@@ -138,6 +147,7 @@ import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispat
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { applyConnectionTools, migrateAutomaticConnectionTools } from '../services/connection-grants';
+import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance } from '../services/connection-guidance';
 import { _resetGrantRequestsForTesting, dropGrantRequestsFor, recordGrantRequest } from '../services/grant-requests';
 import {
   registerMcpBindingHandlers,
@@ -170,6 +180,9 @@ beforeEach(() => {
   vi.mocked(bindingManager.bind).mockClear();
   vi.mocked(bindingManager.unbind).mockClear();
   vi.mocked(bindingManager.setInstructions).mockClear();
+  vi.mocked(bindingManager.restoreInstructions).mockImplementation((agentId, targetId, instructions) => {
+    bindingManager.setInstructions(agentId, targetId, instructions);
+  });
   vi.mocked(bindingManager.setDisabledTools).mockClear();
   vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([]);
 });
@@ -382,6 +395,32 @@ describe('SEC-06: MCP binding IPC authorization', () => {
       const handler = getHandler(IPC.MCP_BINDING.SET_INSTRUCTIONS);
       expect(() => handler(fakeEvent, 'sleeping-agent', 'target-1', { key: 'val' })).not.toThrow();
       expect(bindingManager.setInstructions).toHaveBeenCalledWith('sleeping-agent', 'target-1', { key: 'val' });
+    });
+
+    describe('shared directional guidance', () => {
+      it('passes the saved revision and explicit replacement choice through the app-window boundary', async () => {
+        const request = { instructions: { '*': 'A to B only' }, revision: 'r1', replaceAcrossSources: true };
+        await getHandler(IPC.MCP_BINDING.GET_CONNECTION_GUIDANCE)(fakeEvent, 'a', 'b');
+        await getHandler(IPC.MCP_BINDING.SAVE_CONNECTION_GUIDANCE)(fakeEvent, 'a', 'b', request);
+        await getHandler(IPC.MCP_BINDING.GET_CONNECTION_TOOL_CATALOG)(fakeEvent, 'a', 'b');
+        await getHandler(IPC.MCP_BINDING.PREVIEW_CONNECTION_GUIDANCE)(fakeEvent, 'a', 'b', request.instructions);
+        expect(getConnectionGuidance).toHaveBeenCalledWith('a', 'b');
+        expect(saveConnectionGuidance).toHaveBeenCalledWith('a', 'b', request);
+        expect(getConnectionGuidanceCatalog).toHaveBeenCalledWith('a', 'b');
+        expect(previewConnectionGuidance).toHaveBeenCalledWith('a', 'b', request.instructions);
+      });
+
+      it('rejects unauthorized reads and writes before reaching the guidance service', () => {
+        mockFromWebContents.mockReturnValue(null);
+        expect(() => getHandler(IPC.MCP_BINDING.GET_CONNECTION_GUIDANCE)(fakeEvent, 'a', 'b')).toThrow('unauthorized caller');
+        expect(() => getHandler(IPC.MCP_BINDING.SAVE_CONNECTION_GUIDANCE)(fakeEvent, 'a', 'b', { instructions: {}, revision: 'r1' })).toThrow('unauthorized caller');
+        expect(() => getHandler(IPC.MCP_BINDING.GET_CONNECTION_TOOL_CATALOG)(fakeEvent, 'a', 'b')).toThrow('unauthorized caller');
+        expect(() => getHandler(IPC.MCP_BINDING.PREVIEW_CONNECTION_GUIDANCE)(fakeEvent, 'a', 'b', {})).toThrow('unauthorized caller');
+        expect(getConnectionGuidance).not.toHaveBeenCalled();
+        expect(saveConnectionGuidance).not.toHaveBeenCalled();
+        expect(getConnectionGuidanceCatalog).not.toHaveBeenCalled();
+        expect(previewConnectionGuidance).not.toHaveBeenCalled();
+      });
     });
 
     it('allows setInstructions for registered agent', () => {

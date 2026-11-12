@@ -300,7 +300,11 @@ async function handleCreateGroupProject(callerId: string, args: Record<string, u
     // The first member to join leads the project: the caller, when it joins.
     members.sort((a, b) => Number(b.id === callerId) - Number(a.id === callerId));
 
-    const created = await groupProjectRegistry.create(name);
+    const callerProject = (await projectStore.list()).find((project) => project.path === scope.projectPath);
+    if (!callerProject) {
+      throw new ConnectionScopeError('Your project is not registered. Register it before creating a group project.');
+    }
+    const created = await groupProjectRegistry.create(name, { projectId: callerProject.id });
     const project = (await groupProjectRegistry.update(created.id, { metadata: { [GROUP_PROJECT_CREATOR_KEY]: callerId } })) ?? created;
     appLog('core:mcp', 'info', 'Orchestrator created a group project', {
       meta: { agentId: callerId, groupProjectId: project.id, members: members.length },

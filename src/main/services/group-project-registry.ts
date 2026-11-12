@@ -6,11 +6,13 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
-import type { GroupProject } from '../../shared/group-project-types';
+import type { GroupProject, GroupProjectCreateOptions, GroupProjectScope } from '../../shared/group-project-types';
+import { resolveGroupProjectScope } from '../../shared/group-project-scope';
 import { appLog } from './log-service';
 import { ensureProjectChannels } from './group-project-bulletin';
 import { persist } from '../telemetry/persist';
 import { replaceFile } from './settings-store';
+import * as projectStore from './project-store';
 
 function groupProjectsDir(): string {
   const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
@@ -39,8 +41,26 @@ const FLUSH_DELAY_MS = 500;
 
 type ChangeListener = () => void;
 
+type StoredGroupProject = GroupProject & { _scopeInference?: 'legacy-v1' };
+
+function serializeProjects(
+  projects: Map<string, GroupProject>, inferredIds: ReadonlySet<string>, priorCandidates: ReadonlyMap<string, GroupProjectScope>,
+): string {
+  return JSON.stringify([...projects.values()].map((project): StoredGroupProject => ({
+    ...project,
+    ...(inferredIds.has(project.id) ? { scope: project.scope ?? priorCandidates.get(project.id), _scopeInference: 'legacy-v1' as const } : {}),
+  })), null, 2);
+}
+
+function sameScope(left: GroupProjectScope | undefined, right: GroupProjectScope): boolean {
+  return left?.level === right.level && left.reach === right.reach
+    && (left.level !== 'project' || (right.level === 'project' && left.projectId === right.projectId));
+}
+
 class GroupProjectRegistry {
   private projects = new Map<string, GroupProject>();
+  private inferredScopeIds = new Set<string>();
+  private inferredScopeCandidates = new Map<string, GroupProjectScope>();
   private loaded = false;
   private loadPromise: Promise<void> | null = null;
   private dirty = false;
@@ -58,13 +78,25 @@ class GroupProjectRegistry {
   }
 
   private async load(): Promise<void> {
-    const projects = new Map<string, GroupProject>();
+    let projects = new Map<string, GroupProject>();
+    let inferredIds = new Set<string>();
+    const priorCandidates = new Map<string, GroupProjectScope>();
+    let original = '';
     const rp = registryPath();
     if (await pathExists(rp)) {
       try {
-        const data: GroupProject[] = JSON.parse(await fsp.readFile(rp, 'utf-8'));
+        original = await fsp.readFile(rp, 'utf-8');
+        const data: StoredGroupProject[] = JSON.parse(original);
         if (!Array.isArray(data)) throw new Error('Invalid group-projects registry');
-        for (const p of data) {
+        for (const record of data) {
+          const { _scopeInference, ...p } = record;
+          if (typeof p.id !== 'string' || !p.id || projects.has(p.id)) throw new Error('Invalid or duplicate group-project identity');
+          if (_scopeInference !== undefined) {
+            if (_scopeInference !== 'legacy-v1') throw new Error('Unrecognized group-project scope inference provenance');
+            inferredIds.add(p.id);
+            if (p.scope !== undefined) priorCandidates.set(p.id, p.scope);
+            delete p.scope;
+          }
           // Normalize old entries missing new fields
           if (p.description === undefined) p.description = '';
           if (p.instructions === undefined) p.instructions = '';
@@ -77,8 +109,54 @@ class GroupProjectRegistry {
         throw err;
       }
     }
+    if ([...projects.values()].some((project) => project.scope === undefined)) {
+      const { collectLegacyGroupProjectScopes, GroupProjectScopeMigrationError } = await import('./group-project-scope-migration');
+      try {
+        const inventory = await collectLegacyGroupProjectScopes([...projects.values()]);
+        for (const [id, prior] of priorCandidates) {
+          if (!sameScope(inventory.scopes.get(id), prior)) {
+            throw new GroupProjectScopeMigrationError(`Scope inference for ${id} no longer matches the recorded candidate; explicit scope confirmation is required.`);
+          }
+        }
+        if (inventory.scopes.size > 0) {
+          const candidates = new Map([...projects].map(([id, project]) => [
+            id, { ...project, ...(inventory.scopes.has(id) ? { scope: inventory.scopes.get(id) } : {}) },
+          ]));
+          const candidateIds = new Set([...inferredIds, ...inventory.scopes.keys()]);
+          await inventory.assertUnchanged();
+          await this.writeSnapshot(serializeProjects(candidates, candidateIds, priorCandidates));
+          try {
+            await inventory.assertUnchanged();
+          } catch (error) {
+            try {
+              await this.writeSnapshot(original);
+            } catch (rollbackError) {
+              throw Object.assign(new Error(`Scope migration inventory changed and rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`), {
+                errors: [error, rollbackError],
+              });
+            }
+            throw error;
+          }
+          projects = candidates;
+          inferredIds = candidateIds;
+          for (const [id, scope] of inventory.scopes) priorCandidates.set(id, { ...scope });
+        }
+      } catch (error) {
+        if (!(error instanceof GroupProjectScopeMigrationError)) throw error;
+        appLog('core:group-project', 'warn', 'Group project scope migration deferred until a complete inventory is available', {
+          meta: { error: error.message, retryable: true, retry: 'next startup' },
+        });
+      }
+    }
     this.projects = projects;
+    this.inferredScopeIds = inferredIds;
+    this.inferredScopeCandidates = priorCandidates;
     this.loaded = true;
+  }
+
+  private async writeSnapshot(data: string): Promise<void> {
+    await ensureDir(groupProjectsDir());
+    await persist.timed('group_registry', () => replaceFile(registryPath(), data, undefined));
   }
 
   private scheduleFlush(): void {
@@ -105,10 +183,9 @@ class GroupProjectRegistry {
     if (!this.dirty) return;
 
     const revision = this.revision;
-    const data = JSON.stringify([...this.projects.values()], null, 2);
+    const data = serializeProjects(this.projects, this.inferredScopeIds, this.inferredScopeCandidates);
     const flushPromise = (async () => {
-      await ensureDir(groupProjectsDir());
-      await persist.timed('group_registry', () => replaceFile(registryPath(), data, undefined));
+      await this.writeSnapshot(data);
       if (this.revision === revision) this.dirty = false;
     })().finally(() => {
       if (this.pendingFlush === flushPromise) this.pendingFlush = null;
@@ -132,8 +209,10 @@ class GroupProjectRegistry {
     }
   }
 
-  async create(name: string): Promise<GroupProject> {
+  async create(name: string, options?: GroupProjectCreateOptions): Promise<GroupProject> {
     await this.ensureLoaded();
+    const registered = new Set(options === undefined ? [] : (await projectStore.list()).map((project) => project.id));
+    const scope = resolveGroupProjectScope(options, registered);
     const id = `gp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const project: GroupProject = {
       id,
@@ -141,6 +220,7 @@ class GroupProjectRegistry {
       description: '',
       instructions: '',
       createdAt: new Date().toISOString(),
+      scope,
       metadata: {},
     };
     this.projects.set(id, project);
@@ -185,6 +265,8 @@ class GroupProjectRegistry {
   async delete(id: string): Promise<boolean> {
     await this.ensureLoaded();
     const existed = this.projects.delete(id);
+    this.inferredScopeIds.delete(id);
+    this.inferredScopeCandidates.delete(id);
     if (existed) this.markDirty();
     return existed;
   }
@@ -207,6 +289,8 @@ class GroupProjectRegistry {
     this.flushTimer = null;
     this.pendingFlush = null;
     this.projects.clear();
+    this.inferredScopeIds.clear();
+    this.inferredScopeCandidates.clear();
     this.listeners.clear();
     this.loaded = false;
     this.loadPromise = null;

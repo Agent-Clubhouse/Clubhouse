@@ -32,7 +32,6 @@ interface WireConfigPopoverProps {
 export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition, onRemoveWireDefinition, onUpdateWireDefinition, forceBidirectional }: WireConfigPopoverProps) {
   const unbind = useMcpBindingStore((s) => s.unbind);
   const bind = useMcpBindingStore((s) => s.bind);
-  const setInstructions = useMcpBindingStore((s) => s.setInstructions);
   const setDisabledTools = useMcpBindingStore((s) => s.setDisabledTools);
   const bindings = useMcpBindingStore((s) => s.bindings);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -94,16 +93,6 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
       await bind(binding.targetId, revTarget);
       if (disabledTools) await setDisabledTools(binding.targetId, binding.agentId, disabledTools, { start: true });
       onAddWireDefinition?.({ agentId: binding.targetId, ...revTarget, ...(disabledTools && { disabledTools }) } as McpBindingEntry);
-    }
-  };
-
-  const handleSaveInstructions = async (instructions: Record<string, string>) => {
-    await setInstructions(binding.agentId, binding.targetId, instructions);
-    onUpdateWireDefinition?.(binding.agentId, binding.targetId, { instructions });
-    // Mirror instructions to the reverse binding for bidirectional agent-to-agent wires
-    if (bidirectional && isAgentToAgent) {
-      await setInstructions(binding.targetId, binding.agentId, instructions);
-      onUpdateWireDefinition?.(binding.targetId, binding.agentId, { instructions });
     }
   };
 
@@ -225,7 +214,6 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
       {showInstructions && (
         <WireInstructionsDialog
           binding={liveBinding}
-          onSave={handleSaveInstructions}
           onClose={() => setShowInstructions(false)}
         />
       )}

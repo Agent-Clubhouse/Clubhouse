@@ -55,7 +55,10 @@ export function GroupProjectCanvasWidget({
   const groupProjectId = metadata.groupProjectId as string | undefined;
 
   if (!groupProjectId && !isRemote) {
-    return <CreationForm onUpdateMetadata={onUpdateMetadata} />;
+    if (!isAppMode && !projectId) {
+      return <div role="alert" className="p-4 text-xs text-ctp-error">No current project is available. Open a registered project before creating a group project.</div>;
+    }
+    return <CreationForm projectId={projectId} onUpdateMetadata={onUpdateMetadata} />;
   }
 
   if (!groupProjectId) {
@@ -127,8 +130,10 @@ export function PausedPolling({ groupProjectId }: { groupProjectId: string }) {
 }
 
 function CreationForm({
+  projectId,
   onUpdateMetadata,
 }: {
+  projectId?: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
 }) {
   const [name, setName] = useState('');
@@ -148,7 +153,7 @@ function CreationForm({
     setCreating(true);
     setError(null);
     try {
-      const project = await create(trimmed);
+      const project = await create(trimmed, projectId === undefined ? undefined : { projectId });
       onUpdateMetadata({ groupProjectId: project.id, name: project.name });
     } catch (err) {
       // Surface the failure instead of silently resetting the card. The most
@@ -161,7 +166,7 @@ function CreationForm({
     } finally {
       setCreating(false);
     }
-  }, [name, creating, create, onUpdateMetadata]);
+  }, [name, creating, create, projectId, onUpdateMetadata]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

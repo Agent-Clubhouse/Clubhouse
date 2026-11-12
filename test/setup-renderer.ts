@@ -486,6 +486,13 @@ vi.stubGlobal('clubhouse', {
     bind: asyncNoop,
     unbind: asyncNoop,
     setInstructions: asyncNoop,
+    getConnectionGuidance: async (agentId: string, targetId: string) => ({
+      agentId, targetId, instructions: {}, hasOverride: false, sources: [], unreadable: [],
+      conflictingSources: false, needsSourceConfirmation: false, readOnly: false, revision: 'test',
+    }),
+    getConnectionToolCatalog: async () => ({ state: 'available', tools: [] }),
+    previewConnectionGuidance: async () => ({}),
+    saveConnectionGuidance: async () => { throw new Error('Configure the guidance-save mock for this test.'); },
     setDisabledTools: asyncNoop,
     getAgentConnection: async () => null,
     getToolConnections: async () => [],
