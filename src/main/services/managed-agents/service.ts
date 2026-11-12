@@ -44,6 +44,7 @@ import {
 } from '../../../shared/managed-agents-types';
 import { builtinParts, builtinTemplates, DEFAULT_HELPER_TEMPLATE_ID, type BuiltinPart } from './builtins';
 import type { ManagedStateStore } from './state-store';
+import type { ManagedRestartReceipt } from './activation-receipts';
 
 export class ManagedError extends Error {
   constructor(readonly code: ManagedErrorCode, message?: string) {
@@ -573,6 +574,21 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
   }
 
   const api = {
+    async latestRestartReceipt(agentId: string): Promise<ManagedRestartReceipt | null> {
+      const mine = (await state.read()).restarts?.filter((r) => r.agentId === agentId);
+      return mine?.[mine.length - 1] ?? null;
+    },
+
+    async recordRestartReceipt(receipt: ManagedRestartReceipt): Promise<void> {
+      await state.update((s) => {
+        const history = s.restarts ?? [];
+        const index = history.findIndex((r) => r.id === receipt.id);
+        if (index >= 0) history[index] = structuredClone(receipt);
+        else history.push(structuredClone(receipt));
+        s.restarts = history.slice(-100);
+      });
+    },
+
     /** Install or update the built-in parts. Startup only: runs as Clubhouse itself. */
     async ensureBuiltins(): Promise<void> {
       // One bad built-in is logged and skipped, so the rest still install; the call fails at the end so a later start retries.
@@ -867,6 +883,14 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const named = await skillFolders(next.skills, live);
       for (const name of planned.skillFolders ?? []) named.push({ name, skillName: name });
       refuseSkillFolderClash(named);
+      const serverKeys = new Set<string>();
+      for (const id of next.mcps) {
+        if (id === CLUBHOUSE_MCP_PART_ID) continue;
+        const content = await contentOf(live[id]);
+        if (content.kind !== 'mcp') continue;
+        if (serverKeys.has(content.serverKey)) throw new ManagedError('invalid', 'Two MCP parts in this setup use the same server key. Choose one; Clubhouse will not overwrite a server by precedence.');
+        serverKeys.add(content.serverKey);
+      }
       return next;
     },
 

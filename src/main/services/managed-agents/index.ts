@@ -20,6 +20,8 @@ import { keepInstructionsAtFirstStart } from './before-managed';
 import { previewSwitchToPlain, switchToPlain, type PlainDeps } from './plain';
 import * as path from 'path';
 import { delivered, failedDeliveries, forgetDelivery, mcpProblems } from './delivery-records';
+import { managedActivationFor, partRevisions } from './activation';
+import { restartWithReceipt } from './activation-receipts';
 import {
   deliverManagedSetup,
   managedSettingsRows,
@@ -234,6 +236,17 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };
 }
 
+export async function activationFor(projectPath: string, agentId: string) {
+  const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+  if (!agent) throw new ManagedError('not_found', 'Agent not found.');
+  const system = await import('../agent-system');
+  const provider = await system.resolveOrchestrator(projectPath, agent.orchestrator);
+  return managedActivationFor({
+    service: managedAgents(), agent, running: system.isAgentRunning(agentId), effectiveProvider: provider.id, materialized: delivered.get(agentId),
+    deliveryFailed: failedDeliveries.has(agentId), mcpProblems: mcpProblems.get(agentId),
+  });
+}
+
 /** Preview's settings rows a running session picks up without a restart. */
 const LIVE_SETTINGS_ROWS = new Set(['orchestration', 'helpers', 'helperTemplate', 'dispatcher']);
 
@@ -290,12 +303,13 @@ export function switchPlain(projectPath: string, agentId: string, choice: Manage
 const restarting = new Set<string>();
 
 async function waitForTurnEnd(agentId: string, timeoutMs = 30 * 60_000): Promise<boolean> {
+  const { isAgentRunning } = await import('../agent-system');
   const { getAgentRuntime } = await import('../agent-runtime');
   const { BUSY_STATES } = await import('../agent-runtime/checkpoint-tracker');
   const ptyManager = await import('../pty-manager');
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (!isRunning(agentId)) return false;
+    if (!isAgentRunning(agentId)) return false;
     const runtime = getAgentRuntime(agentId);
     const busy = runtime?.kind === 'chat'
       ? BUSY_STATES.has(runtime.getState())
@@ -320,7 +334,7 @@ export async function isAgentWorking(agentId: string): Promise<boolean> {
  * Only a running managed agent: a sleeping one picks its setup up at its next
  * start, and starting it here would wake it outside the wake rules.
  */
-export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean } = {}): Promise<{ resumed: boolean; noSession?: boolean }> {
+export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean; authorize?: () => Promise<void> } = {}): Promise<{ resumed: boolean; noSession?: boolean }> {
   const target = await agentConfig.getDurableConfig(projectPath, agentId);
   if (!target) throw new ManagedError('not_found', 'agent not found');
   if (!target.managed) throw new ManagedError('not_managed', `${target.name} isn't Clubhouse managed, so there is no setup to restart into.`);
@@ -329,42 +343,51 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
   if (restarting.has(agentId)) throw new Error('already restarting');
   restarting.add(agentId);
   try {
-    if (options.whenTurnEnds && !(await waitForTurnEnd(agentId))) {
-      // Stopped by someone else, or still working after the wait: don't restart behind their back.
-      throw new Error(isRunning(agentId) ? 'The agent is still working. Try Restart again later.' : 'The agent stopped before its turn ended.');
-    }
-    const before = await agentConfig.getDurableConfig(projectPath, agentId);
-    if (!before) throw new Error('agent not found');
-    if (agentSystem.isAgentRunning(agentId)) {
+    const service = managedAgents();
+    const requested = setupFingerprint(target, await resolveManagedSetup(service, target.managed));
+    return await restartWithReceipt({
+      agentId, fresh: !!options.fresh, whenTurnEnds: !!options.whenTurnEnds, requestedParts: partRevisions(requested.parts),
+    }, (receipt) => service.recordRestartReceipt(receipt), async () => {
+      if (options.whenTurnEnds && !(await waitForTurnEnd(agentId))) {
+        // Stopped by someone else, or still working after the wait: don't restart behind their back.
+        throw new Error(agentSystem.isAgentRunning(agentId) ? 'The agent is still working. Try Restart again later.' : 'The agent stopped before its turn ended.');
+      }
+      const before = await agentConfig.getDurableConfig(projectPath, agentId);
+      if (!before) throw new Error('agent not found');
+      if (!before.managed) throw new ManagedError('not_managed', 'The agent stopped being managed while the restart was waiting.');
+      await options.authorize?.();
+      if (!agentSystem.isAgentRunning(agentId)) throw new ManagedError('invalid', 'The agent stopped before restart. It was not woken.');
       await agentSystem.killAgent(agentId, projectPath, before.orchestrator, 'user', { waitForExit: true });
-    }
-    // Read after the exit: it just saved the session id this restart resumes.
-    const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-    if (!agent) throw new Error('agent not found');
-    const record = delivered.get(agentId);
-    const cliChanged = !!record && (record.orchestrator ?? '') !== (agent.orchestrator ?? '');
-    const resume = !options.fresh && !cliChanged && !!agent.lastSessionId;
-    broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, agentId);
-    try {
-      await agentSystem.spawnAgent({
-        agentId,
-        projectPath,
-        cwd: agent.worktreePath || projectPath,
-        kind: 'durable',
-        model: agent.model,
-        orchestrator: agent.orchestrator,
-        freeAgentMode: agent.freeAgentMode,
-        resume,
-        sessionId: resume ? agent.lastSessionId : undefined,
-      });
-    } catch (err) {
-      broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, agentId, err instanceof Error ? err.message : String(err));
-      throw err;
-    }
-    // Neither asked for nor forced by a CLI change: there was no conversation to resume.
-    const noSession = !resume && !options.fresh && !cliChanged;
-    appLog('core:managed', 'info', 'Restarted managed agent', { meta: { agentId, resume, noSession } });
-    return { resumed: resume, ...(noSession && { noSession: true }) };
+      // Read after the exit: it just saved the session id this restart resumes.
+      const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+      if (!agent?.managed) throw new ManagedError('not_managed', 'The managed agent is no longer available after stopping. It was not started.');
+      const record = delivered.get(agentId);
+      const cliChanged = !!record && (record.provider
+        ? record.provider !== (await agentSystem.resolveOrchestrator(projectPath, agent.orchestrator)).id
+        : (record.orchestrator ?? '') !== (agent.orchestrator ?? ''));
+      const resume = !options.fresh && !cliChanged && !!agent.lastSessionId;
+      broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, agentId);
+      try {
+        await agentSystem.spawnAgent({
+          agentId,
+          projectPath,
+          cwd: agent.worktreePath || projectPath,
+          kind: 'durable',
+          model: agent.model,
+          orchestrator: agent.orchestrator,
+          freeAgentMode: agent.freeAgentMode,
+          resume,
+          sessionId: resume ? agent.lastSessionId : undefined,
+        });
+      } catch (err) {
+        broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, agentId, 'Managed restart failed. Inspect the lifecycle receipt and current target state before retrying.');
+        throw err;
+      }
+      // Neither asked for nor forced by a CLI change: there was no conversation to resume.
+      const noSession = !resume && !options.fresh && !cliChanged;
+      appLog('core:managed', 'info', 'Restarted managed agent', { meta: { agentId, resume, noSession } });
+      return { resumed: resume, ...(noSession && { noSession: true }) };
+    });
   } finally {
     restarting.delete(agentId);
   }
