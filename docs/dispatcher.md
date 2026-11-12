@@ -122,6 +122,10 @@ Off means no new grant; existing wider permissions and explicit saved changes
 are unchanged. Presence read is limited by the fixed remote tool surface and
 never includes output/settings, waking, resets or additional control.
 
+The permissions page shows both remote rows even when they are Off. Each change
+affects only that sender action, without changing connection switches or adding
+authority over the receiving machine.
+
 ## What connections start with (#3214)
 
 The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". Every new connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off (#3333). Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).

@@ -3,13 +3,38 @@ import {
   GRANT_ACTION_LABELS, applyGrantChanges, carriedGrants, grantKey, grantRows, grantTargetLabel, normalizeGrantChanges, normalizeTemplateGrants,
   withGrantChange, withoutOwnChanges, withTemplateGrants,
 } from './agent-grant-changes';
-import { GRANT_ACTIONS, type Grant } from './agent-grants';
+import { evaluateGrant, GRANT_ACTIONS, type Grant } from './agent-grants';
 import { defaultGrants } from './default-grants';
 
 const helperDefaults = defaultGrants({ dispatcher: false, helper: true, orchestrates: false, crossProject: false });
 const has = (grants: Grant[], key: string) => grants.some((g) => grantKey(g) === key);
 
 describe('saved grant changes (#2971)', () => {
+  it('shows unrelated agents remote opt-in rows without granting either action', () => {
+    const defaults = defaultGrants({ dispatcher: false, helper: false, orchestrates: false, crossProject: false });
+    const remoteRows = grantRows(defaults, undefined).filter((row) => row.target.kind === 'remote_dispatcher');
+    expect(remoteRows).toEqual([
+      { action: 'agent.read', target: { kind: 'remote_dispatcher' }, mode: 'off', defaultMode: 'off', source: 'none', fixed: false },
+      { action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'off', defaultMode: 'off', source: 'none', fixed: false },
+    ]);
+    for (const action of ['agent.read', 'agent.message'] as const) {
+      expect(evaluateGrant({
+        caller: { kind: 'agent', agentId: 'unrelated' }, action,
+        target: { kind: 'agent', isDispatcher: true, isRemoteDispatcher: true },
+      }, applyGrantChanges(defaults, undefined)).outcome).toBe('refuse');
+    }
+  });
+
+  it('does not duplicate trusted remote defaults and preserves wider ANY coverage', () => {
+    const facts = { dispatcher: false, helper: false, orchestrates: false, crossProject: false, connectedToDispatcher: true };
+    const rows = grantRows(defaultGrants(facts), undefined).filter((row) => row.target.kind === 'remote_dispatcher');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ action: 'agent.read', mode: 'allow', source: 'structural' });
+    expect(rows[1]).toMatchObject({ action: 'agent.message', mode: 'ask', source: 'structural' });
+    const dispatcherRows = grantRows(defaultGrants({ ...facts, dispatcher: true }), undefined);
+    expect(dispatcherRows.find((row) => grantKey(row) === 'agent.read@remote_dispatcher')?.coveredBy).toBe('agent.read@any');
+  });
+
   it('normalizes, saves and revokes an explicit cross-agent activity grant', () => {
     const change = { action: 'agent.watch', target: { kind: 'app' }, mode: 'allow' } as const;
     const saved = normalizeGrantChanges({ changes: [change] });

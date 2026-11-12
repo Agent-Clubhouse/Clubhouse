@@ -238,7 +238,7 @@ export interface GrantRow {
   coveredBy?: string;
 }
 
-/** Every row to show: each default, plus each saved change that isn't one. */
+/** Defaults and saved changes, plus remote opt-ins that show Off without granting authority. */
 export function grantRows(defaults: readonly Grant[], saved: AgentGrantChanges | undefined): GrantRow[] {
   const changes = new Map((saved?.changes ?? []).map((c) => [grantKey(c), c]));
   const template = new Map((saved?.template ?? []).map((c) => [grantKey(c), c]));
@@ -249,6 +249,8 @@ export function grantRows(defaults: readonly Grant[], saved: AgentGrantChanges |
     ...defaults.map((g) => ({ action: g.action, target: g.target, base: g })),
     ...[...template.values()].map((c) => ({ action: c.action, target: c.target })),
     ...[...changes.values()].map((c) => ({ action: c.action, target: c.target })),
+    { action: 'agent.read', target: { kind: 'remote_dispatcher' } },
+    { action: 'agent.message', target: { kind: 'remote_dispatcher' } },
   ];
   for (const e of entries) {
     const key = grantKey(e);
