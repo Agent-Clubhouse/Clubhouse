@@ -564,6 +564,56 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     release();
     expect(await first).toMatchObject({ delivery: { state: 'delivered' } });
   });
+
+  it('preserves a large first read while bounding its durable replay without repeating the runner', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    const output = 'x'.repeat(80 * 1024);
+    const run = vi.fn(async () => ok(output));
+    restart({ runTool: run });
+    const body = call({ callId: 'large-read', tool: 'read_output' });
+    expect(await receiveAgentCall(OTHER, body, now)).toMatchObject({ result: ok(output) });
+    restart({ runTool: run });
+    const replay = await receiveAgentCall(OTHER, body, now);
+    expect(Buffer.byteLength(JSON.stringify(replay))).toBeLessThan(64 * 1024);
+    expect(replay).toMatchObject({ delivery: { state: 'delivered' } });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('quarantines a contradictory success marker on an error instead of retrying an uncertain effect', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    const run = vi.fn(async () => ({ ...ok('partial effect'), isError: true, annexDelivery: { state: 'delivered' as const } }));
+    restart({ runTool: run });
+    const body = call({ callId: 'contradictory' });
+    expect(await receiveAgentCall(OTHER, body, now)).toMatchObject({ delivery: { state: 'indeterminate' } });
+    restart({ runTool: run });
+    expect(await receiveAgentCall(OTHER, body, now)).toMatchObject({ delivery: { state: 'indeterminate' } });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send from a stopped lifecycle after an awaited capability lookup resumes', async () => {
+    let release!: (supported: boolean) => void;
+    const gate = new Promise<boolean>((resolve) => { release = resolve; });
+    const support = vi.spyOn(transport, 'supportsDurableDelivery').mockReturnValueOnce(gate).mockResolvedValue(true);
+    const pending = forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'one lifecycle only' });
+    await vi.waitFor(() => expect(support).toHaveBeenCalledTimes(1));
+    restart();
+    release(true);
+    await pending;
+    await vi.waitFor(() => expect(waitingFor(OTHER)).toHaveLength(0));
+    expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(1);
+  });
+
+  it('quarantines migrated legacy work whose prior acceptance cannot be proven', async () => {
+    const queuedAt = new Date().toISOString();
+    fs.writeFileSync(path.join(state.base, 'recovered-legacy.json'), JSON.stringify({ version: 1, items: [{
+      id: 'legacy-call', machine: OTHER, queuedAt,
+      body: { ...call({ callId: 'legacy-call', to: 'there' }), from: { agentId: 'here', name: 'Sender' } },
+    }] }));
+    restart({ deliveryStore: createAnnexDeliveryStore('recovered-legacy.json') });
+    await flushOutbox(OTHER);
+    await vi.waitFor(() => expect(getDelivery('here', 'legacy-call')).toMatchObject({ state: 'indeterminate', reason: 'legacy_delivery_unverified' }));
+    expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
+  });
 });
 
 describe('keeping both machines\' copies of a connection', () => {
