@@ -45,22 +45,19 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   create: async (name, options) => {
     const raw = await window.clubhouse.groupProject.create(name, options);
     if (!isGroupProject(raw)) throw new Error('create returned invalid GroupProject');
-    set((state) => ({ projects: [...state.projects, raw] }));
+    set((state) => state.projects.some((project) => project.id === raw.id)
+      ? state
+      : { projects: [...state.projects, raw] });
     return raw;
   },
 
   update: async (id, fields) => {
-    await window.clubhouse.groupProject.update(id, fields);
+    const updated = await window.clubhouse.groupProject.update(id, fields);
+    if (!isGroupProject(updated) || updated.id !== id) {
+      throw new Error('Group project update was not confirmed. Reload the directory and try again.');
+    }
     set((state) => ({
-      projects: state.projects.map((p) => {
-        if (p.id !== id) return p;
-        const updated = { ...p, ...fields };
-        // Merge metadata rather than replacing it (matches main process behavior)
-        if (fields.metadata) {
-          updated.metadata = { ...p.metadata, ...fields.metadata };
-        }
-        return updated;
-      }),
+      projects: state.projects.map((p) => p.id === id ? updated : p),
     }));
   },
 

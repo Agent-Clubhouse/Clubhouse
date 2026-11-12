@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useUIStore } from '../stores/uiStore';
 import { useUpdateStore } from '../stores/updateStore';
@@ -94,6 +94,17 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
     render(<AccessoryPanel />);
     expect(screen.getByText('External editor')).toBeInTheDocument();
+  });
+
+  it('opens the local Group Projects directory from app settings, not project settings', () => {
+    vi.spyOn(window.clubhouse.app, 'isPreviewEligible').mockResolvedValue(false);
+    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({});
+    const { rerender } = render(<AccessoryPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Group Projects' }));
+    expect(useUIStore.getState().settingsSubPage).toBe('group-projects');
+    act(() => { useUIStore.setState({ settingsContext: 'project' }); });
+    rerender(<AccessoryPanel />);
+    expect(screen.queryByRole('button', { name: 'Group Projects' })).not.toBeInTheDocument();
   });
 
   it('has no Clubhouse MCP page: the Clubhouse MCP always runs, so there is nothing to set', async () => {

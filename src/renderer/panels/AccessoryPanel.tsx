@@ -61,6 +61,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Dispatcher', page: 'dispatcher' },
     // After Dispatcher for now; the settings reorganization (#2750) moves it.
     { label: 'Actions', page: 'actions' },
+    { label: 'Group Projects', page: 'group-projects' },
     { label: 'Display & UI', page: 'display' },
     { label: 'External editor', page: 'editor' },
     { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },
