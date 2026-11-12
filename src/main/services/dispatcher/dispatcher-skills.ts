@@ -26,6 +26,7 @@ import agentCards from './skills/work/agent-cards/SKILL.md';
 import checkIns from './skills/work/check-ins/SKILL.md';
 import delegatingWork from './skills/work/delegating-work/SKILL.md';
 import memoryUpkeep from './skills/work/memory-upkeep/SKILL.md';
+import importingRepository from './skills/work/importing-repository/SKILL.md';
 import passingOnNews from './skills/work/passing-on-news/SKILL.md';
 
 export interface DispatcherSkill {
@@ -64,6 +65,7 @@ export const DISPATCHER_SKILLS: readonly DispatcherSkill[] = [
   parseSkill(checkIns, 'work'),
   parseSkill(agentCards, 'work'),
   parseSkill(memoryUpkeep, 'work'),
+  parseSkill(importingRepository, 'work'),
 ];
 
 export function dispatcherSkills(role: DispatcherRole): DispatcherSkill[] {

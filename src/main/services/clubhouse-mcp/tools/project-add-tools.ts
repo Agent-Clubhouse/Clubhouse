@@ -12,6 +12,7 @@ import { describeCallsForAsk } from '../ask-first';
 import * as projectStore from '../../project-store';
 import { checkProjectFolder, describeFolderGit, registerProjectFolder } from '../../project-add';
 import { appLog } from '../../log-service';
+import { registerProjectImportTools } from './project-import-tools';
 
 const DISPLAY_NAME_MAX = 200;
 
@@ -85,6 +86,7 @@ async function addProject(agentId: string, args: Record<string, unknown>): Promi
 }
 
 export function registerProjectAddTools(): void {
+  registerProjectImportTools();
   describeCallsForAsk('add_project', (args) => {
     const where = typeof args.path === 'string' && args.path.trim() ? args.path.trim() : 'a folder';
     if (args.dryRun === true) return `Check whether ${where} can be added as a project. Nothing changes.`;
