@@ -2219,6 +2219,56 @@ describe('peekProjectsChecked (D99)', () => {
     });
   }
 
+  const project = { id: 'p1', name: 'one', path: '/one' };
+
+  it.each([
+    { label: 'mixed malformed row', primary: JSON.stringify([project, { future: true }]) },
+    { label: 'duplicate ID', primary: JSON.stringify([project, { ...project, path: '/two' }]) },
+    { label: 'duplicate path', primary: JSON.stringify([project, { ...project, id: 'p2', path: '/one/../one' }]) },
+    { label: 'newer version', primary: JSON.stringify({ version: 2, projects: [project] }) },
+    { label: 'unknown version', primary: JSON.stringify({ version: '1', projects: [project] }) },
+    { label: 'invalid top-level schema', primary: JSON.stringify({ projects: null }) },
+    { label: 'corrupt primary', primary: '{torn' },
+    { label: 'unreadable primary', primary: errorWith('EACCES') },
+    { label: 'invalid parent directory', primary: errorWith('ENOTDIR') },
+  ])('strictly refuses $label rather than filtering, merging or using a stale backup', async ({ primary }) => {
+    files({ [STORE_PATH]: primary, [BAK_PATH]: JSON.stringify([project]) });
+
+    expect(await peekProjectsChecked({ strict: true })).toEqual({ projects: [], readable: false });
+    expect((await peekProjectsChecked()).readable).toBe(true);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.mkdir).not.toHaveBeenCalled();
+    expect(fsp.rename).not.toHaveBeenCalled();
+    expect(fsp.copyFile).not.toHaveBeenCalled();
+    expect(fsp.unlink).not.toHaveBeenCalled();
+  });
+
+  it.each(['symlink', 'inode'])('strictly rejects ambiguous %s directory identities without changing defaults', async (identity) => {
+    files({ [STORE_PATH]: JSON.stringify([project, { ...project, id: 'p2', path: '/alias' }]) });
+    if (identity === 'symlink') vi.mocked(fsp.realpath).mockImplementation(async (p) => String(p) === '/alias' ? '/one' : String(p));
+    if (identity === 'inode') vi.mocked(fsp.stat).mockResolvedValue({ dev: 1n, ino: 42n } as Awaited<ReturnType<typeof fsp.stat>>);
+
+    expect(await peekProjectsChecked({ strict: true })).toEqual({ projects: [], readable: false });
+    expect((await peekProjectsChecked()).projects).toHaveLength(2);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.mkdir).not.toHaveBeenCalled();
+    expect(fsp.rename).not.toHaveBeenCalled();
+  });
+
+  it('strictly accepts known schemas, empty stores and missing-primary backups without writes', async () => {
+    for (const payload of [[], [project], { version: 1, projects: [project] }]) {
+      files({ [STORE_PATH]: JSON.stringify(payload) });
+      expect((await peekProjectsChecked({ strict: true })).readable).toBe(true);
+    }
+    files({});
+    expect(await peekProjectsChecked({ strict: true })).toEqual({ projects: [], readable: true });
+    files({ [BAK_PATH]: JSON.stringify([project]) });
+    expect(await peekProjectsChecked({ strict: true })).toEqual({ projects: [project], readable: true });
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.mkdir).not.toHaveBeenCalled();
+    expect(fsp.rename).not.toHaveBeenCalled();
+  });
+
   it('reads the projects', async () => {
     files({ [STORE_PATH]: JSON.stringify([{ id: 'p1', name: 'one', path: '/one' }]) });
     const r = await peekProjectsChecked();
