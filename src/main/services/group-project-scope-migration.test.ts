@@ -156,6 +156,17 @@ describe('one-shot legacy group project scope migration', () => {
     });
   });
 
+  it.each([
+    { members: ['a'], expected: { level: 'app', reach: 'local' } },
+    { members: [], expected: { level: 'project', projectId: 'p_b', reach: 'local' } },
+  ])('includes an existing granted foreign member alongside $members', async ({ members, expected }) => {
+    await canvas(members);
+    await connection(fixture.projects[0], 'b', {
+      ownerId: 'a', agentProjectPath: fixture.projects[1].path, scope: 'granted',
+    });
+    expect((await groupProjectRegistry.get('gp_legacy'))?.scope).toEqual(expected);
+  });
+
   it('ignores a saved connection that is no longer within its owner reach', async () => {
     await canvas(['a'], projectCanvasKvDir(fixture.projects[0].path));
     await connection(fixture.projects[0], 'b', { ownerId: 'a', agentProjectPath: fixture.projects[1].path });
@@ -169,12 +180,20 @@ describe('one-shot legacy group project scope migration', () => {
     'unknown canvas wire', 'unknown canvas instance', 'unknown canvas view', 'changing projects',
     'ambiguous projects', 'ambiguous directories',
     'unreadable project registry',
+    'unregistered live identity', 'malformed saved owner', 'unprovable granted location',
   ])(
     'defers %s without guessing or writing, and logs a retryable failure',
     async (kind) => {
       await canvas([kind === 'unknown member' ? 'unknown' : 'a']);
       if (kind === 'unreadable project') fixture.configs.delete(fixture.projects[1].path);
       if (kind === 'unreadable project registry') fixture.projectsReadable = false;
+      if (kind === 'unregistered live identity') fixture.registrations.set('a', {
+        projectPath: path.join(fixture.home, 'unregistered'), orchestrator: 'claude-code', runtime: 'pty',
+      });
+      if (kind === 'malformed saved owner') await connection(fixture.projects[0], 'b', { ownerId: '' });
+      if (kind === 'unprovable granted location') await connection(fixture.projects[0], 'a', {
+        ownerId: 'a', agentProjectPath: fixture.projects[1].path, scope: 'granted',
+      });
       if (kind === 'corrupt canvas') {
         const file = path.join(projectCanvasKvDir(fixture.projects[1].path), 'canvas-wires.json');
         await fsp.mkdir(path.dirname(file), { recursive: true });

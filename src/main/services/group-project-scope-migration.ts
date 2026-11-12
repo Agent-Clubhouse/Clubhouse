@@ -115,6 +115,7 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
   }
   const keys = new Set(inventory.map((home) => home.key));
   if (keys.size !== inventory.length) throw new GroupProjectScopeMigrationError('Registered projects share an ambiguous directory identity.');
+  const registeredByPath = new Map(inventory.map((home) => [home.project.path, home]));
   for (const home of inventory) {
     const foreign = new Map<string, Map<string, ScopedAgent>>();
     for (const row of rows) {
@@ -124,17 +125,23 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
       helpers.set(row.config.id, { config: row.config, projectName: row.home.project.name });
     }
     const unreadable = new Set<string>();
+    const granted = new Map<string, ScopedAgent>();
     for (const connection of home.connections) {
       for (const recorded of [connection.agentProjectPath, connection.targetProjectPath]) {
-        if (recorded && !keys.has(await checked(`Cannot identify ${recorded}`, () => agentConfig.projectKey(recorded)))) {
-          unreadable.add(recorded);
+        if (!recorded) continue;
+        const registeredHome = registeredByPath.get(recorded);
+        if (!registeredHome) unreadable.add(recorded);
+        else {
+          for (const config of registeredHome.agents) {
+            granted.set(config.id, { config, projectName: registeredHome.project.displayName || registeredHome.project.name });
+          }
         }
       }
     }
-    const result = bindingsFromConnections(home.connections, {
+    const result = await checked(`Cannot resolve saved connections in ${home.project.path}`, async () => bindingsFromConnections(home.connections, {
       local: new Map(home.agents.map((config) => [config.id, config])),
-      projectName: home.project.name, foreign, unreadable,
-    }, names);
+      projectName: home.project.name, foreign, unreadable, granted,
+    }, names));
     if (result.unknown.length > 0) throw new GroupProjectScopeMigrationError(`Unverified connections in ${home.project.path}.`);
     bindings.push(...result.bindings);
   }
@@ -147,7 +154,9 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
   for (const row of rows) addAgent(row.config.id, row.home.project.id);
   for (const [agentId, registration] of registrations) {
     const key = await checked(`Cannot identify live agent ${agentId}`, () => agentConfig.projectKey(registration.projectPath));
-    for (const home of inventory) if (home.key === key) addAgent(agentId, home.project.id);
+    const home = inventory.find((entry) => entry.key === key);
+    if (!home) throw new GroupProjectScopeMigrationError(`Cannot locate live agent ${agentId} in a registered project.`);
+    addAgent(agentId, home.project.id);
   }
   const legacyIds = new Set(legacy.map((project) => project.id));
   const memberProjects = new Map<string, Set<string>>();
