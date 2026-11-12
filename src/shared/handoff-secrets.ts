@@ -31,8 +31,8 @@ const CONTENT_RULES = [
   { id: 'content.pypi_token', pattern: /\bpypi-[A-Za-z0-9_-]{40,}\b/ },
   { id: 'content.slack_token', pattern: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/ },
   { id: 'content.stripe_live_key', pattern: /\b(?:sk|rk)_live_[A-Za-z0-9]{16,}\b/ },
-  { id: 'content.connection_password', pattern: /\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i },
-  { id: 'content.database_password', pattern: /\b(?:Server|Data Source|Host)\s*=[^;\r\n]+;[^\r\n]*\b(?:Password|Pwd)\s*=\s*[^;\s]+/i },
+  { id: 'content.connection_password', pattern: /\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]*:[^\s/@]+@/i },
+  { id: 'content.database_password', pattern: /^(?=[^\r\n]*\b(?:Server|Data Source|Host)\s*=\s*[^;\r\n]+)(?=[^\r\n]*\b(?:Password|Pwd)\s*=\s*[^;\s]+)[^\r\n]+$/i },
 ] as const;
 
 export type HandoffSecretRule = typeof PATH_RULES[number]['id'] | typeof CONTENT_RULES[number]['id']
