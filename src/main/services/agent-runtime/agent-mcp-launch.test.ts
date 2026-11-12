@@ -213,6 +213,31 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       expect(JSON.stringify(vi.mocked(broadcastToAllWindows).mock.calls)).not.toContain('must-not-appear');
     });
 
+    it.each(['stop', 'start'] as const)('checks current authorization synchronously before the %s lifecycle effect', async (stage) => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      let checks = 0;
+      await expect(restartManagedAgent(root, agent.id, {
+        whenTurnEnds: true,
+        authorize: async () => () => {
+          if (++checks === (stage === 'stop' ? 1 : 2)) throw new Error('revoked before effect');
+        },
+      })).rejects.toThrow('Managed restart failed');
+      expect(killAgent).toHaveBeenCalledTimes(stage === 'stop' ? 0 : 1);
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(fixture.running).toBe(stage === 'stop');
+      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+    });
+
     it('does not resume another provider conversation after the effective project default changes', async () => {
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
