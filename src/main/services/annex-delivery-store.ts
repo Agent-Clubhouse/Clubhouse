@@ -109,7 +109,12 @@ export function createAnnexDeliveryStore(filename = 'annex-agent-outbox.json'): 
     onLoad: (result) => {
       if ('error' in result && (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT') loadError = result.error;
       if ('raw' in result) {
-        const raw = JSON.parse(result.raw) as Record<string, unknown>;
+        const parsed: unknown = JSON.parse(result.raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          loadError = new Error('Invalid delivery store root');
+          return;
+        }
+        const raw = parsed as Record<string, unknown>;
         if (Buffer.byteLength(result.raw) > DELIVERY_MAX_BYTES || raw.version !== 1
           || (!Array.isArray(raw.items) && (!Array.isArray(raw.outbox) || !Array.isArray(raw.inbox) || !Array.isArray(raw.deliveries)))) {
           loadError = new Error('Incomplete delivery store');
@@ -139,7 +144,8 @@ export function createAnnexDeliveryStore(filename = 'annex-agent-outbox.json'): 
         // Reserve space for each in-flight outcome, so accepting a call cannot
         // consume the capacity needed to durably finish an earlier one.
         const reserved = file.inbox.filter((r) => r.state === 'claimed').length * DELIVERY_MAX_RESULT_BYTES;
-        if (file.inbox.length + file.deliveries.length > DELIVERY_MAX_RECORDS || Buffer.byteLength(JSON.stringify(file)) + reserved > DELIVERY_MAX_BYTES) {
+        // Match settings-store's on-disk encoding, not its smaller compact form.
+        if (file.inbox.length + file.deliveries.length > DELIVERY_MAX_RECORDS || Buffer.byteLength(JSON.stringify(file, null, 2)) + reserved > DELIVERY_MAX_BYTES) {
           throw new DeliveryStoreError('delivery_store_full', 'The durable delivery store is full. Existing receipts are retained; retry after they expire.');
         }
         await store.save(file);
