@@ -9,6 +9,7 @@ import type { ChatDriverStartOptions } from '../../../shared/chat';
 const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[] }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
 vi.mock('../agent-config', () => ({
+  agentConfigGeneration: () => 0,
   peekDurableConfigs: vi.fn(async () => fixture.agents),
   getDurableConfig: vi.fn(async (_p: string, id: string) => fixture.agents.find((a) => a.id === id)),
   touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}),
@@ -66,7 +67,7 @@ import { createAssetCatalogStore } from '../asset-catalog/store';
 import { discoverManagedAssets } from '../managed-agents/discovery';
 import { prepareManagedAssetImport } from '../managed-agents/imports';
 import { withSettingsSurface } from '../settings-audit';
-import { spawnAgent, killAgent } from '../agent-system';
+import { spawnAgent, killAgent, resolveOrchestrator } from '../agent-system';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 
 const conventions = { configDir: '.github', skillsDir: 'skills', agentTemplatesDir: 'agents', mcpConfigFile: '.github/mcp.json', localSettingsFile: 'hooks.json' };
@@ -238,6 +239,69 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
     });
 
+    it.each(['stop', 'start'] as const)('does not replace a runtime recreated during %s authorization', async (stage) => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      let prepares = 0;
+      await expect(restartManagedAgent(root, agent.id, {
+        authorize: async () => {
+          if (++prepares === (stage === 'stop' ? 1 : 2)) {
+            await stopAllChatAgents();
+            await start();
+            fixture.running = true;
+          }
+          return () => {};
+        },
+      })).rejects.toThrow('Managed restart failed');
+      expect(killAgent).toHaveBeenCalledTimes(stage === 'stop' ? 0 : 1);
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(fixture.running).toBe(true);
+    });
+
+    it('does not spawn or record completion when stop returns without stopping its runtime', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      vi.mocked(killAgent).mockImplementationOnce(async () => {});
+      await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+    });
+
+    it('does not start a target made plain during the provider lookup', async () => {
+      const service = createManagedAgentsService({
+        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+        state: createManagedStateStore(path.join(root, 'managed')),
+        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+      });
+      _setManagedAgentsForTesting(service);
+      await service.ensureBuiltins();
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await deliverForSpawn(root, agent, copilot);
+      await start(); fixture.running = true;
+      vi.mocked(resolveOrchestrator).mockImplementationOnce(async () => { await Promise.resolve(); delete agent.managed; return copilot; });
+      await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
+      expect(spawnAgent).not.toHaveBeenCalled();
+    });
+
     it.each(['before restart', 'during authorization preparation'] as const)('does not resume another provider conversation when the effective default changes %s', async (stage) => {
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
@@ -259,7 +323,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
           return () => {};
         },
       })).toEqual({ resumed: false });
-      expect(spawnAgent).toHaveBeenLastCalledWith(expect.objectContaining({ resume: false, sessionId: undefined }));
+      expect(spawnAgent).toHaveBeenLastCalledWith(expect.objectContaining({ orchestrator: 'claude-code', resume: false, sessionId: undefined }));
       expect(fixture.starts[fixture.starts.length - 1].resumeNativeSessionId).toBeUndefined();
     });
   });

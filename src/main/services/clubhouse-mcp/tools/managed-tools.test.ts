@@ -14,6 +14,9 @@ const state = vi.hoisted(() => ({
   available: true,
   failMetadata: false,
   projectListeners: new Set<() => void>(),
+  projectPresent: true,
+  projectGeneration: 0,
+  projectPending: false,
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -33,7 +36,8 @@ vi.mock('../dispatcher-gate', async (importOriginal) => ({
   isDispatcherAgent: (id: string) => id === 'dispatcher',
 }));
 vi.mock('../../project-store', () => ({
-  peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }],
+  peekProjects: async () => state.projectPresent ? [{ id: 'p1', name: 'Clubhouse', path: '/proj' }] : [],
+  projectRegistryMutationState: () => ({ generation: state.projectGeneration, pending: state.projectPending }),
   onProjectsChanged: (listener: () => void) => { state.projectListeners.add(listener); return () => { state.projectListeners.delete(listener); }; },
 }));
 vi.mock('../../agent-config', () => ({
@@ -123,6 +127,9 @@ beforeEach(async () => {
   state.available = true;
   state.failMetadata = false;
   state.projectListeners = new Set();
+  state.projectPresent = true;
+  state.projectGeneration = 0;
+  state.projectPending = false;
   vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
@@ -818,6 +825,11 @@ describe('templates', () => {
 });
 
 describe('restart_agent', () => {
+  beforeEach(() => {
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty', nonce: 'original' });
+  });
+  afterEach(() => { agentRegistry.untrack('dispatcher'); });
+
   it('refuses an agent that isn\'t managed, one that is asleep, and the Dispatcher itself', async () => {
     state.agents.set('plain', { id: 'plain', name: 'plain', color: 'indigo', createdAt: '', worktreePath: '/w/plain' });
     state.running.add('plain');
@@ -943,6 +955,52 @@ describe('restart_agent', () => {
     });
     expect((await call('restart_agent', { project: 'Clubhouse', agent: 'unresolved-restart' })).isError).toBe(true);
     expect(effect).not.toHaveBeenCalled();
+  });
+
+  it.each(['missing', 'changed', 'pending'] as const)('refuses a %s project after asynchronous lifecycle preparation', async (change) => {
+    managedAgent('project-fence');
+    state.running.add('project-fence');
+    const effect = vi.fn();
+    vi.mocked(restartManagedAgent).mockImplementationOnce(async (_p, _id, options) => {
+      const authorize = await options?.authorize?.();
+      if (change === 'missing') state.projectPresent = false;
+      await authorize?.refresh?.();
+      if (change === 'changed') state.projectGeneration++;
+      if (change === 'pending') state.projectPending = true;
+      authorize?.();
+      effect();
+      return { resumed: true };
+    });
+    expect((await call('restart_agent', { project: 'Clubhouse', agent: 'project-fence' })).isError).toBe(true);
+    expect(effect).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse original Ask proof after the caller registration and nonce are replaced', async () => {
+    managedAgent('caller-fence');
+    state.running.add('caller-fence');
+    _resetGrantRequestsForTesting();
+    const effects = vi.fn();
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.restart', target: { kind: 'any' }, mode: 'ask' }] }));
+      const args = { project: 'Clubhouse', agent: 'caller-fence' };
+      expect((await call('restart_agent', args)).isError).toBe(true);
+      expect(takeGrantRequest(listGrantRequests()[0].requestId, true)).toBeTruthy();
+      vi.mocked(restartManagedAgent).mockImplementationOnce(async (_p, _id, options) => {
+        (await options?.authorize?.())?.();
+        effects('stop');
+        const original = agentRegistry.get('dispatcher')!;
+        agentRegistry.untrack('dispatcher');
+        agentRegistry.register('dispatcher', { ...original, nonce: 'replacement' });
+        (await options?.authorize?.())?.();
+        effects('start');
+        return { resumed: true };
+      });
+      expect((await call('restart_agent', args)).isError).toBe(true);
+      expect(effects.mock.calls).toEqual([['stop']]);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      _resetGrantRequestsForTesting();
+    }
   });
 });
 

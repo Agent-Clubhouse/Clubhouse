@@ -1,19 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 
-const state = vi.hoisted(() => ({ agents: new Map<string, DurableAgentConfig>(), running: new Set<string>() }));
-const spawnAgent = vi.hoisted(() => vi.fn(async () => undefined));
-const killAgent = vi.hoisted(() => vi.fn(async () => undefined));
+const state = vi.hoisted(() => ({
+  agents: new Map<string, DurableAgentConfig>(), running: new Set<string>(),
+  runtimes: new Map<string, { kind: 'chat'; getState(): string }>(),
+}));
+const spawnAgent = vi.hoisted(() => vi.fn(async ({ agentId }: { agentId: string }) => { state.running.add(agentId); }));
+const killAgent = vi.hoisted(() => vi.fn(async (agentId: string) => { state.running.delete(agentId); }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/tmp' } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
-vi.mock('../project-store', () => ({ peekProjects: async () => [] }));
+vi.mock('../project-store', () => ({ peekProjects: async () => [], projectRegistryMutationState: () => ({ generation: 0, pending: false }) }));
 vi.mock('../agent-config', () => ({
+  agentConfigGeneration: () => 0,
   getDurableConfig: async (_p: string, id: string) => state.agents.get(id) ?? null,
   peekDurableConfigs: async () => [...state.agents.values()],
   setManagedSetup: async () => undefined,
 }));
+vi.mock('../agent-runtime', () => ({ getAgentRuntime: (id: string) => state.running.has(id) ? state.runtimes.get(id) : undefined }));
+vi.mock('../pty-manager', () => ({ getLastActivity: () => null, processIdentity: () => undefined }));
 const deliver = vi.hoisted(() => vi.fn(async (): Promise<unknown> => null));
 vi.mock('./delivery', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./delivery')>()),
@@ -30,8 +36,11 @@ vi.mock('../agent-system', () => ({
 
 import { deliverForSpawn, forgetDelivery, recordMcpStartProblems, restartManagedAgent, statusFor } from './index';
 import type { OrchestratorProvider } from '../../orchestrators/types';
+import { agentRegistry } from '../agent-registry';
 
 function add(id: string, managed: boolean): void {
+  state.runtimes.set(id, { kind: 'chat', getState: () => 'idle' });
+  agentRegistry.register(id, { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
   state.agents.set(id, {
     id, name: id, color: 'indigo', createdAt: '', worktreePath: `/w/${id}`,
     ...(managed && { managed: { version: 1, blocks: [], skills: [], mcps: [] } }),
@@ -43,6 +52,7 @@ let receiptRoot: string;
 beforeEach(async () => {
   state.agents.clear();
   state.running.clear();
+  state.runtimes.clear();
   spawnAgent.mockClear();
   killAgent.mockClear();
   const fs = await import('node:fs');
@@ -67,6 +77,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  for (const id of state.agents.keys()) agentRegistry.untrack(id);
   (await import('./index'))._setManagedAgentsForTesting(null);
   (await import('node:fs')).rmSync(receiptRoot, { recursive: true, force: true });
 });
@@ -91,6 +102,24 @@ describe('restartManagedAgent', () => {
     await restartManagedAgent('/p', 'worker', { fresh: true });
     expect(killAgent).toHaveBeenCalledTimes(1);
     expect(spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'worker', resume: false }));
+  });
+
+  it('does not replace the original runtime identity while waiting for its turn', async () => {
+    add('waiting', true);
+    state.running.add('waiting');
+    let entered!: () => void;
+    const atWait = new Promise<void>((resolve) => { entered = resolve; });
+    state.runtimes.set('waiting', { kind: 'chat', getState: () => { entered(); return 'running'; } });
+    vi.useFakeTimers();
+    try {
+      const restart = restartManagedAgent('/p', 'waiting', { whenTurnEnds: true });
+      await atWait;
+      state.runtimes.set('waiting', { kind: 'chat', getState: () => 'idle' });
+      await vi.advanceTimersByTimeAsync(2000);
+      await expect(restart).rejects.toThrow('Managed restart failed');
+      expect(killAgent).not.toHaveBeenCalled();
+      expect(spawnAgent).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
   });
 });
 

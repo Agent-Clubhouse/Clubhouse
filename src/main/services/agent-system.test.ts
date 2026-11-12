@@ -430,6 +430,27 @@ describe('agent-system', () => {
   });
 
   describe('spawnAgent', () => {
+    it('starts under its own transition reservation while refusing a competing activity', async () => {
+      const { withAgentActivity, withAgentTransition } = await import('./agent-transition');
+      let entered!: () => void;
+      let release!: () => void;
+      const atProcessCreate = new Promise<void>((resolve) => { entered = resolve; });
+      const holdProcessCreate = new Promise<void>((resolve) => { release = resolve; });
+      mockPtySpawn.mockImplementationOnce(async () => { entered(); await holdProcessCreate; });
+      const spawn = withAgentTransition('agent-1', () => spawnAgent({
+        agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable',
+      }));
+      try {
+        await Promise.race([atProcessCreate, spawn.then(() => { throw new Error('Spawn returned before process creation'); })]);
+        await expect(withAgentActivity('agent-1', async () => undefined)).rejects.toMatchObject({ code: 'agent_transition_busy' });
+        expect(mockPtySpawn).toHaveBeenCalledOnce();
+      } finally {
+        release();
+        await spawn;
+      }
+      await expect(withAgentActivity('agent-1', async () => 'released')).resolves.toBe('released');
+    }, 2000);
+
     it('refuses to launch while the app shuts down (#2053)', async () => {
       const { closeLaunches, reopenLaunches, LaunchesClosedError } = await import('./launch-gate');
       closeLaunches('quitting');
