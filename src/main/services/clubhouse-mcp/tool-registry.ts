@@ -19,10 +19,10 @@ import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChang
 import { dispatcherGateVersion, isDispatcherAgent, isDispatcherChatAgent, isDispatcherCoordinatorId, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
-import { checkToolGrant, isListable, type AskedAction, type GrantCheck, type GrantCheckWire } from './grant-check';
+import { callerGrants, checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
 import { askFirst } from './ask-first';
-import { callKey } from '../grant-requests';
-import { resolveArgTargets } from './arg-targets';
+import { callKey, type ConsumedCallApproval } from '../grant-requests';
+import { resolveArgTargets, type ArgTargets } from './arg-targets';
 import { recordGrantDecision } from '../grant-telemetry';
 import { recordDispatcherControl } from '../../telemetry/dispatcher-telemetry';
 import { CONNECTION_TOOLS, WAKE_TOOL } from '../../../shared/connection-grants';
@@ -39,14 +39,28 @@ import {
 export const DISPATCHER_ONLY_MESSAGE = 'Only the Dispatcher can use this tool.';
 import type { McpRefusalReason } from '../../telemetry/agent-signals';
 
-const approvedCall = new AsyncLocalStorage<{ key: string; asks: AskedAction[] }>();
+const approvedCall = new AsyncLocalStorage<{ key: string; approval?: ConsumedCallApproval }>();
+
+/** Main-only local context, not a durable or forwardable authorization token. */
+export function grantApprovalContext(agentId: string, toolName: string, args: Record<string, unknown>, grant: ToolGrant | undefined, targets: ArgTargets, wire?: GrantCheckWire): string {
+  const caller = agentRegistry.get(agentId);
+  return callKey(agentId, toolName, {
+    args,
+    caller: { projectPath: caller?.projectPath, orchestrator: caller?.orchestrator, runtime: caller?.runtime, access: caller?.launchAccess },
+    policy: callerGrants(agentId), declarations: grant,
+    targets: [...targets].map(([declaration, resolved]) => ({ declaration, resolved })),
+    wire: wire && { targetId: wire.binding.targetId, targetKind: wire.binding.targetKind, metadata: wire.groupMetadata },
+  });
+}
 
 /** A fresh refusal always wins; only this exact call's consumed user approval can cover Ask first. */
-export function callGrantIsApproved(agentId: string, toolName: string, args: Record<string, unknown>, check: GrantCheck): boolean {
+export function callGrantIsApproved(agentId: string, toolName: string, args: Record<string, unknown>, check: GrantCheck, context?: string): boolean {
   if (check.ok === true) return true;
-  const approval = approvedCall.getStore();
-  return check.reason === 'ask_first' && approval?.key === callKey(agentId, toolName, args)
-    && check.asks.every((ask) => approval.asks.some((approved) => approved.action === ask.action && approved.where === ask.where));
+  const current = approvedCall.getStore();
+  const approval = current?.approval;
+  return check.reason === 'ask_first' && current?.key === callKey(agentId, toolName, args)
+    && !!context && approval?.scope.context === context
+    && check.asks.every((ask) => approval.scope.asks.some((approved) => approved.action === ask.action && approved.where === ask.where));
 }
 
 /**
@@ -888,14 +902,17 @@ export async function callTool(
     if ('message' in localized) return refuse('other_machine', localized.message);
     args = localized.args;
     // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
-    const granted = checkToolGrant(agentId, globalTool.grant, args, undefined, await resolveArgTargets(agentId, globalTool.grant, args));
+    const targets = await resolveArgTargets(agentId, globalTool.grant, args);
+    const granted = checkToolGrant(agentId, globalTool.grant, args, undefined, targets);
+    let approval: ConsumedCallApproval | undefined;
     if (granted.ok === false) {
-      const refused = await grantRefusal(agentId, toolName, granted, args);
-      if (refused) return refused;
+      const outcome = await grantRefusal(agentId, toolName, granted, args, grantApprovalContext(agentId, toolName, args, globalTool.grant, targets));
+      if ('refusal' in outcome) return outcome.refusal;
+      approval = outcome.approval;
     }
     return approvedCall.run({
       key: callKey(agentId, toolName, args),
-      asks: granted.ok === false && granted.reason === 'ask_first' ? granted.asks : [],
+      approval,
     }, () => withSettingsSurface('mcp', agentId, () => globalTool.handler(agentId, args)));
   }
 
@@ -1005,13 +1022,14 @@ export async function callTool(
   const localized = localizeAgentArgs(template.grant, args);
   if ('message' in localized) return refuse('other_machine', localized.message);
   args = localized.args;
-  const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), await resolveArgTargets(agentId, template.grant, args));
+  const targets = await resolveArgTargets(agentId, template.grant, args);
+  const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), targets);
   if (remoteDispatcherFederationPeer(binding.targetId) && granted.ok === false && granted.reason === 'ask_first') {
     return refuse('tool_denied', 'Durable Ask-first Dispatcher calls are not available yet. Nothing was queued or sent.');
   }
   if (granted.ok === false) {
-    const refused = await grantRefusal(agentId, toolName, granted, args);
-    if (refused) return refused;
+    const outcome = await grantRefusal(agentId, toolName, granted, args, grantApprovalContext(agentId, toolName, args, template.grant, targets, wireOf(binding)));
+    if ('refusal' in outcome) return outcome.refusal;
   }
 
   // A wire to an agent on another machine runs there, which checks it again against its own store (#3064).
@@ -1060,28 +1078,28 @@ function wireOf(binding: McpBinding): GrantCheckWire {
 
 /**
  * A call no grant covers (#2968), or one the user is asked about first
- * (#2970). Null: the user allowed this call, so it runs. The refusal never
+ * (#2970). An approval retains the user's original scope; a refusal never
  * says whether the target exists.
  */
-async function grantRefusal(agentId: string, toolName: string, check: Extract<GrantCheck, { ok: false }>, args: Record<string, unknown>): Promise<McpToolResult | null> {
+async function grantRefusal(agentId: string, toolName: string, check: Extract<GrantCheck, { ok: false }>, args: Record<string, unknown>, context: string): Promise<{ refusal: McpToolResult } | { approval: ConsumedCallApproval }> {
   if (check.reason === 'ask_first') {
-    const outcome = await askFirst(agentId, toolName, args, check.asks);
-    if (outcome.kind === 'approved') return null;
+    const outcome = await askFirst(agentId, toolName, args, check.asks, context);
+    if (outcome.kind === 'approved') return { approval: outcome.approval };
     // Only a new request is recorded: a retry while it waits, or a request that couldn't be placed, isn't an ask.
     if (outcome.created) recordGrantDecision({ agentId, toolName, decision: 'asked', reason: 'ask_first', actions: [...new Set(check.asks.map((a) => a.action))] });
-    return refuse('ask_first', outcome.text);
+    return { refusal: refuse('ask_first', outcome.text) };
   }
   appLog('core:mcp', 'info', 'Tool call refused: no Clubhouse permission covers it', { meta: { agentId, toolName, reason: check.reason } });
   recordGrantDecision({ agentId, toolName, decision: 'refused', reason: check.reason, actions: check.action ? [check.action] : [], ...(check.targetKind && { targetKind: check.targetKind }) });
   if (toolName === 'create_managed_agent' && args.connectToDispatcher === true) {
     const receiptId = randomUUID();
     const recorded = recordDispatcherControl({ tool: toolName, actorId: agentId, targets: [], requested: { receiptId }, outcome: 'refused', code: check.reason });
-    return refuse('no_grant', JSON.stringify({
+    return { refusal: refuse('no_grant', JSON.stringify({
       status: 'refused', connectedToDispatcher: false, receipt: { id: receiptId, outcome: 'refused' }, error: check.message,
       ...(!recorded && { audit_warning: 'Local telemetry recording is off, so this is not in the audit record.' }),
-    }));
+    })) };
   }
-  return refuse('no_grant', check.message);
+  return { refusal: refuse('no_grant', check.message) };
 }
 
 function matchScopedToolName(

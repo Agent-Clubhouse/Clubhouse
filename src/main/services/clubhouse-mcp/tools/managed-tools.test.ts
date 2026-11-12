@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   hiddenFromPeek: new Set<string>(),
   available: true,
   failMetadata: false,
+  projectListeners: new Set<() => void>(),
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -20,18 +21,21 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../agent-system', async (original) => ({
   ...await original<typeof import('../../agent-system')>(),
-  resolveOrchestrator: async (_projectPath: string, cli?: string) => ({
+  resolveOrchestrator: vi.fn(async (_projectPath: string, cli?: string) => ({
     id: cli ?? 'claude-code',
     displayName: 'Test CLI',
     checkAvailability: async () => ({ available: state.available }),
     conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md' },
-  }),
+  })),
 }));
 vi.mock('../dispatcher-gate', async (importOriginal) => ({
   ...await importOriginal<typeof import('../dispatcher-gate')>(),
   isDispatcherAgent: (id: string) => id === 'dispatcher',
 }));
-vi.mock('../../project-store', () => ({ peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }] }));
+vi.mock('../../project-store', () => ({
+  peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }],
+  onProjectsChanged: (listener: () => void) => { state.projectListeners.add(listener); return () => { state.projectListeners.delete(listener); }; },
+}));
 vi.mock('../../agent-config', () => ({
   listDurable: async () => [...state.agents.values()],
   peekDurableConfigs: async () => [...state.agents.values()].filter((a) => !state.hiddenFromPeek.has(a.id)),
@@ -90,7 +94,7 @@ vi.mock('../../managed-agents', async () => {
   };
 });
 
-import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
+import { callTool, getScopedToolList, registerGlobalTool, _resetForTesting } from '../tool-registry';
 import { CONFIRM_TTL_MS, registerManagedTools, _resetConfirmTokensForTesting } from './managed-tools';
 import { managedAgents, restartManagedAgent } from '../../managed-agents';
 import { _resetSettingsAuditForTesting } from '../../settings-audit';
@@ -99,7 +103,8 @@ import { BUILTIN_BLOCK_IDS } from '../../managed-agents/builtins';
 import { getAgentGrantChanges, updateAgentGrantChanges } from '../../agent-grants-store';
 import { deleteAgent } from '../../agent-delete';
 import { agentRegistry } from '../../agent-registry';
-import { listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
+import { dropCallApprovalsFor, listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
+import { resolveOrchestrator } from '../../agent-system';
 import { describeDeleteCall } from './managed-tools';
 import { _resetDispatcherBootstrapForTesting } from '../dispatcher-bootstrap';
 import { getOrchestrationPolicy, setOrchestrationPolicy } from '../../orchestration-policy';
@@ -117,6 +122,8 @@ beforeEach(async () => {
   state.hiddenFromPeek = new Set();
   state.available = true;
   state.failMetadata = false;
+  state.projectListeners = new Set();
+  vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
   grantMock.granted = false;
@@ -412,6 +419,108 @@ describe('discovery and confirmed library imports (#2855)', () => {
       agentRegistry.untrack('dispatcher');
       _resetGrantRequestsForTesting();
     }
+  });
+
+  it('does not widen the original pending approval when source-read becomes Ask first before the user answers', async () => {
+    const { args, token } = await importPreview('Original pending approval scope');
+    const confirmed = { ...args, confirm: token };
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'library.write', target: { kind: 'any' }, mode: 'ask' }] }));
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+      const old = listGrantRequests('dispatcher')[0];
+      expect(old.actions).toEqual(['library.write']);
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [
+        { action: 'library.write', target: { kind: 'any' }, mode: 'ask' },
+        { action: 'agent.read', target: { kind: 'any' }, mode: 'ask' },
+      ] }));
+      dropCallApprovalsFor('dispatcher');
+      expect(takeGrantRequest(old.requestId, true)?.actions).toEqual(['library.write']);
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+      expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+      const current = listGrantRequests('dispatcher')[0];
+      expect(current.actions).toEqual(['agent.read', 'library.write']);
+      expect(takeGrantRequest(current.requestId, true)).toBeTruthy();
+      expect((await call('import_agent_asset', confirmed)).json.status).toBe('imported');
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it('refuses an inherited project provider changed during the final source/library snapshot', async () => {
+    let projectProvider: 'claude-code' | 'copilot-cli' = 'claude-code';
+    const provider = await resolveOrchestrator('/proj');
+    vi.mocked(resolveOrchestrator).mockImplementation(async (_p, cli) => ({ ...provider, id: cli ?? projectProvider }));
+    const { args, token } = await importPreview('Late inherited project provider');
+    const service = managedAgents();
+    const entries = service.liveEntries.bind(service);
+    let snapshots = 0;
+    vi.spyOn(service, 'liveEntries').mockImplementation(async () => {
+      if (++snapshots === 2) projectProvider = 'copilot-cli';
+      return entries();
+    });
+    expect(state.agents.get('native-source')?.orchestrator).toBeUndefined();
+    expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+    expect(projectProvider).toBe('copilot-cli');
+    expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+  });
+
+  it('re-asks when a name resolves to a different canonical agent despite identical actions and labels', async () => {
+    sourceAgent();
+    const original = state.agents.get('native-source')!;
+    original.name = 'Shared source name';
+    const handler = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'read' }] }));
+    registerGlobalTool('test_read_named_agent', { description: 'Read an agent', inputSchema: { type: 'object' } }, handler, {
+      grant: { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+    });
+    const args = { project: 'Clubhouse', agent: original.name };
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.read', target: { kind: 'any' }, mode: 'ask' }] }));
+      expect((await call('test_read_named_agent', args)).isError).toBe(true);
+      const old = listGrantRequests()[0];
+      original.name = 'Previous source';
+      state.agents.set('replacement', { ...original, id: 'replacement', name: args.agent });
+      expect(takeGrantRequest(old.requestId, true)).toBeTruthy();
+      expect((await call('test_read_named_agent', args)).isError).toBe(true);
+      expect(handler).not.toHaveBeenCalled();
+      const current = listGrantRequests()[0];
+      expect(current.actions).toEqual(old.actions);
+      expect(current.where).toBe(old.where);
+      expect(takeGrantRequest(current.requestId, true)).toBeTruthy();
+      expect((await call('test_read_named_agent', args)).isError).toBeFalsy();
+      expect(handler).toHaveBeenCalledTimes(1);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it('synchronously refuses a project generation change after the final provider resolution and releases its listener', async () => {
+    let projectProvider: 'claude-code' | 'copilot-cli' = 'claude-code';
+    const provider = await resolveOrchestrator('/proj');
+    vi.mocked(resolveOrchestrator).mockImplementation(async (_p, cli) => ({ ...provider, id: cli ?? projectProvider }));
+    const { args, token } = await importPreview('Project generation changed at final snapshot');
+    const service = managedAgents();
+    const entries = service.liveEntries.bind(service);
+    let snapshots = 0;
+    vi.spyOn(service, 'liveEntries').mockImplementation(async () => {
+      if (++snapshots === 3) {
+        projectProvider = 'copilot-cli';
+        for (const listener of state.projectListeners) listener();
+      }
+      return entries();
+    });
+    expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+    expect(projectProvider).toBe('copilot-cli');
+    expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+    expect(state.projectListeners.size).toBe(0);
   });
 
   it('returns an error-shaped durable partial receipt and can repair the existing part without creating again', async () => {

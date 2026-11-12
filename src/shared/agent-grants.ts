@@ -132,6 +132,8 @@ export interface GrantCaller {
  */
 export interface GrantCallTarget {
   kind: 'agent' | 'browser' | 'project' | 'group_project' | 'app' | 'library' | 'action';
+  /** Main-resolved local agent identity, including when a call names it by display name. */
+  agentId?: string;
   /** For an Action target: its id. `relations` has `self` when the caller owns it. */
   actionId?: string;
   relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member' | 'created_by_me'>;
