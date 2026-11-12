@@ -20,6 +20,7 @@ import { dropCallApprovalsFor } from './grant-requests';
 import { getAgentGrantChanges, updateAgentGrantChanges } from './agent-grants-store';
 import { isDispatcherAgentId, resolveDispatcherIdentity } from './dispatcher/dispatcher-service';
 import { recordGrantChange } from './grant-telemetry';
+import { callerConnectedToLocalDispatcher } from './clubhouse-mcp/local-dispatcher-connections';
 
 function factsOf(agentId: string, config: DurableAgentConfig) {
   const dispatcher = isDispatcherAgentId(agentId);
@@ -27,7 +28,7 @@ function factsOf(agentId: string, config: DurableAgentConfig) {
   const policy = resolveOrchestrationPolicy(config.orchestration, { helper });
   const orchestrates = !dispatcher && policy.orchestrate;
   const crossProject = orchestrates && policy.crossProjectHelpers;
-  return { dispatcher, helper, orchestrates, crossProject, control: policy.control };
+  return { dispatcher, connectedToDispatcher: callerConnectedToLocalDispatcher(agentId), helper, orchestrates, crossProject, control: policy.control };
 }
 
 /**
@@ -98,7 +99,7 @@ export async function readAgentGrants(projectPath: string, agentId: string): Pro
  * agent cache, #2960), synchronously: its defaults and saved changes.
  */
 export function grantsFromFacts(agentId: string, facts: GrantCallerFacts): Grant[] {
-  return applyGrantChanges(defaultGrants(facts), getAgentGrantChanges(agentId));
+  return applyGrantChanges(defaultGrants({ ...facts, connectedToDispatcher: callerConnectedToLocalDispatcher(agentId) }), getAgentGrantChanges(agentId));
 }
 
 /** The grants an agent holds now, defaults and changes together. */

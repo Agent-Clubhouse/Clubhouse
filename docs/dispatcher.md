@@ -118,6 +118,9 @@ integration are separate prerequisites.
 
 The connection fact comes from an exact local controller binding, even while
 that receiver is off, never from a name, remote address or tool argument.
+Settings and cached Actions facts derive it from the shared
+`clubhouse-mcp/local-dispatcher-connections.ts` predicate, not durable config or
+a supplied connection flag.
 Off means no new grant; existing wider permissions and explicit saved changes
 are unchanged. Presence read is limited by the fixed remote tool surface and
 never includes output/settings, waking, resets or additional control.

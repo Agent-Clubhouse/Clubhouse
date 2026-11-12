@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../shared/types';
+import { evaluateGrant } from '../../shared/agent-grants';
 
 const mocks = vi.hoisted(() => ({
   config: {} as Partial<DurableAgentConfig>,
@@ -22,15 +23,66 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   resolveDispatcherIdentity: (projectPath: string, agentId: string) => ({ projectPath, agentId }),
 }));
 
-import { readAgentGrants, setAgentGrant } from './agent-grants-service';
+import { effectiveAgentGrants, grantsFromFacts, readAgentGrants, setAgentGrant } from './agent-grants-service';
+import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { setDispatcherIdLookup } from './clubhouse-mcp/dispatcher-gate';
 
 const row = (view: Awaited<ReturnType<typeof readAgentGrants>>, action: string, kind: string) =>
   view.rows.find((r) => r.action === action && r.target.kind === kind);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  bindingManager._resetForTesting();
+  setDispatcherIdLookup((id) => id === 'real-controller');
   mocks.config = { id: 'o1', name: 'Orch', orchestration: { orchestrate: true, control: 'hands-off' } } as Partial<DurableAgentConfig>;
   mocks.changes = undefined;
+});
+afterEach(() => setDispatcherIdLookup(null));
+
+describe('trusted remote sender defaults', () => {
+  const facts = { dispatcher: false, helper: false, orchestrates: false, crossProject: false };
+  const remoteDecision = (grants: ReturnType<typeof grantsFromFacts>, action: 'agent.read' | 'agent.message') => evaluateGrant({
+    caller: { kind: 'agent', agentId: 'o1' }, action,
+    target: { kind: 'agent', isDispatcher: true, isRemoteDispatcher: true },
+  }, grants).outcome;
+
+  it('uses the same live trusted connection in settings, effective grants and cached Actions facts', async () => {
+    bindingManager.bind('o1', { targetId: 'real-controller', targetKind: 'agent', label: 'An ordinary label' });
+    const view = await readAgentGrants('/p', 'o1');
+    expect(row(view, 'agent.read', 'remote_dispatcher')).toMatchObject({ mode: 'allow', source: 'structural' });
+    expect(row(view, 'agent.message', 'remote_dispatcher')).toMatchObject({ mode: 'ask', source: 'structural' });
+    const effective = await effectiveAgentGrants('/p', 'o1');
+    expect(remoteDecision(effective, 'agent.read')).toBe('allow');
+    expect(remoteDecision(effective, 'agent.message')).toBe('ask');
+    expect(remoteDecision(grantsFromFacts('o1', facts), 'agent.message')).toBe('ask');
+    bindingManager.unbind('o1', 'real-controller');
+    expect(row(await readAgentGrants('/p', 'o1'), 'agent.read', 'remote_dispatcher')?.mode).toBe('off');
+    expect(remoteDecision(grantsFromFacts('o1', facts), 'agent.message')).toBe('refuse');
+  });
+
+  it('does not trust an injected connection fact in cached caller facts or durable config', async () => {
+    Object.assign(mocks.config, { connectedToDispatcher: true });
+    bindingManager.bind('o1', { targetId: 'ordinary', targetKind: 'agent', label: 'Dispatcher' });
+    const view = await readAgentGrants('/p', 'o1');
+    expect(row(view, 'agent.read', 'remote_dispatcher')?.mode).toBe('off');
+    expect(row(view, 'agent.message', 'remote_dispatcher')?.mode).toBe('off');
+    const grants = grantsFromFacts('o1', { ...facts, connectedToDispatcher: true });
+    expect(remoteDecision(grants, 'agent.read')).toBe('refuse');
+    expect(remoteDecision(grants, 'agent.message')).toBe('refuse');
+  });
+
+  it('keeps saved remote Off and Allow choices over the trusted connection defaults', async () => {
+    bindingManager.bind('o1', { targetId: 'real-controller', targetKind: 'agent', label: 'Controller' });
+    mocks.changes = { changes: [
+      { action: 'agent.read', target: { kind: 'remote_dispatcher' }, mode: 'off', by: 'user' },
+      { action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'allow', by: 'user' },
+    ] };
+    const view = await readAgentGrants('/p', 'o1');
+    expect(row(view, 'agent.read', 'remote_dispatcher')).toMatchObject({ mode: 'off', source: 'user' });
+    expect(row(view, 'agent.message', 'remote_dispatcher')).toMatchObject({ mode: 'allow', source: 'user' });
+    expect(remoteDecision(await effectiveAgentGrants('/p', 'o1'), 'agent.read')).toBe('refuse');
+    expect(remoteDecision(grantsFromFacts('o1', facts), 'agent.message')).toBe('allow');
+  });
 });
 
 describe('start and dispose rows follow the approval setting (#2970)', () => {
