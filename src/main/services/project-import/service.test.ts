@@ -872,14 +872,29 @@ describe('cancellation, interruption and unsafe incidental execution', () => {
     fs.mkdirSync(hooks);
     fs.writeFileSync(path.join(hooks, 'post-checkout'), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
     const config = path.join(temp.root, '.gitconfig');
-    fs.writeFileSync(config, `[core]\n hooksPath = ${hooks}\n[init]\n templateDir = ${hooks}\n[filter "danger"]\n smudge = touch '${marker}'\n required = true\n[url "file:///unexpected/"]\n insteadOf = https://github.com/\n`);
-    fs.writeFileSync(path.join(f.source, '.gitattributes'), 'readme.txt filter=danger\n');
-    fs.symlinkSync(marker, path.join(f.source, 'link'));
-    git(f.source, 'add', '.');
-    git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'untrusted attributes');
+    fs.writeFileSync(config, '', { flag: 'wx', mode: 0o600 });
     try {
-      const { receipt } = await start(f);
-      expect((await finished(f.service, receipt.id)).phase).toBe('completed');
+      const windowsPath = String.raw`C:\Users\fixture\AppData\Local\Temp\hooks`;
+      git(f.source, 'config', '--file', config, 'core.hooksPath', windowsPath);
+      expect(git(f.source, 'config', '--file', config, '--get', 'core.hooksPath')).toBe(windowsPath);
+      for (const [key, value] of [
+        ['core.hooksPath', hooks], ['init.templateDir', hooks],
+        ['filter.danger.smudge', `touch '${marker}'`], ['filter.danger.required', 'true'],
+        ['url.file:///unexpected/.insteadOf', 'https://github.com/'],
+      ]) {
+        git(f.source, 'config', '--file', config, key, value);
+        expect(git(f.source, 'config', '--file', config, '--get', key)).toBe(value);
+      }
+      fs.writeFileSync(path.join(f.source, '.gitattributes'), 'readme.txt filter=danger\n');
+      fs.symlinkSync(marker, path.join(f.source, 'link'));
+      git(f.source, 'add', '.');
+      git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'untrusted attributes');
+      const commit = git(f.source, 'rev-parse', 'HEAD');
+      const { plan, receipt } = await start(f);
+      expect(plan).toMatchObject({ branch: 'trunk', defaultBranch: 'trunk', commit, headCommit: commit });
+      const outcome = await finished(f.service, receipt.id);
+      expect(outcome.phase, `Import terminal phase=${outcome.phase}, failedAt=${outcome.failedAt ?? 'none'}, reason=${outcome.reason ?? 'none'}`).toBe('completed');
+      expect(outcome.cloneCompleted).toBe(true);
       expect(fs.existsSync(marker)).toBe(false);
       expect(fs.lstatSync(path.join(f.destination, 'link')).isSymbolicLink()).toBe(false);
       expect(fs.readFileSync(path.join(f.destination, 'readme.txt'), 'utf8')).toBe('hello\n');
@@ -891,13 +906,26 @@ describe('cancellation, interruption and unsafe incidental execution', () => {
 
   it.each(['.clubhouse', '.ClubHouse', '.clubhouse.'])('refuses repository-provided %s runtime state before checkout or registration', async (folder) => {
     const f = fixture();
-    fs.mkdirSync(path.join(f.source, folder));
-    fs.writeFileSync(path.join(f.source, folder, 'agents.json'), '{"agents":[]}');
-    git(f.source, 'add', '.');
-    git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'runtime state');
-    const { receipt } = await start(f);
+    const inputGit = (input: string, ...args: string[]) => execFileSync(fixtureBinary, ['-c', 'protocol.file.allow=always', ...args], {
+      cwd: f.source, env: fixtureEnv, input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const payload = '{"agents":[]}';
+    const blob = inputGit(payload, 'hash-object', '-w', '--stdin');
+    const runtimeTree = inputGit(`100644 blob ${blob}\tagents.json\n`, 'mktree');
+    const tree = inputGit(`${git(f.source, 'ls-tree', 'HEAD')}\n040000 tree ${runtimeTree}\t${folder}\n`, 'mktree');
+    const commit = git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit-tree', tree, '-p', f.commit, '-m', 'runtime state');
+    git(f.source, 'update-ref', 'refs/heads/trunk', commit, f.commit);
+    expect(git(f.source, 'ls-tree', '-z', '--name-only', 'HEAD').split('\0').filter(Boolean)).toEqual([folder, 'readme.txt']);
+    expect(git(f.source, 'cat-file', 'blob', `${commit}:${folder}/agents.json`)).toBe(payload);
+    expect(git(f.source, 'symbolic-ref', '--short', 'HEAD')).toBe('trunk');
+    expect(git(f.source, 'rev-parse', 'HEAD')).toBe(commit);
+    expect(fs.readdirSync(f.source).sort()).toEqual(['.git', 'readme.txt']);
+    const { plan, receipt } = await start(f);
+    expect(plan).toMatchObject({ branch: 'trunk', defaultBranch: 'trunk', commit, headCommit: commit });
     const result = await finished(f.service, receipt.id);
     expect(result).toMatchObject({ phase: 'failed', cloneCompleted: false, reason: 'repository_app_state' });
+    expect(vi.mocked(f.runner.run).mock.calls.some(([args]) => args[0] === 'checkout')).toBe(false);
+    expect(fs.readdirSync(f.destination)).toEqual(['.git']);
     expect(fs.existsSync(path.join(f.destination, '.clubhouse'))).toBe(false);
     expect(f.register).not.toHaveBeenCalled();
   });

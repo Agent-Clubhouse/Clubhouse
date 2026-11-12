@@ -153,6 +153,11 @@ pre-existing or user-modified content.
 
 Fixtures use isolated local Git repositories and mocked authentication/approval
 boundaries, without private credentials, login probes or paid agent calls.
+Git serializes fixture configuration with exact value readbacks, including
+Windows backslashes. Runtime-name fixtures use real Git objects/refs without
+requiring host worktree spelling, checking exact trees/payloads and trunk/tips.
+Native macOS results and modeled Windows path/config controls do not establish
+native Windows success.
 The entry-limit fixture uses stream-mocked directory enumeration over one owned
 real file: the real walker counts 20,000 entries and reads/hashes their bytes,
 then rejects entry 20,001 before file opens. Separate real-filesystem fixtures
