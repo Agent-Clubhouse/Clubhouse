@@ -92,6 +92,22 @@ The rewrite step that put agents' news into their own voice under their own name
 
 A separate thread per agent was considered instead. It would keep the clutter out of the main chat but leave the user two places to watch, put questions that need them out of sight, and need new UI on desktop and phone. The fix in place keeps one conversation.
 
+## Federation protocol foundation (#2834, #3345, #3346, #3349)
+
+`shared/dispatcher-federation.ts` defines the peer/controller boundary for the
+staged federation implementation. This contract alone does not enable federation:
+the authenticated Annex delivery and local controller adapters must be installed.
+It does not add a queue, elect a lead, share memory or replace Annex chat.
+
+| Boundary | Rule |
+|---|---|
+| Membership | Only other computer members get links; phones and one-to-one pairings do not. Reconcile from current membership, including after reconnect. |
+| Tools | Only status, connectivity, message, file and `hand_off_request`. The receiving parser rejects every other name and extra argument; saved connection switches cannot widen this set. |
+| Authority | Origin is supplied separately by the receiving transport. Payloads cannot supply origin, grants or approval. A hand-off is a request; a message is news. |
+| Presence | A disconnected member is offline even if its last snapshot was working. Unknown controller information is unavailable, not guessed online. Machine-qualified addresses are for routing; names and machines are for labels. |
+| Outcome | Delivery and work outcome are separate. A message without an explicit receiver outcome never becomes completed. |
+| Causality | Root, depth and parent delivery id are internal metadata kept with remote requests, including across later controller turns and replies. |
+
 ## What connections start with (#3214)
 
 The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". A connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off, except for a parent's direction to its own helper. Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).
