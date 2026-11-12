@@ -86,6 +86,7 @@ import {
   isSameProject,
   isChatTipAgentReadUncertain,
   listDurable,
+  peekDurableConfigsChecked,
   projectKey,
   renameDurable,
   restoreFromBackup,
@@ -119,6 +120,66 @@ beforeEach(() => {
   dirInodes.clear();
   copiedFiles.length = 0;
   writeGate = null;
+});
+
+describe('strict read-only durable inventory', () => {
+  beforeEach(() => {
+    vi.mocked(fsp.stat).mockResolvedValue({ isDirectory: () => true } as Awaited<ReturnType<typeof fsp.stat>>);
+  });
+
+  it.each([
+    { label: 'mixed unknown row', value: [AGENT_A, { future: true }] },
+    { label: 'duplicate identity', value: [AGENT_A, { ...AGENT_A, name: 'copy' }] },
+    { label: 'unknown helper owner', value: [AGENT_A, { ...AGENT_B, parentAgentId: 7 }] },
+    { label: 'dangling helper owner', value: [AGENT_A, { ...AGENT_B, parentAgentId: 'missing' }] },
+    { label: 'missing name', value: [{ id: 'unknown' }] },
+    { label: 'invalid top-level schema', value: { agents: [AGENT_A] } },
+    { label: 'corrupt primary', value: '{torn' },
+  ])('refuses $label rather than using a lossy or backup inventory', async ({ value }) => {
+    files.set(CONFIG_PATH, typeof value === 'string' ? value : JSON.stringify(value));
+    files.set(BACKUP_PATH, JSON.stringify([AGENT_A]));
+    const before = new Map(files);
+
+    expect(await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).toEqual({ agents: [], readable: false });
+    expect((await peekDurableConfigsChecked(PROJECT_PATH)).readable).toBe(true);
+    expect(files).toEqual(before);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.mkdir).not.toHaveBeenCalled();
+    expect(fsp.rename).not.toHaveBeenCalled();
+    expect(watch).not.toHaveBeenCalled();
+  });
+
+  it('does not use a cached inventory to hide an unreadable primary', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    await listDurable(PROJECT_PATH);
+    readErrors.set(CONFIG_PATH, Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    const before = new Map(files);
+    vi.mocked(fsp.writeFile).mockClear();
+    vi.mocked(fsp.mkdir).mockClear();
+    vi.mocked(fsp.rename).mockClear();
+
+    expect(await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).toEqual({ agents: [], readable: false });
+    expect(await peekDurableConfigsChecked(PROJECT_PATH)).toEqual({ agents: [AGENT_A], readable: true });
+    expect(files).toEqual(before);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.mkdir).not.toHaveBeenCalled();
+    expect(fsp.rename).not.toHaveBeenCalled();
+  });
+
+  it('reads valid helpers, known-empty stores, and missing-primary backups without loading or writing', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A, { ...AGENT_B, parentAgentId: AGENT_A.id }]));
+    const before = new Map(files);
+    expect((await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).agents).toHaveLength(2);
+    expect(files).toEqual(before);
+    files.delete(CONFIG_PATH);
+    expect(await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).toEqual({ agents: [], readable: true });
+    files.set(BACKUP_PATH, JSON.stringify([AGENT_A]));
+    expect(await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).toEqual({ agents: [AGENT_A], readable: true });
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.mkdir).not.toHaveBeenCalled();
+    expect(fsp.rename).not.toHaveBeenCalled();
+    expect(watch).not.toHaveBeenCalled();
+  });
 });
 
 describe('agent-config persistence barrier', () => {
