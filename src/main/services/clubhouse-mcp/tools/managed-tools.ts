@@ -22,6 +22,8 @@ import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
 import { managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
 import { applyManagedSettings, createManagedAgent } from '../../managed-agents/agents';
 import { previewManagedSetup } from '../../managed-agents/delivery';
+import { discoverManagedAssets } from '../../managed-agents/discovery';
+import { prepareManagedAssetImport, type ManagedAssetImportRequest } from '../../managed-agents/imports';
 import { checkTemplateSettings, ManagedError } from '../../managed-agents/service';
 import { resolveOrchestrator } from '../../agent-system';
 import { getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
@@ -320,6 +322,42 @@ export function registerManagedTools(): void {
   tool('get_agent_part', { actions: ['library.read'], target: 'library' }, 'Read one agent part with its full content and revision.',
     { id: S }, ['id'],
     async (_c, args) => json(await svc().getPart(requireString(args, 'id'))));
+
+  tool('discover_agent_assets', { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+    'Discover skill folders and local MCP definitions in a registered agent\'s effective-provider folder, without executing anything or changing files. Plain agents remain plain. Only this agent folder is inspected, not global/inherited configuration. Discovered does not mean configured, desired, running or provider-confirmed loaded. Use import_agent_asset to preview a complete bundle.',
+    { project: PROJECT, agent: AGENT }, ['project', 'agent'],
+    async (_c, args) => {
+      const t = await resolveAgent(args);
+      const agent = await agentConfig.getDurableConfig(t.project.path, t.agentId);
+      if (!agent?.worktreePath) throw new ArgError('This agent has no own source folder. Import accepts only a registered agent folder, never an arbitrary path.');
+      const provider = await resolveOrchestrator(t.project.path, agent.orchestrator);
+      return json({ agentId: t.agentId, provider: provider.id, ...await discoverManagedAssets({ root: agent.worktreePath, conventions: provider.conventions }) });
+    });
+
+  tool('import_agent_asset', [
+    { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+    { actions: ['library.read', 'library.write'], target: 'library' },
+  ],
+    'Preview, then explicitly confirm importing one discovered asset into the shared part library. project/agent name the source, not a target to change. candidateId comes from discover_agent_assets. mode copy requires name and makes an independent bundle; reuse requires an exactly matching partId and follows that shared part. No assignment, conversion, restart or probe. Supporting/binary files and executable flags are kept; links, unsafe paths, credentials and unsupported fields refuse the whole import. Preview returns no content or source paths. Confirm with identical arguments and the single-use token; source/library changes require a new preview.',
+    { project: PROJECT, agent: AGENT, candidateId: S, mode: { type: 'string', enum: ['copy', 'reuse'] }, partId: S, name: S, confirm: S },
+    ['project', 'agent', 'candidateId', 'mode'],
+    async (callerId, args) => {
+      const t = await resolveAgent(args);
+      const agent = await agentConfig.getDurableConfig(t.project.path, t.agentId);
+      if (!agent?.worktreePath) throw new ArgError('The source agent has no own folder.');
+      const provider = await resolveOrchestrator(t.project.path, agent.orchestrator);
+      const mode = requireString(args, 'mode');
+      if (mode !== 'copy' && mode !== 'reuse') throw new ArgError('mode must be copy or reuse.');
+      const request: ManagedAssetImportRequest = { candidateId: requireString(args, 'candidateId'), mode,
+        partId: optionalString(args, 'partId'), name: optionalString(args, 'name') };
+      const plan = await prepareManagedAssetImport(svc(), { root: agent.worktreePath, conventions: provider.conventions }, request, t.project.id);
+      const digest = digestOf('import_agent_asset', t.project.id, t.agentId, provider.id, plan.fingerprint);
+      const confirm = optionalString(args, 'confirm');
+      if (!confirm) return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest), ...plan.preview });
+      redeemConfirm(callerId, confirm, digest);
+      const part = await asDispatcher(callerId, () => plan.commit(ACTOR));
+      return json({ status: mode === 'copy' ? 'imported' : 'reused', part, assigned: false, providerLoaded: 'not_confirmed' });
+    });
 
   tool('create_agent_part', { actions: ['library.write'], target: 'library' },
     'Create a custom agent part in the library. It is not added to any agent; use set_agent_setup for that. content: block {content}, skill {skillName, files: [{path, content, encoding?, executable?}]}, mcp {serverKey, transport: stdio|http|sse, command?, args?, url?, envVars?: names only}. Never put secret values in parts.',
