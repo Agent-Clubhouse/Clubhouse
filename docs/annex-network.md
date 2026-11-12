@@ -38,6 +38,7 @@ Before entering `applying`, a worker must persist the registered project id, res
 `handoff-secrets.ts` contains fixed, case-insensitive sensitive-path rules and high-confidence credential-content rules. Findings contain only a redacted path, rule id and optional line number, never a matched value. Known credentials embedded in filenames are also blocked and redacted. UTF-8 text up to 1 MiB is scanned by content; binary and larger files receive name checks only. Auth configuration that cannot be inspected is blocked. `.env.example`, `.env.sample` and `.env.template` are exempt by name, not by content. Handoff records, including briefs and response reasons, are checked before persistence.
 
 These are internal safety primitives, not a complete transfer implementation. Project-owned audited allowlists, immutable file snapshots, receiver-side byte/hash verification, branch bundles, transfer routes and automatic fresh-worktree apply remain gated on subsequent reviewed slices. Agents cannot override a secret block.
+
 ## Durable agent delivery (#3334)
 
 Every cross-machine `send_message` and `send_file`, online or offline, enters the atomic sender outbox before transport. Supply `idempotency_key` (or `task_id`) when retrying: caller, machine, target, tool and both network pairing epochs scope the key, and different content under that key is refused. Without a supplied key, a new call is new work. Queued responses include `delivery_id`; `get_delivery` reads only the caller's retained delivery metadata. Work from an ended pairing is not sent under a new pairing.
