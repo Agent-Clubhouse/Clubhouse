@@ -70,6 +70,8 @@ describe('recorded burn forecasts', () => {
     });
     expect(summarizeHelperBurn([e], key, 'fiveHour', NOW + 2000)).toMatchObject({ unknown: 1, evaluated: 0, intervalsEvaluated: 0 });
     expect(summarizeHelperBurn([entry({ ...e, effort: 'low' })], key, 'weekly', NOW + 2000)).toMatchObject({ decisions: 0 });
+    expect(summarizeHelperBurn([e, e], key, 'weekly', NOW + 2000)).toMatchObject({ decisions: 1, evaluated: 1 });
+    expect(summarizeHelperBurn([e], null, 'weekly', NOW + 2000)).toMatchObject({ decisions: 0, evaluated: 0 });
   });
 
   it.each([
@@ -183,10 +185,12 @@ describe('recorded burn forecasts', () => {
     expect(readBurnForecast({ ...e.forecast, prompt: 'not retained' })).toEqual(e.forecast);
     expect(readBurnForecast({ ...e.forecast, weekly: { samples: 5, expectedBp: NaN } })).toBeUndefined();
     expect(readBurnForecast({ ...e.forecast, weekly: { samples: 5, effectiveSamples: Infinity } })).toBeUndefined();
+    expect(readBurnForecast({ ...e.forecast, weekly: { samples: 5, effectiveSamples: 2, expectedBp: 100 } })).toBeUndefined();
     expect(readBurnForecast({ ...e.forecast, weekly: { samples: 0, unavailableReason: 'arbitrary text' } })).toBeUndefined();
     expect(readBurnForecast({ ...e.forecast, baselineUnavailableReason: 'arbitrary text' })).toBeUndefined();
     const forecast = predictHelperBurn(entry(), history([100, 200, 300, 400, 900]), NOW);
     for (const interval of [
+      null, 'not an interval',
       { method: 'calibrated', nominalCoverageBp: 8000, lowerBp: 100, upperBp: 900 },
       { method: 'weighted_empirical', nominalCoverageBp: 9500, lowerBp: 100, upperBp: 900 },
       { method: 'weighted_empirical', nominalCoverageBp: 8000, lowerBp: 400, upperBp: 100 },

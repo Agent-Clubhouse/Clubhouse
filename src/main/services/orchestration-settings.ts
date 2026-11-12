@@ -76,7 +76,7 @@ const store = createSettingsStore<OrchestrationSettings>(
     copilotAuto: raw.copilotAuto !== false,
   }),
   // Presets and Auto have rows of their own, with reasons.
-  { audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'helperPresetCellGenerations', 'autoHelpers', 'copilotAuto'] } },
+  { atomic: true, rollBackFailedSaves: true, audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'helperPresetCellGenerations', 'autoHelpers', 'copilotAuto'] } },
 );
 
 export const getSettings = store.get;
