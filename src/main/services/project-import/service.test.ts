@@ -34,7 +34,7 @@ const assertCurrent = async (): Promise<void> => {};
 const authorized: ImportAuthorization = vi.fn(async () => ({ kind: 'approved', assertCurrent }));
 const projects: Project[] = [];
 
-function fixture() {
+function fixture(sourceEnvironment = environment) {
   const work = path.join(temp.root, `case-${++n}`);
   const source = path.join(work, 'source');
   fs.mkdirSync(source, { recursive: true });
@@ -45,7 +45,7 @@ function fixture() {
   const commit = git(source, 'rev-parse', 'HEAD');
   const destination = path.join(work, 'imported');
   const url = 'https://github.com/example/repository.git';
-  const safeGit = createImportGit(environment);
+  const safeGit = createImportGit(sourceEnvironment);
   const runner: ImportGit = {
     remote: vi.fn(async (remote, branch) => parseRemoteIdentity(remote, git(source, 'ls-remote', '--symref', source, 'HEAD', 'refs/heads/*'), branch)),
     run: vi.fn(async (args, options) => {
@@ -271,6 +271,80 @@ describe('approval and placement change invalidation', () => {
   });
 });
 
+describe('QA engine regressions with real Git and harmless isolated markers', () => {
+  it('does not execute a checked-out git program through a cwd-relative inherited PATH', async () => {
+    const f = fixture(() => ({ ...environment(), PATH: `.${path.delimiter}/usr/bin${path.delimiter}/bin` }));
+    const marker = path.join(f.work, 'executed-git');
+    fs.writeFileSync(path.join(f.source, 'git'), `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
+    git(f.source, 'add', '.');
+    git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'untrusted git executable');
+    const { receipt } = await start(f);
+    const result = await finished(f.service, receipt.id);
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(result.phase).toBe('completed');
+    expect(f.register).toHaveBeenCalledTimes(1);
+  });
+
+  it('seals regular local Git configuration against an after-fetch smudge filter injection', async () => {
+    const f = fixture();
+    const marker = path.join(f.work, 'executed-filter');
+    fs.writeFileSync(path.join(f.source, '.gitattributes'), 'readme.txt filter=danger\n');
+    git(f.source, 'add', '.');
+    git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'untrusted filter name');
+    const original = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await original(args, options);
+      if (args[0] === 'fetch') fs.appendFileSync(path.join(f.destination, '.git', 'config'), `\n[filter "danger"]\n smudge = sh -c 'printf ran > "${marker}"; cat'\n`);
+      return result;
+    });
+    const { receipt } = await start(f);
+    const result = await finished(f.service, receipt.id);
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(result).toMatchObject({ phase: 'failed', cloneCompleted: false, reason: 'checkout_changed' });
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the approved parent after the final asynchronous authority assertion and creates nothing in a replacement symlink target', async () => {
+    const f = fixture();
+    const parent = path.join(f.work, 'approved-parent');
+    const other = path.join(f.work, 'unapproved-parent');
+    fs.mkdirSync(parent);
+    fs.mkdirSync(other);
+    f.destination = path.join(parent, 'repo');
+    let checks = 0;
+    const policy: ImportAuthorization = async () => ({
+      kind: 'approved',
+      assertCurrent: async () => {
+        if (++checks === 2) {
+          await Promise.resolve();
+          fs.renameSync(parent, `${parent}-old`);
+          fs.symlinkSync(other, parent, 'junction');
+        }
+      },
+    });
+    const { receipt } = await start(f, policy);
+    const result = await finished(f.service, receipt.id);
+    expect(fs.existsSync(path.join(other, 'repo'))).toBe(false);
+    expect(result.phase).toBe('failed');
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it('does not register an origin changed after checkout as a completed approved import', async () => {
+    const f = fixture();
+    const original = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await original(args, options);
+      if (args[0] === 'checkout') git(f.destination, 'remote', 'set-url', 'origin', 'https://github.com/example/other.git');
+      return result;
+    });
+    const { receipt } = await start(f);
+    const result = await finished(f.service, receipt.id);
+    expect(f.register).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ phase: 'partial', cloneCompleted: true });
+    expect(git(f.destination, 'config', '--get', 'remote.origin.url')).toBe('https://github.com/example/other.git');
+  });
+});
+
 describe('cancellation, interruption and unsafe incidental execution', () => {
   it('cancels only the tracked owned import, preserves partial state and does not re-clone on retry', async () => {
     const f = fixture();
@@ -283,6 +357,7 @@ describe('cancellation, interruption and unsafe incidental execution', () => {
       await new Promise<void>((_resolve, reject) => {
         options.signal!.addEventListener('abort', () => reject(new ImportError('cancelled', 'cancelled')), { once: true });
       });
+
       return '';
     });
     const { plan, receipt } = await start(f);
