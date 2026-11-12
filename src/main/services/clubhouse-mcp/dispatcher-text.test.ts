@@ -235,4 +235,28 @@ describe('how the Dispatcher speaks and acts (#3185)', () => {
     for (const [label, text] of texts) expect(text, label).not.toMatch(NARRATES);
     expect(NARRATES.test('The outcome comes back here as a message from Clubhouse.')).toBe(true);
   });
+
+  it('distinguishes routing to an existing mobile owner from a request to create a new agent (#2583)', () => {
+    // Prompt contracts, not simulated model decisions: no paid prompts in CI.
+    const routing = dispatcherSkills('work').find((s) => s.name === 'delegating-work')!.text;
+    expect(routing).toContain('Reuse an appropriate existing agent unless the user asks for a new agent.');
+    expect(routing).toContain('even if its card fits');
+    expect(routing).toContain('For "bring the mobile app up to date too", find the mobile project\'s owner by its card');
+    expect(routing).toContain('Send the feature decisions and relevant pointers to the mobile owner');
+    expect(routing).toContain('Keep the earlier projects\' work and context separate');
+    expect(routing).toContain('settings.orchestrator');
+    expect(routing).toContain('settings.model');
+    expect(routing).toContain('start it only when requested');
+  });
+
+  it('requires import validation and separate partial outcomes without adding another clone tool (#2808)', () => {
+    const routing = dispatcherSkills('work').find((s) => s.name === 'delegating-work')!.text;
+    expect(routing).toContain('there is no separate clone tool');
+    expect(routing).toContain('read-only remote metadata checks');
+    expect(routing).toContain('Changed repository, placement or branch choices need renewed validation and approval');
+    expect(routing).toContain('Report clone, project registration, agent creation and start separately in `done`');
+    expect(routing).toContain('inspect what already exists before retrying');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('A token is not user approval');
+    expect(DISPATCHER_INSTRUCTIONS).toContain('`now: true` cuts off a turn: ask first');
+  });
 });

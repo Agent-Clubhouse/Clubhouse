@@ -144,6 +144,46 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     expect(state.agents.size).toBe(0);
   });
 
+  it('keeps explicit CLI and model choices over a template, and inherits only omitted choices', async () => {
+    grantMock.granted = true;
+    const template = await managedAgents().saveTemplate({
+      name: 'Provider precedence', description: '',
+      setup: { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] },
+      settings: { orchestrator: 'claude-code', model: 'opus' },
+    });
+    const explicit = await call('create_managed_agent', {
+      project: 'Clubhouse', name: 'explicit-provider', templateId: template.id,
+      settings: { orchestrator: 'copilot-cli', model: 'gpt-5' },
+    });
+    expect(explicit.isError).toBeFalsy();
+    expect(state.agents.get(explicit.json.id)).toMatchObject({
+      orchestrator: 'copilot-cli', model: 'gpt-5', managed: { templateId: template.id },
+    });
+    const inherited = await call('create_managed_agent', {
+      project: 'Clubhouse', name: 'template-provider', templateId: template.id,
+    });
+    expect(inherited.isError).toBeFalsy();
+    expect(state.agents.get(inherited.json.id)).toMatchObject({ orchestrator: 'claude-code', model: 'opus' });
+  });
+
+  it.each([
+    { provider: 'copilot-cli' },
+    { orchestrator: 'copilot-cli' },
+    { model: 'gpt-5' },
+    { settings: { provider: 'copilot-cli', model: 'gpt-5' } },
+    { settings: { orchestrator: null, model: 'gpt-5' } },
+    { settings: { orchestrator: '', model: 'gpt-5' } },
+    { settings: { orchestrator: 'copilot-cli', model: null } },
+  ])('refuses misplaced or invalid explicit runtime choices instead of creating a default agent: %j', async (choices) => {
+    grantMock.granted = true;
+    const result = await call('create_managed_agent', {
+      project: 'Clubhouse', name: 'wrong-provider', templateId: 'builtin-template-orchestrator', ...choices,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/settings\.orchestrator|settings\.model|CLI|model/);
+    expect(state.agents.size).toBe(0);
+  });
+
   it('a shared edit needs the preview\'s confirm token, and saves with it', async () => {
     // The service is shared across tests here, so names are unique per test.
     const part = (await call('create_agent_part', { kind: 'block', name: 'Shared rules', content: { kind: 'block', content: 'one' } })).json;
