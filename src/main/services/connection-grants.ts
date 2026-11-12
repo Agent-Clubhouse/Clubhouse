@@ -8,17 +8,20 @@
  * - A store write updates the live binding, so calls are checked against the
  *   store by the existing call path (tool-registry's disabled tools).
  * - The user's own links (Make two-way) are a persisted binding source.
+ * Make two-way commits its grants before clearing an older session removal;
+ * a newer removal during the save wins. Removal listeners still persist
+ * asynchronously; their stores are not in that commit.
  */
 
 import type { AgentAddress, ConnectionDirection, DirectionTools } from '../../shared/connection-grants';
 import {
-  NEW_CONNECTION_DISABLED_TOOLS, NEW_CONNECTION_ENABLED_TOOLS, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localDirectionTools,
+  NEW_CONNECTION_ENABLED_TOOLS, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localDirectionTools,
 } from '../../shared/connection-grants';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager, type RestoreOptions } from './clubhouse-mcp/binding-manager';
 import {
   connectionGrantsWritable, connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
-  listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
+  linkConnectionDirections, listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
@@ -328,22 +331,19 @@ const networkConnectionSource: PersistedBindingSource = {
 
 /**
  * Connect an agent here with an agent on another machine (#3064): the user's
- * link from here to there, and with `twoWay` the one back, each starting like
- * a new connection. The other machine gets both when it's next connected.
+ * link from here to there, and with `twoWay` the one back, saved together.
+ * Saved switches stay; only absent directions start like a new connection.
+ * The other machine gets both when it's next connected.
  */
 export async function connectAcrossMachines(agentId: string, address: string, options: { twoWay?: boolean; name?: string } = {}): Promise<void> {
   const other = connectionEnd(address);
   if (!other.machineId) throw new Error('That agent is on this computer.');
   if (!isNetworkComputer(other.machineId)) throw new Error('Agents connect only with computers in this Annex Network.');
   if (options.name) await rememberRemoteAgentName(bindingTargetOf(other), options.name);
-  const link = async (from: AgentAddress, to: AgentAddress) => {
-    // A direction already linked keeps its tools and its time, so the other machine's newer edits stand.
-    if (getConnectionDirection(from, to)?.link) return;
-    await setConnectionTools(from, to, [...NEW_CONNECTION_SWITCHES.disabledTools], [...NEW_CONNECTION_SWITCHES.enabledTools]);
-    await setConnectionLink(from, to, true);
-  };
-  await link(local(agentId), other);
-  if (options.twoWay) await link(other, local(agentId));
+  await linkConnectionDirections([
+    { from: local(agentId), to: other },
+    ...(options.twoWay ? [{ from: other, to: local(agentId) }] : []),
+  ]);
   await rebuildPersistedBindings();
 }
 
@@ -387,16 +387,20 @@ async function agentNames(): Promise<Map<string, string>> {
 
 /**
  * Make a one-way connection two-way (#2972): the user's own link for the
- * other direction, starting like any new connection (read, message and wake).
+ * other direction, retaining its saved switches when it has any.
  */
 export async function makeTwoWay(fromAgentId: string, toAgentId: string): Promise<void> {
-  // The user's own act: a pair they removed this session may be connected again.
-  clearBindingRemovedByUser(fromAgentId, toAgentId);
-  const existing = getConnectionDirection(local(fromAgentId), local(toAgentId));
-  // A new link starts like a new connection, wake on; only an existing link keeps its lists.
-  if (existing?.link) await setConnectionTools(local(fromAgentId), local(toAgentId), existing.disabledTools);
-  else await setConnectionTools(local(fromAgentId), local(toAgentId), [...NEW_CONNECTION_DISABLED_TOOLS], [...NEW_CONNECTION_ENABLED_TOOLS]);
-  await setConnectionLink(local(fromAgentId), local(toAgentId), true);
+  let removedDuringSave = false;
+  const unwatchRemoval = onBindingRemovedByUser((agentId, targetId) => {
+    if (agentId === fromAgentId && targetId === toAgentId) removedDuringSave = true;
+  });
+  try {
+    await linkConnectionDirections([{ from: local(fromAgentId), to: local(toAgentId) }]);
+    if (removedDuringSave) throw new Error('Connection permissions were saved, but a newer removal canceled this connection. The removal remains in effect.');
+    clearBindingRemovedByUser(fromAgentId, toAgentId);
+  } finally {
+    unwatchRemoval();
+  }
   recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: true });
   await rebuildPersistedBindings();
 }
