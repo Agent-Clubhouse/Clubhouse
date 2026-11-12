@@ -334,7 +334,7 @@ export async function isAgentWorking(agentId: string): Promise<boolean> {
  * Only a running managed agent: a sleeping one picks its setup up at its next
  * start, and starting it here would wake it outside the wake rules.
  */
-export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean; authorize?: () => Promise<void> } = {}): Promise<{ resumed: boolean; noSession?: boolean }> {
+export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean; authorize?: () => Promise<() => void> } = {}): Promise<{ resumed: boolean; noSession?: boolean }> {
   const target = await agentConfig.getDurableConfig(projectPath, agentId);
   if (!target) throw new ManagedError('not_found', 'agent not found');
   if (!target.managed) throw new ManagedError('not_managed', `${target.name} isn't Clubhouse managed, so there is no setup to restart into.`);
@@ -352,13 +352,15 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
         // Stopped by someone else, or still working after the wait: don't restart behind their back.
         throw new Error(agentSystem.isAgentRunning(agentId) ? 'The agent is still working. Try Restart again later.' : 'The agent stopped before its turn ended.');
       }
+      const authorizeStop = await options.authorize?.();
       const before = await agentConfig.getDurableConfig(projectPath, agentId);
       if (!before) throw new Error('agent not found');
       if (!before.managed) throw new ManagedError('not_managed', 'The agent stopped being managed while the restart was waiting.');
-      await options.authorize?.();
       if (!agentSystem.isAgentRunning(agentId)) throw new ManagedError('invalid', 'The agent stopped before restart. It was not woken.');
+      authorizeStop?.();
       await agentSystem.killAgent(agentId, projectPath, before.orchestrator, 'user', { waitForExit: true });
-      // Read after the exit: it just saved the session id this restart resumes.
+      const authorizeStart = await options.authorize?.();
+      // Read after exit and permission preparation so neither the session nor provider comparison is stale.
       const agent = await agentConfig.getDurableConfig(projectPath, agentId);
       if (!agent?.managed) throw new ManagedError('not_managed', 'The managed agent is no longer available after stopping. It was not started.');
       const record = delivered.get(agentId);
@@ -368,6 +370,7 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
       const resume = !options.fresh && !cliChanged && !!agent.lastSessionId;
       broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, agentId);
       try {
+        authorizeStart?.();
         await agentSystem.spawnAgent({
           agentId,
           projectPath,

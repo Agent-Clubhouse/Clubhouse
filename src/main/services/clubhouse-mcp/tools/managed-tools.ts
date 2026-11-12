@@ -718,8 +718,19 @@ export function registerManagedTools(): void {
         authorize: async () => {
           const stableArgs = { ...args, project: t.project.path, agent: t.agentId };
           const targets = await resolveArgTargets(callerId, RESTART_GRANTS, stableArgs);
-          const grant = checkToolGrant(callerId, RESTART_GRANTS, stableArgs, undefined, targets);
-          if (!grant.ok) throw new ManagedError('not_permitted', 'Restart authorization changed while waiting. Nothing was interrupted; request permission and try again.');
+          return () => {
+            const required = now ? RESTART_GRANTS : [RESTART_GRANTS[0]];
+            if (required.some((declaration) => !targets.get(declaration)?.some((target) =>
+              target.kind === 'agent' && target.agentId === t.agentId && target.projectPath
+                && path.resolve(target.projectPath) === path.resolve(t.project.path)))) {
+              throw new ManagedError('not_permitted', 'The restart authorization target is no longer available. Inspect the lifecycle receipt and current target state before retrying.');
+            }
+            const grant = checkToolGrant(callerId, RESTART_GRANTS, stableArgs, undefined, targets);
+            const context = grantApprovalContext(callerId, 'restart_agent', args, RESTART_GRANTS, targets);
+            if (!callGrantIsApproved(callerId, 'restart_agent', args, grant, context)) {
+              throw new ManagedError('not_permitted', 'Restart authorization changed before a lifecycle effect. Inspect the lifecycle receipt and current target state before requesting permission and retrying.');
+            }
+          };
         },
       });
       const answer = (r: { resumed: boolean; noSession?: boolean }) => json({ status: 'restarted', resumed: r.resumed,

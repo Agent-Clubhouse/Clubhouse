@@ -238,7 +238,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
     });
 
-    it('does not resume another provider conversation after the effective project default changes', async () => {
+    it.each(['before restart', 'during authorization preparation'] as const)('does not resume another provider conversation when the effective default changes %s', async (stage) => {
       const service = createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
         state: createManagedStateStore(path.join(root, 'managed')),
@@ -247,13 +247,18 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       });
       _setManagedAgentsForTesting(service);
       await service.ensureBuiltins();
-      delete agent.orchestrator;
+      if (stage === 'before restart') delete agent.orchestrator;
       agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
       agent.lastSessionId = 'previous-copilot-conversation';
       await deliverForSpawn(root, agent, copilot);
       await start(); fixture.running = true;
-      // The resolver now supplies Claude for the project default; the agent override remains absent.
-      expect(await restartManagedAgent(root, agent.id)).toEqual({ resumed: false });
+      let preparations = 0;
+      expect(await restartManagedAgent(root, agent.id, {
+        authorize: async () => {
+          if (stage === 'during authorization preparation' && ++preparations === 2) delete agent.orchestrator;
+          return () => {};
+        },
+      })).toEqual({ resumed: false });
       expect(spawnAgent).toHaveBeenLastCalledWith(expect.objectContaining({ resume: false, sessionId: undefined }));
       expect(fixture.starts[fixture.starts.length - 1].resumeNativeSessionId).toBeUndefined();
     });

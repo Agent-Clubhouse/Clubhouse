@@ -867,7 +867,7 @@ describe('restart_agent', () => {
     expect(authorize).toBeTypeOf('function');
     try {
       await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.restart', target: { kind: 'any' }, mode: 'off' }] }));
-      await expect(authorize!()).rejects.toMatchObject({ code: 'not_permitted' });
+      await expect(authorize!().then((check) => check())).rejects.toMatchObject({ code: 'not_permitted' });
     } finally {
       await updateAgentGrantChanges('dispatcher', () => undefined);
     }
@@ -891,17 +891,19 @@ describe('restart_agent', () => {
       expect(request.actions).toEqual(now ? ['agent.restart', 'agent.sleep'] : ['agent.restart']);
       expect(takeGrantRequest(request.requestId, true)).toBeTruthy();
       vi.mocked(restartManagedAgent).mockImplementationOnce(async (_p, _id, options) => {
-        const authorize = await options?.authorize?.();
-        if (typeof authorize === 'function') authorize();
-        effect();
+        for (const stage of ['stop', 'start']) {
+          const authorize = await options?.authorize?.();
+          if (typeof authorize === 'function') authorize();
+          effect(stage);
+        }
         return { resumed: true };
       });
       const result = await call('restart_agent', args);
       expect(result.isError, result.content[0].text).toBeFalsy();
       expect(result.json.status).toBe('restarted');
-      expect(effect).toHaveBeenCalledTimes(1);
+      expect(effect.mock.calls).toEqual([['stop'], ['start']]);
       expect((await call('restart_agent', args)).isError).toBe(true);
-      expect(effect).toHaveBeenCalledTimes(1);
+      expect(effect).toHaveBeenCalledTimes(2);
     } finally {
       await updateAgentGrantChanges('dispatcher', () => undefined);
       agentRegistry.untrack('dispatcher');
