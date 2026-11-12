@@ -60,6 +60,7 @@ vi.mock('../../util/ipc-broadcast', () => ({
 import * as bridgeServer from './bridge-server';
 import { appLog } from '../log-service';
 import { bindingManager } from './binding-manager';
+import { groupProjectRegistry } from '../group-project-registry';
 import { registerBuiltinProviders } from '../../orchestrators';
 import { registerToolTemplate, registerGlobalTool, buildToolName, _resetForTesting as resetTools } from './tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
@@ -179,6 +180,40 @@ describe('BridgeServer', () => {
     expect(body.result.protocolVersion).toBe('2024-11-05');
     expect(body.result.capabilities.tools.listChanged).toBe(true);
     expect(body.result.serverInfo.name).toBe('clubhouse');
+  });
+
+  it('serializes read, write and destructive annotations on global and scoped tools', async () => {
+    setOrchestrationEnabled('agent-1', true);
+    const board = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue({
+      id: 'board', name: 'Board', description: '', instructions: '', createdAt: '',
+      metadata: { admins: ['agent-1'] },
+    });
+    const definition = { description: 'Annotation serialization', inputSchema: { type: 'object' as const } };
+    const handler = async () => ({ content: [] });
+    registerGlobalTool('read_settings', definition, handler, { grant: { actions: ['settings.app.read'], target: 'app' } });
+    registerGlobalTool('hand_off', definition, handler, { grant: { actions: ['agent.dispose'], target: 'my_helpers' } });
+    registerToolTemplate('group-project', 'clear_topic', definition, handler, { grant: { actions: ['group_project.admin'], target: 'bound' } });
+    registerToolTemplate('browser', 'screenshot', definition, handler, { grant: { actions: ['browser.read'], target: 'bound' } });
+    registerToolTemplate('browser', 'evaluate', definition, handler, { grant: { actions: ['browser.act'], target: 'bound' } });
+    bindingManager.bind('agent-1', { targetId: 'board', targetKind: 'group-project', label: 'Board' });
+    bindingManager.bind('agent-1', { targetId: 'page', targetKind: 'browser', label: 'Page' });
+
+    try {
+      const { statusCode, body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
+        jsonrpc: '2.0', id: 1, method: 'tools/list',
+      }, 'test-nonce');
+
+      expect(statusCode).toBe(200);
+      expect(body.result.tools).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'read_settings', annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }),
+        expect.objectContaining({ name: 'hand_off', annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }),
+        expect.objectContaining({ name: expect.stringContaining('__clear_topic'), annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false } }),
+        expect.objectContaining({ name: 'browser__page__screenshot', annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true } }),
+        expect.objectContaining({ name: 'browser__page__evaluate', annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true } }),
+      ]));
+    } finally {
+      board.mockRestore();
+    }
   });
 
   it('decodes multi-byte UTF-8 characters split across request chunks', async () => {
