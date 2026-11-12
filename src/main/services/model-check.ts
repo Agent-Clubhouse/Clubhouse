@@ -47,7 +47,7 @@ export async function checkHelperModel(cli: string | undefined, model: string): 
     list = await modelListFor(provider);
   } catch (err) {
     // telemetry-exempt: logged; the caller is warned in the start_helper result
-    appLog('core:mcp', 'warn', 'start_helper: could not list models', { meta: { cli, error: errorText(err) } });
+    appLog('core:mcp', 'warn', 'start_helper: could not list models', { meta: { cli, error: err instanceof Error ? err.name : 'unknown' } });
     return { ok: true, warning: `Could not check model "${model}" for ${cli}: ${errorText(err)}` };
   }
   if (!list || accepts(provider, model, list)) return { ok: true };
@@ -95,7 +95,7 @@ export async function checkHelperEffort(cli: string | undefined, model: string |
     list = await modelListFor(provider);
   } catch (err) {
     // telemetry-exempt: logged; the caller is warned in the start_helper result
-    appLog('core:mcp', 'warn', 'start_helper: could not list models', { meta: { cli, error: errorText(err) } });
+    appLog('core:mcp', 'warn', 'start_helper: could not list models', { meta: { cli, error: err instanceof Error ? err.name : 'unknown' } });
     return unchecked(`${errorText(err)}.`);
   }
   if (!list || !list.models.some((m) => m.efforts?.length)) return unchecked('its model list doesn\'t report effort levels.');

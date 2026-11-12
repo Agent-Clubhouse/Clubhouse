@@ -31,7 +31,7 @@ export interface TopicDigest {
   isProtected?: boolean;
 }
 
-/** Per-project retention configuration for the bulletin board. */
+/** Per-project retention limits for unprotected bulletin messages only. */
 export interface BulletinRetentionConfig {
   maxPerTopic: number;
   maxTotal: number;

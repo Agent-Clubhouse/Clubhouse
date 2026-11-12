@@ -55,7 +55,8 @@ describe('settings read tools', () => {
   });
 
   it('stays small: every agent carries these definitions', () => {
-    expect(JSON.stringify(getScopedToolList('a1')).length).toBeLessThan(1200);
+    // The two tools now also carry explicit MCP effect hints.
+    expect(JSON.stringify(getScopedToolList('a1')).length).toBeLessThan(1400);
   });
 
   it('asks as the agent, in its own scope', async () => {

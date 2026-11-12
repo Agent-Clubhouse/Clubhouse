@@ -15,6 +15,7 @@ export interface UpdateGateAgent {
   orchestrator: string;
   isWorking: boolean;
   resumeStrategy: 'auto' | 'manual';
+  dispatcherRole?: 'work' | 'chat';
 }
 
 interface UpdateGateModalProps {
@@ -38,7 +39,7 @@ export function UpdateGateModal({ agents, actionStates = {}, loading = false, er
     <Modal open={true} onClose={onCancel} aria-label="Update ready" width="w-full max-w-lg mx-4">
         <h2 className="text-base font-semibold text-ctp-text mb-4">Update ready</h2>
         <p className="text-xs text-ctp-subtext0 mb-4">
-          Interrupt ends the current turn. Only the conversation resumes after restart, not the interrupted turn.
+          Interrupt ends the current turn. For agents that resume after restart, only the conversation resumes, not the interrupted turn.
           {' '}Stop now ends the agent and excludes it from resuming after restart.
         </p>
         {loading && <p role="status" className="text-xs text-ctp-subtext0 mb-2">Checking active agents.</p>}
@@ -81,6 +82,10 @@ export function UpdateGateModal({ agents, actionStates = {}, loading = false, er
                       </button>
                     </div>
                   </div>
+                  {agent.dispatcherRole === 'work' && <p className="text-xs text-ctp-subtext0 mt-2">
+                    The Dispatcher's background agent carries out hand-offs. Interrupt or Stop now can end work in progress.
+                    After restart it resumes when next needed, not immediately.
+                  </p>}
                   {state?.message && <p role="alert" className="text-xs text-ctp-text mt-2">{state.message}</p>}
                 </div>
               );
@@ -100,7 +105,8 @@ export function UpdateGateModal({ agents, actionStates = {}, loading = false, er
                   <span className="text-sm text-ctp-text font-medium">{agent.agentName}</span>
                 </div>
                 <span className="text-xs text-ctp-subtext0">
-                  {agent.resumeStrategy === 'auto' ? 'Auto-resume' : 'Manual resume'}
+                  {agent.dispatcherRole === 'work' ? 'Resumes when next needed'
+                    : agent.resumeStrategy === 'auto' ? 'Auto-resume' : 'Manual resume'}
                 </span>
               </div>
             ))}

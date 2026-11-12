@@ -199,6 +199,17 @@ describe('classifyQuota', () => {
   it('another duration still counts, named other', () => {
     expect(classifyQuota([{ name: '1d', usedPercent: 85, asOf: NOW }, week(10)], NOW)).toMatchObject({ state: 'low', limitingWindow: 'other' });
   });
+
+  it('keeps content-free evidence of other windows and provider-reported limits', () => {
+    expect(classifyQuota([
+      week(10), hours(undefined, { limitReached: true }),
+      { name: '1d', usedPercent: 85, resetsAt: NOW + 1000, asOf: NOW },
+    ], NOW)).toMatchObject({
+      state: 'exhausted', limitingWindow: 'fiveHour',
+      fiveHour: { usedPercent: null, limitReached: true },
+      otherWindows: [{ usedPercent: 85, resetsAt: new Date(NOW + 1000).toISOString() }],
+    });
+  });
 });
 
 describe('quotaRefetchDelaySeconds', () => {

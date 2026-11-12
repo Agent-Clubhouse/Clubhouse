@@ -1,10 +1,10 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { PermissionViolationBanner } from '../plugins/PermissionViolationBanner';
 import { PluginUpdateBanner } from '../plugins/PluginUpdateBanner';
 import { UpdateBanner } from './UpdateBanner';
-import { ResumeBanner, type ResumeBannerSession } from './ResumeBanner';
+import { ResumeBanner, useResumeBannerSessions } from './ResumeBanner';
 
 /**
  * The app-wide notices in the new chrome (#2014): update ready, resume
@@ -13,13 +13,7 @@ import { ResumeBanner, type ResumeBannerSession } from './ResumeBanner';
  * collapsed. Render exactly one of the two at a time.
  */
 export function AppNotices({ variant }: { variant: 'bar' | 'card' }) {
-  const resumingAgents = useAgentStore((s) => s.resumingAgents);
-  const agents = useAgentStore((s) => s.agents);
-  const sessions: ResumeBannerSession[] = useMemo(() => Object.entries(resumingAgents).map(([agentId, status]) => ({
-    agentId,
-    agentName: agents[agentId]?.name || agentId,
-    status,
-  })), [resumingAgents, agents]);
+  const sessions = useResumeBannerSessions();
   const onManualResume = useCallback((agentId: string) => {
     console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
   }, []);

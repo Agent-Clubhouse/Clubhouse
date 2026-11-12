@@ -662,7 +662,7 @@ export const ATTR = {
   // One candidate of a decision.
   helperCandidateEligible: boolAttr('clubhouse.helper_candidate.eligible'),
   helperCandidateChosen: boolAttr('clubhouse.helper_candidate.chosen'),
-  helperCandidateExcluded: enumAttr('clubhouse.helper_candidate.excluded', ['cli_disabled', 'cli_unavailable', 'auto_disabled', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted', 'none']),
+  helperCandidateExcluded: enumAttr('clubhouse.helper_candidate.excluded', ['cli_disabled', 'cli_unavailable', 'auto_disabled', 'auto_not_supported', 'no_valid_mapping', 'mapping_changed', 'cooling_down', 'quota_near_limit', 'quota_exhausted', 'none']),
   helperCandidateMappedSource: enumAttr('clubhouse.helper_candidate.mapped_source', ['request', 'persona', 'orchestrator', 'auto', 'custom_mapping', 'builtin_mapping', 'cli_default']),
   helperCandidateMappedVerified: boolAttr('clubhouse.helper_candidate.mapped_verified'),
   helperCandidateLoadLive: intAttr('clubhouse.helper_candidate.load_live'),

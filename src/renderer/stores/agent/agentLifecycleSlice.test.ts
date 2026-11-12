@@ -22,6 +22,7 @@ function createMinimalState(overrides: Partial<AgentState> = {}): AgentState {
     projectActiveAgent: {},
     cancelledAgentIds: {},
     resumingAgents: {},
+    resumeAgentNames: {},
     agentIcons: {},
     pendingRecovery: null,
     ...overrides,
@@ -47,6 +48,18 @@ function createTestStore(initial: Partial<AgentState> = {}) {
 
 const PROJECT_ID = 'proj-1';
 const PROJECT_PATH = '/test/project';
+
+describe('resume notice names', () => {
+  it('keeps captured names across status changes and clears them with the notice', () => {
+    const { state, slice } = createTestStore();
+    slice.setResumeStatus('chat', 'pending', 'Sage');
+    slice.setResumeStatus('chat', 'resuming');
+    expect(state().resumeAgentNames).toEqual({ chat: 'Sage' });
+    slice.clearResumingAgents();
+    expect(state().resumeAgentNames).toEqual({});
+    expect(state().resumingAgents).toEqual({});
+  });
+});
 
 describe('agentLifecycleSlice – spawnQuickAgent', () => {
   beforeEach(() => {

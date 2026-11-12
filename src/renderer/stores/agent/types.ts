@@ -126,7 +126,8 @@ export interface AgentLifecycleSlice {
    */
   executeDelete: (mode: DeleteMode, projectPath: string, helperChoice?: HelperDeleteChoice) => Promise<DeleteResult>;
   resumingAgents: Record<string, import('../../features/app/ResumeBanner').ResumeStatus>;
-  setResumeStatus: (agentId: string, status: import('../../features/app/ResumeBanner').ResumeStatus) => void;
+  resumeAgentNames: Record<string, string>;
+  setResumeStatus: (agentId: string, status: import('../../features/app/ResumeBanner').ResumeStatus, name?: string) => void;
   clearResumingAgents: () => void;
 }
 

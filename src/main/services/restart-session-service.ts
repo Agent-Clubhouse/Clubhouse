@@ -13,7 +13,7 @@ import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo
 import * as freeAgentSettings from './free-agent-settings';
 import { getDurableConfig } from './agent-config';
 import { isAssistantAgent } from '../../shared/assistant-utils';
-import { isDispatcherCoordinatorPath } from './dispatcher/dispatcher-paths';
+import { isDispatcherChatPath, isDispatcherCoordinatorPath } from './dispatcher/dispatcher-paths';
 import { hasAgentWorkInFlight } from './launch-gate';
 
 const SCHEMA_VERSION = 1;
@@ -187,6 +187,18 @@ export async function loadPendingResume(): Promise<RestartSessionState | null> {
     }
     const dirExists = await pathExists(session.worktreePath || session.projectPath);
     if (dirExists) {
+      if (isDispatcherChatPath(session.projectPath) && (!session.agentName || session.agentName === session.agentId)) {
+        try {
+          const config = await getDurableConfig(session.projectPath, session.agentId);
+          session.agentName = config?.name && config.name !== session.agentId ? config.name : 'Dispatcher';
+        } catch (err) {
+          // telemetry-exempt: the lookup failure is recorded in the update log.
+          appLog('update:session-resume', 'warn', 'Could not look up the Dispatcher chat name', {
+            meta: { agentId: session.agentId, error: err instanceof Error ? err.message : String(err) },
+          });
+          session.agentName = 'Dispatcher';
+        }
+      }
       validSessions.push(session);
     } else {
       appLog('update:session-resume', 'warn', `Skipping resume for ${session.agentId} — directory missing: ${session.worktreePath || session.projectPath}`);
@@ -240,7 +252,9 @@ export function getLiveAgentsForUpdate(options: { includePendingWork?: boolean }
   const WORKING_THRESHOLD_MS = 5000;
 
   for (const [agentId, reg] of all) {
-    const base = { agentId, projectPath: reg.projectPath, orchestrator: reg.orchestrator, runtime: reg.runtime };
+    const dispatcherRole = isDispatcherCoordinatorPath(reg.projectPath) ? 'work' as const
+      : isDispatcherChatPath(reg.projectPath) ? 'chat' as const : undefined;
+    const base = { agentId, projectPath: reg.projectPath, orchestrator: reg.orchestrator, runtime: reg.runtime, ...(dispatcherRole && { dispatcherRole }) };
     const pendingWork = options.includePendingWork && hasAgentWorkInFlight(agentId);
     if (reg.runtime === 'pty') {
       const lastActivity = ptyManager.getLastActivity(agentId);

@@ -38,8 +38,8 @@ const history = (values: number[]): ForecastEntry[] => values.map((value, i) => 
 describe('recorded burn forecasts', () => {
   it('is unknown until the minimum cohort, then uses a median without inventing a missing window', () => {
     const samples = history([100, 300, 200, 200, 900]);
-    expect(predictHelperBurn(entry(), samples.slice(0, 4), NOW).weekly).toEqual({ samples: 4 });
-    expect(predictHelperBurn(entry(), samples, NOW)).toMatchObject({ weekly: { samples: 5, expectedBp: 200 }, fiveHour: { samples: 0 } });
+    expect(predictHelperBurn(entry(), samples.slice(0, 4), NOW).weekly).toMatchObject({ samples: 4, unavailableReason: 'insufficient_samples' });
+    expect(predictHelperBurn(entry(), samples, NOW)).toMatchObject({ weekly: { samples: 5, expectedBp: 200 }, fiveHour: { samples: 0, unavailableReason: 'insufficient_samples' } });
     expect(predictHelperBurn(entry(), history([0, 0, 0, 0, 0]), NOW).weekly.expectedBp).toBe(0);
   });
 
@@ -47,7 +47,7 @@ describe('recorded burn forecasts', () => {
     { provider: 'codex-cli' }, { model: 'claude-opus-5-5' }, { effort: 'medium' }, { difficulty: 'easy' as const },
     { mappingRevision: 'r2.0' }, { taskProfile: 'small' as const }, { model: null }, { mappingRevision: undefined },
   ])('does not transfer calibration across changed or missing identities: %j', (change) => {
-    expect(predictHelperBurn(entry(change), history([100, 100, 100, 100, 100]), NOW).weekly).toEqual({ samples: 0 });
+    expect(predictHelperBurn(entry(change), history([100, 100, 100, 100, 100]), NOW).weekly).toMatchObject({ samples: 0 });
   });
 
   it('keeps observations chronological, bounded and recent, with a recency-weighted median', () => {
@@ -58,15 +58,34 @@ describe('recorded burn forecasts', () => {
     expect(predictHelperBurn(entry(), [...old, ...recent], NOW).weekly.expectedBp).toBe(300);
     expect(predictHelperBurn(entry(), old.map((e) => ({
       ...e, burnObservation: { ...e.burnObservation!, atMs: NOW - AUTO_FORECAST_RETENTION_MS - 1 },
-    })), NOW).weekly).toEqual({ samples: 0 });
+    })), NOW).weekly).toMatchObject({ samples: 0 });
     expect(predictHelperBurn(entry(), recent.map((e) => ({
       ...e, burnObservation: { ...e.burnObservation!, atMs: NOW },
-    })), NOW).weekly).toEqual({ samples: 0 });
+    })), NOW).weekly).toMatchObject({ samples: 0 });
     expect(predictHelperBurn(entry(), history(Array(100).fill(200)), NOW).weekly.samples).toBe(32);
     const repeated = history([100])[0];
-    expect(predictHelperBurn(entry(), Array(5).fill(repeated), NOW).weekly).toEqual({ samples: 1 });
+    expect(predictHelperBurn(entry(), Array(5).fill(repeated), NOW).weekly).toMatchObject({ samples: 1 });
     const thin = [...old.slice(0, 4), ...recent.slice(0, 1)];
-    expect(predictHelperBurn(entry(), thin, NOW).weekly).toEqual({ samples: 5 });
+    expect(predictHelperBurn(entry(), thin, NOW).weekly).toMatchObject({ samples: 5, unavailableReason: 'insufficient_effective_samples' });
+    expect(predictHelperBurn(entry(), thin, NOW).weekly.effectiveSamples).toBeLessThan(3);
+  });
+
+  it('explains unavailable identity and baseline evidence without substituting zero', () => {
+    const prediction = predictHelperBurn(entry({ model: null }), [], NOW);
+    expect(prediction.weekly).toEqual({ samples: 0, unavailableReason: 'missing_identity' });
+    expect(prediction.baselineUnavailableReason).toBe('missing');
+    expect(prediction.weekly).not.toHaveProperty('expectedBp');
+    for (const [value, reason] of [
+      [baseline({ quality: 'stale' }), 'not_fresh'],
+      [baseline({ asOfMs: undefined }), 'missing_timestamp'],
+      [baseline({ asOfMs: NOW + 1 }), 'future_timestamp'],
+      [baseline({ asOfMs: NOW - 16 * 60_000 }), 'stale'],
+      [baseline({ windows: [] }), 'missing_windows'],
+    ] as const) {
+      const forecast = predictHelperBurn(entry(), [], NOW, value);
+      expect(forecast).toMatchObject({ baselineUnavailableReason: reason });
+      expect(forecast).not.toHaveProperty('baseline');
+    }
   });
 
   it('records signed errors against an interval proxy, leaving its immutable prediction unchanged', () => {
@@ -115,6 +134,9 @@ describe('recorded burn forecasts', () => {
     const e = completed();
     expect(readBurnForecast({ ...e.forecast, prompt: 'not retained' })).toEqual(e.forecast);
     expect(readBurnForecast({ ...e.forecast, weekly: { samples: 5, expectedBp: NaN } })).toBeUndefined();
+    expect(readBurnForecast({ ...e.forecast, weekly: { samples: 5, effectiveSamples: Infinity } })).toBeUndefined();
+    expect(readBurnForecast({ ...e.forecast, weekly: { samples: 0, unavailableReason: 'arbitrary text' } })).toBeUndefined();
+    expect(readBurnForecast({ ...e.forecast, baselineUnavailableReason: 'arbitrary text' })).toBeUndefined();
     expect(readBurnObservation({ atMs: NOW, attribution: 'whole_login_unknown', reason: 'invented' })).toBeUndefined();
     expect(burnForecastKey(entry({ model: null }))).toBeNull();
   });

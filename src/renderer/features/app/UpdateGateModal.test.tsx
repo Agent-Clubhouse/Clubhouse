@@ -20,7 +20,7 @@ describe('UpdateGateModal', () => {
     expect(screen.getByRole('img', { name: 'Working' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Interrupt' })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Wait' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Only the conversation resumes/)).toBeInTheDocument();
+    expect(screen.getByText(/For agents that resume after restart, only the conversation resumes, not the interrupted turn\./)).toBeInTheDocument();
   });
 
   it('renders idle agents in will-resume section', () => {
