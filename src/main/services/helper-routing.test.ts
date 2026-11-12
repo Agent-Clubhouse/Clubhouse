@@ -980,6 +980,22 @@ describe('Auto (#2671)', () => {
     expect(appLog).toHaveBeenCalledWith('core:mcp', 'warn', 'Could not initialize helper calibration generations', { meta: { error: 'Error' } });
   });
 
+  it('does not reuse a prepared calibration identity after its generation becomes unavailable', async () => {
+    W.enabled = ['copilot-cli'];
+    W.lists.set('copilot-cli', { ...live(COPILOT), fetchedAt: Date.now() });
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    W.generationError = true;
+    const result = decideAutoPlan(prepared.plan!, {});
+    expect(result).toMatchObject({
+      ok: true, plan: { provider: 'copilot-cli', decision: { calibrationIdentityReason: 'missing_generation' } },
+    });
+    if (!result.ok) throw new Error(result.message);
+    expect(result.plan?.decision).not.toHaveProperty('calibration');
+    settleAutoDecision(result.plan!.decision!.decisionId);
+    expect(reservedLoad({ live: new Set(), notRunning: new Set() })).toEqual({});
+  });
+
   it('partitions changed cached alias resolutions without relabeling them as verified executions', async () => {
     W.enabled = ['claude-code'];
     const aliases = (resolvedId: string): ModelList => ({

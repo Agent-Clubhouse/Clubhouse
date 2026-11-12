@@ -563,9 +563,11 @@ function autoDecisionRecord(args: {
   const evaluations = new Map((decision?.evaluations ?? []).map((e) => [e.provider, e]));
   const chosen = decision?.ok ? decision.provider : undefined;
   const chosenOption = options.find((option) => option.provider === chosen);
+  const currentGeneration = chosenOption ? orchestrationSettings.getPresetCellGeneration(chosenOption.provider, difficulty) : undefined;
+  const confirmedGeneration = chosenOption?.configuredGeneration === currentGeneration ? currentGeneration : undefined;
   const identity = chosenOption ? peekHelperCalibrationModel(chosenOption.provider, chosenOption.cell.cell.model, now) : undefined;
   const identityReason = !chosenOption ? undefined : chosenOption.cell.fallback !== 'none' ? 'unverified_mapping'
-    : !chosenOption.configuredGeneration ? 'missing_generation' : identity?.reason;
+    : !confirmedGeneration ? 'missing_generation' : identity?.reason;
   const loadOf = (provider: string) => load[provider] ?? { live: 0, reserved: 0 };
   const candidates: DecisionCandidate[] = getAllProviders().map(({ id }) => {
     const option = options.find((o) => o.provider === id);
@@ -614,8 +616,8 @@ function autoDecisionRecord(args: {
     mappingRevision: helperRoutingRevision(),
     ...(routing && chosenOption && {
       calibrationIdentityReason: identityReason,
-      ...(identityReason === 'cached_catalog' && identity?.model && chosenOption.configuredGeneration && {
-        calibration: { revision: chosenOption.configuredGeneration, model: identity.model },
+      ...(identityReason === 'cached_catalog' && identity?.model && confirmedGeneration && {
+        calibration: { revision: confirmedGeneration, model: identity.model },
       }),
     }),
     mappingFingerprint: mappingFingerprint(options),
@@ -680,11 +682,13 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
     quota: peekProviderQuota(option.provider, { model: option.cell.cell.model, now }),
   }));
   const eligible = options.filter((option) => {
+    const currentGeneration = orchestrationSettings.getPresetCellGeneration(option.provider, difficulty);
     if (enabled.length > 0 && !enabled.includes(option.provider)) skipped[option.provider] = 'cli_disabled';
     else if (option.provider === 'copilot-cli' && !orchestrationSettings.getCopilotAuto()) skipped[option.provider] = 'auto_disabled';
     else if (isProviderCoolingDownNow(option.provider, now)) skipped[option.provider] = 'cooling_down';
     else if (!sameCell(option.configuredCell, orchestrationSettings.getPresets()[option.provider]?.[difficulty] ?? BUILTIN_PRESETS[option.provider][difficulty])
-      || option.configuredGeneration !== orchestrationSettings.getPresetCellGeneration(option.provider, difficulty)) skipped[option.provider] = 'mapping_changed';
+      || (option.configuredGeneration !== undefined && currentGeneration !== undefined
+        && option.configuredGeneration !== currentGeneration)) skipped[option.provider] = 'mapping_changed';
     else return true;
     return false;
   });
