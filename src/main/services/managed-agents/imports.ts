@@ -61,12 +61,15 @@ export async function prepareManagedAssetImport(service: ManagedAgentsService, s
   return {
     preview,
     fingerprint,
-    async commit(actor: string, prepareAuthorization?: () => Promise<() => void>): Promise<ManagedPartSummary> {
-      const beforeCommit = async () => {
-        // Resolve async targets first; check live grants synchronously after the final source/library read.
-        const authorize = await prepareAuthorization?.();
+    async commit(actor: string, prepareAuthorization?: (assertSnapshot: () => Promise<void>) => Promise<() => void>): Promise<ManagedPartSummary> {
+      const assertSnapshot = async () => {
         const current = await prepareManagedAssetImport(service, source, request, projectId);
         if (current.fingerprint !== fingerprint) throw new ManagedError('stale', 'The source or library changed before import committed. Preview again; nothing was imported.');
+      };
+      const beforeCommit = async () => {
+        // Resolve async targets/providers first; generations and live grants are checked synchronously last.
+        const authorize = await prepareAuthorization?.(assertSnapshot);
+        await assertSnapshot();
         authorize?.();
       };
       if (shared) { await beforeCommit(); return shared; }

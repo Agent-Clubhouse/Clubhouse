@@ -12,7 +12,7 @@
 import { legacyDefaultsNotCopied } from '../../legacy-defaults';
 import { createHash, randomBytes } from 'crypto';
 import * as path from 'path';
-import { callGrantIsApproved, registerGlobalTool } from '../tool-registry';
+import { callGrantIsApproved, grantApprovalContext, registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import type { ToolGrant, ToolGrantDeclaration } from '../tool-grants';
 import { appLog } from '../../log-service';
@@ -346,39 +346,45 @@ export function registerManagedTools(): void {
     ['project', 'agent', 'candidateId', 'mode'],
     async (callerId, args) => {
       const t = await resolveAgent(args);
-      const agent = await agentConfig.getDurableConfig(t.project.path, t.agentId);
-      if (!agent?.worktreePath) throw new ArgError('The source agent has no own folder.');
-      const provider = await resolveOrchestrator(t.project.path, agent.orchestrator);
-      const mode = requireString(args, 'mode');
-      if (mode !== 'copy' && mode !== 'reuse') throw new ArgError('mode must be copy or reuse.');
-      const request: ManagedAssetImportRequest = { candidateId: requireString(args, 'candidateId'), mode,
-        partId: optionalString(args, 'partId'), name: optionalString(args, 'name') };
-      const source = { root: agent.worktreePath, conventions: provider.conventions };
-      const sourceOrchestrator = agent.orchestrator;
-      const plan = await prepareManagedAssetImport(svc(), source, request, t.project.id);
-      const digest = digestOf('import_agent_asset', t.project.id, t.agentId, provider.id, plan.fingerprint);
-      const confirm = optionalString(args, 'confirm');
-      if (!confirm) return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest), ...plan.preview });
-      redeemConfirm(callerId, confirm, digest);
-      const part = await withAgentActivity(t.agentId, () => asDispatcher(callerId, () => plan.commit(ACTOR, async () => {
-        const stableArgs = { ...args, project: t.project.path, agent: t.agentId };
-        const current = await resolveAgent(stableArgs);
-        const currentAgent = await agentConfig.getDurableConfig(current.project.path, current.agentId);
-        const currentProvider = await resolveOrchestrator(current.project.path, currentAgent?.orchestrator);
-        const targets = await resolveArgTargets(callerId, IMPORT_GRANTS, stableArgs);
-        return () => {
-          if (current.project.id !== t.project.id || currentAgent?.worktreePath !== source.root || currentAgent?.orchestrator !== sourceOrchestrator
-            || currentProvider.id !== provider.id || digestOf(currentProvider.conventions) !== digestOf(source.conventions)) {
-            throw new ManagedError('stale', 'The registered source folder or provider changed before import committed. Preview again; nothing was imported.');
-          }
-          if (!targets.get(IMPORT_GRANTS[0])?.length) throw new ManagedError('not_permitted', 'The source authorization target is no longer available. Preview again; nothing was imported.');
-          const check = checkToolGrant(callerId, IMPORT_GRANTS, stableArgs, undefined, targets);
-          if (!callGrantIsApproved(callerId, 'import_agent_asset', args, check)) {
-            throw new ManagedError('not_permitted', 'Import authorization changed before the library write. Nothing was imported; request permission and preview again.');
-          }
-        };
-      })));
-      return json({ status: mode === 'copy' ? 'imported' : 'reused', part, assigned: false, providerLoaded: 'not_confirmed' });
+      let projectChanged = false;
+      const releaseProject = projectStore.onProjectsChanged(() => { projectChanged = true; });
+      try {
+        const agent = await agentConfig.getDurableConfig(t.project.path, t.agentId);
+        if (!agent?.worktreePath) throw new ArgError('The source agent has no own folder.');
+        const provider = await resolveOrchestrator(t.project.path, agent.orchestrator);
+        const mode = requireString(args, 'mode');
+        if (mode !== 'copy' && mode !== 'reuse') throw new ArgError('mode must be copy or reuse.');
+        const request: ManagedAssetImportRequest = { candidateId: requireString(args, 'candidateId'), mode,
+          partId: optionalString(args, 'partId'), name: optionalString(args, 'name') };
+        const source = { root: agent.worktreePath, conventions: provider.conventions };
+        const sourceOrchestrator = agent.orchestrator;
+        const plan = await prepareManagedAssetImport(svc(), source, request, t.project.id);
+        const digest = digestOf('import_agent_asset', t.project.id, t.agentId, provider.id, plan.fingerprint);
+        const confirm = optionalString(args, 'confirm');
+        if (!confirm) return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest), ...plan.preview });
+        redeemConfirm(callerId, confirm, digest);
+        const part = await withAgentActivity(t.agentId, () => asDispatcher(callerId, () => plan.commit(ACTOR, async (assertSnapshot) => {
+          const stableArgs = { ...args, project: t.project.path, agent: t.agentId };
+          const targets = await resolveArgTargets(callerId, IMPORT_GRANTS, stableArgs);
+          await assertSnapshot();
+          const current = await resolveAgent(stableArgs);
+          const currentAgent = await agentConfig.getDurableConfig(current.project.path, current.agentId);
+          const currentProvider = await resolveOrchestrator(current.project.path, currentAgent?.orchestrator);
+          return () => {
+            if (projectChanged || current.project.id !== t.project.id || currentAgent?.worktreePath !== source.root || currentAgent?.orchestrator !== sourceOrchestrator
+              || currentProvider.id !== provider.id || digestOf(currentProvider.conventions) !== digestOf(source.conventions)) {
+              throw new ManagedError('stale', 'The registered project, source folder or provider changed before import committed. Preview again; nothing was imported.');
+            }
+            if (!targets.get(IMPORT_GRANTS[0])?.length) throw new ManagedError('not_permitted', 'The source authorization target is no longer available. Preview again; nothing was imported.');
+            const check = checkToolGrant(callerId, IMPORT_GRANTS, stableArgs, undefined, targets);
+            const context = grantApprovalContext(callerId, 'import_agent_asset', args, IMPORT_GRANTS, targets);
+            if (!callGrantIsApproved(callerId, 'import_agent_asset', args, check, context)) {
+              throw new ManagedError('not_permitted', 'Import authorization changed before the library write. Nothing was imported; request permission and preview again.');
+            }
+          };
+        })));
+        return json({ status: mode === 'copy' ? 'imported' : 'reused', part, assigned: false, providerLoaded: 'not_confirmed' });
+      } finally { releaseProject(); }
     });
 
   tool('create_agent_part', { actions: ['library.write'], target: 'library' },

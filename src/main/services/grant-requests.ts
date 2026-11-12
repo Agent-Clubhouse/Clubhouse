@@ -14,6 +14,7 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
+import type { GrantAction } from '../../shared/agent-grants';
 import { recordGrantRequest as recordRequestEvent } from './grant-telemetry';
 import {
   GRANT_REQUEST_TTL_MS, MAX_PENDING_GRANT_REQUESTS_PER_AGENT, type GrantRequest,
@@ -21,19 +22,29 @@ import {
 
 export type GrantRequestChange =
   | { kind: 'added'; request: GrantRequest }
-  /** `answered`: someone took it to answer (it comes back as `added` if a lasting allow fails to save). `withdrawn`: its agent was deleted. */
+  /** `answered`: someone took it to answer (it comes back as `added` if a lasting allow fails to save). `withdrawn`: its agent was deleted or its scope changed. */
   | { kind: 'closed'; requestIds: string[]; reason: 'answered' | 'expired' | 'withdrawn' };
 
 type Listener = (change: GrantRequestChange) => void;
 
-/** A waiting request and what makes two requests the same. */
-interface Entry { request: GrantRequest; key: string }
+/** Original main-only scope, separate from the model-visible request. */
+export interface CallApprovalScope {
+  readonly context: string;
+  readonly asks: readonly { readonly action: GrantAction; readonly where: string }[];
+}
+
+export interface ConsumedCallApproval {
+  readonly requestId: string;
+  readonly scope: CallApprovalScope;
+}
+
+interface Entry { request: GrantRequest; key: string; scope?: CallApprovalScope }
 
 const pending = new Map<string, Entry>();
-/** Requests taken for an answer that hasn't finished, by id, with their agent: only these can be put back. */
-const answering = new Map<string, string>();
+/** Requests taken for an unfinished answer, preserving original scope: only these can be put back. */
+const answering = new Map<string, Entry>();
 /** One-time approvals of call requests, by call key, with when they lapse. */
-const approvals = new Map<string, number>();
+const approvals = new Map<string, { until: number; requestId: string; scope?: CallApprovalScope }>();
 const listeners = new Set<Listener>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -68,7 +79,7 @@ function sweep(now: number): void {
   const expired = gone.map((e) => e.request.requestId);
   for (const id of expired) pending.delete(id);
   for (const e of gone) recordRequestEvent({ agentId: e.request.agentId, kind: e.request.kind, outcome: 'expired', actions: e.request.actions });
-  for (const [key, until] of approvals) if (until <= now) approvals.delete(key);
+  for (const [key, approval] of approvals) if (approval.until <= now) approvals.delete(key);
   emit({ kind: 'closed', requestIds: expired, reason: 'expired' });
 }
 
@@ -94,11 +105,17 @@ export function recordGrantRequest(
   key: string,
   request: Omit<GrantRequest, 'requestId' | 'createdAt' | 'expiresAt'>,
   now = Date.now(),
+  scope?: CallApprovalScope,
 ): RecordGrantRequestResult {
   sweep(now);
-  const mine = [...pending.values()].filter((e) => e.request.agentId === request.agentId);
+  let mine = [...pending.values()].filter((e) => e.request.agentId === request.agentId);
   const existing = mine.find((e) => e.key === key);
-  if (existing) return { ok: true, request: existing.request, reused: true };
+  if (existing) {
+    if (JSON.stringify(stable(existing.scope)) === JSON.stringify(stable(scope))) return { ok: true, request: existing.request, reused: true };
+    pending.delete(existing.request.requestId);
+    emit({ kind: 'closed', requestIds: [existing.request.requestId], reason: 'withdrawn' });
+    mine = mine.filter((entry) => entry !== existing);
+  }
   if (mine.length >= MAX_PENDING_GRANT_REQUESTS_PER_AGENT) return { ok: false, reason: 'too_many', waiting: mine.length };
   const full: GrantRequest = {
     ...request,
@@ -106,7 +123,7 @@ export function recordGrantRequest(
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + GRANT_REQUEST_TTL_MS).toISOString(),
   };
-  pending.set(full.requestId, { request: full, key });
+  pending.set(full.requestId, { request: full, key, ...(scope && { scope: structuredClone(scope) }) });
   schedule();
   emit({ kind: 'added', request: full });
   return { ok: true, request: full, reused: false };
@@ -125,10 +142,11 @@ export function peekGrantRequest(requestId: string, now = Date.now()): GrantRequ
  * waits instead). True when it was put back.
  */
 export function restoreGrantRequest(request: GrantRequest, key: string, now = Date.now()): boolean {
-  const taken = answering.delete(request.requestId);
+  const taken = answering.get(request.requestId);
+  answering.delete(request.requestId);
   if (!taken || Date.parse(request.expiresAt) <= now || pending.has(request.requestId)) return false;
   if ([...pending.values()].some((e) => e.key === key && e.request.agentId === request.agentId)) return false;
-  pending.set(request.requestId, { request, key });
+  pending.set(request.requestId, { request, key, ...(taken.scope && { scope: taken.scope }) });
   schedule();
   emit({ kind: 'added', request });
   return true;
@@ -153,8 +171,11 @@ export function takeGrantRequest(requestId: string, allowed: boolean, now = Date
   const entry = pending.get(requestId);
   if (!entry) return null;
   pending.delete(requestId);
-  answering.set(requestId, entry.request.agentId);
-  if (allowed && entry.request.kind === 'call') approvals.set(entry.key, Date.parse(entry.request.expiresAt));
+  answering.set(requestId, entry);
+  if (allowed && entry.request.kind === 'call') approvals.set(entry.key, {
+    until: Date.parse(entry.request.expiresAt), requestId,
+    ...(entry.scope && { scope: structuredClone(entry.scope) }),
+  });
   schedule();
   emit({ kind: 'closed', requestIds: [requestId], reason: 'answered' });
   return entry.request;
@@ -162,10 +183,19 @@ export function takeGrantRequest(requestId: string, allowed: boolean, now = Date
 
 /** Use a one-time approval for this call, if the user gave one. */
 export function consumeCallApproval(key: string, now = Date.now()): boolean {
-  const until = approvals.get(key);
-  if (until === undefined) return false;
+  const approval = approvals.get(key);
+  if (!approval) return false;
   approvals.delete(key);
-  return until > now;
+  return approval.until > now;
+}
+
+/** Original private request scope, consumed once. A key-only legacy approval cannot authorize a scoped call. */
+export function consumeCallApprovalScope(key: string, now = Date.now()): ConsumedCallApproval | null {
+  const approval = approvals.get(key);
+  if (!approval) return null;
+  approvals.delete(key);
+  return approval.until > now && approval.scope
+    ? { requestId: approval.requestId, scope: structuredClone(approval.scope) } : null;
 }
 
 /** Every waiting request, oldest first. */
@@ -184,7 +214,7 @@ export function dropGrantRequestsFor(agentId: string): string[] {
   const ids = [...pending.values()].filter((e) => e.request.agentId === agentId).map((e) => e.request.requestId);
   for (const id of ids) pending.delete(id);
   // An answer still saving for this agent can't put its request back.
-  for (const [id, owner] of answering) if (owner === agentId) answering.delete(id);
+  for (const [id, entry] of answering) if (entry.request.agentId === agentId) answering.delete(id);
   dropCallApprovalsFor(agentId);
   schedule();
   emit({ kind: 'closed', requestIds: ids, reason: 'withdrawn' });
