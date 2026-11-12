@@ -12,6 +12,7 @@ import { appLog } from './log-service';
 import { persist } from '../telemetry/persist';
 import { tel } from '../telemetry/facade';
 import { ATTR } from '../../shared/telemetry/attributes';
+import { replaceFile } from './settings-store';
 
 type BulletinPostResult = Parameters<typeof ATTR.bulletinPostResult>[0];
 
@@ -46,8 +47,9 @@ async function pathExists(p: string): Promise<boolean> {
   try {
     await fsp.access(p);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
   }
 }
 
@@ -105,6 +107,7 @@ class BulletinBoard {
   private loaded = false;
   private loadPromise: Promise<void> | null = null;
   private dirty = false;
+  private revision = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingFlush: Promise<void> | null = null;
 
@@ -131,6 +134,11 @@ class BulletinBoard {
       if (await pathExists(bp)) {
         try {
           const data: BulletinData = JSON.parse(await fsp.readFile(bp, 'utf-8'));
+          if (!data || typeof data.topics !== 'object' || data.topics === null || Array.isArray(data.topics)) {
+            throw new Error('Invalid bulletin board');
+          }
+          const topics = new Map<string, BulletinMessage[]>();
+          const protectedTopics = new Set(this.protectedTopics);
           // Silent one-time migration: canonicalize topic keys to lowercase. Boards
           // written before channel names were case-insensitive may hold mixed-case
           // keys (e.g. `inbox-My-Agent`) that collide with the canonical form once
@@ -150,7 +158,7 @@ class BulletinBoard {
               return true;
             });
             if (unique.length !== canonical.length) migrated = true;
-            const existing = this.topics.get(key);
+            const existing = topics.get(key);
             const existingTopic = sourceTopics.get(key);
             if (existing && existingTopic !== undefined && existingTopic !== topic) {
               migrated = true;
@@ -163,9 +171,9 @@ class BulletinBoard {
                 (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
               );
               if (merged.length !== existing.length + unique.length) migrated = true;
-              this.topics.set(key, merged);
+              topics.set(key, merged);
             } else {
-              this.topics.set(key, unique);
+              topics.set(key, unique);
             }
             sourceTopics.set(key, existingTopic ?? topic);
           }
@@ -173,38 +181,56 @@ class BulletinBoard {
             for (const t of data.protectedTopics) {
               const key = normalizeChannelName(t);
               if (key !== t) migrated = true;
-              this.protectedTopics.add(key);
+              protectedTopics.add(key);
             }
           }
+          this.topics = topics;
+          this.protectedTopics = protectedTopics;
           // Persist the canonical form once so the migration is durable rather than
           // re-run on every load.
           if (migrated) {
-            this.dirty = true;
-            this.scheduleFlush();
+            this.markDirty();
           }
         } catch (err) {
           appLog('core:group-project', 'error', 'Failed to parse bulletin board', {
             meta: { projectId: this.projectId, error: err instanceof Error ? err.message : String(err) },
           });
+          throw err;
         }
       }
       this.loaded = true;
-    })();
+    })().finally(() => { this.loadPromise = null; });
 
     return this.loadPromise;
   }
 
   private scheduleFlush(): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
-    this.flushTimer = setTimeout(() => { void this.flush(); }, FLUSH_DELAY_MS);
+    this.flushTimer = setTimeout(() => {
+      void this.flush().catch((err) => {
+        appLog('core:group-project', 'error', 'Failed to write bulletin board', {
+          meta: { projectId: this.projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+      });
+    }, FLUSH_DELAY_MS);
+  }
+
+  private markDirty(): void {
+    this.dirty = true;
+    this.revision++;
+    this.scheduleFlush();
   }
 
   async flush(): Promise<void> {
+    if (this.dirty && !this.loaded) await this.ensureLoaded();
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    if (this.pendingFlush) await this.pendingFlush;
+    if (this.pendingFlush) {
+      await this.pendingFlush;
+      return this.flush();
+    }
     if (!this.dirty) return;
 
     const data: BulletinData = { topics: {} };
@@ -214,21 +240,20 @@ class BulletinBoard {
     if (this.protectedTopics.size > 0) {
       data.protectedTopics = [...this.protectedTopics];
     }
+    const revision = this.revision;
+    const contents = JSON.stringify(data, null, 2);
 
     const flushPromise = (async () => {
       await ensureDir(path.dirname(bulletinPath(this.projectId)));
-      await persist.timed('bulletin', () => fsp.writeFile(bulletinPath(this.projectId), JSON.stringify(data, null, 2), 'utf-8'));
-      this.dirty = false;
-    })().catch((err) => {
-      appLog('core:group-project', 'error', 'Failed to write bulletin board', {
-        meta: { projectId: this.projectId, error: err instanceof Error ? err.message : String(err) },
-      });
-    }).finally(() => {
+      await persist.timed('bulletin', () => replaceFile(bulletinPath(this.projectId), contents, undefined));
+      if (this.revision === revision) this.dirty = false;
+    })().finally(() => {
       if (this.pendingFlush === flushPromise) this.pendingFlush = null;
     });
 
     this.pendingFlush = flushPromise;
     await flushPromise;
+    if (this.dirty) await this.flush();
   }
 
   /** Post a message to a topic. */
@@ -266,8 +291,7 @@ class BulletinBoard {
     const evictedBoard = this.pruneGlobal(message.id);
     recordBulletinPost(evictedBoard > 0 ? 'evicted_topic' : evictedOwn > 0 ? 'evicted_message' : 'ok');
 
-    this.dirty = true;
-    this.scheduleFlush();
+    this.markDirty();
     return message;
   }
 
@@ -403,8 +427,7 @@ class BulletinBoard {
     } else {
       this.protectedTopics.delete(canonicalTopic);
     }
-    this.dirty = true;
-    this.scheduleFlush();
+    this.markDirty();
   }
 
   /** Check whether a topic is protected. */
@@ -435,8 +458,7 @@ class BulletinBoard {
       this.protectedTopics.delete(canonicalTopic);
     }
 
-    this.dirty = true;
-    this.scheduleFlush();
+    this.markDirty();
     return true;
   }
 
@@ -450,8 +472,7 @@ class BulletinBoard {
     this.topics.delete(canonicalTopic);
     this.protectedTopics.delete(canonicalTopic);
 
-    this.dirty = true;
-    this.scheduleFlush();
+    this.markDirty();
     return true;
   }
 
@@ -466,8 +487,7 @@ class BulletinBoard {
     }
     this.topics.clear();
     this.protectedTopics.clear();
-    this.dirty = true;
-    this.scheduleFlush();
+    this.markDirty();
     return total;
   }
 
@@ -494,8 +514,7 @@ class BulletinBoard {
     const afterCount = this.totalMessageCount();
     const removed = beforeCount - afterCount;
     if (removed > 0) {
-      this.dirty = true;
-      this.scheduleFlush();
+      this.markDirty();
     }
     return removed;
   }
@@ -556,6 +575,7 @@ class BulletinBoard {
     this.loaded = false;
     this.loadPromise = null;
     this.dirty = false;
+    this.revision = 0;
     this.maxPerTopic = DEFAULT_MAX_PER_TOPIC;
     this.maxTotal = DEFAULT_MAX_TOTAL;
   }

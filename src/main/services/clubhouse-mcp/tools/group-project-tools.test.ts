@@ -15,21 +15,28 @@ vi.mock('electron', () => ({
 const store = new Map<string, string>();
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn().mockResolvedValue(undefined),
-  access: vi.fn().mockImplementation(async (p: string) => {
-    if (!store.has(p)) throw new Error('ENOENT');
+  access: vi.fn(async (p: string) => {
+    if (!store.has(p)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
   }),
-  readFile: vi.fn().mockImplementation(async (p: string) => {
+  readFile: vi.fn(async (p: string) => {
     const data = store.get(p);
-    if (!data) throw new Error('ENOENT');
+    if (!data) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     return data;
   }),
-  writeFile: vi.fn().mockImplementation(async (p: string, content: string) => {
+  writeFile: vi.fn(async (p: string, content: string) => {
     store.set(p, content);
   }),
 }));
 
 vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
+}));
+vi.mock('../../settings-store', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../settings-store')>(),
+  replaceFile: vi.fn(async (file: string, body: string) => {
+    const fsp = await import('fs/promises');
+    await fsp.writeFile(file, body, 'utf-8');
+  }),
 }));
 
 const mockPtyWrite = vi.fn();

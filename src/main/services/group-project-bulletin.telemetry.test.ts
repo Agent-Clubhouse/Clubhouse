@@ -4,13 +4,20 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/tmp/test
 const store = vi.hoisted(() => new Map<string, string>());
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn().mockResolvedValue(undefined),
-  access: vi.fn().mockImplementation(async (p: string) => { if (!store.has(p)) throw new Error('ENOENT'); }),
-  readFile: vi.fn().mockImplementation(async (p: string) => { const d = store.get(p); if (!d) throw new Error('ENOENT'); return d; }),
-  writeFile: vi.fn().mockImplementation(async (p: string, c: string) => { store.set(p, c); }),
+  access: vi.fn(async (p: string) => { if (!store.has(p)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
+  readFile: vi.fn(async (p: string) => { const d = store.get(p); if (!d) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return d; }),
+  writeFile: vi.fn(async (p: string, c: string) => { store.set(p, c); }),
   rename: vi.fn().mockResolvedValue(undefined),
   rm: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./settings-store', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./settings-store')>(),
+  replaceFile: vi.fn(async (file: string, body: string) => {
+    const fsp = await import('fs/promises');
+    await fsp.writeFile(file, body, 'utf-8');
+  }),
+}));
 const counts = vi.hoisted(() => [] as Array<{ name: string; result: unknown }>);
 vi.mock('../telemetry/facade', () => ({
   tel: {

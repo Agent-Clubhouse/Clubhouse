@@ -10,15 +10,15 @@ vi.mock('electron', () => ({
 const store = new Map<string, string>();
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn().mockResolvedValue(undefined),
-  access: vi.fn().mockImplementation(async (p: string) => {
-    if (!store.has(p)) throw new Error('ENOENT');
+  access: vi.fn(async (p: string) => {
+    if (!store.has(p)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
   }),
-  readFile: vi.fn().mockImplementation(async (p: string) => {
+  readFile: vi.fn(async (p: string) => {
     const data = store.get(p);
-    if (!data) throw new Error('ENOENT');
+    if (!data) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     return data;
   }),
-  writeFile: vi.fn().mockImplementation(async (p: string, content: string) => {
+  writeFile: vi.fn(async (p: string, content: string) => {
     store.set(p, content);
   }),
   rm: vi.fn().mockResolvedValue(undefined),
@@ -26,6 +26,13 @@ vi.mock('fs/promises', () => ({
 
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
+}));
+vi.mock('./settings-store', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./settings-store')>(),
+  replaceFile: vi.fn(async (file: string, body: string) => {
+    const fsp = await import('fs/promises');
+    await fsp.writeFile(file, body, 'utf-8');
+  }),
 }));
 
 import {
@@ -304,11 +311,11 @@ describe('BulletinBoard', () => {
 
     it('keeps work channels readable and durable when protected history exceeds the global limit', async () => {
       vi.mocked(fsp.access).mockImplementation(async (p: string) => {
-        if (!store.has(p)) throw new Error('ENOENT');
+        if (!store.has(p)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
       vi.mocked(fsp.readFile).mockImplementation(async (p: string) => {
         const data = store.get(p);
-        if (data === undefined) throw new Error('ENOENT');
+        if (data === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
         return data;
       });
       vi.mocked(fsp.writeFile).mockImplementation(async (p: string, content: string) => {
@@ -763,23 +770,6 @@ describe('BulletinBoard', () => {
   describe('mixed-case migration on load', () => {
     const bulletinPathFor = (projectId: string) =>
       path.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', projectId, 'bulletin.json');
-
-    // vitest config sets `mockReset: true`, which wipes the store-backed mock
-    // implementations before each test. These migration tests are the only ones
-    // that read seeded content back through readFile, so re-establish the impls.
-    beforeEach(() => {
-      vi.mocked(fsp.access).mockImplementation(async (p: string) => {
-        if (!store.has(p)) throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readFile).mockImplementation(async (p: string) => {
-        const data = store.get(p);
-        if (data === undefined) throw new Error('ENOENT');
-        return data;
-      });
-      vi.mocked(fsp.writeFile).mockImplementation(async (p: string, content: string) => {
-        store.set(p, content);
-      });
-    });
 
     it('canonicalizes a lone mixed-case topic key on load', async () => {
       store.set(bulletinPathFor('gp_mig_lone'), JSON.stringify({
