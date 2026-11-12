@@ -210,6 +210,7 @@ async function saveLocked(agentId: string, targetId: string, request: SaveConnec
         && current.snapshot.revision === hash([revision, sourceRevision, bindingRevision(binding), sourceVersion]);
       applicationError = 'Its sources or live ownership changed, or could not be checked.';
     } catch (error) {
+      // telemetry-exempt: logged below and returned in the committed-but-not-applied notice
       applicationError = error instanceof Error ? error.message : String(error);
       stillOwned = false;
     }
@@ -235,6 +236,7 @@ export function startConnectionGuidance(): void {
       return kind === 'plugin' || connectionGuidanceOwnership(agentId, targetId).managed
         ? undefined : entryOf(file, guidanceKey(agentId, targetId, kind))?.instructions;
     } catch (error) {
+      // telemetry-exempt: read failures are logged once until a successful read
       if (!reportedReadError) appLog('core:mcp', 'warn', 'Saved connection guidance could not be read; overrides will not be applied', {
         meta: { error: error instanceof Error ? error.message : String(error) },
       });
