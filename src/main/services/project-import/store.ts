@@ -3,6 +3,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getBaseDirPath } from '../base-dir';
+import { appLog } from '../log-service';
 import { ACTIVE_PHASES, IMPORT_EFFECTS, ImportError, containsControlCharacters, validateGithubUrl, validateImportBranch, type ImportPlan, type ImportReceipt, type ImportState } from './types';
 
 export const IMPORT_STATE_MAX_BYTES = 128 * 1024;
@@ -13,6 +14,27 @@ const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
 function fileSignature(stat: fs.BigIntStats): string {
   return `${stat.dev}:${stat.ino}:${stat.mode}:${stat.nlink}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+}
+
+async function verifyMissingParent(file: string): Promise<void> {
+  let directory = path.dirname(file);
+  for (let probes = 0; probes < 128; probes++) {
+    let stat: fs.BigIntStats;
+    try {
+      stat = await fsp.lstat(directory, { bigint: true });
+    } catch (error) {
+      // telemetry-exempt: only verified absence is accepted; filesystem paths/errors stay private.
+      const parent = path.dirname(directory);
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT' && parent !== directory) {
+        directory = parent;
+        continue;
+      }
+      throw new ImportError('history_unavailable', 'Import history absence cannot be verified safely. Existing state was not replaced.');
+    }
+    if (stat.isDirectory() && !stat.isSymbolicLink()) return;
+    throw new ImportError('history_unavailable', 'Import history has an unsafe parent. Existing state was not replaced.');
+  }
+  throw new ImportError('history_unavailable', 'Import history absence exceeds the bounded parent inspection. Existing state was not replaced.');
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -98,7 +120,10 @@ export class ImportStore {
     try {
       before = await fsp.lstat(this.file, { bigint: true });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { state: { version: 1, plans: [], receipts: [] } };
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        await verifyMissingParent(this.file);
+        return { state: { version: 1, plans: [], receipts: [] } };
+      }
       throw unavailable();
     }
     if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n) throw unavailable();
@@ -147,23 +172,75 @@ export class ImportStore {
       decodeImportState(body);
       await fsp.mkdir(path.dirname(this.file), { recursive: true });
       const temp = `${this.file}.${randomUUID()}.tmp`;
-      const handle = await fsp.open(temp, 'wx', 0o600);
+      const handle = await fsp.open(temp, 'wx+', 0o600);
+      const unavailable = () => new ImportError('history_unavailable', 'Import history could not be saved safely. Existing committed history and any checkout/project were preserved; inspect status before retrying.');
+      const expected = Buffer.from(body, 'utf8');
+      let created: fs.BigIntStats | undefined;
+      let sealed: string | undefined;
+      let writtenSealed = false;
+      let committed = false;
+      const verifyTemp = (version?: string) => {
+        const opened = fs.fstatSync(handle.fd, { bigint: true });
+        const current = fs.lstatSync(temp, { bigint: true, throwIfNoEntry: false });
+        const owned = (stat: fs.BigIntStats) => created && stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1n
+          && stat.dev === created.dev && stat.ino === created.ino && stat.mode === created.mode;
+        if (!owned(opened) || !current || !owned(current) || fileSignature(opened) !== fileSignature(current)
+          || (version !== undefined && fileSignature(opened) !== version)) throw unavailable();
+        return opened;
+      };
+      const verifyBytes = () => {
+        const buffer = Buffer.alloc(expected.length + 1);
+        let total = 0;
+        while (total < buffer.length) {
+          const bytes = fs.readSync(handle.fd, buffer, total, buffer.length - total, total);
+          if (!bytes) break;
+          total += bytes;
+        }
+        if (total !== expected.length || !buffer.subarray(0, total).equals(expected)) throw unavailable();
+      };
       try {
+        created = fs.fstatSync(handle.fd, { bigint: true });
+        sealed = fileSignature(created);
+        if (created.size !== 0n) throw unavailable();
+        verifyTemp(sealed);
         await handle.writeFile(body, 'utf8');
+        const written = verifyTemp();
+        if (written.size !== BigInt(expected.length)) throw unavailable();
+        verifyBytes();
+        sealed = fileSignature(written);
+        verifyTemp(sealed);
+        writtenSealed = true;
         await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      try {
+        verifyTemp(sealed);
+        verifyBytes();
         const current = fs.lstatSync(this.file, { bigint: true, throwIfNoEntry: false });
         if ((current ? fileSignature(current) : undefined) !== signature) {
-          throw new ImportError('history_unavailable', 'Import history changed before commit. Existing state was not replaced.');
+          throw unavailable();
         }
+        verifyTemp(sealed);
         await fsp.rename(temp, this.file);
+        committed = true;
       } catch {
-        // telemetry-exempt: a failed receipt write is explicit; only our exact temporary file is removed.
-        await fsp.unlink(temp);
-        throw new ImportError('history_unavailable', 'Import history could not be saved. Any completed checkout or project is preserved; inspect status before retrying.');
+        // telemetry-exempt: failure is explicit; remove only the unchanged owned temporary file.
+        try {
+          if (!sealed) throw unavailable();
+          verifyTemp(sealed);
+          if (writtenSealed) verifyBytes();
+          verifyTemp(sealed);
+          fs.unlinkSync(temp);
+        } catch {
+          // telemetry-exempt: report preserved unexpected state without private paths or raw errors.
+          appLog('core:project', 'warn', 'Import history commit failed; unexpected temporary state was preserved');
+        }
+        throw unavailable();
+      } finally {
+        try { await handle.close(); } catch {
+          // telemetry-exempt: report the actual commit outcome without private paths or raw errors.
+          appLog('core:project', 'warn', 'Import history descriptor could not be closed safely', { meta: { committed } });
+          throw new ImportError('history_unavailable', committed
+            ? 'Import history was committed, but its file could not be closed safely. Inspect status before retrying.'
+            : 'Import history could not be closed safely. Existing committed history was preserved; inspect status before retrying.');
+        }
       }
       return state;
     });

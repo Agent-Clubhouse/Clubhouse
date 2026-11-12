@@ -128,8 +128,20 @@ repository's total byte size; there is no disk quota or repository-size promise.
 Ledger reads require a singly linked regular file, compare path and open-file
 identity/version before and after the bounded read, and check the observed path
 again before committing. Existing and dangling symlinks are refused even where
-`O_NOFOLLOW` is unavailable. These cooperative checks do not claim atomic
-confinement against other OS processes.
+`O_NOFOLLOW` is unavailable. An ENOENT result is empty history only after at most
+128 closest-ancestor probes reach an existing directory; encountered files,
+links, permission failures, unknown roots and over-bound paths are refused.
+
+Each commit keeps its exclusively created temporary file descriptor open through
+rename. BigInt identity/type/link-count checks bind the path to that descriptor,
+and bounded readback verifies the exact encoded bytes. The known post-write
+version is sealed across sync and checked again after destination inspection,
+immediately before rename; the initial empty-file version is not reused after
+the app's own write. A changed temporary file stops before replacing the ledger.
+Failure cleanup removes only still-matching owned state; unexpected replacements
+and moved originals are preserved with a sanitized warning. Descriptor-close
+failure explicitly reports whether the ledger was already committed.
+These cooperative checks do not claim atomic confinement against other OS processes.
 
 Repeated starts of one plan return its existing receipt, not another checkout or
 project. After cancellation, failure or app interruption, no download is silently
