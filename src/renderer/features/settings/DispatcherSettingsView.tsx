@@ -249,7 +249,7 @@ function IdentitySection({ state, config }: { state: DispatcherState; config: Du
       <SettingsField label="Setup" help="Name, look, Behavior and personality one step at a time, with Try it out to hear how it sounds.">
         <Button onClick={openDispatcherSetup} data-testid="dispatcher-open-setup">Set up…</Button>
       </SettingsField>
-      <SettingsField label="Name" htmlFor="dispatcher-name" help="Shows in the sidebar, in its chat, on your phone and to the agents connected to it.">
+      <SettingsField label="Name" htmlFor="dispatcher-name" help="Shows in the sidebar, in its chat and on your phone. Its internal agent appears as Dispatcher controller.">
         <input
           id="dispatcher-name"
           className={`${settingsInput} w-48`}
