@@ -110,6 +110,18 @@ the receiving machine.
 The grant schema alone does not enable federation; transport and controller
 integration are separate prerequisites.
 
+| Sender | Remote status/connectivity | Remote messages/files/hand-off requests |
+|---|---|---|
+| Dispatcher | Allow | Allow |
+| Agent connected to its own trusted local Dispatcher | Allow | Ask first |
+| Other agents | Off | Off |
+
+The connection fact comes from an exact local controller binding, even while
+that receiver is off, never from a name, remote address or tool argument.
+Off means no new grant; existing wider permissions and explicit saved changes
+are unchanged. Presence read is limited by the fixed remote tool surface and
+never includes output/settings, waking, resets or additional control.
+
 ## What connections start with (#3214)
 
 The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". Every new connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off (#3333). Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).
