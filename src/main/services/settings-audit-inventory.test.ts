@@ -36,6 +36,8 @@ const NOT_SETTINGS = new Set([
   'handoffs.json',
   // The parameterized Annex store holds operational outbox/inbox, receipt and status records.
   path.join('services', 'annex-delivery-store.ts'),
+  // Immutable original-click approval lifecycle records are operational state, not settings.
+  path.join('services', 'durable-call-approvals.ts'),
   'annex-ports.json',
   // Annex Network membership state (removals, confirmations), kept by Clubhouse: not settings.
   'annex-network.json',

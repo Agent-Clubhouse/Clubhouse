@@ -171,3 +171,20 @@ All under the Clubhouse base folder (`~/.clubhouse`, or `.clubhouse-dev` in deve
 | `dispatcher-usage.json` | 31 days of usage, conversations and background work | no |
 | `dispatcher-upkeep.json` | when upkeep last ran | no |
 | `dispatcher-settings.json` (app settings folder) | switch, Behavior, chosen models and what they replaced, personality, setup state | no |
+
+## Staged original-click approval ledger
+
+`durable-call-approvals.ts` is an uninstalled local-only ledger for an exact
+original human decision. It does not enable remote Ask-first, register a tool or
+protocol, or start a transport. Its factory requires Main's original answered
+request source; a request id, current grant, Boolean or consumed local approval
+cannot manufacture a receipt. The command id and complete wire hash must come
+from the same authoritative transport preparation used by enqueue, never a
+separate preview.
+
+Receipts bind the original caller, target, tool, pairing, policy, asks and exact
+command. Fresh refusal wins. A new invocation can find only unclaimed proof;
+bound proof belongs to its immutable queued command. Writes are atomic `0600`
+and publish only committed state, with 2,000-record and exact persisted 4 MiB
+limits. Capacity failure preserves every live proof and the old file unchanged.
+Native answer, policy and transport integration require separate review.
