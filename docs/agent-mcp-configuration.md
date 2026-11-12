@@ -45,6 +45,29 @@ negotiates transports and reports connection state. For example, the Copilot SDK
 driver reports each server's connection state, and a server it couldn't send.
 No save or configuration read probes a server.
 
+## Clubhouse tool effect hints
+
+The bridge publishes explicit `readOnlyHint`, `destructiveHint` and
+`openWorldHint` annotations with each built-in tool in `tools/list`, for both
+HTTP and stdio clients. The reviewed catalog lives in `clubhouse-mcp/tool-registry.ts`;
+the annotation inventory test registers the same catalog as startup, including
+helper and group-project tools, and fails if a new tool has no classification.
+
+Reads are distinguished from writes, not inferred from names or grants.
+For example, `hand_off` records a receipt without disposing anything, whereas
+`dispose_helper`, `clear_agent`, `clear_topic` and `delete_messages` are destructive.
+Mixed tools describe their possible effects: arbitrary browser operations,
+reset/compaction, force-capable sleep, fresh restart and delegated actions are
+not advertised as harmless reads. Browser tools, live provider model/preset
+queries, helper creation with model validation, and project cloning are
+open-world; Clubhouse-internal tools are closed-world. Contributed
+plugin tools and the generic wire-tool dispatcher conservatively advertise
+possible writes, destruction and open-world access.
+
+These are client-facing descriptions, not authorization. Tool-group, wire,
+role, grant and user-approval checks still run on every call. An annotation
+does not grant access or change any provider's approval policy.
+
 ## Codex local TOML limitation
 
 The JSON editor does not read or write `.codex/config.toml`. Existing TOML helpers
