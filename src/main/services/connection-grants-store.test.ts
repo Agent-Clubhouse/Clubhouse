@@ -13,6 +13,7 @@ import {
   setConnectionTools, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
 import { resetAllSettingsStoresForTests } from './settings-store';
+import { appLog } from './log-service';
 
 const A = { agentId: 'a' };
 const B = { agentId: 'b' };
@@ -52,6 +53,21 @@ describe('atomic explicit user links', () => {
     await expect(linkConnectionDirections([{ from: A, to: B }, { from: { agentId: '' }, to: A }])).rejects.toThrow('address');
     expect(getConnectionDirection(A, B)).toBeUndefined();
     expect(rename).not.toHaveBeenCalled();
+  });
+
+  it('reports a failing listener without exposing its error or skipping the remaining listeners', async () => {
+    const unsubscribeFailing = onConnectionGrantsChanged(() => { throw new Error('private listener details'); });
+    const remaining = vi.fn();
+    const unsubscribeRemaining = onConnectionGrantsChanged(remaining);
+    try {
+      await linkConnectionDirections([{ from: A, to: B }]);
+      expect(getConnectionDirection(A, B)?.link).toBeDefined();
+      expect(remaining).toHaveBeenCalledWith(A, B);
+      expect(appLog).toHaveBeenCalledExactlyOnceWith('core:mcp', 'warn', 'Could not notify a connection-permissions listener after saving grants');
+    } finally {
+      unsubscribeFailing();
+      unsubscribeRemaining();
+    }
   });
 
   it('preserves linked and unrelated raw records instead of normalizing or repairing the store', async () => {

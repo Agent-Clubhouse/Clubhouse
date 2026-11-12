@@ -8,7 +8,7 @@
  * - A store write updates the live binding, so calls are checked against the
  *   store by the existing call path (tool-registry's disabled tools).
  * - The user's own links (Make two-way) are a persisted binding source.
- * Explicit links commit their grants before clearing session removals. Removal
+ * Make two-way commits its grants before clearing session removals. Removal
  * listeners still persist asynchronously; their stores are not in that commit.
  */
 
@@ -343,7 +343,6 @@ export async function connectAcrossMachines(agentId: string, address: string, op
     { from: local(agentId), to: other },
     ...(options.twoWay ? [{ from: other, to: local(agentId) }] : []),
   ]);
-  clearBindingRemovedByUser(agentId, bindingTargetOf(other));
   await rebuildPersistedBindings();
 }
 

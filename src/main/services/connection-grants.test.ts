@@ -264,7 +264,7 @@ describe('connections with agents on other machines (#3064)', () => {
         ]),
       });
       expect.soft(observations).toEqual([[true, true], [true, true]]);
-      expect.soft(isBindingRemovedByUser('a', `z@${FAR}`)).toBe(false);
+      expect.soft(isBindingRemovedByUser('a', `z@${FAR}`)).toBe(true);
     } finally {
       observe.mockRestore();
       unsubscribe();

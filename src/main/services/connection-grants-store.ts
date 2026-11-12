@@ -35,6 +35,7 @@ import {
 } from '../../shared/connection-grants';
 import { createSettingsStore } from './settings-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { appLog } from './log-service';
 
 export const CONNECTION_GRANTS_VERSION = 1;
 
@@ -312,7 +313,7 @@ export async function linkConnectionDirections(pairs: readonly Pick<ConnectionDi
       try {
         listener(d.from, d.to);
       } catch {
-        // telemetry-exempt: one listener failing must not stop the others
+        appLog('core:mcp', 'warn', 'Could not notify a connection-permissions listener after saving grants');
       }
     }
   }
