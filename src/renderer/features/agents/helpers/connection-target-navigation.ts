@@ -1,7 +1,7 @@
 import type { CanvasTargetIndex, CanvasTargetStore, GroupProjectNavigationIndex } from '../../../../shared/canvas-index-types';
 import { findTargetCanvasHits, isCanvasTargetView, type NavigableCanvasTargetKind, type TargetCanvasHit } from '../../../../shared/canvas-persistence';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
-import { prepareCanvasNavigation } from '../../../plugins/builtin/canvas/canvas-navigation-handoff';
+import { consumeCanvasNavigationHandoff, prepareCanvasNavigation } from '../../../plugins/builtin/canvas/canvas-navigation-handoff';
 import { useAgentStore } from '../../../stores/agentStore';
 import { durableAgentFromConfig } from '../../../stores/agent/agentCrudSlice';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
@@ -84,10 +84,11 @@ export async function jumpToConnectionCanvas(
   kind: NavigableCanvasTargetKind, targetId: string, hit: ConnectionCanvasHit, signal: AbortSignal,
   freshIndex?: GroupProjectNavigationIndex,
 ): Promise<void> {
-  const { index, hits } = freshIndex
+  const { index, hits, errors } = freshIndex
     ? { index: freshIndex, ...mergeTargetCanvasHits(kind, targetId, freshIndex) }
     : await lookupConnectionCanvases(kind, targetId, signal);
   assertCurrent(signal);
+  if (errors.length) throw new Error(`Canvas lookup is incomplete. ${errors.join(' ')} Retry Open after the affected stores are available.`);
   if (!hits.some((entry) => entry.scope === hit.scope && entry.projectId === hit.projectId
     && entry.canvasId === hit.canvasId && entry.viewId === hit.viewId)) {
     throw new Error('This Canvas representation was removed. Retry Open to find its current representations.');
@@ -120,30 +121,41 @@ export async function jumpToConnectionCanvas(
   store.getState().zoomView(null);
   store.getState().focusView(hit.viewId);
   store.getState().selectView(hit.viewId);
-  prepareCanvasNavigation(store, { ...hit, kind, targetId });
+  const handoff = prepareCanvasNavigation(store, { ...hit, kind, targetId });
   const ui = useUIStore.getState();
   ui.setActiveHost(null);
   ui.setDispatcherOpen(false);
   useProjectStore.getState().setActiveProject(hit.projectId ?? null);
   ui.setExplorerTab('plugin:canvas', hit.projectId);
+  const cancelIfDeparted = () => {
+    if (useUIStore.getState().explorerTab !== 'plugin:canvas'
+      || useUIStore.getState().activeHostId !== null
+      || useProjectStore.getState().activeProjectId !== (hit.projectId ?? null)
+      || (hit.projectId && !useProjectStore.getState().projects.some((entry) => entry.id === hit.projectId))) {
+      consumeCanvasNavigationHandoff(store, handoff);
+    }
+  };
+  const offUI = useUIStore.subscribe(cancelIfDeparted);
+  const offProject = useProjectStore.subscribe(cancelIfDeparted);
+  handoff.dispose = () => { offUI(); offProject(); };
+  cancelIfDeparted();
 }
 
 /** Plugin IDs have a genuine tab only when that enabled plugin contributes one. */
-export function pluginNavigationReason(pluginId: string, projectId: string): string | null {
-  const plugins = usePluginStore.getState();
+export function pluginNavigationReason(pluginId: string, projectId: string, plugins = usePluginStore.getState()): string | null {
   const entry = plugins.plugins[pluginId];
   if (!entry?.manifest.contributes?.tab) return 'This plugin has no standalone navigation view.';
   if (entry.status !== 'activated') return 'This plugin is unavailable. Enable it in Settings before opening its view.';
-  const enabled = entry.manifest.scope === 'app'
-    ? plugins.appEnabled.includes(pluginId)
-    : (plugins.projectEnabled[projectId] ?? []).includes(pluginId);
-  return enabled ? null : 'This plugin is not enabled in the connection project. Enable it in Settings before opening its view.';
+  const projectEnabled = entry.manifest.scope !== 'app' && (plugins.projectEnabled[projectId] ?? []).includes(pluginId);
+  const appEnabled = entry.manifest.scope !== 'project' && plugins.appEnabled.includes(pluginId);
+  return projectEnabled || appEnabled ? null : 'This plugin is not enabled in the connection project. Enable it in Settings before opening its view.';
 }
 
 export function openConnectionPlugin(pluginId: string, projectId: string): void {
   const reason = pluginNavigationReason(pluginId, projectId);
   if (reason) throw new Error(reason);
-  const app = usePluginStore.getState().plugins[pluginId].manifest.scope === 'app';
+  const plugins = usePluginStore.getState();
+  const app = plugins.plugins[pluginId].manifest.scope === 'app' || !(plugins.projectEnabled[projectId] ?? []).includes(pluginId);
   if (!app && !useProjectStore.getState().projects.some((project) => project.id === projectId)) {
     throw new Error('The connection project was removed. Restore it and retry Open.');
   }

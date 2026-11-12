@@ -175,7 +175,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const store = isAppMode ? useAppCanvasStore : getProjectCanvasStore(api.context.projectId ?? null);
   const storage = isAppMode ? api.storage.global : api.storage.projectLocal;
   const navigationHandoff = useMemo(() => getCanvasNavigationHandoff(store), [store]);
-  const [navigationRuntimeChanged, setNavigationRuntimeChanged] = useState(false);
+  const [reconciledNavigation, setReconciledNavigation] = useState<typeof navigationHandoff>();
 
   const canvases = store((s) => s.canvases);
   const activeCanvasId = store((s) => s.activeCanvasId);
@@ -396,7 +396,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     const offAwoke = navigationHandoff ? window.clubhouse.agent.onAgentAwoke((agentId) => {
       releaseNavigationWiresForAgent(navigationHandoff, agentId);
       if (store.getState().views.some((view) => view.type === 'agent' && view.agentId === agentId)) {
-        setNavigationRuntimeChanged(true);
+        setReconciledNavigation(navigationHandoff);
       }
       reconcile();
     }) : undefined;
@@ -771,7 +771,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onRemoveWireDefinition: (agentId: string, targetId: string) => store.getState().removeWireDefinition(agentId, targetId),
             onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => store.getState().updateWireDefinition(agentId, targetId, updates),
             zoneWireDefinitions,
-            navigationBaseline: navigationRuntimeChanged ? undefined : navigationHandoff?.state,
+            navigationBaseline: reconciledNavigation === navigationHandoff ? undefined : navigationHandoff?.state,
             navigationFocus: navigationHandoff && !navigationHandoff.revealed ? {
               viewId: navigationHandoff.target.viewId,
               onRevealed: () => completeCanvasNavigationReveal(store, navigationHandoff),

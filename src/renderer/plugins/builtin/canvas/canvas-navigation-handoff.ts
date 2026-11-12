@@ -10,22 +10,26 @@ export interface CanvasNavigationHandoff {
   target: { canvasId: string; viewId: string; kind: NavigableCanvasTargetKind; targetId: string };
   structure: string;
   revealed: boolean;
+  dispose?: () => void;
 }
 
 const handoffs = new WeakMap<StoreApi<CanvasState>, CanvasNavigationHandoff>();
 const pairKey = (wire: Pick<McpBindingEntry, 'agentId' | 'targetId'>) => `${wire.agentId}\0${wire.targetId}`;
 
 /** Only the next mount skips restore: ordinary manual Canvas mounts are unchanged. */
-export function prepareCanvasNavigation(store: StoreApi<CanvasState>, target: CanvasNavigationHandoff['target']): void {
+export function prepareCanvasNavigation(store: StoreApi<CanvasState>, target: CanvasNavigationHandoff['target']): CanvasNavigationHandoff {
+  handoffs.get(store)?.dispose?.();
   const state = store.getState();
   const active = new Set(useMcpBindingStore.getState().bindings.map(pairKey));
-  handoffs.set(store, {
+  const handoff: CanvasNavigationHandoff = {
     state,
     inactiveWires: new Set(state.wireDefinitions.filter((wire) => !active.has(pairKey(wire)))),
     target,
     structure: canvasStructure(state),
     revealed: false,
-  });
+  };
+  handoffs.set(store, handoff);
+  return handoff;
 }
 
 export function viewStructure(views: readonly CanvasView[]): string {
@@ -65,6 +69,8 @@ export function getCanvasNavigationHandoff(store: StoreApi<CanvasState>): Canvas
 
 export function consumeCanvasNavigationHandoff(store: StoreApi<CanvasState>, handoff: CanvasNavigationHandoff): void {
   if (handoffs.get(store) === handoff) handoffs.delete(store);
+  handoff.dispose?.();
+  handoff.dispose = undefined;
 }
 
 export function isNavigationHydrationUnchanged(state: CanvasState, handoff: CanvasNavigationHandoff): boolean {

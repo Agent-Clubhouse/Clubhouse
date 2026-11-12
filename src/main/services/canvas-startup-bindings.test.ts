@@ -328,6 +328,8 @@ describe('canvas membership index', () => {
 
   describe('connection target canvas index', () => {
     it('re-reads primary data at the hydration boundary and refuses missing/stale/corrupt stores without recovery writes', async () => {
+      await expect(readCanvasForNavigation('proj_w')).rejects.toThrow(/invalid or unknown rows/);
+      writeKv(projectCanvasKvDir(wardfall), 'canvas-wires', [wire('durable_w1', 'gp_wardfall', 'group-project')]);
       const before = snapshotTree(root);
       const snapshot = await readCanvasForNavigation('proj_w');
       expect(snapshot.canvases).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'cv_w1' })]));

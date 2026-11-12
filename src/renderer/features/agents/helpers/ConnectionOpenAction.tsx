@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from '../../../components/Modal';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { usePluginStore } from '../../../plugins/plugin-store';
 import {
   beginConnectionNavigationRequest, jumpToConnectionCanvas, lookupConnectionCanvases, openConnectionAgent, openConnectionPlugin,
   pluginNavigationReason, type ConnectionCanvasHit,
@@ -14,7 +15,7 @@ export function ConnectionOpenAction({ targetId, targetKind, name, projectId }: 
   const [state, setState] = useState<State>({ kind: 'idle' });
   const request = useRef<AbortController | null>(null);
   const descriptionId = useId();
-  const unsupported = targetKind === 'plugin' ? pluginNavigationReason(targetId, projectId) : null;
+  const unsupported = usePluginStore((plugins) => targetKind === 'plugin' ? pluginNavigationReason(targetId, projectId, plugins) : null);
   useEffect(() => {
     setState({ kind: 'idle' });
     return () => { request.current?.abort(); };

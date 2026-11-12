@@ -15,6 +15,7 @@ import { usePluginStore } from '../../../plugins/plugin-store';
 import { ConnectionOpenAction } from './ConnectionOpenAction';
 import { ConnectionsCard } from './ConnectionsCard';
 import { beginConnectionNavigationRequest, jumpToConnectionCanvas, mergeTargetCanvasHits, openConnectionAgent } from './connection-target-navigation';
+import { manifest as browserManifest } from '../../../plugins/builtin/browser/manifest';
 
 const projects: Project[] = [
   { id: 'nav-one', name: 'Same project name', path: '/nav/one' },
@@ -124,6 +125,21 @@ describe('connection Open navigation', () => {
   });
 
   it('waits for unvisited persisted hydration, then focuses/reveals the real node without writes or reconnecting inactive wires; explicit edits and manual reopening still work', async () => {
+    const data: CanvasNavigationSnapshot = {
+      ...snapshot(),
+      canvases: [board('other', []), board('board', [
+        groupView(),
+        {
+          id: 'zone', type: 'zone', title: 'Zone', displayName: 'Zone', metadata: {}, themeId: 'catppuccin-mocha',
+          position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 0, containedViewIds: ['zone-agent'],
+        },
+        {
+          id: 'zone-agent', type: 'agent', agentId: 'zone-sleeper', title: 'Zone member', displayName: 'Zone member', metadata: {},
+          position: { x: 50, y: 50 }, size: { width: 200, height: 200 }, zIndex: 1,
+        },
+      ])],
+      zoneWires: [{ id: 'zone-wire', sourceZoneId: 'zone', targetId: 'gp_actual', targetType: 'group-project' }],
+    };
     const loading = deferred<CanvasNavigationSnapshot>();
     vi.mocked(window.clubhouse.canvas.readForNavigation).mockReturnValue(loading.promise);
     const store = getProjectCanvasStore('nav-two');
@@ -135,14 +151,19 @@ describe('connection Open navigation', () => {
     const projectCreate = vi.spyOn(window.clubhouse.project, 'add');
     const groupCreate = vi.spyOn(window.clubhouse.groupProject, 'create');
     const policy = vi.spyOn(window.clubhouse.agent, 'setOrchestrationPolicy');
-    const { api, storage } = panelApi(snapshot());
+    let onAwoke: ((agentId: string) => void) | undefined;
+    vi.spyOn(window.clubhouse.agent, 'onAgentAwoke').mockImplementation((callback) => {
+      onAwoke = callback;
+      return () => {};
+    });
+    const { api, storage } = panelApi(data);
     const card = render(<ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Old project name" projectId="nav-one" />);
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
     await waitFor(() => expect(window.clubhouse.canvas.readForNavigation).toHaveBeenCalledWith('group-project', 'gp_actual', 'nav-two'));
     expect(focus).not.toHaveBeenCalled();
     expect(store.getState().loaded).toBe(false);
     expect(useUIStore.getState().explorerTab).toBe('agents');
-    await act(async () => { loading.resolve(snapshot()); });
+    await act(async () => { loading.resolve(data); });
     await waitFor(() => expect(useUIStore.getState().explorerTab).toBe('plugin:canvas'));
     expect(store.getState().activeCanvasId).toBe('board');
     expect(store.getState().selectedViewId).toBe('node');
@@ -159,10 +180,14 @@ describe('connection Open navigation', () => {
     expect(useMcpBindingStore.getState().bindings).toEqual([]);
     expect(useGroupProjectStore.getState().projects[0].metadata).toEqual({});
 
+    await act(async () => { onAwoke?.('sleeping'); });
+    expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }));
+    bind.mockClear();
     act(() => { store.getState().moveView('node', { x: 5200, y: 6200 }); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
     expect(storage.write).toHaveBeenCalledWith('canvas-instances', expect.any(Array));
     expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }));
+    expect(bind).toHaveBeenCalledWith('zone-sleeper', expect.objectContaining({ targetId: 'gp_actual' }));
     panel.unmount();
     const manualLoad = vi.spyOn(store.getState(), 'loadCanvas');
     const manualWires = vi.spyOn(store.getState(), 'loadWires');
@@ -242,6 +267,28 @@ describe('connection Open navigation', () => {
     expect(getProjectCanvasStore('nav-two').getState().loaded).toBe(false);
   });
 
+  it('discards an unconsumed handoff when its tab closes and reports a target removed between hydration and mount', async () => {
+    const store = getProjectCanvasStore('nav-two');
+    await jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
+    expect(getCanvasNavigationHandoff(store)).toBeDefined();
+    useUIStore.getState().setExplorerTab('agents', 'nav-two');
+    expect(getCanvasNavigationHandoff(store)).toBeUndefined();
+    await jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
+    store.setState((state) => ({
+      canvases: state.canvases.map((canvas) => canvas.id === 'board' ? { ...canvas, views: [] } : canvas),
+    }));
+    const { api, storage } = panelApi(snapshot());
+    const create = vi.spyOn(store.getState(), 'addCanvas');
+    const bind = vi.spyOn(window.clubhouse.mcpBinding, 'bind');
+    render(<MainPanel api={api} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('deleted before it opened');
+    expect(screen.queryByTestId('canvas-workspace')).not.toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+    expect(bind).not.toHaveBeenCalled();
+    expect(storage.read).not.toHaveBeenCalled();
+    expect(storage.write).not.toHaveBeenCalled();
+  });
+
   it('keeps suspended-row Open distinct from Edit/Remove and disables unsupported plugin navigation with an accessible explanation', async () => {
     window.clubhouse.mcpBinding.getDispatcherLinks = vi.fn(async () => [{
       agentId: 'lead', targetId: 'actual-agent', agentName: 'Lead', targetName: 'Old name', status: 'suspended', reason: 'dispatcher_off',
@@ -258,5 +305,19 @@ describe('connection Open navigation', () => {
     const unsupported = screen.getByRole('button', { name: 'Open' });
     expect(unsupported).toBeDisabled();
     expect(unsupported).toHaveAccessibleDescription('This plugin has no standalone navigation view.');
+  });
+
+  it('uses a genuine enabled plugin tab, including Home for a dual-scope plugin, without enabling or creating anything', () => {
+    render(<ConnectionOpenAction targetId="browser" targetKind="plugin" name="Browser plugin" projectId="nav-one" />);
+    expect(screen.getByRole('button', { name: 'Open' })).toBeDisabled();
+    act(() => {
+      usePluginStore.getState().registerPlugin(browserManifest, 'builtin', '/builtin/browser', 'activated');
+      usePluginStore.getState().enableApp('browser');
+    });
+    const before = usePluginStore.getState().appEnabled;
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(useUIStore.getState().explorerTab).toBe('plugin:browser');
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+    expect(usePluginStore.getState().appEnabled).toBe(before);
   });
 });
