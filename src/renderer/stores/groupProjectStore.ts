@@ -5,6 +5,23 @@ function isGroupProject(v: unknown): v is GroupProject {
   return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).id === 'string' && typeof (v as Record<string, unknown>).name === 'string';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCompleteGroupProject(value: unknown): value is GroupProject {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string'
+    || typeof value.description !== 'string' || typeof value.instructions !== 'string'
+    || typeof value.createdAt !== 'string' || !isRecord(value.metadata)) {
+    return false;
+  }
+  const scope = value.scope;
+  return scope === undefined || (isRecord(scope)
+    && (scope.reach === 'local' || scope.reach === 'network')
+    && (scope.level === 'app' ? scope.projectId === undefined
+      : scope.level === 'project' && typeof scope.projectId === 'string' && scope.projectId.length > 0));
+}
+
 interface GroupProjectStoreState {
   projects: GroupProject[];
   loaded: boolean;
@@ -45,22 +62,19 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   create: async (name, options) => {
     const raw = await window.clubhouse.groupProject.create(name, options);
     if (!isGroupProject(raw)) throw new Error('create returned invalid GroupProject');
-    set((state) => ({ projects: [...state.projects, raw] }));
+    set((state) => state.projects.some((project) => project.id === raw.id)
+      ? state
+      : { projects: [...state.projects, raw] });
     return raw;
   },
 
   update: async (id, fields) => {
-    await window.clubhouse.groupProject.update(id, fields);
+    const updated = await window.clubhouse.groupProject.update(id, fields);
+    if (!isCompleteGroupProject(updated) || updated.id !== id) {
+      throw new Error('Group project update was not confirmed. Reload the directory and try again.');
+    }
     set((state) => ({
-      projects: state.projects.map((p) => {
-        if (p.id !== id) return p;
-        const updated = { ...p, ...fields };
-        // Merge metadata rather than replacing it (matches main process behavior)
-        if (fields.metadata) {
-          updated.metadata = { ...p.metadata, ...fields.metadata };
-        }
-        return updated;
-      }),
+      projects: state.projects.map((p) => p.id === id ? updated : p),
     }));
   },
 

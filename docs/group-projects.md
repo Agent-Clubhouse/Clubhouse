@@ -18,9 +18,46 @@ path and refuses an unregistered caller path.
 Network creation is explicitly refused until the authoritative Annex host path
 is available, even if Annex is enabled. No local group is presented as a network
 group. `get_project_info` includes scope; legacy records without one return
-`scope: null` until membership-aware migration can inspect the complete saved
+`scope: null` unless membership-aware migration can verify the complete
 membership inventory. Creation does not infer migration scope from an incomplete
 startup binding cache or change existing members or subscriptions.
+
+## Legacy scope inference
+
+Initial registry loading inventories registered projects, durable agents, saved
+connections, every app/project Canvas store, and live bindings/registrations.
+It reuses the existing wire and connection eligibility rules, including saved
+grant-authorized foreign endpoints, without creating memberships or changing
+subscriptions. Unknown live-agent directory identities defer inference rather
+than being ignored. A single known member project implies
+project/local; mixed or verified empty membership implies app/local.
+
+Strict read-only source readers refuse unknown or malformed rows, ambiguous
+identities and corrupt/unreadable primary files rather than treating filtered
+rows, caches or recovered backups as a complete inventory. Ordinary readers
+retain their existing recovery behavior. Backup-only or recovery-only data is
+untrusted; only verified absence of primary and recovery copies is empty.
+
+Inference persists atomically before publication, retaining an internal
+`_scopeInference: "legacy-v1"` provenance marker on every later registry write.
+The marker is not part of the public Group Project object. On every fresh load,
+marked scopes are untrusted until a complete inventory reproduces the recorded
+candidate and passes drift checks. A different candidate is never silently
+adopted. Unrelated edits retain the recorded candidate even while its public
+scope is unresolved. Explicit scopes from new creation remain authoritative and are not
+re-inferred.
+
+Immutable inventory signatures are rechecked before and after persistence.
+Detected drift restores the previous registry before publication; restoration
+failure explicitly rejects loading. The retained provenance also protects a
+restart after a crash between rename and verification. This is cooperative
+validation, not a transaction spanning independent source files or protection
+against external filesystem tampering.
+
+Unavailable, unknown or changed inventory leaves scope unresolved
+(`get_project_info` returns `scope: null`) with a logged retryable diagnostic.
+Repairing the source permits another attempt on the next app startup. There is
+no polling loop, automatic read retry or live membership expansion.
 
 ## Local persistence
 
@@ -53,12 +90,33 @@ just-posted message even if older history has timestamps ahead of the clock.
 
 - `src/shared/group-project-types.ts`: registry and bulletin types.
 - `src/main/services/group-project-registry.ts`: registry loading, CRUD and flush.
+- `src/main/services/group-project-scope-migration.ts`: checked legacy inventory.
+- `src/main/services/group-project-scope-migration.test.ts`: real-file inference,
+  drift, crash-provenance and publication-barrier regressions.
 - `src/main/services/group-project-bulletin.ts`: board loading, retention and flush.
 - `src/main/services/settings-store.ts`: shared atomic replacement helper.
 - `src/main/services/group-project-storage.test.ts`: real-file crash/failure,
   concurrent-load and in-flight mutation regressions.
 
-Legacy scope migration, scope management, authoritative host identity and
+Scope management, authoritative host identity and
 sequence numbers, durable membership, directory management and network
 synchronization are separate additions. These foundations do not change canvas
 membership, grants or polling.
+
+## Local directory
+
+Settings > Group Projects, also available as **Group Projects** in the command
+palette, lists this machine's local registry, including records on no Canvas.
+This is not an authoritative host, network or membership directory.
+
+Creation here explicitly uses app/local scope regardless of the active project.
+Select a record to edit its name, description and instructions through the same
+store and IPC used by Canvas. Instructions retain their whitespace. Scope is
+read-only; legacy or missing scope is shown as unresolved, not inferred.
+Failed loads hide the inventory and offer a retry. Failed writes retain the
+current draft and report that it was not saved.
+
+Network creation remains unavailable because the authoritative host backend is
+not available, even when Annex is on. Host state, durable membership and its
+management, grants, owned Actions, deletion, board viewing and Canvas navigation
+are outside this local directory slice.
