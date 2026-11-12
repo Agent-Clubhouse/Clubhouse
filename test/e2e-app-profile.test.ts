@@ -45,7 +45,7 @@ const mockChildren: ChildProcess[] = [];
 
 function fakeChild(live = false): ChildProcess {
   const child = new ChildProcess(); // Event emitter only; never spawned or signalled.
-  if (!live) child.exitCode = 0;
+  if (!live) Object.defineProperty(child, 'exitCode', { value: 0 });
   mockChildren.push(child);
   return child;
 }
@@ -58,7 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const child of mockChildren.splice(0)) {
     if (child.exitCode === null && child.signalCode === null) {
-      child.exitCode = 0;
+      Object.defineProperty(child, 'exitCode', { value: 0 });
       child.emit('exit', 0, null);
       child.emit('close', 0, null);
     }
@@ -125,7 +125,7 @@ describe('createDisposableProfile', () => {
 
     child.emit('close', 0, null);
     expect(() => profile.dispose()).toThrow(/exit has not been observed/);
-    child.exitCode = 0;
+    Object.defineProperty(child, 'exitCode', { value: 0 });
     child.emit('exit', 0, null);
     profile.dispose();
     expect(profile.disposed).toBe(true);
@@ -272,7 +272,7 @@ function fakeApp(pages: ReturnType<typeof fakePage>[], live = false) {
     windows: () => pages,
     waitForEvent: vi.fn(async () => { throw new Error('no more windows'); }),
     close: vi.fn(async () => {
-      child.exitCode = 0;
+      Object.defineProperty(child, 'exitCode', { value: 0 });
       child.emit('exit', 0, null);
       child.emit('close', 0, null);
     }),
@@ -387,7 +387,7 @@ describe('launchApp', () => {
       throw undefined;
     });
     app.close.mockImplementation(async () => {
-      child.exitCode = 1;
+      Object.defineProperty(child, 'exitCode', { value: 1 });
       child.emit('exit', 1, null);
       child.emit('close', 1, null);
       throw new Error('close failed');
@@ -419,7 +419,7 @@ describe('launchApp', () => {
     expect(warning).toHaveBeenCalledWith('[e2e profile] disposal incomplete; profile retained');
 
     const child = app.process();
-    child.exitCode = 0;
+    Object.defineProperty(child, 'exitCode', { value: 0 });
     child.emit('exit', 0, null);
     disposeAllProfiles();
     expect(fs.existsSync(directory)).toBe(false);
