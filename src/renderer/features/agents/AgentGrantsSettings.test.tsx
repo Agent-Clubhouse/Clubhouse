@@ -224,8 +224,31 @@ describe('Clubhouse permissions page (#2971)', () => {
     window.clubhouse.agent.resetGrants = vi.fn(async () => { throw new Error('nope'); });
     render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Reset to defaults' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't reset to defaults, so nothing changed. Try again.");
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't confirm the reset. Check the saved permissions before trying again.");
     expect(radios('See app settings (The app)').getByRole('radio', { name: 'Off' })).toBeChecked();
+  });
+
+  it('reloads actual saved policy after a thrown reset without claiming nothing changed', async () => {
+    window.clubhouse.agent.getGrants = vi.fn()
+      .mockResolvedValueOnce(withChange(defaultsView(), 'settings.app.read', 'off'))
+      .mockResolvedValue(withChange(defaultsView(), 'settings.app.read', 'ask'));
+    window.clubhouse.agent.resetGrants = vi.fn(async () => { throw new Error('reset uncertain'); });
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset to defaults' }));
+    await waitFor(() => expect(radios('See app settings (The app)').getByRole('radio', { name: 'Ask first' })).toBeChecked());
+    expect(screen.getByRole('alert')).not.toHaveTextContent('nothing changed');
+    expect(window.clubhouse.agent.getGrants).toHaveBeenCalledTimes(2);
+  });
+
+  it('hides old permission rows if a thrown reset also has unreadable saved policy', async () => {
+    window.clubhouse.agent.getGrants = vi.fn()
+      .mockResolvedValueOnce(withChange(defaultsView(), 'settings.app.read', 'off'))
+      .mockRejectedValue(new Error('readback unavailable'));
+    window.clubhouse.agent.resetGrants = vi.fn(async () => { throw new Error('reset uncertain'); });
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset to defaults' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't read epic-lead's Clubhouse permissions");
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });
 
   it('shows plain loading, empty and failed reads', async () => {

@@ -16,7 +16,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'durable-original-answer-'));
 
 import { durableGrantApprovals, invalidateCallApprovalsFor } from './durable-grant-approvals';
-import { createDurableCallApprovals } from './durable-call-approvals';
+import { createDurableCallApprovals, DURABLE_APPROVAL_MAX_BYTES } from './durable-call-approvals';
 import { answerGrantRequest } from './grant-request-answers';
 import { runGrantCommand } from './mobile-grant-requests';
 import { _resetGrantRequestsForTesting, callKey, consumeCallApprovalScope, peekGrantRequest, readOriginalAllowedCall, recordGrantRequest } from './grant-requests';
@@ -27,6 +27,7 @@ import { agentGrantChangePending, withAgentGrantChange } from './agent-grants-st
 import { evaluateGrant } from '../../shared/agent-grants';
 import { GRANT_OFF_PERSISTENCE_FAILED } from '../../shared/agent-grant-changes';
 import { checkToolGrant } from './clubhouse-mcp/grant-check';
+import { GRANT_REQUEST_TTL_MS } from '../../shared/grant-requests';
 
 const now = Date.UTC(2026, 10, 12, 12);
 const machine = Array(16).fill('aa').join(':');
@@ -267,5 +268,49 @@ describe('actual native/mobile original-call answers (transport not activated)',
         : failure === 'policy' ? { allowed: false, reason: 'approval_revoked' } : { allowed: true },
     );
     expect(agentGrantChangePending(callerId)).toBe(false);
+  });
+
+  it('saves truthful restrictive Off when full-ledger revocation cannot fit and blocks later widening', async () => {
+    const callerId = `capacity-caller-${++sequence}`;
+    const grant = { action: 'agent.message' as const, target: { kind: 'remote_dispatcher' as const } };
+    await setAgentGrant('/project', callerId, { ...grant, mode: 'ask' });
+    const key = callKey(callerId, 'hand_off_request', { request: 'original' });
+    const intent = durableGrantApprovals.prepare({
+      callerId, callKey: key, toolName: 'hand_off_request', protocol: 'federation', operation: 'hand_off_request',
+      machineId: machine, targetId: 'controller', epoch: { sender: 'sender-pairing', receiver: 'receiver-pairing' },
+      displayTarget: 'Dispatcher on Mac', policyContext: deliveryHash({ mode: 'ask' }),
+    }, deliveryHash({ request: 'original' }), [
+      { action: 'agent.message', where: 'x'.repeat(1_000) }, { action: 'agent.read', where: 'y'.repeat(100) },
+    ], 'capacity-command', now);
+    const recorded = recordGrantRequest(key, {
+      kind: 'call', agentId: callerId, agentName: 'Caller', projectPath: '/project',
+      actions: ['agent.message', 'agent.read'], where: 'Dispatcher on Mac', toolName: 'hand_off_request',
+    }, now, intent.scope);
+    if (!recorded.ok) throw new Error('Request not recorded');
+    expect(await answerGrantRequest(recorded.request.requestId, true)).toEqual({ ok: true });
+    await durableGrantApprovals.claim({ requestId: recorded.request.requestId }, intent, 'ask', now);
+    const file = path.join(state.base, 'durable-call-approvals.json');
+    const receipt = JSON.parse(fs.readFileSync(file, 'utf8')).receipts.find((entry: { requestId: string }) => entry.requestId === recorded.request.requestId);
+    const seed = { version: 1, receipts: Array.from({ length: 2_000 }, (_, index) => ({ ...receipt, requestId: `seed-${index}` })) };
+    const before = JSON.stringify(seed);
+    expect(Buffer.byteLength(before)).toBeLessThan(DURABLE_APPROVAL_MAX_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(seed, null, 2))).toBeGreaterThan(DURABLE_APPROVAL_MAX_BYTES);
+    fs.writeFileSync(file, before);
+    vi.resetModules();
+    const freshPolicy = await import('./agent-grants-service');
+    const freshProof = await import('./durable-grant-approvals');
+    expect(await freshPolicy.setAgentGrant('/project', callerId, { ...grant, mode: 'off' })).toMatchObject({
+      partialFailure: { code: 'approval_revocation_failed', effectiveOff: true },
+    });
+    await expect(freshPolicy.setAgentGrant('/project', callerId, { ...grant, mode: 'allow' })).rejects.toMatchObject({ code: 'approval_store_full' });
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+    expect(freshProof.durableGrantApprovals.verify({ requestId: 'seed-0' }, intent, 'ask', now)).toEqual({ allowed: false, reason: 'approval_revoked' });
+    expect(restart().verify({ requestId: 'seed-0' }, intent, 'ask', now)).toEqual({ allowed: true });
+    expect(restart().verify({ requestId: 'seed-0' }, intent, 'refuse', now)).toEqual({ allowed: false, reason: 'grant_refused' });
+    expect(evaluateGrant({
+      caller: { kind: 'agent', agentId: callerId, projectPath: '/project' }, action: grant.action,
+      target: { kind: 'agent', isDispatcher: true, isRemoteDispatcher: true },
+    }, await freshPolicy.effectiveAgentGrants('/project', callerId)).outcome).toBe('refuse');
+    expect(receipt.claimBy).toBe(now + GRANT_REQUEST_TTL_MS);
   });
 });

@@ -304,6 +304,32 @@ describe('durable original-click approval ledger (not activated)', () => {
     expect(fs.readFileSync(f.file, 'utf8')).toBe(before);
   });
 
+  it.each(['approve', 'claim', 'revoke'] as const)('bounds the exact persisted representation for %s with a full valid compact seed', async (operation) => {
+    const f = fixture();
+    const wideAsks = [
+      { action: 'agent.message' as const, where: 'x'.repeat(1_000) },
+      { action: 'agent.read' as const, where: 'y'.repeat(100) },
+    ];
+    const intent = f.ledger.prepare(identity, deliveryHash(payload), wideAsks, 'wide-command', now);
+    f.answers.set('wide-click', { ...f.answer('wide-click'), scope: intent.scope });
+    await f.ledger.approveAnsweredRequest('wide-click', now);
+    const file = JSON.parse(fs.readFileSync(f.file, 'utf8'));
+    file.receipts = Array.from({ length: operation === 'approve' ? 1_999 : 2_000 }, (_, index) => ({ ...file.receipts[0], requestId: `seed-${index}` }));
+    const before = JSON.stringify(file);
+    expect(Buffer.byteLength(before)).toBeLessThan(DURABLE_APPROVAL_MAX_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(file, null, 2))).toBeGreaterThan(DURABLE_APPROVAL_MAX_BYTES);
+    fs.writeFileSync(f.file, before);
+    const loaded = createDurableCallApprovals((id) => f.answers.get(id), f.filename);
+    const prepared = loaded.prepare(identity, deliveryHash(payload), wideAsks, 'new-command', now);
+    f.answers.set('new-click', { ...f.answer('new-click'), scope: prepared.scope });
+    const changing = operation === 'approve' ? loaded.approveAnsweredRequest('new-click', now)
+      : operation === 'claim' ? loaded.claim({ requestId: 'seed-0' }, intent, 'ask', now)
+        : loaded.revokeCaller(identity.callerId, now);
+    await expect(changing).rejects.toMatchObject({ code: 'approval_store_full' });
+    expect(fs.readFileSync(f.file, 'utf8')).toBe(before);
+    expect(f.restart().findUnclaimedForCall(identity.callKey, now)?.reference).toEqual({ requestId: 'seed-0' });
+  });
+
   it('accepts a complete file at the exact byte bound but rejects one extra byte', () => {
     const f = fixture();
     const exact = '{"version":1,"receipts":[]}'.padEnd(DURABLE_APPROVAL_MAX_BYTES, ' ');

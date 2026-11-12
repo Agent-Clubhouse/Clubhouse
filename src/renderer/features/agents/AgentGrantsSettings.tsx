@@ -40,7 +40,7 @@ export const SOURCE_LABEL: Record<GrantRow['source'], string | undefined> = {
 };
 
 const SET_FAILED = "Couldn't confirm that change. Showing the saved permissions; reload if they couldn't be read.";
-const RESET_FAILED = "Couldn't reset to defaults, so nothing changed. Try again.";
+const RESET_FAILED = "Couldn't confirm the reset. Check the saved permissions before trying again.";
 
 export interface GrantGroup {
   key: string;
@@ -160,7 +160,14 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0, onNavi
       setPending({});
     } catch (err) {
       reportChromeActionFailed('agent_settings_save', err);
-      setError({ key: null, message: RESET_FAILED });
+      if (seq >= appliedSeq.current) setView(null);
+      try {
+        applyView(seq, await window.clubhouse.agent.getGrants(projectPath, agent.id));
+      } catch {
+        // telemetry-exempt: unknown saved policy is unavailable, never presented as the old value
+        if (seq >= appliedSeq.current) setLoadFailed(true);
+      }
+      if (seq >= appliedSeq.current) setError({ key: null, message: RESET_FAILED });
     }
     setResetting(false);
   };

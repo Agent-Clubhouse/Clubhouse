@@ -176,6 +176,11 @@ not hidden. Both write failures report uncertainty and may leave the old saved
 policy after restart; permission UIs reload actual policy, not optimistic values.
 No live approval is silently evicted or claimed durably revoked after a failed
 write. Known in-run proof remains denied.
+The byte limit covers the exact indented representation written to disk, including
+claim and revocation mutations. A compact existing file that cannot be rewritten
+within that limit is left byte-identical with an explicit capacity error.
+Failed saves and resets reload actual policy; if readback is unavailable, both
+permission surfaces remove stale current-permission claims until reload succeeds.
 
 The canonical registry pre-click and authoritative transport preparation/replay
 hooks still require integration and independent combined end-to-end review before

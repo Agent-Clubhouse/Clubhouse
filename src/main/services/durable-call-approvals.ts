@@ -152,7 +152,7 @@ export function createDurableCallApprovals(
       const file = get();
       file.receipts = file.receipts.filter((receipt) => now < (receipt.boundAt === undefined ? receipt.claimBy : receipt.boundAt + DELIVERY_RETENTION_MS));
       if (change(file, now) === false) return;
-      if (file.receipts.length > DURABLE_APPROVAL_MAX_RECORDS || Buffer.byteLength(JSON.stringify(file)) > DURABLE_APPROVAL_MAX_BYTES) {
+      if (file.receipts.length > DURABLE_APPROVAL_MAX_RECORDS || Buffer.byteLength(JSON.stringify(file, null, 2)) > DURABLE_APPROVAL_MAX_BYTES) {
         throw new DurableApprovalError('approval_store_full', 'The approval store is full. Existing unexpired approvals were not discarded.');
       }
       await store.save(file);

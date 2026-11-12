@@ -87,9 +87,10 @@ function useDispatcherGrants(state: DispatcherState | null, enabled: boolean) {
   const path = state?.path ?? null;
   const id = state?.agentId ?? null;
   useEffect(() => {
+    setView(null);
+    setFailed(false);
     if (!enabled || !path || !id) return;
     let alive = true;
-    setFailed(false);
     Promise.resolve().then(() => window.clubhouse.agent.getGrants(path, id)).then(
       (next) => { if (alive) setView(next); },
       // telemetry-exempt: the card says it couldn't read them; Permissions offers to try again.
@@ -97,7 +98,10 @@ function useDispatcherGrants(state: DispatcherState | null, enabled: boolean) {
     );
     return () => { alive = false; };
   }, [enabled, path, id, nonce]);
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  const reload = useCallback(() => {
+    setView(null);
+    setNonce((n) => n + 1);
+  }, []);
   return { view, setView, failed, reload, path, id };
 }
 
