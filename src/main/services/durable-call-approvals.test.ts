@@ -74,8 +74,10 @@ describe('durable original-click approval ledger (not activated)', () => {
     const f = fixture();
     const reference = await f.click();
     expect(f.ledger.verify(reference, f.intent, 'ask', now)).toEqual({ allowed: false, reason: 'approval_not_bound' });
+    expect(f.restart().findUnclaimedForCall(identity.callKey, now)?.reference).toEqual(reference);
     expect(await f.restart().claim(reference, f.intent, 'ask', now)).toEqual({ allowed: true });
     expect(f.restart().verify(reference, f.intent, 'ask', now + 1)).toEqual({ allowed: true });
+    expect(f.restart().findUnclaimedForCall(identity.callKey, now + 1)).toBeUndefined();
     const raw = fs.readFileSync(f.file, 'utf8');
     expect(raw).not.toContain(payload.args.request);
     expect(JSON.parse(raw).receipts[0].intent.wirePayloadHash).toBe(deliveryHash(payload));
@@ -152,8 +154,8 @@ describe('durable original-click approval ledger (not activated)', () => {
     const spy = vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => { await gate; return rename(from, to); });
     const approving = f.click();
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());
-    expect(f.ledger.findForCall(identity.callKey, now)).toBeUndefined();
-    expect(f.restart().findForCall(identity.callKey, now)).toBeUndefined();
+    expect(f.ledger.findUnclaimedForCall(identity.callKey, now)).toBeUndefined();
+    expect(f.restart().findUnclaimedForCall(identity.callKey, now)).toBeUndefined();
     release();
     const reference = await approving;
     const claimGate = new Promise<void>((resolve) => { release = resolve; });
@@ -170,7 +172,7 @@ describe('durable original-click approval ledger (not activated)', () => {
     const f = fixture();
     vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('disk write blocked'));
     await expect(f.click()).rejects.toThrow('disk write blocked');
-    expect(f.ledger.findForCall(identity.callKey, now)).toBeUndefined();
+    expect(f.ledger.findUnclaimedForCall(identity.callKey, now)).toBeUndefined();
     const reference = await f.click();
     vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('claim write blocked'));
     await expect(f.ledger.claim(reference, f.intent, 'ask', now)).rejects.toThrow('claim write blocked');
@@ -206,13 +208,13 @@ describe('durable original-click approval ledger (not activated)', () => {
     const reference = await approving;
     await expect(revoking).rejects.toThrow('revocation write blocked');
     expect(await f.ledger.claim(reference, f.intent, 'ask', now)).toEqual({ allowed: false, reason: 'approval_revoked' });
-    expect(f.ledger.findForCall(identity.callKey, now)).toBeUndefined();
+    expect(f.ledger.findUnclaimedForCall(identity.callKey, now)).toBeUndefined();
   });
 
   it.each(['{', '{}', '{"version":1}', '{"receipts":[]}', '{"version":2,"receipts":[]}', '{"version":1,"receipts":[{}]}'])('fails closed on corrupt or incomplete authority file %s', async (raw) => {
     const f = fixture();
     fs.writeFileSync(f.file, raw);
-    expect(() => f.ledger.findForCall(identity.callKey, now)).toThrow('approval store is unreadable');
+    expect(() => f.ledger.findUnclaimedForCall(identity.callKey, now)).toThrow('approval store is unreadable');
     await expect(f.click()).rejects.toMatchObject({ code: 'approval_store_unreadable' });
     expect(await f.ledger.claim({ requestId: 'clicked-request' }, f.intent, 'refuse', now)).toEqual({ allowed: false, reason: 'grant_refused' });
     expect(fs.readFileSync(f.file, 'utf8')).toBe(raw);
@@ -228,7 +230,7 @@ describe('durable original-click approval ledger (not activated)', () => {
       { ...file, padding: 'x'.repeat(DURABLE_APPROVAL_MAX_BYTES) },
     ]) {
       fs.writeFileSync(f.file, JSON.stringify(bad));
-      expect(() => f.restart().findForCall(identity.callKey, now)).toThrow('approval store is unreadable');
+      expect(() => f.restart().findUnclaimedForCall(identity.callKey, now)).toThrow('approval store is unreadable');
     }
   });
 
@@ -278,9 +280,9 @@ describe('durable original-click approval ledger (not activated)', () => {
     const f = fixture();
     const exact = '{"version":1,"receipts":[]}'.padEnd(DURABLE_APPROVAL_MAX_BYTES, ' ');
     fs.writeFileSync(f.file, exact);
-    expect(f.restart().findForCall(identity.callKey, now)).toBeUndefined();
+    expect(f.restart().findUnclaimedForCall(identity.callKey, now)).toBeUndefined();
     fs.writeFileSync(f.file, `${exact} `);
-    expect(() => f.restart().findForCall(identity.callKey, now)).toThrow('approval store is unreadable');
+    expect(() => f.restart().findUnclaimedForCall(identity.callKey, now)).toThrow('approval store is unreadable');
   });
 
   it('bounds unapproved preparations without evicting one and frees them at expiry', async () => {

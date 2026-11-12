@@ -227,8 +227,8 @@ export function createDurableCallApprovals(
     verify(reference: unknown, actual: PreparedDurableCall, freshGrant: 'allow' | 'ask' | 'refuse', now = Date.now()): DurableApprovalCheck {
       return check(reference, actual, freshGrant, now, true);
     },
-    findForCall(callKey: string, now = Date.now()): { reference: DurableApprovalReference; intent: PreparedDurableCall } | undefined {
-      const receipt = get().receipts.find((entry) => entry.intent.callKey === callKey && !entry.revoked && (revoked.get(entry.intent.scope.context) ?? 0) <= now
+    findUnclaimedForCall(callKey: string, now = Date.now()): { reference: DurableApprovalReference; intent: PreparedDurableCall } | undefined {
+      const receipt = get().receipts.find((entry) => entry.boundAt === undefined && entry.intent.callKey === callKey && !entry.revoked && (revoked.get(entry.intent.scope.context) ?? 0) <= now
         && now < (entry.boundAt === undefined ? entry.claimBy : entry.boundAt + DELIVERY_MAX_AGE_MS));
       return receipt && { reference: { requestId: receipt.requestId }, intent: structuredClone(receipt.intent) };
     },
