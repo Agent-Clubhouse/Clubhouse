@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process';
+import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 import { getShellEnvironment } from '../../util/shell';
 import { ImportError, validateImportBranch, type RemoteIdentity } from './types';
 
@@ -7,6 +9,8 @@ export interface GitRunOptions {
   cwd: string;
   signal?: AbortSignal;
   onProgress?: (percent: number) => void;
+  assertCurrent?: () => Promise<void>;
+  beforeSpawn?: () => void;
 }
 
 export interface ImportGit {
@@ -16,6 +20,58 @@ export interface ImportGit {
 
 const OUTPUT_MAX = 1024 * 1024;
 const AUTH_KEY = /^credential(?:\.https:\/\/github\.com(?:\/[A-Za-z0-9_./-]+)?)?\.(?:helper|username|usehttppath)$/i;
+
+function nativeExecutable(binary: string): boolean {
+  const fd = fs.openSync(binary, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+  try {
+    const header = Buffer.alloc(64);
+    if (fs.readSync(fd, header, 0, header.length, 0) !== header.length) return false;
+    if (process.platform === 'win32') {
+      if (header.toString('ascii', 0, 2) !== 'MZ') return false;
+      const offset = header.readUInt32LE(60);
+      if (offset > 1024 * 1024) return false;
+      const signature = Buffer.alloc(4);
+      return fs.readSync(fd, signature, 0, 4, offset) === 4 && signature.equals(Buffer.from([0x50, 0x45, 0, 0]));
+    }
+    const magic = header.readUInt32BE(0);
+    return process.platform === 'darwin'
+      ? [0xfeedface, 0xcefaedfe, 0xfeedfacf, 0xcffaedfe, 0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca].includes(magic)
+      : magic === 0x7f454c46;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function trustedGitRuntime(source: Record<string, string | undefined>): { binary: string; searchPath: string } {
+  const rawPath = Object.entries(source).find(([key]) => key.toUpperCase() === 'PATH')?.[1] ?? '';
+  const directories: string[] = [];
+  for (const directory of rawPath.split(path.delimiter)) {
+    if (!path.isAbsolute(directory)) continue;
+    try {
+      const real = fs.realpathSync.native(directory);
+      if (fs.statSync(real).isDirectory() && !directories.includes(real)) directories.push(real);
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+        throw new ImportError('git_unavailable', 'Git search directories cannot be inspected safely. Repair the existing Git installation/PATH outside agent messages.');
+      }
+    }
+  }
+  for (const directory of directories) {
+    const candidate = path.join(directory, process.platform === 'win32' ? 'git.exe' : 'git');
+    try {
+      const binary = fs.realpathSync.native(candidate);
+      if (!fs.statSync(binary).isFile()) continue;
+      fs.accessSync(binary, process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
+      if (!nativeExecutable(binary)) continue;
+      return { binary, searchPath: directories.join(path.delimiter) };
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+        throw new ImportError('git_unavailable', 'Git cannot be resolved safely. Repair the existing native Git installation outside agent messages.');
+      }
+    }
+  }
+  throw new ImportError('git_unavailable', 'No native Git executable exists in the existing absolute PATH directories. Install/repair Git outside agent messages; relative paths and shell shims are not used for repository import.');
+}
 
 export function importGitEnvironment(source: Record<string, string | undefined>): NodeJS.ProcessEnv {
   const env = { ...source };
@@ -37,15 +93,16 @@ export function importGitEnvironment(source: Record<string, string | undefined>)
 }
 
 /** Git is spawned without a shell. Only bounded metadata and numeric progress leave this boundary. */
-function execute(args: string[], env: NodeJS.ProcessEnv, options: GitRunOptions, timeout: number, allowNoMatch = false): Promise<string> {
+function execute(binary: string, args: string[], env: NodeJS.ProcessEnv, options: GitRunOptions, timeout: number, allowNoMatch = false): Promise<string> {
   return new Promise((resolve, reject) => {
     if (options.signal?.aborted) {
       reject(new ImportError('cancelled', 'Import cancelled. Existing and partially downloaded files are preserved.'));
       return;
     }
+    options.beforeSpawn?.();
     let child: ChildProcess;
     try {
-      child = spawn('git', args, { cwd: options.cwd, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(binary, args, { cwd: options.cwd, env, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch {
       // telemetry-exempt: only the sanitized operation failure is returned.
       reject(new ImportError('git_unavailable', 'Git could not be started. Install or repair Git, then preview again.'));
@@ -119,9 +176,13 @@ export function parseRemoteIdentity(url: string, raw: string, requested?: string
 }
 
 export function createImportGit(sourceEnvironment: () => Record<string, string | undefined> = getShellEnvironment): ImportGit {
-  async function environment(signal?: AbortSignal): Promise<NodeJS.ProcessEnv> {
+  let runtime: ReturnType<typeof trustedGitRuntime> | undefined;
+  async function environment(signal?: AbortSignal): Promise<{ env: NodeJS.ProcessEnv; binary: string }> {
     const source = sourceEnvironment();
+    runtime ??= trustedGitRuntime(source);
     const env = importGitEnvironment(source);
+    for (const key of Object.keys(env)) if (key.toUpperCase() === 'PATH') delete env[key];
+    env.PATH = runtime.searchPath;
     // Read only existing system/global credential configuration, never a nearby repository's config.
     // Carry it in the child environment, not argv, logs, receipts or model-visible errors.
     let count = 0;
@@ -130,7 +191,7 @@ export function createImportGit(sourceEnvironment: () => Record<string, string |
       delete readEnv.GIT_CONFIG_NOSYSTEM;
       delete readEnv.GIT_CONFIG_SYSTEM;
       delete readEnv.GIT_CONFIG_GLOBAL;
-      const raw = await execute(['config', scope, '--includes', '--null', '--get-regexp', '^credential\\.'], readEnv, { cwd: os.homedir(), signal }, 10_000, true);
+      const raw = await execute(runtime.binary, ['config', scope, '--includes', '--null', '--get-regexp', '^credential\\.'], readEnv, { cwd: os.homedir(), signal }, 10_000, true);
       for (const item of raw.split('\0')) {
         const split = item.indexOf('\n');
         if (split < 0) continue;
@@ -142,7 +203,7 @@ export function createImportGit(sourceEnvironment: () => Record<string, string |
       }
     }
     env.GIT_CONFIG_COUNT = String(count);
-    return env;
+    return { env, binary: runtime.binary };
   }
 
   const safe = [
@@ -152,17 +213,20 @@ export function createImportGit(sourceEnvironment: () => Record<string, string |
     '-c', 'core.fsmonitor=false', '-c', 'core.symlinks=false',
     '-c', 'core.attributesFile=', '-c', 'submodule.recurse=false',
     '-c', 'fetch.recurseSubmodules=false', '-c', 'credential.interactive=false',
+    '-c', 'gc.auto=0', '-c', 'maintenance.auto=false',
     '-c', 'core.protectHFS=true', '-c', 'core.protectNTFS=true',
   ];
 
   return {
     async remote(url, branch, signal) {
-      const env = await environment(signal);
-      const raw = await execute([...safe, 'ls-remote', '--symref', '--', url, 'HEAD', 'refs/heads/*'], env, { cwd: os.homedir(), signal }, 30_000);
+      const { env, binary } = await environment(signal);
+      const raw = await execute(binary, [...safe, 'ls-remote', '--symref', '--', url, 'HEAD', 'refs/heads/*'], env, { cwd: os.homedir(), signal }, 30_000);
       return parseRemoteIdentity(url, raw, branch);
     },
     async run(args, options) {
-      return execute([...safe, ...args], await environment(options.signal), options, 10 * 60_000);
+      const { env, binary } = await environment(options.signal);
+      await options.assertCurrent?.();
+      return execute(binary, [...safe, ...args], env, options, 10 * 60_000);
     },
   };
 }

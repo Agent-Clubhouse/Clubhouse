@@ -159,9 +159,14 @@ describe('bounded import user flow using isolated real Git fixtures', () => {
 
   it('uses an explicitly chosen existing branch without changing the advertised default', async () => {
     const f = fixture();
-    git(f.source, 'branch', 'release');
-    const result = await f.service.preview('dispatcher', { url: f.url, destination: f.destination, branch: 'release' });
-    expect(result.status === 'ready' && result.plan).toMatchObject({ branch: 'release', defaultBranch: 'trunk' });
+    git(f.source, 'branch', 'release/stable');
+    const result = await f.service.preview('dispatcher', { url: f.url, destination: f.destination, branch: 'release/stable' });
+    if (result.status !== 'ready') throw new Error('expected ready');
+    expect(result.plan).toMatchObject({ branch: 'release/stable', defaultBranch: 'trunk' });
+    const started = await f.service.start('dispatcher', result.plan.id, f.destination, authorized);
+    if (!('receipt' in started)) throw new Error('expected receipt');
+    expect(await finished(f.service, started.receipt.id)).toMatchObject({ phase: 'completed', cloneCompleted: true });
+    expect(git(f.destination, 'symbolic-ref', '--short', 'HEAD')).toBe('release/stable');
   });
 
   it('refuses another caller’s status, cancellation, preview reuse and import receipt', async () => {
@@ -272,6 +277,17 @@ describe('approval and placement change invalidation', () => {
 });
 
 describe('QA engine regressions with real Git and harmless isolated markers', () => {
+  it('skips inherited script shims instead of treating an absolute wrapper path as a native Git pin', async () => {
+    let wrapper = '';
+    const f = fixture(() => ({ ...environment(), PATH: `${wrapper}${path.delimiter}${process.env.PATH ?? ''}` }));
+    wrapper = f.source;
+    const marker = path.join(f.work, 'executed-wrapper');
+    fs.writeFileSync(path.join(wrapper, 'git'), `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'completed', cloneCompleted: true });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
   it('does not execute a checked-out git program through a cwd-relative inherited PATH', async () => {
     const f = fixture(() => ({ ...environment(), PATH: `.${path.delimiter}/usr/bin${path.delimiter}/bin` }));
     const marker = path.join(f.work, 'executed-git');
@@ -294,7 +310,7 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     const original = f.runner.run;
     f.runner.run = vi.fn(async (args, options) => {
       const result = await original(args, options);
-      if (args[0] === 'fetch') fs.appendFileSync(path.join(f.destination, '.git', 'config'), `\n[filter "danger"]\n smudge = sh -c 'printf ran > "${marker}"; cat'\n`);
+      if (args[0] === 'fetch') fs.appendFileSync(path.join(f.destination, '.git', 'config'), `\n[filter "danger"]\n smudge = ${JSON.stringify(`sh -c 'printf ran > "${marker}"; cat'`)}\n`);
       return result;
     });
     const { receipt } = await start(f);
@@ -342,6 +358,76 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     expect(f.register).not.toHaveBeenCalled();
     expect(result).toMatchObject({ phase: 'partial', cloneCompleted: true });
     expect(git(f.destination, 'config', '--get', 'remote.origin.url')).toBe('https://github.com/example/other.git');
+  });
+
+  it('rejects configuration injected during credential preparation, after the earlier ownership checkpoint', async () => {
+    let inject: (() => void) | undefined;
+    const f = fixture(() => {
+      inject?.();
+      inject = undefined;
+      return environment();
+    });
+    const original = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      if (args[0] === 'checkout') inject = () => fs.appendFileSync(path.join(f.destination, '.git', 'config'), '\n[filter "danger"]\n smudge = unexpected-command\n');
+      return original(args, options);
+    });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', reason: 'checkout_changed', cloneCompleted: false });
+    expect(fs.existsSync(path.join(f.destination, 'readme.txt'))).toBe(false);
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it.each(['commondir', 'objects', 'refs'])('rejects after-fetch Git %s indirection without using or replacing its outside target', async (changed) => {
+    const f = fixture();
+    const original = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await original(args, options);
+      if (args[0] === 'fetch') {
+        const target = path.join(f.destination, '.git', changed);
+        if (changed === 'commondir') fs.writeFileSync(target, `${path.join(f.source, '.git')}\n`);
+        else {
+          fs.renameSync(target, `${target}-owned`);
+          fs.symlinkSync(path.join(f.source, '.git', changed), target, 'junction');
+        }
+      }
+      return result;
+    });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', cloneCompleted: false, reason: changed === 'commondir' ? 'checkout_changed' : 'owned_directory_changed' });
+    expect(f.register).not.toHaveBeenCalled();
+    expect(git(f.source, 'rev-parse', 'HEAD')).toBe(f.commit);
+  });
+
+  it.each(['origin', 'HEAD', 'branch', 'gitignore'])('rechecks actual %s after the final registration authority await', async (changed) => {
+    const f = fixture();
+    let finalRemoteChecked = false;
+    let injected = false;
+    const original = f.runner.remote;
+    f.runner.remote = vi.fn(async (...args) => {
+      const result = await original(...args);
+      if ((await f.store.get()).receipts.some((receipt) => receipt.phase === 'registering')) finalRemoteChecked = true;
+      return result;
+    });
+    const marker = path.join(f.work, 'preserved-user-file');
+    fs.writeFileSync(marker, 'keep');
+    const approval: ImportAuthorization = async () => ({
+      kind: 'approved',
+      assertCurrent: async () => {
+        if (!finalRemoteChecked || injected) return;
+        await Promise.resolve();
+        injected = true;
+        if (changed === 'origin') git(f.destination, 'remote', 'set-url', 'origin', 'https://github.com/example/other.git');
+        if (changed === 'HEAD') fs.writeFileSync(path.join(f.destination, '.git', 'HEAD'), `${f.commit}\n`);
+        if (changed === 'branch') fs.writeFileSync(path.join(f.destination, '.git', 'refs', 'heads', 'trunk'), `${'b'.repeat(40)}\n`);
+        if (changed === 'gitignore') fs.symlinkSync(marker, path.join(f.destination, '.gitignore'));
+      },
+    });
+    const { receipt } = await start(f, approval);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'partial', cloneCompleted: true, reason: changed === 'gitignore' ? 'unsafe_gitignore' : 'checkout_changed' });
+    expect(injected).toBe(true);
+    expect(f.register).not.toHaveBeenCalled();
+    expect(fs.readFileSync(marker, 'utf8')).toBe('keep');
   });
 });
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as path from 'path';
 
 const fake = vi.hoisted(() => ({
   outputs: [] as Array<{ stdout?: string; stderr?: string; code?: number; wait?: boolean }>,
@@ -36,7 +37,7 @@ vi.mock('child_process', async () => {
 import { createImportGit } from './git';
 
 const sha = 'a'.repeat(40);
-const source = () => ({ PATH: '/bin', HOME: '/fixture', GIT_TRACE: '/private/trace', GIT_DIR: '/untrusted', GIT_CONFIG_COUNT: '1' });
+const source = () => ({ PATH: process.env.PATH, HOME: '/fixture', GIT_TRACE: '/private/trace', GIT_DIR: '/untrusted', GIT_CONFIG_COUNT: '1' });
 beforeEach(() => { fake.outputs.length = 0; fake.calls.length = 0; });
 
 describe('isolated credential-aware Git subprocess boundary', () => {
@@ -50,7 +51,7 @@ describe('isolated credential-aware Git subprocess boundary', () => {
     expect(result.branch).toBe('trunk');
     const call = fake.calls[2];
     expect(call.shell).toBe(false);
-    expect(call.command).toBe('git');
+    expect(path.isAbsolute(call.command)).toBe(true);
     expect(call.args).toContain('ls-remote');
     expect(call.env).toMatchObject({
       GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'credential.helper',
@@ -94,5 +95,33 @@ describe('isolated credential-aware Git subprocess boundary', () => {
     fake.outputs.push({ code: 1 }, { code: 1 }, { stdout: 'x'.repeat(1024 * 1024 + 1), wait: true });
     await expect(createImportGit(source).remote('https://github.com/example/repo.git', undefined)).rejects.toMatchObject({ reason: 'metadata_limit' });
     expect(fake.calls[2].kills).toEqual(['SIGTERM']);
+  });
+
+  it('refuses a relative-only executable search path without spawning anything', async () => {
+    const runner = createImportGit(() => ({ ...source(), PATH: `.${path.delimiter}relative-bin${path.delimiter}` }));
+    await expect(runner.run(['status'], { cwd: '/fixture' })).rejects.toMatchObject({ reason: 'git_unavailable' });
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('pins the absolute executable and absolute helper search directories before any later environment change', async () => {
+    let current = source();
+    const runner = createImportGit(() => current);
+    await runner.run(['init'], { cwd: '/fixture' });
+    const first = fake.calls[2];
+    current = { ...current, PATH: `.${path.delimiter}relative-bin` };
+    await runner.run(['status'], { cwd: '/fixture' });
+    expect(fake.calls.every((call) => call.command === first.command && call.env.PATH === first.env.PATH)).toBe(true);
+    expect(first.env.PATH?.split(path.delimiter).every((directory) => path.isAbsolute(directory))).toBe(true);
+  });
+
+  it('runs the final synchronous safety check after credential and authority awaits, before spawning the owned Git command', async () => {
+    const assertCurrent = vi.fn(async () => {});
+    const beforeSpawn = vi.fn(() => {
+      expect(assertCurrent).toHaveBeenCalledOnce();
+      expect(fake.calls).toHaveLength(2);
+      throw new Error('test-only final safety refusal');
+    });
+    await expect(createImportGit(source).run(['checkout'], { cwd: '/fixture', assertCurrent, beforeSpawn })).rejects.toThrow('test-only final safety refusal');
+    expect(fake.calls).toHaveLength(2);
   });
 });

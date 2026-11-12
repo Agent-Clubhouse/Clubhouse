@@ -44,6 +44,12 @@ separately authorized `wake_agent`.
 ## Process and content safety
 
 Git is spawned without shell interpolation, with bounded output and timeouts.
+Before checkout, the runner pins a native Git executable resolved from existing
+absolute PATH directories. Relative/empty/missing PATH entries are excluded and
+the canonical helper search path is frozen, so downloaded programs cannot become
+Git or credential-helper executables through cwd-relative PATH lookup.
+Script shims are skipped rather than treating an absolute shell wrapper as a
+native Git pin.
 Only existing system/global GitHub credential-helper configuration is carried
 into an isolated Git environment, in environment variables rather than argv.
 Inherited transport rewrites, Git environment injection, hooks, templates,
@@ -53,6 +59,17 @@ inert regular-file representations for symlinks. Repository hooks, filters,
 setup and submodules are not run. Repository-provided `.clubhouse` runtime state
 is refused before checkout/registration, rather than importing agents/settings
 from untrusted content. This is safe subprocess configuration, **not a sandbox**.
+
+The app-created regular Git configuration is bounded, strictly validated and
+byte-sealed. Unknown keys/includes/filters, changed origin, Git indirection, or
+replacement control directories stop the import. Ownership/configuration is checked again after
+credential and authority awaits, immediately before each owned Git subprocess.
+Checkout creates the selected local branch at the reviewed commit without
+automatically modifying upstream-tracking configuration. Immediately before
+registration, fresh remote metadata and actual local origin, HEAD, branch/ref,
+directory identity and ignore-file safety are rechecked. Final parent checks
+and exclusive directory creation have no intervening asynchronous await.
+These guards do not isolate the filesystem from other OS processes.
 
 Git/credential-helper stderr is never returned, persisted or logged. Progress
 contains only phase and numeric percentage. Cancellation signals only the
