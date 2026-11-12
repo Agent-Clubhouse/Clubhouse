@@ -118,10 +118,12 @@ describe('GroupProjectsSettingsView', () => {
     expect(screen.getByLabelText('Instructions')).toHaveValue(next.instructions);
   });
 
-  it.each(['refused', 'rejected'] as const)('refuses blank names and keeps unsaved edits when the write is %s', async (outcome) => {
+  it.each(['refused', 'rejected', 'partial', 'malformed'] as const)('refuses blank names and keeps unsaved edits when the write is %s', async (outcome) => {
     const update = vi.spyOn(window.clubhouse.groupProject, 'update');
     if (outcome === 'refused') update.mockResolvedValue(null);
-    else update.mockRejectedValue(new Error('Write failed'));
+    else if (outcome === 'rejected') update.mockRejectedValue(new Error('Write failed'));
+    else if (outcome === 'partial') update.mockResolvedValue({ id: alpha.id, name: 'Partial response' });
+    else update.mockResolvedValue({ ...alpha, instructions: 7 });
     render(<GroupProjectsSettingsView />);
     await screen.findByRole('list');
     select();
@@ -134,12 +136,13 @@ describe('GroupProjectsSettingsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(
-        outcome === 'refused' ? 'Not saved. Group project update was not confirmed' : 'Not saved. Write failed',
+        outcome === 'rejected' ? 'Not saved. Write failed' : 'Not saved. Group project update was not confirmed',
       );
     });
     expect(screen.getByLabelText('Name')).toHaveValue('Unsaved name');
     expect(screen.getByLabelText('Instructions')).toHaveValue('  keep this draft\n');
     expect(useGroupProjectStore.getState().projects[0]).toEqual(alpha);
+    expect(screen.queryByText('Changes saved to the local registry.')).not.toBeInTheDocument();
   });
 
   it('surfaces load errors, hides stale inventory, and retries the actual list request', async () => {

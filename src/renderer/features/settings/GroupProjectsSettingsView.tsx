@@ -45,6 +45,7 @@ function CreateGroupProject() {
       setName('');
       setCreated(true);
     } catch (err) {
+      // telemetry-exempt: the failed creation is shown inline and its draft is retained.
       setError(`Not created. ${ipcErrorMessage(err)}`);
     } finally {
       pending.current = false;
@@ -125,6 +126,7 @@ function GroupProjectEditor({ project }: { project: GroupProject }) {
       setDraft(next);
       setSaved(true);
     } catch (err) {
+      // telemetry-exempt: the failed save is shown inline and its draft is retained.
       setError(`Not saved. ${ipcErrorMessage(err)}`);
     } finally {
       pending.current = false;

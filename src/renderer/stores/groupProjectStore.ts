@@ -5,6 +5,23 @@ function isGroupProject(v: unknown): v is GroupProject {
   return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).id === 'string' && typeof (v as Record<string, unknown>).name === 'string';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCompleteGroupProject(value: unknown): value is GroupProject {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string'
+    || typeof value.description !== 'string' || typeof value.instructions !== 'string'
+    || typeof value.createdAt !== 'string' || !isRecord(value.metadata)) {
+    return false;
+  }
+  const scope = value.scope;
+  return scope === undefined || (isRecord(scope)
+    && (scope.reach === 'local' || scope.reach === 'network')
+    && (scope.level === 'app' ? scope.projectId === undefined
+      : scope.level === 'project' && typeof scope.projectId === 'string' && scope.projectId.length > 0));
+}
+
 interface GroupProjectStoreState {
   projects: GroupProject[];
   loaded: boolean;
@@ -53,7 +70,7 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
 
   update: async (id, fields) => {
     const updated = await window.clubhouse.groupProject.update(id, fields);
-    if (!isGroupProject(updated) || updated.id !== id) {
+    if (!isCompleteGroupProject(updated) || updated.id !== id) {
       throw new Error('Group project update was not confirmed. Reload the directory and try again.');
     }
     set((state) => ({
