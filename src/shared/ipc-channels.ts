@@ -484,6 +484,10 @@ export const IPC = {
     REQUEST_DURABLE_RELOAD: 'window:request-durable-reload',
     // Popout lifecycle
     FOCUS_POPOUT: 'window:focus-popout',
+    REVEAL_CANVAS_POPOUT: 'window:reveal-canvas-popout',
+    REQUEST_CANVAS_POPOUT_REVEAL: 'window:request-canvas-popout-reveal',
+    CANVAS_POPOUT_REVEALED: 'window:canvas-popout-revealed',
+    CANCEL_CANVAS_POPOUT_REVEAL: 'window:cancel-canvas-popout-reveal',
     POPOUTS_CHANGED: 'window:popouts-changed',
   },
   MARKETPLACE: {

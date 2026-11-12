@@ -10,7 +10,7 @@
  * - Periodic reconciliation (every 30 seconds) catches any missed events.
  */
 import type { AccessLevel } from '../../../shared/agent-access';
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { CanvasWorkspace } from '../../plugins/builtin/canvas/CanvasWorkspace';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from '../../plugins/builtin/canvas/canvas-types';
 import { clampViewport } from '../../plugins/builtin/canvas/canvas-operations';
@@ -22,6 +22,10 @@ import { createWidgetsAPI } from '../../plugins/plugin-api-ui';
 import type { PluginAPI, AgentsAPI, ProjectsAPI, Disposable, AgentInfo, PluginAgentDetailedStatus } from '../../../shared/plugin-types';
 import type { CanvasMutation } from '../../../shared/types';
 import { useMcpBindingStore } from '../../stores/mcpBindingStore';
+import type { CanvasPopoutReveal } from '../../../shared/canvas-index-types';
+import { isCanvasTargetView } from '../../../shared/canvas-persistence';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
+import { viewStructure } from '../../plugins/builtin/canvas/canvas-navigation-handoff';
 
 interface PopoutCanvasViewProps {
   canvasId?: string;
@@ -195,6 +199,15 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   const [error, setError] = useState<string | null>(null);
   // Guard against mutations firing before the initial IPC snapshot resolves.
   const initializedRef = useRef(false);
+  const [navigation, setNavigation] = useState<CanvasPopoutReveal | null>(null);
+  const [revealedViewport, setRevealedViewport] = useState<Viewport | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const navigationRef = useRef<CanvasPopoutReveal | null>(null);
+  const snapshotGeneration = useRef(0);
+  const pendingEdits = useRef(false);
+  const viewsRef = useRef(views);
+  viewsRef.current = views;
+  const [navigationBaseline, setNavigationBaseline] = useState<{ views: CanvasView[]; zoneWireDefinitions: ZoneWireDefinition[] }>();
 
   const loadProjects = useProjectStore((s) => s.loadProjects);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
@@ -213,6 +226,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
     }
 
     let cancelled = false;
+    const generation = snapshotGeneration.current;
 
     (async () => {
       await loadProjects();
@@ -225,7 +239,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
       }
 
       const snapshot = await window.clubhouse.window.getCanvasState(canvasId, scope, projectId);
-      if (cancelled) return;
+      if (cancelled || generation !== snapshotGeneration.current) return;
 
       if (snapshot) {
         setViews(snapshot.views as CanvasView[]);
@@ -239,6 +253,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
       setLoading(false);
     })().catch((err) => {
       if (!cancelled) {
+        if (generation !== snapshotGeneration.current) return;
         setError(`Failed to load canvas: ${err}`);
         setLoading(false);
       }
@@ -247,13 +262,87 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
     return () => { cancelled = true; };
   }, [canvasId, projectId, scope, loadProjects, loadDurableAgents]);
 
+  useEffect(() => {
+    const offReveal = window.clubhouse.window.onCanvasPopoutReveal((request) => {
+      const refuse = (message: string) => window.clubhouse.window.canvasPopoutRevealed({ requestId: request.requestId, error: message });
+      if (request.canvasId !== canvasId || request.projectId !== projectId || request.snapshot.canvasId !== canvasId) {
+        refuse('The Canvas window no longer owns the requested Canvas. Retry Open.');
+        return;
+      }
+      const incoming = request.snapshot.views as CanvasView[];
+      if (pendingEdits.current && viewStructure(incoming) !== viewStructure(viewsRef.current)) {
+        refuse('The Canvas is still applying your edits. Retry Open after they finish.');
+        return;
+      }
+      const target = incoming.find((view) => view.id === request.viewId && isCanvasTargetView(view, request.targetKind, request.targetId));
+      if (!target || !target.position || !target.size
+        || ![target.position.x, target.position.y, target.size.width, target.size.height].every(Number.isFinite)) {
+        refuse('The target node is no longer available on this Canvas. Retry Open.');
+        return;
+      }
+      if (navigationRef.current) refusePrevious(navigationRef.current);
+      snapshotGeneration.current++;
+      navigationRef.current = request;
+      initializedRef.current = true;
+      const zones = (request.snapshot.zoneWireDefinitions as ZoneWireDefinition[] | undefined) ?? [];
+      useGroupProjectStore.setState({ projects: request.groupProjects, loaded: true, loadError: null });
+      setNavigationBaseline({ views: incoming, zoneWireDefinitions: zones });
+      setViews(incoming);
+      setViewport(clampViewport(request.snapshot.viewport));
+      setZoomedViewId(null);
+      setSelectedViewId(request.viewId);
+      setSelectedViewIds([]);
+      setZoneWireDefinitions(zones);
+      setNavigation(request);
+      setRevealedViewport(null);
+      setError(null);
+      setLoading(false);
+    });
+    const offCancel = window.clubhouse.window.onCanvasPopoutRevealCanceled((requestId) => {
+      if (navigationRef.current?.requestId !== requestId) return;
+      navigationRef.current = null;
+      setNavigation(null);
+    });
+    function refusePrevious(request: CanvasPopoutReveal) {
+      window.clubhouse.window.canvasPopoutRevealed({ requestId: request.requestId, error: 'Canvas navigation was superseded.' });
+    }
+    return () => {
+      offReveal();
+      offCancel();
+      if (navigationRef.current) refusePrevious(navigationRef.current);
+      navigationRef.current = null;
+    };
+  }, [canvasId, projectId]);
+
+  useLayoutEffect(() => {
+    if (!navigation || navigationRef.current !== navigation || !revealedViewport
+      || viewport.panX !== revealedViewport.panX || viewport.panY !== revealedViewport.panY || viewport.zoom !== revealedViewport.zoom
+      || selectedViewId !== navigation.viewId || !containerRef.current?.contains(document.activeElement)) return;
+    navigationRef.current = null;
+    setNavigation(null);
+    window.clubhouse.window.canvasPopoutRevealed({ requestId: navigation.requestId, viewport: revealedViewport });
+  }, [navigation, revealedViewport, viewport, selectedViewId]);
+
   // ── Subscribe to canvas state changes from main window ────────────
 
   useEffect(() => {
     if (!canvasId) return;
     const remove = window.clubhouse.window.onCanvasStateChanged((state) => {
-      if (state.canvasId !== canvasId) return;
+      if (state.canvasId !== canvasId || (state.projectId !== undefined && state.projectId !== projectId)) return;
+      const pending = navigationRef.current;
+      if (pending) {
+        if (state.projectId !== projectId) return;
+        const target = (state.views as CanvasView[]).find((view) => view.id === pending.viewId
+          && isCanvasTargetView(view, pending.targetKind, pending.targetId));
+        if (!target || viewStructure(state.views as CanvasView[]) !== viewStructure(pending.snapshot.views as CanvasView[])) {
+          navigationRef.current = null;
+          setNavigation(null);
+          window.clubhouse.window.canvasPopoutRevealed({ requestId: pending.requestId, error: 'The Canvas changed before its target could be revealed. Retry Open.' });
+        }
+        return;
+      }
       setViews(state.views as CanvasView[]);
+      pendingEdits.current = false;
       setViewport(clampViewport(state.viewport));
       setZoomedViewId(state.zoomedViewId);
       setZoneWireDefinitions((state.zoneWireDefinitions as ZoneWireDefinition[] | undefined) ?? []);
@@ -267,6 +356,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
     if (!canvasId) return;
     const interval = setInterval(() => {
       window.clubhouse.window.getCanvasState(canvasId, scope, projectId).then((snapshot) => {
+        if (navigationRef.current) return;
         if (snapshot) {
           setViews(snapshot.views as CanvasView[]);
           setViewport(clampViewport(snapshot.viewport));
@@ -282,6 +372,14 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
 
   const sendMutation = useCallback((mutation: CanvasMutation) => {
     if (!canvasId || !initializedRef.current) return;
+    if (!['focusView', 'setViewport', 'zoomView', 'selectView'].includes(mutation.type)) {
+      pendingEdits.current = true;
+      if (navigationRef.current) {
+        window.clubhouse.window.canvasPopoutRevealed({ requestId: navigationRef.current.requestId, error: 'Canvas navigation was canceled by your edit. Retry Open.' });
+        navigationRef.current = null;
+        setNavigation(null);
+      }
+    }
     window.clubhouse.window.sendCanvasMutation(canvasId, scope, mutation, projectId);
   }, [canvasId, scope, projectId]);
 
@@ -290,6 +388,9 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
     setViewport(vp);
     sendMutation({ type: 'setViewport', viewport: vp });
   }, [sendMutation]);
+  const handleRevealViewport = useCallback((vp: Viewport) => {
+    setViewport((previous) => previous.panX === vp.panX && previous.panY === vp.panY && previous.zoom === vp.zoom ? previous : vp);
+  }, []);
 
   const handleAddView = useCallback((type: CanvasViewType, position: Position) => {
     sendMutation({ type: 'addView', viewType: type, position });
@@ -383,7 +484,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   }
 
   return (
-    <div className="w-full h-full overflow-hidden" data-testid="popout-canvas-view">
+    <div ref={containerRef} className="w-full h-full overflow-hidden" data-testid="popout-canvas-view">
       <CanvasWorkspace
         views={views}
         viewport={viewport}
@@ -398,7 +499,16 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         onAddZoneWireDefinition={(wire) => ({ ...wire, id: '' })}
         onRemoveZoneWireDefinition={() => {}}
         api={api}
-        onViewportChange={handleViewportChange}
+        navigationBaseline={navigationBaseline}
+        navigationFocus={navigation ? {
+          viewId: navigation.viewId,
+          onRevealed: (centered) => {
+            if (navigationRef.current !== navigation) return;
+            setRevealedViewport((previous) => previous?.panX === centered.panX && previous.panY === centered.panY
+              && previous.zoom === centered.zoom ? previous : centered);
+          },
+        } : undefined}
+        onViewportChange={navigation ? handleRevealViewport : handleViewportChange}
         onAddView={handleAddView}
         onAddPluginView={handleAddPluginView}
         onRemoveView={handleRemoveView}

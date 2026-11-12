@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { CanvasPopoutReveal, CanvasPopoutRevealResult } from '../shared/canvas-index-types';
 
 export const window = {
   window: {
@@ -102,6 +103,8 @@ export const window = {
     ipcRenderer.send(IPC.WINDOW.CANVAS_STATE_RESPONSE, requestId, state),
   onCanvasStateChanged: (callback: (state: {
     canvasId: string;
+    projectId?: string;
+    scope?: string;
     name: string;
     views: unknown[];
     viewport: { panX: number; panY: number; zoom: number };
@@ -142,6 +145,22 @@ export const window = {
     ipcRenderer.invoke(IPC.WINDOW.SET_TITLE, title),
   focusPopout: (windowId: number) =>
     ipcRenderer.invoke(IPC.WINDOW.FOCUS_POPOUT, windowId),
+  revealCanvasPopout: (request: CanvasPopoutReveal): Promise<CanvasPopoutRevealResult> =>
+    ipcRenderer.invoke(IPC.WINDOW.REVEAL_CANVAS_POPOUT, request),
+  onCanvasPopoutReveal: (callback: (request: CanvasPopoutReveal) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: CanvasPopoutReveal) => callback(request);
+    ipcRenderer.on(IPC.WINDOW.REQUEST_CANVAS_POPOUT_REVEAL, listener);
+    return () => ipcRenderer.removeListener(IPC.WINDOW.REQUEST_CANVAS_POPOUT_REVEAL, listener);
+  },
+  canvasPopoutRevealed: (result: CanvasPopoutRevealResult) =>
+    ipcRenderer.send(IPC.WINDOW.CANVAS_POPOUT_REVEALED, result),
+  cancelCanvasPopoutReveal: (requestId: string) =>
+    ipcRenderer.send(IPC.WINDOW.CANCEL_CANVAS_POPOUT_REVEAL, requestId),
+  onCanvasPopoutRevealCanceled: (callback: (requestId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestId: string) => callback(requestId);
+    ipcRenderer.on(IPC.WINDOW.CANCEL_CANVAS_POPOUT_REVEAL, listener);
+    return () => ipcRenderer.removeListener(IPC.WINDOW.CANCEL_CANVAS_POPOUT_REVEAL, listener);
+  },
   onPopoutsChanged: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on(IPC.WINDOW.POPOUTS_CHANGED, listener);

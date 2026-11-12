@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent, Project } from '../../../../shared/types';
-import type { CanvasNavigationSnapshot, GroupProjectNavigationIndex } from '../../../../shared/canvas-index-types';
+import type { CanvasNavigationSnapshot, CanvasPopoutReveal, CanvasPopoutRevealResult, GroupProjectNavigationIndex } from '../../../../shared/canvas-index-types';
 import type { PluginAPI, ScopedStorage } from '../../../../shared/plugin-types';
 import { getProjectCanvasStore, MainPanel, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 import type { CanvasInstanceData, CanvasView } from '../../../plugins/builtin/canvas/canvas-types';
@@ -16,6 +16,7 @@ import { ConnectionOpenAction } from './ConnectionOpenAction';
 import { ConnectionsCard } from './ConnectionsCard';
 import { beginConnectionNavigationRequest, jumpToConnectionCanvas, mergeTargetCanvasHits, openConnectionAgent } from './connection-target-navigation';
 import { manifest as browserManifest } from '../../../plugins/builtin/browser/manifest';
+import { PopoutCanvasView } from '../../popout/PopoutCanvasView';
 
 const projects: Project[] = [
   { id: 'nav-one', name: 'Same project name', path: '/nav/one' },
@@ -92,6 +93,11 @@ beforeEach(() => {
   window.clubhouse.canvas.resolveAgentTarget = vi.fn(async () => ({
     project: projects[1], config: { id: 'actual-agent', name: 'Renamed agent', color: 'teal', createdAt: 'today' },
   }));
+  window.clubhouse.window.listPopouts = vi.fn(async () => []);
+  window.clubhouse.window.onCanvasPopoutReveal = vi.fn(() => () => {});
+  window.clubhouse.window.onCanvasPopoutRevealCanceled = vi.fn(() => () => {});
+  window.clubhouse.window.canvasPopoutRevealed = vi.fn();
+  window.clubhouse.window.cancelCanvasPopoutReveal = vi.fn();
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
     x: 0, y: 0, top: 0, left: 0, right: 800, bottom: 600, width: 800, height: 600, toJSON: () => ({}),
   });
@@ -457,5 +463,144 @@ describe('connection Open navigation', () => {
     await waitFor(() => expect(getProjectCanvasStore('nav-two').getState().selectedViewId).toBe('widget-id'));
     expect(useUIStore.getState().explorerTab).toBe('plugin:canvas');
     expect(window.clubhouse.canvas.readForNavigation).toHaveBeenCalledWith(kind, 'widget-id', 'nav-two');
+  });
+
+  it('reveals a dirty local node in the real owning popout viewport and acknowledges only after container focus, without domain writes', async () => {
+    const store = getProjectCanvasStore('nav-two');
+    const data: CanvasNavigationSnapshot = {
+      ...snapshot(),
+      canvases: [board('board', [
+        groupView(),
+        {
+          id: 'popout-zone', type: 'zone', title: 'Zone', displayName: 'Zone', metadata: {}, themeId: 'catppuccin-mocha',
+          position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 0, containedViewIds: ['popout-member'],
+        },
+        {
+          id: 'popout-member', type: 'agent', agentId: 'zone-sleeper', title: 'Member', displayName: 'Member', metadata: {},
+          position: { x: 50, y: 50 }, size: { width: 200, height: 200 }, zIndex: 1,
+        },
+      ])],
+      zoneWires: [{ id: 'popout-zone-wire', sourceZoneId: 'popout-zone', targetId: 'gp_actual', targetType: 'group-project' }],
+    };
+    store.getState().hydrateForNavigation(data, 'board');
+    store.getState().moveView('node', { x: 9100, y: 10100 });
+    store.getState().renameCanvas('board', 'Unsaved local Canvas');
+    const existing = { agentId: 'existing', targetId: 'gp_actual', targetKind: 'group-project' as const, label: 'Active pair' };
+    useMcpBindingStore.setState({ bindings: [existing] });
+    vi.spyOn(useProjectStore.getState(), 'loadProjects').mockResolvedValue(undefined);
+    vi.spyOn(useAgentStore.getState(), 'loadDurableAgents').mockResolvedValue(undefined);
+    const oldSnapshot = deferred<null>();
+    window.clubhouse.window.getCanvasState = vi.fn(() => oldSnapshot.promise);
+    window.clubhouse.window.listPopouts = vi.fn(async () => [
+      { windowId: 99, params: { type: 'canvas', canvasId: 'board' } },
+      { windowId: 7, params: { type: 'canvas', canvasId: 'board', projectId: 'nav-two' } },
+    ]);
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+      const destination = !!this.closest('[data-testid="popout-canvas-view"]');
+      const width = destination ? 1000 : 800;
+      const height = destination ? 700 : 600;
+      return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: height, width, height, toJSON: () => ({}) };
+    });
+    const focusedWindow = vi.fn();
+    let receive: ((request: CanvasPopoutReveal) => void) | undefined;
+    window.clubhouse.window.onCanvasPopoutReveal = vi.fn((callback) => { receive = callback; return () => {}; });
+    const acknowledged = deferred<CanvasPopoutRevealResult>();
+    window.clubhouse.window.revealCanvasPopout = vi.fn((request) => {
+      expect(request.windowId).toBe(7);
+      expect(request.snapshot.name).toBe('Unsaved local Canvas');
+      receive?.(request);
+      return acknowledged.promise;
+    });
+    window.clubhouse.window.canvasPopoutRevealed = vi.fn((result) => {
+      expect('error' in result).toBe(false);
+      const destination = screen.getByTestId('popout-canvas-view');
+      const workspace = within(destination).getByTestId('canvas-workspace');
+      expect(document.activeElement).toBe(workspace);
+      expect(workspace.firstElementChild).toHaveStyle({ transform: 'scale(1) translate(-8800px, -9900px)' });
+      expect(result).toMatchObject({ viewport: { panX: -8800, panY: -9900, zoom: 1 } });
+      focusedWindow();
+      acknowledged.resolve(result);
+    });
+    const bind = vi.spyOn(window.clubhouse.mcpBinding, 'bind');
+    const unbind = vi.spyOn(window.clubhouse.mcpBinding, 'unbind');
+    const create = vi.spyOn(store.getState(), 'addCanvas');
+    const remove = vi.spyOn(store.getState(), 'removeCanvas');
+    const policy = vi.spyOn(window.clubhouse.agent, 'setOrchestrationPolicy');
+    const createWindow = vi.spyOn(window.clubhouse.window, 'createPopout');
+    const closeWindow = vi.spyOn(window.clubhouse.window, 'closePopout');
+    render(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
+    await waitFor(() => expect(receive).toBeDefined());
+    expect(screen.getByText('Loading canvas...')).toBeInTheDocument();
+    let opening!: Promise<void>;
+    await act(async () => {
+      opening = jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
+    });
+    await waitFor(() => expect(focusedWindow).toHaveBeenCalledOnce());
+    await opening;
+    expect(focusedWindow).toHaveBeenCalledOnce();
+    expect(store.getState().viewport).toEqual({ panX: -8800, panY: -9900, zoom: 1 });
+    expect(store.getState().selectedViewId).toBe('node');
+    const { api, storage } = panelApi(data);
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(within(screen.getByTestId('canvas-panel')).getByTestId('popped-out-placeholder')).toBeInTheDocument());
+    oldSnapshot.resolve(null);
+    await act(async () => { await oldSnapshot.promise; });
+    expect(screen.queryByText('Loading canvas...')).not.toBeInTheDocument();
+    for (const mutation of [bind, unbind, create, remove, policy, createWindow, closeWindow, storage.write]) expect(mutation).not.toHaveBeenCalled();
+    expect(useMcpBindingStore.getState().bindings).toEqual([existing]);
+    expect(window.clubhouse.canvas.readForNavigation).not.toHaveBeenCalled();
+  });
+
+  it('cancels queued destination reveals before measured layout and ignores stale scope or deleted nodes', async () => {
+    const store = getProjectCanvasStore('nav-two');
+    store.getState().hydrateForNavigation(snapshot(), 'board');
+    vi.spyOn(useProjectStore.getState(), 'loadProjects').mockResolvedValue(undefined);
+    vi.spyOn(useAgentStore.getState(), 'loadDurableAgents').mockResolvedValue(undefined);
+    window.clubhouse.window.getCanvasState = vi.fn(async () => null);
+    window.clubhouse.window.listPopouts = vi.fn(async () => [
+      { windowId: 7, params: { type: 'canvas', canvasId: 'board', projectId: 'nav-two' } },
+    ]);
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}),
+    });
+    let receive: ((request: CanvasPopoutReveal) => void) | undefined;
+    let cancelDestination: ((requestId: string) => void) | undefined;
+    window.clubhouse.window.onCanvasPopoutReveal = vi.fn((callback) => { receive = callback; return () => {}; });
+    window.clubhouse.window.onCanvasPopoutRevealCanceled = vi.fn((callback) => { cancelDestination = callback; return () => {}; });
+    const answer = deferred<CanvasPopoutRevealResult>();
+    let delivered: CanvasPopoutReveal | undefined;
+    window.clubhouse.window.revealCanvasPopout = vi.fn((request) => { delivered = request; receive?.(request); return answer.promise; });
+    window.clubhouse.window.cancelCanvasPopoutReveal = vi.fn((requestId) => {
+      cancelDestination?.(requestId);
+      answer.resolve({ requestId, error: 'Canvas navigation was canceled.' });
+    });
+    const destination = render(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
+    await waitFor(() => expect(receive).toBeDefined());
+    const controller = beginConnectionNavigationRequest();
+    const opening = jumpToConnectionCanvas('group-project', 'gp_actual', hit, controller.signal);
+    const rejected = expect(opening).rejects.toThrow();
+    await waitFor(() => expect(delivered).toBeDefined());
+    expect(window.clubhouse.window.canvasPopoutRevealed).not.toHaveBeenCalled();
+    await act(async () => { beginConnectionNavigationRequest(); await rejected; });
+    expect(window.clubhouse.window.cancelCanvasPopoutReveal).toHaveBeenCalledWith(delivered?.requestId);
+    await act(async () => {
+      receive?.({ ...delivered!, requestId: 'wrong-scope', projectId: undefined });
+      receive?.({ ...delivered!, requestId: 'deleted-node', snapshot: { ...delivered!.snapshot, views: [] } });
+    });
+    expect(vi.mocked(window.clubhouse.window.canvasPopoutRevealed).mock.calls.every(([result]) => 'error' in result)).toBe(true);
+    expect(getCanvasNavigationHandoff(store)).toBeUndefined();
+    if (!delivered) throw new Error('Expected the original reveal request to be delivered.');
+    const original = delivered;
+    await act(async () => {
+      receive?.({ ...original, requestId: 'new-navigation' });
+      cancelDestination?.(original.requestId);
+    });
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 800, bottom: 600, width: 800, height: 600, toJSON: () => ({}),
+    });
+    destination.rerender(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
+    await waitFor(() => expect(window.clubhouse.window.canvasPopoutRevealed).toHaveBeenCalledWith({
+      requestId: 'new-navigation', viewport: { panX: -4800, panY: -5850, zoom: 1 },
+    }));
   });
 });

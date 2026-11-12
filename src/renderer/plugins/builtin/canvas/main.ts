@@ -222,7 +222,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       api.window.resetTitle();
     }
   }, [api, activeCanvasName, newChrome]);
-  const { findCanvasPopout } = usePopouts();
+  const { findCanvasPopout, popoutsLoaded } = usePopouts();
 
   // Load persisted state (or remote canvas state for annex projects)
   const projectId = api.context.projectId;
@@ -738,7 +738,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     }, 'Loading canvas...');
   }
 
-  const canvasPopout = findCanvasPopout(activeCanvasId);
+  const canvasPopout = findCanvasPopout(activeCanvasId, { projectId: isAppMode ? undefined : projectId });
+  const poppedOutWindowId = canvasPopout?.windowId ?? (!popoutsLoaded ? navigationHandoff?.popoutWindowId : undefined);
   const activeCanvas = canvases.find((c) => c.id === activeCanvasId);
 
   return React.createElement('div', { className: 'flex flex-col h-full w-full', 'data-testid': 'canvas-panel' },
@@ -753,12 +754,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onPopOutCanvas: handlePopOutCanvas,
       onExportBlueprint: handleExportBlueprint,
     }),
-    canvasPopout
+    poppedOutWindowId !== undefined
       ? React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(PoppedOutPlaceholder, {
             type: 'canvas',
             name: activeCanvas?.name,
-            windowId: canvasPopout.windowId,
+            windowId: poppedOutWindowId,
           }),
         )
       : React.createElement('div', { className: 'flex-1 min-h-0' },

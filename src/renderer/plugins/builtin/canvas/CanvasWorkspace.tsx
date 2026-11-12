@@ -101,7 +101,7 @@ interface CanvasWorkspaceProps {
   bidirectionalWires?: boolean;
   createBidirectionalWires?: boolean;
   navigationBaseline?: { views: CanvasView[]; zoneWireDefinitions: ZoneWireDefinition[] };
-  navigationFocus?: { viewId: string; onRevealed: () => void };
+  navigationFocus?: { viewId: string; onRevealed: (viewport: Viewport) => void };
 }
 
 interface CanvasViewCardProps {
@@ -443,9 +443,10 @@ export function CanvasWorkspace({
     const view = views.find((entry) => entry.id === navigationFocus.viewId);
     const rect = containerRef.current?.getBoundingClientRect();
     if (!view || !rect || !rect.width || !rect.height) return;
-    onViewportChange(viewportToCenterView(view, rect.width, rect.height, viewport.zoom));
-    navigationFocus.onRevealed();
+    const centered = viewportToCenterView(view, rect.width, rect.height, viewport.zoom);
+    onViewportChange(centered);
     containerRef.current?.focus();
+    navigationFocus.onRevealed(centered);
   }, [navigationFocus, containerSize, views, viewport.zoom, onViewportChange]);
 
   // ── Selection manager hook ────────────────────────────────────

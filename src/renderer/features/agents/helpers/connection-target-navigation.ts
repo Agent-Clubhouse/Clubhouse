@@ -3,7 +3,8 @@ import type { CanvasNavigationSnapshot, CanvasTargetIndex, CanvasTargetStore, Gr
 import { findTargetCanvasHits, isCanvasTargetView, type NavigableCanvasTargetKind, type TargetCanvasHit } from '../../../../shared/canvas-persistence';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 import type { CanvasState } from '../../../plugins/builtin/canvas/canvas-store';
-import { consumeCanvasNavigationHandoff, prepareCanvasNavigation } from '../../../plugins/builtin/canvas/canvas-navigation-handoff';
+import type { PopoutEntry } from '../../../../shared/plugin-types';
+import { completeCanvasNavigationReveal, consumeCanvasNavigationHandoff, prepareCanvasNavigation, type CanvasNavigationHandoff } from '../../../plugins/builtin/canvas/canvas-navigation-handoff';
 import { useAgentStore } from '../../../stores/agentStore';
 import { durableAgentFromConfig } from '../../../stores/agent/agentCrudSlice';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
@@ -118,6 +119,15 @@ export async function jumpToConnectionCanvas(
     groupProjects = snapshot.groupProjects;
   }
   assertCurrent(signal);
+  const popouts: PopoutEntry[] = await window.clubhouse.window.listPopouts();
+  assertCurrent(signal);
+  const destinations = popouts.filter((entry) => entry.params.type === 'canvas'
+    && entry.params.canvasId === hit.canvasId && entry.params.projectId === hit.projectId);
+  if (destinations.length > 1) throw new Error('More than one window claims this Canvas. Close the duplicate explicitly and retry Open.');
+  const destination = destinations[0];
+  let prepared: CanvasNavigationHandoff | undefined;
+  let revealRequestId: string | undefined;
+  let departed = false;
   unstable_batchedUpdates(() => {
     if (pendingSnapshot && !localCanvasLoaded(store.getState())) store.getState().hydrateForNavigation(pendingSnapshot, hit.canvasId);
     const canvas = store.getState().canvases.find((entry) => entry.id === hit.canvasId);
@@ -127,6 +137,8 @@ export async function jumpToConnectionCanvas(
       throw new Error('The target node has unreadable layout data. Repair the saved Canvas and retry Open.');
     }
     const handoff = prepareCanvasNavigation(store, { ...hit, kind, targetId });
+    handoff.popoutWindowId = destination?.windowId;
+    prepared = handoff;
     if (groupProjects) useGroupProjectStore.setState({ projects: groupProjects, loaded: true, loadError: null });
     store.getState().setActiveCanvas(hit.canvasId);
     store.getState().zoomView(null);
@@ -143,6 +155,8 @@ export async function jumpToConnectionCanvas(
         || useUIStore.getState().activeHostId !== null
         || useProjectStore.getState().activeProjectId !== (hit.projectId ?? null)
         || (hit.projectId && !useProjectStore.getState().projects.some((entry) => entry.id === hit.projectId))) {
+        departed = true;
+        if (revealRequestId) window.clubhouse.window.cancelCanvasPopoutReveal(revealRequestId);
         consumeCanvasNavigationHandoff(store, handoff);
       }
     };
@@ -151,6 +165,45 @@ export async function jumpToConnectionCanvas(
     handoff.dispose = () => { offUI(); offProject(); };
     cancelIfDeparted();
   });
+  if (destination && prepared) {
+    const handoff = prepared;
+    const canvas = store.getState().canvases.find((entry) => entry.id === hit.canvasId);
+    if (!canvas) throw new Error('The owning Canvas was removed before its window could open. Retry Open.');
+    revealRequestId = crypto.randomUUID();
+    const requestId = revealRequestId;
+    const cancel = () => {
+      window.clubhouse.window.cancelCanvasPopoutReveal(requestId);
+      consumeCanvasNavigationHandoff(store, handoff);
+    };
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+      assertCurrent(signal);
+      const result = await window.clubhouse.window.revealCanvasPopout({
+        requestId, windowId: destination.windowId, canvasId: hit.canvasId, projectId: hit.projectId,
+        viewId: hit.viewId, targetKind: kind, targetId,
+        snapshot: {
+          canvasId: canvas.id, name: canvas.name, views: canvas.views, viewport: canvas.viewport,
+          nextZIndex: canvas.nextZIndex, zoomedViewId: canvas.zoomedViewId,
+          selectedViewId: canvas.selectedViewId, projectId: hit.projectId, scope: hit.scope === 'app' ? 'global' : 'project-local',
+          zoneWireDefinitions: store.getState().zoneWireDefinitions,
+        },
+        groupProjects: groupProjects ?? [],
+      });
+      assertCurrent(signal);
+      if (departed || result.requestId !== requestId) throw new Error('Canvas navigation changed before its target was revealed. Retry Open.');
+      if ('error' in result) throw new Error(result.error);
+      if (store.getState().activeCanvasId !== hit.canvasId) throw new Error('The active Canvas changed before the target was revealed. Retry Open.');
+      unstable_batchedUpdates(() => {
+        store.getState().setViewport(result.viewport);
+        completeCanvasNavigationReveal(store, handoff);
+      });
+    } catch (error) {
+      cancel();
+      throw error;
+    } finally {
+      signal.removeEventListener('abort', cancel);
+    }
+  }
 }
 
 /** Plugin IDs have a genuine tab only when that enabled plugin contributes one. */

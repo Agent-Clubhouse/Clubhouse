@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { CanvasPopoutReveal } from '../../shared/canvas-index-types';
 
 // Define webpack globals before import
 (globalThis as any).MAIN_WINDOW_WEBPACK_ENTRY = 'http://localhost:3000';
@@ -22,7 +23,12 @@ vi.mock('electron', () => {
     minimized = false;
     options: any;
     _readyCallback: (() => void) | null = null;
-    webContents = { send: vi.fn() };
+    private listeners = new Map<string, Set<(...args: any[]) => void>>();
+    webContents = {
+      send: vi.fn(),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    };
 
     constructor(options: any) {
       this.id = nextId++;
@@ -40,9 +46,15 @@ vi.mock('electron', () => {
     once(event: string, cb: () => void) {
       if (event === 'ready-to-show') this._readyCallback = cb;
     }
-    on(_event: string, _cb: () => void) {}
+    on(event: string, cb: (...args: any[]) => void) {
+      if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+      this.listeners.get(event)!.add(cb);
+    }
+    removeListener(event: string, cb: (...args: any[]) => void) { this.listeners.get(event)?.delete(cb); }
+    emit(event: string) { for (const cb of this.listeners.get(event) ?? []) cb(); }
 
     static getAllWindows() { return mockWindows.filter(w => !w.destroyed); }
+    static fromWebContents(contents: unknown) { return mockWindows.find(w => w.webContents === contents && !w.destroyed) ?? null; }
     static _reset() { mockWindows.length = 0; nextId = 1; }
   }
 
@@ -134,6 +146,7 @@ describe('window-handlers', () => {
     });
     registerWindowHandlers();
   });
+  afterEach(() => { vi.useRealTimers(); });
 
   it('registers all window IPC handlers', () => {
     expect(handlers.has(IPC.WINDOW.CREATE_POPOUT)).toBe(true);
@@ -482,6 +495,69 @@ describe('window-handlers', () => {
     const focusHandler = handlers.get(IPC.WINDOW.FOCUS_POPOUT)!;
     // Should not throw
     await focusHandler({}, 999);
+  });
+
+  async function existingCanvasDestination() {
+    const mainWindow = new (BrowserWindow as any)({});
+    const windowId = await handlers.get(IPC.WINDOW.CREATE_POPOUT)!({}, { type: 'canvas', canvasId: 'board', projectId: 'p1' });
+    const destination = BrowserWindow.getAllWindows().find((win) => win.id === windowId)!;
+    const request: CanvasPopoutReveal = {
+      requestId: 'reveal-1', windowId, canvasId: 'board', projectId: 'p1', viewId: 'node',
+      targetKind: 'group-project', targetId: 'actual-gp',
+      groupProjects: [],
+      snapshot: {
+        canvasId: 'board', name: 'Same name', views: [{
+          id: 'node', type: 'plugin', pluginWidgetType: 'plugin:group-project:group-project',
+          metadata: { groupProjectId: 'actual-gp' }, position: { x: 5000, y: 6000 }, size: { width: 400, height: 300 },
+        }],
+        viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1, zoomedViewId: null,
+      },
+    };
+    return { mainWindow, destination, request };
+  }
+
+  it('reveals only the exact existing Canvas destination and focuses it only after its own valid acknowledgement', async () => {
+    const { mainWindow, destination, request } = await existingCanvasDestination();
+    const count = BrowserWindow.getAllWindows().length;
+    const reveal = handlers.get(IPC.WINDOW.REVEAL_CANVAS_POPOUT)!({ sender: mainWindow.webContents }, request);
+    expect(destination.webContents.send).toHaveBeenCalledWith(IPC.WINDOW.REQUEST_CANVAS_POPOUT_REVEAL, request);
+    expect((destination as any).focused).toBe(false);
+    const result = { requestId: request.requestId, viewport: { panX: -4800, panY: -5850, zoom: 1 } };
+    findOnHandler(IPC.WINDOW.CANVAS_POPOUT_REVEALED)!({ sender: mainWindow.webContents }, result);
+    expect((destination as any).focused).toBe(false);
+    findOnHandler(IPC.WINDOW.CANVAS_POPOUT_REVEALED)!({ sender: destination.webContents }, result);
+    await expect(reveal).resolves.toEqual(result);
+    expect((destination as any).focused).toBe(true);
+    expect(BrowserWindow.getAllWindows()).toHaveLength(count);
+    expect((destination as any).closed).toBe(false);
+  });
+
+  it('rejects non-application callers, Home/project identity collisions and missing Canvas windows explicitly', async () => {
+    const { mainWindow, request } = await existingCanvasDestination();
+    const invoke = handlers.get(IPC.WINDOW.REVEAL_CANVAS_POPOUT)!;
+    expect(() => invoke({ sender: {} }, request)).toThrow('application window');
+    expect(() => invoke({ sender: mainWindow.webContents }, { ...request, projectId: undefined })).toThrow('no longer available');
+    expect(() => invoke({ sender: mainWindow.webContents }, { ...request, windowId: 999 })).toThrow('no longer available');
+  });
+
+  it('cancels, supersedes and times out unacknowledged Canvas reveals without late window focus', async () => {
+    vi.useFakeTimers();
+    const { mainWindow, destination, request } = await existingCanvasDestination();
+    const invoke = handlers.get(IPC.WINDOW.REVEAL_CANVAS_POPOUT)!;
+    const first = invoke({ sender: mainWindow.webContents }, request);
+    const second = invoke({ sender: mainWindow.webContents }, { ...request, requestId: 'reveal-2' });
+    await expect(first).resolves.toMatchObject({ error: 'Canvas navigation was superseded.' });
+    findOnHandler(IPC.WINDOW.CANCEL_CANVAS_POPOUT_REVEAL)!({ sender: mainWindow.webContents }, 'reveal-2');
+    await expect(second).resolves.toMatchObject({ error: 'Canvas navigation was canceled.' });
+    findOnHandler(IPC.WINDOW.CANVAS_POPOUT_REVEALED)!({ sender: destination.webContents }, { requestId: 'reveal-2', viewport: { panX: 0, panY: 0, zoom: 1 } });
+    expect((destination as any).focused).toBe(false);
+    const timed = invoke({ sender: mainWindow.webContents }, { ...request, requestId: 'reveal-3' });
+    await vi.advanceTimersByTimeAsync(1500);
+    await expect(timed).resolves.toMatchObject({ error: expect.stringContaining('in time') });
+    const closed = invoke({ sender: mainWindow.webContents }, { ...request, requestId: 'reveal-4' });
+    (destination as any).destroyed = true;
+    (destination as any).emit('closed');
+    await expect(closed).resolves.toMatchObject({ error: expect.stringContaining('closed') });
   });
 
   it('CREATE_POPOUT broadcasts POPOUTS_CHANGED to main window', async () => {

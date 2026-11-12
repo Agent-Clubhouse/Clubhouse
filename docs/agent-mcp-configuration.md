@@ -90,6 +90,10 @@ project node, including on an unvisited Canvas. Multiple representations offer
 a chooser labeled by Home/project, Canvas and node identities; no representation
 explains that no owning Canvas is available. Loaded Canvas edits override saved
 placement, and incomplete or stale lookups are reported rather than guessed.
+If the owning Canvas is already popped out, Open reveals the node in that
+existing window using its own viewport, then focuses the window only after
+the reveal is acknowledged. A closed or unresponsive window offers Retry Open;
+Open never duplicates it or moves it back into the main window.
 Browser and terminal widgets use their existing Canvas route; plugins open an
 enabled contributed tab when one exists. Unsupported targets have a disabled
 Open action with an accessible explanation.

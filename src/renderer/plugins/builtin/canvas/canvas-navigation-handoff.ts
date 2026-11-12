@@ -10,6 +10,7 @@ export interface CanvasNavigationHandoff {
   target: { canvasId: string; viewId: string; kind: NavigableCanvasTargetKind; targetId: string };
   structure: string;
   revealed: boolean;
+  popoutWindowId?: number;
   dispose?: () => void;
 }
 
