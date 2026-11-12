@@ -190,6 +190,7 @@ function sanitizeRun(raw: unknown): ActionRun | null {
   return {
     id: raw.id,
     actionId: raw.actionId,
+    ...(raw.externalSource === 'annex_delivery' && { externalSource: raw.externalSource }),
     ...(owner && { owner }),
     trigger: {
       ...trigger,
@@ -266,7 +267,8 @@ export function createRunHistory(now: () => number = Date.now): RunHistory & { f
       if (kept.length) out[id] = kept;
       else runs.delete(id);
     }
-    lastSave = historyStore.save({ version: 1, runs: out }).catch(logSaveError('action history'));
+    lastSave = historyStore.save({ version: 1, runs: out });
+    void lastSave.catch(logSaveError('action history'));
     return lastSave;
   };
 

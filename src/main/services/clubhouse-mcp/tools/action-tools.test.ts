@@ -853,6 +853,19 @@ describe('action tools', () => {
   });
 
   describe('action_history', () => {
+    it('keeps external Annex receipts visible to their sender and Dispatcher, not other agents or scheduler tools', async () => {
+      const id = 'annex-delivery:c1';
+      h.history.set(id, {
+        id, actionId: id, externalSource: 'annex_delivery', owner: { kind: 'agent', agentId: 'agent-a' },
+        trigger: { kind: 'manual', at: Date.now() }, chain: [], startedAt: Date.now(), outcome: 'expired', steps: [],
+      });
+      expect((await call('agent-a', 'action_history', { id })).body.runs).toHaveLength(1);
+      expect((await call('dispatcher', 'action_history', { id })).body.runs).toHaveLength(1);
+      expect((await call('agent-b', 'action_history', { id })).body.error.code).toBe('not_found');
+      expect((await call('agent-a', 'run_action', { id })).isError).toBe(true);
+      expect(h.stepCalls).toHaveLength(0);
+    });
+
     it('returns an action’s runs with the action described', async () => {
       await call('agent-a', 'run_action', { id: ids['own-a'] });
       await flush();

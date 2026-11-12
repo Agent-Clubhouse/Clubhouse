@@ -26,6 +26,8 @@ import { registerAgentCardTools } from './agent-card-tools';
 import { registerDeviceTools } from './device-tools';
 import { registerProjectAddTools } from './project-add-tools';
 import { registerAppUpdateTools } from './app-update-tools';
+import { registerAnnexDeliveryTools } from './annex-delivery-tools';
+import { registerAnnexNetworkTools } from './annex-network-tools';
 
 export function registerClubhouseMcpTools(): void {
   registerAgentTools();
@@ -51,4 +53,6 @@ export function registerClubhouseMcpTools(): void {
   registerDeviceTools();
   registerProjectAddTools();
   registerAppUpdateTools();
+  registerAnnexDeliveryTools();
+  registerAnnexNetworkTools();
 }

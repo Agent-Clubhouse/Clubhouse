@@ -95,6 +95,8 @@ export interface RunHistory {
   put(run: ActionRun): void;
   /** Omit the id for all retained history, including deleted and one-time actions. */
   list(actionId?: string): ActionRun[];
+  /** Await persistence when another durable service needs a receipt. */
+  flush?(): Promise<void>;
 }
 
 /** What the engine needs to know about agents and projects. Synchronous: answered from caches. */
@@ -403,6 +405,8 @@ export class ActionsEngine {
     const runs = this.deps.history.list(id);
     if (!reader) return runs;
     return runs.flatMap((run) => {
+      if (run.externalSource === 'annex_delivery' && reader.kind === 'agent'
+        && (run.owner?.kind !== 'agent' || run.owner.agentId !== reader.agentId)) return [];
       if (run.trigger.sourceAgentId && this.deps.rights.checkSource(reader, {
         kind: 'event', event: 'agent.quick_finished', source: { kind: 'agent', agentId: run.trigger.sourceAgentId },
       })) return [];
@@ -417,6 +421,7 @@ export class ActionsEngine {
         }));
         return [{ ...rest, steps, chain: [], trigger: { ...run.trigger, at: run.startedAt, events, detail: this.eventDetail(events) } }];
       }
+
       if (run.trigger.agentIds === undefined) return [run];
       if (!this.canWatchAgentActivity(reader)) return [];
       const canRead = (agentId: string) => this.deps.facts.agentExists(agentId)
@@ -435,6 +440,16 @@ export class ActionsEngine {
         },
       }];
     });
+  }
+
+  async recordExternalRun(run: ActionRun & { externalSource: 'annex_delivery' }): Promise<void> {
+    if (!run.actionId.startsWith('annex-delivery:') || run.id !== run.actionId || run.outcome === 'running' || this.get(run.actionId)) {
+      throw new Error('An external delivery receipt cannot create or replace an executable Action.');
+    }
+    if (!this.deps.history.flush) throw new Error('External receipts require durable history persistence.');
+    this.deps.history.put(run);
+    await this.deps.history.flush();
+    this.deps.hooks?.changed?.();
   }
 
   /** The next time a schedule or one-time action runs, for the UI. */
