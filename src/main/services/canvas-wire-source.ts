@@ -72,7 +72,10 @@ export function bindingsFromCanvasStores(
         agentName: wire.agentName,
         targetName: wire.targetName,
         projectName,
-        ...(options.inspect && { sourceLabel: snapshot.location.scope === 'app' ? 'Home' : snapshot.location.projectName }),
+        ...(options.inspect && {
+          sourceLabel: snapshot.location.scope === 'app' ? 'Home' : snapshot.location.projectName,
+          sourceStoreId: storeLabel(snapshot),
+        }),
         ...(wire.instructions && typeof wire.instructions === 'object' ? { instructions: wire.instructions } : {}),
         ...(Array.isArray(wire.disabledTools) ? { disabledTools: wire.disabledTools } : {}),
       });

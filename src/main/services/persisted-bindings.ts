@@ -63,6 +63,7 @@ export interface PersistedBinding {
   instructions?: Record<string, string>;
   /** Read-only provenance, when one source has copies in several stores. */
   sourceLabel?: string;
+  sourceStoreId?: string;
   disabledTools?: string[];
   /** With `startingTools`: the switches the connection starts with on (wake, #3215). */
   enabledTools?: string[];
@@ -161,6 +162,44 @@ const heldBySource = new Map<string, Set<string>>();
  */
 const lastListedBySource = new Map<string, Set<string> | null>();
 const guidanceBySource = new Map<string, Map<string, PersistedBinding[]>>();
+const guidanceSourceInstances = new Map<string, PersistedBindingSource>();
+let inspectedGuidance = new WeakMap<PersistedBindingSource, { bindings: Map<string, PersistedBinding[]>; unverified: Set<string> }>();
+let restoreGuidance: (() => void) | null = null;
+let sourceRegistryVersion = 0;
+
+/** Registration and cached provenance for a direction; inspection never runs stateful collectors. */
+export function getConnectionGuidanceSourceVersion(agentId: string, targetId: string): string {
+  const key = pairKey(agentId, targetId);
+  return JSON.stringify([sourceRegistryVersion, [...sources.values()]
+    .map((source) => [source.id, lastListedBySource.get(source.id)?.has(key), guidanceBySource.get(source.id)?.get(key)])]);
+}
+
+function guidanceCopies(bindings: PersistedBinding[]): Map<string, PersistedBinding[]> {
+  const copies = new Map<string, PersistedBinding[]>();
+  for (const binding of bindings) {
+    const key = pairKey(binding.agentId, binding.targetId);
+    copies.set(key, [...(copies.get(key) ?? []), copyGuidance(binding)]);
+  }
+  return copies;
+}
+
+/** Unknown membership ownership must not acquire a saved ordinary-direction override. */
+export function connectionGuidanceOwnership(agentId: string, targetId: string): { managed: boolean; instructions?: Record<string, string> } {
+  const source = sources.get('dispatcher-federation');
+  if (!source) return { managed: false };
+  const key = pairKey(agentId, targetId);
+  const inspected = inspectedGuidance.get(source);
+  const current = guidanceSourceInstances.get(source.id) === source;
+  const original = inspected?.bindings.get(key)?.[0] ?? (current ? guidanceBySource.get(source.id)?.get(key)?.[0] : undefined);
+  if (original) return { managed: true, instructions: { ...original.instructions } };
+  const listed = current ? lastListedBySource.get(source.id) : undefined;
+  return { managed: inspected?.unverified.has(key) || listed?.has(key) || (!inspected && !listed) };
+}
+
+/** Reapply committed overrides once initially unknown source ownership has settled. */
+export function setConnectionGuidanceRestore(restore: (() => void) | null): void {
+  restoreGuidance = restore;
+}
 
 function copyGuidance(binding: PersistedBinding): PersistedBinding {
   return { ...binding, ...(binding.instructions && { instructions: { ...binding.instructions } }) };
@@ -356,16 +395,22 @@ export async function inspectConnectionGuidance(agentId: string, targetId: strin
       try {
         const collected = await (source.inspect ? source.inspect() : source.collect());
         bindings = Array.isArray(collected) ? collected : collected.bindings;
+        inspectedGuidance.set(source, {
+          bindings: guidanceCopies(bindings),
+          unverified: new Set(Array.isArray(collected) ? [] : collected.unverified?.map((p) => pairKey(p.agentId, p.targetId))),
+        });
         if (!Array.isArray(collected) && collected.unverified?.some((p) => pairKey(p.agentId, p.targetId) === key)) {
           unreadable.push(source.id);
         }
       } catch {
         // telemetry-exempt: returned as unreadable; guidance cannot be saved while ownership is uncertain
         unreadable.push(source.id);
+        inspectedGuidance.delete(source);
+        if (guidanceSourceInstances.get(source.id) === source) guidanceSourceInstances.delete(source.id);
         continue;
       }
     } else {
-      const listed = lastListedBySource.get(source.id);
+      const listed = guidanceSourceInstances.get(source.id) === source ? lastListedBySource.get(source.id) : undefined;
       const cached = guidanceBySource.get(source.id)?.get(key);
       if (!listed || (listed.has(key) && !cached)) {
         unreadable.push(source.id);
@@ -377,6 +422,7 @@ export async function inspectConnectionGuidance(agentId: string, targetId: strin
       if (pairKey(binding.agentId, binding.targetId) !== key) continue;
       originals.push({
         sourceId: source.id,
+        ...(binding.sourceStoreId && { storeId: binding.sourceStoreId }),
         ...(binding.sourceLabel && { label: binding.sourceLabel }),
         instructions: { ...binding.instructions },
       });
@@ -432,9 +478,14 @@ export function listSoleOwnedPairs(sourceId: string): Array<{ agentId: string; t
  * Returns a function that unregisters it.
  */
 export function registerPersistedBindingSource(source: PersistedBindingSource): () => void {
+  sourceRegistryVersion++;
+  inspectedGuidance.delete(source);
+  guidanceSourceInstances.delete(source.id);
+  guidanceBySource.delete(source.id);
+  lastListedBySource.delete(source.id);
   sources.set(source.id, source);
   return () => {
-    if (sources.get(source.id) === source) sources.delete(source.id);
+    if (sources.get(source.id) === source) { sources.delete(source.id); sourceRegistryVersion++; }
   };
 }
 
@@ -544,6 +595,11 @@ export function claimSourceBinding(sourceId: string, binding: PersistedBinding):
     guidanceBySource.set(sourceId, guidance);
   }
   guidance.set(key, [copyGuidance(binding)]);
+  if (source) {
+    guidanceSourceInstances.set(sourceId, source);
+    inspectedGuidance.get(source)?.bindings.set(key, [copyGuidance(binding)]);
+    inspectedGuidance.get(source)?.unverified.delete(key);
+  }
   if (source?.prune) {
     let held = heldBySource.get(sourceId);
     if (!held) {
@@ -588,6 +644,11 @@ export function claimSourceBinding(sourceId: string, binding: PersistedBinding):
  */
 export function releaseSourceBinding(sourceId: string, agentId: string, targetId: string): 'unbound' | 'kept' | 'absent' {
   const key = pairKey(agentId, targetId);
+  const source = sources.get(sourceId);
+  if (source) {
+    inspectedGuidance.get(source)?.bindings.delete(key);
+    inspectedGuidance.get(source)?.unverified.delete(key);
+  }
   heldBySource.get(sourceId)?.delete(key);
   lastListedBySource.get(sourceId)?.delete(key);
   guidanceBySource.get(sourceId)?.delete(key);
@@ -639,9 +700,12 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
       meta: { source: source.id, error: result.error },
     });
     lastListedBySource.set(source.id, null);
+    inspectedGuidance.delete(source);
+    guidanceSourceInstances.delete(source.id);
     return { source, result, listed: null, unverified };
   }
   result.collected = bindings.length;
+  inspectedGuidance.set(source, { bindings: guidanceCopies(bindings), unverified });
   const listed = new Set<string>();
   let owned = ownedBySource.get(source.id);
   if (source.prune && !owned) {
@@ -675,16 +739,13 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
     heldBySource.set(source.id, new Set([...listed, ...unverified, ...(claimedDuringRun.get(source.id) ?? [])]));
   }
   lastListedBySource.set(source.id, new Set([...listed, ...unverified, ...(claimedDuringRun.get(source.id) ?? [])]));
-  const guidance = new Map<string, PersistedBinding[]>();
-  for (const binding of bindings) {
-    const key = pairKey(binding.agentId, binding.targetId);
-    guidance.set(key, [...(guidance.get(key) ?? []), copyGuidance(binding)]);
-  }
+  const guidance = guidanceCopies(bindings);
   for (const key of claimedDuringRun.get(source.id) ?? []) {
     const claimed = guidanceBySource.get(source.id)?.get(key);
     if (claimed && !guidance.has(key)) guidance.set(key, claimed);
   }
   guidanceBySource.set(source.id, guidance);
+  guidanceSourceInstances.set(source.id, source);
   startingBySource.set(source.id, starting);
   listlessBySource.set(source.id, listless);
   return { source, result, listed, unverified };
@@ -750,6 +811,14 @@ async function runRebuild(): Promise<RebuildResult> {
       });
     }
   }
+  try {
+    restoreGuidance?.();
+  } catch (error) {
+    // telemetry-exempt: a failed instruction restore is logged without hiding rebuild results
+    appLog('core:mcp', 'warn', 'Committed connection guidance could not be restored', {
+      meta: { error: error instanceof Error ? error.message : String(error) },
+    });
+  }
   const results = runs.map((run) => run.result);
   appLog('core:mcp', 'info', 'Persisted bindings rebuilt', {
     meta: { sources: results },
@@ -780,6 +849,7 @@ export function rebuildPersistedBindings(): Promise<RebuildResult> {
 
 /** For testing: drop every registered source. */
 export function _resetPersistedBindingSourcesForTesting(): void {
+  sourceRegistryVersion++;
   sources.clear();
   inflight = null;
   queued = null;
@@ -788,6 +858,9 @@ export function _resetPersistedBindingSourcesForTesting(): void {
   heldBySource.clear();
   lastListedBySource.clear();
   guidanceBySource.clear();
+  guidanceSourceInstances.clear();
+  inspectedGuidance = new WeakMap();
+  restoreGuidance = null;
   removedFromSource.clear();
   claimedDuringRun.clear();
   removedByUser.clear();

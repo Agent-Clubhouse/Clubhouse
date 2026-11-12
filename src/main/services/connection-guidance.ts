@@ -4,9 +4,10 @@ import { directionKey } from '../../shared/connection-grants';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import type { BindingTargetKind, McpBinding } from './clubhouse-mcp/types';
 import { connectionEnd } from './connection-grants';
-import { inspectConnectionGuidance } from './persisted-bindings';
-import { createSettingsStore } from './settings-store';
+import { connectionGuidanceOwnership, getConnectionGuidanceSourceVersion, inspectConnectionGuidance, setConnectionGuidanceRestore } from './persisted-bindings';
+import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
 import { getConnectionToolCatalog, sanitizeWireInstruction } from './clubhouse-mcp/tool-registry';
+import { appLog } from './log-service';
 
 interface GuidanceEntry {
   key: string;
@@ -21,12 +22,16 @@ interface GuidanceFile {
 }
 
 const VERSION = 1;
+const FILENAME = 'connection-instructions.json';
 const store = createSettingsStore<GuidanceFile>(
-  'connection-instructions.json',
+  FILENAME,
   { version: VERSION, entries: [] },
   undefined,
   { atomic: true, rollBackFailedSaves: true, audit: { key: 'connection_instructions' } },
 );
+let writeQueue: Promise<unknown> = Promise.resolve();
+const bindingRevisions = new WeakMap<McpBinding, string>();
+let reportedReadError = false;
 
 function instructionsOf(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Connection instructions must be a tool-to-text object.');
@@ -45,21 +50,46 @@ function guidanceKey(agentId: string, targetId: string, kind: BindingTargetKind)
   return `${kind}:${directionKey(connectionEnd(agentId), connectionEnd(targetId))}`;
 }
 
-function entriesOf(file: GuidanceFile): unknown[] {
-  if (!Number.isInteger(file.version) || file.version < 1 || !Array.isArray(file.entries)) {
+function parsedEntry(raw: unknown): GuidanceEntry {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+    || !('key' in raw) || typeof raw.key !== 'string' || !raw.key || raw.key.length > 2000
+    || !('revision' in raw) || typeof raw.revision !== 'string' || !raw.revision || raw.revision.length > 256
+    || !('sourceRevision' in raw) || typeof raw.sourceRevision !== 'string' || !raw.sourceRevision || raw.sourceRevision.length > 256
+    || !('instructions' in raw)) {
     throw new Error('Saved connection guidance could not be read. Repair connection-instructions.json before editing it.');
   }
-  return file.entries;
+  return { key: raw.key, revision: raw.revision, sourceRevision: raw.sourceRevision, instructions: instructionsOf(raw.instructions) };
+}
+
+/** Never read the settings store's optimistic cache, including during an atomic rename. */
+function committedFile(): GuidanceFile {
+  const raw = peekStoredSettingsSync(FILENAME);
+  if (raw === 'missing') return { version: VERSION, entries: [] };
+  if (raw === 'unreadable' || typeof raw.version !== 'number' || !Number.isInteger(raw.version)
+    || raw.version < 1 || !Array.isArray(raw.entries)) {
+    throw new Error('Saved connection guidance could not be read. Repair connection-instructions.json before editing it.');
+  }
+  const keys = new Set<string>();
+  for (const value of raw.entries) {
+    const entry = parsedEntry(value);
+    if (keys.has(entry.key)) throw new Error('Saved connection guidance has duplicate directions. Repair connection-instructions.json before editing it.');
+    keys.add(entry.key);
+  }
+  return { ...raw, version: raw.version, entries: raw.entries };
 }
 
 function entryOf(file: GuidanceFile, key: string): GuidanceEntry | undefined {
-  const raw = entriesOf(file).find((value) => value && typeof value === 'object' && 'key' in value && value.key === key);
-  if (raw === undefined) return undefined;
-  if (!raw || typeof raw !== 'object' || !('revision' in raw) || typeof raw.revision !== 'string'
-    || !('sourceRevision' in raw) || typeof raw.sourceRevision !== 'string' || !('instructions' in raw)) {
-    throw new Error('Saved guidance for this direction is invalid. Repair connection-instructions.json before editing it.');
-  }
-  return { key, revision: raw.revision, sourceRevision: raw.sourceRevision, instructions: instructionsOf(raw.instructions) };
+  return file.entries.map(parsedEntry).find((entry) => entry.key === key);
+}
+
+function bindingRevision(binding: McpBinding): string {
+  let revision = bindingRevisions.get(binding);
+  if (!revision) { revision = randomUUID(); bindingRevisions.set(binding, revision); }
+  return revision;
+}
+
+function sameBinding(binding: McpBinding, kind: BindingTargetKind): boolean {
+  return binding.targetKind === kind && bindingManager.getAllBindings().includes(binding);
 }
 
 function requireBinding(agentId: string, targetId: string): McpBinding {
@@ -71,33 +101,42 @@ function requireBinding(agentId: string, targetId: string): McpBinding {
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-async function snapshotOf(binding: McpBinding): Promise<{ snapshot: ConnectionGuidanceSnapshot; sourceRevision: string; savedRevision?: string }> {
+async function snapshotOf(binding: McpBinding): Promise<{ snapshot: ConnectionGuidanceSnapshot; sourceRevision: string; sourceVersion: string }> {
+  const kind = binding.targetKind;
+  const sourceVersion = getConnectionGuidanceSourceVersion(binding.agentId, binding.targetId);
   const { sources, unreadable } = await inspectConnectionGuidance(binding.agentId, binding.targetId);
+  if (!sameBinding(binding, kind) || sourceVersion !== getConnectionGuidanceSourceVersion(binding.agentId, binding.targetId)) {
+    throw new Error('Connection guidance ownership changed. Reload before editing; your draft has not been applied.');
+  }
   const originals = sources.map((source) => ({ ...source, instructions: instructionsOf(source.instructions) }))
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-  const file = store.get();
+  const file = committedFile();
   const saved = entryOf(file, guidanceKey(binding.agentId, binding.targetId, binding.targetKind));
   const sourceRevision = hash({ sources: originals, unreadable });
+  const ownership = connectionGuidanceOwnership(binding.agentId, binding.targetId);
+  const managed = ownership.managed;
+  const ownershipReason = ownership.instructions === undefined
+    ? 'Connection ownership could not be checked. Reload sources before editing.'
+    : 'This connection is managed by Annex Network membership and cannot be edited here.';
   const readOnlyReason = file.version > VERSION
     ? 'Guidance was saved by a newer Clubhouse. Update Clubhouse before editing it.'
     : binding.targetKind === 'plugin'
       ? 'Plugin connection guidance cannot be changed from this window.'
-      : originals.some((source) => source.sourceId === 'dispatcher-federation')
-        ? 'This connection is managed by Annex Network membership and cannot be edited here.'
-        : undefined;
+      : managed ? ownershipReason : undefined;
+  const instructions = managed ? binding.instructions : saved?.instructions ?? binding.instructions;
   return {
     sourceRevision,
-    savedRevision: saved?.revision,
+    sourceVersion,
     snapshot: {
       agentId: binding.agentId, targetId: binding.targetId,
-      instructions: saved?.instructions ?? instructionsOf(binding.instructions ?? {}),
+      instructions: instructionsOf(instructions ?? {}),
       hasOverride: saved !== undefined,
       sources: originals, unreadable,
       conflictingSources: new Set(originals.filter((s) => Object.keys(s.instructions).length > 0).map((s) => JSON.stringify(s.instructions))).size > 1,
       needsSourceConfirmation: originals.some((s) => Object.keys(s.instructions).length > 0) && saved?.sourceRevision !== sourceRevision,
       readOnly: readOnlyReason !== undefined,
       ...(readOnlyReason && { readOnlyReason }),
-      revision: hash([saved?.revision, sourceRevision]),
+      revision: hash([saved?.revision, sourceRevision, bindingRevision(binding), sourceVersion]),
     },
   };
 }
@@ -121,12 +160,20 @@ export function previewConnectionGuidance(agentId: string, targetId: string, raw
   }));
 }
 
-export async function saveConnectionGuidance(agentId: string, targetId: string, request: SaveConnectionGuidance): Promise<ConnectionGuidanceSnapshot> {
+export function saveConnectionGuidance(agentId: string, targetId: string, request: SaveConnectionGuidance): Promise<ConnectionGuidanceSnapshot> {
+  const save = () => saveLocked(agentId, targetId, request);
+  const result = writeQueue.then(save, save);
+  writeQueue = result;
+  return result;
+}
+
+async function saveLocked(agentId: string, targetId: string, request: SaveConnectionGuidance): Promise<ConnectionGuidanceSnapshot> {
   const instructions = instructionsOf(request.instructions);
   if (typeof request.revision !== 'string' || !request.revision) throw new Error('Reload connection guidance before saving it.');
   if (request.replaceAcrossSources !== undefined && typeof request.replaceAcrossSources !== 'boolean') throw new Error('Source replacement confirmation must be true or false.');
   const binding = requireBinding(agentId, targetId);
-  const { snapshot, sourceRevision, savedRevision } = await snapshotOf(binding);
+  const kind = binding.targetKind;
+  const { snapshot, sourceRevision, sourceVersion } = await snapshotOf(binding);
   if (snapshot.readOnly) throw new Error(snapshot.readOnlyReason);
   if (snapshot.unreadable.length > 0) throw new Error('Some connection sources could not be checked. Reload the sources before saving guidance.');
   if (request.revision !== snapshot.revision) throw new Error('Connection guidance or its sources changed. Reload before saving; your draft has not been applied.');
@@ -135,24 +182,77 @@ export async function saveConnectionGuidance(agentId: string, targetId: string, 
   }
   const key = guidanceKey(binding.agentId, binding.targetId, binding.targetKind);
   const revision = randomUUID();
-  await store.update((file) => {
-    if (file.version > VERSION) throw new Error('Guidance was saved by a newer Clubhouse. Update before editing it.');
-    if (entryOf(file, key)?.revision !== savedRevision) throw new Error('Another editor saved this direction. Reload before saving; your draft has not been applied.');
-    requireBinding(binding.agentId, binding.targetId);
-    const entry: GuidanceEntry = { key, instructions, revision, sourceRevision };
-    return {
-      ...file, version: VERSION,
-      entries: [...entriesOf(file).filter((value) => !(value && typeof value === 'object' && 'key' in value && value.key === key)), entry],
-    };
+  const file = committedFile();
+  if (file.version > VERSION) throw new Error('Guidance was saved by a newer Clubhouse. Update before editing it.');
+  if (!sameBinding(binding, kind) || sourceVersion !== getConnectionGuidanceSourceVersion(binding.agentId, binding.targetId)
+    || connectionGuidanceOwnership(binding.agentId, binding.targetId).managed) {
+    throw new Error('Connection guidance ownership changed. Reload before editing; your draft has not been applied.');
+  }
+  if (hash([entryOf(file, key)?.revision, sourceRevision, bindingRevision(binding), sourceVersion]) !== request.revision) {
+    throw new Error('Another editor saved this direction. Reload before saving; your draft has not been applied.');
+  }
+  const entry: GuidanceEntry = { key, instructions, revision, sourceRevision };
+  await store.save({
+    ...file, version: VERSION,
+    entries: [...file.entries.filter((value) => parsedEntry(value).key !== key), entry],
   });
-  bindingManager.setInstructions(binding.agentId, binding.targetId, instructions);
+  let stillOwned = sameBinding(binding, kind) && sourceVersion === getConnectionGuidanceSourceVersion(binding.agentId, binding.targetId);
+  let applicationError = 'Its live ownership changed.';
+  if (stillOwned) {
+    try {
+      const current = await snapshotOf(binding);
+      const committed = committedFile();
+      stillOwned = sameBinding(binding, kind) && sourceVersion === getConnectionGuidanceSourceVersion(binding.agentId, binding.targetId)
+        && !connectionGuidanceOwnership(binding.agentId, binding.targetId).managed
+        && committed.version <= VERSION && entryOf(committed, key)?.revision === revision
+        && !current.snapshot.readOnly && current.snapshot.unreadable.length === 0
+        && current.sourceVersion === sourceVersion && current.sourceRevision === sourceRevision
+        && current.snapshot.revision === hash([revision, sourceRevision, bindingRevision(binding), sourceVersion]);
+      applicationError = 'Its sources or live ownership changed, or could not be checked.';
+    } catch (error) {
+      applicationError = error instanceof Error ? error.message : String(error);
+      stillOwned = false;
+    }
+  }
+  if (stillOwned) bindingManager.setInstructions(binding.agentId, binding.targetId, instructions);
+  const notice = `Guidance was saved, but it was not applied to this live direction. ${applicationError} Reload Connections before editing.`;
+  if (!stillOwned) appLog('core:mcp', 'warn', 'Committed connection guidance was not applied to changed live ownership or sources', {
+    meta: { agentId: binding.agentId, targetId: binding.targetId, reason: applicationError },
+  });
   return {
     ...snapshot, instructions, hasOverride: true, needsSourceConfirmation: false,
-    revision: hash([revision, sourceRevision]),
+    revision: hash([revision, sourceRevision, bindingRevision(binding), sourceVersion]),
+    ...(!stillOwned && { notice, readOnly: true, readOnlyReason: notice }),
   };
 }
 
 /** Install before restoring sources, so even their first binding sees saved guidance. */
 export function startConnectionGuidance(): void {
-  bindingManager.setConnectionInstructionsSource((agentId, targetId, kind) => entryOf(store.get(), guidanceKey(agentId, targetId, kind))?.instructions);
+  const resolve = (agentId: string, targetId: string, kind: BindingTargetKind) => {
+    try {
+      const file = committedFile();
+      reportedReadError = false;
+      return kind === 'plugin' || connectionGuidanceOwnership(agentId, targetId).managed
+        ? undefined : entryOf(file, guidanceKey(agentId, targetId, kind))?.instructions;
+    } catch (error) {
+      if (!reportedReadError) appLog('core:mcp', 'warn', 'Saved connection guidance could not be read; overrides will not be applied', {
+        meta: { error: error instanceof Error ? error.message : String(error) },
+      });
+      reportedReadError = true;
+      return undefined;
+    }
+  };
+  bindingManager.setConnectionInstructionsSource(resolve);
+  setConnectionGuidanceRestore(() => {
+    for (const binding of bindingManager.getAllBindings()) {
+      const kind = binding.targetKind;
+      if (kind === 'plugin') continue;
+      const ownership = connectionGuidanceOwnership(binding.agentId, binding.targetId);
+      const instructions = ownership.managed ? ownership.instructions : resolve(binding.agentId, binding.targetId, binding.targetKind);
+      if (instructions !== undefined && sameBinding(binding, kind)
+        && hash(instructionsOf(instructions)) !== hash(instructionsOf(binding.instructions ?? {}))) {
+        bindingManager.setInstructions(binding.agentId, binding.targetId, instructions);
+      }
+    }
+  });
 }
