@@ -224,11 +224,16 @@ function PersonalityField({ personality }: { personality: DispatcherPersonality 
 function IdentitySection({ state, config }: { state: DispatcherState; config: DurableAgentConfig }) {
   const { saving, error, saveIdentity, run } = useDispatcherSave(state);
   const [name, setName] = useState(config.name);
+  const nameSeen = useRef(config.name);
   const [showEmoji, setShowEmoji] = useState(false);
   const [cropping, setCropping] = useState<string | null>(null);
   const emojiButton = useRef<HTMLButtonElement>(null);
   const iconData = useIconData(config.icon);
-  useEffect(() => { setName(config.name); }, [config.name]);
+  useEffect(() => {
+    if (nameSeen.current === config.name) return;
+    nameSeen.current = config.name;
+    setName(config.name);
+  }, [config.name]);
 
   const confirmName = async () => {
     const trimmed = cleanDispatcherName(name);
