@@ -16,6 +16,7 @@ import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
 import { setDeviceToolHost } from '../services/clubhouse-mcp/tools/device-tools';
+import { setAnnexNetworkToolHost } from '../services/clubhouse-mcp/tools/annex-network-tools';
 
 function broadcastStatusChanged(): void {
   const status = annexServer.getStatus();
@@ -26,7 +27,45 @@ function broadcastPeersChanged(): void {
   broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
 }
 
+function applyNetworkSettings(settings: AnnexSettings, previous: AnnexSettings, strict = false): void {
+  const bindingChanged = !!settings.loopbackOnly !== !!previous.loopbackOnly;
+  if (settings.enableServer && (!previous.enableServer || bindingChanged)) {
+    if (previous.enableServer) annexServer.stop();
+    try {
+      annexServer.start();
+      appLog('core:annex', 'info', 'Annex server started via settings');
+    } catch (err) {
+      appLog('core:annex', 'error', 'Failed to start Annex server', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      if (strict) throw new Error('The Annex setting was saved, but its server could not apply it. Check Annex Network on the desktop before retrying.');
+    }
+  } else if (!settings.enableServer && previous.enableServer) {
+    annexServer.stop();
+    appLog('core:annex', 'info', 'Annex server stopped via settings');
+  }
+  if (settings.enableClient && !previous.enableClient) {
+    annexClient.startClient();
+    appLog('core:annex', 'info', 'Annex client started via settings');
+  } else if (!settings.enableClient && previous.enableClient) {
+    annexClient.stopClient();
+    appLog('core:annex', 'info', 'Annex client stopped via settings');
+  } else if (settings.enableClient && bindingChanged) {
+    annexClient.scan();
+  }
+  broadcastStatusChanged();
+}
+
 export function registerAnnexHandlers(): void {
+  setAnnexNetworkToolHost({
+    applyLoopbackOnly: async (value, assertAuthorized) => {
+      const previous = annexSettings.getSettings();
+      const settings = await annexSettings.updateSettings((current) => {
+        assertAuthorized();
+        return { ...current, loopbackOnly: value };
+      });
+      settingsChanged('annex');
+      applyNetworkSettings(settings, previous, true);
+    },
+  });
   // See devices and Manage devices (#3068): what the agent tools act through.
   setDeviceToolHost({
     list: () => annexDevices.listDevices(),
@@ -87,37 +126,7 @@ export function registerAnnexHandlers(): void {
     const previous = annexSettings.getSettings();
     await annexSettings.saveSettings(settings);
     settingsChanged('annex');
-    const bindingChanged = !!settings.loopbackOnly !== !!previous.loopbackOnly;
-
-    // Server toggle (independent of client)
-    if (settings.enableServer && (!previous.enableServer || bindingChanged)) {
-      if (previous.enableServer) annexServer.stop();
-      try {
-        annexServer.start();
-        appLog('core:annex', 'info', 'Annex server started via settings');
-      } catch (err) {
-        appLog('core:annex', 'error', 'Failed to start Annex server', {
-          meta: { error: err instanceof Error ? err.message : String(err) },
-        });
-      }
-    } else if (!settings.enableServer && previous.enableServer) {
-      annexServer.stop();
-      appLog('core:annex', 'info', 'Annex server stopped via settings');
-    }
-
-    // Client toggle (independent of server)
-    if (settings.enableClient && !previous.enableClient) {
-      annexClient.startClient();
-      appLog('core:annex', 'info', 'Annex client started via settings');
-    } else if (!settings.enableClient && previous.enableClient) {
-      annexClient.stopClient();
-      appLog('core:annex', 'info', 'Annex client stopped via settings');
-    } else if (settings.enableClient && bindingChanged) {
-      annexClient.scan();
-    }
-
-    // Notify renderer of status change
-    broadcastStatusChanged();
+    applyNetworkSettings(settings, previous);
   }));
 
   ipcMain.handle(IPC.ANNEX.GET_STATUS, () => {

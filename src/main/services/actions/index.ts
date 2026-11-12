@@ -473,6 +473,11 @@ export function actionHistory(id: string, reader?: ActionOwner): ActionRun[] {
   return e.history(id, reader).sort((x, y) => y.startedAt - x.startedAt);
 }
 
+/** Internal receipt ingestion only; never creates an Action or schedules work. */
+export function recordExternalRun(run: ActionRun & { externalSource: 'annex_delivery' }): Promise<void> {
+  return requireEngine().recordExternalRun(run);
+}
+
 /** User-only Settings view. MCP history continues to use its reader-scoped path. */
 export function actionUsage(): ActionOwnerUsage[] {
   const e = requireEngine();

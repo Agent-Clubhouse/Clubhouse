@@ -133,11 +133,24 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   // A loaded project keeps a watcher open, which holds its folder on Windows.
   try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* the OS clears its temp folder */ }
 });
 
 describe('the allowlist', () => {
+  it('reports the effective discovery policy rather than the inverse of a saved loopback switch', async () => {
+    writeApp('annex-settings.json', { enableServer: true, enableClient: true, loopbackOnly: false });
+    const discovery = async () => (await read(dispatcher, { select: ['app.system.annex_discovery_enabled'] })).targets[0].settings['app.system.annex_discovery_enabled'].effective;
+    expect(await discovery()).toBe(true);
+    vi.stubEnv('CLUBHOUSE_ANNEX_LOOPBACK_ONLY', '1');
+    expect(await discovery()).toBe(false);
+    vi.stubEnv('CLUBHOUSE_ANNEX_LOOPBACK_ONLY', '');
+    writeApp('annex-settings.json', { enableServer: false, enableClient: false, loopbackOnly: false });
+    resetAllSettingsStoresForTests();
+    expect(await discovery()).toBe(false);
+  });
+
   it('is exactly these keys: adding one is a decision this test makes you state', async () => {
     const { sections } = await listSettings(dispatcher);
     expect(Object.fromEntries(sections.map((s) => [s.section, s.keys.map((k) => k.slice(s.section.length + 1))]))).toEqual({
@@ -152,7 +165,7 @@ describe('the allowlist', () => {
       'project.defaults': ['orchestrator', 'persona', 'mission', 'free_agent_mode', 'profile_id', 'source_control_provider', 'default_mcps'],
       'project.modes': ['clubhouse_mode', 'mcp', 'permission_mode'],
       'app.defaults': ['idle_timeout_minutes', 'chat_enabled', 'provider_runtime', 'mcp_enabled', 'clubhouse_mode_enabled', 'permission_mode', 'default_access', 'global_helper_cap', 'enabled_orchestrators'],
-      'app.system': ['dispatcher_enabled', 'experimental_chat', 'experimental_copilot_sdk', 'experimental_copilot_legacy_acp', 'annex_server_enabled', 'annex_client_enabled'],
+      'app.system': ['dispatcher_enabled', 'experimental_chat', 'experimental_copilot_sdk', 'experimental_copilot_legacy_acp', 'annex_server_enabled', 'annex_client_enabled', 'annex_network_enabled', 'annex_loopback_only', 'annex_discovery_enabled'],
     });
   });
 
