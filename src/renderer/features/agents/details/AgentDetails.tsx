@@ -22,7 +22,8 @@ import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
-import { dispatcherWiresAgentId, isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
+import { dispatcherWiresAgentId, isDispatcherAgent, useDispatcherStore, useLocalProject } from '../../dispatcher/dispatcherStore';
+import { OtherDispatchers } from '../../dispatcher/OtherDispatchers';
 import { Tooltip } from '../../../components/Tooltip';
 import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
 import { getOrchestratorLabel } from '../orchestrator-colors';
@@ -193,6 +194,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const agentCli = useEffectiveOrchestrator(agent);
   const dispatcher = isDispatcherAgent(agent);
+  const federationPeers = useDispatcherStore((s) => s.state?.federationPeers);
 
   // Chat refreshes when a turn starts or ends, or the agent commits, pushes
   // or rebases mid-turn; the terminal when its hook status moves on.
@@ -332,6 +334,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         </div>
       )}
       <SettingsCard agent={agent} chat={chat} projectPath={projectPath} provider={provider} />
+      {dispatcher && federationPeers && <div className="px-3 py-2"><OtherDispatchers peers={federationPeers} compact /></div>}
 
       {!dispatcher && <ChangesCard
         open={open('changes')}

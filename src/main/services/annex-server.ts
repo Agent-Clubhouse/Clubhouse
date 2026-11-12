@@ -39,6 +39,7 @@ import {
   buildDispatcherSettings, clearDispatcherChatFromPhone, forgetDispatcherFromPhone, setDispatcherModelsFromPhone, updateDispatcherFromPhone,
 } from './mobile-dispatcher-settings';
 import { getDispatcherChatPath, getDispatcherPath, getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { dispatcherFederationIdentity } from '../../shared/dispatcher-federation';
 import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
 import { HELPER_ROUTING_CHANGED_EVENT, helperRoutingCapability, mobileHelperRouting, runHelperRoutingUpdate } from './mobile-helper-routing';
 import { minimalRouting } from '../../shared/helper-routing';
@@ -1313,6 +1314,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     bulletinDigests,
     groupProjectMembers,
     ptyHost: annexPtyHost(process.platform, detectWindowsPty()),
+    dispatcherFederation: dispatcherFederationIdentity(getDispatcherState()),
     // Null until the Dispatcher exists; its agent is the agents[projectId][] shape plus isDispatcher.
     dispatcher: dispatcherAgent
       ? { ...dispatcherSnapshotFlags(), projectId: DISPATCHER_PROJECT_ID, ...dispatcherOffFields(getDispatcherState(), dispatcherAgentView), agent: dispatcherAgent }
@@ -5291,7 +5293,10 @@ export function start(): void {
   unsubHelperRouting = onHelperRoutingChanged((revision) => broadcastAndBuffer(HELPER_ROUTING_CHANGED_EVENT, { revision }));
 
   // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
-  const dispatcherChangedPayload = (state: ReturnType<typeof getDispatcherState>) => ({ ...dispatcherChange(state), ...dispatcherOffFields(state, dispatcherAgentView) });
+  const dispatcherChangedPayload = (state: ReturnType<typeof getDispatcherState>) => ({
+    ...dispatcherChange(state), ...dispatcherOffFields(state, dispatcherAgentView),
+    dispatcherFederation: dispatcherFederationIdentity(state),
+  });
   let lastDispatcherChange = JSON.stringify(dispatcherChangedPayload(getDispatcherState()));
   unsubAppUpdate = onAppUpdateChanged(() => {
     broadcastAndBuffer(APP_UPDATE_CHANGED_EVENT, getAppUpdateStatus());

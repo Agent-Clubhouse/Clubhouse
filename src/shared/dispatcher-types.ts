@@ -3,6 +3,7 @@ import { DEFAULT_DISPATCHER_BEHAVIOR_STATE, type DispatcherBehaviorState } from 
 import { DEFAULT_DISPATCHER_MODELS_STATE, type DispatcherModelsState } from './dispatcher-models';
 import { DEFAULT_DISPATCHER_PERSONALITY, type DispatcherPersonality } from './dispatcher-personality';
 import { NO_DISPATCHER_SETUP, type DispatcherSetupState } from './dispatcher-setup';
+import type { DispatcherFederationPeer } from './dispatcher-federation';
 
 export { DEFAULT_DISPATCHER_NAME } from './dispatcher-name';
 
@@ -112,6 +113,8 @@ export interface DispatcherState {
   personality: DispatcherPersonality;
   /** Whether its view shows first-run setup, or offers it from the chat (#3047). */
   setup: DispatcherSetupState;
+  /** Other computer members' controller links, from existing Annex presence events. */
+  federationPeers?: DispatcherFederationPeer[];
 }
 
 /**

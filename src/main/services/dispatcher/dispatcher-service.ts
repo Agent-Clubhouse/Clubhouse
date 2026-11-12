@@ -90,6 +90,7 @@ import {
   saveDispatcherSetupStatus,
 } from './dispatcher-setup';
 import { onRequestsChanged, requestsUnderWay } from './dispatcher-requests';
+import { getDispatcherFederationPeers, onDispatcherFederationPeersChanged } from './dispatcher-federation-presence';
 
 export {
   getDispatcherPath, getDispatcherChatPath, getDispatcherNotesPath, getDispatcherNotesArchivePath, getDispatcherMemoryPath,
@@ -245,6 +246,7 @@ export function getDispatcherState(): DispatcherState {
     models: getDispatcherModels(),
     personality: getDispatcherPersonality(),
     setup: getDispatcherSetup(),
+    federationPeers: getDispatcherFederationPeers(),
   };
 }
 
@@ -972,6 +974,7 @@ function watchChanges(): void {
   agentRegistry.onAuthChange((agentId) => { if (agentId === config?.id || agentId === chatConfig?.id) emitChanged(); }),
   // Its status shows the user's requests still under way (#3220).
   onRequestsChanged(() => emitChanged()),
+  onDispatcherFederationPeersChanged(() => emitChanged()),
   // A change to the Auto mapping can fix or break Behavior's models: check again, and apply at once.
   onHelperRoutingChanged(() => {
     const queuedIn = generation;

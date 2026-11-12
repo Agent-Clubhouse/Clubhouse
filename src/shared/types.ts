@@ -1299,6 +1299,8 @@ export interface SnapshotPluginSummary {
 }
 
 export interface SatelliteSnapshot {
+  /** Safe controller discovery/presence only; never memory, grants, chat contents or approvals. */
+  dispatcherFederation?: import('./dispatcher-federation').DispatcherFederationIdentity;
   /** The machine this snapshot is from (#3063): its agents' addresses are `<agentId>@<fingerprint>`. */
   machine?: { fingerprint: string; name: string };
   projects: Project[];

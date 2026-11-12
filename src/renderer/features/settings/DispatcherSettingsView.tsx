@@ -68,6 +68,7 @@ import {
 } from '../../../shared/dispatcher-behavior';
 import { DEFAULT_DISPATCHER_MODELS_STATE, DISPATCHER_MODELS_APPLY_NOTE, DISPATCHER_ROLE_LABELS, type DispatcherModelsState, type DispatcherModelsUpdate, type DispatcherRoleModel } from '../../../shared/dispatcher-models';
 import { ConnectedAgentsSection } from './DispatcherConnectedAgents';
+import { OtherDispatchers } from '../dispatcher/OtherDispatchers';
 import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea } from './SettingsLayout';
 
 const TITLE = 'Dispatcher';
@@ -754,6 +755,7 @@ export function DispatcherSettingsView() {
           <ConnectedAgentsSection dispatcherName={name} />
         </>
       )}
+      {state.federationPeers && <div className="mt-6"><OtherDispatchers peers={state.federationPeers} /></div>}
       {/* Its memory is kept while it's off, so it can be forgotten then too. */}
       {config && <ResetSection state={state} />}
     </SettingsPage>

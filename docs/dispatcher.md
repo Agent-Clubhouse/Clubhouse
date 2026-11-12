@@ -115,6 +115,20 @@ the receiving machine.
 | Outcome | Delivery and work outcome are separate. A message without an explicit receiver outcome never becomes completed. |
 | Causality | Root, depth and parent delivery id are internal metadata kept with remote requests, including across later controller turns and replies. |
 
+The staged presence adapter reuses Annex device and Dispatcher-change events;
+it does not poll. Safe snapshots contain only controller identity, name, enabled,
+running and working flags. `OtherDispatchers` is read-only in Settings and agent
+details. A cached routing identity survives a missing snapshot or restart without
+claiming the controller is live, and is pruned when computer membership ends.
+
+The synchronous policy API is `fixedDispatcherFederationTools(fromId, targetId)`
+in `dispatcher-federation-presence.ts`; it returns the exact five safe suffixes
+for either direction of a membership-owned local/remote controller pair, even
+while off or offline. `remoteDispatcherFederationPeer(address)` identifies a
+known remote controller for sender grant and catalog caps. Both read memory only.
+Safety trips use a persisted ten-minute cooldown, independent of grants; this
+does not elect a lead or move work between machines.
+
 ## What connections start with (#3214)
 
 The maintainer set these defaults on 2026-11-09: "the only edit actions are send, and wake". A connection starts with reading, sending and wake on, and with `clear_agent` and `compact_agent` off, except for a parent's direction to its own helper. Dispatcher connections use these narrow defaults too (#3281); saved user-owned switches are unchanged. They're in `AUTOMATIC_CONNECTION_SWITCHES` and `NEW_CONNECTION_SWITCHES` (`shared/connection-grants.ts`).
@@ -185,6 +199,7 @@ All under the Clubhouse base folder (`~/.clubhouse`, or `.clubhouse-dev` in deve
 | `dispatcher/notes-archive*/` | notes from before memory | yes |
 | `dispatcher-news.json` | held news, recently shown | held news only |
 | `dispatcher-requests.json` | the user's requests from the last week and how each ended | no |
+| `dispatcher-federation-peers.json` (app settings folder) | member controllers' last authenticated routing identities and temporary safety pauses; no chat, grants or approvals | no |
 | `dispatcher-agent-cards.json` | when each agent was asked for its card | no (a missing page asks again) |
 | `dispatcher-usage.json` | 31 days of usage, conversations and background work | no |
 | `dispatcher-upkeep.json` | when upkeep last ran | no |

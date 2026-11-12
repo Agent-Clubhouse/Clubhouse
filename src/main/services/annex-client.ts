@@ -29,6 +29,7 @@ import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
 import { normalizeCertFingerprint, parsePairingUrl } from './annex-pairing-url';
 import { devicesChanged } from './annex-device-signal';
+import { isDispatcherFederationIdentity } from '../../shared/dispatcher-federation';
 import {
   annexProblemText,
   classifyConnectionError,
@@ -88,6 +89,8 @@ export interface SatelliteConnection {
 }
 
 export interface SatelliteSnapshot {
+  /** Safe controller discovery, separate from the visible Dispatcher chat. */
+  dispatcherFederation?: import('../../shared/dispatcher-federation').DispatcherFederationIdentity;
   /** The machine this snapshot is from (#3063). */
   machine?: { fingerprint: string; name: string };
   projects: unknown[];
@@ -986,6 +989,20 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
       broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
 
+    case 'dispatcher:changed': {
+      const change = msg.payload;
+      const identity = change && typeof change === 'object'
+        ? (change as Record<string, unknown>).dispatcherFederation : undefined;
+      if (sat.snapshot) {
+        sat.snapshot = {
+          ...sat.snapshot,
+          dispatcherFederation: isDispatcherFederationIdentity(identity) ? identity : undefined,
+        };
+        broadcastSatellitesChanged();
+      }
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
+      break;
+    }
     default:
       // Forward any unknown message types
       broadcastSatelliteEvent(sat.id, type, msg.payload);

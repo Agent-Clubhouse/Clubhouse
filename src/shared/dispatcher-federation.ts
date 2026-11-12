@@ -1,4 +1,4 @@
-import { formatAgentAddress } from './agent-address';
+import { formatAgentAddress, isMachineFingerprint } from './agent-address';
 import { DEFAULT_DISPATCHER_NAME } from './dispatcher-name';
 
 /** Membership owns these links; neither agents nor the connection editor may widen them. */
@@ -19,6 +19,19 @@ export interface DispatcherFederationIdentity {
   working: boolean;
 }
 
+export function dispatcherFederationIdentity(state: {
+  agentId: string | null;
+  config: { name: string } | null;
+  enabled: boolean;
+  running: boolean;
+  requestsUnderWay: number;
+}): DispatcherFederationIdentity | undefined {
+  return state.agentId ? {
+    controllerId: state.agentId, name: state.config?.name || DEFAULT_DISPATCHER_NAME,
+    enabled: state.enabled, running: state.running, working: state.requestsUnderWay > 0,
+  } : undefined;
+}
+
 /** An authoritative membership/presence snapshot, not fields read from an agent's message. */
 export interface DispatcherFederationMember {
   machineId: string;
@@ -28,6 +41,8 @@ export interface DispatcherFederationMember {
   connected: boolean;
   lastSeen?: string;
   dispatcher?: DispatcherFederationIdentity;
+  /** Last authenticated routing identity; not evidence that the controller is currently available. */
+  controller?: Pick<DispatcherFederationIdentity, 'controllerId' | 'name'>;
 }
 
 export interface DispatcherFederationPeer {
@@ -63,6 +78,7 @@ export interface DispatcherRemoteRequestOrigin extends DispatcherFederationOrigi
 }
 
 export type DispatcherFederationOutcome = 'under_way' | 'waiting_user' | 'answered' | 'declined' | 'failed' | 'completed';
+export type DispatcherRemoteTriage = 'now' | 'next_check_in' | 'needs_user' | 'decline';
 
 export interface DispatcherFederationReply {
   requestId: string;
@@ -70,7 +86,8 @@ export interface DispatcherFederationReply {
 }
 
 export type DispatcherFederationPayload =
-  | { tool: 'get_status' | 'check_connectivity' }
+  | { tool: 'get_status' }
+  | { tool: 'check_connectivity' }
   | { tool: 'send_message'; message: string; taskId?: string; reply?: DispatcherFederationReply }
   | { tool: 'send_file'; content: string; filename?: string; taskId?: string }
   | { tool: 'hand_off_request'; request: string; requestId: string };
@@ -102,21 +119,22 @@ export function dispatcherFederationPeers(
   for (const member of members) {
     const machineId = member.machineId.toLowerCase();
     if (member.role !== 'member' || member.kind !== 'desktop' || machineId === localMachineId.toLowerCase()) continue;
-    const dispatcher = member.dispatcher;
+    const dispatcher = member.connected ? member.dispatcher : undefined;
+    const identity = member.dispatcher ?? member.controller;
     const trip = trips.get(machineId);
     const reason = !localEnabled ? 'local_dispatcher_off'
       : dispatcher?.enabled === false ? 'dispatcher_off'
-      : trip ?? (!dispatcher ? 'status_unknown' : undefined);
+      : trip ?? (!identity || (member.connected && !dispatcher) ? 'status_unknown' : undefined);
     const unavailable = reason === 'local_dispatcher_off' || reason === 'dispatcher_off' || reason === 'status_unknown';
     const link: DispatcherFederationLinkState = unavailable ? 'unavailable' : trip ? 'tripped' : member.connected ? 'active' : 'paused';
     // Disconnected snapshots are historical: a previously working controller is not still working now.
-    const presence: DispatcherFederationPresence = dispatcher?.enabled === false ? 'unavailable'
-      : !member.connected ? 'offline'
+    const presence: DispatcherFederationPresence = !member.connected ? 'offline'
+      : dispatcher?.enabled === false ? 'unavailable'
       : !dispatcher ? 'unavailable'
       : dispatcher.working ? 'working' : dispatcher.running ? 'online' : 'asleep';
     peers.set(machineId, {
-      machineId, machineName: member.machineName, name: dispatcher?.name || DEFAULT_DISPATCHER_NAME,
-      ...(dispatcher?.controllerId && { address: formatAgentAddress({ agentId: dispatcher.controllerId, machine: machineId }) }),
+      machineId, machineName: member.machineName, name: identity?.name || DEFAULT_DISPATCHER_NAME,
+      ...(identity?.controllerId && { address: formatAgentAddress({ agentId: identity.controllerId, machine: machineId }) }),
       presence, link, ...(reason && { reason }), ...(member.lastSeen && { lastSeen: member.lastSeen }),
     });
   }
@@ -137,6 +155,25 @@ function text(value: unknown, max: number): value is string {
 
 function optionalText(value: unknown, max: number): value is string | undefined {
   return value === undefined || text(value, max);
+}
+
+/** Remote snapshots are wire input even when a TypeScript interface describes them. */
+export function isDispatcherFederationIdentity(value: unknown): value is DispatcherFederationIdentity {
+  return object(value) && text(value.controllerId, 200) && !value.controllerId.includes('@')
+    && text(value.name, 200) && typeof value.enabled === 'boolean'
+    && typeof value.running === 'boolean' && typeof value.working === 'boolean';
+}
+
+export function isDispatcherFederationCause(value: unknown): value is DispatcherFederationCause {
+  return object(value) && text(value.rootId, 100) && Number.isSafeInteger(value.depth)
+    && typeof value.depth === 'number' && value.depth >= 0
+    && optionalText(value.parentId, 100);
+}
+
+export function isDispatcherRemoteRequestOrigin(value: unknown): value is DispatcherRemoteRequestOrigin {
+  return object(value) && typeof value.machineId === 'string' && isMachineFingerprint(value.machineId)
+    && text(value.machineName, 200) && text(value.agentId, 200) && !value.agentId.includes('@')
+    && text(value.agentName, 200) && text(value.requestId, 100) && isDispatcherFederationCause(value.cause);
 }
 
 function reply(value: unknown): value is DispatcherFederationReply {
