@@ -10,6 +10,7 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-delivery-store-'));
 import {
   createAnnexDeliveryStore, deliveryHash, DELIVERY_MAX_BYTES, DELIVERY_MAX_RECORDS, DELIVERY_MAX_RESULT_BYTES, DELIVERY_RETENTION_MS, type DeliveryFile, type ReceiverDelivery,
 } from './annex-delivery-store';
+import { annexProtocolWireHash, snapshotAnnexProtocolEnvelope } from './annex-delivery-protocols';
 
 afterEach(() => vi.restoreAllMocks());
 const receipt = (id: number, at: number): ReceiverDelivery => ({
@@ -19,6 +20,40 @@ const receipt = (id: number, at: number): ReceiverDelivery => ({
 });
 
 describe('durable Annex delivery store', () => {
+  it('preserves one exact protocol envelope and fails closed on changed bytes or forged local authority', async () => {
+    const filename = 'protocol-integrity.json';
+    const filePath = path.join(state.base, filename);
+    const store = createAnnexDeliveryStore(filename);
+    const at = new Date().toISOString();
+    const body = snapshotAnnexProtocolEnvelope({
+      v: 1, callId: 'protocol-call', protocol: 'handoff', commandId: 'stable-command',
+      from: { agentId: 'caller', name: 'Caller' }, to: 'target', tool: 'offer', args: { request: 'original', earlier: 'value' },
+      context: { rootId: 'root', depth: 0 }, epoch: { sender: 'sender-pairing', receiver: 'receiver-pairing' },
+    });
+    await store.update((file) => {
+      file.outbox.push({
+        id: body.callId, machine: 'receiver', body, queuedAt: at,
+        protocolContext: { senderMachine: 'sender', sourceCall: { toolName: 'agent__target__offer', callKey: 'original-call' }, localAuthorization: { requestId: 'human-request' } },
+      });
+      file.deliveries.push({
+        callId: body.callId, callerId: 'caller', targetId: 'target@receiver', tool: 'offer', state: 'queued',
+        queuedAt: at, updatedAt: at, attempts: 0, payloadHash: annexProtocolWireHash(body),
+      });
+    });
+    const original = fs.readFileSync(filePath, 'utf8');
+    expect(JSON.stringify(createAnnexDeliveryStore(filename).get().outbox[0].body)).toBe(JSON.stringify(body));
+    await expect(store.update((file) => { file.outbox[0].body.args = { request: 'original', earlier: 'value' }; })).rejects.toThrow('wire encoding');
+    await expect(store.update((file) => { file.outbox[0].body.from.name = 'changed'; })).rejects.toThrow('full-wire hash');
+    await expect(store.update((file) => { Reflect.set(file.outbox[0].protocolContext!.localAuthorization!, 'approved', true); })).rejects.toThrow('Main-local');
+    expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
+    const tampered = JSON.parse(original);
+    tampered.outbox[0].body.args.request = 'changed after restart';
+    fs.writeFileSync(filePath, JSON.stringify(tampered));
+    const reopened = createAnnexDeliveryStore(filename);
+    expect(() => reopened.get()).toThrow('unreadable');
+    expect(fs.readFileSync(filePath, 'utf8')).toBe(JSON.stringify(tampered));
+  });
+
   it.each([null, false, 7, 'not a store', [], { version: 1, outbox: [], inbox: null, deliveries: [] }])('refuses raw non-store JSON %j without overwriting it', async (raw) => {
     const filename = 'raw-non-store.json';
     const filePath = path.join(state.base, filename);

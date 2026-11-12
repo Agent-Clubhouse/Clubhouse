@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createHash } from 'crypto';
+import { EventEmitter } from 'events';
+import * as https from 'https';
+import type { ClientRequest, IncomingMessage } from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ base: '', pairing: 'self-epoch', peerPairing: 'peer-epoch' }));
@@ -15,14 +19,20 @@ vi.mock('./annex-peers', () => ({ listPeers: () => [
   { fingerprint: OTHER.toUpperCase(), alias: 'Studio', role: 'member', kind: 'desktop', pairingId: state.peerPairing },
   // A one-to-one pairing: not in the network.
   { fingerprint: THIRD.toUpperCase(), alias: 'Old Mac', role: 'satellite' },
-] }));
+], getPeer: () => undefined }));
+vi.mock('https', async (original) => ({ ...await original<typeof import('https')>(), request: vi.fn() }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-agent-calls-'));
 
 import {
   AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, forwardAgentCall, receiveAgentCall, receiveDirections,
   remoteAgentName, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
+  agentDeliveryCapabilities, prepareAnnexProtocolCall, forwardPreparedAnnexProtocolCall, type PreparedAnnexProtocolCall,
 } from './annex-agent-calls';
-import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS } from './annex-delivery-store';
+import { createAnnexDeliveryStore, deliveryHash, DELIVERY_MAX_AGE_MS } from './annex-delivery-store';
+import {
+  annexProtocolWireHash, registerAnnexDeliveryProtocol, snapshotAnnexProtocolEnvelope, type AnnexProtocolCall,
+  type AnnexDeliveryProtocol, type AnnexProtocolIncoming, type AnnexProtocolOutgoing,
+} from './annex-delivery-protocols';
 import {
   getConnectionDirection, listAllConnectionDirections, removeConnectionDirections, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
@@ -632,6 +642,327 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     await flushOutbox(OTHER);
     await vi.waitFor(() => expect(getDelivery('here', 'legacy-call')).toMatchObject({ state: 'indeterminate', reason: 'legacy_delivery_unverified' }));
     expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
+  });
+});
+
+describe('disabled prepared protocol transport', () => {
+  const filename = 'prepared-protocols.json';
+  let allowed = true;
+  let inboundAllowed = true;
+  let unregister: () => void;
+  const authorize = vi.fn<AnnexDeliveryProtocol['authorizeOutgoing']>(async () => ({ allowed: true }));
+  const check = vi.fn((_request: AnnexProtocolOutgoing) => allowed ? { allowed: true as const } : { allowed: false as const, reason: 'Off now' });
+  const incoming = vi.fn((_request: AnnexProtocolIncoming) => inboundAllowed ? { allowed: true as const } : { allowed: false as const, reason: 'Off here' });
+  const receive = vi.fn(async (_request: AnnexProtocolIncoming) => ok('protocol accepted'));
+
+  beforeEach(async () => {
+    allowed = true;
+    inboundAllowed = true;
+    authorize.mockReset().mockResolvedValue({ allowed: true });
+    check.mockClear();
+    incoming.mockClear();
+    receive.mockReset().mockResolvedValue(ok('protocol accepted'));
+    transport.supportsProtocolDelivery = vi.fn(async () => true);
+    unregister = registerAnnexDeliveryProtocol({
+      name: 'handoff', tools: { offer: 'durable', snapshot: 'durable', cancel: 'durable', get: 'read', capacity: 'read' },
+      authorizeOutgoing: authorize, checkOutgoing: check, authorizeIncoming: incoming, receive,
+    });
+    await createAnnexDeliveryStore(filename).clearForTesting();
+    restartProtocol();
+  });
+  afterEach(() => { unregister(); delete transport.supportsProtocolDelivery; });
+
+  async function prepare(overrides: Partial<AnnexProtocolCall> = {}): Promise<PreparedAnnexProtocolCall> {
+    const result = await prepareAnnexProtocolCall({
+      protocol: 'handoff', machine: OTHER, callerId: 'here', targetId: 'there', tool: 'offer',
+      args: { request: 'original' }, commandId: 'stable-command',
+      sourceCall: { toolName: 'agent__there__offer', callKey: 'call\0here\0agent__there__offer\0original-args-hash' }, ...overrides,
+    });
+    if (!result.ok) throw new Error(textOf(result.result));
+    return result.prepared;
+  }
+
+  function restartProtocol(storeFilename = filename): void {
+    stop();
+    stop = startAgentCalls({
+      transport, deliveryStore: createAnnexDeliveryStore(storeFilename), describeLocalAgent: async () => ({ name: 'Helper', projectName: 'Atlas' }),
+      runTool: async () => { throw new Error('A protocol must never fall back to the generic runner.'); },
+      authorizeQueuedCall: async () => { throw new Error('A protocol must use its actual protocol scope, not generic wire authorization.'); },
+    });
+  }
+
+  function packet(overrides: Record<string, unknown> = {}) {
+    return snapshotAnnexProtocolEnvelope(call({
+      callId: 'protocol-receipt', protocol: 'handoff', commandId: 'remote-stable-command', tool: 'offer',
+      context: { rootId: 'root', depth: 2, parentId: 'parent' },
+      epoch: { sender: state.peerPairing, receiver: state.pairing }, ...overrides,
+    }));
+  }
+
+  it('advertises only the installed protocol, derives a stable scoped id and hashes every final wire field', async () => {
+    expect(agentDeliveryCapabilities().protocolVersions).toEqual({ handoff: 1 });
+    const original = await prepare();
+    expect((await prepare()).body.callId).toBe(original.body.callId);
+    const changed = await prepare({ args: { request: 'different' } });
+    expect(changed.body.callId).toBe(original.body.callId);
+    expect(changed.wirePayloadHash).not.toBe(original.wirePayloadHash);
+    expect(original.wirePayloadHash).toBe(createHash('sha256').update(JSON.stringify(original.body)).digest('hex'));
+    state.peerPairing = 'new-epoch';
+    expect((await prepare()).body.callId).not.toBe(original.body.callId);
+    unregister();
+    expect(agentDeliveryCapabilities().protocolVersions).toEqual({});
+    expect((await forwardPreparedAnnexProtocolCall(original)).isError).toBe(true);
+    expect(posts).toHaveLength(0);
+  });
+
+  it('shares one immutable normalized payload and rejects fabricated handles or authority fields', async () => {
+    connected = false;
+    const args = { request: 'before', nested: { value: 'original' } };
+    const prepared = await prepare({ args });
+    args.request = 'after';
+    args.nested.value = 'changed';
+    expect(Reflect.set(prepared.body.args, 'request', 'forged')).toBe(false);
+    expect(Reflect.set(prepared.body.from, 'name', 'forged')).toBe(false);
+    expect(Reflect.set(prepared.sourceCall, 'callKey', 'forged')).toBe(false);
+    expect((await forwardPreparedAnnexProtocolCall(JSON.parse(JSON.stringify(prepared)))).isError).toBe(true);
+    expect((await forwardPreparedAnnexProtocolCall(prepared, JSON.parse('{"requestId":"r","approved":true}'))).isError).toBe(true);
+    await forwardPreparedAnnexProtocolCall(prepared, { requestId: 'actual-human-request' });
+    expect(waitingFor(OTHER)[0]).toMatchObject({
+      body: { args: { request: 'before', nested: { value: 'original' } } },
+      protocolContext: { sourceCall: prepared.sourceCall, localAuthorization: { requestId: 'actual-human-request' } },
+    });
+    expect(waitingFor(OTHER)[0].body).not.toHaveProperty('sourceCall');
+    expect(waitingFor(OTHER)[0].body).not.toHaveProperty('localAuthorization');
+    expect(prepared.retainedByteLength).toBeGreaterThanOrEqual(Buffer.byteLength(JSON.stringify(prepared.body)));
+  });
+
+  it('never changes content under a queued command identity and enqueues nothing when the real claim refuses', async () => {
+    connected = false;
+    const original = await prepare();
+    authorize.mockResolvedValueOnce({ allowed: false, reason: 'Actual receipt claim refused' });
+    expect(textOf(await forwardPreparedAnnexProtocolCall(original))).toContain('Actual receipt claim refused');
+    expect(waitingFor(OTHER)).toHaveLength(0);
+    await forwardPreparedAnnexProtocolCall(original);
+    const changed = await prepare({ args: { request: 'different' } });
+    expect(textOf(await forwardPreparedAnnexProtocolCall(changed))).toContain('idempotency_conflict');
+    expect(waitingFor(OTHER)).toHaveLength(1);
+    expect(waitingFor(OTHER)[0].body.args).toEqual({ request: 'original' });
+  });
+
+  it('refuses a pairing change during descriptor lookup and never supplies a missing command identity', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    stop();
+    stop = startAgentCalls({
+      transport, deliveryStore: createAnnexDeliveryStore(filename), runTool: async () => ok('generic'),
+      describeLocalAgent: async () => { await gate; return { name: 'Helper' }; },
+    });
+    const pending = prepare();
+    state.peerPairing = 'changed-during-description';
+    release();
+    await expect(pending).rejects.toThrow('changed during preparation');
+    await expect(prepare({ commandId: undefined })).rejects.toThrow();
+    expect(waitingFor(OTHER)).toHaveLength(0);
+  });
+
+  it('admits exactly 512 KiB of actual escaped UTF-8 envelope bytes and refuses one more byte', async () => {
+    const prefix = '"\n\\\u00e9';
+    const small = await prepare({ args: { request: prefix } });
+    const request = prefix + 'x'.repeat(512 * 1024 - small.wireByteLength);
+    const exact = await prepare({ args: { request } });
+    expect(Buffer.byteLength(JSON.stringify(exact.body))).toBe(512 * 1024);
+    const tooLarge = await prepareAnnexProtocolCall({
+      protocol: 'handoff', machine: OTHER, callerId: 'here', targetId: 'there', tool: 'offer',
+      args: { request: request + 'x' }, commandId: 'stable-command', sourceCall: small.sourceCall,
+    });
+    expect(tooLarge).toMatchObject({ ok: false, result: { isError: true } });
+    expect(waitingFor(OTHER)).toHaveLength(0);
+  });
+
+  it.each(['offer', 'get'])('never posts %s to a generic-v1 peer lacking explicit protocol support', async (tool) => {
+    delete transport.supportsProtocolDelivery;
+    const prepared = await prepare({ tool });
+    expect((await forwardPreparedAnnexProtocolCall(prepared)).isError).toBe(true);
+    expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toHaveLength(0);
+  });
+
+  it('checks read scope again after capability negotiation without queueing or posting revoked input', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const support = vi.fn(async () => { await gate; return true; });
+    transport.supportsProtocolDelivery = support;
+    const pending = forwardPreparedAnnexProtocolCall(await prepare({ tool: 'get' }));
+    await vi.waitFor(() => expect(support).toHaveBeenCalledOnce());
+    allowed = false;
+    release();
+    expect(textOf(await pending)).toContain('Off now');
+    expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toHaveLength(0);
+    expect(waitingFor(OTHER)).toHaveLength(0);
+  });
+
+  it('checks revocation after async claim and after waiting for the real store lock', async () => {
+    connected = false;
+    let releaseClaim!: () => void;
+    const claimGate = new Promise<void>((resolve) => { releaseClaim = resolve; });
+    authorize.mockImplementationOnce(async () => { await claimGate; return { allowed: true }; });
+    const prepared = await prepare();
+    const pending = forwardPreparedAnnexProtocolCall(prepared, { requestId: 'actual-request' });
+    await vi.waitFor(() => expect(authorize).toHaveBeenCalledOnce());
+    allowed = false;
+    releaseClaim();
+    expect((await pending).isError).toBe(true);
+    expect(waitingFor(OTHER)).toHaveLength(0);
+
+    allowed = true;
+    const filename = 'protocol-serialized-lock.json';
+    restartProtocol(filename);
+    const store = createAnnexDeliveryStore(filename);
+    stop();
+    stop = startAgentCalls({ transport, deliveryStore: store, runTool: async () => ok('generic'), describeLocalAgent: async () => ({ name: 'Helper' }) });
+    let releaseSave!: () => void;
+    const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
+    const rename = fs.promises.rename;
+    const renaming = vi.spyOn(fs.promises, 'rename').mockImplementationOnce(async (from, to) => { await saveGate; return rename(from, to); });
+    const blocking = store.update(() => {});
+    await vi.waitFor(() => expect(renaming).toHaveBeenCalledOnce());
+    const second = forwardPreparedAnnexProtocolCall(await prepare({ commandId: 'waiting-lock' }));
+    await vi.waitFor(() => expect(authorize).toHaveBeenCalledTimes(2));
+    allowed = false;
+    releaseSave();
+    await blocking;
+    expect((await second).isError).toBe(true);
+    expect(createAnnexDeliveryStore(filename).get().outbox).toHaveLength(0);
+  });
+
+  it('rechecks synchronous full scope after sending persistence, before any POST', async () => {
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      const saved = fs.readFileSync(from, 'utf8');
+      await rename(from, to);
+      if (String(to).endsWith(filename) && JSON.parse(saved).deliveries.some((row: { state: string }) => row.state === 'sending')) allowed = false;
+    });
+    const prepared = await prepare();
+    expect((await forwardPreparedAnnexProtocolCall(prepared)).isError).toBe(true);
+    expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toHaveLength(0);
+    expect(getDelivery('here', prepared.body.callId)).toMatchObject({ state: 'refused', reason: 'authorization_revoked' });
+  });
+
+  it('refuses unknown/uninstalled protocols rather than invoking an editable generic direction', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    expect(await receiveAgentCall(OTHER, { ...packet(), protocol: 'unknown' })).toMatchObject({ status: 400 });
+    expect(await receiveAgentCall(OTHER, { ...packet(), protocol: 'federation', tool: 'send_message' })).toMatchObject({ error: 'protocol_unavailable' });
+    expect(await receiveAgentCall(OTHER, { ...packet(), localAuthorization: { requestId: 'sender-proof' } })).toMatchObject({ status: 400 });
+    expect(await receiveAgentCall(OTHER, { ...packet(), tool: 'wake_agent' })).toMatchObject({ status: 400 });
+    expect(seen).toHaveLength(0);
+    expect(receive).not.toHaveBeenCalled();
+  });
+
+  it('persists receiver claims before effects, checks full-envelope conflicts and denies revoked receipt replay', async () => {
+    const body = packet();
+    receive.mockImplementationOnce(async (request) => {
+      const disk = createAnnexDeliveryStore(filename).get();
+      expect(disk.inbox).toContainEqual(expect.objectContaining({ state: 'claimed', payloadHash: request.wirePayloadHash }));
+      expect(request.origin).toEqual({ machineId: OTHER, machineName: 'Studio', agentId: 'sender', agentName: 'Scout' });
+      expect(request.body.context).toEqual(body.context);
+      return ok('accepted once');
+    });
+    expect(await receiveAgentCall(OTHER, body)).toMatchObject({ delivery: { state: 'delivered' } });
+    restartProtocol();
+    expect(await receiveAgentCall(OTHER, body)).toMatchObject({ delivery: { state: 'delivered' } });
+    expect(await receiveAgentCall(OTHER, { ...body, from: { ...body.from, name: 'changed display' } })).toMatchObject({ error: 'idempotency_conflict' });
+    inboundAllowed = false;
+    expect(await receiveAgentCall(OTHER, body)).toMatchObject({ error: 'protocol_refused' });
+    expect(receive).toHaveBeenCalledOnce();
+  });
+
+  it('does not execute a registered protocol after its owning agent-call runtime stops', async () => {
+    stop();
+    expect(await receiveAgentCall(OTHER, packet())).toMatchObject({ error: 'unavailable' });
+    expect(receive).not.toHaveBeenCalled();
+  });
+
+  it('never acknowledges an effect whose terminal receipt did not commit, and never reruns its orphaned claim', async () => {
+    const body = packet();
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to).endsWith(filename) && JSON.parse(fs.readFileSync(from, 'utf8')).inbox.some((row: { state: string }) => row.state === 'delivered')) {
+        throw Object.assign(new Error('terminal receipt denied'), { code: 'EACCES' });
+      }
+      return rename(from, to);
+    });
+    expect(await receiveAgentCall(OTHER, body)).toMatchObject({ status: 503, error: 'delivery_store_unavailable' });
+    expect(receive).toHaveBeenCalledOnce();
+    vi.restoreAllMocks();
+    restartProtocol();
+    expect(await receiveAgentCall(OTHER, body)).toMatchObject({ delivery: { state: 'indeterminate', reason: 'receiver_interrupted' } });
+    expect(receive).toHaveBeenCalledOnce();
+  });
+
+  it('rechecks receiver permission after the actual durable claim and quarantines orphaned claims on restart', async () => {
+    const body = packet();
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementationOnce(async (from, to) => { await rename(from, to); inboundAllowed = false; });
+    expect(await receiveAgentCall(OTHER, body)).toMatchObject({ delivery: { state: 'refused', reason: 'authorization_revoked' } });
+    expect(receive).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+    inboundAllowed = true;
+    const orphan = packet({ callId: 'orphaned-protocol' });
+    const store = createAnnexDeliveryStore(filename);
+    const at = new Date().toISOString();
+    await store.update((file) => file.inbox.push({
+      key: `${OTHER}/${deliveryHash({ sender: state.pairing, receiver: state.peerPairing })}/${orphan.callId}`,
+      payloadHash: annexProtocolWireHash(orphan), state: 'claimed', createdAt: at, updatedAt: at,
+    }));
+    restartProtocol();
+    expect(await receiveAgentCall(OTHER, orphan)).toMatchObject({ delivery: { state: 'indeterminate', reason: 'receiver_interrupted' } });
+    expect(receive).not.toHaveBeenCalled();
+  });
+
+  it('keeps prepared, persisted, reopened and real client POST bytes identical without Main authority on the wire', async () => {
+    connected = false;
+    const prepared = await prepare({ args: { request: '"\n\\\u00e9', '10': 10, '2': 2, nested: { z: 1, a: 2 } } });
+    const bytes = JSON.stringify(prepared.body);
+    await forwardPreparedAnnexProtocolCall(prepared, { requestId: 'original-human-answer' });
+    const disk = createAnnexDeliveryStore(filename).get().outbox[0];
+    expect(JSON.stringify(disk.body)).toBe(bytes);
+    restartProtocol();
+    expect((await forwardPreparedAnnexProtocolCall(prepared)).isError).toBe(true);
+    expect(JSON.stringify(waitingFor(OTHER)[0].body)).toBe(bytes);
+
+    vi.doMock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+    const client = await import('./annex-client');
+    client._addConnectedSatelliteForTesting(OTHER);
+    const written: string[] = [];
+    vi.mocked(https.request).mockImplementation(((_url: unknown, options: https.RequestOptions, callback: (response: IncomingMessage) => void) => {
+      const request = Object.assign(new EventEmitter(), {
+        write: (chunk: string) => { written.push(chunk); return true; },
+        destroy: () => request,
+        end: () => {
+          expect(options).toMatchObject({ method: 'POST', headers: { 'Content-Length': Buffer.byteLength(bytes) } });
+          const response = Object.assign(new EventEmitter(), { statusCode: 200 });
+          callback(response as IncomingMessage);
+          response.emit('data', Buffer.from(JSON.stringify(delivered(JSON.parse(bytes)).body)));
+          response.emit('end');
+          return request;
+        },
+      });
+      return request as ClientRequest;
+    }) as typeof https.request);
+    const post = vi.spyOn(transport, 'post').mockImplementation((machine, route, body) => {
+      expect(Reflect.set(body, 'localAuthorization', { requestId: 'forged' })).toBe(false);
+      return client.postToMachine(machine, route, body);
+    });
+    connected = true;
+    await flushOutbox(OTHER);
+    expect(written).toEqual([bytes]);
+    expect(createHash('sha256').update(written[0]).digest('hex')).toBe(prepared.wirePayloadHash);
+    expect(JSON.parse(written[0])).not.toHaveProperty('localAuthorization');
+    expect(JSON.parse(written[0])).not.toHaveProperty('sourceCall');
+    expect(getDelivery('here', prepared.body.callId)).toMatchObject({ state: 'delivered', attempts: 1 });
+    expect(check).toHaveBeenCalledWith(expect.objectContaining({ sourceCall: prepared.sourceCall }), { requestId: 'original-human-answer' });
+    post.mockRestore();
+    client.stopClient();
+    vi.doUnmock('../util/ipc-broadcast');
   });
 });
 

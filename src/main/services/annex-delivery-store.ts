@@ -1,7 +1,10 @@
 import { createHash } from 'crypto';
-import type { AnnexCallContext, AnnexDeliveryEpoch, AnnexDeliveryFailure, AnnexDeliveryReceipt, AnnexDeliveryStatus } from '../../shared/annex-delivery';
+import type { AnnexCallContext, AnnexDeliveryEpoch, AnnexDeliveryFailure, AnnexDeliveryReceipt, AnnexDeliveryStatus, AnnexDeliveryProtocolName } from '../../shared/annex-delivery';
 import type { McpToolResult } from './clubhouse-mcp/types';
 import { createSettingsStore } from './settings-store';
+import {
+  annexProtocolWireHash, snapshotAnnexProtocolContext, snapshotAnnexProtocolEnvelope, type AnnexProtocolLocalContext,
+} from './annex-delivery-protocols';
 
 export const DELIVERY_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 export const DELIVERY_RETENTION_MS = DELIVERY_MAX_AGE_MS + 24 * 60 * 60_000;
@@ -18,6 +21,8 @@ export interface DurableAgentCall {
   args: Record<string, unknown>;
   context?: AnnexCallContext;
   epoch?: AnnexDeliveryEpoch;
+  protocol?: AnnexDeliveryProtocolName;
+  commandId?: string;
 }
 
 export interface DeliveryOutboxItem {
@@ -25,6 +30,7 @@ export interface DeliveryOutboxItem {
   machine: string;
   body: DurableAgentCall;
   queuedAt: string;
+  protocolContext?: AnnexProtocolLocalContext;
 }
 
 export interface SenderDelivery extends AnnexDeliveryStatus {
@@ -51,6 +57,18 @@ export interface DeliveryFile {
 }
 
 const empty = (): DeliveryFile => ({ version: 1, outbox: [], inbox: [], deliveries: [] });
+
+function validateProtocolOutbox(file: DeliveryFile): void {
+  for (const item of file.outbox) {
+    if (item.body.protocol === undefined && item.protocolContext === undefined) continue;
+    const body = snapshotAnnexProtocolEnvelope(item.body);
+    if (JSON.stringify(item.body) !== JSON.stringify(body)) throw new Error('The stored Annex protocol body is not the exact prepared wire encoding.');
+    snapshotAnnexProtocolContext(item.protocolContext);
+    if (file.deliveries.find((row) => row.callId === item.id)?.payloadHash !== annexProtocolWireHash(body)) {
+      throw new Error('The persisted Annex protocol envelope does not match its full-wire hash.');
+    }
+  }
+}
 
 /** Stable hashes also reject a reused id whose arguments changed key order only. */
 export function deliveryHash(value: unknown): string {
@@ -103,6 +121,7 @@ export function createAnnexDeliveryStore(filename = 'annex-agent-outbox.json'): 
     if (file.inbox.some((r) => !r || typeof r.key !== 'string' || typeof r.payloadHash !== 'string' || !Number.isFinite(Date.parse(r.updatedAt)) || !['claimed', 'delivered', 'refused', 'retry_later', 'indeterminate'].includes(r.state))
       || file.deliveries.some((r) => !r || typeof r.callId !== 'string' || typeof r.payloadHash !== 'string' || !Number.isFinite(Date.parse(r.updatedAt)))
       || file.outbox.some((r) => !r || typeof r.id !== 'string' || !r.body || r.body.callId !== r.id || typeof r.machine !== 'string' || !Number.isFinite(Date.parse(r.queuedAt)))) throw new Error('Invalid delivery records');
+    validateProtocolOutbox(file);
     return file;
   }, {
     atomic: true, mode: 0o600, rollBackFailedSaves: true,
@@ -141,6 +160,7 @@ export function createAnnexDeliveryStore(filename = 'annex-agent-outbox.json'): 
         file.inbox = file.inbox.filter((r) => now - Date.parse(r.updatedAt) < DELIVERY_RETENTION_MS);
         file.deliveries = file.deliveries.filter((r) => waiting.has(r.callId) || r.failureNotified === false || now - Date.parse(r.updatedAt) < DELIVERY_RETENTION_MS);
         change(file);
+        validateProtocolOutbox(file);
         // Reserve space for each in-flight outcome, so accepting a call cannot
         // consume the capacity needed to durably finish an earlier one.
         const reserved = file.inbox.filter((r) => r.state === 'claimed').length * DELIVERY_MAX_RESULT_BYTES;

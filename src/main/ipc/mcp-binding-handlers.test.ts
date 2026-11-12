@@ -138,6 +138,8 @@ import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispat
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { applyConnectionTools, migrateAutomaticConnectionTools } from '../services/connection-grants';
+import { startAgentCalls } from '../services/annex-agent-calls';
+import * as annexClient from '../services/annex-client';
 import { _resetGrantRequestsForTesting, dropGrantRequestsFor, recordGrantRequest } from '../services/grant-requests';
 import {
   registerMcpBindingHandlers,
@@ -613,6 +615,27 @@ describe('ensureMcpBridgeStarted (#2610)', () => {
 });
 
 describe('restorePersistedBindings (#1544)', () => {
+  it('requires explicit fixed protocol versions without changing generic-v1 support or caching old capabilities', async () => {
+    await restorePersistedBindings();
+    const transport = vi.mocked(startAgentCalls).mock.calls.at(-1)![0].transport;
+    const base = { deliveryVersion: 1, receiptBoundary: 'runtime-accepted' };
+    const post = vi.spyOn(annexClient, 'postToMachine').mockResolvedValue({ status: 200, body: base });
+    try {
+      expect(await transport.supportsDurableDelivery('machine')).toBe(true);
+      expect(await transport.supportsProtocolDelivery!('machine', 'handoff')).toBe(false);
+      for (const protocolVersions of [{}, { handoff: 0 }, { handoff: 2 }, { federation: 1 }, ['handoff']]) {
+        post.mockResolvedValueOnce({ status: 200, body: { ...base, protocolVersions } });
+        expect(await transport.supportsProtocolDelivery!('machine', 'handoff')).toBe(false);
+      }
+      post.mockResolvedValueOnce({ status: 200, body: { ...base, protocolVersions: { handoff: 1 } } });
+      expect(await transport.supportsProtocolDelivery!('machine', 'handoff')).toBe(true);
+      expect(await transport.supportsProtocolDelivery!('machine', 'handoff')).toBe(false);
+      post.mockResolvedValueOnce({ status: 503, body: {} });
+      await expect(transport.supportsProtocolDelivery!('machine', 'handoff')).rejects.toThrow('503');
+      expect(post).toHaveBeenCalledWith('machine', '/api/v1/network/agent-delivery-capabilities', {});
+    } finally { post.mockRestore(); }
+  });
+
   it('does nothing until the MCP handlers are registered', () => {
     _resetHandlersForTesting();
     restorePersistedBindings();

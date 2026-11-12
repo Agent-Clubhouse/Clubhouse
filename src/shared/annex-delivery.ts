@@ -10,7 +10,20 @@ export interface AnnexDeliveryEpoch {
   receiver: string;
 }
 
+export type AnnexDeliveryProtocolName = 'handoff' | 'federation';
+
+export interface AnnexProtocolSourceCall {
+  toolName: string;
+  callKey: string;
+}
+
+/** Main-local receipt reference, never part of a remote agent-call envelope. */
+export interface AnnexProtocolApprovalReference {
+  requestId: string;
+}
+
 export interface AuthenticatedAnnexOrigin {
+  /** The machine is authenticated; the pinned peer asserts the agent identity. */
   machineId: string;
   machineName: string;
   agentId: string;

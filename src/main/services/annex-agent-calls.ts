@@ -33,7 +33,13 @@ import {
   boundedDeliveryResult, createAnnexDeliveryStore, deliveryFailure, deliveryHash, DELIVERY_MAX_AGE_MS,
   type AnnexDeliveryStore, type DeliveryOutboxItem, type DurableAgentCall, type ReceiverDelivery,
 } from './annex-delivery-store';
-import type { AnnexCallContext, AnnexDeliveryEpoch, AnnexDeliveryFailure, AnnexDeliveryReceipt, AnnexDeliveryStatus, AuthenticatedAnnexOrigin } from '../../shared/annex-delivery';
+import type { AnnexCallContext, AnnexDeliveryEpoch, AnnexDeliveryFailure, AnnexDeliveryReceipt, AnnexDeliveryStatus, AnnexDeliveryProtocolName, AnnexProtocolApprovalReference, AuthenticatedAnnexOrigin } from '../../shared/annex-delivery';
+import {
+  annexDeliveryProtocol, annexProtocolToolMode, annexProtocolVersions, annexProtocolWireHash,
+  snapshotAnnexProtocolCall, snapshotAnnexProtocolContext, snapshotAnnexProtocolEnvelope,
+  type AnnexDeliveryProtocol, type AnnexProtocolCall, type AnnexProtocolEnvelope, type AnnexProtocolIncoming,
+  type AnnexProtocolLocalContext, type AnnexProtocolOutgoing,
+} from './annex-delivery-protocols';
 import {
   getConnectionDirection, listAllConnectionDirections, onConnectionGrantsChanged, putConnectionDirection,
 } from './connection-grants-store';
@@ -100,6 +106,8 @@ export interface AgentCallTransport {
   post(machine: string, path: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }>;
   /** Negotiated on the pinned peer before sending input; an old peer must not execute a retried durable call. */
   supportsDurableDelivery(machine: string): Promise<boolean>;
+  /** Required even for protocol reads: old peers may otherwise ignore the protocol and execute generically. */
+  supportsProtocolDelivery?(machine: string, protocol: AnnexDeliveryProtocolName): Promise<boolean>;
   /** The name this machine knows `machine` by. */
   machineName(machine: string): string | undefined;
   /** Called each time a connection to a machine opens. */
@@ -178,7 +186,9 @@ type DeliveryAuthorization = { allowed: true } | { allowed: false; reason: strin
 let authorizeQueuedCall: ((item: OutboxItem) => Promise<DeliveryAuthorization>) | undefined;
 let onDeliveryFailure: ((notice: AnnexDeliveryFailure) => Promise<boolean | void>) | undefined;
 
-const payloadHash = (body: AgentCallBody): string => deliveryHash({ from: body.from.agentId, to: body.to, tool: body.tool, args: body.args, ...(body.context && { context: body.context }), ...(body.epoch && { epoch: body.epoch }) });
+const payloadHash = (body: AgentCallBody): string => body.protocol !== undefined
+  ? annexProtocolWireHash(snapshotAnnexProtocolEnvelope(body))
+  : deliveryHash({ from: body.from.agentId, to: body.to, tool: body.tool, args: body.args, ...(body.context && { context: body.context }), ...(body.epoch && { epoch: body.epoch }) });
 const queuedResult = (callId: string, message: string): McpToolResult => text(`${message} delivery_id=${callId}. This confirms a durable queue, not model execution.`);
 
 function outgoingEpoch(machine: string): AnnexDeliveryEpoch {
@@ -189,9 +199,112 @@ function outgoingEpoch(machine: string): AnnexDeliveryEpoch {
 }
 
 /** Version 1 is the atomic claim/receipt protocol, not an assertion by the calling agent. */
-export function agentDeliveryCapabilities(): { deliveryVersion: 1; receiptBoundary: 'runtime-accepted' } {
+export function agentDeliveryCapabilities(): { deliveryVersion: 1; receiptBoundary: 'runtime-accepted'; protocolVersions: Partial<Record<AnnexDeliveryProtocolName, 1>> } {
   deliveries.get();
-  return { deliveryVersion: 1, receiptBoundary: 'runtime-accepted' };
+  return { deliveryVersion: 1, receiptBoundary: 'runtime-accepted', protocolVersions: annexProtocolVersions() };
+}
+
+export interface PreparedAnnexProtocolCall extends AnnexProtocolOutgoing {
+  /** The shared frozen body is retained once; caller-owned copies/arguments must be charged separately. */
+  readonly wireByteLength: number;
+  readonly retainedByteLength: number;
+}
+
+const preparedCalls = new WeakMap<PreparedAnnexProtocolCall, { generation: number; session: AgentCallTransport; protocol: Readonly<AnnexDeliveryProtocol> }>();
+
+function checkPreparedCall(prepared: PreparedAnnexProtocolCall): void {
+  const state = preparedCalls.get(prepared);
+  if (!state || state.generation !== lifecycle || state.session !== transport
+    || annexDeliveryProtocol(prepared.body.protocol) !== state.protocol) throw new Error('This Annex preparation is no longer installed in this runtime. Review a new request.');
+  if (prepared.senderMachine !== selfFingerprint() || !isNetworkComputer(prepared.machine)
+    || deliveryHash(prepared.body.epoch) !== deliveryHash(outgoingEpoch(prepared.machine))) throw new Error('The Annex identity, membership or pairing changed after preparation.');
+}
+
+function requireProtocolAuthorization(authorization: DeliveryAuthorization): void {
+  if (authorization?.allowed !== true) throw new Error(authorization?.allowed === false ? authorization.reason : 'The Annex protocol did not provide a current authorization decision.');
+}
+
+/** Main prepares once before a human is asked; no approval is created or consumed here. */
+export async function prepareAnnexProtocolCall(request: AnnexProtocolCall): Promise<{ ok: true; prepared: PreparedAnnexProtocolCall } | { ok: false; result: McpToolResult }> {
+  try {
+    const input = snapshotAnnexProtocolCall(request);
+    const machine = input.machine.toLowerCase();
+    const self = selfFingerprint();
+    const session = transport;
+    const generation = lifecycle;
+    const protocol = annexDeliveryProtocol(input.protocol);
+    if (!self || !session || !protocol || !isNetworkComputer(machine)) throw new Error('This Annex protocol or network computer is unavailable.');
+    const epoch = outgoingEpoch(machine);
+    const callId = deliveryHash(['protocol', input.protocol, self, input.callerId, machine, input.targetId, input.tool, input.commandId, epoch]);
+    const sender = await describeLocalAgent(input.callerId);
+    if (generation !== lifecycle || session !== transport || self !== selfFingerprint() || !isNetworkComputer(machine)
+      || protocol !== annexDeliveryProtocol(input.protocol) || deliveryHash(epoch) !== deliveryHash(outgoingEpoch(machine))) throw new Error('The Annex runtime, identity or pairing changed during preparation.');
+    const body = snapshotAnnexProtocolEnvelope({
+      v: AGENT_CALL_VERSION, callId, protocol: input.protocol, commandId: input.commandId,
+      from: { agentId: input.callerId, name: sender?.name ?? input.callerId, ...(sender?.projectName && { projectName: sender.projectName }) },
+      to: input.targetId, tool: input.tool, args: input.args, epoch, context: input.context ?? { rootId: callId, depth: 0 },
+    });
+    const local = snapshotAnnexProtocolContext({ senderMachine: self, sourceCall: input.sourceCall });
+    const wireByteLength = Buffer.byteLength(JSON.stringify(body));
+    const prepared = Object.freeze({
+      machine, senderMachine: self, sourceCall: local.sourceCall, body, wirePayloadHash: annexProtocolWireHash(body), wireByteLength,
+      retainedByteLength: wireByteLength + Buffer.byteLength(JSON.stringify(local)) + Buffer.byteLength(machine) + 64,
+    });
+    preparedCalls.set(prepared, { generation, session, protocol });
+    return { ok: true, prepared };
+  } catch (err) {
+    return { ok: false, result: text(err instanceof Error ? err.message : 'Annex protocol preparation failed.', true) };
+  }
+}
+
+function protocolOutgoing(machine: string, body: AnnexProtocolEnvelope, local: AnnexProtocolLocalContext): AnnexProtocolOutgoing {
+  return Object.freeze({ machine, senderMachine: local.senderMachine, sourceCall: local.sourceCall, wirePayloadHash: annexProtocolWireHash(body), body });
+}
+
+function checkProtocolItem(item: OutboxItem): DeliveryAuthorization {
+  const body = snapshotAnnexProtocolEnvelope(item.body);
+  const local = snapshotAnnexProtocolContext(item.protocolContext);
+  const protocol = annexDeliveryProtocol(body.protocol);
+  if (!protocol || local.senderMachine !== selfFingerprint()) return { allowed: false, reason: 'The prepared Annex protocol or sender identity is no longer available.' };
+  const decision = protocol.checkOutgoing(protocolOutgoing(item.machine, body, local), local.localAuthorization);
+  if (protocol !== annexDeliveryProtocol(body.protocol)) return { allowed: false, reason: 'The Annex protocol was removed during its current-scope check.' };
+  return decision?.allowed === true ? decision : {
+    allowed: false, reason: decision?.allowed === false ? decision.reason : 'The Annex protocol current-scope check did not authorize this delivery.',
+  };
+}
+
+/** Only the original private handle can enqueue the exact envelope shown before approval. */
+export async function forwardPreparedAnnexProtocolCall(prepared: PreparedAnnexProtocolCall, localAuthorization?: Readonly<AnnexProtocolApprovalReference>): Promise<McpToolResult> {
+  try {
+    checkPreparedCall(prepared);
+    const local = snapshotAnnexProtocolContext({
+      senderMachine: prepared.senderMachine, sourceCall: prepared.sourceCall, ...(localAuthorization !== undefined && { localAuthorization }),
+    });
+    const state = preparedCalls.get(prepared)!;
+    const request = protocolOutgoing(prepared.machine, prepared.body, local);
+    requireProtocolAuthorization(await state.protocol.authorizeOutgoing(request, local.localAuthorization));
+    checkPreparedCall(prepared);
+    const check = () => {
+      checkPreparedCall(prepared);
+      requireProtocolAuthorization(state.protocol.checkOutgoing(request, local.localAuthorization));
+      checkPreparedCall(prepared);
+    };
+    if (annexProtocolToolMode(prepared.body.protocol, prepared.body.tool) === 'read') {
+      if (!state.session.connected(prepared.machine)) return text('The other computer is offline. This protocol read was not sent.', true);
+      if (!await state.session.supportsProtocolDelivery?.(prepared.machine, prepared.body.protocol)) return text('The other computer does not support this Annex protocol. No input was sent.', true);
+      check();
+      if (!state.session.connected(prepared.machine)) return text('The other computer disconnected. This protocol read was not sent.', true);
+      return send(prepared.machine, prepared.body, state.session.machineName(prepared.machine) ?? 'the other computer');
+    }
+    await queue(prepared.machine, prepared.body, formatAgentAddress({ agentId: prepared.body.to, machine: prepared.machine }), local, check);
+    checkPreparedCall(prepared);
+    if (state.session.connected(prepared.machine)) await flushOutbox(prepared.machine);
+    const saved = deliveries.get().deliveries.find((row) => row.callId === prepared.body.callId)!;
+    return saved.result ?? queuedResult(saved.callId, `Delivery is ${saved.state}.`);
+  } catch (err) {
+    appLog('core:annex', 'warn', 'An Annex prepared call could not be authorized or queued', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    return text(err instanceof Error ? err.message : 'The prepared Annex call could not be sent.', true);
+  }
 }
 
 /** A sender may inspect only its own delivery, never another agent's payload. */
@@ -278,16 +391,18 @@ async function send(machine: string, body: AgentCallBody, machineName: string): 
   }
 }
 
-async function queue(machine: string, body: AgentCallBody, targetId: string): Promise<void> {
+async function queue(machine: string, body: AgentCallBody, targetId: string, protocolContext?: AnnexProtocolLocalContext, beforeEnqueue?: () => void): Promise<void> {
   await deliveries.update((file) => {
+    beforeEnqueue?.();
     const existing = file.deliveries.find((r) => r.callId === body.callId);
     if (existing) {
       if (existing.payloadHash !== payloadHash(body)) throw new Error('idempotency_conflict: this delivery key already names different content.');
       return;
     }
+    if (protocolContext && !hit(pairKey({ machine: protocolContext.senderMachine, agentId: body.from.agentId }, { machine, agentId: body.to }), LOOP_LIMIT.windowMs, LOOP_LIMIT.messages, Date.now())) throw new Error(LOOP_MESSAGE);
     if (file.outbox.length >= OUTBOX_MAX_TOTAL || file.outbox.filter((i) => i.machine === machine).length >= OUTBOX_MAX_PER_MACHINE) throw new Error('Too many messages are already waiting. Retry after earlier deliveries finish.');
     const queuedAt = new Date().toISOString();
-    file.outbox.push({ id: body.callId, machine, body, queuedAt });
+    file.outbox.push({ id: body.callId, machine, body, queuedAt, ...(protocolContext && { protocolContext }) });
     file.deliveries.push({
       callId: body.callId, callerId: body.from.agentId, targetId, tool: body.tool,
       state: 'queued', queuedAt, updatedAt: queuedAt, attempts: 0, payloadHash: payloadHash(body),
@@ -413,6 +528,10 @@ export async function flushOutbox(machine: string): Promise<void> {
       if (generation !== lifecycle) return;
       const item = waitingFor(machine)[0];
       if (!item) return;
+      if (item.body.protocol !== undefined) {
+        item.body = snapshotAnnexProtocolEnvelope(item.body);
+        item.protocolContext = snapshotAnnexProtocolContext(item.protocolContext);
+      }
       if (Date.now() - Date.parse(item.queuedAt) >= DELIVERY_MAX_AGE_MS) {
         await finishDelivery(item, 'expired', text('Delivery expired after seven days without a receiving receipt.', true), 'expired');
         continue;
@@ -430,7 +549,8 @@ export async function flushOutbox(machine: string): Promise<void> {
         await finishDelivery(item, attempted ? 'indeterminate' : 'refused', text('This delivery belongs to an earlier network pairing. No input was sent under the new authorization; any earlier acceptance is unconfirmed.', true), 'pairing_changed');
         continue;
       }
-      const authorization = authorize ? await authorize(item) : { allowed: false as const, reason: 'Sender authorization is unavailable; this delivery cannot be sent.' };
+      const authorization = item.body.protocol !== undefined ? checkProtocolItem(item)
+        : authorize ? await authorize(item) : { allowed: false as const, reason: 'Sender authorization is unavailable; this delivery cannot be sent.' };
       if (generation !== lifecycle) return;
       if (authorization.allowed === false) {
         await finishDelivery(item, 'refused', text(authorization.reason, true), 'authorization_revoked');
@@ -441,7 +561,11 @@ export async function flushOutbox(machine: string): Promise<void> {
       const delay = Date.parse(status.nextAttemptAt ?? '') - Date.now();
       if (delay > 0) { retryLater(machine, delay); return; }
       let supported: boolean;
-      try { supported = await session.supportsDurableDelivery(machine); }
+      try {
+        supported = item.body.protocol !== undefined
+          ? await session.supportsProtocolDelivery?.(machine, item.body.protocol) === true
+          : await session.supportsDurableDelivery(machine);
+      }
       catch (err) {
         if (generation !== lifecycle) return;
         appLog('core:annex', 'warn', 'Could not negotiate durable agent delivery', { meta: { error: err instanceof Error ? err.message : String(err) } });
@@ -453,7 +577,10 @@ export async function flushOutbox(machine: string): Promise<void> {
       }
       if (generation !== lifecycle) return;
       if (!supported) {
-        await finishDelivery(item, status.attempts ? 'indeterminate' : 'refused', text('The other computer does not support durable delivery. Update it before sending new work. No input was sent by this attempt; any earlier acceptance is unconfirmed.', true), 'durable_delivery_unsupported');
+        const message = item.body.protocol !== undefined
+          ? 'The other computer does not support this Annex protocol. Update it before sending new work. No input was sent by this attempt; any earlier acceptance is unconfirmed.'
+          : 'The other computer does not support durable delivery. Update it before sending new work. No input was sent by this attempt; any earlier acceptance is unconfirmed.';
+        await finishDelivery(item, status.attempts ? 'indeterminate' : 'refused', text(message, true), item.body.protocol !== undefined ? 'protocol_delivery_unsupported' : 'durable_delivery_unsupported');
         continue;
       }
       await deliveries.update((file) => {
@@ -463,7 +590,7 @@ export async function flushOutbox(machine: string): Promise<void> {
         saved.updatedAt = new Date().toISOString();
       });
       if (generation !== lifecycle) return;
-      const currentAuthorization = await authorize!(item);
+      const currentAuthorization = item.body.protocol !== undefined ? checkProtocolItem(item) : await authorize!(item);
       if (generation !== lifecycle) return;
       if (currentAuthorization.allowed === false) {
         await finishDelivery(item, 'refused', text(currentAuthorization.reason, true), 'authorization_revoked');
@@ -530,6 +657,10 @@ const seenCalls = new Map<string, { hash: string; outcome: Promise<AgentCallOutc
 function parseBody(raw: unknown): AgentCallBody | null {
   if (!raw || typeof raw !== 'object') return null;
   const b = raw as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(b, 'protocol')) {
+    try { return snapshotAnnexProtocolEnvelope(b); }
+    catch { return null; }
+  }
   const from = b.from as Record<string, unknown> | undefined;
   const str = (v: unknown, max = 200) => typeof v === 'string' && v.length > 0 && v.length <= max;
   if (b.v !== AGENT_CALL_VERSION || !str(b.callId) || !str(b.to) || !str(b.tool, 100)) return null;
@@ -576,14 +707,31 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   }
   const to = parseAgentAddress(body.to);
   if (!self || !routeOf(to, self).local) return { status: 404, error: 'wrong_machine', message: 'That agent is not on this computer.' };
-  const dispatcher = remoteDispatcher?.isTarget(to.agentId) ? remoteDispatcher : undefined;
-  if (!(dispatcher ? DISPATCHER_CALL_TOOLS : AGENT_CALL_TOOLS).has(body.tool)) return { status: 403, error: 'tool_not_allowed', message: `${body.tool} can't be used from another computer for that target.` };
+  const protocol = body.protocol !== undefined ? annexDeliveryProtocol(body.protocol) : undefined;
+  if (body.protocol !== undefined && !protocol) return { status: 503, error: 'protocol_unavailable', message: 'That Annex protocol is not installed on this computer.' };
+  const protocolRequest: AnnexProtocolIncoming | undefined = protocol ? Object.freeze({
+    origin: Object.freeze({
+      machineId: machine, machineName: annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.alias || 'another computer',
+      agentId: body.from.agentId, agentName: body.from.name,
+    }),
+    receiverMachine: self, body: snapshotAnnexProtocolEnvelope(body), wirePayloadHash: payloadHash(body),
+  }) : undefined;
+  if (protocol && protocolRequest) {
+    try {
+      requireProtocolAuthorization(protocol.authorizeIncoming(protocolRequest));
+    } catch (err) {
+      appLog('core:annex', 'warn', 'An incoming Annex protocol scope was refused', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      return { status: 403, error: 'protocol_refused', message: err instanceof Error ? err.message : 'The receiving protocol could not verify its current scope.' };
+    }
+  }
+  const dispatcher = !protocol && remoteDispatcher?.isTarget(to.agentId) ? remoteDispatcher : undefined;
+  if (!protocol && !(dispatcher ? DISPATCHER_CALL_TOOLS : AGENT_CALL_TOOLS).has(body.tool)) return { status: 403, error: 'tool_not_allowed', message: `${body.tool} can't be used from another computer for that target.` };
   if (dispatcher && !dispatcher.isAvailable(to.agentId)) return { status: 403, error: 'dispatcher_unavailable', message: 'That Dispatcher is not available for federation calls.' };
   const from: ConnectionEnd = { agentId: body.from.agentId, machineId: machine };
   const direction = getConnectionDirection(from, { agentId: to.agentId });
   // The same answer whether or not the agent exists, as for local wires.
-  if (!dispatcher && !direction?.link) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
-  if (!dispatcher && direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: `${body.tool} is turned off on this connection.` };
+  if (!protocol && !dispatcher && !direction?.link) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
+  if (!protocol && !dispatcher && direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: `${body.tool} is turned off on this connection.` };
   const key = `${machine}/${deliveryHash(currentEpoch)}/${body.callId}`;
   const hash = payloadHash(body);
   let saved: ReceiverDelivery | undefined;
@@ -596,7 +744,8 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   if (!hit(`rate:${machine}/${body.from.agentId}>${to.agentId}`, RATE_LIMIT.windowMs, RATE_LIMIT.calls, now)) {
     return { status: 429, error: 'rate_limited', message: 'Too many calls on this connection. Wait a minute and try again.' };
   }
-  if (LOOP_TOOLS.has(body.tool) && !hit(pairKey({ machine, agentId: body.from.agentId }, { machine: self, agentId: to.agentId }), LOOP_LIMIT.windowMs, LOOP_LIMIT.messages, now)) {
+  if ((LOOP_TOOLS.has(body.tool) || (body.protocol !== undefined && annexProtocolToolMode(body.protocol, body.tool) === 'durable'))
+    && !hit(pairKey({ machine, agentId: body.from.agentId }, { machine: self, agentId: to.agentId }), LOOP_LIMIT.windowMs, LOOP_LIMIT.messages, now)) {
     return { status: 429, error: 'loop_limited', message: LOOP_MESSAGE };
   }
   const run = runTool;
@@ -624,12 +773,23 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
     // during either must stop the side effect, even for an in-flight call.
     const current = getConnectionDirection(from, { agentId: to.agentId });
     let result: AgentToolRunResult;
+    let protocolAuthorization: DeliveryAuthorization = { allowed: true };
+    if (protocol && protocolRequest) {
+      try {
+        protocolAuthorization = protocol === annexDeliveryProtocol(protocolRequest.body.protocol)
+          ? protocol.authorizeIncoming(protocolRequest) : { allowed: false, reason: 'The Annex protocol was removed before execution.' };
+      } catch (err) {
+        appLog('core:annex', 'warn', 'The incoming Annex protocol final scope check failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+        protocolAuthorization = { allowed: false, reason: 'The receiving protocol could not verify its current scope before execution.' };
+      }
+    }
     if (generation !== lifecycle || !isNetworkComputer(machine) || deliveryHash(currentEpoch) !== deliveryHash(outgoingEpoch(machine))
-      || (dispatcher ? !dispatcher.isTarget(to.agentId) || !dispatcher.isAvailable(to.agentId) : !current?.link || current.disabledTools.includes(body.tool))) {
+      || (protocol ? protocolAuthorization?.allowed !== true || protocol !== annexDeliveryProtocol(body.protocol!)
+        : dispatcher ? !dispatcher.isTarget(to.agentId) || !dispatcher.isAvailable(to.agentId) : !current?.link || current.disabledTools.includes(body.tool))) {
       result = { ...text('The connection was revoked before this call ran.', true), annexDelivery: { state: 'refused', reason: 'authorization_revoked' } };
     } else {
       try {
-        result = await remoteCallers.run(caller, () => dispatcher
+        result = await remoteCallers.run(caller, () => protocol && protocolRequest ? protocol.receive(protocolRequest) : dispatcher
           ? dispatcher.receive({ origin: { machineId: machine, machineName: caller.machineName, agentId: body.from.agentId, agentName: body.from.name }, targetId: to.agentId, deliveryId: body.callId, cause: caller.context, tool: body.tool, args: body.args })
           : run!(body.tool, to.agentId, callerId, body.args));
       }
@@ -651,7 +811,8 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
       });
     } catch (err) { return receiverStoreFailure(err); }
     const outcome = replayReceipt(body, store.get().inbox.find((r) => r.key === key)!);
-    return !QUEUED_TOOLS.has(body.tool) && 'result' in outcome ? { ...outcome, result: { content: result.content, ...(result.isError && { isError: true }) } } : outcome;
+    const durable = body.protocol !== undefined ? annexProtocolToolMode(body.protocol, body.tool) === 'durable' : QUEUED_TOOLS.has(body.tool);
+    return !durable && 'result' in outcome ? { ...outcome, result: { content: result.content, ...(result.isError && { isError: true }) } } : outcome;
   })();
   seenCalls.set(key, { hash, outcome: running });
   try { return await running; }

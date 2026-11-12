@@ -43,6 +43,7 @@ import {
 } from '../services/connection-grants';
 import { listConnectionDirections } from '../services/connection-grants-store';
 import { startAgentCalls } from '../services/annex-agent-calls';
+import type { AnnexDeliveryProtocolName } from '../../shared/annex-delivery';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexClient from '../services/annex-client';
 import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
@@ -406,18 +407,24 @@ export function restorePersistedBindings(): Promise<void> {
     });
     stopWatchingMcpCallers = watchMcpCallers();
     // Agents across machines (#3064): calls to and from other machines' agents, and the connections between them.
+    const supportsDelivery = async (machine: string, protocol?: AnnexDeliveryProtocolName): Promise<boolean> => {
+      const response = await annexClient.postToMachine(machine, '/api/v1/network/agent-delivery-capabilities', {});
+      if (response.status === 404) return false;
+      if (response.status !== 200) throw new Error(`Durable delivery negotiation failed (${response.status}).`);
+      if (!response.body || typeof response.body !== 'object'
+        || !('deliveryVersion' in response.body) || response.body.deliveryVersion !== 1
+        || !('receiptBoundary' in response.body) || response.body.receiptBoundary !== 'runtime-accepted') return false;
+      if (!protocol) return true;
+      const versions = 'protocolVersions' in response.body ? response.body.protocolVersions : undefined;
+      return !!versions && typeof versions === 'object' && !Array.isArray(versions)
+        && Object.prototype.hasOwnProperty.call(versions, protocol) && Reflect.get(versions, protocol) === 1;
+    };
     startAgentCalls({
       transport: {
         connected: (machine) => annexClient.isMachineConnected(machine),
         post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
-        supportsDurableDelivery: async (machine) => {
-          const response = await annexClient.postToMachine(machine, '/api/v1/network/agent-delivery-capabilities', {});
-          if (response.status === 404) return false;
-          if (response.status !== 200) throw new Error(`Durable delivery negotiation failed (${response.status}).`);
-          return !!response.body && typeof response.body === 'object'
-            && 'deliveryVersion' in response.body && response.body.deliveryVersion === 1
-            && 'receiptBoundary' in response.body && response.body.receiptBoundary === 'runtime-accepted';
-        },
+        supportsDurableDelivery: (machine) => supportsDelivery(machine),
+        supportsProtocolDelivery: (machine, protocol) => supportsDelivery(machine, protocol),
         machineName: (machine) => annexClient.machineAlias(machine),
         onConnected: (listener) => annexClient.onSatelliteConnected(listener),
       },

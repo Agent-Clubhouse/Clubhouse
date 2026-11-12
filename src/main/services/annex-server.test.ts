@@ -1707,12 +1707,12 @@ describe('annex-server', () => {
     const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
     vi.mocked(annexPeers.getPeer).mockReturnValue(member);
     vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
-    const capabilities = vi.spyOn(agentCalls, 'agentDeliveryCapabilities').mockReturnValue({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted' });
+    const capabilities = vi.spyOn(agentCalls, 'agentDeliveryCapabilities').mockReturnValue({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted', protocolVersions: {} });
     const { port } = await startAndPair();
     const route = '/api/v1/network/agent-delivery-capabilities';
     const response = await request(port, 'POST', route, {});
     expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted' });
+    expect(JSON.parse(response.body)).toEqual({ deliveryVersion: 1, receiptBoundary: 'runtime-accepted', protocolVersions: {} });
     capabilities.mockImplementationOnce(() => { throw new Error('unreadable'); });
     expect((await request(port, 'POST', route, {})).status).toBe(503);
     vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
