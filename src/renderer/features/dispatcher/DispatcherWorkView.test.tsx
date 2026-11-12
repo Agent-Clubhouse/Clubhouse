@@ -40,7 +40,7 @@ beforeEach(() => {
 
 describe('Dispatcher controller view boundaries (#3242)', () => {
   it('marks each run active or ended, and an ended run\'s error as history with its time', () => {
-    seed(resumedAfterFailure());
+    seed([...resumedAfterFailure(), ev('s1', 2_250, 'session_info', { title: 'Early hand-off auto-title' })]);
     render(<DispatcherWorkView agentId="work" />);
     const boundaries = screen.getAllByTestId('chat-run-boundary');
     expect(boundaries.map((b) => b.getAttribute('data-active'))).toEqual(['false', 'true']);
@@ -53,6 +53,8 @@ describe('Dispatcher controller view boundaries (#3242)', () => {
     const conversation = screen.getByTestId('dispatcher-work-conversation');
     expect(conversation.getAttribute('data-active')).toBe('true');
     expect(screen.getByTestId('dispatcher-work-native-id').textContent).toBe('old-native');
+    expect(screen.getByRole('heading', { name: 'Dispatcher controller' })).toBeInTheDocument();
+    expect(screen.queryByText('Early hand-off auto-title')).not.toBeInTheDocument();
     expect(conversation.textContent).toMatch(/started .*, active\.$/);
   });
 

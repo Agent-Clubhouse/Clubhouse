@@ -95,7 +95,7 @@ beforeEach(() => {
  * have all run before a test edits a field (#3180). React commits the read's render, then yields
  * to the event loop before running its effects. findBy resolves on the DOM change and returns after
  * a setTimeout(0), which on a slow machine can come first. A test's edit then lands before the
- * effects that copy the saved name and personality into their drafts, and those effects undo it.
+ * effect that copies the saved personality into its draft, and that effect undoes it.
  */
 async function renderOn(s: DispatcherState = ON) {
   state = s;
@@ -207,11 +207,79 @@ describe('DispatcherSettingsView', () => {
   });
 
   describe('Identity', () => {
+    it('preserves and saves an immediate Name edit on the first read', async () => {
+      state = { ...ON, config: { ...ON.config!, name: 'Dispatcher' } };
+      let resolveRead!: (value: DispatcherState) => void;
+      const firstRead = new Promise<DispatcherState>((resolve) => { resolveRead = resolve; });
+      window.clubhouse.dispatcher.get = vi.fn(() => firstRead);
+      let observedEdit!: () => void;
+      const edited = new Promise<void>((resolve) => { observedEdit = resolve; });
+      const events: string[] = [];
+      const witness = { focused: false, before: '', afterChange: '', afterEnter: '', events };
+      const observer = new MutationObserver(() => {
+        const input = document.querySelector('[data-testid="dispatcher-name"]');
+        if (!(input instanceof HTMLInputElement)) return;
+        observer.disconnect();
+        input.addEventListener('change', () => events.push(`change:${input.value}`));
+        input.addEventListener('keydown', (event) => events.push(`keydown:${event.key}:${input.value}`));
+        input.addEventListener('blur', () => events.push(`blur:${input.value}`));
+        input.focus();
+        witness.focused = document.activeElement === input;
+        witness.before = input.value;
+        fireEvent.change(input, { target: { value: 'Rosie' } });
+        witness.afterChange = input.value;
+        fireEvent.keyDown(input, { key: 'Enter' });
+        witness.afterEnter = input.value;
+        observedEdit();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      try {
+        render(<DispatcherSettingsView />);
+        // Keep the first commit reachable before act flushes the initial name effect.
+        resolveRead(state);
+        await edited;
+        await act(async () => {});
+        const input = screen.getByLabelText('Name') as HTMLInputElement;
+        const saveIdentitySpy = vi.mocked(window.clubhouse.agent.updateDurable);
+        console.info('IDENTITY_INITIAL_NAME_PROBE', JSON.stringify({
+          ...witness,
+          afterEffects: input.value,
+          saveCalls: saveIdentitySpy.mock.calls,
+        }));
+        expect(witness.focused).toBe(true);
+        expect(witness.before).toBe('Dispatcher');
+        expect(witness.afterChange).toBe('Rosie');
+        expect(events).toContain('keydown:Enter:Rosie');
+        expect(events).toContain('blur:Rosie');
+        expect(saveIdentitySpy).toHaveBeenCalledWith(FOLDER, 'disp', { name: 'Rosie' });
+      } finally {
+        observer.disconnect();
+      }
+    });
+
+    it('resyncs changed saved names and keeps the Name draft across unrelated config changes', async () => {
+      await renderOn();
+      const name = screen.getByLabelText('Name') as HTMLInputElement;
+      fireEvent.change(name, { target: { value: 'Draft' } });
+      await act(async () => { emit?.({ ...ON, config: { ...ON.config!, color: 'emerald' } }); });
+      expect(name.value).toBe('Draft');
+
+      await act(async () => { emit?.({ ...ON, config: { ...ON.config!, name: 'Juniper' } }); });
+      expect(name.value).toBe('Juniper');
+      fireEvent.change(name, { target: { value: 'Other draft' } });
+      await act(async () => { emit?.({ ...ON, config: { ...ON.config!, name: 'Juniper', color: 'pink' } }); });
+      expect(name.value).toBe('Other draft');
+
+      await act(async () => { emit?.(ON); });
+      expect(name.value).toBe('Rosie');
+      expect(window.clubhouse.agent.updateDurable).not.toHaveBeenCalled();
+    });
+
     it('saves a new name on Enter, and Escape puts the saved one back', async () => {
       await renderOn();
       const name = screen.getByLabelText('Name') as HTMLInputElement;
       expect(name.value).toBe('Rosie');
-      expect(screen.getByText('Shows in the sidebar, in its chat, on your phone and to the agents connected to it.')).toBeInTheDocument();
+      expect(screen.getByText('Shows in the sidebar, in its chat and on your phone. Its internal agent appears as Dispatcher controller.')).toBeInTheDocument();
       fireEvent.change(name, { target: { value: '  Juniper ' } });
       await act(async () => { fireEvent.keyDown(name, { key: 'Enter' }); fireEvent.blur(name); });
       expect(window.clubhouse.agent.updateDurable).toHaveBeenCalledWith(FOLDER, 'disp', { name: 'Juniper' });

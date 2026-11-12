@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { sendGrantEvent } = vi.hoisted(() => ({ sendGrantEvent: vi.fn() }));
+const { sendGrantEvent, dispatcherIdentity } = vi.hoisted(() => ({ sendGrantEvent: vi.fn(), dispatcherIdentity: { name: 'Dispatcher' } }));
 vi.mock('./window-handlers', () => ({
   findMainWindow: () => ({ webContents: { send: sendGrantEvent } }),
 }));
@@ -69,6 +69,12 @@ vi.mock('../services/connection-grants', async () => {
 });
 vi.mock('../services/connection-grants-store', () => ({ listConnectionDirections: vi.fn(() => []) }));
 vi.mock('../services/annex-agent-calls', () => ({ startAgentCalls: vi.fn(() => () => {}) }));
+vi.mock('../services/dispatcher/dispatcher-service', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../services/dispatcher/dispatcher-service')>(),
+  dispatcherDisplayName: (role: 'chat' | 'work' = 'chat') => dispatcherRoleDisplayName(role, dispatcherIdentity.name),
+  isDispatcherAgentId: (id: string) => id === 'dispatcher-work',
+  isDispatcherChatAgentId: (id: string) => id === 'dispatcher-chat',
+}));
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -127,6 +133,12 @@ vi.mock('../services/dispatcher-wire-source', () => ({
 
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
+import { dispatcherRoleDisplayName } from '../../shared/dispatcher-name';
+import { startAgentCalls } from '../services/annex-agent-calls';
+import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
+import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
+import * as projectStore from '../services/project-store';
+import * as agentConfig from '../services/agent-config';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import { agentRegistry } from '../services/agent-registry';
@@ -165,6 +177,7 @@ const fakeEvent = { sender: { id: 1 } } as any;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  dispatcherIdentity.name = 'Dispatcher';
   handlers.clear();
   vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: HandlerFn) => {
     handlers.set(channel, handler);
@@ -196,6 +209,31 @@ function getHandler(channel: string): HandlerFn {
 // ── Registration ──────────────────────────────────────────────────────
 
 describe('mcp-binding-handlers registration', () => {
+  it.each(['Dispatcher', 'Rosie'])('wires display-only remote sender names for chat named %s without inventing agent availability', async (name) => {
+    dispatcherIdentity.name = name;
+    vi.spyOn(projectStore, 'peekProjects').mockResolvedValue([{ id: 'p', name: 'Atlas', path: '/atlas' }]);
+    vi.spyOn(agentConfig, 'peekDurableConfigs').mockResolvedValue([{ id: 'ordinary', name: 'Builder', color: 'blue', createdAt: 'then' }]);
+    await restorePersistedBindings();
+    expect(startAgentCalls).toHaveBeenCalledTimes(1);
+    const { describeLocalAgent, nameOfLocalSender, runTool, authorizeQueuedCall, onDeliveryFailure } = vi.mocked(startAgentCalls).mock.calls[0][0];
+    expect(nameOfLocalSender?.('dispatcher-work')).toBe('Dispatcher controller');
+    expect(nameOfLocalSender?.('dispatcher-chat')).toBe(name);
+    expect(projectStore.peekProjects).not.toHaveBeenCalled();
+    expect(nameOfLocalSender?.('ordinary')).toBeUndefined();
+    expect(nameOfLocalSender?.('unknown')).toBeUndefined();
+    expect(nameOfLocalSender?.('dispatcher-work@another-machine')).toBeUndefined();
+    expect(await describeLocalAgent('dispatcher-work')).toBeUndefined();
+    expect(await describeLocalAgent('dispatcher-chat')).toBeUndefined();
+    expect(await describeLocalAgent('ordinary')).toEqual({ name: 'Builder', projectName: 'Atlas' });
+    expect(await describeLocalAgent('unknown')).toBeUndefined();
+    expect(await describeLocalAgent('dispatcher-work@another-machine')).toBeUndefined();
+    expect(runTool).toBe(runAgentToolForRemoteCaller);
+    expect(authorizeQueuedCall).toBe(authorizeQueuedAnnexCall);
+    expect(onDeliveryFailure).toBe(reportAnnexDeliveryFailure);
+    expect(bindingManager.bind).not.toHaveBeenCalled();
+    expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
+  });
+
   it('notifies the renderer when grant requests for an agent are withdrawn', () => {
     const result = recordGrantRequest('agent-grant', {
       kind: 'grant', agentId: 'agent', agentName: 'Agent', projectPath: 'project',

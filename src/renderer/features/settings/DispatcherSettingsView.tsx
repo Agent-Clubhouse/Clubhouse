@@ -224,11 +224,16 @@ function PersonalityField({ personality }: { personality: DispatcherPersonality 
 function IdentitySection({ state, config }: { state: DispatcherState; config: DurableAgentConfig }) {
   const { saving, error, saveIdentity, run } = useDispatcherSave(state);
   const [name, setName] = useState(config.name);
+  const nameSeen = useRef(config.name);
   const [showEmoji, setShowEmoji] = useState(false);
   const [cropping, setCropping] = useState<string | null>(null);
   const emojiButton = useRef<HTMLButtonElement>(null);
   const iconData = useIconData(config.icon);
-  useEffect(() => { setName(config.name); }, [config.name]);
+  useEffect(() => {
+    if (nameSeen.current === config.name) return;
+    nameSeen.current = config.name;
+    setName(config.name);
+  }, [config.name]);
 
   const confirmName = async () => {
     const trimmed = cleanDispatcherName(name);
@@ -249,7 +254,7 @@ function IdentitySection({ state, config }: { state: DispatcherState; config: Du
       <SettingsField label="Setup" help="Name, look, Behavior and personality one step at a time, with Try it out to hear how it sounds.">
         <Button onClick={openDispatcherSetup} data-testid="dispatcher-open-setup">Set up…</Button>
       </SettingsField>
-      <SettingsField label="Name" htmlFor="dispatcher-name" help="Shows in the sidebar, in its chat, on your phone and to the agents connected to it.">
+      <SettingsField label="Name" htmlFor="dispatcher-name" help="Shows in the sidebar, in its chat and on your phone. Its internal agent appears as Dispatcher controller.">
         <input
           id="dispatcher-name"
           className={`${settingsInput} w-48`}

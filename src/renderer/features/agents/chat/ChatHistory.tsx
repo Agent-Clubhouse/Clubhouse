@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChatSessionSummary } from '../../../../shared/chat';
 import { foldChatEvents, type ChatViewState } from '../../../stores/chatStore';
 import { ChatStream } from './ChatStream';
+import { DISPATCHER_CONTROLLER_NAME } from '../../../../shared/dispatcher-name';
+import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
 
-function SavedSession({ agentId, sessionId }: { agentId: string; sessionId: string }) {
+function SavedSession({ agentId, sessionId, agentName }: { agentId: string; sessionId: string; agentName?: string }) {
   const [tail, setTail] = useState<number | undefined>(500);
   const [state, setState] = useState<ChatViewState | null>(null);
   const [partial, setPartial] = useState(false);
@@ -20,7 +22,7 @@ function SavedSession({ agentId, sessionId }: { agentId: string; sessionId: stri
   }, [agentId, sessionId, tail]);
   if (error) return <p role="alert" className="p-4 text-ctp-error">Could not load this conversation.</p>;
   if (!state) return <p role="status" className="p-4 text-ctp-overlay1">Loading conversation…</p>;
-  return <ChatStream state={state} announce={false} emptyMessage="This session has no messages." onShowEarlier={partial ? () => setTail(undefined) : undefined} />;
+  return <ChatStream state={state} agentName={agentName} announce={false} emptyMessage="This session has no messages." onShowEarlier={partial ? () => setTail(undefined) : undefined} />;
 }
 
 // The index sets title on the first user message, even when it contains only attachments.
@@ -37,6 +39,8 @@ export function ChatHistory({ agentId, currentSessionId, onClose }: {
   const [sessions, setSessions] = useState<ChatSessionSummary[] | null>(null);
   const [selected, setSelected] = useState('');
   const [error, setError] = useState(false);
+  const controller = useDispatcherStore((s) => s.state?.agentId === agentId);
+  const fixedTitle = controller ? DISPATCHER_CONTROLLER_NAME : undefined;
   const section = useRef<HTMLElement>(null);
   useEffect(() => { section.current?.focus(); }, []);
   useEffect(() => {
@@ -52,7 +56,7 @@ export function ChatHistory({ agentId, currentSessionId, onClose }: {
     return () => { alive = false; };
   }, [agentId, currentSessionId]);
   const sessionOption = (s: ChatSessionSummary) => <option key={s.sessionId} value={s.sessionId}>
-    {new Date(s.startedAt).toLocaleString()} · {s.title || s.sessionId.slice(0, 8)}{s.sessionId === currentSessionId ? ' (current)' : ''}
+    {new Date(s.startedAt).toLocaleString()} · {fixedTitle ?? (s.title || s.sessionId.slice(0, 8))}{s.sessionId === currentSessionId ? ' (current)' : ''}
   </option>;
   return (
     <section ref={section} tabIndex={-1} aria-label="Chat history" className="flex flex-col h-full min-h-0 bg-ctp-base" onKeyDown={(event) => {
@@ -74,7 +78,7 @@ export function ChatHistory({ agentId, currentSessionId, onClose }: {
                 {sessions.filter((s) => !hasUserMessage(s)).map(sessionOption)}
               </optgroup>}
             </select>}
-      {selected && <SavedSession key={`${agentId}:${selected}`} agentId={agentId} sessionId={selected} />}
+      {selected && <SavedSession key={`${agentId}:${selected}`} agentId={agentId} sessionId={selected} agentName={fixedTitle} />}
     </section>
   );
 }

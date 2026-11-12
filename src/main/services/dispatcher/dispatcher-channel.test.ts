@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   delivered: [] as Array<{ id: string; text: string; routed: unknown }>,
   delivery: 'delivered' as 'delivered' | 'not_running' | 'stopping',
   base: '',
+  name: 'Dispatcher',
 }));
 
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.base }));
@@ -24,13 +25,14 @@ vi.mock('../clubhouse-mcp/tools/dispatcher-delivery', () => ({
   dispatcherInboxId: () => 'coordinator',
   deliverToDispatcher: vi.fn(async (): Promise<unknown> => ({ delivered: true, woke: false })),
 }));
-vi.mock('./dispatcher-service', () => ({
-  dispatcherDisplayName: () => 'Dispatcher',
+vi.mock('./dispatcher-service', async () => ({
+  dispatcherDisplayName: (role: 'chat' | 'work' = 'chat') => dispatcherRoleDisplayName(role, h.name),
   getDispatcherAgentId: () => 'coordinator',
   getDispatcherChatAgentId: () => 'chat',
   isDispatcherAgentId: (id: string) => id === 'coordinator',
   isDispatcherChatAgentId: (id: string) => id === 'chat',
 }));
+import { dispatcherRoleDisplayName } from '../../../shared/dispatcher-name';
 vi.mock('../agent-config', () => ({
   getDurableConfig: vi.fn(async (_dir: string, id: string) => h.configs.get(id) ?? null),
 }));
@@ -63,6 +65,7 @@ beforeEach(async () => {
   await _resetDispatcherRequestsForTesting();
   fs.rmSync(getRequestsPath(), { force: true });
   h.enabled = true;
+  h.name = 'Dispatcher';
   h.running.clear();
   h.stopping.clear();
   h.delivered = [];
@@ -236,14 +239,15 @@ describe('telling the user, through the chat (#3036)', () => {
     expect(h.delivered).toEqual([]);
   });
 
-  it('tells the delivery step when a report didn\'t reach the chat, and notifies the user of a question (#3193)', async () => {
+  it.each(['Dispatcher', 'Rosie'])('names the controller when a report cannot reach chat named %s, but still opens that chat (#3193)', async (name) => {
+    h.name = name;
     h.running.add('chat');
     h.delivery = 'stopping';
     const notDelivered = vi.fn();
     setChatDelivery(() => ({ text: 'ask it', routed: [{ fromClubhouse: true, text: 'Should deletion be on by default?' }], notDelivered }));
     expect((await deliverToChat('coordinator', { message: 'x', from: 'api-lead', kind: 'needs_user' })).outcome).toBe('stopping');
     expect(notDelivered).toHaveBeenCalledTimes(1);
-    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'chat', { title: 'Dispatcher needs you', message: 'Should deletion be on by default?' });
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'chat', { title: 'Dispatcher controller needs you', message: 'Should deletion be on by default?' });
 
     // An answer that didn't arrive is forgotten as shown too, but isn't worth a notification.
     vi.mocked(broadcastToAllWindows).mockClear();

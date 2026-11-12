@@ -50,6 +50,7 @@ import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
 import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
+import { dispatcherDisplayName, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
 
 /** An agent's name and project here, for another machine's view of a call or connection (#3064). */
 async function describeAgentHere(agentId: string): Promise<{ name: string; projectName?: string } | undefined> {
@@ -460,6 +461,8 @@ export function restorePersistedBindings(): Promise<void> {
       },
       runTool: runAgentToolForRemoteCaller,
       describeLocalAgent: describeAgentHere,
+      nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work')
+        : isDispatcherChatAgentId(id) ? dispatcherDisplayName() : undefined,
       authorizeQueuedCall: authorizeQueuedAnnexCall,
       onDeliveryFailure: reportAnnexDeliveryFailure,
     });

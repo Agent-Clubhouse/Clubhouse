@@ -39,7 +39,7 @@ import { isDispatcherEnabled } from '../dispatcher/dispatcher-settings';
 import { sleepAgent, wakeWiredAgent } from '../clubhouse-mcp/tools/agent-lifecycle';
 import { deliverToDispatcher, dispatcherInboxId } from '../clubhouse-mcp/tools/dispatcher-delivery';
 import { clearDispatcherBackgroundWork, noteDispatcherBackgroundWork } from '../dispatcher/dispatcher-usage';
-import { DISPATCHER_NAME, getDispatcherAgentId, getDispatcherState, isDispatcherAgentId, isDispatcherIdentityAgentId, isDispatcherPath } from '../dispatcher/dispatcher-service';
+import { dispatcherDisplayName, getDispatcherAgentId, isDispatcherAgentId, isDispatcherIdentityAgentId, isDispatcherPath } from '../dispatcher/dispatcher-service';
 import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
 import * as projectStore from '../project-store';
@@ -90,17 +90,12 @@ function projectLabel(p: Project): string {
   return p.displayName || p.name;
 }
 
-/** The Dispatcher's name, as people named it. It is in no project, so knownAgent doesn't have it. */
-function dispatcherName(): string {
-  return getDispatcherState().config?.name || DISPATCHER_NAME;
-}
-
 const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWorktree(id: string): string | undefined } = {
   deviceOnline: devicePresenceOnline,
   // The Dispatcher counts as an agent here, so its subscriptions can message it (#3042).
   agentExists: (id) => !!knownAgent(id) || isDispatcherAgentId(id),
   isRunning: (id) => isAgentRunning(id),
-  agentName: (id) => knownAgent(id)?.name ?? (isDispatcherAgentId(id) ? dispatcherName() : undefined),
+  agentName: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work') : knownAgent(id)?.name,
   isQuickAgent: (id) => knownAgent(id)?.quick === true,
   agentProjectId: (id) => {
     const a = knownAgent(id);

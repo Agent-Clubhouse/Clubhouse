@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   idle: 0,
   sleepSeconds: 0,
   known: new Map<string, { projectPath: string; name: string; parentAgentId?: string }>(),
+  dispatcherName: 'Rosie',
 }));
 
 vi.mock('electron', async () => {
@@ -48,14 +49,16 @@ vi.mock('../dispatcher/dispatcher-usage', () => {
   h.clear = vi.fn();
   return { noteDispatcherBackgroundWork: h.note, clearDispatcherBackgroundWork: h.clear };
 });
-vi.mock('../dispatcher/dispatcher-service', () => ({
+vi.mock('../dispatcher/dispatcher-service', async () => ({
   DISPATCHER_NAME: 'Dispatcher',
   getDispatcherAgentId: () => 'disp',
   getDispatcherState: () => ({ config: { name: 'Rosie' } }),
+  dispatcherDisplayName: (role: 'chat' | 'work' = 'chat') => dispatcherRoleDisplayName(role, h.dispatcherName),
   isDispatcherAgentId: (id: string) => id === 'disp',
   isDispatcherIdentityAgentId: (id: string) => id === 'disp' || id === 'disp-chat',
   isDispatcherPath: (p?: string) => p === 'dispatcher-folder',
 }));
+import { dispatcherRoleDisplayName } from '../../../shared/dispatcher-name';
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../notification-service', () => ({ getSettings: () => ({ enabled: false }), sendNotification: vi.fn() }));
 vi.mock('../project-store', () => ({ list: async () => [], onProjectsChanged: () => () => undefined }));
@@ -76,6 +79,7 @@ vi.mock('./actions-store', () => ({
 
 import {
   actionHistory,
+  actionNames,
   actionUsage,
   actionsReady,
   createAction,
@@ -133,6 +137,7 @@ beforeEach(async () => {
   h.saved = { actions: [], state: { nextAt: {}, waits: [] } };
   h.runs.clear();
   h.known.clear();
+  h.dispatcherName = 'Rosie';
   h.deliver.mockClear();
   h.note.mockClear();
   h.clear.mockClear();
@@ -171,6 +176,22 @@ it('excludes both Dispatcher identities and owned helper ancestry from any-agent
     stopActions();
     vi.useRealTimers();
   }
+});
+
+it.each(['Dispatcher', 'Rosie'])('labels real Action targets as controller with base name %s, leaving ownership and delivery IDs unchanged', async (name) => {
+  h.dispatcherName = name;
+  h.known.set('disp', { projectPath: 'dispatcher-folder', name });
+  h.known.set('disp-chat', { projectPath: 'dispatcher-chat-folder', name });
+  h.known.set('ordinary', { projectPath: 'project-folder', name: 'Builder' });
+  expect(actionNames().agent('disp')).toBe('Dispatcher controller');
+  expect(actionNames().agent('disp-chat')).toBe(name);
+  expect(actionNames().agent('ordinary')).toBe('Builder');
+  const action = createAction({ trigger: nightly, steps: message('hello') }, { kind: 'user' });
+  runActionNow(action.id);
+  await flush();
+  expect(h.deliver).toHaveBeenCalledWith(expect.objectContaining({ targetId: 'disp', targetName: 'Dispatcher controller' }));
+  expect(getAction(action.id)).toMatchObject({ owner: { kind: 'user' }, steps: [{ kind: 'message', agentId: 'disp', text: 'hello' }] });
+  expect(actionHistory(action.id)[0]).toMatchObject({ outcome: 'done' });
 });
 
 it('wires Electron presence only for enabled return actions and persists use without publishing absence details', async () => {
@@ -369,7 +390,7 @@ describe('Clubhouse’s own actions (#3040)', () => {
     expect(actionHistory(mine.id)).toEqual([
       expect.objectContaining({
         outcome: 'done',
-        steps: [expect.objectContaining({ detail: "Queued for Rosie's next turn", delivery: 'queued' })],
+        steps: [expect.objectContaining({ detail: "Queued for Dispatcher controller's next turn", delivery: 'queued' })],
       }),
     ]);
   });

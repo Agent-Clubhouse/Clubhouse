@@ -638,15 +638,21 @@ describe('two agents, one identity (#3036)', () => {
 
   it('is called by the name the user gave it, cleaned, or "Dispatcher" (#3053)', async () => {
     expect(svc.dispatcherDisplayName()).toBe('Dispatcher');
+    expect(svc.dispatcherDisplayName('work')).toBe('Dispatcher controller');
     await svc.setDispatcherEnabled(true);
     await settle();
     expect(svc.dispatcherDisplayName()).toBe('Dispatcher');
     await agentConfig.updateDurable(dispatcherDir(), 'durable_1', { name: '  Rosie\n the  Second ' });
     await settle();
     expect(svc.dispatcherDisplayName()).toBe('Rosie the Second');
+    expect(svc.dispatcherDisplayName('chat')).toBe('Rosie the Second');
+    expect(svc.dispatcherDisplayName('work')).toBe('Dispatcher controller');
+    expect(svc.getDispatcherState().config?.name).toBe('  Rosie\n the  Second ');
+    expect(svc.getDispatcherAgentId()).toBe('durable_1');
     await agentConfig.updateDurable(dispatcherDir(), 'durable_1', { name: '   ' });
     await settle();
     expect(svc.dispatcherDisplayName()).toBe('Dispatcher');
+    expect(svc.dispatcherDisplayName('work')).toBe('Dispatcher controller');
   });
 
   it('copies a change from either record onto the other, once', async () => {
