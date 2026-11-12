@@ -145,3 +145,8 @@ The entry-limit fixture uses stream-mocked directory enumeration over one owned
 real file: the real walker counts 20,000 entries and reads/hashes their bytes,
 then rejects entry 20,001 before file opens. Separate real-filesystem fixtures
 retain byte, metadata, symlink, depth and elapsed-budget checks.
+PATH fixtures also calibrate a controlled pre-launch observer at `spawn` and
+`execFileSync`, including `--version` probes. An import must make no untrusted
+admissions even if a rejected probe could fall back successfully. On Windows,
+this is an admission observation, not a claim that POSIX script bytes named
+`git.exe` are natively launchable.

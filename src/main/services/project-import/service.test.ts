@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import type { Project } from '../../../shared/types';
 
 const temp = vi.hoisted(() => {
@@ -11,7 +11,30 @@ const temp = vi.hoisted(() => {
   const root = f.realpathSync.native(f.mkdtempSync(p.join(o.tmpdir(), 'project-import-')));
   return { root, base: p.join(root, 'app') };
 });
+const executions = vi.hoisted(() => ({
+  active: false, blocked: [] as string[],
+  denied: [] as Array<{ api: string; command: string }>,
+  allowed: [] as Array<{ api: string; command: string }>,
+}));
 
+vi.mock('child_process', async (original) => {
+  const child = await original<typeof import('child_process')>();
+  const paths = await import('path');
+  const key = (command: string) => process.platform === 'win32' ? paths.normalize(command).toLowerCase() : paths.normalize(command);
+  const admit = (api: string, command: string) => {
+    if (!executions.active) return;
+    if (executions.blocked.some((blocked) => key(blocked) === key(command))) {
+      executions.denied.push({ api, command });
+      throw new Error('test-only untrusted Git admission');
+    }
+    executions.allowed.push({ api, command });
+  };
+  return {
+    ...child,
+    spawn: (...args: Parameters<typeof child.spawn>) => { admit('spawn', args[0]); return child.spawn(...args); },
+    execFileSync: (...args: Parameters<typeof child.execFileSync>) => { admit('execFileSync', args[0]); return child.execFileSync(...args); },
+  };
+});
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => temp.base }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../badge-settings', () => ({ getSettings: () => ({}), saveSettings: vi.fn() }));
@@ -30,12 +53,40 @@ let n = 0;
 const environment = () => ({ PATH: process.env.PATH, HOME: temp.root, USERPROFILE: temp.root, XDG_CONFIG_HOME: path.join(temp.root, 'xdg') });
 const fixtureConfig = path.join(temp.root, 'empty.config');
 fs.writeFileSync(fixtureConfig, '', { flag: 'wx', mode: 0o600 });
-const fixtureEnv = importGitEnvironment(environment(), fixtureConfig);
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'protocol.file.allow=always', ...args], { cwd, env: fixtureEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const fixturePath = (process.env.PATH ?? '').split(path.delimiter).filter((directory) => path.isAbsolute(directory));
+const gitProgram = process.platform === 'win32' ? 'git.exe' : 'git';
+const fixtureCandidate = fixturePath.map((directory) => path.join(directory, gitProgram)).find((file) => fs.existsSync(file) && fs.statSync(file).isFile());
+if (!fixtureCandidate) throw new Error('The fixture requires Git in the existing absolute PATH');
+const fixtureBinary = fs.realpathSync.native(fixtureCandidate);
+const fixtureEnv = importGitEnvironment({ ...environment(), PATH: fixturePath.join(path.delimiter) }, fixtureConfig);
+const git = (cwd: string, ...args: string[]) => execFileSync(fixtureBinary, ['-c', 'protocol.file.allow=always', ...args], { cwd, env: fixtureEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const assertCurrent = async (): Promise<void> => {};
 const authorized: ImportAuthorization = vi.fn(async () => ({ kind: 'approved', assertCurrent }));
 const projects: Project[] = [];
 const terminalUpdates = new Map<string, { promise: Promise<void>; resolve: () => void }>();
+
+function gitAdmission(source: string, destination: string) {
+  executions.active = true;
+  executions.blocked = [source, destination, 'git', 'git.exe'];
+  return {
+    // This observes pre-launch admission, not native launchability of Windows script bytes.
+    probe: (file: string) => {
+      expect(fs.lstatSync(file).isFile()).toBe(true);
+      expect(() => spawn(file, ['--version'])).toThrow('test-only untrusted Git admission');
+      expect(() => execFileSync(file, ['--version'])).toThrow('test-only untrusted Git admission');
+      expect(executions.denied).toEqual([{ api: 'spawn', command: file }, { api: 'execFileSync', command: file }]);
+      executions.denied.length = 0;
+      executions.allowed.length = 0;
+    },
+    verify: () => {
+      expect(executions.denied).toEqual([]);
+      const observed = executions.allowed.filter((call) => call.api === 'spawn');
+      expect(observed.length).toBeGreaterThan(0);
+      expect(observed.every((call) => path.isAbsolute(call.command))).toBe(true);
+    },
+    close: () => { executions.active = false; },
+  };
+}
 
 function fixture(sourceEnvironment = environment) {
   const work = path.join(temp.root, `case-${++n}`);
@@ -115,6 +166,9 @@ async function finished(service: ProjectImportService, id: string): Promise<Awai
 beforeEach(() => {
   projects.length = 0;
   terminalUpdates.clear();
+  executions.active = false;
+  executions.denied.length = 0;
+  executions.allowed.length = 0;
   vi.mocked(authorized).mockResolvedValue({ kind: 'approved', assertCurrent });
 });
 
@@ -338,26 +392,40 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
 
   it('skips inherited script shims instead of treating an absolute wrapper path as a native Git pin', async () => {
     let wrapper = '';
-    const f = fixture(() => ({ ...environment(), PATH: `${wrapper}${path.delimiter}${process.env.PATH ?? ''}` }));
+    const f = fixture(() => ({ ...environment(), PATH: `${wrapper}${path.delimiter}${fixtureEnv.PATH ?? ''}` }));
     wrapper = f.source;
     const marker = path.join(f.work, 'executed-wrapper');
-    fs.writeFileSync(path.join(wrapper, process.platform === 'win32' ? 'git.exe' : 'git'), `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
-    const { receipt } = await start(f);
-    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'completed', cloneCompleted: true });
-    expect(fs.existsSync(marker)).toBe(false);
+    const program = path.join(wrapper, gitProgram);
+    fs.writeFileSync(program, `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
+    const admission = gitAdmission(program, path.join(f.destination, gitProgram));
+    try {
+      admission.probe(program);
+      const { receipt } = await start(f);
+      expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'completed', cloneCompleted: true });
+      expect(fs.existsSync(marker)).toBe(false);
+      expect(f.register).toHaveBeenCalledOnce();
+      admission.verify();
+    } finally { admission.close(); }
   });
 
   it('does not execute a checked-out git program through a cwd-relative inherited PATH', async () => {
     const f = fixture(() => ({ ...environment(), PATH: `.${path.delimiter}${fixtureEnv.PATH ?? ''}` }));
     const marker = path.join(f.work, 'executed-git');
-    fs.writeFileSync(path.join(f.source, process.platform === 'win32' ? 'git.exe' : 'git'), `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
+    const program = path.join(f.source, gitProgram);
+    fs.writeFileSync(program, `#!/bin/sh\nprintf ran > '${marker}'\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
     git(f.source, 'add', '.');
     git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'untrusted git executable');
-    const { receipt } = await start(f);
-    const result = await finished(f.service, receipt.id);
-    expect(fs.existsSync(marker)).toBe(false);
-    expect(result.phase).toBe('completed');
-    expect(f.register).toHaveBeenCalledTimes(1);
+    const admission = gitAdmission(program, path.join(f.destination, gitProgram));
+    try {
+      admission.probe(program);
+      const { receipt } = await start(f);
+      const result = await finished(f.service, receipt.id);
+      expect(fs.existsSync(marker)).toBe(false);
+      expect(result.phase).toBe('completed');
+      expect(f.register).toHaveBeenCalledTimes(1);
+      admission.verify();
+      admission.probe(path.join(f.destination, gitProgram));
+    } finally { admission.close(); }
   });
 
   it('seals regular local Git configuration against an after-fetch smudge filter injection', async () => {
