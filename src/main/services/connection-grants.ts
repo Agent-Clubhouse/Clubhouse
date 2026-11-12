@@ -18,7 +18,7 @@ import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager, type RestoreOptions } from './clubhouse-mcp/binding-manager';
 import {
   connectionGrantsWritable, connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
-  listAllConnectionDirections, listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
+  listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
@@ -221,18 +221,6 @@ export const AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION = 'connection-defaults-3214
 let automaticDeferralLogged = false;
 
 /**
- * A direction saved exactly as a new connection started before the
- * 2026-11-09 defaults: clear and compact off, nothing turned on, no link. A
- * canvas wire drawn since #2969, or a Dispatcher link #3216's pass or
- * connect_orchestrators saved (`setBy: "dispatcher"`). Wake it didn't exist
- * when it was saved, so its wake off isn't a choice anyone made. On this
- * computer only: across machines wake has its own rule (D232).
- */
-function isOldNewConnectionDefault(d: ConnectionDirection): boolean {
-  return !d.link && sameTools(d.disabledTools, NEW_CONNECTION_DISABLED_TOOLS) && !d.enabledTools?.length && !d.from.machineId && !d.to.machineId;
-}
-
-/**
  * Once, after a rebuild, the maintainer's defaults (2026-11-09) for
  * connections made before them, only where nothing is saved:
  * - Each direction a source Clubhouse connects with (helper and Dispatcher
@@ -243,13 +231,8 @@ function isOldNewConnectionDefault(d: ConnectionDirection): boolean {
  * - A wire the user drew (`drawnSourceIds`, the canvas) with no list of its
  *   own, that none of those lists, starts like a new connection: clear and
  *   compact off, wake on.
- * - A direction saved exactly as a new connection started before these
- *   defaults (clear and compact off, nothing turned on, no link: a canvas
- *   wire's, a Dispatcher link's) gets wake on, keeping who set it. The
- *   maintainer's ruling: Wake it didn't exist then, so wake off there wasn't
- *   anyone's choice.
- * Any other saved direction (the user's, an explicit everything-on included,
- * a canvas wire's other list, a Make two-way link) is never touched.
+ * Every saved direction is left exactly as it is, including the old
+ * new-connection defaults with wake off (#3333).
  * Waits while a source can't be read, or the file is a newer build's. Until
  * this has run, a new connection's lists are live only; from then on they're
  * kept (restoreTools).
@@ -284,13 +267,9 @@ export async function migrateAutomaticConnectionTools(sourceIds: readonly string
   for (const id of drawnSourceIds) {
     for (const p of listPairsWithoutTools(id)) fill(p.agentId, p.targetId, NEW_CONNECTION_SWITCHES.disabledTools, NEW_CONNECTION_SWITCHES.enabledTools);
   }
-  const wakeOn = new Set(listAllConnectionDirections().filter(isOldNewConnectionDefault)
-    .map((d): ConnectionDirection => ({ ...d, enabledTools: [...NEW_CONNECTION_ENABLED_TOOLS], updatedAt: now })));
   const written = await runConnectionMigration(
     AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION,
-    [...directions, ...wakeOn],
-    // Checked again under the store's lock: a direction changed meanwhile stays as it is.
-    (current, next) => wakeOn.has(next) && isOldNewConnectionDefault(current) && current.setBy === next.setBy,
+    directions,
   );
   if (written === null) return 'already';
   appLog('core:mcp', 'info', 'Connections made before the 2026-11-09 defaults now keep the tools they start with', {
@@ -360,7 +339,7 @@ export async function connectAcrossMachines(agentId: string, address: string, op
   const link = async (from: AgentAddress, to: AgentAddress) => {
     // A direction already linked keeps its tools and its time, so the other machine's newer edits stand.
     if (getConnectionDirection(from, to)?.link) return;
-    await setConnectionTools(from, to, [...NEW_CONNECTION_DISABLED_TOOLS]);
+    await setConnectionTools(from, to, [...NEW_CONNECTION_SWITCHES.disabledTools], [...NEW_CONNECTION_SWITCHES.enabledTools]);
     await setConnectionLink(from, to, true);
   };
   await link(local(agentId), other);

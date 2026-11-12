@@ -29,9 +29,9 @@ export const HELPER_WIRE_SOURCE_ID = 'helper-wires';
 /**
  * Both directions of one parent ↔ helper pair. Each binding is labelled with
  * its target's project, as a canvas wire is. Empty when either is disposed: a
- * disposed helper keeps its link for history, but has no wire. The parent
- * starts with every tool on its helper; the helper starts like a new
- * connection over its parent: send and wake, no clear or compact (#3214).
+ * disposed helper keeps its link for history, but has no wire. Both
+ * directions start like any new connection: send and wake, no clear or
+ * compact (#3333).
  */
 function pairBindings(
   parent: DurableAgentConfig,
@@ -44,7 +44,6 @@ function pairBindings(
     {
       agentId: parent.id, targetId: helper.id, targetKind: 'agent', label: helper.name, agentName: parent.name, targetName: helper.name,
       ...(helperProjectName ? { projectName: helperProjectName } : {}),
-      // Everything on, given as its starting list so another source listing the pair doesn't start it with less.
       ...startingTools(AUTOMATIC_CONNECTION_SWITCHES.parentToHelper),
     },
     {
