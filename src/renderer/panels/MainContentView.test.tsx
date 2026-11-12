@@ -87,6 +87,9 @@ vi.mock('../features/settings/EditorSettingsView', () => ({
 vi.mock('../features/settings/GoobersSettingsView', () => ({
   GoobersSettingsView: () => <div data-testid="goobers-settings" />,
 }));
+vi.mock('../features/settings/GroupProjectsSettingsView', () => ({
+  GroupProjectsSettingsView: () => <div data-testid="group-projects-settings" />,
+}));
 
 const completedAgent: CompletedQuickAgent = {
   id: 'completed-1',
@@ -127,6 +130,13 @@ describe('MainContentView selectedCompleted derivation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+  });
+
+  it('renders the Group Projects directory without an active project', () => {
+    useProjectStore.setState({ activeProjectId: null });
+    useUIStore.setState({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'group-projects' });
+    render(<MainContentView />);
+    expect(screen.getByTestId('group-projects-settings')).toBeInTheDocument();
   });
 
   it('shows QuickAgentGhost when a completed agent is selected', () => {

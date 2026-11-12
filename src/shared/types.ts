@@ -986,7 +986,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'smart-selection' | 'dispatcher' | 'actions'
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'smart-selection' | 'dispatcher' | 'actions' | 'group-projects'
   // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 

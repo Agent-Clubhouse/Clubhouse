@@ -62,3 +62,21 @@ Legacy scope migration, scope management, authoritative host identity and
 sequence numbers, durable membership, directory management and network
 synchronization are separate additions. These foundations do not change canvas
 membership, grants or polling.
+
+## Local directory
+
+Settings > Group Projects, also available as **Group Projects** in the command
+palette, lists this machine's local registry, including records on no Canvas.
+This is not an authoritative host, network or membership directory.
+
+Creation here explicitly uses app/local scope regardless of the active project.
+Select a record to edit its name, description and instructions through the same
+store and IPC used by Canvas. Instructions retain their whitespace. Scope is
+read-only; legacy or missing scope is shown as unresolved, not inferred.
+Failed loads hide the inventory and offer a retry. Failed writes retain the
+current draft and report that it was not saved.
+
+Network creation remains unavailable because the authoritative host backend is
+not available, even when Annex is on. Host state, durable membership and its
+management, grants, owned Actions, deletion, board viewing and Canvas navigation
+are outside this local directory slice.
