@@ -79,7 +79,34 @@ const store = createSettingsStore<OrchestrationSettings>(
   { atomic: true, rollBackFailedSaves: true, audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'helperPresetCellGenerations', 'autoHelpers', 'copilotAuto'] } },
 );
 
-export const getSettings = store.get;
+let pendingWrites = 0;
+let publishedSettings: OrchestrationSettings | undefined;
+type PendingRestriction = { globalHelperCap?: number; autoHelpers?: false; copilotAuto?: false };
+const pendingRestrictions = new Set<PendingRestriction>();
+
+export function getSettings(): OrchestrationSettings {
+  if (pendingWrites === 0 || !publishedSettings) return store.get();
+  const settings = { ...publishedSettings };
+  for (const restriction of pendingRestrictions) {
+    if (restriction.autoHelpers === false) settings.autoHelpers = false;
+    if (restriction.copilotAuto === false) settings.copilotAuto = false;
+    if (restriction.globalHelperCap !== undefined) settings.globalHelperCap = Math.min(settings.globalHelperCap, restriction.globalHelperCap);
+  }
+  return Object.freeze(settings);
+}
+
+/** Routing sees committed mappings and generations, never the store's attempted write cache. */
+async function updateSettings(update: (current: OrchestrationSettings) => OrchestrationSettings, restriction?: PendingRestriction): Promise<void> {
+  if (pendingWrites === 0) publishedSettings = store.get();
+  pendingWrites++;
+  if (restriction) pendingRestrictions.add(restriction);
+  try {
+    publishedSettings = Object.freeze(await store.update(update));
+  } finally {
+    if (restriction) pendingRestrictions.delete(restriction);
+    pendingWrites--;
+  }
+}
 
 /** Save settings; throws on an invalid cap so a bad value never lands on disk. */
 export async function saveSettings(settings: OrchestrationSettings): Promise<void> {
@@ -87,7 +114,7 @@ export async function saveSettings(settings: OrchestrationSettings): Promise<voi
     throw new Error(`globalHelperCap must be a whole number from 1 to ${MAX_HELPER_LIMIT}`);
   }
   // Only the cap: presets have their own checked path, savePresets.
-  await store.save({ ...getSettings(), globalHelperCap: settings.globalHelperCap });
+  await updateSettings((current) => ({ ...current, globalHelperCap: settings.globalHelperCap }), { globalHelperCap: settings.globalHelperCap });
 }
 
 export function getAutoHelpers(): boolean {
@@ -96,7 +123,8 @@ export function getAutoHelpers(): boolean {
 
 /** Turn Auto on or off for the app, moving the revision. */
 export async function saveAutoHelpers(on: boolean): Promise<void> {
-  await store.save({ ...getSettings(), autoHelpers: on, helperPresetsRevision: getPresetsRevision() + 1 });
+  await updateSettings((current) => ({ ...current, autoHelpers: on, helperPresetsRevision: (current.helperPresetsRevision ?? 0) + 1 }),
+    on ? undefined : { autoHelpers: false });
 }
 
 export function getCopilotAuto(): boolean {
@@ -104,12 +132,13 @@ export function getCopilotAuto(): boolean {
 }
 
 export async function saveCopilotAuto(on: boolean): Promise<void> {
-  await store.save({ ...getSettings(), copilotAuto: on, helperPresetsRevision: getPresetsRevision() + 1 });
+  await updateSettings((current) => ({ ...current, copilotAuto: on, helperPresetsRevision: (current.helperPresetsRevision ?? 0) + 1 }),
+    on ? undefined : { copilotAuto: false });
 }
 
 /** A project's setting changed: an open page should refetch. */
 export async function bumpPresetsRevision(): Promise<void> {
-  await store.save({ ...getSettings(), helperPresetsRevision: getPresetsRevision() + 1 });
+  await updateSettings((current) => ({ ...current, helperPresetsRevision: (current.helperPresetsRevision ?? 0) + 1 }));
 }
 
 export function getPresets(): SavedPresets {
@@ -124,15 +153,27 @@ export function getPresetCellGeneration(provider: PresetProvider, level: AutoLev
   return getSettings().helperPresetCellGenerations?.[provider]?.[level];
 }
 
+let cellGenerationInitialization: Promise<void> | undefined;
+
 /** Once, outside the start lock. Missing or legacy metadata starts cold, never at a guessed revision. */
 export async function ensurePresetCellGenerations(): Promise<void> {
+  // The settings cache changes before rename; concurrent starts must await its durable outcome.
+  if (cellGenerationInitialization) return cellGenerationInitialization;
   if (PRESET_PROVIDERS.every((provider) => AUTO_LEVELS.every((level) => getPresetCellGeneration(provider, level)))) return;
-  await store.update((current) => ({ ...current, helperPresetCellGenerations: nextCellGenerations(current, current.helperPresets ?? {}) }));
+  const initializing = updateSettings((current) => ({
+    ...current, helperPresetCellGenerations: nextCellGenerations(current, current.helperPresets ?? {}),
+  }));
+  cellGenerationInitialization = initializing;
+  try {
+    await initializing;
+  } finally {
+    cellGenerationInitialization = undefined;
+  }
 }
 
 /** Save presets checked by services/helper-routing.ts, moving the revision. */
 export async function savePresets(presets: SavedPresets): Promise<void> {
-  await store.update((current) => ({
+  await updateSettings((current) => ({
     ...current, helperPresets: presets, helperPresetsRevision: (current.helperPresetsRevision ?? 0) + 1,
     helperPresetCellGenerations: nextCellGenerations(current, presets),
   }));

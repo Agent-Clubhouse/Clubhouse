@@ -31,6 +31,19 @@ beforeEach(async () => {
 afterEach(() => fs.rmSync(W.dir, { recursive: true, force: true }));
 
 describe('model catalog notices', () => {
+  it.each(['default', 'best', 'opus', 'sonnet', 'haiku', 'fable', 'opusplan'].flatMap((alias) => [
+    alias, `${alias}[1m]`, alias.toUpperCase(),
+  ]))('keeps the supported Claude alias %s unknown unless its cached entry resolves canonically', async (alias) => {
+    const { peekHelperCalibrationModel: peek } = await import('./helper-model-catalog');
+    const claude = { ...provider, id: 'claude-code' as const };
+    await observe(claude, catalog([alias], 100));
+    expect(peek(claude.id, alias, 100)).toEqual({ reason: 'unresolved_model' });
+    await observe(claude, catalog([], 101, { models: [{ id: alias, label: alias, resolvedId: 'claude-opus-5-5' }] }));
+    expect(peek(claude.id, alias, 101)).toEqual({ model: 'claude-opus-5-5', reason: 'cached_catalog' });
+    await observe(claude, catalog([], 102, { models: [{ id: alias, label: alias, resolvedId: 'fable[1m]' }] }));
+    expect(peek(claude.id, alias, 102)).toEqual({ reason: 'unresolved_model' });
+  });
+
   it('peeks existing fresh canonical evidence only, with explicit missing, fallback, stale and alias provenance', async () => {
     const { peekHelperCalibrationModel: peek, HELPER_CALIBRATION_CATALOG_MAX_AGE_MS: maxAge } = await import('./helper-model-catalog');
     expect(peek(provider.id, 'gpt-6.1-sol', 100)).toEqual({ reason: 'missing_catalog' });

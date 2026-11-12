@@ -169,6 +169,19 @@ describe('helper presets (#2671)', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8')).helperPresetsRevision).toBe(2);
   });
 
+  it('serializes concurrent writers without dropping committed mappings, generations or switches', async () => {
+    await Promise.all([savePresets(presets), saveAutoHelpers(true), saveCopilotAuto(false), saveSettings({ globalHelperCap: 8 })]);
+    expect(getSettings()).toMatchObject({
+      helperPresets: presets, autoHelpers: true, copilotAuto: false, globalHelperCap: 8, helperPresetsRevision: 3,
+    });
+    const generation = getPresetCellGeneration('codex-cli', 'easy');
+    resetAllSettingsStoresForTests();
+    expect(getSettings()).toMatchObject({
+      helperPresets: presets, autoHelpers: true, copilotAuto: false, globalHelperCap: 8, helperPresetsRevision: 3,
+    });
+    expect(getPresetCellGeneration('codex-cli', 'easy')).toBe(generation);
+  });
+
   it('saving the cap leaves them alone', async () => {
     await savePresets(presets);
     await saveSettings({ globalHelperCap: 7 });
