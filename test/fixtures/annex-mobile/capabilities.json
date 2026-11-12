@@ -250,6 +250,7 @@
           "auto_disabled",
           "auto_not_supported",
           "no_valid_mapping",
+          "mapping_changed",
           "cooling_down",
           "quota_near_limit",
           "quota_exhausted"
