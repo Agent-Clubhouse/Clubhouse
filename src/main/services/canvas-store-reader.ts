@@ -20,11 +20,13 @@ import { appLog } from './log-service';
 import {
   REMOVED_CANVAS_VIEW_TYPES,
   findAgentCanvasHits,
+  findTargetCanvasHits,
+  type NavigableCanvasTargetKind,
   type AgentCanvasHit,
   type CanvasInstanceLike,
   type CanvasViewLike,
 } from '../../shared/canvas-persistence';
-import type { CanvasMembership, PersistedCanvasWire } from '../../shared/canvas-index-types';
+import type { CanvasMembership, CanvasTargetIndex, PersistedCanvasWire } from '../../shared/canvas-index-types';
 
 const CANVAS_PLUGIN_ID = 'canvas';
 const KEY_INSTANCES = 'canvas-instances';
@@ -152,6 +154,7 @@ function normalizeViews(raw: unknown, strict = false): CanvasViewLike[] | null {
         && !['agent', 'anchor', 'plugin', 'sticky-note', 'zone'].includes(view.type)) return null;
       if (view.type === 'agent' && view.agentId !== null
         && (typeof view.agentId !== 'string' || !view.agentId)) return null;
+      if (view.type === 'plugin' && (typeof view.pluginWidgetType !== 'string' || !view.pluginWidgetType)) return null;
       if (view.metadata !== undefined && view.metadata !== null
         && (typeof view.metadata !== 'object' || Array.isArray(view.metadata))) return null;
       const gpId = (view.metadata as Record<string, unknown> | null | undefined)?.groupProjectId;
@@ -163,6 +166,9 @@ function normalizeViews(raw: unknown, strict = false): CanvasViewLike[] | null {
       type: typeof view.type === 'string' ? view.type : undefined,
       agentId: typeof view.agentId === 'string' ? view.agentId : null,
       metadata: view.metadata && typeof view.metadata === 'object' ? view.metadata as Record<string, unknown> : null,
+      pluginWidgetType: typeof view.pluginWidgetType === 'string' ? view.pluginWidgetType : undefined,
+      title: typeof view.title === 'string' ? view.title : undefined,
+      displayName: typeof view.displayName === 'string' ? view.displayName : undefined,
     });
   }
   return views;
@@ -250,6 +256,13 @@ async function readWires(kvDir: string, options: CanvasStoreReadOptions): Promis
 
 /** Read one canvas store. Never throws and never writes. */
 export async function readCanvasStore(location: CanvasStoreLocation, options: CanvasStoreReadOptions = {}): Promise<CanvasStoreSnapshot> {
+  if (options.strict && location.scope === 'project') {
+    try {
+      if (!(await fsp.stat(location.projectPath)).isDirectory()) throw new Error('Project folder is not a directory.');
+    } catch (err) {
+      return { location, canvases: null, wires: null, problems: [`Project folder is unavailable: ${errorMessage(err)}`] };
+    }
+  }
   const [instances, wires] = await Promise.all([readInstances(location.kvDir, options), readWires(location.kvDir, options)]);
   const problems = [instances.problem, wires.problem].filter((p): p is string => !!p);
   return { location, canvases: instances.canvases, wires: wires.wires, problems };
@@ -308,4 +321,28 @@ export async function getAgentCanvasMemberships(agentId: string, projectId?: str
   const wanted = locations.filter((l) => l.scope === 'app' || (!!projectId && l.projectId === projectId));
   const snapshots = await Promise.all(wanted.map((location) => readCanvasStore(location)));
   return snapshots.flatMap((s) => toMemberships(s, agentId));
+}
+
+/** A complete, read-only inventory for connection Open, with per-scope failures. */
+export async function getTargetCanvasIndex(kind: NavigableCanvasTargetKind, targetId: string): Promise<CanvasTargetIndex> {
+  const registered = await projectStore.peekProjectsChecked({ strict: true });
+  if (!registered.readable) {
+    return { stores: [], error: 'Registered projects could not be read. Repair the project list and retry Open.' };
+  }
+  const locations: CanvasStoreLocation[] = [
+    { scope: 'app', kvDir: globalCanvasKvDir() },
+    ...registered.projects.map((project): CanvasStoreLocation => ({
+      scope: 'project', projectId: project.id, projectName: project.displayName || project.name,
+      projectPath: project.path, kvDir: projectCanvasKvDir(project.path),
+    })),
+  ];
+  const snapshots = await Promise.all(locations.map((location) => readCanvasStore(location, { strict: true })));
+  return {
+    stores: snapshots.map(({ location, canvases, problems }) => ({
+      scope: location.scope,
+      ...(location.scope === 'project' ? { projectId: location.projectId, projectName: location.projectName } : {}),
+      hits: canvases ? findTargetCanvasHits(canvases, kind, targetId) : [],
+      ...(!canvases && { error: problems.join('; ') || 'Canvas instances could not be read.' }),
+    })),
+  };
 }

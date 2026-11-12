@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { collectCanvasEndpointIds, findAgentCanvasHits, reconcilePersistedWires } from './canvas-persistence';
+import { collectCanvasEndpointIds, findAgentCanvasHits, findTargetCanvasHits, reconcilePersistedWires } from './canvas-persistence';
 
 const views = [
   { id: 'v1', type: 'agent', agentId: 'durable_a' },
@@ -40,5 +40,27 @@ describe('canvas-persistence', () => {
       { canvasId: 'c3', name: 'three', viewId: 'y' },
     ]);
     expect(findAgentCanvasHits(canvases, 'nobody')).toEqual([]);
+  });
+
+  it('finds actual group-project representations, including two nodes on one board, without guessing names', () => {
+    const gp = (id: string, groupProjectId: string) => ({
+      id, type: 'plugin', pluginWidgetType: 'plugin:group-project:group-project',
+      displayName: 'Renamed project', metadata: { groupProjectId },
+    });
+    const canvases = [
+      { id: 'one', name: 'Renamed board', views: [
+        gp('actual', 'gp_1'), gp('duplicate', 'gp_1'), gp('same-name', 'gp_2'),
+        { ...gp('wrong-widget', 'gp_1'), pluginWidgetType: 'plugin:browser:webview' },
+      ] },
+      { id: 'two', name: 'Other board', views: [gp('elsewhere', 'gp_1')] },
+    ];
+    expect(findTargetCanvasHits(canvases, 'group-project', 'gp_1')).toEqual([
+      { canvasId: 'one', name: 'Renamed board', viewId: 'actual', nodeName: 'Renamed project' },
+      { canvasId: 'one', name: 'Renamed board', viewId: 'duplicate', nodeName: 'Renamed project' },
+      { canvasId: 'two', name: 'Other board', viewId: 'elsewhere', nodeName: 'Renamed project' },
+    ]);
+    expect(findTargetCanvasHits(canvases, 'group-project', 'Renamed project')).toEqual([]);
+    expect(findTargetCanvasHits(canvases, 'browser', 'wrong-widget').map((hit) => hit.viewId)).toEqual(['wrong-widget']);
+    expect(findTargetCanvasHits(canvases, 'terminal', 'wrong-widget')).toEqual([]);
   });
 });

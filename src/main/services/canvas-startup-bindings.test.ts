@@ -11,7 +11,7 @@ import * as crypto from 'crypto';
 
 const { home, projects, groupProjects } = vi.hoisted(() => ({
   home: { dir: '' },
-  projects: { list: [] as Array<{ id: string; name: string; path: string; displayName?: string }> },
+  projects: { list: [] as Array<{ id: string; name: string; path: string; displayName?: string }>, readable: true },
   groupProjects: { list: [] as Array<{ id: string; name: string }>, fail: false },
 }));
 
@@ -23,7 +23,10 @@ vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
   return { ...actual, readFile: vi.fn(actual.readFile), lstat: vi.fn(actual.lstat) };
 });
-vi.mock('./project-store', () => ({ list: vi.fn(async () => projects.list) }));
+vi.mock('./project-store', () => ({
+  list: vi.fn(async () => projects.list),
+  peekProjectsChecked: vi.fn(async () => ({ projects: projects.list, readable: projects.readable })),
+}));
 vi.mock('./group-project-registry', () => ({
   groupProjectRegistry: {
     list: vi.fn(async () => {
@@ -46,6 +49,7 @@ import {
 import { canvasWireBindingSource, bindingsFromCanvasStores } from './canvas-wire-source';
 import {
   getAgentCanvasMemberships,
+  getTargetCanvasIndex,
   globalCanvasKvDir,
   projectCanvasKvDir,
   readCanvasStore,
@@ -137,6 +141,7 @@ beforeEach(() => {
     { id: 'proj_empty', name: 'empty', path: path.join(root, 'empty') },
   ];
   groupProjects.list = [{ id: 'gp_wardfall', name: 'Wardfall' }];
+  projects.readable = true;
   groupProjects.fail = false;
   bindingManager._resetForTesting();
   _resetPersistedBindingSourcesForTesting();
@@ -318,6 +323,45 @@ describe('canvas membership index', () => {
     expect(await getAgentCanvasMemberships('durable_a', 'proj_w')).toEqual([
       { scope: 'app', canvasId: 'cv_home', name: 'home-board', viewId: 'v1' },
     ]);
+  });
+
+  describe('connection target canvas index', () => {
+    it('indexes every persisted scope by actual GP identity and reports incomplete stores without writing', async () => {
+      projects.list[0].displayName = 'Renamed project';
+      const before = snapshotTree(root);
+      const index = await getTargetCanvasIndex('group-project', 'gp_wardfall');
+      expect(index.error).toBeUndefined();
+      expect(index.stores.find((store) => store.projectId === 'proj_w')).toEqual({
+        scope: 'project', projectId: 'proj_w', projectName: 'Renamed project',
+        hits: [{ canvasId: 'cv_w1', name: 'drifting-forge', viewId: 'g1', nodeName: 'g1' }],
+      });
+      expect(index.stores.find((store) => store.projectId === 'proj_o')?.error).toMatch(/unusable/);
+      expect(index.stores.find((store) => store.projectId === 'proj_empty')?.error).toMatch(/unavailable/);
+      expect(snapshotTree(root)).toEqual(before);
+    });
+
+    it('keeps multiple representations labeled even with colliding names, and never uses names as identity', async () => {
+      writeKv(projectCanvasKvDir(other), 'canvas-instances', [
+        canvas('other-board', 'drifting-forge', [gpCard('other-node', 'gp_wardfall'), gpCard('same-name', 'gp_other')]),
+      ]);
+      writeKv(globalCanvasKvDir(), 'canvas-instances', [
+        canvas('home-board', 'drifting-forge', [gpCard('home-node', 'gp_wardfall')]),
+      ]);
+      const index = await getTargetCanvasIndex('group-project', 'gp_wardfall');
+      expect(index.stores.flatMap((store) => store.hits.map((hit) => [store.scope, store.projectId, hit.canvasId, hit.viewId]))).toEqual([
+        ['app', undefined, 'home-board', 'home-node'],
+        ['project', 'proj_w', 'cv_w1', 'g1'],
+        ['project', 'proj_o', 'other-board', 'other-node'],
+      ]);
+      expect((await getTargetCanvasIndex('group-project', 'drifting-forge')).stores.flatMap((store) => store.hits)).toEqual([]);
+    });
+
+    it('does not claim a unique or absent owner when the registered-project inventory is unreadable', async () => {
+      projects.readable = false;
+      expect(await getTargetCanvasIndex('group-project', 'gp_wardfall')).toEqual({
+        stores: [], error: expect.stringMatching(/Registered projects.*retry Open/),
+      });
+    });
   });
 
   it('only searches the agent\'s own project store', async () => {
