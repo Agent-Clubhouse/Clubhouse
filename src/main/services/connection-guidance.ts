@@ -4,7 +4,7 @@ import { directionKey } from '../../shared/connection-grants';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import type { BindingTargetKind, McpBinding } from './clubhouse-mcp/types';
 import { connectionEnd } from './connection-grants';
-import { connectionGuidanceOwnership, getConnectionGuidanceSourceVersion, inspectConnectionGuidance, setConnectionGuidanceRestore } from './persisted-bindings';
+import { connectionGuidanceOwnership, getConnectionGuidanceSourceVersion, inspectConnectionGuidance, isBindingRemovedByUser, setConnectionGuidanceRestore } from './persisted-bindings';
 import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
 import { getConnectionToolCatalog, keepsFirstToolList, sanitizeWireInstruction } from './clubhouse-mcp/tool-registry';
 import { appLog } from './log-service';
@@ -93,9 +93,13 @@ function sameBinding(binding: McpBinding, kind: BindingTargetKind): boolean {
   return binding.targetKind === kind && bindingManager.getAllBindings().includes(binding);
 }
 
-function requireBinding(agentId: string, targetId: string): McpBinding {
+function findBinding(agentId: string, targetId: string): McpBinding | undefined {
   const key = directionKey(connectionEnd(agentId), connectionEnd(targetId));
-  const binding = bindingManager.getAllBindings().find((b) => directionKey(connectionEnd(b.agentId), connectionEnd(b.targetId)) === key);
+  return bindingManager.getAllBindings().find((b) => directionKey(connectionEnd(b.agentId), connectionEnd(b.targetId)) === key);
+}
+
+function requireBinding(agentId: string, targetId: string): McpBinding {
+  const binding = findBinding(agentId, targetId);
   if (!binding) throw new Error('This direction is no longer connected. Reload Connections before editing it.');
   return binding;
 }
@@ -143,7 +147,36 @@ async function snapshotOf(binding: McpBinding): Promise<{ snapshot: ConnectionGu
 }
 
 export async function getConnectionGuidance(agentId: string, targetId: string): Promise<ConnectionGuidanceSnapshot> {
-  return (await snapshotOf(requireBinding(agentId, targetId))).snapshot;
+  const binding = findBinding(agentId, targetId);
+  if (binding) return (await snapshotOf(binding)).snapshot;
+  const sourceVersion = getConnectionGuidanceSourceVersion(agentId, targetId);
+  const { sources, unreadable, offlineKinds } = await inspectConnectionGuidance(agentId, targetId);
+  if (findBinding(agentId, targetId) || sourceVersion !== getConnectionGuidanceSourceVersion(agentId, targetId)
+    || isBindingRemovedByUser(agentId, targetId)) {
+    throw new Error('Saved connection ownership changed. Reload before inspecting guidance.');
+  }
+  if (unreadable.length > 0) throw new Error(`Saved connection sources could not be checked: ${unreadable.join(', ')}. Reload before inspecting guidance.`);
+  if (offlineKinds.length !== 1 || sources.length === 0) {
+    throw new Error('A unique saved connection source and endpoint kind could not be proved. Reload Connections before inspecting guidance.');
+  }
+  const originals = sources.map((source) => ({ ...source, instructions: instructionsOf(source.instructions) }))
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  const sourceRevision = hash({ sources: originals, unreadable });
+  const file = committedFile();
+  const saved = entryOf(file, guidanceKey(agentId, targetId, offlineKinds[0]));
+  const ownership = connectionGuidanceOwnership(agentId, targetId);
+  if (ownership.managed && ownership.instructions === undefined) throw new Error('Saved connection ownership could not be checked. Reload sources before inspecting guidance.');
+  const conflictingSources = new Set(originals.map((source) => JSON.stringify(source.instructions))).size > 1;
+  const instructions = ownership.managed ? ownership.instructions
+    : saved?.instructions ?? (conflictingSources ? {} : originals[0].instructions);
+  const notice = 'Saved guidance only: this direction is not connected. Editing and tool-description previews are unavailable until it reconnects. No session or tool client was started.'
+    + (!ownership.managed && !saved && conflictingSources ? ' Original source guidance conflicts; no combined guidance is selected. Inspect each retained original.' : '');
+  return {
+    agentId, targetId, instructions: instructionsOf(instructions ?? {}), hasOverride: saved !== undefined,
+    sources: originals, unreadable, conflictingSources, needsSourceConfirmation: false,
+    readOnly: true, offline: true, readOnlyReason: notice, notice,
+    revision: hash(['offline', saved?.revision, sourceRevision, sourceVersion]),
+  };
 }
 
 export function getConnectionGuidanceCatalog(agentId: string, targetId: string) {

@@ -147,6 +147,13 @@ let lastPairsFor: string | null = null;
 export const dispatcherWireBindingSource: PersistedBindingSource = {
   id: DISPATCHER_WIRE_SOURCE_ID,
   prune: true,
+  async inspect(): Promise<PersistedBinding[]> {
+    const dispatcherId = getDispatcherAgentId();
+    if (!dispatcherId) return [];
+    const projects = await readWires(dispatcherId, await registeredProjects(), 'Could not inspect saved Dispatcher wire guidance');
+    if (projects.some((project) => project.bindings === null)) throw new Error('Saved Dispatcher wire sources could not be checked.');
+    return projects.flatMap((project) => project.bindings ?? []);
+  },
   async collect(): Promise<CollectedBindings> {
     const dispatcherId = activeDispatcherId();
     collected.set(DISPATCHER_KEY, dispatcherId ?? '');

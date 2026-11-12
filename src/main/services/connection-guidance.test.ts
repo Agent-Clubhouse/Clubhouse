@@ -12,7 +12,7 @@ vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({ ...await origina
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   _resetPersistedBindingSourcesForTesting, applyPersistedBinding,
-  rebuildPersistedBindings, registerPersistedBindingSource, type PersistedBinding,
+  rebuildPersistedBindings, registerPersistedBindingSource, markBindingRemovedByUser, type PersistedBinding,
 } from './persisted-bindings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from './connection-guidance';
@@ -126,6 +126,7 @@ describe('durable directional connection guidance', () => {
   });
 
   it('never exposes an uncommitted attempt to reads or a newly restored binding', async () => {
+    registerPersistedBindingSource({ id: 'saved-source', readOnlyCollect: true, collect: async () => [wire({})] });
     applyPersistedBinding(wire({}));
     const initial = await getConnectionGuidance('a', 'b');
     const previous = await saveConnectionGuidance('a', 'b', { instructions: { '*': 'Committed' }, revision: initial.revision });
@@ -147,6 +148,7 @@ describe('durable directional connection guidance', () => {
     try {
       during = await getConnectionGuidance('a', 'b');
       bindingManager.unbind('a', 'b');
+      expect(await getConnectionGuidance('a', 'b')).toMatchObject({ offline: true, readOnly: true, instructions: { '*': 'Committed' } });
       applyPersistedBinding(wire({ '*': 'Source' }));
       restored = binding()?.instructions;
     } finally {
@@ -446,11 +448,12 @@ describe('durable directional connection guidance', () => {
 
   it('restores automatic Dispatcher guidance across pruning, reconnect and restart without live clients', async () => {
     let connected = true;
-    const collect = vi.fn(async () => connected ? [
+    const originals = [
       wire({ '*': 'Agent to Dispatcher' }),
       wire({ '*': 'Dispatcher to agent' }, { agentId: 'b', targetId: 'a', label: 'A' }),
-    ] : []);
-    const source = { id: 'dispatcher-wires', prune: true, collect };
+    ];
+    const collect = vi.fn(async () => connected ? originals : []);
+    const source = { id: 'dispatcher-wires', prune: true, collect, inspect: async () => originals };
     registerPersistedBindingSource(source);
     await rebuildPersistedBindings();
     const before = await getConnectionGuidance('a', 'b');
@@ -463,6 +466,26 @@ describe('durable directional connection guidance', () => {
     connected = false;
     await rebuildPersistedBindings();
     expect(bindingManager.getAllBindings()).toEqual([]);
+    const file = path.join(userData.dir, 'connection-instructions.json');
+    const bytes = fs.readFileSync(file, 'utf8');
+    const bind = vi.spyOn(bindingManager, 'bind');
+    const rename = vi.spyOn(fs.promises, 'rename');
+    const offline = await getConnectionGuidance('a', 'b');
+    expect(offline).toMatchObject({
+      offline: true, readOnly: true, instructions: { '*': 'Route only focused work', future_tool: 'Retained while absent' },
+      sources: [{ sourceId: 'dispatcher-wires', instructions: { '*': 'Agent to Dispatcher' } }],
+    });
+    expect((await getConnectionGuidance('b', 'a')).instructions).toEqual({ '*': 'Dispatcher to agent' });
+    await expect(saveConnectionGuidance('a', 'b', { instructions: { '*': 'Forbidden' }, revision: offline.revision })).rejects.toThrow('no longer connected');
+    expect(() => previewConnectionGuidance('a', 'b', {})).toThrow('no longer connected');
+    expect(() => getConnectionGuidanceCatalog('a', 'b')).toThrow('no longer connected');
+    expect(collect).toHaveBeenCalledTimes(2);
+    expect(bind).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+    expect(bindingManager.getAllBindings()).toEqual([]);
+    bind.mockRestore();
+    rename.mockRestore();
     connected = true;
     await rebuildPersistedBindings();
     expect(binding()?.instructions).toEqual({ '*': 'Route only focused work', future_tool: 'Retained while absent' });
@@ -472,11 +495,60 @@ describe('durable directional connection guidance', () => {
     resetAllSettingsStoresForTests();
     startConnectionGuidance();
     registerPersistedBindingSource(source);
+    expect(await getConnectionGuidance('a', 'b')).toMatchObject({ offline: true, readOnly: true, instructions: { '*': 'Route only focused work', future_tool: 'Retained while absent' } });
+    expect(bindingManager.getAllBindings()).toEqual([]);
+    expect(collect).toHaveBeenCalledTimes(3);
     await rebuildPersistedBindings();
     expect((await getConnectionGuidance('a', 'b')).instructions).toEqual({ '*': 'Route only focused work', future_tool: 'Retained while absent' });
     expect((await getConnectionGuidance('b', 'a')).instructions).toEqual({ '*': 'Dispatcher to agent' });
     expect(agentRegistry.get('a')).toBeUndefined();
     expect(agentRegistry.get('b')).toBeUndefined();
+  });
+
+  it.each(['missing source', 'ambiguous kind', 'unknown kind', 'unreadable source', 'corrupt source', 'corrupt guidance', 'removed direction'] as const)(
+    'refuses offline saved-entry authority when its proof is invalid: %s', async (failure) => {
+      let originals = [wire({ '*': 'Source' })];
+      let unreadable = false;
+      registerPersistedBindingSource({ id: 'saved-source', collect: async () => originals, inspect: async () => {
+        if (unreadable) throw new Error('Source unavailable');
+        return originals;
+      } });
+      applyPersistedBinding(originals[0]);
+      const before = await getConnectionGuidance('a', 'b');
+      await saveConnectionGuidance('a', 'b', { instructions: { '*': 'Committed' }, revision: before.revision, replaceAcrossSources: true });
+      bindingManager.unbind('a', 'b');
+      if (failure === 'missing source') originals = [];
+      if (failure === 'ambiguous kind') originals.push(wire({}, { targetKind: 'terminal' }));
+      if (failure === 'unknown kind') originals = [JSON.parse('{"agentId":"a","targetId":"b","targetKind":"unknown","label":"B"}')];
+      if (failure === 'unreadable source') unreadable = true;
+      if (failure === 'corrupt source') originals = [JSON.parse('{"agentId":"a","targetId":"b","targetKind":"agent","label":"B","instructions":"corrupt"}')];
+      if (failure === 'corrupt guidance') fs.writeFileSync(path.join(userData.dir, 'connection-instructions.json'), '{invalid');
+      if (failure === 'removed direction') markBindingRemovedByUser('a', 'b');
+      const file = path.join(userData.dir, 'connection-instructions.json');
+      const bytes = fs.readFileSync(file, 'utf8');
+      await expect(getConnectionGuidance('a', 'b')).rejects.toThrow(/source|kind|guidance|ownership/i);
+      expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+      expect(bindingManager.getAllBindings()).toEqual([]);
+    },
+  );
+
+  it('rejects stale source registration during offline inspection without collecting or binding', async () => {
+    const entered = deferred();
+    const release = deferred();
+    const collect = vi.fn(async () => []);
+    const unregister = registerPersistedBindingSource({ id: 'saved-source', collect, inspect: async () => {
+      entered.resolve();
+      await release.promise;
+      return [wire({ '*': 'Stale' })];
+    } });
+    const pending = getConnectionGuidance('a', 'b');
+    await entered.promise;
+    unregister();
+    release.resolve();
+    await expect(pending).rejects.toThrow('ownership changed');
+    expect(collect).not.toHaveBeenCalled();
+    expect(bindingManager.getAllBindings()).toEqual([]);
+    expect(fs.existsSync(path.join(userData.dir, 'connection-instructions.json'))).toBe(false);
   });
 
   it('requires explicit replacement across conflicting source copies and preserves all originals', async () => {

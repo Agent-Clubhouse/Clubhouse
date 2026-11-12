@@ -24,6 +24,7 @@ beforeEach(() => {
   useMcpBindingStore.setState({ bindings: [binding, { ...binding, agentId: 'b', targetId: 'a', label: 'A' }] });
   useAgentStore.setState({ agents: {} });
   window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs, unreadable: [] }));
+  window.clubhouse.mcpBinding.getDispatcherLinks = vi.fn(async () => []);
   window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
   window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => snapshot(from, to));
   window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({
@@ -303,11 +304,18 @@ describe('shared Canvas and card guidance editor', () => {
       })), unreadable: [],
     }));
     window.clubhouse.mcpBinding.removeConnectionSource = vi.fn(async () => ({ ok: true, remaining: [], stillConnected: false }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => snapshot(from, to, {
+      offline: true, readOnly: true, readOnlyReason: 'Saved guidance only; reconnect before editing.',
+    }));
     const view = render(<WireInstructionsDialog binding={binding} onClose={vi.fn()} />);
     expect(await view.findByTestId('connection-source-dispatcher_link')).toHaveTextContent('Not connected now: Dispatcher off');
-    expect(window.clubhouse.mcpBinding.getConnectionGuidance).not.toHaveBeenCalled();
-    expect(view.queryByRole('textbox', { name: 'Instructions' })).toBeNull();
-    expect(view.getByText(/Guidance inspection and editing are unavailable until this connection is active again/)).toBeInTheDocument();
+    expect(await view.findByRole('textbox', { name: 'Instructions' })).toHaveValue('a default');
+    expect(view.getByRole('textbox', { name: 'Instructions' })).toBeDisabled();
+    expect(window.clubhouse.mcpBinding.getConnectionGuidance).toHaveBeenCalledWith('a', 'b');
+    expect(window.clubhouse.mcpBinding.getConnectionGuidance).toHaveBeenCalledWith('b', 'a');
+    expect(window.clubhouse.mcpBinding.getConnectionToolCatalog).not.toHaveBeenCalled();
+    expect(window.clubhouse.mcpBinding.saveConnectionGuidance).not.toHaveBeenCalled();
+    expect(useMcpBindingStore.getState().bindings).toEqual([]);
     fireEvent.click(view.getByTestId('connection-source-remove-dispatcher_link'));
     await act(async () => { fireEvent.click(view.getByTestId('connection-source-confirm-dispatcher_link')); });
     expect(window.clubhouse.mcpBinding.removeConnectionSource).toHaveBeenCalledTimes(2);
@@ -316,16 +324,63 @@ describe('shared Canvas and card guidance editor', () => {
   });
 
   it('retains a dirty direction draft when a saved connection temporarily suspends and reconnects', async () => {
+    let suspended = false;
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => snapshot(from, to, {
+      offline: suspended, readOnly: suspended,
+      ...(suspended && { readOnlyReason: 'Saved guidance only; reconnect before editing.' }),
+    }));
     const props = { agentId: 'a', otherId: 'b', agentName: 'A', otherName: 'B', onClose: vi.fn(), onRemoved: vi.fn() };
     const view = render(<ConnectionSourcesDialog {...props} pairs={pairs} />);
     const textarea = await view.findByRole('textbox', { name: 'Instructions' });
     fireEvent.change(textarea, { target: { value: 'Keep across temporary suspension' } });
+    suspended = true;
     view.rerender(<ConnectionSourcesDialog {...props} pairs={pairs.map((pair) => ({
       ...pair, bound: false, sources: [{ kind: 'dispatcher_link' as const, sourceId: 'dispatcher-connections', suspended: 'Dispatcher off' }],
     }))} />);
-    expect(view.queryByRole('textbox', { name: 'Instructions' })).toBeNull();
-    expect(view.getByText(/Guidance inspection and editing are unavailable/)).toBeInTheDocument();
+    expect(view.getByRole('textbox', { name: 'Instructions' })).toBeDisabled();
+    await waitFor(() => expect(view.getByRole('textbox', { name: 'Instructions' })).toHaveValue('a default'));
+    expect(view.getByText('Unsaved draft (retained; not saved)')).toBeInTheDocument();
+    expect(view.getByText('*: Keep across temporary suspension')).toBeInTheDocument();
+    expect(view.getByRole('button', { name: 'Save direction' })).toBeDisabled();
+    suspended = false;
     view.rerender(<ConnectionSourcesDialog {...props} pairs={pairs} />);
-    expect(await view.findByRole('textbox', { name: 'Instructions' })).toHaveValue('Keep across temporary suspension');
+    await waitFor(() => expect(view.getByRole('textbox', { name: 'Instructions' })).toHaveValue('Keep across temporary suspension'));
+    expect(view.getByRole('textbox', { name: 'Instructions' })).toBeEnabled();
+  });
+
+  it.each(['canvas', 'card'] as const)('inspects saved suspended guidance from the %s entrypoint and fails visibly when its source cannot be proved', async (entry) => {
+    const agent = { id: 'a', projectId: 'p', name: 'A', kind: 'durable' as const, status: 'sleeping' as const, color: 'teal' };
+    useAgentStore.setState({ agents: { a: agent } });
+    useMcpBindingStore.setState({ bindings: [] });
+    window.clubhouse.mcpBinding.getDispatcherLinks = vi.fn(async () => pairs.map((pair) => ({
+      agentId: pair.agentId, targetId: pair.targetId, agentName: pair.agentId.toUpperCase(), targetName: pair.targetId.toUpperCase(),
+      status: 'suspended' as const, reason: 'dispatcher_off' as const,
+    })));
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: pairs.map((pair) => ({ ...pair, bound: false, sources: [{ kind: 'dispatcher_link' as const, sourceId: 'dispatcher-connections', suspended: 'Dispatcher off' }] })),
+      unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn().mockRejectedValue(new Error('Saved source could not be proved'));
+    const view = render(entry === 'canvas'
+      ? <WireInstructionsDialog binding={binding} onClose={vi.fn()} />
+      : <ConnectionsCard agent={agent} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    if (entry === 'card') fireEvent.click(await view.findByRole('button', { name: 'Edit' }));
+    expect(await view.findByRole('button', { name: 'Retry guidance' })).toBeInTheDocument();
+    expect(view.getByText('Saved source could not be proved')).toBeInTheDocument();
+    expect(view.queryByRole('textbox', { name: 'Instructions' })).toBeNull();
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => snapshot(from, to, {
+      offline: true, readOnly: true, hasOverride: true, readOnlyReason: 'Saved guidance only; no session was started.',
+    }));
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Retry guidance' })); });
+    const textarea = view.getByRole('textbox', { name: 'Instructions' });
+    expect(textarea).toHaveValue('a default');
+    expect(textarea).toBeDisabled();
+    fireEvent.change(view.getByLabelText('Apply guidance to'), { target: { value: 'absent_tool' } });
+    expect(textarea).toHaveValue('Retain me');
+    expect(view.getByRole('button', { name: 'Save direction' })).toBeDisabled();
+    expect(view.getByRole('button', { name: 'Preview descriptions' })).toBeDisabled();
+    expect(window.clubhouse.mcpBinding.getConnectionToolCatalog).not.toHaveBeenCalled();
+    expect(window.clubhouse.mcpBinding.saveConnectionGuidance).not.toHaveBeenCalled();
+    expect(useMcpBindingStore.getState().bindings).toEqual([]);
   });
 });

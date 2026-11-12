@@ -611,6 +611,25 @@ const pairsSignature = (pairs: readonly Pair[]) => pairs.map((p) => `${p.agentId
 export const dispatcherConnectionSource: PersistedBindingSource = {
   id: DISPATCHER_CONNECTION_SOURCE_ID,
   prune: true,
+  async inspect(): Promise<CollectedBindings> {
+    const connections = await readDispatcherConnections();
+    const census = await readAgentCensus();
+    const bindings: PersistedBinding[] = [];
+    const unverified: Pair[] = [];
+    for (const c of connections) {
+      if (isBindingRemovedByUser(c.agentId, c.targetId)) continue;
+      const ends = [endStatus(c.agentId, c.agentProjectPath, census), endStatus(c.targetId, c.targetProjectPath, census)];
+      if (ends.includes('gone')) continue;
+      const from = census.agents.get(c.agentId);
+      const to = census.agents.get(c.targetId);
+      if (ends.includes('unverified') || !from || !to || from.projectPath !== c.agentProjectPath || to.projectPath !== c.targetProjectPath) {
+        unverified.push({ agentId: c.agentId, targetId: c.targetId });
+        continue;
+      }
+      bindings.push(bindingFor(from, to));
+    }
+    return { bindings, unverified };
+  },
   async collect(): Promise<CollectedBindings> {
     // Off: nothing is listed, so the wires are pruned. The entries stay and come back when it is on.
     if (!isDispatcherEnabled()) {

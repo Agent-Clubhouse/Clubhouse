@@ -160,6 +160,21 @@ afterEach(() => {
 });
 
 describe('dispatcherWiresForProject', () => {
+  it('inspects durable automatic directions while off without running the collector or restoring bindings', async () => {
+    dispatcher.enabled = false;
+    const collect = vi.spyOn(dispatcherWireBindingSource, 'collect');
+    const inspected = await dispatcherWireBindingSource.inspect!();
+    expect(Array.isArray(inspected) ? inspected.map(key) : inspected.bindings.map(key)).toEqual([
+      `${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`,
+    ]);
+    expect(collect).not.toHaveBeenCalled();
+    expect(boundPairs()).toEqual([]);
+    unreadablePolicies.add(projectPath);
+    await expect(dispatcherWireBindingSource.inspect!()).rejects.toThrow('sources could not be checked');
+    expect(collect).not.toHaveBeenCalled();
+    collect.mockRestore();
+  });
+
   it('labels the controller in both directions without changing agent names, IDs or tool addresses', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!, 'Wardfall');
     const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true };

@@ -17,6 +17,8 @@ export interface ConnectionGuidanceSnapshot {
   needsSourceConfirmation: boolean;
   readOnly: boolean;
   readOnlyReason?: string;
+  /** Proven saved-source metadata without a live binding; never a writable revision. */
+  offline?: boolean;
   revision: string;
   /** Save outcome and runtime reload advice; never proof of client-loaded descriptions. */
   notice?: string;

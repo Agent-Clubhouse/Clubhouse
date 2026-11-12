@@ -385,10 +385,12 @@ export async function collectSourcesByPair(): Promise<{ bySource: Map<string, Se
 }
 
 /** Inspect originals without calling stateful collectors outside a rebuild. */
-export async function inspectConnectionGuidance(agentId: string, targetId: string): Promise<{ sources: ConnectionGuidanceSource[]; unreadable: string[] }> {
+export async function inspectConnectionGuidance(agentId: string, targetId: string): Promise<{ sources: ConnectionGuidanceSource[]; unreadable: string[]; offlineKinds: BindingTargetKind[] }> {
   const key = pairKey(agentId, targetId);
   const originals: ConnectionGuidanceSource[] = [];
   const unreadable: string[] = [];
+  const offlineKinds = new Set<BindingTargetKind>();
+  let offlineProof = true;
   for (const source of [...sources.values()]) {
     let bindings: PersistedBinding[];
     if (source.inspect || source.readOnlyCollect) {
@@ -420,6 +422,14 @@ export async function inspectConnectionGuidance(agentId: string, targetId: strin
     }
     for (const binding of bindings) {
       if (pairKey(binding.agentId, binding.targetId) !== key) continue;
+      if (source.inspect || source.readOnlyCollect) {
+        if (typeof binding.label !== 'string' || !binding.label.trim() || !VALID_TARGET_KINDS.has(binding.targetKind)
+          || (binding.instructions !== undefined && (!binding.instructions || typeof binding.instructions !== 'object' || Array.isArray(binding.instructions)))) {
+          unreadable.push(source.id);
+          continue;
+        }
+        offlineKinds.add(binding.targetKind);
+      } else offlineProof = false;
       originals.push({
         sourceId: source.id,
         ...(binding.sourceStoreId && { storeId: binding.sourceStoreId }),
@@ -428,7 +438,7 @@ export async function inspectConnectionGuidance(agentId: string, targetId: strin
       });
     }
   }
-  return { sources: originals, unreadable: [...new Set(unreadable)] };
+  return { sources: originals, unreadable: [...new Set(unreadable)], offlineKinds: offlineProof ? [...offlineKinds] : [] };
 }
 
 /** The key collectSourcesByPair uses for a pair. */
