@@ -15,6 +15,30 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 - **Agents across machines** (`src/main/services/annex-agent-calls.ts`, #3064): a connection to an agent on another machine is a binding whose target is its address. Its tool calls go to that machine (`POST /api/v1/network/agent-call`), which checks them against its own connection store (D129) and runs them with the same tool code. Each direction that involves another machine is kept on both machines and sent on every connect (`POST /api/v1/network/connections`). The Connections card lists them under "On other computers" and connects to an agent on a connected computer.
 - **A problem** (`src/shared/annex-problems.ts`) is a classified reason a connection failed, shown as two sentences: what happened, and what to do.
 
+## Handoff lifecycle foundation
+
+The internal handoff record (`src/shared/handoffs.ts`, #3338) is separate from the existing orchestrator `hand_off` tool. This foundation does **not** register agent tools, enable transfers, apply files, or wake agents.
+
+An immutable, bounded offer names machine-qualified sender and receiver addresses, or a receiving machine's Dispatcher. The receiving machine serializes acceptance, decline, sender cancellation and subsequent progress. A Dispatcher must explicitly select an agent on its own machine. Acceptance alone never starts a transfer in this slice.
+
+The state sequence is `offered` -> `accepted` -> `transferring` -> `verifying` -> `applying` -> `applied`. Decline ends an offer; failure ends any active state. Only the sender can cancel, and only before `applying`. A remote cancellation is a command to the receiving authority, not a local rollback. Command versions prevent competing decisions; stable operation UUIDs reconcile responses and cancellations whose acknowledgements were lost.
+
+`handoffs.json` in app user data stores complete append-only histories with atomic, owner-only writes. A successful response means its record was persisted; reads never expose an uncommitted write. Corrupt or unsupported files block reads and writes without replacing the original. The store holds at most 1,000 records, each with a 256-character title, 16,000-character brief and 256 history entries (the last entry is reserved for a terminal state).
+
+Lifecycle records and their history are app-owned operational state, not a person's settings. The settings audit inventory explicitly classifies `handoffs.json` as not settings, like Actions and their run history; lifecycle writes do not emit fake settings-change audit entries.
+
+Receiver snapshots must preserve the immutable offer and history prefix. They are accepted only from the authenticated receiving machine; offers only from the authenticated sender. Transport registration and durable command delivery remain separate integration work.
+
+Before entering `applying`, a worker must persist the registered project id, reserved worktree/branch and staging UUID. Restart during `applying` records `failed` with `recovery/indeterminate_apply`, retaining that checkpoint. This does not claim rollback or absence of filesystem side effects, and never retries automatically. Earlier transfer states remain resumable, but worker transitions recheck both parties' grants and connection authorization.
+
+### Transfer safety foundation (not enabled)
+
+`handoff-manifest.ts` defines a canonical, SHA-256-ready worktree manifest with regular files, executable modes and explicit deletions. It rejects traversal, `.git` internals and aliases, symlink modes, Windows device/alternate-stream names, case/Unicode collisions, conflicting paths, invalid hashes, unsafe remote URLs and inconsistent byte totals. Ill-formed UTF-16 is rejected before encoding; paths and selection patterns containing Unicode default-ignorable characters are refused, not rewritten, to avoid HFS aliases of `.git` and other names. Complete manifests are capped at 2 MiB. Default bounds are 1 GiB total, 256 MiB per file and 10,000 file/deletion entries; the internal configurable ceiling cannot exceed 16 GiB. Configuration UI and byte transport are not wired.
+
+`handoff-secrets.ts` contains fixed, case-insensitive sensitive-path rules and high-confidence credential-content rules. Findings contain only a redacted path, rule id and optional line number, never a matched value. Known credentials embedded in filenames are also blocked and redacted. UTF-8 text up to 1 MiB is scanned by content; binary and larger files receive name checks only. Auth configuration that cannot be inspected is blocked. `.env.example`, `.env.sample` and `.env.template` are exempt by name, not by content. Handoff records, including briefs and response reasons, are checked before persistence.
+
+These are internal safety primitives, not a complete transfer implementation. Project-owned audited allowlists, immutable file snapshots, receiver-side byte/hash verification, branch bundles, transfer routes and automatic fresh-worktree apply remain gated on subsequent reviewed slices. Agents cannot override a secret block.
+
 ## Manual connect and user-managed forwards
 
 In **Add a device**, paste the other computer's unmodified pairing link. **Address override (optional)** accepts a host or `host:port`, for example `127.0.0.1:7443` for a local forward or `[::1]:7443` for IPv6. Omitting the port uses the main TLS port from the link. An override replaces the link's endpoints for that pairing attempt, not its expected identity, certificate or one-time PIN.
