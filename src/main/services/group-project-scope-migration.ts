@@ -45,6 +45,12 @@ function projectSignature(projects: readonly Project[]): string {
   return JSON.stringify(projects.map((project) => [project.id, project.path]).sort());
 }
 
+async function readRegisteredProjects(): Promise<Project[]> {
+  const result = await checked('Cannot read registered projects', () => projectStore.peekProjectsChecked({ strict: true }));
+  if (!result.readable) throw new GroupProjectScopeMigrationError('Cannot read the complete registered-project inventory.');
+  return result.projects;
+}
+
 export interface LegacyGroupProjectScopeInventory {
   scopes: Map<string, GroupProjectScope>;
   assertUnchanged(): Promise<void>;
@@ -59,8 +65,7 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
   const liveBindingsSignature = JSON.stringify(bindingManager.getAllBindings());
   const registrations = [...agentRegistry.getAllRegistrations()].map(([id, registration]) => [id, { ...registration }] as const);
   const registrationsSignature = JSON.stringify(registrations);
-  const registered = (await checked('Cannot list registered projects', () => projectStore.list()))
-    .map((project) => ({ ...project }));
+  const registered = (await readRegisteredProjects()).map((project) => ({ ...project }));
   const signature = projectSignature(registered);
   if (new Set(registered.map((project) => project.id)).size !== registered.length) {
     throw new GroupProjectScopeMigrationError('Registered projects contain ambiguous identities.');
@@ -166,7 +171,7 @@ export async function collectLegacyGroupProjectScopes(projects: readonly GroupPr
         && home.connectionsSignature === JSON.stringify(connections) && home.key === key;
     }
     const canvases = await Promise.all(locations.map((location) => readCanvasStore(location, { strict: true })));
-    const after = await checked('Cannot recheck registered projects', () => projectStore.list());
+    const after = await readRegisteredProjects();
     if (!unchanged || canvasSignature !== JSON.stringify(canvases)
       || generation !== agentConfig.agentConfigGeneration() || bindingsVersion !== bindingManager.getVersion()
       || liveBindingsSignature !== JSON.stringify(bindingManager.getAllBindings())

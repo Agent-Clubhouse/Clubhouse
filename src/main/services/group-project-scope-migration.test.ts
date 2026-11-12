@@ -11,10 +11,14 @@ const fixture = vi.hoisted(() => ({
   configs: new Map<string, DurableAgentConfig[]>(),
   registrations: new Map<string, AgentRegistration>(),
   generation: 0,
+  projectsReadable: true,
 }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => fixture.home } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./project-store', () => ({ list: vi.fn(async () => fixture.projects) }));
+vi.mock('./project-store', () => ({
+  list: vi.fn(async () => fixture.projects),
+  peekProjectsChecked: vi.fn(async () => ({ projects: fixture.projects, readable: fixture.projectsReadable })),
+}));
 vi.mock('./plugin-storage', () => ({ getGlobalPluginDataDir: () => path.join(fixture.home, 'plugins') }));
 vi.mock('./agent-config', () => ({
   peekDurableConfigsChecked: vi.fn(async (projectPath: string) => ({
@@ -34,6 +38,7 @@ import { connectionsStorePath, _resetOrchestratorConnectionsForTesting } from '.
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { appLog } from './log-service';
 import { peekDurableConfigsChecked, projectKey } from './agent-config';
+import { list as listProjects, peekProjectsChecked } from './project-store';
 
 const registryFile = () => path.join(fixture.home, '.clubhouse-dev', 'group-projects', 'registry.json');
 const agent = (id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig => ({
@@ -70,6 +75,7 @@ beforeEach(async () => {
   fixture.configs.set(fixture.projects[1].path, [agent('b')]);
   fixture.registrations.clear();
   fixture.generation = 0;
+  fixture.projectsReadable = true;
   groupProjectRegistry._resetForTesting();
   bindingManager._resetForTesting();
   _resetOrchestratorConnectionsForTesting();
@@ -101,6 +107,8 @@ describe('one-shot legacy group project scope migration', () => {
     expect(await fsp.readFile(canvasFile, 'utf-8')).toBe(before);
     expect(bindingManager.getAllBindings()).toEqual([]);
     expect(peekDurableConfigsChecked).toHaveBeenCalledWith(fixture.projects[0].path, { strict: true });
+    expect(peekProjectsChecked).toHaveBeenCalledWith({ strict: true });
+    expect(listProjects).not.toHaveBeenCalled();
     expect(JSON.parse(await fsp.readFile(registryFile(), 'utf-8'))[0].scope).toEqual(project?.scope);
   });
 
@@ -160,11 +168,13 @@ describe('one-shot legacy group project scope migration', () => {
     'unreadable project', 'unknown member', 'corrupt canvas', 'unsupported connections', 'changing inventory',
     'unknown canvas wire', 'unknown canvas instance', 'unknown canvas view', 'changing projects',
     'ambiguous projects', 'ambiguous directories',
+    'unreadable project registry',
   ])(
     'defers %s without guessing or writing, and logs a retryable failure',
     async (kind) => {
       await canvas([kind === 'unknown member' ? 'unknown' : 'a']);
       if (kind === 'unreadable project') fixture.configs.delete(fixture.projects[1].path);
+      if (kind === 'unreadable project registry') fixture.projectsReadable = false;
       if (kind === 'corrupt canvas') {
         const file = path.join(projectCanvasKvDir(fixture.projects[1].path), 'canvas-wires.json');
         await fsp.mkdir(path.dirname(file), { recursive: true });
