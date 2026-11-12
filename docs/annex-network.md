@@ -25,6 +25,8 @@ The state sequence is `offered` -> `accepted` -> `transferring` -> `verifying` -
 
 `handoffs.json` in app user data stores complete append-only histories with atomic, owner-only writes. A successful response means its record was persisted; reads never expose an uncommitted write. Corrupt or unsupported files block reads and writes without replacing the original. The store holds at most 1,000 records, each with a 256-character title, 16,000-character brief and 256 history entries (the last entry is reserved for a terminal state).
 
+Lifecycle records and their history are app-owned operational state, not a person's settings. The settings audit inventory explicitly classifies `handoffs.json` as not settings, like Actions and their run history; lifecycle writes do not emit fake settings-change audit entries.
+
 Receiver snapshots must preserve the immutable offer and history prefix. They are accepted only from the authenticated receiving machine; offers only from the authenticated sender. Transport registration and durable command delivery remain separate integration work.
 
 Before entering `applying`, a worker must persist the registered project id, reserved worktree/branch and staging UUID. Restart during `applying` records `failed` with `recovery/indeterminate_apply`, retaining that checkpoint. This does not claim rollback or absence of filesystem side effects, and never retries automatically. Earlier transfer states remain resumable, but worker transitions recheck both parties' grants and connection authorization.

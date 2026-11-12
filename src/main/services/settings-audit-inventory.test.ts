@@ -32,6 +32,8 @@ const NOT_SETTINGS = new Set([
   // Actions (#2918): the actions themselves and their run history, kept and shown by Actions.
   'actions.json',
   'action-history.json',
+  // Handoff lifecycle records and append-only history are operational state, not a person's settings.
+  'handoffs.json',
   'annex-ports.json',
   // Annex Network membership state (removals, confirmations), kept by Clubhouse: not settings.
   'annex-network.json',
