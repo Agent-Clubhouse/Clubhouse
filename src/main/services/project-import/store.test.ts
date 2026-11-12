@@ -293,6 +293,30 @@ describe('bounded fail-closed import lifecycle history', () => {
     } finally { refuseClose.mockRestore(); }
   });
 
+  it('preserves owned cleanup and close-error precedence when both commit and close fail', async () => {
+    const { root, file } = temporary();
+    const committed = encodeImportState(empty());
+    fs.writeFileSync(file, committed);
+    const open = fsp.open;
+    const refuseClose = vi.spyOn(fsp, 'open').mockImplementation(async (name, flags, mode) => {
+      const handle = await open(name, flags, mode);
+      if (typeof name === 'string' && name.endsWith('.tmp')) {
+        const close = handle.close.bind(handle);
+        vi.spyOn(handle, 'close').mockImplementation(async () => { await close(); throw new Error('private close diagnostic'); });
+      }
+      return handle;
+    });
+    const refuseCommit = vi.spyOn(fsp, 'rename').mockRejectedValue(Object.assign(new Error('private commit diagnostic'), { code: 'EACCES' }));
+    try {
+      await expect(new ImportStore(file).update((state) => { state.plans.push(plan()); })).rejects.toMatchObject({
+        reason: 'history_unavailable',
+        message: 'Import history could not be closed safely. Existing committed history was preserved; inspect status before retrying.',
+      });
+      expect(fs.readFileSync(file, 'utf8')).toBe(committed);
+      expect(fs.readdirSync(root)).toEqual(['history.json']);
+    } finally { refuseClose.mockRestore(); refuseCommit.mockRestore(); }
+  });
+
   it.each(['regular', 'dangling', 'permission', 'unknown-root'] as const)('refuses modeled ENOENT with a %s ancestor instead of fabricating empty history', async (kind) => {
     const { root } = temporary();
     const parent = path.join(root, 'parent');

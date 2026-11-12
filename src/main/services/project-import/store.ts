@@ -179,6 +179,7 @@ export class ImportStore {
       let sealed: string | undefined;
       let writtenSealed = false;
       let committed = false;
+      let failure: ImportError | undefined;
       const verifyTemp = (version?: string) => {
         const opened = fs.fstatSync(handle.fd, { bigint: true });
         const current = fs.lstatSync(temp, { bigint: true, throwIfNoEntry: false });
@@ -232,16 +233,17 @@ export class ImportStore {
           // telemetry-exempt: report preserved unexpected state without private paths or raw errors.
           appLog('core:project', 'warn', 'Import history commit failed; unexpected temporary state was preserved');
         }
-        throw unavailable();
+        failure = unavailable();
       } finally {
         try { await handle.close(); } catch {
           // telemetry-exempt: report the actual commit outcome without private paths or raw errors.
           appLog('core:project', 'warn', 'Import history descriptor could not be closed safely', { meta: { committed } });
-          throw new ImportError('history_unavailable', committed
+          failure = new ImportError('history_unavailable', committed
             ? 'Import history was committed, but its file could not be closed safely. Inspect status before retrying.'
             : 'Import history could not be closed safely. Existing committed history was preserved; inspect status before retrying.');
         }
       }
+      if (failure) throw failure;
       return state;
     });
     this.queue = operation.catch((): void => {});
