@@ -43,7 +43,7 @@ function noteDispatcherReached(callerId: string, targetId: string): void {
  * its bindings carry the orchestrator's project only for tool naming (#2548).
  */
 export function buildSenderLabel(agentId: string, senderName: string, projectName?: string): string {
-  if (!projectName || isTrackedDispatcher(agentId)) return senderName;
+  if (!projectName || isTrackedDispatcher(agentId) || isDispatcherAgentId(agentId)) return senderName;
   return `${senderName}@${projectName}`;
 }
 
@@ -55,7 +55,8 @@ export function buildSenderLabel(agentId: string, senderName: string, projectNam
 function senderOf(agentId: string, targetId: string): { senderName: string; senderLabel: string; targetName: string } {
   const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
   const remote = currentRemoteCaller();
-  const senderName = remote ? `${remote.name} on ${remote.machineName}` : sourceBinding?.agentName || agentId;
+  const senderName = remote ? `${remote.name} on ${remote.machineName}`
+    : isDispatcherAgentId(agentId) ? 'Dispatcher controller' : sourceBinding?.agentName || agentId;
   const senderLabel = remote
     ? (remote.projectName ? `${remote.name}@${remote.projectName} on ${remote.machineName}` : senderName)
     : buildSenderLabel(agentId, senderName, sourceBinding?.projectName);

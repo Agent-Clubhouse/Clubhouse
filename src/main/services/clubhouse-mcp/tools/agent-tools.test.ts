@@ -67,7 +67,10 @@ import { registerAgentTools, writeChunkedBracketedPaste, waitForBufferQuiescence
 import { getScopedToolList, callTool, refusalReasonOf, buildToolName, invalidateToolListCache, runAgentToolForRemoteCaller, _resetForTesting as resetTools } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
-import { setDispatcherAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
+import { setDispatcherAgent, setDispatcherChatAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
+import * as dispatcher from '../../dispatcher/dispatcher-service';
+import { registerChatRuntime, unregisterChatRuntime } from '../../agent-runtime';
+import type { AgentRuntime } from '../../../../shared/chat';
 import type { McpBinding } from '../types';
 
 function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string; targetKind: McpBinding['targetKind'] }): McpBinding {
@@ -789,6 +792,7 @@ describe('AgentTools', () => {
     const suffixes = (agentId: string) => getScopedToolList(agentId).map((t) => t.name.split('__').pop());
 
     beforeEach(() => {
+      vi.spyOn(dispatcher, 'isDispatcherAgentId').mockImplementation((id) => id === 'dispatcher-1');
       lifecycle.sleepAgent.mockReset().mockResolvedValue(ok);
       lifecycle.wakeWiredAgent.mockReset().mockResolvedValue(ok);
       _resetDispatcherGateForTesting();
@@ -801,7 +805,7 @@ describe('AgentTools', () => {
       });
     });
 
-    afterEach(() => { _resetDispatcherGateForTesting(); });
+    afterEach(() => { vi.restoreAllMocks(); _resetDispatcherGateForTesting(); });
 
     it('are registered in the dispatcher group: the Dispatcher sees them by target state', () => {
       expect(suffixes('dispatcher-1')).toEqual(['preview_provider', 'change_provider', 'get_status', 'wake_agent']);
@@ -822,9 +826,9 @@ describe('AgentTools', () => {
       await callTool('dispatcher-1', agentToolName(toTarget, 'wake_agent'), { message: 'ship it' });
       const request = lifecycle.wakeWiredAgent.mock.calls[0][0];
       expect(request).toMatchObject({ callerId: 'dispatcher-1', targetId: 'orch-1', targetName: 'boss' });
-      expect(request.mission).toMatch(/^\[TASK:t_\w+\] \[FROM:Dispatcher\] ship it/);
+      expect(request.mission).toMatch(/^\[TASK:t_\w+\] \[FROM:Dispatcher controller\] ship it/);
       expect(request.mission).toContain(agentToolName(back, 'send_message'));
-      expect(request.missionRouted).toEqual([{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher' }, text: 'ship it' }]);
+      expect(request.missionRouted).toEqual([{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher controller' }, text: 'ship it' }]);
     });
 
     it('wake_agent without a message sends no first prompt', async () => {
@@ -1079,6 +1083,7 @@ describe('AgentTools', () => {
     });
 
     beforeEach(() => {
+      vi.spyOn(dispatcher, 'isDispatcherAgentId').mockImplementation((id) => id === 'dispatcher-1');
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       for (const b of [toOrchestrator, toDispatcher]) {
         const { agentId, ...rest } = b;
@@ -1088,6 +1093,7 @@ describe('AgentTools', () => {
     });
 
     afterEach(() => {
+      vi.restoreAllMocks();
       _resetDispatcherGateForTesting();
     });
 
@@ -1097,13 +1103,14 @@ describe('AgentTools', () => {
       expect(agentToolName(toOrchestrator, 'send_message')).toMatch(/^clubhouse__myapp_boss_[a-z0-9]+__send_message$/);
     });
 
-    it('labels a Dispatcher message as just "Dispatcher"', async () => {
+    it('labels controller messages without changing the reply tool', async () => {
       const result = await sendMessage('dispatcher-1', agentToolName(toOrchestrator, 'send_message'), { message: 'hi', task_id: 'd1' });
       expect(result.isError).toBeFalsy();
       // Two-way pairs add reply instructions, so the message goes as a bracketed paste.
       expect(mockPtyWrite.mock.calls[0][0]).toBe('orch-1');
       expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).not.toContain('Dispatcher@');
-      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d1] [FROM:Dispatcher] hi');
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d1] [FROM:Dispatcher controller] hi');
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain(`Reply to Dispatcher controller via tool "${agentToolName(toDispatcher, 'send_message')}"`);
     });
 
     it('labels an orchestrator message to the Dispatcher with its project', async () => {
@@ -1114,13 +1121,68 @@ describe('AgentTools', () => {
       expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d2] [FROM:boss@myapp] hi');
     });
 
-    it('labels a Dispatcher send_file as just "Dispatcher"', async () => {
+    it('labels controller file notices', async () => {
       const promise = callTool('dispatcher-1', agentToolName(toOrchestrator, 'send_file'), { content: 'x', task_id: 'd3' });
       await vi.advanceTimersByTimeAsync(600);
       const result = await promise;
       expect(result.isError).toBeFalsy();
-      expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:Dispatcher] File delivered');
+      expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:Dispatcher controller] File delivered');
       expect(mockPtyWrite.mock.calls[0][1]).not.toContain('Dispatcher@');
+    });
+
+    it('preserves the physical sender id in chat message and file metadata', async () => {
+      const receive = vi.fn().mockResolvedValue(undefined);
+      registerChatRuntime({ agentId: 'orch-1', kind: 'chat', sendMessage: receive } as AgentRuntime);
+      try {
+        expect((await callTool('dispatcher-1', agentToolName(toOrchestrator, 'send_message'), { message: 'hi', task_id: 'chat-message' })).isError).toBeFalsy();
+        expect(receive).toHaveBeenLastCalledWith(expect.stringContaining('[FROM:Dispatcher controller] hi'), expect.objectContaining({
+          routed: [{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher controller' }, text: 'hi' }],
+        }));
+        expect((await callTool('dispatcher-1', agentToolName(toOrchestrator, 'send_file'), { content: 'x', task_id: 'chat-file' })).isError).toBeFalsy();
+        expect(receive).toHaveBeenLastCalledWith(expect.stringContaining('[FROM:Dispatcher controller] File delivered'), expect.objectContaining({
+          routed: [{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher controller' }, text: expect.stringContaining('File delivered:') }],
+        }));
+      } finally {
+        unregisterChatRuntime('orch-1');
+      }
+    });
+
+    it('uses the controller identity even if the live gate no longer tracks it', async () => {
+      setDispatcherAgent('dispatcher-1', false);
+      const call = runAgentToolForRemoteCaller('send_message', 'orch-1', 'dispatcher-1', { message: 'hi', task_id: 'late' });
+      await vi.advanceTimersByTimeAsync(1500);
+      expect((await call).isError).toBeFalsy();
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[FROM:Dispatcher controller] hi');
+    });
+
+    it('keeps the chat and ordinary agents named from their own bindings', async () => {
+      const chat = makeBinding({ ...toOrchestrator, agentId: 'chat-1', agentName: 'Sage' });
+      bindingManager.bind('chat-1', chat);
+      setDispatcherChatAgent('chat-1', true);
+      // The chat's tool gate does not expose wire tools; exercise the sender
+      // handler directly without changing that gate.
+      const chatCall = runAgentToolForRemoteCaller('send_message', 'orch-1', 'chat-1', { message: 'hi', task_id: 'chat' });
+      await vi.advanceTimersByTimeAsync(1500);
+      expect((await chatCall).isError).toBeFalsy();
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[FROM:Sage] hi');
+      mockPtyWrite.mockClear();
+      const ordinary = makeBinding({ ...toOrchestrator, agentId: 'other-1', agentName: 'Sage' });
+      bindingManager.bind('other-1', ordinary);
+      await sendMessage('other-1', agentToolName(ordinary, 'send_message'), { message: 'hi', task_id: 'other' });
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[FROM:Sage@myapp] hi');
+    });
+
+    it('keeps a remote sender identity even when its id matches the local controller', async () => {
+      remoteCaller.value = { name: 'Scout', machineName: 'Studio', projectName: 'Atlas', targetName: 'boss' };
+      try {
+        const pending = runAgentToolForRemoteCaller('send_message', 'orch-1', 'dispatcher-1', { message: 'hi', task_id: 'remote' });
+        await vi.advanceTimersByTimeAsync(1500);
+        const result = await pending;
+        expect(result.isError).toBeFalsy();
+        expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[FROM:Scout@Atlas on Studio] hi');
+      } finally {
+        remoteCaller.value = undefined;
+      }
     });
   });
 
