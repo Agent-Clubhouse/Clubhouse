@@ -63,6 +63,8 @@ export type HelperTaskProfile = (typeof HELPER_TASK_PROFILES)[number];
 
 export const HELPER_FORECAST_UNAVAILABLE_REASONS = ['missing_identity', 'missing_calibration_identity', 'insufficient_samples', 'insufficient_effective_samples'] as const;
 export const HELPER_FORECAST_BASELINE_UNAVAILABLE_REASONS = ['missing', 'not_fresh', 'missing_timestamp', 'future_timestamp', 'stale', 'missing_windows'] as const;
+export const HELPER_CALIBRATION_IDENTITY_REASONS = ['cached_catalog', 'missing_generation', 'missing_catalog', 'fallback_catalog', 'stale_catalog', 'unresolved_model', 'unverified_mapping'] as const;
+export type HelperCalibrationIdentityReason = (typeof HELPER_CALIBRATION_IDENTITY_REASONS)[number];
 
 /** Separate from the public settings revision: one exact mapped cell and its live catalog identity. */
 export interface HelperCalibrationIdentity {
@@ -168,6 +170,7 @@ export interface HelperDecisionRecord {
   mappingRevision?: string;
   /** Absent on legacy or unverified identities; those observations cannot train new cohorts. */
   calibration?: HelperCalibrationIdentity;
+  calibrationIdentityReason?: HelperCalibrationIdentityReason;
   /** Fingerprint across the effective cells, so two runs on the same mapping compare equal. Hashed on recording. */
   mappingFingerprint?: string;
   /** The mapping came from the user's own cells, the built-ins, or neither. */

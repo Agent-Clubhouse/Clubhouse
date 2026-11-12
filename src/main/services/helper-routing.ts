@@ -59,6 +59,7 @@ import { appLog } from './log-service';
 import { forceProviderQuota, isProviderCoolingDown, isProviderCoolingDownNow, peekProviderQuota, readProviderQuota } from './provider-quota';
 import { setRoutingPolicyListener } from './helper-routing-changes';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
+import { peekHelperCalibrationModel } from './helper-model-catalog';
 import * as orchestrationSettings from './orchestration-settings';
 import { appendSettingsAudit, type SettingsAuditSurface } from './settings-audit';
 import { AUTO_TIERS, decideAutoProvider, type AutoCandidate, type AutoDecision } from './helper-auto-policy';
@@ -283,6 +284,7 @@ interface AutoOption {
   provider: AutoCandidateProvider;
   cell: ResolvedCell;
   configuredCell: PresetCell;
+  configuredGeneration?: string;
   quota: QuotaView;
   /** Provider: see candidateKey. */
   key: string;
@@ -436,6 +438,12 @@ function candidateKey(provider: string): string {
  * of starts sees each other's.
  */
 async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> {
+  try {
+    await orchestrationSettings.ensurePresetCellGenerations();
+  } catch (err) {
+    // telemetry-exempt: missing metadata leaves shadow calibration cold, not routing unavailable.
+    appLog('core:mcp', 'warn', 'Could not initialize helper calibration generations', { meta: { error: errorType(err) } });
+  }
   const { orchestratorCli } = request;
   const difficulty = request.difficulty as HelperDifficulty;
   const enabled = getOrchestratorSettings().enabled ?? [];
@@ -450,10 +458,11 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
     if (!(await providerUsable(provider))) { skipped[provider] = 'cli_unavailable'; return; }
     if (await isProviderCoolingDown(provider)) { skipped[provider] = 'cooling_down'; return; }
     const configuredCell = { ...(orchestrationSettings.getPresets()[provider]?.[difficulty] ?? BUILTIN_PRESETS[provider][difficulty]) };
+    const configuredGeneration = orchestrationSettings.getPresetCellGeneration(provider, difficulty);
     const { resolved } = await resolveCell(provider, difficulty);
     if (!resolved) { skipped[provider] = 'no_valid_mapping'; return; }
     const quota = await readProviderQuota(provider, { model: resolved.cell.model });
-    options.push({ provider, cell: resolved, configuredCell, quota, key: candidateKey(provider) });
+    options.push({ provider, cell: resolved, configuredCell, configuredGeneration, quota, key: candidateKey(provider) });
   }));
   // A stable order for what's shown. The choice doesn't depend on it.
   options.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -553,6 +562,10 @@ function autoDecisionRecord(args: {
   const { decisionId, now, difficulty, orchestratorCli, options, skipped, load, decision, routing } = args;
   const evaluations = new Map((decision?.evaluations ?? []).map((e) => [e.provider, e]));
   const chosen = decision?.ok ? decision.provider : undefined;
+  const chosenOption = options.find((option) => option.provider === chosen);
+  const identity = chosenOption ? peekHelperCalibrationModel(chosenOption.provider, chosenOption.cell.cell.model, now) : undefined;
+  const identityReason = !chosenOption ? undefined : chosenOption.cell.fallback !== 'none' ? 'unverified_mapping'
+    : !chosenOption.configuredGeneration ? 'missing_generation' : identity?.reason;
   const loadOf = (provider: string) => load[provider] ?? { live: 0, reserved: 0 };
   const candidates: DecisionCandidate[] = getAllProviders().map(({ id }) => {
     const option = options.find((o) => o.provider === id);
@@ -599,6 +612,12 @@ function autoDecisionRecord(args: {
     ...(routing && { source: routing.source, reason: routing.reason }),
     fallback: routing?.fallback ?? 'candidate_skipped',
     mappingRevision: helperRoutingRevision(),
+    ...(routing && chosenOption && {
+      calibrationIdentityReason: identityReason,
+      ...(identityReason === 'cached_catalog' && identity?.model && chosenOption.configuredGeneration && {
+        calibration: { revision: chosenOption.configuredGeneration, model: identity.model },
+      }),
+    }),
     mappingFingerprint: mappingFingerprint(options),
     mappingKind: sources.size === 0 ? 'none' : sources.size > 1 ? 'mixed' : sources.has('custom_mapping') ? 'custom' : 'builtin',
     settings: { autoEnabled: true, enabledProviders: enabled.length > 0 ? enabled.length : getAllProviders().length },
@@ -664,7 +683,8 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
     if (enabled.length > 0 && !enabled.includes(option.provider)) skipped[option.provider] = 'cli_disabled';
     else if (option.provider === 'copilot-cli' && !orchestrationSettings.getCopilotAuto()) skipped[option.provider] = 'auto_disabled';
     else if (isProviderCoolingDownNow(option.provider, now)) skipped[option.provider] = 'cooling_down';
-    else if (!sameCell(option.configuredCell, orchestrationSettings.getPresets()[option.provider]?.[difficulty] ?? BUILTIN_PRESETS[option.provider][difficulty])) skipped[option.provider] = 'mapping_changed';
+    else if (!sameCell(option.configuredCell, orchestrationSettings.getPresets()[option.provider]?.[difficulty] ?? BUILTIN_PRESETS[option.provider][difficulty])
+      || option.configuredGeneration !== orchestrationSettings.getPresetCellGeneration(option.provider, difficulty)) skipped[option.provider] = 'mapping_changed';
     else return true;
     return false;
   });

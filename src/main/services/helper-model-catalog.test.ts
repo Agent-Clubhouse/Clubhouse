@@ -31,6 +31,24 @@ beforeEach(async () => {
 afterEach(() => fs.rmSync(W.dir, { recursive: true, force: true }));
 
 describe('model catalog notices', () => {
+  it('peeks existing fresh canonical evidence only, with explicit missing, fallback, stale and alias provenance', async () => {
+    const { peekHelperCalibrationModel: peek, HELPER_CALIBRATION_CATALOG_MAX_AGE_MS: maxAge } = await import('./helper-model-catalog');
+    expect(peek(provider.id, 'gpt-6.1-sol', 100)).toEqual({ reason: 'missing_catalog' });
+    await observe(provider, catalog(['gpt-6.1-sol'], 100));
+    expect(peek(provider.id, 'gpt-6.1-sol', 100)).toEqual({ model: 'gpt-6.1-sol', reason: 'cached_catalog' });
+    expect(peek(provider.id, 'gpt-6.1-sol', 99)).toEqual({ reason: 'stale_catalog' });
+    expect(peek(provider.id, 'gpt-6.1-sol', 101 + maxAge)).toEqual({ reason: 'stale_catalog' });
+    expect(peek(provider.id, 'unlisted', 100)).toEqual({ reason: 'unresolved_model' });
+    await observe(provider, catalog(['gpt-6.1-sol'], 101, { source: 'fallback' }));
+    expect(peek(provider.id, 'gpt-6.1-sol', 101)).toEqual({ reason: 'fallback_catalog' });
+    await observe(provider, catalog(['opus'], 102));
+    expect(peek(provider.id, 'opus', 102)).toEqual({ reason: 'unresolved_model' });
+    await observe(provider, catalog([], 103, { models: [{ id: 'opus', resolvedId: 'claude-opus-5-5', label: 'Opus' }] }));
+    expect(peek(provider.id, 'opus', 103)).toEqual({ model: 'claude-opus-5-5', reason: 'cached_catalog' });
+    await observe(provider, catalog(['gpt-6.1-sol'], 102));
+    expect(peek(provider.id, 'gpt-6.1-sol', 104)).toEqual({ reason: 'stale_catalog' });
+  });
+
   it('silently saves a first live baseline, then combines additions into one notice exactly once', async () => {
     await observe(provider, catalog(['old'], 1));
     expect(W.notices).not.toHaveBeenCalled();

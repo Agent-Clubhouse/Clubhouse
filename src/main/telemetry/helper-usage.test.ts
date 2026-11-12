@@ -86,6 +86,7 @@ function decision(over: Partial<HelperDecisionRecord> = {}): HelperDecisionRecor
     source: { model: 'builtin_mapping' }, reason: 'lower_load', fallback: 'none',
     mappingRevision: 'rev-7', mappingFingerprint: 'fp-abc', mappingKind: 'builtin',
     calibration: { revision: '11111111-1111-4111-8111-111111111111', model: 'claude-sonnet-5-5' },
+    calibrationIdentityReason: 'cached_catalog',
     settings: { autoEnabled: true, enabledProviders: 2 },
     candidates: [candidate('claude-code', { chosen: true }), candidate('codex-cli', { eligible: false, excluded: 'quota_near_limit' })],
     tie: { setSize: 2, bandBp: 0, reason: 'lower_load', byLoad: true },
@@ -138,13 +139,27 @@ describe('Stage 3 shadow forecasts', () => {
     const observation = events('clubhouse.helper.forecast').at(-1)!;
     expect(observation.attrs).toMatchObject({
       'clubhouse.helper_forecast.weekly_error_bp': 100, 'clubhouse.helper_forecast.attribution': 'whole_login_unknown',
+      'clubhouse.helper_forecast.interval_method': 'weighted_empirical',
+      'clubhouse.helper_forecast.nominal_coverage_bp': 8000,
+      'clubhouse.helper_forecast.weekly_lower_bp': 100, 'clubhouse.helper_forecast.weekly_upper_bp': 100,
+      'clubhouse.helper_forecast.weekly_evaluated': 1, 'clubhouse.helper_forecast.weekly_mae_bp': 100,
+      'clubhouse.helper_forecast.weekly_decisions': 6, 'clubhouse.helper_forecast.weekly_unknown': 5,
+      'clubhouse.helper_forecast.weekly_bias_bp': 100, 'clubhouse.helper_forecast.weekly_coverage_bp': 0,
+      'clubhouse.helper_forecast.weekly_interval_score_bp': 1000, 'clubhouse.helper_forecast.qualification': 'shadow_proxy_only',
+      'clubhouse.helper_forecast.weekly_interval_covered': false,
+      'clubhouse.helper_forecast.five_hour_missing_window': 6,
     });
+    expect(observation.attrs).not.toHaveProperty('clubhouse.helper_forecast.five_hour_mae_bp');
+    expect(observation.attrs).not.toHaveProperty('clubhouse.helper_forecast.five_hour_interval_covered');
+    expect(observation.kinds['clubhouse.helper_forecast.calibration_revision_hash']).toBe('hash');
+    expect(observation.kinds['clubhouse.helper_forecast.calibration_model_hash']).toBe('hash');
     expect(observation.opts?.localOnly).toBe(true);
     expect(exported).toEqual([]);
     await ledger.flushLedger();
     ledger.configureLedger({ file: path.join(dir, 'ledger.json'), now: () => now });
     expect(ledger.getEntry('h-5')?.forecast).toEqual(lastPrediction);
     expect(ledger.getEntry('h-5')?.burnObservation?.weekly?.errorBp).toBe(100);
+    expect(ledger.getEntry('h-5')?.burnObservation?.availableAtMs).toBe(now - 60_000);
     recordQuotaSample('claude-code', {
       state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
       weekly: { usedPercent: 10, resetsAt: new Date(reset).toISOString() },
@@ -155,8 +170,9 @@ describe('Stage 3 shadow forecasts', () => {
   it('does not calibrate changed model identity or write telemetry-off decisions', () => {
     recordHelperDecision(decision());
     run('helper-1', 'different-model');
+    now += 20;
     recordQuotaSample('claude-code', {
-      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
       weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
     });
     expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
@@ -179,8 +195,9 @@ describe('Stage 3 shadow forecasts', () => {
     expect(ledger.getEntry('helper-1')?.forecastRun).toEqual(evidence);
     expect(events('clubhouse.helper.usage.sample')).toEqual(usage);
     expect(events('clubhouse.helper.outcome')).toEqual(outcomes);
+    now += 20;
     recordQuotaSample('claude-code', {
-      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
       weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
     });
     const observation = events('clubhouse.helper.forecast')[0];
@@ -220,8 +237,9 @@ describe('Stage 3 shadow forecasts', () => {
     expect(events('clubhouse.helper.outcome')).toHaveLength(2);
     expect(ledger.getRun('helper-1')).toBeUndefined();
     expect(ledger.getEntry('helper-1')?.forecast).toEqual(forecast);
+    now += 20;
     recordQuotaSample('claude-code', {
-      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
       weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
     });
     expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
@@ -272,8 +290,9 @@ describe('Stage 3 shadow forecasts', () => {
     }
     handleHelperChatEvent(chat('session_ended', { reason: 'idle_timeout' }, { ts: now + 4 }));
     expect(ledger.getEntry('helper-1')?.forecastRun).toMatchObject({ usageSamples: 1, usable: false });
+    now += 20;
     recordQuotaSample('claude-code', {
-      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
       weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
     });
     expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
@@ -291,8 +310,9 @@ describe('Stage 3 shadow forecasts', () => {
       started('helper-1', { driver: 'claude_agent_sdk' });
       handleHelperChatEvent(chat('session_ended', { reason: 'stopped' }, { ts: now + 4 }));
     }
+    now += 20;
     recordQuotaSample('claude-code', {
-      state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+      state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
       weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
     });
     expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');
@@ -316,8 +336,9 @@ describe('Stage 3 shadow forecasts', () => {
         'clubhouse.helper_run.outcome': 'completed', 'clubhouse.helper_run.turns': turns,
         'clubhouse.helper_usage.turns_missing': 0,
       });
+      now += 20;
       recordQuotaSample('claude-code', {
-        state: 'known', source: 'cli_query', asOf: new Date(now + 20).toISOString(),
+        state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
         weekly: { usedPercent: 50, resetsAt: new Date(now + 86_400_000).toISOString() },
       });
       expect(ledger.getEntry('helper-1')?.burnObservation?.reason).toBe('incomplete');

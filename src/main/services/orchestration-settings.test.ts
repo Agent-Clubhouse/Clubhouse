@@ -138,6 +138,26 @@ describe('helper presets (#2671)', () => {
       expect(getPresetCellGeneration('copilot-cli', 'hard')).toMatch(/^[a-f0-9-]{36}$/);
       expect(JSON.stringify(getSettings().helperPresetCellGenerations)).not.toMatch(/arbitrary|secret|other-provider/);
     });
+
+    it('does not publish a changed cell or generation after an atomic disk replacement fails', async () => {
+      await ensurePresetCellGenerations();
+      const generation = getPresetCellGeneration('copilot-cli', 'hard');
+      const previous = fs.readFileSync(file, 'utf8');
+      const failure = vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('synthetic disk failure'));
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await expect(savePresets({ 'copilot-cli': { hard: { model: 'gpt-6.1-sol', effort: 'high' } } }))
+          .rejects.toThrow('synthetic disk failure');
+        expect(getPresetCellGeneration('copilot-cli', 'hard')).toBe(generation);
+        expect(getPresets()).toEqual({});
+        expect(getPresetsRevision()).toBe(0);
+        expect(fs.readFileSync(file, 'utf8')).toBe(previous);
+        expect(logged).toHaveBeenCalled();
+      } finally {
+        failure.mockRestore();
+        logged.mockRestore();
+      }
+    });
   });
 
   it('moves the revision on each write, and keeps them on disk', async () => {

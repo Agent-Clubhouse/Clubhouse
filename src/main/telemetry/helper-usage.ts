@@ -201,6 +201,7 @@ export function recordHelperDecision(rec: HelperDecisionRecord): void {
         difficulty: rec.resolved.difficulty,
         mappingRevision: rec.mappingRevision,
         ...(calibration && { calibration }),
+        ...(rec.calibrationIdentityReason && { calibrationIdentityReason: rec.calibrationIdentityReason }),
         mappingFingerprint: rec.mappingFingerprint,
         ...(rec.taskProfile && { taskProfile: rec.taskProfile }),
       };
@@ -242,6 +243,7 @@ export function recordHelperDecision(rec: HelperDecisionRecord): void {
       rec.mappingRevision ? ATTR.helperMappingRevisionHash(rec.mappingRevision) : undefined,
       rec.mappingFingerprint ? ATTR.helperMappingFingerprintHash(rec.mappingFingerprint) : undefined,
       rec.mappingKind ? ATTR.helperMappingKind(rec.mappingKind) : undefined,
+      ...calibrationAttrs(calibration, rec.calibrationIdentityReason),
       ATTR.helperCandidateCount(rec.candidates.length),
       ATTR.helperEligibleCount(rec.candidates.filter((c) => c.eligible).length),
       rec.settings && ATTR.helperAutoEnabled(rec.settings.autoEnabled),
@@ -272,11 +274,62 @@ export function recordHelperDecision(rec: HelperDecisionRecord): void {
 }
 
 function forecastAttrs(forecast: BurnForecast): Array<TelAttr | undefined> {
+  const weekly = forecast.weekly, five = forecast.fiveHour;
   return [
     ATTR.helperForecastWeeklySamples(forecast.weekly.samples),
     ATTR.helperForecastFiveHourSamples(forecast.fiveHour.samples),
     forecast.weekly.expectedBp !== undefined ? ATTR.helperForecastWeeklyBp(forecast.weekly.expectedBp) : undefined,
     forecast.fiveHour.expectedBp !== undefined ? ATTR.helperForecastFiveHourBp(forecast.fiveHour.expectedBp) : undefined,
+    weekly.unavailableReason ? ATTR.helperForecastWeeklyUnavailable(weekly.unavailableReason) : undefined,
+    five.unavailableReason ? ATTR.helperForecastFiveHourUnavailable(five.unavailableReason) : undefined,
+    forecast.baselineUnavailableReason ? ATTR.helperForecastBaselineUnavailable(forecast.baselineUnavailableReason) : undefined,
+    weekly.effectiveSamples !== undefined ? ATTR.helperForecastWeeklyEffectiveMilli(Math.round(1000 * weekly.effectiveSamples)) : undefined,
+    five.effectiveSamples !== undefined ? ATTR.helperForecastFiveHourEffectiveMilli(Math.round(1000 * five.effectiveSamples)) : undefined,
+    weekly.interval || five.interval ? ATTR.helperForecastIntervalMethod('weighted_empirical') : undefined,
+    weekly.interval || five.interval ? ATTR.helperForecastNominalCoverageBp(8000) : undefined,
+    weekly.interval ? ATTR.helperForecastWeeklyLowerBp(weekly.interval.lowerBp) : undefined,
+    weekly.interval ? ATTR.helperForecastWeeklyUpperBp(weekly.interval.upperBp) : undefined,
+    five.interval ? ATTR.helperForecastFiveHourLowerBp(five.interval.lowerBp) : undefined,
+    five.interval ? ATTR.helperForecastFiveHourUpperBp(five.interval.upperBp) : undefined,
+  ];
+}
+
+function calibrationAttrs(calibration: HelperDecisionRecord['calibration'], reason: HelperDecisionRecord['calibrationIdentityReason']): Array<TelAttr | undefined> {
+  return [
+    calibration ? ATTR.helperCalibrationRevisionHash(calibration.revision) : undefined,
+    calibration ? ATTR.helperCalibrationModelHash(calibration.model) : undefined,
+    reason ? ATTR.helperCalibrationIdentityReason(reason) : undefined,
+  ];
+}
+
+function calibrationReportAttrs(weekly: BurnCalibration, five: BurnCalibration): Array<TelAttr | undefined> {
+  const rounded = (value: number | undefined, attr: (n: number) => TelAttr): TelAttr | undefined => value === undefined ? undefined : attr(Math.round(value));
+  return [
+    ATTR.helperForecastQualification('shadow_proxy_only'),
+    ATTR.helperForecastWeeklyDecisions(weekly.decisions),
+    ATTR.helperForecastWeeklyUnknown(weekly.unknown),
+    ATTR.helperForecastWeeklyEvaluated(weekly.evaluated),
+    ATTR.helperForecastWeeklyPending(weekly.pending),
+    ATTR.helperForecastWeeklyExcluded(weekly.excluded),
+    ATTR.helperForecastWeeklyMissingWindow(weekly.missingWindow),
+    rounded(weekly.maeBp, ATTR.helperForecastWeeklyMaeBp),
+    rounded(weekly.biasBp, ATTR.helperForecastWeeklyBiasBp),
+    ATTR.helperForecastWeeklyIntervals(weekly.intervalsEvaluated),
+    rounded(weekly.intervalCoverageBp, ATTR.helperForecastWeeklyCoverageBp),
+    rounded(weekly.meanIntervalWidthBp, ATTR.helperForecastWeeklyWidthBp),
+    rounded(weekly.meanIntervalScoreBp, ATTR.helperForecastWeeklyIntervalScoreBp),
+    ATTR.helperForecastFiveHourEvaluated(five.evaluated),
+    ATTR.helperForecastFiveHourDecisions(five.decisions),
+    ATTR.helperForecastFiveHourUnknown(five.unknown),
+    ATTR.helperForecastFiveHourPending(five.pending),
+    ATTR.helperForecastFiveHourExcluded(five.excluded),
+    ATTR.helperForecastFiveHourMissingWindow(five.missingWindow),
+    rounded(five.maeBp, ATTR.helperForecastFiveHourMaeBp),
+    rounded(five.biasBp, ATTR.helperForecastFiveHourBiasBp),
+    ATTR.helperForecastFiveHourIntervals(five.intervalsEvaluated),
+    rounded(five.intervalCoverageBp, ATTR.helperForecastFiveHourCoverageBp),
+    rounded(five.meanIntervalWidthBp, ATTR.helperForecastFiveHourWidthBp),
+    rounded(five.meanIntervalScoreBp, ATTR.helperForecastFiveHourIntervalScoreBp),
   ];
 }
 
@@ -288,6 +341,13 @@ function evaluateForecasts(provider: string, quota: QuotaView): void {
     if (!observation) continue;
     ledger.setBurnObservation(entry.helperId, observation);
     if (!admit()) continue;
+    const key = entry.forecast?.key ?? null;
+    const covered = (window: 'weekly' | 'fiveHour'): boolean | undefined => {
+      const interval = entry.forecast?.[window].interval;
+      const measured = observation[window]?.observedBp;
+      return interval && measured !== undefined ? measured >= interval.lowerBp && measured <= interval.upperBp : undefined;
+    };
+    const weeklyCovered = covered('weekly'), fiveCovered = covered('fiveHour');
     emit('clubhouse.helper.forecast', [
       ATTR.helperDecisionIdHash(entry.decisionId),
       observation.runId ? ATTR.helperRunIdHash(observation.runId) : undefined,
@@ -297,6 +357,14 @@ function evaluateForecasts(provider: string, quota: QuotaView): void {
       ATTR.helperRoutingDifficulty(entry.difficulty ?? 'none'),
       ATTR.helperTaskProfile(entry.taskProfile ?? 'unspecified'),
       entry.mappingRevision ? ATTR.helperMappingRevisionHash(entry.mappingRevision) : undefined,
+      ...calibrationAttrs(entry.calibration, entry.calibrationIdentityReason),
+      ...(entry.forecast ? forecastAttrs(entry.forecast) : []),
+      ...calibrationReportAttrs(
+        summarizeHelperBurn(history, key, 'weekly', clock()),
+        summarizeHelperBurn(history, key, 'fiveHour', clock()),
+      ),
+      weeklyCovered !== undefined ? ATTR.helperForecastWeeklyIntervalCovered(weeklyCovered) : undefined,
+      fiveCovered !== undefined ? ATTR.helperForecastFiveHourIntervalCovered(fiveCovered) : undefined,
       ATTR.helperForecastReason(observation.reason),
       ATTR.helperForecastAttribution(observation.attribution),
       ATTR.helperForecastUsageSamples(entry.forecastRun?.usageSamples ?? 0),
