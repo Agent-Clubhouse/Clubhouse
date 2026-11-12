@@ -4960,7 +4960,15 @@ function isCurrentServer(server: http.Server | https.Server): boolean {
   return server === tlsServer || server === httpServer || server === pairingServer;
 }
 
-function trackIncomingSockets(server: http.Server | https.Server): void {
+function trackServer(server: http.Server | https.Server): void {
+  const generation = serverGeneration;
+  // Keep this server-owned listener after close: an OS bind error may already be queued.
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    const current = generation === serverGeneration && isCurrentServer(server);
+    appLog('core:annex', current ? 'warn' : 'debug', 'Annex listener error', {
+      meta: { error: err.message, ...(err.code && { code: err.code }), generation, current },
+    });
+  });
   server.on('connection', (socket) => {
     if (!isCurrentServer(server)) {
       socket.destroy();
@@ -5020,7 +5028,7 @@ function startServer(strict = false): Promise<void> {
 
   // --- Pairing server (plain HTTP): identity hint only; pairing itself is on the TLS port ---
   pairingServer = http.createServer(handlePairingRequest);
-  trackIncomingSockets(pairingServer);
+  trackServer(pairingServer);
 
   // --- Main server (TLS with mTLS) ---
   let tlsOptions: tls.TlsOptions;
@@ -5044,7 +5052,7 @@ function startServer(strict = false): Promise<void> {
   if (!tlsServer) {
     httpServer = mainServer as http.Server;
   }
-  trackIncomingSockets(mainServer);
+  trackServer(mainServer);
 
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
   wss = websocketServer;
