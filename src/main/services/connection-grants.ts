@@ -8,8 +8,9 @@
  * - A store write updates the live binding, so calls are checked against the
  *   store by the existing call path (tool-registry's disabled tools).
  * - The user's own links (Make two-way) are a persisted binding source.
- * Make two-way commits its grants before clearing session removals. Removal
- * listeners still persist asynchronously; their stores are not in that commit.
+ * Make two-way commits its grants before clearing an older session removal;
+ * a newer removal during the save wins. Removal listeners still persist
+ * asynchronously; their stores are not in that commit.
  */
 
 import type { AgentAddress, ConnectionDirection, DirectionTools } from '../../shared/connection-grants';
@@ -389,8 +390,17 @@ async function agentNames(): Promise<Map<string, string>> {
  * other direction, retaining its saved switches when it has any.
  */
 export async function makeTwoWay(fromAgentId: string, toAgentId: string): Promise<void> {
-  await linkConnectionDirections([{ from: local(fromAgentId), to: local(toAgentId) }]);
-  clearBindingRemovedByUser(fromAgentId, toAgentId);
+  let removedDuringSave = false;
+  const unwatchRemoval = onBindingRemovedByUser((agentId, targetId) => {
+    if (agentId === fromAgentId && targetId === toAgentId) removedDuringSave = true;
+  });
+  try {
+    await linkConnectionDirections([{ from: local(fromAgentId), to: local(toAgentId) }]);
+    if (removedDuringSave) throw new Error('Connection permissions were saved, but a newer removal canceled this connection. The removal remains in effect.');
+    clearBindingRemovedByUser(fromAgentId, toAgentId);
+  } finally {
+    unwatchRemoval();
+  }
   recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: true });
   await rebuildPersistedBindings();
 }

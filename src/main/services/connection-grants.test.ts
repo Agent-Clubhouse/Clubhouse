@@ -24,7 +24,7 @@ import {
   _resetConnectionFileWarningForTesting,
 } from './connection-grants';
 import {
-  applyPersistedBinding, isBindingRemovedByUser, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource, startingTools, _resetPersistedBindingSourcesForTesting,
+  applyPersistedBinding, isBindingRemovedByUser, markBindingRemovedByUser, onBindingDrawnByUser, rebuildPersistedBindings, registerPersistedBindingSource, startingTools, _resetPersistedBindingSourcesForTesting,
   type PersistedBinding,
 } from './persisted-bindings';
 import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
@@ -154,6 +154,33 @@ describe('connection permissions (D129)', () => {
       expect(bindingManager.getBindingsForAgent('b')).toEqual([]);
     } finally {
       fault.mockRestore();
+    }
+  });
+
+  it.each([false, true])('Make two-way respects a newer removal during persistence (initially removed: %s)', async (initiallyRemoved) => {
+    await setConnectionTools(B, A, ['send_message', 'future_denied'], ['future_enabled']);
+    if (initiallyRemoved) markBindingRemovedByUser('b', 'a');
+    const drawn = vi.fn();
+    const unwatchDrawn = onBindingDrawnByUser(drawn);
+    try {
+      const promotion = makeTwoWay('b', 'a');
+      queueMicrotask(() => markBindingRemovedByUser('b', 'a'));
+      await expect.soft(promotion).rejects.toThrow(new Error('Connection permissions were saved, but a newer removal canceled this connection. The removal remains in effect.'));
+      expect.soft(isBindingRemovedByUser('b', 'a')).toBe(true);
+      expect.soft(bindingManager.getBindingsForAgent('b')).toEqual([]);
+      expect.soft(drawn).not.toHaveBeenCalled();
+      expect(getConnectionDirection(B, A)).toMatchObject({ disabledTools: ['send_message', 'future_denied'], enabledTools: ['future_enabled'] });
+      expect(JSON.parse(savedGrants())).toMatchObject({
+        directions: expect.arrayContaining([
+          expect.objectContaining({ from: B, to: A, disabledTools: ['send_message', 'future_denied'], enabledTools: ['future_enabled'] }),
+        ]),
+      });
+      await makeTwoWay('b', 'a');
+      expect(isBindingRemovedByUser('b', 'a')).toBe(false);
+      expect(bindingManager.getBindingsForAgent('b').some((b) => b.targetId === 'a')).toBe(true);
+      expect(drawn).toHaveBeenCalledExactlyOnceWith('b', 'a');
+    } finally {
+      unwatchDrawn();
     }
   });
 
