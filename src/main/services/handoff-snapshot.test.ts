@@ -386,7 +386,9 @@ describe('local secret-safe handoff snapshots', () => {
     expect(snapshot.manifest.files.find((entry) => entry.path === 'models/selected.bin')?.sha256).toBe(hash(large));
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('final unstaged\n');
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/untracked.txt'), 'utf8')).toBe('untracked\n');
-    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/models/selected.bin'))).toEqual(large);
+    const selectedBytes = await fs.promises.readFile(path.join(snapshot.root, 'files/models/selected.bin'));
+    expect(selectedBytes.byteLength).toBe(large.byteLength);
+    expect(selectedBytes.equals(large)).toBe(true);
     expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
     if (process.platform !== 'win32') {
       expect((await fs.promises.stat(snapshot.root)).mode & 0o777).toBe(0o700);
@@ -578,16 +580,38 @@ describe('local secret-safe handoff snapshots', () => {
     expect(await fs.promises.readFile(target, 'utf8')).toBe(outside ? 'outside' : 'base\n');
   });
 
-  it('enforces total, per-file and count ceilings before allocating staging', async () => {
+  it.each([
+    ['per-file', { totalBytes: 11, perFileBytes: 9, maxFiles: 10 }],
+    ['total', { totalBytes: 10, perFileBytes: 10, maxFiles: 10 }],
+    ['count', { totalBytes: 20, perFileBytes: 10, maxFiles: 1 }],
+  ] as const)('enforces the %s ceiling before allocating staging', async (_name, bounds) => {
     await file('new.txt', '1234567890');
     await file('second.txt', 'a');
-    for (const bounds of [
-      { totalBytes: 11, perFileBytes: 9, maxFiles: 10 },
-      { totalBytes: 10, perFileBytes: 10, maxFiles: 10 },
-      { totalBytes: 20, perFileBytes: 10, maxFiles: 1 },
-    ]) await expect(prepareHandoffSnapshot(options({ bounds }))).rejects.toMatchObject({ code: 'bounds_exceeded' });
-    expect(await fs.promises.readdir(staging)).toEqual([]);
-    expect((await prepareHandoffSnapshot(options({ bounds: { totalBytes: 11, perFileBytes: 10, maxFiles: 2 } }))).manifest.total_bytes).toBe(11);
+    await fs.promises.writeFile(path.join(staging, 'keep.txt'), 'keep');
+    const mkdir = vi.spyOn(fs.promises, 'mkdir');
+    await expect(prepareHandoffSnapshot(options({ bounds }))).rejects.toMatchObject({ code: 'bounds_exceeded', cleanupFailed: false });
+    expect(mkdir).not.toHaveBeenCalled();
+    expect(await fs.promises.readdir(staging)).toEqual(['keep.txt']);
+    expect(await fs.promises.readFile(path.join(staging, 'keep.txt'), 'utf8')).toBe('keep');
+    expect(await fs.promises.readFile(path.join(repo, 'new.txt'), 'utf8')).toBe('1234567890');
+    expect(await fs.promises.readFile(path.join(repo, 'second.txt'), 'utf8')).toBe('a');
+    expect(await fs.promises.readFile(path.join(repo, 'tracked.txt'), 'utf8')).toBe('base\n');
+  });
+
+  it('accepts exact total, per-file and count bounds with eleven selected bytes', async () => {
+    await file('new.txt', '1234567890');
+    await file('second.txt', 'a');
+    await fs.promises.writeFile(path.join(staging, 'keep.txt'), 'keep');
+    const snapshot = await prepareHandoffSnapshot(options({ bounds: { totalBytes: 11, perFileBytes: 10, maxFiles: 2 } }));
+    expect(snapshot.manifest.total_bytes).toBe(11);
+    expect(snapshot.manifest.files.map(({ path, size }) => ({ path, size }))).toEqual([
+      { path: 'new.txt', size: 10 }, { path: 'second.txt', size: 1 },
+    ]);
+    expect((await fs.promises.readdir(staging)).sort()).toEqual([path.basename(snapshot.root), 'keep.txt'].sort());
+    expect(await fs.promises.readFile(path.join(staging, 'keep.txt'), 'utf8')).toBe('keep');
+    expect(await fs.promises.readFile(path.join(repo, 'new.txt'), 'utf8')).toBe('1234567890');
+    expect(await fs.promises.readFile(path.join(repo, 'second.txt'), 'utf8')).toBe('a');
+    expect(await fs.promises.readFile(path.join(repo, 'tracked.txt'), 'utf8')).toBe('base\n');
   });
 
   it.each(['below total', 'exact total', 'below per-file', 'raised bounds'] as const)('enforces exact comparison read budgets independently of output bounds (%s; scaled fault injection)', async (scenario) => {
