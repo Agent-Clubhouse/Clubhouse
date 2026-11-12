@@ -33,8 +33,8 @@ project/local; mixed or verified empty membership implies app/local.
 Strict read-only source readers refuse unknown or malformed rows, ambiguous
 identities and corrupt/unreadable primary files rather than treating filtered
 rows, caches or recovered backups as a complete inventory. Ordinary readers
-retain their existing recovery behavior. Missing primary files may use known
-backups; verified absent stores are empty.
+retain their existing recovery behavior. Backup-only or recovery-only data is
+untrusted; only verified absence of primary and recovery copies is empty.
 
 Inference persists atomically before publication, retaining an internal
 `_scopeInference: "legacy-v1"` provenance marker on every later registry write.
