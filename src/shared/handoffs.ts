@@ -1,7 +1,10 @@
 import { isMachineFingerprint, type AgentAddress } from './agent-address';
 
 export const HANDOFF_SCHEMA_VERSION = 1;
-export const HANDOFF_LIMITS = { title: 256, brief: 16_000, reason: 512, history: 256, records: 1000 } as const;
+export const HANDOFF_LIMITS = {
+  title: 256, brief: 16_000, reason: 512, history: 256, records: 1000,
+  encodedBytes: 384 * 1024, terminalReserveBytes: 64 * 1024,
+} as const;
 export const HANDOFF_STATES = [
   'offered', 'accepted', 'transferring', 'verifying', 'applying', 'applied', 'declined', 'cancelled', 'failed',
 ] as const;
@@ -274,6 +277,9 @@ export function parseHandoff(value: unknown): Handoff {
       requireValid(replay.history.length < HANDOFF_LIMITS.history || isTerminalHandoff(replay.state));
     }
   }
+  // Leave envelope headroom and room for a terminal event's JSON-escaped result plus its derived copy.
+  const byteLimit = HANDOFF_LIMITS.encodedBytes - (isTerminalHandoff(replay.state) ? 0 : HANDOFF_LIMITS.terminalReserveBytes);
+  requireValid(new TextEncoder().encode(JSON.stringify(replay)).byteLength <= byteLimit);
   return structuredClone(replay);
 }
 
