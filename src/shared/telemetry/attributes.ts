@@ -930,6 +930,7 @@ export const ATTR = {
     'GET /api/v1/mobile/network',
     'POST /api/v1/mobile/network/members',
     'POST /api/v1/network/agent-call',
+    'POST /api/v1/network/agent-delivery-capabilities',
     'POST /api/v1/network/connections',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',

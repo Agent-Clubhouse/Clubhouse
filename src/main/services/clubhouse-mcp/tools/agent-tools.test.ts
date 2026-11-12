@@ -70,7 +70,6 @@ import { bindingManager } from '../binding-manager';
 import { setDispatcherAgent, setDispatcherChatAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
 import * as dispatcher from '../../dispatcher/dispatcher-service';
 import { registerChatRuntime, unregisterChatRuntime } from '../../agent-runtime';
-import type { AgentRuntime } from '../../../../shared/chat';
 import type { McpBinding } from '../types';
 import * as runtimes from '../../agent-runtime';
 import type { AgentRuntime, ChatSessionState } from '../../../../shared/chat';
