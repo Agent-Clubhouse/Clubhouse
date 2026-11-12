@@ -17,6 +17,7 @@
  * - fillConnectionTools(from, to, disabledTools, enabledTools): the lists a connection Clubhouse made starts with, where none is saved (#3214);
  * - removeConnectionDirection(from, to): drop one direction's entry;
  * - setConnectionLink(from, to, on): the user's own link for one direction;
+ * - linkConnectionDirections(pairs): add user links atomically, retaining saved switches;
  * - listConnectionDirections(agentId): every entry touching an agent;
  * - listLinkedDirections(): every direction the user linked (Make two-way);
  * - removeConnectionDirections(agentId): drop an agent's entries (deleted);
@@ -30,7 +31,7 @@
  */
 
 import {
-  WAKE_TOOL, directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
+  NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection, type StartingSwitches,
 } from '../../shared/connection-grants';
 import { createSettingsStore } from './settings-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -263,14 +264,45 @@ export function removeConnectionDirection(from: AgentAddress, to: AgentAddress):
 export function setConnectionLink(from: AgentAddress, to: AgentAddress, on: boolean, defaultTools: readonly string[] = []): Promise<ConnectionDirection | null> {
   return updateDirection(from, to, (current) => {
     if (!on) return current ? { ...current, link: undefined, updatedAt: new Date().toISOString() } : null;
-    return {
-      from, to,
-      disabledTools: current?.disabledTools ?? [...defaultTools],
-      ...(current?.enabledTools && { enabledTools: current.enabledTools }),
-      link: current?.link ?? { createdAt: new Date().toISOString() },
-      updatedAt: new Date().toISOString(),
-    };
+    return userLink(from, to, current, { disabledTools: defaultTools, enabledTools: [] }, new Date().toISOString());
   });
+}
+
+function userLink(from: AgentAddress, to: AgentAddress, current: ConnectionDirection | undefined, starting: StartingSwitches, now: string): ConnectionDirection {
+  const enabled = current ? current.enabledTools : starting.enabledTools;
+  return {
+    from, to, disabledTools: [...(current?.disabledTools ?? starting.disabledTools)],
+    ...(enabled && enabled.length > 0 && { enabledTools: [...enabled] }),
+    link: current?.link ?? { createdAt: now }, updatedAt: now,
+  };
+}
+
+/** Add user-owned directions in one commit, preserving saved switches and existing links. */
+export async function linkConnectionDirections(pairs: readonly Pick<ConnectionDirection, 'from' | 'to'>[]): Promise<ConnectionDirection[]> {
+  const requested = new Map(pairs.map((pair) => [directionKey(pair.from, pair.to), pair]));
+  let written: ConnectionDirection[] = [];
+  await store.update((file) => {
+    if (file.version !== undefined && file.version > CONNECTION_GRANTS_VERSION) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
+    const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
+    const now = new Date().toISOString();
+    written = [...requested].flatMap(([key, { from, to }]) => {
+      const current = list.find((d) => directionKey(d.from, d.to) === key);
+      return current?.link ? [] : [userLink(from, to, current, NEW_CONNECTION_SWITCHES, now)];
+    });
+    if (written.length === 0) return file;
+    const keys = new Set(written.map((d) => directionKey(d.from, d.to)));
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions: [...list.filter((d) => !keys.has(directionKey(d.from, d.to))), ...written] };
+  });
+  for (const direction of written) {
+    for (const listener of [...listeners]) {
+      try {
+        listener(direction.from, direction.to);
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+  return written;
 }
 
 /**

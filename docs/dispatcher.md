@@ -115,6 +115,12 @@ An explicit `allow` on `connect_orchestrators` or `set_connection_tools` still w
 
 Each source uses `NEW_CONNECTION_SWITCHES` for new directions (#3333): status, output, reachability, messages, files and wake on; clear and compact off, including parent-to-helper and cross-machine links. Starting lists (`startingTools` on the binding: `disabledTools`, and `enabledTools` for wake) apply whichever source bound the pair first. A saved direction always wins, an explicit everything-on included. With nothing saved, the live binding carries the starting `enabledTools`, and wake reads from it (`localConnectionWakeOn` in `connection-grants-store.ts`, `localDirectionTools`). A wire drawn on the canvas is saved at once with wake on (`setDisabledTools` with `start`). A first change on the Connections card to a direction with nothing saved keeps the wake its source started it with.
 
+Make two-way and connecting to another machine add a user-owned link without
+replacing saved switches, even when that direction had no user link yet.
+Only a direction with nothing saved receives the new defaults. Both directions
+of a cross-machine two-way link commit together before listeners see them.
+A failed save leaves the user's previous removal in place.
+
 **One-time pass** (`migrateAutomaticConnectionTools`, done marker `connection-defaults-3214-2026-11-09`), after a complete rebuild and after `migrateDispatcherLinkTools`. Only where nothing is saved, it gives:
 
 - each direction a Clubhouse source lists (helper, Dispatcher and orchestrator links) the starting lists that source gave at its last collect. A start with every tool on isn't saved, since its binding already says that;

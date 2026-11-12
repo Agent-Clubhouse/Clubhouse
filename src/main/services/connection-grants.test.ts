@@ -15,7 +15,7 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-grants-'));
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   connectionMigrationDone, deniedConnectionTools, getConnectionDirection, listConnectionDirections, localConnectionWakeOn, removeConnectionDirections,
-  setConnectionDirections, setConnectionTools, _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
+  onConnectionGrantsChanged, setConnectionDirections, setConnectionTools, _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import {
@@ -24,7 +24,7 @@ import {
   _resetConnectionFileWarningForTesting,
 } from './connection-grants';
 import {
-  applyPersistedBinding, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource, startingTools, _resetPersistedBindingSourcesForTesting,
+  applyPersistedBinding, isBindingRemovedByUser, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource, startingTools, _resetPersistedBindingSourcesForTesting,
   type PersistedBinding,
 } from './persisted-bindings';
 import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
@@ -97,11 +97,42 @@ describe('connection permissions (D129)', () => {
     expect(listConnectionDirections('gone')).toEqual([]);
   });
 
-  it('Make two-way connects a pair the user removed this session, starting like a new connection', async () => {
-    await setConnectionTools(B, A, []); // a leftover entry, everything on
+  it('Make two-way reconnects a removed pair without replacing saved switches or enabling wake', async () => {
+    await setConnectionTools(B, A, []);
     markBindingRemovedByUser('b', 'a');
     await makeTwoWay('b', 'a');
-    expect(toolsOf('b', 'a')).toEqual(['clear_agent', 'compact_agent']);
+    expect(toolsOf('b', 'a')).toBeUndefined();
+    expect(getConnectionDirection(B, A)).toMatchObject({ link: expect.anything(), disabledTools: [] });
+    expect(localConnectionWakeOn('b', 'a')).toBe(false);
+    expect(isBindingRemovedByUser('b', 'a')).toBe(false);
+  });
+
+  it('keeps a removed pair suppressed when its user link could not be saved', async () => {
+    markBindingRemovedByUser('b', 'a');
+    const rename = fs.promises.rename;
+    const failingSave = vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (path.basename(String(to)) === 'connection-grants.json') throw new Error('Connection save blocked');
+      return rename(from, to);
+    });
+    try {
+      await expect(makeTwoWay('b', 'a')).rejects.toThrow('Connection save blocked');
+      expect(getConnectionDirection(B, A)).toBeUndefined();
+      expect(isBindingRemovedByUser('b', 'a')).toBe(true);
+    } finally {
+      failingSave.mockRestore();
+    }
+  });
+
+  it('refuses a newer connection file without removing the previous user suppression', async () => {
+    markBindingRemovedByUser('b', 'a');
+    await _setConnectionGrantsVersionForTesting(99);
+    try {
+      await expect(makeTwoWay('b', 'a')).rejects.toThrow('newer Clubhouse');
+      expect(getConnectionDirection(B, A)).toBeUndefined();
+      expect(isBindingRemovedByUser('b', 'a')).toBe(true);
+    } finally {
+      await _setConnectionGrantsVersionForTesting(1);
+    }
   });
 
   it('other targets keep their list on the binding alone', async () => {
@@ -178,6 +209,29 @@ describe('connections with agents on other machines (#3064)', () => {
     const before = getConnectionDirection(A, far)!;
     await connectAcrossMachines('a', `z@${FAR}`);
     expect(getConnectionDirection(A, far)).toEqual(before);
+  });
+
+  it('adds remote user links without replacing either saved direction, including absent wake', async () => {
+    await setConnectionTools(A, far, ['send_file']);
+    await setConnectionTools(far, A, [], ['wake_agent']);
+    await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true });
+    expect(getConnectionDirection(A, far)).toMatchObject({ link: expect.anything(), disabledTools: ['send_file'] });
+    expect(getConnectionDirection(A, far)?.enabledTools).toBeUndefined();
+    expect(getConnectionDirection(far, A)).toMatchObject({ link: expect.anything(), disabledTools: [], enabledTools: ['wake_agent'] });
+  });
+
+  it('publishes a two-way remote link only after both directions are committed', async () => {
+    const snapshots: boolean[] = [];
+    const unsubscribe = onConnectionGrantsChanged(() => {
+      snapshots.push(!!getConnectionDirection(A, far)?.link && !!getConnectionDirection(far, A)?.link);
+    });
+    try {
+      await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true });
+    } finally {
+      unsubscribe();
+    }
+    expect(snapshots.length).toBeGreaterThan(0);
+    expect(snapshots).not.toContain(false);
   });
 
   it('deleting an agent turns its links with other machines off rather than dropping them, so they hear', async () => {

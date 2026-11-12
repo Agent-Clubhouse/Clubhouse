@@ -12,13 +12,13 @@
 
 import type { AgentAddress, ConnectionDirection, DirectionTools } from '../../shared/connection-grants';
 import {
-  NEW_CONNECTION_DISABLED_TOOLS, NEW_CONNECTION_ENABLED_TOOLS, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localDirectionTools,
+  NEW_CONNECTION_ENABLED_TOOLS, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localDirectionTools,
 } from '../../shared/connection-grants';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager, type RestoreOptions } from './clubhouse-mcp/binding-manager';
 import {
   connectionGrantsWritable, connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
-  listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
+  linkConnectionDirections, listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
@@ -336,14 +336,11 @@ export async function connectAcrossMachines(agentId: string, address: string, op
   if (!other.machineId) throw new Error('That agent is on this computer.');
   if (!isNetworkComputer(other.machineId)) throw new Error('Agents connect only with computers in this Annex Network.');
   if (options.name) await rememberRemoteAgentName(bindingTargetOf(other), options.name);
-  const link = async (from: AgentAddress, to: AgentAddress) => {
-    // A direction already linked keeps its tools and its time, so the other machine's newer edits stand.
-    if (getConnectionDirection(from, to)?.link) return;
-    await setConnectionTools(from, to, [...NEW_CONNECTION_SWITCHES.disabledTools], [...NEW_CONNECTION_SWITCHES.enabledTools]);
-    await setConnectionLink(from, to, true);
-  };
-  await link(local(agentId), other);
-  if (options.twoWay) await link(other, local(agentId));
+  await linkConnectionDirections([
+    { from: local(agentId), to: other },
+    ...(options.twoWay ? [{ from: other, to: local(agentId) }] : []),
+  ]);
+  clearBindingRemovedByUser(agentId, bindingTargetOf(other));
   await rebuildPersistedBindings();
 }
 
@@ -387,16 +384,12 @@ async function agentNames(): Promise<Map<string, string>> {
 
 /**
  * Make a one-way connection two-way (#2972): the user's own link for the
- * other direction, starting like any new connection (read, message and wake).
+ * other direction. Only a direction with nothing saved gets the new defaults.
  */
 export async function makeTwoWay(fromAgentId: string, toAgentId: string): Promise<void> {
-  // The user's own act: a pair they removed this session may be connected again.
+  await linkConnectionDirections([{ from: local(fromAgentId), to: local(toAgentId) }]);
+  // Only a saved user link may override a previous removal.
   clearBindingRemovedByUser(fromAgentId, toAgentId);
-  const existing = getConnectionDirection(local(fromAgentId), local(toAgentId));
-  // A new link starts like a new connection, wake on; only an existing link keeps its lists.
-  if (existing?.link) await setConnectionTools(local(fromAgentId), local(toAgentId), existing.disabledTools);
-  else await setConnectionTools(local(fromAgentId), local(toAgentId), [...NEW_CONNECTION_DISABLED_TOOLS], [...NEW_CONNECTION_ENABLED_TOOLS]);
-  await setConnectionLink(local(fromAgentId), local(toAgentId), true);
   recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: true });
   await rebuildPersistedBindings();
 }
