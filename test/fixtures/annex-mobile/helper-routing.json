@@ -96,6 +96,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -594,6 +595,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -1080,6 +1082,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -1577,6 +1580,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -2083,6 +2087,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -2577,6 +2582,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -3075,6 +3081,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -3568,6 +3575,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -4041,6 +4049,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"
@@ -4534,6 +4543,7 @@
             "cli_disabled": "Turned off in Settings",
             "cli_unavailable": "Not available on this computer",
             "cooling_down": "It failed to start recently",
+            "mapping_changed": "The mapping changed while this start was being prepared",
             "no_valid_mapping": "No choice for this difficulty is offered now",
             "quota_exhausted": "The provider reports its limit reached",
             "quota_near_limit": "Close to its limit"

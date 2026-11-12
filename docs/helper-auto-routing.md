@@ -143,6 +143,10 @@ A provider's helpers, across all orchestrators, that are creating, starting or h
 
 A pure function, one decision per start. Inputs that need a CLI are read before the global start lock, and the decision runs under it.
 
+Under that lock, enabled CLIs, the Copilot opt-out and current cooldowns are checked again. Quota is reclassified from the latest cached windows at the decision timestamp, including session updates, stale readings and expired reset windows; this pass never probes or waits on a provider. A provider disabled while preparation was waiting cannot receive the start. Only already-prepared candidates can become eligible: enabling another provider takes effect on the next preparation.
+
+A changed model/effort cell is skipped as `mapping_changed`, rather than launching its old value with the latest revision. If none remain, the refusal invites one fresh Auto request to read the current mappings. Unrelated setting edits do not invalidate an unchanged prepared cell.
+
 Policy 3 (#3279) preserves policy 2's plan-consumption balancing (#2887) and adds an unreadable-quota last resort. Nothing in it knows who asked, which provider was chosen last, or the order providers were registered in.
 
 1. Candidates: enabled, available, Auto-eligible, a valid mapping cell, not cooling down. Each runs the user's mapped model and effort for the difficulty; Auto picks the provider only.
@@ -166,6 +170,8 @@ A burst on equal readings spreads by load; a burst on unequal readings goes to t
 ### Stage 3 groundwork: recorded, not used
 
 The local decision ledger records an immutable shadow prediction for each fresh Auto decision (part of #2888). `helper-auto-forecast.ts` uses an exact provider, mapped model id, effort, difficulty, mapping revision and task-profile key. No model aliases or missing identities inherit another cohort. A revision change, including changing a mapping back, starts cold; the existing app-wide revision conservatively partitions every cohort on any mapping edit. Historical records remain queryable. There is no Settings switch. `AUTO_USE_BURN_FORECASTS` is false, production routing supplies no forecast inputs, and replay checks that decisions with shadow inputs are byte-for-byte unchanged.
+
+The ledger also records per-window effective sample size and a closed missing-estimate reason (`missing_identity`, `insufficient_samples`, `insufficient_effective_samples`). An unusable baseline has its own reason: `missing`, `not_fresh`, `missing_timestamp`, `future_timestamp`, `stale` or `missing_windows`. Unknown estimates have no expected value, never a zero substitute. Effective sample size describes the existing recency weighting, not calibrated confidence or prediction-interval coverage. These additive diagnostics stay in the local, consent-gated ledger and do not change exported telemetry.
 
 Each window's estimate is a recency-weighted median of at most the latest 32 eligible observations from the preceding 30 days, with a seven-day weight half-life. It requires five samples and an effective sample size of at least three. Otherwise the expected burn is unknown, not zero. Weekly and five-hour windows are separate, in basis points of that provider's own plan. Tokens and dollars are never converted to quota.
 
@@ -230,7 +236,7 @@ Stable codes:
 - `decisionId`: for an Auto decision, its id, shared by its reservation and its #2747 decision record.
 - `fallback`: `none`, `builtin_preset`, `candidate_skipped`, `model_unverified`, `retried_after_spawn_failure`.
 - `source`: `request`, `persona`, `auto`, `orchestrator`, `custom_mapping`, `builtin_mapping`, `cli_default`.
-- `skipped`, per provider: `cli_disabled`, `cli_unavailable`, `auto_disabled`, `auto_not_supported`, `no_valid_mapping`, `cooling_down`, `quota_near_limit`, `quota_exhausted`.
+- `skipped`, per provider: `cli_disabled`, `cli_unavailable`, `auto_disabled`, `auto_not_supported`, `no_valid_mapping`, `mapping_changed`, `cooling_down`, `quota_near_limit`, `quota_exhausted`.
 - `auto.reason`, when Auto is off: `not_enabled`, `project_off`, `orchestration_off`, `dispatcher_locked`. `mcp_off` stays in `autoOffReasons` as a code only and is never sent.
 
 MCP calls the provider `cli`, as `start_helper` does.
@@ -262,6 +268,7 @@ Eight events, all `localOnly`: they go to the local recording (`~/.clubhouse/log
 
 Conventions that hold for every field:
 
+- Decision quota evidence includes other-duration windows and explicit provider-reported exhaustion flags. Only model-scoped windows matching the mapped model count; an unrelated model's exhausted cap is not reported as this candidate's exhaustion. Arbitrary other-window names, project paths and raw provider error messages are not logged.
 - **Absent is unavailable. Zero is a reported zero.** A quota with no reading has no percent attribute, not `0`. A provider that reports no reasoning tokens has no `reasoning_tokens`.
 - Percentages are basis points of the provider's own plan window (4200 is 42.00%), times are epoch milliseconds, ids are hashed by the facade with the install's secret salt. A model is `model_hash` (different mapped models stay distinguishable, the id is not recoverable) plus the closed `clubhouse.model.family`. The same applies to the mapping revision and fingerprint, so two decisions on the same mapping compare equal.
 - Tokens are never turned into a subscription percentage, and neither are dollars. Used percent is only the provider's reading.

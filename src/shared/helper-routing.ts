@@ -148,7 +148,7 @@ export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'prese
 export type HelperRoutingFallback = 'none' | 'builtin_preset' | 'candidate_skipped' | 'model_unverified';
 /** `persona` is from before personas were retired (#2901), kept so an older saved decision still reads. */
 export type HelperRoutingFieldSource = 'request' | 'persona' | 'orchestrator' | 'auto' | 'custom_mapping' | 'builtin_mapping' | 'cli_default';
-export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_disabled' | 'auto_not_supported' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
+export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_disabled' | 'auto_not_supported' | 'no_valid_mapping' | 'mapping_changed' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
 export type { HelperAutoOffReason, HelperAutoSource } from './orchestration-policy';
 export type PresetCellState = 'valid' | 'unverified' | 'stale';
 export type PresetStaleReason = 'model_unavailable' | 'effort_unavailable';
@@ -158,7 +158,7 @@ export type HelperContextStatus = 'none' | 'applied' | 'reset' | 'not_applied';
 export const HELPER_ROUTING_MODES: readonly HelperRoutingMode[] = ['explicit', 'preset', 'auto'];
 export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'last_resort_unmeasured', 'sticky', 'default_order'];
 export const HELPER_ROUTING_FALLBACKS: readonly HelperRoutingFallback[] = ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified'];
-export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_disabled', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted'];
+export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_disabled', 'auto_not_supported', 'no_valid_mapping', 'mapping_changed', 'cooling_down', 'quota_near_limit', 'quota_exhausted'];
 export const HELPER_AUTO_OFF_REASONS: readonly HelperAutoOffReason[] = ['not_enabled', 'project_off', 'orchestration_off', 'mcp_off', 'dispatcher_locked'];
 export const PRESET_CELL_STATES: readonly PresetCellState[] = ['valid', 'unverified', 'stale'];
 
@@ -194,6 +194,7 @@ export const HELPER_ROUTING_LABELS = {
     auto_disabled: 'Turned off for Auto in Settings',
     auto_not_supported: 'Auto doesn’t support this provider yet',
     no_valid_mapping: 'No choice for this difficulty is offered now',
+    mapping_changed: 'The mapping changed while this start was being prepared',
     cooling_down: 'It failed to start recently',
     quota_near_limit: 'Close to its limit',
     quota_exhausted: 'The provider reports its limit reached',
@@ -444,6 +445,8 @@ export type QuotaWindowName = 'weekly' | 'fiveHour' | 'other' | `model:${string}
 export interface QuotaWindowView {
   usedPercent: number | null;
   resetsAt: string | null;
+  /** Only when the provider explicitly reported this window exhausted; never inferred from percent. */
+  limitReached?: boolean;
 }
 
 export interface QuotaView {
@@ -457,6 +460,8 @@ export interface QuotaView {
   resetsAt?: string | null;
   weekly?: QuotaWindowView | null;
   fiveHour?: QuotaWindowView | null;
+  /** Other plan durations, without the provider's arbitrary window labels. */
+  otherWindows?: QuotaWindowView[];
   /** Limits for one model. They don't set this state, because they only apply to that model. */
   modelWindows?: Array<QuotaWindowView & { name: string }>;
   /** Windows that exist but couldn't be read, so the others decided. */
@@ -480,7 +485,7 @@ function isModelWindow(name: string): boolean {
 }
 
 function windowView(window: QuotaWindow | undefined): QuotaWindowView | null {
-  return window ? { usedPercent: window.usedPercent ?? null, resetsAt: iso(window.resetsAt) } : null;
+  return window ? { usedPercent: window.usedPercent ?? null, resetsAt: iso(window.resetsAt), ...(window.limitReached && { limitReached: true }) } : null;
 }
 
 /**
@@ -499,6 +504,9 @@ export function classifyQuota(windows: readonly QuotaWindow[], now: number, opti
   const listed = {
     weekly: windowView(current.find((w) => w.name === 'week')),
     fiveHour: windowView(current.find((w) => w.name === '5h')),
+    ...(current.some((w) => wireName(w.name) === 'other') && {
+      otherWindows: current.filter((w) => wireName(w.name) === 'other').map((w) => windowView(w)!),
+    }),
     ...(current.some((w) => isModelWindow(w.name)) && {
       modelWindows: current.filter((w) => isModelWindow(w.name)).map((w) => ({ name: wireName(w.name).slice('model:'.length), ...windowView(w)! })),
     }),

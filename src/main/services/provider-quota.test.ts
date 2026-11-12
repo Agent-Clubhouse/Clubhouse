@@ -26,7 +26,7 @@ vi.mock('../telemetry/feature-events', () => ({
 }));
 
 import {
-  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, QUOTA_FORCED_READ_BUDGET_MS, _resetProviderQuotaForTesting, classifyStartFailure, forceProviderQuota, isProviderCoolingDown, noteProviderFailure, providerStartWarning, readProviderQuota, watchSessionQuota,
+  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, QUOTA_FORCED_READ_BUDGET_MS, _resetProviderQuotaForTesting, classifyStartFailure, forceProviderQuota, isProviderCoolingDown, isProviderCoolingDownNow, noteProviderFailure, peekProviderQuota, providerStartWarning, readProviderQuota, watchSessionQuota,
 } from './provider-quota';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { QUOTA_STALE_MS } from '../../shared/helper-routing';
@@ -52,6 +52,34 @@ describe('readProviderQuota', () => {
   it('a provider that can\'t report is not_supported, and nothing is read', async () => {
     expect(await readProviderQuota('copilot-cli')).toEqual({ state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null });
     expect(await readProviderQuota('nobody')).toMatchObject({ unknownReason: 'not_supported' });
+  });
+
+  describe('lock-time quota snapshots', () => {
+    it('does not probe, and keeps missing readings unknown rather than inventing capacity', () => {
+      const read = vi.fn(async () => reading(0));
+      W.read = read;
+      expect(peekProviderQuota('claude-code')).toMatchObject({ state: 'unknown', unknownReason: 'not_read', source: 'none', asOf: null });
+      expect(peekProviderQuota('copilot-cli')).toEqual({ state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null });
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('reclassifies stale and reset-crossing readings without a handshake, preserving source and sample time', async () => {
+      const read = vi.fn(async () => reading(10));
+      W.read = read;
+      await readProviderQuota('claude-code');
+      expect(peekProviderQuota('claude-code', { now: NOW + QUOTA_STALE_MS + 1 })).toMatchObject({
+        state: 'unknown', unknownReason: 'stale', source: 'cli_query', asOf: new Date(NOW).toISOString(),
+      });
+      expect(peekProviderQuota('claude-code', { now: NOW + 3 * 86_400_000 })).toMatchObject({ state: 'unknown' });
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    it('sees newly reported cooldowns synchronously, including Copilot without a quota reader', async () => {
+      expect(isProviderCoolingDownNow('copilot-cli', NOW)).toBe(false);
+      await noteProviderFailure('copilot-cli', 'quota');
+      expect(isProviderCoolingDownNow('copilot-cli', NOW)).toBe(true);
+      expect(isProviderCoolingDownNow('copilot-cli', NOW + AUTO_COOLDOWN_QUOTA_MS)).toBe(false);
+    });
   });
 
   it('reports the state, source and age', async () => {

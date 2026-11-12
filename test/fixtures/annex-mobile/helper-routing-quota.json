@@ -12,6 +12,7 @@
       "source": "cli_query",
       "state": "exhausted",
       "weekly": {
+        "limitReached": true,
         "resetsAt": "2027-01-18T08:00:00.000Z",
         "usedPercent": 96
       }
