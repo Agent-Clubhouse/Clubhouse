@@ -166,7 +166,7 @@ describe('strict read-only durable inventory', () => {
     expect(fsp.rename).not.toHaveBeenCalled();
   });
 
-  it('reads valid helpers, known-empty stores, and missing-primary backups without loading or writing', async () => {
+  it('reads valid helpers and known-empty stores but refuses backup-only data without loading or writing', async () => {
     files.set(CONFIG_PATH, JSON.stringify([AGENT_A, { ...AGENT_B, parentAgentId: AGENT_A.id }]));
     const before = new Map(files);
     expect((await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).agents).toHaveLength(2);
@@ -174,7 +174,10 @@ describe('strict read-only durable inventory', () => {
     files.delete(CONFIG_PATH);
     expect(await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).toEqual({ agents: [], readable: true });
     files.set(BACKUP_PATH, JSON.stringify([AGENT_A]));
-    expect(await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).toEqual({ agents: [AGENT_A], readable: true });
+    expect(await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).toEqual({ agents: [], readable: false });
+    expect(await peekDurableConfigsChecked(PROJECT_PATH)).toEqual({ agents: [AGENT_A], readable: true });
+    readErrors.set(BACKUP_PATH, Object.assign(new Error('unreadable recovery'), { code: 'EACCES' }));
+    expect(await peekDurableConfigsChecked(PROJECT_PATH, { strict: true })).toEqual({ agents: [], readable: false });
     expect(fsp.writeFile).not.toHaveBeenCalled();
     expect(fsp.mkdir).not.toHaveBeenCalled();
     expect(fsp.rename).not.toHaveBeenCalled();
