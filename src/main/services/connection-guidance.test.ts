@@ -29,7 +29,7 @@ import * as agentConfig from './agent-config';
 import * as orchestrationPolicy from './orchestration-policy';
 import * as dispatcherService from './dispatcher/dispatcher-service';
 import { listConnectionSources } from './connection-sources';
-import { listConnectionDirectionsForInspection } from './connection-grants-store';
+import { listConnectionDirections, listConnectionDirectionsForInspection } from './connection-grants-store';
 import { groupProjectRegistry } from './group-project-registry';
 
 const wire = (instructions: Record<string, string>, extra: Partial<PersistedBinding> = {}): PersistedBinding => ({
@@ -177,6 +177,44 @@ describe('durable directional connection guidance', () => {
     expect(fs.readFileSync(`${file}.bak`, 'utf8')).toBe(previous);
     expect(fs.readFileSync(guidanceFile, 'utf8')).toBe(guidanceBytes);
     expect(fs.readdirSync(userData.dir, { recursive: true }).sort()).toEqual(names);
+  });
+
+  it('observes and blocks actual legacy grant-temp cleanup, restores real imports, and leaves strict inspection untouched', () => {
+    const file = path.join(userData.dir, 'connection-grants.json');
+    const temp = `${file}.tmp-0-retained`;
+    const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: ['send_message'] };
+    const bytes = JSON.stringify({ version: 1, directions: [direction] });
+    fs.writeFileSync(file, bytes);
+    fs.writeFileSync(temp, 'Protected uncommitted bytes');
+    resetAllSettingsStoresForTests();
+    const originalRemove = fs.rmSync;
+    const blocked = vi.spyOn(fs, 'rmSync').mockImplementation(() => { throw new Error('Protected test temp deletion'); });
+    try {
+      syncBuiltinESMExports();
+      expect(fsExports.rmSync).toBe(blocked);
+      expect(listConnectionDirections('a')).toEqual([direction]);
+      expect(blocked).toHaveBeenCalledWith(temp, { force: true });
+      expect(fs.readFileSync(temp, 'utf8')).toBe('Protected uncommitted bytes');
+    } finally {
+      blocked.mockRestore();
+      syncBuiltinESMExports();
+    }
+    expect(fs.rmSync).toBe(originalRemove);
+    expect(fsExports.rmSync).toBe(originalRemove);
+    resetAllSettingsStoresForTests();
+    const observed = vi.spyOn(fs, 'rmSync');
+    try {
+      syncBuiltinESMExports();
+      expect(fsExports.rmSync).toBe(observed);
+      expect(listConnectionDirectionsForInspection('a')).toEqual([direction]);
+      expect(observed).not.toHaveBeenCalled();
+      expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+      expect(fs.readFileSync(temp, 'utf8')).toBe('Protected uncommitted bytes');
+    } finally {
+      observed.mockRestore();
+      syncBuiltinESMExports();
+    }
+    expect(fsExports.rmSync).toBe(originalRemove);
   });
 
   it('reads committed direction metadata without loading or sweeping the permission store after a cold reset', () => {
