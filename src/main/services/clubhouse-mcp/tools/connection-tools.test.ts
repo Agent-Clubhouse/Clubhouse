@@ -130,6 +130,7 @@ import { getConnectionDirection, removeConnectionDirections, setConnectionTools 
 import { updateAgentGrantChanges } from '../../agent-grants-store';
 import { dropGrantRequestsFor, listGrantRequests } from '../../grant-requests';
 import { recordDispatcherControl } from '../../../telemetry/dispatcher-telemetry';
+import { groupProjectRegistry } from '../../group-project-registry';
 
 let root: string;
 let projectPath: string;
@@ -413,6 +414,21 @@ describe('scoping refusals', () => {
 });
 
 describe('connecting and persistence', () => {
+  it('creates a group project with the caller registered project as its scope default', async () => {
+    const result = await call('create_group_project', { name: 'Local team' });
+    expect(result.isError).toBe(false);
+    expect(groupProjectRegistry.create).toHaveBeenCalledWith('Local team', { projectId: 'proj_w' });
+  });
+
+  it('refuses an unregistered caller project instead of silently creating app scope', async () => {
+    projects.list = [];
+    const result = await call('create_group_project', { name: 'Must not create' });
+    expect(result.isError).toBe(true);
+    expect(result.text).toMatch(/not registered/);
+    expect(groupProjectRegistry.create).not.toHaveBeenCalled();
+    expect(groupProjects.size).toBe(0);
+  });
+
   it('records the creator and joins members, announcing the join like a drawn wire', async () => {
     initGroupProjectLifecycle();
     const res = await call('create_group_project', { name: 'Raid', members: ['h1', 'lead'] });
