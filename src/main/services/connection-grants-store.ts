@@ -17,6 +17,7 @@
  * - fillConnectionTools(from, to, disabledTools, enabledTools): the lists a connection Clubhouse made starts with, where none is saved (#3214);
  * - removeConnectionDirection(from, to): drop one direction's entry;
  * - setConnectionLink(from, to, on): the user's own link for one direction;
+ * - linkConnectionDirections(pairs): add user links in one write, retaining saved switches;
  * - listConnectionDirections(agentId): every entry touching an agent;
  * - listLinkedDirections(): every direction the user linked (Make two-way);
  * - removeConnectionDirections(agentId): drop an agent's entries (deleted);
@@ -30,7 +31,7 @@
  */
 
 import {
-  WAKE_TOOL, directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
+  NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
 } from '../../shared/connection-grants';
 import { createSettingsStore } from './settings-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -271,6 +272,51 @@ export function setConnectionLink(from: AgentAddress, to: AgentAddress, on: bool
       updatedAt: new Date().toISOString(),
     };
   });
+}
+
+/** Add explicit user links atomically; only absent directions get new-connection defaults. */
+export async function linkConnectionDirections(pairs: readonly Pick<ConnectionDirection, 'from' | 'to'>[]): Promise<ConnectionDirection[]> {
+  const requested = new Map<string, Pick<ConnectionDirection, 'from' | 'to'>>();
+  for (const pair of pairs) {
+    const valid = normalizeConnectionDirection(pair);
+    if (!valid) throw new Error('That connection address is not valid.');
+    requested.set(directionKey(valid.from, valid.to), { from: valid.from, to: valid.to });
+  }
+  if (requested.size === 0) return [];
+  const written: ConnectionDirection[] = [];
+  await store.update((file) => {
+    if (file.version !== undefined && file.version > CONNECTION_GRANTS_VERSION) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
+    if (!Array.isArray(file.directions)) throw new Error('The saved connection directions are not a list, so this version will not change them.');
+    // Read through the normalizer, but do not rewrite unrelated or already-linked raw records.
+    const directions = [...file.directions];
+    const list = directions.map(normalizeConnectionDirection);
+    const now = new Date().toISOString();
+    for (const [key, { from, to }] of requested) {
+      const index = list.findIndex((d) => d && directionKey(d.from, d.to) === key);
+      const current = list[index];
+      if (current?.link) continue;
+      const enabled = current ? current.enabledTools : NEW_CONNECTION_SWITCHES.enabledTools;
+      const next: ConnectionDirection = {
+        from, to, disabledTools: [...(current?.disabledTools ?? NEW_CONNECTION_SWITCHES.disabledTools)],
+        ...(enabled && enabled.length > 0 && { enabledTools: [...enabled] }),
+        link: { createdAt: now }, updatedAt: now,
+      };
+      if (index >= 0) directions[index] = next;
+      else directions.push(next);
+      written.push(next);
+    }
+    return written.length === 0 ? file : { ...file, version: CONNECTION_GRANTS_VERSION, directions };
+  });
+  for (const d of written) {
+    for (const listener of [...listeners]) {
+      try {
+        listener(d.from, d.to);
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+  return written;
 }
 
 /**
