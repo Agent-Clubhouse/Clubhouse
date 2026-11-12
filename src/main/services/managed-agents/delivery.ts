@@ -721,6 +721,8 @@ export interface DeliveryRecord {
   /** Parts the setup lists that no longer exist, skipped this start. */
   missing?: number;
   deliveredAt: string;
+  /** The effective provider actually used, including a project-default provider. */
+  provider?: string;
   orchestrator?: string;
   parts: Record<string, { name: string; revision: number }>;
   order: string[];
@@ -793,6 +795,7 @@ export async function deliverManagedSetup(params: {
   const record = setupFingerprint(agent, resolved);
   return {
     ...record,
+    provider: provider.id,
     snapshot: {
       deliveredAt: record.deliveredAt,
       instructions,

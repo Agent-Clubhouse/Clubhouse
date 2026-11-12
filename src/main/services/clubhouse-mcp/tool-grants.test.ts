@@ -179,6 +179,7 @@ describe('tool grant declarations (#2967)', () => {
       fork_agent_part: library.write on library; agent.grant on agent_arg if agent
       delete_agent_part: library.write on library
       get_agent_setup: agent.read on agent_arg
+      get_agent_activation: agent.read on agent_arg
       set_agent_setup: agent.grant on agent_arg
       preview_agent_setup: agent.read on agent_arg
       list_agent_templates: library.read on library
@@ -186,7 +187,7 @@ describe('tool grant declarations (#2967)', () => {
       push_agent_template: template.write on library; template.push on agent_arg if agents
       delete_agent_template: template.write on library
       create_managed_agent: agent.create on project_arg; agent.grant on project_arg if settings or templateId; connection.bootstrap on created_by_me if connectToDispatcher is true
-      restart_agent: agent.restart on agent_arg
+      restart_agent: agent.restart on agent_arg; agent.sleep on agent_arg if now is true
       delete_agent: agent.dispose on agent_arg
       answer_helper_question: agent.message on my_helpers
       create_group_project: connection.manage on agent_arg
