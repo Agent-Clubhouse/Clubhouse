@@ -37,6 +37,7 @@ import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
 import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
 import { appLog } from './log-service';
+import { readAgentCensus } from './dispatcher-connections';
 
 export const DISPATCHER_WIRE_SOURCE_ID = 'dispatcher-wires';
 
@@ -150,9 +151,10 @@ export const dispatcherWireBindingSource: PersistedBindingSource = {
   async inspect(): Promise<PersistedBinding[]> {
     const dispatcherId = getDispatcherAgentId();
     if (!dispatcherId) return [];
-    const projects = await readWires(dispatcherId, await registeredProjects(), 'Could not inspect saved Dispatcher wire guidance');
-    if (projects.some((project) => project.bindings === null)) throw new Error('Saved Dispatcher wire sources could not be checked.');
-    return projects.flatMap((project) => project.bindings ?? []);
+    const census = await readAgentCensus({ strict: true });
+    if (census.unreadable.size > 0) throw new Error('Saved Dispatcher wire sources could not be checked.');
+    return [...census.agents.values()].filter(({ agent, policy }) => agent.id !== dispatcherId && !isDisposedAgent(agent) && policy.connectToDispatcher)
+      .flatMap(({ agent, projectName }) => pairBindings(dispatcherId, agent, projectName));
   },
   async collect(): Promise<CollectedBindings> {
     const dispatcherId = activeDispatcherId();

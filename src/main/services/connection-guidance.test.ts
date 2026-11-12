@@ -5,6 +5,7 @@ import * as path from 'path';
 
 const userData = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => userData.dir } }));
+vi.mock('./base-dir', () => ({ getBaseDirPath: () => userData.dir }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => null }));
 vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({ ...await original<typeof import('./clubhouse-mcp/mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -19,6 +20,15 @@ import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionG
 import { _resetForTesting as resetTools, getScopedToolList, registerToolTemplate } from './clubhouse-mcp/tool-registry';
 import { agentRegistry } from './agent-registry';
 import { registerBuiltinProviders } from '../orchestrators';
+import { dispatcherConnectionSource, dispatcherConnectionsPath, dispatcherPendingRemovalsPath, listDispatcherLinksForUser } from './dispatcher-connections';
+import { dispatcherWireBindingSource } from './dispatcher-wire-source';
+import * as projectStore from './project-store';
+import * as agentConfig from './agent-config';
+import * as orchestrationPolicy from './orchestration-policy';
+import * as dispatcherService from './dispatcher/dispatcher-service';
+import { listConnectionSources } from './connection-sources';
+import { listConnectionDirectionsForInspection } from './connection-grants-store';
+import { groupProjectRegistry } from './group-project-registry';
 
 const wire = (instructions: Record<string, string>, extra: Partial<PersistedBinding> = {}): PersistedBinding => ({
   agentId: 'a', targetId: 'b', targetKind: 'agent', label: 'B', instructions, ...extra,
@@ -28,6 +38,48 @@ function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => { resolve = done; });
   return { promise, resolve };
+}
+
+async function rawOfflineFixture(source: 'manual' | 'automatic') {
+  const projectPath = path.join(userData.dir, 'project');
+  const agentsFile = path.join(projectPath, '.clubhouse', 'agents.json');
+  fs.mkdirSync(path.dirname(agentsFile), { recursive: true });
+  fs.writeFileSync(path.join(userData.dir, 'projects.json'), JSON.stringify({
+    version: 1, projects: [{ id: 'project', name: 'Project', path: projectPath }],
+  }));
+  fs.writeFileSync(agentsFile, JSON.stringify(['a', 'b'].map((id) => ({
+    id, name: id.toUpperCase(), color: 'emerald', createdAt: '2026-11-07',
+    orchestration: { orchestrate: true, connectToDispatcher: true },
+  }))));
+  if (source === 'manual') fs.writeFileSync(dispatcherConnectionsPath(), JSON.stringify({
+    version: 1, removedByUser: [], connections: [{
+      agentId: 'a', targetId: 'b', agentProjectPath: projectPath, targetProjectPath: projectPath,
+      createdAt: '2026-11-07', createdBy: 'dispatcher',
+    }],
+  }));
+  applyPersistedBinding(wire({}));
+  const before = await getConnectionGuidance('a', 'b');
+  await saveConnectionGuidance('a', 'b', {
+    instructions: { '*': 'Committed offline guidance', absent_tool: 'Retained replacement' }, revision: before.revision,
+  });
+  bindingManager.unbind('a', 'b');
+  vi.spyOn(dispatcherService, 'getDispatcherAgentId').mockReturnValue('b');
+  vi.spyOn(dispatcherService, 'isDispatcherEnabled').mockReturnValue(false);
+  vi.spyOn(dispatcherService, 'isDispatcherPath').mockReturnValue(false);
+  const actualSource = source === 'manual' ? dispatcherConnectionSource : dispatcherWireBindingSource;
+  registerPersistedBindingSource(actualSource);
+  const collect = vi.spyOn(actualSource, 'collect');
+  const bind = vi.spyOn(bindingManager, 'bind');
+  const lifecycleReads = [
+    vi.spyOn(projectStore, 'list'), vi.spyOn(agentConfig, 'listDurable'),
+    vi.spyOn(orchestrationPolicy, 'resolveOrchestrationPolicies'),
+  ];
+  const mutations = [
+    vi.spyOn(fs.promises, 'rename'), vi.spyOn(fs.promises, 'writeFile'), vi.spyOn(fs.promises, 'mkdir'),
+    vi.spyOn(fs.promises, 'rm'), vi.spyOn(fs.promises, 'unlink'), vi.spyOn(fs.promises, 'copyFile'),
+  ];
+  const watches = [vi.spyOn(fs, 'watch'), vi.spyOn(fs, 'watchFile'), vi.spyOn(fs.promises, 'watch')];
+  return { agentsFile, collect, bind, lifecycleReads, mutations, watches };
 }
 
 beforeEach(() => {
@@ -52,6 +104,147 @@ afterEach(() => {
 });
 
 describe('durable directional connection guidance', () => {
+  it.each(['manual', 'automatic'] as const)('reads real %s saved source files offline without lifecycle loading, recovery, writes or binding', async (source) => {
+    const fixture = await rawOfflineFixture(source);
+    const files = [path.join(userData.dir, 'projects.json'), fixture.agentsFile, path.join(userData.dir, 'connection-instructions.json'),
+      ...(source === 'manual' ? [dispatcherConnectionsPath()] : [])];
+    const bytes = files.map((file) => fs.readFileSync(file, 'utf8'));
+    const names = fs.readdirSync(userData.dir, { recursive: true }).sort();
+    const offline = await getConnectionGuidance('a', 'b');
+    expect(offline).toMatchObject({
+      offline: true, readOnly: true, hasOverride: true,
+      instructions: { '*': 'Committed offline guidance', absent_tool: 'Retained replacement' },
+    });
+    expect(offline.notice).toContain('No session or tool client was started');
+    const listed = await listConnectionSources('a');
+    expect(listed.unreadable).toEqual([]);
+    expect(listed.pairs.find((pair) => pair.agentId === 'a' && pair.targetId === 'b')).toMatchObject({
+      bound: false, sources: [{ kind: source === 'manual' ? 'dispatcher_link' : 'dispatcher_auto' }],
+      ...(source === 'automatic' && { inspection: { targetKind: 'agent' } }),
+    });
+    await listDispatcherLinksForUser({ strict: true });
+    await expect(saveConnectionGuidance('a', 'b', { instructions: {}, revision: offline.revision })).rejects.toThrow('no longer connected');
+    expect(() => previewConnectionGuidance('a', 'b', {})).toThrow('no longer connected');
+    expect(fixture.collect).not.toHaveBeenCalled();
+    expect(fixture.bind).not.toHaveBeenCalled();
+    for (const read of fixture.lifecycleReads) expect(read).not.toHaveBeenCalled();
+    for (const mutation of fixture.mutations) expect(mutation).not.toHaveBeenCalled();
+    for (const watch of fixture.watches) expect(watch).not.toHaveBeenCalled();
+    expect(files.map((file) => fs.readFileSync(file, 'utf8'))).toEqual(bytes);
+    expect(fs.readdirSync(userData.dir, { recursive: true }).sort()).toEqual(names);
+    expect(agentRegistry.get('a')).toBeUndefined();
+    expect(agentRegistry.get('b')).toBeUndefined();
+  });
+
+  it.each([
+    ['manual', 'store-json'], ['manual', 'store-shape'], ['manual', 'store-missing-time'], ['manual', 'pending-json'], ['manual', 'pending-shape'],
+    ['manual', 'projects-json'], ['automatic', 'projects-json'],
+    ['manual', 'agents-json'], ['automatic', 'agents-json'],
+    ['automatic', 'agents-duplicate'], ['automatic', 'projects-missing'], ['automatic', 'agents-missing'],
+  ] as const)('rejects real %s %s source data without quarantining, restoring a backup or changing any bytes', async (source, failure) => {
+    const fixture = await rawOfflineFixture(source);
+    const file = failure.startsWith('projects') ? path.join(userData.dir, 'projects.json')
+      : failure.startsWith('agents') ? fixture.agentsFile
+        : failure.startsWith('pending') ? dispatcherPendingRemovalsPath() : dispatcherConnectionsPath();
+    const previous = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '{"version":1,"removals":[]}';
+    fs.writeFileSync(`${file}.bak`, previous);
+    if (failure.endsWith('missing')) fs.unlinkSync(file);
+    else {
+      const data = JSON.parse(previous);
+      if (failure === 'store-missing-time') delete data.connections[0].createdAt;
+      fs.writeFileSync(file, failure === 'store-shape' ? '{}' : failure === 'agents-duplicate'
+        ? JSON.stringify([...data, data[0]]) : failure === 'store-missing-time' ? JSON.stringify(data)
+          : failure === 'pending-shape' ? '{"version":1,"removals":[{"agentId":"a","targetId":"b"}]}' : '{malformed');
+    }
+    const guidanceFile = path.join(userData.dir, 'connection-instructions.json');
+    const guidanceBytes = fs.readFileSync(guidanceFile, 'utf8');
+    const sourceBytes = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+    const names = fs.readdirSync(userData.dir, { recursive: true }).sort();
+    await expect(getConnectionGuidance('a', 'b')).rejects.toThrow(/source.*could not be checked/i);
+    expect(fixture.collect).not.toHaveBeenCalled();
+    expect(fixture.bind).not.toHaveBeenCalled();
+    for (const read of fixture.lifecycleReads) expect(read).not.toHaveBeenCalled();
+    for (const mutation of fixture.mutations) expect(mutation).not.toHaveBeenCalled();
+    for (const watch of fixture.watches) expect(watch).not.toHaveBeenCalled();
+    expect(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null).toBe(sourceBytes);
+    expect(fs.readFileSync(`${file}.bak`, 'utf8')).toBe(previous);
+    expect(fs.readFileSync(guidanceFile, 'utf8')).toBe(guidanceBytes);
+    expect(fs.readdirSync(userData.dir, { recursive: true }).sort()).toEqual(names);
+  });
+
+  it('reads committed direction metadata without loading or sweeping the permission store after a cold reset', () => {
+    const file = path.join(userData.dir, 'connection-grants.json');
+    const temp = `${file}.tmp-0-retained`;
+    const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: ['send_message'], updatedAt: '2026-11-07' };
+    const bytes = JSON.stringify({ version: 1, directions: [direction] });
+    fs.writeFileSync(file, bytes);
+    fs.writeFileSync(temp, 'Uncommitted bytes');
+    resetAllSettingsStoresForTests();
+    const remove = vi.spyOn(fs, 'rmSync');
+    expect(listConnectionDirectionsForInspection('a')).toEqual([direction]);
+    expect(remove).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+    expect(fs.readFileSync(temp, 'utf8')).toBe('Uncommitted bytes');
+  });
+
+  it.each(['malformed', 'duplicate'] as const)('refuses %s committed direction metadata without defaulting or cleaning its files', (failure) => {
+    const file = path.join(userData.dir, 'connection-grants.json');
+    const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: [] };
+    const bytes = failure === 'malformed' ? '{malformed' : JSON.stringify({ version: 1, directions: [direction, direction] });
+    fs.writeFileSync(file, bytes);
+    fs.writeFileSync(`${file}.tmp-0-retained`, 'Uncommitted bytes');
+    resetAllSettingsStoresForTests();
+    const remove = vi.spyOn(fs, 'rmSync');
+    expect(() => listConnectionDirectionsForInspection('a')).toThrow(/metadata.*(read|ambiguous)/);
+    expect(remove).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(bytes);
+    expect(fs.readFileSync(`${file}.tmp-0-retained`, 'utf8')).toBe('Uncommitted bytes');
+  });
+
+  it('strictly peeks committed group-project metadata past a loaded cache without migration or cache changes', async () => {
+    const file = path.join(userData.dir, '.clubhouse-dev', 'group-projects', 'registry.json');
+    const cached = { id: 'gp', name: 'Cached', description: '', instructions: '', metadata: {}, createdAt: '2026-11-07' };
+    const committed = { ...cached, name: 'Committed' };
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify([committed]));
+    groupProjectRegistry._setForTesting(cached);
+    const load = vi.spyOn(groupProjectRegistry, 'list');
+    const rename = vi.spyOn(fs.promises, 'rename');
+    try {
+      expect(await groupProjectRegistry.peek()).toEqual([cached]);
+      expect(await groupProjectRegistry.peek({ strict: true })).toEqual([committed]);
+      fs.writeFileSync(file, '{malformed');
+      await expect(groupProjectRegistry.peek({ strict: true })).rejects.toThrow('registry could not be read');
+      expect(groupProjectRegistry.getSync('gp')).toEqual(cached);
+      expect(load).not.toHaveBeenCalled();
+      expect(rename).not.toHaveBeenCalled();
+      expect(fs.readFileSync(file, 'utf8')).toBe('{malformed');
+    } finally {
+      groupProjectRegistry._resetForTesting();
+    }
+  });
+
+  it('rejects old inspection metadata when its registered source is replaced during the actual source-list read', async () => {
+    const entered = deferred();
+    const release = deferred();
+    const collect = vi.fn(async () => []);
+    registerPersistedBindingSource({
+      id: 'dispatcher-wires', collect,
+      inspect: async () => {
+        entered.resolve();
+        await release.promise;
+        return [wire({}, { agentName: 'A', targetName: 'B' })];
+      },
+    });
+    const pending = listConnectionSources('a');
+    await entered.promise;
+    registerPersistedBindingSource({ id: 'dispatcher-wires', collect, inspect: async () => [] });
+    release.resolve();
+    expect(await pending).toEqual({ pairs: [], unreadable: ['dispatcher-wires'] });
+    expect(collect).not.toHaveBeenCalled();
+    expect(bindingManager.getAllBindings()).toEqual([]);
+  });
+
   it.each(['pty', 'headless'] as const)('reports a required restart for the actual fixed-tool-list %s provider after updating server descriptions', async (runtime) => {
     registerToolTemplate('agent', 'get_status', { description: 'Read status', inputSchema: { type: 'object' } }, vi.fn(), {
       grant: { actions: ['agent.read'], target: 'bound' },

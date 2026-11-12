@@ -32,7 +32,7 @@
 import {
   WAKE_TOOL, directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
 } from '../../shared/connection-grants';
-import { createSettingsStore } from './settings-store';
+import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 
 export const CONNECTION_GRANTS_VERSION = 1;
@@ -103,6 +103,22 @@ export function localConnectionWakeOn(fromId: string, toId: string): boolean {
 /** Every entry where the agent sends or receives. */
 export function listConnectionDirections(agentId: string): ConnectionDirection[] {
   return entries().filter((d) => d.from.agentId === agentId || d.to.agentId === agentId);
+}
+
+/** Committed display metadata only: no optimistic cache, temp cleanup, migration or permission writes. */
+export function listConnectionDirectionsForInspection(agentId: string): ConnectionDirection[] {
+  const raw = peekStoredSettingsSync('connection-grants.json');
+  if (raw === 'missing') return [];
+  if (raw === 'unreadable' || !Array.isArray(raw.directions)
+    || (raw.version !== undefined && raw.version !== CONNECTION_GRANTS_VERSION)) {
+    throw new Error('Saved connection direction metadata could not be read. Its files were left unchanged.');
+  }
+  const directions = raw.directions.map(normalizeConnectionDirection);
+  if (!directions.every((direction): direction is ConnectionDirection => direction !== null)
+    || new Set(directions.map((direction) => directionKey(direction.from, direction.to))).size !== directions.length) {
+    throw new Error('Saved connection direction metadata is invalid or ambiguous. Its files were left unchanged.');
+  }
+  return directions.filter((direction) => direction.from.agentId === agentId || direction.to.agentId === agentId);
 }
 
 /** Every entry. */

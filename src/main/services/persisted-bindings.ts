@@ -359,12 +359,14 @@ export function keepHeldBinding(agentId: string, targetId: string): boolean {
  * collect outside a rebuild would change state its watcher relies on. A
  * source whose last collect failed, or that hasn't been read yet, is
  * reported as unreadable.
+ * cachedOnly never invokes collectors; read surfaces can use strict inspectors
+ * separately without triggering a collector's recovery or migration.
  */
-export async function collectSourcesByPair(): Promise<{ bySource: Map<string, Set<string>>; failed: string[] }> {
+export async function collectSourcesByPair(options: { cachedOnly?: boolean } = {}): Promise<{ bySource: Map<string, Set<string>>; failed: string[] }> {
   const bySource = new Map<string, Set<string>>();
   const failed: string[] = [];
   for (const source of [...sources.values()]) {
-    if (source.readOnlyCollect) {
+    if (source.readOnlyCollect && !options.cachedOnly) {
       try {
         const collected = await source.collect();
         const bindings = Array.isArray(collected) ? collected : collected.bindings;
@@ -382,6 +384,16 @@ export async function collectSourcesByPair(): Promise<{ bySource: Map<string, Se
     else failed.push(source.id);
   }
   return { bySource, failed };
+}
+
+/** Saved-only metadata from a registered inspector, never a lifecycle collector. */
+export async function inspectPersistedBindingSource(sourceId: string): Promise<PersistedBinding[] | CollectedBindings | undefined> {
+  const source = sources.get(sourceId);
+  if (!source) return undefined;
+  if (!source.inspect) throw new Error(`Connection source ${sourceId} cannot be inspected without a rebuild.`);
+  const inspected = await source.inspect();
+  if (sources.get(sourceId) !== source) throw new Error(`Connection source ${sourceId} changed. Retry inspection.`);
+  return inspected;
 }
 
 /** Inspect originals without calling stateful collectors outside a rebuild. */

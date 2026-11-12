@@ -41,7 +41,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getBaseDirPath } from './base-dir';
-import { listDurable, onAgentConfigChanged } from './agent-config';
+import { listDurable, onAgentConfigChanged, peekDurableConfigsChecked } from './agent-config';
 import { pathExists } from './fs-utils';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
 import * as projectStore from './project-store';
@@ -58,7 +58,7 @@ import {
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { appLog } from './log-service';
 import { isDisposedAgent } from '../../shared/agent-helpers';
-import type { ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
+import { resolveOrchestrationPolicy, type ResolvedOrchestrationPolicy } from '../../shared/orchestration-policy';
 import type { DispatcherLink, DurableAgentConfig } from '../../shared/types';
 
 export const DISPATCHER_CONNECTION_SOURCE_ID = 'dispatcher-connections';
@@ -137,8 +137,8 @@ async function quarantine(file: string, reason: string): Promise<void> {
   });
 }
 
-/** The store file as written, under the lock. Unparseable moves aside and reads as empty; other read errors throw. */
-async function readStoreFile(): Promise<StoreState> {
+/** Lifecycle reads recover corrupt files; strict saved inspections reject them without recovery. */
+async function readStoreFile(options: { strict?: boolean } = {}): Promise<StoreState> {
   const empty: StoreState = { connections: [], removedByUser: [], writable: true };
   const file = dispatcherConnectionsPath();
   let raw: string;
@@ -152,6 +152,7 @@ async function readStoreFile(): Promise<StoreState> {
   try {
     data = JSON.parse(raw);
   } catch (err) {
+    if (options.strict) throw new Error('Saved Dispatcher connections could not be read. Their file was left unchanged.');
     // telemetry-exempt: logged by quarantine; the store continues empty
     await quarantine(file, err instanceof Error ? err.message : String(err));
     return empty;
@@ -159,8 +160,19 @@ async function readStoreFile(): Promise<StoreState> {
   const record = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null;
   const version = record?.version;
   if (!record || !Array.isArray(record.connections) || typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
+    if (options.strict) throw new Error('Saved Dispatcher connections have an invalid shape. Their file was left unchanged.');
     await quarantine(file, 'not a Dispatcher connections store');
     return empty;
+  }
+  if (options.strict && (version !== DISPATCHER_CONNECTION_STORE_VERSION || !Array.isArray(record.removedByUser)
+    || !record.connections.every(isConnection)
+    || record.connections.some((value) => !value.agentId || !value.targetId || !value.agentProjectPath || !value.targetProjectPath
+      || !value.createdBy || typeof value.createdAt !== 'string' || !value.createdAt)
+    || !record.removedByUser.every(isRemovedPair)
+    || record.removedByUser.some((value) => !value.agentId || !value.targetId || !value.agentProjectPath || !value.targetProjectPath
+      || typeof value.removedAt !== 'string' || !value.removedAt)
+    || new Set(record.connections.map(pairKey)).size !== record.connections.length)) {
+    throw new Error('Saved Dispatcher connections are unknown or ambiguous. Their file was left unchanged.');
   }
   return {
     connections: (record.connections as unknown[]).filter(isConnection),
@@ -198,21 +210,30 @@ function isPendingRemoval(value: unknown): value is PendingRemoval {
 }
 
 /** Throws on a file it can't read: what it may hold is unknown, so nothing should restore past it. */
-async function readPendingFile(): Promise<void> {
+async function readPendingFile(options: { strict?: boolean } = {}): Promise<PendingRemoval[]> {
   let raw: string;
   try {
     raw = await fsp.readFile(dispatcherPendingRemovalsPath(), 'utf-8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw err;
   }
-  const removals = (JSON.parse(raw) as { removals?: unknown } | null)?.removals;
+  const data = JSON.parse(raw) as { version?: unknown; removals?: unknown } | null;
+  const removals = data?.removals;
   if (!Array.isArray(removals) || !removals.every(isPendingRemoval)) {
     throw new Error('The Dispatcher pending removals file is not one this version can read.');
+  }
+  if (options.strict) {
+    if (data?.version !== 1 || removals.some((removal) => !removal.agentId || !removal.targetId
+      || typeof removal.removedAt !== 'string' || !removal.removedAt)) {
+      throw new Error('Saved Dispatcher pending removals are unknown. Their file was left unchanged.');
+    }
+    return removals;
   }
   for (const removal of removals) {
     if (!pendingRemovals.has(pairKey(removal))) pendingRemovals.set(pairKey(removal), removal);
   }
+  return removals;
 }
 
 async function savePendingRemovals(): Promise<void> {
@@ -299,8 +320,14 @@ function withStoreLock<T>(fn: () => Promise<T>): Promise<T> {
 
 const samePair = (a: Pair, b: Pair) => a.agentId === b.agentId && a.targetId === b.targetId;
 
-export function readDispatcherConnections(): Promise<DispatcherConnection[]> {
-  return withStoreLock(async () => (await loadStore()).connections);
+export function readDispatcherConnections(options: { strict?: boolean } = {}): Promise<DispatcherConnection[]> {
+  return withStoreLock(async () => {
+    if (!options.strict) return (await loadStore()).connections;
+    const pending = await readPendingFile({ strict: true });
+    const state = await readStoreFile({ strict: true });
+    const removed = new Set([...pendingRemovals.keys(), ...pending.map(pairKey), ...state.removedByUser.map(pairKey)]);
+    return state.connections.filter((connection) => !removed.has(pairKey(connection)));
+  });
 }
 
 /** Whether the user removed this pair, in any session. */
@@ -498,7 +525,39 @@ export interface AgentCensus {
   agents: ReadonlyMap<string, OrchestratorEntry>;
 }
 
-export async function readAgentCensus(): Promise<AgentCensus> {
+export async function readAgentCensus(options: { strict?: boolean } = {}): Promise<AgentCensus> {
+  if (options.strict) {
+    const savedProjects = await projectStore.peekProjectsChecked({ strict: true });
+    if (!savedProjects.readable) throw new Error('Saved projects could not be checked without recovery.');
+    const registered = new Set<string>();
+    const unreadable = new Set<string>();
+    const agents = new Map<string, OrchestratorEntry>();
+    for (const project of savedProjects.projects) {
+      if (isDispatcherPath(project.path) || registered.has(project.path)) continue;
+      registered.add(project.path);
+      const saved = await peekDurableConfigsChecked(project.path, { strict: true });
+      if (!saved.readable) { unreadable.add(project.path); continue; }
+      for (const agent of saved.agents) {
+        const previous = agents.get(agent.id);
+        if (previous) {
+          unreadable.add(previous.projectPath);
+          unreadable.add(project.path);
+          continue;
+        }
+        const policy = agent.orchestration;
+        if (policy != null && (typeof policy !== 'object' || Array.isArray(policy)
+          || [policy.orchestrate, policy.connectToDispatcher].some((value) => value != null && typeof value !== 'boolean'))) {
+          unreadable.add(project.path);
+          continue;
+        }
+        agents.set(agent.id, {
+          agent, projectPath: project.path, projectName: project.displayName || project.name,
+          policy: resolveOrchestrationPolicy(policy, { helper: !!agent.parentAgentId }),
+        });
+      }
+    }
+    return { registered, unreadable, agents };
+  }
   const registered = new Set<string>();
   const unreadable = new Set<string>();
   const agents = new Map<string, OrchestratorEntry>();
@@ -612,8 +671,8 @@ export const dispatcherConnectionSource: PersistedBindingSource = {
   id: DISPATCHER_CONNECTION_SOURCE_ID,
   prune: true,
   async inspect(): Promise<CollectedBindings> {
-    const connections = await readDispatcherConnections();
-    const census = await readAgentCensus();
+    const connections = await readDispatcherConnections({ strict: true });
+    const census = await readAgentCensus({ strict: true });
     const bindings: PersistedBinding[] = [];
     const unverified: Pair[] = [];
     for (const c of connections) {
@@ -671,15 +730,23 @@ export const dispatcherConnectionSource: PersistedBindingSource = {
  * this source alone owns. `suspended` has no binding at all. A pair the user
  * also drew is neither: it reads as an ordinary wire.
  */
-export async function listDispatcherLinksForUser(): Promise<DispatcherLink[]> {
-  const connections = await readDispatcherConnections();
+export async function listDispatcherLinksForUser(options: { strict?: boolean } = {}): Promise<DispatcherLink[]> {
+  const connections = await readDispatcherConnections(options);
   if (connections.length === 0) return [];
-  const census = await readAgentCensus();
+  const census = await readAgentCensus(options);
   const dispatcherOn = isDispatcherEnabled();
   const owned = listSoleOwnedPairs(DISPATCHER_CONNECTION_SOURCE_ID);
   const out: DispatcherLink[] = [];
   for (const c of connections) {
     if (isBindingRemovedByUser(c.agentId, c.targetId)) continue;
+    if (options.strict) {
+      const ends = [endStatus(c.agentId, c.agentProjectPath, census), endStatus(c.targetId, c.targetProjectPath, census)];
+      if (ends.includes('gone')) continue;
+      if (ends.includes('unverified') || census.agents.get(c.agentId)?.projectPath !== c.agentProjectPath
+        || census.agents.get(c.targetId)?.projectPath !== c.targetProjectPath) {
+        throw new Error('Saved Dispatcher link sources could not be checked without recovery.');
+      }
+    }
     const bound = bindingManager.getBindingsForAgent(c.agentId).some((b) => b.targetId === c.targetId);
     const status = statusOf(c, census, dispatcherOn);
     const shape = status === 'suspended' && !bound ? 'suspended' : owned.some((p) => samePair(p, c)) ? 'active' : null;

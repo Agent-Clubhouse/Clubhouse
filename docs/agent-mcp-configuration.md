@@ -95,6 +95,12 @@ from a saved guidance entry alone. Editing and description previews still requir
 an active binding. Any unsaved draft is retained separately from the saved text
 and becomes editable again after reconnecting. No running tool client is needed
 to inspect guidance, even when its sender or target sleeps.
+Configured automatic Dispatcher directions also appear on the Connections card
+while the Dispatcher is off, clearly marked suspended and not connected. These
+read-only inspection rows do not enable connection tools, Wake it or Make two-way.
+Their source's existing Remove action still requires confirmation before turning
+off Connect to Dispatcher. Inspection rejects corrupt source files without
+repairing, restoring or quarantining them.
 Saving guidance changes only the selected sender-to-receiver direction. The
 explicit **Copy guidance to reverse draft** action copies text, not permissions,
 and still requires saving that reverse direction separately.

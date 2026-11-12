@@ -82,6 +82,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.base }));
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => [...state.projects]),
+  peekProjectsChecked: vi.fn(async () => ({ projects: [...state.projects], readable: true })),
   onProjectsChanged: vi.fn((): (() => void) => (): undefined => undefined),
 }));
 vi.mock('./fs-utils', () => ({ pathExists: vi.fn(async () => true) }));
@@ -90,6 +91,12 @@ vi.mock('./agent-config', () => ({
     if (state.unreadable.has(p)) throw new Error('EACCES');
     return state.agents.get(p) ?? [];
   }),
+  peekDurableConfigsChecked: vi.fn(async (p: string) => ({
+    agents: (state.agents.get(p) as Array<{ id: string }> | undefined)?.map((agent) => ({
+      ...agent, orchestration: state.policies.get(agent.id),
+    })) ?? [],
+    readable: !state.unreadable.has(p),
+  })),
   onAgentConfigChanged: vi.fn((listener: (p: string) => void) => {
     state.agentListeners.add(listener);
     return () => state.agentListeners.delete(listener);
