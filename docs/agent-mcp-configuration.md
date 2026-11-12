@@ -68,6 +68,15 @@ These are client-facing descriptions, not authorization. Tool-group, wire,
 role, grant and user-approval checks still run on every call. An annotation
 does not grant access or change any provider's approval policy.
 
+The connection editor reads `getConnectionToolCatalog` for registered suffixes
+and base descriptions, including tools currently gated by role, group or grant.
+It does not depend on a running client or target; asleep/busy state, custom wire
+guidance and direction switches do not alter the catalog. A tool requiring
+approval stays available as in normal listing. A plugin without a registered
+catalog is explicitly unavailable rather than an apparently empty tool list.
+Catalog availability is not authorization: calls still enforce the saved
+direction switches and all existing checks.
+
 ## Codex local TOML limitation
 
 The JSON editor does not read or write `.codex/config.toml`. Existing TOML helpers
