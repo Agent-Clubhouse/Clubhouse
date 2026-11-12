@@ -1,6 +1,7 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ChatEvent } from '../../../../shared/chat';
+import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { ChatHistory } from './ChatHistory';
 import { useChatStore } from '../../../stores/chatStore';
 import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
@@ -31,10 +32,10 @@ describe('ChatHistory', () => {
       config: { id: 'work', name: 'Rosie', color: 'indigo', createdAt: 'then' },
     });
     window.clubhouse.chat.listSessions = vi.fn(async () => sessions);
-    window.clubhouse.chat.readTranscript = vi.fn(async (agentId, _tail, sessionId) => [
-      { v: 2, agentId, sessionId: sessionId!, seq: 1, ts: 1, type: 'session_started', data: { driver, provider, cwd: '/dispatcher', resumed: true, capabilities: { usage: 'none' } } },
+    window.clubhouse.chat.readTranscript = vi.fn(async (agentId: string, _tail?: number, sessionId?: string): Promise<ChatEvent[]> => [
+      { v: 2, agentId, sessionId: sessionId!, seq: 1, ts: 1, type: 'session_started', data: { driver, provider, cwd: '/dispatcher', resumed: true, capabilities: MINIMAL_CHAT_CAPABILITIES } },
       { v: 2, agentId, sessionId: sessionId!, seq: 2, ts: 2, type: 'session_info', data: { title: 'Provider auto-title', nativeSessionId: 'native-controller' } },
-    ] as ChatEvent[]);
+    ]);
     const { rerender } = render(<ChatHistory agentId="work" currentSessionId="current" onClose={vi.fn()} />);
     await screen.findByText('This session has no messages.');
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
