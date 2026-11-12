@@ -94,7 +94,10 @@ describe('tool grant declarations (#2967)', () => {
 
   it('plugin tools are marked as plugin tools, with no action', () => {
     registerPluginTools('acme', [{ name: 'lookup', description: 'Look up', inputSchema: {} }]);
-    expect(listToolGrants()).toEqual([{ kind: 'plugin', name: 'lookup', grant: 'plugin' }]);
+    expect(listToolGrants()).toEqual([{
+      kind: 'plugin', name: 'lookup', grant: 'plugin',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    }]);
   });
 
   it('no tool finishes a pairing: none pairs, takes a code or confirms a certificate (#3068)', () => {

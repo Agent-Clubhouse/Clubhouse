@@ -74,6 +74,7 @@ describe('plugin-tool-registry', () => {
     expect(getScopedToolList('agent-1').find(t => t.name === 'plugin__my_plugin__lookup')).toEqual({
       name: 'plugin__my_plugin__lookup',
       description: 'Look up a value',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
     });
   });

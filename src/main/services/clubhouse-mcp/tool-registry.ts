@@ -5,7 +5,7 @@
 
 import { randomUUID } from 'crypto';
 import { withSettingsSurface } from '../settings-audit';
-import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
+import type { McpToolAnnotations, McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { isToolGrantPassThrough, toolGrantDeclarations, type ToolGrant } from './tool-grants';
 import type { GrantAction } from '../../../shared/agent-grants';
 import type { GrantToolMap } from '../../../shared/agent-grant-changes';
@@ -163,6 +163,149 @@ export interface ToolRegistrationOptions {
   group?: ToolGroups;
 }
 
+const INTERNAL_READ: Readonly<McpToolAnnotations> = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const INTERNAL_WRITE: Readonly<McpToolAnnotations> = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+const INTERNAL_DESTRUCTIVE: Readonly<McpToolAnnotations> = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+const OPEN_READ: Readonly<McpToolAnnotations> = { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
+const OPEN_WRITE: Readonly<McpToolAnnotations> = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
+const OPEN_DESTRUCTIVE: Readonly<McpToolAnnotations> = { readOnlyHint: false, destructiveHint: true, openWorldHint: true };
+
+/**
+ * Explicit effects, not grant actions or name heuristics. The inventory test
+ * registers the startup catalog so an added tool needs an annotation review.
+ * Mixed tools describe their most capable call, not just their preview path.
+ */
+const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Record<string, Readonly<McpToolAnnotations>>>>> = {
+  agent: {
+    preview_provider: INTERNAL_READ,
+    change_provider: INTERNAL_WRITE,
+    send_message: INTERNAL_WRITE,
+    get_status: INTERNAL_READ,
+    read_output: INTERNAL_READ,
+    check_connectivity: INTERNAL_READ,
+    send_file: INTERNAL_WRITE,
+    clear_agent: INTERNAL_DESTRUCTIVE,
+    compact_agent: INTERNAL_DESTRUCTIVE,
+    wake_agent: INTERNAL_WRITE,
+    sleep_agent: INTERNAL_DESTRUCTIVE,
+  },
+  browser: {
+    navigate: OPEN_DESTRUCTIVE,
+    screenshot: OPEN_READ,
+    get_console: OPEN_READ,
+    click: OPEN_DESTRUCTIVE,
+    type: OPEN_DESTRUCTIVE,
+    evaluate: OPEN_DESTRUCTIVE,
+    get_page_content: OPEN_READ,
+    get_accessibility_tree: OPEN_READ,
+  },
+  'group-project': {
+    list_members: INTERNAL_READ,
+    post_bulletin: INTERNAL_WRITE,
+    read_bulletin: INTERNAL_READ,
+    read_topic: INTERNAL_READ,
+    get_project_info: INTERNAL_READ,
+    shoulder_tap: INTERNAL_WRITE,
+    broadcast: INTERNAL_WRITE,
+    wake_agent: INTERNAL_WRITE,
+    sleep_agent: INTERNAL_DESTRUCTIVE,
+    toggle_polling: INTERNAL_WRITE,
+    query_polling: INTERNAL_READ,
+    nudge_polling: INTERNAL_WRITE,
+    read_message: INTERNAL_READ,
+    clear_topic: INTERNAL_DESTRUCTIVE,
+    clear_agent: INTERNAL_DESTRUCTIVE,
+    compact_agent: INTERNAL_DESTRUCTIVE,
+    delete_messages: INTERNAL_DESTRUCTIVE,
+    set_project_info: INTERNAL_WRITE,
+  },
+  global: {
+    // Can call browser/plugin tools or destructive wire tools, with their gates intact.
+    call_wire_tool: OPEN_DESTRUCTIVE,
+    notify_user: INTERNAL_WRITE,
+    // hand_off records a receipt; only dispose_helper removes files and branches.
+    hand_off: INTERNAL_WRITE,
+    dispose_helper: INTERNAL_DESTRUCTIVE,
+    start_helper: OPEN_WRITE,
+    list_helpers: INTERNAL_READ,
+    sleep_helper: INTERNAL_DESTRUCTIVE,
+    wake_helper: INTERNAL_WRITE,
+    list_projects: INTERNAL_READ,
+    message_parent: INTERNAL_WRITE,
+    // Live model/limit reads may contact a provider, even if a cached call does not.
+    list_models: OPEN_READ,
+    list_agents: INTERNAL_READ,
+    inspect_helper: INTERNAL_READ,
+    start_work: INTERNAL_DESTRUCTIVE,
+    read_memory: INTERNAL_READ,
+    write_memory: INTERNAL_WRITE,
+    list_abilities: INTERNAL_READ,
+    tell_user: INTERNAL_WRITE,
+    search_memory: INTERNAL_READ,
+    update_project: INTERNAL_WRITE,
+    update_agent: INTERNAL_WRITE,
+    list_settings: INTERNAL_READ,
+    read_settings: INTERNAL_READ,
+    set_orchestrator_helpers: INTERNAL_WRITE,
+    connect_orchestrators: INTERNAL_WRITE,
+    disconnect_orchestrators: INTERNAL_DESTRUCTIVE,
+    set_connection_tools: INTERNAL_WRITE,
+    list_orchestrator_controls: INTERNAL_READ,
+    list_agent_parts: INTERNAL_READ,
+    get_agent_part: INTERNAL_READ,
+    create_agent_part: INTERNAL_WRITE,
+    update_agent_part: INTERNAL_WRITE,
+    fork_agent_part: INTERNAL_WRITE,
+    delete_agent_part: INTERNAL_DESTRUCTIVE,
+    get_agent_setup: INTERNAL_READ,
+    set_agent_setup: INTERNAL_WRITE,
+    preview_agent_setup: INTERNAL_READ,
+    list_agent_templates: INTERNAL_READ,
+    save_agent_template: INTERNAL_WRITE,
+    push_agent_template: INTERNAL_WRITE,
+    delete_agent_template: INTERNAL_DESTRUCTIVE,
+    create_managed_agent: INTERNAL_WRITE,
+    restart_agent: INTERNAL_DESTRUCTIVE,
+    delete_agent: INTERNAL_DESTRUCTIVE,
+    answer_helper_question: INTERNAL_WRITE,
+    create_group_project: INTERNAL_WRITE,
+    add_to_group_project: INTERNAL_WRITE,
+    remove_from_group_project: INTERNAL_DESTRUCTIVE,
+    connect_agents: INTERNAL_WRITE,
+    disconnect_agents: INTERNAL_DESTRUCTIVE,
+    create_action: INTERNAL_WRITE,
+    list_actions: INTERNAL_READ,
+    update_action: INTERNAL_WRITE,
+    delete_action: INTERNAL_DESTRUCTIVE,
+    run_action: INTERNAL_DESTRUCTIVE,
+    action_history: INTERNAL_READ,
+    subscribe: INTERNAL_WRITE,
+    read_helper_presets: OPEN_READ,
+    set_helper_presets: OPEN_WRITE,
+    request_grant: INTERNAL_WRITE,
+    update_my_card: INTERNAL_WRITE,
+    list_devices: INTERNAL_READ,
+    rename_device: INTERNAL_WRITE,
+    reconnect_device: INTERNAL_WRITE,
+    remove_device: INTERNAL_DESTRUCTIVE,
+    start_adding_device: INTERNAL_WRITE,
+    add_project: OPEN_WRITE,
+    request_app_update: INTERNAL_WRITE,
+  },
+};
+
+function annotatedDefinition(
+  kind: 'global' | BindingTargetKind,
+  name: string,
+  definition: Omit<McpToolDefinition, 'name'>,
+): Omit<McpToolDefinition, 'name'> {
+  // Plugin behavior is unknown; never borrow a built-in's hints by matching its name.
+  const catalog = TOOL_ANNOTATIONS[kind];
+  const annotations = kind === 'plugin' ? OPEN_DESTRUCTIVE
+    : catalog && Object.prototype.hasOwnProperty.call(catalog, name) ? catalog[name] : undefined;
+  return annotations ? { ...definition, annotations: { ...annotations } } : definition;
+}
+
 export interface ToolTemplate {
   nameSuffix: string;
   definition: Omit<McpToolDefinition, 'name'>;
@@ -209,7 +352,10 @@ export function setTargetToolTemplates(targetKind: BindingTargetKind, targetId: 
     byTarget = new Map();
     targetTemplates.set(targetKind, byTarget);
   }
-  byTarget.set(targetId, [...templates]);
+  byTarget.set(targetId, templates.map((t) => ({
+    ...t,
+    definition: annotatedDefinition(targetKind, t.nameSuffix, t.definition),
+  })));
   invalidateToolListCache();
 }
 
@@ -325,7 +471,7 @@ export function registerToolTemplate(
   }
   // `options?.`: test-only tools may register without options; real tools can't (typecheck, tool-grants.test).
   templates.push({
-    nameSuffix, definition, handler,
+    nameSuffix, definition: annotatedDefinition(targetKind, nameSuffix, definition), handler,
     grant: options?.grant,
     ...(options?.group && { group: options.group }),
   });
@@ -359,7 +505,7 @@ export function registerGlobalTool(
 ): void {
   // `options?.`: test-only tools may register without options; real tools can't (typecheck, tool-grants.test).
   globalTools.set(name, {
-    definition: { ...definition, name },
+    definition: { ...annotatedDefinition('global', name, definition), name },
     handler,
     ...(options?.grant && { grant: options.grant }),
     ...(options?.group && { group: options.group }),
@@ -377,6 +523,8 @@ export interface RegisteredToolGrant {
   grant: ToolGrant | undefined;
   /** The tool group gating it, if any. */
   group?: ToolGroups;
+  /** Effect hints, independent of the grant and group enforcing authorization. */
+  annotations?: McpToolAnnotations;
 }
 
 /**
@@ -387,14 +535,14 @@ export interface RegisteredToolGrant {
 export function listToolGrants(): RegisteredToolGrant[] {
   const out: RegisteredToolGrant[] = [];
   for (const [kind, templates] of toolTemplates) {
-    for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant, ...(t.group && { group: t.group }) });
+    for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant, ...(t.group && { group: t.group }), ...(t.definition.annotations && { annotations: { ...t.definition.annotations } }) });
   }
   for (const [kind, byTarget] of targetTemplates) {
     for (const [, templates] of byTarget) {
-      for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant });
+      for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant, ...(t.definition.annotations && { annotations: { ...t.definition.annotations } }) });
     }
   }
-  for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant, ...(tool.group && { group: tool.group }) });
+  for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant, ...(tool.group && { group: tool.group }), ...(tool.definition.annotations && { annotations: { ...tool.definition.annotations } }) });
   return out;
 }
 

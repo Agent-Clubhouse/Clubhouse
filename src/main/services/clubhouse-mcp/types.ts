@@ -58,10 +58,19 @@ export interface JsonRpcNotification {
   params?: Record<string, unknown>;
 }
 
+/** MCP hints describe possible effects, never authorization or approval policy. */
+export interface McpToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  openWorldHint: boolean;
+}
+
 /** MCP tool definition as returned by tools/list. */
 export interface McpToolDefinition {
   name: string;
   description: string;
+  /** Required for the built-in catalog by the annotation inventory test. */
+  annotations?: McpToolAnnotations;
   inputSchema: {
     type: 'object';
     properties?: Record<string, unknown>;
