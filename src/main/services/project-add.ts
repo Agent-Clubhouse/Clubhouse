@@ -25,18 +25,24 @@ export interface RegisterProjectResult {
   gitignore?: GitignoreOutcome;
 }
 
+export interface ImportRegistrationGuard {
+  beforeGitignore: () => Promise<void>;
+  assertSafe: () => void;
+}
+
 /**
  * Register a folder, or return the project it already is. A new project gets
  * Clubhouse's lines in its .gitignore, as Add project always did; a folder
  * that's already a project is not touched.
  */
-export function registerProjectFolder(dirPath: string): Promise<RegisterProjectResult> {
+export function registerProjectFolder(dirPath: string, guard?: ImportRegistrationGuard): Promise<RegisterProjectResult> {
   return tel.flow('clubhouse.project.add', {}, async () => {
     const { project, created } = await projectStore.addProject(dirPath);
     if (!created) return { project, created };
     let gitignore: GitignoreOutcome;
     try {
-      gitignore = (await tel.step('clubhouse.project.add.ensure_gitignore', () => ensureGitignore(dirPath))) ? 'updated' : 'unchanged';
+      if (guard) await guard.beforeGitignore();
+      gitignore = (await tel.step('clubhouse.project.add.ensure_gitignore', () => guard ? ensureGitignore(dirPath, guard.assertSafe) : ensureGitignore(dirPath))) ? 'updated' : 'unchanged';
     } catch (err) {
       // telemetry-exempt: logged, and reported to the caller as gitignore: failed
       gitignore = 'failed';
