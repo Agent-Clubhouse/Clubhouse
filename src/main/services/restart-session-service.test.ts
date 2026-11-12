@@ -62,7 +62,7 @@ vi.mock('./agent-runtime', async () => {
   return { ...actual, getAgentRuntime: vi.fn((id: string) => actual.getAgentRuntime(id)) };
 });
 
-import { captureSessionState, loadPendingResume, clearPendingResume, getLiveAgentsForUpdate, markAgentStoppedForUpdate } from './restart-session-service';
+import { captureSessionState, loadPendingResume, clearPendingResume, getLiveAgentActivity, getLiveAgentsForUpdate, markAgentStoppedForUpdate } from './restart-session-service';
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
@@ -448,6 +448,20 @@ describe('restart-session-service', () => {
   });
 
   describe('getLiveAgentsForUpdate', () => {
+    it('can read live activity without resolving a provider or discovering sessions', () => {
+      agentRegistry.register('capacity-agent', { projectPath: '/project', orchestrator: 'copilot-cli', runtime: 'pty' });
+      vi.mocked(ptyManager.getLastActivity).mockReturnValue(null);
+      expect(getLiveAgentActivity({ includePendingWork: true })).toEqual([{
+        agentId: 'capacity-agent', projectPath: '/project', orchestrator: 'copilot-cli', runtime: 'pty',
+        isWorking: false, lastActivity: null,
+      }]);
+      expect(getProvider).not.toHaveBeenCalled();
+      expect(getDurableConfig).not.toHaveBeenCalled();
+      expect(ptyManager.getBuffer).not.toHaveBeenCalled();
+      expect(getLiveAgentsForUpdate()).toHaveLength(1);
+      expect(getProvider).toHaveBeenCalledWith('copilot-cli');
+    });
+
     it('counts queued and in-flight messages as work for remote approvals without changing the desktop gate', async () => {
       agentRegistry.register('pending-chat', { projectPath: '/project', orchestrator: 'claude-code', runtime: 'chat' });
       const runtime = {

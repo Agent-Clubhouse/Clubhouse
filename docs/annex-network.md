@@ -49,7 +49,9 @@ These are internal safety primitives, not a complete transfer implementation. Pr
 
 The local sampler reads CPU counters over 100 ms, memory counters and `statfs` for registered project volumes; it never creates files, benchmarks, lists processes or invokes a provider. Load is high at 90% CPU or memory pressure, medium at 65% CPU or 75% memory pressure. Disk is low below 2 GiB or 3% available, limited below 20 GiB or 10%, otherwise ample; multiple volumes use the worst band. Missing or invalid observations fail explicitly instead of claiming spare capacity.
 
-The internal query service shares in-flight reads, caches for 30 seconds, limits callers to 30 queries per minute, checks `device.read` before and after the query, and rechecks online membership before releasing a remote result. Its membership, grant, cached-provider-signals and pinned-transport adapters remain integration work. No capacity tool/route or settings UI is enabled by this foundation.
+The internal query service shares in-flight reads, caches for 30 seconds, limits callers to 30 queries per minute, checks `device.read` before and after the query, and rechecks online membership before releasing a remote result. Its membership, grant, pinned-transport and startup adapters remain integration work. No capacity tool/route or settings UI is enabled by this foundation.
+
+The unregistered local app source uses checked, non-repairing project/agent peeks and the runtime activity inventory, without resolving providers or discovering sessions. Running counts include all live sessions; idle-durable is their non-working configured-durable subset, and sleeping counts configured durables with no live session. Unreadable registries fail explicitly rather than returning healthy zeros. Provider bands use only `cachedProviderCapacity`; the accepting callback defaults false until the trusted runtime installs the real setting and readiness policy.
 
 ### Preparation guide foundation (delivery disabled)
 

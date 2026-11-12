@@ -228,14 +228,10 @@ function resumeStrategyFor(orchestrator: string): ResumeStrategy {
 /** Chat states with a turn in progress. */
 const CHAT_WORKING_STATES = new Set(['running', 'waiting_permission', 'waiting_input']);
 
-/**
- * Every live agent the update restart stops (#2053): terminals, chat sessions
- * and headless runs. Chat agents resume like terminals; a headless run ends
- * with the restart and isn't resumed.
- */
-export function getLiveAgentsForUpdate(options: { includePendingWork?: boolean } = {}): LiveAgentInfo[] {
+/** Runtime counters only: no provider resolution or session discovery. */
+export function getLiveAgentActivity(options: { includePendingWork?: boolean } = {}): Omit<LiveAgentInfo, 'resumeStrategy'>[] {
   const all = agentRegistry.getAllRegistrations();
-  const result: LiveAgentInfo[] = [];
+  const result: Omit<LiveAgentInfo, 'resumeStrategy'>[] = [];
   const now = Date.now();
   const WORKING_THRESHOLD_MS = 5000;
 
@@ -245,17 +241,28 @@ export function getLiveAgentsForUpdate(options: { includePendingWork?: boolean }
     if (reg.runtime === 'pty') {
       const lastActivity = ptyManager.getLastActivity(agentId);
       const isWorking = !!pendingWork || lastActivity !== null && (now - lastActivity) < WORKING_THRESHOLD_MS;
-      result.push({ ...base, isWorking, lastActivity, resumeStrategy: resumeStrategyFor(reg.orchestrator) });
+      result.push({ ...base, isWorking, lastActivity });
     } else if (reg.runtime === 'chat') {
       const runtime = getAgentRuntime(agentId);
       if (!runtime || !runtime.isRunning() && !pendingWork) continue;
       const queued = options.includePendingWork && (runtime.hasPendingWork?.() ?? !!runtime.getQueueState?.().queuedMessageIds.length);
-      result.push({ ...base, isWorking: !!pendingWork || !!queued || CHAT_WORKING_STATES.has(runtime.getState()), lastActivity: null, resumeStrategy: resumeStrategyFor(reg.orchestrator) });
+      result.push({ ...base, isWorking: !!pendingWork || !!queued || CHAT_WORKING_STATES.has(runtime.getState()), lastActivity: null });
     } else if (reg.runtime === 'headless') {
       if (!headlessManager.isHeadless(agentId)) continue;
-      result.push({ ...base, isWorking: true, lastActivity: null, resumeStrategy: 'manual' });
+      result.push({ ...base, isWorking: true, lastActivity: null });
     }
   }
 
   return result;
+}
+
+/**
+ * Every live agent the update restart stops (#2053): terminals, chat sessions
+ * and headless runs. Chat agents resume like terminals; a headless run ends
+ * with the restart and isn't resumed.
+ */
+export function getLiveAgentsForUpdate(options: { includePendingWork?: boolean } = {}): LiveAgentInfo[] {
+  return getLiveAgentActivity(options).map((activity) => ({
+    ...activity, resumeStrategy: activity.runtime === 'headless' ? 'manual' : resumeStrategyFor(activity.orchestrator),
+  }));
 }
