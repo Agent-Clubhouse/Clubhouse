@@ -1768,6 +1768,22 @@ describe('interrupted writes', () => {
     expect(failures).toBeLessThan(0);
   });
 
+  it('rechecks a new asset commit guard after a retryable index rename failure', async () => {
+    let permitted = true;
+    renameFault = (_from, to) => {
+      if (path.basename(to) !== 'catalog.json') return null;
+      permitted = false;
+      return Object.assign(new Error('busy'), { code: 'EPERM' });
+    };
+    await expect(store.createAsset({ kind: 'block', name: 'Revoked before retry', payload: doc() }, async () => {
+      if (!permitted) throw new Error('Authorization revoked');
+    })).rejects.toThrow('Authorization revoked');
+    expect((await store.read()).assets).toEqual({});
+    expect(filesUnder(dir).filter((file) => file.includes('.tmp.'))).toEqual([]);
+    renameFault = null;
+    expect((await store.createAsset({ kind: 'block', name: 'Allowed later', payload: doc() })).name).toBe('Allowed later');
+  });
+
   it('gives up on a rename that stays refused, and reports it', async () => {
     renameFault = () => Object.assign(new Error('busy'), { code: 'EBUSY' });
     await expect(store.createAsset({ kind: 'block', name: 'Doc', payload: doc() })).rejects.toThrow('busy');

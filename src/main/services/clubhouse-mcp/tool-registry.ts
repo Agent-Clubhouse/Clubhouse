@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { withSettingsSurface } from '../settings-audit';
 import type { McpToolAnnotations, McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind, ConnectionToolCatalog } from './types';
 import { isToolGrantPassThrough, toolGrantDeclarations, type ToolGrant } from './tool-grants';
@@ -18,8 +19,9 @@ import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChang
 import { dispatcherGateVersion, isDispatcherAgent, isDispatcherChatAgent, isDispatcherCoordinatorId, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
-import { checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
+import { checkToolGrant, isListable, type AskedAction, type GrantCheck, type GrantCheckWire } from './grant-check';
 import { askFirst } from './ask-first';
+import { callKey } from '../grant-requests';
 import { resolveArgTargets } from './arg-targets';
 import { recordGrantDecision } from '../grant-telemetry';
 import { recordDispatcherControl } from '../../telemetry/dispatcher-telemetry';
@@ -32,6 +34,16 @@ import { getProvider } from '../../orchestrators';
 /** The refusal a Dispatcher tool returns for any other agent. */
 export const DISPATCHER_ONLY_MESSAGE = 'Only the Dispatcher can use this tool.';
 import type { McpRefusalReason } from '../../telemetry/agent-signals';
+
+const approvedCall = new AsyncLocalStorage<{ key: string; asks: AskedAction[] }>();
+
+/** A fresh refusal always wins; only this exact call's consumed user approval can cover Ask first. */
+export function callGrantIsApproved(agentId: string, toolName: string, args: Record<string, unknown>, check: GrantCheck): boolean {
+  if (check.ok === true) return true;
+  const approval = approvedCall.getStore();
+  return check.reason === 'ask_first' && approval?.key === callKey(agentId, toolName, args)
+    && check.asks.every((ask) => approval.asks.some((approved) => approved.action === ask.action && approved.where === ask.where));
+}
 
 /**
  * Whether the agent's CLI keeps the tool list it read at session start (#2603).
@@ -855,7 +867,10 @@ export async function callTool(
       const refused = await grantRefusal(agentId, toolName, granted, args);
       if (refused) return refused;
     }
-    return withSettingsSurface('mcp', agentId, () => globalTool.handler(agentId, args));
+    return approvedCall.run({
+      key: callKey(agentId, toolName, args),
+      asks: granted.ok === false && granted.reason === 'ask_first' ? granted.asks : [],
+    }, () => withSettingsSurface('mcp', agentId, () => globalTool.handler(agentId, args)));
   }
 
   const bindings = bindingManager.getBindingsForAgent(agentId);

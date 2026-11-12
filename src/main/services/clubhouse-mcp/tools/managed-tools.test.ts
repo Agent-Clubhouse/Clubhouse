@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   /** Rows the grant check's peek doesn't see, as when it can't place a name. */
   hiddenFromPeek: new Set<string>(),
   available: true,
+  failMetadata: false,
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -64,9 +65,13 @@ vi.mock('../../managed-agents', async () => {
   let svc: ReturnType<typeof createManagedAgentsService> | null = null;
   return {
     managedAgents: () => {
+      const backing = createManagedStateStore(path.join(state.base, 'managed'));
       svc ??= createManagedAgentsService({
         catalog: createAssetCatalogStore({ dir: path.join(state.base, 'catalog') }),
-        state: createManagedStateStore(path.join(state.base, 'managed')),
+        state: { read: backing.read, update: async (fn) => {
+          if (state.failMetadata) throw new Error('password=private-value at /private/metadata');
+          return backing.update(fn);
+        } },
         listProjects: async () => [{ path: '/proj', name: 'Clubhouse' }],
         listAgents: async () => [...state.agents.values()],
         getAgent: async (_p, id) => state.agents.get(id) ?? null,
@@ -111,6 +116,7 @@ beforeEach(async () => {
   state.restartOrigins = [];
   state.hiddenFromPeek = new Set();
   state.available = true;
+  state.failMetadata = false;
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
   grantMock.granted = false;
@@ -352,6 +358,119 @@ describe('discovery and confirmed library imports (#2855)', () => {
     } finally {
       await updateAgentGrantChanges('dispatcher', () => undefined);
     }
+  });
+
+  async function importPreview(name: string) {
+    const source = sourceAgent();
+    const discovered = await call('discover_agent_assets', source);
+    const args = { ...source, candidateId: discovered.json.candidates[0].id, mode: 'copy', name };
+    const preview = await call('import_agent_asset', args);
+    expect(preview.json.status).toBe('needs_confirmation');
+    return { args, token: preview.json.confirm };
+  }
+
+  it.each(['library.write', 'agent.read'] as const)('refuses %s revoked during confirmation preparation at the effect boundary', async (action) => {
+    const { args, token } = await importPreview(`In-flight revoked ${action}`);
+    const service = managedAgents();
+    const entries = service.liveEntries.bind(service);
+    vi.spyOn(service, 'liveEntries').mockImplementationOnce(async () => {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action, target: { kind: 'any' }, mode: 'off' }] }));
+      return entries();
+    });
+    try {
+      expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+      expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
+  });
+
+  it.each(['move', 'retarget', 'provider'] as const)('refuses an in-flight registered source %s before the durable import', async (change) => {
+    const { args, token } = await importPreview(`In-flight source ${change}`);
+    const service = managedAgents();
+    const entries = service.liveEntries.bind(service);
+    vi.spyOn(service, 'liveEntries').mockImplementationOnce(async () => {
+      const source = state.agents.get('native-source')!;
+      if (change === 'provider') source.orchestrator = 'copilot-cli';
+      else {
+        const moved = path.join(state.base, 'moved-during-confirm');
+        if (change === 'move') fs.renameSync(source.worktreePath!, moved);
+        else fs.mkdirSync(moved);
+        source.worktreePath = moved;
+      }
+      return entries();
+    });
+    expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+    expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+  });
+
+  it('keeps real Ask-first approval separate from preview confirmation and valid through the effect check', async () => {
+    const { args, token } = await importPreview('Actually approved import');
+    const confirmed = { ...args, confirm: token };
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'library.write', target: { kind: 'any' }, mode: 'ask' }] }));
+      const asked = await call('import_agent_asset', confirmed);
+      expect(asked.isError).toBe(true);
+      expect(asked.content[0].text).toContain('approval');
+      expect((await managedAgents().listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+      expect(takeGrantRequest(listGrantRequests('dispatcher')[0].requestId, true)).toBeTruthy();
+      const imported = await call('import_agent_asset', confirmed);
+      expect(imported.isError, imported.content[0].text).toBeFalsy();
+      expect(imported.json).toMatchObject({ status: 'imported', part: { name: args.name } });
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it.each(['off', 'ask'] as const)('does not let a real approval cover source-read changed to %s in flight', async (mode) => {
+    const { args, token } = await importPreview(`Approval does not widen to ${mode}`);
+    const confirmed = { ...args, confirm: token };
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'library.write', target: { kind: 'any' }, mode: 'ask' }] }));
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+      expect(takeGrantRequest(listGrantRequests('dispatcher')[0].requestId, true)).toBeTruthy();
+      const service = managedAgents();
+      const entries = service.liveEntries.bind(service);
+      vi.spyOn(service, 'liveEntries').mockImplementationOnce(async () => {
+        await updateAgentGrantChanges('dispatcher', () => ({ changes: [
+          { action: 'library.write', target: { kind: 'any' }, mode: 'ask' },
+          { action: 'agent.read', target: { kind: 'any' }, mode },
+        ] }));
+        return entries();
+      });
+      expect((await call('import_agent_asset', confirmed)).isError).toBe(true);
+      expect((await service.listParts('skill')).some((p) => p.name === args.name)).toBe(false);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it('returns an error-shaped durable partial receipt and can repair the existing part without creating again', async () => {
+    const { args, token } = await importPreview('Recoverable partial import');
+    let partial: Awaited<ReturnType<typeof call>>;
+    try {
+      state.failMetadata = true;
+      partial = await call('import_agent_asset', { ...args, confirm: token });
+    } finally { state.failMetadata = false; }
+    expect(partial.isError).toBe(true);
+    expect(partial.json).toMatchObject({ status: 'partial', assigned: false, providerLoaded: 'not_confirmed',
+      receipt: { catalog: 'committed', metadata: 'not_saved', unfinishedStage: 'metadata' } });
+    expect(partial.content[0].text).not.toMatch(/private-value|\/private\/metadata/);
+    const id = partial.json.receipt.partId;
+    expect((await call('get_agent_part', { id })).json).toMatchObject({ name: args.name, revision: 1 });
+    expect((await call('import_agent_asset', { ...args, confirm: token })).isError).toBe(true);
+    expect((await call('update_agent_part', { id, expectedRevision: 1, expectedDescription: '', description: 'Recovered metadata' })).json)
+      .toMatchObject({ id, description: 'Recovered metadata' });
+    expect((await managedAgents().listParts('skill')).filter((p) => p.name === args.name)).toHaveLength(1);
   });
 });
 

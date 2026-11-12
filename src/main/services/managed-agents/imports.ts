@@ -30,7 +30,8 @@ export async function prepareManagedAssetImport(service: ManagedAgentsService, s
   const native = await readDiscoveredManagedAsset(source, request.candidateId);
   const hash = contentHash(native.content);
   const matches: ManagedPartSummary[] = [];
-  for (const entry of Object.values(await service.liveEntries())) {
+  const library = await service.liveEntries();
+  for (const entry of Object.values(library)) {
     if (entry.kind !== native.content.kind) continue;
     const part = await service.getPart(entry.id);
     if (!part.retired && contentHash(part.content) === hash) {
@@ -38,6 +39,8 @@ export async function prepareManagedAssetImport(service: ManagedAgentsService, s
       matches.push(summary);
     }
   }
+  const sourceAfterLibrary = await readDiscoveredManagedAsset(source, request.candidateId);
+  if (sourceAfterLibrary.fingerprint !== native.fingerprint) throw new ManagedError('stale', 'The source changed while its library snapshot was read. Preview again; nothing was imported.');
   const shared = request.mode === 'reuse' ? matches.find((p) => p.id === request.partId) : undefined;
   if (request.mode === 'reuse' && !shared) throw new ManagedError('stale', 'The selected library part does not exactly match the discovered asset. Preview again, or import an independent copy.');
   const preview = {
@@ -54,15 +57,23 @@ export async function prepareManagedAssetImport(service: ManagedAgentsService, s
     providerLoaded: 'not_confirmed',
     note: 'Review supporting files and external dependencies before confirming. Nothing was run. Import does not assign, convert or restart an agent. Reuse follows future shared edits; a copy is independent. Literal environment values are not copied; set them in the external environment.',
   };
+  const fingerprint = canonicalHash({ source: native.fingerprint, projectId, request, preview, library, matches });
   return {
     preview,
-    fingerprint: canonicalHash({ source: native.fingerprint, projectId, request, preview, library: matches }),
-    async commit(actor: string): Promise<ManagedPartSummary> {
-      if (shared) return shared;
+    fingerprint,
+    async commit(actor: string, prepareAuthorization?: () => Promise<() => void>): Promise<ManagedPartSummary> {
+      const beforeCommit = async () => {
+        // Resolve async targets first; check live grants synchronously after the final source/library read.
+        const authorize = await prepareAuthorization?.();
+        const current = await prepareManagedAssetImport(service, source, request, projectId);
+        if (current.fingerprint !== fingerprint) throw new ManagedError('stale', 'The source or library changed before import committed. Preview again; nothing was imported.');
+        authorize?.();
+      };
+      if (shared) { await beforeCommit(); return shared; }
       return service.createPart({
         name: request.name!.trim(), content: native.content, actor,
         source: { kind: 'import', from: native.content.kind === 'skill' ? 'project-skill' : 'native-mcp', projectId, nativeName: native.candidate.nativeName },
-      });
+      }, beforeCommit);
     },
   };
 }
