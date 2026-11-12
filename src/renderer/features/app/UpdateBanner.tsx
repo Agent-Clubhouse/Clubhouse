@@ -6,6 +6,7 @@ import { UPDATE_AGENT_ACTION_TIMEOUT_MS, type LiveAgentInfo, type UpdateAgentAct
 import { NoticeCard } from '../../components/NoticeCard';
 import { Button } from '../../components/Button';
 import type { AppUpdateRequest } from '../../../shared/app-update';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 
 // Literal class strings so Tailwind can see every variant it needs to generate.
 const TONES = {
@@ -33,6 +34,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
   const dismiss = useUpdateStore((s) => s.dismiss);
   const openUpdateDownload = useUpdateStore((s) => s.openUpdateDownload);
   const agents = useAgentStore((s) => s.agents);
+  const dispatcher = useDispatcherStore((s) => s.state);
   const [showGate, setShowGate] = useState(false);
   const [simulateMode, setSimulateMode] = useState(false);
   const [gateAgents, setGateAgents] = useState<UpdateGateAgent[]>([]);
@@ -96,7 +98,9 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
         // provider's session capability — the same source the capture path uses.
         const next = live.filter((a: LiveAgentInfo) => !stoppedAgents.current.has(a.agentId)).map((a: LiveAgentInfo) => ({
           ...a,
-          agentName: agents[a.agentId]?.name || a.agentId,
+          agentName: a.dispatcherRole === 'work' ? 'Dispatcher work'
+            : agents[a.agentId]?.name && agents[a.agentId].name !== a.agentId ? agents[a.agentId].name
+              : a.dispatcherRole === 'chat' ? dispatcher?.config?.name || 'Dispatcher' : a.agentId,
         }));
         const ids = new Set(next.map((a) => a.agentId));
         return [...next, ...previous.filter((a) => !ids.has(a.agentId)
@@ -113,7 +117,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
     } finally {
       if (attempt === gateAttempt.current && sequence === refreshSequence.current) setGateLoading(false);
     }
-  }, [agents]);
+  }, [agents, dispatcher]);
 
   const openGate = () => {
     gateAttempt.current++;

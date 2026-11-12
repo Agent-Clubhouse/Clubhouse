@@ -1952,6 +1952,8 @@ export interface RestartSessionState {
 export interface LiveAgentInfo {
   agentId: string;
   projectPath: string;
+  /** Dispatcher role, determined by the main process from its workspace path. */
+  dispatcherRole?: 'work' | 'chat';
   orchestrator: OrchestratorId;
   runtime: string;
   isWorking: boolean;

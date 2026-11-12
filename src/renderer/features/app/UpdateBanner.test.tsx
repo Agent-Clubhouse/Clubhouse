@@ -4,6 +4,8 @@ import { useUpdateStore } from '../../stores/updateStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { UpdateBanner } from './UpdateBanner';
 import { UPDATE_AGENT_ACTION_TIMEOUT_MS, type LiveAgentInfo, type UpdateAgentActionResult } from '../../../shared/types';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
+import { DISPATCHER_OFF } from '../../../shared/dispatcher-types';
 
 // Mock window.clubhouse to prevent errors from agentStore
 Object.defineProperty(globalThis, 'window', {
@@ -63,6 +65,7 @@ Object.defineProperty(globalThis, 'window', {
 });
 
 function resetStores() {
+  useDispatcherStore.setState({ state: null });
   vi.mocked(window.clubhouse.app.getAppUpdateRequest).mockResolvedValue(null);
   vi.mocked(window.clubhouse.app.onAppUpdateRequestChanged).mockReturnValue(vi.fn());
   useUpdateStore.setState({
@@ -493,6 +496,28 @@ describe('UpdateBanner card variant (new chrome)', () => {
       render(<UpdateBanner />);
       await act(async () => { fireEvent.click(screen.getByTestId('update-restart-btn')); });
     }
+
+    it('distinguishes Dispatcher work and explains its actions and delayed resume', async () => {
+      useDispatcherStore.setState({ state: {
+        ...DISPATCHER_OFF, chatAgentId: 'chat', config: { id: 'work', name: 'Sage', color: 'blue', createdAt: '' },
+      } });
+      const work: LiveAgentInfo = { ...liveAgent, agentId: 'work', dispatcherRole: 'work' };
+      const chat: LiveAgentInfo = { ...liveAgent, agentId: 'chat', dispatcherRole: 'chat', isWorking: false };
+      vi.mocked(window.clubhouse.app.getLiveAgentsForUpdate).mockResolvedValue([work, chat]);
+      await openGate();
+      expect(screen.getByText('Dispatcher work')).toBeInTheDocument();
+      expect(screen.getByText('Sage')).toBeInTheDocument();
+      expect(screen.queryByText('work')).not.toBeInTheDocument();
+      expect(screen.queryByText('chat')).not.toBeInTheDocument();
+      expect(screen.getByText(/Interrupt or Stop now can end work in progress/)).toBeInTheDocument();
+      expect(screen.getByText(/After restart it resumes when next needed/)).toBeInTheDocument();
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Interrupt' })); });
+      expect(window.clubhouse.app.resolveWorkingAgent).toHaveBeenCalledWith('work', 'interrupt');
+      vi.mocked(window.clubhouse.app.getLiveAgentsForUpdate).mockResolvedValue([{ ...work, isWorking: false }, chat]);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      expect(screen.getByText('Resumes when next needed')).toBeInTheDocument();
+      expect(screen.getByText('Auto-resume')).toBeInTheDocument();
+    });
 
     it('checks a woken agent again after cancelling an earlier successful stop', async () => {
       vi.mocked(window.clubhouse.app.resolveWorkingAgent).mockResolvedValue({ status: 'resolved', isWorking: false });

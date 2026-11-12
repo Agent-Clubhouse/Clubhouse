@@ -1,7 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Spinner } from '../../components/Spinner';
 import { NoticeCard, NOTICE_DOT, type NoticeTone } from '../../components/NoticeCard';
 import { Button } from '../../components/Button';
+import type { DispatcherState } from '../../../shared/dispatcher-types';
+import type { Agent } from '../../../shared/types';
+import { useAgentStore } from '../../stores/agentStore';
+import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 
 export type ResumeStatus = 'pending' | 'resuming' | 'resumed' | 'failed' | 'manual' | 'timed_out';
 
@@ -10,6 +14,31 @@ export interface ResumeBannerSession {
   agentName: string;
   status: ResumeStatus;
   error?: string;
+}
+
+export function resumeBannerSessions(
+  statuses: Record<string, ResumeStatus>,
+  agents: Record<string, Agent>,
+  names: Record<string, string>,
+  dispatcher: DispatcherState | null,
+): ResumeBannerSession[] {
+  return Object.entries(statuses).map(([agentId, status]) => {
+    const name = [agents[agentId]?.name, names[agentId]].find((value) => value && value !== agentId);
+    return {
+      agentId,
+      agentName: name && name !== agentId ? name
+        : agentId === dispatcher?.chatAgentId ? dispatcher.config?.name || 'Dispatcher' : agentId,
+      status,
+    };
+  });
+}
+
+export function useResumeBannerSessions(): ResumeBannerSession[] {
+  const statuses = useAgentStore((s) => s.resumingAgents);
+  const agents = useAgentStore((s) => s.agents);
+  const names = useAgentStore((s) => s.resumeAgentNames);
+  const dispatcher = useDispatcherStore((s) => s.state);
+  return useMemo(() => resumeBannerSessions(statuses, agents, names, dispatcher), [statuses, agents, names, dispatcher]);
 }
 
 interface ResumeBannerProps {

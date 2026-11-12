@@ -30,7 +30,7 @@ export async function processResumeQueue(state: RestartSessionState): Promise<vo
   // Set initial statuses
   for (const entry of sessions) {
     const status: ResumeStatus = entry.resumeStrategy === 'manual' ? 'manual' : 'pending';
-    store.setResumeStatus(entry.agentId, status);
+    store.setResumeStatus(entry.agentId, status, entry.agentName);
   }
 
   // Process all workspaces in parallel, but sequential within each workspace

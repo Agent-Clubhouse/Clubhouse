@@ -113,7 +113,7 @@ describe('resume-queue', () => {
       await processResumeQueue(state);
 
       // First call should set to 'pending', subsequent ones by resumeAgent set 'resuming' then 'resumed'
-      expect(mockSetResumeStatus).toHaveBeenCalledWith('agent-1', 'pending');
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('agent-1', 'pending', 'Test Agent');
     });
 
     it('sets initial status to manual for manual agents', async () => {
@@ -121,7 +121,7 @@ describe('resume-queue', () => {
 
       await processResumeQueue(state);
 
-      expect(mockSetResumeStatus).toHaveBeenCalledWith('agent-manual', 'manual');
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('agent-manual', 'manual', 'Test Agent');
     });
 
     it('calls spawnAgent with correct params for auto-resume agents (resume: true, sessionId)', async () => {

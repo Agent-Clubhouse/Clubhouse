@@ -17,7 +17,7 @@ import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
 import { UpdateBanner } from './features/app/UpdateBanner';
-import { ResumeBanner, ResumeBannerSession } from './features/app/ResumeBanner';
+import { ResumeBanner, useResumeBannerSessions } from './features/app/ResumeBanner';
 import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
@@ -52,13 +52,7 @@ export function App() {
   const isNewChrome = useChromeFlagStore((s) => s.enabled);
 
   // ── Resume banner state ──────────────────────────────────────────────────
-  const resumingAgents = useAgentStore((s) => s.resumingAgents);
-  const agents = useAgentStore((s) => s.agents);
-  const resumeSessions: ResumeBannerSession[] = Object.entries(resumingAgents).map(([agentId, status]) => ({
-    agentId,
-    agentName: agents[agentId]?.name || agentId,
-    status,
-  }));
+  const resumeSessions = useResumeBannerSessions();
 
   // ── Annex lock state (individual selectors to avoid reference-inequality re-render loops) ──
   const lockLocked = useLockStore((s) => s.locked);
