@@ -2,6 +2,7 @@ import { AUTO_LEVELS, BUILTIN_PRESETS, isPresetModel, isPresetProvider } from '.
 import type { HelperCalibrationIdentityReason } from '../../shared/telemetry/helper-usage-contract';
 import { IPC } from '../../shared/ipc-channels';
 import type { ModelInfo, ModelList, OrchestratorProvider } from '../orchestrators/types';
+import { isClaudeModelAlias } from '../orchestrators/claude-model-aliases';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { appLog } from './log-service';
 import { getPresets } from './orchestration-settings';
@@ -35,7 +36,8 @@ export function peekHelperCalibrationModel(provider: string, model: string, now:
   const base = model.replace(/\[1m\]$/i, '');
   const entry = list.models.find((m) => m.id === model || m.id === base || m.resolvedId === base);
   const canonical = entry?.resolvedId ?? entry?.id;
-  if (!isPresetModel(canonical) || /^(opus|sonnet|haiku|default|auto)$/i.test(canonical)) return { reason: 'unresolved_model' };
+  if (!isPresetModel(canonical) || isClaudeModelAlias(canonical)
+    || canonical.replace(/\[1m\]$/i, '').toLowerCase() === 'auto') return { reason: 'unresolved_model' };
   return { model: canonical, reason: 'cached_catalog' };
 }
 

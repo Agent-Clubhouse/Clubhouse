@@ -476,6 +476,7 @@ describe('ClaudeCodeProvider', () => {
       expect(provider.acceptsModel('gpt-6.1-sol', live)).toBe(false);
       expect(provider.acceptsModel('claude-opus-9', live)).toBe(false);
       expect(provider.acceptsModel('[1m]', live)).toBe(false);
+      expect(provider.acceptsModel('opus[1m][1m]', live)).toBe(false);
     });
   });
 
