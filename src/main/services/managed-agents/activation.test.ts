@@ -1,0 +1,154 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DurableAgentConfig } from '../../../shared/types';
+import { captureAuditEvents, type AuditCapture } from '../../telemetry/__test-utils__/audit-capture';
+
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
+vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+
+import { createAssetCatalogStore } from '../asset-catalog/store';
+import { _resetSettingsAuditForTesting, withSettingsSurface } from '../settings-audit';
+import { createManagedStateStore } from './state-store';
+import { createManagedAgentsService, type ManagedAgentsService } from './service';
+import { restartWithReceipt, type ManagedRestartReceipt } from './activation-receipts';
+import { managedActivationFor } from './activation';
+import { resolveManagedSetup, setupFingerprint } from './delivery';
+import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
+
+let root: string, service: ManagedAgentsService, agent: DurableAgentConfig, capture: AuditCapture;
+const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
+
+beforeEach(async () => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-activation-receipt-'));
+  capture = captureAuditEvents();
+  _resetSettingsAuditForTesting(true);
+  agent = { id: 'target', name: 'Target', color: 'indigo', createdAt: '', orchestrator: 'copilot-cli',
+    managed: { version: 1, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] } };
+  service = createManagedAgentsService({
+    catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+    state: createManagedStateStore(path.join(root, 'managed')),
+    listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+    setManagedSetup: async (_p, _id, setup) => { if (setup) agent.managed = setup; }, isRunning: () => true,
+  });
+  await service.ensureBuiltins();
+});
+afterEach(() => {
+  capture.stop();
+  _resetSettingsAuditForTesting(false);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe('passive managed activation evidence (#2855)', () => {
+  it('keeps configured, desired, materialized, running and provider confirmation separate', async () => {
+    const before = await managedActivationFor({ service, agent, running: true, deliveryFailed: false });
+    expect(before).toMatchObject({
+      status: 'pending', configured: { managed: true }, desired: { parts: [{ id: CLUBHOUSE_MCP_PART_ID }] },
+      materialized: { status: 'not_confirmed', matchesDesired: null }, running: { status: 'running', launchSetup: 'not_confirmed', matchesDesired: null },
+      providerConfirmedLoaded: { skills: 'not_confirmed', mcpTools: 'not_confirmed', syntheticCheck: 'not_run' },
+      verification: { status: 'blocked', attempts: 0 },
+    });
+    const materialized = { ...setupFingerprint(agent, await resolveManagedSetup(service, agent.managed!)), provider: 'copilot-cli' };
+    const after = await managedActivationFor({ service, agent, running: true, materialized, deliveryFailed: false });
+    expect(after).toMatchObject({ status: 'partial', materialized: { status: 'recorded', matchesDesired: true }, running: { launchSetup: 'recorded_at_start' } });
+    expect(after.providerConfirmedLoaded).toEqual(before.providerConfirmedLoaded);
+    const part = await user(() => service.createPart({ name: 'New server', content: { kind: 'mcp', serverKey: 'new-server', transport: 'stdio', command: 'never-run' } }));
+    agent.managed!.mcps.push(part.id);
+    const changed = await managedActivationFor({ service, agent, running: true, materialized, deliveryFailed: false });
+    expect(changed).toMatchObject({ status: 'pending', materialized: { matchesDesired: false }, running: { matchesDesired: false } });
+    expect(changed.desired?.parts.map((p) => p.id)).toContain(part.id);
+    expect('parts' in changed.materialized && changed.materialized.parts?.map((p) => p.id)).not.toContain(part.id);
+  });
+
+  it('does not call an old materialization current when the effective project provider changed', async () => {
+    delete agent.orchestrator;
+    const materialized = { ...setupFingerprint(agent, await resolveManagedSetup(service, agent.managed!)), provider: 'copilot-cli' };
+    const result = await managedActivationFor({ service, agent, effectiveProvider: 'codex-cli', running: true, materialized, deliveryFailed: false });
+    expect(result).toMatchObject({ provider: 'codex-cli', status: 'pending', materialized: { provider: 'copilot-cli', matchesDesired: false }, running: { matchesDesired: false } });
+  });
+
+  it('reports plain agents, failed/missing deliveries and missing environment as blocked without secret-bearing diagnostics', async () => {
+    const materialized = setupFingerprint(agent, await resolveManagedSetup(service, agent.managed!));
+    expect(await managedActivationFor({ service, agent, running: true, materialized, deliveryFailed: true }))
+      .toMatchObject({ status: 'blocked', materialized: { status: 'failed' }, running: { launchSetup: 'not_confirmed' }, diagnostics: ['delivery_failed'] });
+    expect(await managedActivationFor({ service, agent, running: true, materialized, deliveryFailed: false, mcpProblems: [{ server: 'safe', missingEnv: ['SERVICE_TOKEN'] }] }))
+      .toMatchObject({ status: 'blocked', diagnostics: ['missing_mcp_environment'] });
+    agent.managed!.skills.push('missing-skill');
+    expect(await managedActivationFor({ service, agent, running: false, materialized, deliveryFailed: false }))
+      .toMatchObject({ status: 'blocked', desired: { missing: ['missing-skill'] }, running: { status: 'stopped' } });
+    delete agent.managed;
+    expect(await managedActivationFor({ service, agent, running: true, deliveryFailed: false }))
+      .toMatchObject({ status: 'blocked', configured: { managed: false }, desired: null, diagnostics: ['not_managed'] });
+  });
+
+  it('refuses duplicate MCP server keys rather than silently selecting a part by precedence', async () => {
+    const parts = await user(async () => Promise.all(['One', 'Two'].map((name) => service.createPart({ name,
+      content: { kind: 'mcp', serverKey: 'duplicate', transport: 'stdio', command: name.toLowerCase() } }))));
+    await expect(service.checkSetup({ blocks: [], skills: [], mcps: parts.map((p) => p.id) })).rejects.toThrow('same server key');
+    agent.managed!.mcps.push(...parts.map((p) => p.id));
+    expect(await managedActivationFor({ service, agent, running: true, deliveryFailed: false }))
+      .toMatchObject({ status: 'blocked', diagnostics: ['duplicate_mcp_keys'] });
+  });
+});
+
+describe('persistent lifecycle receipts (#2855)', () => {
+  const input = { agentId: 'target', whenTurnEnds: true, fresh: false, requestedParts: [{ id: CLUBHOUSE_MCP_PART_ID, revision: 1 }] };
+  const save = (r: ManagedRestartReceipt) => service.recordRestartReceipt(r);
+
+  it('persists intent before restart, then its actor, revisions and outcome without content', async () => {
+    const restart = vi.fn(async () => {
+      expect(await service.latestRestartReceipt('target')).toMatchObject({ outcome: 'requested', actorId: 'dispatcher', requestedParts: input.requestedParts });
+      return { resumed: true };
+    });
+    expect(await withSettingsSurface('mcp', 'dispatcher', () => restartWithReceipt(input, save, restart))).toEqual({ resumed: true });
+    expect(restart).toHaveBeenCalledOnce();
+    const reloaded = await createManagedStateStore(path.join(root, 'managed')).read();
+    expect(reloaded.restarts).toMatchObject([{ outcome: 'completed', actorId: 'dispatcher', resumed: true, fresh: false, whenTurnEnds: true }]);
+    expect(capture.settings().filter((r) => r.key.startsWith('managed.restart.'))).toEqual([
+      { surface: 'mcp', actorId: 'dispatcher', scope: 'agent', targetId: 'target', key: 'managed.restart.requested', changed: true, outcome: 'ok' },
+      { surface: 'mcp', actorId: 'dispatcher', scope: 'agent', targetId: 'target', key: 'managed.restart.completed', changed: true, outcome: 'ok' },
+    ]);
+  });
+
+  it('persists a failed restart and never exposes the raw failure or promotes it to activation success', async () => {
+    const restart = async () => { throw new Error('password=private-value at /private/source'); };
+    const error = await restartWithReceipt(input, save, restart).catch((e: Error) => e);
+    expect(error).toBeInstanceOf(Error);
+    const result = await managedActivationFor({ service, agent, running: false, deliveryFailed: false });
+    expect(result).toMatchObject({ status: 'blocked', lastRestart: { outcome: 'failed', failure: 'restart_failed' }, diagnostics: ['restart_failed'] });
+    const raw = JSON.stringify({ result, error: String(error), audit: capture.settings(), persisted: fs.readFileSync(path.join(root, 'managed/state.json'), 'utf8') });
+    expect(raw).not.toContain('private-value');
+    expect(raw).not.toContain('/private/source');
+    expect(result.providerConfirmedLoaded.mcpTools).toBe('not_confirmed');
+  });
+
+  it('does not perform lifecycle work when intent persistence fails, and does not report success when the completion receipt fails', async () => {
+    const restart = vi.fn(async () => ({ resumed: true }));
+    await expect(restartWithReceipt(input, async () => { throw new Error('disk full'); }, restart)).rejects.toThrow('Restart was not attempted');
+    expect(restart).not.toHaveBeenCalled();
+    await expect(restartWithReceipt(input, async (r) => {
+      if (r.outcome === 'completed') throw new Error('secret outcome storage error');
+      await save(r);
+    }, restart)).rejects.toThrow('outcome receipt could not be saved');
+    expect(restart).toHaveBeenCalledOnce();
+    const result = await managedActivationFor({ service, agent, running: true, deliveryFailed: false });
+    expect(result).toMatchObject({ lastRestart: { outcome: 'requested' }, restartNote: expect.stringContaining('do not assume completion') });
+  });
+
+  it('strips non-receipt stored fields and refuses malformed state without exposing its content', async () => {
+    await restartWithReceipt(input, save, async () => ({ resumed: true }));
+    const file = path.join(root, 'managed/state.json');
+    const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+    state.restarts[0].providerError = 'password=private-value at /private/source';
+    state.restarts[0].requestedParts[0].content = 'private instruction';
+    fs.writeFileSync(file, JSON.stringify(state));
+    const receipt = await service.latestRestartReceipt('target');
+    expect(receipt).toMatchObject({ outcome: 'completed', requestedParts: input.requestedParts });
+    expect(JSON.stringify(receipt)).not.toMatch(/private|providerError|content/);
+    fs.writeFileSync(file, '{"password":"private-value at /private/source",broken');
+    await expect(service.latestRestartReceipt('target')).rejects.toMatchObject({
+      message: 'Managed state is unreadable. Check local storage before retrying; no stored content was returned.',
+    });
+  });
+});

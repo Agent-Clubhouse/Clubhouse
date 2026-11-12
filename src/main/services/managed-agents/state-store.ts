@@ -9,6 +9,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getBaseDirPath } from '../base-dir';
 import type { ManagedTemplate } from '../../../shared/managed-agents-types';
+import { readRestartReceipt, type ManagedRestartReceipt } from './activation-receipts';
 
 export interface PartMeta {
   description?: string;
@@ -31,6 +32,8 @@ export interface ManagedState {
   retiredCopies?: Record<string, string>;
   /** A retired built-in's copy about to be made, with its name and when, so one made just before the app stopped is found again (D99). */
   retiredPending?: Record<string, { name: string; at: string }>;
+  /** Latest bounded lifecycle history: ids/revisions and outcomes only, never provider content or errors. */
+  restarts?: ManagedRestartReceipt[];
 }
 
 const EMPTY: ManagedState = { version: 1, parts: {}, templates: {} };
@@ -60,7 +63,10 @@ export function createManagedStateStore(dir: string = managedStateDir()): Manage
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return structuredClone(EMPTY);
       throw err;
     }
-    const parsed = JSON.parse(raw) as Partial<ManagedState>;
+    let parsed: Partial<ManagedState>;
+    try { parsed = JSON.parse(raw) as Partial<ManagedState>; } catch {
+      throw new Error('Managed state is unreadable. Check local storage before retrying; no stored content was returned.');
+    }
     if (parsed.version !== 1) throw new Error('managed state version not supported');
     return {
       version: 1,
@@ -76,6 +82,9 @@ export function createManagedStateStore(dir: string = managedStateDir()): Manage
         : {}),
       ...(isRecord(parsed.retiredPending)
         ? { retiredPending: Object.fromEntries(Object.entries(parsed.retiredPending).filter((e): e is [string, { name: string; at: string }] => isRecord(e[1]) && typeof e[1].name === 'string' && typeof e[1].at === 'string')) }
+        : {}),
+      ...(Array.isArray(parsed.restarts)
+        ? { restarts: parsed.restarts.slice(-100).map(readRestartReceipt).filter((r): r is ManagedRestartReceipt => r !== null) }
         : {}),
     };
   }

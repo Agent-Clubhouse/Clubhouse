@@ -14,6 +14,9 @@ const state = vi.hoisted(() => ({
   available: true,
   failMetadata: false,
   projectListeners: new Set<() => void>(),
+  projectPresent: true,
+  projectGeneration: 0,
+  projectPending: false,
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -33,7 +36,8 @@ vi.mock('../dispatcher-gate', async (importOriginal) => ({
   isDispatcherAgent: (id: string) => id === 'dispatcher',
 }));
 vi.mock('../../project-store', () => ({
-  peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }],
+  peekProjects: async () => state.projectPresent ? [{ id: 'p1', name: 'Clubhouse', path: '/proj' }] : [],
+  projectRegistryMutationState: () => ({ generation: state.projectGeneration, pending: state.projectPending }),
   onProjectsChanged: (listener: () => void) => { state.projectListeners.add(listener); return () => { state.projectListeners.delete(listener); }; },
 }));
 vi.mock('../../agent-config', () => ({
@@ -123,6 +127,9 @@ beforeEach(async () => {
   state.available = true;
   state.failMetadata = false;
   state.projectListeners = new Set();
+  state.projectPresent = true;
+  state.projectGeneration = 0;
+  state.projectPending = false;
   vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
@@ -818,6 +825,11 @@ describe('templates', () => {
 });
 
 describe('restart_agent', () => {
+  beforeEach(() => {
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty', nonce: 'original' });
+  });
+  afterEach(() => { agentRegistry.untrack('dispatcher'); });
+
   it('refuses an agent that isn\'t managed, one that is asleep, and the Dispatcher itself', async () => {
     state.agents.set('plain', { id: 'plain', name: 'plain', color: 'indigo', createdAt: '', worktreePath: '/w/plain' });
     state.running.add('plain');
@@ -840,19 +852,155 @@ describe('restart_agent', () => {
     managedAgent('worker');
     state.running.add('worker');
     expect((await call('restart_agent', { project: 'Clubhouse', agent: 'worker' })).json).toEqual({ status: 'restarted', resumed: true });
-    expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: undefined, whenTurnEnds: true });
+    expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: undefined, whenTurnEnds: true, authorize: expect.any(Function) });
+    grantMock.granted = true;
     await call('restart_agent', { project: 'Clubhouse', agent: 'worker', now: true, fresh: true });
-    expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: true, whenTurnEnds: false });
+    expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: true, whenTurnEnds: false, authorize: expect.any(Function) });
     expect(state.restartOrigins).toEqual(['mcp', 'mcp']);
   });
 
   it('says when there was no conversation to resume', async () => {
     managedAgent('newbie');
     state.running.add('newbie');
+    grantMock.granted = true;
     vi.mocked(restartManagedAgent).mockResolvedValueOnce({ resumed: false, noSession: true });
     expect((await call('restart_agent', { project: 'Clubhouse', agent: 'newbie', now: true })).json).toEqual({
       status: 'restarted', resumed: false, note: 'There was no conversation to resume, so it started a new one.',
     });
+  });
+
+  it('does not turn a restart-only grant into permission to interrupt, and rechecks authorization after waiting', async () => {
+    managedAgent('restart-only');
+    state.running.add('restart-only');
+    expect((await call('restart_agent', { project: 'Clubhouse', agent: 'restart-only', now: true })).isError).toBe(true);
+    expect(restartManagedAgent).not.toHaveBeenCalled();
+    expect((await call('restart_agent', { project: 'Clubhouse', agent: 'restart-only' })).json.status).toBe('restarted');
+    const authorize = vi.mocked(restartManagedAgent).mock.calls[0][2]?.authorize;
+    expect(authorize).toBeTypeOf('function');
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.restart', target: { kind: 'any' }, mode: 'off' }] }));
+      await expect(authorize!().then((check) => check())).rejects.toMatchObject({ code: 'not_permitted' });
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
+  });
+
+  it.each([false, true])('keeps genuine original Ask-first approval through the restart effect check (now=%s)', async (now) => {
+    managedAgent('approved-worker');
+    state.running.add('approved-worker');
+    agentRegistry.register('dispatcher', { projectPath: '/dispatcher-home', orchestrator: 'claude-code', runtime: 'pty' });
+    _resetGrantRequestsForTesting();
+    const effect = vi.fn();
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [
+        { action: 'agent.restart', target: { kind: 'any' }, mode: 'ask' },
+        { action: 'agent.sleep', target: { kind: 'any' }, mode: 'ask' },
+      ] }));
+      const args = { project: 'Clubhouse', agent: 'approved-worker', now };
+      expect((await call('restart_agent', args)).isError).toBe(true);
+      expect(restartManagedAgent).not.toHaveBeenCalled();
+      const request = listGrantRequests()[0];
+      expect(request.actions).toEqual(now ? ['agent.restart', 'agent.sleep'] : ['agent.restart']);
+      expect(takeGrantRequest(request.requestId, true)).toBeTruthy();
+      vi.mocked(restartManagedAgent).mockImplementationOnce(async (_p, _id, options) => {
+        for (const stage of ['stop', 'start']) {
+          const authorize = await options?.authorize?.();
+          if (typeof authorize === 'function') authorize();
+          effect(stage);
+        }
+        return { resumed: true };
+      });
+      const result = await call('restart_agent', args);
+      expect(result.isError, result.content[0].text).toBeFalsy();
+      expect(result.json.status).toBe('restarted');
+      expect(effect.mock.calls).toEqual([['stop'], ['start']]);
+      expect((await call('restart_agent', args)).isError).toBe(true);
+      expect(effect).toHaveBeenCalledTimes(2);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      agentRegistry.untrack('dispatcher');
+      _resetGrantRequestsForTesting();
+    }
+  });
+
+  it.each(['off', 'ask'] as const)('refuses restart changed to %s after asynchronous authorization preparation', async (mode) => {
+    managedAgent('late-authorization');
+    state.running.add('late-authorization');
+    const effect = vi.fn();
+    vi.mocked(restartManagedAgent).mockImplementationOnce(async (_p, _id, options) => {
+      const authorize = await options?.authorize?.();
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.restart', target: { kind: 'any' }, mode }] }));
+      if (typeof authorize === 'function') authorize();
+      effect();
+      return { resumed: true };
+    });
+    try {
+      expect((await call('restart_agent', { project: 'Clubhouse', agent: 'late-authorization' })).isError).toBe(true);
+      expect(effect).not.toHaveBeenCalled();
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
+  });
+
+  it('refuses a restart when its registered authorization target disappears before the effect', async () => {
+    managedAgent('unresolved-restart');
+    state.running.add('unresolved-restart');
+    const effect = vi.fn();
+    vi.mocked(restartManagedAgent).mockImplementationOnce(async (_p, _id, options) => {
+      state.hiddenFromPeek.add('unresolved-restart');
+      const authorize = await options?.authorize?.();
+      if (typeof authorize === 'function') authorize();
+      effect();
+      return { resumed: true };
+    });
+    expect((await call('restart_agent', { project: 'Clubhouse', agent: 'unresolved-restart' })).isError).toBe(true);
+    expect(effect).not.toHaveBeenCalled();
+  });
+
+  it.each(['missing', 'changed', 'pending'] as const)('refuses a %s project after asynchronous lifecycle preparation', async (change) => {
+    managedAgent('project-fence');
+    state.running.add('project-fence');
+    const effect = vi.fn();
+    vi.mocked(restartManagedAgent).mockImplementationOnce(async (_p, _id, options) => {
+      const authorize = await options?.authorize?.();
+      if (change === 'missing') state.projectPresent = false;
+      await authorize?.refresh?.();
+      if (change === 'changed') state.projectGeneration++;
+      if (change === 'pending') state.projectPending = true;
+      authorize?.();
+      effect();
+      return { resumed: true };
+    });
+    expect((await call('restart_agent', { project: 'Clubhouse', agent: 'project-fence' })).isError).toBe(true);
+    expect(effect).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse original Ask proof after the caller registration and nonce are replaced', async () => {
+    managedAgent('caller-fence');
+    state.running.add('caller-fence');
+    _resetGrantRequestsForTesting();
+    const effects = vi.fn();
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.restart', target: { kind: 'any' }, mode: 'ask' }] }));
+      const args = { project: 'Clubhouse', agent: 'caller-fence' };
+      expect((await call('restart_agent', args)).isError).toBe(true);
+      expect(takeGrantRequest(listGrantRequests()[0].requestId, true)).toBeTruthy();
+      vi.mocked(restartManagedAgent).mockImplementationOnce(async (_p, _id, options) => {
+        (await options?.authorize?.())?.();
+        effects('stop');
+        const original = agentRegistry.get('dispatcher')!;
+        agentRegistry.untrack('dispatcher');
+        agentRegistry.register('dispatcher', { ...original, nonce: 'replacement' });
+        (await options?.authorize?.())?.();
+        effects('start');
+        return { resumed: true };
+      });
+      expect((await call('restart_agent', args)).isError).toBe(true);
+      expect(effects.mock.calls).toEqual([['stop']]);
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+      _resetGrantRequestsForTesting();
+    }
   });
 });
 

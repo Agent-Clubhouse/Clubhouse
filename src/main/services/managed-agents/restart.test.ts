@@ -1,19 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 
-const state = vi.hoisted(() => ({ agents: new Map<string, DurableAgentConfig>(), running: new Set<string>() }));
-const spawnAgent = vi.hoisted(() => vi.fn(async () => undefined));
-const killAgent = vi.hoisted(() => vi.fn(async () => undefined));
+const state = vi.hoisted(() => ({
+  agents: new Map<string, DurableAgentConfig>(), running: new Set<string>(),
+  runtimes: new Map<string, { kind: 'chat'; getState(): string }>(),
+}));
+const spawnAgent = vi.hoisted(() => vi.fn(async ({ agentId }: { agentId: string }) => {
+  state.runtimes.set(agentId, { kind: 'chat', getState: () => 'idle' });
+  state.running.add(agentId);
+}));
+const killAgent = vi.hoisted(() => vi.fn(async (agentId: string) => { state.running.delete(agentId); }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/tmp' } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
-vi.mock('../project-store', () => ({ peekProjects: async () => [] }));
+vi.mock('../project-store', () => ({ peekProjects: async () => [], projectRegistryMutationState: () => ({ generation: 0, pending: false }) }));
 vi.mock('../agent-config', () => ({
+  agentConfigGeneration: () => 0,
+  peekCachedDurableConfig: (_p: string, id: string) => structuredClone(state.agents.get(id) ?? null),
   getDurableConfig: async (_p: string, id: string) => state.agents.get(id) ?? null,
   peekDurableConfigs: async () => [...state.agents.values()],
   setManagedSetup: async () => undefined,
 }));
+vi.mock('../agent-runtime', () => ({ getAgentRuntime: (id: string) => state.running.has(id) ? state.runtimes.get(id) : undefined }));
+vi.mock('../pty-manager', () => ({ getLastActivity: () => null, processIdentity: () => undefined }));
 const deliver = vi.hoisted(() => vi.fn(async (): Promise<unknown> => null));
 vi.mock('./delivery', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./delivery')>()),
@@ -22,6 +32,7 @@ vi.mock('./delivery', async (importOriginal) => ({
 const queueExcludes = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('./git-excludes', () => ({ queueManagedExcludes: queueExcludes }));
 vi.mock('../agent-system', () => ({
+  resolveOrchestrator: async (_p: string, cli?: string) => ({ id: cli ?? 'claude-code' }),
   isAgentRunning: (id: string) => state.running.has(id),
   killAgent,
   spawnAgent,
@@ -29,19 +40,50 @@ vi.mock('../agent-system', () => ({
 
 import { deliverForSpawn, forgetDelivery, recordMcpStartProblems, restartManagedAgent, statusFor } from './index';
 import type { OrchestratorProvider } from '../../orchestrators/types';
+import { agentRegistry } from '../agent-registry';
 
 function add(id: string, managed: boolean): void {
+  state.runtimes.set(id, { kind: 'chat', getState: () => 'idle' });
+  agentRegistry.register(id, { projectPath: '/p', orchestrator: 'claude-code', runtime: 'chat' });
   state.agents.set(id, {
     id, name: id, color: 'indigo', createdAt: '', worktreePath: `/w/${id}`,
     ...(managed && { managed: { version: 1, blocks: [], skills: [], mcps: [] } }),
   });
 }
 
-beforeEach(() => {
+let receiptRoot: string;
+
+beforeEach(async () => {
   state.agents.clear();
   state.running.clear();
+  state.runtimes.clear();
   spawnAgent.mockClear();
   killAgent.mockClear();
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { createAssetCatalogStore } = await import('../asset-catalog/store');
+  const { createManagedStateStore } = await import('./state-store');
+  const { createManagedAgentsService } = await import('./service');
+  const { _setManagedAgentsForTesting } = await import('./index');
+  const { _resetSettingsAuditForTesting } = await import('../settings-audit');
+  receiptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-restart-'));
+  _resetSettingsAuditForTesting(false);
+  _setManagedAgentsForTesting(createManagedAgentsService({
+    catalog: createAssetCatalogStore({ dir: path.join(receiptRoot, 'catalog') }),
+    state: createManagedStateStore(path.join(receiptRoot, 'managed')),
+    listProjects: async () => [],
+    listAgents: async () => [],
+    getAgent: async (_p, id) => state.agents.get(id) ?? null,
+    setManagedSetup: async () => undefined,
+    isRunning: (id) => state.running.has(id),
+  }));
+});
+
+afterEach(async () => {
+  for (const id of state.agents.keys()) agentRegistry.untrack(id);
+  (await import('./index'))._setManagedAgentsForTesting(null);
+  (await import('node:fs')).rmSync(receiptRoot, { recursive: true, force: true });
 });
 
 describe('restartManagedAgent', () => {
@@ -64,6 +106,25 @@ describe('restartManagedAgent', () => {
     await restartManagedAgent('/p', 'worker', { fresh: true });
     expect(killAgent).toHaveBeenCalledTimes(1);
     expect(spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'worker', resume: false }));
+  });
+
+  it('does not replace the original runtime identity while waiting for its turn', async () => {
+    add('waiting', true);
+    state.running.add('waiting');
+    let entered!: () => void;
+    const atWait = new Promise<void>((resolve) => { entered = resolve; });
+    state.runtimes.set('waiting', { kind: 'chat', getState: () => { entered(); return 'running'; } });
+    vi.useFakeTimers();
+    try {
+      const restart = restartManagedAgent('/p', 'waiting', { whenTurnEnds: true });
+      const observed = restart.then(() => undefined, (error: unknown) => error);
+      await Promise.race([atWait, observed.then(() => { throw new Error('Restart ended before waiting for its turn'); })]);
+      state.runtimes.set('waiting', { kind: 'chat', getState: () => 'idle' });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await observed).toMatchObject({ message: expect.stringContaining('Managed restart failed') });
+      expect(killAgent).not.toHaveBeenCalled();
+      expect(spawnAgent).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
   });
 });
 
