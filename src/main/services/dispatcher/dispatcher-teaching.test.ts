@@ -33,6 +33,8 @@ vi.mock('../orchestration-policy', () => ({
     new Map(agents.map((a) => [a.id, { connectToDispatcher: mocks.connected.has(a.id), orchestrate: false }]))),
 }));
 vi.mock('../agent-grants-store', () => ({
+  agentGrantChangePending: () => false,
+  withAgentGrantChange: <T,>(_id: string, change: () => Promise<T>) => change(),
   getAgentGrantChanges: (id: string) => mocks.changes.get(id),
   updateAgentGrantChanges: vi.fn(async (id: string, fn: (c: unknown) => unknown) => { mocks.changes.set(id, fn(mocks.changes.get(id))); }),
 }));

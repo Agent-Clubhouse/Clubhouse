@@ -148,8 +148,8 @@ even while it is off. Sending uses a separately installed adapter, never generic
 editable-direction forwarding. Durable Ask-first calls remain disabled until
 canonical pre-click approval receipts and their end-to-end checks are installed.
 
-`durable-call-approvals.ts` is an uninstalled local-only receipt ledger, not
-permission to enable those paths. Transport must prepare the same final envelope
+`durable-call-approvals.ts` is a staged local-only receipt ledger, not permission
+to enable those paths. Transport must prepare the same final envelope
 it will enqueue before the human is asked; its command id and complete wire hash
 are bound with canonical caller/target/machine, pairing, labels, policy and the
 original requested actions. An actual original answer can persist that existing
@@ -159,9 +159,27 @@ every replay require an exact current match and fresh local grants; Off wins.
 The atomic `0600` ledger retains at most 2,000 receipts / 4 MiB without evicting
 live proof. Unclaimed approval expires with the original request; a bound command
 has at most seven days of authority and an eight-day retained tombstone.
-Answer-path, policy-revocation and transport integration still require independent
-end-to-end review. Persistence errors must be surfaced, not acknowledged as a
-successful approval or revocation.
+`durable-grant-approvals.ts` connects only actual unfinished allowed answers to
+that ledger. Original caller, key, expiry and scope remain private; neither public
+request views nor consumed ephemeral approvals can change them. Native and
+authorized phone answers await persistence before success; a failed write restores
+the original request and emits no allowed notification. Durable requests never
+mint a separate ephemeral call approval.
+
+Permission changes deny calls while their revocation/write is queued, using
+per-caller pending gates. Committed policy is published only after an atomic
+`0600` write. Non-Off/reset/template changes wait for durable revocation. By the
+maintainer's explicit safety decision, restrictive Off still saves if receipt
+revocation fails: the actual committed view includes an explicit partial warning,
+and only a fresh matcher refusal is called effective Off. Broader permissions are
+not hidden. Both write failures report uncertainty and may leave the old saved
+policy after restart; permission UIs reload actual policy, not optimistic values.
+No live approval is silently evicted or claimed durably revoked after a failed
+write. Known in-run proof remains denied.
+
+The canonical registry pre-click and authoritative transport preparation/replay
+hooks still require integration and independent combined end-to-end review before
+Ask-first can be enabled. Existing frozen ledger prototypes do not activate them.
 
 ## What connections start with (#3214)
 

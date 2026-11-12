@@ -8,10 +8,14 @@ const mocks = vi.hoisted(() => ({
     return { ok: true, message: '' };
   }),
   changes: undefined as unknown,
+  invalidate: vi.fn(async (_id: string) => {}),
 }));
+vi.mock('./durable-grant-approvals', () => ({ invalidateCallApprovalsFor: mocks.invalidate }));
 vi.mock('./agent-config', () => ({ getDurableConfig: vi.fn(async () => mocks.config) }));
 vi.mock('./orchestration-policy', () => ({ setOrchestrationPolicy: mocks.setOrchestrationPolicy }));
 vi.mock('./agent-grants-store', () => ({
+  agentGrantChangePending: () => false,
+  withAgentGrantChange: <T,>(_id: string, change: () => Promise<T>) => change(),
   getAgentGrantChanges: () => mocks.changes,
   updateAgentGrantChanges: vi.fn(async (_id: string, fn: (c: unknown) => unknown) => { mocks.changes = fn(mocks.changes); }),
 }));
@@ -22,7 +26,9 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   resolveDispatcherIdentity: (projectPath: string, agentId: string) => ({ projectPath, agentId }),
 }));
 
-import { readAgentGrants, setAgentGrant } from './agent-grants-service';
+import { applyTemplateGrants, readAgentGrants, resetAgentGrants, setAgentGrant } from './agent-grants-service';
+import { updateAgentGrantChanges } from './agent-grants-store';
+import { GRANT_OFF_PERSISTENCE_FAILED } from '../../shared/agent-grant-changes';
 
 const row = (view: Awaited<ReturnType<typeof readAgentGrants>>, action: string, kind: string) =>
   view.rows.find((r) => r.action === action && r.target.kind === kind);
@@ -31,6 +37,61 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.config = { id: 'o1', name: 'Orch', orchestration: { orchestrate: true, control: 'hands-off' } } as Partial<DurableAgentConfig>;
   mocks.changes = undefined;
+  mocks.invalidate.mockResolvedValue(undefined);
+});
+
+describe('restrictive Off when approval storage fails', () => {
+  const remote = { action: 'agent.message' as const, target: { kind: 'remote_dispatcher' as const } };
+  beforeEach(() => { mocks.changes = { changes: [{ ...remote, mode: 'ask' }] }; });
+
+  it('saves Off despite receipt-only failure and returns explicit partial status with actual fresh-matcher refusal', async () => {
+    mocks.invalidate.mockRejectedValueOnce(new Error('receipt disk failed'));
+    const actual = await setAgentGrant('/p', 'o1', { ...remote, mode: 'off' });
+    expect(actual.partialFailure).toMatchObject({ code: 'approval_revocation_failed', effectiveOff: true });
+    expect(actual.partialFailure?.message).toContain('Permission is Off');
+    expect(mocks.changes).toBeUndefined();
+  });
+
+  it('does not claim Off when a wider ANY Ask still matches the remote target', async () => {
+    mocks.changes = { changes: [{ ...remote, mode: 'ask' }, { action: remote.action, target: { kind: 'any' }, mode: 'ask' }] };
+    mocks.invalidate.mockRejectedValueOnce(new Error('receipt disk failed'));
+    const actual = await setAgentGrant('/p', 'o1', { ...remote, mode: 'off' });
+    expect(actual.partialFailure?.effectiveOff).toBe(false);
+    expect(actual.partialFailure?.message).not.toContain('Permission is Off');
+    expect(actual.partialFailure?.message).toContain('other matching permissions');
+  });
+
+  it('reads current caller facts again instead of returning the configuration from before revocation', async () => {
+    mocks.invalidate.mockImplementationOnce(async () => {
+      mocks.config = { ...mocks.config, orchestration: { orchestrate: false } };
+      throw new Error('receipt disk failed');
+    });
+    const actual = await setAgentGrant('/p', 'o1', { ...remote, mode: 'off' });
+    expect(actual.orchestrates).toBe(false);
+    expect(actual.partialFailure?.effectiveOff).toBe(true);
+  });
+
+  it.each(['ask', 'allow'] as const)('does not widen to %s until old receipts are durably revoked', async (mode) => {
+    mocks.invalidate.mockRejectedValueOnce(new Error('receipt disk failed'));
+    await expect(setAgentGrant('/p', 'o1', { ...remote, mode })).rejects.toThrow('receipt disk failed');
+    expect(updateAgentGrantChanges).not.toHaveBeenCalled();
+  });
+
+  it('blocks reset and mixed template changes rather than sneaking an Allow through the Off exception', async () => {
+    mocks.invalidate.mockRejectedValueOnce(new Error('receipt disk failed'));
+    await expect(resetAgentGrants('/p', 'o1')).rejects.toThrow('receipt disk failed');
+    mocks.invalidate.mockRejectedValueOnce(new Error('receipt disk failed'));
+    await expect(applyTemplateGrants('o1', [{ ...remote, mode: 'off' }, { action: 'library.write', target: { kind: 'any' }, mode: 'allow' }])).rejects.toThrow('receipt disk failed');
+    expect(updateAgentGrantChanges).not.toHaveBeenCalled();
+  });
+
+  it('aggregates both failures without claiming Off or changing the old saved policy', async () => {
+    mocks.invalidate.mockRejectedValueOnce(new Error('receipt disk failed'));
+    vi.mocked(updateAgentGrantChanges).mockRejectedValueOnce(new Error('policy disk failed'));
+    const saving = setAgentGrant('/p', 'o1', { ...remote, mode: 'off' });
+    await expect(saving).rejects.toMatchObject({ message: GRANT_OFF_PERSISTENCE_FAILED, errors: expect.arrayContaining([expect.any(Error), expect.any(Error)]) });
+    expect(mocks.changes).toEqual({ changes: [{ ...remote, mode: 'ask' }] });
+  });
 });
 
 describe('start and dispose rows follow the approval setting (#2970)', () => {

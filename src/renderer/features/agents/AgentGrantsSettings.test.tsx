@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { grantRows, type AgentGrantsView, type GrantRow } from '../../../shared/agent-grant-changes';
+import { GRANT_OFF_PERSISTENCE_FAILED, grantRows, type AgentGrantsView, type GrantRow } from '../../../shared/agent-grant-changes';
 import { defaultGrants } from '../../../shared/default-grants';
 import { AgentGrantsSettings, groupGrantRows } from './AgentGrantsSettings';
 import { useMcpBindingStore } from '../../stores/mcpBindingStore';
@@ -178,9 +178,45 @@ describe('Clubhouse permissions page (#2971)', () => {
     const group = await screen.findByRole('radiogroup', { name: 'See app settings (The app)' });
     fireEvent.click(within(group).getByRole('radio', { name: 'Off' }));
     expect(within(group).getByRole('radio', { name: 'Off' })).toBeChecked();
-    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save that change, so it wasn't changed. Try again.");
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't confirm that change. Showing the saved permissions");
     expect(within(screen.getByTestId('agent-grant-row-settings.app.read@app')).getByRole('alert')).toBeInTheDocument();
     expect(within(group).getByRole('radio', { name: 'Allow' })).toBeChecked();
+  });
+
+  it('applies the actual saved Off before displaying explicit approval-revocation partial failure', async () => {
+    const saved = withChange(defaultsView(), 'settings.app.read', 'off');
+    const message = 'Permission is Off; existing-approval revocation could not be persisted. Repair storage before enabling it.';
+    saved.partialFailure = { code: 'approval_revocation_failed', effectiveOff: true, message };
+    window.clubhouse.agent.setGrant = vi.fn(async () => saved);
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    const group = await screen.findByRole('radiogroup', { name: 'See app settings (The app)' });
+    fireEvent.click(within(group).getByRole('radio', { name: 'Off' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(within(group).getByRole('radio', { name: 'Off' })).toBeChecked();
+    expect(within(group).getByRole('radio', { name: 'Allow' })).not.toBeChecked();
+  });
+
+  it('reloads actual saved policy and surfaces both-failure uncertainty instead of inventing an old value', async () => {
+    window.clubhouse.agent.getGrants = vi.fn()
+      .mockResolvedValueOnce(defaultsView())
+      .mockResolvedValue(withChange(defaultsView(), 'settings.app.read', 'ask'));
+    window.clubhouse.agent.setGrant = vi.fn(async () => { throw new Error(`IPC failure: ${GRANT_OFF_PERSISTENCE_FAILED}`); });
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    const group = await screen.findByRole('radiogroup', { name: 'See app settings (The app)' });
+    fireEvent.click(within(group).getByRole('radio', { name: 'Off' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(GRANT_OFF_PERSISTENCE_FAILED);
+    expect(within(group).getByRole('radio', { name: 'Ask first' })).toBeChecked();
+    expect(window.clubhouse.agent.getGrants).toHaveBeenCalledTimes(2);
+  });
+
+  it('hides stale permission rows if a failed operation cannot read back actual saved policy', async () => {
+    window.clubhouse.agent.getGrants = vi.fn().mockResolvedValueOnce(defaultsView()).mockRejectedValue(new Error('readback failed'));
+    window.clubhouse.agent.setGrant = vi.fn(async () => { throw new Error('write failed'); });
+    render(<AgentGrantsSettings agent={agent} projectPath={PROJECT} />);
+    const group = await screen.findByRole('radiogroup', { name: 'See app settings (The app)' });
+    fireEvent.click(within(group).getByRole('radio', { name: 'Off' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't read epic-lead's Clubhouse permissions");
+    expect(screen.queryByRole('radiogroup', { name: 'See app settings (The app)' })).not.toBeInTheDocument();
   });
 
   it('says so when a reset fails', async () => {

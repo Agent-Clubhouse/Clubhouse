@@ -4,7 +4,7 @@ import { DISPATCHER_FEDERATION_TOOLS } from '../../../shared/dispatcher-federati
 
 const h = vi.hoisted(() => ({ changes: undefined as AgentGrantChanges | undefined }));
 vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
-vi.mock('../agent-grants-store', () => ({ getAgentGrantChanges: () => h.changes }));
+vi.mock('../agent-grants-store', () => ({ agentGrantChangePending: () => false, getAgentGrantChanges: () => h.changes }));
 vi.mock('../connection-grants-store', () => ({ localConnectionWakeOn: () => true }));
 vi.mock('./ask-first', () => ({
   askFirst: vi.fn(async () => ({ kind: 'asked', text: 'Needs you', created: true })),

@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Agent } from '../../../../shared/types';
-import type { AgentGrantsView, GrantChangeMode } from '../../../../shared/agent-grant-changes';
+import { GRANT_OFF_PERSISTENCE_FAILED, type AgentGrantsView, type GrantChangeMode } from '../../../../shared/agent-grant-changes';
 import { AGENT_CARD_FIELD_MAX, type AgentCardView } from '../../../../shared/dispatcher-agent-card';
 import { DEFAULT_DISPATCHER_NAME, type DispatcherState } from '../../../../shared/dispatcher-types';
 import { Button } from '../../../components/Button';
@@ -237,7 +237,14 @@ export function DispatcherCard({ agent, orch, open, onToggle }: {
           failed={grants.failed}
           onSet={async (row, mode) => {
             if (!grants.path || !grants.id) return;
-            grants.setView(await window.clubhouse.agent.setGrant(grants.path, grants.id, { action: row.action, target: CONNECTED_TARGET, mode }));
+            try {
+              const next = await window.clubhouse.agent.setGrant(grants.path, grants.id, { action: row.action, target: CONNECTED_TARGET, mode });
+              grants.setView(next);
+              return next.partialFailure?.message;
+            } catch (error) {
+              grants.reload();
+              throw error;
+            }
           }}
           onShowAll={() => { closePermissions(); setAllPermissionsOpen(true); }}
           onClose={closePermissions}
@@ -339,7 +346,7 @@ function PermissionsPopover({ anchor, name, agentName, rows, failed, onSet, onSh
   agentName: string;
   rows: ReachRow[] | null;
   failed: boolean;
-  onSet: (row: ReachRow, mode: GrantChangeMode) => Promise<void>;
+  onSet: (row: ReachRow, mode: GrantChangeMode) => Promise<string | void>;
   onShowAll: () => void;
   onClose: () => void;
 }) {
@@ -372,10 +379,15 @@ function PermissionsPopover({ anchor, name, agentName, rows, failed, onSet, onSh
     setError(null);
     setPending((p) => ({ ...p, [row.action]: mode }));
     try {
-      await onSet(row, mode);
+      const partial = await onSet(row, mode);
+      if (partial) {
+        reportChromeActionFailed('agent_settings_save', new Error('approval_revocation_failed'));
+        setError(partial);
+      }
     } catch (err) {
       reportChromeActionFailed('agent_settings_save', err);
-      setError('Couldn’t save that change, so it wasn’t changed. Try again.');
+      setError(err instanceof Error && err.message.includes(GRANT_OFF_PERSISTENCE_FAILED)
+        ? GRANT_OFF_PERSISTENCE_FAILED : 'Couldn’t confirm that change. Reloading its saved permissions.');
     }
     setPending((p) => {
       const rest = { ...p };

@@ -28,7 +28,7 @@ import { agentRegistry } from '../agent-registry';
 import { bindingManager } from './binding-manager';
 import { isDispatcherAgent, isDispatcherCoordinatorId, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
-import { getAgentGrantChanges } from '../agent-grants-store';
+import { agentGrantChangePending, getAgentGrantChanges } from '../agent-grants-store';
 import { localConnectionWakeOn } from '../connection-grants-store';
 import { applyGrantChanges } from '../../../shared/agent-grant-changes';
 import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from './orchestration-gate';
@@ -198,6 +198,7 @@ function callerOf(agentId: string): GrantCaller {
 
 /** A running agent's grants: its defaults, from what the gates know about it, with a person's changes (#2971). */
 export function callerGrants(agentId: string): Grant[] {
+  if (agentGrantChangePending(agentId)) return [];
   const tracked = isTrackedDispatcher(agentId);
   return applyGrantChanges(defaultGrants({
     dispatcher: isDispatcherAgent(agentId),

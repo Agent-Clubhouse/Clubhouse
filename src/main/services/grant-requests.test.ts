@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GRANT_REQUEST_TTL_MS, MAX_PENDING_GRANT_REQUESTS_PER_AGENT } from '../../shared/grant-requests';
 import {
   callKey, consumeCallApproval, consumeCallApprovalScope, dropGrantRequestsFor, listGrantRequests, onGrantRequestsChanged,
-  peekGrantRequest, recordGrantRequest, restoreGrantRequest, takeGrantRequest, _resetGrantRequestsForTesting,
+  finishGrantAnswer, peekGrantRequest, readOriginalAllowedCall, recordGrantRequest, restoreGrantRequest, takeGrantRequest, _resetGrantRequestsForTesting,
 } from './grant-requests';
 
 const base = { kind: 'call' as const, agentId: 'a1', agentName: 'Ada', projectPath: '/p', actions: ['settings.app.write' as const], where: 'the app', toolName: 'set_helper_presets' };
@@ -119,6 +119,78 @@ describe('permission requests (#2970)', () => {
     if (!r.ok) throw new Error('not recorded');
     takeGrantRequest(r.request.requestId, true, 10);
     expect(consumeCallApproval('grant-key', 20)).toBe(false);
+  });
+
+  it('reveals only cloned original scope during an actual allowed scoped call answer', () => {
+    const key = callKey('a1', 't', {});
+    const scope = { context: 'original', asks: [{ action: 'settings.app.write' as const, where: 'the app' }] };
+    const recorded = recordGrantRequest(key, base, 0, scope);
+    if (!recorded.ok) throw new Error('not recorded');
+    const id = recorded.request.requestId;
+    expect(recorded.request).not.toHaveProperty('scope');
+    expect(readOriginalAllowedCall(id, 1)).toBeUndefined();
+    takeGrantRequest(id, false, 10, { deferCallApproval: true });
+    expect(readOriginalAllowedCall(id, 11)).toBeUndefined();
+    expect(restoreGrantRequest(recorded.request, key, 20)).toBe(true);
+    takeGrantRequest(id, true, 30, { deferCallApproval: true });
+    const original = readOriginalAllowedCall(id, 31);
+    expect(original).toMatchObject({ callerId: 'a1', callKey: key, scope });
+    if (!original) throw new Error('Missing original allowed call');
+    Object.assign(original.scope, { context: 'forged' });
+    Object.assign(original.scope.asks[0], { where: 'forged' });
+    expect(readOriginalAllowedCall(id, 32)?.scope).toEqual(scope);
+    expect(consumeCallApprovalScope(key, 32)).toBeNull();
+    expect(finishGrantAnswer(id, 40)).toBe(true);
+    expect(readOriginalAllowedCall(id, 41)).toBeUndefined();
+    expect(consumeCallApprovalScope(key, 41)?.scope).toEqual(scope);
+    expect(consumeCallApprovalScope(key, 41)).toBeNull();
+  });
+
+  it('never promotes a durable call to a key-only or ephemeral local approval', () => {
+    const key = callKey('a1', 't', {});
+    const scope = { durable: true as const, context: 'original-durable', asks: [{ action: 'settings.app.write' as const, where: 'the app' }] };
+    const r = recordGrantRequest(key, base, 0, scope);
+    if (!r.ok) throw new Error('not recorded');
+    takeGrantRequest(r.request.requestId, true, 10);
+    expect(readOriginalAllowedCall(r.request.requestId, 20)?.scope).toEqual(scope);
+    expect(consumeCallApproval(key, 20)).toBe(false);
+    expect(finishGrantAnswer(r.request.requestId, 30)).toBe(true);
+    expect(consumeCallApprovalScope(key, 40)).toBeNull();
+  });
+
+  it('keeps original caller and expiry private across public request views, take, and failed-answer restore', () => {
+    const key = callKey('a1', 't', {});
+    const scope = { context: 'original', asks: [{ action: 'settings.app.write' as const, where: 'the app' }] };
+    const r = recordGrantRequest(key, base, 0, scope);
+    if (!r.ok) throw new Error('not recorded');
+    const id = r.request.requestId;
+    r.request.agentId = 'forged';
+    r.request.expiresAt = new Date(GRANT_REQUEST_TTL_MS * 10).toISOString();
+    const viewed = peekGrantRequest(id, 1);
+    if (!viewed) throw new Error('Missing request');
+    viewed.agentId = 'also-forged';
+    const taken = takeGrantRequest(id, true, 10, { deferCallApproval: true });
+    if (!taken) throw new Error('Not taken');
+    taken.expiresAt = new Date(GRANT_REQUEST_TTL_MS * 10).toISOString();
+    expect(restoreGrantRequest(taken, key, 20)).toBe(true);
+    takeGrantRequest(id, true, 30, { deferCallApproval: true });
+    expect(readOriginalAllowedCall(id, 40)).toMatchObject({ callerId: 'a1', expiresAt: GRANT_REQUEST_TTL_MS, scope });
+    expect(readOriginalAllowedCall(id, GRANT_REQUEST_TTL_MS)).toBeUndefined();
+  });
+
+  it('withdrawal and expiry invalidate unfinished original answers and deferred promotion', () => {
+    const scope = { context: 'original', asks: [{ action: 'settings.app.write' as const, where: 'the app' }] };
+    for (const drop of [false, true]) {
+      const key = `case-${drop}`;
+      const r = recordGrantRequest(key, base, 0, scope);
+      if (!r.ok) throw new Error('not recorded');
+      takeGrantRequest(r.request.requestId, true, 10, { deferCallApproval: true });
+      if (drop) dropGrantRequestsFor('a1');
+      const at = drop ? 20 : GRANT_REQUEST_TTL_MS;
+      expect(readOriginalAllowedCall(r.request.requestId, at)).toBeUndefined();
+      expect(finishGrantAnswer(r.request.requestId, at)).toBe(false);
+      expect(consumeCallApprovalScope(key, at)).toBeNull();
+    }
   });
 
   it('drops an agent\'s requests and approvals', () => {

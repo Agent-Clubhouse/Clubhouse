@@ -15,7 +15,8 @@ import { GRANT_ACTION_LABELS } from '../../shared/agent-grant-changes';
 import type { GrantRequest, GrantRequestAnswer } from '../../shared/grant-requests';
 import { setAgentGrant } from './agent-grants-service';
 import { deliverHelperUpdate } from './clubhouse-mcp/tools/helper-delivery';
-import { finishGrantAnswer, grantRequestKey, peekGrantRequest, restoreGrantRequest, takeGrantRequest } from './grant-requests';
+import { finishGrantAnswer, grantRequestKey, peekGrantRequest, readOriginalAllowedCall, restoreGrantRequest, takeGrantRequest } from './grant-requests';
+import { persistDurableGrantAnswer } from './durable-grant-approvals';
 import { appLog } from './log-service';
 import { recordGrantRequest } from './grant-telemetry';
 import { currentSettingsOrigin } from './settings-audit';
@@ -49,7 +50,7 @@ export async function answerGrantRequest(requestId: string, allow: boolean, upda
   if (updateMode !== undefined) return { ok: false, error: 'This request is not an update approval.' };
   // Used up before anything is saved, so a second answer, or the expiry, can't land meanwhile.
   const key = grantRequestKey(requestId);
-  const request = takeGrantRequest(requestId, allow);
+  const request = takeGrantRequest(requestId, allow, Date.now(), { deferCallApproval: true });
   if (!request || key === null) return { ok: false, error: 'This request has expired or was already answered.' };
   if (allow && request.kind === 'grant' && request.target) {
     try {
@@ -60,7 +61,16 @@ export async function answerGrantRequest(requestId: string, allow: boolean, upda
       return { ok: false, error: errorText(err) };
     }
   }
-  finishGrantAnswer(requestId);
+  if (allow && readOriginalAllowedCall(requestId)?.scope.durable === true) {
+    try {
+      await persistDurableGrantAnswer(requestId, assertAuthorized);
+    } catch (err) {
+      // telemetry-exempt: the actual user surface receives the failure; no allowed event or notification is emitted
+      restoreGrantRequest(request, key);
+      return { ok: false, error: errorText(err) };
+    }
+  }
+  if (!finishGrantAnswer(requestId)) return { ok: false, error: 'This request expired or its agent was removed while the answer was being saved.' };
   recordGrantRequest({ agentId: request.agentId, kind: request.kind, outcome: allow ? 'allowed' : 'declined', actions: request.actions });
   if (request.kind === 'call' && request.actions.includes('connection.bootstrap')) {
     recordDispatcherControl({

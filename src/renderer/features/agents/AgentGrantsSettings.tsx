@@ -9,7 +9,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { Agent } from '../../../shared/types';
 import type { GrantTarget } from '../../../shared/agent-grants';
 import {
-  GRANT_ACTION_LABELS, grantKey, grantTargetLabel, targetKey,
+  GRANT_ACTION_LABELS, GRANT_OFF_PERSISTENCE_FAILED, grantKey, grantTargetLabel, targetKey,
   type AgentGrantsView, type GrantChangeMode, type GrantRow, type GrantToolMap,
 } from '../../../shared/agent-grant-changes';
 import { Button } from '../../components/Button';
@@ -39,7 +39,7 @@ export const SOURCE_LABEL: Record<GrantRow['source'], string | undefined> = {
   none: undefined,
 };
 
-const SET_FAILED = "Couldn't save that change, so it wasn't changed. Try again.";
+const SET_FAILED = "Couldn't confirm that change. Showing the saved permissions; reload if they couldn't be read.";
 const RESET_FAILED = "Couldn't reset to defaults, so nothing changed. Try again.";
 
 export interface GrantGroup {
@@ -122,11 +122,25 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0, onNavi
     setPending((p) => ({ ...p, [key]: mode }));
     const seq = ++requestSeq.current;
     try {
-      applyView(seq, await window.clubhouse.agent.setGrant(projectPath, agent.id, { action: row.action, target: row.target, mode }));
+      const next = await window.clubhouse.agent.setGrant(projectPath, agent.id, { action: row.action, target: row.target, mode });
+      applyView(seq, next);
+      if (next.partialFailure && seq >= appliedSeq.current) {
+        reportChromeActionFailed('agent_settings_save', new Error(next.partialFailure.code));
+        setError({ key: null, message: next.partialFailure.message });
+      }
     } catch (err) {
       reportChromeActionFailed('agent_settings_save', err);
+      try {
+        applyView(seq, await window.clubhouse.agent.getGrants(projectPath, agent.id));
+      } catch {
+        // telemetry-exempt: explicit unavailable state; never put the optimistic old value back
+        if (seq >= appliedSeq.current) setLoadFailed(true);
+      }
       // A later change already answered: this one's failure is old news.
-      if (seq >= appliedSeq.current) setError({ key, message: SET_FAILED });
+      if (seq >= appliedSeq.current) setError({
+        key: err instanceof Error && err.message.includes(GRANT_OFF_PERSISTENCE_FAILED) ? null : key,
+        message: err instanceof Error && err.message.includes(GRANT_OFF_PERSISTENCE_FAILED) ? GRANT_OFF_PERSISTENCE_FAILED : SET_FAILED,
+      });
     }
     setPending((p) => {
       if (p[key] !== mode) return p;

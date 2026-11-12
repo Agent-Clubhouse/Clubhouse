@@ -47,7 +47,7 @@ const fixture = () => {
   return { filename, file: path.join(state.base, filename), ledger, intent, answers, answer, click, restart };
 };
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 afterAll(() => fs.rmSync(state.base, { recursive: true, force: true }));
 
 describe('durable original-click approval ledger (not activated)', () => {
@@ -56,6 +56,12 @@ describe('durable original-click approval ledger (not activated)', () => {
     await expect(f.ledger.approveAnsweredRequest('clicked-request', now)).rejects.toMatchObject({ code: 'approval_not_original' });
     expect(await f.ledger.claim({ requestId: 'clicked-request' }, f.intent, 'allow', now)).toEqual({ allowed: false, reason: 'approval_missing_or_invalid' });
     expect(f.ledger.verify({ requestId: 'clicked-request', approved: true }, f.intent, 'ask', now)).toEqual({ allowed: false, reason: 'approval_missing_or_invalid' });
+    expect(fs.existsSync(f.file)).toBe(false);
+  });
+
+  it('does not create a receipt file for ordinary permission edits without caller proof or preparation', async () => {
+    const f = fixture();
+    await f.ledger.revokeCaller('unrelated-caller', now);
     expect(fs.existsSync(f.file)).toBe(false);
   });
 
@@ -82,6 +88,28 @@ describe('durable original-click approval ledger (not activated)', () => {
     expect(raw).not.toContain(payload.args.request);
     expect(JSON.parse(raw).receipts[0].intent.wirePayloadHash).toBe(deliveryHash(payload));
     if (process.platform !== 'win32') expect(fs.statSync(f.file).mode & 0o777).toBe(0o600);
+  });
+
+  it('rechecks the real claim deadline after waiting behind a pending ledger write', async () => {
+    const f = fixture();
+    const reference = await f.click();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now + GRANT_REQUEST_TTL_MS - 100);
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => { entered(); await gate; return rename(from, to); });
+    f.answers.set('another-click', f.answer('another-click'));
+    const writing = f.ledger.approveAnsweredRequest('another-click');
+    await started;
+    const claiming = f.ledger.claim(reference, f.intent, 'ask');
+    vi.setSystemTime(now + GRANT_REQUEST_TTL_MS);
+    release();
+    await writing;
+    expect(await claiming).toEqual({ allowed: false, reason: 'approval_expired' });
+    expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).receipts.every((receipt: { boundAt?: number }) => receipt.boundAt === undefined)).toBe(true);
   });
 
   it('does not widen the original approved asks when policy changes while the human request is pending', async () => {

@@ -10,6 +10,7 @@ export const DURABLE_APPROVAL_MAX_BYTES = 4 * 1024 * 1024;
 const PREPARED_MAX = 256;
 
 export interface DurableApprovalScope {
+  durable: true;
   context: string;
   asks: readonly { action: GrantAction; where: string }[];
 }
@@ -72,7 +73,7 @@ const text = (value: unknown, max = 200): value is string => typeof value === 's
 const hash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 function validScope(value: unknown): value is DurableApprovalScope {
-  return object(value) && hash(value.context) && Array.isArray(value.asks) && value.asks.length > 0 && value.asks.length <= 20
+  return object(value) && value.durable === true && hash(value.context) && Array.isArray(value.asks) && value.asks.length > 0 && value.asks.length <= 20
     && value.asks.every((ask) => object(ask) && GRANT_ACTIONS.some((action) => action === ask.action) && text(ask.where, 1_000));
 }
 function validIntent(value: unknown): value is PreparedDurableCall {
@@ -86,7 +87,7 @@ function validIntent(value: unknown): value is PreparedDurableCall {
 }
 function intentContext(intent: Record<string, unknown>): string {
   const { scope, ...identity } = intent;
-  return deliveryHash({ ...identity, asks: object(scope) ? scope.asks : undefined });
+  return deliveryHash({ kind: 'durable-call-v1', ...identity, asks: object(scope) ? scope.asks : undefined });
 }
 function validReceipt(value: unknown): value is Receipt {
   return object(value) && text(value.requestId) && validIntent(value.intent)
@@ -145,11 +146,12 @@ export function createDurableCallApprovals(
     }
     return structuredClone(committed);
   };
-  const update = (change: (file: ApprovalFile) => void | boolean, now: number): Promise<void> => {
+  const update = (change: (file: ApprovalFile, now: number) => void | boolean, at?: number): Promise<void> => {
     const task = lock.catch(() => {}).then(async () => {
+      const now = at ?? Date.now();
       const file = get();
       file.receipts = file.receipts.filter((receipt) => now < (receipt.boundAt === undefined ? receipt.claimBy : receipt.boundAt + DELIVERY_RETENTION_MS));
-      if (change(file) === false) return;
+      if (change(file, now) === false) return;
       if (file.receipts.length > DURABLE_APPROVAL_MAX_RECORDS || Buffer.byteLength(JSON.stringify(file)) > DURABLE_APPROVAL_MAX_BYTES) {
         throw new DurableApprovalError('approval_store_full', 'The approval store is full. Existing unexpired approvals were not discarded.');
       }
@@ -179,7 +181,7 @@ export function createDurableCallApprovals(
       pruneRevocations(now);
       const base = {
         ...structuredClone(identity), machineId: identity.machineId.toLowerCase(), commandId,
-        wirePayloadHash, scope: { context: '', asks: structuredClone(asks) },
+        wirePayloadHash, scope: { durable: true as const, context: '', asks: structuredClone(asks) },
       };
       base.scope.context = intentContext(base);
       if (!validIntent(base)) throw new DurableApprovalError('approval_changed', 'The canonical durable call is incomplete or invalid.');
@@ -189,8 +191,8 @@ export function createDurableCallApprovals(
       prepared.set(base.scope.context, { intent: structuredClone(base), expiresAt: now + GRANT_REQUEST_TTL_MS });
       return structuredClone(base);
     },
-    async approveAnsweredRequest(requestId: string, now = Date.now()): Promise<DurableApprovalReference> {
-      await update((file) => {
+    async approveAnsweredRequest(requestId: string, at?: number): Promise<DurableApprovalReference> {
+      await update((file, now) => {
         const answer = readAnsweredOriginal(requestId);
         const original = answer && prepared.get(answer.scope.context);
         if (!answer || answer.requestId !== requestId || !original || original.expiresAt <= now
@@ -208,20 +210,20 @@ export function createDurableCallApprovals(
           return;
         }
         file.receipts.push({ requestId, intent: structuredClone(original.intent), approvedAt: now, claimBy: answer.expiresAt });
-      }, now);
+      }, at);
       return { requestId };
     },
-    async claim(reference: DurableApprovalReference, actual: PreparedDurableCall, freshGrant: 'allow' | 'ask' | 'refuse', now = Date.now()): Promise<DurableApprovalCheck> {
+    async claim(reference: DurableApprovalReference, actual: PreparedDurableCall, freshGrant: 'allow' | 'ask' | 'refuse', at?: number): Promise<DurableApprovalCheck> {
       if (freshGrant === 'refuse') return { allowed: false, reason: 'grant_refused' };
       let outcome: DurableApprovalCheck = { allowed: false, reason: 'approval_missing_or_invalid' };
-      await update((file) => {
+      await update((file, now) => {
         outcome = check(reference, actual, freshGrant, now, false);
         if (outcome.allowed === false) return false;
         const receipt = file.receipts.find((entry) => entry.requestId === reference.requestId);
         if (!receipt) { outcome = { allowed: false, reason: 'approval_missing_or_invalid' }; return false; }
         if (receipt.boundAt !== undefined) return false;
         receipt.boundAt = now;
-      }, now);
+      }, at);
       return outcome;
     },
     verify(reference: unknown, actual: PreparedDurableCall, freshGrant: 'allow' | 'ask' | 'refuse', now = Date.now()): DurableApprovalCheck {
@@ -234,18 +236,24 @@ export function createDurableCallApprovals(
     },
     async revokeCaller(callerId: string, now = Date.now()): Promise<void> {
       pruneRevocations(now);
-      for (const receipt of get().receipts) if (receipt.intent.callerId === callerId) {
+      const receipts = get().receipts.filter((receipt) => receipt.intent.callerId === callerId);
+      const pending = [...prepared].filter(([, entry]) => entry.intent.callerId === callerId);
+      if (receipts.length === 0 && pending.length === 0) return;
+      for (const receipt of receipts) {
         revokeIntent(receipt.intent.scope.context, receipt.boundAt === undefined ? receipt.claimBy : receipt.boundAt + DELIVERY_RETENTION_MS);
       }
-      for (const [key, entry] of prepared) if (entry.intent.callerId === callerId) {
+      for (const [key, entry] of pending) {
         revokeIntent(key, entry.expiresAt);
         prepared.delete(key);
       }
       await update((file) => {
+        let changed = false;
         for (const receipt of file.receipts) if (receipt.intent.callerId === callerId) {
           revokeIntent(receipt.intent.scope.context, receipt.boundAt === undefined ? receipt.claimBy : receipt.boundAt + DELIVERY_RETENTION_MS);
           receipt.revoked = true;
+          changed = true;
         }
+        return changed;
       }, now);
     },
   };
