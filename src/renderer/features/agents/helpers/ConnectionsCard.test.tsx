@@ -579,7 +579,12 @@ describe('Connections card (#2232)', () => {
         id, name: id === 'lead' ? lead.name : 'Rosie', color: 'teal', createdAt: '2026-11-07',
         orchestration: { orchestrate: true, connectToDispatcher: true },
       }))));
-      fs.writeFileSync(path.join(canvasDir, 'canvas-instances.json'), '[]');
+      fs.writeFileSync(path.join(canvasDir, 'canvas-instances.json'), JSON.stringify([{
+        id: 'canvas', name: 'Project canvas', views: [
+          { id: 'lead-view', type: 'agent', agentId: 'lead' },
+          { id: 'gp-view', type: 'plugin', metadata: { groupProjectId: 'legacy-gp' } },
+        ],
+      }]));
       fs.writeFileSync(path.join(canvasDir, 'canvas-wires.json'), JSON.stringify([
         { agentId: 'lead', targetId: 'legacy-gp', targetKind: 'group-project', label: 'Legacy group', agentName: lead.name },
       ]));
@@ -607,7 +612,8 @@ describe('Connections card (#2232)', () => {
       }
       resetAllSettingsStoresForTests();
       const protectedFiles = [projectsFile, agentsFile, registryFile, grantsFile, grantsTemp,
-        path.join(canvasDir, 'canvas-wires.json'), path.join(offlineFiles.base, 'connection-instructions.json')];
+        path.join(canvasDir, 'canvas-instances.json'), path.join(canvasDir, 'canvas-wires.json'),
+        path.join(offlineFiles.base, 'connection-instructions.json')];
       const bytes = protectedFiles.map((file) => fs.readFileSync(file, 'utf8'));
       const names = fs.readdirSync(offlineFiles.base, { recursive: true }).sort();
       const forbidden = [

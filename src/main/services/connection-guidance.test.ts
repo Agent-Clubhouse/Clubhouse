@@ -182,7 +182,7 @@ describe('durable directional connection guidance', () => {
   it('observes and blocks actual legacy grant-temp cleanup, restores real imports, and leaves strict inspection untouched', () => {
     const file = path.join(userData.dir, 'connection-grants.json');
     const temp = `${file}.tmp-0-retained`;
-    const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: ['send_message'] };
+    const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: ['send_message'], updatedAt: '2026-11-07' };
     const bytes = JSON.stringify({ version: 1, directions: [direction] });
     fs.writeFileSync(file, bytes);
     fs.writeFileSync(temp, 'Protected uncommitted bytes');
