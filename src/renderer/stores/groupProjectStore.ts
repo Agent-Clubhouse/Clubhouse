@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GroupProject } from '../../shared/group-project-types';
+import type { GroupProject, GroupProjectCreateOptions } from '../../shared/group-project-types';
 
 function isGroupProject(v: unknown): v is GroupProject {
   return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).id === 'string' && typeof (v as Record<string, unknown>).name === 'string';
@@ -10,7 +10,7 @@ interface GroupProjectStoreState {
   loaded: boolean;
   loadError: string | null;
   loadProjects: () => Promise<void>;
-  create: (name: string) => Promise<GroupProject>;
+  create: (name: string, options?: GroupProjectCreateOptions) => Promise<GroupProject>;
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   setPolling: (id: string, enabled: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -42,8 +42,8 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
     }
   },
 
-  create: async (name) => {
-    const raw = await window.clubhouse.groupProject.create(name);
+  create: async (name, options) => {
+    const raw = await window.clubhouse.groupProject.create(name, options);
     if (!isGroupProject(raw)) throw new Error('create returned invalid GroupProject');
     set((state) => ({ projects: [...state.projects, raw] }));
     return raw;

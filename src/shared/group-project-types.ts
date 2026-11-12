@@ -20,6 +20,8 @@ export interface GroupProject {
   description: string;   // purpose of this group, shown to agents
   instructions: string;  // rules agents must follow
   createdAt: string;     // ISO 8601
+  /** Absent only on legacy records awaiting membership-aware migration. */
+  scope?: GroupProjectScope;
   metadata: Record<string, unknown>;
 }
 
