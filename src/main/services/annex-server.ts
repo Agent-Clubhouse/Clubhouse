@@ -215,6 +215,7 @@ let unsubMembership: (() => void) | null = null;
 const MDNS_RESTART_DELAY_MS = 30_000;
 let serverPort = 0; // Main TLS port
 let boundHost = ''; // networkProfile.host while running
+let serverGeneration = 0;
 let currentPin = '';
 let currentPinIssuedAt = 0;
 let pinRotationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -4970,10 +4971,26 @@ function trackIncomingSockets(server: http.Server | https.Server): void {
 }
 
 export function start(): void {
+  void startServer();
+}
+
+/** MCP settings changes require actual secure readiness, not a scheduled listen. */
+export async function startVerified(): Promise<void> {
+  const generation = serverGeneration + 1;
+  try { await startServer(true); }
+  catch (err) {
+    if (serverGeneration === generation) stop();
+    throw err;
+  }
+}
+
+function startServer(strict = false): Promise<void> {
   if (tlsServer || httpServer) {
     appLog('core:annex', 'debug', 'Annex server start() called but already running');
-    return;
+    if (strict) throw new Error('Annex is already starting or running; secure readiness for this change cannot be confirmed.');
+    return Promise.resolve();
   }
+  serverGeneration++;
 
   appLog('core:annex', 'info', 'Annex server starting...');
   const serverStartMs = Date.now();
@@ -5005,6 +5022,7 @@ export function start(): void {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
     tlsServer = null;
+    if (strict) throw err;
     recordTlsFallback();
   }
 
@@ -5420,32 +5438,50 @@ export function start(): void {
   const lastPorts = annexSettings.getLastPorts();
   const pairing = pairingServer;
 
-  listenPreferringPort(listenServer(mainServer, networkProfile.host), lastPorts.mainPort).then((port) => {
-    if (mainServer !== (tlsServer || httpServer)) return; // stopped while binding
+  const mainListening = listenPreferringPort(listenServer(mainServer, networkProfile.host), lastPorts.mainPort).then((port) => {
+    if (mainServer !== (tlsServer || httpServer)) {
+      if (strict) throw new Error('Annex stopped or changed while its main listener was binding.');
+      return;
+    }
     serverPort = port;
     appLog('core:annex', 'info', `Annex main server listening on ${networkProfile.host}:${serverPort} (${tlsServer ? 'TLS' : 'HTTP'})`);
     mainReady = true;
     if (pairingReady) recordServerStarted(serverStartMs, !!tlsServer);
     publishBonjour();
   }).catch((err) => {
-    if (!isCurrentServer(mainServer)) return; // stopped while binding or waiting to retry
-    appLog('core:annex', 'error', 'Annex main server failed to listen', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
+    if (isCurrentServer(mainServer)) {
+      appLog('core:annex', 'error', 'Annex main server failed to listen', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    if (strict) throw err;
   });
 
-  listenPreferringPort(listenServer(pairing, networkProfile.host), lastPorts.pairingPort).then((port) => {
-    if (pairing !== pairingServer) return; // stopped while binding
+  const pairingListening = listenPreferringPort(listenServer(pairing, networkProfile.host), lastPorts.pairingPort).then((port) => {
+    if (pairing !== pairingServer) {
+      if (strict) throw new Error('Annex stopped or changed while its pairing listener was binding.');
+      return;
+    }
     pairingPort = port;
     appLog('core:annex', 'info', `Annex pairing server listening on ${networkProfile.host}:${pairingPort} (HTTP)`);
     pairingReady = true;
     if (mainReady) recordServerStarted(serverStartMs, !!tlsServer);
     publishBonjour();
   }).catch((err) => {
-    if (!isCurrentServer(pairing)) return; // stopped while binding or waiting to retry
-    appLog('core:annex', 'error', 'Annex pairing server failed to listen', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
+    if (isCurrentServer(pairing)) {
+      appLog('core:annex', 'error', 'Annex pairing server failed to listen', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    if (strict) throw err;
+  });
+  return Promise.all([mainListening, pairingListening]).then(() => {
+    if (!strict) return;
+    const currentProfile = annexNetworkProfile(process.env, annexSettings.getSettings().loopbackOnly);
+    if (mainServer !== tlsServer || pairing !== pairingServer || !tlsServer.listening || !pairing.listening
+      || !serverPort || !pairingPort || boundHost !== currentProfile.host || currentProfile.advertise !== networkProfile.advertise) {
+      throw new Error('Annex secure listener readiness or network profile changed before confirmation.');
+    }
   });
 }
 
@@ -5530,6 +5566,7 @@ function rememberBoundPorts(): void {
 }
 
 export function stop(): void {
+  serverGeneration++;
   // Unsubscribe from event bus
   unsubscribeEventBus();
   if (refreshFollowUp) clearTimeout(refreshFollowUp);

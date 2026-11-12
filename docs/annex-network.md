@@ -31,6 +31,8 @@ Both desktops need delivery protocol version 1 (atomic claim/receipt, boundary `
 
 `get_annex_network_settings` requires `settings.app.read` and exposes only switches, effective listener scope, discovery policy and an `expected_state` token. `update_annex_network_settings` changes only `loopback_only`, requires `settings.app.write`, and always asks the person to approve the exact change even when its grant is Allow. Read the current token first; changed settings invalidate pending approval. Expanding exposure is explicitly identified as sensitive. An isolated process profile cannot be broadened by MCP, and application failures are returned explicitly. No device identities, addresses, ports, PINs, fingerprints or peer secrets are returned. The existing settings audit records successful changes.
 
+A successful MCP scope change awaits actual TLS and both listeners under the approved profile, not just a call to start. Failed strict starts are stopped without creating the ordinary HTTP error-only fallback. Restoration of the previous saved setting and secure runtime is attempted; a failed write, failed runtime restore or concurrent settings edit is reported as an explicit partial failure, never a successful change or a fabricated complete rollback.
+
 ## Manual connect and user-managed forwards
 
 In **Add a device**, paste the other computer's unmodified pairing link. **Address override (optional)** accepts a host or `host:port`, for example `127.0.0.1:7443` for a local forward or `[::1]:7443` for IPv6. Omitting the port uses the main TLS port from the link. An override replaces the link's endpoints for that pairing attempt, not its expected identity, certificate or one-time PIN.
