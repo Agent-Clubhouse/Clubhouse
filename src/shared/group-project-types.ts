@@ -3,6 +3,16 @@
  * where multiple agents collaborate via a shared bulletin board.
  */
 
+export type GroupProjectScope =
+  | { level: 'project'; projectId: string; reach: 'local' | 'network' }
+  | { level: 'app'; reach: 'local' | 'network' };
+
+export interface GroupProjectCreateOptions {
+  /** Supplies the default scope only when scope is omitted. */
+  projectId?: string;
+  scope?: GroupProjectScope;
+}
+
 /** A group project entity. */
 export interface GroupProject {
   id: string;            // "gp_<timestamp>_<random>"
