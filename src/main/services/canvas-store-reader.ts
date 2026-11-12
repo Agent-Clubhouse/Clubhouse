@@ -54,7 +54,7 @@ export interface CanvasStoreSnapshot {
 }
 
 export interface CanvasStoreReadOptions {
-  /** Refuse incomplete primary data instead of normalizing or recovering it. */
+  /** Refuse incomplete primary data or unverified directories instead of normalizing or recovering. */
   strict?: boolean;
 }
 
@@ -75,6 +75,23 @@ function isMissingFileError(err: unknown): boolean {
   return code === 'ENOENT' || code === 'ENOTDIR';
 }
 
+async function missingFileParentProblem(file: string): Promise<string | undefined> {
+  // Windows can return ENOENT for a child of a regular file.
+  for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+    let entryPresent = false;
+    try {
+      const entry = await fsp.lstat(dir);
+      entryPresent = true;
+      const stats = entry.isSymbolicLink() ? await fsp.stat(dir) : entry;
+      return stats.isDirectory() ? undefined : `not a directory: ${dir}`;
+    } catch (err) {
+      // telemetry-exempt: returned as unreadable; the caller reports the incomplete store
+      if (!entryPresent && (err as NodeJS.ErrnoException)?.code === 'ENOENT' && path.dirname(dir) !== dir) continue;
+      return errorMessage(err);
+    }
+  }
+}
+
 async function readJsonFile(file: string, strict = false): Promise<KvRead> {
   let raw: string;
   try {
@@ -82,6 +99,10 @@ async function readJsonFile(file: string, strict = false): Promise<KvRead> {
   } catch (err) {
     // telemetry-exempt: returned as missing/unreadable; the caller logs a skipped store
     const missing = strict ? (err as NodeJS.ErrnoException)?.code === 'ENOENT' : isMissingFileError(err);
+    if (strict && missing) {
+      const problem = await missingFileParentProblem(file);
+      if (problem !== undefined) return { status: 'unreadable', error: problem };
+    }
     return missing ? { status: 'missing' } : { status: 'unreadable', error: errorMessage(err) };
   }
   try {

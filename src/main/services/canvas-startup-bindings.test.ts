@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -18,6 +19,10 @@ vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => home.dir },
 }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile), lstat: vi.fn(actual.lstat) };
+});
 vi.mock('./project-store', () => ({ list: vi.fn(async () => projects.list) }));
 vi.mock('./group-project-registry', () => ({
   groupProjectRegistry: {
@@ -232,6 +237,49 @@ describe('canvas-store-reader', () => {
     const before = snapshotTree(root);
     expect((await readCanvasStore({ scope: 'app', kvDir }, { strict: true })).problems.length).toBeGreaterThan(0);
     expect((await readCanvasStore({ scope: 'app', kvDir })).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it.each(['store', 'ancestor'])('rejects Windows-shaped missing child reads under a non-directory %s', async (position) => {
+    const file = path.join(root, 'not-a-directory');
+    fs.writeFileSync(file, 'keep');
+    const kvDir = position === 'store' ? file : path.join(file, 'kv');
+    const missing = Object.assign(new Error('missing child'), { code: 'ENOENT' });
+    vi.mocked(fsp.readFile).mockRejectedValue(missing);
+    vi.mocked(fsp.lstat).mockImplementation((candidate, ...args) => {
+      if (position === 'ancestor' && String(candidate) === kvDir) return Promise.reject(missing);
+      return fs.promises.lstat(candidate, ...args);
+    });
+    const before = snapshotTree(root);
+
+    const strict = await readCanvasStore({ scope: 'app', kvDir }, { strict: true });
+
+    expect(strict.problems.length).toBeGreaterThan(0);
+    expect(strict).toMatchObject({ canvases: null, wires: null });
+    expect((await readCanvasStore({ scope: 'app', kvDir })).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it.each(['EACCES', 'ENOENT'])('refuses missing strict data when surrounding directories cannot be verified (%s)', async (code) => {
+    const kvDir = path.join(root, 'unverified', 'kv');
+    vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('missing child'), { code: 'ENOENT' }));
+    vi.mocked(fsp.lstat).mockRejectedValue(Object.assign(new Error('directory unavailable'), { code }));
+    const before = snapshotTree(root);
+
+    const strict = await readCanvasStore({ scope: 'app', kvDir }, { strict: true });
+
+    expect(strict.problems.length).toBeGreaterThan(0);
+    expect(strict).toMatchObject({ canvases: null, wires: null });
+    expect((await readCanvasStore({ scope: 'app', kvDir })).problems).toEqual([]);
+    expect(snapshotTree(root)).toEqual(before);
+  });
+
+  it('accepts a genuinely absent nested store beneath a verified directory without writes', async () => {
+    const kvDir = path.join(root, 'absent', 'nested', 'kv');
+    const before = snapshotTree(root);
+    expect(await readCanvasStore({ scope: 'app', kvDir }, { strict: true })).toMatchObject({
+      canvases: [], wires: [], problems: [],
+    });
     expect(snapshotTree(root)).toEqual(before);
   });
 
