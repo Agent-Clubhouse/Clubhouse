@@ -121,6 +121,7 @@ function emptyGitConfig() {
     if (fd !== undefined) fs.closeSync(fd);
     if (directory) {
       try { fs.rmdirSync(directory); } catch {
+        // telemetry-exempt: appLog reports the cleanup failure without private filesystem paths or raw errors.
         appLog('core:project', 'warn', 'Temporary import Git isolation setup failed; unexpected state was preserved');
       }
     }
