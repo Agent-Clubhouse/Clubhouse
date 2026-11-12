@@ -497,7 +497,7 @@ describe('UpdateBanner card variant (new chrome)', () => {
       await act(async () => { fireEvent.click(screen.getByTestId('update-restart-btn')); });
     }
 
-    it('distinguishes Dispatcher work and explains its actions and delayed resume', async () => {
+    it('distinguishes the Dispatcher controller and explains its actions and delayed resume', async () => {
       useDispatcherStore.setState({ state: {
         ...DISPATCHER_OFF, chatAgentId: 'chat', config: { id: 'work', name: 'Sage', color: 'blue', createdAt: '' },
       } });
@@ -505,7 +505,7 @@ describe('UpdateBanner card variant (new chrome)', () => {
       const chat: LiveAgentInfo = { ...liveAgent, agentId: 'chat', dispatcherRole: 'chat', isWorking: false };
       vi.mocked(window.clubhouse.app.getLiveAgentsForUpdate).mockResolvedValue([work, chat]);
       await openGate();
-      expect(screen.getByText('Dispatcher work')).toBeInTheDocument();
+      expect(screen.getByText('Dispatcher controller')).toBeInTheDocument();
       expect(screen.getByText('Sage')).toBeInTheDocument();
       expect(screen.queryByText('work')).not.toBeInTheDocument();
       expect(screen.queryByText('chat')).not.toBeInTheDocument();

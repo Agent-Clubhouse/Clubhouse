@@ -98,7 +98,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
         // provider's session capability — the same source the capture path uses.
         const next = live.filter((a: LiveAgentInfo) => !stoppedAgents.current.has(a.agentId)).map((a: LiveAgentInfo) => ({
           ...a,
-          agentName: a.dispatcherRole === 'work' ? 'Dispatcher work'
+          agentName: a.dispatcherRole === 'work' ? 'Dispatcher controller'
             : agents[a.agentId]?.name && agents[a.agentId].name !== a.agentId ? agents[a.agentId].name
               : a.dispatcherRole === 'chat' ? dispatcher?.config?.name || 'Dispatcher' : a.agentId,
         }));
