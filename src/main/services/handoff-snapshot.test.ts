@@ -45,11 +45,13 @@ async function replacementFixture(): Promise<{ base: string; replacement: string
 }
 
 beforeEach(async () => {
-  // Model supported repositories without ambient runner filters; production still refuses them.
-  vi.stubEnv('GIT_CONFIG_GLOBAL', os.devNull);
-  vi.stubEnv('GIT_CONFIG_SYSTEM', os.devNull);
-  vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-snapshot-')));
+  // Isolate supported fixtures with regular config files; Git for Windows rejects null devices.
+  const config = path.join(root, 'empty-git-config');
+  await fs.promises.writeFile(config, '');
+  vi.stubEnv('GIT_CONFIG_GLOBAL', config);
+  vi.stubEnv('GIT_CONFIG_SYSTEM', config);
+  vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   repo = path.join(root, 'repo');
   staging = path.join(root, 'staging');
   await fs.promises.mkdir(repo);
