@@ -254,6 +254,7 @@ export async function readCanvasStore(location: CanvasStoreLocation, options: Ca
     try {
       if (!(await fsp.stat(location.projectPath)).isDirectory()) throw new Error('Project folder is not a directory.');
     } catch (err) {
+      // telemetry-exempt: returned as snapshot problems; inspectors report the unreadable store
       return { location, canvases: null, wires: null, problems: [`Project folder is unavailable: ${errorMessage(err)}`] };
     }
   }

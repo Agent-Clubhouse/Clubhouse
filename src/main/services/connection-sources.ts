@@ -68,6 +68,7 @@ export async function listConnectionSources(agentId: string): Promise<AgentConne
       bySource.set(sourceId, new Set(saved.keys()));
       unreadable.delete(sourceId);
     } catch (error) {
+      // telemetry-exempt: appLog reports the error and the returned unreadable marker reaches the UI
       bySource.delete(sourceId);
       unreadable.add(sourceId);
       appLog('core:mcp', 'warn', 'Could not inspect saved connections', { meta: { sourceId, error: String(error) } });
@@ -78,6 +79,7 @@ export async function listConnectionSources(agentId: string): Promise<AgentConne
   try {
     links = await listDispatcherLinksForUser({ strict: true });
   } catch (error) {
+    // telemetry-exempt: appLog reports the error and the Dispatcher unreadable marker reaches the UI
     links = [];
     bySource.delete(DISPATCHER_CONNECTION_SOURCE_ID);
     unreadable.add(DISPATCHER_CONNECTION_SOURCE_ID);
