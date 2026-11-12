@@ -2,18 +2,13 @@
  * Agent wires summarize connection permissions; other targets keep wire-scoped controls.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
-import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
-import { useAgentStore } from '../../../stores/agentStore';
 import { Toggle } from '../../../components/Toggle';
 import { GROUP_PROJECT_TOOL_SUFFIXES } from '../../../../shared/group-project-permissions';
-import { CONNECTION_SWITCHES, localDirectionTools, WAKE_TOOL, type ConnectionDirection } from '../../../../shared/connection-grants';
-import { CONNECTION_SOURCE_LABELS, type AgentConnectionSources } from '../../../../shared/connection-sources';
 import { Modal } from '../../../components/Modal';
 import { Button } from '../../../components/Button';
-import { AgentConnectionSummary } from '../../../features/agents/helpers/AgentConnectionSummary';
-import { isDispatcherAgent } from '../../../features/dispatcher/dispatcherStore';
+import { ConnectionEditorDialog } from '../../../features/agents/helpers/ConnectionEditorDialog';
 
 /** Known tool suffixes for each target kind. */
 const TOOL_SUFFIXES: Record<string, string[]> = {
@@ -68,94 +63,8 @@ interface WireToolPermissionsDialogProps {
 
 export function WireToolPermissionsDialog(props: WireToolPermissionsDialogProps) {
   return props.binding.targetKind === 'agent'
-    ? <AgentConnectionPermissionsDialog {...props} />
+    ? <ConnectionEditorDialog binding={props.binding} onClose={props.onClose} backdropTestId="wire-tool-permissions-dialog" />
     : <WireScopedToolPermissionsDialog {...props} />;
-}
-
-function AgentConnectionPermissionsDialog({ binding, onClose, onNavigate }: WireToolPermissionsDialogProps) {
-  const bindings = useMcpBindingStore((s) => s.bindings);
-  const agents = useAgentStore((s) => s.agents);
-  const [snapshot, setSnapshot] = useState<{ grants: ConnectionDirection[]; sources: AgentConnectionSources } | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [reload, setReload] = useState(0);
-  useEffect(() => window.clubhouse.mcpBinding.onConnectionGrantsChanged(() => setReload((n) => n + 1)), []);
-  useEffect(() => {
-    let alive = true;
-    setSnapshot(null);
-    setFailed(false);
-    Promise.all([
-      window.clubhouse.mcpBinding.getConnectionGrants(binding.agentId),
-      window.clubhouse.mcpBinding.getConnectionSources(binding.agentId),
-    ]).then(([grants, sources]) => {
-      if (alive) setSnapshot({ grants, sources });
-    }).catch(() => {
-      // telemetry-exempt: the dialog reports the failed read and offers a retry.
-      if (alive) setFailed(true);
-    });
-    return () => { alive = false; };
-  }, [binding.agentId, bindings, reload]);
-
-  const from = agents[binding.agentId];
-  const to = agents[binding.targetId];
-  const fromName = from?.name ?? binding.agentName ?? binding.agentId;
-  const toName = to?.name ?? binding.targetName ?? binding.label;
-  const pairs = snapshot?.sources.pairs.filter((p) => (p.agentId === binding.agentId && p.targetId === binding.targetId)
-    || (p.agentId === binding.targetId && p.targetId === binding.agentId)) ?? [];
-  const family = from?.parentAgentId === binding.targetId || to?.parentAgentId === binding.agentId
-    || pairs.some((p) => p.sources.some((s) => s.kind === 'helper'));
-  const dispatcher = isDispatcherAgent(from ?? { id: binding.agentId, projectId: '' })
-    || isDispatcherAgent(to ?? { id: binding.targetId, projectId: '' });
-  const showWake = !family && !dispatcher;
-  const directions = [
-    { fromId: binding.agentId, toId: binding.targetId, fromName, toName },
-    { fromId: binding.targetId, toId: binding.agentId, fromName: toName, toName: fromName },
-  ];
-
-  return (
-    <div onMouseDown={(e) => e.stopPropagation()}>
-      <Modal open onClose={onClose} title="Connection permissions" backdropTestId="wire-tool-permissions-dialog" footer={<Button onClick={onClose}>Close</Button>}>
-        <AgentConnectionSummary agentId={binding.agentId} onNavigate={() => { onClose(); onNavigate?.(); }} />
-        <p className="mb-3 text-xs text-ctp-overlay1">On only describes the connection switch. The sender's Clubhouse permissions can still turn a tool off or require Ask first.</p>
-        {failed ? (
-          <p role="alert" className="text-xs text-ctp-error">
-            Couldn't read the connection permissions. <Button kind="quiet" onClick={() => setReload((n) => n + 1)}>Try again</Button>
-          </p>
-        ) : !snapshot ? <p className="text-xs text-ctp-overlay1">Loading connection permissions...</p> : (
-          <div className="flex gap-4">
-            {directions.map((d) => {
-              const live = bindings.find((b) => b.targetKind === 'agent' && b.agentId === d.fromId && b.targetId === d.toId)
-                ?? (d.fromId === binding.agentId ? binding : undefined);
-              const saved = snapshot.grants.find((g) => !g.from.machineId && !g.to.machineId && g.from.agentId === d.fromId && g.to.agentId === d.toId);
-              const pair = pairs.find((p) => p.agentId === d.fromId && p.targetId === d.toId);
-              const connected = !!live || !!pair?.bound || !!pair?.sources.some((s) => !s.suspended);
-              const tools = localDirectionTools(saved, live?.disabledTools, live?.enabledTools);
-              const sources = [...new Set(pair?.sources.map((s) => CONNECTION_SOURCE_LABELS[s.kind]) ?? [])];
-              return (
-                <section key={d.fromId} aria-label={`${d.fromName} to ${d.toName}`} className="flex-1 min-w-0 text-xs text-ctp-subtext1" data-testid={`wire-connection-direction-${d.fromId}-${d.toId}`}>
-                  <h3 className="mb-2 text-[13px] text-ctp-text">{d.fromName}{' \u2192 '}{d.toName}</h3>
-                  {!connected ? <p>Not connected this way.</p> : (
-                    <>
-                      <ul className="space-y-1">
-                        {CONNECTION_SWITCHES.filter((s) => showWake || s.tool !== WAKE_TOOL).map(({ tool, label }) => (
-                          <li key={tool} className="flex justify-between gap-2">
-                            <span>{label}</span>
-                            <span>{tools.allowed.includes(tool) ? 'On' : 'Off'}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      {sources.length > 0 && <p className="mt-2 text-ctp-overlay1">From: {sources.join(', ')}.</p>}
-                    </>
-                  )}
-                </section>
-              );
-            })}
-          </div>
-        )}
-        {!showWake && <p className="mt-3 text-xs text-ctp-overlay1">This connection has no Wake it switch. The Dispatcher and helpers use their own wake tools.</p>}
-        {snapshot && snapshot.sources.unreadable.length > 0 && <p role="alert" className="mt-2 text-xs text-ctp-error">Some connection sources couldn't be read: {snapshot.sources.unreadable.join(', ')}.</p>}
-      </Modal>
-    </div>
-  );
 }
 
 function WireScopedToolPermissionsDialog({ binding, onSave, onClose }: WireToolPermissionsDialogProps) {

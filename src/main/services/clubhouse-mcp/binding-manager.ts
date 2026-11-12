@@ -28,6 +28,20 @@ class BindingManager {
    */
   private toolsResolver: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => string[] | undefined) | null = null;
   private toolsRestorer: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: RestoreOptions) => void) | null = null;
+  private instructionsResolver: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => Record<string, string> | undefined) | null = null;
+
+  setConnectionInstructionsSource(
+    resolve: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => Record<string, string> | undefined) | null,
+  ): void {
+    this.instructionsResolver = resolve;
+  }
+
+  /** Source text is restored only when no directional override is saved. */
+  restoreInstructions(agentId: string, targetId: string, instructions: Record<string, string>): void {
+    const binding = this.bindings.get(agentId)?.find((b) => b.targetId === targetId);
+    if (!binding) return;
+    this.setInstructions(agentId, targetId, this.instructionsResolver?.(agentId, targetId, binding.targetKind) ?? instructions);
+  }
 
   /** Register the connection store: a new binding takes its list from it, and a restored list migrates into it. */
   setConnectionToolsSource(
@@ -72,7 +86,12 @@ class BindingManager {
 
     // A connection's saved permissions apply from the moment it's bound (D129).
     const disabledTools = this.toolsResolver?.(agentId, target.targetId, target.targetKind);
-    agentBindings.push({ agentId, ...target, ...(disabledTools && disabledTools.length > 0 && { disabledTools }) });
+    const instructions = this.instructionsResolver?.(agentId, target.targetId, target.targetKind);
+    agentBindings.push({
+      agentId, ...target,
+      ...(disabledTools && disabledTools.length > 0 && { disabledTools }),
+      ...(instructions && Object.keys(instructions).length > 0 && { instructions: { ...instructions } }),
+    });
     this.notifyChange(agentId);
     return true;
   }
@@ -108,10 +127,7 @@ class BindingManager {
     if (!binding) return;
 
     // Remove empty entries
-    const cleaned: Record<string, string> = {};
-    for (const [key, value] of Object.entries(instructions)) {
-      if (value.trim()) cleaned[key] = value;
-    }
+    const cleaned = Object.fromEntries(Object.entries(instructions).filter(([, value]) => value.trim()));
 
     binding.instructions = Object.keys(cleaned).length > 0 ? cleaned : undefined;
     this.notifyChange(agentId);
