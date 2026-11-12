@@ -15,13 +15,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
+import type { ChildProcess } from 'child_process';
 import { installFakeClis, type FakeClis } from '../chat-fake-cli';
 import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { buildChatScript, writeChatScript } from '../../src/main/orchestrators/adapters/testing/chat-script';
 import type { DeliveryFile } from '../../src/main/services/annex-delivery-store';
 import type { McpToolResult } from '../../src/main/services/clubhouse-mcp/types';
 import { launchApp, type LaunchedApp } from '../launch';
-import type { DisposableProfile } from '../app-profile';
+import { assertDisposableProfile, type DisposableProfile } from '../app-profile';
 import { untrackOpenApp } from '../e2e-cleanup';
 import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helpers';
 import { isNewLayout } from '../layout';
@@ -38,22 +39,56 @@ const profiles: DisposableProfile[] = [];
 
 test.setTimeout(300_000);
 
+const exited = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null;
+
+async function killOwnedDesktop(app: LaunchedApp, child: ChildProcess, pid: number | undefined, profile: DisposableProfile): Promise<void> {
+  if (app.electronApp.process() !== child || child.pid !== pid || !Number.isSafeInteger(pid) || !pid || pid <= 0 || pid === process.pid
+    || app.profile !== profile || app.userDataDir !== profile.userDataDir) throw new Error('Owned desktop identity changed before termination');
+  if (exited(child)) return;
+  assertDisposableProfile(profile);
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      child.removeListener('exit', onExit);
+      child.removeListener('error', onError);
+    };
+    const onExit = () => { cleanup(); resolve(); };
+    const onError = (error: Error) => { cleanup(); reject(error); };
+    child.once('exit', onExit);
+    child.once('error', onError);
+    try {
+      if (exited(child)) onExit();
+      else process.kill(pid, 'SIGKILL');
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
+  if (!exited(child)) throw new Error('Owned desktop termination did not observe process exit');
+}
+
 async function close(app: LaunchedApp | undefined): Promise<void> {
   if (!app) return;
   const errors: unknown[] = [];
   const child = app.electronApp.process();
+  const pid = child.pid;
+  const profile = app.profile;
   try {
-    if (child.exitCode === null && child.signalCode === null) await restoreDeliveryInstrumentation(app);
+    if (!exited(child)) await restoreDeliveryInstrumentation(app);
   } catch (error) {
     errors.push(error);
   }
   try {
     await app.electronApp.close();
+    if (!exited(child)) await new Promise<void>((resolve) => child.once('exit', () => resolve()));
   } catch (error) {
-    if (child.exitCode === null && child.signalCode === null) errors.push(error);
-  } finally {
-    untrackOpenApp(app.electronApp);
+    if (!exited(child)) {
+      errors.push(error);
+      try { await killOwnedDesktop(app, child, pid, profile); }
+      catch (terminationError) { errors.push(terminationError); }
+    }
   }
+  if (exited(child)) untrackOpenApp(app.electronApp);
+  else errors.push(new Error('Owned desktop is still live; retaining the entire fixture cohort'));
   if (errors.length) throw new AggregateError(errors, 'Owned Annex desktop cleanup failed');
 }
 
@@ -82,16 +117,23 @@ test.afterEach(async () => {
     errors.push(error);
   } finally {
     const closed = await Promise.allSettled([close(here), close(there)]);
-    here = undefined;
-    there = undefined;
-    const disposed = await Promise.allSettled([
-      ...profiles.splice(0).map(async (profile) => profile.dispose()),
-      fakesHere?.cleanup(),
-      fakesThere?.cleanup(),
-      ...(scratch ? [fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })] : []),
-    ]);
-    for (const result of [...closed, ...disposed]) {
+    for (const result of closed) {
       if (result.status === 'rejected') errors.push(result.reason);
+    }
+    if ([here, there].some((app) => app && !exited(app.electronApp.process()))) {
+      errors.push(new Error('Fixture cleanup withheld because an owned desktop has not exited'));
+    } else {
+      here = undefined;
+      there = undefined;
+      const disposed = await Promise.allSettled([
+        ...profiles.splice(0).map(async (profile) => profile.dispose()),
+        fakesHere?.cleanup(),
+        fakesThere?.cleanup(),
+        ...(scratch ? [fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })] : []),
+      ]);
+      for (const result of disposed) {
+        if (result.status === 'rejected') errors.push(result.reason);
+      }
     }
   }
   if (errors.length) throw new AggregateError(errors, 'Owned Annex cleanup failed after preserving test evidence');
@@ -205,7 +247,7 @@ test('an agent messages an agent on another computer through the connection the 
   const senderId = await startAgent(here, path.join(scratch, 'here-project'), `sender-${Date.now()}`);
   const receiverName = `receiver-${Date.now()}`;
   const receiverId = await startAgent(there, path.join(scratch, 'there-project'), receiverName);
-  await expect.poll(async () => (await fakesHere!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 20_000 }).toBe(senderId);
+  await expect.poll(async () => (await fakesHere!.report('claude').catch((): undefined => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 20_000 }).toBe(senderId);
 
   // The first computer pairs with the second.
   await enableAnnexViaPreload(there.window);
@@ -242,7 +284,7 @@ test('an agent messages an agent on another computer through the connection the 
   expect(sent.text).toContain('Message sent');
 
   await expect.poll(async () => {
-    const report = await fakesThere!.report('claude').catch(() => undefined);
+    const report = await fakesThere!.report('claude').catch((): undefined => undefined);
     const prompts = JSON.stringify(report?.unexpected ?? []);
     return prompts.includes('hello from the other desk') && prompts.includes('on Desk') && prompts.includes('[TASK:across1]');
   }, { timeout: 30_000 }).toBe(true);
@@ -307,10 +349,8 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   if (!pid) throw new Error('Owned sender PID is unavailable');
   const closed = here.electronApp.waitForEvent('close');
   const child = here.electronApp.process();
-  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
-  process.kill(pid, 'SIGKILL');
-  await Promise.all([closed, exited]);
-  expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+  await Promise.all([closed, killOwnedDesktop(here, child, pid, profile)]);
+  expect(exited(child)).toBe(true);
   untrackOpenApp(here.electronApp);
   here = undefined;
   const receiverChat = there.window.locator(`[data-testid="chat-view"][data-agent-pane="${receiverId}"][data-view-context="main"]`);
