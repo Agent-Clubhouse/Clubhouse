@@ -429,6 +429,113 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     expect(f.register).not.toHaveBeenCalled();
     expect(fs.readFileSync(marker, 'utf8')).toBe('keep');
   });
+
+  it('honors cancellation while the final registration authority assertion is awaiting', async () => {
+    const f = fixture();
+    let finalRemote = false;
+    let entered!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const paused = new Promise<void>((resolve) => { release = resolve; });
+    const remote = f.runner.remote;
+    f.runner.remote = vi.fn(async (...args) => {
+      const result = await remote(...args);
+      if ((await f.store.get()).receipts.some((receipt) => receipt.phase === 'registering')) finalRemote = true;
+      return result;
+    });
+    const approval: ImportAuthorization = async () => ({
+      kind: 'approved',
+      assertCurrent: async () => { if (finalRemote) { entered(); await paused; } },
+    });
+    const { receipt } = await start(f, approval);
+    await ready;
+    expect(await f.service.cancel('dispatcher', receipt.id, f.destination)).toMatchObject({ status: 'cancellation_requested' });
+    release();
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'cancelled', cloneCompleted: true, reason: 'cancelled' });
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it.each(['tracked-file', 'runtime-state', 'ignored-content'])('preserves and refuses %s changes during the last registration authority await', async (changed) => {
+    const f = fixture();
+    fs.writeFileSync(path.join(f.source, '.gitignore'), 'scratch/\n');
+    git(f.source, 'add', '.');
+    git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'ignored fixture directory');
+    let finalRemote = false;
+    let injected = false;
+    const remote = f.runner.remote;
+    f.runner.remote = vi.fn(async (...args) => {
+      const result = await remote(...args);
+      if ((await f.store.get()).receipts.some((receipt) => receipt.phase === 'registering')) finalRemote = true;
+      return result;
+    });
+    const file = changed === 'tracked-file' ? path.join(f.destination, 'readme.txt')
+      : path.join(f.destination, changed === 'runtime-state' ? '.clubhouse' : 'scratch', 'user.txt');
+    const approval: ImportAuthorization = async () => ({
+      kind: 'approved',
+      assertCurrent: async () => {
+        if (!finalRemote || injected) return;
+        await Promise.resolve();
+        injected = true;
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, 'user edit\n');
+      },
+    });
+    const { receipt } = await start(f, approval);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'partial', cloneCompleted: true });
+    expect(injected).toBe(true);
+    expect(f.register).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe('user edit\n');
+  });
+
+  it.each(['logs/HEAD', 'logs/refs/heads/trunk'])('rejects a post-fetch %s file symlink before checkout can append outside the import', async (relative) => {
+    const f = fixture();
+    const outside = path.join(f.work, 'outside-user-file');
+    fs.writeFileSync(outside, 'keep\n');
+    const run = f.runner.run;
+    f.runner.run = vi.fn(async (args, options) => {
+      const result = await run(args, options);
+      if (args[0] === 'fetch') {
+        const target = path.join(f.destination, '.git', relative);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.symlinkSync(outside, target);
+      }
+      return result;
+    });
+    const { receipt } = await start(f);
+    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', cloneCompleted: false });
+    expect(fs.readFileSync(outside, 'utf8')).toBe('keep\n');
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it('preserves the registered id and refuses a gitignore symlink swapped during real addProject', async () => {
+    const f = fixture();
+    fs.rmSync(temp.base, { recursive: true, force: true });
+    fs.writeFileSync(path.join(f.source, '.gitignore'), '# fixture\n');
+    git(f.source, 'add', '.');
+    git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'gitignore fixture');
+    const outside = path.join(f.work, 'outside-user-file');
+    fs.writeFileSync(outside, 'keep\n');
+    const actualConfig = await vi.importActual<typeof import('../agent-config')>('../agent-config');
+    vi.mocked(ensureGitignore).mockImplementationOnce(actualConfig.ensureGitignore);
+    const addProject = projectStore.addProject;
+    const spy = vi.spyOn(projectStore, 'addProject').mockImplementation(async (folder) => {
+      const result = await addProject(folder);
+      fs.renameSync(path.join(folder, '.gitignore'), path.join(f.work, 'original-ignore'));
+      fs.symlinkSync(outside, path.join(folder, '.gitignore'));
+      return result;
+    });
+    f.service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: async () => [], register: registerProjectFolder });
+    try {
+      const { receipt } = await start(f);
+      const result = await finished(f.service, receipt.id);
+      expect(result).toMatchObject({ phase: 'partial', cloneCompleted: true, gitignore: 'failed' });
+      expect(result.projectId).toBeDefined();
+      expect(await projectStore.findByPath(f.destination)).toMatchObject({ id: result.projectId });
+      expect(fs.readFileSync(outside, 'utf8')).toBe('keep\n');
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe('cancellation, interruption and unsafe incidental execution', () => {
