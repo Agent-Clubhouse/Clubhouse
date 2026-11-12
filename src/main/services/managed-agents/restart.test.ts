@@ -38,11 +38,37 @@ function add(id: string, managed: boolean): void {
   });
 }
 
-beforeEach(() => {
+let receiptRoot: string;
+
+beforeEach(async () => {
   state.agents.clear();
   state.running.clear();
   spawnAgent.mockClear();
   killAgent.mockClear();
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { createAssetCatalogStore } = await import('../asset-catalog/store');
+  const { createManagedStateStore } = await import('./state-store');
+  const { createManagedAgentsService } = await import('./service');
+  const { _setManagedAgentsForTesting } = await import('./index');
+  const { _resetSettingsAuditForTesting } = await import('../settings-audit');
+  receiptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-restart-'));
+  _resetSettingsAuditForTesting(false);
+  _setManagedAgentsForTesting(createManagedAgentsService({
+    catalog: createAssetCatalogStore({ dir: path.join(receiptRoot, 'catalog') }),
+    state: createManagedStateStore(path.join(receiptRoot, 'managed')),
+    listProjects: async () => [],
+    listAgents: async () => [],
+    getAgent: async (_p, id) => state.agents.get(id) ?? null,
+    setManagedSetup: async () => undefined,
+    isRunning: (id) => state.running.has(id),
+  }));
+});
+
+afterEach(async () => {
+  (await import('./index'))._setManagedAgentsForTesting(null);
+  (await import('node:fs')).rmSync(receiptRoot, { recursive: true, force: true });
 });
 
 describe('restartManagedAgent', () => {
