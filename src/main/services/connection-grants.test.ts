@@ -14,8 +14,8 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-grants-'));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
-  connectionMigrationDone, deniedConnectionTools, getConnectionDirection, listConnectionDirections, localConnectionWakeOn, removeConnectionDirections,
-  setConnectionDirections, setConnectionTools, _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
+  connectionMigrationDone, deniedConnectionTools, getConnectionDirection, listConnectionDirections, localConnectionWakeOn, onConnectionGrantsChanged,
+  putConnectionDirection, removeConnectionDirections, setConnectionDirections, setConnectionTools, _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import {
@@ -24,7 +24,7 @@ import {
   _resetConnectionFileWarningForTesting,
 } from './connection-grants';
 import {
-  applyPersistedBinding, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource, startingTools, _resetPersistedBindingSourcesForTesting,
+  applyPersistedBinding, isBindingRemovedByUser, markBindingRemovedByUser, onBindingDrawnByUser, rebuildPersistedBindings, registerPersistedBindingSource, startingTools, _resetPersistedBindingSourcesForTesting,
   type PersistedBinding,
 } from './persisted-bindings';
 import { AUTOMATIC_CONNECTION_SWITCHES } from '../../shared/connection-grants';
@@ -33,6 +33,8 @@ import { NEW_AGENT_WIRE_DISABLED_TOOLS } from '../../shared/wire-defaults';
 const A = { agentId: 'a' };
 const B = { agentId: 'b' };
 const toolsOf = (agentId: string, targetId: string) => bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === targetId)?.disabledTools;
+const grantsPath = () => path.join(state.base, 'connection-grants.json');
+const savedGrants = () => fs.readFileSync(grantsPath(), 'utf-8');
 let stop: () => void = () => {};
 
 beforeEach(async () => {
@@ -97,11 +99,89 @@ describe('connection permissions (D129)', () => {
     expect(listConnectionDirections('gone')).toEqual([]);
   });
 
-  it('Make two-way connects a pair the user removed this session, starting like a new connection', async () => {
+  it('Make two-way reconnects a removed pair without resetting its saved everything-on and wake-off switches', async () => {
     await setConnectionTools(B, A, []); // a leftover entry, everything on
     markBindingRemovedByUser('b', 'a');
     await makeTwoWay('b', 'a');
-    expect(toolsOf('b', 'a')).toEqual(['clear_agent', 'compact_agent']);
+    expect(toolsOf('b', 'a') ?? []).toEqual([]);
+    expect(localConnectionWakeOn('b', 'a')).toBe(false);
+    expect(isBindingRemovedByUser('b', 'a')).toBe(false);
+  });
+
+  it('Make two-way leaves an already linked direction and its timestamps exactly as saved', async () => {
+    const saved = {
+      from: B, to: A, disabledTools: ['send_file', 'future_denied'],
+      enabledTools: ['wake_agent', 'future_enabled'],
+      link: { createdAt: '2025-01-01T00:00:00.000Z' }, updatedAt: '2025-02-01T00:00:00.000Z',
+    };
+    await putConnectionDirection(saved);
+    const before = savedGrants();
+    await makeTwoWay('b', 'a');
+    expect(getConnectionDirection(B, A)).toEqual(saved);
+    expect(savedGrants()).toBe(before);
+  });
+
+  it('Make two-way promotes saved disabled and custom switches without granting new defaults', async () => {
+    await setConnectionTools(B, A, ['send_message', 'wake_agent', 'future_denied'], ['future_enabled']);
+    const before = getConnectionDirection(B, A)!;
+    await makeTwoWay('b', 'a');
+    expect(getConnectionDirection(B, A)).toMatchObject({
+      disabledTools: before.disabledTools, enabledTools: before.enabledTools, link: { createdAt: expect.any(String) },
+    });
+    expect(localConnectionWakeOn('b', 'a')).toBe(false);
+  });
+
+  it('Make two-way persistence failure keeps saved switches, links and the user-removal fence intact', async () => {
+    await setConnectionTools(B, A, ['send_message'], ['future_enabled']);
+    markBindingRemovedByUser('b', 'a');
+    const before = getConnectionDirection(B, A);
+    const bytes = savedGrants();
+    const rename = fs.promises.rename;
+    const fencesAtPersist: boolean[] = [];
+    const fault = vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === grantsPath()) {
+        fencesAtPersist.push(isBindingRemovedByUser('b', 'a'));
+        throw new Error('ENOSPC: injected grants persistence failure');
+      }
+      return rename(from, to);
+    });
+    try {
+      await expect(makeTwoWay('b', 'a')).rejects.toThrow('ENOSPC');
+      expect(fencesAtPersist).toEqual([true]);
+      expect(getConnectionDirection(B, A)).toEqual(before);
+      expect(savedGrants()).toBe(bytes);
+      expect(isBindingRemovedByUser('b', 'a')).toBe(true);
+      expect(bindingManager.getBindingsForAgent('b')).toEqual([]);
+    } finally {
+      fault.mockRestore();
+    }
+  });
+
+  it.each([false, true])('Make two-way respects a newer removal during persistence (initially removed: %s)', async (initiallyRemoved) => {
+    await setConnectionTools(B, A, ['send_message', 'future_denied'], ['future_enabled']);
+    if (initiallyRemoved) markBindingRemovedByUser('b', 'a');
+    const drawn = vi.fn();
+    const unwatchDrawn = onBindingDrawnByUser(drawn);
+    try {
+      const promotion = makeTwoWay('b', 'a');
+      queueMicrotask(() => markBindingRemovedByUser('b', 'a'));
+      await expect.soft(promotion).rejects.toThrow(new Error('Connection permissions were saved, but a newer removal canceled this connection. The removal remains in effect.'));
+      expect.soft(isBindingRemovedByUser('b', 'a')).toBe(true);
+      expect.soft(bindingManager.getBindingsForAgent('b')).toEqual([]);
+      expect.soft(drawn).not.toHaveBeenCalled();
+      expect(getConnectionDirection(B, A)).toMatchObject({ disabledTools: ['send_message', 'future_denied'], enabledTools: ['future_enabled'] });
+      expect(JSON.parse(savedGrants())).toMatchObject({
+        directions: expect.arrayContaining([
+          expect.objectContaining({ from: B, to: A, disabledTools: ['send_message', 'future_denied'], enabledTools: ['future_enabled'] }),
+        ]),
+      });
+      await makeTwoWay('b', 'a');
+      expect(isBindingRemovedByUser('b', 'a')).toBe(false);
+      expect(bindingManager.getBindingsForAgent('b').some((b) => b.targetId === 'a')).toBe(true);
+      expect(drawn).toHaveBeenCalledExactlyOnceWith('b', 'a');
+    } finally {
+      unwatchDrawn();
+    }
   });
 
   it('other targets keep their list on the binding alone', async () => {
@@ -178,6 +258,76 @@ describe('connections with agents on other machines (#3064)', () => {
     const before = getConnectionDirection(A, far)!;
     await connectAcrossMachines('a', `z@${FAR}`);
     expect(getConnectionDirection(A, far)).toEqual(before);
+    await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true });
+    expect(getConnectionDirection(A, far)).toEqual(before);
+    expect(getConnectionDirection(far, A)).toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], link: expect.anything() });
+  });
+
+  it('remote two-way promotion retains both saved switch maps and commits both links before notifying', async () => {
+    await setConnectionTools(A, far, ['send_message', 'future_denied'], ['future_enabled']);
+    await setConnectionTools(far, A, ['wake_agent'], []);
+    const before = [getConnectionDirection(A, far)!, getConnectionDirection(far, A)!];
+    markBindingRemovedByUser('a', `z@${FAR}`);
+    const observations: boolean[][] = [];
+    const unsubscribe = onConnectionGrantsChanged(() => observations.push([
+      !!getConnectionDirection(A, far)?.link, !!getConnectionDirection(far, A)?.link,
+    ]));
+    const rename = fs.promises.rename;
+    const writes: unknown[] = [];
+    const observe = vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === grantsPath()) writes.push(JSON.parse(fs.readFileSync(String(from), 'utf-8')));
+      return rename(from, to);
+    });
+    try {
+      await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true });
+      expect.soft([getConnectionDirection(A, far), getConnectionDirection(far, A)].map((d) => ({
+        disabledTools: d?.disabledTools, enabledTools: d?.enabledTools,
+      }))).toEqual(before.map((d) => ({ disabledTools: d.disabledTools, enabledTools: d.enabledTools })));
+      expect.soft(writes).toHaveLength(1);
+      expect.soft(writes[0]).toMatchObject({
+        directions: expect.arrayContaining([
+          expect.objectContaining({ from: A, to: far, link: expect.anything() }),
+          expect.objectContaining({ from: far, to: A, link: expect.anything() }),
+        ]),
+      });
+      expect.soft(observations).toEqual([[true, true], [true, true]]);
+      expect.soft(isBindingRemovedByUser('a', `z@${FAR}`)).toBe(true);
+    } finally {
+      observe.mockRestore();
+      unsubscribe();
+    }
+  });
+
+  it('remote two-way persistence failure cannot expose a half-link, overwrite switches or clear a removal', async () => {
+    await setConnectionTools(A, far, ['send_file', 'future_denied'], ['future_enabled']);
+    await setConnectionTools(far, A, ['send_message'], []);
+    markBindingRemovedByUser('a', `z@${FAR}`);
+    const before = [getConnectionDirection(A, far), getConnectionDirection(far, A)];
+    const bytes = savedGrants();
+    const observations: boolean[][] = [];
+    const unsubscribe = onConnectionGrantsChanged(() => observations.push([
+      !!getConnectionDirection(A, far)?.link, !!getConnectionDirection(far, A)?.link,
+    ]));
+    const rename = fs.promises.rename;
+    const fault = vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === grantsPath()) {
+        const next = JSON.parse(fs.readFileSync(String(from), 'utf-8')) as { directions: Array<{ from: { machineId?: string }; disabledTools: string[]; link?: unknown }> };
+        const reverse = next.directions.find((d) => d.from.machineId === FAR);
+        if (reverse?.link || reverse?.disabledTools.join(',') !== 'send_message') throw new Error('ENOSPC: injected reverse-link failure');
+      }
+      return rename(from, to);
+    });
+    try {
+      await expect(connectAcrossMachines('a', `z@${FAR}`, { twoWay: true })).rejects.toThrow('ENOSPC');
+      expect.soft([getConnectionDirection(A, far), getConnectionDirection(far, A)]).toEqual(before);
+      expect.soft(savedGrants()).toBe(bytes);
+      expect.soft(observations).toEqual([]);
+      expect.soft(isBindingRemovedByUser('a', `z@${FAR}`)).toBe(true);
+      expect.soft(toolsOf('a', `z@${FAR}`)).toBeUndefined();
+    } finally {
+      fault.mockRestore();
+      unsubscribe();
+    }
   });
 
   it('deleting an agent turns its links with other machines off rather than dropping them, so they hear', async () => {

@@ -250,9 +250,9 @@ class GroupProjectRegistry {
     return [...this.projects.values()];
   }
 
-  /** Navigation must not load/migrate the registry or schedule a write. */
-  async peek(): Promise<GroupProject[]> {
-    if (this.loaded) return [...this.projects.values()];
+  /** Navigation and inspection must not load/migrate the registry or schedule a write. */
+  async peek(options: { strict?: boolean } = {}): Promise<GroupProject[]> {
+    if (this.loaded && !options.strict) return [...this.projects.values()];
     let raw: string;
     try {
       raw = await fsp.readFile(registryPath(), 'utf-8');
@@ -260,7 +260,13 @@ class GroupProjectRegistry {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
     }
-    const records: unknown = JSON.parse(raw);
+    let records: unknown;
+    try {
+      records = JSON.parse(raw);
+    } catch (error) {
+      if (options.strict) throw new Error('Group-project registry could not be read. Its file was left unchanged.');
+      throw error;
+    }
     if (!Array.isArray(records)) throw new Error('Group-project registry is not a list. Repair it and retry Open.');
     const ids = new Set<string>();
     return records.map((record: unknown): GroupProject => {

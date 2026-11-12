@@ -40,6 +40,12 @@ export interface ConnectionPairSources {
    * unresolved, never guessed.
    */
   unresolved?: boolean;
+  /** Proven saved-only automatic direction, for inspection. Never a live binding or permission. */
+  inspection?: {
+    targetKind: 'agent';
+    agentName: string;
+    targetName: string;
+  };
 }
 
 export interface AgentConnectionSources {

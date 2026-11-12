@@ -7,6 +7,7 @@ import { useManagedStatus } from '../../managed/managedApi';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { CardNote, DetailsCard } from './DetailsCard';
+import { dispatcherAgentDisplayName, useDispatcherStore } from '../../dispatcher/dispatcherStore';
 
 /**
  * The MCP servers card (#2093). It lists what the agent is connected to: the
@@ -135,6 +136,7 @@ const KIND_WORD: Record<McpBindingEntry['targetKind'], string> = {
   browser: 'browser',
   terminal: 'terminal',
   'group-project': 'group project',
+  plugin: 'plugin',
 };
 
 function StatusMark({ status }: { status: McpRowStatus }) {
@@ -176,6 +178,7 @@ export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open,
   // Opening the card checks again, so a handshake since the last turn shows up.
   const clubhouse = useClubhouseMcpConnection(agent, spawnedAt, `${String(refreshKey)}:${open}`);
   const bindings = useAgentBindings(agent.id);
+  const dispatcher = useDispatcherStore((s) => s.state);
   const { value: managedStatus } = useManagedStatus(agent.status === 'running' ? projectPath : undefined, agent.id);
   const { rows, configuredOnly, reasons } = mcpRows(live, clubhouse, agent.mcpIds ?? [], managedStatus?.mcpProblems ?? []);
   const hasClubhouse = rows.some((r) => r.name === CLUBHOUSE_MCP);
@@ -200,7 +203,7 @@ export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open,
         <ul className="flex flex-col pb-1" aria-label="Wires" data-testid="details-mcp-wires">
           {bindings.map((b) => (
             <li key={b.targetId} className="h-6 flex items-center gap-2 pl-[49px] pr-3.5 text-xs text-ctp-subtext1">
-              <span className="truncate">Wired to {b.targetName ?? b.label}</span>
+              <span className="truncate">Wired to {b.targetKind === 'agent' ? dispatcherAgentDisplayName(b.targetId, b.targetName ?? b.label, dispatcher) : b.targetName ?? b.label}</span>
               <span className="ml-auto text-ctp-overlay1 whitespace-nowrap">{KIND_WORD[b.targetKind] ?? b.targetKind}</span>
             </li>
           ))}

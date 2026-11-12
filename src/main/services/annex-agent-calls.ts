@@ -120,6 +120,7 @@ const describeNothing: DescribeAgent = async () => undefined;
 let transport: AgentCallTransport | null = null;
 let runTool: AgentToolRunner | null = null;
 let describeLocalAgent: DescribeAgent = describeNothing;
+let nameOfLocalSender: ((agentId: string) => string | undefined) | undefined;
 export interface DispatcherAgentCallReceiver {
   isTarget(id: string): boolean;
   isAvailable(id: string): boolean;
@@ -224,7 +225,7 @@ export async function forwardAgentCall(callerId: string, targetId: string, targe
     callId: QUEUED_TOOLS.has(tool) && (args.idempotency_key !== undefined || args.task_id !== undefined)
       ? deliveryHash([self, callerId, machine, to, tool, args.idempotency_key ?? args.task_id, context?.rootId, epoch])
       : randomUUID(),
-    from: { agentId: callerId, name: sender?.name ?? callerId, ...(sender?.projectName && { projectName: sender.projectName }) },
+    from: { agentId: callerId, name: nameOfLocalSender?.(callerId) ?? sender?.name ?? callerId, ...(sender?.projectName && { projectName: sender.projectName }) },
     to,
     tool,
     args,
@@ -874,6 +875,8 @@ export interface StartAgentCallsOptions {
   transport: AgentCallTransport;
   runTool: AgentToolRunner;
   describeLocalAgent: DescribeAgent;
+  /** Outgoing display name only; never used to establish a local connection endpoint. */
+  nameOfLocalSender?: (agentId: string) => string | undefined;
   /** Every direction in the store (tests pass their own). */
   listDirections?: () => ConnectionDirection[];
   /** Recheck the sender's live grants and connection before every queued attempt. */
@@ -891,6 +894,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
   transport = options.transport;
   runTool = options.runTool;
   describeLocalAgent = options.describeLocalAgent;
+  nameOfLocalSender = options.nameOfLocalSender;
   if (options.deliveryStore) deliveries = options.deliveryStore;
   authorizeQueuedCall = options.authorizeQueuedCall;
   onDeliveryFailure = options.onDeliveryFailure;
@@ -914,6 +918,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
     transport = null;
     runTool = null;
     describeLocalAgent = describeNothing;
+    nameOfLocalSender = undefined;
     authorizeQueuedCall = undefined;
     onDeliveryFailure = undefined;
     remoteDispatcher = undefined;

@@ -260,6 +260,7 @@ export async function readCanvasStore(location: CanvasStoreLocation, options: Ca
     try {
       if (!(await fsp.stat(location.projectPath)).isDirectory()) throw new Error('Project folder is not a directory.');
     } catch (err) {
+      // telemetry-exempt: returned as snapshot problems; inspectors report the unreadable store
       return { location, canvases: null, wires: null, problems: [`Project folder is unavailable: ${errorMessage(err)}`] };
     }
   }
@@ -269,12 +270,17 @@ export async function readCanvasStore(location: CanvasStoreLocation, options: Ca
 }
 
 /** The app-wide store plus one per registered local project. */
-export async function listCanvasStoreLocations(): Promise<CanvasStoreLocation[]> {
+export async function listCanvasStoreLocations(options: CanvasStoreReadOptions = {}): Promise<CanvasStoreLocation[]> {
   const locations: CanvasStoreLocation[] = [{ scope: 'app', kvDir: globalCanvasKvDir() }];
   let projects: Awaited<ReturnType<typeof projectStore.list>> = [];
   try {
-    projects = await projectStore.list();
+    if (options.strict) {
+      const saved = await projectStore.peekProjectsChecked({ strict: true });
+      if (!saved.readable) throw new Error('Saved Canvas projects could not be checked without recovery.');
+      projects = saved.projects;
+    } else projects = await projectStore.list();
   } catch (err) {
+    if (options.strict) throw err;
     // telemetry-exempt: logged; only the app-wide store is read
     appLog('core:canvas-index', 'warn', 'Could not list projects for canvas stores', {
       meta: { error: errorMessage(err) },
@@ -294,9 +300,9 @@ export async function listCanvasStoreLocations(): Promise<CanvasStoreLocation[]>
 }
 
 /** Read every canvas store on this machine. */
-export async function readAllCanvasStores(): Promise<CanvasStoreSnapshot[]> {
-  const locations = await listCanvasStoreLocations();
-  return Promise.all(locations.map((location) => readCanvasStore(location)));
+export async function readAllCanvasStores(options: CanvasStoreReadOptions = {}): Promise<CanvasStoreSnapshot[]> {
+  const locations = await listCanvasStoreLocations(options);
+  return Promise.all(locations.map((location) => readCanvasStore(location, options)));
 }
 
 function toMemberships(snapshot: CanvasStoreSnapshot, agentId: string): CanvasMembership[] {
@@ -325,18 +331,13 @@ export async function getAgentCanvasMemberships(agentId: string, projectId?: str
 
 /** A complete, read-only inventory for connection Open, with per-scope failures. */
 export async function getTargetCanvasIndex(kind: NavigableCanvasTargetKind, targetId: string): Promise<CanvasTargetIndex> {
-  const registered = await projectStore.peekProjectsChecked({ strict: true });
-  if (!registered.readable) {
-    return { stores: [], error: 'Registered projects could not be read. Repair the project list and retry Open.' };
+  let snapshots: CanvasStoreSnapshot[];
+  try {
+    snapshots = await readAllCanvasStores({ strict: true });
+  } catch (error) {
+    // telemetry-exempt: Open surfaces the incomplete inventory with an actionable retry.
+    return { stores: [], error: `Registered projects could not be read. ${errorMessage(error)} Repair the project list and retry Open.` };
   }
-  const locations: CanvasStoreLocation[] = [
-    { scope: 'app', kvDir: globalCanvasKvDir() },
-    ...registered.projects.map((project): CanvasStoreLocation => ({
-      scope: 'project', projectId: project.id, projectName: project.displayName || project.name,
-      projectPath: project.path, kvDir: projectCanvasKvDir(project.path),
-    })),
-  ];
-  const snapshots = await Promise.all(locations.map((location) => readCanvasStore(location, { strict: true })));
   return {
     stores: snapshots.map(({ location, canvases, problems }) => ({
       scope: location.scope,

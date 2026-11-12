@@ -5,6 +5,7 @@ import { agentDot } from './treeModel';
 import { StatusDot, dispatcherDot, dispatcherWorkingText, type AgentDot } from '../../features/agents/agent-status';
 import { useChatStore } from '../../stores/chatStore';
 import { activeRunFailing } from '../../features/dispatcher/work-conversation';
+import { DISPATCHER_CONTROLLER_NAME } from '../../../shared/dispatcher-name';
 
 /**
  * The Dispatcher's pinned row (#2538), above every project and shown with
@@ -121,7 +122,7 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
   const failing = useChatStore((s) => activeRunFailing(s.agents[agentId]));
   const dot: AgentDot = !running ? 'sleeping' : inTurn ? 'working' : failing ? 'error' : 'idle';
   return (
-    <div role="tree" aria-label="Dispatcher controller (debug)" data-testid="dispatcher-work-row" className="flex-shrink-0 px-1.5 pb-1">
+    <div role="tree" aria-label={`${DISPATCHER_CONTROLLER_NAME} (debug)`} data-testid="dispatcher-work-row" className="flex-shrink-0 px-1.5 pb-1">
       <div
         data-active={active}
         aria-current={active ? 'true' : undefined}
@@ -135,7 +136,7 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
           tabIndex={0}
           aria-level={1}
           aria-selected={active}
-          aria-label="Dispatcher controller"
+          aria-label={DISPATCHER_CONTROLLER_NAME}
           aria-describedby={noteId}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
@@ -145,7 +146,7 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
         >
           <StatusDot dot={dot} />
           <span className="w-[18px] h-[18px] flex-shrink-0 rounded-full bg-surface-1" aria-hidden="true" />
-          <span className="truncate font-medium">Dispatcher controller</span>
+          <span className="truncate font-medium">{DISPATCHER_CONTROLLER_NAME}</span>
           <span id={noteId} className="ml-auto flex-shrink-0 text-xs text-ctp-overlay1">debug</span>
         </div>
       </div>

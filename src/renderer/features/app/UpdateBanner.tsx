@@ -7,6 +7,7 @@ import { NoticeCard } from '../../components/NoticeCard';
 import { Button } from '../../components/Button';
 import type { AppUpdateRequest } from '../../../shared/app-update';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
+import { dispatcherRoleDisplayName } from '../../../shared/dispatcher-name';
 
 // Literal class strings so Tailwind can see every variant it needs to generate.
 const TONES = {
@@ -98,9 +99,9 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
         // provider's session capability — the same source the capture path uses.
         const next = live.filter((a: LiveAgentInfo) => !stoppedAgents.current.has(a.agentId)).map((a: LiveAgentInfo) => ({
           ...a,
-          agentName: a.dispatcherRole === 'work' ? 'Dispatcher controller'
+          agentName: a.dispatcherRole === 'work' ? dispatcherRoleDisplayName('work')
             : agents[a.agentId]?.name && agents[a.agentId].name !== a.agentId ? agents[a.agentId].name
-              : a.dispatcherRole === 'chat' ? dispatcher?.config?.name || 'Dispatcher' : a.agentId,
+              : a.dispatcherRole === 'chat' ? dispatcherRoleDisplayName('chat', dispatcher?.config?.name) : a.agentId,
         }));
         const ids = new Set(next.map((a) => a.agentId));
         return [...next, ...previous.filter((a) => !ids.has(a.agentId)

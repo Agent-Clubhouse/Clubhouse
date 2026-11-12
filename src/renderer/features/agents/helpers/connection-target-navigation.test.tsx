@@ -440,4 +440,22 @@ describe('connection Open navigation', () => {
     expect(useProjectStore.getState().activeProjectId).toBeNull();
     expect(usePluginStore.getState().appEnabled).toBe(before);
   });
+
+  it.each([
+    ['browser', 'plugin:browser:webview'],
+    ['terminal', 'plugin:terminal:shell'],
+  ] as const)('opens the actual %s widget through its owning Canvas rather than inventing a page', async (kind, pluginWidgetType) => {
+    const widget = { ...groupView('widget-id'), pluginWidgetType, metadata: {}, title: 'Same widget name', displayName: 'Same widget name' };
+    const data = { ...snapshot(), canvases: [board('board', [widget])], wires: [] };
+    vi.mocked(window.clubhouse.canvas.readForNavigation).mockResolvedValue(data);
+    vi.mocked(window.clubhouse.canvas.getTargetCanvases).mockResolvedValue({
+      stores: [{ scope: 'project', projectId: 'nav-two', hits: [{ ...hit, viewId: 'widget-id', nodeName: 'Same widget name' }] }],
+      groupProjects: [],
+    });
+    render(<ConnectionOpenAction targetId="widget-id" targetKind={kind} name="Same widget name" projectId="nav-one" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    await waitFor(() => expect(getProjectCanvasStore('nav-two').getState().selectedViewId).toBe('widget-id'));
+    expect(useUIStore.getState().explorerTab).toBe('plugin:canvas');
+    expect(window.clubhouse.canvas.readForNavigation).toHaveBeenCalledWith(kind, 'widget-id', 'nav-two');
+  });
 });

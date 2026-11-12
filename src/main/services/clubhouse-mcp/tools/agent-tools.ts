@@ -26,6 +26,7 @@ import { deliverToDispatcher, isDispatcherTarget, sleepingDispatcherHint } from 
 import { isDispatcherAgentId } from '../../dispatcher/dispatcher-service';
 import { noteAgentReached } from '../../dispatcher/dispatcher-requests';
 import type { RoutedMessagePart, RuntimeSendResult } from '../../../../shared/chat';
+import { DISPATCHER_CONTROLLER_NAME } from '../../../../shared/dispatcher-name';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
 export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfterPaste } from '../../agent-runtime/pty-input';
@@ -56,11 +57,12 @@ function senderOf(agentId: string, targetId: string): { senderName: string; send
   const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
   const remote = currentRemoteCaller();
   const senderName = remote ? `${remote.name} on ${remote.machineName}`
-    : isDispatcherAgentId(agentId) ? 'Dispatcher controller' : sourceBinding?.agentName || agentId;
+    : isDispatcherAgentId(agentId) ? DISPATCHER_CONTROLLER_NAME : sourceBinding?.agentName || agentId;
   const senderLabel = remote
     ? (remote.projectName ? `${remote.name}@${remote.projectName} on ${remote.machineName}` : senderName)
     : buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
-  return { senderName, senderLabel, targetName: sourceBinding?.targetName || remote?.targetName || targetId };
+  const targetName = isDispatcherAgentId(targetId) ? DISPATCHER_CONTROLLER_NAME : sourceBinding?.targetName || remote?.targetName || targetId;
+  return { senderName, senderLabel, targetName };
 }
 
 /**
@@ -685,7 +687,7 @@ export function registerAgentTools(): void {
       },
     },
     handler: async (targetId, agentId, args): Promise<McpToolResult> => {
-      const targetName = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId)?.targetName || targetId;
+      const targetName = senderOf(agentId, targetId).targetName;
       return sleepAgent({ callerId: agentId, targetId, targetName, force: args.force === true });
     },
   });
@@ -711,7 +713,7 @@ export function registerAgentTools(): void {
       const bindings = bindingManager.getBindingsForAgent(agentId);
       const binding = bindings.find((b) => b.targetId === args.target);
       if (!binding) {
-        const wires = bindings.map((b) => `${b.targetName || b.label} (${b.targetId})`).join(', ') || 'none';
+        const wires = bindings.map((b) => `${isDispatcherAgentId(b.targetId) ? DISPATCHER_CONTROLLER_NAME : b.targetName || b.label} (${b.targetId})`).join(', ') || 'none';
         return { content: [{ type: 'text', text: `You have no wire to ${String(args.target)}. Your wires: ${wires}.` }], isError: true };
       }
       return callTool(agentId, buildToolName(binding, String(args.tool)), (args.arguments as Record<string, unknown>) ?? {});

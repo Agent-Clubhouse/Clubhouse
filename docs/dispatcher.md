@@ -4,6 +4,12 @@ What shipped under the Level Up epic (#3034), for people working on Clubhouse. T
 
 To the user it is one identity: one name, one chat, one set of settings. The debug view calls the agent that does its work the Dispatcher's controller. `src/main/services/dispatcher/dispatcher-copy.test.ts` fails on any string the app can show that names a coordinator, a second, hidden or background session, or the controller by its old name.
 
+## Display roles (#3331)
+
+The **chat** uses the user's chosen name, or **Dispatcher** by default. **Dispatcher controller** is the fixed display name of the internal agent that carries out hand-offs and holds connections and grants. Wires, Action targets, sender labels, fallback needs-you notifications and diagnostic conversation titles distinguish the controller from the chat. The normal Dispatcher chat stays unified.
+
+These are display labels, not saved identities. Existing agent IDs, connections, permissions and wire tool names are unchanged; wire `targetName` retains the base name used in those tool addresses. Conversation histories project the fixed controller title without rewriting provider titles or saved records. Restart controls retain their in-flight interruption warning and next-needed resume behavior.
+
 ## On by default (#3053)
 
 `resolveDispatcherEnablement` (`src/shared/dispatcher-types.ts`) decides, first match wins:

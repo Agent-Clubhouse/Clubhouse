@@ -124,11 +124,14 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   await expect.poll(async () => (await recordOf(dispatcherDir())).name).toBe('Rosie');
   await expect.poll(async () => (await recordOf(path.join(baseDir(), 'dispatcher-chat'))).name, { timeout: 10_000 }).toBe('Rosie');
   await expect(w.locator('[data-testid="dispatcher-row"]')).toContainText('Rosie');
-  // Agents see the new name too: the wire to it is relabelled in place (#3053).
+  // The tool address keeps the new base name; its visible controller role stays fixed (#3331).
   await expect.poll(async () => {
-    const bindings = await w.evaluate(() => window.clubhouse.mcpBinding.getBindings()) as Array<{ agentId: string; targetId: string; label: string }>;
-    return bindings.find((b) => b.agentId === ORCHESTRATOR_ID && b.targetId === coordinator.id)?.label;
-  }, { timeout: 15_000 }).toBe('Rosie');
+    const bindings = await w.evaluate(() => window.clubhouse.mcpBinding.getBindings()) as Array<{ agentId: string; targetId: string; label: string; targetName?: string }>;
+    return bindings.find((b) => b.agentId === ORCHESTRATOR_ID && b.targetId === coordinator.id);
+  }, { timeout: 15_000 }).toMatchObject({
+    agentId: ORCHESTRATOR_ID, targetId: coordinator.id,
+    label: 'Dispatcher controller', targetName: 'Rosie',
+  });
   expect(await hasWire(w, coordinator.id)).toBe(true);
 
   // Personality (#3047): a preset fills the text; Save writes it and the chat is told it as written.
@@ -215,5 +218,5 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   await expect(w.locator('[data-testid="dispatcher-setup"]')).toHaveAttribute('data-step', 'look');
 
   // Nothing ever started the CLI.
-  expect((await fakes.report('claude').catch(() => undefined))?.consumed ?? 0).toBe(0);
+  expect((await fakes.report('claude').catch((): undefined => undefined))?.consumed ?? 0).toBe(0);
 });

@@ -1,5 +1,5 @@
 import { unstable_batchedUpdates } from 'react-dom';
-import type { CanvasTargetIndex, CanvasTargetStore, GroupProjectNavigationIndex } from '../../../../shared/canvas-index-types';
+import type { CanvasNavigationSnapshot, CanvasTargetIndex, CanvasTargetStore, GroupProjectNavigationIndex } from '../../../../shared/canvas-index-types';
 import { findTargetCanvasHits, isCanvasTargetView, type NavigableCanvasTargetKind, type TargetCanvasHit } from '../../../../shared/canvas-persistence';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 import type { CanvasState } from '../../../plugins/builtin/canvas/canvas-store';
@@ -106,6 +106,7 @@ export async function jumpToConnectionCanvas(
   if (hit.scope === 'project' && !project) throw new Error('This Canvas project was removed. Restore the project and retry Open.');
   const store = hit.scope === 'app' ? useAppCanvasStore : getProjectCanvasStore(hit.projectId ?? null);
   let groupProjects = index.groupProjects;
+  let pendingSnapshot: CanvasNavigationSnapshot | undefined;
   if (!localCanvasLoaded(store.getState())) {
     const snapshot = await window.clubhouse.canvas.readForNavigation(kind, targetId, hit.projectId);
     assertCurrent(signal);
@@ -113,18 +114,19 @@ export async function jumpToConnectionCanvas(
       throw new Error('This Canvas project was removed while loading. Restore it and retry Open.');
     }
     // A concurrent load or unsaved edit wins over a disk read that started earlier.
-    if (!localCanvasLoaded(store.getState())) store.getState().hydrateForNavigation(snapshot, hit.canvasId);
+    if (!localCanvasLoaded(store.getState())) pendingSnapshot = snapshot;
     groupProjects = snapshot.groupProjects;
   }
   assertCurrent(signal);
-  const canvas = store.getState().canvases.find((entry) => entry.id === hit.canvasId);
-  const view = canvas?.views.find((entry) => entry.id === hit.viewId && isCanvasTargetView(entry, kind, targetId));
-  if (!view) throw new Error('The Canvas or its target node was deleted while loading. Retry Open to refresh its representations.');
-  if (!view.position || !view.size || ![view.position.x, view.position.y, view.size.width, view.size.height].every(Number.isFinite)) {
-    throw new Error('The target node has unreadable layout data. Repair the saved Canvas and retry Open.');
-  }
-  const handoff = prepareCanvasNavigation(store, { ...hit, kind, targetId });
   unstable_batchedUpdates(() => {
+    if (pendingSnapshot && !localCanvasLoaded(store.getState())) store.getState().hydrateForNavigation(pendingSnapshot, hit.canvasId);
+    const canvas = store.getState().canvases.find((entry) => entry.id === hit.canvasId);
+    const view = canvas?.views.find((entry) => entry.id === hit.viewId && isCanvasTargetView(entry, kind, targetId));
+    if (!view) throw new Error('The Canvas or its target node was deleted while loading. Retry Open to refresh its representations.');
+    if (!view.position || !view.size || ![view.position.x, view.position.y, view.size.width, view.size.height].every(Number.isFinite)) {
+      throw new Error('The target node has unreadable layout data. Repair the saved Canvas and retry Open.');
+    }
+    const handoff = prepareCanvasNavigation(store, { ...hit, kind, targetId });
     if (groupProjects) useGroupProjectStore.setState({ projects: groupProjects, loaded: true, loadError: null });
     store.getState().setActiveCanvas(hit.canvasId);
     store.getState().zoomView(null);
