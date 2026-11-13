@@ -71,7 +71,10 @@ describe('shared Canvas and card guidance editor', () => {
     expect(select.options).toHaveLength(602);
     fireEvent.change(search, { target: { value: '  RELEASE RECEIPTS  ' } });
     expect(select.options).toHaveLength(2);
-    expect(within(select).getByRole('option', { name: 'registered_417 (unavailable now)' })).toBeInTheDocument();
+    const unavailable = within(select).getByRole('option', { name: 'registered_417 (unavailable now)' });
+    expect(unavailable).toBeInTheDocument();
+    expect(select).toBeEnabled();
+    expect(unavailable).toBeEnabled();
     fireEvent.change(select, { target: { value: 'registered_417' } });
     fireEvent.change(textarea, { target: { value: 'Specific gated-tool guidance' } });
     fireEvent.change(search, { target: { value: 'registered_599' } });

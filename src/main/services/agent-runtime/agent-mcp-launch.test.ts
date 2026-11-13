@@ -1,15 +1,23 @@
 import { afterAll, afterEach, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
-import * as fs from 'fs/promises';
-import { rmSync } from 'fs';
+import { existsSync, promises as fs, rmSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
 import type { AgentRuntime, ChatDriverStartOptions } from '../../../shared/chat';
 import { CheckpointFixtureLifetime } from '../../../../test/checkpoint-fixture-lifetime';
-import { ownedRegistration } from '../../../../test/dispatcher-work-owner';
+import { ownedRegistration, preservingFailure } from '../../../../test/dispatcher-work-owner';
 
-const lifetime = vi.hoisted(() => ({ current: undefined as CheckpointFixtureLifetime | undefined }));
+interface McpFixtureResources {
+  directories: string[];
+  agentId?: string;
+  releases: Array<() => void>;
+  closing: boolean;
+}
+const lifetime = vi.hoisted(() => ({
+  current: undefined as CheckpointFixtureLifetime | undefined,
+  resources: undefined as McpFixtureResources | undefined,
+}));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   const { ownCheckpointExecFile } = await import('../../../../test/checkpoint-fixture-lifetime');
@@ -113,35 +121,63 @@ const raw = (servers: object) => JSON.stringify({ mcpServers: servers });
 beforeEach(async () => {
   lifetime.current?.assertRetired();
   lifetime.current = new CheckpointFixtureLifetime();
+  const resources: McpFixtureResources = { directories: [], releases: [], closing: false };
+  lifetime.resources = resources;
   vi.clearAllMocks(); clearChatDrivers(); clearChatRuntimes(); clearDriverHealth();
   fixture.running = false;
   fixture.cacheAvailable = true;
   fixture.configGeneration = 0;
   fixture.starts = [];
+  await prepareMcpFixture(resources);
+});
+
+async function prepareMcpFixture(resources: McpFixtureResources): Promise<void> {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-2849-'));
+  resources.directories.push(root);
   cwd = path.join(root, 'agent'); localPath = path.join(cwd, conventions.mcpConfigFile);
   settingsPath = path.join(root, '.clubhouse/settings.json');
   await fs.mkdir(path.dirname(settingsPath), { recursive: true }); await fs.mkdir(cwd);
   await fs.writeFile(settingsPath, JSON.stringify({ orchestrator: 'claude-code', agentDefaults: { mcpJson: raw(projectMap) } }));
   agent = { id: 'synthetic-agent', name: 'synthetic', color: 'blue', createdAt: '', worktreePath: cwd, orchestrator: 'copilot-cli' };
+  resources.agentId = agent.id;
   agentRegistry.register(agent.id, { projectPath: root, orchestrator: 'copilot-cli', runtime: 'chat' });
   fixture.agents = [agent]; handlers = new Map();
   vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: never) => { handlers.set(channel, handler); });
   registerAgentSettingsHandlers();
-});
-afterEach(async () => {
-  const capturedRoot = root;
-  const capturedAgentId = agent.id;
-  await owner().close(stopAllChatAgents, () => {
+}
+
+function closeMcpFixture(current: CheckpointFixtureLifetime, resources: McpFixtureResources): Promise<void> {
+  resources.closing = true;
+  for (const release of resources.releases) release();
+  return current.close(stopAllChatAgents, () => {
     clearChatDrivers(); clearChatRuntimes();
-    agentRegistry.untrack(capturedAgentId);
-    forgetDelivery(capturedAgentId); _setManagedAgentsForTesting(null);
-    rmSync(capturedRoot, { recursive: true, force: true });
+    if (resources.agentId) {
+      agentRegistry.untrack(resources.agentId);
+      forgetDelivery(resources.agentId);
+    }
+    _setManagedAgentsForTesting(null);
+    for (const directory of resources.directories) rmSync(directory, { recursive: true, force: true });
   });
+}
+
+afterEach(async () => {
+  const resources = lifetime.resources;
+  if (!resources) throw new Error('MCP launch fixture resources are missing');
+  await closeMcpFixture(owner(), resources);
 });
 afterAll(() => { lifetime.current?.assertRetired(); });
 
 async function save(content: string) { return handlers.get(IPC.AGENT.WRITE_MCP_RAW_JSON)!({}, cwd, content, root, agent.id); }
+function gatedSave() {
+  const resources = lifetime.resources;
+  if (!resources) throw new Error('MCP launch fixture resources are missing');
+  let release!: () => void;
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  resources.releases.push(release);
+  if (resources.closing) release();
+  vi.mocked(peekDurableConfigs).mockImplementationOnce(async () => { await wait; return fixture.agents; });
+  return { release, saving: owner().observeDirect(save(raw({ local: { command: 'never' } }))) };
+}
 async function start(options: { resume?: boolean; sessionId?: string; orchestrator?: OrchestratorProvider['id']; beforeCreate?: (runtime?: AgentRuntime) => void } = {}) {
   // No explicit legacy selection: exercise the standard Copilot SDK adapter.
   const provider = options.orchestrator === 'claude-code' ? claude : copilot;
@@ -522,14 +558,92 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     expect(await start()).toEqual({ custom: { command: 'never' }, clubhouse: { command: 'synthetic-live-bridge' } });
   });
   it('reserves Save before its first await against provider changes, starts and remaps', async () => {
+    const { release, saving } = gatedSave();
+    await preservingFailure(async () => {
+      await expect(withAgentActivity(agent.id, async () => {})).rejects.toMatchObject({ code: 'agent_transition_busy' });
+      await expect(withAgentTransition(agent.id, async () => {})).rejects.toMatchObject({ code: 'agent_transition_busy' });
+      release(); expect(await saving).toEqual({ ok: true });
+      await expect(withAgentActivity(agent.id, async () => 'available')).resolves.toBe('available');
+    }, async () => { release(); await saving; });
+  });
+  it('releases and awaits owned Save after either reservation assertion fails', async () => {
+    for (const failedCheck of ['activity', 'transition']) {
+      const { release, saving } = gatedSave();
+      const failure = new Error(`Injected ${failedCheck} assertion failure`);
+      await expect(preservingFailure(async () => {
+        expect(owner().evidence().teardown.directPending).toBeGreaterThan(0);
+        await expect(withAgentActivity(agent.id, async () => {})).rejects.toMatchObject({ code: 'agent_transition_busy' });
+        if (failedCheck === 'activity') throw failure;
+        await expect(withAgentTransition(agent.id, async () => {})).rejects.toMatchObject({ code: 'agent_transition_busy' });
+        throw failure;
+      }, async () => { release(); await saving; })).rejects.toBe(failure);
+      expect(await saving).toEqual({ ok: true });
+      expect(await fs.readFile(localPath, 'utf8')).toBe(raw({ local: { command: 'never' } }));
+      await expect(withAgentActivity(agent.id, async () => 'available')).resolves.toBe('available');
+      await expect(withAgentTransition(agent.id, async () => 'available')).resolves.toBe('available');
+    }
+  });
+  it('retires failed or late raw MCP setup without using the previous root or agent identity', async () => {
+    const previousRoot = root;
+    const previousAgentId = agent.id;
+    const previous = path.join(previousRoot, 'previous-owner.txt');
+    await fs.writeFile(previous, 'preserve previous fixture\n');
+    const failedResources: McpFixtureResources = { directories: [], releases: [], closing: false };
+    const failedOwner = new CheckpointFixtureLifetime();
+    const failure = new Error('Injected settings write failure before agent assignment');
+    const failingWrite = vi.spyOn(fs, 'writeFile').mockRejectedValueOnce(failure);
+    const failedSetup = failedOwner.observeRaw(prepareMcpFixture(failedResources));
+    await preservingFailure(async () => {
+      await expect(failedSetup).rejects.toBe(failure);
+      expect(failedResources.agentId).toBeUndefined();
+      await closeMcpFixture(failedOwner, failedResources);
+      failedOwner.assertRetired();
+      expect(failedResources.directories.every((directory) => !existsSync(directory))).toBe(true);
+      expect(agentRegistry.get(previousAgentId)?.projectPath).toBe(previousRoot);
+      expect(await fs.readFile(previous, 'utf8')).toBe('preserve previous fixture\n');
+    }, async () => {
+      await Promise.allSettled([failedSetup]);
+      try { await closeMcpFixture(failedOwner, failedResources); }
+      finally { failingWrite.mockRestore(); }
+    });
+
+    const current = new CheckpointFixtureLifetime();
+    const resources: McpFixtureResources = { directories: [], releases: [], closing: false };
     let release!: () => void;
-    const wait = new Promise<void>((r) => { release = r; });
-    vi.mocked(peekDurableConfigs).mockImplementationOnce(async () => { await wait; return fixture.agents; });
-    const saving = save(raw({ local: { command: 'never' } }));
-    await expect(withAgentActivity(agent.id, async () => {})).rejects.toMatchObject({ code: 'agent_transition_busy' });
-    await expect(withAgentTransition(agent.id, async () => {})).rejects.toMatchObject({ code: 'agent_transition_busy' });
-    release(); expect(await saving).toEqual({ ok: true });
-    await expect(withAgentActivity(agent.id, async () => 'available')).resolves.toBe('available');
+    let entered!: () => void;
+    let directory: string | undefined;
+    const paused = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const mkdtemp = fs.mkdtemp;
+    const spy = vi.spyOn(fs, 'mkdtemp').mockImplementationOnce(async (prefix) => {
+      directory = await mkdtemp(prefix);
+      entered(); await paused;
+      return directory;
+    });
+    const setup = current.observeRaw(prepareMcpFixture(resources));
+    let closing: Promise<void> | undefined;
+    await preservingFailure(async () => {
+      await Promise.race([ready, setup.then(() => { throw new Error('Setup settled before its mkdtemp gate'); })]);
+      if (!directory) throw new Error('Late setup did not create an owned directory');
+      expect(resources.directories).toEqual([]);
+      expect(existsSync(directory)).toBe(true);
+      closing = closeMcpFixture(current, resources);
+      expect(() => current.assertRetired()).toThrow();
+      release();
+      await setup;
+      await closing;
+      current.assertRetired();
+      expect(existsSync(directory)).toBe(false);
+      const ownedAgentId = resources.agentId;
+      if (!ownedAgentId) throw new Error('Late setup did not admit an owned agent identity');
+      expect(agentRegistry.get(ownedAgentId)).toBeUndefined();
+      expect(await fs.readFile(previous, 'utf8')).toBe('preserve previous fixture\n');
+    }, async () => {
+      release();
+      await Promise.allSettled([setup]);
+      try { await (closing ?? closeMcpFixture(current, resources)); }
+      finally { spy.mockRestore(); }
+    });
   });
   it.each(['provider', 'folder'])('revalidates an external %s change immediately before file write', async (change) => {
     let reads = 0;
