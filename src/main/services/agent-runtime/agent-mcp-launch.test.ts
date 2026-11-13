@@ -1,10 +1,37 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
 import * as fs from 'fs/promises';
+import { rmSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
 import type { AgentRuntime, ChatDriverStartOptions } from '../../../shared/chat';
+import { CheckpointFixtureLifetime } from '../../../../test/checkpoint-fixture-lifetime';
+import { ownedRegistration } from '../../../../test/dispatcher-work-owner';
+
+const lifetime = vi.hoisted(() => ({ current: undefined as CheckpointFixtureLifetime | undefined }));
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  const { ownCheckpointExecFile } = await import('../../../../test/checkpoint-fixture-lifetime');
+  return { ...actual, execFile: ownCheckpointExecFile(actual.execFile, () => lifetime.current) };
+});
+vi.mock('../managed-agents/git-excludes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../managed-agents/git-excludes')>();
+  return {
+    ...actual,
+    queueManagedExcludes: (...args: Parameters<typeof actual.queueManagedExcludes>) => {
+      if (!lifetime.current) throw new Error('Managed excludes have no fixture owner');
+      return lifetime.current.observeDirect(actual.queueManagedExcludes(...args));
+    },
+  };
+});
+
+function owner(): CheckpointFixtureLifetime {
+  if (!lifetime.current) throw new Error('MCP launch fixture is missing');
+  return lifetime.current;
+}
+const it = ownedRegistration(rawIt, 1, (promise) => { owner().observeRaw(promise); });
+const beforeEach = ownedRegistration(rawBeforeEach, 0, (promise) => { owner().observeRaw(promise); });
 
 const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[], cacheAvailable: true, configGeneration: 0 }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
@@ -84,6 +111,8 @@ const projectMap = { inherited: { command: 'never-run-project' } };
 const raw = (servers: object) => JSON.stringify({ mcpServers: servers });
 
 beforeEach(async () => {
+  lifetime.current?.assertRetired();
+  lifetime.current = new CheckpointFixtureLifetime();
   vi.clearAllMocks(); clearChatDrivers(); clearChatRuntimes(); clearDriverHealth();
   fixture.running = false;
   fixture.cacheAvailable = true;
@@ -101,11 +130,16 @@ beforeEach(async () => {
   registerAgentSettingsHandlers();
 });
 afterEach(async () => {
-  await stopAllChatAgents(); clearChatDrivers(); clearChatRuntimes();
-  agentRegistry.untrack(agent.id);
-  forgetDelivery(agent.id); _setManagedAgentsForTesting(null);
-  await fs.rm(root, { recursive: true, force: true });
+  const capturedRoot = root;
+  const capturedAgentId = agent.id;
+  await owner().close(stopAllChatAgents, () => {
+    clearChatDrivers(); clearChatRuntimes();
+    agentRegistry.untrack(capturedAgentId);
+    forgetDelivery(capturedAgentId); _setManagedAgentsForTesting(null);
+    rmSync(capturedRoot, { recursive: true, force: true });
+  });
 });
+afterAll(() => { lifetime.current?.assertRetired(); });
 
 async function save(content: string) { return handlers.get(IPC.AGENT.WRITE_MCP_RAW_JSON)!({}, cwd, content, root, agent.id); }
 async function start(options: { resume?: boolean; sessionId?: string; orchestrator?: OrchestratorProvider['id']; beforeCreate?: (runtime?: AgentRuntime) => void } = {}) {
@@ -176,35 +210,43 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       } finally { providerLookup.mockRestore(); }
     });
 
-    it.each(['model', 'access', 'provider', 'session', 'managed', 'cache'] as const)('refuses %s drift during the inner driver probe', async (field) => {
-      const service = createManagedAgentsService({
-        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
-        state: createManagedStateStore(path.join(root, 'managed')),
-        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
-        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+    describe('inner driver drift with a prepared running agent', () => {
+      let service: ReturnType<typeof createManagedAgentsService>;
+      beforeEach(async () => {
+        service = createManagedAgentsService({
+          catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+          state: createManagedStateStore(path.join(root, 'managed')),
+          listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+          setManagedSetup: async () => {}, isRunning: () => fixture.running,
+        });
+        _setManagedAgentsForTesting(service);
+        await service.ensureBuiltins();
+        agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+        agent.lastSessionId = 'original-native';
+        await deliverForSpawn(root, agent, copilot);
+        await start(); fixture.running = true;
+        await owner().settleEpoch(() => Promise.resolve());
       });
-      _setManagedAgentsForTesting(service);
-      await service.ensureBuiltins();
-      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
-      agent.lastSessionId = 'original-native';
-      await deliverForSpawn(root, agent, copilot);
-      await start(); fixture.running = true;
-      const actualStart = vi.spyOn(FakeChatDriver.prototype, 'start');
-      const probe = vi.spyOn(FakeChatDriver.prototype, 'probe').mockImplementationOnce(async () => {
-        await Promise.resolve();
-        if (field === 'model') agent.model = 'changed-model';
-        if (field === 'access') agent.access = 'full_access';
-        if (field === 'provider') agent.orchestrator = 'claude-code';
-        if (field === 'session') agent.lastSessionId = 'replacement-native';
-        if (field === 'managed') delete agent.managed;
-        if (field === 'cache') fixture.cacheAvailable = false;
-        return { handshakeOk: true, capabilities: new FakeChatDriver().capabilities };
+
+      it.each(['model', 'access', 'provider', 'session', 'managed', 'cache'] as const)('refuses %s drift during the inner driver probe', async (field) => {
+        const actualStart = vi.spyOn(FakeChatDriver.prototype, 'start');
+        const probe = vi.spyOn(FakeChatDriver.prototype, 'probe').mockImplementationOnce(async () => {
+          await Promise.resolve();
+          if (field === 'model') agent.model = 'changed-model';
+          if (field === 'access') agent.access = 'full_access';
+          if (field === 'provider') agent.orchestrator = 'claude-code';
+          if (field === 'session') agent.lastSessionId = 'replacement-native';
+          if (field === 'managed') delete agent.managed;
+          if (field === 'cache') fixture.cacheAvailable = false;
+          return { handshakeOk: true, capabilities: new FakeChatDriver().capabilities };
+        });
+        try {
+          await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
+          expect(probe).toHaveBeenCalledOnce();
+          expect(actualStart).not.toHaveBeenCalled();
+          expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
+        } finally { probe.mockRestore(); actualStart.mockRestore(); }
       });
-      try {
-        await expect(restartManagedAgent(root, agent.id)).rejects.toThrow('Managed restart failed');
-        expect(actualStart).not.toHaveBeenCalled();
-        expect(await service.latestRestartReceipt(agent.id)).toMatchObject({ outcome: 'failed' });
-      } finally { probe.mockRestore(); actualStart.mockRestore(); }
     });
 
     it('accepts only owned last-sleep bookkeeping across its actual chat stop and new driver start', async () => {

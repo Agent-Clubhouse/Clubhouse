@@ -1,3 +1,5 @@
+import { promisify } from 'node:util';
+
 /**
  * Test-only inventory for checkpoint-tracker's serial, plain-test fixture.
  * This observes explicit producers, not arbitrary asynchronous work or OS quiescence.
@@ -155,14 +157,53 @@ export class CheckpointFixtureLifetime {
 
 /**
  * Preserve execFile's overload/property surface and the actual returned handle.
- * Only the supplied callback is proxied; file/args/options/input are unchanged.
+ * Direct calls proxy only the supplied callback; file/args/options/input are unchanged.
  * Callback completion and child close are separate receipts (error may precede close).
+ * Native custom promisify calls bypass execFile's apply trap. Observe their
+ * unchanged promise and its actual .child until BOTH settlement and close.
  * No error listener, signals, timeout changes, or promisify replacement are added.
- * This fixture's source calls execFile directly, never its custom promisify property.
  */
 export function ownCheckpointExecFile<T extends object>(delegate: T, owner: () => CheckpointFixtureLifetime | undefined): T {
-  return new Proxy(delegate, {
-    apply(target, receiver, args: unknown[]) {
+  const observeChild = (child: unknown, reservation: ReturnType<CheckpointFixtureLifetime['child']>) => {
+    try {
+      if (!child || typeof child !== 'object' || !('once' in child) || typeof child.once !== 'function') reservation.unknown();
+      else Reflect.apply(child.once, child, ['close', () => { reservation.close(); }]);
+    } catch { reservation.unknown(); } // Observation must not replace the handle/return.
+  };
+  // The native custom property is non-configurable/read-only. A callable
+  // surface retains its descriptors without violating Proxy get invariants.
+  const surface = Object.assign(() => undefined, delegate);
+  const descriptors = Object.getOwnPropertyDescriptors(delegate);
+  const custom: unknown = Reflect.get(delegate, promisify.custom);
+  const customDescriptor = Object.getOwnPropertyDescriptor(delegate, promisify.custom);
+  if (typeof custom === 'function' && customDescriptor) {
+    Reflect.deleteProperty(descriptors, promisify.custom);
+    Object.defineProperty(surface, promisify.custom, {
+      ...customDescriptor,
+      value: new Proxy(custom, {
+        apply(body, bodyThis, args: unknown[]) {
+          const fixture = owner();
+          if (!fixture) return Reflect.apply(body, bodyThis, args);
+          const reservation = fixture.child(true);
+          let result: unknown;
+          try { result = Reflect.apply(body, bodyThis, args); }
+          catch (error) { reservation.unknown(); throw error; }
+          try {
+            if (!result || typeof result !== 'object' || !('then' in result) || typeof result.then !== 'function') reservation.unknown();
+            else {
+              void result.then(() => { reservation.callback(); }, () => { reservation.callback(); });
+              observeChild('child' in result ? result.child : undefined, reservation);
+            }
+          } catch { reservation.unknown(); }
+          return result;
+        },
+      }),
+    });
+  }
+  Object.defineProperties(surface, descriptors);
+  return new Proxy(surface, {
+    apply(_target, receiver, args: unknown[]) {
+      const target = delegate;
       if (typeof target !== 'function') throw new Error('Checkpoint execFile delegate must be callable');
       const fixture = owner();
       if (!fixture) return Reflect.apply(target, receiver, args);
@@ -180,10 +221,7 @@ export function ownCheckpointExecFile<T extends object>(delegate: T, owner: () =
       let child: unknown;
       try { child = Reflect.apply(target, receiver, args); }
       catch (error) { reservation.unknown(); throw error; }
-      try {
-        if (!child || typeof child !== 'object' || !('once' in child) || typeof child.once !== 'function') reservation.unknown();
-        else Reflect.apply(child.once, child, ['close', () => { reservation.close(); }]);
-      } catch { reservation.unknown(); } // Observation must not replace the handle/return.
+      observeChild(child, reservation);
       return child;
     },
   });
