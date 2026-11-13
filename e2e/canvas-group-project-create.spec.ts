@@ -4,7 +4,7 @@
  * Runs on the new layout, and on classic in the Classic layout E2E job
  * (#2843). Only reaching the project's Canvas tab differs between them.
  */
-import { test, expect, _electron as electron, type Page, type Locator } from '@playwright/test';
+import { test, expect, _electron as electron, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchApp } from './launch';
@@ -18,33 +18,6 @@ const GROUP_PROJECT_WIDGET = 'plugin:group-project:group-project';
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 let userDataDir: string | undefined;
-
-async function clickCanvasMenuItem(item: Locator): Promise<void> {
-  try {
-    await item.click({ timeout: 2_000 });
-  } catch (error) {
-    // Electron CI sometimes reports an on-screen, hit-testable portal item as
-    // outside Playwright's viewport. Only dispatch when the browser itself
-    // confirms the item's center is inside the viewport and receives hits.
-    const geometry = await item.evaluate((element) => {
-      const r = element.getBoundingClientRect();
-      const x = r.left + r.width / 2;
-      const y = r.top + r.height / 2;
-      const hit = document.elementFromPoint(x, y);
-      return {
-        rect: { x: r.x, y: r.y, width: r.width, height: r.height },
-        viewport: { width: innerWidth, height: innerHeight },
-        hit: hit ? { tag: hit.tagName, className: hit.getAttribute('class'), testId: hit.closest('[data-testid]')?.getAttribute('data-testid') } : null,
-        reachable: x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
-          && !!hit && (hit === element || element.contains(hit)),
-      };
-    });
-    console.log('Canvas menu click diagnostics:', JSON.stringify(geometry));
-    await test.info().attach('canvas-menu-click', { body: await window.screenshot(), contentType: 'image/png' });
-    if (!geometry.reachable) throw error;
-    await item.dispatchEvent('click');
-  }
-}
 
 async function navigateToCanvas(page: Page): Promise<void> {
   // On the new layout the tab is in the title bar or its More menu, which
@@ -80,20 +53,7 @@ test('creating a group project advances from naming form to initialized card', a
   const workspace = window.locator('[data-testid="canvas-workspace"]');
   await expect(workspace).toBeVisible({ timeout: 5_000 });
 
-  const workspaceBox = await workspace.boundingBox();
-  expect(workspaceBox).not.toBeNull();
-  await workspace.evaluate((element) => element.addEventListener('contextmenu', (event) => {
-    const mouse = event as MouseEvent;
-    element.setAttribute('data-e2e-context-coordinates', JSON.stringify({ x: mouse.clientX, y: mouse.clientY }));
-  }, { once: true }));
-  console.log('Canvas context menu coordinates:', JSON.stringify({ workspaceBox, clientX: workspaceBox!.x + 220, clientY: workspaceBox!.y + 180 }));
-  await workspace.dispatchEvent('contextmenu', {
-    bubbles: true,
-    button: 2,
-    clientX: workspaceBox!.x + 220,
-    clientY: workspaceBox!.y + 180,
-  });
-  console.log('Canvas received context menu event:', await workspace.getAttribute('data-e2e-context-coordinates'));
+  await workspace.click({ button: 'right', position: { x: 220, y: 180 } });
   const contextMenu = window.locator('[data-testid="canvas-context-menu"]');
   await expect(contextMenu).toBeVisible({ timeout: 5_000 });
 
@@ -101,7 +61,7 @@ test('creating a group project advances from naming form to initialized card', a
     `[data-testid="canvas-context-menu-${GROUP_PROJECT_WIDGET}"]`,
   );
   await expect(addGroupProject).toBeVisible({ timeout: 5_000 });
-  await clickCanvasMenuItem(addGroupProject);
+  await addGroupProject.click();
 
   const widget = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await expect(widget).toBeVisible({ timeout: 8_000 });
@@ -148,11 +108,8 @@ test('creating a group project advances from naming form to initialized card', a
   await window.getByTestId('canvas-add-new').click();
   await expect(tabs).toHaveCount(2);
 
-  const box = await workspace.boundingBox();
-  expect(box).not.toBeNull();
-  console.log('Canvas context menu coordinates:', JSON.stringify({ workspaceBox: box, clientX: box!.x + 220, clientY: box!.y + 180 }));
-  await workspace.dispatchEvent('contextmenu', { bubbles: true, button: 2, clientX: box!.x + 220, clientY: box!.y + 180 });
-  await clickCanvasMenuItem(window.getByTestId(`canvas-context-menu-${GROUP_PROJECT_WIDGET}`));
+  await workspace.click({ button: 'right', position: { x: 220, y: 180 } });
+  await window.getByTestId(`canvas-context-menu-${GROUP_PROJECT_WIDGET}`).click();
   const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await card.getByLabel('Existing group project').selectOption({ label: 'E2E Group Project' });
   await card.getByRole('button', { name: 'Add existing' }).click();

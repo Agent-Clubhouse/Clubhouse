@@ -61,6 +61,8 @@ export function PopupMenu({ items, position, label, testId, minWidth = 180, laye
   const enabled = items.filter((i): i is MenuItem => !isSeparator(i) && !i.disabled);
   const [activeId, setActiveId] = useState<string | undefined>(() => (enabled.find((i) => i.selected) ?? enabled[0])?.id);
   const [autoLayer, setAutoLayer] = useState<MenuLayer>('dropdown');
+  const x = Number.isFinite(position.x) ? position.x : MARGIN;
+  const y = Number.isFinite(position.y) ? position.y : MARGIN;
   const l = layer ?? autoLayer;
   const zIndex = l === 'dropdown' ? Z_INDEX.dropdown : Z_INDEX[l] + 1;
   // A modal mounting in the same commit is in the DOM by now, though its effect hasn't run.
@@ -95,10 +97,10 @@ export function PopupMenu({ items, position, label, testId, minWidth = 180, laye
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
     setPos({
-      left: Math.max(MARGIN, Math.min(position.x, window.innerWidth - width - MARGIN)),
-      top: Math.max(MARGIN, Math.min(position.y, window.innerHeight - height - MARGIN)),
+      left: Math.max(MARGIN, Math.min(x, window.innerWidth - width - MARGIN)),
+      top: Math.max(MARGIN, Math.min(y, window.innerHeight - height - MARGIN)),
     });
-  }, [position.x, position.y, items.length]);
+  }, [x, y, items.length]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const all = [...(ref.current?.querySelectorAll<HTMLElement>(ITEMS) ?? [])];
@@ -119,8 +121,8 @@ export function PopupMenu({ items, position, label, testId, minWidth = 180, laye
       data-testid={testId}
       {...{ [LAYER_PORTAL_ATTR]: '' }}
       onKeyDown={onKeyDown}
-      style={{ position: 'fixed', left: pos?.left ?? position.x, top: pos?.top ?? position.y, minWidth: `min(${minWidth}px, calc(100vw - ${MARGIN * 2}px))`, maxWidth: `calc(100vw - ${MARGIN * 2}px)`, maxHeight: `calc(100vh - ${MARGIN * 2}px)`, overflowY: 'auto', zIndex }}
-      className="p-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl"
+      style={{ left: pos?.left ?? x, top: pos?.top ?? y, minWidth: `min(${minWidth}px, calc(100vw - ${MARGIN * 2}px))`, maxWidth: `calc(100vw - ${MARGIN * 2}px)`, maxHeight: `calc(100vh - ${MARGIN * 2}px)`, overflowY: 'auto', zIndex }}
+      className="fixed p-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl"
     >
       {items.map((item) => isSeparator(item) ? (
         <div key={item.id} role="separator" className="h-px my-1 mx-1.5 bg-surface-0" />
