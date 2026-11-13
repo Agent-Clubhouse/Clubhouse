@@ -176,6 +176,8 @@ export interface GroupProjectMembershipView {
   groupProjectId: string;
   /** False for a group project still held by canvas wires (not migrated yet). */
   managed: boolean;
+  /** Why it isn't migrated yet, when a Canvas store couldn't be read. */
+  deferred?: string;
   autoJoin: boolean;
   members: ResolvedGroupProjectMember[];
   excluded: Array<{ agentId: string; name: string; excludedAt: string }>;

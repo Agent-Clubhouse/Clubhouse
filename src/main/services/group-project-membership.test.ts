@@ -30,6 +30,11 @@ vi.mock('./agent-config', () => ({
 }));
 vi.mock('./quick-agent-events', () => ({ knownQuickAgents: () => fx.quick }));
 // Every Canvas store, read strictly for migration.
+vi.mock('./canvas-store-reader', () => ({
+  readAllCanvasStores: async () => fx.canvasUnreadable
+    ? [{ location: { scope: 'project', projectId: 'proj_b', projectName: 'Beta', projectPath: 'x', kvDir: 'x' }, canvases: null, wires: null, problems: ['Project folder is unavailable: ENOENT'] }]
+    : [],
+}));
 vi.mock('./canvas-wire-source', () => ({
   canvasWireBindingSource: {
     id: 'canvas-wires',
@@ -46,7 +51,6 @@ vi.mock('./group-project-bulletin', () => ({
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { listDurable } from './agent-config';
-import { appLog } from './log-service';
 import {
   _resetPersistedBindingSourcesForTesting, keepHeldBinding, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource,
 } from './persisted-bindings';
@@ -287,7 +291,7 @@ describe('migration', () => {
     fx.canvasUnreadable = true;
     registerPersistedBindingSource(membershipBindingSource);
     await rebuildPersistedBindings();
-    await vi.waitFor(() => expect(vi.mocked(appLog)).toHaveBeenCalledWith('core:group-project', 'warn', expect.stringContaining('migration deferred'), expect.anything()));
+    await vi.waitFor(async () => expect((await describeMembership('gp_old')).deferred).toContain('the folder of project “Beta” is missing'));
     expect((await describeMembership('gp_old')).managed).toBe(false);
 
     // Repaired: the next rebuild migrates.
@@ -325,6 +329,9 @@ describe('exclusions and preview', () => {
     expect(app.unreadableProjects).toEqual([{ projectId: PROJ_B.id, name: PROJ_B.name }]);
     const project = await previewAutoJoin({ level: 'project', projectId: PROJ_A.id, reach: 'local' });
     expect(project.unreadableProjects).toEqual([]);
+    // Shape-checked like creation: unknown levels and unregistered projects are refused.
+    await expect(previewAutoJoin({ level: 'galaxy', reach: 'local' })).rejects.toThrow(/project or app/);
+    await expect(previewAutoJoin({ level: 'project', projectId: 'nope', reach: 'local' })).rejects.toThrow(/registered project/);
     vi.mocked(listDurable).mockImplementation(async (p: string) => fx.configs.get(p) ?? []);
   });
 });

@@ -69,7 +69,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.ADD_MEMBER, withValidatedArgs([stringArg(), stringArg()], (_event, id, agentId) => addMember(id as string, agentId as string)));
   ipcMain.handle(IPC.GROUP_PROJECT.EXCLUDE_MEMBER, withValidatedArgs([stringArg(), stringArg()], (_event, id, agentId) => excludeMember(id as string, agentId as string)));
   ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, withValidatedArgs(
-    [objectArg<GroupProjectScope>()], (_event, scope) => previewAutoJoin(scope as GroupProjectScope),
+    [objectArg<GroupProjectScope>()], (_event, scope) => previewAutoJoin(scope),
   ));
   ipcMain.handle(IPC.GROUP_PROJECT.ANSWER_AUTO_JOIN_OFFER, withValidatedArgs(
     [stringArg(), booleanArg()], (_event, id, accept) => answerAutoJoinOffer(id as string, accept as boolean),

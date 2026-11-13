@@ -186,6 +186,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const canvases = store((s) => s.canvases);
   const activeCanvasId = store((s) => s.activeCanvasId);
+  const hydrationSeq = store((s) => s.hydrationSeq);
   const views = store((s) => s.views);
   const viewport = store((s) => s.viewport);
   const zoomedViewId = store((s) => s.zoomedViewId);
@@ -791,6 +792,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onRemoveWireDefinition: (agentId: string, targetId: string) => store.getState().removeWireDefinition(agentId, targetId),
             onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => store.getState().updateWireDefinition(agentId, targetId, updates),
             zoneWireDefinitions,
+            zoneSessionKey: `${activeCanvasId}:${hydrationSeq}`,
             navigationBaseline: reconciledNavigation === navigationHandoff ? undefined : navigationHandoff?.state,
             navigationFocus: navigationHandoff && !navigationHandoff.revealed ? {
               viewId: navigationHandoff.target.viewId,
