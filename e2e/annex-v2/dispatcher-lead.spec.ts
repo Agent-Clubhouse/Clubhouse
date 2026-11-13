@@ -69,6 +69,8 @@ test('a lead reaches the other computer, which follows its chat, keeps messages 
   const laptopChatId = (await there.window.evaluate(() => window.clubhouse.dispatcher.get())).chatAgentId!;
   await there.window.locator('[data-testid="dispatcher-row"] [role="treeitem"]').click();
   await there.window.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+  // Laptop's chat is running there before Desk is expected to show it live.
+  await expect.poll(async () => (await there.window.evaluate(() => window.clubhouse.dispatcher.get())).chatRunning, { timeout: 30_000 }).toBe(true);
   await here.window.locator('[data-testid="dispatcher-row"]').click();
   await expect(here.window.getByTestId('follower-heading')).toContainText('on Laptop', { timeout: 30_000 });
   // Typed on Desk, it's the person's message in Laptop's chat, not one from Desk or its Dispatcher.

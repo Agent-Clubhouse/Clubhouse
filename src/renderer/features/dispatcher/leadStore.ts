@@ -4,7 +4,7 @@ import type { Agent } from '../../../shared/types';
 import type { DispatcherLeadState } from '../../../shared/dispatcher-lead';
 import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
-import { namespacedAgentId, namespacedProjectId } from '../../stores/remoteProjectStore';
+import { namespacedAgentId, namespacedProjectId, useRemoteProjectStore } from '../../stores/remoteProjectStore';
 
 /**
  * The network-wide lead as this computer sees it (#3351), for Settings, the
@@ -61,13 +61,15 @@ export function useFollowedLead(): FollowedLead | null {
   const remote = satellite?.snapshot?.dispatcher?.agent ?? null;
   const satelliteId = satellite?.id ?? null;
   const online = satellite?.state === 'connected';
+  // Its live run state: the snapshot's copy is as it was when the snapshot was taken.
+  const live = useRemoteProjectStore((s) => (remote && satelliteId ? s.remoteAgents[namespacedAgentId(satelliteId, remote.id)] ?? null : null));
   const agent = useMemo<Agent | null>(() => {
     if (!machine) return null;
     if (!remote || !satelliteId) return lastKnown.get(machine) ?? null;
-    const shown = { ...remote, id: namespacedAgentId(satelliteId, remote.id), projectId: namespacedProjectId(satelliteId, remote.projectId || DISPATCHER_PROJECT_ID) };
+    const shown = live ?? { ...remote, id: namespacedAgentId(satelliteId, remote.id), projectId: namespacedProjectId(satelliteId, remote.projectId || DISPATCHER_PROJECT_ID) };
     lastKnown.set(machine, shown);
     return shown;
-  }, [remote, satelliteId, machine]);
+  }, [remote, satelliteId, machine, live]);
   if (!state || !machine) return null;
   return { state, machineName: state.lead?.name ?? satellite?.alias ?? 'another computer', agent, online };
 }

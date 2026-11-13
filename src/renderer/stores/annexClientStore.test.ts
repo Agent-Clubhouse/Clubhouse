@@ -393,6 +393,22 @@ describe('annexClientStore', () => {
       vi.useRealTimers();
     });
 
+    it('applies agent:status run state, so a remote durable chat agent that slept shows asleep (#3352)', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentRunState');
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+      initAnnexClientListener();
+      eventCallback!({ satelliteId: 'sat-1', type: 'agent:status', payload: { id: 'chat-1', agentId: 'chat-1', kind: 'durable', status: 'sleeping', detailedStatus: null } });
+      eventCallback!({ satelliteId: 'sat-1', type: 'agent:status', payload: { id: 'chat-1', agentId: 'chat-1', kind: 'durable', status: 'running', detailedStatus: { state: 'idle', message: 'Idle', timestamp: 1 } } });
+      expect(spy).toHaveBeenNthCalledWith(1, 'sat-1', 'chat-1', 'sleeping');
+      expect(spy).toHaveBeenNthCalledWith(2, 'sat-1', 'chat-1', 'running');
+      spy.mockRestore();
+    });
+
     it('ignores agent:status without detailedStatus (a quick agent run state)', async () => {
       const { useRemoteProjectStore } = await import('./remoteProjectStore');
       const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
