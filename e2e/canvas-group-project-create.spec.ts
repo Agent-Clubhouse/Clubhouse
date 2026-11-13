@@ -82,12 +82,18 @@ test('creating a group project advances from naming form to initialized card', a
 
   const workspaceBox = await workspace.boundingBox();
   expect(workspaceBox).not.toBeNull();
+  await workspace.evaluate((element) => element.addEventListener('contextmenu', (event) => {
+    const mouse = event as MouseEvent;
+    element.setAttribute('data-e2e-context-coordinates', JSON.stringify({ x: mouse.clientX, y: mouse.clientY }));
+  }, { once: true }));
+  console.log('Canvas context menu coordinates:', JSON.stringify({ workspaceBox, clientX: workspaceBox!.x + 220, clientY: workspaceBox!.y + 180 }));
   await workspace.dispatchEvent('contextmenu', {
     bubbles: true,
     button: 2,
     clientX: workspaceBox!.x + 220,
     clientY: workspaceBox!.y + 180,
   });
+  console.log('Canvas received context menu event:', await workspace.getAttribute('data-e2e-context-coordinates'));
   const contextMenu = window.locator('[data-testid="canvas-context-menu"]');
   await expect(contextMenu).toBeVisible({ timeout: 5_000 });
 
@@ -144,6 +150,7 @@ test('creating a group project advances from naming form to initialized card', a
 
   const box = await workspace.boundingBox();
   expect(box).not.toBeNull();
+  console.log('Canvas context menu coordinates:', JSON.stringify({ workspaceBox: box, clientX: box!.x + 220, clientY: box!.y + 180 }));
   await workspace.dispatchEvent('contextmenu', { bubbles: true, button: 2, clientX: box!.x + 220, clientY: box!.y + 180 });
   await clickCanvasMenuItem(window.getByTestId(`canvas-context-menu-${GROUP_PROJECT_WIDGET}`));
   const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
