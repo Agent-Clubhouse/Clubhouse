@@ -705,7 +705,6 @@ class GroupProjectHostService {
       const current = await this.getMembership(gp.id);
       // A managed record (#3357) holds its own members; only wire-membership group projects need carrying over.
       if (current.scopeMembersRecorded || current.autoJoin || current.autoJoinOffer !== undefined) continue;
-      const hostMachine = this.hostMachineOf(gp);
       const bound = bindingManager.getAllBindings().filter((b) => b.targetKind === 'group-project' && b.targetId === gp.id);
       await this.updateMembership(gp.id, (draft) => {
         if (draft.scopeMembersRecorded || draft.autoJoin || draft.autoJoinOffer !== undefined) return;
@@ -937,7 +936,6 @@ class GroupProjectHostService {
     }
     return this.commit(id, 'board', async ({ reserve }) => {
       if (await this.channelsReady(id)) return;
-      const board = getBulletinBoard(id);
       await ensureProjectChannels(id, await reserve());
     }, options.withinExclusive);
   }
