@@ -5,15 +5,10 @@
  * ids in `project.metadata.admins`. The standard pattern is a single project
  * manager, but multiple admins are allowed.
  *
- * Role model (see {@link deniedGroupProjectTools}):
- *  - Non-admin members get the core tools only (read/post/list/info).
- *  - Admins additionally get the privileged tools (wake/sleep, polling,
- *    broadcast, shoulder_tap, clear/compact, message curation, set_project_info).
- *  - The role sets the baseline; per-wire `disabledTools` restrict further for
- *    anyone (an admin can have specific tools removed on their wire).
+ * Since #3360 the list is only migrated: each admin gets the lead and admin
+ * grants on the group project once (group-project-roles.ts), and the list
+ * gates nothing. Per-wire `disabledTools` still restrict anyone.
  */
-
-import { GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES } from './group-project-permissions';
 
 /** Read the admin agent-id list from a group project's metadata. */
 export function getProjectAdmins(metadata?: Record<string, unknown>): string[] {
@@ -39,20 +34,16 @@ export function removeAdmin(metadata: Record<string, unknown> | undefined, agent
 }
 
 /**
- * The set of tool suffixes denied for `agentId` on a group-project wire.
- *
- * - Per-wire `disabledTools` always apply (a wire can restrict anyone further).
- * - Non-admins are additionally denied every privileged tool (role baseline);
- *   admins keep the privileged set unless a wire explicitly disables one.
+ * The set of tool suffixes denied for `agentId` on a group-project wire: the
+ * wire's own `disabledTools`. Lead and admin tools are no longer gated by the
+ * `admins` role here (#3360): they declare `group_project.lead` or
+ * `group_project.admin` on the group project, which only an explicit grant
+ * gives, and the grant check lists and refuses them.
  */
 export function deniedGroupProjectTools(
-  metadata: Record<string, unknown> | undefined,
-  agentId: string,
+  _metadata: Record<string, unknown> | undefined,
+  _agentId: string,
   wireDisabledTools?: string[],
 ): Set<string> {
-  const denied = new Set<string>(wireDisabledTools ?? []);
-  if (!isProjectAdmin(metadata, agentId)) {
-    for (const t of GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES) denied.add(t);
-  }
-  return denied;
+  return new Set<string>(wireDisabledTools ?? []);
 }

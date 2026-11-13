@@ -79,6 +79,7 @@ vi.mock('../orchestrators', () => ({
 
 vi.mock('../services/group-project-lifecycle', () => ({
   initGroupProjectLifecycle: vi.fn(),
+  setRecordDecidesMembers: vi.fn(),
 }));
 
 vi.mock('../services/group-project-shoulder-tap', () => ({

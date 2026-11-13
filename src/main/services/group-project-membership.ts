@@ -41,6 +41,7 @@ import {
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { resolveGroupProjectScope } from '../../shared/group-project-scope';
 import { canvasWireBindingSource } from './canvas-wire-source';
+import { setRecordDecidesMembers } from './group-project-lifecycle';
 import { readAllCanvasStores } from './canvas-store-reader';
 import { appLog } from './log-service';
 
@@ -218,11 +219,17 @@ async function snapshotAll(): Promise<{ snapshots: Snapshot[]; inventory: Invent
   const snapshots: Snapshot[] = [];
   for (const gp of projects) {
     const membership = await groupProjectHost.getMembership(gp.id);
-    if (!isManagedMembership(membership)) continue;
+    if (!isManagedMembership(membership)) { managedSeen.delete(gp.id); continue; }
+    managedSeen.add(gp.id);
     snapshots.push({ gp, membership, resolution: resolveMembership(gp, membership, inventory, quick) });
   }
   return { snapshots, inventory, quick };
 }
+
+/** Group projects known to take their members from their record, for synchronous checks. */
+const managedSeen = new Set<string>();
+// The lifecycle's guard against stale wire restores doesn't apply to these: the record binds.
+setRecordDecidesMembers((id) => managedSeen.has(id));
 
 /** Group project id → member agent ids, as last bound or released here. Null until the first rebuild. */
 let listed: Map<string, Set<string>> | null = null;

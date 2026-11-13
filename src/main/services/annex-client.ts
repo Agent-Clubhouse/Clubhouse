@@ -2041,6 +2041,16 @@ export function requestSetTopicProtection(
  * Runs setProjectPolling on the satellite so the persisted setting + member
  * side-effect stay identical to a local toggle.
  */
+/** A satellite group project's roles and own grants (#3360). */
+export function requestGroupProjectRoles(fingerprint: string, groupProjectId: string): Promise<unknown> {
+  return satelliteHttpsRequest(fingerprint, 'GET', `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/roles`);
+}
+
+/** Give an agent lead or admin on a satellite group project (#3360). */
+export function requestGroupProjectSetRole(fingerprint: string, groupProjectId: string, agentId: string, role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off'): Promise<unknown> {
+  return satelliteHttpsRequest(fingerprint, 'POST', `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/roles`, { agentId, role, mode });
+}
+
 export function requestGroupProjectSetPolling(
   fingerprint: string,
   groupProjectId: string,

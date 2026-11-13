@@ -21,7 +21,10 @@ const state = vi.hoisted(() => ({
   groups: new Map<string, Record<string, unknown>>(),
 }));
 vi.mock('./plugin-tool-registry', () => ({ agentOfPluginCall: () => state.pluginCaller }));
-vi.mock('../group-project-registry', () => ({ groupProjectRegistry: { getSync: (id: string) => (state.groups.has(id) ? { metadata: state.groups.get(id) } : undefined) } }));
+vi.mock('../group-project-registry', () => ({ groupProjectRegistry: {
+  getSync: (id: string) => (state.groups.has(id) ? { metadata: state.groups.get(id) } : undefined),
+  list: async () => [...state.groups].map(([id, metadata]) => ({ id, name: `Team ${id}`, metadata })),
+} }));
 
 vi.mock('../project-store', () => ({
   peekProjects: async () => [{ id: 'p1', name: 'Home', path: '/home' }, { id: 'p2', name: 'Far', path: '/far' }],
@@ -275,10 +278,13 @@ describe('what a plugin may do for the agent whose call it answers, with real gr
     expect(await checkPluginCaller('p', 'c', { action: 'agent.create', projectPath: '/home' })).toMatch(/agent\.create/);
   });
 
-  it('a group project\'s admin wakes and stops its members, as its group tools would, and no one else (#3174)', async () => {
+  it('a group project\'s lead wakes and stops its members, as its group tools would, and no one else (#3174, #3360)', async () => {
     asCaller('plain');
     expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).not.toBeNull();
+    // Leading is the lead grant on the group project (#3360); the old admins role gives nothing.
     state.groups.set('gp1', { admins: ['plain'] });
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).not.toBeNull();
+    await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: 'gp1' }, mode: 'allow' }] }));
     bindingManager.bind('plain', { targetId: 'gp1', targetKind: 'group-project', label: 'Team' });
     bindingManager.bind('peer', { targetId: 'gp1', targetKind: 'group-project', label: 'Team' });
     try {
@@ -300,6 +306,29 @@ describe('what a plugin may do for the agent whose call it answers, with real gr
       bindingManager.unbind('plain', 'gp1');
       bindingManager.unbind('peer', 'gp1');
       state.groups.clear();
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+});
+
+describe('a group project named in a call (#3360)', () => {
+  const join = [{ actions: ['connection.manage' as const], target: 'group_project_arg' as const, from: { args: ['project'] } }];
+
+  it('resolves with its id, so a grant on that one group project covers it and no other', async () => {
+    state.groups.set('gp1', {});
+    state.groups.set('gp2', {});
+    bindingManager.bind('plain', { targetId: 'gp1', targetKind: 'group-project', label: 'Team' });
+    try {
+      const [targets] = [...(await resolveArgTargets('plain', join, { project: 'Team gp1' })).values()];
+      expect(targets).toEqual([{ kind: 'group_project', groupRole: 'member', groupProjectId: 'gp1' }]);
+
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'connection.manage', target: { kind: 'group_project', id: 'gp1' }, mode: 'allow' }] }));
+      expect(checkToolGrant('plain', join, { project: 'gp1' }, undefined, await resolveArgTargets('plain', join, { project: 'gp1' })).ok).toBe(true);
+      expect(checkToolGrant('plain', join, { project: 'gp2' }, undefined, await resolveArgTargets('plain', join, { project: 'gp2' })).ok).toBe(false);
+    } finally {
+      bindingManager.unbind('plain', 'gp1');
+      state.groups.clear();
+      await updateAgentGrantChanges('plain', () => undefined);
     }
   });
 });

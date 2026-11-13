@@ -583,6 +583,10 @@ export const IPC = {
     GP_SET_TOPIC_PROTECTION: 'annex-client:gp-set-topic-protection',
     GP_INJECT_MESSAGE: 'annex-client:gp-inject-message',
     GP_SET_POLLING: 'annex-client:gp-set-polling',
+    /** A satellite group project's lead and admin holders and its own grants (#3360). */
+    GP_GET_ROLES: 'annex-client:gp-get-roles',
+    /** Give an agent lead or admin on a satellite group project (#3360). */
+    GP_SET_ROLE: 'annex-client:gp-set-role',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',
@@ -627,6 +631,12 @@ export const IPC = {
     ANSWER_AUTO_JOIN_OFFER: 'group-project:answer-auto-join-offer',
     /** Who would auto-join a group project with a scope, before creating it. Read-only. */
     PREVIEW_AUTO_JOIN: 'group-project:preview-auto-join',
+    /** Its own grants and who holds lead and admin (#3360). */
+    GET_ROLES: 'group-project:get-roles',
+    /** Give an agent lead or admin on it: Allow, Ask first or Off. */
+    SET_ROLE: 'group-project:set-role',
+    /** Turn one of its own grants on or off (deliver, wake). */
+    SET_OWN_GRANT: 'group-project:set-own-grant',
     /** Main → renderer: a group project's membership changed (its id). */
     MEMBERSHIP_CHANGED: 'group-project:membership-changed',
   },

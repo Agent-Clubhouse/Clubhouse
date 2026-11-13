@@ -27,7 +27,6 @@ import { watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper
 import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
 import { onGrantRequestsChanged } from '../services/grant-requests';
 import { agentRegistry } from '../services/agent-registry';
-import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
 import {
   registerPersistedBindingSource,
@@ -41,6 +40,7 @@ import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { setManagedGroupProjects } from '../services/managed-group-projects';
 import { MCP_UNBIND_CANVAS_CLEANUP, type McpBindCause, type McpBindResult, type McpUnbindResult } from '../../shared/mcp-unbind';
 import { watchGroupProjectDelivery } from '../services/group-project-delivery';
+import { watchGroupProjectRoles } from '../services/group-project-roles';
 import {
   excludeMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
 } from '../services/group-project-membership';
@@ -190,12 +190,6 @@ export function registerMcpBindingHandlers(): void {
         assertValidTargetKind(target.targetKind);
         clearBindingRemovedByUser(agentId as string, target.targetId);
         const isNew = bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
-        // Bootstrap the project lead: the first agent to join a group project
-        // becomes its admin (no-op once an admin exists). The registry change
-        // invalidates the scoped tool cache so role gating applies immediately.
-        if (target.targetKind === 'group-project') {
-          void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
-        }
         if (!isNew) {
           // Duplicate binding — notifyChange was skipped by bind(), so the
           // renderer's mcpBindingStore won't receive a BINDINGS_CHANGED event.
@@ -215,10 +209,10 @@ export function registerMcpBindingHandlers(): void {
       };
       if (target.targetKind !== 'group-project') { bindNow(); return undefined; }
       // Scope, exclusions and the membership record (#3355, #3357) decide; see group-project-bind.ts.
+      // Joining makes no one lead: lead and admin are explicit grants (#3360).
       return bindToGroupProject(target.targetId, agentId as string, cause as McpBindCause | undefined, {
         bindNow,
         joined: () => {
-          void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
           broadcastBindingsChanged();
         },
       });
@@ -521,6 +515,8 @@ export function restorePersistedBindings(): Promise<void> {
     watchGroupProjectMembership();
     // Members hear about posts as notices (#3362).
     watchGroupProjectDelivery();
+    // Lead and admin as grants; today's admins get them once (#3360).
+    watchGroupProjectRoles();
     // Connection permissions (D129): the store sets each direction's tools, and the user's links are a source.
     startConnectionGrants({
       notify: (from, to, disabledTools) => broadcastToAllWindows(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, from, to, disabledTools),

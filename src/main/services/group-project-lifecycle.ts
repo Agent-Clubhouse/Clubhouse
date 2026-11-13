@@ -65,6 +65,13 @@ export function injectPtyMessage(agentId: string, message: string): void {
   }
 }
 
+let recordDecidesMembers: (groupProjectId: string) => boolean = () => false;
+
+/** The membership module says which group projects take their members from their record (#3357). */
+export function setRecordDecidesMembers(check: (groupProjectId: string) => boolean): void {
+  recordDecidesMembers = check;
+}
+
 /** Tracks known memberships: projectId → Set<agentId> */
 const memberships = new Map<string, Set<string>>();
 /** Cached agent names: agentId → human-readable name */
@@ -123,6 +130,15 @@ async function syncMemberships(agentId: string): Promise<void> {
       // Record the leave timestamp for debouncing
       recentLeaves.set(`${agentId}:${projectId}`, Date.now());
 
+      // Lead and admin end with membership (#3360): excluded, out of scope, disposed or unwired.
+      // Loaded here: the roles module reads the grants store, which this module's users needn't load.
+      void import('./group-project-roles').then(({ revokeGroupProjectRoles }) => revokeGroupProjectRoles(projectId, agentId)).catch((err) => {
+        // telemetry-exempt: a grant on a group project the agent left still needs membership to reach any tool; logged
+        appLog('core:group-project', 'warn', 'Could not take lead and admin from an agent that left', {
+          meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+      });
+
       const agentName = agentNames.get(agentId) || resolveAgentName(agentId);
       try {
         const proj = await groupProjectRegistry.get(projectId);
@@ -149,7 +165,9 @@ async function syncMemberships(agentId: string): Promise<void> {
       // agents that are no longer running, producing spurious join events.
       const leaveKey = `${agentId}:${projectId}`;
       const lastLeave = recentLeaves.get(leaveKey);
-      if (lastLeave !== undefined && Date.now() - lastLeave < REJOIN_DEBOUNCE_MS) {
+      // A group project whose members are a record (#3357) binds from the record, never a stale wire.
+      if (recordDecidesMembers(projectId)) recentLeaves.delete(leaveKey);
+      else if (lastLeave !== undefined && Date.now() - lastLeave < REJOIN_DEBOUNCE_MS) {
         if (!isAgentAlive(agentId)) {
           appLog('core:group-project', 'info', 'Suppressed spurious rejoin — agent not running', {
             meta: { agentId, projectId, msSinceLeave: Date.now() - lastLeave },

@@ -47,7 +47,7 @@ export function grantKey(g: { action: GrantAction; target: GrantTarget }): strin
 export function targetKey(t: GrantTarget): string {
   switch (t.kind) {
     case 'project': return `project:${typeof t.project === 'string' ? t.project : `path:${t.project.path}`}`;
-    case 'group_project': return `group_project:${t.role}`;
+    case 'group_project': return 'id' in t ? `group_project:id:${t.id}` : `group_project:${t.role}`;
     case 'connected': return t.onlyDispatcher ? 'connected:dispatcher' : t.wakeOn ? 'connected:wake_on' : t.excludeDispatcher ? 'connected:not_dispatcher' : 'connected';
     case 'action': return `action:${t.id}`;
     default: return t.kind;
@@ -169,7 +169,7 @@ export function normalizeGrantChanges(raw: unknown): AgentGrantChanges | undefin
 function rebuildTarget(t: GrantTarget): GrantTarget {
   switch (t.kind) {
     case 'project': return { kind: 'project', project: typeof t.project === 'string' ? t.project : { path: t.project.path } };
-    case 'group_project': return { kind: 'group_project', role: t.role };
+    case 'group_project': return 'id' in t ? { kind: 'group_project', id: t.id } : { kind: 'group_project', role: t.role };
     case 'connected':
       return t.onlyDispatcher ? { kind: 'connected', onlyDispatcher: true }
         : t.wakeOn ? { kind: 'connected', wakeOn: true }
@@ -188,8 +188,11 @@ function isGrantTarget(t: unknown): t is GrantTarget {
     case 'project':
       return target.project === 'own' || target.project === 'any'
         || (!!target.project && typeof target.project === 'object' && typeof (target.project as { path?: unknown }).path === 'string');
-    case 'group_project':
+    case 'group_project': {
+      const id = (target as { id?: unknown }).id;
+      if (id !== undefined) return typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id);
       return target.role === 'member' || target.role === 'admin';
+    }
     case 'action':
       return typeof (target as { id?: unknown }).id === 'string' && (target as { id: string }).id.length > 0 && (target as { id: string }).id.length <= 200;
     default:
@@ -308,6 +311,7 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'connection.bootstrap': 'Connect a newly created agent to the Dispatcher',
   'group_project.read': 'Read the board',
   'group_project.post': 'Post to the board',
+  'group_project.lead': 'Lead the group project',
   'group_project.admin': 'Manage the group project',
   'project.read': 'See project settings',
   'project.add': 'Add or open projects',
@@ -342,7 +346,7 @@ export function grantTargetLabel(t: GrantTarget): string {
     case 'my_helpers': return 'Its helpers';
     case 'created_by_me': return 'Agents it creates in this call';
     case 'connected': return t.onlyDispatcher ? 'The Dispatcher, when connected' : t.wakeOn ? 'Connected agents with Wake it on' : t.excludeDispatcher ? 'Connected agents, except the Dispatcher' : 'Connected agents';
-    case 'group_project': return t.role === 'admin' ? 'Group projects it runs' : 'Group projects it is in';
+    case 'group_project': return 'id' in t ? `Group project ${t.id}` : t.role === 'admin' ? 'Group projects it runs' : 'Group projects it is in';
     case 'group_members': return 'Members of group projects it runs';
     case 'project': return t.project === 'own' ? 'Its project' : t.project === 'any' ? 'Every project' : `Project ${t.project.path}`;
     case 'app': return 'The app';
