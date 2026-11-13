@@ -128,8 +128,8 @@ export class HandoffCoordinator {
     if (!sameHandoffAgent(record.from, actor)) throw new Error('Only the sender can cancel.');
     if (record.state === 'cancelled') return record;
     if (['applying', 'applied', 'declined', 'failed'].includes(record.state)) throw new Error('This handoff can no longer be cancelled.');
-    if (record.to.machine !== this.options.machine && this.options.commands.isUndelivered?.(id)) {
-      const cancelled = await this.service.cancelUndelivered(id, reason);
+    if (record.to.machine !== this.options.machine && (this.options.commands.isUndelivered?.(id) || this.options.peerRemoved?.(record.to.machine))) {
+      const cancelled = await this.service.cancelUnreachableOffer(id, reason);
       await this.options.commands.acknowledge?.(id, cancelled.version);
       for (const command of this.options.commands.list().filter((item) => item.id === id)) await this.options.commands.remove(command.operationId);
       await this.changed(cancelled);
@@ -284,9 +284,9 @@ export class HandoffCoordinator {
     const now = (this.options.now ?? Date.now)();
     for (const record of this.options.store.list()) {
       if (record.state === 'offered' && record.from.machine === this.options.machine && record.to.machine !== this.options.machine
-        && now >= record.createdAt + HANDOFF_OFFER_TTL_MS) {
-        if (this.options.commands.isUndelivered?.(record.id)) {
-          await this.cancel(record.id, record.from, 'Offer expired before any delivery attempt.');
+        && (now >= record.createdAt + HANDOFF_OFFER_TTL_MS || this.options.peerRemoved?.(record.to.machine))) {
+        if (this.options.commands.isUndelivered?.(record.id) || this.options.peerRemoved?.(record.to.machine)) {
+          await this.cancel(record.id, record.from, this.options.peerRemoved?.(record.to.machine) ? 'Receiving computer was removed from the network.' : 'Offer expired before any delivery attempt.');
         } else if (!this.options.commands.list().some((command) => command.id === record.id)) {
           await this.options.commands.put({ id: record.id, from: record.from, operationId: randomUUID(), reason: 'Offer expired.' });
         }

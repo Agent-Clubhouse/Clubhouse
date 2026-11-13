@@ -99,17 +99,17 @@ export class HandoffService {
   }
 
   private async admitIncomingOffer(record: Handoff, authenticatedMachine: string): Promise<void> {
-  const active = this.options.store.list().filter((item) => !isTerminalHandoff(item.state));
-  const expired = this.now() >= record.createdAt + HANDOFF_OFFER_TTL_MS;
-  if (expired || record.createdAt > this.now() + 5 * 60_000 || active.length >= HANDOFF_ACTIVE_LIMIT
-    || active.filter((item) => item.to.machine === this.options.machine && item.from.machine === authenticatedMachine).length >= HANDOFF_PEER_LIMIT
-    || this.options.incomingAvailable?.(record) === false
-    || !await this.options.authorize({ action: 'handoff.offer', actor: record.from, record, stage: 'offered' })) {
-    throw new HandoffOfferRefused(transitionHandoff(record, {
-      state: 'failed', failure: { step: 'authorization', code: expired ? 'expired' : 'refused' },
-      operationId: this.newId(), at: Math.max(this.now(), record.updatedAt), by: { kind: 'machine', machine: this.options.machine },
-    }, record.version));
-  }
+    const active = this.options.store.list().filter((item) => !isTerminalHandoff(item.state));
+    const expired = this.now() >= record.createdAt + HANDOFF_OFFER_TTL_MS;
+    if (expired || record.createdAt > this.now() + 5 * 60_000 || active.length >= HANDOFF_ACTIVE_LIMIT
+      || active.filter((item) => item.to.machine === this.options.machine && item.from.machine === authenticatedMachine).length >= HANDOFF_PEER_LIMIT
+      || this.options.incomingAvailable?.(record) === false
+      || !await this.options.authorize({ action: 'handoff.offer', actor: record.from, record, stage: 'offered' })) {
+      throw new HandoffOfferRefused(transitionHandoff(record, {
+        state: 'failed', failure: { step: 'authorization', code: expired ? 'expired' : 'refused' },
+        operationId: this.newId(), at: Math.max(this.now(), record.updatedAt), by: { kind: 'machine', machine: this.options.machine },
+      }, record.version));
+    }
   }
 
   async receiveOffer(raw: unknown, authenticatedMachine: string): Promise<Handoff> {
@@ -225,8 +225,8 @@ export class HandoffService {
     return expired;
   }
 
-  /** Only for a durable outbox entry known never to have attempted transport. */
-  async cancelUndelivered(id: string, reason = 'Offer cancelled before any delivery attempt.'): Promise<Handoff> {
+  /** Internal only: proven never attempted, or its receiving peer is permanently removed. */
+  async cancelUnreachableOffer(id: string, reason = 'Offer cancelled before any delivery attempt.'): Promise<Handoff> {
     return this.options.store.transact(id, (record) => {
       if (!record || record.from.machine !== this.options.machine || record.version !== 1 || record.state !== 'offered') throw new Error('Handoff may have been delivered.');
       return transitionHandoff(record, { state: 'cancelled', operationId: this.newId(), at: Math.max(this.now(), record.updatedAt),
