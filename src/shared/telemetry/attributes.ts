@@ -574,7 +574,7 @@ export const ATTR = {
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'list_other_dispatchers', 'set_connection_tools',
     // orchestration: connection tools (#2230)
-    'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents', 'list_connections', 'join_group_project', 'leave_group_project',
+    'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'list_group_projects', 'open_group_project_directory', 'connect_agents', 'disconnect_agents', 'list_connections', 'join_group_project', 'leave_group_project',
     // actions (#2952), the permission model's action.* (#2921)
     'create_action', 'list_actions', 'update_action', 'delete_action', 'run_action', 'action_history', 'subscribe',
     // provider changes (#2845)

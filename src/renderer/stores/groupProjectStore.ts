@@ -26,6 +26,8 @@ function isCompleteGroupProject(value: unknown): value is GroupProject {
 
 interface GroupProjectStoreState {
   projects: GroupProject[];
+  directorySelection: string | null;
+  selectDirectoryProject: (id: string | null) => void;
   loaded: boolean;
   loadError: string | null;
   loadProjects: () => Promise<void>;
@@ -50,6 +52,8 @@ interface GroupProjectStoreState {
 
 export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   projects: [],
+  directorySelection: null,
+  selectDirectoryProject: (id) => set({ directorySelection: id }),
   loaded: false,
   loadError: null,
 

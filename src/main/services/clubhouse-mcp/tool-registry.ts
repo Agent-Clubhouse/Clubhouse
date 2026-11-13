@@ -296,6 +296,8 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     leave_group_project: INTERNAL_DESTRUCTIVE,
     list_orchestrator_controls: INTERNAL_READ,
     list_other_dispatchers: INTERNAL_READ,
+    list_group_projects: INTERNAL_READ,
+    open_group_project_directory: INTERNAL_WRITE,
     list_agent_parts: INTERNAL_READ,
     get_agent_part: INTERNAL_READ,
     discover_agent_assets: INTERNAL_READ,

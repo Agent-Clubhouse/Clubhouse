@@ -9,6 +9,7 @@ import { registerFederatedRequestTools } from './federated-request-tools';
 import { registerAgentTools } from './agent-tools';
 import { registerBrowserTools } from './browser-tools';
 import { registerGroupProjectTools } from './group-project-tools';
+import { registerGroupProjectDirectoryTools } from './group-project-directory-tools';
 import { registerNotifyTools } from './notify-tools';
 import { registerHelperDisposeTools } from './helper-dispose-tools';
 import { registerHelperTools } from './helper-tools';
@@ -41,6 +42,7 @@ export function registerClubhouseMcpTools(): void {
   registerFederatedRequestTools();
   registerBrowserTools();
   registerGroupProjectTools();
+  registerGroupProjectDirectoryTools();
   registerNotifyTools();
   registerHelperDisposeTools();
   registerHelperTools();
