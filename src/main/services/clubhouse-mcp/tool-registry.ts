@@ -243,6 +243,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     sleep_agent: INTERNAL_DESTRUCTIVE,
     toggle_polling: INTERNAL_WRITE,
     query_polling: INTERNAL_READ,
+    subscribe_topic: INTERNAL_WRITE,
     nudge_polling: INTERNAL_WRITE,
     read_message: INTERNAL_READ,
     clear_topic: INTERNAL_DESTRUCTIVE,

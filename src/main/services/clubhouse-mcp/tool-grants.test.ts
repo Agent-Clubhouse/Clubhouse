@@ -138,6 +138,7 @@ describe('tool grant declarations (#2967)', () => {
       group-project sleep_agent: agent.sleep on group_members
       group-project toggle_polling: group_project.admin on bound
       group-project query_polling: group_project.read on bound
+      group-project subscribe_topic: group_project.read on bound
       group-project nudge_polling: group_project.admin on bound
       group-project read_message: group_project.read on bound
       group-project clear_topic: group_project.admin on bound

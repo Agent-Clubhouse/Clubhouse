@@ -536,7 +536,7 @@ export const ATTR = {
     // group project
     'list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'read_message', 'get_project_info',
     'set_project_info', 'shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'query_polling',
-    'nudge_polling', 'clear_topic', 'delete_messages',
+    'subscribe_topic', 'nudge_polling', 'clear_topic', 'delete_messages',
     // global
     'notify_user',
     // orchestration: hand off and dispose (#2229)
