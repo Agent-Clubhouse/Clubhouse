@@ -269,7 +269,9 @@ describe('mcp-binding-handlers registration', () => {
     expect(await describeLocalAgent('dispatcher-work@another-machine')).toBeUndefined();
     expect(runTool).toBe(runAgentToolForRemoteCaller);
     expect(authorizeQueuedCall).toBe(authorizeQueuedAnnexCall);
-    expect(onDeliveryFailure).toBe(reportAnnexDeliveryFailure);
+    // A failed delivery that isn't a follower's news (#3352) is reported as before.
+    const notice = { callId: 'not-news', callerId: 'ordinary', targetId: 'x@m', tool: 'send_message', state: 'refused' as const, queuedAt: '', updatedAt: '', attempts: 1 };
+    expect(await onDeliveryFailure?.(notice)).toBe(await reportAnnexDeliveryFailure(notice));
     expect(bindingManager.bind).not.toHaveBeenCalled();
     expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
   });
