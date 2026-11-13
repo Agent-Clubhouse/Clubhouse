@@ -36,7 +36,10 @@ export class HandoffCommandStore implements HandoffCommandStorage {
         if ('error' in result) this.loadFailed = (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT';
         else {
           try { parseFile(JSON.parse(result.raw)); }
-          catch { this.loadFailed = true; } // telemetry-exempt: fail closed below; never log raw commands
+          catch {
+            // telemetry-exempt: fail closed below; never log raw commands
+            this.loadFailed = true;
+          }
         }
       },
     });

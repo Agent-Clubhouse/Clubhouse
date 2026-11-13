@@ -36,7 +36,10 @@ export function registerHandoffTools(): void {
         ...(args.manifest !== undefined && { manifest: args.manifest as HandoffManifestSummary }),
       }, host.localHandoffAgent(agentId)));
       return text(record);
-    } catch { return text('Handoff offer was refused or could not be persisted. Check the target, connection, permissions and secret-free metadata.', true); } // telemetry-exempt: never reflect task text, secret values or store paths
+    } catch {
+      // telemetry-exempt: never reflect task text, secret values or store paths
+      return text('Handoff offer was refused or could not be persisted. Check the target, connection, permissions and secret-free metadata.', true);
+    }
   }, { group: 'handoffs', grant: HANDOFF_OFFER_GRANT });
 
   registerGlobalTool('respond_to_handoff', {
@@ -58,7 +61,10 @@ export function registerHandoffTools(): void {
         return text(await host.handoffHost().coordinator.respond(args.id as string,
           host.localHandoffAgent(agentId), args.accept as boolean, target && 'agentId' in target ? target : undefined, args.reason as string | undefined));
       });
-    } catch { return text('Handoff response was refused or could not be persisted. Only its receiver or addressed Dispatcher can respond with current permissions.', true); } // telemetry-exempt: bounded refusal only
+    } catch {
+      // telemetry-exempt: bounded refusal only
+      return text('Handoff response was refused or could not be persisted. Only its receiver or addressed Dispatcher can respond with current permissions.', true);
+    }
   }, { group: 'handoffs', grant: HANDOFF_ACCEPT_GRANT });
 
   registerGlobalTool('get_handoff', {
@@ -69,7 +75,10 @@ export function registerHandoffTools(): void {
     try {
       const host = await import('../../handoff-host');
       return text(host.handoffHost().coordinator.service.get(args.id as string, host.localHandoffAgent(agentId)));
-    } catch { return text('Handoff is unavailable to this agent or its store is unreadable.', true); } // telemetry-exempt: no store path or task data in errors
+    } catch {
+      // telemetry-exempt: no store path or task data in errors
+      return text('Handoff is unavailable to this agent or its store is unreadable.', true);
+    }
   }, { group: 'handoffs', grant: READ });
 
   registerGlobalTool('list_handoffs', {
@@ -81,7 +90,10 @@ export function registerHandoffTools(): void {
     try {
       const host = await import('../../handoff-host');
       return text(host.handoffHost().coordinator.service.list(host.localHandoffAgent(agentId), args.direction as 'sent' | 'received' | undefined, args.state as typeof HANDOFF_STATES[number] | undefined));
-    } catch { return text('The handoff store is unreadable; no state can be confirmed.', true); } // telemetry-exempt: no raw store data in errors
+    } catch {
+      // telemetry-exempt: no raw store data in errors
+      return text('The handoff store is unreadable; no state can be confirmed.', true);
+    }
   }, { group: 'handoffs', grant: READ });
 
   registerGlobalTool('cancel_handoff', {
@@ -94,6 +106,9 @@ export function registerHandoffTools(): void {
       const current = host.handoffHost();
       const record = await current.coordinator.cancel(args.id as string, host.localHandoffAgent(agentId), args.reason as string | undefined);
       return text({ id: record.id, state: record.state, cancellation_pending: current.commands.list().some((command) => command.id === record.id) });
-    } catch { return text('Cancellation was refused or could not be persisted. Only the sender may cancel, before applying starts.', true); } // telemetry-exempt: bounded refusal only
+    } catch {
+      // telemetry-exempt: bounded refusal only
+      return text('Cancellation was refused or could not be persisted. Only the sender may cancel, before applying starts.', true);
+    }
   }, { group: 'handoffs', grant: READ });
 }

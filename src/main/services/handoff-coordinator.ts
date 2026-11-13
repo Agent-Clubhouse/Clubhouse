@@ -79,7 +79,7 @@ export class HandoffCoordinator {
     // A repeated tool call cannot create a second response or a second worker.
     if (current.acceptance && accept && sameHandoffAgent(current.acceptance.by, actor)
       && sameHandoffAgent(current.acceptance.target, target ?? actor)) return current;
-    const response = current.history.at(-1);
+    const response = current.history[current.history.length - 1];
     if (!accept && current.state === 'declined' && response?.by.kind === 'agent' && sameHandoffAgent(response.by.address, actor)) return current;
     const record = await this.service.respond(id, actor, accept, current.version, target, reason);
     await this.changed(record);

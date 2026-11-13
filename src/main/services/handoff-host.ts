@@ -146,7 +146,10 @@ async function authorize(request: HandoffAuthorization): Promise<boolean> {
   if (record.to.machine === ownMachine() && !receiver) return false;
   if (receiver?.machine === ownMachine()) {
     try { await localAgent(receiver.agentId); }
-    catch { return false; } // telemetry-exempt: removed/unknown receivers never acquire an offer
+    catch {
+      // telemetry-exempt: removed/unknown receivers never acquire an offer
+      return false;
+    }
   }
   if (receiver && !('via' in record.to) && !(receiver.machine === ownMachine() && isDispatcherAgentId(receiver.agentId)) && !hasConnection(record.from, receiver)) return false;
   if (actor.machine !== ownMachine()) return true; // Its own computer checks its saved grant before sending.
@@ -212,7 +215,10 @@ export function handoffHost(): Host {
         const location = await localAgent(record.from.agentId);
         const grants = agentRegistry.get(record.from.agentId) ? callerGrants(record.from.agentId) : await effectiveAgentGrants(location.projectPath, record.from.agentId);
         return evaluateGrant({ caller: { kind: 'agent', agentId: record.from.agentId, projectPath: location.projectPath }, action: 'handoff.offer', target: await peerTarget(record.from, record.to) }, grants).outcome !== 'refuse';
-      } catch { return false; } // telemetry-exempt: a missing caller or connection stops the outgoing offer
+      } catch {
+        // telemetry-exempt: a missing caller or connection stops the outgoing offer
+        return false;
+      }
     },
     changed: async (record) => {
       const participants = [record.from, ...('agentId' in record.to ? [record.to] : getDispatcherState().agentId ? [localHandoffAgent(getDispatcherState().agentId!)] : []), ...(record.acceptance ? [record.acceptance.target] : [])];
@@ -232,7 +238,10 @@ export function startHandoffs(): void {
       || 'agentId' in record.to && record.to.agentId === agentId && record.to.machine === ownMachine()
       || 'via' in record.to && record.to.machine === ownMachine() && isDispatcherAgentId(agentId)
       || !!record.acceptance && record.acceptance.target.agentId === agentId && record.acceptance.target.machine === ownMachine()); }
-    catch { return false; } // telemetry-exempt: no permission or record is inferred from unreadable storage
+    catch {
+      // telemetry-exempt: no permission or record is inferred from unreadable storage
+      return false;
+    }
   });
   const flush = async () => {
     if (flushing || !getIdentity()) return;
