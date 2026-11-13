@@ -85,6 +85,7 @@ function validReceipt(value: unknown): value is ImportReceipt {
       && typeof value.agentCreation.requestId === 'string' && ID.test(value.agentCreation.requestId)
       && ['reserved', 'completed', 'failed'].includes(String(value.agentCreation.phase))
       && (value.agentCreation.agentId === undefined || boundedString(value.agentCreation.agentId, 200))
+      && (value.agentCreation.receiptSaved === undefined || (value.agentCreation.receiptSaved === false && value.agentCreation.phase === 'completed'))
       && (value.agentCreation.phase !== 'completed' || boundedString(value.agentCreation.agentId, 200))))
     && (value.progress === undefined || (typeof value.progress === 'number' && Number.isInteger(value.progress) && value.progress >= 0 && value.progress <= 100));
 }

@@ -5,9 +5,14 @@ import { persist } from '../telemetry/persist';
 
 export interface SettingsStore<T> {
   get(): T;
-  save(settings: T): Promise<void>;
+  save(settings: T, precondition?: SettingsCommitPrecondition): Promise<void>;
   /** Sequential read-modify-write: reads the current value, applies `fn`, saves, and returns the updated value. */
-  update(fn: (current: T) => T): Promise<T>;
+  update(fn: (current: T) => T, precondition?: SettingsCommitPrecondition): Promise<T>;
+}
+
+export interface SettingsCommitPrecondition {
+  prepare(): Promise<void>;
+  check(): void;
 }
 
 const settingsStoreResetters = new Set<() => void>();
@@ -299,7 +304,7 @@ export function createSettingsStore<T>(
     }
   }
 
-  function queueWrite(settings: T): Promise<void> {
+  function queueWrite(settings: T, precondition?: SettingsCommitPrecondition): Promise<void> {
     const snapshot = cloneSettings(settings);
     const serialized = JSON.stringify(snapshot, null, 2);
     const filePath = getFilePath();
@@ -310,6 +315,7 @@ export function createSettingsStore<T>(
         console.warn(`[settings-store] Previous write to ${filename} failed:`, err instanceof Error ? err.message : err);
       })
       .then(() => persist.timed('settings', async () => {
+        if (precondition) { await precondition.prepare(); precondition.check(); }
         if (options?.atomic) {
           await replaceFile(filePath, serialized, options.mode);
           return;
@@ -367,13 +373,14 @@ export function createSettingsStore<T>(
       }
       return Object.freeze(cachedSettings!) as T;
     },
-    save(settings: T) {
+    save(settings: T, precondition?: SettingsCommitPrecondition) {
+      precondition?.check();
       const before = auditSnapshot();
-      const previous = options?.rollBackFailedSaves ? store.get() : undefined;
+      const previous = options?.rollBackFailedSaves || precondition ? store.get() : undefined;
       const attempted = cloneSettings(settings);
       cachedSettings = attempted;
       cacheLoaded = true;
-      const queued = queueWrite(attempted);
+      const queued = queueWrite(attempted, precondition);
       const written = previous === undefined ? queued : queued.catch((err) => {
         // Unless something newer has replaced it since.
         if (cachedSettings === attempted) cachedSettings = previous;
@@ -385,11 +392,12 @@ export function createSettingsStore<T>(
       void written.then(() => reportAudit(before, after), (): void => undefined);
       return written;
     },
-    update(fn: (current: T) => T): Promise<T> {
-      const result = updateLock.catch(() => {}).then((): Promise<T> => {
+    update(fn: (current: T) => T, precondition?: SettingsCommitPrecondition): Promise<T> {
+      const result = updateLock.catch(() => {}).then(async (): Promise<T> => {
+        if (precondition) { await precondition.prepare(); precondition.check(); }
         const current = store.get();
         const updated = fn(current);
-        return store.save(updated).then(() => cloneSettings(updated));
+        return store.save(updated, precondition).then(() => cloneSettings(updated));
       });
       updateLock = result;
       return result;

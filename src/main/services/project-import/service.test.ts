@@ -132,7 +132,7 @@ function fixture(sourceEnvironment = environment) {
     return { project, created: true, gitignore: 'updated' as const };
   });
   const listProjects = vi.fn(async () => projects);
-  const service = new ProjectImportService({ store, git: runner, listProjects, origin: async () => url, register });
+  const service = new ProjectImportService({ store, git: runner, listProjects, origin: async () => url, register, reserveMembership: vi.fn(async () => {}) });
   return { service, store, runner, register, source, destination, url, commit, work, listProjects };
 }
 

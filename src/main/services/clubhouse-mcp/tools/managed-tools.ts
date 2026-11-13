@@ -33,7 +33,7 @@ import { resolveOrchestrationPolicy } from '../../../../shared/orchestration-pol
 import type { ImportedAgentReview } from '../../../../shared/project-import';
 import { projectImportService } from '../../project-import/service';
 import { approveImportCall } from '../../project-import/approval';
-import { ImportError } from '../../project-import/types';
+import { ImportAgentReceiptError, ImportError } from '../../project-import/types';
 import { callKey } from '../../grant-requests';
 import { withDurableCreationGit } from '../../agent-config';
 import { accessCeilingRefusal } from '../access-ceiling';
@@ -230,6 +230,12 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
     } catch (err) {
       // telemetry-exempt: the error reaches the Dispatcher as the tool result
       if (err instanceof ArgError) return fail(err.message);
+      if (err instanceof ImportAgentReceiptError) return {
+        ...json({
+          status: 'partial', reason: err.reason, message: err.message, importId: err.importId, projectId: err.projectId,
+          id: err.config.id, name: err.config.name, agentCreated: true, agentStarted: false, connectedToDispatcher: 'not_confirmed',
+        }), isError: true,
+      };
       if (err instanceof ImportError) return { ...json({ status: 'refused', reason: err.reason, message: err.message }), isError: true };
       if (err instanceof ManagedPartCreationError) return { ...json({ status: 'partial', receipt: err.receipt, message: err.message, assigned: false, providerLoaded: 'not_confirmed' }), isError: true };
       if (name === 'create_managed_agent' && args.importId !== undefined) {
@@ -771,7 +777,8 @@ export function registerManagedTools(): void {
         return createDispatcherManagedAgent(callerId, args, project, CREATE_GRANTS,
           () => projectImportService.createAgentOnce(callerId, importId, creationKey, agentConfig.listDurable,
             async (_importedProject, requestId) => withDurableCreationGit({
-              assertCurrent, preserveOnFailure: true,
+              assertCurrent, assertConsent: approval.assertConsent, assertFilesystem, preserveOnFailure: true,
+              operation: { importId, requestId, key: creationKey, state: 'creating' },
               run: (gitArgs, cwd, signal) => projectImportService.runAgentGit(callerId, importId, gitArgs, cwd, signal, assertCurrent),
             }, () => asDispatcher(callerId, () => createManagedAgent(project.path, { ...input, creationRequestId: requestId, preserveOnFailure: true }, checkAccess, prepared)))),
           { importId, projectId: project.id, agentCreated: true, agentStarted: false },

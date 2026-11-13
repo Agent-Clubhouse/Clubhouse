@@ -113,7 +113,10 @@ function createAgentRecord(projectPath: string, input: CreateManagedAgentInput, 
  * `null` puts one back to its default. The effort goes in the same write as
  * the CLI and model, after them, since a new model clears it.
  */
-export async function applyManagedSettings(projectPath: string, agentId: string, settings: ManagedTemplateSettings): Promise<void> {
+export async function applyManagedSettings(
+  projectPath: string, agentId: string, settings: ManagedTemplateSettings,
+  precondition?: import('../settings-store').SettingsCommitPrecondition,
+): Promise<void> {
   const updates: Parameters<typeof agentConfig.updateDurableConfig>[2] = {};
   if (settings.orchestrator !== undefined) updates.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) updates.model = settings.model;
@@ -128,7 +131,10 @@ export async function applyManagedSettings(projectPath: string, agentId: string,
     if (!result.ok) throw new ManagedError('invalid', result.message);
   }
   // The template's Clubhouse permissions (#2971), under the person's own changes.
-  if (settings.grants?.length) await applyTemplateGrants(agentId, settings.grants);
+  if (settings.grants?.length) {
+    if (precondition) await applyTemplateGrants(agentId, settings.grants, precondition);
+    else await applyTemplateGrants(agentId, settings.grants);
+  }
 }
 
 export async function prepareManagedAgentCreation(projectPath: string, input: CreateManagedAgentInput, checkAccess?: NewAgentAccessCheck): Promise<PreparedManagedCreation> {
@@ -171,10 +177,13 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
       ...(settings.helperTemplateId && { helperTemplateId: settings.helperTemplateId }),
       ...(settings.grants?.length && { grants: settings.grants }),
     };
-    if (Object.keys(rest).length > 0) await applyManagedSettings(projectPath, config.id, rest);
+    if (Object.keys(rest).length > 0) await applyManagedSettings(projectPath, config.id, rest,
+      input.preserveOnFailure ? agentConfig.durableCreationPrecondition() : undefined);
+    if (input.preserveOnFailure) await agentConfig.finishImportedCreation(projectPath, config.id);
   } catch (err) {
     // Leave no half-made agent: it has no setup, so remove it with the folder and branch it was just given.
     if (!input.preserveOnFailure) await agentConfig.deleteDurable(projectPath, config.id).catch(() => {});
+    else await agentConfig.preserveImportedCreationFailure(projectPath, config.id);
     throw err;
   }
   return (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;

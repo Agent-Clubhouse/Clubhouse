@@ -31,6 +31,8 @@ export interface ImportAgentCreation {
   requestId: string;
   phase: 'reserved' | 'completed' | 'failed';
   agentId?: string;
+  /** Creation is complete, but its separate receipt save still needs reconciliation. */
+  receiptSaved?: false;
 }
 
 export interface ImportReceipt {

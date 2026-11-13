@@ -54,6 +54,7 @@ export async function approveImportCall(
   if (decision.kind === 'asked') return { kind: 'asked' as const, text: decision.text };
   return {
     kind: 'approved' as const,
+    assertConsent: current,
     assertCurrent: async () => {
       const freshTargets = await resolveArgTargets(agentId, grant, args);
       current();

@@ -156,10 +156,13 @@ export async function resetAgentGrants(projectPath: string, agentId: string): Pr
  * Only the user's own template edits and creation reach this; the person's
  * own changes stay over it.
  */
-export async function applyTemplateGrants(agentId: string, grants: readonly TemplateGrant[]): Promise<void> {
+export async function applyTemplateGrants(
+  agentId: string, grants: readonly TemplateGrant[],
+  precondition?: import('./settings-store').SettingsCommitPrecondition,
+): Promise<void> {
   if (grants.length === 0) return;
   dropCallApprovalsFor(agentId);
-  await updateAgentGrantChanges(agentId, (saved) => withTemplateGrants(saved, grants));
+  await updateAgentGrantChanges(agentId, (saved) => withTemplateGrants(saved, grants), precondition);
   // One event per push or creation, for the rows the template layer actually took.
   const applied = grants.filter((g) => !isFixedGrant(g) && !isHelperControlRow(g));
   if (applied.length > 0) recordGrantChange({ agentId, layer: 'template', mode: applied.length === 1 ? applied[0].mode ?? 'reset' : 'allow', actions: applied.map((g) => g.action) });

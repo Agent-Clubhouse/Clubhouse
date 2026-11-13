@@ -38,22 +38,56 @@ import { dropGrantRequestsFor } from './grant-requests';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 interface DurableCreationGit {
+  active?: boolean;
   assertCurrent(): Promise<void>;
+  assertConsent(): void;
+  assertFilesystem(recordsOnly?: boolean): void;
+  operation: NonNullable<DurableAgentConfig['repositoryImportCreation']>;
   run(args: string[], cwd: string, signal?: AbortSignal): Promise<string>;
   preserveOnFailure: true;
 }
 
 const creationGit = new AsyncLocalStorage<DurableCreationGit>();
 
+function currentCreationGit(): DurableCreationGit | undefined {
+  const scope = creationGit.getStore();
+  return scope?.active === false ? undefined : scope;
+}
+
 /** Main-private import composition: reuse creation, without admitting repository hooks/filters or PATH executables. */
-export function withDurableCreationGit<T>(git: DurableCreationGit, operation: () => Promise<T>): Promise<T> {
-  return creationGit.run(git, operation);
+export async function withDurableCreationGit<T>(git: DurableCreationGit, operation: () => Promise<T>): Promise<T> {
+  const scope = { ...git, active: true };
+  try { return await creationGit.run(scope, operation); }
+  finally { scope.active = false; }
+}
+
+export function durableCreationPrecondition(): { prepare(): Promise<void>; check(): void } | undefined {
+  const scope = currentCreationGit();
+  return scope && {
+    prepare: () => scope.assertCurrent(),
+    check: () => { scope.assertConsent(); scope.assertFilesystem(); },
+  };
+}
+
+function ensureCreationDirectory(dir: string): Promise<void> {
+  const scope = currentCreationGit();
+  if (!scope) return ensureDir(dir);
+  scope.assertConsent();
+  scope.assertFilesystem();
+  const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
+  if (!stat) fs.mkdirSync(dir);
+  else if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Imported agent storage changed; existing content was preserved.');
+  scope.assertFilesystem();
+  return Promise.resolve();
 }
 
 async function creationInsideGitRepo(projectPath: string): Promise<boolean> {
-  const git = creationGit.getStore();
+  const git = currentCreationGit();
   if (!git) return isInsideGitRepo(projectPath);
-  return (await git.run(['rev-parse', '--is-inside-work-tree'], projectPath)).trim() === 'true';
+  if ((await git.run(['rev-parse', '--is-inside-work-tree'], projectPath)).trim() !== 'true') {
+    throw new Error('The imported project is no longer a verified Git checkout. No plain-folder fallback is permitted.');
+  }
+  return true;
 }
 
 /**
@@ -62,7 +96,7 @@ async function creationInsideGitRepo(projectPath: string): Promise<boolean> {
  * can come from another agent (#2221).
  */
 function execGitFileAsync(args: string[], cwd: string, maxBuffer?: number, signal?: AbortSignal): Promise<string> {
-  const git = creationGit.getStore();
+  const git = currentCreationGit();
   if (git) return git.run(args, cwd, signal);
   return new Promise((resolve, reject) => {
     execFile('git', args, { cwd, encoding: 'utf-8', maxBuffer, ...(signal ? { signal } : {}) }, (error, stdout) => {
@@ -768,7 +802,7 @@ async function writeAgentsToDiskWithOptions(
   options: { skipBackup?: boolean },
 ): Promise<void> {
   const dir = clubhouseDir(projectPath);
-  await ensureDir(dir);
+  await ensureCreationDirectory(dir);
   ensureConfigWatcher(projectPath);
 
   const configPath = agentsConfigPath(projectPath);
@@ -790,7 +824,13 @@ async function writeAgentsToDiskWithOptions(
   // main file rename succeeds so a crash can never leave both files corrupt.
   const tmpPath = configPath + '.tmp.' + randomUUID().slice(0, 8);
   await trackOperation('agents.json write', () => persist.timed('agents', async () => {
+    await currentCreationGit()?.assertCurrent();
+    currentCreationGit()?.assertConsent();
+    currentCreationGit()?.assertFilesystem();
     await fsp.writeFile(tmpPath, JSON.stringify(agents, null, 2), 'utf-8');
+    await currentCreationGit()?.assertCurrent();
+    currentCreationGit()?.assertConsent();
+    currentCreationGit()?.assertFilesystem();
     await fsp.rename(tmpPath, configPath);
   }));
   // The watcher reports this write, so the backstop check needn't report it again.
@@ -1551,6 +1591,8 @@ async function updateDurableConfigInner(
   const agent = agentsById.get(agentId);
   if (!agent) return;
   if (beforeCommit) await beforeCommit();
+  await currentCreationGit()?.assertCurrent();
+  const importedBefore = currentCreationGit() ? cloneAgent(agent) : undefined;
   const rollbackProvider = beforeCommit && updates.orchestrator !== undefined ? structuredClone(agent) : undefined;
   const auditBefore = pickAudited(agent, AGENT_AUDIT_CATALOG);
   if (updates.quickAgentDefaults !== undefined) {
@@ -1707,7 +1749,7 @@ async function updateDurableConfigInner(
     }
   }
   try {
-    await writeAgents(projectPath, agents);
+    await writeCreationMutation(projectPath, agents, agent, importedBefore);
     // Guided Save acknowledges durable persistence, not just the debounced cache.
     if (rollbackProvider) await flushAgentConfig(projectPath);
   } catch (err) {
@@ -2061,6 +2103,60 @@ function cloneAgent(agent: DurableAgentConfig): DurableAgentConfig {
   return JSON.parse(JSON.stringify(agent)) as DurableAgentConfig;
 }
 
+async function writeCreationMutation(
+  projectPath: string, agents: DurableAgentConfig[], agent: DurableAgentConfig,
+  before: DurableAgentConfig | undefined, deferFlush = false,
+): Promise<void> {
+  const attempted = before && cloneAgent(agent);
+  try {
+    currentCreationGit()?.assertConsent();
+    currentCreationGit()?.assertFilesystem();
+    await writeAgents(projectPath, agents, deferFlush);
+    if (before) await flushAgentConfig(projectPath);
+  } catch (error) {
+    if (before && attempted) {
+      for (const key of new Set([...Object.keys(before), ...Object.keys(attempted)])) {
+        const field = key as keyof DurableAgentConfig;
+        if (JSON.stringify(before[field]) !== JSON.stringify(attempted[field])
+          && JSON.stringify(agent[field]) === JSON.stringify(attempted[field])) {
+          if (before[field] === undefined) Reflect.deleteProperty(agent, key);
+          else Reflect.set(agent, key, before[field]);
+        }
+      }
+    }
+    throw error;
+  }
+}
+
+export async function finishImportedCreation(projectPath: string, agentId: string): Promise<void> {
+  const scope = currentCreationGit();
+  if (!scope) return;
+  await mutateAgentRecord(projectPath, agentId, (agent) => {
+    const operation = agent.repositoryImportCreation;
+    if (!operation || agent.creation || operation.state !== 'creating' || operation.importId !== scope.operation.importId
+      || operation.requestId !== scope.operation.requestId || operation.key !== scope.operation.key) {
+      throw new Error('Imported agent creation association changed or is not ready to complete.');
+    }
+    operation.state = 'completed';
+  }, { flush: true });
+}
+
+export async function preserveImportedCreationFailure(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
+  const scope = currentCreationGit();
+  if (!scope) return null;
+  return withDurableCreationGit({
+    ...scope, assertCurrent: async () => scope.assertFilesystem(true), assertConsent: () => scope.assertFilesystem(true),
+    assertFilesystem: () => scope.assertFilesystem(true),
+  }, () => mutateAgentRecord(projectPath, agentId, (agent) => {
+    if (agent.repositoryImportCreation) agent.repositoryImportCreation.state = 'failed';
+    const { owner: _owner, heartbeatAt: _beat, ...rest } = agent.creation ?? { startedAt: agent.createdAt, state: 'failed' as const };
+    agent.creation = {
+      ...rest, state: 'failed', stage: 'failed', preserveOnInterruption: true,
+      reason: 'Imported agent creation did not finish. Its record, partial worktree and branch are preserved for inspection; do not replay creation.',
+    };
+  }, { flush: true }));
+}
+
 /** Apply `fn` to an agent's record and save it. Returns a copy of the result, or null when the record is gone. */
 async function mutateAgentRecord(
   projectPath: string,
@@ -2071,8 +2167,10 @@ async function mutateAgentRecord(
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return null;
+  await currentCreationGit()?.assertCurrent();
+  const before = currentCreationGit() ? cloneAgent(agent) : undefined;
   fn(agent);
-  await writeAgents(projectPath, agents, activeCreations.get(agentId)?.deferWritesUntilReady);
+  await writeCreationMutation(projectPath, agents, agent, before, activeCreations.get(agentId)?.deferWritesUntilReady);
   if (flush) await flushAgentConfig(projectPath);
   return cloneAgent(agent);
 }
@@ -2285,12 +2383,14 @@ export async function beginDurableCreation(
   const parentProject = await foreignParentProject(projectPath, params);
   const parentAgents = parentProject ? await readAgents(parentProject) : undefined;
 
-  await creationGit.getStore()?.assertCurrent();
-  await ensureDir(clubhouseDir(projectPath));
+  await currentCreationGit()?.assertCurrent();
+  await ensureCreationDirectory(clubhouseDir(projectPath));
   // The Dispatcher's folder is no repo, so it gets no .gitignore (#2535).
   if (!isDispatcherPath(projectPath)) {
-    await creationGit.getStore()?.assertCurrent();
-    await ensureGitignore(projectPath, creationGit.getStore() ? () => {
+    await currentCreationGit()?.assertCurrent();
+    await ensureGitignore(projectPath, currentCreationGit() ? () => {
+      currentCreationGit()!.assertConsent();
+      currentCreationGit()!.assertFilesystem();
       const ignore = fs.lstatSync(path.join(projectPath, '.gitignore'), { throwIfNoEntry: false });
       if (ignore && (!ignore.isFile() || ignore.isSymbolicLink() || ignore.nlink !== 1 || ignore.size > 1024 * 1024)) throw new Error('Imported ignore file changed; inspect the preserved state before agent creation.');
     } : undefined);
@@ -2300,7 +2400,7 @@ export async function beginDurableCreation(
   const access = accessForNewAgent(params, projectPath);
   const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
   const agents = await readAgents(projectPath);
-  await creationGit.getStore()?.assertCurrent();
+  await currentCreationGit()?.assertCurrent();
 
   // From here until the record is in the cache there is no await, so two
   // creations in this process cannot both claim the same folder or branch.
@@ -2323,6 +2423,7 @@ export async function beginDurableCreation(
   const startedAt = new Date().toISOString();
   const config: DurableAgentConfig = {
     id,
+    ...(currentCreationGit() && { repositoryImportCreation: { ...currentCreationGit()!.operation } }),
     name,
     color,
     ...(plan ? { branch: plan.branch, worktreePath: plan.wtPath, branchOwned: false } : {}),
@@ -2352,7 +2453,7 @@ export async function beginDurableCreation(
       stage: 'config_created',
       owner: { pid: process.pid, instanceId: INSTANCE_ID },
       heartbeatAt: startedAt,
-      ...(creationGit.getStore()?.preserveOnFailure && { preserveOnInterruption: true }),
+      ...(currentCreationGit()?.preserveOnFailure && { preserveOnInterruption: true }),
     },
   };
 
@@ -2397,9 +2498,20 @@ export async function beginDurableCreation(
  * empty folder. Returns true, or throws when the folder is taken.
  */
 async function claimAgentFolder(wtPath: string, folder: string): Promise<true> {
-  await ensureDir(path.dirname(wtPath));
+  const scope = currentCreationGit();
+  const parent = path.dirname(wtPath);
+  await ensureCreationDirectory(parent);
+  const identity = scope ? fs.lstatSync(parent) : undefined;
+  if (scope) await scope.assertCurrent();
   try {
-    await fsp.mkdir(wtPath);
+    if (scope) {
+      scope.assertConsent();
+      scope.assertFilesystem();
+      const current = fs.lstatSync(parent);
+      if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== identity!.dev || current.ino !== identity!.ino
+        || fs.realpathSync.native(parent) !== path.resolve(parent)) throw new Error('Imported worktree parent changed; no folder was created.');
+      fs.mkdirSync(wtPath);
+    } else await fsp.mkdir(wtPath);
   } catch (err) {
     // telemetry-exempt: rethrown below, typed for telemetry.
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
@@ -2453,12 +2565,13 @@ async function runDurableCreation(
     if (plan) {
       checkCancelled();
       const { wtPath, branch, branchFrom } = plan;
-      const hasGit = await isInsideGitRepo(projectPath);
+      const hasGit = await creationInsideGitRepo(projectPath);
       if (hasGit) {
         // Ensure repo has at least one commit (required for branching/worktrees)
         try {
           await execGitFileAsync(['rev-parse', 'HEAD'], projectPath);
-        } catch {
+        } catch (error) {
+          if (currentCreationGit()) throw error;
           // Empty repo with no commits — bootstrap with an initial commit
           // Include .gitignore which ensureGitignore() has already created/updated
           appLog('core:agent-config', 'info', 'Empty repository detected, creating initial commit for worktree support', {
@@ -2499,6 +2612,7 @@ async function runDurableCreation(
           branchStartSha = sha;
         } catch (err) {
           checkCancelled();
+          if (currentCreationGit()) throw err;
           if (plan.branchNamed || branchFrom !== undefined) {
             // Until there is an explicit adopt mode, a named or based branch must be new.
             throw tagError(new Error(`Could not create the branch "${branch}": ${errorMessage(err).trim()}. Choose a branch name that does not exist yet.`), 'validation');
@@ -2579,12 +2693,9 @@ async function runDurableCreation(
     return ready;
   } catch (err) {
     const cancelled = signal.aborted || err instanceof DurableCreationCancelledError;
-    if (creationGit.getStore()?.preserveOnFailure) {
+    if (currentCreationGit()?.preserveOnFailure) {
       const reason = 'Imported agent creation did not finish. Its record, partial worktree and branch are preserved for inspection. Do not repeat creation or delete user-modified content as recovery.';
-      const failed = await mutateAgentRecord(projectPath, id, (agent) => {
-        const { owner: _owner, heartbeatAt: _beat, ...rest } = agent.creation ?? { startedAt: initial.createdAt, state: 'failed' as const };
-        agent.creation = { ...rest, state: 'failed', stage: 'failed', reason, preserveOnInterruption: true };
-      }, { flush: true });
+      const failed = await preserveImportedCreationFailure(projectPath, id);
       emit('failed', failed ?? undefined, reason);
       throw err;
     }
@@ -2874,7 +2985,7 @@ async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfi
   const worktreePath = agent.worktreePath;
   if (!worktreePath) return;
   const agentId = agent.id;
-  const hasGit = await creationInsideGitRepo(projectPath);
+  const hasGit = await isInsideGitRepo(projectPath);
   if (hasGit) {
     try {
       await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', '--force', '--', worktreePath], projectPath));
@@ -3409,9 +3520,11 @@ async function setOrchestrationConfigInner(
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
+  await currentCreationGit()?.assertCurrent();
+  const before = currentCreationGit() ? cloneAgent(agent) : undefined;
   if (config && Object.keys(config).length > 0) agent.orchestration = { ...config };
   else delete agent.orchestration;
-  await writeAgents(projectPath, agents);
+  await writeCreationMutation(projectPath, agents, agent, before);
 }
 
 /**
@@ -3423,6 +3536,8 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
+  await currentCreationGit()?.assertCurrent();
+  const before = currentCreationGit() ? cloneAgent(agent) : undefined;
   const managedBefore = managedAuditFields(agent);
   if (setup) {
     // Switched once, by hand or on its own: never switched automatically again, even after Stop managing (D59).
@@ -3444,7 +3559,7 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
   } else {
     delete agent.managed;
   }
-  await writeAgents(projectPath, agents, activeCreations.get(agentId)?.deferWritesUntilReady);
+  await writeCreationMutation(projectPath, agents, agent, before, activeCreations.get(agentId)?.deferWritesUntilReady);
   await auditChanges('agent', 'agent', agentId, managedBefore, managedAuditFields(agent), MANAGED_AUDIT_CATALOG);
 }
 

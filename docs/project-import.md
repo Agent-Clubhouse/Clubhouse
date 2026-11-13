@@ -204,6 +204,28 @@ user-owned connection changes. The import receipt's `agentCreated: false` and
 separate builder outcome, and `wake_agent`/`get_status` report actual runtime
 start outcomes. Lifecycle receipts do not grant authority.
 
+App-owned project registration retains import membership before checkout effects,
+including partial destinations later registered through Add project. Positively
+registered ordinary projects do not read import history during agent creation;
+an unreadable import ledger cannot disable their existing builder. Ambiguous
+legacy registration still requires readable history, and registered import
+membership never falls back to ordinary creation on a ledger error.
+
+The imported builder uses the protected native Git adapter for its actual
+repository probe; a false/error result cannot bootstrap a commit or succeed as
+a plain folder. Canonical parent checks and exclusive worktree-folder creation
+have no asynchronous gap. Current exact consent, template/settings and permissions
+are checked after setup/settings/grant preparation and at commit boundaries.
+Invalidation preserves partial state without completing creation or publishing
+template permissions beyond the caller's revoked reach.
+
+A completed imported agent retains its operation association independently of
+the separate import ledger link. If that final link save fails, public results
+and status retain the actual agent id and distinguish completed creation from
+receipt-save failure. Once committed history is readable/writable, retry after
+restart reconciles that association without another builder run, connection
+restoration or wake.
+
 Fixtures use isolated local Git repositories and mocked authentication/approval
 boundaries, without private credentials, login probes or paid agent calls.
 Git serializes fixture configuration with exact value readbacks, including

@@ -18,6 +18,7 @@ import { isDispatcherAgent } from './dispatcher-gate';
 import type { ToolGrant } from './tool-grants';
 import type { McpToolResult } from './types';
 import { bindingManager } from './binding-manager';
+import { ImportAgentReceiptError } from '../project-import/types';
 
 const TOOL = 'create_managed_agent';
 const json = (value: object, isError = false): McpToolResult => ({
@@ -99,6 +100,7 @@ export async function createDispatcherManagedAgent(
       }
       await scoped?.assertCurrent();
       config = await create();
+      await scoped?.assertCurrent();
       if (connect) {
         const created = config;
         const targetId = created.id;
@@ -154,13 +156,16 @@ export async function createDispatcherManagedAgent(
       if (connect) completed.set(key, { result, config, payload, receiptId });
       return result;
     } catch (err) {
+      const receiptFailure = err instanceof ImportAgentReceiptError;
+      if (receiptFailure) config = err.config;
       audit(err instanceof BootstrapRefused ? 'refused' : 'error', config?.id, 'bootstrap_failed');
       if (scoped) return json({
         ...extra, status: 'partial', agentCreated: config ? true : 'not_confirmed', agentStarted: false,
-        reason: config ? 'agent_connection_failed' : 'agent_creation_failed',
-        connectedToDispatcher: 'not_confirmed',
+        ...(config && { id: config.id, name: config.name }),
+        reason: receiptFailure ? err.reason : config ? 'agent_connection_failed' : 'agent_creation_failed',
+        connectedToDispatcher: receiptFailure ? false : 'not_confirmed',
         receipt: { id: receiptId, outcome: 'partial', ...(config && { agentId: config.id }) },
-        error: 'The separate imported-agent creation/connection did not fully finish. The project and any agent, worktree, branch or connection switches are preserved for inspection. Do not repeat creation or silently undo user changes; reuse the existing agent and inspect its connection before a separately authorized wake.',
+        error: receiptFailure ? err.message : 'The separate imported-agent creation/connection did not fully finish. The project and any agent, worktree, branch or connection switches are preserved for inspection. Do not repeat creation or silently undo user changes; reuse the existing agent and inspect its connection before a separately authorized wake.',
       }, true);
       if (!connect) throw err;
       const cleanup: unknown[] = [];

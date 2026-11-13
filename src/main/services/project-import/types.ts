@@ -21,6 +21,16 @@ export class ImportError extends Error {
   }
 }
 
+export class ImportAgentReceiptError extends ImportError {
+  constructor(
+    public readonly importId: string,
+    public readonly projectId: string,
+    public readonly config: import('../../../shared/types').DurableAgentConfig,
+  ) {
+    super('agent_receipt_save_failed', 'The agent was created and remains asleep, but its creation receipt could not be saved. Its durable operation association is retained. Reuse this agent id; retry only receipt reconciliation, never creation or connection restoration.');
+  }
+}
+
 export const ACTIVE_PHASES: ReadonlySet<ImportPhase> = new Set([
   'reserved', 'initializing', 'fetching', 'checking_out', 'cloned', 'registering',
 ]);
