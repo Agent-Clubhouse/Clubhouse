@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  inventory: vi.fn(), canvas: vi.fn(), remove: vi.fn(), purge: vi.fn(), begin: vi.fn(), finish: vi.fn(), pending: vi.fn(), exclusive: vi.fn(), exclusivePending: vi.fn(),
+  inventory: vi.fn(), canvas: vi.fn(), remove: vi.fn(), purge: vi.fn(), purgeActions: vi.fn(), begin: vi.fn(), finish: vi.fn(), pending: vi.fn(), exclusive: vi.fn(), exclusivePending: vi.fn(),
 }));
+vi.mock('./actions', () => ({ purgeGroupProjectActions: mocks.purgeActions }));
 vi.mock('./group-project-host', () => ({ groupProjectHost: { exclusive: mocks.exclusive, beginDelete: mocks.begin, finishDelete: mocks.finish, listPendingDeletes: mocks.pending, exclusivePending: mocks.exclusivePending } }));
 vi.mock('./group-project-delete-inventory', () => ({ readGroupProjectDeletionInventory: mocks.inventory }));
 vi.mock('./group-project-canvas-inventory', () => ({ readGroupProjectCanvasInventory: mocks.canvas, removeGroupProjectFromCanvasInventory: mocks.remove }));
@@ -20,6 +21,7 @@ beforeEach(() => {
   mocks.canvas.mockResolvedValue({ revision: 'canvas', entries: [] });
   mocks.remove.mockResolvedValue(undefined);
   mocks.purge.mockResolvedValue(undefined);
+  mocks.purgeActions.mockResolvedValue(undefined);
   mocks.begin.mockResolvedValue({});
   mocks.finish.mockResolvedValue({});
   mocks.pending.mockResolvedValue([]);
@@ -36,6 +38,8 @@ describe('local group project cascade', () => {
     expect(mocks.begin).toHaveBeenCalledBefore(mocks.remove);
     expect(tel.event).toHaveBeenCalledWith('clubhouse.group_project.deleted', []);
     expect(mocks.remove).toHaveBeenCalledBefore(mocks.finish);
+    expect(mocks.purgeActions).toHaveBeenCalledWith('gp');
+    expect(mocks.purgeActions).toHaveBeenCalledBefore(mocks.finish);
     expect(mocks.begin).toHaveBeenCalledWith('gp', { expectedSeq: 3, withinExclusive: true });
     expect(release).toHaveBeenCalledWith('gp');
   });
@@ -50,13 +54,14 @@ describe('local group project cascade', () => {
     expect(mocks.begin).not.toHaveBeenCalled();
     expect(release).not.toHaveBeenCalled();
   });
-  it.each(['canvas', 'guidance', 'bindings', 'finish'] as const)('recovers after %s fails following the tombstone', async (step) => {
+  it.each(['canvas', 'guidance', 'bindings', 'actions', 'finish'] as const)('recovers after %s fails following the tombstone', async (step) => {
     let pending = false;
     let fail = true;
     mocks.begin.mockImplementation(async () => { pending = true; });
     mocks.pending.mockImplementation(async () => pending ? [{ groupProjectId: 'gp' }] : []);
     mocks.remove.mockImplementation(async () => { if (step === 'canvas' && fail) { fail = false; throw new Error(step); } });
     mocks.purge.mockImplementation(async () => { if (step === 'guidance' && fail) { fail = false; throw new Error(step); } });
+    mocks.purgeActions.mockImplementation(async () => { if (step === 'actions' && fail) { fail = false; throw new Error(step); } });
     mocks.finish.mockImplementation(async () => { if (step === 'finish' && fail) { fail = false; throw new Error(step); } pending = false; });
     const release = vi.fn(() => { if (step === 'bindings' && fail) { fail = false; throw new Error(step); } });
     const service = createLocalGroupProjectDeleteService(release);

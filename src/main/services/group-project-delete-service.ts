@@ -20,6 +20,8 @@ export function createLocalGroupProjectDeleteService(releaseBindings: (id: strin
     // Lead and admin grants on it (#3360): the agent grants store, not a host write; safe to rerun.
     await purgeGroupProjectRoles(id);
     releaseBindings(id);
+    const { purgeGroupProjectActions } = await import('./actions');
+    await purgeGroupProjectActions(id);
     await journal.finishDelete(id, { withinExclusive: true });
   };
   const service = createGroupProjectDeletionService({
