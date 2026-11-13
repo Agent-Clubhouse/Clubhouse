@@ -7,6 +7,7 @@ import { federationReceiver } from '../services/dispatcher-federation-receiver';
 import { parseAgentAddress } from '../../shared/agent-address';
 import { federationBindingSource, learnFederationController, localFederationController, watchFederation } from '../services/dispatcher-federation';
 import { learnLeadShare, leadShare, startDispatcherLead } from '../services/dispatcher-federation-lead';
+import { watchDispatcherPresence } from '../services/dispatcher-presence';
 import { federationDirection } from '../services/dispatcher-federation-policy';
 import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
@@ -481,6 +482,7 @@ let stopWatchingDispatcherConnections: (() => void) | null = null;
 let stopFederatedRequests: (() => void) | undefined;
 let stopWatchingFederation: (() => void) | null = null;
 let stopDispatcherLead: (() => void) | null = null;
+let stopWatchingDispatcherPresence: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
 
 /**
@@ -541,6 +543,8 @@ export function restorePersistedBindings(): Promise<void> {
       connected: (machine) => annexClient.isMachineConnected(machine),
     });
     startHandoffs();
+    // Other computers' Dispatchers (#3349): one read-only snapshot, recomputed when its sources change.
+    stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.isMachineConnected(machine));
     startAgentCalls({
       remoteDispatcher: federationReceiver,
       federation: {
@@ -610,6 +614,8 @@ export function _resetHandlersForTesting(): void {
   stopDispatcherLead = null;
   stopWatchingCardConnections?.();
   stopWatchingCardConnections = null;
+  stopWatchingDispatcherPresence?.();
+  stopWatchingDispatcherPresence = null;
   stopWatchingHelperWires?.();
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();
