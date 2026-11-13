@@ -46,6 +46,8 @@ vi.stubGlobal('clubhouse', {
   project: {
     onChanged: () => noop,
     list: async () => [],
+    listImports: async () => ({ ok: true, value: [] }),
+    cancelImport: async () => ({ ok: false, reason: 'import_not_found', message: 'No import was found.' }),
     add: asyncNoop,
     remove: asyncNoop,
     pickDirectory: async () => null,

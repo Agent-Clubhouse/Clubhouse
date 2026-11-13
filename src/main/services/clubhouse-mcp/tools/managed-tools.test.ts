@@ -22,6 +22,9 @@ const state = vi.hoisted(() => ({
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base } }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../project-import/service', () => ({
+  projectImportService: { importForProject: vi.fn(async () => undefined) },
+}));
 vi.mock('../../agent-system', async (original) => ({
   ...await original<typeof import('../../agent-system')>(),
   resolveOrchestrator: vi.fn(async (_projectPath: string, cli?: string) => ({

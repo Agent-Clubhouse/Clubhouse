@@ -10,6 +10,7 @@ import { describeGrantRequest, grantRequestAllowEffect, type GrantRequest } from
 import { Button } from '../../components/Button';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { grantRequestsFor, useGrantRequestStore } from '../../stores/grantRequestStore';
+import { ImportAgentReview, ImportReview } from '../projects/ImportReview';
 
 export function GrantRequestList({ agentId, agentName, onAnswered }: {
   agentId: string;
@@ -49,6 +50,8 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
         <li key={r.requestId} className="flex flex-col gap-1.5 text-[13px]" data-testid={`grant-request-${r.requestId}`}>
           <p className="text-ctp-text">{describeGrantRequest(r)}</p>
           {r.reason && <p className="text-ctp-subtext1">Its reason: {r.reason}</p>}
+          {r.importReview && <ImportReview plan={r.importReview} />}
+          {r.agentReview && <ImportAgentReview review={r.agentReview} />}
           {r.details && (
             <pre className="max-h-40 overflow-auto rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words">{r.details}</pre>
           )}

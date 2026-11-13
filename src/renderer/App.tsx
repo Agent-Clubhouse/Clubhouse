@@ -40,6 +40,7 @@ import { useChromeFlagStore } from './chrome/chromeFlag';
 import { useChromeStore } from './chrome/chromeStore';
 import { ChromeTitleBar } from './chrome/ChromeTitleBar';
 import { ChromeBody } from './chrome/ChromeBody';
+import { RepositoryImports } from './features/projects/RepositoryImports';
 
 export function App() {
   // ── Routing state (minimal selectors for view switching) ────────────────
@@ -296,6 +297,7 @@ export function App() {
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
+        <RepositoryImports />
       </div>
     );
   }
@@ -330,6 +332,7 @@ export function App() {
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
+        <RepositoryImports />
       </div>
     );
   }
@@ -383,6 +386,7 @@ export function App() {
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
+        <RepositoryImports />
       </div>
     );
   }
@@ -415,6 +419,7 @@ export function App() {
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
+        <RepositoryImports />
       </div>
     );
   }
@@ -447,6 +452,7 @@ export function App() {
       <FeedbackDialogHost />
       <FilePreviewHost />
       <ToastContainer />
+      <RepositoryImports />
     </div>
   );
 }

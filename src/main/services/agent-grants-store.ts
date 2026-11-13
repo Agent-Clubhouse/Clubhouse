@@ -10,7 +10,7 @@
  * can edit this file too, though it is read only at app start.
  */
 
-import { createSettingsStore } from './settings-store';
+import { createSettingsStore, type SettingsCommitPrecondition } from './settings-store';
 import { normalizeGrantChanges, type AgentGrantChanges } from '../../shared/agent-grant-changes';
 import { notifyToolGateChange } from './clubhouse-mcp/orchestration-gate';
 
@@ -32,6 +32,7 @@ export function getAgentGrantChanges(agentId: string): AgentGrantChanges | undef
 export async function updateAgentGrantChanges(
   agentId: string,
   fn: (current: AgentGrantChanges | undefined) => AgentGrantChanges | undefined,
+  precondition?: SettingsCommitPrecondition,
 ): Promise<AgentGrantChanges | undefined> {
   let next: AgentGrantChanges | undefined;
   await store.update((file) => {
@@ -41,7 +42,7 @@ export async function updateAgentGrantChanges(
     if (next) agents[agentId] = next;
     else delete agents[agentId];
     return { agents };
-  });
+  }, precondition);
   // The next call is checked against it; the CLI lists its tools again.
   notifyToolGateChange(agentId);
   return next;

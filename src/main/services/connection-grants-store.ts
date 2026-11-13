@@ -33,7 +33,7 @@
 import {
   NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
 } from '../../shared/connection-grants';
-import { createSettingsStore, peekStoredSettingsSync } from './settings-store';
+import { createSettingsStore, peekStoredSettingsSync, type SettingsCommitPrecondition } from './settings-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { appLog } from './log-service';
 
@@ -203,7 +203,7 @@ export interface DirectionToolsChange {
 export async function setConnectionDirections(
   changes: readonly DirectionToolsChange[],
   guard: (current: ConnectionDirection | undefined, change: DirectionToolsChange) => void | false,
-  options: { agentId?: string } = {},
+  options: { agentId?: string; precondition?: SettingsCommitPrecondition } = {},
 ): Promise<ConnectionDirection[]> {
   if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
   let written: ConnectionDirection[] = [];
@@ -223,7 +223,7 @@ export async function setConnectionDirections(
     const keys = new Set(next.map((d) => directionKey(d.from, d.to)));
     written = next;
     return { ...file, version: CONNECTION_GRANTS_VERSION, directions: [...list.filter((d) => !keys.has(directionKey(d.from, d.to))), ...next] };
-  });
+  }, options.precondition);
   for (const d of written) {
     for (const listener of [...listeners]) {
       try {

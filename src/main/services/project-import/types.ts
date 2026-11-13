@@ -5,50 +5,8 @@ export const IMPORT_EFFECTS = [
   'Do not create, connect, configure or start an agent.',
 ] as const;
 
-export interface ImportInput {
-  url: string;
-  destination: string;
-  branch?: string;
-}
-
-export interface RemoteIdentity {
-  url: string;
-  defaultBranch: string;
-  branch: string;
-  commit: string;
-  headCommit: string;
-}
-
-export interface ImportPlan extends RemoteIdentity {
-  id: string;
-  agentId: string;
-  destination: string;
-  parent: string;
-  parentIdentity: string;
-  createdAt: number;
-  expiresAt: number;
-  effects: readonly string[];
-}
-
-export type ImportPhase = 'reserved' | 'initializing' | 'fetching' | 'checking_out' | 'cloned' | 'registering'
-  | 'completed' | 'partial' | 'cancelled' | 'interrupted' | 'failed';
-
-export interface ImportReceipt {
-  id: string;
-  plan: ImportPlan;
-  phase: ImportPhase;
-  updatedAt: number;
-  /** Filesystem identity of the directory created exclusively for this import. */
-  directoryIdentity?: string;
-  cloneCompleted: boolean;
-  projectId?: string;
-  gitignore?: 'updated' | 'unchanged' | 'failed';
-  reason?: string;
-  failedAt?: ImportPhase;
-  progress?: number;
-  agentCreated: false;
-  agentStarted: false;
-}
+import type { ImportPhase, ImportPlan, ImportReceipt } from '../../../shared/project-import';
+export type { ImportInput, RemoteIdentity, ImportPlan, ImportPhase, ImportReceipt, ImportStatus } from '../../../shared/project-import';
 
 export interface ImportState {
   version: 1;
@@ -60,6 +18,16 @@ export class ImportError extends Error {
   constructor(public readonly reason: string, message: string) {
     super(message);
     this.name = 'ImportError';
+  }
+}
+
+export class ImportAgentReceiptError extends ImportError {
+  constructor(
+    public readonly importId: string,
+    public readonly projectId: string,
+    public readonly config: import('../../../shared/types').DurableAgentConfig,
+  ) {
+    super('agent_receipt_save_failed', 'The agent was created and remains asleep, but its creation receipt could not be saved. Its durable operation association is retained. Reuse this agent id; retry only receipt reconciliation, never creation or connection restoration.');
   }
 }
 

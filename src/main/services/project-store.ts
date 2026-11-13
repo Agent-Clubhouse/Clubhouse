@@ -18,6 +18,14 @@ const CURRENT_VERSION = 1;
 interface ProjectStoreV1 {
   version: 1;
   projects: Project[];
+  ordinaryProjectIds?: string[];
+  repositoryImports?: RepositoryImportMembership[];
+}
+
+interface RepositoryImportMembership {
+  destination: string;
+  importId: string;
+  agentId: string;
 }
 
 async function getBaseDir(): Promise<string> {
@@ -316,7 +324,24 @@ function migrate(raw: unknown): MigrateResult {
     throw new InvalidStoreError(`All ${dropped} project entries are malformed`);
   }
   const { projects, merged } = mergeDuplicates(valid);
-  return { store: { version: CURRENT_VERSION, projects }, dropped, merged };
+  const source = !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  if (source.ordinaryProjectIds !== undefined && (!Array.isArray(source.ordinaryProjectIds)
+    || !source.ordinaryProjectIds.every((id) => typeof id === 'string'))) throw new InvalidStoreError('Invalid project registration membership');
+  if (source.repositoryImports !== undefined && (!Array.isArray(source.repositoryImports) || source.repositoryImports.length > 32
+    || !source.repositoryImports.every((entry: unknown) => {
+      if (!entry || typeof entry !== 'object') return false;
+      const value = entry as Record<string, unknown>;
+      return typeof value.destination === 'string' && path.isAbsolute(value.destination) && value.destination.length <= 4096
+        && typeof value.importId === 'string' && /^[a-f0-9-]{36}$/.test(value.importId)
+        && typeof value.agentId === 'string' && value.agentId.length > 0 && value.agentId.length <= 200;
+    }))) throw new InvalidStoreError('Invalid repository import membership');
+  return {
+    store: {
+      version: CURRENT_VERSION, projects,
+      ...(source.ordinaryProjectIds !== undefined && { ordinaryProjectIds: source.ordinaryProjectIds as string[] }),
+      ...(source.repositoryImports !== undefined && { repositoryImports: source.repositoryImports as RepositoryImportMembership[] }),
+    }, dropped, merged,
+  };
 }
 
 /**
@@ -546,10 +571,6 @@ async function readProjects(): Promise<Project[]> {
   return (await readStore()).projects;
 }
 
-async function writeProjects(projects: Project[]): Promise<void> {
-  await writeStore({ version: CURRENT_VERSION, projects });
-}
-
 type ProjectsChangeListener = () => void;
 const projectsChangeListeners = new Set<ProjectsChangeListener>();
 
@@ -585,11 +606,20 @@ let projectUpdateQueue: Promise<unknown> = Promise.resolve();
  */
 async function updateProjects(fn: (projects: Project[]) => Project[] | Promise<Project[]>): Promise<Project[]> {
   const run = async (): Promise<Project[]> => {
-    const projects = await readProjects();
+    const state = await readStore();
+    const projects = state.projects;
     const updated = await fn(projects);
     // The same list back means nothing changed (an add of a folder already registered).
     if (updated === projects) return updated;
-    await writeProjects(updated);
+    const ordinary = new Set(state.ordinaryProjectIds ?? []);
+    for (const project of updated) {
+      if (projects.some((p) => p.id === project.id)) continue;
+      const canonical = projectPathKey(await canonicalProjectPath(project.path));
+      if (!state.repositoryImports?.some((entry) => projectPathKey(entry.destination) === canonical)) ordinary.add(project.id);
+    }
+    await writeStore({
+      ...state, projects: updated, ordinaryProjectIds: [...ordinary].filter((id) => updated.some((p) => p.id === id)),
+    });
     notifyProjectsChanged();
     return updated;
   };
@@ -603,6 +633,43 @@ async function updateProjects(fn: (projects: Project[]) => Project[] | Promise<P
 
 export async function list(): Promise<Project[]> {
   return readProjects();
+}
+
+/** App-owned provenance, independent of the import operation ledger and repository files. */
+export async function projectImportMembership(project: Project): Promise<'ordinary' | RepositoryImportMembership | undefined> {
+  let parsed: MigrateResult;
+  try {
+    parsed = migrate(JSON.parse(await fsp.readFile(path.join(getBaseDirPath(), 'projects.json'), 'utf8')));
+  } catch {
+    throw new Error('Project registration membership is unavailable. Inspect app storage before creating an agent.');
+  }
+  if (parsed.dropped || parsed.merged.length || !parsed.store.projects.some((p) => p.id === project.id && p.path === project.path)) {
+    throw new Error('Project registration membership changed. Resolve the registered project again before creating an agent.');
+  }
+  const canonical = projectPathKey(await canonicalProjectPath(project.path));
+  const imported = parsed.store.repositoryImports?.find((entry) => projectPathKey(entry.destination) === canonical);
+  if (imported) return imported;
+  return parsed.store.ordinaryProjectIds?.includes(project.id) ? 'ordinary' : undefined;
+}
+
+/** Reserve provenance before checkout effects, including partial destinations registered later through Add project. */
+export async function reserveRepositoryImport(destination: string, importId: string, agentId: string): Promise<void> {
+  await registryMutation(() => {
+    const run = async () => {
+      const state = await readStore();
+      const entries = state.repositoryImports ?? [];
+      const existing = entries.find((entry) => projectPathKey(entry.destination) === projectPathKey(destination));
+      if (existing) {
+        if (existing.importId === importId && existing.agentId === agentId) return;
+        throw new Error('This destination already belongs to a repository import. Inspect its existing outcome.');
+      }
+      if (entries.length >= 32) throw new Error('Repository import membership is full. Existing import outcomes were preserved.');
+      await writeStore({ ...state, repositoryImports: [...entries, { destination, importId, agentId }] });
+    };
+    const next = projectUpdateQueue.then(run, run);
+    projectUpdateQueue = next.then((): void => undefined, (): void => undefined);
+    return next;
+  });
 }
 
 /**

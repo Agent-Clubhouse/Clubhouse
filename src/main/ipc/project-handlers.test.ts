@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
+vi.mock('./project-import-handlers', () => ({ registerProjectImportHandlers: vi.fn() }));
+
 vi.mock('electron', () => {
   const mockWin = {
     id: 1,

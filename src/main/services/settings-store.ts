@@ -5,9 +5,14 @@ import { persist } from '../telemetry/persist';
 
 export interface SettingsStore<T> {
   get(): T;
-  save(settings: T): Promise<void>;
+  save(settings: T, precondition?: SettingsCommitPrecondition): Promise<void>;
   /** Sequential read-modify-write: reads the current value, applies `fn`, saves, and returns the updated value. */
-  update(fn: (current: T) => T): Promise<T>;
+  update(fn: (current: T) => T, precondition?: SettingsCommitPrecondition): Promise<T>;
+}
+
+export interface SettingsCommitPrecondition {
+  prepare(): Promise<void>;
+  check(): void;
 }
 
 const settingsStoreResetters = new Set<() => void>();
@@ -147,8 +152,9 @@ const tempPrefix = (filePath: string): string => `${filePath}.tmp-`;
 const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
 const RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800, 1500];
 
-async function renameOver(from: string, to: string): Promise<void> {
+async function renameOver(from: string, to: string, precondition?: SettingsCommitPrecondition): Promise<void> {
   for (let attempt = 0; ; attempt++) {
+    if (precondition) { await precondition.prepare(); precondition.check(); }
     try {
       await fs.promises.rename(from, to);
       return;
@@ -176,10 +182,13 @@ async function existingMode(filePath: string): Promise<number | undefined> {
  * it over `filePath`. The flush keeps a power loss from committing the rename
  * before the data. The replacement gets `mode`, or the old file's permissions.
  */
-export async function replaceFile(filePath: string, body: string, mode: number | undefined): Promise<void> {
+export async function replaceFile(
+  filePath: string, body: string, mode: number | undefined, precondition?: SettingsCommitPrecondition,
+): Promise<void> {
   const tmp = `${tempPrefix(filePath)}${process.pid}-${++tempFileCounter}`;
   const keep = mode ?? (process.platform === 'win32' ? undefined : await existingMode(filePath));
   try {
+    if (precondition) { await precondition.prepare(); precondition.check(); }
     const handle = await fs.promises.open(tmp, 'w', keep ?? 0o666);
     try {
       await handle.writeFile(body, 'utf-8');
@@ -189,7 +198,7 @@ export async function replaceFile(filePath: string, body: string, mode: number |
     }
     // The create mode is subject to the umask. No-op on Windows, where POSIX modes don't apply.
     if (keep != null && process.platform !== 'win32') await fs.promises.chmod(tmp, keep);
-    await renameOver(tmp, filePath);
+    await renameOver(tmp, filePath, precondition);
   } catch (err) {
     await fs.promises.rm(tmp, { force: true }).catch((): void => undefined);
     throw err;
@@ -299,7 +308,7 @@ export function createSettingsStore<T>(
     }
   }
 
-  function queueWrite(settings: T): Promise<void> {
+  function queueWrite(settings: T, precondition?: SettingsCommitPrecondition): Promise<void> {
     const snapshot = cloneSettings(settings);
     const serialized = JSON.stringify(snapshot, null, 2);
     const filePath = getFilePath();
@@ -310,8 +319,9 @@ export function createSettingsStore<T>(
         console.warn(`[settings-store] Previous write to ${filename} failed:`, err instanceof Error ? err.message : err);
       })
       .then(() => persist.timed('settings', async () => {
+        if (precondition) { await precondition.prepare(); precondition.check(); }
         if (options?.atomic) {
-          await replaceFile(filePath, serialized, options.mode);
+          await replaceFile(filePath, serialized, options.mode, precondition);
           return;
         }
         if (options?.mode == null) {
@@ -367,13 +377,14 @@ export function createSettingsStore<T>(
       }
       return Object.freeze(cachedSettings!) as T;
     },
-    save(settings: T) {
+    save(settings: T, precondition?: SettingsCommitPrecondition) {
+      precondition?.check();
       const before = auditSnapshot();
-      const previous = options?.rollBackFailedSaves ? store.get() : undefined;
+      const previous = options?.rollBackFailedSaves || precondition ? store.get() : undefined;
       const attempted = cloneSettings(settings);
       cachedSettings = attempted;
       cacheLoaded = true;
-      const queued = queueWrite(attempted);
+      const queued = queueWrite(attempted, precondition);
       const written = previous === undefined ? queued : queued.catch((err) => {
         // Unless something newer has replaced it since.
         if (cachedSettings === attempted) cachedSettings = previous;
@@ -385,11 +396,12 @@ export function createSettingsStore<T>(
       void written.then(() => reportAudit(before, after), (): void => undefined);
       return written;
     },
-    update(fn: (current: T) => T): Promise<T> {
-      const result = updateLock.catch(() => {}).then((): Promise<T> => {
+    update(fn: (current: T) => T, precondition?: SettingsCommitPrecondition): Promise<T> {
+      const result = updateLock.catch(() => {}).then(async (): Promise<T> => {
+        if (precondition) { await precondition.prepare(); precondition.check(); }
         const current = store.get();
         const updated = fn(current);
-        return store.save(updated).then(() => cloneSettings(updated));
+        return store.save(updated, precondition).then(() => cloneSettings(updated));
       });
       updateLock = result;
       return result;

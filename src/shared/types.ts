@@ -291,6 +291,13 @@ export interface SessionInfo {
 
 export interface DurableAgentConfig {
   id: string;
+  /** Recovery association, not authority: retained after an imported builder finishes. */
+  repositoryImportCreation?: {
+    importId: string;
+    requestId: string;
+    key: string;
+    state: 'creating' | 'completed' | 'failed';
+  };
   name: string;
   color: string;
   icon?: string;        // filename in ~/.clubhouse/agent-icons/
@@ -645,6 +652,8 @@ export interface DurableAgentCreation {
   owner?: { pid: number; instanceId: string };
   /** Refreshed while the creation runs; a creation whose owner stopped beating is treated as interrupted. */
   heartbeatAt?: string;
+  /** Imported-agent creation preserves partial/user-modified state on failure and restart. */
+  preserveOnInterruption?: true;
 }
 
 /**

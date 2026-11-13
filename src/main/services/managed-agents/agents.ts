@@ -63,6 +63,8 @@ export interface CreateManagedAgentInput {
   managed?: false;
   /** A Clubhouse MCP creation must use its separately authorized bootstrap. */
   deferDispatcherConnection?: true;
+  /** Import workflow recovery preserves partial state for inspection, never deletes it incidentally. */
+  preserveOnFailure?: true;
 }
 
 /**
@@ -70,6 +72,11 @@ export interface CreateManagedAgentInput {
  * anything is made; throws to refuse (D126: an agent never sets Access above its own).
  */
 export type NewAgentAccessCheck = (level: AccessLevel, from: 'settings' | 'template' | 'default') => void;
+
+export interface PreparedManagedCreation {
+  settings: ManagedTemplateSettings;
+  setup: Omit<ManagedAgentSetup, 'version'>;
+}
 
 /** The level a createDurable access argument gives, worked out as creation does: a level, a legacy on/off, or unset for the Default access. */
 function newAgentLevel(projectPath: string, access: boolean | AccessLevel | undefined): AccessLevel {
@@ -106,7 +113,10 @@ function createAgentRecord(projectPath: string, input: CreateManagedAgentInput, 
  * `null` puts one back to its default. The effort goes in the same write as
  * the CLI and model, after them, since a new model clears it.
  */
-export async function applyManagedSettings(projectPath: string, agentId: string, settings: ManagedTemplateSettings): Promise<void> {
+export async function applyManagedSettings(
+  projectPath: string, agentId: string, settings: ManagedTemplateSettings,
+  precondition?: import('../settings-store').SettingsCommitPrecondition,
+): Promise<void> {
   const updates: Parameters<typeof agentConfig.updateDurableConfig>[2] = {};
   if (settings.orchestrator !== undefined) updates.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) updates.model = settings.model;
@@ -121,11 +131,13 @@ export async function applyManagedSettings(projectPath: string, agentId: string,
     if (!result.ok) throw new ManagedError('invalid', result.message);
   }
   // The template's Clubhouse permissions (#2971), under the person's own changes.
-  if (settings.grants?.length) await applyTemplateGrants(agentId, settings.grants);
+  if (settings.grants?.length) {
+    if (precondition) await applyTemplateGrants(agentId, settings.grants, precondition);
+    else await applyTemplateGrants(agentId, settings.grants);
+  }
 }
 
-export async function createManagedAgent(projectPath: string, input: CreateManagedAgentInput, checkAccess?: NewAgentAccessCheck): Promise<DurableAgentConfig> {
-  if (input.managed === false) return createPlainAgent(projectPath, input, checkAccess);
+export async function prepareManagedAgentCreation(projectPath: string, input: CreateManagedAgentInput, checkAccess?: NewAgentAccessCheck): Promise<PreparedManagedCreation> {
   const service = managedAgents();
   const base = input.templateId ? await service.setupFromTemplate(input.templateId) : null;
   // The caller's own Access wins over the template's (#2761): a level it names, or a legacy on/off that keeps
@@ -144,6 +156,14 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
     : base?.setup ?? { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
   checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(input.settings) ? 'settings' : namesAccess(base?.settings) ? 'template' : 'default');
   settings.orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
+  return { settings, setup };
+}
+
+export async function createManagedAgent(projectPath: string, input: CreateManagedAgentInput, checkAccess?: NewAgentAccessCheck, prepared?: PreparedManagedCreation): Promise<DurableAgentConfig> {
+  if (input.managed === false) return createPlainAgent(projectPath, input, checkAccess);
+  const service = managedAgents();
+  const { settings, setup } = prepared ?? await prepareManagedAgentCreation(projectPath, input, checkAccess);
+  if (prepared) checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), 'settings');
   // Managed agents always get their own folder: a worktree in a git project, a plain folder otherwise.
   // Only the setup goes in it, delivered at start: never the project's legacy agent defaults (#3243).
   const config = await createAgentRecord(projectPath, input, settings);
@@ -157,10 +177,13 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
       ...(settings.helperTemplateId && { helperTemplateId: settings.helperTemplateId }),
       ...(settings.grants?.length && { grants: settings.grants }),
     };
-    if (Object.keys(rest).length > 0) await applyManagedSettings(projectPath, config.id, rest);
+    if (Object.keys(rest).length > 0) await applyManagedSettings(projectPath, config.id, rest,
+      input.preserveOnFailure ? agentConfig.durableCreationPrecondition() : undefined);
+    if (input.preserveOnFailure) await agentConfig.finishImportedCreation(projectPath, config.id);
   } catch (err) {
     // Leave no half-made agent: it has no setup, so remove it with the folder and branch it was just given.
-    await agentConfig.deleteDurable(projectPath, config.id).catch(() => {});
+    if (!input.preserveOnFailure) await agentConfig.deleteDurable(projectPath, config.id).catch(() => {});
+    else await agentConfig.preserveImportedCreationFailure(projectPath, config.id);
     throw err;
   }
   return (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;

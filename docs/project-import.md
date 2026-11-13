@@ -1,12 +1,11 @@
 # Bounded GitHub project import (#2808)
 
-This stage adds an internal main-process import engine and opt-in registration
-safety guards only. It registers no MCP tools, UI entry point or Dispatcher
-skill, and is **not user-accessible**. Gateway registration and genuine human
-approval integration require separate review. Any later import handler must
-remain fail-closed with `approval_boundary_unavailable` until that boundary is
-approved. `add_project` still only registers an existing local folder; it is not
-a cloner.
+The Dispatcher exposes the existing bounded main-process importer through
+`preview_repository_import`, `import_repository`, `get_repository_import` and
+`cancel_repository_import`. The app's Needs you list reviews the exact main-owned
+plan; Repository imports shows responsive progress, cancellation, real project
+ids and recovery. `add_project` still only registers an existing local folder;
+it is not a cloner. Import, agent creation and agent start are separate operations.
 
 The initial supported input is exactly `https://github.com/owner/repository`,
 optionally ending in `.git`, with an explicit absolute **new** destination and an
@@ -30,9 +29,40 @@ approval of the immutable server plan, including repository, canonical path,
 parent identity, default/selected branch and commit, and actual effects. A generic
 Allow grant or model/repository text cannot substitute. Inputs, placement, access
 and remote metadata are revalidated around approval and before exclusive target
-creation. This engine-only stage exposes no effect handler and does not adopt
-approval activation. A later gateway must remain explicitly fail-closed until
-the separately reviewed original-scope human-approval boundary is integrated.
+creation. The public gateway always asks, including in Allow mode, through the
+existing scoped one-time Needs you request. Only the real user-only IPC answer or
+an authorized controlling device's `grant.answer` supplies that answer. A legacy
+key-only approval cannot approve an import. No permission setting is changed.
+The main-only scope binds the complete immutable plan, caller registration and
+nonce, access, policy, target and approval revision; a changed caller, grant,
+parent, tip, branch, plan or destination requires renewed review. The ledger is
+never an approval source, and model text/tokens are not accepted as authority.
+
+## Public workflow
+
+1. The user names an HTTPS GitHub repository and exact new absolute destination
+   with an existing parent. `preview_repository_import` checks authorized access,
+   actual branches/tips and placement and reports `ready`, an existing project
+   for explicit open/reuse, or an existing owned import receipt. It creates no
+   checkout, project or agent.
+2. `import_repository` takes only that caller's `planId` and exact canonical
+   `destination`. Its first call places the full immutable review in Needs you:
+   repository, parent/path/identity, advertised default branch and tip, selected
+   branch and commit, expiry and effects. Allow is one use, not a lasting grant.
+   The Dispatcher repeats the exact call only after the genuine answer.
+3. Start returns immediately with an owned receipt. `get_repository_import`
+   reports phase/numeric progress; `cancel_repository_import` additionally
+   requires its exact destination. User-only typed IPC exposes the same receipts
+   and exact cancellation to Repository imports. Cancellation never deletes.
+4. A real registered project id enables a separate `create_managed_agent` with
+   the owned `importId`. Needs you shows the effective template/setup, CLI/model,
+   effort, access/Free Agent Mode, orchestration and connection choices. Decline
+   to choose differently with the Dispatcher. Import approval never creates an
+   agent. The builder leaves it asleep, and only a separately requested wake
+   under the existing wake/message grants starts it. Repository setup is not run.
+   The panel exposes receipt/project ids for recovery after lost conversation
+   context; an omitted builder `importId` reports that caller's owned lifecycle
+   id, not authority. The exact creation still needs its own human review.
 
 Import downloads a shallow single-branch checkout into its exclusively created
 directory, then calls the same `registerProjectFolder` path as the app and
@@ -42,9 +72,17 @@ registration, managed-agent creation and agent start are separate outcomes.
 Import never creates/connects an agent or changes its authority.
 
 After registration, a requested durable agent uses `list_agent_templates` and
-`create_managed_agent` with the user's effective provider/model/access/template
-choices, including Free Agent Mode and orchestration. It remains asleep until a
-separately authorized `wake_agent`.
+`create_managed_agent` with `importId` and the user's effective
+CLI/model/access/template choices, including Free Agent Mode and orchestration.
+The gateway reuses the managed builder and bootstrap; it does not add a creation
+engine. Template/settings changes invalidate the exact creation review. Access
+and template grants remain capped to the caller; a connection requires its
+existing separate `connection.bootstrap` authorization. A template cannot
+implicitly connect it. It remains asleep until a separately authorized
+`wake_agent`; without a connection there is no promise of Dispatcher reach.
+The existing builder's Git operations retain the importer's native Git pin and
+inert configuration for this composition, so creating a worktree does not admit
+repository hooks/filters, injected PATH executables, setup or runtime delivery.
 
 ## Process and content safety
 
@@ -151,6 +189,54 @@ downloads stay at their recorded destination for inspection; choose another new
 destination only explicitly. No recovery path resets, overwrites or deletes
 pre-existing or user-modified content.
 
+Each import can link one agent-creation outcome in the same bounded ledger.
+Before the existing builder runs it reserves an operation key/request id; a
+completed call returns the existing agent, including after app restart, without
+replaying creation or restoring a removed connection. Changed choices, a removed
+agent or an interrupted/failed reservation are explicit refusals with inspection
+and reuse choices, never blind retries. Omitting `importId` cannot bypass this
+workflow for an imported project. Additional agents remain explicit app
+operations. Imported-agent failure/interruption preserves its record, partial
+worktree/branch and user-modified content; ordinary builder recovery is unchanged.
+Agent creation/connection failures do not erase project registration or undo
+user-owned connection changes. The import receipt's `agentCreated: false` and
+`agentStarted: false` describe the import itself; `agentCreation` reports the
+separate builder outcome, and `wake_agent`/`get_status` report actual runtime
+start outcomes. Lifecycle receipts do not grant authority.
+
+App-owned project registration retains import membership before checkout effects,
+including partial destinations later registered through Add project. Positively
+registered ordinary projects do not read import history during agent creation;
+an unreadable import ledger cannot disable their existing builder. Ambiguous
+legacy registration still requires readable history, and registered import
+membership never falls back to ordinary creation on a ledger error.
+
+The imported builder uses the protected native Git adapter for its actual
+repository probe; a false/error result cannot bootstrap a commit or succeed as
+a plain folder. Canonical parent checks and exclusive worktree-folder creation
+have no asynchronous gap. Current exact consent, template/settings and permissions
+are checked after setup/settings/grant preparation and at commit boundaries.
+Invalidation preserves partial state without completing creation or publishing
+template permissions beyond the caller's revoked reach.
+
+A completed imported agent retains its operation association independently of
+the separate import ledger link. If that final link save fails, public results
+and status retain the actual agent id and distinguish completed creation from
+receipt-save failure. Once committed history is readable/writable, retry after
+restart reconciles that association without another builder run, connection
+restoration or wake.
+
+The same live import approval continues through separate connection bootstrap:
+queued direction writes, their atomic replacement, policy preparation/commit,
+and final connection inspection all recheck the original caller and consent.
+Invalidation reports a partial connection outcome without undoing already
+committed or user-owned switches. No agent is started.
+
+Agent-record backups also recheck owned record storage immediately before their
+temporary write and rename. A replaced `.clubhouse` stops remaining backup effects.
+A blocked backup reports the already-committed main record honestly, without
+rolling it back in memory, overwriting outside files or unsafe cleanup.
+
 Fixtures use isolated local Git repositories and mocked authentication/approval
 boundaries, without private credentials, login probes or paid agent calls.
 Git serializes fixture configuration with exact value readbacks, including
@@ -158,6 +244,13 @@ Windows backslashes. Runtime-name fixtures use real Git objects/refs without
 requiring host worktree spelling, checking exact trees/payloads and trunk/tips.
 Native macOS results and modeled Windows path/config controls do not establish
 native Windows success.
+Public composition tests call the actual startup-registered MCP catalog,
+Needs you/user-only answer seam and controlling-device answer seam, real bounded
+Git checkout/registration, managed template/builder and persistent retry link.
+The renderer tests review/progress/cancel/choice surfaces. Access/provider
+availability and the wake runtime boundary are deterministic stubs: no live
+private credentials, provider/model execution, local Electron/browser/E2E or
+paid prompts are evidence for this workflow.
 The entry-limit fixture uses stream-mocked directory enumeration over one owned
 real file: the real walker counts 20,000 entries and reads/hashes their bytes,
 then rejects entry 20,001 before file opens. Separate real-filesystem fixtures

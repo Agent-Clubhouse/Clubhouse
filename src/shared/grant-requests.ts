@@ -38,6 +38,9 @@ export interface GrantRequest {
   reason?: string;
   /** Update requests need an explicit restart choice, never a generic Allow. */
   update?: import('./app-update').AppUpdateApproval;
+  /** Main-generated exact review, never supplied by a model as approval. */
+  importReview?: import('./project-import').ImportPlan;
+  agentReview?: import('./project-import').ImportedAgentReview;
   createdAt: string;
   expiresAt: string;
 }

@@ -6,7 +6,7 @@
  */
 
 import { GRANT_ACTION_LABELS } from '../../../shared/agent-grant-changes';
-import { GRANT_REQUEST_DETAILS_MAX, GRANT_REQUEST_REASON_MAX } from '../../../shared/grant-requests';
+import { GRANT_REQUEST_DETAILS_MAX, GRANT_REQUEST_REASON_MAX, type GrantRequest } from '../../../shared/grant-requests';
 import { getDurableConfig } from '../agent-config';
 import { agentRegistry } from '../agent-registry';
 import { callKey, consumeCallApprovalScope, recordGrantRequest, type CallApprovalScope, type ConsumedCallApproval } from '../grant-requests';
@@ -59,7 +59,7 @@ export type AskFirstOutcome =
   /** Not yet: tell the agent this. `created`: a new request went to Needs you (only then is it recorded, #2973). */
   | { kind: 'asked'; text: string; created?: boolean };
 
-export async function askFirst(agentId: string, toolName: string, args: Record<string, unknown>, asks: AskedAction[], context?: string): Promise<AskFirstOutcome> {
+export async function askFirst(agentId: string, toolName: string, args: Record<string, unknown>, asks: AskedAction[], context?: string, review?: Pick<GrantRequest, 'importReview' | 'agentReview'>): Promise<AskFirstOutcome> {
   const key = callKey(agentId, toolName, args);
   const scope: CallApprovalScope = { context: context ?? callKey(agentId, toolName, { args, asks }), asks: asks.map(({ action, where }) => ({ action, where })) };
   const approval = consumeCallApprovalScope(key);
@@ -88,6 +88,7 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
     toolName,
     ...(details && { details, ...described }),
     ...(reason && { reason }),
+    ...review,
   }, Date.now(), scope);
   if (recorded.ok === false) {
     return { kind: 'asked', text: `You already have ${recorded.waiting} requests waiting for the user. Wait for an answer before asking again.` };

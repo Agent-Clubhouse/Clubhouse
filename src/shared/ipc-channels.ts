@@ -107,6 +107,8 @@ export const IPC = {
     STATE_CHANGED: 'project:state-changed',
     /** main → renderer: the project list was written; windows re-read how projects look (#2597). */
     CHANGED: 'project:changed',
+    IMPORT_LIST: 'project:import-list',
+    IMPORT_CANCEL: 'project:import-cancel',
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',

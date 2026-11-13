@@ -45,6 +45,7 @@ const pending = new Map<string, Entry>();
 const answering = new Map<string, Entry>();
 /** One-time approvals of call requests, by call key, with when they lapse. */
 const approvals = new Map<string, { until: number; requestId: string; scope?: CallApprovalScope }>();
+const approvalVersions = new Map<string, number>();
 const listeners = new Set<Listener>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -206,7 +207,13 @@ export function listGrantRequests(now = Date.now()): GrantRequest[] {
 
 /** Drop an agent's one-time approvals: its permissions changed since the user gave them. */
 export function dropCallApprovalsFor(agentId: string): void {
+  approvalVersions.set(agentId, callApprovalVersion(agentId) + 1);
   for (const key of approvals.keys()) if (key.startsWith(`call\0${agentId}\0`)) approvals.delete(key);
+}
+
+/** Also invalidates an already consumed scoped approval at a later asynchronous effect boundary. */
+export function callApprovalVersion(agentId: string): number {
+  return approvalVersions.get(agentId) ?? 0;
 }
 
 /** Drop an agent's waiting requests and approvals (it was deleted). Returns their ids. */
@@ -233,5 +240,6 @@ export function _resetGrantRequestsForTesting(opts: { keepListeners?: boolean } 
   pending.clear();
   answering.clear();
   approvals.clear();
+  approvalVersions.clear();
   if (!opts.keepListeners) listeners.clear();
 }

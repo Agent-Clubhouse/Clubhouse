@@ -195,7 +195,7 @@ function fixture(sourceEnvironment = environment) {
     return { project, created: true, gitignore: 'updated' as const };
   });
   const listProjects = vi.fn(async () => projects);
-  const service = new ProjectImportService({ store, git: runner, listProjects, origin: async () => url, register });
+  const service = new ProjectImportService({ store, git: runner, listProjects, origin: async () => url, register, reserveMembership: vi.fn(async () => {}) });
   return { service, store, runner, register, source, destination, url, commit, work, listProjects };
 }
 
@@ -689,35 +689,52 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     expect(git(f.source, 'rev-parse', 'HEAD')).toBe(f.commit);
   });
 
-  it.each(['origin', 'HEAD', 'branch', 'gitignore'])('rechecks actual %s after the final registration authority await', async (changed) => {
-    const f = fixture();
-    let finalRemoteChecked = false;
-    let injected = false;
-    const original = f.runner.remote;
-    f.runner.remote = vi.fn(async (...args) => {
-      const result = await original(...args);
-      if ((await f.store.get()).receipts.some((receipt) => receipt.phase === 'registering')) finalRemoteChecked = true;
-      return result;
+  describe('final registration identity after prepared checkout', () => {
+    let f: ReturnType<typeof fixture>;
+    let receipt: ImportReceipt;
+    let marker: string;
+    let resume!: () => void;
+    let waiting: boolean;
+    beforeEach(async () => {
+      f = fixture();
+      waiting = false;
+      let finalRemoteChecked = false;
+      let arrived!: () => void;
+      const entered = new Promise<void>((resolve) => { arrived = resolve; });
+      const released = new Promise<void>((resolve) => { resume = resolve; });
+      lifetime.releases.push(() => { resume(); arrived(); });
+      const original = f.runner.remote;
+      f.runner.remote = vi.fn(async (...args) => {
+        const result = await original(...args);
+        if ((await f.store.get()).receipts.some((entry) => entry.phase === 'registering')) finalRemoteChecked = true;
+        return result;
+      });
+      marker = path.join(f.work, 'preserved-user-file');
+      fs.writeFileSync(marker, 'keep');
+      const approval: ImportAuthorization = async () => ({
+        kind: 'approved',
+        assertCurrent: async () => {
+          if (!finalRemoteChecked || waiting) return;
+          waiting = true;
+          arrived();
+          await released;
+        },
+      });
+      ({ receipt } = await start(f, approval));
+      await entered;
     });
-    const marker = path.join(f.work, 'preserved-user-file');
-    fs.writeFileSync(marker, 'keep');
-    const approval: ImportAuthorization = async () => ({
-      kind: 'approved',
-      assertCurrent: async () => {
-        if (!finalRemoteChecked || injected) return;
-        await Promise.resolve();
-        injected = true;
-        if (changed === 'origin') git(f.destination, 'remote', 'set-url', 'origin', 'https://github.com/example/other.git');
-        if (changed === 'HEAD') fs.writeFileSync(path.join(f.destination, '.git', 'HEAD'), `${f.commit}\n`);
-        if (changed === 'branch') fs.writeFileSync(path.join(f.destination, '.git', 'refs', 'heads', 'trunk'), `${'b'.repeat(40)}\n`);
-        if (changed === 'gitignore') fs.symlinkSync(marker, path.join(f.destination, '.gitignore'));
-      },
+
+    it.each(['origin', 'HEAD', 'branch', 'gitignore'])('rechecks actual %s after the final registration authority await', async (changed) => {
+      expect(waiting).toBe(true);
+      if (changed === 'origin') git(f.destination, 'remote', 'set-url', 'origin', 'https://github.com/example/other.git');
+      if (changed === 'HEAD') fs.writeFileSync(path.join(f.destination, '.git', 'HEAD'), `${f.commit}\n`);
+      if (changed === 'branch') fs.writeFileSync(path.join(f.destination, '.git', 'refs', 'heads', 'trunk'), `${'b'.repeat(40)}\n`);
+      if (changed === 'gitignore') fs.symlinkSync(marker, path.join(f.destination, '.gitignore'));
+      resume();
+      expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'partial', cloneCompleted: true, reason: changed === 'gitignore' ? 'unsafe_gitignore' : 'checkout_changed' });
+      expect(f.register).not.toHaveBeenCalled();
+      expect(fs.readFileSync(marker, 'utf8')).toBe('keep');
     });
-    const { receipt } = await start(f, approval);
-    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'partial', cloneCompleted: true, reason: changed === 'gitignore' ? 'unsafe_gitignore' : 'checkout_changed' });
-    expect(injected).toBe(true);
-    expect(f.register).not.toHaveBeenCalled();
-    expect(fs.readFileSync(marker, 'utf8')).toBe('keep');
   });
 
   it('honors cancellation while the final registration authority assertion is awaiting', async () => {

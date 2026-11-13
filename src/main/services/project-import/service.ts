@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
-import type { Project } from '../../../shared/types';
+import type { DurableAgentConfig, Project } from '../../../shared/types';
+import type { ImportStatus } from '../../../shared/project-import';
 import { checkProjectFolder, registerProjectFolder } from '../project-add';
 import * as projectStore from '../project-store';
 import { getOriginUrl } from '../git-service';
@@ -11,7 +12,7 @@ import { createImportGit, type ImportGit } from './git';
 import { checkoutFingerprint, protectedRuntimeName } from './checkout';
 import { ImportStore, IMPORT_HISTORY_MAX } from './store';
 import {
-  ACTIVE_PHASES, IMPORT_EFFECTS, ImportError, containsControlCharacters, directoryIdentity, validateGithubUrl, validateImportBranch,
+  ACTIVE_PHASES, IMPORT_EFFECTS, ImportAgentReceiptError, ImportError, containsControlCharacters, directoryIdentity, validateGithubUrl, validateImportBranch,
   type ImportInput, type ImportPlan, type ImportReceipt,
 } from './types';
 
@@ -119,6 +120,7 @@ interface Dependencies {
   listProjects: () => Promise<Project[]>;
   origin: (folder: string) => Promise<string | null>;
   register: typeof registerProjectFolder;
+  reserveMembership: typeof projectStore.reserveRepositoryImport;
 }
 
 function inside(child: string, parent: string): boolean {
@@ -139,11 +141,15 @@ export class ProjectImportService {
   private readonly deps: Dependencies;
   private readonly running = new Map<string, { controller: AbortController; receipt: ImportReceipt }>();
   private starting = false;
+  private readonly creatingAgents = new Map<string, { key: string; operation: Promise<DurableAgentConfig> }>();
+  /** Terminal in-memory failures stay visible even if the last ledger write failed. */
+  private readonly terminal = new Map<string, ImportReceipt>();
 
   constructor(deps: Partial<Dependencies> = {}) {
     this.deps = {
       store: new ImportStore(), git: createImportGit(), now: Date.now,
       listProjects: projectStore.list, origin: getOriginUrl, register: registerProjectFolder,
+      reserveMembership: projectStore.reserveRepositoryImport,
       ...deps,
     };
   }
@@ -238,6 +244,16 @@ export class ProjectImportService {
     await this.validateRemote(plan);
   }
 
+  private async assertPlanCurrent(plan: ImportPlan): Promise<void> {
+    const state = await this.deps.store.get();
+    const current = state.plans.find((p) => p.id === plan.id && p.agentId === plan.agentId);
+    if (!current || JSON.stringify(current) !== JSON.stringify(plan)
+      || state.receipts.some((r) => r.plan.id === plan.id && JSON.stringify(r.plan) !== JSON.stringify(plan))) {
+      throw new ImportError('plan_changed', 'The immutable main-process plan changed since review. Preview again and obtain new human approval; nothing further was attempted.');
+    }
+    if (this.deps.now() >= plan.expiresAt) throw new ImportError('plan_expired', 'The reviewed import expired. Inspect any preserved partial state before choosing a new preview.');
+  }
+
   async start(agentId: string, planId: string, destination: string, authorize: ImportAuthorization) {
     if (this.starting) throw new ImportError('import_busy', 'Another import is being validated. Wait for its result; no second checkout was started.');
     this.starting = true;
@@ -253,19 +269,33 @@ export class ProjectImportService {
       if (decision.kind !== 'approved') return { status: 'approval_required' as const, message: decision.text };
       // Approval never substitutes for current filesystem, access and remote-identity checks.
       await this.validate(plan);
+      await this.assertPlanCurrent(plan);
       await decision.assertCurrent();
       const receipt: ImportReceipt = {
         id: randomUUID(), plan, phase: 'reserved', updatedAt: this.deps.now(), cloneCompleted: false,
         agentCreated: false, agentStarted: false,
       };
       await this.deps.store.update((current) => {
+        if (JSON.stringify(current.plans.find((p) => p.id === plan.id)) !== JSON.stringify(plan)) throw new ImportError('plan_changed', 'The reviewed plan changed before reservation. Preview and approve again.');
         if (current.receipts.some((r) => r.plan.destination === destination)) throw new ImportError('destination_reserved', 'This destination already has an import receipt. Inspect/reuse that import; no duplicate checkout was started.');
         if (current.receipts.length >= IMPORT_HISTORY_MAX) throw new ImportError('history_limit', 'The bounded import history is full. Existing receipts and checkouts were preserved; no new checkout was started.');
         current.receipts.push(receipt);
       });
+      await this.deps.reserveMembership(destination, receipt.id, agentId);
       const controller = new AbortController();
       this.running.set(receipt.id, { controller, receipt });
-      void this.perform(receipt, controller, decision.assertCurrent).finally(() => { this.running.delete(receipt.id); });
+      const assertCurrent = async () => { await this.assertPlanCurrent(plan); await decision.assertCurrent(); };
+      void this.perform(receipt, controller, assertCurrent).catch(() => {
+        // telemetry-exempt: raw diagnostics stay private; status retains an honest terminal outcome.
+        receipt.failedAt = receipt.phase;
+        receipt.reason = 'operation_failed';
+        receipt.phase = receipt.cloneCompleted || receipt.projectId ? 'partial' : 'failed';
+        this.terminal.set(receipt.id, structuredClone(receipt));
+        appLog('core:project', 'warn', 'Import stopped outside its receipt boundary', { meta: { importId: receipt.id } });
+      }).finally(() => {
+        if (receipt.reason === 'history_unavailable') this.terminal.set(receipt.id, structuredClone(receipt));
+        this.running.delete(receipt.id);
+      });
       return { status: 'started' as const, receipt, message: 'Import is running. Read status for bounded progress or cancel this import id. Agent creation and start remain separate approvals.' };
     } finally {
       this.starting = false;
@@ -289,12 +319,16 @@ export class ProjectImportService {
     }
   }
 
-  private verifyOwned(receipt: ImportReceipt, initialized: boolean, seal?: GitSeal, expectedWrites?: ReadonlySet<string>): void {
+  private verifyOwnedDirectory(receipt: ImportReceipt): void {
     this.verifyParent(receipt.plan);
     const target = fs.lstatSync(receipt.plan.destination);
     if (target.isSymbolicLink() || !target.isDirectory() || directoryIdentity(target) !== receipt.directoryIdentity) {
       throw new ImportError('owned_directory_changed', 'The import directory or its parent was replaced. No further writes were attempted. Inspect the preserved state before reusing it.');
     }
+  }
+
+  private verifyOwned(receipt: ImportReceipt, initialized: boolean, seal?: GitSeal, expectedWrites?: ReadonlySet<string>): void {
+    this.verifyOwnedDirectory(receipt);
     const gitPath = path.join(receipt.plan.destination, '.git');
     const gitDir = fs.lstatSync(gitPath, { throwIfNoEntry: false });
     if ((!initialized && gitDir) || (initialized && (!gitDir || !gitDir.isDirectory() || gitDir.isSymbolicLink()))
@@ -399,6 +433,7 @@ export class ProjectImportService {
       if (currentPlacement.parentIdentity !== receipt.plan.parentIdentity || currentPlacement.destination !== destination) {
         throw new ImportError('placement_changed', 'The approved parent changed before directory creation. No checkout was started.');
       }
+      await this.validateRemote(receipt.plan, signal);
       await assertCurrent();
       signal.throwIfAborted();
       // No await separates the final canonical-parent check and exclusive creation.
@@ -462,6 +497,7 @@ export class ProjectImportService {
       receipt.gitignore = result.gitignore;
       if (signal.aborted) receipt.reason = 'cancelled';
       else if (result.gitignore === 'failed') receipt.reason = 'gitignore_failed';
+      if (signal.aborted || result.gitignore === 'failed') receipt.failedAt = 'registering';
       await this.save(receipt, signal.aborted || result.gitignore === 'failed' ? 'partial' : 'completed');
     } catch (error) {
       // telemetry-exempt: raw Git/credential/filesystem errors never leave this boundary.
@@ -480,12 +516,13 @@ export class ProjectImportService {
     }
   }
 
-  async status(agentId: string, importId: string) {
+  async status(agentId: string, importId: string): Promise<ImportStatus> {
     const active = this.running.get(importId);
-    const stored = active?.receipt ?? (await this.deps.store.get()).receipts.find((r) => r.id === importId);
+    const stored = active?.receipt ?? this.terminal.get(importId) ?? (await this.deps.store.get()).receipts.find((r) => r.id === importId);
     if (!stored || stored.plan.agentId !== agentId) throw new ImportError('import_not_found', 'No import with that id belongs to this caller.');
     const receipt = structuredClone(stored);
     if (!active && ACTIVE_PHASES.has(receipt.phase)) {
+      receipt.failedAt = receipt.phase;
       receipt.phase = 'interrupted';
       receipt.reason = 'app_interrupted';
       const project = (await this.deps.listProjects()).find((p) => projectStore.projectPathKey(p.path) === projectStore.projectPathKey(receipt.plan.destination));
@@ -495,8 +532,20 @@ export class ProjectImportService {
         receipt.phase = 'partial';
       }
     }
+    const unfinished = receipt.reason && receipt.reason !== 'git_failed'
+      ? `Import stopped at ${receipt.failedAt ?? receipt.phase} (${receipt.reason}). No unfinished operation was silently retried.`
+      : undefined;
     return {
       ...receipt,
+      ...(receipt.agentCreation && { agentRecovery: receipt.agentCreation.receiptSaved === false
+        ? `Agent ${receipt.agentCreation.agentId} was created, but its separate receipt save failed. Its durable association is retained. Reuse it; retry only receipt reconciliation, never creation or connection restoration.`
+        : receipt.agentCreation.phase === 'completed'
+        ? 'Reuse the existing agent id. Connections remain user-owned; creation retry never restores one. Starting is a separate requested and authorized wake, whose actual result comes from wake_agent/get_status.'
+        : 'Agent creation was reserved or failed. Inspect the project agents and preserved worktree/branch. Do not repeat creation, reset or delete user-modified files as recovery; any additional agent is an explicit user operation.' }),
+      ...(unfinished && { message: unfinished }),
+      ...(receipt.reason === 'history_unavailable' && {
+        message: 'The import receipt could not be saved at the reported stage. Completed files and project registration are preserved. Inspect and reuse them; no unfinished step was silently retried.',
+      }),
       ...(receipt.reason === 'git_failed' && {
         message: 'Restore existing authorized GitHub/Git credential-helper access outside agent messages and check connectivity/repository access. Never send tokens or passwords here.',
       }),
@@ -519,6 +568,207 @@ export class ProjectImportService {
     if (!active || !ACTIVE_PHASES.has(active.receipt.phase)) return { status: 'not_running' as const, receipt };
     active.controller.abort();
     return { status: 'cancellation_requested' as const, receipt, message: 'Cancellation targets only this import\'s tracked Git child. Read status for the final outcome; files and completed project registration are preserved.' };
+  }
+
+  async listForUser(): Promise<ImportStatus[]> {
+    const state = await this.deps.store.get();
+    return Promise.all(state.receipts.map((receipt) => this.status(receipt.plan.agentId, receipt.id)));
+  }
+
+  async cancelForUser(importId: string, destination: string) {
+    const receipt = (await this.deps.store.get()).receipts.find((r) => r.id === importId);
+    if (!receipt) throw new ImportError('import_not_found', 'The import receipt is no longer available. Inspect the preserved destination before trying again.');
+    return this.cancel(receipt.plan.agentId, importId, destination);
+  }
+
+  /** The builder uses a real registered project, not a model-provided project id or path. */
+  async importForProject(agentId: string, project: Project): Promise<string | undefined> {
+    const membership = await projectStore.projectImportMembership(project);
+    if (membership === 'ordinary') return undefined;
+    if (membership) {
+      if (membership.agentId !== agentId) throw new ImportError('import_owner_changed', 'This registered project belongs to another caller’s import workflow. Ask the user to inspect its existing outcomes.');
+      const receipt = (await this.deps.store.get()).receipts.find((r) => r.id === membership.importId && r.plan.agentId === agentId
+        && projectStore.projectPathKey(r.plan.destination) === projectStore.projectPathKey(membership.destination));
+      if (!receipt) throw new ImportError('import_not_found', 'Registered import membership has no readable matching receipt. Inspect app storage; ordinary creation cannot bypass its import review.');
+      return receipt.id;
+    }
+    const receipt = (await this.deps.store.get()).receipts.find((r) => r.projectId === project.id
+      || projectStore.projectPathKey(r.plan.destination) === projectStore.projectPathKey(project.path));
+    if (!receipt) return undefined;
+    if (receipt.plan.agentId !== agentId) throw new ImportError('import_owner_changed', 'This project belongs to another caller’s import workflow. Ask the user to inspect/reuse its existing project and agent outcomes.');
+    return receipt.id;
+  }
+
+  async projectForAgent(agentId: string, importId: string): Promise<Project> {
+    const receipt = await this.status(agentId, importId);
+    if (!receipt.projectId || ACTIVE_PHASES.has(receipt.phase)) {
+      throw new ImportError('project_not_registered', 'Import registration has not completed. Read its status; agent creation and start are separate and have not happened.');
+    }
+    const project = (await this.deps.listProjects()).find((p) => p.id === receipt.projectId);
+    if (!project || projectStore.projectPathKey(await projectStore.canonicalProjectPath(project.path))
+      !== projectStore.projectPathKey(receipt.plan.destination)) {
+      throw new ImportError('project_changed', 'The registered import project changed or was removed. Reuse/inspect it explicitly; no agent was created.');
+    }
+    this.verifyAgentFilesystem(receipt, project);
+    return project;
+  }
+
+  async agentFilesystemGuard(agentId: string, importId: string): Promise<(recordsOnly?: boolean) => void> {
+    const receipt = await this.status(agentId, importId);
+    const project = await this.projectForAgent(agentId, importId);
+    const directories = new Map<string, string>();
+    return (recordsOnly = false) => {
+      this.verifyAgentFilesystem(receipt, project, recordsOnly);
+      for (const relative of recordsOnly ? ['.clubhouse'] : ['.clubhouse', '.clubhouse/agents']) {
+        const stat = fs.lstatSync(path.join(project.path, relative), { throwIfNoEntry: false });
+        const identity = stat && directoryIdentity(stat);
+        const previous = directories.get(relative);
+        if (previous && identity !== previous) throw new ImportError('agent_directory_changed', 'Owned Clubhouse agent storage was replaced. No further writes were attempted; inspect the preserved state.');
+        if (identity) directories.set(relative, identity);
+      }
+    };
+  }
+
+  private verifyAgentFilesystem(receipt: ImportReceipt, project: Project, recordsOnly = false): void {
+    this.verifyParent(receipt.plan);
+    if (recordsOnly) this.verifyOwnedDirectory(receipt);
+    else this.verifyOwned(receipt, true);
+    if (!recordsOnly) inspectConfig(receipt.plan.destination, receipt.plan.url);
+    for (const directory of recordsOnly ? ['.clubhouse'] : ['.clubhouse', '.clubhouse/agents']) {
+      const stat = fs.lstatSync(path.join(project.path, directory), { throwIfNoEntry: false });
+      if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) throw new ImportError('agent_directory_changed', 'Clubhouse agent storage is not an ordinary directory. Existing content was preserved; inspect it before creating an agent.');
+    }
+    const config = fs.lstatSync(path.join(project.path, '.clubhouse', 'agents.json'), { throwIfNoEntry: false });
+    if (config && (!config.isFile() || config.isSymbolicLink() || config.nlink !== 1)) {
+      throw new ImportError('agent_config_changed', 'The imported agent record is not a singly linked regular file. Existing content was preserved; inspect it before continuing.');
+    }
+    if (recordsOnly) return;
+    const ignore = fs.lstatSync(path.join(project.path, '.gitignore'), { throwIfNoEntry: false });
+    if (ignore && (!ignore.isFile() || ignore.isSymbolicLink() || ignore.nlink !== 1 || ignore.size > 1024 * 1024)) {
+      throw new ImportError('unsafe_gitignore', 'The imported .gitignore cannot be safely inspected for agent creation. It was preserved; inspect it before continuing.');
+    }
+  }
+
+  /** Keep the existing builder's Git commands under the importer's native pin and inert configuration. */
+  async runAgentGit(agentId: string, importId: string, args: string[], cwd: string, signal: AbortSignal | undefined, assertCurrent: () => Promise<void>): Promise<string> {
+    const project = await this.projectForAgent(agentId, importId);
+    const receipt = await this.status(agentId, importId);
+    if (cwd !== project.path) throw new ImportError('agent_git_scope', 'Imported-agent Git is confined to the registered project. No command was started.');
+    const config = inspectConfig(project.path, receipt.plan.url).config;
+    return this.deps.git.run(args, {
+      cwd, signal, assertCurrent,
+      beforeSpawn: () => {
+        signal?.throwIfAborted();
+        this.verifyOwned(receipt, true);
+        if (inspectConfig(project.path, receipt.plan.url).config !== config) throw new ImportError('checkout_changed', 'Imported Git configuration changed before agent creation. Inspect it before proceeding.');
+      },
+    });
+  }
+
+  async agentCreationFor(agentId: string, importId: string, key: string, listAgents: (projectPath: string) => Promise<DurableAgentConfig[]>): Promise<DurableAgentConfig | undefined> {
+    const project = await this.projectForAgent(agentId, importId);
+    const creation = (await this.status(agentId, importId)).agentCreation;
+    if (!creation) return undefined;
+    if (creation.key !== key) throw new ImportError('agent_choice_changed', 'This import already has an agent creation outcome with different choices. Inspect/reuse it; another agent requires a separate explicit request.');
+    const existing = (await listAgents(project.path)).find((a) => a.id === creation.agentId
+      || a.creation?.requestId === creation.requestId
+      || (a.repositoryImportCreation?.importId === importId && a.repositoryImportCreation.requestId === creation.requestId
+        && a.repositoryImportCreation.key === key));
+    const association = existing?.repositoryImportCreation;
+    if (existing && !existing.creation && association?.importId === importId && association.requestId === creation.requestId
+      && association.key === key && association.state === 'completed') {
+      if (creation.phase !== 'completed' || creation.receiptSaved === false) {
+        try {
+          await this.saveAgentLink(agentId, importId, key, creation.requestId, existing.id);
+          this.terminal.delete(importId);
+        } catch {
+          throw new ImportAgentReceiptError(importId, project.id, existing);
+        }
+      }
+      return existing;
+    }
+    if (creation.phase === 'completed' && creation.receiptSaved === undefined && existing && !existing.creation && existing.id === creation.agentId) return existing;
+    throw new ImportError('agent_creation_interrupted', 'This creation was reserved, interrupted, failed or its agent was removed. Nothing was recreated. Inspect the project agents and preserved worktree; reuse any existing agent. Request another agent only explicitly.');
+  }
+
+  private async saveAgentLink(agentId: string, importId: string, key: string, requestId: string, createdAgentId: string): Promise<void> {
+    await this.deps.store.update((state) => {
+      const receipt = state.receipts.find((r) => r.id === importId && r.plan.agentId === agentId);
+      if (!receipt?.agentCreation || receipt.agentCreation.requestId !== requestId || receipt.agentCreation.key !== key) {
+        throw new ImportError('history_corrupt', 'Agent creation finished but its receipt changed. Inspect the existing project agent; do not recreate it.');
+      }
+      receipt.agentCreation = { key, requestId, phase: 'completed', agentId: createdAgentId };
+    });
+  }
+
+  /** Persistent link to the existing managed builder. An interrupted/failed creation is never replayed. */
+  async createAgentOnce(
+    agentId: string, importId: string, key: string,
+    listAgents: (projectPath: string) => Promise<DurableAgentConfig[]>,
+    create: (project: Project, creationRequestId: string) => Promise<DurableAgentConfig>,
+  ): Promise<DurableAgentConfig> {
+    const project = await this.projectForAgent(agentId, importId);
+    const pending = this.creatingAgents.get(importId);
+    if (pending) {
+      if (pending.key !== key) throw new ImportError('agent_choice_changed', 'This import already has a different agent creation request. Inspect/reuse it; nothing was duplicated.');
+      return pending.operation;
+    }
+    const run = async () => {
+      const creation = (await this.deps.store.get()).receipts.find((r) => r.id === importId)?.agentCreation;
+      if (creation) {
+        const existing = await this.agentCreationFor(agentId, importId, key, listAgents);
+        if (existing) return existing;
+        throw new ImportError('agent_creation_interrupted', 'This creation was reserved, interrupted, failed or its agent was removed. Nothing was recreated. Inspect the project agents and preserved worktree; reuse any existing agent. Request a different additional agent only explicitly.');
+      }
+      const requestId = randomUUID();
+      let reserved: ImportReceipt | undefined;
+      await this.deps.store.update((state) => {
+        const receipt = state.receipts.find((r) => r.id === importId && r.plan.agentId === agentId);
+        if (!receipt || receipt.agentCreation) throw new ImportError('agent_creation_reserved', 'Agent creation already has a receipt. Inspect it instead of repeating creation.');
+        receipt.agentCreation = { key, requestId, phase: 'reserved' };
+        reserved = structuredClone(receipt);
+      });
+      this.terminal.delete(importId);
+      let config: DurableAgentConfig | undefined;
+      try {
+        config = await create(project, requestId);
+        await this.saveAgentLink(agentId, importId, key, requestId, config.id);
+        return config;
+      } catch (error) {
+        if (config && reserved) {
+          const completed = { key, requestId, phase: 'completed' as const, agentId: config.id, receiptSaved: false as const };
+          this.terminal.set(importId, { ...reserved, agentCreation: completed });
+          try {
+            await this.deps.store.update((state) => {
+              const receipt = state.receipts.find((r) => r.id === importId && r.plan.agentId === agentId);
+              if (!receipt?.agentCreation || receipt.agentCreation.requestId !== requestId || receipt.agentCreation.key !== key) {
+                throw new ImportError('history_corrupt', 'The existing agent link changed; no receipt was replaced.');
+              }
+              receipt.agentCreation = completed;
+            });
+          } catch {
+            // telemetry-exempt: known creation/id stays visible; raw receipt diagnostics remain private.
+            appLog('core:project', 'warn', 'Created imported agent retained its durable operation association; receipt reconciliation is required', { meta: { importId, agentId: config.id } });
+          }
+          throw new ImportAgentReceiptError(importId, project.id, config);
+        }
+        // telemetry-exempt: the reserved receipt remains a no-replay barrier if its final write fails.
+        try {
+          await this.deps.store.update((state) => {
+            const receipt = state.receipts.find((r) => r.id === importId);
+            if (receipt?.agentCreation?.requestId === requestId) receipt.agentCreation.phase = 'failed';
+          });
+        } catch {
+          // telemetry-exempt: sanitized warning below; the reserved receipt still prevents replay.
+          appLog('core:project', 'warn', 'Imported agent creation receipt could not be completed; no replay is allowed', { meta: { importId } });
+        }
+        if (error instanceof ImportError) throw error;
+        throw new ImportError('agent_creation_failed', 'Project import succeeded, but managed-agent creation did not finish. Inspect its agent/worktree state before recovery. No import or creation is silently retried; nothing was started.');
+      }
+    };
+    const operation = run();
+    this.creatingAgents.set(importId, { key, operation });
+    try { return await operation; } finally { this.creatingAgents.delete(importId); }
   }
 }
 

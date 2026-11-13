@@ -69,7 +69,7 @@ function validPlan(value: unknown): value is ImportPlan {
 }
 
 function validReceipt(value: unknown): value is ImportReceipt {
-  return object(value) && keys(value, ['id', 'plan', 'phase', 'updatedAt', 'directoryIdentity', 'cloneCompleted', 'projectId', 'gitignore', 'reason', 'failedAt', 'progress', 'agentCreated', 'agentStarted'])
+  return object(value) && keys(value, ['id', 'plan', 'phase', 'updatedAt', 'directoryIdentity', 'cloneCompleted', 'projectId', 'gitignore', 'reason', 'failedAt', 'progress', 'agentCreated', 'agentStarted', 'agentCreation'])
     && typeof value.id === 'string' && ID.test(value.id) && validPlan(value.plan)
     && typeof value.phase === 'string' && PHASES.has(value.phase)
     && typeof value.updatedAt === 'number' && Number.isSafeInteger(value.updatedAt)
@@ -79,6 +79,14 @@ function validReceipt(value: unknown): value is ImportReceipt {
     && (value.gitignore === undefined || ['updated', 'unchanged', 'failed'].includes(String(value.gitignore)))
     && (value.reason === undefined || (typeof value.reason === 'string' && /^[a-z_]{1,100}$/.test(value.reason)))
     && (value.failedAt === undefined || (typeof value.failedAt === 'string' && PHASES.has(value.failedAt)))
+    && (value.agentCreation === undefined || (object(value.agentCreation)
+      && keys(value.agentCreation, ['key', 'requestId', 'phase', 'agentId'])
+      && typeof value.agentCreation.key === 'string' && /^[a-f0-9]{64}$/.test(value.agentCreation.key)
+      && typeof value.agentCreation.requestId === 'string' && ID.test(value.agentCreation.requestId)
+      && ['reserved', 'completed', 'failed'].includes(String(value.agentCreation.phase))
+      && (value.agentCreation.agentId === undefined || boundedString(value.agentCreation.agentId, 200))
+      && (value.agentCreation.receiptSaved === undefined || (value.agentCreation.receiptSaved === false && value.agentCreation.phase === 'completed'))
+      && (value.agentCreation.phase !== 'completed' || boundedString(value.agentCreation.agentId, 200))))
     && (value.progress === undefined || (typeof value.progress === 'number' && Number.isInteger(value.progress) && value.progress >= 0 && value.progress <= 100));
 }
 
