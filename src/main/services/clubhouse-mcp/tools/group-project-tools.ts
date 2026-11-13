@@ -110,7 +110,7 @@ export function registerGroupProjectTools(): void {
     label: 'Post Bulletin',
     mcp: { targetKind: 'group-project', nameSuffix: 'post_bulletin', grant: { actions: ['group_project.post'], target: 'bound' } },
     description:
-        'Post a message to a channel on the project board.\n\n' +
+        'Post a message to a channel on the group project board.\n\n' +
         'CHANNEL MODEL:\n' +
         '- "general" (protected): team-wide announcements only. Avoid posting here otherwise.\n' +
         '- "control" (protected): changes to how the team works, and agreeing on new channels before anyone creates one.\n' +
@@ -196,7 +196,7 @@ export function registerGroupProjectTools(): void {
     label: 'Read Bulletin',
     mcp: { targetKind: 'group-project', nameSuffix: 'read_bulletin', grant: { actions: ['group_project.read'], target: 'bound' } },
       description:
-        'Get a digest of channels on the project board — {topic, messageCount, newMessageCount, latestTimestamp, isProtected} per channel.\n\n' +
+        'Get a digest of channels on the group project board — {topic, messageCount, newMessageCount, latestTimestamp, isProtected} per channel.\n\n' +
         'Pass "since" (the latestTimestamp from your last read) on every call after your first to keep the digest cheap.\n' +
         'Pass "channels" to restrict the digest to the channels you care about. You get a notice when someone posts to your channels, so read when one arrives rather than in a loop. Your standard set is:\n' +
         '  ["general", "control", "inbox-<your-name>", ...any work channels you are actively tracking]\n' +
@@ -893,7 +893,7 @@ export function registerGroupProjectTools(): void {
     label: 'Clear Topic',
     mcp: { targetKind: 'group-project', nameSuffix: 'clear_topic', grant: { actions: ['group_project.lead'], target: 'bound' } },
     description:
-      'Delete an entire channel and all its messages from the project board.\n\n' +
+      'Delete an entire channel and all its messages from the group project board.\n\n' +
       'Use this to clean up stale or completed work channels that are no longer relevant. ' +
       'Destructive — all messages in the channel are permanently removed.\n\n' +
       'The "system" channel cannot be deleted, and protected channels ("general", "control", and any "inbox-<name>") will still be recreated automatically when used.',

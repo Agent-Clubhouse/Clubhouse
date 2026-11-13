@@ -356,9 +356,18 @@ async function handleCreateGroupProject(callerId: string, args: Record<string, u
   }
 }
 
+function groupProjectRef(args: Record<string, unknown>): string {
+  const canonical = args.group_project;
+  const legacy = args.project;
+  if (canonical !== undefined && legacy !== undefined && canonical !== legacy) {
+    throw new McpArgError('group_project and project must identify the same group project');
+  }
+  return requireString(args, canonical !== undefined ? 'group_project' : 'project');
+}
+
 async function handleAddToGroupProject(callerId: string, args: Record<string, unknown>, granted = false): Promise<McpToolResult> {
   try {
-    const projectRef = requireString(args, 'project');
+    const projectRef = granted ? requireString(args, 'project') : groupProjectRef(args);
     const helperRef = requireString(args, granted ? 'agent' : 'helper');
     const scope = await callerScope(callerId, granted);
     const agent = resolveAgent(scope, helperRef, 'helper');
@@ -379,7 +388,7 @@ async function handleAddToGroupProject(callerId: string, args: Record<string, un
 
 async function handleRemoveFromGroupProject(callerId: string, args: Record<string, unknown>, granted = false): Promise<McpToolResult> {
   try {
-    const projectRef = requireString(args, 'project');
+    const projectRef = granted ? requireString(args, 'project') : groupProjectRef(args);
     const helperRef = requireString(args, granted ? 'agent' : 'helper');
     const scope = await callerScope(callerId, granted);
     const agent = resolveAgent(scope, helperRef, 'helper');
@@ -711,26 +720,28 @@ export function registerConnectionTools(): void {
   }, handleCreateGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['members'], names: 'self_and_helpers' } } });
 
   registerGlobalTool('add_to_group_project', {
-    description: 'Add you or one of your helpers to a group project. The membership is saved and comes back when Clubhouse restarts.',
+    description: 'Add you or one of your helpers to a group project. Supply group_project, or its legacy alias project. The membership is saved and comes back when Clubhouse restarts.',
     inputSchema: {
       type: 'object',
       properties: {
-        project: { type: 'string', description: PROJECT_REF },
+        group_project: { type: 'string', description: PROJECT_REF },
+        project: { type: 'string', description: 'Legacy alias for group_project.' },
         helper: { type: 'string', description: AGENT_REF },
       },
-      required: ['project', 'helper'],
+      required: ['helper'],
     },
   }, handleAddToGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['helper'], names: 'self_and_helpers' } } });
 
   registerGlobalTool('remove_from_group_project', {
-    description: 'Remove you or one of your helpers from a group project. Memberships made on the canvas stay; change those on the canvas.',
+    description: 'Exclude you or one of your helpers from a group project. Supply group_project, or its legacy alias project. The group project membership is updated.',
     inputSchema: {
       type: 'object',
       properties: {
-        project: { type: 'string', description: PROJECT_REF },
+        group_project: { type: 'string', description: PROJECT_REF },
+        project: { type: 'string', description: 'Legacy alias for group_project.' },
         helper: { type: 'string', description: AGENT_REF },
       },
-      required: ['project', 'helper'],
+      required: ['helper'],
     },
   }, handleRemoveFromGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['helper'], names: 'self_and_helpers' } } });
 
