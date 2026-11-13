@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('electron', () => ({ app: { getPath: () => state.dir } }));
 vi.mock('../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: (_area: string, work: () => Promise<void>) => work() } }));
+vi.mock('./handoff-preparations', () => ({ bindPreparedHandoff: async () => {}, settleHandoffPreparationBinding: () => {}, pruneHandoffPreparations: async () => {} }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: state.machine }), getOrCreateIdentity: () => ({ fingerprint: state.machine }) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => ({ alias: 'this-computer', enableServer: true, networkEnabled: true, acceptHandoffs: state.accepting }), networkEnabled: () => true }));
 vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: state.peer, alias: 'other-computer', role: 'member', kind: 'desktop' }] }));

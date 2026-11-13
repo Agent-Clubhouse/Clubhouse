@@ -27,7 +27,7 @@ export class HandoffSnapshotError extends Error {
   cleanupFailed = false;
   boundsReport?: { totalBytes: number; fileCount: number; largestFiles: Array<{ path: string; size: number }>; bounds: HandoffTransferBounds };
   constructor(
-    readonly code: 'invalid_repository' | 'unsupported_repository' | 'git_failed' | 'unsafe_entry' | 'source_changed' | 'bounds_exceeded'
+    readonly code: 'invalid_repository' | 'unsupported_repository' | 'uncommitted_branch' | 'git_failed' | 'unsafe_entry' | 'source_changed' | 'bounds_exceeded'
       | 'secret_blocked' | 'hash_mismatch' | 'filesystem_failed' | 'invalid_staging',
     readonly file?: string,
     readonly findings?: HandoffSecretFinding[],
@@ -95,16 +95,37 @@ function gitEnvironment(): NodeJS.ProcessEnv {
 }
 
 /** Unlike UI Git helpers, never log Git stderr, URLs, paths or subprocess output. */
-async function git(context: SnapshotGit, args: string[], missingAllowed = false): Promise<string | null> {
+async function gitBytes(context: SnapshotGit, args: string[], missingAllowed = false): Promise<Buffer | null> {
   try {
     const result = await exec('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...args], {
-      cwd: context.root, encoding: 'buffer', timeout: 10_000, maxBuffer: 8 * 1024 ** 2, env: context.env,
+      cwd: context.root, encoding: 'buffer', timeout: 30_000, maxBuffer: 8 * 1024 ** 2, env: context.env,
     });
-    return new TextDecoder('utf-8', { fatal: true }).decode(result.stdout);
+    return result.stdout;
   } catch (error) {
     if (missingAllowed && error !== null && typeof error === 'object' && 'code' in error && error.code === 1) return null;
     throw new HandoffSnapshotError('git_failed');
   }
+}
+async function git(context: SnapshotGit, args: string[], missingAllowed = false): Promise<string | null> {
+  const result = await gitBytes(context, args, missingAllowed);
+  if (result === null) return null;
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(result); }
+  catch { throw new HandoffSnapshotError('git_failed'); /* telemetry-exempt: malformed Git output is never reflected */ }
+}
+
+/** Main-only Git access after the same worktree/control checks as snapshot selection. */
+export async function openHandoffRepository(worktreeRoot: string) {
+  const source = await directory(worktreeRoot);
+  const context: SnapshotGit = { root: source.root, env: gitEnvironment() };
+  const repo = await repository(context);
+  return {
+    repo, root: source.root,
+    read: (args: string[]) => gitBytes(context, args),
+    assertCurrent: async () => {
+      await checkDirectories(source);
+      if (JSON.stringify(await repository(context)) !== JSON.stringify(repo)) throw new HandoffSnapshotError('source_changed');
+    },
+  };
 }
 
 async function gitControls(context: SnapshotGit): Promise<void> {
@@ -345,7 +366,10 @@ function metadata(manifest: HandoffWorktreeManifest, policy?: HandoffSecretPolic
   for (const value of [
     manifest.repo.remote ?? '', manifest.repo.branch, ...manifest.include.ignored, ...manifest.exclude, ...manifest.deletions,
   ]) block(scanHandoffSecrets('metadata/value.txt', new TextEncoder().encode(value)));
-  for (const file of manifest.files) block(scan(file.path, new Uint8Array(), policy));
+  for (const file of manifest.files) {
+    block(scanHandoffSecrets('metadata/path.txt', new TextEncoder().encode(file.path)).map((finding) => ({ ...finding, path: safeHandoffDiagnosticPath(file.path) })));
+    block(scan(file.path, new Uint8Array(), policy));
+  }
 }
 
 async function writeAll(handle: FileHandle, buffer: Uint8Array): Promise<void> {
@@ -357,11 +381,24 @@ async function writeAll(handle: FileHandle, buffer: Uint8Array): Promise<void> {
   }
 }
 
-async function validateSourceLink(root: SourceRoot, name: string, bytes: Uint8Array, actualLink: boolean): Promise<void> {
+async function validateSourceLink(root: SourceRoot, name: string, bytes: Uint8Array): Promise<void> {
   try {
     const target = handoffLinkTarget(bytes);
     assertInternalHandoffLinks(new Map([[name, target]]));
-    const resolved = await fs.promises.realpath(actualLink ? path.join(root.root, name) : path.resolve(path.dirname(path.join(root.root, name)), target));
+    // Keep .. in filesystem order: normalizing before resolving an existing
+    // link can hide an escape. A missing tail is safe only beneath a verified
+    // existing ancestor inside this worktree.
+    let candidate = `${path.dirname(path.join(root.root, name))}${path.sep}${target.split('/').join(path.sep)}`;
+    let resolved: string;
+    for (;;) {
+      try { resolved = await fs.promises.realpath(candidate); break; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        const parent = path.dirname(candidate);
+        if (parent === candidate) throw error;
+        candidate = parent;
+      }
+    }
     const relative = path.relative(root.root, resolved).split(path.sep).join('/');
     if (relative && !isSafeHandoffPath(relative)) throw new Error('Outside link.');
   } catch { throw new HandoffSnapshotError('unsafe_entry', safeHandoffDiagnosticPath(name)); }
@@ -372,7 +409,7 @@ async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint
     const before = await sourceStat(root, source.path, false, true);
     if (!before || stamp(before) !== stamp(source.stat)) throw new HandoffSnapshotError('source_changed', source.path);
     const bytes = await fs.promises.readlink(path.join(root.root, source.path), { encoding: 'buffer' });
-    await validateSourceLink(root, source.path, bytes, true);
+    await validateSourceLink(root, source.path, bytes);
     const after = await sourceStat(root, source.path, false, true);
     if (!after || stamp(before) !== stamp(after) || BigInt(bytes.byteLength) !== before.size) throw new HandoffSnapshotError('source_changed', source.path);
     if (!gitObjectHash) block(scan(source.path, bytes, policy));
@@ -417,7 +454,7 @@ async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint
     if (content?.subarray(0, LFS_POINTER_HEADER.length).equals(LFS_POINTER_HEADER)) {
       throw new HandoffSnapshotError('unsupported_repository');
     }
-    if (source.link) await validateSourceLink(root, source.path, content!, false);
+    if (source.link) await validateSourceLink(root, source.path, content!);
     if (!gitObjectHash) block(scan(source.path, content, policy));
     const after = await sourceStat(root, source.path);
     if (!after || stamp(after) !== stamp(initial) || stamp(await handle.stat({ bigint: true })) !== stamp(initial)) {
@@ -482,6 +519,7 @@ async function preflight(options: Omit<PrepareHandoffSnapshot, 'stagingRoot' | '
       mode: selected.modes.get(source.path) ?? physicalMode(source.stat),
     })),
   }, bounds);
+  metadata(manifest, options.secretPolicy);
   options.secretPolicy?.assertCurrent();
   return { bounds, sourceRoot, root, context, repo, authority, manifest, selected, sources, total };
 }
@@ -619,4 +657,74 @@ export async function verifyHandoffSnapshot(
   } catch (error) {
     throw failure(error);
   }
+}
+
+/** A verified, pinned source descriptor: chunks never follow a later path replacement. */
+export async function openHandoffSnapshotArtifact(options: {
+  snapshot: HandoffSnapshot; file: number; bounds?: HandoffTransferBounds;
+  policy?: HandoffSecretPolicy; handoffId: string; authorize(): Promise<void>;
+}) {
+  let handle: FileHandle | undefined;
+  try {
+    await options.authorize();
+    const bounds = validateHandoffBounds(options.bounds ?? HANDOFF_TRANSFER_DEFAULTS);
+    const manifest = parseHandoffManifest(options.snapshot.manifest, bounds);
+    if (manifest.manifest_sha256 !== digest(manifest, bounds)) throw new HandoffSnapshotError('hash_mismatch');
+    if (options.policy !== undefined && !isTrustedHandoffSecretPolicy(options.policy)) throw new HandoffSnapshotError('secret_blocked');
+    options.policy?.assertCurrent(); metadata(manifest, options.policy);
+    if (!Number.isSafeInteger(options.file) || options.file < -1 || options.file >= manifest.files.length) throw new HandoffSnapshotError('unsafe_entry');
+    const bundle = options.file === -1;
+    const artifact = bundle ? manifest.bundle : manifest.files[options.file];
+    if (!artifact) throw new HandoffSnapshotError('unsafe_entry');
+    const parent = await directory(options.snapshot.root);
+    const root = bundle ? parent : await directory(path.join(parent.root, 'files'), parent);
+    const name = bundle ? 'bundle.bin' : manifest.files[options.file].path;
+    const stat = await sourceStat(root, name);
+    if (!stat || stat.size !== BigInt(artifact.size)) throw new HandoffSnapshotError('hash_mismatch', name);
+    const actual = await inspect(root, { path: name, stat }, undefined, undefined, options.policy);
+    if (!timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(artifact.sha256, 'hex'))) throw new HandoffSnapshotError('hash_mismatch', name);
+    handle = await fs.promises.open(path.join(root.root, name), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+    const pinned = handle;
+    const check = async () => {
+      await options.authorize(); options.policy?.assertCurrent();
+      const current = await sourceStat(root, name);
+      if (!current || stamp(current) !== stamp(stat) || stamp(await pinned.stat({ bigint: true })) !== stamp(stat)) throw new HandoffSnapshotError('source_changed', name);
+    };
+    await check(); await options.policy?.recordUse(options.handoffId, 'sender'); await check();
+    return {
+      size: artifact.size,
+      read: async (offset: number, maximum = 256 * 1024): Promise<Buffer> => {
+        try {
+          if (!Number.isSafeInteger(offset) || offset < 0 || offset > artifact.size || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 256 * 1024) throw new HandoffSnapshotError('unsafe_entry');
+          await check();
+          const bytes = Buffer.alloc(Math.min(maximum, artifact.size - offset));
+          let position = 0;
+          while (position < bytes.length) {
+            const { bytesRead } = await pinned.read(bytes, position, bytes.length - position, offset + position);
+            if (!bytesRead) throw new HandoffSnapshotError('source_changed', name);
+            position += bytesRead;
+          }
+          await check(); return bytes;
+        } catch (error) { throw failure(error); }
+      },
+      close: () => pinned.close(),
+    };
+  } catch (error) {
+    await handle?.close(); throw failure(error);
+  }
+}
+
+/** Read only bounded private metadata, and bind it to the immutable agreement summary. */
+export async function readHandoffSnapshotManifest(root: string, expected: HandoffManifestSummary, bounds: HandoffTransferBounds) {
+  try {
+    const source = await directory(root);
+    const stat = await sourceStat(source, 'manifest.json');
+    if (!stat || stat.size > 2n * 1024n ** 2n) throw new HandoffSnapshotError('bounds_exceeded');
+    const chunks: Buffer[] = [];
+    await inspect(source, { path: 'manifest.json', stat }, async (bytes) => { chunks.push(Buffer.from(bytes)); });
+    const manifest = parseHandoffManifest(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))), bounds);
+    const summary = summarizeHandoffManifest(manifest);
+    if (summary.fileCount !== expected.fileCount || summary.totalBytes !== expected.totalBytes || summary.sha256 !== expected.sha256 || manifest.manifest_sha256 !== digest(manifest, bounds)) throw new HandoffSnapshotError('hash_mismatch');
+    return manifest;
+  } catch (error) { throw failure(error); }
 }

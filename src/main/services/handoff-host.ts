@@ -1,3 +1,4 @@
+import { bindPreparedHandoff, settleHandoffPreparationBinding, pruneHandoffPreparations } from './handoff-preparations';
 import { evaluateGrant, type GrantCallTarget } from '../../shared/agent-grants';
 import { parseAgentAddress } from '../../shared/agent-address';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -209,6 +210,7 @@ export function handoffHost(): Host {
     }, isDispatcher: (agent) => agent.machine === machine && isDispatcherAgentId(agent.agentId) && getDispatcherState().enabled });
   const coordinator = new HandoffCoordinator({
     machine, store, service, commands,
+    bindOffer: bindPreparedHandoff, offerSettled: settleHandoffPreparationBinding,
     peerRemoved: (peer) => !isNetworkComputer(peer),
     connected: (peer) => isNetworkComputer(peer) && annexClient.isMachineConnected(peer),
     post: async (peer, body) => {
@@ -232,6 +234,7 @@ export function handoffHost(): Host {
       }
     },
     changed: async (record) => {
+      if (record.from.machine === machine && isTerminalHandoff(record.state)) await pruneHandoffPreparations(store.list());
       const participants = [record.from, ...('agentId' in record.to ? [record.to] : getDispatcherState().agentId ? [localHandoffAgent(getDispatcherState().agentId!)] : []), ...(record.acceptance ? [record.acceptance.target] : [])];
       for (const participant of participants) if (participant.machine === machine) notifyToolGateChange(participant.agentId);
       await notifyRecord(record);
@@ -261,6 +264,7 @@ export function startHandoffs(): void {
     flushWork = (async () => {
       try {
         await current.coordinator.flush();
+        await pruneHandoffPreparations(current.store.list());
         for (const record of current.store.list()) await notifyRecord(record);
       } catch { /* telemetry-exempt: durable records/commands retry; tools report unreadable storage explicitly */ }
     })().finally(() => { flushWork = undefined; });

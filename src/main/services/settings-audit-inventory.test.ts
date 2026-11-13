@@ -34,6 +34,7 @@ const NOT_SETTINGS = new Set([
   'action-history.json',
   // Handoff lifecycle records and append-only history are operational state, not a person's settings.
   'handoffs.json',
+  'handoff-preparations.json',
   // The parameterized Annex store holds operational outbox/inbox, receipt and status records.
   path.join('services', 'annex-delivery-store.ts'),
   // Federated requests, outcomes and link pauses are operational delivery history.

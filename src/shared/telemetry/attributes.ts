@@ -568,7 +568,7 @@ export const ATTR = {
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
     'probe_capacity', 'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
     'request_app_update',
-    'check_handoff', 'offer_handoff', 'respond_to_handoff', 'get_handoff', 'list_handoffs', 'cancel_handoff',
+    'check_handoff', 'prepare_handoff', 'offer_handoff', 'respond_to_handoff', 'get_handoff', 'list_handoffs', 'cancel_handoff',
     'hand_off_request', 'list_remote_requests', 'triage_remote_request', 'report_remote_request',
     'message_remote_dispatcher', 'send_file_to_remote_dispatcher', 'offer_handoff_to_remote_dispatcher',
     'get_delivery', 'get_annex_network_settings', 'update_annex_network_settings',
