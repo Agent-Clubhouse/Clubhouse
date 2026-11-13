@@ -82,6 +82,20 @@ describe('model catalog notices', () => {
     expect(W.notices).not.toHaveBeenCalled();
   });
 
+  it('deduplicates alias renames and concrete ids by authoritative resolved model identity across restart', async () => {
+    await observe(provider, catalog([], 1, { models: [{ id: 'friendly-alias', label: 'Friendly', resolvedId: 'model-v1' }] }));
+    await observe(provider, catalog([], 2, { models: [{ id: 'renamed-alias', label: 'Renamed', resolvedId: 'model-v1' }, { id: 'model-v1', label: 'Version one' }] }));
+    expect(W.notices).not.toHaveBeenCalled();
+    vi.resetModules(); observe = (await import('./helper-model-catalog')).observeHelperModelCatalog;
+    await observe(provider, catalog(['temporary'], 3, { source: 'fallback', via: 'static' }));
+    await observe(provider, catalog(['model-v1', 'model-v2'], 4));
+    expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice', 'New models for Codex: MODEL-V2. Review Smart selection');
+    W.notices.mockClear(); // Dismissal changes no mapping and does not clear persisted seen state.
+    await observe(provider, catalog(['model-v1', 'model-v2'], 5));
+    expect(W.notices).not.toHaveBeenCalled();
+    expect(W.presets).toEqual({});
+  });
+
   it('updates disabled providers silently without replaying discoveries when enabled', async () => {
     await observe(provider, catalog(['old'], 1));
     W.enabled = [];
