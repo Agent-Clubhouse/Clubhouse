@@ -5,13 +5,7 @@ import { readGroupProjectCanvasInventory, removeGroupProjectFromCanvasInventory 
 import { withCanvasWriteBarrier } from './canvas-write-barrier';
 import { writeKeyWithinCanvasBarrier } from './plugin-storage';
 
-// The host lane supplies these journal operations in its next update.
-const journal = groupProjectHost as typeof groupProjectHost & {
-  beginDelete(id: string, options: { expectedSeq: number; withinExclusive: true }): Promise<unknown>;
-  finishDelete(id: string, options: { withinExclusive: true }): Promise<unknown>;
-  listPendingDeletes(): Promise<Array<{ groupProjectId: string }>>;
-  exclusivePending<T>(id: string, callback: () => Promise<T>): Promise<T>;
-};
+const journal = groupProjectHost;
 
 /** Build the local cascade; release is supplied by the durable membership source. */
 export function createLocalGroupProjectDeleteService(releaseBindings: (id: string) => void) {
