@@ -249,3 +249,22 @@ Delivery is recorded separately as `accepted`, `delivered`, `refused`, or `expir
 Fixed controller bounds are eight causal crossings, twenty crossings per minute per member link, and thirty waiting requests per link. Reply and news causality is retained, so a reply cannot start a fresh loop. A new request created by the local person's conversation can start a new cause; an agent-supplied id or text cannot. A tripped link pauses and sends a notice to both computers. Its pause is retained for that pairing. This version has no agent tool for clearing it. Request/outcome and duplicate telemetry contains identifiers and closed state codes, never request or report text.
 
 The two-desktop fake CLI fixtures in `e2e/annex-v2/dispatcher-federation.spec.ts` cover local triage, correlated outcomes, offline restart and a bounded loop. That file is in the explicit Annex CI shard list. No paid model is used.
+## Other machines' Dispatchers (#3349)
+
+`src/main/services/dispatcher-presence.ts` turns what the controller links already know into one read-only snapshot (`DispatcherPresenceSnapshot`, `src/shared/dispatcher-presence.ts`). It has one entry for each other computer member, never phones or one-to-one pairings, sorted by machine name. Each entry has:
+- the controller's machine-qualified address;
+- its name and the label "<Dispatcher name> on <machine>" ("Dispatcher on <machine>" until its name is known);
+- a state: `online`, `working`, `asleep`, `offline` with `lastSeen` from the peer record, `off`, or `unknown` (connected, but no controller published yet);
+- the link state from the federation status (`active`, `paused` or `unavailable`, with the reason; a tripped delivery limit shows as paused).
+
+The published controller now carries an optional `state` (`asleep` while its agent isn't running, `working` while requests are under way, else `online`). It's validated under the same publication guard. An older computer that sends none reads as `online` while connected.
+
+Nothing polls. The snapshot is recomputed on device and connectivity changes, Dispatcher changes and controller publications, and its listeners hear only real changes. It is read by:
+- Settings › Dispatcher › Other machines, and the compact Other machines card in the Dispatcher's Details (IPC `dispatcher:get-presence`, pushed as `dispatcher:presence-changed`);
+- phones (the snapshot's `dispatcherPresence` and the `dispatcher:presence` event, advertised as `dispatcher.presence` in the capabilities; see docs/mobile-control-v1.md);
+- the controller (`list_other_dispatchers`, `agent.read` on connected, read-only);
+- agent pickers (#3348).
+
+Messages and files from another machine are tagged "<name> on <machine>" by the receiving computer. This computer's own Dispatcher never gets a machine label.
+
+The controller's memory has one page per known peer, `agents/peer-<hash>.md`. The hash is the first 16 hex digits of the SHA-256 of the lowercased machine-qualified address, so the name is safe on every file system (fingerprints contain colons). The page is titled by the label. Clubhouse writes the card from the link's stable facts (name, machine, address) only when they change, while the Dispatcher is on; the Dispatcher's notes are kept. A peer that leaves keeps its page.

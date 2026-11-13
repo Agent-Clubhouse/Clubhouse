@@ -50,12 +50,14 @@ const identity = async (page: Page) => {
   expect(state.agentId).toBeTruthy(); expect(state.chatAgentId).not.toBe(state.agentId);
   return { controller: state.agentId!, chat: state.chatAgentId!, machine: annex.fingerprint!.toLowerCase() };
 };
+/** Other machines' Dispatchers as Settings › Dispatcher lists them (#3349). */
+const presence = (page: Page) => page.evaluate(async () => (await window.clubhouse.dispatcher.getPresence()).remotes);
 const links = (page: Page, id: string) => page.evaluate(async (controller) => {
   const sources = await window.clubhouse.mcpBinding.getConnectionSources(controller);
   return sources.pairs.filter((p) => p.sources.some((s) => s.kind === 'dispatcher_federation'));
 }, id);
 
-test('membership creates two-way controller links, pauses offline, resumes, refuses edits and removes them', async () => {
+test('membership creates two-way controller links and presence, pauses offline, resumes, refuses edits and removes them', async () => {
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'dispatcher-federation-e2e-'));
   const fixture = path.join(scratch, 'quiet.jsonl');
   const lines = (await fs.promises.readFile(chatFixturePath('claude', 'session-info'), 'utf8')).split('\n').slice(0, 3);
@@ -73,20 +75,28 @@ test('membership creates two-way controller links, pauses offline, resumes, refu
   await expect.poll(async () => (await links(there.window, b.controller)).length, { timeout: 30_000 }).toBe(2);
   expect((await links(here.window, a.controller)).some((p) => p.targetId === remote)).toBe(true);
   expect((await links(here.window, a.controller)).some((p) => p.targetId.startsWith(b.chat))).toBe(false);
+  await expect.poll(async () => (await presence(here.window)).map((r) => [r.machineName, r.address, r.link.state]), { timeout: 30_000 })
+    .toEqual([['Laptop', remote, 'active']]);
+  expect((await presence(here.window))[0].label).toMatch(/ on Laptop$/);
   await expect(here.window.evaluate(([id, target]) => window.clubhouse.mcpBinding.setDisabledTools(id, target, []), [a.controller, remote] as const)).rejects.toThrow('membership');
   expect(await here.window.evaluate(([id, target]) => window.clubhouse.mcpBinding.unbind(id, target), [a.controller, remote] as const)).toMatchObject({ kept: true });
   await there.window.evaluate(() => window.clubhouse.dispatcher.setEnabled(false));
   await expect.poll(async () => (await links(here.window, a.controller)).flatMap((p) => p.sources).some((s) => s.suspended?.includes('Dispatcher is off')), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => (await presence(here.window))[0]?.state, { timeout: 30_000 }).toBe('off');
   await there.window.evaluate(() => window.clubhouse.dispatcher.setEnabled(true));
   await expect.poll(async () => (await links(here.window, a.controller)).flatMap((p) => p.sources).some((s) => s.suspended), { timeout: 30_000 }).toBe(false);
   const profile = there.profile;
   await there.electronApp.close(); apps.splice(apps.indexOf(there), 1);
   await expect.poll(async () => (await links(here.window, a.controller)).flatMap((p) => p.sources).some((s) => s.suspended?.includes('offline')), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => { const [r] = await presence(here.window); return r && [r.state, !!r.lastSeen, r.link.state]; }, { timeout: 30_000 })
+    .toEqual(['offline', true, 'paused']);
   there = await desktop('Laptop', profile);
   await expect.poll(async () => (await links(here.window, a.controller)).flatMap((p) => p.sources).some((s) => s.suspended), { timeout: 45_000 }).toBe(false);
   await expect.poll(async () => (await links(there.window, b.controller)).length, { timeout: 30_000 }).toBe(2);
+  await expect.poll(async () => { const [r] = await presence(here.window); return r && [r.state === 'offline', r.link.state]; }, { timeout: 45_000 }).toEqual([false, 'active']);
   await here.window.evaluate((fingerprint) => window.clubhouse.annex.removeDevice(fingerprint), b.machine);
   await expect.poll(async () => (await links(here.window, a.controller)).length).toBe(0);
+  await expect.poll(async () => (await presence(here.window)).length).toBe(0);
   await expect.poll(async () => (await links(there.window, b.controller)).length, { timeout: 30_000 }).toBe(0);
 });
 

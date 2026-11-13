@@ -258,8 +258,8 @@ function guardSection(text: string): string {
     .trim();
 }
 
-export function renderAgentPage(agent: string, page: AgentPage): string {
-  return `# ${agent}\n\n${AGENT_CARD_HEADING}\n\n${guardSection(page.card)}\n\n${AGENT_NOTES_HEADING}\n\n${guardSection(page.notes)}\n`;
+export function renderAgentPage(agent: string, page: AgentPage, title: string = agent): string {
+  return `# ${title}\n\n${AGENT_CARD_HEADING}\n\n${guardSection(page.card)}\n\n${AGENT_NOTES_HEADING}\n\n${guardSection(page.notes)}\n`;
 }
 
 export async function readAgentPage(agent: string, root?: string): Promise<AgentPage | null> {
@@ -285,15 +285,30 @@ export async function withMemoryPageLock<T>(page: string, root: string, fn: (fil
   return withPageLock(`write:${file}`, () => fn(file));
 }
 
-async function writeAgentSection(agent: string, section: keyof AgentPage, text: string, root?: string, reason: string = section === 'card' ? 'card' : 'notes'): Promise<AgentPage> {
+async function writeAgentSection(agent: string, section: keyof AgentPage, text: string, root?: string, reason: string = section === 'card' ? 'card' : 'notes', title?: string): Promise<AgentPage> {
   await ensureMemoryLayout(root);
   return withPageLock(agentPagePath(agent, root), async () => {
     const written = await memoryWrite(relativeMemoryPage(agentPagePath(agent, root), root), (previous) => {
       const current = previous === null ? { card: '', notes: '' } : parseAgentPage(previous);
-      return renderAgentPage(agent, { ...current, [section]: text });
+      return renderAgentPage(agent, { ...current, [section]: text }, title ?? agent);
     }, reason, root);
     return parseAgentPage(written);
   });
+}
+
+/**
+ * A Dispatcher on another computer (#3349): its page is keyed by its
+ * machine-qualified address, hashed so the file name is short and safe on
+ * every file system (a machine fingerprint has colons). The label and full
+ * address are in the page.
+ */
+export function remoteDispatcherPageName(address: string): string {
+  return `peer-${createHash('sha256').update(address.toLowerCase()).digest('hex').slice(0, 16)}`;
+}
+
+/** Write a remote Dispatcher's card from what its link says, titled by its label, keeping the notes. */
+export function writeRemoteDispatcherCard(address: string, label: string, card: string, root?: string): Promise<AgentPage> {
+  return writeAgentSection(remoteDispatcherPageName(address), 'card', card, root, 'peer card', label);
 }
 
 /** Replace the agent's card, keeping the Dispatcher's notes. */
