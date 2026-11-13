@@ -16,6 +16,8 @@ import { readMobileChatContent } from './annex-chat-content';
 import * as agentCalls from './annex-agent-calls';
 import type { AnnexSettings } from '../../shared/types';
 const networkToolHost = vi.hoisted(() => ({ host: undefined as import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost | undefined }));
+vi.mock('./group-project-host', async () =>
+  (await import('./__tests__/group-project-host-passthrough')).passthroughHostModule());
 vi.mock('./clubhouse-mcp/tools/annex-network-tools', () => ({
   setAnnexNetworkToolHost: (host: import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost) => { networkToolHost.host = host; },
 }));

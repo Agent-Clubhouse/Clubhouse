@@ -68,6 +68,8 @@ export interface GroupProjectMembership {
   explicit: GroupProjectExplicitMember[];
   excluded: GroupProjectExclusion[];
   autoJoinOffer?: 'pending' | 'accepted' | 'dismissed';
+  /** Per-member tool switches (#2084), keyed by address. */
+  disabledTools?: Record<string, string[]>;
   [extra: string]: unknown;
 }
 

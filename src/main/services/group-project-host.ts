@@ -22,7 +22,8 @@ import {
   getBulletinBoard, normalizeChannelName, resolveInboxChannel,
 } from './group-project-bulletin';
 import { readMembershipFile, validateMembership, writeMembershipFile } from './group-project-membership-file';
-import { assertGroupProjectId, hostStatePath, tombstonesPath } from './group-project-paths';
+import * as fs from 'fs';
+import { assertGroupProjectId, groupProjectDir, hostStatePath, tombstonesPath } from './group-project-paths';
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
 import * as annexIdentity from './annex-identity';
 import { annexEphemeralSession } from './annex-network-profile';
@@ -94,6 +95,7 @@ class GroupProjectHostService {
     try {
       return annexIdentity.getIdentity()?.fingerprint.toLowerCase() ?? null;
     } catch {
+      // telemetry-exempt: an unreadable identity means no lasting fingerprint; annex-identity logs it
       return null;
     }
   }
@@ -135,7 +137,11 @@ class GroupProjectHostService {
 
   private emit(change: GroupProjectChange): void {
     for (const listener of this.listeners) {
-      try { listener(change); } catch { /* a listener's failure isn't the writer's */ }
+      try {
+        listener(change);
+      } catch {
+        // telemetry-exempt: a listener's failure isn't the writer's; listeners report their own
+      }
     }
   }
 
@@ -179,10 +185,13 @@ class GroupProjectHostService {
       this.reconciled = (async () => {
         const tombstones = await this.loadTombstones();
         for (const tombstone of tombstones) {
-          if (!(await groupProjectRegistry.get(tombstone.groupProjectId))) continue;
-          appLog('core:group-project', 'warn', 'Finishing an interrupted group project delete', { meta: { id: tombstone.groupProjectId } });
-          await groupProjectRegistry.delete(tombstone.groupProjectId);
-          await groupProjectRegistry.flush();
+          if (await groupProjectRegistry.get(tombstone.groupProjectId)) {
+            appLog('core:group-project', 'warn', 'Finishing an interrupted group project delete', { meta: { id: tombstone.groupProjectId } });
+            await groupProjectRegistry.delete(tombstone.groupProjectId);
+            await groupProjectRegistry.flush();
+          }
+          // Also when the record is gone: an earlier removal of its data may have failed.
+          // A leftover directory is logged and retried next start, not a reason to refuse every group project.
           await destroyBulletinBoard(tombstone.groupProjectId);
         }
       })().catch((err) => {
@@ -224,6 +233,7 @@ class GroupProjectHostService {
       try {
         await ensureProjectChannels(created.id, seq);
       } catch (err) {
+        // telemetry-exempt: logged; the group project exists and channels are seeded again on first join
         appLog('core:group-project', 'warn', 'Failed to seed project channels', {
           meta: { projectId: created.id, error: err instanceof Error ? err.message : String(err) },
         });
@@ -240,6 +250,7 @@ class GroupProjectHostService {
         return updated && this.view(updated);
       });
     } catch (err) {
+      // telemetry-exempt: update of an absent group project answers null, as before; anything else rethrows
       if (err instanceof GroupProjectHostError && err.code === 'not_found') return null;
       throw err;
     }
@@ -277,14 +288,17 @@ class GroupProjectHostService {
       };
       const now = Date.now();
       const kept = (await this.loadTombstones())
-        .filter((t) => t.groupProjectId !== id && now - Date.parse(t.deletedAt) < TOMBSTONE_TTL_MS)
-        .slice(-(TOMBSTONE_MAX - 1));
+        .filter((t) => t.groupProjectId !== id)
+        // Past its age or count, a tombstone stays while its data still waits to be removed.
+        .filter((t, i, all) => fs.existsSync(groupProjectDir(t.groupProjectId))
+          || (now - Date.parse(t.deletedAt) < TOMBSTONE_TTL_MS && i >= all.length - (TOMBSTONE_MAX - 1)));
       await writeJsonFile(tombstonesPath(), [...kept, tombstone]);
       this.tombstones = [...kept, tombstone];
       await groupProjectRegistry.delete(id);
       await groupProjectRegistry.flush();
-      await destroyBulletinBoard(id);
       this.seqs.delete(id);
+      // A failure here rejects; the tombstone stays and the next start removes the data.
+      await destroyBulletinBoard(id, { strict: true });
       this.emit({ groupProjectId: id, seq, part: 'deleted' });
       return { deleted: true, tombstone: { ...tombstone, host: { ...tombstone.host } } };
     };
@@ -344,23 +358,34 @@ class GroupProjectHostService {
     return this.commit(id, 'board', async ({ reserve }) => getBulletinBoard(id).postMessage(sender, topic, body, await reserve()));
   }
 
+  /** False when there's no such message, or no such group project, as before #3356. */
   deleteMessage(id: string, topic: string, messageId: string): Promise<boolean> {
-    return this.commit(id, 'board', async ({ reserve }) => {
+    return this.unlessMissing(false, () => this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       const message = await board.getMessageById(messageId);
       if (!message || message.topic !== normalizeChannelName(topic)) return false;
       await reserve();
       return board.deleteMessage(topic, messageId);
-    });
+    }));
   }
 
   deleteTopic(id: string, topic: string): Promise<boolean> {
-    return this.commit(id, 'board', async ({ reserve }) => {
+    return this.unlessMissing(false, () => this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       if (!(await board.hasTopic(topic))) return false;
       await reserve();
       return board.deleteTopic(topic);
-    });
+    }));
+  }
+
+  private async unlessMissing<T>(fallback: T, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      // telemetry-exempt: an absent group project is an answer, not a failure; anything else rethrows
+      if (err instanceof GroupProjectHostError && err.code === 'not_found') return fallback;
+      throw err;
+    }
   }
 
   setTopicProtected(id: string, topic: string, isProtected: boolean): Promise<void> {

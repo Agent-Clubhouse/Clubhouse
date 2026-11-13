@@ -643,8 +643,11 @@ export async function flushAllBulletinBoards(): Promise<void> {
   }
 }
 
-/** Destroy a bulletin board instance and remove its data directory from disk. */
-export async function destroyBulletinBoard(projectId: string): Promise<void> {
+/**
+ * Destroy a bulletin board instance and remove its data directory from disk.
+ * With `strict`, a failed removal rejects rather than being logged and ignored.
+ */
+export async function destroyBulletinBoard(projectId: string, options: { strict?: boolean } = {}): Promise<void> {
   const board = boards.get(projectId);
   if (board) {
     board._resetForTesting();
@@ -656,8 +659,9 @@ export async function destroyBulletinBoard(projectId: string): Promise<void> {
     if (await pathExists(dir)) {
       await fsp.rm(dir, { recursive: true, force: true });
     }
-  } catch {
+  } catch (err) {
     appLog('core:group-project', 'warn', 'Failed to remove bulletin data directory', { meta: { projectId, dir } });
+    if (options.strict) throw err;
   }
 }
 

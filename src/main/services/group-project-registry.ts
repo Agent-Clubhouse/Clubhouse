@@ -204,7 +204,7 @@ class GroupProjectRegistry {
    * a deleted group project left behind.
    */
   async create(
-    name: string, options: GroupProjectCreateOptions | undefined, host: GroupProjectHost,
+    name: string, options?: GroupProjectCreateOptions, host: GroupProjectHost = { machine: null },
     resolveScope: (options: unknown, registered: ReadonlySet<string>) => GroupProjectScope = resolveGroupProjectScope,
     isUnusedId: (id: string) => boolean = () => true,
   ): Promise<GroupProject> {

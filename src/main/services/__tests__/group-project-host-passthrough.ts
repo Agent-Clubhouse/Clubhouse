@@ -13,6 +13,7 @@ function optional<T>(mod: object, name: string): T | undefined {
   try {
     return (mod as Record<string, T>)[name];
   } catch {
+    // telemetry-exempt: test double
     return undefined;
   }
 }
@@ -28,7 +29,11 @@ export async function passthroughHostModule() {
     isThisMachine: vi.fn(() => true),
     list: vi.fn(async () => registry.list()),
     get: vi.fn(async (id: string) => registry.get(id)),
-    create: vi.fn(async (name: string, options?: unknown) => registry.create(name, options)),
+    create: vi.fn(async (name: string, options?: unknown) => {
+      const project = await registry.create(name, options) as { id: string };
+      await optional<(id: string) => Promise<void>>(bulletin, 'ensureProjectChannels')?.(project.id);
+      return project;
+    }),
     update: vi.fn(async (id: string, fields: unknown) => registry.update(id, fields)),
     delete: vi.fn(async (id: string) => {
       const deleted = await registry.delete(id);

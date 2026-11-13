@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
+vi.mock('./group-project-host', async () =>
+  (await import('./__tests__/group-project-host-passthrough')).passthroughHostModule());
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,

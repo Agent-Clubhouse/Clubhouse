@@ -12,6 +12,10 @@ vi.mock('./annex-network-profile', () => ({ annexEphemeralSession: () => false }
 vi.mock('./annex-identity', () => ({
   getIdentity: () => (fixture.fingerprint ? { fingerprint: fixture.fingerprint } : null),
 }));
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return { ...actual, rm: vi.fn(actual.rm) };
+});
 vi.mock('./project-store', () => ({ list: vi.fn(async () => [{ id: 'proj_a' }]) }));
 
 import { groupProjectRegistry } from './group-project-registry';
@@ -201,6 +205,18 @@ describe('group project host: crash safety', () => {
 });
 
 describe('group project host: delete', () => {
+  it('reports a failed data removal, and the next start removes the data', async () => {
+    const project = await groupProjectHost.create('Stuck');
+    await groupProjectHost.flushBoards();
+    vi.mocked(fsp.rm).mockRejectedValueOnce(new Error('busy'));
+    await expect(groupProjectHost.delete(project.id)).rejects.toThrow('busy');
+    expect(fs.existsSync(path.join(dataDir(), project.id))).toBe(true);
+    await restart();
+    expect(await groupProjectHost.list()).toEqual([]);
+    expect(fs.existsSync(path.join(dataDir(), project.id))).toBe(false);
+    expect((await groupProjectHost.listTombstones()).map((t) => t.groupProjectId)).toEqual([project.id]);
+  });
+
   it('removes the record, board, membership and sequence state, and leaves a tombstone', async () => {
     fixture.fingerprint = FP_A;
     const project = await groupProjectHost.create('Gone');
