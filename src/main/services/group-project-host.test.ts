@@ -49,11 +49,15 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  // A debounce may already be writing. Drain it before reset forgets its
+  // promise and before removal races the writer recreating a directory.
+  await groupProjectRegistry.flush();
+  await groupProjectHost.flushBoards();
   groupProjectRegistry._resetForTesting();
   _resetAllBoardsForTesting();
   groupProjectHost._resetForTesting();
-  vi.restoreAllMocks();
-  await fsp.rm(fixture.home, { recursive: true, force: true });
+  await fsp.rm(fixture.home, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
 });
 
 describe('group project host: identity and creation', () => {
