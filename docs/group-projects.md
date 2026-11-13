@@ -90,6 +90,8 @@ just-posted message even if older history has timestamps ahead of the clock.
 
 - `src/shared/group-project-types.ts`: registry and bulletin types.
 - `src/main/services/group-project-host.ts`: the one writer; serialization, sequence numbers, membership, tombstones.
+- `src/main/services/group-project-membership.ts`: membership policy and its binding source (#3357).
+- `src/renderer/features/group-projects/GroupProjectMembersSection.tsx`: members, exclusions and the auto-join offer, for the directory.
 - `src/main/services/group-project-host.test.ts`: real-file ordering, restart, crash and address regressions.
 - `src/main/services/group-project-host.guard.test.ts`: fails any write outside the host.
 - `src/main/services/group-project-membership-file.ts`, `group-project-json-file.ts`, `group-project-paths.ts`: host-only stores.
@@ -189,6 +191,59 @@ machines use tombstones to drop their cached copies (#3363).
 Registry and board files keep their existing atomic writes (below). `host.json`,
 `membership.json` and `tombstones.json` use the same temp file, flush and
 rename, so a crash mid-write leaves the previous file readable.
+
+## Membership (#3357)
+
+Who is in a group project is a record on its host (`membership.json`, written
+only through `groupProjectHost.updateMembership`), not canvas wires. Policy is
+in `src/main/services/group-project-membership.ts`; MCP bindings are derived
+from it by a pruning persisted-binding source, `group-project-membership`.
+
+- **Auto-join.** With `autoJoin`, every top-level durable agent in scope (not a
+  helper, not disposed) is a member, existing and future. One that leaves
+  scope (deleted, moved, its project removed) leaves. A new group project
+  auto-joins: the create paths call `beginAutoJoin`.
+- **Exclusions.** Excluding a durable agent records it in `excluded`, so
+  auto-join never brings it back, across restarts. Adding it again removes the
+  exclusion.
+- **Helpers** join only when added (`explicit`, kind `helper`), and leave when
+  disposed or deleted; the entry is dropped then.
+- **Quick agents** join only when added, for one run (`runId`). The entry goes
+  when the run ends, and doesn't survive a restart. A quick member's display
+  name carries a suffix from its id, so two runs that drew the same name get
+  separate inboxes and sender labels (#1646). Their posts stay.
+- **Migration.** A group project from before the record keeps exactly the
+  members its bindings had at the first start with this build (`explicit`,
+  `autoJoin: false`) and gets `autoJoinOffer: 'pending'`. The directory's
+  members section shows who would join; accepting turns `autoJoin` on,
+  dismissing keeps the current members.
+- **Tool switches (#2084).** A member's disabled group-project tools are kept
+  in the record (`disabledTools`, by address), so "Apply to all" and the wire
+  popover survive restarts. A member without its own list starts from the
+  group project's `defaultDisabledTools`.
+
+Restores are silent, as for every binding source. Changes after startup bind
+and unbind through `claimSourceBinding`/`releaseSourceBinding`, so a new
+member's join is posted on the board. Canvas cleanup (closing a card or a
+canvas) keeps a member's binding, since the record holds it.
+
+**Canvas gestures.** Drawing a wire to a managed group project adds the member
+(or removes its exclusion). Deleting the wire excludes the agent, or drops a
+helper or quick agent. A stored wire the canvas binds again on load
+(`MCP_BIND_RESTORE`) never adds a member. The canvas wire source no longer
+lists group-project wires for a managed group project.
+
+**Orchestrator tools.** `create_group_project`, `add_to_group_project` and
+`remove_from_group_project` change the record for a managed group project;
+nothing about the membership goes in the orchestrator connection store. A
+helper an orchestrator added stays a member if it is reparented or released,
+until it is disposed or removed.
+
+**Reading it.** `describeMembership` (IPC `GROUP_PROJECT.LIST_MEMBERS`) returns
+members, exclusions and the offer; `MEMBERSHIP_CHANGED` is broadcast with the
+group project id. The host's `resolveMembers` uses the same resolution. The
+Connections card lists a membership as "Group project member". A deleted group
+project's bindings are released when the host reports the delete.
 
 ## Local directory
 
