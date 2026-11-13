@@ -409,7 +409,7 @@ export function clearUserRemovedAgentNetworkSources(from: AgentAddress, to: Agen
  * entry here (decided under the store's lock): another machine's copy of a
  * direction between it and this one (#3064, D234). Returns whether it was written.
  */
-export async function putConnectionDirection(direction: ConnectionDirection): Promise<boolean> {
+export async function putConnectionDirection(direction: ConnectionDirection, options: { allowUserReconnect?: boolean } = {}): Promise<boolean> {
   let applied = false;
   await updateDirection(direction.from, direction.to, (current) => {
     const incoming = direction.agentLinks;
@@ -419,7 +419,10 @@ export async function putConnectionDirection(direction: ConnectionDirection): Pr
       const prior = merged.get(key);
       if (prior?.removedByUser && !link.removedAt) continue;
       if (!prior || Date.parse(link.removedAt ?? link.createdAt) > Date.parse(prior.removedAt ?? prior.createdAt) || (link.removedAt && !prior.removedAt && link.removedAt === prior.createdAt)) {
-        merged.set(key, prior?.removedByUser ? { ...link, removedByUser: true } : link);
+        // Only a newer, explicit removal tombstone from an authenticated endpoint
+        // can clear a user removal. Active sources alone never clear it.
+        const reconnect = options.allowUserReconnect && !!link.removedAt && !link.removedByUser;
+        merged.set(key, prior?.removedByUser && !reconnect ? { ...link, removedByUser: true } : link);
       }
     }
     const newer = !current || Date.parse(current.updatedAt) < Date.parse(direction.updatedAt);

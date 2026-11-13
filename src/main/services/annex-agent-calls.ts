@@ -865,7 +865,23 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     const current = getConnectionDirection(from, to);
     if (typeof entry.link !== 'boolean') continue;
     const userLink = typeof entry.userLink === 'boolean' ? entry.userLink : entry.link;
-    const agentLinks = Array.isArray(entry.agentLinks) ? entry.agentLinks.filter((l) => l && typeof l.agentId === 'string' && l.agentId.length > 0 && l.agentId.length <= 200 && typeof l.machineId === 'string' && (l.machineId.toLowerCase() === self || isNetworkComputer(l.machineId.toLowerCase())) && typeof l.createdAt === 'string' && !Number.isNaN(Date.parse(l.createdAt)) && (l.machineId.toLowerCase() === machine || (l.removedByUser === true && typeof l.removedAt === 'string' && !Number.isNaN(Date.parse(l.removedAt))))).slice(0, 50).map((l) => ({ agentId: l.agentId, machineId: l.machineId.toLowerCase(), createdAt: Date.parse(l.createdAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : l.createdAt, ...(typeof l.name === 'string' && l.name.length <= 200 && { name: l.name }), ...(typeof l.removedAt === 'string' && !Number.isNaN(Date.parse(l.removedAt)) && { removedAt: Date.parse(l.removedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : l.removedAt }), ...(l.removedByUser === true && { removedByUser: true }) })) : [];
+    const agentLinks = Array.isArray(entry.agentLinks) ? entry.agentLinks.filter((link) => {
+      if (!link || typeof link.agentId !== 'string' || !link.agentId || link.agentId.length > 200
+        || typeof link.machineId !== 'string' || (link.machineId.toLowerCase() !== self && !isNetworkComputer(link.machineId.toLowerCase()))
+        || typeof link.createdAt !== 'string' || Number.isNaN(Date.parse(link.createdAt))) return false;
+      if (link.machineId.toLowerCase() === machine) return true;
+      if (typeof link.removedAt !== 'string' || Number.isNaN(Date.parse(link.removedAt))) return false;
+      // A non-creator can remove a source as the user, or clear an existing
+      // user-removal tombstone when this endpoint explicitly reconnects.
+      return link.removedByUser === true || !!current?.agentLinks?.some((saved) => saved.agentId === link.agentId
+        && saved.machineId === link.machineId.toLowerCase() && saved.removedByUser);
+    }).slice(0, 50).map((link) => ({
+      agentId: link.agentId, machineId: link.machineId.toLowerCase(),
+      createdAt: Date.parse(link.createdAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : link.createdAt,
+      ...(typeof link.name === 'string' && link.name.length <= 200 && { name: link.name }),
+      ...(typeof link.removedAt === 'string' && !Number.isNaN(Date.parse(link.removedAt)) && { removedAt: Date.parse(link.removedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : link.removedAt }),
+      ...(link.removedByUser === true && { removedByUser: true }),
+    })) : [];
     const active = !!userLink || agentLinks.some((link) => !link.removedAt);
     if (active && !entry.link) continue; // Both the legacy flag and the source list must agree.
     // A link only for an agent here that exists; a link turned off only matters where there's one to turn off.
@@ -904,7 +920,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
       ...(!protectUserTools && agentAuthored && typeof entry.setByAgent === 'string' && entry.setByAgent.length <= 200 && { setByAgent: entry.setByAgent }),
       ...(protectUserTools && current?.setByAgent && { setByAgent: current.setByAgent }),
       updatedAt: protectUserTools && current ? current.updatedAt : updatedAt,
-    });
+    }, { allowUserReconnect: true });
     if (!wrote) continue;
     applied++;
     if (active && !current?.link && !activeAgentLinks(current).length) kept++;
