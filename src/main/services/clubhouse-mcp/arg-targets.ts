@@ -19,10 +19,13 @@ import * as agentConfig from '../agent-config';
 import { agentRegistry } from '../agent-registry';
 import { resolveOrchestrationPolicies } from '../orchestration-policy';
 import * as projectStore from '../project-store';
+import { groupProjectRegistry } from '../group-project-registry';
+import { parseAgentAddress } from '../../../shared/agent-address';
+import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { localConnectionWakeOn } from '../connection-grants-store';
 import { bindingManager } from './binding-manager';
-import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
-import { mcpCallerParent } from './mcp-call-gate';
+import { isDispatcherAgent, isTrackedDispatcher, isDispatcherCoordinatorId } from './dispatcher-gate';
+import { mcpCallerKind, mcpCallerParent } from './mcp-call-gate';
 import { toolGrantDeclarations, type ToolGrant, type ToolGrantDeclaration } from './tool-grants';
 
 /** What each argument-target declaration of a call reaches. Null: not checked here (see the file comment). */
@@ -98,6 +101,13 @@ class Lookup {
    * nothing matches.
    */
   async candidates(ref: string, inProject: string | undefined, names: 'project' | 'self_and_helpers' | 'registered'): Promise<Array<{ config: DurableAgentConfig; projectPath: string }>> {
+    let dispatcher: { config: DurableAgentConfig | null; path: string | null } | undefined;
+    if (isDispatcherCoordinatorId(ref) || names === 'registered') {
+      try { dispatcher = await import('../dispatcher/dispatcher-service').then((m) => m.getDispatcherState()); } catch { /* telemetry-exempt: lookup continues with registered agents */ }
+      if (dispatcher?.config && dispatcher.path && ref === dispatcher.config.id) return [{ config: dispatcher.config, projectPath: dispatcher.path }];
+    }
+    const quick = agentRegistry.get(ref);
+    if (quick && mcpCallerKind(ref) === 'quick') return [{ config: { id: ref, name: ref, color: 'indigo', createdAt: new Date().toISOString() } as DurableAgentConfig, projectPath: quick.projectPath }];
     const byId = await this.byId(ref, inProject);
     if (byId) return [byId];
     const pool: Array<{ config: DurableAgentConfig; projectPath: string }> = [];
@@ -112,6 +122,7 @@ class Lookup {
     } else if (this.callerProject) {
       for (const config of await this.agentsIn(this.callerProject)) pool.push({ config, projectPath: this.callerProject });
     }
+    if (dispatcher?.config && dispatcher.path && names === 'registered') pool.push({ config: dispatcher.config, projectPath: dispatcher.path });
     const exact = pool.filter((c) => c.config.name === ref);
     return exact.length > 0 ? exact : pool.filter((c) => c.config.name.toLowerCase() === ref.toLowerCase());
   }
@@ -140,7 +151,7 @@ async function agentTarget(lookup: Lookup, config: DurableAgentConfig, projectPa
   const connected = await isConnected(lookup, config, projectPath);
   if (connected) relations.push('connected');
   const wakeOn = connected && localConnectionWakeOn(caller, config.id);
-  return { kind: 'agent', agentId: config.id, relations, projectPath, isDispatcher: isTrackedDispatcher(config.id), ...(wakeOn && { wakeOn: true }) };
+  return { kind: 'agent', agentId: config.id, relations, projectPath, isDispatcher: isTrackedDispatcher(config.id) || isDispatcherCoordinatorId(config.id), ...(wakeOn && { wakeOn: true }) };
 }
 
 /**
@@ -171,6 +182,16 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
     return [{ kind: 'agent', relations: [], ...(projectPath && { projectPath }) }];
   }
   const refs = from.args.flatMap((a) => refsOf(args[a]));
+  if (d.target === 'group_project_arg') {
+    const projects = await groupProjectRegistry.list();
+    return refs.flatMap((ref) => {
+      const matches = projects.filter((p) => p.id === ref || p.name.toLowerCase() === ref.toLowerCase());
+      return matches.map((p): GrantCallTarget => {
+        const member = bindingManager.getBindingsForAgent(lookup.callerId).some((b) => b.targetKind === 'group-project' && b.targetId === p.id);
+        return { kind: 'group_project', groupRole: member ? (isProjectAdmin(p.metadata, lookup.callerId) ? 'admin' : 'member') : null };
+      });
+    });
+  }
   if (d.target === 'project_arg') {
     // Adding or opening a project (#3050): the folder usually isn't a project yet, so it can't be left
     // to the tool like an unknown project. A path is checked as that folder; anything else (or nothing)
@@ -197,9 +218,19 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
   // several agents (a shared name) is checked against every one of them.
   const out: GrantCallTarget[] = [];
   for (const ref of refs) {
-    for (const found of await lookup.candidates(ref, inProject, from.names ?? 'project')) {
-      out.push(await agentTarget(lookup, found.config, found.projectPath));
+    const remote = d.allowRemote ? parseAgentAddress(ref) : undefined;
+    if (remote?.machine) {
+      const connected = bindingManager.getBindingsForAgent(lookup.callerId).some((b) => b.targetKind === 'agent' && b.targetId === ref);
+      out.push({ kind: 'agent', agentId: ref, relations: connected ? ['connected'] : [] });
+      continue;
     }
+    const candidates = await lookup.candidates(ref, inProject, from.names ?? 'project');
+    if (candidates.length === 0 && ref === lookup.callerId && (d.strictTargets || d.allowRemote)) {
+      out.push({ kind: 'agent', agentId: lookup.callerId, relations: ['self'], ...(lookup.callerProject && { projectPath: lookup.callerProject }), isDispatcher: isTrackedDispatcher(lookup.callerId) });
+      continue;
+    }
+    if (candidates.length === 0 && (d.strictTargets || d.allowRemote)) out.push({ kind: 'agent', relations: [] });
+    for (const found of candidates) out.push(await agentTarget(lookup, found.config, found.projectPath));
   }
   return out;
 }
@@ -208,7 +239,7 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
 export async function resolveArgTargets(callerId: string, grant: ToolGrant | undefined, args: Record<string, unknown>): Promise<ArgTargets> {
   const out: ArgTargets = new Map();
   if (!grant) return out;
-  const declarations = toolGrantDeclarations(grant).filter((d) => (d.target === 'agent_arg' || d.target === 'project_arg') && d.from);
+  const declarations = toolGrantDeclarations(grant).filter((d) => (d.target === 'agent_arg' || d.target === 'project_arg' || d.target === 'group_project_arg') && d.from);
   if (declarations.length === 0) return out;
   const lookup = new Lookup(callerId, agentRegistry.get(callerId)?.projectPath);
   for (const d of declarations) {
@@ -216,7 +247,7 @@ export async function resolveArgTargets(callerId: string, grant: ToolGrant | und
       out.set(d, await resolveDeclaration(lookup, d, args));
     } catch {
       // telemetry-exempt: unresolved, so not checked here; the tool's own checks still run.
-      out.set(d, null);
+      out.set(d, d.target === 'group_project_arg' ? [{ kind: 'group_project', groupRole: null }] : d.strictTargets || d.allowRemote ? [{ kind: 'agent', relations: [] }] : null);
     }
   }
   return out;

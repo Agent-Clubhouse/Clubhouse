@@ -84,7 +84,7 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
 /** The target a declaration names, resolved for this call. Null: not checked here (see the file comment). */
 function resolveTargets(agentId: string, d: ToolGrantDeclaration, wire: GrantCheckWire | undefined, args: Record<string, unknown>, argTargets?: ArgTargets): GrantCallTarget[] {
   // Named in the arguments: resolved before the check, at call time only (arg-targets.ts).
-  if (d.target === 'agent_arg' || d.target === 'project_arg') return argTargets?.get(d) ?? [];
+  if (d.target === 'agent_arg' || d.target === 'project_arg' || d.target === 'group_project_arg') return argTargets?.get(d) ?? [];
   const one = resolveTarget(agentId, d.target, wire, args);
   return one ? [one] : [];
 }
@@ -120,6 +120,7 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     }
     case 'agent_arg':
     case 'project_arg':
+    case 'group_project_arg':
       return null; // resolveTargets takes these from the call's resolved arguments
   }
 }

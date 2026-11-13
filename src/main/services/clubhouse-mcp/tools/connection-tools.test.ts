@@ -131,6 +131,11 @@ import { updateAgentGrantChanges } from '../../agent-grants-store';
 import { dropGrantRequestsFor, listGrantRequests } from '../../grant-requests';
 import { recordDispatcherControl } from '../../../telemetry/dispatcher-telemetry';
 import { groupProjectRegistry } from '../../group-project-registry';
+import * as annexIdentity from '../../annex-identity';
+import * as annexCalls from '../../annex-agent-calls';
+import * as dispatcherService from '../../dispatcher/dispatcher-service';
+import * as dispatcherGate from '../dispatcher-gate';
+import { forgetMcpCaller, setMcpCallerQuick } from '../mcp-call-gate';
 
 let root: string;
 let projectPath: string;
@@ -253,6 +258,179 @@ describe('ordinary agents with connection.manage (#3336)', () => {
   }));
 
   beforeEach(() => setOrchestrationEnabled('durable_lead', false));
+
+  it('describes the available connection management tools', () => {
+    const names = new Set(['connect_agents', 'disconnect_agents', 'set_connection_tools', 'list_connections', 'join_group_project', 'leave_group_project']);
+    expect(getScopedToolList('durable_lead').filter((tool) => names.has(tool.name)).map(({ name, description }) => [name, description])).toMatchSnapshot();
+  });
+
+  it('requires management grants for both an agent and group project, and persists only its own membership', async () => {
+    const project = await groupProjectRegistry.create('Shared');
+    const denied = await call('join_group_project', { agent: 'lead', project: project.id });
+    expect(denied.isError).toBe(true);
+    expect(boundPairs()).toEqual([]);
+    await grantConnections();
+    expect((await call('join_group_project', { agent: 'other', project: project.id })).isError).toBe(false);
+    restart();
+    await rebuildPersistedBindings();
+    expect(boundPairs()).toContain(`durable_other->${project.id}`);
+    expect((await call('leave_group_project', { agent: 'other', project: project.id })).isError).toBe(false);
+    expect(boundPairs()).not.toContain(`durable_other->${project.id}`);
+  });
+
+  it('asks for the agent grant even when a group membership grant covers the project', async () => {
+    const project = await groupProjectRegistry.create('Shared');
+    bindingManager.bind('durable_lead', { targetId: project.id, targetKind: 'group-project', label: project.name });
+    await updateAgentGrantChanges('durable_lead', () => ({ changes: [{ action: 'connection.manage', target: { kind: 'group_project', role: 'member' }, mode: 'allow' }] }));
+    const result = await call('join_group_project', { agent: 'lead', project: project.id });
+    expect(result.isError).toBe(true);
+    expect(listGrantRequests().some((r) => r.agentId === 'durable_lead' && r.actions.includes('connection.manage'))).toBe(true);
+    expect(await readConnections(projectPath)).toEqual([]);
+  });
+
+  it('makes tools available to a quick agent and retains its links between durable agents after it ends', async () => {
+    const id = 'quick';
+    agentRegistry.register(id, { projectPath, orchestrator: 'claude-code', runtime: 'pty' });
+    setMcpCallerQuick(id, projectPath);
+    try {
+      expect(getScopedToolList(id).map((tool) => tool.name)).toContain('connect_agents');
+      const asked = await call('list_connections', {}, id);
+      expect(asked.isError).toBe(true);
+      expect(listGrantRequests().some((request) => request.agentId === id && request.actions.includes('connection.manage'))).toBe(true);
+      await updateAgentGrantChanges(id, () => ({ changes: [{ action: 'connection.manage', target: { kind: 'self' }, mode: 'off' }] }));
+      expect(getScopedToolList(id).map((tool) => tool.name)).not.toContain('connect_agents');
+      await updateAgentGrantChanges(id, () => ({ changes: [{ action: 'connection.manage', target: { kind: 'any' }, mode: 'allow' }] }));
+      expect(getScopedToolList(id).map((tool) => tool.name)).toContain('connect_agents');
+      expect((await call('connect_agents', { from: id, to: 'lead' }, id)).isError).toBe(false);
+      expect((await call('connect_agents', { from: 'lead', to: 'other' }, id)).isError).toBe(false);
+      expect(boundPairs()).toEqual(['durable_lead->durable_other', 'quick->durable_lead']);
+      const stopWatching = watchOrchestratorConnections(() => rebuildPersistedBindings());
+      forgetMcpCaller(id);
+      agentRegistry.untrack(id);
+      await vi.waitFor(() => expect(boundPairs()).toEqual(['durable_lead->durable_other']));
+      stopWatching();
+      restart();
+      await rebuildPersistedBindings();
+      expect(boundPairs()).toEqual(['durable_lead->durable_other']);
+    } finally {
+      await updateAgentGrantChanges(id, () => undefined);
+      dropGrantRequestsFor(id);
+      forgetMcpCaller(id);
+      agentRegistry.untrack(id);
+    }
+  });
+
+  it('can connect to a different running quick agent and removes its source when it finishes', async () => {
+    const id = 'quick-target';
+    agentRegistry.register(id, { projectPath, orchestrator: 'claude-code', runtime: 'pty' });
+    setMcpCallerQuick(id, projectPath);
+    try {
+      await grantConnections();
+      expect((await call('connect_agents', { from: 'lead', to: id })).isError).toBe(false);
+      expect(boundPairs()).toContain(`durable_lead->${id}`);
+      const stopWatching = watchOrchestratorConnections(() => rebuildPersistedBindings());
+      agentRegistry.untrack(id);
+      await vi.waitFor(() => expect(boundPairs()).not.toContain(`durable_lead->${id}`));
+      stopWatching();
+    } finally {
+      forgetMcpCaller(id);
+      agentRegistry.untrack(id);
+    }
+  });
+
+  it('connects to the Dispatcher and restores its source after restart', async () => {
+    const dispatcherPath = path.join(root, 'dispatcher');
+    fs.mkdirSync(dispatcherPath);
+    const config = agent('dispatcher', { name: 'Dispatcher' });
+    configs.set(dispatcherPath, [config]);
+    vi.spyOn(dispatcherService, 'getDispatcherState').mockReturnValue({ config, path: dispatcherPath } as ReturnType<typeof dispatcherService.getDispatcherState>);
+    await grantConnections();
+    expect((await call('connect_agents', { from: 'lead', to: 'dispatcher', twoWay: true })).isError).toBe(false);
+    expect(boundPairs()).toEqual(['dispatcher->durable_lead', 'durable_lead->dispatcher']);
+    restart();
+    await rebuildPersistedBindings();
+    expect(boundPairs()).toEqual(['dispatcher->durable_lead', 'durable_lead->dispatcher']);
+    vi.restoreAllMocks();
+  });
+
+  it('offers connection tools to the Dispatcher chat only when it has a grant', async () => {
+    const chatPath = path.join(root, 'dispatcher-chat');
+    fs.mkdirSync(chatPath);
+    const config = agent('chat', { name: 'Chat' });
+    configs.set(chatPath, [config]);
+    agentRegistry.register(config.id, { projectPath: chatPath, orchestrator: 'claude-code', runtime: 'pty' });
+    vi.spyOn(dispatcherService, 'getDispatcherState').mockReturnValue({ config: null, path: null, chatPath } as ReturnType<typeof dispatcherService.getDispatcherState>);
+    vi.spyOn(dispatcherGate, 'isTrackedDispatcher').mockImplementation((id) => id === config.id);
+    vi.spyOn(dispatcherGate, 'isTrackedDispatcherChat').mockImplementation((id) => id === config.id);
+    vi.spyOn(dispatcherGate, 'isDispatcherChatAgent').mockImplementation((id) => id === config.id);
+    try {
+      expect(getScopedToolList(config.id).map((tool) => tool.name)).not.toContain('connect_agents');
+      await updateAgentGrantChanges(config.id, () => ({ changes: [{ action: 'connection.manage', target: { kind: 'any' }, mode: 'allow' }] }));
+      expect(getScopedToolList(config.id).map((tool) => tool.name)).toContain('connect_agents');
+      expect((await call('connect_agents', { from: 'lead', to: 'other' }, config.id)).isError).toBe(false);
+      restart();
+      await rebuildPersistedBindings();
+      expect(boundPairs()).toContain('durable_lead->durable_other');
+    } finally {
+      await updateAgentGrantChanges(config.id, () => undefined);
+      agentRegistry.untrack(config.id);
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('lets the Dispatcher manage a grant-authorized link made through these tools', async () => {
+    const dispatcherPath = path.join(root, 'dispatcher');
+    fs.mkdirSync(dispatcherPath);
+    const config = agent('dispatcher', { name: 'Dispatcher' });
+    configs.set(dispatcherPath, [config]);
+    agentRegistry.register(config.id, { projectPath: dispatcherPath, orchestrator: 'claude-code', runtime: 'pty' });
+    vi.spyOn(dispatcherService, 'getDispatcherState').mockReturnValue({ config, path: dispatcherPath } as ReturnType<typeof dispatcherService.getDispatcherState>);
+    vi.spyOn(dispatcherGate, 'isDispatcherAgent').mockReturnValue(true);
+    try {
+      await updateAgentGrantChanges(config.id, () => ({ changes: [{ action: 'connection.manage', target: { kind: 'any' }, mode: 'allow' }] }));
+      expect((await call('connect_agents', { from: 'lead', to: 'other' }, config.id)).isError).toBe(false);
+      expect((await call('set_connection_tools', { from: 'lead', to: 'other', allow: ['send_message'] }, config.id)).isError).toBe(false);
+      expect((await call('disconnect_agents', { from: 'lead', to: 'other' }, config.id)).isError).toBe(false);
+    } finally {
+      await updateAgentGrantChanges(config.id, () => undefined);
+      agentRegistry.untrack(config.id);
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('manages remote directions only with grants, preserves their creator, and reads saved tools', async () => {
+    const self = Array(16).fill('aa').join(':');
+    const far = Array(16).fill('bb').join(':');
+    vi.spyOn(annexIdentity, 'getIdentity').mockReturnValue({ fingerprint: self } as ReturnType<typeof annexIdentity.getIdentity>);
+    vi.spyOn(annexCalls, 'isNetworkComputer').mockReturnValue(true);
+    const ref = `remote@${far}`;
+    expect((await call('connect_agents', { from: 'lead', to: ref })).isError).toBe(true);
+    await grantConnections();
+    const made = await call('connect_agents', { from: 'lead', to: ref, twoWay: true, allow: ['send_message', 'wake_agent'] });
+    expect(made.isError).toBe(false);
+    expect(getConnectionDirection({ agentId: 'durable_lead' }, { agentId: 'remote', machineId: far })).toMatchObject({ agentLinks: [{ agentId: 'durable_lead', machineId: self }] });
+    const listed = JSON.parse((await call('list_connections', {})).text);
+    expect(listed.connections).toEqual(expect.arrayContaining([expect.objectContaining({ from: { agentId: 'remote', machineId: far }, to: { agentId: 'durable_lead' }, made_by_agent: 'durable_lead' })]));
+    expect((await call('set_connection_tools', { from: 'lead', to: ref, allow: ['clear_agent'] })).isError).toBe(true);
+    expect((await call('set_connection_tools', { from: 'lead', to: ref, allow: ['send_file'] })).isError).toBe(false);
+    expect((await call('disconnect_agents', { from: 'lead', to: ref, twoWay: true })).isError).toBe(false);
+    expect(getConnectionDirection({ agentId: 'durable_lead' }, { agentId: 'remote', machineId: far })?.agentLinks?.[0].removedAt).toEqual(expect.any(String));
+    vi.restoreAllMocks();
+  });
+
+  it('can manage a direction whose two endpoints are on another network computer', async () => {
+    const self = Array(16).fill('aa').join(':');
+    const far = Array(16).fill('bb').join(':');
+    vi.spyOn(annexIdentity, 'getIdentity').mockReturnValue({ fingerprint: self } as ReturnType<typeof annexIdentity.getIdentity>);
+    vi.spyOn(annexCalls, 'isNetworkComputer').mockReturnValue(true);
+    await grantConnections();
+    expect((await call('connect_agents', { from: `first@${far}`, to: `second@${far}` })).isError).toBe(false);
+    const direction = getConnectionDirection({ agentId: 'first', machineId: far }, { agentId: 'second', machineId: far });
+    expect(direction?.agentLinks?.[0]).toMatchObject({ agentId: 'durable_lead', machineId: self });
+    expect((await call('list_connections', { agent: `first@${far}` })).text).toContain('second');
+    expect((await call('disconnect_agents', { from: `first@${far}`, to: `second@${far}` })).isError).toBe(false);
+    vi.restoreAllMocks();
+  });
 
   it('connects, lists saved switches, changes one owned direction and disconnects without orchestration', async () => {
     await grantConnections();

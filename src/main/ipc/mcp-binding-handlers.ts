@@ -46,14 +46,20 @@ import { startAgentCalls } from '../services/annex-agent-calls';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexClient from '../services/annex-client';
 import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
+import { mcpCallerKind } from '../services/clubhouse-mcp/mcp-call-gate';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
 import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
-import { dispatcherDisplayName, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
+import { dispatcherDisplayName, getDispatcherChatConfig, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
 
 /** An agent's name and project here, for another machine's view of a call or connection (#3064). */
 async function describeAgentHere(agentId: string): Promise<{ name: string; projectName?: string } | undefined> {
+  const dispatcher = getDispatcherState().config;
+  if (dispatcher?.id === agentId) return { name: dispatcher.name };
+  const chat = getDispatcherChatConfig();
+  if (chat?.id === agentId) return { name: chat.name };
+  if (mcpCallerKind(agentId) === 'quick' && agentRegistry.get(agentId)) return { name: agentId };
   for (const project of await projectStore.peekProjects()) {
     const agent = (await agentConfig.peekDurableConfigs(project.path)).find((a) => a.id === agentId);
     if (agent) return { name: agent.name, projectName: project.displayName || project.name };

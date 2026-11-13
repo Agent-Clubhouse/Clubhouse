@@ -139,6 +139,8 @@ import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-regi
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
+import * as dispatcherService from '../services/dispatcher/dispatcher-service';
+import * as callerGate from '../services/clubhouse-mcp/mcp-call-gate';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import { agentRegistry } from '../services/agent-registry';
@@ -232,6 +234,19 @@ describe('mcp-binding-handlers registration', () => {
     expect(onDeliveryFailure).toBe(reportAnnexDeliveryFailure);
     expect(bindingManager.bind).not.toHaveBeenCalled();
     expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
+  });
+
+  it('describes available Dispatchers and running quick agents for network links', async () => {
+    vi.spyOn(dispatcherService, 'getDispatcherState').mockReturnValue({ config: { id: 'dispatcher-work', name: 'Dispatcher' } } as ReturnType<typeof dispatcherService.getDispatcherState>);
+    vi.spyOn(dispatcherService, 'getDispatcherChatConfig').mockReturnValue(null);
+    vi.spyOn(callerGate, 'mcpCallerKind').mockImplementation((id) => id === 'quick' ? 'quick' : undefined);
+    mockGet.mockImplementation((id) => id === 'quick' ? { projectPath: 'project', orchestrator: 'claude-code', runtime: 'pty' } : undefined);
+    await restorePersistedBindings();
+    const { describeLocalAgent } = vi.mocked(startAgentCalls).mock.calls[0][0];
+    expect(await describeLocalAgent('dispatcher-work')).toEqual({ name: 'Dispatcher' });
+    expect(await describeLocalAgent('quick')).toEqual({ name: 'quick' });
+    expect(await describeLocalAgent('missing')).toBeUndefined();
+    vi.restoreAllMocks();
   });
 
   it('notifies the renderer when grant requests for an agent are withdrawn', () => {

@@ -1,3 +1,4 @@
+import { activeAgentLinks } from '../../shared/connection-grants';
 /**
  * Agents across machines (#3064, Annex Network stage 7).
  *
@@ -23,7 +24,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import { tel } from '../telemetry/facade';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
-import { CONNECTION_TOOLS, WAKE_TOOL, type AgentAddress as ConnectionEnd, type ConnectionDirection } from '../../shared/connection-grants';
+import { CONNECTION_TOOLS, WAKE_TOOL, localWakeOn, type AgentAddress as ConnectionEnd, type ConnectionDirection } from '../../shared/connection-grants';
 import type { McpToolResult } from './clubhouse-mcp/types';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
@@ -586,7 +587,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   const from: ConnectionEnd = { agentId: body.from.agentId, machineId: machine };
   const direction = getConnectionDirection(from, { agentId: to.agentId });
   // The same answer whether or not the agent exists, as for local wires.
-  if (!dispatcher && !direction?.link) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
+  if (!dispatcher && !direction?.link && !activeAgentLinks(direction).length) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
   if (!dispatcher && direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: `${body.tool} is turned off on this connection.` };
   const key = `${machine}/${deliveryHash(currentEpoch)}/${body.callId}`;
   const hash = payloadHash(body);
@@ -635,7 +636,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
     const current = getConnectionDirection(from, { agentId: to.agentId });
     let result: AgentToolRunResult;
     if (generation !== lifecycle || !isNetworkComputer(machine) || deliveryHash(currentEpoch) !== deliveryHash(outgoingEpoch(machine))
-      || (dispatcher ? !dispatcher.isTarget(to.agentId) || !dispatcher.isAvailable(to.agentId) : !current?.link || current.disabledTools.includes(body.tool))) {
+      || (dispatcher ? !dispatcher.isTarget(to.agentId) || !dispatcher.isAvailable(to.agentId) : (!current?.link && !activeAgentLinks(current).length) || current.disabledTools.includes(body.tool))) {
       result = { ...text('The connection was revoked before this call ran.', true), annexDelivery: { state: 'refused', reason: 'authorization_revoked' } };
     } else {
       try {
@@ -695,6 +696,11 @@ export interface WireDirection {
   to: { agentId: string; machine: string; name?: string };
   disabledTools: string[];
   link: boolean;
+  /** New peers distinguish a user link from agent sources; absent means legacy link. */
+  userLink?: boolean;
+  agentLinks?: Array<{ agentId: string; machineId: string; createdAt: string; name?: string; removedAt?: string; removedByUser?: boolean }>;
+  setByAgent?: string;
+  toolsProtected?: boolean;
   updatedAt: string;
 }
 
@@ -735,11 +741,10 @@ function relative(end: { agentId: string; machine: string }, self: string): Conn
   return end.machine.toLowerCase() === self ? { agentId: end.agentId } : { agentId: end.agentId, machineId: end.machine.toLowerCase() };
 }
 
-/** The other machine a direction involves, if exactly one end is elsewhere. */
-function otherMachine(d: Pick<ConnectionDirection, 'from' | 'to'>): string | null {
-  if (d.from.machineId && !d.to.machineId) return d.from.machineId.toLowerCase();
-  if (d.to.machineId && !d.from.machineId) return d.to.machineId.toLowerCase();
-  return null;
+/** Peers holding an endpoint or an agent source, including the creator of a relayed link. */
+function peersFor(d: Pick<ConnectionDirection, 'from' | 'to' | 'agentLinks'>, self: string): string[] {
+  return [...new Set([d.from.machineId, d.to.machineId, ...(d.agentLinks ?? []).map((l) => l.machineId)]
+    .filter((machine): machine is string => !!machine && machine.toLowerCase() !== self).map((machine) => machine.toLowerCase()))];
 }
 
 async function toWire(d: ConnectionDirection, self: string): Promise<WireDirection> {
@@ -750,10 +755,19 @@ async function toWire(d: ConnectionDirection, self: string): Promise<WireDirecti
   const to = absolute(d.to, self);
   const fromName = await nameOf(d.from);
   const toName = await nameOf(d.to);
+  let toolsProtected: boolean | undefined;
+  if (!d.from.machineId && d.agentLinks?.length) {
+    const { collectSourcesByPair } = await import('./persisted-bindings');
+    const { bySource, failed } = await collectSourcesByPair();
+    const targetId = d.to.machineId ? formatAgentAddress({ agentId: d.to.agentId, machine: d.to.machineId }) : d.to.agentId;
+    const key = `${d.from.agentId}\u0000${targetId}`;
+    toolsProtected = !!d.link || !d.setByAgent || failed.length > 0 || [...bySource].some(([id, keys]) => id !== 'network-agent-connections' && keys.has(key));
+  }
   return {
     from: { ...from, ...(fromName && { name: fromName }) },
     to: { ...to, ...(toName && { name: toName }) },
-    disabledTools: d.disabledTools, link: !!d.link, updatedAt: d.updatedAt,
+    disabledTools: !d.from.machineId && !d.to.machineId && !localWakeOn(d) ? [...new Set([...d.disabledTools, WAKE_TOOL])] : d.disabledTools, link: !!d.link || !!activeAgentLinks(d).length, userLink: !!d.link,
+    agentLinks: d.agentLinks ?? [], ...(d.setByAgent && { setByAgent: d.setByAgent }), ...(toolsProtected !== undefined && { toolsProtected }), updatedAt: d.updatedAt,
   };
 }
 
@@ -789,7 +803,7 @@ export function syncDirectionsWith(machine: string): Promise<boolean> {
 
 /** This machine's directions with `machine`, as sent: the most recent first, at most one request's worth. */
 async function shareFor(machine: string, self: string): Promise<WireDirection[]> {
-  const share = listDirections().filter((d) => otherMachine(d) === machine)
+  const share = listDirections().filter((d) => peersFor(d, self).includes(machine))
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   return Promise.all(share.slice(0, DIRECTIONS_PER_REQUEST).map((d) => toWire(d, self)));
 }
@@ -831,7 +845,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
   }
   let applied = 0;
   // Links count toward the cap; a link turned off (a deleted agent's, say) doesn't.
-  let kept = listDirections().filter((d) => otherMachine(d) === machine && !!d.link).length;
+  let kept = listDirections().filter((d) => peersFor(d, self).includes(machine) && (!!d.link || !!activeAgentLinks(d).length)).length;
   const learned: Record<string, string> = {};
   for (const entry of list.directions as WireDirection[]) {
     const ok = entry && entry.from && entry.to && typeof entry.from.agentId === 'string' && typeof entry.to.agentId === 'string'
@@ -840,29 +854,62 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
       && typeof entry.updatedAt === 'string' && !Number.isNaN(Date.parse(entry.updatedAt))
       && !entry.from.agentId.includes('@') && !entry.to.agentId.includes('@');
     if (!ok) continue;
-    const ends = [entry.from.machine.toLowerCase(), entry.to.machine.toLowerCase()].sort().join(' ');
-    // One end here and the other on the sender's machine: nothing else is the sender's to say.
-    if (ends !== [machine, self].sort().join(' ')) continue;
+    const machines = [entry.from.machine.toLowerCase(), entry.to.machine.toLowerCase()];
+    if (machines.some((m) => m !== self && !isNetworkComputer(m))) continue;
+    const creators = Array.isArray(entry.agentLinks) ? entry.agentLinks : [];
+    const authoredBySender = creators.some((l) => l && typeof l.machineId === 'string' && l.machineId.toLowerCase() === machine);
+    const authoredHere = creators.some((l) => l && typeof l.machineId === 'string' && l.machineId.toLowerCase() === self);
+    const legacyPair = machines.includes(self) && machines.includes(machine);
+    // A third machine may relay an agent-made link to its ends or its creator, never an arbitrary legacy user link.
+    if (!legacyPair && !(machines.includes(self) && authoredBySender) && !(authoredHere && machines.includes(machine))) continue;
     const from = relative(entry.from, self);
     const to = relative(entry.to, self);
-    const localEnd = from.machineId ? to : from;
+    const localEnds = [from, to].filter((end) => !end.machineId);
     const current = getConnectionDirection(from, to);
+    if (typeof entry.link !== 'boolean') continue;
+    const userLink = typeof entry.userLink === 'boolean' ? entry.userLink : entry.link;
+    const agentLinks = Array.isArray(entry.agentLinks) ? entry.agentLinks.filter((l) => l && typeof l.agentId === 'string' && l.agentId.length > 0 && l.agentId.length <= 200 && typeof l.machineId === 'string' && (l.machineId.toLowerCase() === self || isNetworkComputer(l.machineId.toLowerCase())) && typeof l.createdAt === 'string' && !Number.isNaN(Date.parse(l.createdAt))).slice(0, 50).map((l) => ({ agentId: l.agentId, machineId: l.machineId.toLowerCase(), createdAt: Date.parse(l.createdAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : l.createdAt, ...(typeof l.name === 'string' && l.name.length <= 200 && { name: l.name }), ...(typeof l.removedAt === 'string' && !Number.isNaN(Date.parse(l.removedAt)) && { removedAt: Date.parse(l.removedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : l.removedAt }), ...(l.removedByUser === true && { removedByUser: true }) })) : [];
+    const active = !!userLink || agentLinks.some((link) => !link.removedAt);
+    if (active && !entry.link) continue; // Both the legacy flag and the source list must agree.
     // A link only for an agent here that exists; a link turned off only matters where there's one to turn off.
-    if (entry.link ? !(await describe(localEnd.agentId)) : !current) continue;
-    if (entry.link && !current?.link && kept >= DIRECTIONS_PER_MACHINE) continue;
+    if (localEnds.length === 0 && !current) continue;
+    if (active || agentLinks.length > 0) {
+      if ((await Promise.all(localEnds.map((end) => describe(end.agentId)))).some((found) => !found)) continue;
+    } else if (!current) continue;
+    if (active && !current?.link && !activeAgentLinks(current).length && kept >= DIRECTIONS_PER_MACHINE) continue;
     const updatedAt = Date.parse(entry.updatedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : entry.updatedAt;
     const tools = [...new Set(entry.disabledTools.filter((t): t is string => typeof t === 'string' && t.length > 0 && t.length <= 100))].slice(0, 50);
+    // An agent-authored update can add its source, but cannot overwrite a person's source or saved switches.
+    const agentAuthored = typeof entry.setByAgent === 'string' && agentLinks.some((l) => l.agentId === entry.setByAgent);
+    let protectUserTools = !!current && ((!legacyPair && !!current.link) || (agentAuthored && (current.setByAgent !== entry.setByAgent || !!current.link)));
+    let protectedLive: { disabledTools?: string[]; enabledTools?: string[] } | undefined;
+    if (agentAuthored && !from.machineId) {
+      const { collectSourcesByPair } = await import('./persisted-bindings');
+      const { bySource, failed } = await collectSourcesByPair();
+      const targetId = to.machineId ? formatAgentAddress({ agentId: to.agentId, machine: to.machineId }) : to.agentId;
+      const key = `${from.agentId}\u0000${targetId}`;
+      if (failed.length || [...bySource].some(([id, keys]) => id !== 'network-agent-connections' && keys.has(key))) {
+        protectUserTools = true;
+        const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+        protectedLive = bindingManager.getBindingsForAgent(from.agentId).find((binding) => binding.targetId === targetId);
+        if (!current && !protectedLive) continue; // An unreadable source must not have its switches guessed.
+      }
+    }
+    const effectiveUserLink = protectUserTools || !legacyPair ? !!current?.link : userLink;
     const wrote = await putConnectionDirection({
-      from, to, disabledTools: tools,
-      ...(entry.link && { link: { createdAt: current?.link?.createdAt ?? updatedAt } }),
-      updatedAt,
+      from, to, disabledTools: protectUserTools ? current?.disabledTools ?? protectedLive?.disabledTools ?? [] : tools,
+      ...(!from.machineId && !to.machineId && (protectUserTools ? localWakeOn(current, protectedLive?.enabledTools) : !tools.includes(WAKE_TOOL)) && { enabledTools: [WAKE_TOOL] }),
+      ...(effectiveUserLink && { link: { createdAt: current?.link?.createdAt ?? updatedAt } }),
+      ...(agentLinks.length && { agentLinks }),
+      ...(entry.from.machine.toLowerCase() === machine && typeof entry.toolsProtected === 'boolean' && { agentToolsProtected: entry.toolsProtected }),
+      ...(!protectUserTools && typeof entry.setByAgent === 'string' && entry.setByAgent.length <= 200 && { setByAgent: entry.setByAgent }),
+      updatedAt: protectUserTools && current ? current.updatedAt : updatedAt,
     });
     if (!wrote) continue;
     applied++;
-    if (entry.link && !current?.link) kept++;
-    const remoteEnd = entry.from.machine.toLowerCase() === self ? entry.to : entry.from;
-    if (typeof remoteEnd.name === 'string' && remoteEnd.name.length > 0 && remoteEnd.name.length <= 200) {
-      learned[formatAgentAddress({ agentId: remoteEnd.agentId, machine: remoteEnd.machine })] = remoteEnd.name;
+    if (active && !current?.link && !activeAgentLinks(current).length) kept++;
+    for (const remoteEnd of [entry.from, entry.to].filter((end) => end.machine.toLowerCase() !== self)) {
+      if (typeof remoteEnd.name === 'string' && remoteEnd.name.length > 0 && remoteEnd.name.length <= 200) learned[formatAgentAddress({ agentId: remoteEnd.agentId, machine: remoteEnd.machine })] = remoteEnd.name;
     }
   }
   await learnNames(learned);
@@ -903,8 +950,9 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
   const offConnected = options.transport.onConnected((machine) => { void syncThenFlush(machine); });
   // A change here to a direction with another machine is sent to it at once, when connected.
   const offChanged = onConnectionGrantsChanged((from, to) => {
-    const machine = otherMachine({ from, to });
-    if (machine) void syncDirectionsWith(machine);
+    const self = selfFingerprint();
+    const direction = getConnectionDirection(from, to);
+    if (self && direction) for (const machine of peersFor(direction, self)) void syncDirectionsWith(machine);
   });
   void (async () => {
     await notifyFailures();

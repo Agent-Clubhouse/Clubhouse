@@ -1,0 +1,30 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ordinary agents with connection.manage (#3336) > describes the available connection management tools 1`] = `
+[
+  [
+    "join_group_project",
+    "Add an agent you may manage to a group project you may manage.",
+  ],
+  [
+    "leave_group_project",
+    "Remove a membership source you made for an agent and group project you may manage.",
+  ],
+  [
+    "connect_agents",
+    "Connect two agents covered by your connection.manage grants. New directions allow status, output, reachability, messages, files and wake; clear and compact stay off. Set twoWay to connect both directions. Each direction is saved and read back; existing switches are kept.",
+  ],
+  [
+    "disconnect_agents",
+    "Remove a connection made with connect_agents. Set twoWay to remove both directions. Connections drawn on the canvas, and the link between you and your helpers, stay.",
+  ],
+  [
+    "set_connection_tools",
+    "Set one direction of a connection you made. Other sources and directions stay unchanged. Returns saved switches. Reset tools require your agent.reset grant on the receiver. Dispatcher-owned links keep their existing ownership rules.",
+  ],
+  [
+    "list_connections",
+    "Read your saved connections, their sources, switches and whether you may change each direction. Naming another agent, including an address on a network computer, requires connection.manage on it.",
+  ],
+]
+`;

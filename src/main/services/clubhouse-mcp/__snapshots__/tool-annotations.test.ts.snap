@@ -88,6 +88,8 @@ global:answer_helper_question readOnly=false destructive=false openWorld=false
 global:create_group_project readOnly=false destructive=false openWorld=false
 global:add_to_group_project readOnly=false destructive=false openWorld=false
 global:remove_from_group_project readOnly=false destructive=true openWorld=false
+global:join_group_project readOnly=false destructive=false openWorld=false
+global:leave_group_project readOnly=false destructive=true openWorld=false
 global:connect_agents readOnly=false destructive=false openWorld=false
 global:disconnect_agents readOnly=false destructive=true openWorld=false
 global:set_connection_tools readOnly=false destructive=false openWorld=false

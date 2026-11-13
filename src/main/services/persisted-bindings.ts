@@ -287,6 +287,9 @@ const removedFromSource = new Set<string>();
 export function markSourceRemovedByUser(sourceId: string, agentId: string, targetId: string): void {
   removedFromSource.add(`${sourceId}\u0001${pairKey(agentId, targetId)}`);
 }
+export function clearSourceRemovedByUser(sourceId: string, agentId: string, targetId: string): void {
+  removedFromSource.delete(`${sourceId}\u0001${pairKey(agentId, targetId)}`);
+}
 export function isSourceRemovedByUser(sourceId: string, agentId: string, targetId: string): boolean {
   return removedFromSource.has(`${sourceId}\u0001${pairKey(agentId, targetId)}`);
 }

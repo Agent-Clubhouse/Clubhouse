@@ -19,7 +19,7 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => true }));
 const running = vi.hoisted(() => new Set<string>());
 vi.mock('../agent-registry', () => ({
-  agentRegistry: { get: (id: string) => (running.has(id) ? { runtime: 'pty', projectPath: '/p' } : undefined) },
+  agentRegistry: { get: (id: string) => (running.has(id) ? { runtime: 'pty', projectPath: '/p' } : undefined), onAuthChange: () => () => undefined },
   getAgentNonce: vi.fn(),
   getAgentProjectPath: () => '/p',
 }));

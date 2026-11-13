@@ -67,6 +67,14 @@ describe('connections with agents on other computers (#3064)', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it('shows an agent-created direction and its maker without a user link', () => {
+    const networkDirection = { ...dir({ agentId: 'a' }, { agentId: 'z', machineId: NET }, false), agentLinks: [{ agentId: 'maker', machineId: NET, name: 'Morgan', createdAt: at }] };
+    render(<RemoteConnections agent={agent} grants={[networkDirection]} onChanged={vi.fn()} />);
+    expect(screen.getByTestId('remote-connection-row')).toHaveTextContent('Made by Morgan');
+    fireEvent.click(screen.getByTestId('remote-connection-manage'));
+    expect(screen.getByText('What alpha can do to zed')).toBeInTheDocument();
+  });
+
   it('removes both directions after confirming', async () => {
     const disconnect = vi.fn().mockResolvedValue(undefined);
     Object.assign(window.clubhouse.mcpBinding, { disconnectAcrossMachines: disconnect });
