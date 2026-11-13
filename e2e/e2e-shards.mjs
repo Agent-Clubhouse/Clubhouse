@@ -35,6 +35,7 @@ export const E2E_SHARDS = {
   2: [
     'canvas-card-wheel.spec.ts',
     'group-project-membership.spec.ts',
+    'group-project-actions.spec.ts',
     'mermaid-preview.spec.ts',
     'navigation.spec.ts',
     'open-project.spec.ts',

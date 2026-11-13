@@ -4,6 +4,7 @@ import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { DeleteGroupProjectDialog } from './DeleteGroupProjectDialog';
+import { GroupProjectActionsSection } from '../group-projects/GroupProjectActionsSection';
 import {
   SettingsBlock, SettingsPage, SettingsSection,
   settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea,
@@ -259,6 +260,7 @@ export function GroupProjectsSettingsView() {
         <>
           {selected && <GroupProjectEditor key={selected.id} project={selected} />}
           {selected && <GroupProjectScopeEditor key={`scope-${selected.id}`} project={selected} />}
+          {selected && <GroupProjectActionsSection key={`actions:${selected.id}`} groupProjectId={selected.id} />}
           <CreateGroupProject />
         </>
       )}
@@ -266,7 +268,7 @@ export function GroupProjectsSettingsView() {
         <SettingsBlock>
           <p className={settingsHelp}>
             Host status, network synchronization, durable membership,
-            membership management, admin grants and owned Actions are not available here.
+            membership management and admin grants are not available here.
             Board and Canvas navigation are not provided by this directory.
             This list is not an authoritative network or membership directory.
           </p>

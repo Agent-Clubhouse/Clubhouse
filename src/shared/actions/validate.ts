@@ -13,6 +13,7 @@ import {
   APP_EVENT_KINDS,
   DEVICE_EVENT_KINDS,
   GIT_EVENT_KINDS,
+  GROUP_PROJECT_EVENT_KINDS,
   HISTORY_MAX_AGE_MS,
   HISTORY_MAX_RUNS,
   MAX_ACTION_STEPS,
@@ -78,6 +79,12 @@ function text(v: unknown, field: string, required: boolean): Result<string | und
 }
 
 function validateSource(event: ActionEventKind, raw: unknown): Result<ActionEventSource> {
+  if (GROUP_PROJECT_EVENT_KINDS.includes(event)) {
+    if (!isObject(raw) || raw.kind !== 'group_project' || !nonEmpty(raw.groupProjectId)) return { ok: false, error: 'Choose a group project to watch.' };
+    if (raw.topic !== undefined && (!nonEmpty(raw.topic) || event !== 'group_project.message_posted')) return { ok: false, error: 'A topic filter is only for posted messages.' };
+    return { ok: true, value: { kind: 'group_project', groupProjectId: raw.groupProjectId, ...(typeof raw.topic === 'string' && { topic: raw.topic.trim() }) } };
+  }
+  if (isObject(raw) && raw.kind === 'group_project') return { ok: false, error: 'A group project source is only for group project events.' };
   if (DEVICE_EVENT_KINDS.includes(event)) {
     if (!isObject(raw) || raw.kind !== 'device') return { ok: false, error: 'Device events need a device source.' };
     if (raw.deviceId !== undefined && !nonEmpty(raw.deviceId)) return { ok: false, error: 'Give a device id from list_devices, or leave it out for any device.' };
@@ -146,7 +153,7 @@ export function validateTrigger(raw: unknown): Result<ActionTrigger> {
       }
       if (raw.delaySeconds) delaySeconds = raw.delaySeconds;
     }
-    if (event === 'agent.idle' && !delayMinutes && !delaySeconds) return { ok: false, error: 'Say how much idle time to wait for.' };
+    if ((event === 'agent.idle' || event === 'group_project.board_idle') && !delayMinutes && !delaySeconds) return { ok: false, error: 'Say how much idle time to wait for.' };
     if (source.value.kind === 'any' && (raw.delayMinutes !== undefined || raw.delaySeconds !== undefined)) {
       return { ok: false, error: 'Any readable agent uses its coalescing window instead of Wait first.' };
     }
@@ -200,6 +207,16 @@ export function validateStep(raw: unknown, index: number): Result<ActionStep> {
   if (!isObject(raw) || !ACTION_STEP_KINDS.includes(raw.kind as never)) return { ok: false, error: `${label} needs a type.` };
   const needAgent = (): Result<string> => nonEmpty(raw.agentId) ? { ok: true, value: raw.agentId } : { ok: false, error: `${label} needs an agent.` };
   switch (raw.kind) {
+    case 'group_post': {
+      if (!nonEmpty(raw.topic)) return { ok: false, error: `${label} needs a topic.` };
+      const body = text(raw.text, `${label}’s message`, true); if (!body.ok) return fail(body);
+      return { ok: true, value: { kind: 'group_post', topic: raw.topic.trim(), text: body.value as string } };
+    }
+    case 'group_tap': {
+      const agentId = needAgent(); if (!agentId.ok) return fail(agentId);
+      const body = text(raw.text, `${label}’s message`, true); if (!body.ok) return fail(body);
+      return { ok: true, value: { kind: 'group_tap', agentId: agentId.value, text: body.value as string } };
+    }
     case 'wake': {
       const agentId = needAgent(); if (!agentId.ok) return fail(agentId);
       const prompt = text(raw.prompt, `${label}’s prompt`, false); if (!prompt.ok) return fail(prompt);

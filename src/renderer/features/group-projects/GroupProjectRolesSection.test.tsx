@@ -4,7 +4,7 @@ import type { GroupProjectRolesView } from '../../../shared/group-project-types'
 import { GroupProjectRolesSection } from './GroupProjectRolesSection';
 
 const roles = (extra: Partial<GroupProjectRolesView> = {}): GroupProjectRolesView => ({
-  groupProjectId: 'gp1', own: { deliver: 'allow', wake: 'off' }, holders: [{ agentId: 'lead', lead: 'allow', admin: 'off' }], ...extra,
+  groupProjectId: 'gp1', own: { deliver: 'allow', wake: 'off', actions: 'allow' }, holders: [{ agentId: 'lead', lead: 'allow', admin: 'off' }], ...extra,
 });
 
 describe('GroupProjectRolesSection', () => {
@@ -22,17 +22,19 @@ describe('GroupProjectRolesSection', () => {
     expect(screen.getByLabelText('Lead for dev')).toHaveValue('off');
     expect(screen.getByLabelText('Admin for lead')).toHaveValue('off');
     expect(screen.getByLabelText('Tell members about new posts')).toHaveValue('allow');
-    expect(screen.getByLabelText('Wake a sleeping member when a lead taps it')).toHaveValue('off');
+    expect(screen.getByLabelText('Wake sleeping members')).toHaveValue('off');
   });
 
   it('gives a role and changes an own grant', async () => {
     const setRole = vi.spyOn(window.clubhouse.groupProject, 'setRole').mockResolvedValue(roles({ holders: [{ agentId: 'dev', lead: 'ask', admin: 'off' }] }));
-    const setOwnGrant = vi.spyOn(window.clubhouse.groupProject, 'setOwnGrant').mockResolvedValue(roles({ own: { deliver: 'allow', wake: 'allow' } }));
+    const setOwnGrant = vi.spyOn(window.clubhouse.groupProject, 'setOwnGrant').mockResolvedValue(roles({ own: { deliver: 'allow', wake: 'allow', actions: 'allow' } }));
     render(<GroupProjectRolesSection groupProjectId="gp1" />);
     fireEvent.change(await screen.findByLabelText('Lead for dev'), { target: { value: 'ask' } });
     expect(setRole).toHaveBeenCalledWith('gp1', 'dev', 'lead', 'ask');
     expect(await screen.findByLabelText('Lead for dev')).toHaveValue('ask');
-    fireEvent.change(screen.getByLabelText('Wake a sleeping member when a lead taps it'), { target: { value: 'allow' } });
+    fireEvent.change(screen.getByLabelText('Wake sleeping members'), { target: { value: 'allow' } });
     expect(setOwnGrant).toHaveBeenCalledWith('gp1', 'wake', 'allow');
+    fireEvent.change(await screen.findByLabelText('Run group project Actions'), { target: { value: 'off' } });
+    expect(setOwnGrant).toHaveBeenCalledWith('gp1', 'actions', 'off');
   });
 });

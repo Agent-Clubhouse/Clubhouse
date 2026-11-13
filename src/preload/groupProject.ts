@@ -73,7 +73,7 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_ROLES, projectId),
   setRole: (projectId: string, agentId: string, role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off'): Promise<GroupProjectRolesView> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_ROLE, projectId, agentId, role, mode),
-  setOwnGrant: (projectId: string, grant: 'deliver' | 'wake', mode: 'allow' | 'off'): Promise<GroupProjectRolesView> =>
+  setOwnGrant: (projectId: string, grant: 'deliver' | 'wake' | 'actions', mode: 'allow' | 'off'): Promise<GroupProjectRolesView> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_OWN_GRANT, projectId, grant, mode),
   previewAutoJoin: (scope: GroupProjectScope): Promise<AutoJoinPreview> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, scope),

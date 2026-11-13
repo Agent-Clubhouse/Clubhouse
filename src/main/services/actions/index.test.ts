@@ -29,6 +29,9 @@ vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../agent-system', () => ({ isAgentRunning: () => false }));
 vi.mock('../annex-device-presence', () => ({ devicePresenceOnline: () => undefined }));
 vi.mock('../annex-devices', () => ({ listDevices: () => [] }));
+vi.mock('../group-project-registry', () => ({ groupProjectRegistry: { getSync: () => null } }));
+vi.mock('../group-project-host', () => ({ groupProjectHost: { isThisMachine: () => true, list: async () => [], post: vi.fn() } }));
+vi.mock('../group-project-shoulder-tap', () => ({ executeShoulderTap: vi.fn() }));
 vi.mock('../agent-runtime', () => ({ getAgentRuntime: () => undefined, isAgentStoppingError: () => false }));
 vi.mock('../app-event-bus', () => ({
   onAppEvent: (fn: (event: AppEvent) => void) => { h.events.add(fn); return () => { h.events.delete(fn); }; },

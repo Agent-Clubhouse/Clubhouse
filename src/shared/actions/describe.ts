@@ -79,6 +79,7 @@ export const OVERLAP_LABELS: Record<OverlapRule, string> = {
 export interface ActionNames {
   agent(agentId: string): string | undefined;
   project(projectId: string): string | undefined;
+  groupProject?(id: string): string | undefined;
   /** The Dispatcher's display name, when it has one ("Navi"). */
   dispatcher?(): string | undefined;
   device?(deviceId: string): string | undefined;
@@ -96,6 +97,7 @@ function sourceText(source: ActionEventSource, names: ActionNames): string {
   if (source.kind === 'any') return 'any readable agent';
   if (source.kind === 'agent') return agentName(names, source.agentId);
   if (source.kind === 'project') return `any agent in ${names.project(source.projectId) ?? 'a project'}`;
+  if (source.kind === 'group_project') return `${names.groupProject?.(source.groupProjectId) ?? 'a group project'}${source.topic ? `, topic ${source.topic},` : ''}`;
   return 'Clubhouse';
 }
 
@@ -113,6 +115,10 @@ const EVENT_PHRASES: Record<ActionEventKind, string> = {
   'agent.compacted': 'compacts its context',
   'agent.quick_finished': 'finishes a quick run',
   'helper.finished': 'has a helper finish',
+  'group_project.message_posted': 'gets a message',
+  'group_project.member_joined': 'gets a member',
+  'group_project.member_left': 'loses a member',
+  'group_project.board_idle': 'has a quiet board',
   'git.commit': 'gets a new commit',
   'git.branch_switched': 'switches branch',
   'git.remote_updated': 'is pushed, pulled or fetched',
@@ -143,6 +149,10 @@ export const EVENT_LABELS: Record<ActionEventKind, string> = {
   'agent.compacted': 'Compacts its context',
   'agent.quick_finished': 'A quick agent finishes',
   'helper.finished': 'A helper finishes',
+  'group_project.message_posted': 'A message is posted',
+  'group_project.member_joined': 'A member joins',
+  'group_project.member_left': 'A member leaves',
+  'group_project.board_idle': 'The board is idle',
   'git.commit': 'New commit',
   'git.branch_switched': 'Branch switched',
   'git.remote_updated': 'Pushed, pulled or fetched',
@@ -215,6 +225,8 @@ function describeDelivery(step: MessageStep): string {
 /** One step in plain words, e.g. "Wake pm with a prompt". */
 export function describeStep(step: ActionStep, names: ActionNames = NO_NAMES): string {
   switch (step.kind) {
+    case 'group_post': return `Post to ${step.topic}`;
+    case 'group_tap': return `Tap ${agentName(names, step.agentId)}`;
     case 'wake': return `Wake ${agentName(names, step.agentId)}${step.prompt ? ' with a prompt' : ''}`;
     case 'message': return `Message ${agentName(names, step.agentId)}${describeDelivery(step)}`;
     case 'sleep': return `Put ${agentName(names, step.agentId)} to sleep`;

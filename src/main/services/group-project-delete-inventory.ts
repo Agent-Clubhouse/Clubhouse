@@ -13,6 +13,7 @@ export async function readGroupProjectDeletionInventory(id: string): Promise<Gro
     groupProjectHost.resolveMembers(id), groupProjectHost.getMembership(id),
     groupProjectHost.digest(id), readGroupProjectCanvasInventory(id),
   ]);
+  const { groupProjectActions } = await import('./actions');
   const machines = new Set<string>();
   for (const member of members) {
     const at = member.address.lastIndexOf('@');
@@ -23,8 +24,7 @@ export async function readGroupProjectDeletionInventory(id: string): Promise<Gro
     members: members.map((member) => `${member.name} (${member.address})`).sort(),
     exclusions: membership.excluded.map((entry) => entry.address).sort(),
     canvases: canvas.canvases,
-    // Owned Actions are introduced by a separate lane (#3361).
-    actions: [],
+    actions: groupProjectActions(id).map((action) => `${action.name} (${action.id})`).sort(),
     // Lead and admin grants on it (#3360), which the cascade removes.
     grants: listGroupProjectRoles(id)
       .flatMap((h) => [...(h.lead !== 'off' ? [`${h.agentId}: lead (${h.lead})`] : []), ...(h.admin !== 'off' ? [`${h.agentId}: admin (${h.admin})`] : [])])

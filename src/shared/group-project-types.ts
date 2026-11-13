@@ -194,7 +194,7 @@ export interface GroupProjectRoleHolderView {
 export interface GroupProjectRolesView {
   groupProjectId: string;
   /** What it does by itself: post notices to members, and wake a member with a lead's shoulder tap. */
-  own: { deliver: 'allow' | 'off'; wake: 'allow' | 'off' };
+  own: { deliver: 'allow' | 'off'; wake: 'allow' | 'off'; actions: 'allow' | 'off' };
   holders: GroupProjectRoleHolderView[];
 }
 

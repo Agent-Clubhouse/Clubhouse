@@ -276,7 +276,7 @@ vi.mock('./group-project-shoulder-tap', () => ({
   executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', delivered: [], failed: [] }),
 }));
 
-const rolesView = { groupProjectId: 'gp_1', own: { deliver: 'allow', wake: 'off' }, holders: [{ agentId: 'a1', lead: 'allow', admin: 'off' }] };
+const rolesView = { groupProjectId: 'gp_1', own: { deliver: 'allow', wake: 'off', actions: 'allow' }, holders: [{ agentId: 'a1', lead: 'allow', admin: 'off' }] };
 vi.mock('./group-project-roles', async (original) => ({
   ...await original<typeof import('./group-project-roles')>(),
   describeGroupProjectRoles: vi.fn(async () => rolesView),

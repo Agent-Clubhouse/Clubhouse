@@ -3,7 +3,8 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
-const fixture = vi.hoisted(() => ({ home: '', inventory: vi.fn(), canvas: vi.fn(), remove: vi.fn(), purge: vi.fn() }));
+const fixture = vi.hoisted(() => ({ home: '', inventory: vi.fn(), canvas: vi.fn(), remove: vi.fn(), purge: vi.fn(), purgeActions: vi.fn() }));
+vi.mock('./actions', () => ({ purgeGroupProjectActions: fixture.purgeActions }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => fixture.home } }));
 vi.mock('./annex-network-profile', () => ({ annexEphemeralSession: () => false }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => null }));
@@ -38,10 +39,11 @@ beforeEach(async () => {
   fixture.canvas.mockResolvedValue({ revision: 'canvas', entries: [] });
   fixture.remove.mockResolvedValue(undefined);
   fixture.purge.mockResolvedValue(undefined);
+  fixture.purgeActions.mockResolvedValue(undefined);
 });
 afterEach(async () => {
   vi.restoreAllMocks();
-  fixture.inventory.mockReset(); fixture.canvas.mockReset(); fixture.remove.mockReset(); fixture.purge.mockReset();
+  fixture.inventory.mockReset(); fixture.canvas.mockReset(); fixture.remove.mockReset(); fixture.purge.mockReset(); fixture.purgeActions.mockReset();
   groupProjectRegistry._resetForTesting();
   _resetAllBoardsForTesting();
   groupProjectHost._resetForTesting();
@@ -49,12 +51,13 @@ afterEach(async () => {
 });
 
 describe('group project deletion recovery with the host journal', () => {
-  it.each(['canvas', 'guidance', 'bindings', 'finish'] as const)('resumes after restart when %s fails', async (step) => {
+  it.each(['canvas', 'guidance', 'bindings', 'actions', 'finish'] as const)('resumes after restart when %s fails', async (step) => {
     const project = await groupProjectHost.create('Release');
     fixture.inventory.mockResolvedValue({ groupProjectId: project.id, members: [], exclusions: [], canvases: [], actions: [], grants: [], messages: 0, topics: 0, machines: [], revisions: [String(project.seq), 'canvas'] });
     let fail = true;
     fixture.remove.mockImplementation(async () => { if (step === 'canvas' && fail) { throw new Error(step); } });
     fixture.purge.mockImplementation(async () => { if (step === 'guidance' && fail) throw new Error(step); });
+    fixture.purgeActions.mockImplementation(async () => { if (step === 'actions' && fail) throw new Error(step); });
     const release = vi.fn(() => { if (step === 'bindings' && fail) { throw new Error(step); } });
     const finish = groupProjectHost.finishDelete.bind(groupProjectHost);
     vi.spyOn(groupProjectHost, 'finishDelete').mockImplementation(async (...args) => {
@@ -71,6 +74,7 @@ describe('group project deletion recovery with the host journal', () => {
     await restart();
     expect(await groupProjectRegistry.get(project.id)).toBeNull();
     await createLocalGroupProjectDeleteService(release).recoverPending();
+    expect(fixture.purgeActions).toHaveBeenCalledWith(project.id);
     expect(await groupProjectHost.listPendingDeletes()).toEqual([]);
     expect((await groupProjectHost.listTombstones()).find((t) => t.groupProjectId === project.id)?.state).toBe('deleted');
   });

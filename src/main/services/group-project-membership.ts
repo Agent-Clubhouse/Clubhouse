@@ -32,7 +32,7 @@ import { GroupProjectHostError, groupProjectHost } from './group-project-host';
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { knownQuickAgents } from './quick-agent-events';
-import { onAppEvent } from './app-event-bus';
+import { onAppEvent, publishAppEvent } from './app-event-bus';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   claimSourceBinding, clearBindingRemovedByUser, releaseSourceBinding,
@@ -423,6 +423,7 @@ export async function reconcileMembership(): Promise<void> {
       const binding = memberBinding(s.gp, s.membership, member);
       const outcome = claimSourceBinding(GROUP_PROJECT_MEMBERSHIP_SOURCE_ID, binding);
       if (outcome === 'created' && binding.disabledTools) bindingManager.setDisabledTools(member.agentId, s.gp.id, binding.disabledTools);
+      publishAppEvent({ type: 'group_project.member_joined', groupProjectId: s.gp.id, memberAddress: member.agentId });
       changed.add(s.gp.id);
     }
     const unverified = new Set(s.resolution.unverified);
@@ -430,6 +431,7 @@ export async function reconcileMembership(): Promise<void> {
       if (ids.has(agentId)) continue;
       if (unverified.has(agentId)) { ids.add(agentId); continue; }
       releaseSourceBinding(GROUP_PROJECT_MEMBERSHIP_SOURCE_ID, agentId, s.gp.id);
+      publishAppEvent({ type: 'group_project.member_left', groupProjectId: s.gp.id, memberAddress: agentId });
       changed.add(s.gp.id);
     }
     await tidy(s, inventory, quick);

@@ -119,6 +119,7 @@ export interface SatelliteSnapshot {
   plugins?: unknown[];
   protocolVersion?: number;
   groupProjects?: unknown[];
+  groupProjectActions?: import('../../shared/actions/view').RemoteGroupAction[];
   bulletinDigests?: Record<string, unknown[]>;
   groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
   /** Unvalidated; read through `windowsPtyForHost`. */

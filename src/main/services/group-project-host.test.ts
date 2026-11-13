@@ -34,6 +34,7 @@ import { _resetAllBoardsForTesting, getBulletinBoard } from './group-project-bul
 import { GroupProjectHostError, groupProjectHost } from './group-project-host';
 import type { GroupProjectChange } from '../../shared/group-project-types';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { onAppEvent } from './app-event-bus';
 
 const dataDir = () => path.join(fixture.home, '.clubhouse-dev', 'group-projects');
 const hostFile = (id: string) => path.join(dataDir(), id, 'host.json');
@@ -121,6 +122,17 @@ describe('group project host: identity and creation', () => {
 });
 
 describe('group project host: sequence numbers', () => {
+  it('publishes a board event with the action chain only after the post commits', async () => {
+    const project = await groupProjectHost.create('Events');
+    const events: unknown[] = [];
+    const unsubscribe = onAppEvent((event) => { if (event.type === 'group_project.message_posted') events.push(event); });
+    try {
+      await groupProjectHost.post(project.id, 'Action', 'updates', 'Ready', { chain: ['action-1'] });
+      expect(events).toEqual([expect.objectContaining({ type: 'group_project.message_posted', groupProjectId: project.id, topic: 'updates', chain: ['action-1'] })]);
+      await expect(groupProjectHost.post('invalid/id', 'Action', 'updates', 'Rejected')).rejects.toThrow();
+      expect(events).toHaveLength(1);
+    } finally { unsubscribe(); }
+  });
   it('increases with each change, across record, membership and board, and announces each one', async () => {
     const project = await groupProjectHost.create('Seq');
     const changes: GroupProjectChange[] = [];
