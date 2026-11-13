@@ -280,9 +280,16 @@ export function CanvasWorkspace({
   // memberships are unbound, and manual wires are never touched. It also runs on
   // hydration, re-deriving runtime bindings from the persisted zone wires.
   const prevExpandedRef = useRef<ExpandedBinding[]>([]);
+  const baselineRef = useRef({ baseline: navigationBaseline, retired: false });
   useEffect(() => {
-    if (navigationBaseline && viewStructure(navigationBaseline.views) === viewStructure(views)
-      && navigationBaseline.zoneWireDefinitions === zoneWireDefinitions) return;
+    if (baselineRef.current.baseline !== navigationBaseline) {
+      baselineRef.current = { baseline: navigationBaseline, retired: false };
+    }
+    if (navigationBaseline && !baselineRef.current.retired) {
+      if (viewStructure(navigationBaseline.views) === viewStructure(views)
+        && JSON.stringify(navigationBaseline.zoneWireDefinitions) === JSON.stringify(zoneWireDefinitions)) return;
+      baselineRef.current.retired = true;
+    }
     const desired = expandZoneWires(zoneWireDefinitions, views);
     const currentKeys = new Set(
       useMcpBindingStore.getState().bindings.map((b) => `${b.agentId}:${b.targetId}`),

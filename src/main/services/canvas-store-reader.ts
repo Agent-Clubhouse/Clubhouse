@@ -154,7 +154,6 @@ function normalizeViews(raw: unknown, strict = false): CanvasViewLike[] | null {
         && !['agent', 'anchor', 'plugin', 'sticky-note', 'zone'].includes(view.type)) return null;
       if (view.type === 'agent' && view.agentId !== null
         && (typeof view.agentId !== 'string' || !view.agentId)) return null;
-      if (view.type === 'plugin' && (typeof view.pluginWidgetType !== 'string' || !view.pluginWidgetType)) return null;
       if (view.metadata !== undefined && view.metadata !== null
         && (typeof view.metadata !== 'object' || Array.isArray(view.metadata))) return null;
       const gpId = (view.metadata as Record<string, unknown> | null | undefined)?.groupProjectId;

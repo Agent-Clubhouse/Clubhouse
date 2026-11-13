@@ -29,6 +29,10 @@ vi.mock('./project-store', () => ({
 }));
 vi.mock('./group-project-registry', () => ({
   groupProjectRegistry: {
+    peek: vi.fn(async () => {
+      if (groupProjects.fail) throw new Error('registry unreadable');
+      return groupProjects.list;
+    }),
     list: vi.fn(async () => {
       if (groupProjects.fail) throw new Error('registry unreadable');
       return groupProjects.list;
@@ -161,6 +165,31 @@ describe('canvas-store-reader', () => {
   const location = () => ({
     scope: 'project' as const, projectId: 'proj_w', projectName: 'wardfall',
     projectPath: wardfall, kvDir: projectCanvasKvDir(wardfall),
+  });
+
+  it('preserves strict legacy GP guidance inspection without writes, while navigation requires a genuine widget discriminator', async () => {
+    fs.mkdirSync(projects.list[2].path, { recursive: true });
+    writeKv(projectCanvasKvDir(other), 'canvas-instances', []);
+    writeKv(projectCanvasKvDir(other), 'canvas-wires', []);
+    const legacy = { id: 'legacy-gp', type: 'plugin', metadata: { groupProjectId: 'gp_wardfall' } };
+    writeKv(location().kvDir, 'canvas-instances', [
+      canvas('legacy-board', 'Legacy', [agentCard('agent', 'durable_w1'), legacy]),
+    ]);
+    writeKv(location().kvDir, 'canvas-wires', [
+      wire('durable_w1', 'gp_wardfall', 'group-project', { instructions: { send_message: 'Saved guidance' }, disabledTools: ['broadcast'] }),
+    ]);
+    const before = snapshotTree(root);
+    const inspect = canvasWireBindingSource.inspect;
+    if (!inspect) throw new Error('Canvas saved-source inspection must be available.');
+    const saved = await inspect();
+    expect(saved).toContainEqual(expect.objectContaining({
+      agentId: 'durable_w1', targetId: 'gp_wardfall', sourceStoreId: 'project:proj_w',
+      instructions: { send_message: 'Saved guidance' }, disabledTools: ['broadcast'],
+    }));
+    const index = await getTargetCanvasIndex('group-project', 'gp_wardfall');
+    expect(index.stores.flatMap((store) => store.hits)).toEqual([]);
+    expect(index.stores.find((store) => store.projectId === 'proj_w')?.error).toBeUndefined();
+    expect(snapshotTree(root)).toEqual(before);
   });
 
   it.each([

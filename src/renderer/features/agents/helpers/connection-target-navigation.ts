@@ -128,6 +128,26 @@ export async function jumpToConnectionCanvas(
   let prepared: CanvasNavigationHandoff | undefined;
   let revealRequestId: string | undefined;
   let departed = false;
+  const tab = hit.scope === 'app' ? 'plugin:app:canvas' : 'plugin:canvas';
+  const route = (handoff: CanvasNavigationHandoff) => {
+    const ui = useUIStore.getState();
+    ui.setActiveHost(null);
+    ui.setDispatcherOpen(false);
+    useProjectStore.getState().setActiveProject(hit.projectId ?? null);
+    ui.setExplorerTab(tab, hit.projectId);
+    const cancelIfDeparted = () => {
+      if (useUIStore.getState().explorerTab !== tab
+        || useUIStore.getState().activeHostId !== null
+        || useProjectStore.getState().activeProjectId !== (hit.projectId ?? null)
+        || (hit.projectId && !useProjectStore.getState().projects.some((entry) => entry.id === hit.projectId))) {
+        consumeCanvasNavigationHandoff(store, handoff);
+      }
+    };
+    const offUI = useUIStore.subscribe(cancelIfDeparted);
+    const offProject = useProjectStore.subscribe(cancelIfDeparted);
+    handoff.dispose = () => { offUI(); offProject(); };
+    cancelIfDeparted();
+  };
   unstable_batchedUpdates(() => {
     if (pendingSnapshot && !localCanvasLoaded(store.getState())) store.getState().hydrateForNavigation(pendingSnapshot, hit.canvasId);
     const canvas = store.getState().canvases.find((entry) => entry.id === hit.canvasId);
@@ -145,25 +165,7 @@ export async function jumpToConnectionCanvas(
     store.getState().focusView(hit.viewId);
     store.getState().selectView(hit.viewId);
     handoff.state = store.getState();
-    const ui = useUIStore.getState();
-    ui.setActiveHost(null);
-    ui.setDispatcherOpen(false);
-    useProjectStore.getState().setActiveProject(hit.projectId ?? null);
-    ui.setExplorerTab('plugin:canvas', hit.projectId);
-    const cancelIfDeparted = () => {
-      if (useUIStore.getState().explorerTab !== 'plugin:canvas'
-        || useUIStore.getState().activeHostId !== null
-        || useProjectStore.getState().activeProjectId !== (hit.projectId ?? null)
-        || (hit.projectId && !useProjectStore.getState().projects.some((entry) => entry.id === hit.projectId))) {
-        departed = true;
-        if (revealRequestId) window.clubhouse.window.cancelCanvasPopoutReveal(revealRequestId);
-        consumeCanvasNavigationHandoff(store, handoff);
-      }
-    };
-    const offUI = useUIStore.subscribe(cancelIfDeparted);
-    const offProject = useProjectStore.subscribe(cancelIfDeparted);
-    handoff.dispose = () => { offUI(); offProject(); };
-    cancelIfDeparted();
+    if (!destination) route(handoff);
   });
   if (destination && prepared) {
     const handoff = prepared;
@@ -175,6 +177,26 @@ export async function jumpToConnectionCanvas(
       window.clubhouse.window.cancelCanvasPopoutReveal(requestId);
       consumeCanvasNavigationHandoff(store, handoff);
     };
+    const callerUI = useUIStore.getState();
+    const callerProject = useProjectStore.getState().activeProjectId;
+    const callerAgent = useAgentStore.getState().activeAgentId;
+    const cancelIfDeparted = () => {
+      const ui = useUIStore.getState();
+      if (ui.explorerTab !== callerUI.explorerTab || ui.activeHostId !== callerUI.activeHostId
+        || ui.dispatcherOpen !== callerUI.dispatcherOpen
+        || useProjectStore.getState().activeProjectId !== callerProject
+        || useAgentStore.getState().activeAgentId !== callerAgent
+        || store.getState().activeCanvasId !== hit.canvasId
+        || (project && !useProjectStore.getState().projects.some((entry) => entry.id === project.id && entry.path === project.path))) {
+        departed = true;
+        cancel();
+      }
+    };
+    // The initiating Card stays mounted until ACK; genuine caller departure still cancels.
+    const offUI = useUIStore.subscribe(cancelIfDeparted);
+    const offProject = useProjectStore.subscribe(cancelIfDeparted);
+    const offAgent = useAgentStore.subscribe(cancelIfDeparted);
+    const offCanvas = store.subscribe(cancelIfDeparted);
     signal.addEventListener('abort', cancel, { once: true });
     try {
       assertCurrent(signal);
@@ -193,14 +215,17 @@ export async function jumpToConnectionCanvas(
       if (departed || result.requestId !== requestId) throw new Error('Canvas navigation changed before its target was revealed. Retry Open.');
       if ('error' in result) throw new Error(result.error);
       if (store.getState().activeCanvasId !== hit.canvasId) throw new Error('The active Canvas changed before the target was revealed. Retry Open.');
+      offUI(); offProject(); offAgent(); offCanvas();
       unstable_batchedUpdates(() => {
         store.getState().setViewport(result.viewport);
         completeCanvasNavigationReveal(store, handoff);
+        route(handoff);
       });
     } catch (error) {
       cancel();
       throw error;
     } finally {
+      offUI(); offProject(); offAgent(); offCanvas();
       signal.removeEventListener('abort', cancel);
     }
   }
@@ -228,5 +253,5 @@ export function openConnectionPlugin(pluginId: string, projectId: string): void 
   ui.setActiveHost(null);
   ui.setDispatcherOpen(false);
   useProjectStore.getState().setActiveProject(app ? null : projectId);
-  ui.setExplorerTab(`plugin:${pluginId}`, app ? undefined : projectId);
+  ui.setExplorerTab(app ? `plugin:app:${pluginId}` : `plugin:${pluginId}`, app ? undefined : projectId);
 }

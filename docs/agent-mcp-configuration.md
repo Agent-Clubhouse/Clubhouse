@@ -94,6 +94,8 @@ If the owning Canvas is already popped out, Open reveals the node in that
 existing window using its own viewport, then focuses the window only after
 the reveal is acknowledged. A closed or unresponsive window offers Retry Open;
 Open never duplicates it or moves it back into the main window.
+The initiating connection stays visible until that acknowledgement or error,
+so a failed reveal can be retried without losing the row.
 Browser and terminal widgets use their existing Canvas route; plugins open an
 enabled contributed tab when one exists. Unsupported targets have a disabled
 Open action with an accessible explanation.
@@ -102,7 +104,9 @@ Open does not create Canvases/projects, reconnect inactive wires, or change
 bindings, membership, grants or policy. Canvas navigation uses read-only lookup
 and validated hydration rather than a new-board/recovery path. Normal manual
 Canvas opening, subsequent explicit edits and runtime wake reconciliation keep
-their existing behavior.
+their existing behavior. Unchanged scoped broadcasts do not reconnect saved
+inactive zones; the first structural edit ends navigation-only suppression,
+including when that edit is later reverted.
 
 ## Directional connection guidance
 

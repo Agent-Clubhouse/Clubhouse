@@ -328,7 +328,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   useEffect(() => {
     if (!canvasId) return;
     const remove = window.clubhouse.window.onCanvasStateChanged((state) => {
-      if (state.canvasId !== canvasId || (state.projectId !== undefined && state.projectId !== projectId)) return;
+      if (state.canvasId !== canvasId || state.projectId !== projectId) return;
       const pending = navigationRef.current;
       if (pending) {
         if (state.projectId !== projectId) return;
@@ -348,15 +348,17 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
       setZoneWireDefinitions((state.zoneWireDefinitions as ZoneWireDefinition[] | undefined) ?? []);
     });
     return remove;
-  }, [canvasId]);
+  }, [canvasId, projectId]);
 
   // ── Periodic reconciliation ───────────────────────────────────────
 
   useEffect(() => {
     if (!canvasId) return;
+    let disposed = false;
     const interval = setInterval(() => {
+      const generation = snapshotGeneration.current;
       window.clubhouse.window.getCanvasState(canvasId, scope, projectId).then((snapshot) => {
-        if (navigationRef.current) return;
+        if (disposed || generation !== snapshotGeneration.current || navigationRef.current) return;
         if (snapshot) {
           setViews(snapshot.views as CanvasView[]);
           setViewport(clampViewport(snapshot.viewport));
@@ -365,7 +367,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         }
       }).catch(() => { /* silent — main window may be busy */ });
     }, RECONCILE_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => { disposed = true; clearInterval(interval); };
   }, [canvasId, scope, projectId]);
 
   // ── Mutation forwarding via IPC ───────────────────────────────────
@@ -374,6 +376,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
     if (!canvasId || !initializedRef.current) return;
     if (!['focusView', 'setViewport', 'zoomView', 'selectView'].includes(mutation.type)) {
       pendingEdits.current = true;
+      setNavigationBaseline(undefined);
       if (navigationRef.current) {
         window.clubhouse.window.canvasPopoutRevealed({ requestId: navigationRef.current.requestId, error: 'Canvas navigation was canceled by your edit. Retry Open.' });
         navigationRef.current = null;

@@ -367,6 +367,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const wireDefsRef = useRef(wireDefinitions);
   wireDefsRef.current = wireDefinitions;
   useEffect(() => {
+    if (!navigationHandoff) return;
+    return store.subscribe((state) => { navigationWireDefinitions(state, navigationHandoff); });
+  }, [store, navigationHandoff]);
+  useEffect(() => {
     if (!loaded || navigationUnavailable) return;
 
     // Group-project targets are checked against the projects on this machine;
@@ -463,8 +467,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const handleSelectCanvas = useCallback((canvasId: string) => {
     // Tab switching is local (controller may browse different tabs than satellite)
+    if (navigationHandoff && canvasId !== navigationHandoff.target.canvasId) {
+      consumeCanvasNavigationHandoff(store, navigationHandoff);
+      navigationHandoff.popoutWindowId = undefined;
+      navigationHandoff.structureRetired = true;
+    }
     store.getState().setActiveCanvas(canvasId);
-  }, [store]);
+  }, [store, navigationHandoff]);
 
   const handleAddCanvas = useCallback(() => {
     remoteForward({ type: 'addCanvas' });
@@ -739,7 +748,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }
 
   const canvasPopout = findCanvasPopout(activeCanvasId, { projectId: isAppMode ? undefined : projectId });
-  const poppedOutWindowId = canvasPopout?.windowId ?? (!popoutsLoaded ? navigationHandoff?.popoutWindowId : undefined);
+  const poppedOutWindowId = canvasPopout?.windowId ?? (!popoutsLoaded
+    && !isRemote && !isRemoteApp && navigation.store === store
+    && activeCanvasId === navigationHandoff?.target.canvasId
+    ? navigationHandoff?.popoutWindowId : undefined);
   const activeCanvas = canvases.find((c) => c.id === activeCanvasId);
 
   return React.createElement('div', { className: 'flex flex-col h-full w-full', 'data-testid': 'canvas-panel' },

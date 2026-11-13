@@ -10,6 +10,7 @@ export interface CanvasNavigationHandoff {
   target: { canvasId: string; viewId: string; kind: NavigableCanvasTargetKind; targetId: string };
   structure: string;
   revealed: boolean;
+  structureRetired: boolean;
   popoutWindowId?: number;
   dispose?: () => void;
 }
@@ -28,6 +29,7 @@ export function prepareCanvasNavigation(store: StoreApi<CanvasState>, target: Ca
     target,
     structure: canvasStructure(state),
     revealed: false,
+    structureRetired: false,
   };
   handoffs.set(store, handoff);
   return handoff;
@@ -38,7 +40,10 @@ export function viewStructure(views: readonly CanvasView[]): string {
 }
 
 function canvasStructure(state: CanvasState): string {
-  return JSON.stringify(state.canvases.map((canvas) => [canvas.id, viewStructure(canvas.views)]));
+  return JSON.stringify([
+    state.canvases.map((canvas) => [canvas.id, viewStructure(canvas.views)]),
+    state.wireDefinitions, state.zoneWireDefinitions,
+  ]);
 }
 
 export function navigationTargetAvailable(state: CanvasState, handoff: CanvasNavigationHandoff): boolean {
@@ -55,7 +60,8 @@ export function completeCanvasNavigationReveal(store: StoreApi<CanvasState>, han
 }
 
 export function navigationWireDefinitions(state: CanvasState, handoff: CanvasNavigationHandoff): McpBindingEntry[] {
-  if (canvasStructure(state) !== handoff.structure) return state.wireDefinitions;
+  if (canvasStructure(state) !== handoff.structure) handoff.structureRetired = true;
+  if (handoff.structureRetired) return state.wireDefinitions;
   return state.wireDefinitions.filter((wire) => !handoff.inactiveWires.has(wire));
 }
 

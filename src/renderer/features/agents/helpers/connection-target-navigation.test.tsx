@@ -17,6 +17,18 @@ import { ConnectionsCard } from './ConnectionsCard';
 import { beginConnectionNavigationRequest, jumpToConnectionCanvas, mergeTargetCanvasHits, openConnectionAgent } from './connection-target-navigation';
 import { manifest as browserManifest } from '../../../plugins/builtin/browser/manifest';
 import { PopoutCanvasView } from '../../popout/PopoutCanvasView';
+import { ChromeBody } from '../../../chrome/ChromeBody';
+import { useChromeStore } from '../../../chrome/chromeStore';
+import { useChromeFlagStore } from '../../../chrome/chromeFlag';
+import { useAgentDetailsStore } from '../details/detailsStore';
+import { resetChatFlag } from '../chat/chat-flag';
+import { activatePlugin, _resetActiveContexts } from '../../../plugins/plugin-loader';
+import { manifest as canvasManifest } from '../../../plugins/builtin/canvas/manifest';
+
+vi.mock('../../../chrome/ChromeSidebar', () => ({ ChromeSidebar: () => null }));
+vi.mock('../../../chrome/sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null }));
+vi.mock('../../dispatcher/useDispatcherSync', () => ({ useDispatcherSync: () => {} }));
+vi.mock('../AgentTerminal', () => ({ AgentTerminal: () => <div data-testid="navigation-terminal" /> }));
 
 const projects: Project[] = [
   { id: 'nav-one', name: 'Same project name', path: '/nav/one' },
@@ -76,13 +88,34 @@ function panelApi(data: CanvasNavigationSnapshot): { api: PluginAPI; storage: Sc
   return { api, storage };
 }
 
+async function registerNavigationPanels() {
+  const plugins = usePluginStore.getState();
+  plugins.registerPlugin(canvasManifest, 'builtin', '/builtin/canvas', 'activated');
+  plugins.setPluginModule('canvas', { MainPanel });
+  await activatePlugin('canvas');
+  await activatePlugin('canvas', 'nav-two', '/nav/two');
+  useChromeFlagStore.setState({ enabled: true });
+  useChromeStore.setState({ sidebarCollapsed: true, projectScopeId: null, newAgent: null });
+  useAgentDetailsStore.setState({ open: true, settingsOpen: false, focus: { agentId: lead.id, card: 'connections', nonce: 1 } });
+  window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: false }));
+  resetChatFlag();
+}
+
+function dragCanvasView(container: HTMLElement, viewId: string, dx: number, dy: number) {
+  const titlebar = within(within(container).getByTestId(`canvas-view-${viewId}`)).getByTestId('canvas-view-titlebar');
+  fireEvent.mouseDown(titlebar, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.mouseMove(window, { clientX: dx, clientY: dy });
+  fireEvent.mouseUp(window);
+}
+
 beforeEach(() => {
   useProjectStore.setState({ projects, activeProjectId: 'nav-one', projectsLoaded: true, gitStatus: { 'nav-one': false, 'nav-two': false } });
   useUIStore.setState({ explorerTab: 'agents', activeHostId: null, dispatcherOpen: false });
   useAgentStore.setState({ agents: { lead }, activeAgentId: lead.id });
   useMcpBindingStore.setState({ bindings: [] });
   useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null });
-  usePluginStore.setState({ plugins: {}, appEnabled: [], projectEnabled: {} });
+  _resetActiveContexts();
+  usePluginStore.setState({ plugins: {}, modules: {}, pluginSettings: {}, appEnabled: [], projectEnabled: {} });
   for (const store of [useAppCanvasStore, ...projects.map((project) => getProjectCanvasStore(project.id))]) {
     const handoff = getCanvasNavigationHandoff(store);
     if (handoff) consumeCanvasNavigationHandoff(store, handoff);
@@ -98,6 +131,9 @@ beforeEach(() => {
   window.clubhouse.window.onCanvasPopoutRevealCanceled = vi.fn(() => () => {});
   window.clubhouse.window.canvasPopoutRevealed = vi.fn();
   window.clubhouse.window.cancelCanvasPopoutReveal = vi.fn();
+  window.clubhouse.window.onCanvasStateChanged = vi.fn(() => () => {});
+  window.clubhouse.window.broadcastCanvasState = vi.fn();
+  window.clubhouse.window.sendCanvasMutation = vi.fn();
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
     x: 0, y: 0, top: 0, left: 0, right: 800, bottom: 600, width: 800, height: 600, toJSON: () => ({}),
   });
@@ -105,6 +141,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  _resetActiveContexts();
+  useChromeFlagStore.setState({ enabled: false });
+  useAgentDetailsStore.setState({ open: false, focus: null });
   vi.useRealTimers();
 });
 
@@ -442,9 +481,127 @@ describe('connection Open navigation', () => {
     });
     const before = usePluginStore.getState().appEnabled;
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    expect(useUIStore.getState().explorerTab).toBe('plugin:browser');
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:browser');
     expect(useProjectStore.getState().activeProjectId).toBeNull();
     expect(usePluginStore.getState().appEnabled).toBe(before);
+  });
+
+  it('opens Home and an enabled app plugin from the real Card through Chrome and the registered app context, without a project fallback', async () => {
+    await registerNavigationPanels();
+    useMcpBindingStore.setState({ bindings: [
+      { agentId: lead.id, targetId: 'gp_actual', targetKind: 'group-project', label: 'Home target' },
+    ] });
+    const homeHit = { ...hit, scope: 'app' as const, projectId: undefined, projectName: undefined };
+    vi.mocked(window.clubhouse.canvas.getTargetCanvases).mockResolvedValue({
+      stores: [{ scope: 'app', hits: [homeHit] }], groupProjects: [groupProject],
+    });
+    vi.mocked(window.clubhouse.canvas.readForNavigation).mockResolvedValue({ ...snapshot(), wires: [] });
+    const projectCreate = vi.spyOn(window.clubhouse.project, 'add');
+    const canvasCreate = vi.spyOn(useAppCanvasStore.getState(), 'addCanvas');
+    const writes = vi.spyOn(window.clubhouse.plugin, 'storageWrite');
+    render(<ChromeBody />);
+    const row = await screen.findByTestId('connection-row');
+    fireEvent.click(within(row).getByRole('button', { name: 'Open' }));
+    const target = await screen.findByTestId('canvas-view-node');
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+    expect(target).toHaveTextContent('Renamed project');
+    expect(screen.getByTestId('canvas-workspace')).toHaveFocus();
+    expect(useAppCanvasStore.getState().selectedViewId).toBe('node');
+    expect(useAppCanvasStore.getState().viewport).toEqual({ panX: -4800, panY: -5850, zoom: 1 });
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+    expect(getProjectCanvasStore('nav-two').getState().loaded).toBe(false);
+    expect(projectCreate).not.toHaveBeenCalled();
+    expect(canvasCreate).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
+
+    cleanup();
+    act(() => {
+      useProjectStore.getState().setActiveProject('nav-one');
+      useUIStore.getState().setExplorerTab('agents', 'nav-one');
+      usePluginStore.getState().registerPlugin(browserManifest, 'builtin', '/builtin/browser', 'activated');
+      usePluginStore.getState().setPluginModule('browser', {
+        MainPanel: ({ api }) => <div data-testid="registered-browser-panel">{api.context.mode}:{api.context.projectId ?? 'Home'}</div>,
+      });
+      usePluginStore.getState().enableApp('browser');
+      useMcpBindingStore.setState({ bindings: [{ agentId: lead.id, targetId: 'browser', targetKind: 'plugin', label: 'Browser' }] });
+    });
+    await activatePlugin('browser');
+    const enabled = usePluginStore.getState().appEnabled;
+    writes.mockClear();
+    render(<ChromeBody />);
+    fireEvent.click(within(await screen.findByTestId('connection-row')).getByRole('button', { name: 'Open' }));
+    expect(await screen.findByTestId('registered-browser-panel')).toHaveTextContent('app:Home');
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+    expect(usePluginStore.getState().appEnabled).toBe(enabled);
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it('keeps the actual routed Card alive until popout ACK, shows Retry on failure, and cancels genuine departure', async () => {
+    await registerNavigationPanels();
+    useMcpBindingStore.setState({ bindings: [{ agentId: lead.id, targetId: 'gp_actual', targetKind: 'group-project', label: 'Target' }] });
+    const store = getProjectCanvasStore('nav-two');
+    store.getState().hydrateForNavigation({ ...snapshot(), wires: [] }, 'board');
+    vi.spyOn(useProjectStore.getState(), 'loadProjects').mockResolvedValue(undefined);
+    vi.spyOn(useAgentStore.getState(), 'loadDurableAgents').mockResolvedValue(undefined);
+    window.clubhouse.window.getCanvasState = vi.fn(async () => null);
+    window.clubhouse.window.listPopouts = vi.fn(async () => [{ windowId: 7, params: { type: 'canvas', canvasId: 'board', projectId: 'nav-two' } }]);
+    let receive: ((request: CanvasPopoutReveal) => void) | undefined;
+    let cancelDestination: ((requestId: string) => void) | undefined;
+    let answer = deferred<CanvasPopoutRevealResult>();
+    let delivered: CanvasPopoutReveal | undefined;
+    window.clubhouse.window.onCanvasPopoutReveal = vi.fn((callback) => { receive = callback; return () => {}; });
+    window.clubhouse.window.onCanvasPopoutRevealCanceled = vi.fn((callback) => { cancelDestination = callback; return () => {}; });
+    window.clubhouse.window.revealCanvasPopout = vi.fn((request) => {
+      delivered = request;
+      receive?.(request);
+      return answer.promise;
+    });
+    window.clubhouse.window.cancelCanvasPopoutReveal = vi.fn((requestId) => {
+      cancelDestination?.(requestId);
+      answer.resolve({ requestId, error: 'Canvas navigation was canceled.' });
+    });
+    const mutations = [
+      vi.spyOn(window.clubhouse.mcpBinding, 'bind'),
+      vi.spyOn(window.clubhouse.mcpBinding, 'unbind'),
+      vi.spyOn(window.clubhouse.mcpBinding, 'makeTwoWay'),
+      vi.spyOn(window.clubhouse.mcpBinding, 'removeConnectionSource'),
+      vi.spyOn(window.clubhouse.mcpBinding, 'saveConnectionGuidance'),
+      vi.spyOn(window.clubhouse.groupProject, 'update'),
+      vi.spyOn(window.clubhouse.agent, 'setOrchestrationPolicy'),
+    ];
+    const bindingsBefore = JSON.stringify(useMcpBindingStore.getState().bindings);
+    render(<><ChromeBody /><PopoutCanvasView canvasId="board" projectId="nav-two" /></>);
+    const open = within(await screen.findByTestId('connection-row')).getByRole('button', { name: 'Open' });
+    fireEvent.click(open);
+    await waitFor(() => expect(window.clubhouse.window.canvasPopoutRevealed).toHaveBeenCalled());
+    expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+    expect(open).toBeDisabled();
+    expect(useUIStore.getState().explorerTab).toBe('agents');
+    expect(window.clubhouse.window.cancelCanvasPopoutReveal).not.toHaveBeenCalled();
+    await act(async () => { answer.resolve({ requestId: delivered!.requestId, error: 'The Canvas window closed. Retry Open.' }); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('window closed');
+    expect(screen.getByRole('button', { name: 'Retry Open' })).toBeEnabled();
+    answer = deferred<CanvasPopoutRevealResult>();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Open' }));
+    await waitFor(() => expect(window.clubhouse.window.revealCanvasPopout).toHaveBeenCalledTimes(2));
+    act(() => { useUIStore.getState().setExplorerTab('help'); });
+    await waitFor(() => expect(window.clubhouse.window.cancelCanvasPopoutReveal).toHaveBeenCalledWith(delivered!.requestId));
+    act(() => { useUIStore.getState().setExplorerTab('agents', 'nav-one'); });
+    answer = deferred<CanvasPopoutRevealResult>();
+    fireEvent.click(within(await screen.findByTestId('connection-row')).getByRole('button', { name: 'Open' }));
+    await waitFor(() => expect(window.clubhouse.window.revealCanvasPopout).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(window.clubhouse.window.canvasPopoutRevealed).toHaveBeenCalledWith({
+      requestId: delivered!.requestId, viewport: { panX: -4800, panY: -5850, zoom: 1 },
+    }));
+    const result = vi.mocked(window.clubhouse.window.canvasPopoutRevealed).mock.calls.at(-1)![0];
+    expect('error' in result).toBe(false);
+    expect(useUIStore.getState().explorerTab).toBe('agents');
+    await act(async () => { answer.resolve(result); });
+    expect(await screen.findByTestId('popped-out-placeholder')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+    expect(useProjectStore.getState().activeProjectId).toBe('nav-two');
+    expect(JSON.stringify(useMcpBindingStore.getState().bindings)).toBe(bindingsBefore);
+    for (const mutation of mutations) expect(mutation).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -465,7 +622,7 @@ describe('connection Open navigation', () => {
     expect(window.clubhouse.canvas.readForNavigation).toHaveBeenCalledWith(kind, 'widget-id', 'nav-two');
   });
 
-  it('reveals a dirty local node in the real owning popout viewport and acknowledges only after container focus, without domain writes', async () => {
+  it('reveals a dirty local node with the real leader broadcast, preserving inactive zones and exact scope after ACK without domain writes', async () => {
     const store = getProjectCanvasStore('nav-two');
     const data: CanvasNavigationSnapshot = {
       ...snapshot(),
@@ -473,11 +630,15 @@ describe('connection Open navigation', () => {
         groupView(),
         {
           id: 'popout-zone', type: 'zone', title: 'Zone', displayName: 'Zone', metadata: {}, themeId: 'catppuccin-mocha',
-          position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 0, containedViewIds: ['popout-member'],
+          position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 0, containedViewIds: ['popout-member', 'popout-active'],
         },
         {
           id: 'popout-member', type: 'agent', agentId: 'zone-sleeper', title: 'Member', displayName: 'Member', metadata: {},
           position: { x: 50, y: 50 }, size: { width: 200, height: 200 }, zIndex: 1,
+        },
+        {
+          id: 'popout-active', type: 'agent', agentId: 'existing', title: 'Active member', displayName: 'Active member', metadata: {},
+          position: { x: 300, y: 50 }, size: { width: 200, height: 200 }, zIndex: 1,
         },
       ])],
       zoneWires: [{ id: 'popout-zone-wire', sourceZoneId: 'popout-zone', targetId: 'gp_actual', targetType: 'group-project' }],
@@ -505,6 +666,9 @@ describe('connection Open navigation', () => {
     let receive: ((request: CanvasPopoutReveal) => void) | undefined;
     window.clubhouse.window.onCanvasPopoutReveal = vi.fn((callback) => { receive = callback; return () => {}; });
     const acknowledged = deferred<CanvasPopoutRevealResult>();
+    let receiveBroadcast: Parameters<typeof window.clubhouse.window.onCanvasStateChanged>[0] | undefined;
+    window.clubhouse.window.onCanvasStateChanged = vi.fn((callback) => { receiveBroadcast = callback; return () => { receiveBroadcast = undefined; }; });
+    window.clubhouse.window.broadcastCanvasState = vi.fn((state) => { receiveBroadcast?.(JSON.parse(JSON.stringify(state))); });
     window.clubhouse.window.revealCanvasPopout = vi.fn((request) => {
       expect(request.windowId).toBe(7);
       expect(request.snapshot.name).toBe('Unsaved local Canvas');
@@ -528,6 +692,8 @@ describe('connection Open navigation', () => {
     const policy = vi.spyOn(window.clubhouse.agent, 'setOrchestrationPolicy');
     const createWindow = vi.spyOn(window.clubhouse.window, 'createPopout');
     const closeWindow = vi.spyOn(window.clubhouse.window, 'closePopout');
+    const membership = vi.spyOn(window.clubhouse.groupProject, 'update');
+    const projectCreate = vi.spyOn(window.clubhouse.project, 'add');
     render(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
     await waitFor(() => expect(receive).toBeDefined());
     expect(screen.getByText('Loading canvas...')).toBeInTheDocument();
@@ -543,12 +709,166 @@ describe('connection Open navigation', () => {
     const { api, storage } = panelApi(data);
     render(<MainPanel api={api} />);
     await waitFor(() => expect(within(screen.getByTestId('canvas-panel')).getByTestId('popped-out-placeholder')).toBeInTheDocument());
+    expect(window.clubhouse.window.broadcastCanvasState).toHaveBeenCalled();
+    const broadcast = vi.mocked(window.clubhouse.window.broadcastCanvasState).mock.calls.at(-1)![0];
+    await act(async () => {
+      receiveBroadcast?.(JSON.parse(JSON.stringify(broadcast)));
+      receiveBroadcast?.({ ...broadcast, projectId: undefined, views: [groupView('home-node')], viewport: { panX: 123, panY: 456, zoom: 1 } });
+    });
+    const destination = screen.getByTestId('popout-canvas-view');
+    expect(within(destination).getByTestId('canvas-view-node')).toBeInTheDocument();
+    expect(within(destination).queryByTestId('canvas-view-home-node')).not.toBeInTheDocument();
+    expect(within(destination).getByTestId('canvas-workspace').firstElementChild).toHaveStyle({
+      transform: 'scale(1) translate(-8800px, -9900px)',
+    });
+    await act(async () => {
+      receiveBroadcast?.({ ...broadcast, viewport: { panX: -8700, panY: -9800, zoom: 1 } });
+    });
+    expect(within(destination).getByTestId('canvas-workspace').firstElementChild).toHaveStyle({
+      transform: 'scale(1) translate(-8700px, -9800px)',
+    });
     oldSnapshot.resolve(null);
     await act(async () => { await oldSnapshot.promise; });
+    vi.useFakeTimers();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
     expect(screen.queryByText('Loading canvas...')).not.toBeInTheDocument();
-    for (const mutation of [bind, unbind, create, remove, policy, createWindow, closeWindow, storage.write]) expect(mutation).not.toHaveBeenCalled();
+    for (const mutation of [bind, unbind, create, remove, policy, createWindow, closeWindow, membership, projectCreate, storage.write]) expect(mutation).not.toHaveBeenCalled();
     expect(useMcpBindingStore.getState().bindings).toEqual([existing]);
     expect(window.clubhouse.canvas.readForNavigation).not.toHaveBeenCalled();
+  });
+
+  it('fences an older periodic snapshot after real destination ACK and after receiver departure', async () => {
+    const store = getProjectCanvasStore('nav-two');
+    store.getState().hydrateForNavigation({ ...snapshot(), wires: [] }, 'board');
+    store.getState().moveView('node', { x: 9100, y: 10100 });
+    vi.spyOn(useProjectStore.getState(), 'loadProjects').mockResolvedValue(undefined);
+    vi.spyOn(useAgentStore.getState(), 'loadDurableAgents').mockResolvedValue(undefined);
+    const stale = deferred<Awaited<ReturnType<typeof window.clubhouse.window.getCanvasState>>>();
+    const departed = deferred<Awaited<ReturnType<typeof window.clubhouse.window.getCanvasState>>>();
+    const initial = {
+      canvasId: 'board', name: 'Old snapshot', views: [groupView()],
+      viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1, zoomedViewId: null, projectId: 'nav-two',
+    };
+    window.clubhouse.window.getCanvasState = vi.fn().mockResolvedValue({
+      ...initial, canvasId: 'other', views: [groupView('other-node')], viewport: { panX: 77, panY: 88, zoom: 1 },
+    })
+      .mockResolvedValueOnce(initial).mockReturnValueOnce(stale.promise).mockReturnValueOnce(departed.promise);
+    window.clubhouse.window.listPopouts = vi.fn(async () => [{ windowId: 7, params: { type: 'canvas', canvasId: 'board', projectId: 'nav-two' } }]);
+    let receive: ((request: CanvasPopoutReveal) => void) | undefined;
+    const answer = deferred<CanvasPopoutRevealResult>();
+    window.clubhouse.window.onCanvasPopoutReveal = vi.fn((callback) => { receive = callback; return () => { receive = undefined; }; });
+    window.clubhouse.window.revealCanvasPopout = vi.fn((request) => { receive?.(request); return answer.promise; });
+    window.clubhouse.window.canvasPopoutRevealed = vi.fn((result) => { answer.resolve(result); });
+    const destination = render(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
+    await screen.findByTestId('canvas-view-node');
+    vi.useFakeTimers();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(window.clubhouse.window.getCanvasState).toHaveBeenCalledTimes(2);
+    let opening!: Promise<void>;
+    await act(async () => {
+      opening = jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
+    });
+    await opening;
+    const workspace = screen.getByTestId('canvas-workspace');
+    expect(workspace.firstElementChild).toHaveStyle({ transform: 'scale(1) translate(-8900px, -9950px)' });
+    await act(async () => { stale.resolve({ ...initial, views: [groupView('stale-node')], viewport: { panX: 555, panY: 666, zoom: 1 } }); });
+    expect(screen.queryByTestId('canvas-view-stale-node')).not.toBeInTheDocument();
+    expect(workspace.firstElementChild).toHaveStyle({ transform: 'scale(1) translate(-8900px, -9950px)' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(window.clubhouse.window.getCanvasState).toHaveBeenCalledTimes(3);
+    destination.rerender(<PopoutCanvasView canvasId="other" projectId="nav-two" />);
+    await act(async () => {});
+    expect(screen.getByTestId('canvas-view-other-node')).toBeInTheDocument();
+    await act(async () => { departed.resolve({ ...initial, views: [groupView('departed-node')] }); });
+    expect(screen.queryByTestId('canvas-view-departed-node')).not.toBeInTheDocument();
+    expect(screen.getByTestId('canvas-view-other-node')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-workspace').firstElementChild).toHaveStyle({ transform: 'scale(1) translate(77px, 88px)' });
+    destination.unmount();
+  });
+
+  it('renders the manually selected Canvas B while the popout list is pending, never the navigation A placeholder', async () => {
+    const store = getProjectCanvasStore('nav-two');
+    const data = { ...snapshot(), canvases: [board(), board('manual-b', [groupView('manual-node')])], wires: [] };
+    store.getState().hydrateForNavigation(data, 'board');
+    const entries = [{ windowId: 7, params: { type: 'canvas' as const, canvasId: 'board', projectId: 'nav-two' } }];
+    const pending = deferred<typeof entries>();
+    window.clubhouse.window.listPopouts = vi.fn().mockResolvedValueOnce(entries).mockReturnValue(pending.promise);
+    window.clubhouse.window.revealCanvasPopout = vi.fn(async (request) => ({
+      requestId: request.requestId, viewport: { panX: -4800, panY: -5850, zoom: 1 },
+    }));
+    await jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
+    const { api } = panelApi(data);
+    const create = vi.spyOn(store.getState(), 'addCanvas');
+    const remove = vi.spyOn(store.getState(), 'removeCanvas');
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('popped-out-placeholder')).toBeInTheDocument();
+    const tabs = screen.getAllByRole('tab');
+    fireEvent.click(tabs[1]);
+    expect(screen.getByTestId('canvas-workspace')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-view-manual-node')).toBeInTheDocument();
+    expect(screen.queryByTestId('popped-out-placeholder')).not.toBeInTheDocument();
+    await act(async () => { pending.resolve(entries); });
+    expect(screen.getByTestId('canvas-view-manual-node')).toBeInTheDocument();
+    fireEvent.click(tabs[0]);
+    expect(screen.getByTestId('popped-out-placeholder')).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it.each(['leader', 'receiver'] as const)('retires navigation suppression permanently after real %s zone enter and exact-baseline leave', async (mode) => {
+    const data: CanvasNavigationSnapshot = {
+      ...snapshot(),
+      canvases: [board('board', [
+        groupView(),
+        { id: 'manual-zone', type: 'zone', title: 'Zone', displayName: 'Zone', metadata: {}, themeId: 'catppuccin-mocha',
+          position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 0, containedViewIds: [] },
+        { id: 'manual-member', type: 'agent', agentId: 'manual-agent', title: 'Member', displayName: 'Member', metadata: {},
+          position: { x: 700, y: 60 }, size: { width: 200, height: 200 }, zIndex: 1 },
+      ])],
+      zoneWires: [{ id: 'manual-zone-wire', sourceZoneId: 'manual-zone', targetId: 'gp_actual', targetType: 'group-project' }],
+    };
+    const store = getProjectCanvasStore('nav-two');
+    store.getState().hydrateForNavigation(data, 'board');
+    const unrelated = { agentId: 'unrelated', targetId: 'other-target', targetKind: 'group-project' as const, label: 'Unrelated active pair' };
+    useMcpBindingStore.setState({ bindings: [unrelated] });
+    const bind = vi.spyOn(window.clubhouse.mcpBinding, 'bind');
+    const unbind = vi.spyOn(window.clubhouse.mcpBinding, 'unbind');
+    if (mode === 'leader') {
+      await jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
+      render(<MainPanel api={panelApi(data).api} />);
+    } else {
+      vi.spyOn(useProjectStore.getState(), 'loadProjects').mockResolvedValue(undefined);
+      vi.spyOn(useAgentStore.getState(), 'loadDurableAgents').mockResolvedValue(undefined);
+      window.clubhouse.window.getCanvasState = vi.fn(async () => null);
+      const answer = deferred<CanvasPopoutRevealResult>();
+      let receive: ((request: CanvasPopoutReveal) => void) | undefined;
+      window.clubhouse.window.onCanvasPopoutReveal = vi.fn((callback) => { receive = callback; return () => {}; });
+      window.clubhouse.window.listPopouts = vi.fn(async () => [{ windowId: 7, params: { type: 'canvas', canvasId: 'board', projectId: 'nav-two' } }]);
+      window.clubhouse.window.revealCanvasPopout = vi.fn((request) => { receive?.(request); return answer.promise; });
+      window.clubhouse.window.canvasPopoutRevealed = vi.fn((result) => { answer.resolve(result); });
+      render(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
+      await waitFor(() => expect(receive).toBeDefined());
+      let opening!: Promise<void>;
+      await act(async () => { opening = jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal); });
+      await opening;
+    }
+    const workspace = screen.getByTestId('canvas-workspace');
+    expect(bind).not.toHaveBeenCalled();
+    dragCanvasView(workspace, 'manual-member', -640, 0);
+    await waitFor(() => expect(bind).toHaveBeenCalledWith('manual-agent', expect.objectContaining({ targetId: 'gp_actual' })));
+    dragCanvasView(workspace, 'manual-member', 640, 0);
+    await waitFor(() => expect(unbind).toHaveBeenCalledWith('manual-agent', 'gp_actual', expect.any(String)));
+    expect(useMcpBindingStore.getState().bindings).toContainEqual(unrelated);
+    expect(useMcpBindingStore.getState().bindings.some((wire) => wire.agentId === 'manual-agent')).toBe(false);
+    expect(unbind.mock.calls.every(([agentId]) => agentId === 'manual-agent')).toBe(true);
+    if (mode === 'leader') {
+      expect(store.getState().views.find((view) => view.id === 'manual-member')?.position).toEqual({ x: 700, y: 60 });
+      useMcpBindingStore.setState({ bindings: [unrelated] });
+      bind.mockClear();
+      vi.useFakeTimers();
+      await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
+      expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }));
+    }
   });
 
   it('cancels queued destination reveals before measured layout and ignores stale scope or deleted nodes', async () => {
