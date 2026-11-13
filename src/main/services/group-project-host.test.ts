@@ -580,3 +580,16 @@ describe('group project host: joins fail closed (#3431 review)', () => {
     expect(await groupProjectHost.recordScopedWireMembers()).toBe(0);
   });
 });
+
+describe('group project host: local agent ids (#3363)', () => {
+  it('reads addresses relative to the host: bare is the host\'s agent, qualified names its machine', async () => {
+    fixture.fingerprint = FP_A;
+    const hosted = await groupProjectHost.create('Here');
+    expect(groupProjectHost.localAgentId(hosted, 'agent_1')).toBe('agent_1');
+    expect(groupProjectHost.localAgentId(hosted, `agent_1@${FP_A}`)).toBe('agent_1');
+    expect(groupProjectHost.localAgentId(hosted, `agent_2@${FP_B}`)).toBeNull();
+    const elsewhere = { ...hosted, host: { machine: FP_B } };
+    expect(groupProjectHost.localAgentId(elsewhere, 'agent_3')).toBeNull();
+    expect(groupProjectHost.localAgentId(elsewhere, `agent_4@${FP_A}`)).toBe('agent_4');
+  });
+});

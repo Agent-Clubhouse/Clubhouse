@@ -19,6 +19,7 @@ import {
   GroupProjectScopeError, memberInScope, membersLeavingScope, resolveGroupProjectScope, sameGroupProjectScope,
 } from '../../shared/group-project-scope';
 import { canonicalMemberAddress, memberAddress } from '../../shared/group-project-members';
+import { parseAgentAddress } from '../../shared/agent-address';
 import { groupProjectRegistry } from './group-project-registry';
 import {
   PROJECT_CHANNELS, destroyBulletinBoard, ensureInboxChannel, ensureProjectChannels, flushAllBulletinBoards,
@@ -604,6 +605,19 @@ class GroupProjectHostService {
     const projectId = project.scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
     // A new join fails closed: an agent whose project can't be known is not admitted.
     return memberInScope(project.scope, { address, projectId }) === true;
+  }
+
+  /**
+   * The id of the agent on this machine that a member address names, or null
+   * when it names an agent on another machine (#3363). Addresses are relative
+   * to the group project's host: a bare id is an agent on the host, so on a
+   * cached copy of a group project hosted elsewhere it is not local.
+   */
+  localAgentId(project: GroupProject, address: string): string | null {
+    const parsed = parseAgentAddress(address.trim());
+    const machine = parsed.machine ?? this.hostMachineOf(project);
+    const self = this.selfMachine();
+    return machine === null || machine === self ? parsed.agentId : null;
   }
 
   /** The host-relative address of an agent here or on another machine. */
