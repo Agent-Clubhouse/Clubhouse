@@ -133,6 +133,8 @@ let remoteDispatcher: DispatcherAgentCallReceiver | undefined;
 let lifecycle = 0;
 let federation: StartAgentCallsOptions['federation'];
 export function federationControllerForShare(): unknown { return federation?.local(); }
+/** Other federation state for the connection exchange (#3351's lead), beside the controller. */
+export function federationExtraForShare(): unknown { return federation?.extra?.local(); }
 
 /** Pairing and service incarnation that authenticated this publication. */
 export function captureControllerPublication(machine: string): FederationPublicationGuard {
@@ -839,12 +841,16 @@ async function exchangeShare(machine: string): Promise<boolean> {
   try {
     const directions = await shareFor(machine, self);
     if (!publication.current()) return false;
-    const response = await transport.post(machine, '/api/v1/network/connections', { v: AGENT_CALL_VERSION, directions: directions as unknown as Record<string, unknown>[], ...(owner && { controller: owner.local(), epoch: publication.epoch }) });
+    const response = await transport.post(machine, '/api/v1/network/connections', { v: AGENT_CALL_VERSION, directions: directions as unknown as Record<string, unknown>[], ...(owner && { controller: owner.local(), epoch: publication.epoch }), ...(owner?.extra && { extra: owner.extra.local() }) });
     if (response.status !== 200 || !publication.current()) return false;
-    const answer = response.body as { controller?: unknown; epoch?: unknown } | null;
+    const answer = response.body as { controller?: unknown; epoch?: unknown; extra?: unknown } | null;
     if ((answer?.epoch !== undefined || (owner && answer?.controller !== undefined)) && !publicationEpochMatches(answer?.epoch, publication.epoch)) return false;
     if (owner && answer?.controller !== undefined) {
       await owner.learn(machine, answer.controller, publication);
+    }
+    // The lead (#3351) only under the same authenticated pairing as the controller.
+    if (owner?.extra && answer?.extra !== undefined && publicationEpochMatches(answer.epoch, publication.epoch)) {
+      await owner.extra.learn(machine, answer.extra, publication);
     }
     if (!publication.current()) return false;
     const theirs = (response.body as { directions?: unknown } | null)?.directions;
@@ -876,7 +882,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     return { status: 400, error: 'invalid_connections', message: 'The connections were not in a form this computer reads.' };
   }
   const publication = authenticated ?? captureControllerPublication(machine);
-  const metadata = raw as { controller?: unknown; epoch?: unknown };
+  const metadata = raw as { controller?: unknown; epoch?: unknown; extra?: unknown };
   if (!publication.current() || (metadata.epoch !== undefined && !publicationEpochMatches(metadata.epoch, publication.epoch))) {
     return { status: 403, error: 'pairing_changed', message: 'The network pairing changed during this connection exchange.' };
   }
@@ -884,6 +890,10 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     if (!publicationEpochMatches(metadata.epoch, publication.epoch)) return { status: 400, error: 'invalid_controller_epoch', message: 'Controller publication requires its authenticated network pairing.' };
     await federation.learn(machine, metadata.controller, publication);
     if (!publication.current()) return { status: 403, error: 'pairing_changed', message: 'The network pairing changed before controller publication committed.' };
+  }
+  if (federation?.extra && metadata.extra !== undefined && publicationEpochMatches(metadata.epoch, publication.epoch)) {
+    await federation.extra.learn(machine, metadata.extra, publication);
+    if (!publication.current()) return { status: 403, error: 'pairing_changed', message: 'The network pairing changed before the lead record committed.' };
   }
   let applied = 0;
   // Links count toward the cap; a link turned off (a deleted agent's, say) doesn't.
@@ -995,7 +1005,11 @@ export interface StartAgentCallsOptions {
   deliveryStore?: AnnexDeliveryStore;
   /** Fixed controller capability; never selected by agent arguments or editable tool names. */
   remoteDispatcher?: DispatcherAgentCallReceiver;
-  federation?: { local(): unknown; learn(machine: string, raw: unknown, guard: FederationPublicationGuard): Promise<void> };
+  federation?: {
+    local(): unknown; learn(machine: string, raw: unknown, guard: FederationPublicationGuard): Promise<void>;
+    /** More federation state on the same exchange, as `extra` (the lead, #3351), learned under the same guard. */
+    extra?: { local(): unknown; learn(machine: string, raw: unknown, guard: FederationPublicationGuard): Promise<void> };
+  };
 }
 
 export function startAgentCalls(options: StartAgentCallsOptions): () => void {

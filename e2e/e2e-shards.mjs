@@ -59,6 +59,7 @@ export const ANNEX_SHARDS = {
   1: [
     'annex-v2/agents-across-machines.spec.ts',
     'annex-v2/device-list.spec.ts',
+    'annex-v2/dispatcher-lead.spec.ts',
     'annex-v2/error-handling.spec.ts',
     'annex-v2/full-demo.spec.ts',
     'annex-v2/network-channel.spec.ts',

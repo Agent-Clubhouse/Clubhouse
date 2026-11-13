@@ -749,6 +749,12 @@ export const IPC = {
     AGENT_CARD_CHANGED: 'dispatcher:agent-card-changed',
     /** What its chat shows before the first message (#3048): the agents connected to it. */
     GET_TEACHING: 'dispatcher:get-teaching',
+    /** The network-wide lead (#3351). Resolves with a DispatcherLeadState. */
+    GET_LEAD: 'dispatcher:get-lead',
+    /** Choose the lead: a computer's machine id, or null for peers. A person's action only. Resolves with a DispatcherLeadState. */
+    SET_LEAD: 'dispatcher:set-lead',
+    /** Main → renderer: DispatcherLeadState after any change. */
+    LEAD_CHANGED: 'dispatcher:lead-changed',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */

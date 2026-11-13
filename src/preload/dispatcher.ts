@@ -9,6 +9,7 @@ import type { DispatcherSetupInput, TryItOutRequest, TryItOutResult } from '../s
 import type { ConnectableAgent, ForgetEverythingResult } from '../shared/dispatcher-settings-page';
 import type { DispatcherTeaching } from '../shared/dispatcher-teaching';
 import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
+import type { DispatcherLeadState } from '../shared/dispatcher-lead';
 
 export const dispatcher = {
   dispatcher: {
@@ -54,6 +55,17 @@ export const dispatcher = {
       ipcRenderer.invoke(IPC.DISPATCHER.SAVE_AGENT_CARD, agentId, fields),
     /** What its chat shows before the first message (#3048): the agents connected to it. */
     getTeaching: (): Promise<DispatcherTeaching> => ipcRenderer.invoke(IPC.DISPATCHER.GET_TEACHING),
+    /** The network-wide lead (#3351), as Settings shows it. */
+    getLead: (): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.GET_LEAD),
+    /** Choose the lead: a computer's machine id, or null for peers. Resolves with the state afterwards. */
+    setLead: (machine: string | null): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_LEAD, machine),
+    onLeadChanged: (callback: (state: DispatcherLeadState) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: DispatcherLeadState) => callback(state);
+      ipcRenderer.on(IPC.DISPATCHER.LEAD_CHANGED, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.DISPATCHER.LEAD_CHANGED, listener);
+      };
+    },
     onAgentCardChanged: (callback: (agentId: string) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string) => callback(agentId);
       ipcRenderer.on(IPC.DISPATCHER.AGENT_CARD_CHANGED, listener);

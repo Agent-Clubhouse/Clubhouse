@@ -203,3 +203,35 @@ Controller publications carry both network pairing IDs. Exchanges capture the
 service lifecycle and pairing before authenticated I/O, and publication commits
 check that guard again before the atomic rename. A delayed response or request
 from a removed pairing cannot label its endpoint as belonging to a later pairing.
+
+## The network lead (#3351)
+
+Settings › Dispatcher has **Lead** on a computer that's in an Annex Network with
+at least one other computer. It's None (each computer uses its own Dispatcher,
+as before) or one computer, this one included. Only a person chooses it. No
+tool, grant or controller link reaches it.
+
+- **One record for the network.** The choice is `{lead, rev, changedAt, by}`
+  (`src/shared/dispatcher-lead.ts`), kept in `dispatcher-lead.json`. It travels
+  as `extra.lead` on the same pinned connection exchange as the controller
+  (`/api/v1/network/connections`, both the request and the answer), and is
+  learned only under the exchange's authenticated pairing, checked again when
+  it's saved, so it can't cross a remove and re-pair. A computer that was off
+  gets it when it reconnects. A change is sent to every connected computer at
+  once, and a computer that takes a newer record passes it on, so it also
+  reaches computers the chooser can't reach.
+- **Which record wins.** The higher `rev`, then the later `changedAt`, then the
+  higher machine id. A choice is always one `rev` past the newest record its
+  computer has seen, so a clock that's ahead or behind can't undo a later
+  choice, and two choices made at once settle on the same result everywhere.
+- **Confirmed.** The page lists which computers have sent back the same record,
+  and which it's still waiting for.
+- **The lead's computer leaves the network.** Each computer that sees the
+  removal writes "no lead" one past the record it had, naming the computer that
+  left, and the page says so. An offline lead stays the lead.
+- **This computer leaves the network.** It forgets the record, so it can't
+  overrule the lead of a network it joins later.
+- Older desktops ignore `extra` and stay peers.
+
+What followers show, Take back while the lead is offline, and approvals from
+other computers come with #3352, #3353 and #3354.

@@ -12,6 +12,8 @@
  *   provider, model, effort and context; Behavior then sets only how often
  *   it checks in.
  * - Connected agents: one list across projects (DispatcherConnectedAgents).
+ * - Lead (#3351): one computer's Dispatcher for the whole Annex Network, shown
+ *   only in a network with another computer (DispatcherLeadSection).
  * - Reset, at the bottom: Forget everything, behind a confirmation. It clears
  *   memory only.
  *
@@ -68,6 +70,7 @@ import {
 } from '../../../shared/dispatcher-behavior';
 import { DEFAULT_DISPATCHER_MODELS_STATE, DISPATCHER_MODELS_APPLY_NOTE, DISPATCHER_ROLE_LABELS, type DispatcherModelsState, type DispatcherModelsUpdate, type DispatcherRoleModel } from '../../../shared/dispatcher-models';
 import { ConnectedAgentsSection } from './DispatcherConnectedAgents';
+import { LeadSection } from './DispatcherLeadSection';
 import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea } from './SettingsLayout';
 
 const TITLE = 'Dispatcher';
@@ -757,6 +760,7 @@ export function DispatcherSettingsView() {
           <IdentitySection state={state} config={config} />
           <BehaviorSection state={state} config={config} />
           <ConnectedAgentsSection dispatcherName={name} />
+          <LeadSection />
         </>
       )}
       {/* Its memory is kept while it's off, so it can be forgotten then too. */}

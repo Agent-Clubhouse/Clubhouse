@@ -612,6 +612,9 @@ vi.stubGlobal('clubhouse', {
     saveAgentCard: async () => ({ state: 'none', card: null }),
     onAgentCardChanged: () => noop,
     getTeaching: async () => ({ agents: [] }),
+    getLead: async () => ({ available: false, role: 'peer', lead: null, choices: [], confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: null }),
+    setLead: async () => ({ available: false, role: 'peer', lead: null, choices: [], confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: null }),
+    onLeadChanged: () => noop,
   },
   actions: {
     list: async () => [],

@@ -21,7 +21,7 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-agent-calls-'));
 
 import {
   AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, captureControllerPublication, forwardAgentCall, receiveAgentCall, receiveDirections,
-  remoteAgentName, shareForAnswer, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
+  remoteAgentName, shareForAnswer, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, federationExtraForShare, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
 } from './annex-agent-calls';
 import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
 import {
@@ -982,5 +982,33 @@ describe('controller publication pairing boundaries (#3345)', () => {
     expect(publication.current()).toBe(true);
     stop();
     expect(publication.current()).toBe(false);
+  });
+});
+
+describe('more federation state on the same exchange (#3351)', () => {
+  it('sends extra beside the controller, and learns it only under the authenticated pairing, from a computer member', async () => {
+    stop();
+    const mine = { lead: { v: 1, lead: null, rev: 0 } };
+    const theirs = { lead: { v: 1, lead: 'abc', rev: 2 } };
+    const learnExtra = vi.fn(async () => {});
+    const epoch = () => ({ sender: state.peerPairing, receiver: state.pairing });
+    respond = (urlPath) => urlPath.endsWith('/connections')
+      ? { status: 200, body: { directions: [], controller: null, extra: theirs, epoch: epoch() } }
+      : { status: 503, body: {} };
+    stop = startAgentCalls({ transport, runTool: async () => ok('unused'), describeLocalAgent: async () => undefined,
+      federation: { local: () => null, learn: async () => {}, extra: { local: () => mine, learn: learnExtra } } });
+    await syncDirectionsWith(OTHER);
+    expect(posts.find((p) => p.path.endsWith('/connections'))?.body.extra).toEqual(mine);
+    expect(learnExtra).toHaveBeenCalledWith(OTHER, theirs, expect.objectContaining({ epoch: { sender: state.pairing, receiver: state.peerPairing } }));
+    expect(federationExtraForShare()).toEqual(mine);
+    learnExtra.mockClear();
+    await receiveDirections(OTHER, { v: 1, directions: [], extra: theirs, epoch: epoch() });
+    expect(learnExtra).toHaveBeenCalledWith(OTHER, theirs, expect.any(Object));
+    learnExtra.mockClear();
+    // No pairing named, a stale pairing, or not a computer member: not learned.
+    await receiveDirections(OTHER, { v: 1, directions: [], extra: theirs });
+    await receiveDirections(OTHER, { v: 1, directions: [], extra: theirs, epoch: { sender: 'old', receiver: state.pairing } });
+    await receiveDirections(THIRD, { v: 1, directions: [], extra: theirs, epoch: epoch() });
+    expect(learnExtra).not.toHaveBeenCalled();
   });
 });
