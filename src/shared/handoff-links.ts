@@ -4,7 +4,7 @@ import { isSafeHandoffPath } from './handoff-manifest';
 export function handoffLinkTarget(raw: Uint8Array): string {
   if (raw.byteLength === 0 || raw.byteLength > 4096) throw new Error('Unsafe handoff link.');
   const target = new TextDecoder('utf-8', { fatal: true }).decode(raw);
-  if (target.startsWith('/') || /[\\:\x00-\x1f\x7f]/.test(target) || /\p{Default_Ignorable_Code_Point}/u.test(target)) throw new Error('Unsafe handoff link.');
+  if (target.startsWith('/') || /[\\:]/.test(target) || [...target].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) || /\p{Default_Ignorable_Code_Point}/u.test(target)) throw new Error('Unsafe handoff link.');
   for (const part of target.split('/')) if (part !== '.' && part !== '..' && !isSafeHandoffPath(part)) throw new Error('Unsafe handoff link.');
   return target;
 }

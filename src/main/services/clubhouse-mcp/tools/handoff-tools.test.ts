@@ -49,6 +49,16 @@ describe('global handoff tools', () => {
     expect(state.offer).toHaveBeenCalledWith({ to: state.target, senderName: 'Caller name', task: { title: 'Task', brief: 'Remaining work' }, mode: 'worktree', manifest: { fileCount: 1, totalBytes: 5, sha256: 'a'.repeat(64) } }, { agentId: 'caller', machine: state.target.machine });
   });
 
+  it('reports automatic preparation ceilings and largest files before creating or posting an offer', async () => {
+    const { HandoffSnapshotError } = await import('../../handoff-snapshot');
+    const error = new HandoffSnapshotError('bounds_exceeded');
+    error.boundsReport = { totalBytes: 900, fileCount: 1, largestFiles: [{ path: 'fixture.bin', size: 900 }], bounds: { totalBytes: 800, perFileBytes: 800, maxFiles: 10 } };
+    state.ensure.mockRejectedValueOnce(error);
+    const result = await call('offer_handoff', { to: 'Receiver', task: 'Task', brief: 'Work', mode: 'worktree' });
+    expect(JSON.parse(result.content[0].text as string)).toMatchObject({ ready: false, reason: 'bounds_exceeded', ...error.boundsReport });
+    expect(state.offer).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['offer_handoff', { to: 'Receiver', task: 'Task', brief: 'Work', mode: 'patch' }],
     ['respond_to_handoff', { id, accept: false, target_agent: 'new_helper' }],
