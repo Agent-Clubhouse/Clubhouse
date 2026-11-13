@@ -184,6 +184,23 @@ describe('group project event triggers', () => {
     await h.clock.advance(15_000);
     expect(h.history(idle.id)).toHaveLength(1);
   });
+  it('fires and coalesces membership changes only for the watched group', async () => {
+    const h = setup();
+    h.engine.start();
+    const source = { kind: 'group_project', groupProjectId: 'gp1' } as const;
+    const owner = { kind: 'group_project', groupProjectId: 'gp1' } as const;
+    const joined = h.engine.create({ trigger: { kind: 'event', event: 'group_project.member_joined', source, coalesceSeconds: 10 }, steps: [notify] }, owner);
+    const left = h.engine.create({ trigger: { kind: 'event', event: 'group_project.member_left', source }, steps: [notify] }, owner);
+    h.event({ type: 'group_project.member_joined', groupProjectId: 'other', memberAddress: 'foreign' });
+    h.event({ type: 'group_project.member_joined', groupProjectId: 'gp1', memberAddress: 'ada' });
+    h.event({ type: 'group_project.member_joined', groupProjectId: 'gp1', memberAddress: 'bob' });
+    h.event({ type: 'group_project.member_left', groupProjectId: 'gp1', memberAddress: 'ada' });
+    await flush();
+    expect(h.history(left.id)).toHaveLength(1);
+    expect(h.history(joined.id)).toHaveLength(0);
+    await h.clock.advance(10_000);
+    expect(h.history(joined.id)).toHaveLength(1);
+  });
 });
 
 describe('quick agent Action sources', () => {
