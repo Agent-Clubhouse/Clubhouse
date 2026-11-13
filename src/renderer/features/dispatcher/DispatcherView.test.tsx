@@ -200,7 +200,8 @@ describe('DispatcherView on a follower (#3352)', () => {
     useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
     useAnnexClientStore.setState({ satellites: [{
       id: 'sat-laptop', alias: 'Laptop', icon: 'computer', color: 'indigo', fingerprint: 'LAPTOP', state: 'connected', host: 'h', mainPort: 1, pairingPort: 2, lastError: null,
-      snapshot: { dispatcher: { agent: { id: 'lead-chat', projectId: DISPATCHER_PROJECT_ID, name: 'Rosie', kind: 'durable', status: 'running', executionMode: 'chat' } } },
+      // Taken while it slept: no executionMode, which a Dispatcher's chat still runs in.
+      snapshot: { dispatcher: { agent: { id: 'lead-chat', projectId: DISPATCHER_PROJECT_ID, name: 'Rosie', kind: 'durable', status: 'running', executionMode: null } } },
     }] } as never);
     useLeadStore.setState({ state: LEAD });
     // The first reader subscribes; main answers with whatever the test has set.

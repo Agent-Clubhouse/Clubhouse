@@ -66,7 +66,9 @@ export function useFollowedLead(): FollowedLead | null {
   const agent = useMemo<Agent | null>(() => {
     if (!machine) return null;
     if (!remote || !satelliteId) return lastKnown.get(machine) ?? null;
-    const shown = live ?? { ...remote, id: namespacedAgentId(satelliteId, remote.id), projectId: namespacedProjectId(satelliteId, remote.projectId || DISPATCHER_PROJECT_ID) };
+    const copy = live ?? { ...remote, id: namespacedAgentId(satelliteId, remote.id), projectId: namespacedProjectId(satelliteId, remote.projectId || DISPATCHER_PROJECT_ID) };
+    // A Dispatcher's chat always runs in chat; a snapshot taken while it slept says null (D220).
+    const shown: Agent = { ...copy, executionMode: 'chat' };
     lastKnown.set(machine, shown);
     return shown;
   }, [remote, satelliteId, machine, live]);
