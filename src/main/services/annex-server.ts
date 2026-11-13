@@ -1331,7 +1331,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     appCanvasState,
     sessionPaused,
     groupProjects,
-    groupProjectActions,
+    ...(groupProjectActions.length > 0 && { groupProjectActions }),
     bulletinDigests,
     groupProjectMembers,
     ptyHost: annexPtyHost(process.platform, detectWindowsPty()),
