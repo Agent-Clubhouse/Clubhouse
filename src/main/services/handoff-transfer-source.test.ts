@@ -72,3 +72,13 @@ it('closes a descriptor that opens after its deadline rather than caching it', a
   expect(await f.service.receive(peer, { op: 'manifest', id: f.record.id })).toEqual({ manifest: f.manifest });
   expect(f.options.prepared).toHaveBeenCalledTimes(2); await f.service.close();
 });
+
+it('keeps the total deadline when closing a failed descriptor never settles', async () => {
+  vi.useFakeTimers(); const f = fixture(); f.options.timeoutMs = 50;
+  f.descriptor.read.mockRejectedValue(new Error('read failed'));
+  f.descriptor.close.mockImplementation(() => new Promise(() => {}));
+  const pending = expect(f.service.receive(peer, { op: 'read', id: f.record.id, file: 0, offset: 0 })).rejects.toThrow('read failed');
+  await vi.advanceTimersByTimeAsync(51); await pending;
+  expect(await f.service.receive(peer, { op: 'manifest', id: f.record.id })).toEqual({ manifest: f.manifest });
+  await f.service.close();
+});

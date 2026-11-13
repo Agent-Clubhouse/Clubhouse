@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import * as fs from 'fs';
 import type { FileHandle } from 'fs/promises';
@@ -114,15 +114,51 @@ async function git(context: SnapshotGit, args: string[], missingAllowed = false)
 }
 
 /** Main-only Git access after the same worktree/control checks as snapshot selection. */
-export async function openHandoffRepository(worktreeRoot: string) {
+export async function openHandoffRepository(worktreeRoot: string, options: { mutableWorktree?: boolean } = {}) {
   const source = await directory(worktreeRoot);
   const context: SnapshotGit = { root: source.root, env: gitEnvironment() };
   const repo = await repository(context);
+  // A newly allocated destination writes files itself; retain inode/mode pins
+  // while allowing those intentional directory timestamp changes.
+  const checkRoot = async () => {
+    if (!options.mutableWorktree) return checkDirectories(source);
+    for (const name of source.required) {
+      const current = await fs.promises.lstat(name, { bigint: true }); const pinned = source.directories.get(name);
+      if (!pinned || !current.isDirectory() || current.isSymbolicLink() || current.dev !== pinned.dev || current.ino !== pinned.ino || current.mode !== pinned.mode) throw new HandoffSnapshotError('source_changed');
+    }
+  };
   return {
     repo, root: source.root,
     read: (args: string[]) => gitBytes(context, args),
+    streamBlob: async (oid: string, size: number, sink: (bytes: Buffer) => Promise<void>, authorize: () => Promise<void>) => {
+      if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid) || !Number.isSafeInteger(size) || size < 0 || size > 16 * 1024 ** 3) throw new HandoffSnapshotError('bounds_exceeded');
+      await authorize(); await checkRoot();
+      const child = spawn('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', 'cat-file', 'blob', oid], {
+        cwd: context.root, env: context.env, stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const completion = new Promise<void>((resolve, reject) => {
+        child.once('error', () => reject(new HandoffSnapshotError('git_failed')));
+        child.once('close', (code) => code === 0 ? resolve() : reject(new HandoffSnapshotError('git_failed')));
+      });
+      void completion.catch(() => {}); // telemetry-exempt: reported at the bounded stream boundary
+      const timeout = setTimeout(() => child.kill(), 60_000);
+      const hash = createHash(oid.length === 40 ? 'sha1' : 'sha256').update(`blob ${size}\0`);
+      let total = 0;
+      try {
+        for await (const chunk of child.stdout) {
+          const bytes = Buffer.from(chunk); total += bytes.length;
+          if (total > size) throw new HandoffSnapshotError('hash_mismatch');
+          await authorize(); hash.update(bytes); await sink(bytes);
+        }
+        await completion; await authorize(); await checkRoot();
+        if (total !== size || hash.digest('hex') !== oid) throw new HandoffSnapshotError('hash_mismatch');
+      } catch (error) {
+        child.kill(); await completion.catch(() => {}); // telemetry-exempt: stream failure below preserves the safe error
+        throw failure(error);
+      } finally { clearTimeout(timeout); }
+    },
     assertCurrent: async () => {
-      await checkDirectories(source);
+      await checkRoot();
       if (JSON.stringify(await repository(context)) !== JSON.stringify(repo)) throw new HandoffSnapshotError('source_changed');
     },
   };
@@ -662,7 +698,7 @@ export async function verifyHandoffSnapshot(
 /** A verified, pinned source descriptor: chunks never follow a later path replacement. */
 export async function openHandoffSnapshotArtifact(options: {
   snapshot: HandoffSnapshot; file: number; bounds?: HandoffTransferBounds;
-  policy?: HandoffSecretPolicy; handoffId: string; authorize(): Promise<void>;
+  policy?: HandoffSecretPolicy; handoffId: string; side?: 'sender' | 'receiver'; authorize(): Promise<void>;
 }) {
   let handle: FileHandle | undefined;
   try {
@@ -690,7 +726,7 @@ export async function openHandoffSnapshotArtifact(options: {
       const current = await sourceStat(root, name);
       if (!current || stamp(current) !== stamp(stat) || stamp(await pinned.stat({ bigint: true })) !== stamp(stat)) throw new HandoffSnapshotError('source_changed', name);
     };
-    await check(); await options.policy?.recordUse(options.handoffId, 'sender'); await check();
+    await check(); await options.policy?.recordUse(options.handoffId, options.side ?? 'sender'); await check();
     return {
       size: artifact.size,
       read: async (offset: number, maximum = 256 * 1024): Promise<Buffer> => {

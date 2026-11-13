@@ -58,7 +58,7 @@ export class HandoffTransferSource {
       current.source = (async () => {
         const prepared = await this.options.prepared(record);
         const policy = prepared.source.secretPolicy;
-        await (this.options.verify ?? verifyHandoffSnapshot)(prepared.snapshot.root, prepared.snapshot.manifest,
+        prepared.snapshot = await (this.options.verify ?? verifyHandoffSnapshot)(prepared.snapshot.root, prepared.snapshot.manifest,
           record.manifest as HandoffManifestSummary, prepared.source.bounds,
           policy ? { policy, handoffId: id, side: 'sender' } : undefined);
         if (!current.active) throw new Error('Handoff transfer expired.');
@@ -125,7 +125,10 @@ export class HandoffTransferSource {
       })();
       return await Promise.race([work, deadline]);
     } catch (error) {
-      if (entry) await this.invalidate(request.id, entry);
+      if (entry) {
+        try { await Promise.race([this.invalidate(request.id, entry), deadline]); }
+        catch { /* telemetry-exempt: a stuck descriptor close cannot extend the request deadline */ }
+      }
       throw error;
     } finally {
       if (timer) clearTimeout(timer);
