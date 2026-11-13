@@ -193,3 +193,13 @@ Turning off a Dispatcher leaves its endpoint known, shows an unavailable reason 
 other computers and refuses new requests. A new network pairing must publish its
 controller again before links resume. Each receiver derives its link from its own
 membership and endpoint record, and rechecks membership before execution.
+
+An enabled sleeping controller is woken through the receiving machine's own
+Dispatcher delivery path. Remote origin labels remain intact, and a durable
+receipt confirms accepted input only. Busy controllers leave input in the sender's
+durable queue. Admission is rechecked after delivery waits and saved-config reads.
+
+Controller publications carry both network pairing IDs. Exchanges capture the
+service lifecycle and pairing before authenticated I/O, and publication commits
+check that guard again before the atomic rename. A delayed response or request
+from a removed pairing cannot label its endpoint as belonging to a later pairing.

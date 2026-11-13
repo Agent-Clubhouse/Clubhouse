@@ -4,10 +4,11 @@
 import { formatAgentAddress } from '../../shared/agent-address';
 import type { AgentAddress, ConnectionDirection } from '../../shared/connection-grants';
 import { createSettingsStore } from './settings-store';
+import { ownPairing } from './annex-network-membership';
 import { listPeers } from './annex-peers';
 import { onDevicesChanged } from './annex-device-signal';
 import { dispatcherDisplayName, getDispatcherAgentId, isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
-import { FEDERATION_DISABLED_TOOLS, FEDERATION_SOURCE_ID, setFederationLookup, setFederationStatus } from './dispatcher-federation-policy';
+import { FEDERATION_DISABLED_TOOLS, FEDERATION_SOURCE_ID, setFederationLookup, setFederationStatus, type FederationPublicationGuard } from './dispatcher-federation-policy';
 import type { PersistedBindingSource } from './persisted-bindings';
 
 export interface FederationController {
@@ -15,6 +16,7 @@ export interface FederationController {
   name: string;
   enabled: boolean;
   pairingId?: string;
+  ownPairingId?: string;
 }
 const controllers = createSettingsStore<{ controllers: Record<string, FederationController> }>(
   'dispatcher-federation.json', { controllers: {} }, undefined,
@@ -27,21 +29,33 @@ export function localFederationController(): FederationController {
 export function remoteFederationController(machine: string): FederationController | undefined {
   const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase() && p.role === 'member' && p.kind !== 'phone');
   const saved = controllers.get().controllers[machine.toLowerCase()];
-  return peer && saved?.pairingId === peer.pairingId ? saved : undefined;
+  return peer && saved && saved.pairingId === peer.pairingId && (saved.ownPairingId ?? 'legacy') === (ownPairing()?.id ?? 'legacy') ? saved : undefined;
 }
-export async function learnFederationController(machine: string, raw: unknown): Promise<void> {
+export async function learnFederationController(machine: string, raw: unknown, publication?: FederationPublicationGuard): Promise<void> {
   const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase() && p.role === 'member' && p.kind !== 'phone');
   if (!peer) return;
+  const pairing = publication?.epoch.receiver ?? peer.pairingId ?? 'legacy';
+  const selfPairing = publication?.epoch.sender ?? ownPairing()?.id ?? 'legacy';
+  const current = () => (!publication || publication.current()) && (ownPairing()?.id ?? 'legacy') === selfPairing && listPeers().some((p) => p.fingerprint.toLowerCase() === machine.toLowerCase()
+    && p.role === 'member' && p.kind !== 'phone' && (p.pairingId ?? 'legacy') === pairing);
+  if (!current()) return;
   const value = raw as FederationController | null;
   if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean'
     || typeof value.name !== 'string' || !value.name || value.name.length > 200
     || (value.agentId !== null && (typeof value.agentId !== 'string' || !value.agentId || value.agentId.length > 200 || value.agentId.includes('@')))) return;
-  const info = { agentId: value.agentId, name: value.name, enabled: value.enabled, ...(peer.pairingId && { pairingId: peer.pairingId }) };
+  const info = { agentId: value.agentId, name: value.name, enabled: value.enabled, ownPairingId: selfPairing, ...(peer.pairingId && { pairingId: peer.pairingId }) };
   if (JSON.stringify(remoteFederationController(machine)) === JSON.stringify(info)) return;
-  await controllers.update((file) => {
-    const members = new Set(listPeers().filter((p) => p.role === 'member' && p.kind !== 'phone').map((p) => p.fingerprint.toLowerCase()));
-    return { controllers: { ...Object.fromEntries(Object.entries(file.controllers).filter(([id]) => members.has(id))), [machine.toLowerCase()]: info } };
-  });
+  const stale = new Error('Controller publication belongs to an earlier network pairing or service.');
+  try {
+    await controllers.update((file) => {
+      const members = new Set(listPeers().filter((p) => p.role === 'member' && p.kind !== 'phone').map((p) => p.fingerprint.toLowerCase()));
+      return { controllers: { ...Object.fromEntries(Object.entries(file.controllers).filter(([id]) => members.has(id))), [machine.toLowerCase()]: info } };
+    }, { prepare: async () => {}, check: () => { if (!current()) throw stale; } });
+  } catch (err) {
+    if (err === stale) return;
+    throw err;
+  }
+  if (!current()) return;
   for (const listener of listeners) listener();
 }
 

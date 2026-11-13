@@ -1,3 +1,4 @@
+import type { AnnexDeliveryEpoch } from '../../shared/annex-delivery';
 import type { AgentAddress, ConnectionDirection } from '../../shared/connection-grants';
 
 export const FEDERATION_SOURCE_ID = 'dispatcher-federation';
@@ -24,4 +25,10 @@ export function federationStatus(from: AgentAddress, to: AgentAddress): Federati
 export function setFederationStatus(value: typeof status): () => void {
   status = value;
   return () => { if (status === value) status = () => undefined; };
+}
+
+/** Captured before authenticated I/O. Checked again at the metadata commit. */
+export interface FederationPublicationGuard {
+  epoch: AnnexDeliveryEpoch;
+  current(): boolean;
 }

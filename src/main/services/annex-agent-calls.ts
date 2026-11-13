@@ -21,7 +21,7 @@ import { activeAgentLinks } from '../../shared/connection-grants';
  *   back; reads say it's offline; other calls are refused (D235).
  */
 
-import { FEDERATION_TOOLS, federationDirection, federationStatus } from './dispatcher-federation-policy';
+import { FEDERATION_TOOLS, federationDirection, federationStatus, type FederationPublicationGuard } from './dispatcher-federation-policy';
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import { tel } from '../telemetry/facade';
@@ -133,6 +133,19 @@ let remoteDispatcher: DispatcherAgentCallReceiver | undefined;
 let lifecycle = 0;
 let federation: StartAgentCallsOptions['federation'];
 export function federationControllerForShare(): unknown { return federation?.local(); }
+
+/** Pairing and service incarnation that authenticated this publication. */
+export function captureControllerPublication(machine: string): FederationPublicationGuard {
+  const generation = lifecycle;
+  const owner = federation;
+  const epoch = Object.freeze(outgoingEpoch(machine));
+  return { epoch, current: () => generation === lifecycle && owner === federation && isNetworkComputer(machine)
+    && deliveryHash(epoch) === deliveryHash(outgoingEpoch(machine)) };
+}
+function publicationEpochMatches(raw: unknown, expected: AnnexDeliveryEpoch): boolean {
+  const epoch = raw as AnnexDeliveryEpoch | null;
+  return !!epoch && epoch.sender === expected.receiver && epoch.receiver === expected.sender;
+}
 
 
 const selfFingerprint = (): string | undefined => annexIdentity.getIdentity()?.fingerprint.toLowerCase();
@@ -821,11 +834,19 @@ async function shareFor(machine: string, self: string): Promise<WireDirection[]>
 async function exchangeShare(machine: string): Promise<boolean> {
   const self = selfFingerprint();
   if (!self || !transport?.connected(machine) || !isNetworkComputer(machine)) return false;
+  const publication = captureControllerPublication(machine);
+  const owner = federation;
   try {
     const directions = await shareFor(machine, self);
-    const response = await transport.post(machine, '/api/v1/network/connections', { v: AGENT_CALL_VERSION, directions: directions as unknown as Record<string, unknown>[], ...(federation && { controller: federation.local() }) });
-    if (response.status !== 200) return false;
-    if (federation) await federation.learn(machine, (response.body as { controller?: unknown } | null)?.controller);
+    if (!publication.current()) return false;
+    const response = await transport.post(machine, '/api/v1/network/connections', { v: AGENT_CALL_VERSION, directions: directions as unknown as Record<string, unknown>[], ...(owner && { controller: owner.local(), epoch: publication.epoch }) });
+    if (response.status !== 200 || !publication.current()) return false;
+    const answer = response.body as { controller?: unknown; epoch?: unknown } | null;
+    if ((answer?.epoch !== undefined || (owner && answer?.controller !== undefined)) && !publicationEpochMatches(answer?.epoch, publication.epoch)) return false;
+    if (owner && answer?.controller !== undefined) {
+      await owner.learn(machine, answer.controller, publication);
+    }
+    if (!publication.current()) return false;
     const theirs = (response.body as { directions?: unknown } | null)?.directions;
     if (Array.isArray(theirs) && theirs.length > 0) await receiveDirections(machine, { v: AGENT_CALL_VERSION, directions: theirs });
     return true;
@@ -847,14 +868,23 @@ export async function shareForAnswer(machine: string): Promise<WireDirection[]> 
  * one. Only directions between an agent here and one on the sender's machine
  * are taken, and only for agents here that exist; the newer copy wins.
  */
-export async function receiveDirections(senderMachine: string, raw: unknown, now = Date.now()): Promise<{ applied: number } | AgentCallRefusal> {
+export async function receiveDirections(senderMachine: string, raw: unknown, now = Date.now(), authenticated?: FederationPublicationGuard): Promise<{ applied: number } | AgentCallRefusal> {
   const self = selfFingerprint();
   const machine = senderMachine.toLowerCase();
   const list = (raw as { v?: unknown; directions?: unknown } | null);
   if (!self || !list || list.v !== AGENT_CALL_VERSION || !Array.isArray(list.directions) || list.directions.length > DIRECTIONS_PER_REQUEST) {
     return { status: 400, error: 'invalid_connections', message: 'The connections were not in a form this computer reads.' };
   }
-  if (federation && isNetworkComputer(machine)) await federation.learn(machine, (raw as { controller?: unknown }).controller);
+  const publication = authenticated ?? captureControllerPublication(machine);
+  const metadata = raw as { controller?: unknown; epoch?: unknown };
+  if (!publication.current() || (metadata.epoch !== undefined && !publicationEpochMatches(metadata.epoch, publication.epoch))) {
+    return { status: 403, error: 'pairing_changed', message: 'The network pairing changed during this connection exchange.' };
+  }
+  if (federation && metadata.controller !== undefined) {
+    if (!publicationEpochMatches(metadata.epoch, publication.epoch)) return { status: 400, error: 'invalid_controller_epoch', message: 'Controller publication requires its authenticated network pairing.' };
+    await federation.learn(machine, metadata.controller, publication);
+    if (!publication.current()) return { status: 403, error: 'pairing_changed', message: 'The network pairing changed before controller publication committed.' };
+  }
   let applied = 0;
   // Links count toward the cap; a link turned off (a deleted agent's, say) doesn't.
   let kept = listDirections().filter((d) => peersFor(d, self).includes(machine) && (!!d.link || !!activeAgentLinks(d).length)).length;
@@ -903,6 +933,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
       if ((await Promise.all(localEnds.map((end) => describe(end.agentId)))).some((found) => !found)) continue;
     } else if (!current) continue;
     if (active && !current?.link && !activeAgentLinks(current).length && kept >= DIRECTIONS_PER_MACHINE) continue;
+    if (!publication.current()) return { status: 403, error: 'pairing_changed', message: 'The network pairing changed during this connection exchange.' };
     const updatedAt = Date.parse(entry.updatedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : entry.updatedAt;
     const tools = [...new Set(entry.disabledTools.filter((t): t is string => typeof t === 'string' && t.length > 0 && t.length <= 100))].slice(0, 50);
     // An agent-authored update can add its source, but cannot overwrite a person's source or saved switches.
@@ -923,6 +954,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
         if (!current && !protectedLive) continue; // An unreadable source must not have its switches guessed.
       }
     }
+    if (!publication.current()) return { status: 403, error: 'pairing_changed', message: 'The network pairing changed during connection source inspection.' };
     const effectiveUserLink = protectUserTools || !legacyPair ? !!current?.link : userLink;
     const wrote = await putConnectionDirection({
       from, to, disabledTools: protectUserTools ? current?.disabledTools ?? protectedLive?.disabledTools ?? [] : tools,
@@ -963,7 +995,7 @@ export interface StartAgentCallsOptions {
   deliveryStore?: AnnexDeliveryStore;
   /** Fixed controller capability; never selected by agent arguments or editable tool names. */
   remoteDispatcher?: DispatcherAgentCallReceiver;
-  federation?: { local(): unknown; learn(machine: string, raw: unknown): Promise<void> };
+  federation?: { local(): unknown; learn(machine: string, raw: unknown, guard: FederationPublicationGuard): Promise<void> };
 }
 
 export function startAgentCalls(options: StartAgentCallsOptions): () => void {

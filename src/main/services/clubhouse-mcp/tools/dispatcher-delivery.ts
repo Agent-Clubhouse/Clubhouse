@@ -87,6 +87,10 @@ export interface DispatcherDeliveryRequest {
   args: Record<string, unknown>;
   /** Sent by an action's step (#3042): nobody can make the call again, so Ask first isn't asked. */
   fromAction?: boolean;
+  /** Authenticated membership-owned controller input, admitted under this receiver's own rules. */
+  wakeAsReceiver?: true;
+  /** Trusted receiver admission, checked after queue waits and before a wake side effect. */
+  admission?: () => boolean;
   messageOptions?: Pick<RuntimeSendOptions, 'delivery' | 'actionQueue'>;
 }
 
@@ -137,6 +141,7 @@ function recordForGroupChat(req: DispatcherDeliveryRequest): void {
 }
 
 async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise<DispatcherDelivery> {
+  if (req.admission && !req.admission()) return { delivered: false, text: 'The controller connection was revoked before delivery.' };
   const { senderId, targetName } = req;
   const meta = { sourceAgent: senderId, targetAgent: inboxId, taskId: req.taskId };
 
@@ -156,7 +161,7 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   }
 
   // The Dispatcher's own subscription (or Clubhouse acting for it) wakes itself: no grant to check.
-  const decision = senderId === inboxId ? 'allow' : dispatcherWakeDecision(senderId);
+  const decision = senderId === inboxId || req.wakeAsReceiver ? 'allow' : dispatcherWakeDecision(senderId);
   switch (decision) {
     case 'refuse':
       appLog('core:mcp', 'info', 'send_message: sender may not wake the Dispatcher', { meta });
@@ -183,7 +188,8 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
 
   appLog('core:mcp', 'info', 'send_message: waking the Dispatcher to deliver', { meta });
   const result = await wakeWiredAgent({
-    callerId: senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed, locate: locateDispatcher,
+    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed, locate: locateDispatcher,
+    ...(req.admission && { admission: req.admission }),
   });
   const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
   if (result.isError) {

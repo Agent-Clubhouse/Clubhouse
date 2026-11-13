@@ -20,7 +20,7 @@ vi.mock('./annex-peers', () => ({ listPeers: () => [
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-agent-calls-'));
 
 import {
-  AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, forwardAgentCall, receiveAgentCall, receiveDirections,
+  AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, captureControllerPublication, forwardAgentCall, receiveAgentCall, receiveDirections,
   remoteAgentName, shareForAnswer, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
 } from './annex-agent-calls';
 import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
@@ -934,17 +934,53 @@ describe('authenticated controller publication (#3345)', () => {
     const remote = { agentId: 'there-controller', enabled: true, name: 'There controller' };
     const learn = vi.fn(async () => {});
     respond = (urlPath) => urlPath.endsWith('/connections')
-      ? { status: 200, body: { directions: [], controller: remote } }
+      ? { status: 200, body: { directions: [], controller: remote, epoch: { sender: state.peerPairing, receiver: state.pairing } } }
       : { status: 503, body: {} };
     stop = startAgentCalls({ transport, runTool: async () => ok('unused'), describeLocalAgent: async () => undefined, federation: { local: () => local, learn } });
     await syncDirectionsWith(OTHER);
     expect(posts.find((p) => p.path.endsWith('/connections'))?.body.controller).toEqual(local);
-    expect(learn).toHaveBeenCalledWith(OTHER, remote);
+    expect(learn).toHaveBeenCalledWith(OTHER, remote, expect.objectContaining({ epoch: { sender: state.pairing, receiver: state.peerPairing } }));
     const inboundController = { agentId: 'replacement-controller', enabled: false, name: 'Other controller' };
-    await receiveDirections(OTHER, { v: 1, directions: [], controller: inboundController });
-    expect(learn).toHaveBeenCalledWith(OTHER, inboundController);
+    await receiveDirections(OTHER, { v: 1, directions: [], controller: inboundController, epoch: { sender: state.peerPairing, receiver: state.pairing } });
+    expect(learn).toHaveBeenCalledWith(OTHER, inboundController, expect.any(Object));
     learn.mockClear();
-    await receiveDirections(THIRD, { v: 1, directions: [], controller: inboundController });
+    await receiveDirections(THIRD, { v: 1, directions: [], controller: inboundController, epoch: { sender: state.peerPairing, receiver: state.pairing } });
     expect(learn).not.toHaveBeenCalled();
+  });
+});
+
+describe('controller publication pairing boundaries (#3345)', () => {
+  it('drops a deferred old-pairing response after removal and re-pairing', async () => {
+    stop();
+    const learn = vi.fn(async () => {});
+    let answer!: (value: { status: number; body: unknown }) => void;
+    let requested!: () => void;
+    const requestedNow = new Promise<void>((resolve) => { requested = resolve; });
+    const deferred = new Promise<{ status: number; body: unknown }>((resolve) => { answer = resolve; });
+    stop = startAgentCalls({
+      transport: { ...transport, post: async () => { requested(); return deferred; } },
+      runTool: async () => ok('unused'), describeLocalAgent: async () => undefined,
+      federation: { local: () => ({ agentId: 'here', enabled: true, name: 'Here' }), learn },
+    });
+    const pending = syncDirectionsWith(OTHER);
+    await requestedNow;
+    const oldPairing = state.peerPairing;
+    state.peerPairing = 'removed-and-paired-again';
+    answer({ status: 200, body: { directions: [], controller: { agentId: 'stale-controller', enabled: true, name: 'Old' }, epoch: { sender: oldPairing, receiver: state.pairing } } });
+    expect(await pending).toBe(false);
+    expect(learn).not.toHaveBeenCalled();
+  });
+  it('rejects inbound publication captured before a re-pair and requires its wire epoch', async () => {
+    const publication = captureControllerPublication(OTHER);
+    const epoch = { sender: state.peerPairing, receiver: state.pairing };
+    state.peerPairing = 'new-peer-pairing';
+    expect(await receiveDirections(OTHER, { v: 1, directions: [], controller: { agentId: 'stale', enabled: true, name: 'Old' }, epoch }, now, publication)).toMatchObject({ error: 'pairing_changed' });
+    expect(await receiveDirections(OTHER, { v: 1, directions: [], epoch }, now)).toMatchObject({ error: 'pairing_changed' });
+  });
+  it('invalidates publication guards across an agent-call service restart', () => {
+    const publication = captureControllerPublication(OTHER);
+    expect(publication.current()).toBe(true);
+    stop();
+    expect(publication.current()).toBe(false);
   });
 });

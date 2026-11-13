@@ -1,3 +1,4 @@
+import { federationDirection } from '../../dispatcher-federation-policy';
 import { dispatcherProviderControl } from '../../dispatcher-provider-control';
 /**
  * Agent-to-Agent MCP Tools — allows linked agents to communicate.
@@ -11,7 +12,7 @@ import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { isTrackedDispatcher } from '../dispatcher-gate';
 import { agentRegistry } from '../../agent-registry';
-import { currentRemoteCaller, type AgentToolRunResult } from '../../annex-agent-calls';
+import { captureControllerPublication, currentRemoteCaller, type AgentToolRunResult } from '../../annex-agent-calls';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { requireString, optionalString, numberWithDefault } from './validation';
@@ -23,7 +24,7 @@ import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getProvider } from '../../../orchestrators';
 import { sleepAgent, wakeWiredAgent } from './agent-lifecycle';
 import { deliverToDispatcher, isDispatcherTarget, sleepingDispatcherHint } from './dispatcher-delivery';
-import { isDispatcherAgentId } from '../../dispatcher/dispatcher-service';
+import { isDispatcherAgentId, isDispatcherEnabled } from '../../dispatcher/dispatcher-service';
 import { noteAgentReached } from '../../dispatcher/dispatcher-requests';
 import type { RoutedMessagePart, RuntimeSendResult } from '../../../../shared/chat';
 import { DISPATCHER_CONTROLLER_NAME } from '../../../../shared/dispatcher-name';
@@ -103,9 +104,10 @@ function remoteDelivery(result: McpToolResult, state: NonNullable<AgentToolRunRe
 }
 
 /** Leave remote work in its durable sender queue, not the volatile chat queue. */
-function remoteInputPreflight(targetId: string): AgentToolRunResult | undefined {
+function remoteInputPreflight(targetId: string, receiverWake = false): AgentToolRunResult | undefined {
   if (!currentRemoteCaller()) return undefined;
   const runtime = getAgentRuntime(targetId);
+  if (receiverWake && !runtime && !agentRegistry.get(targetId)) return undefined;
   if (!runtime || (runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.()))) {
     return remoteDelivery({ content: [{ type: 'text', text: 'The target is busy, starting or asleep. Input was not accepted; this delivery will retry later.' }], isError: true }, 'retry_later', 'target_not_ready');
   }
@@ -230,7 +232,15 @@ export function registerAgentTools(): void {
           : `Message sent to ${targetName}. task_id=${taskId} — ` +
             `poll read_output for TASK_RESULT:${taskId}.${wokeNote}${submitNote}`;
       };
-      const notReady = remoteInputPreflight(targetId);
+      const remote = currentRemoteCaller();
+      const publication = remote?.machineId ? captureControllerPublication(remote.machineId) : undefined;
+      const receiverAdmission = () => !!publication?.current() && isDispatcherEnabled() && !!remote && !!federationDirection(
+        { agentId: remote.agentId, machineId: remote.machineId }, { agentId: targetId },
+      );
+      const receiverWake = isDispatcherTarget(targetId) && !!remote && !!federationDirection(
+        { agentId: remote.agentId, machineId: remote.machineId }, { agentId: targetId },
+      );
+      const notReady = remoteInputPreflight(targetId, receiverWake);
       if (notReady) return notReady;
 
       // The Dispatcher, asleep or awake: a sleeping one is woken to take the message (#3037).
@@ -242,9 +252,13 @@ export function registerAgentTools(): void {
         try {
           const delivery = await deliverToDispatcher({
             senderId: agentId, targetId, targetName: tagged.targetName, text: tagged.text, routed: tagged.routed,
+            ...(receiverWake && { wakeAsReceiver: true, admission: receiverAdmission }),
             taskId, submit: forceSubmit, toolName, args,
           });
-          if (delivery.delivered === false) return { content: [{ type: 'text', text: delivery.text }], isError: true };
+          if (delivery.delivered === false) {
+            const failure = { content: [{ type: 'text' as const, text: delivery.text }], isError: true };
+            return receiverWake && !receiverAdmission() ? remoteDelivery(failure, 'refused', 'authorization_revoked') : failure;
+          }
           return remoteInputReceipt({ content: [{ type: 'text', text: sentText(tagged.targetName, tagged.isBidirectional, delivery.woke) }] }, delivery.delivery ? { delivery: delivery.delivery } : undefined);
         } catch (err) {
           // telemetry-exempt: logged, and the error reaches the sender as the tool result

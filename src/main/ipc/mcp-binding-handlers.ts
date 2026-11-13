@@ -1,3 +1,4 @@
+import { federationReceiver } from '../services/dispatcher-federation-receiver';
 /**
  * IPC handlers for MCP binding management.
  */
@@ -55,7 +56,7 @@ import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
 import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
-import { getDispatcherAgentId, isDispatcherEnabled, dispatcherDisplayName, getDispatcherChatConfig, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
+import { dispatcherDisplayName, getDispatcherChatConfig, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
 
 function federationEnd(id: string) {
   const parsed = parseAgentAddress(id);
@@ -469,18 +470,7 @@ export function restorePersistedBindings(): Promise<void> {
       }
     }, (machine) => annexClient.isMachineConnected(machine));
     startAgentCalls({
-      remoteDispatcher: {
-        isTarget: (id) => id === getDispatcherAgentId(),
-        isAvailable: () => isDispatcherEnabled(),
-        receive: async (request) => {
-          const caller = { agentId: request.origin.agentId, machineId: request.origin.machineId };
-          if (!federationDirection(caller, { agentId: request.targetId })) return {
-            content: [{ type: 'text', text: 'That controller is not linked by this computer’s Annex Network membership.' }],
-            isError: true, annexDelivery: { state: 'refused', reason: 'not_connected' },
-          };
-          return runAgentToolForRemoteCaller(request.tool, request.targetId, `${caller.agentId}@${caller.machineId}`, request.args);
-        },
-      },
+      remoteDispatcher: federationReceiver,
       federation: { local: localFederationController, learn: learnFederationController },
       transport: {
         connected: (machine) => annexClient.isMachineConnected(machine),

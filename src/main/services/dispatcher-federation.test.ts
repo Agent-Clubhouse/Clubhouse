@@ -3,9 +3,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnnexPeer } from '../../shared/types';
-const state = vi.hoisted(() => ({ base: '', local: 'controller-here', enabled: true, peers: [] as AnnexPeer[], changed: undefined as (() => void) | undefined }));
+const state = vi.hoisted(() => ({ base: '', selfPairing: 'self', local: 'controller-here', enabled: true, peers: [] as AnnexPeer[], changed: undefined as (() => void) | undefined }));
 vi.mock('electron', () => ({ app: { getPath: () => state.base, isPackaged: false } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./annex-network-membership', () => ({ ownPairing: () => ({ id: state.selfPairing }) }));
 vi.mock('./annex-peers', () => ({ listPeers: () => state.peers }));
 vi.mock('./dispatcher/dispatcher-service', () => ({
   getDispatcherAgentId: () => state.local, isDispatcherEnabled: () => state.enabled,
@@ -20,7 +21,7 @@ import { devicesChanged, resetDeviceSignalForTests } from './annex-device-signal
 const peer = (id: string, kind: 'desktop' | 'phone' = 'desktop', role = 'member') => ({ fingerprint: id, kind, role, alias: id } as AnnexPeer);
 let stop = () => {};
 beforeEach(() => {
-  state.enabled = true; state.peers = [peer('desk'), peer('laptop'), peer('phone', 'phone'), peer('paired', 'desktop', 'satellite')];
+  state.selfPairing = 'self'; state.enabled = true; state.peers = [peer('desk'), peer('laptop'), peer('phone', 'phone'), peer('paired', 'desktop', 'satellite')];
   stop = watchFederation(() => {});
 });
 afterEach(() => { stop(); resetDeviceSignalForTests(); });
@@ -83,6 +84,40 @@ describe('membership-owned controller links (#3345)', () => {
     expect(controllerDirection(local, remote)).toBeUndefined();
     await learnFederationController('desk', info('controller-desk'));
     expect(controllerDirection(local, remote)).toBeDefined();
+  });
+  it('requires fresh publication after this computer gets a new pairing too', async () => {
+    state.peers = [peer('desk')];
+    await learnFederationController('desk', info('controller-desk'));
+    expect(controllerDirection(local, remote)).toBeDefined();
+    state.selfPairing = 'new-self-pairing';
+    expect(controllerDirection(local, remote)).toBeUndefined();
+    await learnFederationController('desk', info('controller-desk'));
+    expect(controllerDirection(local, remote)).toBeDefined();
+  });
+  it('checks the captured pairing again at the atomic metadata commit', async () => {
+    state.peers = [{ ...peer('commit-peer'), pairingId: 'pairing-A' }];
+    let written!: () => void;
+    const atWrite = new Promise<void>((resolve) => { written = resolve; });
+    let release!: () => void;
+    const continueWrite = new Promise<void>((resolve) => { release = resolve; });
+    const open = fs.promises.open.bind(fs.promises);
+    const spy = vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args);
+      if (String(args[0]).includes('dispatcher-federation.json.tmp-')) { written(); await continueWrite; }
+      return handle;
+    });
+    const pending = learnFederationController('commit-peer', info('old-controller'), {
+      epoch: { sender: 'self', receiver: 'pairing-A' },
+      current: () => state.peers[0]?.pairingId === 'pairing-A',
+    });
+    await atWrite;
+    state.peers = [{ ...peer('commit-peer'), pairingId: 'pairing-B' }];
+    release(); await pending; spy.mockRestore();
+    expect(await federationBindingSource.collect()).toEqual([]);
+    // The rejected attempt must not poison the cache or disk for the new pairing.
+    await learnFederationController('commit-peer', info('new-controller'));
+    expect(controllerDirection(local, { agentId: 'new-controller', machineId: 'commit-peer' })).toBeDefined();
+    expect(controllerDirection(local, { agentId: 'old-controller', machineId: 'commit-peer' })).toBeUndefined();
   });
   it('rejects malformed endpoint publication and never links a visible chat by text alone', async () => {
     state.peers = [peer('unseen')];
