@@ -96,6 +96,7 @@ export interface GroupProjectTombstone {
 export interface GroupProjectDeleteImpact {
   token: string;
   members: string[];
+  exclusions: string[];
   canvases: string[];
   actions: string[];
   grants: string[];

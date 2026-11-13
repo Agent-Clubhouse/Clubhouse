@@ -19,6 +19,7 @@ export async function readGroupProjectDeletionInventory(id: string): Promise<Gro
   return {
     groupProjectId: id,
     members: members.map((member) => `${member.name} (${member.address})`).sort(),
+    exclusions: membership.excluded.map((entry) => entry.address).sort(),
     canvases: canvas.canvases,
     // Owned Actions and principal grants are introduced by separate lanes.
     actions: [],

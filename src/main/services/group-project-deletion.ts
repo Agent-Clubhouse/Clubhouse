@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'crypto';
 export interface GroupProjectDeletionInventory {
   groupProjectId: string;
   members: string[];
+  exclusions: string[];
   canvases: string[];
   actions: string[];
   grants: string[];

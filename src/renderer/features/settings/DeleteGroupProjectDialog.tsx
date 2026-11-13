@@ -57,6 +57,7 @@ export function DeleteGroupProjectDialog({ name, loadImpact, confirmDelete, onCl
         {!impact && !error && <p role="status">Checking impact...</p>}
         {impact && <dl className="flex flex-col gap-2">
           {list('Members', impact.members)}
+          {list('Exclusions', impact.exclusions)}
           {list('Canvases', impact.canvases)}
           {list('Owned Actions', impact.actions)}
           {list('Grants', impact.grants)}

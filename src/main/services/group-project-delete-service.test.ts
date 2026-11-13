@@ -9,7 +9,7 @@ vi.mock('./group-project-canvas-inventory', () => ({ readGroupProjectCanvasInven
 vi.mock('./plugin-storage', () => ({ writeKeyWithinCanvasBarrier: vi.fn() }));
 import { createLocalGroupProjectDeleteService } from './group-project-delete-service';
 
-const impact = { groupProjectId: 'gp', members: ['Ada'], canvases: ['One', 'Two'], actions: [], grants: [], messages: 2, topics: 1, machines: [], revisions: ['3', 'canvas'] };
+const impact = { groupProjectId: 'gp', members: ['Ada'], exclusions: [], canvases: ['One', 'Two'], actions: [], grants: [], messages: 2, topics: 1, machines: [], revisions: ['3', 'canvas'] };
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.inventory.mockImplementation(async () => structuredClone(impact));

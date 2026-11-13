@@ -8,7 +8,7 @@ import { groupProjectRegistry } from '../services/group-project-registry';
 import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
-import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin } from '../services/group-project-membership';
+import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, releaseMembershipBindings } from '../services/group-project-membership';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
@@ -25,6 +25,7 @@ import { flushOpenCanvases } from '../services/canvas-flush';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 
 const deletion = createLocalGroupProjectDeleteService((id) => {
+  releaseMembershipBindings(id);
   for (const binding of bindingManager.getAllBindings()) {
     if (binding.targetKind === 'group-project' && binding.targetId === id) bindingManager.unbind(binding.agentId, id);
   }

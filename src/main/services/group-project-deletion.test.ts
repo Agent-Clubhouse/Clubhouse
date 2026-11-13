@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createGroupProjectDeletionService, type GroupProjectDeletionInventory } from './group-project-deletion';
 
 function inventory(): GroupProjectDeletionInventory {
-  return { groupProjectId: 'gp', members: ['Ada'], canvases: ['Home', 'Work'], actions: ['Build'], grants: ['Admin'], messages: 3, topics: 2, machines: [], revisions: ['1'] };
+  return { groupProjectId: 'gp', members: ['Ada'], exclusions: [], canvases: ['Home', 'Work'], actions: ['Build'], grants: ['Admin'], messages: 3, topics: 2, machines: [], revisions: ['1'] };
 }
 
 describe('group project deletion confirmation', () => {
