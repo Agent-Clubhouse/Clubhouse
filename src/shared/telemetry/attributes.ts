@@ -569,6 +569,7 @@ export const ATTR = {
     'probe_capacity', 'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
     'request_app_update',
     'offer_handoff', 'respond_to_handoff', 'get_handoff', 'list_handoffs', 'cancel_handoff',
+    'hand_off_request', 'list_remote_requests', 'triage_remote_request', 'report_remote_request',
     'get_delivery', 'get_annex_network_settings', 'update_annex_network_settings',
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'set_connection_tools',
@@ -1107,6 +1108,13 @@ export const ATTR = {
   /** Whether the Dispatcher was asked to review anything (a background turn follows). */
   dispatcherUpkeepReview: boolAttr('clubhouse.dispatcher.upkeep.review'),
   /** What the Dispatcher said a report was (tell_user's kind). */
+  federationRequest: hashAttr('clubhouse.federation.request'),
+  federationOrigin: hashAttr('clubhouse.federation.origin'),
+  federationTarget: hashAttr('clubhouse.federation.target'),
+  federationDelivery: enumAttr('clubhouse.federation.delivery', ['accepted', 'delivered', 'refused', 'expired']),
+  federationOutcome: enumAttr('clubhouse.federation.outcome', ['under_way', 'waiting_user', 'answered', 'declined', 'failed']),
+  federationEvent: enumAttr('clubhouse.federation.event', ['crossing', 'duplicate', 'triage']),
+  federationTriage: enumAttr('clubhouse.federation.triage', ['now', 'check_in', 'needs_user', 'decline', 'pending']),
   dispatcherNewsKind: enumAttr('clubhouse.dispatcher.news.kind', ['needs_user', 'answer', 'routine', 'check_in']),
   /** What triage did with it. */
   dispatcherNewsShow: enumAttr('clubhouse.dispatcher.news.show', ['now', 'check_in', 'later', 'never']),
@@ -1939,6 +1947,7 @@ export const EVENTS = {
   'clubhouse.dispatcher.memory_upkeep': { level: 'standard' },
   /** One report on its way to the Dispatcher's chat: its kind, what triage did and why, whether it was an agent's, held items a check-in took, and the rewrite outcome. */
   'clubhouse.dispatcher.news_triage': { level: 'standard' },
+  'clubhouse.dispatcher.federation': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

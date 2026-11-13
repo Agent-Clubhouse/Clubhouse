@@ -235,3 +235,17 @@ tool, grant or controller link reaches it.
 
 What followers show, Take back while the lead is offline, and approvals from
 other computers come with #3352, #3353 and #3354.
+
+### Requests between controllers
+
+Use a controller link's `hand_off_request` with `request` and an existing local `request_id` to ask the other computer's Dispatcher to handle part of that request. Plain `send_message` and `send_file` calls are news. They do not create work requests. A hand-off creates a separate receiver-local request with authenticated machine and agent identity, the origin request id, and the text. Identity claims in the text have no effect.
+
+The receiving controller uses `list_remote_requests` and `triage_remote_request` to choose `now`, `check_in`, `needs_user`, or `decline`, with a reason. Held requests stay on the list; the next check-in explicitly reads and triages them. `needs_user` names the origin when asking the person on the receiving computer. All subsequent actions use that controller's own local grants. Nothing from another computer answers a permission prompt, an Ask first request, or a question. Pending runtime prompts hold remote input until the person here has answered them.
+
+`report_remote_request` sends an explicit `under_way`, `waiting_user`, `answered`, `declined`, or `failed` report. Reports carry the origin request id and reach its controller and chat with the other computer's label. Only an explicit report changes that outcome. A delivery receipt and a finished CLI turn never mean the requested work is complete.
+
+Delivery is recorded separately as `accepted`, `delivered`, `refused`, or `expired`. Accepted means a durable request is waiting. Delivered means the receiver durably admitted it, not that its model executed the task. An offline member's requests wait in the existing durable Annex outbox, expire after seven days, and have their grants, controller link and pairing checked again before sending. Removal drops pending requests and replies and tells the local sender. Already delivered requests are not sent again on reconnect. Retrying the same request id and exact text reuses the existing identity; duplicate receipts are counted.
+
+Fixed controller bounds are eight causal crossings, twenty crossings per minute per member link, and thirty waiting requests per link. Reply and news causality is retained, so a reply cannot start a fresh loop. A new request created by the local person's conversation can start a new cause; an agent-supplied id or text cannot. A tripped link pauses and sends a notice to both computers. Its pause is retained for that pairing. This version has no agent tool for clearing it. Request/outcome and duplicate telemetry contains identifiers and closed state codes, never request or report text.
+
+The two-desktop fake CLI fixtures in `e2e/annex-v2/dispatcher-federation.spec.ts` cover local triage, correlated outcomes, offline restart and a bounded loop. That file is in the explicit Annex CI shard list. No paid model is used.

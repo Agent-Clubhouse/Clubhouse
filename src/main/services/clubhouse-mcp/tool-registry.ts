@@ -219,6 +219,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     preview_provider: INTERNAL_READ,
     change_provider: INTERNAL_WRITE,
     send_message: INTERNAL_WRITE,
+    hand_off_request: INTERNAL_WRITE,
     get_status: INTERNAL_READ,
     read_output: INTERNAL_READ,
     check_connectivity: INTERNAL_READ,
@@ -349,6 +350,9 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     cancel_repository_import: INTERNAL_WRITE,
     request_app_update: INTERNAL_WRITE,
     get_delivery: INTERNAL_READ,
+    list_remote_requests: INTERNAL_READ,
+    triage_remote_request: INTERNAL_WRITE,
+    report_remote_request: INTERNAL_WRITE,
     get_annex_network_settings: INTERNAL_READ,
     // Restricting to loopback interrupts existing remote connections.
     update_annex_network_settings: INTERNAL_DESTRUCTIVE,

@@ -1,3 +1,4 @@
+import { startFederatedRequests } from '../services/dispatcher-federation-runtime';
 import { federationReceiver } from '../services/dispatcher-federation-receiver';
 /**
  * IPC handlers for MCP binding management.
@@ -457,6 +458,7 @@ let stopWatchingOrchestratorConnections: (() => void) | null = null;
 let stopWatchingDispatcherWires: (() => void) | null = null;
 let stopWatchingAgentCards: (() => void) | null = null;
 let stopWatchingDispatcherConnections: (() => void) | null = null;
+let stopFederatedRequests: (() => void) | undefined;
 let stopWatchingFederation: (() => void) | null = null;
 let stopDispatcherLead: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
@@ -546,6 +548,7 @@ export function restorePersistedBindings(): Promise<void> {
       authorizeQueuedCall: authorizeQueuedAnnexCall,
       onDeliveryFailure: reportAnnexDeliveryFailure,
     });
+    stopFederatedRequests = startFederatedRequests();
   }
   return rebuildPersistedBindings().then(async (): Promise<void> => {
     // Once, after a rebuild has read every source: Dispatcher links from before #3215 get the new defaults.
@@ -577,6 +580,8 @@ export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
   persistedSourcesRegistered = false;
   stopWatchingFederation?.();
+  stopFederatedRequests?.();
+  stopFederatedRequests = undefined;
   stopWatchingFederation = null;
   stopDispatcherLead?.();
   stopDispatcherLead = null;
