@@ -44,7 +44,7 @@ vi.mock('./settings-store', async (importOriginal) => ({
 }));
 
 import { groupProjectRegistry } from './group-project-registry';
-import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
+import { _resetAllBoardsForTesting } from './group-project-bulletin';
 import * as fsp from 'fs/promises';
 
 describe('GroupProjectRegistry', () => {
@@ -209,7 +209,7 @@ describe('GroupProjectRegistry', () => {
     });
     (fsp.readFile as any).mockImplementation(async (p: string) => {
       if (p === registryFile) return oldData;
-      throw new Error('ENOENT');
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     });
 
     groupProjectRegistry._resetForTesting();
@@ -225,28 +225,5 @@ describe('GroupProjectRegistry', () => {
     // Verify writeFile was called
     const fsp = await import('fs/promises');
     expect(fsp.writeFile).toHaveBeenCalled();
-  });
-
-  it('seeds protected "general" and "control" channels on create', async () => {
-    const p = await groupProjectRegistry.create('Seeded');
-    const board = getBulletinBoard(p.id);
-    const digest = await board.getDigest();
-    const byTopic = Object.fromEntries(digest.map(d => [d.topic, d]));
-    expect(byTopic.general).toBeDefined();
-    expect(byTopic.control).toBeDefined();
-    expect(byTopic.general.isProtected).toBe(true);
-    expect(byTopic.control.isProtected).toBe(true);
-  });
-
-  it('seeded channels are idempotent across repeated boots', async () => {
-    const p = await groupProjectRegistry.create('Idem');
-    const board = getBulletinBoard(p.id);
-    const before = (await board.getDigest()).find(d => d.topic === 'general')!.messageCount;
-    // Second call via ensureProjectChannels path (simulated through create of same id not possible;
-    // rely on the internal seed being idempotent)
-    const { ensureProjectChannels } = await import('./group-project-bulletin');
-    await ensureProjectChannels(p.id);
-    const after = (await board.getDigest()).find(d => d.topic === 'general')!.messageCount;
-    expect(after).toBe(before);
   });
 });

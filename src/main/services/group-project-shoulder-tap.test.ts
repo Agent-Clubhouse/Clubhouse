@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock electron app
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
+vi.mock('./group-project-host', async () =>
+  (await import('./__tests__/group-project-host-passthrough')).passthroughHostModule());
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -49,6 +51,7 @@ vi.mock('./pty-manager', () => ({
   isStopping: (...args: unknown[]) => mockIsStopping(...args),
 }));
 
+import { groupProjectHost } from './group-project-host';
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { _resetAllBoardsForTesting, getBulletinBoard } from './group-project-bulletin';
@@ -275,7 +278,7 @@ describe('executeShoulderTap', () => {
   });
 
   it('does NOT record tap to any bulletin channel (ephemeral)', async () => {
-    const project = await groupProjectRegistry.create('RecordProj');
+    const project = await groupProjectHost.create('RecordProj');
 
     agentRegistry.register('agent-r', { projectPath: '/r', orchestrator: 'claude-code', runtime: 'pty' });
     bindingManager.bind('agent-r', {

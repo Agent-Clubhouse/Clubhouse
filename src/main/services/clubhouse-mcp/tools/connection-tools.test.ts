@@ -5,6 +5,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
+vi.mock('../../group-project-host', async () =>
+  (await import('../../__tests__/group-project-host-passthrough')).passthroughHostModule());
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 import * as fs from 'fs';
 import * as os from 'os';

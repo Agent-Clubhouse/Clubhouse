@@ -10,6 +10,7 @@
 import { agentRegistry } from './agent-registry';
 import { inboxChannelName } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
+import { groupProjectHost } from './group-project-host';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { buildToolName } from './clubhouse-mcp/tool-registry';
 import { getAgentRuntime } from './agent-runtime';
@@ -44,10 +45,14 @@ export interface ShoulderTapResult {
  * channel if the sender is an agent (senderLabel is `agentName@projectName`),
  * or null when the sender is the UI/human user.
  */
-function senderReplyChannel(senderLabel: string): string | null {
+async function senderReplyChannel(projectId: string, senderLabel: string, senderAgentId?: string): Promise<string | null> {
   if (!senderLabel || senderLabel === 'user') return null;
   const senderAgentName = senderLabel.split('@')[0];
   if (!senderAgentName) return null;
+  if (senderAgentId) {
+    // The sender's own inbox, which a same-named member doesn't share (#1646).
+    try { return await groupProjectHost.inboxFor(projectId, senderAgentName, senderAgentId); } catch { /* telemetry-exempt: name-derived fallback */ }
+  }
   return inboxChannelName(senderAgentName);
 }
 
@@ -89,7 +94,7 @@ async function deliverShoulderTap(params: ShoulderTapParams): Promise<ShoulderTa
   const project = await groupProjectRegistry.get(projectId);
   const projectName = project?.name || projectId;
 
-  const replyChannel = senderReplyChannel(senderLabel);
+  const replyChannel = await senderReplyChannel(projectId, senderLabel, params.senderAgentId);
 
   // Find target agents
   const allBindings = bindingManager.getAllBindings();

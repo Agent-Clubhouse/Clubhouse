@@ -5,6 +5,8 @@ const gateClosed = vi.hoisted(() => new Set<string>());
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: (id: string) => (gateClosed.has(id) ? 'closed' : 'open') }));
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
+vi.mock('../../group-project-host', async () =>
+  (await import('../../__tests__/group-project-host-passthrough')).passthroughHostModule());
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,

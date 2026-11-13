@@ -26,6 +26,7 @@ import * as agentConfig from '../../agent-config';
 import * as projectStore from '../../project-store';
 import { listHelpersEverywhere } from '../../helper-index';
 import { groupProjectRegistry } from '../../group-project-registry';
+import { groupProjectHost } from '../../group-project-host';
 import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
   claimSourceBinding,
@@ -304,8 +305,8 @@ async function handleCreateGroupProject(callerId: string, args: Record<string, u
     if (!callerProject) {
       throw new ConnectionScopeError('Your project is not registered. Register it before creating a group project.');
     }
-    const created = await groupProjectRegistry.create(name, { projectId: callerProject.id });
-    const project = (await groupProjectRegistry.update(created.id, { metadata: { [GROUP_PROJECT_CREATOR_KEY]: callerId } })) ?? created;
+    const created = await groupProjectHost.create(name, { projectId: callerProject.id });
+    const project = (await groupProjectHost.update(created.id, { metadata: { [GROUP_PROJECT_CREATOR_KEY]: callerId } })) ?? created;
     appLog('core:mcp', 'info', 'Orchestrator created a group project', {
       meta: { agentId: callerId, groupProjectId: project.id, members: members.length },
     });

@@ -16,6 +16,7 @@ vi.mock('fs/promises', async (importOriginal) => {
 import { groupProjectRegistry } from './group-project-registry';
 import { _resetAllBoardsForTesting, flushAllBulletinBoards, getBulletinBoard } from './group-project-bulletin';
 import { createShutdownCoordinator } from '../shutdown-guard';
+import { groupProjectHost } from './group-project-host';
 
 const dataDir = () => path.join(fixture.home, '.clubhouse-dev', 'group-projects');
 const registryFile = () => path.join(dataDir(), 'registry.json');
@@ -33,6 +34,7 @@ beforeEach(async () => {
   fixture.home = await fsp.mkdtemp(path.join(cache, 'group-project-storage-'));
   groupProjectRegistry._resetForTesting();
   _resetAllBoardsForTesting();
+  groupProjectHost._resetForTesting();
 });
 
 afterEach(async () => {
@@ -137,7 +139,7 @@ describe('group project durable storage', () => {
   });
 
   it.each(['registry', 'board'] as const)('atomically replaces the %s, reports failure and preserves a retryable snapshot', async (kind) => {
-    const project = await groupProjectRegistry.create('Release');
+    const project = await groupProjectHost.create('Release');
     const board = getBulletinBoard(project.id);
     await groupProjectRegistry.flush();
     await board.flush();
@@ -216,7 +218,7 @@ describe('group project durable storage', () => {
   });
 
   it.each(['registry', 'board'] as const)('refuses to overwrite a corrupt %s', async (kind) => {
-    const project = await groupProjectRegistry.create('Existing');
+    const project = await groupProjectHost.create('Existing');
     const board = getBulletinBoard(project.id);
     await groupProjectRegistry.flush();
     await board.flush();
@@ -242,7 +244,7 @@ describe('group project durable storage', () => {
   });
 
   it('does not keep partially decoded topics after a failed load is repaired', async () => {
-    const project = await groupProjectRegistry.create('Existing');
+    const project = await groupProjectHost.create('Existing');
     const board = getBulletinBoard(project.id);
     await board.flush();
     board._resetForTesting();
@@ -264,7 +266,7 @@ describe('group project durable storage', () => {
   });
 
   it('preserves history and applies protection changes made before the first board read', async () => {
-    const project = await groupProjectRegistry.create('Existing');
+    const project = await groupProjectHost.create('Existing');
     const board = getBulletinBoard(project.id);
     await board.flush();
     const before = await board.getAllMessages();
