@@ -21,6 +21,14 @@ export interface HandoffServiceOptions {
   isDispatcher(agent: HandoffAgent): boolean;
   now?: () => number;
   newId?: () => string;
+  incomingAvailable?(record: Handoff): boolean;
+}
+
+export const HANDOFF_OFFER_TTL_MS = 24 * 60 * 60 * 1000;
+export const HANDOFF_ACTIVE_LIMIT = 512;
+export const HANDOFF_PEER_LIMIT = 64;
+export class HandoffOfferRefused extends Error {
+  constructor(readonly record: Handoff) { super('Handoff offer refused.'); }
 }
 
 type Advance = Extract<HandoffTransition, { state: 'transferring' | 'applying' | 'applied' | 'failed' }>
@@ -74,7 +82,7 @@ export class HandoffService {
       && (!state || record.state === state));
   }
 
-  async offer(input: HandoffOffer, sender: HandoffAgent): Promise<Handoff> {
+  async offer(input: HandoffOffer, sender: HandoffAgent, beforeCommit?: (record: Handoff) => Promise<void>): Promise<Handoff> {
     this.requireLocal(sender);
     const at = this.now();
     const record = parseHandoff({
@@ -82,10 +90,26 @@ export class HandoffService {
       state: 'offered', history: [{ operationId: this.newId(), at, by: { kind: 'agent', address: sender }, state: 'offered' }],
     });
     if (!await this.options.authorize({ action: 'handoff.offer', actor: sender, record, stage: 'offered' })) throw new Error('Handoff offer is not authorized.');
-    return this.options.store.transact(record.id, (current) => {
+    return this.options.store.transact(record.id, async (current) => {
       if (current) throw new Error('Handoff id already exists.');
+      if (this.options.incomingAvailable?.(record) === false || this.options.store.list().filter((item) => !isTerminalHandoff(item.state)).length >= HANDOFF_ACTIVE_LIMIT) throw new Error('Handoff capacity reached.');
+      await beforeCommit?.(record);
       return record;
     });
+  }
+
+  private async admitIncomingOffer(record: Handoff, authenticatedMachine: string): Promise<void> {
+  const active = this.options.store.list().filter((item) => !isTerminalHandoff(item.state));
+  const expired = this.now() >= record.createdAt + HANDOFF_OFFER_TTL_MS;
+  if (expired || record.createdAt > this.now() + 5 * 60_000 || active.length >= HANDOFF_ACTIVE_LIMIT
+    || active.filter((item) => item.to.machine === this.options.machine && item.from.machine === authenticatedMachine).length >= HANDOFF_PEER_LIMIT
+    || this.options.incomingAvailable?.(record) === false
+    || !await this.options.authorize({ action: 'handoff.offer', actor: record.from, record, stage: 'offered' })) {
+    throw new HandoffOfferRefused(transitionHandoff(record, {
+      state: 'failed', failure: { step: 'authorization', code: expired ? 'expired' : 'refused' },
+      operationId: this.newId(), at: Math.max(this.now(), record.updatedAt), by: { kind: 'machine', machine: this.options.machine },
+    }, record.version));
+  }
   }
 
   async receiveOffer(raw: unknown, authenticatedMachine: string): Promise<Handoff> {
@@ -97,17 +121,18 @@ export class HandoffService {
         assertHandoffExtension(record, current);
         return current;
       }
-      if (!await this.options.authorize({ action: 'handoff.offer', actor: record.from, record, stage: 'offered' })) throw new Error('Handoff offer is not authorized.');
+      await this.admitIncomingOffer(record, authenticatedMachine);
       return record;
     });
   }
 
   async respond(id: string, actor: HandoffAgent, accept: boolean, expectedVersion: number, target?: HandoffAgent, reason?: string, operationId = this.newId()): Promise<Handoff> {
     this.requireLocal(actor);
-    return this.options.store.transact(id, async (record) => {
+    const result = await this.options.store.transact(id, async (record) => {
       if (!record) throw new Error('Handoff is unavailable to this agent.');
       this.requireReceiver(record);
       if (!this.receiverAgent(record, actor)) throw new Error('Only the addressed receiver can respond.');
+      if (record.state === 'offered' && this.now() >= record.createdAt + HANDOFF_OFFER_TTL_MS) return transitionHandoff(record, { state: 'failed', failure: { step: 'authorization', code: 'expired' }, operationId: this.newId(), at: Math.max(this.now(), record.updatedAt), by: { kind: 'machine', machine: this.options.machine } }, record.version);
       if (!await this.options.authorize({ action: 'handoff.accept', actor, record, stage: 'accepted' })) throw new Error('Handoff response is not authorized.');
       const base = {
         operationId, at: Math.max(this.now(), record.updatedAt),
@@ -116,6 +141,23 @@ export class HandoffService {
       return transitionHandoff(record, accept
         ? { ...base, state: 'accepted', target: target ?? actor }
         : { ...base, state: 'declined' }, expectedVersion);
+    });
+    if (result.state === 'failed' && result.failure?.code === 'expired') throw new Error('Handoff offer expired.');
+    return result;
+  }
+
+  /** Atomically records cancellation even when the original offer was never received. */
+  async receiveCancelledOffer(raw: unknown, sender: HandoffAgent, machine: string, operationId: string, reason?: string): Promise<Handoff> {
+    const offer = parseHandoff(raw);
+    this.requireReceiver(offer);
+    if (offer.version !== 1 || machine !== sender.machine || !sameHandoffAgent(offer.from, sender)) throw new Error('Invalid cancelled offer.');
+    return this.options.store.transact(offer.id, async (current) => {
+      if (current) assertHandoffExtension(offer, current);
+      const record = current ?? offer;
+      if (isTerminalHandoff(record.state) || record.state === 'applying') return record;
+      if (!current) await this.admitIncomingOffer(offer, machine);
+      return transitionHandoff(record, { state: 'cancelled', operationId, at: Math.max(this.now(), record.updatedAt),
+        by: { kind: 'agent', address: sender }, ...(reason !== undefined && { reason }) }, record.version);
     });
   }
 
@@ -166,6 +208,29 @@ export class HandoffService {
       }
       assertHandoffExtension(current, next);
       return next;
+    });
+  }
+
+  /** Receiver-authored expiry; acceptance checks it again inside its serialized decision path. */
+  async expireOffers(): Promise<Handoff[]> {
+    const expired: Handoff[] = [];
+    for (const item of this.options.store.list()) {
+      if (item.to.machine !== this.options.machine || item.state !== 'offered' || this.now() < item.createdAt + HANDOFF_OFFER_TTL_MS) continue;
+      expired.push(await this.options.store.transact(item.id, (record) => {
+        if (!record || record.state !== 'offered' || this.now() < record.createdAt + HANDOFF_OFFER_TTL_MS) return record!;
+        return transitionHandoff(record, { state: 'failed', failure: { step: 'authorization', code: 'expired' }, operationId: this.newId(),
+          at: Math.max(this.now(), record.updatedAt), by: { kind: 'machine', machine: this.options.machine } }, record.version);
+      }));
+    }
+    return expired;
+  }
+
+  /** Only for a durable outbox entry known never to have attempted transport. */
+  async cancelUndelivered(id: string, reason = 'Offer cancelled before any delivery attempt.'): Promise<Handoff> {
+    return this.options.store.transact(id, (record) => {
+      if (!record || record.from.machine !== this.options.machine || record.version !== 1 || record.state !== 'offered') throw new Error('Handoff may have been delivered.');
+      return transitionHandoff(record, { state: 'cancelled', operationId: this.newId(), at: Math.max(this.now(), record.updatedAt),
+        by: { kind: 'agent', address: record.from }, reason }, record.version);
     });
   }
 

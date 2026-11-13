@@ -84,7 +84,7 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
 /** The target a declaration names, resolved for this call. Null: not checked here (see the file comment). */
 function resolveTargets(agentId: string, d: ToolGrantDeclaration, wire: GrantCheckWire | undefined, args: Record<string, unknown>, argTargets?: ArgTargets): GrantCallTarget[] {
   // Named in the arguments: resolved before the check, at call time only (arg-targets.ts).
-  if (d.target === 'agent_arg' || d.target === 'project_arg' || d.target === 'group_project_arg') return argTargets?.get(d) ?? [];
+  if (d.target === 'handoff_peer' || d.target === 'agent_arg' || d.target === 'project_arg' || d.target === 'group_project_arg') return argTargets?.get(d) ?? [];
   const one = resolveTarget(agentId, d.target, wire, args);
   return one ? [one] : [];
 }
@@ -118,6 +118,7 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
       // An unknown id reads like someone else's: a refusal never says whether it exists.
       return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId ? ['self'] : [] };
     }
+    case 'handoff_peer':
     case 'agent_arg':
     case 'project_arg':
     case 'group_project_arg':
@@ -216,7 +217,7 @@ function hasAnyAgentSource(args: Record<string, unknown>): boolean {
  * needs. A tool registered without a declaration (tests only; real tools
  * can't) is let through.
  */
-export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, wire?: GrantCheckWire, argTargets?: ArgTargets): GrantCheck {
+export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, wire?: GrantCheckWire, argTargets?: ArgTargets, listing = false): GrantCheck {
   if (!grant) return OK;
   const declarations = toolGrantDeclarations(grant)
     .filter((d) => (!d.ifArgs || d.ifArgs.some((a) => args[a] !== undefined && args[a] !== null))
@@ -228,6 +229,19 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
   // A refusal wins over an ask: there's no point asking the user for a call that would fail anyway.
   const asks: AskedAction[] = [];
   for (const d of declarations) {
+    if (d.target === 'handoff_peer' && listing) {
+      // Listing: any target covered by this action makes the tool useful. The
+      // actual peer is resolved and checked before an execution or an Ask-first request.
+      for (const action of d.actions) {
+        const matching = grants.filter((g) => g.action === action);
+        if (!matching.length) return { ok: false, reason: 'no_grant', message: GRANT_REFUSAL_MESSAGES.no_grant, action, targetKind: 'agent' };
+        if (!matching.some((g) => g.mode === 'allow')) asks.push({ action, where: 'a handoff participant' });
+      }
+      continue;
+    }
+    if (d.target === 'handoff_peer' && !argTargets?.get(d)?.length) {
+      return { ok: false, reason: 'no_grant', message: 'This handoff target or metadata is unavailable or unsafe.' };
+    }
     for (const target of resolveTargets(agentId, d, wire, args, argTargets)) {
       for (const action of d.actions) {
         const decision = evaluateGrant({ caller, action, target }, grants);

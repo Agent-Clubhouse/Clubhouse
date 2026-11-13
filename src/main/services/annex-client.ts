@@ -91,6 +91,7 @@ export interface SatelliteConnection {
 export interface SatelliteSnapshot {
   /** The machine this snapshot is from (#3063). */
   machine?: { fingerprint: string; name: string };
+  dispatcher?: unknown;
   projects: unknown[];
   agents: Record<string, unknown[]>;
   quickAgents: Record<string, unknown[]>;

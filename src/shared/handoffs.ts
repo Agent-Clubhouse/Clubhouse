@@ -36,7 +36,7 @@ export interface HandoffApplyCheckpoint {
 
 export interface HandoffFailure {
   step: 'authorization' | 'transfer' | 'verification' | 'apply' | 'wake' | 'recovery';
-  code: 'authorization_changed' | 'transfer_failed' | 'verification_failed' | 'apply_failed' | 'wake_failed' | 'indeterminate_apply';
+  code: 'refused' | 'expired' | 'authorization_changed' | 'transfer_failed' | 'verification_failed' | 'apply_failed' | 'wake_failed' | 'indeterminate_apply';
 }
 
 interface TransitionBase {
@@ -63,6 +63,8 @@ export interface Handoff {
   version: number;
   from: HandoffAgent;
   to: HandoffTarget;
+  /** Display name captured by the sending host; authority remains the agent id and machine. */
+  senderName?: string;
   task: { title: string; brief: string };
   mode: HandoffMode;
   manifest?: HandoffManifestSummary;
@@ -77,6 +79,7 @@ export interface Handoff {
 
 export interface HandoffOffer {
   to: HandoffTarget;
+  senderName?: string;
   task: Handoff['task'];
   mode: HandoffMode;
   manifest?: HandoffManifestSummary;
@@ -138,6 +141,7 @@ function isFailure(value: unknown): value is HandoffFailure {
     authorization: 'authorization_changed', transfer: 'transfer_failed', verification: 'verification_failed',
     apply: 'apply_failed', wake: 'wake_failed', recovery: 'indeterminate_apply',
   };
+  if (value.step === 'authorization' && (value.code === 'refused' || value.code === 'expired')) return true;
   return typeof value.step === 'string' && Object.prototype.hasOwnProperty.call(codes, value.step)
     && codes[value.step as HandoffFailure['step']] === value.code;
 }
@@ -220,12 +224,13 @@ function append(record: Handoff, event: HandoffTransition): Handoff {
 /** Reject rather than repair malformed or newer records, including rewritten history. */
 export function parseHandoff(value: unknown): Handoff {
   requireValid(object(value) && keys(value, [
-    'schemaVersion', 'id', 'createdAt', 'updatedAt', 'version', 'from', 'to', 'task', 'mode', 'manifest',
+    'schemaVersion', 'id', 'createdAt', 'updatedAt', 'version', 'from', 'to', 'senderName', 'task', 'mode', 'manifest',
     'state', 'history', 'acceptance', 'progress', 'checkpoint', 'result', 'failure',
   ]));
   requireValid(value.schemaVersion === HANDOFF_SCHEMA_VERSION && typeof value.id === 'string' && UUID.test(value.id)
     && integer(value.createdAt) && integer(value.updatedAt) && integer(value.version)
     && isHandoffAgent(value.from) && isTarget(value.to) && !('agentId' in value.to && sameHandoffAgent(value.from, value.to))
+    && (value.senderName === undefined || bounded(value.senderName, 128))
     && object(value.task) && keys(value.task, ['title', 'brief'])
     && bounded(value.task.title, HANDOFF_LIMITS.title) && bounded(value.task.brief, HANDOFF_LIMITS.brief)
     && (value.mode === 'branch' || value.mode === 'worktree') && (value.manifest === undefined || isSummary(value.manifest))
@@ -245,7 +250,7 @@ export function parseHandoff(value: unknown): Handoff {
   }
   let replay: Handoff = {
     schemaVersion: 1, id: value.id, createdAt: value.createdAt, updatedAt: value.createdAt, version: 1,
-    from: value.from, to: value.to, task: { title: value.task.title, brief: value.task.brief }, mode: value.mode,
+    from: value.from, to: value.to, ...(value.senderName !== undefined && { senderName: value.senderName as string }), task: { title: value.task.title, brief: value.task.brief }, mode: value.mode,
     ...(manifest !== undefined && { manifest }), state: 'offered', history: [first],
   };
   for (const event of history.slice(1)) {

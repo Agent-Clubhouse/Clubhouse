@@ -64,6 +64,8 @@ export const GRANT_ACTIONS = [
   'grant.request', // ask for a grant for itself
   // Annex Network (#3068): this machine's devices. No action lets an agent finish a pairing.
   'device.read', // names, and whether each is online
+  'handoff.offer', // offer work to a connected agent or a computer's Dispatcher
+  'handoff.accept', // agree to receive and automatically apply the offered work
   'device.manage', // rename, reconnect, remove, and start adding one (a person finishes it)
 ] as const;
 

@@ -247,6 +247,9 @@ export function grantRows(defaults: readonly Grant[], saved: AgentGrantChanges |
   // Defaults first, then what the template adds, then the person's own additions.
   const entries: Array<{ action: GrantAction; target: GrantTarget; base?: Grant }> = [
     ...defaults.map((g) => ({ action: g.action, target: g.target, base: g })),
+    // Handoffs are Off unless explicitly granted, but the person still needs rows to turn them on.
+    { action: 'handoff.offer', target: { kind: 'any' } },
+    { action: 'handoff.accept', target: { kind: 'any' } },
     ...[...template.values()].map((c) => ({ action: c.action, target: c.target })),
     ...[...changes.values()].map((c) => ({ action: c.action, target: c.target })),
   ];
@@ -325,6 +328,8 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'browser.read': 'Read canvas browsers',
   'browser.act': 'Use canvas browsers',
   'grant.request': 'Ask for permissions',
+  'handoff.offer': 'Offer handoffs',
+  'handoff.accept': 'Accept handoffs and apply work',
   'device.read': 'See devices',
   'device.manage': 'Manage devices',
 };

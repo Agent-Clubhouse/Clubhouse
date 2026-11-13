@@ -69,6 +69,7 @@ vi.mock('../services/connection-grants', async () => {
   };
 });
 vi.mock('../services/connection-grants-store', () => ({ listConnectionDirections: vi.fn(() => []) }));
+vi.mock('../services/handoff-host', () => ({ startHandoffs: vi.fn() }));
 vi.mock('../services/annex-agent-calls', () => ({ startAgentCalls: vi.fn(() => () => {}) }));
 vi.mock('../services/dispatcher/dispatcher-service', async (importOriginal) => ({
   ...await importOriginal<typeof import('../services/dispatcher/dispatcher-service')>(),
