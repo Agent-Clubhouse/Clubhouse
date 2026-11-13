@@ -27,7 +27,8 @@ export type WireTargetState = 'ok' | 'missing' | 'unknown';
 export type WireReportReason = 'missing_target' | 'bind_failing';
 
 export interface WireReconcilerDeps {
-  bind: (def: McpBindingEntry) => Promise<void>;
+  /** Resolves 'not_member' when a group project's record doesn't list the agent (#3357): never bound again. */
+  bind: (def: McpBindingEntry) => Promise<void | 'not_member'>;
   targetState?: (def: McpBindingEntry) => WireTargetState;
   onReport?: (def: McpBindingEntry, reason: WireReportReason) => void;
   setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
@@ -83,7 +84,9 @@ export function createWireReconciler(deps: WireReconcilerDeps): WireReconciler {
       const delay = backoff.get(key) || 0;
       const attempt = () => {
         timers.delete(key);
-        deps.bind(def).catch(() => {
+        deps.bind(def).then((result) => {
+          if (result === 'not_member') gaveUp.add(key);
+        }, () => {
           const failed = (failures.get(key) ?? 0) + 1;
           failures.set(key, failed);
           if (failed === MAX_BIND_FAILURES) deps.onReport?.(def, 'bind_failing');

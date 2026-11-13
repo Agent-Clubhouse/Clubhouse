@@ -20,6 +20,7 @@ import {
 } from '../../shared/connection-grants';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager, type RestoreOptions } from './clubhouse-mcp/binding-manager';
+import { recordMemberDisabledTools, savedMemberDisabledTools } from './group-project-membership';
 import {
   connectionGrantsWritable, connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
   linkConnectionDirections, listConnectionDirections, listAllConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
@@ -150,6 +151,15 @@ function restoreTools(agentId: string, targetId: string, targetKind: BindingTarg
 export async function applyConnectionTools(agentId: string, targetId: string, disabledTools: string[], options: { restore?: boolean; start?: boolean } = {}): Promise<string[]> {
   const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === targetId);
   const targetKind = binding?.targetKind;
+  if (targetKind === 'group-project') {
+    // A member's switches live in the group project's membership record (#2084):
+    // a stored canvas wire bound again only fills a record that has none.
+    const saved = options.restore ? await savedMemberDisabledTools(targetId, agentId) : undefined;
+    const tools = saved ?? disabledTools;
+    bindingManager.setDisabledTools(agentId, targetId, tools);
+    if (!saved) await recordMemberDisabledTools(targetId, agentId, tools);
+    return tools;
+  }
   if (targetKind && targetKind !== 'agent') {
     bindingManager.setDisabledTools(agentId, targetId, disabledTools);
     return disabledTools;

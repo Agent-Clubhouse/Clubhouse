@@ -19,3 +19,19 @@ export interface McpUnbindResult {
    */
   removalNotSaved?: boolean;
 }
+
+/**
+ * Why the renderer asks main to bind. `restore`: the canvas is bringing back a
+ * wire it stored, not the user drawing one. For a group project whose members
+ * come from its membership record (#3357), a restore never adds a member.
+ * No cause: the user drew the wire.
+ */
+export const MCP_BIND_RESTORE = 'restore';
+export type McpBindCause = typeof MCP_BIND_RESTORE;
+
+/**
+ * What main answers a bind with. `notMember`: a restore to a group project
+ * whose record doesn't list the agent (#3357). Final: the canvas stops
+ * binding that wire rather than retrying it.
+ */
+export type McpBindResult = { notMember: true } | undefined;

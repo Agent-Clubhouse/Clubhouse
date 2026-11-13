@@ -16,6 +16,8 @@ export type ConnectionSourceKind =
   | 'dispatcher_link'
   /** A link the user made on the Connections card (Make two-way, #2972). */
   | 'user_link'
+  /** A group project's membership record (#3357). Managed in Group Projects. */
+  | 'group_member'
   /** A source this build doesn't know. */
   | 'dispatcher_federation'
   | 'other';
@@ -82,6 +84,7 @@ export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, str
   dispatcher_link: 'Made by the Dispatcher',
   user_link: 'Made by you',
   dispatcher_federation: 'Annex Network controllers',
+  group_member: 'Group project member',
   other: 'Other',
 };
 

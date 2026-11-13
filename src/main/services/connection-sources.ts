@@ -45,6 +45,7 @@ const KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> = {
   'network-connections': 'user_link',
   'network-agent-connections': 'tool_link',
   'dispatcher-federation': 'dispatcher_federation',
+  'group-project-membership': 'group_member',
 };
 
 const SUSPENDED_WHY: Readonly<Record<string, string>> = {

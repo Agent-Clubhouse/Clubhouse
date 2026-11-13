@@ -19,8 +19,8 @@ import { WireConfigPopover } from './WireConfigPopover';
 import { CanvasMinimap } from './CanvasMinimap';
 import { useWiring, type ZoneWireCallback } from './useWiring';
 import type { ZoneWireDefinition } from './zone-wire-store';
-import { expandZoneWires, diffZoneBindings, type ExpandedBinding } from './zone-wire-expansion';
-import { MCP_UNBIND_CANVAS_CLEANUP } from '../../../../shared/mcp-unbind';
+import { expandZoneWires, diffZoneBindings, classifyZoneAdds, type ExpandedBinding } from './zone-wire-expansion';
+import { MCP_BIND_RESTORE, MCP_UNBIND_CANVAS_CLEANUP } from '../../../../shared/mcp-unbind';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
@@ -101,6 +101,12 @@ interface CanvasWorkspaceProps {
   bidirectionalWires?: boolean;
   createBidirectionalWires?: boolean;
   navigationBaseline?: { views: CanvasView[]; zoneWireDefinitions: ZoneWireDefinition[] };
+  /**
+   * Changes when the workspace shows other canvas content: another canvas tab,
+   * or a reload or satellite state. The next zone expansion is then a
+   * hydration, which never adds a group project member (#3357).
+   */
+  zoneSessionKey?: string;
   navigationFocus?: { viewId: string; onRevealed: (viewport: Viewport) => void };
 }
 
@@ -250,6 +256,7 @@ export function CanvasWorkspace({
   bidirectionalWires,
   createBidirectionalWires,
   navigationBaseline,
+  zoneSessionKey,
   navigationFocus,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -280,11 +287,27 @@ export function CanvasWorkspace({
   // memberships are unbound, and manual wires are never touched. It also runs on
   // hydration, re-deriving runtime bindings from the persisted zone wires.
   const prevExpandedRef = useRef<ExpandedBinding[]>([]);
+  const zoneExpandedOnceRef = useRef(false);
+  /** The zone members a suppressed navigation baseline showed, until the first real expansion. */
+  const suppressedExpansionRef = useRef<ExpandedBinding[] | null>(null);
+  /** Zone members a group project's record doesn't list: not re-bound until they enter a zone again. */
+  const zoneNotMemberRef = useRef(new Set<string>());
   const baselineRef = useRef({ baseline: navigationBaseline, retired: false });
+  const zoneSessionRef = useRef(zoneSessionKey);
   useEffect(() => {
+    // Other canvas content: what it shows now isn't a person's new zone wire or move.
+    const newSession = zoneSessionRef.current !== zoneSessionKey;
+    if (newSession) {
+      zoneSessionRef.current = zoneSessionKey;
+      zoneExpandedOnceRef.current = false;
+      zoneNotMemberRef.current = new Set();
+      suppressedExpansionRef.current = null;
+    }
     if (baselineRef.current.baseline !== navigationBaseline) {
       baselineRef.current = { baseline: navigationBaseline, retired: false };
     }
+    // The canvas a navigation opened, as it was: its zone members were members already.
+    let baselineExpansion: ExpandedBinding[] | null = null;
     if (navigationBaseline && !baselineRef.current.retired) {
       if (viewStructure(navigationBaseline.views) === viewStructure(views)
         && navigationBaseline.zoneWireDefinitions.length === zoneWireDefinitions.length
@@ -292,29 +315,40 @@ export function CanvasWorkspace({
           const current = zoneWireDefinitions[index];
           return wire.id === current.id && wire.sourceZoneId === current.sourceZoneId
             && wire.targetId === current.targetId && wire.targetType === current.targetType;
-        })) return;
+        })) {
+        // Kept in case the baseline is dropped (a popout's edit) before the change is seen.
+        suppressedExpansionRef.current = expandZoneWires(navigationBaseline.zoneWireDefinitions, navigationBaseline.views);
+        return;
+      }
       baselineRef.current.retired = true;
+      baselineExpansion = expandZoneWires(navigationBaseline.zoneWireDefinitions, navigationBaseline.views);
     }
+    baselineExpansion ??= suppressedExpansionRef.current;
+    suppressedExpansionRef.current = null;
     const desired = expandZoneWires(zoneWireDefinitions, views);
     const currentKeys = new Set(
       useMcpBindingStore.getState().bindings.map((b) => `${b.agentId}:${b.targetId}`),
     );
     const { toAdd, toRemove } = diffZoneBindings(prevExpandedRef.current, desired, currentKeys);
+    // The first expansion with cards on the canvas is its hydration, unless
+    // a navigation baseline says what the canvas held before this change.
+    const hydrating = !baselineExpansion && !zoneExpandedOnceRef.current;
+    if (views.length > 0) zoneExpandedOnceRef.current = true;
+    const adds = classifyZoneAdds(baselineExpansion ?? prevExpandedRef.current, toAdd, hydrating, zoneNotMemberRef.current);
     prevExpandedRef.current = desired;
-    for (const b of toAdd) {
-      void mcpBind(b.agentId, {
-        targetId: b.targetId,
-        targetKind: b.targetKind,
-        label: b.label,
-        agentName: b.agentName,
-        targetName: b.targetName,
+    for (const { binding: b, fresh } of adds) {
+      const key = `${b.agentId}:${b.targetId}`;
+      if (fresh) zoneNotMemberRef.current.delete(key);
+      const target = { targetId: b.targetId, targetKind: b.targetKind, label: b.label, agentName: b.agentName, targetName: b.targetName };
+      void (fresh ? mcpBind(b.agentId, target) : mcpBind(b.agentId, target, MCP_BIND_RESTORE)).then((result) => {
+        if (result?.notMember) zoneNotMemberRef.current.add(key);
       });
     }
     for (const b of toRemove) {
       // A member leaving a zone is cleanup: main keeps helper wires (#2225).
       void useMcpBindingStore.getState().unbind(b.agentId, b.targetId, MCP_UNBIND_CANVAS_CLEANUP);
     }
-  }, [zoneWireDefinitions, views, mcpBind, navigationBaseline]);
+  }, [zoneWireDefinitions, views, mcpBind, navigationBaseline, zoneSessionKey]);
 
   const handleAddWireDef = useCallback((entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => {
     onAddWireDefinition(entry as McpBindingEntry);

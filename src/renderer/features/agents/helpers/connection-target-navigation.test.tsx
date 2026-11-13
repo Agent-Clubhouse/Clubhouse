@@ -228,13 +228,15 @@ describe('connection Open navigation', () => {
     expect(useGroupProjectStore.getState().projects[0].metadata).toEqual({});
 
     await act(async () => { onAwoke?.('sleeping'); });
-    expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }));
+    // A stored wire coming back is a restore (#3357).
+    expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }), 'restore');
     bind.mockClear();
     act(() => { store.getState().moveView('node', { x: 5200, y: 6200 }); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
     expect(storage.write).toHaveBeenCalledWith('canvas-instances', expect.any(Array));
-    expect(bind).toHaveBeenCalledWith('edit-sleeper', expect.objectContaining({ targetId: 'gp_actual' }));
-    expect(bind).toHaveBeenCalledWith('zone-sleeper', expect.objectContaining({ targetId: 'gp_actual' }));
+    expect(bind).toHaveBeenCalledWith('edit-sleeper', expect.objectContaining({ targetId: 'gp_actual' }), 'restore');
+    // Already in its zone when the canvas opened: a restore (#3357).
+    expect(bind).toHaveBeenCalledWith('zone-sleeper', expect.objectContaining({ targetId: 'gp_actual' }), 'restore');
     panel.unmount();
     const manualLoad = vi.spyOn(store.getState(), 'loadCanvas');
     const manualWires = vi.spyOn(store.getState(), 'loadWires');
@@ -884,7 +886,7 @@ describe('connection Open navigation', () => {
       act(() => { useMcpBindingStore.setState({ bindings: [unrelated] }); });
       bind.mockClear();
       await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
-      expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }));
+      expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }), 'restore');
     }
   });
 

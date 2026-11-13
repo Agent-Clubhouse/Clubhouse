@@ -67,9 +67,16 @@ export interface GroupProjectMembership {
   autoJoin: boolean;
   explicit: GroupProjectExplicitMember[];
   excluded: GroupProjectExclusion[];
+  /**
+   * The one-time "Include every agent in scope" offer of a group project
+   * migrated from canvas wires (#3357): shown while pending. Absent on a
+   * record that was never migrated.
+   */
   autoJoinOffer?: 'pending' | 'accepted' | 'dismissed';
   /** Per-member tool switches (#2084), keyed by address. */
   disabledTools?: Record<string, string[]>;
+  /** A member's wire instructions carried over from canvas wires by migration (#3357), by address. */
+  instructions?: Record<string, Record<string, string>>;
   [extra: string]: unknown;
 }
 
@@ -141,3 +148,39 @@ export interface BulletinRetentionConfig {
  * was last read.
  */
 export type DigestSince = string | Record<string, string>;
+
+/** How a member came to be in a group project (#3357). */
+export type GroupProjectMemberKind = GroupProjectExplicitMember['kind'];
+
+/** One member as resolved from the record, scope and the agents that exist now. */
+export interface ResolvedGroupProjectMember {
+  agentId: string;
+  /** Display name. A quick agent's carries a run suffix, so two runs with one name stay apart (#1646). */
+  name: string;
+  kind: GroupProjectMemberKind;
+  /** 'auto': joined by being in scope. 'explicit': added by a person or an orchestrator. */
+  via: 'auto' | 'explicit';
+  projectId?: string;
+  projectName?: string;
+}
+
+/** Who would auto-join a group project with a given scope, shown before creating it (#3357). */
+export interface AutoJoinPreview {
+  wouldJoin: ResolvedGroupProjectMember[];
+  /** Projects in scope whose agents couldn't be read: their agents would join too once readable. */
+  unreadableProjects: Array<{ projectId: string; name: string }>;
+}
+
+/** What the directory shows about one group project's membership. */
+export interface GroupProjectMembershipView {
+  groupProjectId: string;
+  /** False for a group project still held by canvas wires (not migrated yet). */
+  managed: boolean;
+  /** Why it isn't migrated yet, when a Canvas store couldn't be read. */
+  deferred?: string;
+  autoJoin: boolean;
+  members: ResolvedGroupProjectMember[];
+  excluded: Array<{ agentId: string; name: string; excludedAt: string }>;
+  /** Pending only on a migrated group project; `wouldJoin` lists who accepting adds. */
+  autoJoinOffer?: { state: 'pending' | 'accepted' | 'dismissed'; wouldJoin: ResolvedGroupProjectMember[] };
+}

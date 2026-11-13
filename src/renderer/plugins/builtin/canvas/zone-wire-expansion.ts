@@ -231,6 +231,27 @@ export function expandZoneWires(
  * the zone needs the pair, so a helper being disposed can't unbind it. A pair
  * the zone already wanted is re-bound only if it went missing.
  */
+/**
+ * Which zone additions are new (#3357): a zone wire just drawn, or a card just
+ * moved into a zone. Everything else (the first expansion after hydration,
+ * or a binding re-made for a card still in its zone) is a restore, which
+ * never adds a group project member or undoes an exclusion. A restore the
+ * record refused (`refused`) isn't tried again until the card enters anew.
+ */
+export function classifyZoneAdds(
+  prevDesired: ExpandedBinding[],
+  toAdd: ExpandedBinding[],
+  hydrating: boolean,
+  refused: ReadonlySet<string>,
+): Array<{ binding: ExpandedBinding; fresh: boolean }> {
+  const keyOf = (b: { agentId: string; targetId: string }) => `${b.agentId}:${b.targetId}`;
+  const previous = new Set(prevDesired.map(keyOf));
+  return toAdd.flatMap((binding) => {
+    const fresh = !hydrating && !previous.has(keyOf(binding));
+    return !fresh && refused.has(keyOf(binding)) ? [] : [{ binding, fresh }];
+  });
+}
+
 export function diffZoneBindings(
   prevDesired: ExpandedBinding[],
   newDesired: ExpandedBinding[],

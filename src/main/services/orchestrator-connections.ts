@@ -33,6 +33,7 @@ import { listHelpersEverywhere } from './helper-index';
 import { pathExists } from './fs-utils';
 import { groupProjectRegistry } from './group-project-registry';
 import { agentRegistry } from './agent-registry';
+import { managedGroupProjectIds, withoutManagedMembers } from './managed-group-projects';
 import { onBindingRemovedByUser, startingTools, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -479,7 +480,9 @@ export const orchestratorConnectionSource: PersistedBindingSource = {
       lastPairs.set(project.path, [...projectBindings.map((b) => ({ agentId: b.agentId, targetId: b.targetId })), ...unknown]);
       bindings.push(...projectBindings);
     }
-    return { bindings, unverified };
+    // A group project whose members come from its record (#3357) isn't held here.
+    const managed = await managedGroupProjectIds();
+    return { bindings: await withoutManagedMembers(bindings), unverified: unverified.filter((u) => !managed.has(u.targetId)) };
   },
 };
 
