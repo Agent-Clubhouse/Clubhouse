@@ -207,7 +207,7 @@ export async function plainPairingPortRequest(
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: response.status, body: await response.json().catch(() => null) };
+  return { status: response.status, body: await response.json().catch((): null => null) };
 }
 
 /** Fetch a JSON endpoint over mTLS; throws on anything but 200. */

@@ -223,7 +223,7 @@ describe('sending a call to another machine', () => {
     const at = new Date(now).toISOString();
     expect(await receiveDirections(OTHER, { v: 1, directions: ['dispatcher-work', 'dispatcher-chat', 'unknown'].map((id) => ({
       from: { agentId: 'there', machine: OTHER }, to: { agentId: id, machine: SELF },
-      disabledTools: [], link: true, updatedAt: at,
+      disabledTools: [] as const, link: true, updatedAt: at,
     })) }, now)).toEqual({ applied: 0 });
     for (const id of ['dispatcher-work', 'dispatcher-chat', 'unknown']) {
       expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: id })).toBeUndefined();
@@ -570,6 +570,29 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     restart({ onDeliveryFailure: notices });
     await Promise.resolve();
     expect(notices).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies the sender exactly once when a queued call receives a final refusal', async () => {
+    connected = false;
+    const notices = vi.fn(async () => {});
+    restart({ onDeliveryFailure: notices });
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'not allowed' });
+    const id = waitingFor(OTHER)[0].id;
+    respond = (_path, body) => ({
+      status: 200,
+      body: {
+        result: { ...ok('send_message is turned off'), isError: true },
+        delivery: { callId: body.callId, state: 'refused', reason: 'tool_denied', receiptAt: new Date().toISOString() },
+      },
+    });
+    connected = true;
+    await flushOutbox(OTHER);
+    expect(waitingFor(OTHER)).toHaveLength(0);
+    expect(getDelivery('here', id)).toMatchObject({ state: 'refused', reason: 'tool_denied' });
+    expect(notices).toHaveBeenCalledTimes(1);
+    expect(notices).toHaveBeenCalledWith(expect.objectContaining({
+      callId: id, callerId: 'here', targetId: `there@${OTHER}`, state: 'refused', reason: 'tool_denied',
+    }));
   });
 
   it('refuses queued work when sender authorization is revoked without POSTing it', async () => {

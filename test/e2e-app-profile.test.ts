@@ -3,8 +3,9 @@
  * `e2e/launch.ts`).
  *
  * The guarantee under test: every E2E launch runs against an owned,
- * disposable profile — never an inherited or real one — and a failed launch
- * cleans up after itself. Electron is mocked; nothing here launches the app.
+ * disposable profile — never an inherited or real one — and failed setup
+ * retains it while the launched process is live or unknown.
+ * Electron is mocked; nothing here launches the app.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -14,10 +15,19 @@ import * as path from 'path';
 import { ChildProcess } from 'node:child_process';
 
 const launchMock = vi.hoisted(() => vi.fn());
+vi.mock('fs', async (importOriginal) => ({
+  ...await importOriginal<typeof import('fs')>(),
+}));
 vi.mock('@playwright/test', () => ({ _electron: { launch: launchMock } }));
 vi.mock('../e2e/renderer-diagnostics', () => ({
   installFrameMonitor: vi.fn(),
   reportActionFailure: vi.fn(),
+}));
+vi.mock('../e2e/e2e-cleanup', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../e2e/e2e-cleanup')>(),
+  recordElectronApp: vi.fn(),
+  trackOpenApp: vi.fn(),
+  untrackOpenApp: vi.fn(),
 }));
 
 import {
@@ -26,6 +36,7 @@ import {
   buildLaunchEnv,
   createDisposableProfile,
   disposeAllProfiles,
+  registerProfileProcess,
   seedProfile,
   type DisposableProfile,
 } from '../e2e/app-profile';
@@ -33,13 +44,31 @@ import { launchApp } from '../e2e/launch';
 import { reportActionFailure } from '../e2e/renderer-diagnostics';
 
 let sandbox: string;
+const mockChildren: ChildProcess[] = [];
+
+function fakeChild(live = false): ChildProcess {
+  const child = new ChildProcess(); // Event emitter only; never spawned or signalled.
+  if (!live) Object.defineProperty(child, 'exitCode', { value: 0 });
+  mockChildren.push(child);
+  return child;
+}
 
 beforeEach(() => {
   sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'app-profile-test-'));
+  for (const key of ['TMPDIR', 'TMP', 'TEMP']) vi.stubEnv(key, sandbox);
 });
 
 afterEach(() => {
+  for (const child of mockChildren.splice(0)) {
+    if (child.exitCode === null && child.signalCode === null) {
+      Object.defineProperty(child, 'exitCode', { value: 0 });
+      child.emit('exit', 0, null);
+      child.emit('close', 0, null);
+    }
+  }
   disposeAllProfiles();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   fs.rmSync(sandbox, { recursive: true, force: true });
 });
 
@@ -83,6 +112,27 @@ describe('createDisposableProfile', () => {
     disposeAllProfiles();
     expect(fs.existsSync(a.userDataDir)).toBe(false);
     expect(fs.existsSync(b.userDataDir)).toBe(false);
+  });
+
+  it('retains a registered live or unknown child during direct and worker-exit disposal until exit is observed', () => {
+    const profile = createDisposableProfile({ tmpDir: sandbox });
+    const child = fakeChild(true);
+    registerProfileProcess(profile, child);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(() => profile.dispose()).toThrow(/exit has not been observed/);
+    disposeAllProfiles();
+    expect(warn).toHaveBeenCalledWith('[e2e profile] disposal incomplete; profile retained');
+    expect(profile.disposed).toBe(false);
+    expect(fs.existsSync(profile.userDataDir)).toBe(true);
+
+    child.emit('close', 0, null);
+    expect(() => profile.dispose()).toThrow(/exit has not been observed/);
+    Object.defineProperty(child, 'exitCode', { value: 0 });
+    child.emit('exit', 0, null);
+    profile.dispose();
+    expect(profile.disposed).toBe(true);
+    expect(fs.existsSync(profile.userDataDir)).toBe(false);
   });
 });
 
@@ -216,15 +266,19 @@ function fakePage(url = RENDERER_URL) {
   };
 }
 
-function fakeApp(pages: ReturnType<typeof fakePage>[]) {
+function fakeApp(pages: ReturnType<typeof fakePage>[], live = false) {
   const context = { addInitScript: vi.fn(async (_script: () => void) => {}) };
-  const child = new ChildProcess(); // Event emitter only; never spawned.
+  const child = fakeChild(live);
   return {
     context: () => context,
     process: () => child,
     windows: () => pages,
     waitForEvent: vi.fn(async () => { throw new Error('no more windows'); }),
-    close: vi.fn(async () => {}),
+    close: vi.fn(async () => {
+      Object.defineProperty(child, 'exitCode', { value: 0 });
+      child.emit('exit', 0, null);
+      child.emit('close', 0, null);
+    }),
   };
 }
 
@@ -279,17 +333,21 @@ describe('launchApp', () => {
   });
 
   it('relaunches against a profile the test owns, preserving its state', async () => {
-    launchMock.mockImplementation(async () => fakeApp([fakePage()]));
+    launchMock.mockImplementation(async () => fakeApp([fakePage()], true));
     const profile = createDisposableProfile();
     fs.writeFileSync(path.join(profile.userDataDir, 'state.json'), '{"kept":true}');
 
-    await launchApp({ profile });
-    await launchApp({ profile, experimental: { chat: true } });
+    const first = await launchApp({ profile });
+    await first.electronApp.close();
+    const second = await launchApp({ profile, experimental: { chat: true } });
 
     expect(launchedUserData(0)).toBe(profile.userDataDir);
     expect(launchedUserData(1)).toBe(profile.userDataDir);
     expect(await fs.promises.readFile(path.join(profile.userDataDir, 'state.json'), 'utf-8')).toBe('{"kept":true}');
     expect(fs.existsSync(path.join(profile.userDataDir, 'experimental-settings.json'))).toBe(true);
+    expect(() => profile.dispose()).toThrow(/exit has not been observed/);
+    expect(profile.disposed).toBe(false);
+    await second.electronApp.close();
     profile.dispose();
   });
 
@@ -308,6 +366,22 @@ describe('launchApp', () => {
     expect(fs.existsSync(launchedUserData())).toBe(false);
   });
 
+  it('retains the launch and disposal errors when owned-profile removal fails', async () => {
+    const launchError = new Error('spawn failed');
+    launchMock.mockRejectedValue(launchError);
+    const removal = vi.spyOn(fs, 'rmSync').mockImplementationOnce(() => { throw new Error('removal failed'); });
+    try {
+      await expect(launchApp({ experimental: {} })).rejects.toSatisfy((error: unknown) =>
+        error instanceof AggregateError
+        && error.message === 'E2E launch failed and owned profile disposal failed'
+        && error.errors.length === 2
+        && error.errors[0] === launchError
+        && error.errors[1] instanceof Error
+        && error.errors[1].message === 'E2E profile disposal failed; profile retained');
+      expect(fs.existsSync(launchedUserData())).toBe(true);
+    } finally { removal.mockRestore(); }
+  });
+
   it('closes the app and removes its own profile when no renderer window appears', async () => {
     const app = fakeApp([fakePage('devtools://devtools/bundled/inspector.html')]);
     launchMock.mockResolvedValue(app);
@@ -320,18 +394,19 @@ describe('launchApp', () => {
 
   it('records ownership before setup and preserves thrown undefined when setup close rejects', async () => {
     const app = fakeApp([]);
-    const child = new ChildProcess();
-    Object.defineProperty(child, 'pid', { value: 12345 });
+    const child = fakeChild(true);
+    Object.defineProperty(child, 'pid', { value: 45678 });
     app.process = () => child;
     const output = vi.spyOn(console, 'log').mockImplementation(() => {});
     const receipts = () => output.mock.calls
       .filter(call => call[0] === '[e2e owned-process]')
       .map(call => JSON.parse(String(call[1])));
     app.context().addInitScript.mockImplementation(async () => {
-      expect(receipts()[0]).toMatchObject({ phase: 'launch-returned', pid: 12345 });
+      expect(receipts()[0]).toMatchObject({ phase: 'launch-returned', pid: 45678 });
       throw undefined;
     });
     app.close.mockImplementation(async () => {
+      Object.defineProperty(child, 'exitCode', { value: 1 });
       child.emit('exit', 1, null);
       child.emit('close', 1, null);
       throw new Error('close failed');
@@ -347,6 +422,26 @@ describe('launchApp', () => {
       ]));
       expect(fs.existsSync(launchedUserData())).toBe(false);
     } finally { output.mockRestore(); }
+  });
+
+  it('registers a launched child before setup can fail and retains the profile when setup close leaves it live', async () => {
+    const app = fakeApp([], true);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    app.context().addInitScript.mockRejectedValue(new Error('setup failed'));
+    app.close.mockRejectedValue(new Error('close failed'));
+    launchMock.mockResolvedValue(app);
+
+    await expect(launchApp()).rejects.toThrow('setup failed');
+    const directory = launchedUserData();
+    disposeAllProfiles();
+    expect(fs.existsSync(directory)).toBe(true);
+    expect(warning).toHaveBeenCalledWith('[e2e profile] disposal incomplete; profile retained');
+
+    const child = app.process();
+    Object.defineProperty(child, 'exitCode', { value: 0 });
+    child.emit('exit', 0, null);
+    disposeAllProfiles();
+    expect(fs.existsSync(directory)).toBe(false);
   });
 
   it('leaves a test-owned profile in place when the launch fails', async () => {

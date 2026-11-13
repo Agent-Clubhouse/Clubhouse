@@ -13,6 +13,7 @@ import { withTestPhaseDiagnostic } from './test-phase-diagnostic';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { ProcessTableResult } from '../e2e/cleanup-process-table';
 
 import {
   isLocalRun,
@@ -90,15 +91,130 @@ beforeEach(() => {
   fs.mkdirSync(paths.tmpDir!, { recursive: true });
 });
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.E2E_LIVE_ORCHESTRATOR;
-  for (const child of spawned) {
-    if (child.pid && isAlive(child.pid)) {
-      try { process.kill(child.pid, 'SIGKILL'); } catch { /* already gone */ }
-    }
-  }
-  spawned.length = 0;
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+  await Promise.all(spawned.splice(0).map(async (child) => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+    child.kill('SIGKILL');
+    await exited;
+  }));
   fs.rmSync(sandbox, { recursive: true, force: true });
+});
+
+describe('post-signal exit proof', () => {
+  const pid = 424242;
+  const query = async (): Promise<ProcessTableResult> => ({
+    ok: true, elapsedMs: 0,
+    processes: [{ pid, ppid: 1, command: path.join(ELECTRON_DIST_DIR, 'Electron') }],
+  });
+
+  async function fixture() {
+    const profile = path.join(paths.tmpDir!, 'clubhouse-e2e-recorded');
+    const stray = path.join(paths.tmpDir!, 'clubhouse-e2e-stray');
+    fs.mkdirSync(profile);
+    fs.mkdirSync(stray);
+    recordElectronApp(pid, profile, paths);
+    const registry = path.join(paths.stateDir!, 'electron-pids.jsonl');
+    return { profile, stray, registry, bytes: await fs.promises.readFile(registry) };
+  }
+
+  it.each(['unfinished', 'refused', 'unknown'] as const)('retains all directories and state when termination is %s', async (mode) => {
+    vi.useFakeTimers();
+    const state = await fixture();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let signalled = false;
+    vi.spyOn(process, 'kill').mockImplementation((target, signal) => {
+      if (target !== pid) throw new Error('Unexpected mocked process target');
+      if (signal === 0) {
+        if (signalled && mode === 'unknown') throw Object.assign(new Error('synthetic unknown liveness'), { code: 'EPERM' });
+        return true;
+      }
+      signalled = true;
+      if (mode === 'refused') throw Object.assign(new Error('synthetic signal refusal'), { code: 'EPERM' });
+      return true;
+    });
+
+    const pending = sweepE2EProcesses(paths, query);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    const expected = mode === 'unknown' ? 'unknown' : 'live';
+    expect(result).toMatchObject({ killed: mode === 'refused' ? 0 : 1, tempDirsRemoved: 0, processExit: expected });
+    expect(fs.existsSync(state.profile)).toBe(true);
+    expect(fs.existsSync(state.stray)).toBe(true);
+    expect(await fs.promises.readFile(state.registry)).toEqual(state.bytes);
+    expect(warn).toHaveBeenCalledWith('[e2e cleanup] process exit unconfirmed; sweep/state retained', { state: expected });
+  });
+
+  it('retains all directories and state when initial liveness is unknown without querying or signalling', async () => {
+    const state = await fixture();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const queryMock = vi.fn(query);
+    const signal = vi.spyOn(process, 'kill').mockImplementation((target, requested) => {
+      if (target !== pid || requested !== 0) throw new Error('Unexpected mocked process request');
+      throw Object.assign(new Error('synthetic unknown liveness'), { code: 'EPERM' });
+    });
+
+    expect(await sweepE2EProcesses(paths, queryMock)).toMatchObject({ killed: 0, tempDirsRemoved: 0, processExit: 'unknown' });
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(signal).toHaveBeenCalledOnce();
+    expect(signal).toHaveBeenCalledWith(pid, 0);
+    expect(warn).toHaveBeenCalled();
+    expect(fs.existsSync(state.profile)).toBe(true);
+    expect(fs.existsSync(state.stray)).toBe(true);
+    expect(await fs.promises.readFile(state.registry)).toEqual(state.bytes);
+  });
+
+  it('waits for observed exit after accepted signals before deleting directories and state', async () => {
+    vi.useFakeTimers();
+    const state = await fixture();
+    let gone = false;
+    vi.spyOn(process, 'kill').mockImplementation((target, signal) => {
+      if (target !== pid) throw new Error('Unexpected mocked process target');
+      if (signal === 0 && gone) throw Object.assign(new Error('synthetic observed exit'), { code: 'ESRCH' });
+      return true;
+    });
+
+    const pending = sweepE2EProcesses(paths, query);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fs.existsSync(state.profile)).toBe(true);
+      expect(await fs.promises.readFile(state.registry)).toEqual(state.bytes);
+      gone = true;
+      await vi.runAllTimersAsync();
+      expect((await pending).processExit).toBeUndefined();
+      expect(fs.existsSync(state.profile)).toBe(false);
+      expect(fs.existsSync(state.stray)).toBe(false);
+      expect(fs.existsSync(state.registry)).toBe(false);
+    } finally {
+      gone = true;
+      await vi.runAllTimersAsync();
+      await pending;
+    }
+  });
+
+  it('revalidates the exact launch snapshot after waiting for process exit', async () => {
+    vi.useFakeTimers();
+    const state = await fixture();
+    const signal = vi.spyOn(process, 'kill').mockImplementation((target) => {
+      if (target !== pid) throw new Error('Unexpected mocked process target');
+      return true;
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const pending = sweepE2EProcesses(paths, query);
+    await vi.advanceTimersByTimeAsync(0);
+    recordElectronApp(pid + 1, undefined, paths);
+    const appended = await fs.promises.readFile(state.registry);
+    await vi.runAllTimersAsync();
+    expect(await pending).toMatchObject({ recordState: 'changed', tempDirsRemoved: 0 });
+    expect(fs.existsSync(state.profile)).toBe(true);
+    expect(fs.existsSync(state.stray)).toBe(true);
+    expect(await fs.promises.readFile(state.registry)).toEqual(appended);
+    expect(signal.mock.calls.every(([target]) => target === pid)).toBe(true);
+  });
 });
 
 // ── The safety gate ──────────────────────────────────────────────────────

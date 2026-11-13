@@ -163,12 +163,13 @@ function kill(pid: number, signal: NodeJS.Signals): boolean {
   }
 }
 
-function isAlive(pid: number): boolean {
+function processState(pid: number): 'live' | 'gone' | 'unknown' {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return 'unknown';
   try {
     process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+    return 'live';
+  } catch (error) {
+    return error && typeof error === 'object' && 'code' in error && error.code === 'ESRCH' ? 'gone' : 'unknown';
   }
 }
 
@@ -217,16 +218,20 @@ function removeStrayTempDirs(paths?: CleanupPaths): number {
 }
 
 export interface SweepResult {
+  /** Accepted termination signal requests, not proof of process exit. */
   killed: number;
   tempDirsRemoved: number;
   /** Unknown enumeration never permits a kill, directory removal or state deletion. */
   processTable?: 'complete' | 'timeout' | 'error' | 'invalid' | 'unreconciled';
   recordState?: 'changed' | 'unknown';
+  processExit?: 'live' | 'unknown';
 }
 
 /**
  * Kill Electron instances left over from this run and remove their temp dirs.
- * No-op in CI. Never throws — cleanup must not fail a run.
+ * No-op in CI. Never throws — cleanup must not fail a run. Recorded roots and
+ * known repo-Electron termination targets must be observed gone before any
+ * directory/state removal. This does not discover or certify unknown orphans.
  */
 export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promise<ProcessTableResult> = readProcessTable): Promise<SweepResult> {
   const result: SweepResult = { killed: 0, tempDirsRemoved: 0 };
@@ -246,8 +251,19 @@ export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promi
       console.warn('[e2e cleanup] launch state unavailable or changed; remaining sweep/state retained', { status: 'unknown' });
       return result;
     }
+    const retain = (state: 'live' | 'unknown') => {
+      result.processExit = state;
+      console.warn('[e2e cleanup] process exit unconfirmed; sweep/state retained', { state });
+    };
     const records = launchSnapshot.records;
-    const livePids = records.map((r) => r.pid).filter(isAlive);
+    const roots = records.map((r) => r.pid);
+    const rootStates = roots.map((pid) => ({ pid, state: processState(pid) }));
+    if (rootStates.some(({ state }) => state === 'unknown')) {
+      retain('unknown');
+      return result;
+    }
+    const livePids = rootStates.filter(({ state }) => state === 'live').map(({ pid }) => pid);
+    let targets: number[] = [];
 
     if (livePids.length > 0) {
       const snapshot = await query();
@@ -270,7 +286,7 @@ export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promi
       const candidates = withDescendants(livePids, processes);
 
       // Only ever kill processes running from this repo's Electron dist.
-      const targets = [...candidates].filter((pid) => {
+      targets = [...candidates].filter((pid) => {
         const info = byPid.get(pid);
         return info ? isRepoElectronProcess(info) : false;
       });
@@ -280,8 +296,31 @@ export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promi
       }
       // Escalate for anything that ignored SIGTERM.
       for (const pid of targets) {
-        if (isAlive(pid)) kill(pid, 'SIGKILL');
+        const state = processState(pid);
+        if (state === 'unknown') {
+          retain('unknown');
+          return result;
+        }
+        if (state === 'live') kill(pid, 'SIGKILL');
       }
+    }
+
+    const observed = [...new Set([...roots, ...targets])];
+    const deadline = Date.now() + 1_000;
+    for (;;) {
+      if (!stillCurrent()) return result;
+      const states = observed.map(processState);
+      if (states.some((state) => state === 'unknown')) {
+        retain('unknown');
+        return result;
+      }
+      if (states.every((state) => state === 'gone')) break;
+      if (Date.now() >= deadline) {
+        retain('live');
+        return result;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      if (!stillCurrent()) return result;
     }
 
     if (!stillCurrent()) return result;
@@ -299,7 +338,8 @@ export async function sweepE2EProcesses(paths?: CleanupPaths, query: () => Promi
       // Best-effort.
     }
   } catch {
-    // Cleanup is best-effort by design.
+    result.processExit = 'unknown';
+    console.warn('[e2e cleanup] sweep incomplete; remaining files/state retained', { state: 'unknown' });
   }
 
   return result;
