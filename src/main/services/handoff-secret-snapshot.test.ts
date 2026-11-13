@@ -19,10 +19,17 @@ const set = (project: string, names: string[]) => withSettingsSurface('ui', unde
 let staging: string;
 beforeEach(async () => {
   state.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-security-')); state.repo = path.join(state.dir, 'repo'); staging = path.join(state.dir, 'stage');
+  // Runner-wide filters (including Git LFS) intentionally make a repository unsupported.
+  // Use regular files here because Git for Windows does not accept null devices.
+  const config = path.join(state.dir, 'empty-git-config');
+  fs.writeFileSync(config, '');
+  vi.stubEnv('GIT_CONFIG_GLOBAL', config);
+  vi.stubEnv('GIT_CONFIG_SYSTEM', config);
+  vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   fs.mkdirSync(state.repo); fs.mkdirSync(staging); _resetHandoffSecretSettingsForTesting(); state.receipt.mockReset().mockResolvedValue(undefined);
   for (const args of [['init', '-b', 'main'], ['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.invalid'], ['-c', `core.hooksPath=${path.join(state.dir, 'no-hooks')}`, 'commit', '--allow-empty', '-qm', 'Base']]) await exec('git', args, { cwd: state.repo });
 });
-afterEach(() => { fs.rmSync(state.dir, { recursive: true, force: true }); });
+afterEach(() => { vi.unstubAllEnvs(); fs.rmSync(state.dir, { recursive: true, force: true }); });
 const options = () => ({ worktreeRoot: state.repo, stagingRoot: staging, handoffId: randomUUID() });
 const summary = (manifest: Awaited<ReturnType<typeof prepareHandoffSnapshot>>['manifest']) => ({ fileCount: manifest.files.length + manifest.deletions.length, totalBytes: manifest.total_bytes, sha256: manifest.manifest_sha256 });
 it('blocks before creating staging or sending bytes; reports only safe path, rule and line', async () => {
