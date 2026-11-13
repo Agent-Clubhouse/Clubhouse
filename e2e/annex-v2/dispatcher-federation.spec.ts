@@ -123,16 +123,28 @@ async function mcp(env: Record<string, string | null>) {
     },
   };
 }
+/** A report belongs to this agent, and the current bridge must accept a real handshake. */
+async function readyMcp(cli: FakeClis, agentId: string, timeout = 45_000) {
+  let client: Awaited<ReturnType<typeof mcp>> | undefined;
+  await expect.poll(async () => {
+    try {
+      const report = await cli.report('claude', agentId);
+      expect(report.env.CLUBHOUSE_AGENT_ID).toBe(agentId);
+      client = await mcp(report.env);
+      await client.names();
+      return 'ready';
+    } catch (error) { return error instanceof Error ? error.message : String(error); }
+  }, { timeout, message: `MCP is ready for ${agentId}` }).toBe('ready');
+  return client!;
+}
 async function startController(app: LaunchedApp, cli: FakeClis) {
   const ids = await identity(app.window);
   await app.window.locator('[data-testid="dispatcher-row"] [role="treeitem"]').click();
   await app.window.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
-  await expect.poll(async (): Promise<string | null | undefined> => (await cli.report('claude').catch((): undefined => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(ids.chat);
-  const chat = await mcp((await cli.report('claude')).env);
+  const chat = await readyMcp(cli, ids.chat);
   const started = await chat.call('start_work', { request: 'Prepare to coordinate with the other computer.' });
   expect(started.isError).toBe(false);
-  await expect.poll(async () => (await cli.report('claude')).env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(ids.controller);
-  return { ids, chat, controller: await mcp((await cli.report('claude')).env), localId: /Request (\S+) is under way/.exec(started.text)![1] };
+  return { ids, chat, controller: await readyMcp(cli, ids.controller), localId: /Request (\S+) is under way/.exec(started.text)![1] };
 }
 async function requestNetwork() {
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'federated-requests-e2e-'));
@@ -151,7 +163,7 @@ async function requestNetwork() {
   expect(await here.window.evaluate((link) => window.clubhouse.annexClient.pairWithLink(link), pairing.toString())).toMatchObject({ success: true });
   await expect.poll(async () => (await a.controller.names()).some((n) => n.endsWith('__hand_off_request')), { timeout: 30_000 }).toBe(true);
   await expect.poll(async () => (await b.controller.names()).some((n) => n.endsWith('__hand_off_request')), { timeout: 30_000 }).toBe(true);
-  return { here, there, a, b, otherCli };
+  return { here, there, a, b, otherCli, fixture: script.fixture };
 }
 const remoteRequests = async (client: Awaited<ReturnType<typeof mcp>>) => {
   const result = await client.call('list_remote_requests'); expect(result.isError).toBe(false);
@@ -164,7 +176,7 @@ async function offerRemote(client: Awaited<ReturnType<typeof mcp>>, requestId: s
 
 test('remote requests triage locally, send correlated outcomes and wait once across an offline restart', async () => {
   test.setTimeout(300_000);
-  const { here, a, b, otherCli, ...network } = await requestNetwork();
+  const { here, a, b, ...network } = await requestNetwork();
   let there = network.there;
   for (const choice of ['now', 'check_in', 'needs_user', 'decline'] as const) {
     const local = await a.chat.call('start_work', { request: `Remote triage fixture ${choice}` });
@@ -189,8 +201,7 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   const project = path.join(scratch!, 'direct-sender'); await fs.promises.mkdir(project);
   await addProject(here.electronApp, here.window, project);
   const sender = await createDurableAgent(here.window, { projectName: path.basename(project), name: 'direct-sender', orchestrator: 'claude-code' });
-  await expect.poll(async () => (await fakes!.report('claude')).env.CLUBHOUSE_AGENT_ID).toBe(sender);
-  const direct = await mcp((await fakes!.report('claude')).env);
+  const direct = await readyMcp(fakes!, sender);
   const ownBefore = (await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay;
   const news = { machine: 'Laptop', message: 'Direct authorized project news', task_id: 'direct-news', idempotency_key: 'direct-news' };
   const setMode = async (action: 'agent.message' | 'handoff.offer', mode: 'off' | 'ask' | 'allow') => here.window.evaluate(async ({ project, sender, action, mode }) => {
@@ -254,9 +265,10 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   expect(offered.text).toContain('Waiting for Laptop');
   const sent = JSON.parse(offered.text).request;
   expect(sent.delivery).toBe('accepted');
-  there = await desktop('Laptop', profile, otherCli);
-  await expect.poll(async () => (await otherCli.report('claude')).env.CLUBHOUSE_AGENT_ID, { timeout: 45_000 }).toBe(b.ids.controller);
-  const restarted = { controller: await mcp((await otherCli.report('claude')).env) };
+  // A new report directory cannot expose the closed desktop's old bridge port.
+  const restartCli = await installFakeClis({ claude: network.fixture }); additionalFakes.push(restartCli);
+  there = await desktop('Laptop', profile, restartCli);
+  const restarted = { controller: await readyMcp(restartCli, b.ids.controller) };
   await expect.poll(async () => (await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id).length, { timeout: 45_000 }).toBe(1);
   await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.delivery, { timeout: 30_000 }).toBe('delivered');
   expect((await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.outcome).toBe('under_way');

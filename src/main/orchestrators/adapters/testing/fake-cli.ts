@@ -9,6 +9,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createHash } from 'crypto';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
 
@@ -31,6 +32,11 @@ const FIXTURE_DIRS: Record<ChatFixtureCli | 'copilot-sdk', string> = {
 
 export function chatFixturePath(cli: ChatFixtureCli | 'copilot-sdk', name: string): string {
   return path.join(CHAT_FIXTURES_DIR, FIXTURE_DIRS[cli], `${name}.jsonl`);
+}
+
+/** Per-agent sidecar, independent of other CLIs sharing the fixture's latest report. */
+export function fakeCliAgentReportPath(reportPath: string, agentId: string): string {
+  return `${reportPath}.agent-${createHash('sha256').update(agentId).digest('hex')}.json`;
 }
 
 /** Progress report the fake CLI rewrites after every replayed line. */

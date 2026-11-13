@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveStructuredSpawn } from '../structured-spawn';
-import { EventLog, NdjsonPeer, chatFixturePath, writeFakeCliShims } from './fake-cli';
+import { EventLog, NdjsonPeer, chatFixturePath, fakeCliAgentReportPath, writeFakeCliShims } from './fake-cli';
 
 describe('writeFakeCliShims', () => {
   let dir: string | undefined;
@@ -38,6 +38,31 @@ describe('writeFakeCliShims', () => {
     // The state-dir variables it was launched with, so E2E can check the app passed them on.
     expect(written.env).toMatchObject({ CODEX_HOME: codexHome, COPILOT_HOME: null });
   });
+
+  it('keeps agent reports independent when two CLI processes share a latest report', async () => {
+    dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'fake-cli-agents-'));
+    const report = path.join(dir, 'report.json');
+    const shims = await writeFakeCliShims(path.join(dir, 'bin'), { codex: { fixture: chatFixturePath('codex', 'multi-turn'), report } });
+    const command = resolveStructuredSpawn(shims.codex, ['app-server']);
+    for (const agentId of ['controller', 'chat']) {
+      const peer = NdjsonPeer.start(command.binary, command.args, {
+        windowsVerbatimArguments: command.windowsVerbatimArguments,
+        env: { ...process.env, CLUBHOUSE_AGENT_ID: agentId },
+      });
+      peer.send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'clubhouse', title: 'Clubhouse', version: '1' }, capabilities: {} } });
+      await peer.waitFor({ id: 1 });
+      peer.closeStdin();
+      expect((await peer.exited).code).toBe(0);
+    }
+    const latest = JSON.parse(await fs.promises.readFile(report, 'utf8'));
+    expect(latest.env.CLUBHOUSE_AGENT_ID).toBe('chat');
+    const controller = JSON.parse(await fs.promises.readFile(fakeCliAgentReportPath(report, 'controller'), 'utf8'));
+    const chat = JSON.parse(await fs.promises.readFile(fakeCliAgentReportPath(report, 'chat'), 'utf8'));
+    expect(controller.env.CLUBHOUSE_AGENT_ID).toBe('controller');
+    expect(chat.env.CLUBHOUSE_AGENT_ID).toBe('chat');
+    expect(controller.pid).not.toBe(chat.pid);
+  });
+
 });
 
 describe('EventLog', () => {
