@@ -26,15 +26,22 @@ async function clickCanvasMenuItem(item: Locator): Promise<void> {
     // Electron CI sometimes reports an on-screen, hit-testable portal item as
     // outside Playwright's viewport. Only dispatch when the browser itself
     // confirms the item's center is inside the viewport and receives hits.
-    const reachable = await item.evaluate((element) => {
+    const geometry = await item.evaluate((element) => {
       const r = element.getBoundingClientRect();
       const x = r.left + r.width / 2;
       const y = r.top + r.height / 2;
       const hit = document.elementFromPoint(x, y);
-      return x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
-        && !!hit && (hit === element || element.contains(hit));
+      return {
+        rect: { x: r.x, y: r.y, width: r.width, height: r.height },
+        viewport: { width: innerWidth, height: innerHeight },
+        hit: hit ? { tag: hit.tagName, className: hit.getAttribute('class'), testId: hit.closest('[data-testid]')?.getAttribute('data-testid') } : null,
+        reachable: x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
+          && !!hit && (hit === element || element.contains(hit)),
+      };
     });
-    if (!reachable) throw error;
+    console.log('Canvas menu click diagnostics:', JSON.stringify(geometry));
+    await test.info().attach('canvas-menu-click', { body: await window.screenshot(), contentType: 'image/png' });
+    if (!geometry.reachable) throw error;
     await item.dispatchEvent('click');
   }
 }
