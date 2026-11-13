@@ -138,6 +138,8 @@ import * as annexCalls from '../../annex-agent-calls';
 import * as dispatcherService from '../../dispatcher/dispatcher-service';
 import * as dispatcherGate from '../dispatcher-gate';
 import { forgetMcpCaller, setMcpCallerQuick } from '../mcp-call-gate';
+import { _resetMembershipForTesting, excludeMember, membershipBindingSource } from '../../group-project-membership';
+import { groupProjectHost } from '../../group-project-host';
 
 let root: string;
 let projectPath: string;
@@ -191,7 +193,11 @@ function restart(): void {
   _resetPersistedBindingSourcesForTesting();
   _resetOrchestratorConnectionsForTesting();
   _resetLifecycleForTesting();
+  _resetMembershipForTesting();
+  groupProjectHost._resetForTesting();
   registerPersistedBindingSource(orchestratorConnectionSource);
+  // Group project members are a record on the host (#3357).
+  registerPersistedBindingSource(membershipBindingSource);
 }
 
 beforeEach(async () => {
@@ -229,7 +235,12 @@ beforeEach(async () => {
     setOrchestrationEnabled(id, true);
   }
   registerConnectionTools();
+  _resetMembershipForTesting();
+  groupProjectHost._resetForTesting();
   registerPersistedBindingSource(orchestratorConnectionSource);
+  registerPersistedBindingSource(membershipBindingSource);
+  // The startup rebuild: membership's baseline.
+  await rebuildPersistedBindings();
 });
 
 afterEach(() => {
@@ -652,15 +663,17 @@ describe('connecting and persistence', () => {
     const expected = ['durable_h1->durable_h2', 'durable_h1->durable_lead', 'durable_h2->gp_1', 'durable_lead->durable_h1'];
     expect(boundPairs()).toEqual(expected);
 
+    // The group project membership is in its record (#3357), not the orchestrator store.
     const stored = JSON.parse(fs.readFileSync(path.join(projectPath, '.clubhouse', '.local', 'orchestrator-connections.json'), 'utf-8'));
-    expect(stored.connections).toHaveLength(4);
+    expect(stored.connections).toHaveLength(3);
     expect(stored.connections[0]).toMatchObject({ ownerId: 'durable_lead', agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent' });
 
     restart();
     expect(boundPairs()).toEqual([]);
     const result = await rebuildPersistedBindings();
     expect(result.sources).toEqual([
-      { id: 'orchestrator-connections', collected: 4, created: 4, existing: 0, removed: 0, invalid: 0, pruned: 0 },
+      { id: 'orchestrator-connections', collected: 3, created: 3, existing: 0, removed: 0, invalid: 0, pruned: 0 },
+      { id: 'group-project-membership', collected: 1, created: 1, existing: 0, removed: 0, invalid: 0, pruned: 0 },
     ]);
     expect(boundPairs()).toEqual(expected);
     const wire = bindingManager.getBindingsForAgent('durable_h1').find((b) => b.targetId === 'durable_h2')!;
@@ -787,7 +800,7 @@ describe('helper disposal', () => {
     await rebuilt(1);
 
     expect(boundPairs()).toEqual(['durable_h2->durable_lead', 'durable_h2->gp_1']);
-    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(['durable_h2->durable_lead', 'durable_h2->gp_1']);
+    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(['durable_h2->durable_lead']);
 
     // A deleted helper goes the same way.
     setAgents(configs.get(projectPath)!.filter((a) => a.id !== 'durable_h2'));
@@ -831,7 +844,7 @@ describe('store', () => {
       'durable_h1->durable_h2', 'durable_h1->durable_lead', 'durable_h1->gp_1',
       'durable_h2->durable_lead', 'durable_h2->gp_1', 'durable_lead->durable_h1',
     ];
-    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(expected);
+    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(expected.filter((k) => !k.endsWith('gp_1')));
     expect(boundPairs()).toEqual(expected);
 
     await Promise.all([
@@ -840,7 +853,7 @@ describe('store', () => {
       call('remove_from_group_project', { project: 'Raid', helper: 'h1' }),
     ]);
     const left = ['durable_h1->durable_lead', 'durable_h2->durable_lead', 'durable_h2->gp_1'];
-    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(left);
+    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(left.filter((k) => !k.endsWith('gp_1')));
     expect(boundPairs()).toEqual(left);
   });
 
@@ -935,29 +948,31 @@ describe('scope over time', () => {
     stop();
   };
 
-  it('drops a reparented helper\'s connections and memberships', async () => {
+  // Group project members are a record (#3357): a helper stays a member until
+  // it's disposed or removed, whoever its orchestrator is now.
+  it('drops a reparented helper\'s connections; its membership stays', async () => {
     await setup();
     await watchAndWait(configs.get(projectPath)!.map((a) =>
       a.id === 'durable_h1' ? { ...a, parentAgentId: 'durable_other' } : a));
 
-    expect(boundPairs()).toEqual(['durable_h2->gp_1', 'durable_lead->gp_1']);
-    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(['durable_h2->gp_1', 'durable_lead->gp_1']);
+    expect(boundPairs()).toEqual(['durable_h1->gp_1', 'durable_h2->gp_1', 'durable_lead->gp_1']);
+    expect(await readConnections(projectPath)).toEqual([]);
   });
 
-  it('drops every helper connection when the orchestrator releases its helpers', async () => {
+  it('drops every helper connection when the orchestrator releases its helpers; memberships stay', async () => {
     await setup();
     // Orchestration turned off (or the orchestrator deleted) with "keep helpers".
     await watchAndWait(configs.get(projectPath)!.map((a) =>
       a.parentAgentId === 'durable_lead' ? { ...a, parentAgentId: undefined } : a));
 
-    expect(boundPairs()).toEqual(['durable_lead->gp_1']);
-    expect((await readConnections(projectPath)).map(pairKey)).toEqual(['durable_lead->gp_1']);
+    expect(boundPairs()).toEqual(['durable_h1->gp_1', 'durable_h2->gp_1', 'durable_lead->gp_1']);
+    expect(await readConnections(projectPath)).toEqual([]);
   });
 
-  it('drops everything an orchestrator owned once it is deleted', async () => {
+  it('drops everything an orchestrator owned once it is deleted; its helpers stay members', async () => {
     await setup();
     await watchAndWait(configs.get(projectPath)!.filter((a) => a.id !== 'durable_lead'));
-    expect(boundPairs()).toEqual([]);
+    expect(boundPairs()).toEqual(['durable_h1->gp_1', 'durable_h2->gp_1']);
     expect(await readConnections(projectPath)).toEqual([]);
   });
 
@@ -967,7 +982,7 @@ describe('scope over time', () => {
       a.id === 'durable_h2' ? { ...a, parentAgentId: undefined } : a));
     restart();
     await rebuildPersistedBindings();
-    expect(boundPairs()).toEqual(['durable_h1->durable_lead', 'durable_h1->gp_1', 'durable_lead->durable_h1', 'durable_lead->gp_1']);
+    expect(boundPairs()).toEqual(['durable_h1->durable_lead', 'durable_h1->gp_1', 'durable_h2->gp_1', 'durable_lead->durable_h1', 'durable_lead->gp_1']);
   });
 });
 
@@ -1017,7 +1032,8 @@ describe('a helper in another project (#2513)', () => {
     setFar(configs.get(farPath)!.map((a) => ({ ...a, lastSessionId: 'y' } as DurableAgentConfig)));
     await new Promise((r) => setTimeout(r, 150));
     stop();
-    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(['durable_far->gp_1', 'durable_lead->durable_far']);
+    // The membership is in the group project's record (#3357), not the orchestrator store.
+    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(['durable_lead->durable_far']);
     expect(boundPairs()).toEqual(['durable_far->gp_1', 'durable_lead->durable_far']);
   });
 
@@ -1087,11 +1103,13 @@ describe('names and user removals', () => {
     await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
     await call('create_group_project', { name: 'Raid', members: ['h1'] });
 
-    // The user deletes lead -> h1 and h1's membership in the UI (IPC UNBIND).
+    // The user deletes lead -> h1 and h1's membership in the UI (IPC UNBIND,
+    // which takes a member out of the group project's record, #3357).
     for (const [agentId, targetId] of [['durable_lead', 'durable_h1'], ['durable_h1', 'gp_1']]) {
       bindingManager.unbind(agentId, targetId);
       markBindingRemovedByUser(agentId, targetId);
     }
+    await excludeMember('gp_1', 'durable_h1');
     await vi.waitFor(async () => {
       expect((await readConnections(projectPath)).map(pairKey)).toEqual(['durable_h1->durable_lead']);
     });

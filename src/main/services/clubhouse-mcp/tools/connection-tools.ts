@@ -30,7 +30,7 @@ import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
 import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
-  addMember as addGroupMember, excludeMember as excludeGroupMember, isMember as isGroupMember, isMembershipManaged,
+  addMember as addGroupMember, beginAutoJoin, excludeMember as excludeGroupMember, isMember as isGroupMember, isMembershipManaged,
 } from '../../group-project-membership';
 import {
   claimSourceBinding,
@@ -337,6 +337,8 @@ async function handleCreateGroupProject(callerId: string, args: Record<string, u
       throw new ConnectionScopeError('Your project is not registered. Register it before creating a group project.');
     }
     const created = await groupProjectHost.create(name, { projectId: callerProject.id });
+    // Everyone in scope joins a new group project (#3357); the members named here are added.
+    await beginAutoJoin(created.id);
     const project = (await groupProjectHost.update(created.id, { metadata: { [GROUP_PROJECT_CREATOR_KEY]: callerId } })) ?? created;
     appLog('core:mcp', 'info', 'Orchestrator created a group project', {
       meta: { agentId: callerId, groupProjectId: project.id, members: members.length },

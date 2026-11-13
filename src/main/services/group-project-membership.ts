@@ -26,10 +26,9 @@
  */
 
 import type {
-  GroupProject, GroupProjectMemberKind, GroupProjectMembership, GroupProjectMembershipView, ResolvedGroupProjectMember,
+  GroupProject, GroupProjectMemberKind, GroupProjectMembership, GroupProjectMembershipView, GroupProjectMemberView, ResolvedGroupProjectMember,
 } from '../../shared/group-project-types';
-import { getMembership, updateMembership, deleteMembership } from './group-project-membership-store';
-import { groupProjectRegistry } from './group-project-registry';
+import { groupProjectHost } from './group-project-host';
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { knownQuickAgents } from './quick-agent-events';
@@ -210,10 +209,10 @@ interface Snapshot {
 }
 
 async function snapshotAll(): Promise<{ snapshots: Snapshot[]; inventory: Inventory; quick: Map<string, QuickFact> }> {
-  const [projects, inventory, quick] = await Promise.all([groupProjectRegistry.list(), readInventory(), liveQuickAgents()]);
+  const [projects, inventory, quick] = await Promise.all([groupProjectHost.list(), readInventory(), liveQuickAgents()]);
   const snapshots: Snapshot[] = [];
   for (const gp of projects) {
-    const membership = await getMembership(gp.id);
+    const membership = await groupProjectHost.getMembership(gp.id);
     if (!isManagedMembership(membership)) continue;
     snapshots.push({ gp, membership, resolution: resolveMembership(gp, membership, inventory, quick) });
   }
@@ -243,7 +242,7 @@ function notify(groupProjectId: string): void {
 /** Whether a group project's members come from its record (not canvas wires). */
 export async function isMembershipManaged(groupProjectId: string): Promise<boolean> {
   try {
-    return isManagedMembership(await getMembership(groupProjectId));
+    return isManagedMembership(await groupProjectHost.getMembership(groupProjectId));
   } catch (err) {
     // telemetry-exempt: an unreadable record is treated as unmanaged, so its wires keep working; logged
     appLog('core:group-project', 'warn', 'Group project membership could not be read', { meta: { groupProjectId, error: err instanceof Error ? err.message : String(err) } });
@@ -254,7 +253,7 @@ export async function isMembershipManaged(groupProjectId: string): Promise<boole
 /** Ids of every group project whose members come from its record. */
 export async function managedGroupProjectIds(): Promise<Set<string>> {
   const out = new Set<string>();
-  for (const gp of await groupProjectRegistry.list()) if (await isMembershipManaged(gp.id)) out.add(gp.id);
+  for (const gp of await groupProjectHost.list()) if (await isMembershipManaged(gp.id)) out.add(gp.id);
   return out;
 }
 
@@ -293,7 +292,7 @@ export const membershipBindingSource: PersistedBindingSource = {
 async function migrateLegacyGroupProjects(): Promise<void> {
   const inventory = await readInventory();
   let changed = false;
-  for (const gp of await groupProjectRegistry.list()) {
+  for (const gp of await groupProjectHost.list()) {
     if (await isMembershipManaged(gp.id)) continue;
     await adopt(gp, inventory);
     changed = true;
@@ -303,14 +302,14 @@ async function migrateLegacyGroupProjects(): Promise<void> {
 
 async function adopt(gp: GroupProject, inventory: Inventory): Promise<void> {
   if (Date.parse(gp.createdAt) >= startedAt) {
-    await updateMembership(gp.id, (draft) => { draft.autoJoin = true; });
+    await groupProjectHost.updateMembership(gp.id, (draft) => { draft.autoJoin = true; });
     appLog('core:group-project', 'info', 'New group project auto-joins agents in scope', { meta: { groupProjectId: gp.id } });
     return;
   }
   const now = new Date().toISOString();
   const quick = knownQuickAgents();
   const current = bindingManager.getAllBindings().filter((b) => b.targetKind === 'group-project' && b.targetId === gp.id);
-  await updateMembership(gp.id, (draft) => {
+  await groupProjectHost.updateMembership(gp.id, (draft) => {
     draft.autoJoin = false;
     draft.autoJoinOffer = 'pending';
     for (const b of current) {
@@ -337,7 +336,7 @@ export async function reconcileMembership(): Promise<void> {
   if (!listed) return; // Before the first rebuild: it binds everything.
   if (migrated) {
     const inventory = await readInventory();
-    for (const gp of await groupProjectRegistry.list()) {
+    for (const gp of await groupProjectHost.list()) {
       if (!(await isMembershipManaged(gp.id)) && Date.parse(gp.createdAt) >= startedAt) await adopt(gp, inventory);
     }
   }
@@ -385,7 +384,7 @@ async function tidy(s: Snapshot, inventory: Inventory, quick: ReadonlyMap<string
     return !agent || agent.disposed;
   };
   if (!s.membership.explicit.some(gone)) return;
-  await updateMembership(s.gp.id, (draft) => { draft.explicit = draft.explicit.filter((e) => !gone(e)); });
+  await groupProjectHost.updateMembership(s.gp.id, (draft) => { draft.explicit = draft.explicit.filter((e) => !gone(e)); });
 }
 
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
@@ -412,12 +411,23 @@ export function watchGroupProjectMembership(): () => void {
   const offs = [
     onAgentConfigChanged(() => scheduleReconcile()),
     projectStore.onProjectsChanged(() => scheduleReconcile()),
-    groupProjectRegistry.onChange(() => scheduleReconcile()),
+    groupProjectHost.onChange((change) => {
+      // A deleted group project's members go at once; its record went with it.
+      if (change.part === 'deleted') releaseMembershipBindings(change.groupProjectId);
+      else scheduleReconcile();
+    }),
     onAppEvent((event) => {
       if (event.type === 'agent.quick_finished' || event.type === 'agent.created' || event.type === 'agent.deleted') scheduleReconcile();
     }),
   ];
+  // Who is a member, for the host's own readers (scope preview, #3355).
+  groupProjectHost.setMemberResolver(async (gp, membership) => {
+    if (!isManagedMembership(membership)) return (await describeMembership(gp.id)).members.map(toMemberView);
+    const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
+    return resolveMembership(gp, membership, inventory, quick).members.map(toMemberView);
+  });
   stopWatching = () => {
+    groupProjectHost.setMemberResolver(null);
     for (const off of offs) off();
     if (reconcileTimer) clearTimeout(reconcileTimer);
     reconcileTimer = null;
@@ -429,9 +439,20 @@ export function watchGroupProjectMembership(): () => void {
 // ── Changes ─────────────────────────────────────────────────────────────────
 
 async function requireGroupProject(groupProjectId: string): Promise<GroupProject> {
-  const gp = await groupProjectRegistry.get(groupProjectId);
+  const gp = await groupProjectHost.get(groupProjectId);
   if (!gp) throw new Error(`Group project ${groupProjectId} does not exist.`);
   return gp;
+}
+
+/**
+ * A group project just created: every top-level durable agent in its scope
+ * joins, now and later. Call right after creating it.
+ */
+export async function beginAutoJoin(groupProjectId: string): Promise<void> {
+  await groupProjectHost.updateMembership(groupProjectId, (draft) => {
+    if (!isManagedMembership(draft)) draft.autoJoin = true;
+  });
+  await runReconcile();
 }
 
 /**
@@ -447,7 +468,7 @@ export async function addMember(groupProjectId: string, agentId: string): Promis
   const run = quick.get(agentId);
   if (!run && (!agent || agent.disposed)) throw new Error('That agent does not exist here.');
   const now = new Date().toISOString();
-  await updateMembership(gp.id, (draft) => {
+  await groupProjectHost.updateMembership(gp.id, (draft) => {
     draft.excluded = draft.excluded.filter((e) => e.address !== agentId);
     const auto = draft.autoJoin && agent && !agent.helper && inScope(gp, agent);
     if (auto || draft.explicit.some((e) => e.address === agentId && (!run || e.runId === run.runId))) return;
@@ -472,7 +493,7 @@ export async function excludeMember(groupProjectId: string, agentId: string): Pr
   if (!(await isMembershipManaged(gp.id))) await adopt(gp, inventory);
   const agent = inventory.agents.get(agentId);
   const now = new Date().toISOString();
-  await updateMembership(gp.id, (draft) => {
+  await groupProjectHost.updateMembership(gp.id, (draft) => {
     draft.explicit = draft.explicit.filter((e) => e.address !== agentId);
     if (agent && !agent.helper && !draft.excluded.some((e) => e.address === agentId)) {
       draft.excluded.push({ address: agentId, excludedAt: now });
@@ -485,7 +506,7 @@ export async function excludeMember(groupProjectId: string, agentId: string): Pr
 /** Answer the one-time offer: accepting turns auto-join on, so everyone in scope joins. */
 export async function answerAutoJoinOffer(groupProjectId: string, accept: boolean): Promise<GroupProjectMembershipView> {
   await requireGroupProject(groupProjectId);
-  await updateMembership(groupProjectId, (draft) => {
+  await groupProjectHost.updateMembership(groupProjectId, (draft) => {
     if (draft.autoJoinOffer !== 'pending') return;
     draft.autoJoinOffer = accept ? 'accepted' : 'dismissed';
     if (accept) draft.autoJoin = true;
@@ -497,7 +518,7 @@ export async function answerAutoJoinOffer(groupProjectId: string, accept: boolea
 /** Keep a member's own tool switches (#2084), so the binding the record makes after a restart has them. */
 export async function recordMemberDisabledTools(groupProjectId: string, agentId: string, disabledTools: string[]): Promise<void> {
   if (!(await isMembershipManaged(groupProjectId))) return;
-  await updateMembership(groupProjectId, (draft) => {
+  await groupProjectHost.updateMembership(groupProjectId, (draft) => {
     draft.disabledTools = { ...draft.disabledTools, [agentId]: [...disabledTools] };
   });
 }
@@ -505,7 +526,7 @@ export async function recordMemberDisabledTools(groupProjectId: string, agentId:
 /** A member's saved tool switches, or undefined when none were saved. */
 export async function savedMemberDisabledTools(groupProjectId: string, agentId: string): Promise<string[] | undefined> {
   if (!(await isMembershipManaged(groupProjectId))) return undefined;
-  const saved = (await getMembership(groupProjectId)).disabledTools?.[agentId];
+  const saved = (await groupProjectHost.getMembership(groupProjectId)).disabledTools?.[agentId];
   return Array.isArray(saved) ? [...saved] : undefined;
 }
 
@@ -519,7 +540,7 @@ export async function isMember(groupProjectId: string, agentId: string): Promise
 /** Members, exclusions and the offer, for the directory and the delete impact check. */
 export async function describeMembership(groupProjectId: string): Promise<GroupProjectMembershipView> {
   const gp = await requireGroupProject(groupProjectId);
-  const membership = await getMembership(groupProjectId);
+  const membership = await groupProjectHost.getMembership(groupProjectId);
   const managed = isManagedMembership(membership);
   const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
   const nameOf = (id: string, fallback?: string) => inventory.agents.get(id)?.name ?? quick.get(id)?.name ?? fallback ?? id;
@@ -554,9 +575,8 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
   return view;
 }
 
-/** Members in the shape the host's scope preview asks for (#3355). */
-export async function listMemberAddresses(groupProjectId: string): Promise<Array<{ address: string; name: string; projectId?: string }>> {
-  return (await describeMembership(groupProjectId)).members.map((m) => ({ address: m.agentId, name: m.name, ...(m.projectId && { projectId: m.projectId }) }));
+function toMemberView(m: ResolvedGroupProjectMember): GroupProjectMemberView {
+  return { address: m.agentId, name: m.name, ...(m.projectId && { projectId: m.projectId }) };
 }
 
 /**
@@ -570,14 +590,6 @@ export function releaseMembershipBindings(groupProjectId: string): void {
   notify(groupProjectId);
 }
 
-/**
- * Remove a deleted group project's membership: release its bindings and
- * delete the record. Idempotent.
- */
-export async function purgeMembership(groupProjectId: string): Promise<void> {
-  releaseMembershipBindings(groupProjectId);
-  await deleteMembership(groupProjectId);
-}
 
 /** For tests. */
 export function _resetMembershipForTesting(): void {

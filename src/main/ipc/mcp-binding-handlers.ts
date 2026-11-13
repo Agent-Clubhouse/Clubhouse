@@ -30,10 +30,10 @@ import {
   keepHeldBinding,
   listSoleOwnedPairs,
 } from '../services/persisted-bindings';
-import { canvasWireBindingSource } from '../services/canvas-wire-source';
+import { canvasWireBindingSource, setManagedGroupProjects } from '../services/canvas-wire-source';
 import { MCP_BIND_RESTORE, MCP_UNBIND_CANVAS_CLEANUP, type McpUnbindResult } from '../../shared/mcp-unbind';
 import {
-  addMember, excludeMember, isMember, isMembershipManaged, membershipBindingSource, watchGroupProjectMembership,
+  addMember, excludeMember, isMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
 } from '../services/group-project-membership';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
@@ -163,11 +163,47 @@ export function registerMcpBindingHandlers(): void {
 
   ipcMain.handle(IPC.MCP_BINDING.BIND, withValidatedArgs(
     [stringArg(), objectArg<{ targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }>(), stringArg({ optional: true })],
-    async (event, agentId, target, cause) => {
+    (event, agentId, target, cause): void | Promise<void> => {
       assertCallerIsAppWindow(event);
+      const bindNow = (): void => {
+        // Allow binding for sleeping (unregistered) durable agents — the binding
+        // will be stored and used when the agent wakes up and connects to the MCP
+        // bridge. This is essential for canvas wire creation: wires can be
+        // created (e.g. from a blueprint) before agents are started.
+        if (!agentRegistry.get(agentId as string)) {
+          appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
+        }
+        assertValidTargetKind(target.targetKind);
+        clearBindingRemovedByUser(agentId as string, target.targetId);
+        const isNew = bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
+        // Bootstrap the project lead: the first agent to join a group project
+        // becomes its admin (no-op once an admin exists). The registry change
+        // invalidates the scoped tool cache so role gating applies immediately.
+        if (target.targetKind === 'group-project') {
+          void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
+        }
+        if (!isNew) {
+          // Duplicate binding — notifyChange was skipped by bind(), so the
+          // renderer's mcpBindingStore won't receive a BINDINGS_CHANGED event.
+          // Broadcast explicitly so the canvas wire reconciler can see the
+          // binding and stop retrying.
+          broadcastBindingsChanged();
+        }
+        appLog('core:mcp', isNew ? 'info' : 'debug', isNew ? 'Binding created' : 'Binding already present', {
+          meta: {
+            agentId,
+            agentName: target.agentName,
+            targetId: target.targetId,
+            targetName: target.targetName,
+            targetKind: target.targetKind,
+          },
+        });
+      };
+      if (target.targetKind !== 'group-project') return bindNow();
       // A group project whose members come from its record (#3357): drawing a
       // wire adds the member, and a stored wire coming back adds no one.
-      if (target.targetKind === 'group-project' && await isMembershipManaged(target.targetId)) {
+      return isMembershipManaged(target.targetId).then(async (managed) => {
+        if (!managed) return bindNow();
         if (cause !== MCP_BIND_RESTORE) {
           await addMember(target.targetId, agentId as string);
           void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
@@ -175,39 +211,6 @@ export function registerMcpBindingHandlers(): void {
           appLog('core:mcp', 'debug', 'Stored group project wire not bound: not a member', { meta: { agentId, targetId: target.targetId } });
         }
         broadcastBindingsChanged();
-        return;
-      }
-      // Allow binding for sleeping (unregistered) durable agents — the binding
-      // will be stored and used when the agent wakes up and connects to the MCP
-      // bridge. This is essential for canvas wire creation: wires can be
-      // created (e.g. from a blueprint) before agents are started.
-      if (!agentRegistry.get(agentId as string)) {
-        appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
-      }
-      assertValidTargetKind(target.targetKind);
-      clearBindingRemovedByUser(agentId as string, target.targetId);
-      const isNew = bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
-      // Bootstrap the project lead: the first agent to join a group project
-      // becomes its admin (no-op once an admin exists). The registry change
-      // invalidates the scoped tool cache so role gating applies immediately.
-      if (target.targetKind === 'group-project') {
-        void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
-      }
-      if (!isNew) {
-        // Duplicate binding — notifyChange was skipped by bind(), so the
-        // renderer's mcpBindingStore won't receive a BINDINGS_CHANGED event.
-        // Broadcast explicitly so the canvas wire reconciler can see the
-        // binding and stop retrying.
-        broadcastBindingsChanged();
-      }
-      appLog('core:mcp', isNew ? 'info' : 'debug', isNew ? 'Binding created' : 'Binding already present', {
-        meta: {
-          agentId,
-          agentName: target.agentName,
-          targetId: target.targetId,
-          targetName: target.targetName,
-          targetKind: target.targetKind,
-        },
       });
     },
   ));
@@ -465,6 +468,8 @@ export function restorePersistedBindings(): Promise<void> {
   if (!handlersRegistered) return Promise.resolve();
   if (!persistedSourcesRegistered) {
     persistedSourcesRegistered = true;
+    // A group project whose members come from its record (#3357) isn't held by canvas wires.
+    setManagedGroupProjects(managedGroupProjectIds);
     registerPersistedBindingSource(canvasWireBindingSource);
     registerPersistedBindingSource(helperWireBindingSource);
     stopWatchingHelperWires = watchHelperWires(() => restorePersistedBindings());

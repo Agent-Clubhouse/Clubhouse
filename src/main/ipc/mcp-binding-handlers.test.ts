@@ -114,6 +114,7 @@ vi.mock('../services/persisted-bindings', () => ({
 
 vi.mock('../services/canvas-wire-source', () => ({
   canvasWireBindingSource: { id: 'canvas-wires', collect: vi.fn(async () => []) },
+  setManagedGroupProjects: vi.fn(),
 }));
 
 vi.mock('../services/helper-wire-source', () => ({
@@ -130,6 +131,20 @@ vi.mock('../services/orchestrator-connections', () => ({
 vi.mock('../services/dispatcher-wire-source', () => ({
   dispatcherWireBindingSource: { id: 'dispatcher-wires', prune: true, collect: vi.fn(async () => []) },
   watchDispatcherWires: vi.fn(() => () => undefined),
+}));
+
+const membership = vi.hoisted(() => ({
+  managed: new Set<string>(),
+  members: new Set<string>(),
+}));
+vi.mock('../services/group-project-membership', () => ({
+  membershipBindingSource: { id: 'group-project-membership', prune: true, collect: vi.fn(async () => []) },
+  watchGroupProjectMembership: vi.fn(() => () => undefined),
+  isMembershipManaged: vi.fn(async (id: string) => membership.managed.has(id)),
+  isMember: vi.fn(async (id: string, agentId: string) => membership.members.has(`${agentId}>${id}`)),
+  addMember: vi.fn(async () => undefined),
+  managedGroupProjectIds: vi.fn(async () => membership.managed),
+  excludeMember: vi.fn(async () => undefined),
 }));
 
 import { ipcMain, BrowserWindow } from 'electron';
@@ -160,6 +175,8 @@ import { helperWireBindingSource, watchHelperWires } from '../services/helper-wi
 import { orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispatcher-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
+import { addMember, excludeMember, membershipBindingSource } from '../services/group-project-membership';
+import { MCP_BIND_RESTORE } from '../../shared/mcp-unbind';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { applyConnectionTools, migrateAutomaticConnectionTools } from '../services/connection-grants';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance } from '../services/connection-guidance';
@@ -354,11 +371,11 @@ describe('SEC-06: MCP binding IPC authorization', () => {
       expect(bindingManager.bind).not.toHaveBeenCalled();
     });
 
-    it('allows bind with group-project targetKind', () => {
+    it('allows bind with group-project targetKind', async () => {
       mockGet.mockReturnValue(undefined);
       const handler = getHandler(IPC.MCP_BINDING.BIND);
       const target = { targetId: 'gp_456', targetKind: 'group-project', label: 'My GP' };
-      expect(() => handler(fakeEvent, 'agent-1', target)).not.toThrow();
+      await expect(handler(fakeEvent, 'agent-1', target)).resolves.toBeUndefined();
       expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', target);
     });
 
@@ -532,12 +549,12 @@ describe('plugin bindings are not renderer-controlled (#2082)', () => {
     expect(clearBindingRemovedByUser).not.toHaveBeenCalled();
   });
 
-  it('still binds every non-plugin targetKind', () => {
+  it('still binds every non-plugin targetKind', async () => {
     mockGet.mockReturnValue(undefined);
     const handler = getHandler(IPC.MCP_BINDING.BIND);
     for (const targetKind of ['browser', 'agent', 'terminal', 'group-project']) {
       const target = { targetId: `t-${targetKind}`, targetKind, label: targetKind };
-      expect(() => handler(fakeEvent, 'agent-1', target)).not.toThrow();
+      await expect(Promise.resolve(handler(fakeEvent, 'agent-1', target))).resolves.toBeUndefined();
       expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', target);
     }
   });
@@ -721,6 +738,7 @@ describe('restorePersistedBindings (#1544)', () => {
       orchestratorConnectionSource,
       dispatcherWireBindingSource,
       dispatcherConnectionSource,
+      membershipBindingSource,
       federationBindingSource,
     ]);
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
@@ -803,5 +821,44 @@ describe('user removals and later restores', () => {
     expect(keepHeldBinding).not.toHaveBeenCalled();
     expect(bindingManager.unbind).toHaveBeenCalledWith('lead', 'helper');
     expect(markBindingRemovedByUser).toHaveBeenCalledWith('lead', 'helper');
+  });
+});
+
+describe('group project membership gestures (#3357)', () => {
+  const target = { targetId: 'gp_managed', targetKind: 'group-project', label: 'GP' };
+
+  beforeEach(() => {
+    membership.managed = new Set(['gp_managed']);
+    membership.members = new Set();
+    vi.mocked(addMember).mockClear();
+    vi.mocked(excludeMember).mockClear();
+    mockGet.mockReturnValue(undefined);
+  });
+
+  it('drawing a wire to a managed group project adds the member through the record', async () => {
+    await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'agent-1', target);
+    expect(addMember).toHaveBeenCalledWith('gp_managed', 'agent-1');
+    expect(bindingManager.bind).not.toHaveBeenCalled();
+  });
+
+  it('a stored wire coming back adds no one', async () => {
+    await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'agent-1', target, MCP_BIND_RESTORE);
+    expect(addMember).not.toHaveBeenCalled();
+    expect(bindingManager.bind).not.toHaveBeenCalled();
+  });
+
+  it('deleting the wire excludes the agent; canvas cleanup does not', async () => {
+    vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([{ agentId: 'agent-1', targetId: 'gp_managed', targetKind: 'group-project', label: 'GP' }] as any);
+    await getHandler(IPC.MCP_BINDING.UNBIND)(fakeEvent, 'agent-1', 'gp_managed', MCP_UNBIND_CANVAS_CLEANUP);
+    expect(excludeMember).not.toHaveBeenCalled();
+    await getHandler(IPC.MCP_BINDING.UNBIND)(fakeEvent, 'agent-1', 'gp_managed');
+    expect(excludeMember).toHaveBeenCalledWith('gp_managed', 'agent-1');
+  });
+
+  it('a group project still on wires binds as before', async () => {
+    const legacy = { targetId: 'gp_legacy', targetKind: 'group-project', label: 'Old' };
+    await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'agent-1', legacy, MCP_BIND_RESTORE);
+    expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', legacy);
+    expect(addMember).not.toHaveBeenCalled();
   });
 });
