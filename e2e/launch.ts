@@ -117,7 +117,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     });
     registerProfileProcess(profile, electronApp.process());
   } catch (err) {
-    if (ownsProfile) profile.dispose();
+    if (ownsProfile) {
+      try { profile.dispose(); }
+      catch (cleanupError) {
+        throw new AggregateError([err, cleanupError], 'E2E launch failed and owned profile disposal failed');
+      }
+    }
     throw err;
   }
 

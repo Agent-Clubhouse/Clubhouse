@@ -572,6 +572,29 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     expect(notices).toHaveBeenCalledTimes(1);
   });
 
+  it('notifies the sender exactly once when a queued call receives a final refusal', async () => {
+    connected = false;
+    const notices = vi.fn(async () => {});
+    restart({ onDeliveryFailure: notices });
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'not allowed' });
+    const id = waitingFor(OTHER)[0].id;
+    respond = (_path, body) => ({
+      status: 200,
+      body: {
+        result: { ...ok('send_message is turned off'), isError: true },
+        delivery: { callId: body.callId, state: 'refused', reason: 'tool_denied', receiptAt: new Date().toISOString() },
+      },
+    });
+    connected = true;
+    await flushOutbox(OTHER);
+    expect(waitingFor(OTHER)).toHaveLength(0);
+    expect(getDelivery('here', id)).toMatchObject({ state: 'refused', reason: 'tool_denied' });
+    expect(notices).toHaveBeenCalledTimes(1);
+    expect(notices).toHaveBeenCalledWith(expect.objectContaining({
+      callId: id, callerId: 'here', targetId: `there@${OTHER}`, state: 'refused', reason: 'tool_denied',
+    }));
+  });
+
   it('refuses queued work when sender authorization is revoked without POSTing it', async () => {
     connected = false;
     await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'no longer allowed' });

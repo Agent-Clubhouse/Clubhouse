@@ -363,6 +363,22 @@ describe('launchApp', () => {
     expect(fs.existsSync(launchedUserData())).toBe(false);
   });
 
+  it('retains the launch and disposal errors when owned-profile removal fails', async () => {
+    const launchError = new Error('spawn failed');
+    launchMock.mockRejectedValue(launchError);
+    const removal = vi.spyOn(fs, 'rmSync').mockImplementationOnce(() => { throw new Error('removal failed'); });
+    try {
+      await expect(launchApp({ experimental: {} })).rejects.toSatisfy((error: unknown) =>
+        error instanceof AggregateError
+        && error.message === 'E2E launch failed and owned profile disposal failed'
+        && error.errors.length === 2
+        && error.errors[0] === launchError
+        && error.errors[1] instanceof Error
+        && error.errors[1].message === 'E2E profile disposal failed; profile retained');
+      expect(fs.existsSync(launchedUserData())).toBe(true);
+    } finally { removal.mockRestore(); }
+  });
+
   it('closes the app and removes its own profile when no renderer window appears', async () => {
     const app = fakeApp([fakePage('devtools://devtools/bundled/inspector.html')]);
     launchMock.mockResolvedValue(app);
