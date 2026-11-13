@@ -195,6 +195,26 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     expect(f.a.deps.present).toHaveBeenCalledTimes(1);
     expect(f.a.api.list(f.a.self.agentId)[0].replyPrompts![0].state).toBe('claimed');
   });
+  it.each(['origin_busy', 'receiver_retry'] as const)('pins a late answer during new admissions while %s', async (pending) => {
+    const f = fixture(); const r = await f.offer(); await f.pump();
+    f.advance(FEDERATED_REQUEST_LIMITS.ttl + 2 * 24 * 60 * 60_000);
+    // A durable delivered receipt wins over the original queue expiry, even if reconciliation was delayed.
+    await f.a.api.reconcile();
+    expect(f.a.api.list(f.a.self.agentId)[0].delivery).toBe('delivered');
+    if (pending === 'origin_busy') vi.mocked(f.a.deps.present).mockRejectedValue(new FederationInputNotReady('busy'));
+    else vi.mocked(f.b.deps.send).mockResolvedValueOnce({ deliveryId: 'unadmitted-late-report', error: 'temporary prequeue refusal' });
+    await f.b.api.report(f.b.self.agentId, r.id, 'answered', 'Nine-day build finished');
+    if (pending === 'origin_busy') await f.pump();
+    const held = pending === 'origin_busy' ? f.a : f.b;
+    const other = pending === 'origin_busy' ? f.b : f.a;
+    await held.api.offer(held.self.agentId, other.self.machineId, other.self.agentId, 'fresh-local-request', 'Independent new local request', true);
+    expect(held.api.list(held.self.agentId).find((q) => q.id === r.id)).toMatchObject(pending === 'origin_busy'
+      ? { replyPrompts: [expect.objectContaining({ state: 'pending' })] }
+      : { replies: [expect.objectContaining({ error: 'temporary prequeue refusal' })] });
+    vi.mocked(f.a.deps.present).mockResolvedValue(undefined);
+    await held.api.reconcile(); await f.pump();
+    expect(f.a.api.list(f.a.self.agentId).find((q) => q.id === r.id)?.replyPrompts![0].state).toBe('accepted');
+  });
   it('never blindly replays a controller prompt with unknown acceptance after a crash', async () => {
     const f = fixture(); const r = await f.offer();
     vi.mocked(f.b.deps.present).mockRejectedValueOnce(new Error('runtime interrupted after input'));

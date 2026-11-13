@@ -175,7 +175,11 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       if (reason) { file.paused[r.machineId] = reason; (file.pauseEpochs ??= {})[r.machineId] = r.epoch; return; }
       file.crossings[r.machineId] = [...recent, now];
       // Retain ids longer than the transport's retry window; never evict live work.
-      file.requests = file.requests.filter((q) => now < q.expiresAt + 24 * 60 * 60_000 || (!terminal(q.outcome) && q.delivery === 'delivered' && current(q)));
+      file.requests = file.requests.filter((q) => now < q.expiresAt + 24 * 60 * 60_000
+        || q.noticePending || q.promptState === 'pending' || q.promptState === 'claimed'
+        || q.replyPrompts?.some((p) => p.state === 'pending' || p.state === 'claimed')
+        || q.replies?.some((p) => !p.delivery || p.delivery === 'accepted')
+        || (!terminal(q.outcome) && q.delivery === 'delivered' && current(q)));
       file.requests.push(r);
     }, () => current(r));
     if (reason) { d.record({ ...r, delivery: 'refused' }, 'crossing'); await pause(r, reason); throw new Error(reason); }
@@ -415,9 +419,9 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
           await showNotice({ ...revoked, delivery: 'refused' });
         }
         const status = request.deliveryId && d.delivery(request.callerId, request.deliveryId);
-        const state = request.delivery !== 'accepted' ? request.delivery : !current(request) ? 'refused' : d.now() >= request.expiresAt && request.delivery === 'accepted' ? 'expired'
+        const state = request.delivery !== 'accepted' ? request.delivery : !current(request) ? 'refused' : status && status.state === 'delivered' ? 'delivered' : d.now() >= request.expiresAt && request.delivery === 'accepted' ? 'expired'
           : status && ['refused', 'expired', 'indeterminate'].includes(status.state) ? status.state === 'expired' ? 'expired' : 'refused'
-          : status && status.state === 'delivered' ? 'delivered' : request.delivery;
+          : request.delivery;
         if (state === request.delivery) continue;
         const updated = await replace(request.id, (r) => { r.delivery = state; if (state === 'refused' || state === 'expired') r.noticePending = 'failure'; r.reason = !current(request) ? 'The network member or controller link was removed.' : status ? status.reason : 'The request expired while waiting for the other machine.'; });
         d.record(updated, 'crossing');
