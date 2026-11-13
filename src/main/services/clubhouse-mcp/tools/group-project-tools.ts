@@ -16,6 +16,7 @@ import * as agentSystem from '../../agent-system';
 import { getAgentOrchestrator } from '../../agent-registry';
 import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { setProjectPolling, getProjectPollingState } from '../../group-project-polling';
+import { listTopicSubscriptions, NEW_CHANNEL_NAME_MESSAGE, noteSenderAddress, setTopicSubscription, usableTopic } from '../../group-project-delivery';
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
@@ -150,11 +151,17 @@ export function registerGroupProjectTools(): void {
           isError: true,
         };
       }
+      // A new channel's name appears in other members' notices (#3362): only plain names. Existing channels and inboxes are fine.
+      if (!(await usableTopic(targetId, topic))) {
+        return { content: [{ type: 'text', text: NEW_CHANNEL_NAME_MESSAGE }], isError: true };
+      }
 
       const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
         const msg = await groupProjectHost.post(targetId, sender, topic, body);
+        // Members' notices leave the sender out by address, not by name.
+        noteSenderAddress(msg.id, agentId);
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
@@ -180,7 +187,7 @@ export function registerGroupProjectTools(): void {
       description:
         'Get a digest of channels on the project board — {topic, messageCount, newMessageCount, latestTimestamp, isProtected} per channel.\n\n' +
         'Pass "since" (the latestTimestamp from your last read) on every call after your first to keep the digest cheap.\n' +
-        'Pass "channels" to restrict the digest to the channels you care about. Your standard poll set is:\n' +
+        'Pass "channels" to restrict the digest to the channels you care about. You get a notice when someone posts to your channels, so read when one arrives rather than in a loop. Your standard set is:\n' +
         '  ["general", "control", "inbox-<your-name>", ...any work channels you are actively tracking]\n' +
         'Only drill into a channel with read_topic when its newMessageCount > 0.\n\n' +
         'Ignoring unrelated chatter is the whole point — do not read every channel on the board.',
@@ -640,7 +647,8 @@ export function registerGroupProjectTools(): void {
     label: 'Toggle Polling',
     mcp: { targetKind: 'group-project', nameSuffix: 'toggle_polling', grant: { actions: ['group_project.admin'], target: 'bound' } },
       description:
-        'Turn the project-wide polling setting on or off.\n\n' +
+        'Legacy: members now get a notice when someone posts, so most group projects don\'t poll. ' +
+        'Turn the project-wide polling setting on or off. Turning it off moves the group project to notices.\n\n' +
         'This is the real admin control over `pollingEnabled` — the same setting the ' +
         'UI Polling switch drives and the one agents auto-start from on join. ' +
         'It persists the setting AND injects the orchestrator-aware start/stop ' +
@@ -692,7 +700,7 @@ export function registerGroupProjectTools(): void {
     label: 'Query Polling',
     mcp: { targetKind: 'group-project', nameSuffix: 'query_polling', grant: { actions: ['group_project.read'], target: 'bound' } },
       description:
-        'Read the current project-wide polling setting.\n\n' +
+        'Legacy: read the project-wide polling setting. With it off, members get post notices instead.\n\n' +
         'Returns `{ pollingEnabled, members }` where `pollingEnabled` is the persisted ' +
         'setting (same one the UI toggle and on-join auto-start read) and `members` lists ' +
         'each bound agent with its connection status (connected/sleeping).\n\n' +
@@ -714,6 +722,41 @@ export function registerGroupProjectTools(): void {
     },
   });
 
+  // group__<name>_<hash>__subscribe_topic
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.subscribe_topic',
+    category: 'group-project',
+    label: 'Subscribe Topic',
+    mcp: { targetKind: 'group-project', nameSuffix: 'subscribe_topic', grant: { actions: ['group_project.read'], target: 'bound' } },
+    description:
+        'Choose which channels send you a notice when someone posts (#3362).\n\n' +
+        'By default you hear about posts in "general", "control" and your inbox, and any post that names you as @your-name. ' +
+        'Subscribe to a work channel you are part of, or unsubscribe from one you no longer follow. ' +
+        'A burst of posts arrives as one notice. Returns your subscribed channels. Omit `topic` to list them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Channel name.' },
+        subscribe: { type: 'boolean', description: 'true to hear about it (default), false to stop.' },
+      },
+    },
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const topic = optionalString(args, 'topic');
+      const subscribe = optionalBoolean(args, 'subscribe') ?? true;
+      const binding = findProjectMember(targetId, agentId);
+      const name = binding?.agentName || agentId;
+      try {
+        const topics = topic
+          ? await setTopicSubscription(targetId, agentId, name, topic, subscribe)
+          : await listTopicSubscriptions(targetId, agentId, name);
+        return { content: [{ type: 'text', text: JSON.stringify({ subscribed: topics }) }] };
+      } catch (err) {
+        // telemetry-exempt: a bad channel name or too many changes, returned to the agent
+        return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true };
+      }
+    },
+  });
+
   // group__<name>_<hash>__nudge_polling
   mcpAdapter.registerMcpCommand({
     id: 'group-project.nudge_polling',
@@ -721,7 +764,7 @@ export function registerGroupProjectTools(): void {
     label: 'Nudge Polling',
     mcp: { targetKind: 'group-project', nameSuffix: 'nudge_polling', grant: { actions: ['group_project.admin'], target: 'bound' } },
       description:
-        'Nudge a single connected agent to start polling if it isn\'t already.\n\n' +
+        'Legacy, for a group project that still polls: nudge a single connected agent to start polling if it isn\'t already.\n\n' +
         'This is a one-off PTY nudge to a specific peer — it does NOT change the ' +
         'project `pollingEnabled` setting. Use toggle_polling to actually turn the ' +
         'setting on or off; use this only to remind a peer that has drifted.\n\n' +

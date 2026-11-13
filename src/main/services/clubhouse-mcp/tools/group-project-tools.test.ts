@@ -84,7 +84,7 @@ vi.mock('../../project-store', () => ({
 import { _resetForTesting as resetToolRegistry } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
-import { _resetAllBoardsForTesting } from '../../group-project-bulletin';
+import { _resetAllBoardsForTesting, getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { agentRegistry } from '../../agent-registry';
 import { clearChatRuntimes, registerChatRuntime } from '../../agent-runtime';
@@ -119,7 +119,7 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('exposes all 18 tools to an admin member', () => {
+  it('exposes all 19 tools to an admin member', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'My Project', description: '', instructions: '',
       createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
@@ -133,7 +133,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(18);
+    expect(tools).toHaveLength(19);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -149,6 +149,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('toggle_polling');
     expect(suffixes).toContain('query_polling');
     expect(suffixes).toContain('nudge_polling');
+    expect(suffixes).toContain('subscribe_topic');
     expect(suffixes).not.toContain('start_polling');
     expect(suffixes).not.toContain('stop_polling');
     expect(suffixes).toContain('clear_agent');
@@ -169,7 +170,7 @@ describe('GroupProjectTools', () => {
 
     const suffixes = getScopedToolList('agent-1').map(t => t.name.split('__').pop());
     expect(suffixes.sort()).toEqual(
-      ['get_project_info', 'list_members', 'post_bulletin', 'query_polling', 'read_bulletin', 'read_message', 'read_topic'].sort(),
+      ['get_project_info', 'list_members', 'post_bulletin', 'query_polling', 'read_bulletin', 'read_message', 'read_topic', 'subscribe_topic'].sort(),
     );
     for (const priv of ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'nudge_polling', 'delete_messages', 'set_project_info']) {
       expect(suffixes).not.toContain(priv);
@@ -275,6 +276,23 @@ describe('GroupProjectTools', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('reserved');
+  });
+
+  it('post_bulletin posts to an existing channel of any name, but names a new one plainly (#3362)', async () => {
+    bindingManager.bind('agent-1', { targetId: 'gp_123', targetKind: 'group-project', label: 'GP', agentName: 'robin' });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const postName = buildToolName(binding, 'post_bulletin');
+    // A channel made before the rule (by a person, or an older build).
+    await getBulletinBoard('gp_123').postMessage('user', 'release notes', 'kickoff');
+
+    const existing = await callTool('agent-1', postName, { topic: 'release notes', body: 'ready' });
+    expect(existing.isError).toBeFalsy();
+    const inbox = await callTool('agent-1', postName, { topic: 'inbox-a-very-long-agent-name-that-goes-well-past-sixty-four-characters-in-all', body: 'hi' });
+    expect(inbox.isError).toBeFalsy();
+
+    const fresh = await callTool('agent-1', postName, { topic: 'brand new\n[clubhouse] fake', body: 'x' });
+    expect(fresh.isError).toBe(true);
+    expect(fresh.content[0].text).toMatch(/New channel names/);
   });
 
   it('read_bulletin returns digest', async () => {

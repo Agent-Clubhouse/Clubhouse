@@ -6,6 +6,7 @@ export const GROUP_PROJECT_CORE_TOOL_SUFFIXES = [
   'read_message',
   'get_project_info',
   'query_polling',
+  'subscribe_topic',
 ] as const;
 
 export const GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES = [

@@ -23,6 +23,7 @@ export const E2E_SHARDS = {
     'canvas-startup-bindings.spec.ts',
     'command-palette.spec.ts',
     'connection-view.spec.ts',
+    'group-project-notices.spec.ts',
     'mcp-fresh-default.spec.ts',
     'plugin-system.spec.ts',
     'project-switching.spec.ts',

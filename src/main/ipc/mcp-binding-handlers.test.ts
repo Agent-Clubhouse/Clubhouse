@@ -137,6 +137,7 @@ const membership = vi.hoisted(() => ({
   managed: new Set<string>(),
   members: new Set<string>(),
 }));
+vi.mock('../services/group-project-delivery', () => ({ watchGroupProjectDelivery: vi.fn(() => () => undefined) }));
 vi.mock('../services/group-project-membership', () => ({
   membershipBindingSource: { id: 'group-project-membership', prune: true, collect: vi.fn(async () => []) },
   watchGroupProjectMembership: vi.fn(() => () => undefined),

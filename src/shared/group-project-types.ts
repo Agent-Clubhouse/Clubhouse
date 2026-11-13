@@ -77,6 +77,11 @@ export interface GroupProjectMembership {
   disabledTools?: Record<string, string[]>;
   /** A member's wire instructions carried over from canvas wires by migration (#3357), by address. */
   instructions?: Record<string, Record<string, string>>;
+  /**
+   * A member's own topic subscriptions for post notices (#3362), by address:
+   * topics added to, or removed from, the default set (general, control, its inbox).
+   */
+  subscriptions?: Record<string, { add?: string[]; remove?: string[] }>;
   [extra: string]: unknown;
 }
 
