@@ -569,9 +569,10 @@ export const ATTR = {
     'probe_capacity', 'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
     'request_app_update',
     'hand_off_request', 'list_remote_requests', 'triage_remote_request', 'report_remote_request',
+    'offer_handoff', 'respond_to_handoff', 'get_handoff', 'list_handoffs', 'cancel_handoff',
     'get_delivery', 'get_annex_network_settings', 'update_annex_network_settings',
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
-    'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'set_connection_tools',
+    'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'list_other_dispatchers', 'set_connection_tools',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents', 'list_connections', 'join_group_project', 'leave_group_project',
     // actions (#2952), the permission model's action.* (#2921)
@@ -978,6 +979,7 @@ export const ATTR = {
     'POST /api/v1/network/agent-call',
     'POST /api/v1/network/agent-delivery-capabilities',
     'POST /api/v1/network/handoff-capacity',
+    'POST /api/v1/network/handoffs',
     'POST /api/v1/network/connections',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',

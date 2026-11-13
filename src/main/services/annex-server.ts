@@ -31,7 +31,7 @@ import { MOBILE_LINK_MAX_ENTRIES, MobileLinkQueryError, readMobileChatLink } fro
 import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
 import {
-  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject, dispatcherProject,
+  DISPATCHER_CHANGED_EVENT, DISPATCHER_PRESENCE_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject, dispatcherProject,
   dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
   phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
@@ -65,6 +65,7 @@ import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
 import * as agentCalls from './annex-agent-calls';
 import { receiveCapacityProbe } from './handoff-capacity-host';
+import { receiveNetworkHandoff } from './handoff-host';
 import { cachedRepoKeys } from './project-repo-keys';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import { parseAgentAddress, routeOf } from '../../shared/agent-address';
@@ -119,6 +120,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import type { DigestSince } from '../../shared/group-project-types';
 import { decodeDigestSince, SINCE_CHANNELS_PARAM } from '../../shared/digest-since';
+import { getDispatcherPresence, onDispatcherPresenceChanged } from './dispatcher-presence';
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
@@ -270,6 +272,7 @@ let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
 let unsubHelperRequests: (() => void) | null = null;
 let unsubDispatcher: (() => void) | null = null;
+let unsubDispatcherPresence: (() => void) | null = null;
 let unsubAppUpdate: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -316,6 +319,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectRegistry?.();
   unsubHelperRequests?.();
   unsubDispatcher?.();
+  unsubDispatcherPresence?.();
   unsubHelperRouting?.();
   unsubHelperRouting = null;
   unsubPtyData = null;
@@ -329,6 +333,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectRegistry = null;
   unsubHelperRequests = null;
   unsubDispatcher = null;
+  unsubDispatcherPresence = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1319,6 +1324,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     dispatcher: dispatcherAgent
       ? { ...dispatcherSnapshotFlags(), projectId: DISPATCHER_PROJECT_ID, ...dispatcherOffFields(getDispatcherState(), dispatcherAgentView), agent: dispatcherAgent }
       : null,
+    // Other computers' Dispatchers (#3349), read-only; `dispatcher:presence` sends it again on a change.
+    dispatcherPresence: getDispatcherPresence(),
   } };
 }
 
@@ -3579,6 +3586,24 @@ async function handleNetworkCapacityRoute(ctx: AnnexRouteContext): Promise<void>
   }
 }
 
+async function handleNetworkHandoffsRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (ctx.requireMtls()) { ctx.req.resume(); return; }
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined) return;
+  if (ctx.requireMtls()) return;
+  if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  try {
+    const record = await receiveNetworkHandoff(machine, body);
+    if (ctx.requireMtls()) return;
+    if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+    sendJson(ctx.res, 200, record);
+  } catch { // telemetry-exempt: never return peer content, task text or storage diagnostics
+    sendJson(ctx.res, 400, { error: 'handoff_refused' });
+  }
+}
+
 async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
   const machine = agentCallPeer(ctx);
   if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can share connections here.' }); return; }
@@ -4353,6 +4378,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-call$/, handler: handleNetworkAgentCallRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-delivery-capabilities$/, handler: handleNetworkAgentDeliveryCapabilitiesRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoff-capacity$/, handler: handleNetworkCapacityRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs$/, handler: handleNetworkHandoffsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
@@ -5381,6 +5407,9 @@ function startServer(strict = false): Promise<void> {
     }
     broadcastSnapshotRefresh();
   });
+
+  // Other computers' Dispatchers (#3349): phones show them read-only.
+  unsubDispatcherPresence = onDispatcherPresenceChanged(() => broadcastAndBuffer(DISPATCHER_PRESENCE_EVENT, getDispatcherPresence()));
 
   // Listen for group project registry changes and broadcast them
   unsubGroupProjectRegistry = groupProjectRegistry.onChange(() => {

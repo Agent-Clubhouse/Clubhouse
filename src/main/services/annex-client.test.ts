@@ -2870,6 +2870,36 @@ describe('annex-client', () => {
     });
   });
 
+  it.each([0, 1])('accepts exactly 16 KiB and rejects a response %i byte(s) beyond the cap', async (extra) => {
+    const fingerprint = Array(16).fill('db').join(':');
+    annexClient._addConnectedSatelliteForTesting(fingerprint);
+    const limit = 16 * 1024;
+    const value = 'é'.repeat((limit - 2) / 2);
+    const bytes = Buffer.from(JSON.stringify(value) + ' '.repeat(extra));
+    expect(bytes.byteLength).toBe(limit + extra);
+    const response = Object.assign(new EventEmitter(), { statusCode: 200 });
+    const request = Object.assign(new EventEmitter(), {
+      write: vi.fn(), destroy: vi.fn((error: Error) => { request.emit('error', error); }), end: () => {},
+    });
+    vi.mocked(https.request).mockImplementation(((_url: string, _options: https.RequestOptions, callback: (res: unknown) => void) => {
+      request.end = () => {
+        callback(response);
+        response.emit('data', bytes.subarray(0, limit - 1));
+        response.emit('data', bytes.subarray(limit - 1));
+        response.emit('end');
+      };
+      return request;
+    }) as never);
+    const result = annexClient.postToMachine(fingerprint, '/api/v1/network/handoff-capacity', {}, { maxResponseBytes: limit });
+    if (extra) {
+      await expect(result).rejects.toThrow('byte limit');
+      expect(request.destroy).toHaveBeenCalledTimes(1);
+    } else {
+      expect(await result).toEqual({ status: 200, body: value });
+      expect(request.destroy).not.toHaveBeenCalled();
+    }
+  });
+
   it('aborts a trickling capacity request at its total deadline even while response data keeps arriving', async () => {
     vi.useFakeTimers();
     const fingerprint = Array(16).fill('dc').join(':');

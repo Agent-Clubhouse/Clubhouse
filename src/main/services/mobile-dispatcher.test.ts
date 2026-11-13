@@ -156,6 +156,8 @@ describe('capability and change event', () => {
       // Settings > Dispatcher from a phone (#3206): its route and commands.
       commands: ['dispatcher.setEnabled', 'dispatcher.update', 'dispatcher.setModels', 'dispatcher.clearChat', 'dispatcher.forgetEverything'],
       settings: { version: 1, path: '/api/v1/mobile/dispatcher/settings' },
+      // Other computers' Dispatchers, read-only (#3349).
+      presence: { version: 1, snapshotField: 'dispatcherPresence', event: 'dispatcher:presence' },
     });
   });
 

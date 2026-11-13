@@ -11,7 +11,7 @@ const KEY = 'clubhouse.agentDetails.open';
 /** Settings is the only card persisted across visits, using its original key. */
 const SETTINGS_KEY = 'clubhouse.agentDetails.settingsOpen';
 
-export type CardId = 'settings' | 'changes' | 'dispatcher' | 'orchestrate' | 'subagents' | 'connections' | 'actions' | 'skills-mcp' | 'session' | 'canvases';
+export type CardId = 'settings' | 'changes' | 'dispatcher' | 'orchestrate' | 'subagents' | 'connections' | 'actions' | 'skills-mcp' | 'session' | 'canvases' | 'other-machines';
 type FocusCard = CardId | 'helpers' | 'context' | 'mcp' | 'provider-skills';
 
 export function containingDetailsCard(card: FocusCard): CardId {

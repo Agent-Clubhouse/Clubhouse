@@ -21,6 +21,8 @@ import { cleanSetupInput, cleanTryItOutRequest, type TryItOutResult } from '../.
 import { checkDispatcherBehavior, tryDispatcherPersonality } from '../services/dispatcher/dispatcher-setup';
 import type { DispatcherTeaching } from '../../shared/dispatcher-teaching';
 import { readDispatcherTeaching } from '../services/dispatcher/dispatcher-teaching';
+import { getDispatcherPresence, onDispatcherPresenceChanged } from '../services/dispatcher-presence';
+import type { DispatcherPresenceSnapshot } from '../../shared/dispatcher-presence';
 
 let registered = false;
 
@@ -108,6 +110,10 @@ export function registerDispatcherHandlers(): void {
 
   // What its chat shows before the first message: the intro and suggestions (#3048).
   ipcMain.handle(IPC.DISPATCHER.GET_TEACHING, (): Promise<DispatcherTeaching> => readDispatcherTeaching());
+
+  // The Dispatchers on this person's other computers (#3349): read-only, pushed on a real change.
+  ipcMain.handle(IPC.DISPATCHER.GET_PRESENCE, (): DispatcherPresenceSnapshot => getDispatcherPresence());
+  onDispatcherPresenceChanged(() => broadcastToAllWindows(IPC.DISPATCHER.PRESENCE_CHANGED, getDispatcherPresence()));
 
   let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {

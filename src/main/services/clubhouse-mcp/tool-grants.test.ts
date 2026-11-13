@@ -147,6 +147,11 @@ describe('tool grant declarations (#2967)', () => {
       group-project delete_messages: group_project.admin on bound
       group-project set_project_info: group_project.admin on bound
       probe_capacity: device.read on app
+      offer_handoff: handoff.offer on handoff_peer
+      respond_to_handoff: handoff.accept on handoff_peer
+      get_handoff: agent.read on self
+      list_handoffs: agent.read on self
+      cancel_handoff: agent.read on self
       call_wire_tool: (called_tool)
       list_remote_requests: agent.read on self
       triage_remote_request: agent.message on self
@@ -177,6 +182,7 @@ describe('tool grant declarations (#2967)', () => {
       connect_orchestrators: connection.manage on agent_arg
       disconnect_orchestrators: connection.manage on agent_arg
       list_orchestrator_controls: agent.read on connected
+      list_other_dispatchers: agent.read on connected
       list_agent_parts: library.read on library
       get_agent_part: library.read on library
       discover_agent_assets: agent.read on agent_arg

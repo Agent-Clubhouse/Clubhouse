@@ -103,7 +103,7 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  *
  * A tool may name several groups; it is available when any of them is on.
  */
-export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions' | 'connections' | 'dispatcherConnected';
+export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions' | 'connections' | 'dispatcherConnected' | 'handoffs';
 
 /**
  * Whether an agent has its wire to the Dispatcher. Set by the agent card tools
@@ -115,6 +115,9 @@ let connectedToDispatcher: (agentId: string) => boolean = () => false;
 export function setDispatcherConnectionCheck(check: ((agentId: string) => boolean) | null): void {
   connectedToDispatcher = check ?? (() => false);
 }
+
+let handoffParticipantCheck: (agentId: string) => boolean = () => false;
+export function setHandoffParticipantCheck(check: (agentId: string) => boolean): void { handoffParticipantCheck = check; invalidateToolListCache(); }
 
 /** One group, or several (any one of them opens the tool). */
 export type ToolGroups = ToolGroup | readonly ToolGroup[];
@@ -138,6 +141,10 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
   actions: {
     isEnabled: (agentId) => (isTrackedDispatcher(agentId) ? isDispatcherAgent(agentId) : mcpCallerKind(agentId) !== 'quick'),
     refusal: 'Actions aren’t available to you: quick agents can’t own actions, and the Dispatcher can’t use them while it is turned off.',
+  },
+  handoffs: {
+    isEnabled: (agentId) => callerGrants(agentId).some((grant) => grant.action === 'handoff.offer' || grant.action === 'handoff.accept') || handoffParticipantCheck(agentId),
+    refusal: 'Handoffs require handoff.offer or handoff.accept permissions, or a retained handoff you participate in.',
   },
   connections: {
     isEnabled: (agentId) => (!isTrackedDispatcher(agentId) || isDispatcherAgent(agentId) || isDispatcherChatAgent(agentId))
@@ -287,6 +294,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     join_group_project: INTERNAL_WRITE,
     leave_group_project: INTERNAL_DESTRUCTIVE,
     list_orchestrator_controls: INTERNAL_READ,
+    list_other_dispatchers: INTERNAL_READ,
     list_agent_parts: INTERNAL_READ,
     get_agent_part: INTERNAL_READ,
     discover_agent_assets: INTERNAL_READ,
@@ -324,6 +332,11 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     set_helper_presets: OPEN_WRITE,
     request_grant: INTERNAL_WRITE,
     update_my_card: INTERNAL_WRITE,
+    offer_handoff: OPEN_WRITE,
+    respond_to_handoff: OPEN_WRITE,
+    get_handoff: INTERNAL_READ,
+    list_handoffs: INTERNAL_READ,
+    cancel_handoff: { ...OPEN_WRITE, destructiveHint: true },
     list_devices: INTERNAL_READ,
     probe_capacity: OPEN_READ,
     rename_device: INTERNAL_WRITE,
@@ -447,7 +460,7 @@ export function canCallWake(agentId: string, targetId: string): boolean {
   const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetKind === 'agent' && b.targetId === targetId);
   const template = toolTemplates.get('agent')?.find((t) => t.nameSuffix === WAKE_TOOL);
   if (!binding || !template || binding.disabledTools?.includes(WAKE_TOOL) || !wakeOffered(agentId, binding)) return false;
-  return isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding)));
+  return isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding), undefined, true));
 }
 
 /** wake_agent on an agent wire, which only some senders are offered. */
@@ -615,7 +628,7 @@ export function grantToolMap(): GrantToolMap {
 }
 
 /** The groups whose tools the Dispatcher can call, through its controller or its chat, as toolGroupGates opens them. */
-const DISPATCHER_TOOL_GROUPS: ReadonlySet<ToolGroup> = new Set(['dispatcher', 'dispatcherChat', 'actions']);
+const DISPATCHER_TOOL_GROUPS: ReadonlySet<ToolGroup> = new Set(['dispatcher', 'dispatcherChat', 'actions', 'handoffs']);
 
 /**
  * The grant actions a registered tool lets the running Dispatcher use (#3238):
@@ -737,7 +750,7 @@ function templateListable(
 ): boolean {
   return groupAllows(template.group, binding.agentId)
     && !deniedTools.has(template.nameSuffix)
-    && isListable(checkToolGrant(binding.agentId, template.grant, {}, wire));
+    && isListable(checkToolGrant(binding.agentId, template.grant, {}, wire, undefined, true));
 }
 
 /**
@@ -850,7 +863,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   // Append global tools (available regardless of bindings, unless gated by a group)
   for (const [, tool] of globalTools) {
     if (!groupAllows(tool.group, agentId)) continue;
-    if (!isListable(checkToolGrant(agentId, tool.grant, {}))) continue;
+    if (!isListable(checkToolGrant(agentId, tool.grant, {}, undefined, undefined, true))) continue;
     tools.push(tool.definition);
   }
 
@@ -1126,6 +1139,7 @@ export function _annotationCatalogKeysForTesting(): string[] {
 
 /** For testing: clear all registered templates and global tools. */
 export function _resetForTesting(): void {
+  handoffParticipantCheck = () => false;
   connectedToDispatcher = () => false;
   toolTemplates.clear();
   targetTemplates.clear();

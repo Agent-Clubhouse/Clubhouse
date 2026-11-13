@@ -484,3 +484,33 @@ describe('a helper template\'s permissions are capped by its orchestrator (#2971
     expect(capToHolder('orchestrator', own, { elsewhere: true })[0].mode).toBe('allow');
   });
 });
+
+describe('handoff agreement grants', () => {
+  beforeEach(setupCallers);
+  it.each(['handoff.offer', 'handoff.accept'] as const)('%s defaults Off for every non-Dispatcher and Ask for the Dispatcher', (action) => {
+    const grant = { actions: [action], target: 'handoff_peer' as const };
+    const targets = new Map([[grant, [{ kind: 'agent' as const, agentId: 'peer', relations: ['connected' as const] }]]]);
+    for (const caller of ['plain', 'orchestrator', 'helper']) expect(checkToolGrant(caller, grant, { to: 'peer' }, undefined, targets)).toMatchObject({ ok: false, reason: 'no_grant' });
+    expect(checkToolGrant('dispatcher', grant, { to: 'peer' }, undefined, targets)).toMatchObject({ ok: false, reason: 'ask_first' });
+    expect(isListable(checkToolGrant('dispatcher', grant, {}, undefined, undefined, true))).toBe(true);
+    expect(isListable(checkToolGrant('plain', grant, {}, undefined, undefined, true))).toBe(false);
+  });
+
+  it('enforces the resolved peer target on every call and fails closed if resolution was unsafe', async () => {
+    const grant = { actions: ['handoff.offer' as const], target: 'handoff_peer' as const };
+    expect(checkToolGrant('dispatcher', grant, {})).toMatchObject({ ok: false, reason: 'no_grant' });
+    const args = { to: 'peer' };
+    const connected = new Map([[grant, [{ kind: 'agent' as const, agentId: 'peer', relations: ['connected' as const] }]]]);
+    const unrelated = new Map([[grant, [{ kind: 'agent' as const, agentId: 'other', relations: [] }]]]);
+    try {
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'handoff.offer', target: { kind: 'connected' }, mode: 'allow' }] }));
+      expect(checkToolGrant('plain', grant, args, undefined, connected).ok).toBe(true);
+      expect(checkToolGrant('plain', grant, args, undefined, unrelated).ok).toBe(false);
+      expect(checkToolGrant('plain', grant, args).ok).toBe(false);
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'handoff.offer', target: { kind: 'connected' }, mode: 'ask' }] }));
+      expect(checkToolGrant('plain', grant, args, undefined, connected)).toMatchObject({ ok: false, reason: 'ask_first' });
+      await updateAgentGrantChanges('plain', () => undefined);
+      expect(checkToolGrant('plain', grant, args, undefined, connected).ok).toBe(false);
+    } finally { await updateAgentGrantChanges('plain', () => undefined); }
+  });
+});

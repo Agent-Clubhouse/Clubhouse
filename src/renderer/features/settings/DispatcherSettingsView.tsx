@@ -68,6 +68,8 @@ import {
 } from '../../../shared/dispatcher-behavior';
 import { DEFAULT_DISPATCHER_MODELS_STATE, DISPATCHER_MODELS_APPLY_NOTE, DISPATCHER_ROLE_LABELS, type DispatcherModelsState, type DispatcherModelsUpdate, type DispatcherRoleModel } from '../../../shared/dispatcher-models';
 import { ConnectedAgentsSection } from './DispatcherConnectedAgents';
+import { OtherMachinesList } from '../dispatcher/OtherMachinesList';
+import { useDispatcherPresence } from '../dispatcher/useDispatcherPresence';
 import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea } from './SettingsLayout';
 
 const TITLE = 'Dispatcher';
@@ -638,6 +640,19 @@ function BehaviorSection({ state, config }: { state: DispatcherState; config: Du
   );
 }
 
+/** The Dispatchers on this person's other computers (#3349). Shown only once this computer is in an Annex Network with another computer. */
+function OtherMachinesSection() {
+  const presence = useDispatcherPresence();
+  if (!presence || presence.remotes.length === 0) return null;
+  return (
+    <SettingsSection title="Other machines">
+      <SettingsBlock>
+        <OtherMachinesList remotes={presence.remotes} />
+      </SettingsBlock>
+    </SettingsSection>
+  );
+}
+
 function ResetSection({ state }: { state: DispatcherState }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -759,6 +774,7 @@ export function DispatcherSettingsView() {
           <ConnectedAgentsSection dispatcherName={name} />
         </>
       )}
+      <OtherMachinesSection />
       {/* Its memory is kept while it's off, so it can be forgotten then too. */}
       {config && <ResetSection state={state} />}
     </SettingsPage>

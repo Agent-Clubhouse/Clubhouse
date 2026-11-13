@@ -749,6 +749,10 @@ export const IPC = {
     AGENT_CARD_CHANGED: 'dispatcher:agent-card-changed',
     /** What its chat shows before the first message (#3048): the agents connected to it. */
     GET_TEACHING: 'dispatcher:get-teaching',
+    /** The Dispatchers on this person's other computers (#3349). Resolves with a DispatcherPresenceSnapshot. */
+    GET_PRESENCE: 'dispatcher:get-presence',
+    /** Main → renderer broadcast: DispatcherPresenceSnapshot after a real change. */
+    PRESENCE_CHANGED: 'dispatcher:presence-changed',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */

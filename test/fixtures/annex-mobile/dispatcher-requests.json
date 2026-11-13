@@ -13,6 +13,11 @@
         "event": "dispatcher:changed",
         "flagOn": true,
         "newLayout": true,
+        "presence": {
+          "event": "dispatcher:presence",
+          "snapshotField": "dispatcherPresence",
+          "version": 1
+        },
         "projectId": "__dispatcher__",
         "requestsUnderWay": 0,
         "settings": {
@@ -64,6 +69,11 @@
         "event": "dispatcher:changed",
         "flagOn": true,
         "newLayout": true,
+        "presence": {
+          "event": "dispatcher:presence",
+          "snapshotField": "dispatcherPresence",
+          "version": 1
+        },
         "projectId": "__dispatcher__",
         "requestsUnderWay": 2,
         "settings": {
@@ -126,6 +136,11 @@
         "event": "dispatcher:changed",
         "flagOn": true,
         "newLayout": true,
+        "presence": {
+          "event": "dispatcher:presence",
+          "snapshotField": "dispatcherPresence",
+          "version": 1
+        },
         "projectId": "__dispatcher__",
         "requestsUnderWay": 1,
         "settings": {
@@ -188,6 +203,11 @@
         "event": "dispatcher:changed",
         "flagOn": true,
         "newLayout": true,
+        "presence": {
+          "event": "dispatcher:presence",
+          "snapshotField": "dispatcherPresence",
+          "version": 1
+        },
         "projectId": "__dispatcher__",
         "requestsUnderWay": 0,
         "settings": {

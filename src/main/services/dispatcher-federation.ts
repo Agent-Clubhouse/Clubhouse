@@ -7,7 +7,8 @@ import { createSettingsStore } from './settings-store';
 import { ownPairing } from './annex-network-membership';
 import { listPeers } from './annex-peers';
 import { onDevicesChanged } from './annex-device-signal';
-import { dispatcherDisplayName, getDispatcherAgentId, isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { dispatcherDisplayName, getDispatcherAgentId, getDispatcherState, isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { isPublishedDispatcherState, type PublishedDispatcherState } from '../../shared/dispatcher-presence';
 import { FEDERATION_DISABLED_TOOLS, FEDERATION_SOURCE_ID, setFederationLookup, setFederationStatus, type FederationPublicationGuard } from './dispatcher-federation-policy';
 import type { PersistedBindingSource } from './persisted-bindings';
 
@@ -15,6 +16,8 @@ export interface FederationController {
   agentId: string | null;
   name: string;
   enabled: boolean;
+  /** Whether it is working or asleep, for presence (#3349). Older computers don't send it. */
+  state?: PublishedDispatcherState;
   pairingId?: string;
   ownPairingId?: string;
 }
@@ -24,7 +27,21 @@ const controllers = createSettingsStore<{ controllers: Record<string, Federation
 );
 const listeners = new Set<() => void>();
 export function localFederationController(): FederationController {
-  return { agentId: getDispatcherAgentId(), name: dispatcherDisplayName('work'), enabled: isDispatcherEnabled() };
+  const enabled = isDispatcherEnabled();
+  return { agentId: getDispatcherAgentId(), name: dispatcherDisplayName('work'), enabled, ...(enabled && { state: localDispatcherState() }) };
+}
+
+/** As the Dispatcher's own badge judges it: asleep while its agent isn't running, working while requests are under way. */
+function localDispatcherState(): PublishedDispatcherState {
+  const state = getDispatcherState();
+  if (!state.workRunning) return 'asleep';
+  return state.requestsUnderWay > 0 ? 'working' : 'online';
+}
+
+/** Hear when a computer's published controller changes. */
+export function onFederationControllersChanged(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
 }
 export function remoteFederationController(machine: string): FederationController | undefined {
   const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase() && p.role === 'member' && p.kind !== 'phone');
@@ -42,8 +59,10 @@ export async function learnFederationController(machine: string, raw: unknown, p
   const value = raw as FederationController | null;
   if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean'
     || typeof value.name !== 'string' || !value.name || value.name.length > 200
-    || (value.agentId !== null && (typeof value.agentId !== 'string' || !value.agentId || value.agentId.length > 200 || value.agentId.includes('@')))) return;
-  const info = { agentId: value.agentId, name: value.name, enabled: value.enabled, ownPairingId: selfPairing, ...(peer.pairingId && { pairingId: peer.pairingId }) };
+    || (value.agentId !== null && (typeof value.agentId !== 'string' || !value.agentId || value.agentId.length > 200 || value.agentId.includes('@')))
+    || (value.state !== undefined && !isPublishedDispatcherState(value.state))) return;
+  const info = { agentId: value.agentId, name: value.name, enabled: value.enabled, ...(value.state && { state: value.state }),
+    ownPairingId: selfPairing, ...(peer.pairingId && { pairingId: peer.pairingId }) };
   if (JSON.stringify(remoteFederationController(machine)) === JSON.stringify(info)) return;
   const stale = new Error('Controller publication belongs to an earlier network pairing or service.');
   try {

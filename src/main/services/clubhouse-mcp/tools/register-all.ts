@@ -1,10 +1,11 @@
+import { registerHandoffCapacityTools } from './handoff-capacity-tools';
 /**
  * Registers every Clubhouse MCP tool, as the app does at startup. One list,
  * so tool-grants.test registers exactly what the app registers and can check
  * that each tool declares its grant (#2967).
  */
-import { registerHandoffCapacityTools } from './handoff-capacity-tools';
 import { registerFederatedRequestTools } from './federated-request-tools';
+import { registerHandoffTools } from './handoff-tools';
 import { registerAgentTools } from './agent-tools';
 import { registerBrowserTools } from './browser-tools';
 import { registerGroupProjectTools } from './group-project-tools';
@@ -18,6 +19,7 @@ import { registerDispatcherSearchTools } from './dispatcher-search-tools';
 import { registerAppearanceTools } from './appearance-tools';
 import { registerSettingsReadTools } from './settings-read-tools';
 import { registerDispatcherControlTools } from './dispatcher-control-tools';
+import { registerDispatcherPresenceTools } from './dispatcher-presence-tools';
 import { registerManagedTools } from './managed-tools';
 import { registerHelperQuestionTools } from './helper-question-tools';
 import { registerConnectionTools } from './connection-tools';
@@ -34,6 +36,7 @@ import { registerAnnexNetworkTools } from './annex-network-tools';
 
 export function registerClubhouseMcpTools(): void {
   registerHandoffCapacityTools();
+  registerHandoffTools();
   registerAgentTools();
   registerFederatedRequestTools();
   registerBrowserTools();
@@ -48,6 +51,7 @@ export function registerClubhouseMcpTools(): void {
   registerAppearanceTools();
   registerSettingsReadTools();
   registerDispatcherControlTools();
+  registerDispatcherPresenceTools();
   registerManagedTools();
   registerHelperQuestionTools();
   registerConnectionTools();

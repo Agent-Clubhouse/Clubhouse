@@ -196,6 +196,16 @@ describe('AgentDetails Canvases', () => {
 describe('AgentDetails for the Dispatcher', () => {
   const dispatcher: Agent = { id: 'disp', projectId: DISPATCHER_PROJECT_ID, name: 'Navi', kind: 'durable', status: 'running', color: 'indigo', orchestrator: 'claude-code' };
 
+  it('lists its peers on other machines compactly, and only when there are any (#3349)', async () => {
+    window.clubhouse.dispatcher.getPresence = vi.fn(async () => ({ remotes: [
+      { machineId: 'desk', machineName: 'Desk', address: 'c@desk', dispatcherName: 'Studio', label: 'Studio on Desk', state: 'working' as const, link: { state: 'active' as const } },
+      { machineId: 'laptop', machineName: 'Laptop', address: 'c@laptop', dispatcherName: 'Travel', label: 'Travel on Laptop', state: 'offline' as const, link: { state: 'paused' as const, reason: 'Offline.' } },
+    ] }));
+    render(<AgentDetails agent={dispatcher} />);
+    expect(await screen.findByText('1 of 2 online')).toBeTruthy();
+    window.clubhouse.dispatcher.getPresence = vi.fn(async () => ({ remotes: [] }));
+  });
+
   it('shows Settings and Actions but none of an agent\'s internals (#3184)', () => {
     const chat = {
       ...createChatViewState(dispatcher.id), sessionId: 's1', provider: 'claude-code', driver: 'claude_agent_sdk' as const,

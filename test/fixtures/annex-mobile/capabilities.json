@@ -109,6 +109,11 @@
         "event": "dispatcher:changed",
         "flagOn": true,
         "newLayout": true,
+        "presence": {
+          "event": "dispatcher:presence",
+          "snapshotField": "dispatcherPresence",
+          "version": 1
+        },
         "projectId": "__dispatcher__",
         "requestsUnderWay": 0,
         "settings": {

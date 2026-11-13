@@ -9,6 +9,7 @@ import type { DispatcherSetupInput, TryItOutRequest, TryItOutResult } from '../s
 import type { ConnectableAgent, ForgetEverythingResult } from '../shared/dispatcher-settings-page';
 import type { DispatcherTeaching } from '../shared/dispatcher-teaching';
 import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
+import type { DispatcherPresenceSnapshot } from '../shared/dispatcher-presence';
 
 export const dispatcher = {
   dispatcher: {
@@ -54,6 +55,15 @@ export const dispatcher = {
       ipcRenderer.invoke(IPC.DISPATCHER.SAVE_AGENT_CARD, agentId, fields),
     /** What its chat shows before the first message (#3048): the agents connected to it. */
     getTeaching: (): Promise<DispatcherTeaching> => ipcRenderer.invoke(IPC.DISPATCHER.GET_TEACHING),
+    /** The Dispatchers on this person's other computers (#3349), read-only. */
+    getPresence: (): Promise<DispatcherPresenceSnapshot> => ipcRenderer.invoke(IPC.DISPATCHER.GET_PRESENCE),
+    onPresenceChanged: (callback: (snapshot: DispatcherPresenceSnapshot) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: DispatcherPresenceSnapshot) => callback(snapshot);
+      ipcRenderer.on(IPC.DISPATCHER.PRESENCE_CHANGED, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.DISPATCHER.PRESENCE_CHANGED, listener);
+      };
+    },
     onAgentCardChanged: (callback: (agentId: string) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string) => callback(agentId);
       ipcRenderer.on(IPC.DISPATCHER.AGENT_CARD_CHANGED, listener);

@@ -235,16 +235,21 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
   return out;
 }
 
+export type HandoffGrantTargetResolver = (callerId: string, args: Record<string, unknown>) => Promise<GrantCallTarget>;
+let handoffTargetResolver: HandoffGrantTargetResolver | undefined;
+export function setHandoffGrantTargetResolver(resolver: HandoffGrantTargetResolver): void { handoffTargetResolver = resolver; }
+
 /** Resolve every argument-target declaration of a call. Empty when the tool has none. */
 export async function resolveArgTargets(callerId: string, grant: ToolGrant | undefined, args: Record<string, unknown>): Promise<ArgTargets> {
   const out: ArgTargets = new Map();
   if (!grant) return out;
-  const declarations = toolGrantDeclarations(grant).filter((d) => (d.target === 'agent_arg' || d.target === 'project_arg' || d.target === 'group_project_arg') && d.from);
+  const declarations = toolGrantDeclarations(grant).filter((d) => d.target === 'handoff_peer' || (d.target === 'agent_arg' || d.target === 'project_arg' || d.target === 'group_project_arg') && d.from);
   if (declarations.length === 0) return out;
   const lookup = new Lookup(callerId, agentRegistry.get(callerId)?.projectPath);
   for (const d of declarations) {
     try {
-      out.set(d, await resolveDeclaration(lookup, d, args));
+      if (d.target === 'handoff_peer') out.set(d, handoffTargetResolver ? [await handoffTargetResolver(callerId, args)] : null);
+      else out.set(d, await resolveDeclaration(lookup, d, args));
     } catch {
       // telemetry-exempt: unresolved, so not checked here; the tool's own checks still run.
       out.set(d, d.target === 'group_project_arg' ? [{ kind: 'group_project', groupRole: null }] : d.strictTargets || d.allowRemote ? [{ kind: 'agent', relations: [] }] : null);

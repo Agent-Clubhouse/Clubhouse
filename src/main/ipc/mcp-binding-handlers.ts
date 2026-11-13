@@ -6,6 +6,8 @@ import { federationReceiver } from '../services/dispatcher-federation-receiver';
 
 import { parseAgentAddress } from '../../shared/agent-address';
 import { federationBindingSource, learnFederationController, localFederationController, watchFederation } from '../services/dispatcher-federation';
+import { getDispatcherPresence, onDispatcherPresenceChanged, watchDispatcherPresence } from '../services/dispatcher-presence';
+import { watchPeerPages } from '../services/dispatcher/dispatcher-peer-pages';
 import { federationDirection } from '../services/dispatcher-federation-policy';
 import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
@@ -48,6 +50,7 @@ import {
 } from '../services/connection-grants';
 import { listConnectionDirectionsForInspection } from '../services/connection-grants-store';
 import { syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
+import { startHandoffs } from '../services/handoff-host';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexPeers from '../services/annex-peers';
 import * as annexClient from '../services/annex-client';
@@ -57,7 +60,7 @@ import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
 import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
-import { dispatcherDisplayName, getDispatcherChatConfig, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
+import { dispatcherDisplayName, getDispatcherChatConfig, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId, isDispatcherEnabled } from '../services/dispatcher/dispatcher-service';
 
 function federationEnd(id: string) {
   const parsed = parseAgentAddress(id);
@@ -429,6 +432,8 @@ let stopWatchingAgentCards: (() => void) | null = null;
 let stopWatchingDispatcherConnections: (() => void) | null = null;
 let stopFederatedRequests: (() => void) | undefined;
 let stopWatchingFederation: (() => void) | null = null;
+let stopWatchingDispatcherPresence: (() => void) | null = null;
+let stopWatchingPeerPages: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
 
 /**
@@ -471,6 +476,11 @@ export function restorePersistedBindings(): Promise<void> {
         if (peer.role === 'member' && peer.kind !== 'phone') void syncDirectionsWith(peer.fingerprint.toLowerCase());
       }
     }, (machine) => annexClient.isMachineConnected(machine));
+    // Other computers' Dispatchers (#3349): one read-only snapshot, recomputed when its sources change.
+    stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.isMachineConnected(machine));
+    // And its memory pages for them, keyed by machine-qualified address.
+    stopWatchingPeerPages = watchPeerPages({ remotes: () => getDispatcherPresence().remotes, enabled: isDispatcherEnabled, onChanged: onDispatcherPresenceChanged });
+    startHandoffs();
     startAgentCalls({
       remoteDispatcher: federationReceiver,
       federation: { local: localFederationController, learn: learnFederationController },
@@ -530,6 +540,10 @@ export function _resetHandlersForTesting(): void {
   stopFederatedRequests?.();
   stopFederatedRequests = undefined;
   stopWatchingFederation = null;
+  stopWatchingDispatcherPresence?.();
+  stopWatchingDispatcherPresence = null;
+  stopWatchingPeerPages?.();
+  stopWatchingPeerPages = null;
   stopWatchingHelperWires?.();
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();
