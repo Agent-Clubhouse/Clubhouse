@@ -50,6 +50,28 @@ describe('the skills Clubhouse ships', () => {
     }
   });
 
+  it('delivers managed-agent, shared-edit and interruption safeguards alongside routing guidance (#2583)', async () => {
+    const provider = new CopilotCliProvider();
+    await writeDispatcherSkills(dir, 'work', provider.conventions);
+    await provider.writeInstructions(dir, instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', provider.conventions));
+    const instructions = await provider.readInstructions(dir);
+    const delegation = fs.readFileSync(path.join(dir, skillFile(provider.conventions, 'delegating-work')), 'utf-8');
+
+    expect(instructions).toContain('`create_managed_agent` creates an agent in a project; it starts asleep');
+    expect(delegation).toContain('Before creation, read `list_agent_templates` if using a template');
+    expect(delegation).toContain('Confirm the template and effective CLI, model, access and orchestration with the user');
+    expect(delegation).toContain('Do not silently substitute a template\'s CLI for the user\'s choice');
+    expect(delegation).toContain('Creating an asleep agent and waking it are separate choices: start it only when requested');
+    expect(instructions).toContain('Check `connectedToDispatcher` and its receipt');
+    expect(instructions).toContain('`list_agents` shows the agents connected to you');
+    expect(instructions).toContain('When a tool refuses for lack of permission, stop and tell the user');
+    expect(instructions).toContain('A shared edit or deletion first answers with who it affects; show that preview and ask the user before committing with its `confirm` token');
+    expect(instructions).toContain('A token is not user approval');
+    expect(instructions).toContain('`now: true` cuts off a turn: ask first unless losing it is already acceptable, as with forced sleep');
+    expect(instructions).toContain('pass `force` only when losing that turn is fine, and ask the user if you aren\'t sure');
+    expect(instructions).not.toContain('You don\'t create projects, agents or connections');
+  });
+
   it('refuses a SKILL.md without its front matter', () => {
     expect(() => parseSkill('# No front matter', 'work')).toThrow(/front matter/);
     expect(parseSkill('---\nname: x\ndescription: Does x.\n---\n\n# X\n', 'chat')).toMatchObject({ name: 'x', description: 'Does x.', role: 'chat' });
