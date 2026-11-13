@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { app, ipcMain } from 'electron';
@@ -1103,19 +1104,21 @@ describe('public Dispatcher repository import (#2808)', () => {
       fs.writeFileSync(path.join(outside, 'agents.json.bak'), 'preserve outside backup bytes');
       fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'preserve unrelated bytes');
       let changed = false;
-      const substitute = () => {
+      let committedCacheRecord: DurableAgentConfig | null | undefined;
+      const substitute = async () => {
         if (changed) return;
         const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(mainFile, 'utf8'));
         if (!agents[0]?.branchOwned) return;
+        committedCacheRecord = await agentConfig.getDurableConfig(destination, agents[0].id);
         fs.renameSync(directory, retained);
         fs.symlinkSync(outside, directory, 'dir');
         changed = true;
       };
-      current.afterRename = (_from, to) => {
-        if (boundary === 'backup-write' && to === mainFile) substitute();
+      current.afterRename = async (_from, to) => {
+        if (boundary === 'backup-write' && to === mainFile) await substitute();
       };
-      current.afterWrite = (file) => {
-        if (boundary === 'backup-rename' && file.startsWith(backupFile + '.tmp.')) substitute();
+      current.afterWrite = async (file) => {
+        if (boundary === 'backup-rename' && file.startsWith(backupFile + '.tmp.')) await substitute();
       };
       const result = await call('create_managed_agent', args);
       current.afterRename = undefined;
@@ -1129,10 +1132,30 @@ describe('public Dispatcher repository import (#2808)', () => {
       expect(committed).toHaveLength(1);
       expect(committed[0].branchOwned).toBe(true);
       expect(committed[0].repositoryImportCreation?.importId).toBe(receipt.id);
+      expect(committedCacheRecord).toMatchObject({ id: committed[0].id, branchOwned: true });
       fs.unlinkSync(directory);
       fs.renameSync(retained, directory);
-      await agentConfig.settleAgentsFileChecksForTests();
-      expect((await agentConfig.listDurable(destination))[0].branchOwned).toBe(true);
+      await owner().settleEpoch(() => agentConfig.settleAgentsFileChecksForTests());
+      owner().mutateEpoch(() => agentConfig.clearAgentConfigCache(destination));
+      // Reproduce a stale empty image without reading through the substituted directory.
+      const read = fsPromises.readFile;
+      let servedStaleImage = false;
+      const staleRead = vi.spyOn(fsPromises, 'readFile').mockImplementation((...params) => {
+        if (String(params[0]) === mainFile) {
+          servedStaleImage = true;
+          return Promise.resolve('[]');
+        }
+        return read(...params);
+      });
+      expect(await agentConfig.listDurable(destination)).toEqual([]);
+      expect(servedStaleImage).toBe(true);
+      staleRead.mockRestore();
+      await owner().settleEpoch(() => agentConfig.settleAgentsFileChecksForTests());
+      owner().mutateEpoch(() => agentConfig.clearAgentConfigCache(destination));
+      const restored = await agentConfig.listDurable(destination);
+      expect(restored).toHaveLength(1);
+      expect(restored[0].id).toBe(committed[0].id);
+      expect(restored[0].branchOwned).toBe(true);
       expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
       expect(wakeWiredAgent).not.toHaveBeenCalled();
     });
