@@ -229,6 +229,7 @@ vi.mock('./annex-peers', () => ({
   addPeer: vi.fn(),
   getPeer: vi.fn().mockReturnValue(null),
   updateLastSeen: vi.fn(),
+  recordLastSeen: vi.fn(),
   listPeers: vi.fn().mockReturnValue([]),
   listPeersForDisplay: vi.fn().mockReturnValue([]),
   removePeer: vi.fn(),

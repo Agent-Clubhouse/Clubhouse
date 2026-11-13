@@ -546,7 +546,7 @@ export function restorePersistedBindings(): Promise<void> {
     });
     startHandoffs();
     // Other computers' Dispatchers (#3349): one read-only snapshot, recomputed when its sources change.
-    stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.isMachineConnected(machine));
+    stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.isMachineConnected(machine), (machine) => annexClient.lastConfirmedConnectivity(machine));
     // And its memory pages for them, keyed by machine-qualified address.
     stopWatchingPeerPages = watchPeerPages({ remotes: () => getDispatcherPresence().remotes, enabled: isDispatcherEnabled, onChanged: onDispatcherPresenceChanged });
     startAgentCalls({

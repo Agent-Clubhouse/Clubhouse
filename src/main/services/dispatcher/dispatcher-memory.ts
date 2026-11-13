@@ -285,12 +285,18 @@ export async function withMemoryPageLock<T>(page: string, root: string, fn: (fil
   return withPageLock(`write:${file}`, () => fn(file));
 }
 
+/** A page's existing title, so a write that doesn't set one keeps it (a peer's label, #3349). */
+function pageHeading(text: string | null): string | undefined {
+  const first = text?.split('\n', 1)[0];
+  return first?.startsWith('# ') ? first.slice(2).trim() || undefined : undefined;
+}
+
 async function writeAgentSection(agent: string, section: keyof AgentPage, text: string, root?: string, reason: string = section === 'card' ? 'card' : 'notes', title?: string): Promise<AgentPage> {
   await ensureMemoryLayout(root);
   return withPageLock(agentPagePath(agent, root), async () => {
     const written = await memoryWrite(relativeMemoryPage(agentPagePath(agent, root), root), (previous) => {
       const current = previous === null ? { card: '', notes: '' } : parseAgentPage(previous);
-      return renderAgentPage(agent, { ...current, [section]: text }, title ?? agent);
+      return renderAgentPage(agent, { ...current, [section]: text }, title ?? pageHeading(previous) ?? agent);
     }, reason, root);
     return parseAgentPage(written);
   });

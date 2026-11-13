@@ -176,6 +176,20 @@ export function setTypedHost(fingerprint: string, typedHost: string | undefined)
   return true;
 }
 
+/**
+ * Records when the connection to a peer was last confirmed alive (#3349), so a
+ * long-lived connection's last seen isn't the time it opened. Never moves backwards.
+ */
+export function recordLastSeen(fingerprint: string, at: Date): void {
+  const peers = loadPeers();
+  const peer = peers.find((p) => p.fingerprint.toLowerCase() === fingerprint.toLowerCase());
+  if (!peer) return;
+  const known = Date.parse(peer.lastSeen);
+  if (Number.isFinite(known) && known >= at.getTime()) return;
+  peer.lastSeen = at.toISOString();
+  savePeers(peers);
+}
+
 export function updateLastSeen(fingerprint: string): void {
   const peers = loadPeers();
   const peer = peers.find((p) => p.fingerprint === fingerprint);

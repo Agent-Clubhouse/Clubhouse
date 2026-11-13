@@ -15,8 +15,10 @@ import { onFederationControllersChanged, remoteFederationController } from './di
 import { federationStatus } from './dispatcher-federation-policy';
 
 type Connected = (machine: string) => boolean;
+type LastConfirmed = (machine: string) => string | undefined;
 
 let connected: Connected = () => false;
+let lastConfirmed: LastConfirmed = () => undefined;
 let last = '';
 const listeners = new Set<() => void>();
 
@@ -45,9 +47,17 @@ function presenceFor(peer: ReturnType<typeof listPeers>[number]): RemoteDispatch
     machineId, machineName, address, dispatcherName,
     label: remoteDispatcherLabel(dispatcherName, machineName),
     state,
-    ...(state === 'offline' && peer.lastSeen && { lastSeen: peer.lastSeen }),
+    ...(state === 'offline' && lastSeenOf(machineId, peer.lastSeen)),
     link,
   };
+}
+
+/** The later of the stored last seen and this run's last confirmed connectivity, so a long connection reads right. */
+function lastSeenOf(machineId: string, stored: string | undefined): { lastSeen?: string } {
+  const live = lastConfirmed(machineId);
+  const candidates = [stored, live].filter((v): v is string => !!v && Number.isFinite(Date.parse(v)));
+  if (candidates.length === 0) return {};
+  return { lastSeen: candidates.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a)) };
 }
 
 /** Every other computer member's Dispatcher, now. Never phones. */
@@ -80,16 +90,19 @@ function recompute(): void {
 }
 
 /**
- * Start following the sources. `isConnected` is the Annex client's live
- * connectivity, passed in so this module stays free of the client's imports.
+ * Start following the sources. `isConnected` and `lastConfirmedAt` are the
+ * Annex client's live connectivity and last confirmed contact, passed in so
+ * this module stays free of the client's imports.
  */
-export function watchDispatcherPresence(isConnected: Connected): () => void {
+export function watchDispatcherPresence(isConnected: Connected, lastConfirmedAt: LastConfirmed = () => undefined): () => void {
   connected = isConnected;
+  lastConfirmed = lastConfirmedAt;
   last = JSON.stringify(getDispatcherPresence());
   const offs = [onDevicesChanged(recompute), onDispatcherChanged(recompute), onFederationControllersChanged(recompute)];
   return () => {
     for (const off of offs) off();
     connected = () => false;
+    lastConfirmed = () => undefined;
   };
 }
 
@@ -97,5 +110,6 @@ export function watchDispatcherPresence(isConnected: Connected): () => void {
 export function _resetDispatcherPresenceForTesting(): void {
   listeners.clear();
   connected = () => false;
+  lastConfirmed = () => undefined;
   last = '';
 }

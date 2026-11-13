@@ -65,6 +65,21 @@ describe('remote Dispatcher presence (#3349)', () => {
     expect(laptop).toMatchObject({ state: 'offline', lastSeen: '2026-11-13T10:00:00.000Z', link: { state: 'paused', reason: expect.stringContaining('offline') } });
   });
 
+  it('reports last seen as the later of the stored time and the last confirmed heartbeat of a long-lived connection', async () => {
+    for (const stop of stops) stop();
+    let confirmed: string | undefined = '2026-11-13T15:30:00.000Z';
+    stops = [watchFederation(() => {}, connected), watchDispatcherPresence(connected, () => confirmed)];
+    await learnFederationController('laptop', controller('controller-laptop'));
+    state.online.delete('laptop');
+    expect(getDispatcherPresence().remotes.find((r) => r.machineId === 'laptop')?.lastSeen).toBe('2026-11-13T15:30:00.000Z');
+    // Before any heartbeat this run, the stored time is what's known.
+    confirmed = undefined;
+    expect(getDispatcherPresence().remotes.find((r) => r.machineId === 'laptop')?.lastSeen).toBe('2026-11-13T10:00:00.000Z');
+    // An older live value never moves it backwards.
+    confirmed = '2026-11-12T00:00:00.000Z';
+    expect(getDispatcherPresence().remotes.find((r) => r.machineId === 'laptop')?.lastSeen).toBe('2026-11-13T10:00:00.000Z');
+  });
+
   it('shows a turned-off remote Dispatcher and an unavailable link with the reason, and this one off makes every link unavailable', async () => {
     await learnFederationController('desk', controller('controller-desk', { enabled: false }));
     expect(getDispatcherPresence().remotes[0]).toMatchObject({ state: 'off', link: { state: 'unavailable', reason: expect.stringContaining('other Dispatcher is off') } });

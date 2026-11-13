@@ -42,6 +42,9 @@ describe('memory pages for other computers\' Dispatchers (#3349)', () => {
     const page = await readAgentPage(name, root);
     expect(page).toEqual({ card: peerCardText({ ...remote({ dispatcherName: 'Atelier' }), address: `controller@${FP}` }), notes: 'Prefers short requests.' });
     expect(fs.readFileSync(path.join(root, 'agents', `${name}.md`), 'utf8').split('\n')[0]).toBe('# Atelier on Desk');
+    // The Dispatcher's own notes write keeps the label heading, never the hashed name.
+    await writeAgentNotes(name, 'Prefers short requests. Mornings only.', root);
+    expect(fs.readFileSync(path.join(root, 'agents', `${name}.md`), 'utf8').split('\n')[0]).toBe('# Atelier on Desk');
   });
 
   it('writes only while the Dispatcher is on, and follows presence changes', async () => {
