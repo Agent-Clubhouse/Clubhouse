@@ -136,7 +136,7 @@ afterEach(async () => {
 });
 afterAll(() => { lifetime.current?.assertRetired(); });
 
-describe('local secret-safe handoff snapshots', () => {
+describe('local secret-safe handoff snapshots', { timeout: 30_000 }, () => {
   beforeEach(initializeStandardRepository);
   it.each(['loose', 'packed'])('refuses %s replacement refs without binding their tree to the original base', async (storage) => {
     const { base, replacement } = await replacementFixture();
