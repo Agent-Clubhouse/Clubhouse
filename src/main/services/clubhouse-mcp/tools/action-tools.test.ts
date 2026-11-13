@@ -144,6 +144,9 @@ import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
 import * as grantCheck from '../grant-check';
 import { showDispatcherActionSummary } from '../../dispatcher/dispatcher-action-summary';
+import { setMcpCaller, _resetMcpCallGateForTesting } from '../mcp-call-gate';
+import { _resetGrantRequestsForTesting, listGrantRequests } from '../../grant-requests';
+import { answerGrantRequest } from '../../grant-request-answers';
 
 const engine = () => h.engine as ActionsEngine;
 const NOTIFY = { kind: 'notify', text: 'Stand-up time' };
@@ -601,6 +604,31 @@ describe('action tools', () => {
   });
 
   describe('scope', () => {
+    it('asks the Dispatcher before creating or editing a group-owned Action', async () => {
+      const group = { id: 'gp1', name: 'Group', description: '', instructions: '', createdAt: '', metadata: {} };
+      const project = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue(group);
+      const list = vi.spyOn(groupProjectRegistry, 'list').mockResolvedValue([group]);
+      const host = vi.spyOn(groupProjectHost, 'isThisMachine').mockReturnValue(true);
+      setMcpCaller('dispatcher', 'web-root', {});
+      agentRegistry.register('dispatcher', { projectPath: 'web-root', orchestrator: 'claude-code', runtime: 'pty' });
+      _resetGrantRequestsForTesting();
+      try {
+        const args = { groupProjectId: 'gp1', trigger: DAILY, steps: [{ kind: 'group_post', topic: 'general', text: 'Ready' }] };
+        expect((await call('dispatcher', 'create_action', args)).isError).toBe(true);
+        expect(listGrantRequests('dispatcher')[0].actions).toContain('group_project.admin');
+        await answerGrantRequest(listGrantRequests('dispatcher')[0].requestId, true);
+        const created = await call('dispatcher', 'create_action', args);
+        expect(created.isError).toBe(false);
+        const update = { id: created.body.action.id, name: 'Changed' };
+        expect((await call('dispatcher', 'update_action', update)).isError).toBe(true);
+        expect(listGrantRequests('dispatcher')[0].actions).toContain('group_project.admin');
+        await answerGrantRequest(listGrantRequests('dispatcher')[0].requestId, true);
+        expect((await call('dispatcher', 'update_action', update)).body.action.name).toBe('Changed');
+      } finally {
+        _resetGrantRequestsForTesting(); _resetMcpCallGateForTesting(); agentRegistry.untrack('dispatcher');
+        host.mockRestore(); list.mockRestore(); project.mockRestore();
+      }
+    });
     it('requires the host’s explicit Admin grant to create a group-owned Action', async () => {
       const project = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue({ id: 'gp1', name: 'Group', description: '', instructions: '', createdAt: '', metadata: {} });
       const host = vi.spyOn(groupProjectHost, 'isThisMachine').mockReturnValue(true);
