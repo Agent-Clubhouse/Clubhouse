@@ -196,7 +196,7 @@ export function registerGroupProjectTools(): void {
     label: 'Read Bulletin',
     mcp: { targetKind: 'group-project', nameSuffix: 'read_bulletin', grant: { actions: ['group_project.read'], target: 'bound' } },
       description:
-        'Get a digest of channels on the group project board — {topic, messageCount, newMessageCount, latestTimestamp, isProtected} per channel.\n\n' +
+        'Get a digest of channels on the group project board: {topic, messageCount, newMessageCount, latestTimestamp, isProtected} per channel.\n\n' +
         'Pass "since" (the latestTimestamp from your last read) on every call after your first to keep the digest cheap.\n' +
         'Pass "channels" to restrict the digest to the channels you care about. You get a notice when someone posts to your channels, so read when one arrives rather than in a loop. Your standard set is:\n' +
         '  ["general", "control", "inbox-<your-name>", ...any work channels you are actively tracking]\n' +

@@ -4,10 +4,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { launchApp } from './launch';
+import { installFakeClis } from './chat-fake-cli';
 import { createDisposableProfile } from './app-profile';
 import { addProject } from './smoke-helpers';
 
 test('group project lead and admin grants persist independently', async () => {
+  const fakes = await installFakeClis({});
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gp-grants-e2e-'));
   const profile = createDisposableProfile({ label: 'gp-grants' });
   fs.mkdirSync(path.join(dir, '.clubhouse'));
@@ -19,7 +21,7 @@ test('group project lead and admin grants persist independently', async () => {
   execSync('git init -q && git add -A && git commit -qm init', { cwd: dir, env, stdio: 'pipe' });
   let app: Awaited<ReturnType<typeof launchApp>> | undefined;
   try {
-    app = await launchApp({ profile });
+    app = await launchApp({ profile, env: fakes.env });
     await addProject(app.electronApp, app.window, dir);
     await app.window.getByTestId('nav-settings').click();
     await app.window.getByTestId('settings-nav-app-group-projects').click();
@@ -36,7 +38,7 @@ test('group project lead and admin grants persist independently', async () => {
     await admin.selectOption('ask');
     await expect(admin).toHaveValue('ask');
     await app.electronApp.close();
-    app = await launchApp({ profile });
+    app = await launchApp({ profile, env: fakes.env });
     await app.window.getByTestId('nav-settings').click();
     await app.window.getByTestId('settings-nav-app-group-projects').click();
     await app.window.getByRole('button', { name: 'Grant fixture', exact: true }).click();
@@ -44,6 +46,7 @@ test('group project lead and admin grants persist independently', async () => {
     await expect(app.window.getByLabel('Admin for dev')).toHaveValue('ask');
   } finally {
     await app?.electronApp.close().catch(() => {});
+    await fakes.cleanup();
     profile.dispose();
     await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
