@@ -20,6 +20,7 @@ import { notifyToolGateChange } from './clubhouse-mcp/orchestration-gate';
 import { callerGrants } from './clubhouse-mcp/grant-check';
 import { callTool, setHandoffParticipantCheck } from './clubhouse-mcp/tool-registry';
 import { handoffAgreementCallApproved } from './clubhouse-mcp/handoff-permissions';
+import { withCapacityDeadline } from './handoff-capacity';
 import { HandoffService, type HandoffAuthorization } from './handoff-service';
 import { HandoffStore } from './handoff-store';
 import { HandoffCoordinator } from './handoff-coordinator';
@@ -197,7 +198,7 @@ export function handoffHost(): Host {
     machine, store, service, commands,
     connected: (peer) => isNetworkComputer(peer) && annexClient.isMachineConnected(peer),
     post: async (peer, body) => {
-      const response = await annexClient.postToMachine(peer, '/api/v1/network/handoffs', body);
+      const response = await withCapacityDeadline((signal) => annexClient.postToMachine(peer, '/api/v1/network/handoffs', body, { signal, maxResponseBytes: 512 * 1024 }));
       if (response.status !== 200) throw new Error('Handoff synchronization is unavailable.');
       return response.body;
     },
@@ -261,7 +262,9 @@ export function stopHandoffs(): void {
 
 const incomingRates = new Map<string, number[]>();
 export async function receiveNetworkHandoff(machine: string, body: unknown): Promise<Handoff> {
-  if (!isNetworkComputer(machine) || !acceptsRemote()) throw new Error('Handoff is unavailable.');
+  // The service gates new offers and acceptance. Retained status and sender
+  // cancellation must still synchronize after the person disables incoming work.
+  if (!isNetworkComputer(machine)) throw new Error('Handoff is unavailable.');
   const now = Date.now();
   for (const [peer, times] of incomingRates) if (times.every((at) => now < at || now - at >= 60_000)) incomingRates.delete(peer);
   const times = (incomingRates.get(machine) ?? []).filter((at) => now >= at && now - at < 60_000);

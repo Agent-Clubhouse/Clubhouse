@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { randomUUID } from 'crypto';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -72,13 +73,19 @@ it('retains query access after revocation and delivers each notice once across h
   expect(state.send).toHaveBeenCalledTimes(1);
 });
 
-it('refuses peer synchronization when incoming handoffs are disabled or membership was removed', async () => {
+it('blocks new incoming work while disabled but still synchronizes retained decisions and cancellation', async () => {
+  const local = await handoffHost().coordinator.offer(offer(), localHandoffAgent('sender'));
+  const remoteSender = { agentId: 'remote-sender', machine: state.peer };
+  const remote = { ...local, id: randomUUID(), from: remoteSender, history: [{ ...local.history[0], operationId: randomUUID(), by: { kind: 'agent', address: remoteSender } }] };
+  await receiveNetworkHandoff(state.peer, { op: 'offer', record: remote });
   state.accepting = false;
-  await expect(receiveNetworkHandoff(state.peer, {})).rejects.toThrow('unavailable');
-  state.accepting = true;
+  await expect(receiveNetworkHandoff(state.peer, { op: 'offer', record: { ...remote, id: randomUUID() } })).rejects.toThrow('not authorized');
+  expect(await receiveNetworkHandoff(state.peer, { op: 'offer', record: remote })).toMatchObject({ id: remote.id, state: 'offered' });
+  const cancelled = await receiveNetworkHandoff(state.peer, { op: 'cancel', command: { id: remote.id, operationId: randomUUID(), from: remoteSender } });
+  expect(cancelled.state).toBe('cancelled');
+  expect(await receiveNetworkHandoff(state.peer, { op: 'offer', record: remote })).toMatchObject({ id: remote.id, state: 'cancelled' });
   state.member = false;
-  await expect(receiveNetworkHandoff(state.peer, {})).rejects.toThrow('unavailable');
-  expect(handoffHost().store.list()).toEqual([]);
+  await expect(receiveNetworkHandoff(state.peer, { op: 'offer', record: remote })).rejects.toThrow('unavailable');
 });
 
 it('prepares one asleep managed helper using the normal creation boundary and reuses it after restart', async () => {
