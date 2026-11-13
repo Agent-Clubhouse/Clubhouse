@@ -106,9 +106,7 @@ test('creating a group project advances from naming form to initialized card', a
   await expect(headerPolling).toHaveAttribute('aria-checked', 'true', { timeout: 5_000 });
   await headerPolling.click();
   await expect(headerPolling).toHaveAttribute('aria-checked', 'false', { timeout: 5_000 });
-});
-
-test('an existing group project can appear on two canvases and removing a card leaves it intact', async () => {
+  // Reuse this record on another canvas and verify removing the second card.
   const tabs = window.getByRole('tablist', { name: 'Canvases' }).getByRole('tab');
   const firstTab = tabs.first();
   const firstId = await firstTab.getAttribute('data-testid');
@@ -117,7 +115,6 @@ test('an existing group project can appear on two canvases and removing a card l
   await window.getByTestId('canvas-add-new').click();
   await expect(tabs).toHaveCount(2);
 
-  const workspace = window.getByTestId('canvas-workspace');
   const box = await workspace.boundingBox();
   expect(box).not.toBeNull();
   await workspace.dispatchEvent('contextmenu', { bubbles: true, button: 2, clientX: box!.x + 220, clientY: box!.y + 180 });
@@ -125,10 +122,10 @@ test('an existing group project can appear on two canvases and removing a card l
   const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await card.getByLabel('Existing group project').selectOption({ label: 'E2E Group Project' });
   await card.getByRole('button', { name: 'Add existing' }).click();
-  const polling = card.getByRole('switch', { name: 'Polling' });
-  await expect(polling).toHaveAttribute('aria-checked', 'false');
-  await polling.click();
-  await expect(polling).toHaveAttribute('aria-checked', 'true');
+  const secondPolling = card.getByRole('switch', { name: 'Polling' });
+  await expect(secondPolling).toHaveAttribute('aria-checked', 'false');
+  await secondPolling.click();
+  await expect(secondPolling).toHaveAttribute('aria-checked', 'true');
   await card.getByTestId('canvas-view-close').click();
   await expect(workspace.locator('[data-testid^="canvas-view-cv_"]')).toHaveCount(0);
 
