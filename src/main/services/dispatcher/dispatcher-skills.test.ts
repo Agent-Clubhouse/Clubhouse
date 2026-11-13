@@ -54,7 +54,7 @@ describe('the skills Clubhouse ships', () => {
     const provider = new CopilotCliProvider();
     await writeDispatcherSkills(dir, 'work', provider.conventions);
     await provider.writeInstructions(dir, instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', provider.conventions));
-    const instructions = fs.readFileSync(provider.getInstructionsPath(dir), 'utf-8');
+    const instructions = await provider.readInstructions(dir);
     const delegation = fs.readFileSync(path.join(dir, skillFile(provider.conventions, 'delegating-work')), 'utf-8');
 
     expect(instructions).toContain('`create_managed_agent` creates an agent in a project; it starts asleep');

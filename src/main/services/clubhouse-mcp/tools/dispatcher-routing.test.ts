@@ -243,7 +243,7 @@ describe('Dispatcher desktop/mobile routing and a concurrent project pivot (#258
     const dispatcherDir = path.join(state.base, 'dispatcher');
     await writeDispatcherSkills(dispatcherDir, 'work', provider.conventions);
     await provider.writeInstructions(dispatcherDir, instructions);
-    expect(fs.readFileSync(provider.getInstructionsPath(dispatcherDir), 'utf-8')).toBe(instructions);
+    expect(await provider.readInstructions(dispatcherDir)).toBe(instructions);
     const skillPath = skillFile(provider.conventions, 'delegating-work');
     expect(instructions).toContain(`\`delegating-work\` (\`${skillPath}\`)`);
     const skill = fs.readFileSync(path.join(dispatcherDir, skillPath), 'utf-8');
