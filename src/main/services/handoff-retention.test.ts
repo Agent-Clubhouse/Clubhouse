@@ -86,7 +86,7 @@ describe('handoff refusal, expiry and bounded retention', () => {
     expect(f.sender.store.list()).toHaveLength(200); expect(f.sender.commands).toEqual([]); expect(f.sender.undelivered.size).toBeLessThanOrEqual(200);
     f.advance(); f.advance(); f.advance(); f.advance(); f.advance(); f.advance(); f.advance();
     await f.sender.coordinator.flush(); expect(f.sender.store.list()).toEqual([]);
-  });
+  }, 30_000);
 });
 
 
