@@ -188,3 +188,53 @@ describe('authorized, cached machine capacity', () => {
     expect(await state.service.probe('caller', self)).toEqual([online()]);
   });
 });
+
+describe('capacity sample deadlines', () => {
+  it('expires a never-settling local sampler, releases coalesced callers and allows a fresh attempt', async () => {
+    vi.useFakeTimers();
+    try {
+      const sample = vi.fn<() => Promise<OnlineHandoffCapacity>>().mockImplementationOnce(() => new Promise(() => {})).mockResolvedValue(online());
+      const service = new HandoffCapacityService({
+        machine: self, authorize: async () => true, computers: () => [], sampleLocal: sample, probeRemote: async () => online(other),
+      });
+      const first = expect(service.probe('first', self)).rejects.toThrow('Capacity probe is unavailable.');
+      const coalesced = expect(service.probe('second', self)).rejects.toThrow('Capacity probe is unavailable.');
+      await vi.advanceTimersByTimeAsync(5_000);
+      await Promise.all([first, coalesced]);
+      expect(sample).toHaveBeenCalledTimes(1);
+      expect(await service.probe('retry', self)).toEqual([online()]);
+      expect(sample).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('prevents a late expired result from overwriting the cache or removing a newer in-flight sample', async () => {
+    vi.useFakeTimers();
+    try {
+      let finishExpired!: (value: OnlineHandoffCapacity) => void;
+      let finishFresh!: (value: OnlineHandoffCapacity) => void;
+      const sample = vi.fn<() => Promise<OnlineHandoffCapacity>>()
+        .mockImplementationOnce(() => new Promise((resolve) => { finishExpired = resolve; }))
+        .mockImplementationOnce(() => new Promise((resolve) => { finishFresh = resolve; }));
+      const service = new HandoffCapacityService({
+        machine: self, authorize: async () => true, computers: () => [], sampleLocal: sample, probeRemote: async () => online(other),
+      });
+      const expired = expect(service.probe('expired', self)).rejects.toThrow('Capacity probe is unavailable.');
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expired;
+      const fresh = service.probe('fresh', self);
+      await vi.advanceTimersByTimeAsync(0);
+      finishExpired({ ...online(), load: 'high' });
+      await vi.advanceTimersByTimeAsync(0);
+      const coalesced = service.probe('coalesced', self);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sample).toHaveBeenCalledTimes(2);
+      finishFresh(online());
+      expect(await fresh).toEqual([online()]);
+      expect(await coalesced).toEqual([online()]);
+      expect(await service.probe('cached', self)).toEqual([online()]);
+      expect(sample).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+});

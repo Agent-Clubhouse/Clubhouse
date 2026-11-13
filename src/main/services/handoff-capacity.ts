@@ -7,6 +7,24 @@ import {
 import { isMachineFingerprint } from '../../shared/agent-address';
 
 export const CAPACITY_CACHE_MS = 30_000;
+/** Total elapsed time, independent of socket activity or OS reads making progress. */
+export const CAPACITY_SAMPLE_TIMEOUT_MS = 5_000;
+
+export async function withCapacityDeadline<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error('Capacity probe deadline exceeded.'));
+    }, CAPACITY_SAMPLE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(() => operation(controller.signal)), deadline]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
 export const CAPACITY_RATE_LIMIT = { calls: 30, windowMs: 60_000 } as const;
 const GIB = 1024 ** 3;
 
@@ -84,7 +102,7 @@ export interface CapacityProbeOptions {
   /** Paired Annex Network computers only, never phones or one-to-one satellites. */
   computers(): CapacityComputer[];
   sampleLocal(): Promise<OnlineHandoffCapacity>;
-  probeRemote(machine: string): Promise<unknown>;
+  probeRemote(machine: string, signal: AbortSignal): Promise<unknown>;
   now?: () => number;
 }
 
@@ -121,7 +139,10 @@ export class HandoffCapacityService {
     const pending = this.inflight.get(machine);
     if (pending) return pending;
     const work = async () => {
-      const raw = machine === this.options.machine ? await this.options.sampleLocal() : await this.options.probeRemote(machine);
+      const raw = await withCapacityDeadline((signal) => machine === this.options.machine
+        ? this.options.sampleLocal() : this.options.probeRemote(machine, signal));
+      // Only the winning, unexpired result reaches parsing/cache writes. A late
+      // statfs or peer response cannot mutate the cache after its deadline.
       const parsed = parseHandoffCapacity(raw);
       if (!parsed.online || parsed.machine !== machine) throw new Error('Invalid capacity response.');
       if (!this.cache.has(machine) && this.cache.size >= 200) throw new Error('Capacity cache is full.');
@@ -131,7 +152,9 @@ export class HandoffCapacityService {
     const result = work().catch(() => {
       // telemetry-exempt: surface failure, never transport diagnostics or peer content
       throw new Error('Capacity probe is unavailable.');
-    }).finally(() => { this.inflight.delete(machine); });
+    }).finally(() => {
+      if (this.inflight.get(machine) === result) this.inflight.delete(machine);
+    });
     this.inflight.set(machine, result);
     return result;
   }

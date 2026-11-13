@@ -1123,6 +1123,8 @@ export interface AnnexSettings {
    * are one-to-one as before.
    */
   networkEnabled?: boolean;
+  /** Accept offers from other Annex Network computers. On when absent. */
+  acceptHandoffs?: boolean;
 }
 
 export interface AnnexStatus {

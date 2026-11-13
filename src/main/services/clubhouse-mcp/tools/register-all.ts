@@ -3,6 +3,7 @@
  * so tool-grants.test registers exactly what the app registers and can check
  * that each tool declares its grant (#2967).
  */
+import { registerHandoffCapacityTools } from './handoff-capacity-tools';
 import { registerAgentTools } from './agent-tools';
 import { registerBrowserTools } from './browser-tools';
 import { registerGroupProjectTools } from './group-project-tools';
@@ -31,6 +32,7 @@ import { registerAnnexDeliveryTools } from './annex-delivery-tools';
 import { registerAnnexNetworkTools } from './annex-network-tools';
 
 export function registerClubhouseMcpTools(): void {
+  registerHandoffCapacityTools();
   registerAgentTools();
   registerBrowserTools();
   registerGroupProjectTools();

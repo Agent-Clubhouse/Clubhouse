@@ -112,6 +112,11 @@ export function AnnexNetworkSettingsView() {
           <Toggle aria-label="Only accept connections from this computer" checked={settings.loopbackOnly === true}
             onChange={(value) => { void saveCurrentSettings({ loopbackOnly: value }); }} />
         </SettingsField>
+        <SettingsField label="Accept handoffs from other computers"
+          help="Allow agents on this Annex Network to offer work here. Handoff permissions and receiver agreement are still required.">
+          <Toggle aria-label="Accept handoffs from other computers" checked={settings.acceptHandoffs !== false}
+            onChange={(value) => { void saveCurrentSettings({ acceptHandoffs: value }); }} />
+        </SettingsField>
         {settingsLoadFailed && <p className={settingsError} role="alert">Couldn&apos;t load Annex settings, so nothing was changed. Try again.</p>}
       </div>
 

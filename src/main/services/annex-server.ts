@@ -64,6 +64,7 @@ import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
 import * as agentCalls from './annex-agent-calls';
+import { receiveCapacityProbe } from './handoff-capacity-host';
 import { cachedRepoKeys } from './project-repo-keys';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import { parseAgentAddress, routeOf } from '../../shared/agent-address';
@@ -3560,6 +3561,24 @@ async function handleNetworkAgentDeliveryCapabilitiesRoute(ctx: AnnexRouteContex
   }
 }
 
+async function handleNetworkCapacityRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (ctx.requireMtls()) { ctx.req.resume(); return; }
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined || ctx.requireMtls()) return;
+  try {
+    const capacity = await receiveCapacityProbe(machine, body);
+    if (ctx.requireMtls()) return;
+    if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+    sendJson(ctx.res, 200, capacity);
+  }
+  catch {
+    // telemetry-exempt: bounded refusal without resource/OS/peer details
+    sendJson(ctx.res, 503, { error: 'capacity_unavailable' });
+  }
+}
+
 async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
   const machine = agentCallPeer(ctx);
   if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can share connections here.' }); return; }
@@ -4328,6 +4347,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-call$/, handler: handleNetworkAgentCallRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-delivery-capabilities$/, handler: handleNetworkAgentDeliveryCapabilitiesRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/handoff-capacity$/, handler: handleNetworkCapacityRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },

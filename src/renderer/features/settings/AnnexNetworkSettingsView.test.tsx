@@ -61,6 +61,16 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ ...ON, loopbackOnly: !loopbackOnly }));
   });
 
+  it('lets the person turn incoming handoffs off without changing connectivity', async () => {
+    window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue(ON);
+    setup(ON);
+    render(<AnnexNetworkSettingsView />);
+    const toggle = screen.getByRole('switch', { name: 'Accept handoffs from other computers' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ ...ON, acceptHandoffs: false }));
+  });
+
   it('changes loopback mode without overwriting settings that have not loaded yet', async () => {
     window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue({ ...ON, alias: 'Saved' });
     setup({ ...OFF, alias: '', deviceName: '' });

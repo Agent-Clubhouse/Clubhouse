@@ -137,6 +137,7 @@ vi.mock('https', async (importOriginal) => {
 });
 
 import * as annexClient from './annex-client';
+import { CAPACITY_SAMPLE_TIMEOUT_MS, withCapacityDeadline } from './handoff-capacity';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
 import * as annexPeers from './annex-peers';
@@ -2867,6 +2868,42 @@ describe('annex-client', () => {
       expect(sockets).toHaveLength(0);
       expect(mockBonjourInstance.find).not.toHaveBeenCalled();
     });
+  });
+
+  it('aborts a trickling capacity request at its total deadline even while response data keeps arriving', async () => {
+    vi.useFakeTimers();
+    const fingerprint = Array(16).fill('dc').join(':');
+    annexClient._addConnectedSatelliteForTesting(fingerprint);
+    let signal: AbortSignal | undefined;
+    let chunks = 0;
+    let interval: ReturnType<typeof setInterval>;
+    const response = Object.assign(new EventEmitter(), { statusCode: 200 });
+    const request = Object.assign(new EventEmitter(), {
+      write: vi.fn(),
+      destroy: vi.fn((error: Error) => { clearInterval(interval); request.emit('error', error); response.emit('error', error); }),
+      end: () => {},
+    });
+    vi.mocked(https.request).mockImplementation(((_url: string, options: https.RequestOptions, callback: (res: unknown) => void) => {
+      signal = options.signal;
+      // Simulate Node's request AbortSignal behavior at the transport boundary.
+      signal?.addEventListener('abort', () => request.destroy(new Error('request aborted')), { once: true });
+      request.end = () => {
+        callback(response);
+        interval = setInterval(() => { chunks++; response.emit('data', Buffer.from(' ')); }, 100);
+      };
+      return request;
+    }) as never);
+    const pending = withCapacityDeadline((abortSignal) => annexClient.postToMachine(fingerprint,
+      '/api/v1/network/handoff-capacity', {}, { signal: abortSignal }));
+    const rejected = expect(pending).rejects.toThrow(/deadline|aborted/);
+    await vi.advanceTimersByTimeAsync(CAPACITY_SAMPLE_TIMEOUT_MS - 1);
+    expect(chunks).toBeGreaterThan(10);
+    expect(request.destroy).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await rejected;
+    expect(signal?.aborted).toBe(true);
+    expect(request.destroy).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   describe('chat across desktops (#2390)', () => {

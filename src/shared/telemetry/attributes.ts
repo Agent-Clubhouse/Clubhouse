@@ -566,7 +566,7 @@ export const ATTR = {
     'preview_repository_import', 'import_repository', 'get_repository_import', 'cancel_repository_import',
     // settings reads (#2653)
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
-    'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
+    'probe_capacity', 'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
     'request_app_update',
     'get_delivery', 'get_annex_network_settings', 'update_annex_network_settings',
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
@@ -976,6 +976,7 @@ export const ATTR = {
     'POST /api/v1/mobile/network/members',
     'POST /api/v1/network/agent-call',
     'POST /api/v1/network/agent-delivery-capabilities',
+    'POST /api/v1/network/handoff-capacity',
     'POST /api/v1/network/connections',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',
