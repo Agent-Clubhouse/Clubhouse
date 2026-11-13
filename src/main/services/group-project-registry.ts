@@ -276,6 +276,22 @@ class GroupProjectRegistry {
     return copy;
   }
 
+  /** Tell listeners something about the records' views changed (network state, #3363), without a write. */
+  touch(): void {
+    this.notifyListeners();
+  }
+
+  /** Record this machine's fingerprint as the host of a record that had none (sharing it with the network). */
+  async pinHost(id: string, machine: string): Promise<GroupProject | null> {
+    await this.ensureLoaded();
+    const project = this.projects.get(id);
+    if (!project) return null;
+    if (project.host?.machine && project.host.machine !== machine) throw new Error('A group project keeps its host.');
+    project.host = { machine };
+    this.markDirty();
+    return project;
+  }
+
   /** Change a record's scope (#3355). Only the host service calls this. */
   async setScope(id: string, scope: GroupProjectScope): Promise<GroupProject | null> {
     await this.ensureLoaded();

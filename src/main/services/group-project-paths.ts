@@ -27,3 +27,9 @@ export const tombstonesPath = (): string => path.join(groupProjectsDir(), 'tombs
 export const bulletinPath = (id: string): string => path.join(groupProjectDir(id), 'bulletin.json');
 export const membershipPath = (id: string): string => path.join(groupProjectDir(id), 'membership.json');
 export const hostStatePath = (id: string): string => path.join(groupProjectDir(id), 'host.json');
+/** A copy of a group project hosted on another computer: when it last caught up (#3363). */
+export const replicaStatePath = (id: string): string => path.join(groupProjectDir(id), 'replica.json');
+/** Writes made here for other computers' group projects, waiting for their hosts. */
+export const networkOutboxPath = (): string => path.join(groupProjectsDir(), 'network-outbox.json');
+/** Writes a host refused, for their authors. */
+export const networkRefusalsPath = (): string => path.join(groupProjectsDir(), 'network-refusals.json');

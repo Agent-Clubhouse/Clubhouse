@@ -158,9 +158,21 @@ export function registerGroupProjectTools(): void {
       const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
-        const msg = await groupProjectHost.post(targetId, sender, topic, body);
+        const msg = await groupProjectHost.post(targetId, sender, topic, body, { author: { agentId, label: sender } });
         // Members' notices leave the sender out by address, not by name.
-        noteSenderAddress(msg.id, agentId);
+        if (!msg.pending) noteSenderAddress(msg.id, agentId);
+        if (msg.pending) {
+          // A copy of a group project hosted on another computer that is away (#3363): queued for it.
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                posted: false, queued: true, waitingFor: msg.pending.waitingFor, topic: msg.topic,
+                note: `Waiting for ${msg.pending.waitingFor}. It is posted when that computer is back; if it is refused, you are told why.`,
+              }),
+            }],
+          };
+        }
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{

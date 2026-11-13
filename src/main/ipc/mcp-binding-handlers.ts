@@ -60,10 +60,13 @@ import {
   applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, removeSourceAcrossMachines, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
 } from '../services/connection-grants';
 import { listConnectionDirectionsForInspection } from '../services/connection-grants-store';
-import { syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
+import { isNetworkComputer, syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
 import { startHandoffs } from '../services/handoff-host';
 import { addCardConnection, listConnectionPickerTargets, removeCardConnection, startCardConnections } from '../services/connection-card';
 import type { AddCardConnection } from '../../shared/connection-picker';
+import { startGroupProjectNetwork } from '../services/group-project-network';
+import { onMembershipChanged as onNetworkMembershipChanged } from '../services/annex-network-membership';
+import { injectPtyMessage } from '../services/group-project-lifecycle';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexPeers from '../services/annex-peers';
 import * as annexClient from '../services/annex-client';
@@ -608,6 +611,19 @@ export function restorePersistedBindings(): Promise<void> {
       onDeliveryFailure: async (notice) => (await newsDeliveryFailed(notice)) || reportAnnexDeliveryFailure(notice),
     });
     stopFederatedRequests = startFederatedRequests();
+    // Network group projects (#3363): copies of other computers' group projects, and writes to their hosts.
+    startGroupProjectNetwork({
+      transport: {
+        connected: (machine) => annexClient.isMachineConnected(machine),
+        post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
+        onConnected: (listener) => annexClient.onSatelliteConnected(listener),
+        machineName: (machine) => annexClient.machineAlias(machine) || annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase())?.alias,
+      },
+      isMember: (machine) => isNetworkComputer(machine),
+      members: () => annexPeers.listPeers().map((p) => p.fingerprint.toLowerCase()).filter((fp) => isNetworkComputer(fp)),
+      onMembershipChanged: (listener) => onNetworkMembershipChanged(listener),
+      notifyAgent: (agentId, text) => injectPtyMessage(agentId, text),
+    });
   }
   return rebuildPersistedBindings().then(async (): Promise<void> => {
     // Once, after a rebuild has read every source: Dispatcher links from before #3215 get the new defaults.

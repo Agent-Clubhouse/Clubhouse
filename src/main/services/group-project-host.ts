@@ -13,7 +13,8 @@
 
 import type {
   BulletinMessage, GroupProject, GroupProjectChange, GroupProjectChangePart, GroupProjectCreateOptions, GroupProjectHost,
-  DigestSince, GroupProjectMemberView, GroupProjectMembership, GroupProjectScope, GroupProjectScopeOptions, GroupProjectTombstone, TopicDigest,
+  DigestSince, GroupProjectMemberView, GroupProjectMembership, GroupProjectNetworkRefusal, GroupProjectNetworkState,
+  GroupProjectScope, GroupProjectScopeOptions, GroupProjectTombstone, TopicDigest,
 } from '../../shared/group-project-types';
 import {
   GroupProjectScopeError, memberInScope, membersLeavingScope, resolveGroupProjectScope, sameGroupProjectScope,
@@ -28,7 +29,14 @@ import {
 import { emptyMembership, readMembershipFile, validateMembership, writeMembershipFile } from './group-project-membership-file';
 import * as fs from 'fs';
 import { AsyncLocalStorage } from 'async_hooks';
-import { assertGroupProjectId, groupProjectDir, hostStatePath, tombstonesPath } from './group-project-paths';
+import {
+  assertGroupProjectId, groupProjectDir, hostStatePath, networkOutboxPath, networkRefusalsPath, replicaStatePath, tombstonesPath,
+} from './group-project-paths';
+import { randomUUID } from 'crypto';
+import {
+  applyMembershipPatch, isEmptyPatch, membershipPatch,
+  type QueuedWrite, type ReplicaSnapshot, type SyncRequest, type SyncResponse, type WriteAuthor, type WriteOp, type WriteRequest, type WriteResponse, type WriteResult,
+} from '../../shared/group-project-network';
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
 import * as annexIdentity from './annex-identity';
 import { networkEnabled } from './annex-settings';
@@ -40,7 +48,10 @@ import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import { publishAppEvent } from './app-event-bus';
 
-export type GroupProjectHostErrorCode = 'not_found' | 'changed' | 'invalid' | 'network_unavailable' | 'out_of_scope';
+export type GroupProjectHostErrorCode =
+  | 'not_found' | 'changed' | 'invalid' | 'network_unavailable' | 'out_of_scope'
+  /** #3363: only the host can do this; a copy whose host left; the host refused; too much waiting. */
+  | 'not_host' | 'read_only' | 'refused' | 'queue_full';
 
 export class GroupProjectHostError extends Error {
   constructor(readonly code: GroupProjectHostErrorCode, message: string) {
@@ -53,6 +64,46 @@ export class GroupProjectHostError extends Error {
 export type GroupProjectMemberResolver = (project: GroupProject, membership: GroupProjectMembership) => Promise<GroupProjectMemberView[]>;
 
 type ChangeListener = (change: GroupProjectChange) => void;
+
+/** How the host service reaches other computers in the network (#3363); group-project-network.ts provides it. */
+export interface GroupProjectNetworkLink {
+  /** Connected to that computer now. */
+  connected(machine: string): boolean;
+  /** A computer in this machine's Annex Network. */
+  isMember(machine: string): boolean;
+  machineName(machine: string): string | undefined;
+  sync(machine: string, request: SyncRequest): Promise<SyncResponse>;
+  sendWrites(machine: string, writes: QueuedWrite[]): Promise<WriteResponse>;
+  /** Tell the author of a refused write (an agent here), if there is one to tell. */
+  notifyRefusal?(refusal: GroupProjectNetworkRefusal): void;
+}
+
+/** Answers a reason to refuse a remote write, or undefined to allow it. */
+export type RemoteWriteGate = (project: GroupProject, machine: string, write: QueuedWrite) => Promise<string | undefined> | string | undefined;
+
+type OutboxItem = QueuedWrite & { host: string };
+interface StoredList<T> { version: 1; items: T[] }
+interface ReplicaState { version: 1; syncedAt?: string; hostRemoved?: boolean }
+
+const OUTBOX_MAX_PER_PROJECT = 200;
+const OUTBOX_MAX_TOTAL = 1000;
+const OUTBOX_EXPIRY_MS = 24 * 60 * 60 * 1000;
+const FLUSH_BATCH = 20;
+const REFUSALS_MAX = 200;
+
+function validateStoredList<T>(value: unknown): StoredList<T> {
+  const v = value as Partial<StoredList<T>> | null;
+  if (!v || typeof v !== 'object' || v.version !== 1 || !Array.isArray(v.items)) throw new Error('Group project network state is not a valid version 1 record.');
+  return { version: 1, items: v.items };
+}
+
+function validateReplicaState(value: unknown): ReplicaState {
+  const v = value as Partial<ReplicaState> | null;
+  if (!v || typeof v !== 'object' || v.version !== 1) throw new Error('Group project copy state is not a valid version 1 record.');
+  return { version: 1, ...(typeof v.syncedAt === 'string' && { syncedAt: v.syncedAt }), ...(v.hostRemoved === true && { hostRemoved: true }) };
+}
+
+const stripHost = ({ host: _host, ...item }: OutboxItem): QueuedWrite => item;
 
 /** The group projects whose queue the current async context holds through exclusive(). */
 const exclusiveScope = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -104,6 +155,11 @@ class GroupProjectHostService {
   private reconciled: Promise<void> | null = null;
   private listeners = new Set<ChangeListener>();
   private memberResolver: GroupProjectMemberResolver | null = null;
+  private link: GroupProjectNetworkLink | null = null;
+  private remoteWriteGate: RemoteWriteGate | null = null;
+  private outbox: OutboxItem[] | null = null;
+  private refusals: GroupProjectNetworkRefusal[] | null = null;
+  private flushing = new Map<string, Promise<void>>();
 
   // ── Identity ─────────────────────────────────────────────────────────────
 
@@ -265,7 +321,11 @@ class GroupProjectHostService {
   // ── Records ──────────────────────────────────────────────────────────────
 
   private async view(project: GroupProject): Promise<GroupProject> {
-    return { ...project, host: { machine: project.host?.machine ?? null }, seq: await this.seqOf(project.id) };
+    const network = await this.networkView(project).catch((): undefined => undefined);
+    return {
+      ...project, host: { machine: project.host?.machine ?? null }, seq: await this.seqOf(project.id).catch(() => 0),
+      hostName: this.hostNameOf(project), ...(network && { network }),
+    };
   }
 
   async list(): Promise<GroupProject[]> {
@@ -305,8 +365,14 @@ class GroupProjectHostService {
   }
 
   async update(
-    id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }, options: { withinExclusive?: boolean } = {},
+    id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }, options: { withinExclusive?: boolean; author?: WriteAuthor } = {},
   ): Promise<GroupProject | null> {
+    const replica = await this.replicaFor(id).catch((): null => null);
+    if (replica) {
+      const current = await this.view(replica);
+      return this.forward(replica, { op: 'update', fields }, options.author ?? { label: 'user' }, () => current, () => current)
+        .then(async () => this.get(id));
+    }
     try {
       return await this.commit(id, 'record', async ({ project, reserve }) => {
         const unchanged = (['name', 'description', 'instructions'] as const).every((key) => fields[key] === undefined || fields[key] === project[key])
@@ -345,6 +411,7 @@ class GroupProjectHostService {
     assertGroupProjectId(id);
     const body = async () => {
       const project = await this.requireProject(id);
+      if (this.isReplica(project)) throw this.notHost(project, 'delete');
       const current = await this.seqOf(id);
       if (options.expectedSeq !== undefined && options.expectedSeq !== current) {
         throw new GroupProjectHostError('changed', 'The group project changed after its impact was shown. Review it again before deleting.');
@@ -412,7 +479,9 @@ class GroupProjectHostService {
     assertGroupProjectId(id);
     const body = async () => {
       await this.reconcile();
-      if (!(await groupProjectRegistry.get(id))) return { deleted: false };
+      const existing = await groupProjectRegistry.get(id);
+      if (!existing) return { deleted: false };
+      if (this.isReplica(existing)) throw this.notHost(existing, 'delete');
       await this.beginDelete(id, { expectedSeq: options.expectedSeq, withinExclusive: true });
       return { deleted: true, tombstone: await this.finishDelete(id, { withinExclusive: true }) };
     };
@@ -427,9 +496,22 @@ class GroupProjectHostService {
   }
 
   /** Change the membership record. `fn` edits a copy; a throw changes nothing. */
-  updateMembership(
+  async updateMembership(
     id: string, fn: (draft: GroupProjectMembership) => GroupProjectMembership | void, options: { withinExclusive?: boolean } = {},
-  ): Promise<{ membership: GroupProjectMembership; seq: number }> {
+  ): Promise<{ membership: GroupProjectMembership; seq: number; queued?: boolean }> {
+    const replica = await this.replicaFor(id).catch((): null => null);
+    if (replica) {
+      // A copy sends the change as a patch, applied by the host to its own current record.
+      const hostMachine = this.hostMachineOf(replica);
+      const current = await readMembershipFile(id, hostMachine);
+      const draft = structuredClone(current);
+      const next = validateMembership(fn(draft) ?? draft, hostMachine);
+      const patch = membershipPatch(current, next);
+      const seq = await this.seqOf(id);
+      if (isEmptyPatch(patch)) return { membership: current, seq };
+      return this.forward(replica, { op: 'membership', patch }, { label: 'membership' },
+        () => ({ membership: next, seq }), () => ({ membership: next, seq, queued: true }));
+    }
     return this.commit(id, 'membership', async ({ project, reserve }) => {
       const hostMachine = this.hostMachineOf(project);
       const current = await readMembershipFile(id, hostMachine);
@@ -455,7 +537,7 @@ class GroupProjectHostService {
     const members: GroupProjectMemberView[] = [];
     for (const b of bindingManager.getAllBindings()) {
       if (b.targetKind !== 'group-project' || b.targetId !== id) continue;
-      const address = canonicalMemberAddress(b.agentId, this.hostMachineOf(project));
+      const address = this.addressOf(project, b.agentId);
       if (seen.has(address)) continue;
       seen.add(address);
       const projectId = projects.get(b.agentId);
@@ -503,7 +585,10 @@ class GroupProjectHostService {
     if (!networkEnabled()) {
       return { network: { available: false, reason: 'Network reach needs Annex Network. Turn it on in Settings > Annex Network.' } };
     }
-    return { network: { available: false, reason: 'Network group projects are not available in this version yet.' } };
+    if (!this.selfMachine()) {
+      return { network: { available: false, reason: 'Network reach needs this computer in an Annex Network. Add a device in Settings > Annex Network first.' } };
+    }
+    return { network: { available: true } };
   }
 
   private async resolveScope(scope: unknown): Promise<GroupProjectScope> {
@@ -553,8 +638,13 @@ class GroupProjectHostService {
     id: string, scope: unknown, options: { confirmLeaving?: readonly string[]; withinExclusive?: boolean } = {},
   ): Promise<{ project: GroupProject; left: GroupProjectMemberView[] }> {
     const next = await this.resolveScope(scope);
+    const replica = await this.replicaFor(id).catch((): null => null);
+    if (replica) throw this.notHost(replica, 'change the scope of');
     return this.commit(id, 'record', async ({ project, reserve }) => {
       if (project.scope && sameGroupProjectScope(project.scope, next)) return { project: await this.view(project), left: [] };
+      // Shared with the network, a group project names its host by fingerprint: this computer.
+      const self = this.selfMachine();
+      if (next.reach === 'network' && !project.host?.machine && self) await groupProjectRegistry.pinHost(id, self);
       const leaving = membersLeavingScope(next, await this.resolveMembers(id));
       const returning = new Set((await this.returningWith(project, next)).map((member) => member.address));
       const confirmed = new Set(options.confirmLeaving ?? []);
@@ -579,7 +669,7 @@ class GroupProjectHostService {
         ];
         await writeMembershipFile(id, validateMembership({ ...membership, explicit, excluded }, hostMachine));
         for (const b of bindingManager.getAllBindings()) {
-          if (b.targetKind === 'group-project' && b.targetId === id && leavingAddresses.has(canonicalMemberAddress(b.agentId, hostMachine))) {
+          if (b.targetKind === 'group-project' && b.targetId === id && leavingAddresses.has(this.addressOf(project, b.agentId))) {
             bindingManager.unbind(b.agentId, id);
           }
         }
@@ -624,7 +714,7 @@ class GroupProjectHostService {
         for (const binding of bound) {
           const config = durable.get(binding.agentId);
           if (!config) continue;
-          const address = canonicalMemberAddress(binding.agentId, hostMachine);
+          const address = this.addressOf(gp, binding.agentId);
           if (draft.explicit.some((e) => e.address === address) || draft.excluded.some((e) => e.address === address)) continue;
           draft.explicit.push({
             address, kind: config.parentAgentId ? 'helper' : 'durable', addedAt,
@@ -646,7 +736,7 @@ class GroupProjectHostService {
     const project = await groupProjectRegistry.get(id);
     if (!project) return false;
     if (!project.scope) return true;
-    const address = canonicalMemberAddress(agentId, this.hostMachineOf(project));
+    const address = this.addressOf(project, agentId);
     const projectId = project.scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
     return memberInScope(project.scope, { address, projectId }) === true;
   }
@@ -654,7 +744,7 @@ class GroupProjectHostService {
   /** Refused for its scope: exclude the agent, so a stored wire coming back is refused too. */
   async excludeOutOfScope(id: string, agentId: string): Promise<void> {
     const project = await this.requireProject(id);
-    const address = canonicalMemberAddress(agentId, this.hostMachineOf(project));
+    const address = this.addressOf(project, agentId);
     await this.updateMembership(id, (draft) => {
       if (draft.excluded.some((e) => e.address === address) || draft.explicit.some((e) => e.address === address)) return;
       draft.excluded.push({ address, excludedAt: new Date().toISOString(), reason: 'scope' });
@@ -676,7 +766,7 @@ class GroupProjectHostService {
     const project = await groupProjectRegistry.get(id);
     if (!project) return false;
     const hostMachine = this.hostMachineOf(project);
-    const address = canonicalMemberAddress(agentId, hostMachine);
+    const address = this.addressOf(project, agentId);
     const membership = await readMembershipFile(id, hostMachine);
     // A stored wire coming back: refused when excluded, otherwise a pair that was already
     // a member, which a check never evicts.
@@ -703,6 +793,18 @@ class GroupProjectHostService {
     return machine === null || machine === self ? parsed.agentId : null;
   }
 
+  /**
+   * The host-relative address for a reference made on this computer: a bare id
+   * is an agent here (qualified with this machine on a copy of a group project
+   * hosted elsewhere), and a qualified one is normalized.
+   */
+  addressOf(project: GroupProject, reference: string): string {
+    const parsed = parseAgentAddress(reference.trim());
+    return parsed.machine
+      ? canonicalMemberAddress(reference, this.hostMachineOf(project))
+      : memberAddress(parsed.agentId, this.selfMachine(), this.hostMachineOf(project));
+  }
+
   /** The host-relative address of an agent here or on another machine. */
   memberAddress(project: GroupProject, agentId: string, machine?: string | null): string {
     return memberAddress(agentId, machine ?? this.selfMachine(), this.hostMachineOf(project));
@@ -711,14 +813,26 @@ class GroupProjectHostService {
   // ── Board ────────────────────────────────────────────────────────────────
   // Every write takes `withinExclusive` for use inside `exclusive()`.
 
-  async post(id: string, sender: string, topic: string, body: string, options: { withinExclusive?: boolean; chain?: string[] } = {}): Promise<BulletinMessage> {
+  async post(
+    id: string, sender: string, topic: string, body: string,
+    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor } = {},
+  ): Promise<BulletinMessage> {
+    const replica = await this.replicaFor(id);
+    if (replica) {
+      // A copy forwards to its host, which publishes the post's event where it lands (#3363).
+      return this.forward<BulletinMessage>(replica, { op: 'post', sender, topic, body }, options.author ?? { label: sender }, (result) => result as BulletinMessage, (item) => ({
+        id: `queued_${item.id}`, sender, topic: normalizeChannelName(topic), body, timestamp: item.queuedAt, pending: { waitingFor: this.hostNameOf(replica) },
+      }));
+    }
     const message = await this.commit(id, 'board', async ({ reserve }) => getBulletinBoard(id).postMessage(sender, topic, body, await reserve()), options.withinExclusive);
     publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
     return message;
   }
 
   /** False when there's no such message, or no such group project, as before #3356. */
-  deleteMessage(id: string, topic: string, messageId: string, options: { withinExclusive?: boolean } = {}): Promise<boolean> {
+  async deleteMessage(id: string, topic: string, messageId: string, options: { withinExclusive?: boolean; author?: WriteAuthor } = {}): Promise<boolean> {
+    const replica = await this.replicaFor(id).catch((): null => null);
+    if (replica) return this.forward(replica, { op: 'deleteMessage', topic, messageId }, options.author ?? { label: 'user' }, Boolean, () => true);
     return this.unlessMissing(false, () => this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       const message = await board.getMessageById(messageId);
@@ -728,7 +842,9 @@ class GroupProjectHostService {
     }, options.withinExclusive));
   }
 
-  deleteTopic(id: string, topic: string, options: { withinExclusive?: boolean } = {}): Promise<boolean> {
+  async deleteTopic(id: string, topic: string, options: { withinExclusive?: boolean; author?: WriteAuthor } = {}): Promise<boolean> {
+    const replica = await this.replicaFor(id).catch((): null => null);
+    if (replica) return this.forward(replica, { op: 'deleteTopic', topic }, options.author ?? { label: 'user' }, Boolean, () => true);
     return this.unlessMissing(false, () => this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       if (!(await board.hasTopic(topic))) return false;
@@ -747,7 +863,9 @@ class GroupProjectHostService {
     }
   }
 
-  setTopicProtected(id: string, topic: string, isProtected: boolean, options: { withinExclusive?: boolean } = {}): Promise<void> {
+  async setTopicProtected(id: string, topic: string, isProtected: boolean, options: { withinExclusive?: boolean; author?: WriteAuthor } = {}): Promise<void> {
+    const replica = await this.replicaFor(id);
+    if (replica) return this.forward(replica, { op: 'setTopicProtected', topic, isProtected }, options.author ?? { label: 'user' }, (): undefined => undefined, (): undefined => undefined);
     return this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       await board.hasTopic(topic);
@@ -757,7 +875,9 @@ class GroupProjectHostService {
     }, options.withinExclusive);
   }
 
-  clearAll(id: string, options: { withinExclusive?: boolean } = {}): Promise<number> {
+  async clearAll(id: string, options: { withinExclusive?: boolean } = {}): Promise<number> {
+    const replica = await this.replicaFor(id);
+    if (replica) throw this.notHost(replica, 'clear');
     return this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       await board.hasTopic('general');
@@ -768,7 +888,9 @@ class GroupProjectHostService {
   }
 
   /** Save retention limits and trim the board to them, as one change. Unchanged limits that trim nothing take no number. */
-  setRetention(id: string, maxPerTopic: number, maxTotal: number, options: { withinExclusive?: boolean } = {}): Promise<number> {
+  async setRetention(id: string, maxPerTopic: number, maxTotal: number, options: { withinExclusive?: boolean } = {}): Promise<number> {
+    const replica = await this.replicaFor(id);
+    if (replica) throw this.notHost(replica, 'change the retention of');
     return this.commit(id, 'record', async ({ project, reserve }) => {
       const board = getBulletinBoard(id);
       await board.hasTopic('general');
@@ -787,22 +909,40 @@ class GroupProjectHostService {
   }
 
   /** Seed `general` and `control` and keep them protected. Changes nothing when they are. */
-  ensureChannels(id: string, options: { withinExclusive?: boolean } = {}): Promise<void> {
+  async ensureChannels(id: string, options: { withinExclusive?: boolean } = {}): Promise<void> {
+    const replica = await this.replicaFor(id);
+    if (replica) {
+      // A copy has what the host seeded; only ask when something's missing.
+      if (await this.channelsReady(id)) return;
+      return this.forward(replica, { op: 'ensureChannels' }, { label: 'system' }, (): undefined => undefined, (): undefined => undefined);
+    }
     return this.commit(id, 'board', async ({ reserve }) => {
+      if (await this.channelsReady(id)) return;
       const board = getBulletinBoard(id);
-      let ready = true;
-      for (const name of PROJECT_CHANNELS) {
-        if (!(await board.hasTopic(name)) || !board.isTopicProtected(name)) ready = false;
-      }
-      if (ready) return;
       await ensureProjectChannels(id, await reserve());
     }, options.withinExclusive);
   }
 
+  private async channelsReady(id: string): Promise<boolean> {
+    const board = getBulletinBoard(id);
+    for (const name of PROJECT_CHANNELS) {
+      if (!(await board.hasTopic(name)) || !board.isTopicProtected(name)) return false;
+    }
+    return true;
+  }
+
   /** Seed a member's inbox, kept apart from any other member with the same name (#1646). Returns its channel. */
-  ensureInbox(id: string, agentName: string, address: string, options: { withinExclusive?: boolean } = {}): Promise<string> {
+  async ensureInbox(id: string, agentName: string, address: string, options: { withinExclusive?: boolean } = {}): Promise<string> {
+    const replica = await this.replicaFor(id);
+    if (replica) {
+      const canonical = this.addressOf(replica, address);
+      const board = getBulletinBoard(id);
+      const channel = await resolveInboxChannel(id, agentName, canonical);
+      if ((await board.inboxOwner(channel)) === canonical && (await board.hasTopic(channel)) && board.isTopicProtected(channel)) return channel;
+      return this.forward(replica, { op: 'ensureInbox', agentName, address: canonical }, { label: agentName }, (result) => (typeof result === 'string' ? result : channel), () => channel);
+    }
     return this.commit(id, 'board', async ({ project, reserve }) => {
-      const canonical = canonicalMemberAddress(address, this.hostMachineOf(project));
+      const canonical = this.addressOf(project, address);
       const board = getBulletinBoard(id);
       const channel = await resolveInboxChannel(id, agentName, canonical);
       if ((await board.inboxOwner(channel)) === canonical && (await board.hasTopic(channel)) && board.isTopicProtected(channel)) return channel;
@@ -854,7 +994,387 @@ class GroupProjectHostService {
   /** The inbox channel of a member, without changing anything. */
   async inboxFor(id: string, agentName: string, address?: string): Promise<string> {
     const project = await this.requireProject(id);
-    return resolveInboxChannel(id, agentName, address && canonicalMemberAddress(address, this.hostMachineOf(project)));
+    return resolveInboxChannel(id, agentName, address && this.addressOf(project, address));
+  }
+
+  // ── Network group projects (#3363) ───────────────────────────────────────
+  // A network group project is held by its host. Other computers in the Annex
+  // Network keep a copy (a replica: a record here whose host is another
+  // computer) that follows the host's sequence numbers, and send writes to the
+  // host, queued while it is away. group-project-network.ts carries the
+  // requests; everything that touches the stores is here.
+
+  /** Set by the network service at startup; tests set a fake. */
+  setNetworkLink(link: GroupProjectNetworkLink | null): void {
+    this.link = link;
+  }
+
+  /** Who the host checks a remote write against (#3360 sets one); none allows every network computer. */
+  setRemoteWriteGate(gate: RemoteWriteGate | null): void {
+    this.remoteWriteGate = gate;
+  }
+
+  /** A cached copy of a group project hosted on another computer. */
+  isReplica(project: GroupProject): boolean {
+    return !this.isThisMachine(project.host);
+  }
+
+  private async replicaFor(id: string): Promise<GroupProject | null> {
+    assertGroupProjectId(id);
+    const project = await groupProjectRegistry.get(id);
+    return project && this.isReplica(project) ? project : null;
+  }
+
+  hostNameOf(project: GroupProject): string {
+    if (!this.isReplica(project)) return 'This computer';
+    return this.link?.machineName(project.host!.machine!) || 'another computer';
+  }
+
+  private notHost(project: GroupProject, what: string): GroupProjectHostError {
+    return new GroupProjectHostError('not_host', `Only ${this.hostNameOf(project)} can ${what} this group project.`);
+  }
+
+  private async loadOutbox(): Promise<OutboxItem[]> {
+    if (!this.outbox) this.outbox = (await readJsonFile(networkOutboxPath(), (): StoredList<OutboxItem> => ({ version: 1, items: [] }), validateStoredList<OutboxItem>)).items;
+    return this.outbox;
+  }
+
+  private async saveOutbox(items: OutboxItem[]): Promise<void> {
+    await writeJsonFile(networkOutboxPath(), { version: 1, items } satisfies StoredList<OutboxItem>);
+    this.outbox = items;
+  }
+
+  private async loadRefusals(): Promise<GroupProjectNetworkRefusal[]> {
+    if (!this.refusals) {
+      this.refusals = (await readJsonFile(networkRefusalsPath(), (): StoredList<GroupProjectNetworkRefusal> => ({ version: 1, items: [] }), validateStoredList<GroupProjectNetworkRefusal>)).items;
+    }
+    return this.refusals;
+  }
+
+  private async recordRefusal(item: OutboxItem, reason: string): Promise<void> {
+    const refusal: GroupProjectNetworkRefusal = {
+      id: item.id, groupProjectId: item.groupProjectId, op: item.write.op, reason, at: new Date().toISOString(), author: item.author,
+    };
+    const items = [...(await this.loadRefusals()), refusal].slice(-REFUSALS_MAX);
+    await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
+    this.refusals = items;
+    try {
+      this.link?.notifyRefusal?.(refusal);
+    } catch {
+      // telemetry-exempt: the refusal is kept for the directory whatever the notice does
+    }
+  }
+
+  /** The person has seen a group project's refusals. */
+  async dismissRefusals(id: string): Promise<void> {
+    const items = (await this.loadRefusals()).filter((r) => r.groupProjectId !== id);
+    await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
+    this.refusals = items;
+    groupProjectRegistry.touch();
+  }
+
+  private async replicaState(id: string): Promise<ReplicaState> {
+    return readJsonFile(replicaStatePath(id), (): ReplicaState => ({ version: 1 }), validateReplicaState);
+  }
+
+  private async networkView(project: GroupProject): Promise<GroupProjectNetworkState | undefined> {
+    if (project.scope?.reach !== 'network') return undefined;
+    const refusals = (await this.loadRefusals()).filter((r) => r.groupProjectId === project.id);
+    const waitingWrites = (await this.loadOutbox()).filter((i) => i.groupProjectId === project.id).length;
+    if (!this.isReplica(project)) return { role: 'host', state: 'online', waitingWrites, refusals };
+    const replica = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
+    const host = project.host!.machine!;
+    const state = replica.hostRemoved || (this.link && !this.link.isMember(host)) ? 'host-removed'
+      : this.link?.connected(host) ? 'online' : 'cached';
+    return { role: 'replica', state, waitingWrites, ...(replica.syncedAt && { syncedAt: replica.syncedAt }), refusals };
+  }
+
+  /**
+   * A write on a copy goes to its host: at once when the host is connected and
+   * nothing waits before it, otherwise into the queue for when it's back.
+   */
+  private async forward<T>(project: GroupProject, write: WriteOp, author: WriteAuthor, applied: (result: unknown) => T, queued: (item: OutboxItem) => T): Promise<T> {
+    const host = project.host!.machine!;
+    const replica = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
+    if (replica.hostRemoved || (this.link && !this.link.isMember(host))) {
+      throw new GroupProjectHostError('read_only', `${this.hostNameOf(project)} left your network. This group project is read-only here.`);
+    }
+    const item: OutboxItem = {
+      id: randomUUID(), host, groupProjectId: project.id, author, queuedAt: new Date().toISOString(), write,
+    };
+    const waiting = (await this.loadOutbox()).some((i) => i.host === host);
+    if (this.link?.connected(host) && !waiting) {
+      let response: WriteResponse | undefined;
+      try {
+        response = await this.link.sendWrites(host, [stripHost(item)]);
+      } catch (err) {
+        // telemetry-exempt: the host went away mid-request; the write is queued below
+        appLog('core:group-project', 'info', 'Host unreachable; queuing the write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
+      }
+      const result = response?.results.find((r) => r.id === item.id);
+      if (result?.status === 'applied') {
+        await this.syncFrom(host).catch((err: unknown) => {
+          // telemetry-exempt: the copy catches up on the host's next notice
+          appLog('core:group-project', 'warn', 'Could not catch up after a write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
+        });
+        return applied(result.result);
+      }
+      if (result?.status === 'refused') throw new GroupProjectHostError('refused', `${this.hostNameOf(project)} refused this change: ${result.reason}`);
+    }
+    await this.enqueue(project, item);
+    return queued(item);
+  }
+
+  private async enqueue(project: GroupProject, item: OutboxItem): Promise<void> {
+    const items = await this.loadOutbox();
+    if (items.length >= OUTBOX_MAX_TOTAL || items.filter((i) => i.groupProjectId === project.id).length >= OUTBOX_MAX_PER_PROJECT) {
+      throw new GroupProjectHostError('queue_full', `Too many changes are waiting for ${this.hostNameOf(project)}. Try again when it's back.`);
+    }
+    await this.saveOutbox([...items, item]);
+    groupProjectRegistry.touch();
+  }
+
+  /**
+   * Send what waits for `host`, in order. Each is applied or refused by the
+   * host; a refusal is kept and told to its author. Stops at the first
+   * transport failure, to go on at the next connect. Expired writes are refused
+   * here, without sending.
+   */
+  flushOutbox(host: string): Promise<void> {
+    const running = this.flushing.get(host);
+    if (running) return running;
+    const flush = (async () => {
+      for (;;) {
+        const now = Date.now();
+        const all = await this.loadOutbox();
+        const expired = all.filter((i) => i.host === host && now - Date.parse(i.queuedAt) > OUTBOX_EXPIRY_MS);
+        for (const item of expired) {
+          await this.saveOutbox((await this.loadOutbox()).filter((i) => i.id !== item.id));
+          await this.recordRefusal(item, `It waited more than a day for ${this.link?.machineName(host) || 'its host'}.`);
+        }
+        const batch = (await this.loadOutbox()).filter((i) => i.host === host).slice(0, FLUSH_BATCH);
+        if (batch.length === 0 || !this.link?.connected(host)) break;
+        const response = await this.link.sendWrites(host, batch.map(stripHost));
+        let progressed = false;
+        for (const item of batch) {
+          const result = response.results.find((r) => r.id === item.id);
+          if (!result) break;
+          await this.saveOutbox((await this.loadOutbox()).filter((i) => i.id !== item.id));
+          progressed = true;
+          if (result.status === 'refused') await this.recordRefusal(item, result.reason);
+        }
+        if (!progressed) break;
+      }
+      groupProjectRegistry.touch();
+      await this.syncFrom(host);
+    })().finally(() => { this.flushing.delete(host); });
+    this.flushing.set(host, flush);
+    return flush;
+  }
+
+  /** Catch up every copy held of `host`'s group projects, and learn of new ones. */
+  async syncFrom(host: string): Promise<void> {
+    if (!this.link) return;
+    await this.reconcile();
+    const held = (await groupProjectRegistry.list()).filter((p) => this.isReplica(p) && p.host?.machine === host);
+    const known: Record<string, number> = {};
+    for (const p of held) known[p.id] = await this.seqOf(p.id).catch(() => 0);
+    const response = await this.link.sync(host, { v: 1, known });
+    const listed = new Set([...response.unchanged, ...response.projects.map((p) => p.record.id)]);
+    for (const snapshot of response.projects) await this.applySnapshot(host, snapshot);
+    for (const tombstone of response.tombstones) {
+      if (held.some((p) => p.id === tombstone.groupProjectId)) await this.purgeReplica(tombstone.groupProjectId, `It was deleted on ${this.link.machineName(host) || 'its host'}.`);
+    }
+    for (const p of held) {
+      if (!listed.has(p.id) && !response.tombstones.some((t) => t.groupProjectId === p.id)) {
+        await this.purgeReplica(p.id, `${this.link.machineName(host) || 'Its host'} no longer shares it with your network.`);
+      }
+    }
+    for (const id of response.unchanged) {
+      if (held.some((p) => p.id === id)) await this.markSynced(id);
+    }
+  }
+
+  private async markSynced(id: string): Promise<void> {
+    await writeJsonFile(replicaStatePath(id), { version: 1, syncedAt: new Date().toISOString() } satisfies ReplicaState);
+  }
+
+  /** Store the host's current state of one group project as this computer's copy. */
+  private applySnapshot(host: string, snapshot: ReplicaSnapshot): Promise<void> {
+    const id = snapshot.record.id;
+    return this.run(id, async () => {
+      if (await groupProjectRegistry.hasRecord(id)) {
+        const existing = await groupProjectRegistry.get(id);
+        if (existing && !this.isReplica(existing)) {
+          appLog('core:group-project', 'warn', 'Ignored a copy of a group project this computer hosts', { meta: { id, host } });
+          return;
+        }
+      }
+      const tombstoned = (await this.loadTombstones()).some((t) => t.groupProjectId === id);
+      if (tombstoned) return;
+      const { seq: _seq, hostName: _hostName, network: _network, ...record } = snapshot.record;
+      await groupProjectRegistry.putReplica({ ...record, host: { machine: host } });
+      await writeMembershipFile(id, validateMembership(snapshot.membership, host));
+      const missing = await getBulletinBoard(id).applyReplica(snapshot.board);
+      // A copy missing messages the host still holds asks for everything next time.
+      const seq = missing > 0 ? 0 : snapshot.seq;
+      await writeJsonFile(hostStatePath(id), { version: 1, seq } satisfies HostState);
+      this.seqs.set(id, seq);
+      await this.markSynced(id);
+      this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'record' });
+      this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'board' });
+    });
+  }
+
+  /** Drop this computer's copy: deleted on the host, or no longer shared. Writes waiting for it are refused. */
+  private purgeReplica(id: string, reason: string): Promise<void> {
+    return this.run(id, async () => {
+      const project = await groupProjectRegistry.get(id);
+      if (!project || !this.isReplica(project)) return;
+      const last = await this.view(project);
+      for (const item of (await this.loadOutbox()).filter((i) => i.groupProjectId === id)) {
+        await this.saveOutbox((await this.loadOutbox()).filter((i) => i.id !== item.id));
+        await this.recordRefusal(item, reason);
+      }
+      await groupProjectRegistry.delete(id);
+      await groupProjectRegistry.flush();
+      this.seqs.delete(id);
+      await destroyBulletinBoard(id);
+      appLog('core:group-project', 'info', 'Removed a copy of a network group project', { meta: { id, reason } });
+      this.emit({ groupProjectId: id, seq: last.seq ?? 0, part: 'deleted', project: last });
+    });
+  }
+
+  /**
+   * A computer left the network (#3363). Its group projects become read-only
+   * copies here, and writes waiting for it are refused; its agents leave this
+   * computer's network group projects.
+   */
+  async machineRemoved(machine: string): Promise<void> {
+    const fp = machine.toLowerCase();
+    for (const project of await groupProjectRegistry.list()) {
+      if (this.isReplica(project) && project.host?.machine === fp) {
+        const state = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
+        await writeJsonFile(replicaStatePath(project.id), { ...state, hostRemoved: true } satisfies ReplicaState);
+        for (const item of (await this.loadOutbox()).filter((i) => i.groupProjectId === project.id)) {
+          await this.saveOutbox((await this.loadOutbox()).filter((i) => i.id !== item.id));
+          await this.recordRefusal(item, `${this.hostNameOf(project)} left your network.`);
+        }
+      } else if (!this.isReplica(project) && project.scope?.reach === 'network') {
+        await this.updateMembership(project.id, (draft) => {
+          draft.explicit = draft.explicit.filter((e) => parseAgentAddress(e.address).machine !== fp);
+        });
+        for (const b of bindingManager.getAllBindings()) {
+          if (b.targetKind === 'group-project' && b.targetId === project.id && parseAgentAddress(b.agentId).machine === fp) bindingManager.unbind(b.agentId, project.id);
+        }
+      }
+    }
+    groupProjectRegistry.touch();
+  }
+
+  // ── The host side ──
+
+  /** What a network computer asked to catch up on: the network group projects hosted here. */
+  async networkSnapshot(request: SyncRequest): Promise<SyncResponse> {
+    await this.reconcile();
+    const self = this.selfMachine();
+    if (!self) return { v: 1, projects: [], unchanged: [], tombstones: [] };
+    const projects: ReplicaSnapshot[] = [];
+    const unchanged: string[] = [];
+    for (const project of await groupProjectRegistry.list()) {
+      if (this.isReplica(project) || project.scope?.reach !== 'network') continue;
+      const snapshot = await this.run(project.id, async (): Promise<ReplicaSnapshot | null> => {
+        const seq = await this.seqOf(project.id);
+        const known = request.known[project.id];
+        if (known === seq) return null;
+        const since = known !== undefined && known < seq ? known : 0;
+        const membership = await readMembershipFile(project.id, self);
+        const board = await getBulletinBoard(project.id).replicaSince(since);
+        const view = await this.view(project);
+        const { network: _network, hostName: _hostName, ...record } = view;
+        return {
+          record: { ...record, host: { machine: self }, seq, ...(await this.scopeProjectKeyOf(project)) },
+          seq, membership, board,
+        };
+      });
+      if (snapshot) projects.push(snapshot);
+      else unchanged.push(project.id);
+    }
+    const tombstones = (await this.loadTombstones())
+      .filter((t) => t.host.machine === null || t.host.machine === self)
+      .map((t) => ({ ...t, host: { machine: self } }));
+    return { v: 1, projects, unchanged, tombstones };
+  }
+
+  private async scopeProjectKeyOf(project: GroupProject): Promise<{ scopeProjectKey?: string }> {
+    if (project.scope?.level !== 'project') return {};
+    const scoped = (await projectStore.list()).find((p) => p.id === (project.scope as { projectId: string }).projectId);
+    if (!scoped) return {};
+    try {
+      return { scopeProjectKey: await agentConfig.projectKey(scoped.path) };
+    } catch {
+      // telemetry-exempt: without a key, other computers' projects aren't matched to it
+      return {};
+    }
+  }
+
+  /** Writes from another computer in the network, applied or refused here in order. */
+  async applyRemoteWrites(machine: string, request: WriteRequest): Promise<WriteResponse> {
+    const results: WriteResult[] = [];
+    for (const item of request.writes) results.push(await this.applyRemoteWrite(machine.toLowerCase(), item));
+    return { v: 1, results };
+  }
+
+  private async applyRemoteWrite(machine: string, item: QueuedWrite): Promise<WriteResult> {
+    const refuse = (reason: string): WriteResult => ({ id: item.id, status: 'refused', reason });
+    const id = item.groupProjectId;
+    if ((await this.loadTombstones()).some((t) => t.groupProjectId === id)) return refuse('This group project was deleted.');
+    const project = await groupProjectRegistry.get(id);
+    if (!project) return refuse('This group project no longer exists.');
+    if (this.isReplica(project)) return refuse('This computer is not its host.');
+    if (project.scope?.reach !== 'network') return refuse('This group project is no longer shared with your network.');
+    const gate = this.remoteWriteGate ? await this.remoteWriteGate(project, machine, item) : undefined;
+    if (gate) return refuse(gate);
+    const write = item.write;
+    try {
+      let result: unknown;
+      switch (write.op) {
+        case 'post':
+          if (normalizeChannelName(write.topic) === 'system') return refuse('The system channel is reserved.');
+          result = await this.post(id, write.sender, write.topic, write.body);
+          break;
+        case 'deleteMessage':
+          result = await this.deleteMessage(id, write.topic, write.messageId);
+          break;
+        case 'deleteTopic':
+          if (normalizeChannelName(write.topic) === 'system') return refuse('The system channel can\'t be deleted.');
+          result = await this.deleteTopic(id, write.topic);
+          break;
+        case 'setTopicProtected':
+          await this.setTopicProtected(id, write.topic, write.isProtected);
+          break;
+        case 'update':
+          await this.update(id, write.fields);
+          break;
+        case 'membership':
+          await this.updateMembership(id, (draft) => applyMembershipPatch(draft, write.patch));
+          break;
+        case 'ensureChannels':
+          await this.ensureChannels(id);
+          break;
+        case 'ensureInbox': {
+          // A machine speaks for its own agents only.
+          const address = canonicalMemberAddress(write.address, this.hostMachineOf(project));
+          if (parseAgentAddress(address).machine !== machine) return refuse('An inbox can only be claimed for an agent on the computer asking.');
+          result = await this.ensureInbox(id, write.agentName, address);
+          break;
+        }
+      }
+      return { id: item.id, status: 'applied', seq: await this.seqOf(id), ...(result !== undefined && { result }) };
+    } catch (err) {
+      // telemetry-exempt: answered to the sending computer, which shows it to the author
+      return refuse(err instanceof Error ? err.message : String(err));
+    }
   }
 
   // ── Persistence ──────────────────────────────────────────────────────────
@@ -880,6 +1400,11 @@ class GroupProjectHostService {
     this.reconciled = null;
     this.listeners.clear();
     this.memberResolver = null;
+    this.link = null;
+    this.remoteWriteGate = null;
+    this.outbox = null;
+    this.refusals = null;
+    this.flushing.clear();
   }
 }
 

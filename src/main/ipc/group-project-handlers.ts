@@ -214,7 +214,7 @@ export function registerGroupProjectHandlers(): void {
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, body) => {
       const message = await groupProjectHost.post(projectId as string, 'user', topic as string, body as string);
-      annexEventBus.emitBulletinMessage(projectId as string, message);
+      if (!message.pending) annexEventBus.emitBulletinMessage(projectId as string, message);
       return message;
     },
   ));
