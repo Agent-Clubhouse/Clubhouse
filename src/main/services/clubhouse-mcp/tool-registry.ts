@@ -333,7 +333,8 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     request_app_update: INTERNAL_WRITE,
     get_delivery: INTERNAL_READ,
     get_annex_network_settings: INTERNAL_READ,
-    update_annex_network_settings: INTERNAL_WRITE,
+    // Restricting to loopback interrupts existing remote connections.
+    update_annex_network_settings: INTERNAL_DESTRUCTIVE,
   },
 };
 
@@ -1108,6 +1109,11 @@ groupProjectRegistry.onChange(() => invalidateToolListCache());
 // Tool groups are not bindings either: drop the agent's cached list when its
 // orchestration or crossProject gate flips. The bridge server sends tools/list_changed.
 onOrchestrationGateChange((agentId) => { toolListCache.delete(agentId); });
+
+/** For testing: every `kind:name` the annotation catalog classifies. */
+export function _annotationCatalogKeysForTesting(): string[] {
+  return Object.entries(TOOL_ANNOTATIONS).flatMap(([kind, byName]) => Object.keys(byName ?? {}).map((name) => `${kind}:${name}`));
+}
 
 /** For testing: clear all registered templates and global tools. */
 export function _resetForTesting(): void {
