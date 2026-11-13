@@ -98,6 +98,10 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
   const STEP_ACTION: Record<'message' | 'wake' | 'sleep', GrantAction> = { message: 'agent.message', wake: 'agent.wake', sleep: 'agent.sleep' };
 
   return {
+    quickCeiling(owner: ActionOwner) {
+      if (owner.kind === 'user' || owner.kind === 'app') return 'full_access';
+      return owner.kind === 'agent' && facts.canStartAgents(owner.agentId) && facts.agentAccess(owner.agentId) === QUICK_STEP_ACCESS ? 'full_access' : 'none';
+    },
     checkStep(owner: ActionOwner, step: ActionStep): string | null {
       if ((step.kind === 'group_post' || step.kind === 'group_tap') && owner.kind !== 'group_project') return 'Only a group project may run this step.';
       if (owner.kind === 'user' || owner.kind === 'app') return null;

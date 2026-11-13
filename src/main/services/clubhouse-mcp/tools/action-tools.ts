@@ -18,7 +18,7 @@
  */
 
 import { callGrantIsApproved, grantApprovalContext, registerGlobalTool } from '../tool-registry';
-import { checkToolGrant, decideGrant, registerActionOwnerLookup } from '../grant-check';
+import { checkToolGrant, decideGrant, isGroupMember, registerActionOwnerLookup } from '../grant-check';
 import { resolveArgTargets } from '../arg-targets';
 import type { GrantCallTarget } from '../../../../shared/agent-grants';
 import { groupProjectRegistry } from '../../group-project-registry';
@@ -83,7 +83,7 @@ export interface ActionScope {
 
 function groupAdmin(callerId: string, groupProjectId: string, approved = false): boolean {
   const project = groupProjectRegistry.getSync(groupProjectId);
-  if (!project || !groupProjectHost.isThisMachine(project.host)) return false;
+  if (!project || !groupProjectHost.isThisMachine(project.host) || !isGroupMember(groupProjectId, callerId)) return false;
   const outcome = decideGrant(callerId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId } as GrantCallTarget).outcome;
   return outcome === 'allow' || (outcome === 'ask' && approved);
 }
@@ -296,7 +296,7 @@ function createAction(scope: ActionScope, args: Obj): unknown {
   input.trigger = prepareTrigger(args.trigger, ctx);
   input.steps = prepareSteps(args.steps, ctx);
   input.endsAt = prepareEndsAt(args.endsAt);
-  return { action: present(actions.createAction(input, owner), scope.owner) };
+  return { action: present(owner.kind === 'group_project' ? actions.createAction(input, owner, scope.owner) : actions.createAction(input, owner), scope.owner) };
 }
 
 /**
@@ -352,7 +352,7 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
   // Only turning it on or off: the same as the switch in Settings.
   if (changes.length === 1 && changes[0] === 'enabled') {
     if (typeof args.enabled !== 'boolean') throw new ActionError('invalid_input', 'enabled must be true or false.');
-    return { action: present(actions.setActionEnabled(id, args.enabled), scope.owner) };
+    return { action: present(current.owner.kind === 'group_project' ? actions.setActionEnabled(id, args.enabled, scope.owner) : actions.setActionEnabled(id, args.enabled), scope.owner) };
   }
   const ctx = current.owner.kind === 'group_project' ? {} : contextFor(scope);
   // A name that was the suggestion for the old trigger and steps follows them.
@@ -368,7 +368,7 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
     endsAt: args.endsAt !== undefined ? prepareEndsAt(args.endsAt) : current.endsAt,
     maxRuns: args.maxRuns !== undefined ? args.maxRuns : current.maxRuns,
   };
-  return { action: present(actions.updateAction(id, input), scope.owner) };
+  return { action: present(current.owner.kind === 'group_project' ? actions.updateAction(id, input, scope.owner) : actions.updateAction(id, input), scope.owner) };
 }
 
 function deleteAction(scope: ActionScope, args: Obj): unknown {
@@ -380,8 +380,8 @@ function deleteAction(scope: ActionScope, args: Obj): unknown {
 
 function runAction(scope: ActionScope, args: Obj): unknown {
   const id = idArg(args);
-  findChangeable(scope, id);
-  const { runId } = actions.runActionNow(id);
+  const current = findChangeable(scope, id);
+  const { runId } = current.owner.kind === 'group_project' ? actions.runActionNow(id, scope.owner) : actions.runActionNow(id);
   const view = actions.getAction(id);
   return {
     runId,
@@ -563,7 +563,7 @@ const LIST = { group: 'actions', grant: { actions: ['action.read'], target: 'app
 // Ask first cannot authorize unattended watching: rights.ts explains that a saved Allow is needed.
 const WATCH_ACTIVITY = { actions: ['agent.watch'], target: 'app', ifAnyAgentSource: true, askHandledByTool: true } as const;
 const SUBSCRIBE = { group: 'actions', grant: [{ actions: ['action.write'], target: 'app' }, WATCH_ACTIVITY] } as const;
-const CREATE = { group: 'actions', grant: [...SUBSCRIBE.grant, { actions: ['group_project.admin'], target: 'group_project_arg', ifArgs: ['groupProjectId'], strictTargets: true, from: { args: ['groupProjectId'] } }] } as const;
+const CREATE = { group: 'actions', grant: [...SUBSCRIBE.grant, { actions: ['group_project.admin'], target: 'group_project_arg', ifArgs: ['groupProjectId'], strictTargets: true, requiresGroupMembership: true, from: { args: ['groupProjectId'] } }] } as const;
 // Trigger/step grants are rechecked by rights.ts, not granted by action.write.
 // The action named in the arguments: its owner tells the caller's own from others'.
 const GROUP_OWNER_ADMIN = { actions: ['group_project.admin'], target: 'action_group_project' } as const;

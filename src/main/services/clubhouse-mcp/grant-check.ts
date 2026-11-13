@@ -116,13 +116,13 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
       // its own Actions.
       if (!actionOwnerLookup || args.id === undefined) return null;
       const action = actionOwnerLookup(args);
-      const groupAdmin = action?.groupProjectId && decideGrant(agentId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId: action.groupProjectId } as GrantCallTarget).outcome !== 'refuse';
+      const groupAdmin = action?.groupProjectId && isGroupMember(action.groupProjectId, agentId) && decideGrant(agentId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId: action.groupProjectId } as GrantCallTarget).outcome !== 'refuse';
       // An unknown id reads like someone else's: a refusal never says whether it exists.
       return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId || groupAdmin ? ['self'] : [] };
     }
     case 'action_group_project': {
       const groupProjectId = actionOwnerLookup?.(args)?.groupProjectId;
-      return groupProjectId ? { kind: 'group_project', groupRole: 'member', groupProjectId } as GrantCallTarget : null;
+      return groupProjectId ? { kind: 'group_project', groupRole: isGroupMember(groupProjectId, agentId) ? 'member' : null, groupProjectId } as GrantCallTarget : null;
     }
     case 'handoff_peer':
     case 'agent_arg':
@@ -133,7 +133,7 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
 }
 
 /** Whether an agent is bound to a group project: its member. */
-function isGroupMember(groupId: string, memberId: string): boolean {
+export function isGroupMember(groupId: string, memberId: string): boolean {
   return bindingManager.getAllBindings().some((b) => b.targetKind === 'group-project' && b.targetId === groupId && b.agentId === memberId);
 }
 
@@ -249,6 +249,9 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
       return { ok: false, reason: 'no_grant', message: 'This handoff target or metadata is unavailable or unsafe.' };
     }
     for (const target of resolveTargets(agentId, d, wire, args, argTargets)) {
+      if ((d.target === 'action_group_project' || d.requiresGroupMembership) && target.groupRole !== 'member') {
+        return { ok: false, reason: 'no_grant', message: 'You must be a current member of this group project to manage its Actions.', action: 'group_project.admin', targetKind: 'group_project' };
+      }
       for (const action of d.actions) {
         const decision = evaluateGrant({ caller, action, target }, grants);
         if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target), action, targetKind: target.kind };

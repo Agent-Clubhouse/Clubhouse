@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   access: new Map<string, string>(),
   activityModes: new Map<string, 'allow' | 'ask' | 'off'>(),
   deviceModes: new Map<string, 'allow' | 'ask' | 'off'>(),
+  createModes: new Map<string, 'allow' | 'ask' | 'off'>(),
   engine: null as unknown,
   history: new Map<string, unknown>(),
   /** Steps the engine ran, in order. */
@@ -89,6 +90,7 @@ vi.mock('../../actions', async () => {
         grantsOf: (id) => {
           const mode = h.activityModes.get(id);
           const deviceMode = h.deviceModes.get(id);
+          const createMode = h.createModes.get(id);
           return applyGrantChanges(defaultGrants({
             dispatcher: h.dispatchers.has(id),
             helper: !!h.known.get(id)?.parentAgentId,
@@ -97,6 +99,7 @@ vi.mock('../../actions', async () => {
           }), { changes: [
             ...(mode ? [{ action: 'agent.watch' as const, target: { kind: 'app' as const }, mode }] : []),
             ...(deviceMode ? [{ action: 'device.read' as const, target: { kind: 'app' as const }, mode: deviceMode }] : []),
+            ...(createMode ? [{ action: 'agent.create' as const, target: { kind: 'project' as const, project: 'own' as const }, mode: createMode }] : []),
           ] });
         },
         agentProjectPath: (id) => projects.find((p) => p.id === agentProjectId(id))?.path,
@@ -118,14 +121,14 @@ vi.mock('../../actions', async () => {
   return {
     listActions: vi.fn(() => e().list().filter((a) => a.owner.kind !== 'app').map(view)),
     getAction: vi.fn((id: string) => { const a = e().get(id); return a && a.owner.kind !== 'app' ? view(a) : undefined; }),
-    createAction: vi.fn((input: unknown, owner: ActionOwner) => view(e().create(input, owner))),
+    createAction: vi.fn((input: unknown, owner: ActionOwner, author?: ActionOwner) => view(e().create(input, owner, { author }))),
     withGroupActionLock: async (_id: string, run: () => unknown) => run(),
     changeActionOnHost: async (_id: string, run: () => unknown) => run(),
     subscribe: vi.fn((input: unknown, owner: ActionOwner) => view(e().subscribe(input, owner))),
-    updateAction: vi.fn((id: string, input: unknown) => { visible(id); return view(e().update(id, input)); }),
-    setActionEnabled: vi.fn((id: string, enabled: boolean) => { visible(id); return view(e().setEnabled(id, enabled)); }),
+    updateAction: vi.fn((id: string, input: unknown, author?: ActionOwner) => { visible(id); return view(e().update(id, input, author)); }),
+    setActionEnabled: vi.fn((id: string, enabled: boolean, author?: ActionOwner) => { visible(id); return view(e().setEnabled(id, enabled, author)); }),
     deleteAction: vi.fn((id: string) => { visible(id); e().remove(id); }),
-    runActionNow: vi.fn((id: string) => { visible(id); return { runId: e().runNow(id) }; }),
+    runActionNow: vi.fn((id: string, author?: ActionOwner) => { visible(id); return { runId: e().runNow(id, author) }; }),
     actionHistory: vi.fn((id: string, reader?: ActionOwner) => (e().get(id)?.owner.kind === 'app' ? [] : e().history(id, reader).sort((x, y) => y.startedAt - x.startedAt))),
     canWatchAgentActivity: (reader: ActionOwner) => e().canWatchAgentActivity(reader),
     canReadDevices: (reader: ActionOwner) => e().canReadDevices(reader),
@@ -147,6 +150,7 @@ import { showDispatcherActionSummary } from '../../dispatcher/dispatcher-action-
 import { setMcpCaller, _resetMcpCallGateForTesting } from '../mcp-call-gate';
 import { _resetGrantRequestsForTesting, listGrantRequests } from '../../grant-requests';
 import { answerGrantRequest } from '../../grant-request-answers';
+import { bindingManager } from '../binding-manager';
 
 const engine = () => h.engine as ActionsEngine;
 const NOTIFY = { kind: 'notify', text: 'Stand-up time' };
@@ -175,6 +179,7 @@ describe('action tools', () => {
     h.access.clear();
     h.activityModes.clear();
     h.deviceModes.clear();
+    h.createModes.clear();
     h.dispatchers.clear();
     h.trackedDispatchers.clear();
     h.known.clear();
@@ -604,7 +609,30 @@ describe('action tools', () => {
   });
 
   describe('scope', () => {
+    it('enforces the author’s quick-agent access on group Action creation and edits', async () => {
+      const owner = { kind: 'group_project', groupProjectId: 'gp1' } as const;
+      const author = { kind: 'agent', agentId: 'agent-a' } as const;
+      const quick = { kind: 'quick', projectId: 'proj-1', prompt: 'Review' };
+      h.access.set('agent-a', 'ask');
+      expect(() => engine().create({ trigger: DAILY, steps: [quick] }, owner, { author })).toThrow(/Full access/);
+      h.access.set('agent-a', 'full_access');
+      h.createModes.set('agent-a', 'off');
+      expect(() => engine().create({ trigger: DAILY, steps: [quick] }, owner, { author })).toThrow(/agent.create/);
+      h.createModes.delete('agent-a');
+      const created = engine().create({ trigger: DAILY, steps: [quick] }, owner, { author });
+      expect(created.quickAccess).toBe('full_access');
+      h.access.set('agent-a', 'ask');
+      expect(() => engine().update(created.id, { ...created, name: 'Changed' }, author)).toThrow(/Full access/);
+      expect(() => engine().runNow(created.id, author)).toThrow(/Full access/);
+      expect(engine().get(created.id)?.quickAccess).toBe('full_access');
+      h.known.delete('agent-a');
+      engine().runNow(created.id);
+      await flush();
+      expect(h.stepCalls).toHaveLength(1);
+    });
     it('asks the Dispatcher before creating or editing a group-owned Action', async () => {
+      const members = vi.spyOn(bindingManager, 'getAllBindings').mockReturnValue([{ agentId: 'dispatcher', targetId: 'gp1', targetKind: 'group-project' }] as never);
+      const callerBindings = vi.spyOn(bindingManager, 'getBindingsForAgent').mockReturnValue([{ agentId: 'dispatcher', targetId: 'gp1', targetKind: 'group-project' }] as never);
       const group = { id: 'gp1', name: 'Group', description: '', instructions: '', createdAt: '', metadata: {} };
       const project = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue(group);
       const list = vi.spyOn(groupProjectRegistry, 'list').mockResolvedValue([group]);
@@ -626,10 +654,11 @@ describe('action tools', () => {
         expect((await call('dispatcher', 'update_action', update)).body.action.name).toBe('Changed');
       } finally {
         _resetGrantRequestsForTesting(); _resetMcpCallGateForTesting(); agentRegistry.untrack('dispatcher');
-        host.mockRestore(); list.mockRestore(); project.mockRestore();
+        host.mockRestore(); list.mockRestore(); project.mockRestore(); members.mockRestore(); callerBindings.mockRestore();
       }
     });
     it('requires the host’s explicit Admin grant to create a group-owned Action', async () => {
+      const members = vi.spyOn(bindingManager, 'getAllBindings').mockReturnValue([{ agentId: 'agent-a', targetId: 'gp1', targetKind: 'group-project' }] as never);
       const project = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue({ id: 'gp1', name: 'Group', description: '', instructions: '', createdAt: '', metadata: {} });
       const host = vi.spyOn(groupProjectHost, 'isThisMachine').mockReturnValue(true);
       const decision = vi.spyOn(grantCheck, 'decideGrant').mockReturnValue({ outcome: 'refuse', reason: 'no_grant' });
@@ -644,9 +673,12 @@ describe('action tools', () => {
         const created = await call('agent-a', 'create_action', args);
         expect(created.body.action.owner).toEqual({ kind: 'group_project', groupProjectId: 'gp1' });
         expect(decision).toHaveBeenCalledWith('agent-a', 'group_project.admin', expect.objectContaining({ groupProjectId: 'gp1' }));
+        members.mockReturnValue([]);
+        expect(actionScope('agent-a').canChange(created.body.action)).toBe(false);
+        members.mockReturnValue([{ agentId: 'agent-a', targetId: 'gp1', targetKind: 'group-project' }] as never);
         host.mockReturnValue(false);
         expect((await call('agent-a', 'create_action', args)).isError).toBe(true);
-      } finally { decision.mockRestore(); host.mockRestore(); project.mockRestore(); }
+      } finally { decision.mockRestore(); host.mockRestore(); project.mockRestore(); members.mockRestore(); }
     });
     it('an agent owns what it creates', async () => {
       const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [NOTIFY] });

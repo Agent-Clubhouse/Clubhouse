@@ -34,6 +34,7 @@ function leadAndAdmin(groupProjectId: string): GrantChange[] {
 }
 import { toolGrantDeclarations, type ToolGrant } from './tool-grants';
 import type { ToolGroups } from './tool-registry';
+import { bindingManager } from './binding-manager';
 
 /**
  * The parity suite (#2968): for every tool the app registers, every kind of
@@ -392,6 +393,7 @@ describe('Ask first (#2970)', () => {
   const read = { actions: ['agent.read'] as const, target: 'connected' as const };
 
   it('requires the group Admin grant, including Ask first, for its Actions', async () => {
+    const members = vi.spyOn(bindingManager, 'getAllBindings').mockReturnValue([{ agentId: 'plain', targetId: 'gp1', targetKind: 'group-project' }] as never);
     registerActionOwnerLookup((args) => args.id === 'group-action' ? { actionId: 'group-action', groupProjectId: 'gp1' } : undefined);
     const grants = [
       { actions: ['action.write'] as const, target: 'action_arg' as const },
@@ -403,9 +405,14 @@ describe('Ask first (#2970)', () => {
       expect(checkToolGrant('plain', grants, { id: 'group-action' })).toMatchObject({ ok: false, reason: 'ask_first', asks: [{ action: 'group_project.admin' }] });
       await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'group_project.admin', target: { kind: 'group_project', id: 'gp1' }, mode: 'allow' }] }));
       expect(checkToolGrant('plain', grants, { id: 'group-action' }).ok).toBe(true);
+      members.mockReturnValue([]);
+      expect(checkToolGrant('plain', grants, { id: 'group-action' })).toMatchObject({ ok: false, reason: 'no_grant' });
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'group_project.admin', target: { kind: 'any' }, mode: 'allow' }] }));
+      expect(checkToolGrant('plain', grants, { id: 'group-action' })).toMatchObject({ ok: false, reason: 'no_grant' });
       expect(checkToolGrant('plain', grants, { id: 'unknown' }).ok).toBe(false);
     } finally {
       registerActionOwnerLookup(null);
+      members.mockRestore();
       await updateAgentGrantChanges('plain', () => undefined);
     }
   });

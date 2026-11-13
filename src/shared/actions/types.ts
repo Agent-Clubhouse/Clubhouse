@@ -217,6 +217,8 @@ export interface Action {
   steps: ActionStep[];
   overlap: OverlapRule;
   owner: ActionOwner;
+  /** Maximum quick-agent access approved when a group Action was created; missing is denied. */
+  quickAccess?: 'full_access' | 'none';
   enabled: boolean;
   /** Recurring actions only: stop at this absolute time, in epoch milliseconds. */
   endsAt?: number;

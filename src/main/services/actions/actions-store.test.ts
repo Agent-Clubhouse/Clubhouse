@@ -43,6 +43,8 @@ describe('actions store', () => {
   it('retains a group project owner across reload and rejects missing project ids', () => {
     const action = { id: 'a', name: 'Check', trigger: { kind: 'once', at: 100 }, steps: [{ kind: 'notify', text: 'Check' }], owner: { kind: 'group_project', groupProjectId: 'gp1' }, enabled: true, overlap: 'skip', createdAt: 1, updatedAt: 1 };
     expect(sanitizeActions([action, { ...action, id: 'bad', owner: { kind: 'group_project', groupProjectId: '' } }])).toEqual([action]);
+    expect(sanitizeActions([{ ...action, quickAccess: 'full_access' }])[0].quickAccess).toBe('full_access');
+    expect(sanitizeActions([{ ...action, quickAccess: 'invalid' }])[0].quickAccess).toBeUndefined();
     const run = { id: 'r', actionId: 'a', owner: action.owner, trigger: { kind: 'manual', at: 1 }, chain: [], startedAt: 1, outcome: 'done', steps: [] };
     expect(migrations.get('action-history.json')!({ runs: { a: [run] } })).toEqual({ version: 1, runs: { a: [run] } });
   });

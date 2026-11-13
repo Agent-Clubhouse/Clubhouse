@@ -95,6 +95,13 @@ function projectLabel(p: Project): string {
 }
 
 const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWorktree(id: string): string | undefined } = {
+  boardLatestActivity: async (id) => {
+    const project = groupProjectRegistry.getSync(id);
+    if (!project || !groupProjectHost.isThisMachine(project.host)) throw new Error('Group project is unavailable on this host.');
+    const digest = await groupProjectHost.digest(id);
+    const times = digest.map((topic) => Date.parse(topic.latestTimestamp)).filter(Number.isFinite);
+    return times.length ? Math.max(...times) : null;
+  },
   deviceOnline: devicePresenceOnline,
   // The Dispatcher counts as an agent here, so its subscriptions can message it (#3042).
   agentExists: (id) => !!knownAgent(id) || isDispatcherAgentId(id),
@@ -477,9 +484,9 @@ function requireVisible(id: string): Action {
   return a;
 }
 
-export function createAction(input: unknown, owner: ActionOwner): ActionView {
+export function createAction(input: unknown, owner: ActionOwner, author?: ActionOwner): ActionView {
   const e = requireEngine();
-  return view(e, e.create(input, owner));
+  return view(e, e.create(input, owner, { author }));
 }
 
 /** Serialize a group Action mutation against the host's delete impact check and cascade. */
@@ -505,16 +512,16 @@ export function subscribe(input: unknown, owner: ActionOwner): ActionView {
   return view(e, e.subscribe(input, owner));
 }
 
-export function updateAction(id: string, input: unknown): ActionView {
+export function updateAction(id: string, input: unknown, author?: ActionOwner): ActionView {
   requireVisible(id);
   const e = requireEngine();
-  return view(e, e.update(id, input));
+  return view(e, e.update(id, input, author));
 }
 
-export function setActionEnabled(id: string, enabled: boolean): ActionView {
+export function setActionEnabled(id: string, enabled: boolean, author?: ActionOwner): ActionView {
   requireVisible(id);
   const e = requireEngine();
-  return view(e, e.setEnabled(id, enabled));
+  return view(e, e.setEnabled(id, enabled, author));
 }
 
 export function deleteAction(id: string): void {
@@ -522,9 +529,9 @@ export function deleteAction(id: string): void {
   requireEngine().remove(id);
 }
 
-export function runActionNow(id: string): { runId: string } {
+export function runActionNow(id: string, author?: ActionOwner): { runId: string } {
   requireVisible(id);
-  return { runId: requireEngine().runNow(id) };
+  return { runId: requireEngine().runNow(id, author) };
 }
 
 export function actionHistory(id: string, reader?: ActionOwner): ActionRun[] {

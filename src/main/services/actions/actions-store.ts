@@ -67,6 +67,7 @@ export function sanitizeActions(raw: unknown): Action[] {
       steps: valid.value.steps,
       overlap: valid.value.overlap,
       owner,
+      ...(owner.kind === 'group_project' && (item.quickAccess === 'full_access' || item.quickAccess === 'none') && { quickAccess: item.quickAccess }),
       enabled: valid.value.enabled,
       ...(valid.value.endsAt !== undefined && { endsAt: valid.value.endsAt }),
       ...(valid.value.maxRuns !== undefined && { maxRuns: valid.value.maxRuns }),
@@ -84,6 +85,7 @@ function sanitizeState(raw: unknown): EngineState {
   const state: EngineState = { nextAt: {}, waits: [] };
   if (!isObject(raw)) return state;
   if (typeof raw.lastUse === 'number' && Number.isFinite(raw.lastUse) && raw.lastUse >= 0) state.lastUse = raw.lastUse;
+  if (isObject(raw.idleFiredAt)) state.idleFiredAt = Object.fromEntries(Object.entries(raw.idleFiredAt).filter(([, at]) => typeof at === 'number' && Number.isFinite(at) && at >= 0)) as Record<string, number>;
   if (isObject(raw.lastFiredDate)) {
     state.lastFiredDate = {};
     for (const [id, date] of Object.entries(raw.lastFiredDate)) {
@@ -174,8 +176,8 @@ export async function purgeStoredGroupProjectActions(groupProjectId: string): Pr
   await actionsStore.update((file) => {
     const removed = new Set(file.actions.filter((action) => action.owner.kind === 'group_project' && action.owner.groupProjectId === groupProjectId).map((action) => action.id));
     if (!removed.size) return file;
-    const state = { ...file.state, nextAt: { ...file.state.nextAt }, waits: file.state.waits.filter((wait) => !removed.has(wait.actionId)), lastFiredDate: { ...file.state.lastFiredDate }, throttleStarts: { ...file.state.throttleStarts } };
-    for (const id of removed) { delete state.nextAt[id]; delete state.lastFiredDate[id]; delete state.throttleStarts[id]; }
+    const state = { ...file.state, nextAt: { ...file.state.nextAt }, waits: file.state.waits.filter((wait) => !removed.has(wait.actionId)), lastFiredDate: { ...file.state.lastFiredDate }, throttleStarts: { ...file.state.throttleStarts }, idleFiredAt: { ...file.state.idleFiredAt } };
+    for (const id of removed) { delete state.nextAt[id]; delete state.lastFiredDate[id]; delete state.throttleStarts[id]; delete state.idleFiredAt[id]; }
     return { ...file, actions: file.actions.filter((action) => !removed.has(action.id)), state };
   });
   await historyStore.update((file) => ({ ...file, runs: Object.fromEntries(Object.entries(file.runs).flatMap(([id, runs]) => {

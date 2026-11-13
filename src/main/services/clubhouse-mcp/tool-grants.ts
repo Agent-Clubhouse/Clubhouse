@@ -113,6 +113,8 @@ export interface ToolGrantDeclaration {
   allowRemote?: boolean;
   /** Fail closed when an argument target cannot be resolved. */
   strictTargets?: boolean;
+  /** Require the caller's current membership before checking this group target. */
+  requiresGroupMembership?: boolean;
   from?: { args: readonly string[]; project?: string; missing?: 'caller'; all?: string; names?: 'project' | 'self_and_helpers' | 'registered' };
 }
 

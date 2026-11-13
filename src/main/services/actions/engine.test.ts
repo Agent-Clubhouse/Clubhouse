@@ -52,6 +52,7 @@ const START = new Date(2026, 10, 9, 8, 0).getTime();
 const MIN = 60_000;
 
 interface Setup {
+  boardLatestActivity?: (id: string) => Promise<number | null>;
   devices?: Map<string, boolean | undefined>;
   actions?: Action[];
   state?: EngineState;
@@ -79,6 +80,7 @@ function setup(opts: Setup = {}) {
   const saved: { actions: Action[]; state: EngineState } = { actions: opts.actions ?? [], state: opts.state ?? { nextAt: {}, waits: [] } };
   const runs = new Map<string, ActionRun>();
   const facts: EngineFacts = {
+    boardLatestActivity: opts.boardLatestActivity,
     deviceOnline: (id) => opts.devices?.get(id),
     agentExists: (id) => !!agents[id],
     isRunning: (id) => running.has(id),
@@ -136,6 +138,47 @@ const weekdays9 = { kind: 'schedule', preset: 'weekdays', cron: '0 9 * * 1-5', m
 const user = { kind: 'user' } as const;
 
 describe('group project event triggers', () => {
+  it('arms an already quiet board on creation, enable and restart, once per quiet stretch', async () => {
+    let latest = START - 20_000;
+    const lookup = async () => latest;
+    const h = setup({ boardLatestActivity: lookup });
+    h.engine.start();
+    const action = h.engine.create({ trigger: { kind: 'event', event: 'group_project.board_idle', source: { kind: 'group_project', groupProjectId: 'gp1' }, delaySeconds: 10 }, steps: [notify] }, { kind: 'group_project', groupProjectId: 'gp1' });
+    await flush();
+    expect(h.history(action.id)).toHaveLength(1);
+    h.engine.setEnabled(action.id, false);
+    h.engine.setEnabled(action.id, true);
+    await flush();
+    expect(h.history(action.id)).toHaveLength(1);
+    const restarted = setup({ start: START + 30_000, actions: h.saved.actions, state: h.saved.state, boardLatestActivity: lookup });
+    restarted.engine.start();
+    await flush();
+    expect(restarted.history(action.id)).toHaveLength(0);
+    latest = START + 30_000;
+    restarted.event({ type: 'group_project.message_posted', groupProjectId: 'gp1', topic: 'general' });
+    await restarted.clock.advance(10_000);
+    expect(restarted.history(action.id)).toHaveLength(1);
+    const disabled = restarted.engine.create({ trigger: action.trigger, steps: [notify], enabled: false }, { kind: 'group_project', groupProjectId: 'gp1' });
+    await restarted.clock.advance(20_000);
+    restarted.engine.setEnabled(disabled.id, true);
+    await flush();
+    expect(restarted.history(disabled.id)).toHaveLength(1);
+  });
+  it('rechecks posts made while the host was offline before firing an old idle wait', async () => {
+    let latest = START;
+    const lookup = async () => latest;
+    const h = setup({ boardLatestActivity: lookup });
+    h.engine.start();
+    const action = h.engine.create({ trigger: { kind: 'event', event: 'group_project.board_idle', source: { kind: 'group_project', groupProjectId: 'gp1' }, delaySeconds: 10 }, steps: [notify] }, { kind: 'group_project', groupProjectId: 'gp1' });
+    await flush();
+    latest = START + 25_000;
+    const restarted = setup({ start: START + 30_000, actions: h.saved.actions, state: h.saved.state, boardLatestActivity: lookup });
+    restarted.engine.start();
+    await flush();
+    expect(restarted.history(action.id)).toHaveLength(0);
+    await restarted.clock.advance(5_000);
+    expect(restarted.history(action.id)).toHaveLength(1);
+  });
   it('runs a group-owned Action after the agent that created it is deleted', async () => {
     const h = setup();
     h.engine.start();
