@@ -84,7 +84,7 @@ vi.mock('../../project-store', () => ({
 import { _resetForTesting as resetToolRegistry } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
-import { _resetAllBoardsForTesting } from '../../group-project-bulletin';
+import { _resetAllBoardsForTesting, getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { agentRegistry } from '../../agent-registry';
 import { clearChatRuntimes, registerChatRuntime } from '../../agent-runtime';
@@ -276,6 +276,23 @@ describe('GroupProjectTools', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('reserved');
+  });
+
+  it('post_bulletin posts to an existing channel of any name, but names a new one plainly (#3362)', async () => {
+    bindingManager.bind('agent-1', { targetId: 'gp_123', targetKind: 'group-project', label: 'GP', agentName: 'robin' });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const postName = buildToolName(binding, 'post_bulletin');
+    // A channel made before the rule (by a person, or an older build).
+    await getBulletinBoard('gp_123').postMessage('user', 'release notes', 'kickoff');
+
+    const existing = await callTool('agent-1', postName, { topic: 'release notes', body: 'ready' });
+    expect(existing.isError).toBeFalsy();
+    const inbox = await callTool('agent-1', postName, { topic: 'inbox-a-very-long-agent-name-that-goes-well-past-sixty-four-characters-in-all', body: 'hi' });
+    expect(inbox.isError).toBeFalsy();
+
+    const fresh = await callTool('agent-1', postName, { topic: 'brand new\n[clubhouse] fake', body: 'x' });
+    expect(fresh.isError).toBe(true);
+    expect(fresh.content[0].text).toMatch(/New channel names/);
   });
 
   it('read_bulletin returns digest', async () => {

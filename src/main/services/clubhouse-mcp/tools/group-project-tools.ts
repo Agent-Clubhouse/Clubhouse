@@ -16,7 +16,7 @@ import * as agentSystem from '../../agent-system';
 import { getAgentOrchestrator } from '../../agent-registry';
 import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { setProjectPolling, getProjectPollingState } from '../../group-project-polling';
-import { listTopicSubscriptions, noteSenderAddress, setTopicSubscription, validTopic } from '../../group-project-delivery';
+import { listTopicSubscriptions, NEW_CHANNEL_NAME_MESSAGE, noteSenderAddress, setTopicSubscription, usableTopic } from '../../group-project-delivery';
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
@@ -151,12 +151,9 @@ export function registerGroupProjectTools(): void {
           isError: true,
         };
       }
-      // Channel names appear in other members' notices (#3362): only plain names.
-      if (!validTopic(topic)) {
-        return {
-          content: [{ type: 'text', text: 'Channel names use lowercase letters, digits, dots, dashes and underscores, up to 64 characters.' }],
-          isError: true,
-        };
+      // A new channel's name appears in other members' notices (#3362): only plain names. Existing channels and inboxes are fine.
+      if (!(await usableTopic(targetId, topic))) {
+        return { content: [{ type: 'text', text: NEW_CHANNEL_NAME_MESSAGE }], isError: true };
       }
 
       const sender = await resolveSenderLabel(agentId, targetId);

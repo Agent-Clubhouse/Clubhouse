@@ -58,7 +58,7 @@ export const MAX_SUBSCRIPTIONS = 50;
 /** Topics every member hears about unless it unsubscribes. Its inbox is added per member. */
 export const DEFAULT_SUBSCRIPTIONS = ['general', 'control'] as const;
 
-/** A channel name agents may post to and subscribe to: lowercase letters, digits, dot, dash, underscore. */
+/** A name an agent may give a new channel: lowercase letters, digits, dot, dash, underscore. */
 export const TOPIC_NAME = /^[a-z0-9._-]{1,64}$/;
 
 /** A turn is running: `starting` sends at once, so it isn't one. */
@@ -81,8 +81,9 @@ interface MemberState {
   name: string;
   window: Batch | null;
   timer: ReturnType<typeof setTimeout> | null;
-  /** A notice queued in a busy chat runtime, not delivered yet. */
+  /** A notice queued in a busy chat runtime, not delivered yet, and its message id there. */
   queued: Batch | null;
+  queuedMessageId?: string;
   /** Held while the member sleeps. */
   asleep: Batch | null;
   /** Held by the rate limit, sent when the window frees. */
@@ -151,11 +152,26 @@ function senderName(sender: string): string {
 
 // ── Who hears about a post ──────────────────────────────────────────────────
 
-/** A channel name as stored, or null when it isn't one agents may use. */
+/** A channel name as stored, or null when it isn't one an agent may create. */
 export function validTopic(topic: string): string | null {
   const canonical = topic.trim().toLowerCase();
   return TOPIC_NAME.test(canonical) ? canonical : null;
 }
+
+/**
+ * A channel an agent may post to or subscribe to, as stored: one that already
+ * exists, any inbox, or a new one with a plain name. Null for a new channel
+ * whose name isn't plain, since names appear in other members' notices.
+ */
+export async function usableTopic(groupProjectId: string, topic: string): Promise<string | null> {
+  const canonical = topic.trim().toLowerCase();
+  if (!canonical) return null;
+  if (TOPIC_NAME.test(canonical) || canonical.startsWith('inbox-')) return canonical;
+  const existing = await groupProjectHost.readDigest(groupProjectId);
+  return existing.some((t) => t.topic === canonical) ? canonical : null;
+}
+
+export const NEW_CHANNEL_NAME_MESSAGE = 'New channel names use lowercase letters, digits, dots, dashes and underscores, up to 64 characters.';
 
 /** The topics a member is subscribed to: the defaults and its inbox, with its own changes. */
 export function memberSubscriptions(membership: GroupProjectMembership, address: string, inbox: string): Set<string> {
@@ -189,6 +205,7 @@ export function usesPolling(gp: GroupProject): boolean {
 async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void> {
   if (message.sender === 'system' || message.topic === 'system' || usesPolling(gp)) return;
   const [resolved, membership] = await Promise.all([groupProjectHost.resolveMembers(gp.id), groupProjectHost.getMembership(gp.id)]);
+  forgetFormerMembers(gp.id, resolved);
   for (const member of resolved) {
     // Agents on other machines hear about posts over the network (#3363).
     if (member.address.includes('@')) continue;
@@ -218,6 +235,22 @@ async function stillMember(state: MemberState): Promise<GroupProject | null> {
 function forget(state: MemberState): void {
   clearTimers(state);
   members.delete(keyOf(state.groupProjectId, state.agentId));
+  // A notice still waiting for an ex-member's turn to end is taken back.
+  if (state.queued && state.queuedMessageId) {
+    void getAgentRuntime(state.agentId)?.removeQueued?.([state.queuedMessageId]).catch((err: unknown) => {
+      // telemetry-exempt: the notice stays queued and is harmless; logged
+      appLog('core:group-project', 'warn', 'Could not take back a queued notice', { meta: { agentId: state.agentId, error: err instanceof Error ? err.message : String(err) } });
+    });
+  }
+  state.queued = null;
+}
+
+/** Drop what's held for agents no longer in the group project, taking back a queued notice. */
+function forgetFormerMembers(groupProjectId: string, resolved: ReadonlyArray<{ address: string }>): void {
+  const current = new Set(resolved.map((m) => m.address));
+  for (const state of [...members.values()]) {
+    if (state.groupProjectId === groupProjectId && !current.has(state.agentId)) forget(state);
+  }
 }
 
 async function flush(state: MemberState): Promise<void> {
@@ -295,6 +328,7 @@ async function deliver(state: MemberState, batch: Batch): Promise<void> {
       });
       // The turn ended first: the runtime sent it now, and no receipt will come.
       if (result.delivery !== 'queued' && state.queued === notice) state.queued = null;
+      else if (state.queued === notice) state.queuedMessageId = result.messageId;
     } else {
       state.queued = null;
       await runtime.sendMessage(text, { source: 'group_project', routed });
@@ -387,6 +421,18 @@ export function watchGroupProjectDelivery(): () => void {
       for (const state of [...members.values()]) if (state.groupProjectId === change.groupProjectId) forget(state);
       return;
     }
+    if (change.part === 'membership' || change.part === 'record') {
+      // Members left, or the group project went back to polling or stopped delivering.
+      void (async () => {
+        const gp = await groupProjectHost.get(change.groupProjectId);
+        const resolved = gp && !usesPolling(gp) ? await groupProjectHost.resolveMembers(gp.id) : [];
+        forgetFormerMembers(change.groupProjectId, resolved);
+      })().catch((err) => {
+        // telemetry-exempt: held notices are re-checked when they go anyway; logged
+        appLog('core:group-project', 'warn', 'Could not re-check group project notice recipients', { meta: { groupProjectId: change.groupProjectId, error: err instanceof Error ? err.message : String(err) } });
+      });
+      return;
+    }
     if (change.part !== 'board') return;
     void (async () => {
       const message = await postedMessage(change.groupProjectId, change.seq);
@@ -415,8 +461,8 @@ export function watchGroupProjectDelivery(): () => void {
 
 /** Subscribe a member to a topic's notices, or unsubscribe it. Returns its topics now. */
 export async function setTopicSubscription(groupProjectId: string, agentId: string, name: string, topic: string, on: boolean): Promise<string[]> {
-  const canonical = validTopic(topic);
-  if (!canonical) throw new Error('Channel names use lowercase letters, digits, dots, dashes and underscores, up to 64 characters.');
+  const canonical = await usableTopic(groupProjectId, topic);
+  if (!canonical) throw new Error(NEW_CHANNEL_NAME_MESSAGE);
   const { membership } = await groupProjectHost.updateMembership(groupProjectId, (draft) => {
     const own = { add: [...(draft.subscriptions?.[agentId]?.add ?? [])], remove: [...(draft.subscriptions?.[agentId]?.remove ?? [])] };
     own.add = own.add.filter((t) => t !== canonical);

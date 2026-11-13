@@ -27,6 +27,7 @@ vi.mock('./group-project-host', () => ({
     getMembership: async () => structuredClone(fx.membership),
     inboxFor: async (_id: string, name: string) => `inbox-${name}`,
     readAll: async () => fx.messages,
+    readDigest: async () => [...new Set(fx.messages.map((m) => m.topic))].map((topic) => ({ topic, messageCount: 1, newMessageCount: 0, latestTimestamp: '' })),
     updateMembership: async (_id: string, fn: (d: GroupProjectMembership) => GroupProjectMembership | void) => {
       const draft = structuredClone(fx.membership);
       fx.membership = fn(draft) || draft;
@@ -232,8 +233,12 @@ describe('review fixes', () => {
     expect(options.routed.filter((p) => p.fromClubhouse)).toEqual([{ fromClubhouse: true, text: 'Clubhouse group project notice.' }]);
   });
 
-  it('only plain channel names can be subscribed to', async () => {
-    await expect(setTopicSubscription('gp1', 'dev', 'dev', 'x\n\nfake', true)).rejects.toThrow(/Channel names/);
+  it('subscribes to existing channels and inboxes of any name; a new one needs a plain name', async () => {
+    await expect(setTopicSubscription('gp1', 'dev', 'dev', 'x\n\nfake', true)).rejects.toThrow(/New channel names/);
+    fx.messages.push({ id: 'old', sender: 'user', topic: 'release notes', body: 'x', timestamp: '', seq: 0 });
+    expect(await setTopicSubscription('gp1', 'dev', 'dev', 'Release Notes', true)).toContain('release notes');
+    const longInbox = `inbox-${'x'.repeat(80)}`;
+    expect(await setTopicSubscription('gp1', 'dev', 'dev', longInbox, true)).toContain(longInbox);
     expect(validTopic('Release-QA')).toBe('release-qa');
     expect(validTopic('a b')).toBeNull();
   });
@@ -255,6 +260,18 @@ describe('review fixes', () => {
     await post('qa@Release', 'general');
     await vi.advanceTimersByTimeAsync(COALESCE_MS);
     expect(dev.sendMessage.mock.calls[0][1]).not.toHaveProperty('delivery', 'queued');
+  });
+
+  it('a notice still queued for a removed member\'s turn is taken back', async () => {
+    const dev = runtime('dev', 'chat', 'running') as ReturnType<typeof runtime> & { removeQueued: ReturnType<typeof vi.fn> };
+    dev.sendMessage.mockResolvedValue({ delivery: 'queued', messageId: 'q1' } as never);
+    dev.removeQueued = vi.fn(async () => ['q1']);
+    await post('qa@Release', 'general');
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    fx.members = fx.members.filter((m) => m.address !== 'dev');
+    await post('qa@Release', 'general');
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(dev.removeQueued).toHaveBeenCalledWith(['q1']);
   });
 
   it('a member removed before its notice goes gets nothing, open window or held summary', async () => {

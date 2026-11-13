@@ -869,7 +869,7 @@ export const ATTR = {
    * messages from other topics, `rejected` for an oversized body.
    */
   bulletinPostResult: enumAttr('clubhouse.bulletin.post.result', ['ok', 'evicted_message', 'evicted_topic', 'rejected']),
-  /** A group project post notice (#3362): sent, a message folded into one, held for a sleeping member, or dropped by the rate limit. */
+  /** A group project post notice (#3362): sent, a message folded into one, held for a sleeping member, or deferred by the rate limit to a trailing notice. */
   noticeResult: enumAttr('clubhouse.notice.result', ['sent', 'coalesced', 'held_asleep', 'rate_limited']),
   mcpToolsCount: enumAttr('clubhouse.mcp.tools.count_bucket', COUNT_BUCKETS),
   mcpToolsEmpty: boolAttr('clubhouse.mcp.tools.empty'),
@@ -1716,7 +1716,7 @@ export const METRICS = {
   },
   'clubhouse.group.notices': {
     kind: 'counter', unit: '{notice}', level: 'standard',
-    description: 'Group project post notices to members (#3362): sent, messages coalesced into one, held for a sleeping member, dropped by the rate limit',
+    description: 'Group project post notices to members (#3362): sent, messages coalesced into one, held for a sleeping member, deferred by the rate limit to a trailing notice',
     attributes: ['clubhouse.notice.result'],
   },
 } as const satisfies Record<string, MetricDef>;
