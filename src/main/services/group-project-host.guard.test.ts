@@ -40,6 +40,12 @@ const RULES: Array<{ name: string; applies: (text: string) => boolean; pattern: 
     pattern: /(?<!groupProjectHost\s*)\.\s*(postMessage|deleteMessage|deleteTopic|setTopicProtected|setLimits|trimToLimits|clearAll|claimInbox|flush)\s*\(/,
   },
   {
+    // Reads go through the host too, so a group project hidden by a delete stays unreadable.
+    name: 'direct board access',
+    applies: () => true,
+    pattern: /\bgetBulletinBoard\s*\(/,
+  },
+  {
     name: 'board write helper',
     applies: () => true,
     pattern: /\b(ensureProjectChannels|ensureInboxChannel|destroyBulletinBoard|flushAllBulletinBoards)\b/,
@@ -56,7 +62,7 @@ const RULES: Array<{ name: string; applies: (text: string) => boolean; pattern: 
   },
 ];
 
-describe('group project writes go through the host (#3356)', () => {
+describe('group project reads and writes go through the host (#3356)', () => {
   const files = sourceFiles(MAIN).filter((file) => !STORE_FILES.has(rel(file)));
 
   it('finds the files it guards', () => {

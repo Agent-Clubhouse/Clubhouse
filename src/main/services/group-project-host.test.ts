@@ -225,7 +225,7 @@ describe('group project host: delete', () => {
     groupProjectHost.onChange((c) => changes.push(c));
     const result = await groupProjectHost.delete(project.id);
     expect(result).toMatchObject({ deleted: true, tombstone: { groupProjectId: project.id, host: { machine: FP_A }, seq: 3 } });
-    expect(changes).toEqual([{ groupProjectId: project.id, seq: 3, part: 'deleted' }]);
+    expect(changes).toEqual([{ groupProjectId: project.id, seq: 3, part: 'deleted', project: expect.objectContaining({ id: project.id }) }]);
     expect(fs.existsSync(path.join(dataDir(), project.id))).toBe(false);
     await restart();
     expect(await groupProjectHost.get(project.id)).toBeNull();
@@ -270,7 +270,7 @@ describe('group project host: delete in two steps (#3364 cascade)', () => {
     groupProjectHost.onChange((c) => changes.push(c));
     const tombstone = await groupProjectHost.beginDelete(project.id, { expectedSeq: 1 });
     expect(tombstone).toMatchObject({ groupProjectId: project.id, seq: 2, state: 'deleting' });
-    expect(changes).toEqual([{ groupProjectId: project.id, seq: 2, part: 'deleted' }]);
+    expect(changes).toEqual([{ groupProjectId: project.id, seq: 2, part: 'deleted', project: expect.objectContaining({ id: project.id }) }]);
     expect(await groupProjectHost.get(project.id)).toBeNull();
     expect(await groupProjectHost.list()).toEqual([]);
     expect(groupProjectRegistry.getSync(project.id)).toBeNull();
@@ -357,5 +357,83 @@ describe('group project host: members by address', () => {
     await restart();
     expect(await groupProjectHost.inboxFor(project.id, 'Builder', 'agent_2')).toBe(second);
     expect(await groupProjectHost.inboxFor(project.id, 'Builder', 'agent_1')).toBe(first);
+  });
+});
+
+describe('group project host: review fixes', () => {
+  it('lets writes run inside exclusive() with withinExclusive, without deadlocking', async () => {
+    const project = await groupProjectHost.create('Exclusive writes');
+    const result = await Promise.race([
+      groupProjectHost.exclusive(project.id, async ({ seq }) => {
+        const message = await groupProjectHost.post(project.id, 'a', 'work', 'inside', { withinExclusive: true });
+        await groupProjectHost.update(project.id, { description: 'inside' }, { withinExclusive: true });
+        await groupProjectHost.updateMembership(project.id, (m) => { m.autoJoin = true; }, { withinExclusive: true });
+        await groupProjectHost.setTopicProtected(project.id, 'work', true, { withinExclusive: true });
+        await groupProjectHost.ensureInbox(project.id, 'robin', 'agent_r', { withinExclusive: true });
+        return { before: seq, message };
+      }),
+      new Promise<'deadlock'>((resolve) => setTimeout(() => resolve('deadlock'), 2000)),
+    ]);
+    expect(result).not.toBe('deadlock');
+    expect((result as { message: { seq: number } }).message.seq).toBe(2);
+    expect((await groupProjectHost.get(project.id))?.seq).toBe(6);
+  });
+
+  it('canonicalizes this machine\'s address for a null-host group project once an identity exists', async () => {
+    const project = await groupProjectHost.create('Legacy host');
+    expect(project.host).toEqual({ machine: null });
+    fixture.fingerprint = FP_A;
+    const { membership } = await groupProjectHost.updateMembership(project.id, (m) => {
+      m.excluded.push({ address: `agent_9@${FP_A}`, excludedAt: '2026-11-13T00:00:00.000Z' });
+    });
+    expect(membership.excluded.map((e) => e.address)).toEqual(['agent_9']);
+    await expect(groupProjectHost.updateMembership(project.id, (m) => {
+      m.excluded.push({ address: 'agent_9', excludedAt: '2026-11-13T00:00:00.000Z' });
+    })).rejects.toThrow('twice');
+    const first = await groupProjectHost.ensureInbox(project.id, 'Robin', `agent_9@${FP_A}`);
+    expect(await groupProjectHost.ensureInbox(project.id, 'Robin', 'agent_9')).toBe(first);
+    expect(await groupProjectHost.inboxFor(project.id, 'Robin', 'agent_9')).toBe(first);
+  });
+
+  it('answers empty for every board read once a delete begins', async () => {
+    const project = await groupProjectHost.create('Read guard');
+    const message = await groupProjectHost.post(project.id, 'a', 'work', 'secret');
+    expect(await groupProjectHost.readTopic(project.id, 'work')).toHaveLength(1);
+    await groupProjectHost.beginDelete(project.id);
+    expect(await groupProjectHost.readDigest(project.id)).toEqual([]);
+    expect(await groupProjectHost.readTopic(project.id, 'work')).toEqual([]);
+    expect(await groupProjectHost.readAll(project.id)).toEqual([]);
+    expect(await groupProjectHost.getMessage(project.id, message.id)).toBeNull();
+    expect(await groupProjectHost.estimateTrim(project.id, 1, 1)).toBe(0);
+  });
+
+  it('takes no number for an update or retention change that changes nothing', async () => {
+    const project = await groupProjectHost.create('Quiet', undefined);
+    await groupProjectHost.update(project.id, { name: 'Quiet', description: '' });
+    await groupProjectHost.setRetention(project.id, 100, 500);
+    expect((await groupProjectHost.get(project.id))?.seq).toBe(2);
+    await groupProjectHost.setRetention(project.id, 100, 500);
+    await groupProjectHost.update(project.id, { metadata: { maxPerTopic: 100 } });
+    expect((await groupProjectHost.get(project.id))?.seq).toBe(2);
+  });
+
+  it('carries the deleted group project on its deleted change', async () => {
+    const project = await groupProjectHost.create('Announced');
+    const changes: GroupProjectChange[] = [];
+    groupProjectHost.onChange((c) => changes.push(c));
+    await groupProjectHost.delete(project.id);
+    expect(changes[0]).toMatchObject({ part: 'deleted', project: { id: project.id, name: 'Announced' } });
+  });
+
+  it('hides every group project when the tombstones file is corrupt (fails closed)', async () => {
+    const project = await groupProjectHost.create('Kept');
+    await restart();
+    await fsp.writeFile(path.join(dataDir(), 'tombstones.json'), '{corrupt');
+    expect(await groupProjectRegistry.list()).toEqual([]);
+    expect(groupProjectRegistry.getSync(project.id)).toBeNull();
+    expect(await groupProjectRegistry.peek()).toEqual([]);
+    await fsp.writeFile(path.join(dataDir(), 'tombstones.json'), '[]');
+    groupProjectRegistry._resetForTesting();
+    expect((await groupProjectRegistry.list()).map((p) => p.id)).toEqual([project.id]);
   });
 });

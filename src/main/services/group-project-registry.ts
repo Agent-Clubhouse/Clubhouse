@@ -16,20 +16,21 @@ import { groupProjectsDir, registryPath, tombstonesPath } from './group-project-
 /**
  * Ids with a delete tombstone (#3356, #3364). Read at load so every reader hides
  * a group project whose delete was interrupted, before the host reconciles it.
- * An unreadable file hides nothing here; the host refuses to work with it.
+ * An unreadable or corrupt file fails closed: every record is hidden until it
+ * is repaired, rather than showing one that may be mid-delete.
  */
-async function readTombstonedIds(): Promise<Set<string>> {
+async function readTombstonedIds(): Promise<Set<string> | 'all'> {
   try {
     const list: unknown = JSON.parse(await fsp.readFile(tombstonesPath(), 'utf-8'));
-    if (!Array.isArray(list)) throw new Error('not a list');
-    return new Set(list.flatMap((t) => (t && typeof t.groupProjectId === 'string' ? [t.groupProjectId] : [])));
+    if (!Array.isArray(list) || list.some((t) => !t || typeof t.groupProjectId !== 'string')) throw new Error('not a list of tombstones');
+    return new Set(list.map((t: { groupProjectId: string }) => t.groupProjectId));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return new Set();
     // telemetry-exempt: logged; the host's own read of this file refuses and surfaces it
-    appLog('core:group-project', 'error', 'Group project tombstones could not be read', {
+    appLog('core:group-project', 'error', 'Group project tombstones could not be read; hiding every group project until repaired', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
-    return new Set();
+    return 'all';
   }
 }
 
@@ -71,6 +72,8 @@ class GroupProjectRegistry {
   private projects = new Map<string, GroupProject>();
   /** Tombstoned ids: kept for the host's cleanup, invisible to every reader. */
   private hidden = new Set<string>();
+  /** Tombstones unreadable: hide every record (fail closed). */
+  private hideAll = false;
   private inferredScopeIds = new Set<string>();
   private inferredScopeCandidates = new Map<string, GroupProjectScope>();
   private loaded = false;
@@ -160,7 +163,9 @@ class GroupProjectRegistry {
         });
       }
     }
-    this.hidden = await readTombstonedIds();
+    const tombstoned = await readTombstonedIds();
+    this.hideAll = tombstoned === 'all';
+    this.hidden = tombstoned === 'all' ? new Set() : tombstoned;
     this.projects = projects;
     this.inferredScopeIds = inferredIds;
     this.inferredScopeCandidates = priorCandidates;
@@ -267,12 +272,16 @@ class GroupProjectRegistry {
 
   async get(id: string): Promise<GroupProject | null> {
     await this.ensureLoaded();
-    return this.hidden.has(id) ? null : this.projects.get(id) ?? null;
+    return this.isHidden(id) ? null : this.projects.get(id) ?? null;
+  }
+
+  private isHidden(id: string): boolean {
+    return this.hideAll || this.hidden.has(id);
   }
 
   /** Synchronous lookup from in-memory cache (returns null if not yet loaded). */
   getSync(id: string): GroupProject | null {
-    return this.hidden.has(id) ? null : this.projects.get(id) ?? null;
+    return this.isHidden(id) ? null : this.projects.get(id) ?? null;
   }
 
   async list(): Promise<GroupProject[]> {
@@ -281,7 +290,7 @@ class GroupProjectRegistry {
   }
 
   private visible(): GroupProject[] {
-    return [...this.projects.values()].filter((project) => !this.hidden.has(project.id));
+    return [...this.projects.values()].filter((project) => !this.isHidden(project.id));
   }
 
   /** Whether a record exists, hidden or not. Only the host uses this. */
@@ -336,7 +345,7 @@ class GroupProjectRegistry {
         instructions: typeof value.instructions === 'string' ? value.instructions : '',
         metadata: value.metadata as Record<string, unknown>,
       };
-    }).filter((project) => !hidden.has(project.id));
+    }).filter((project) => hidden !== 'all' && !hidden.has(project.id));
   }
 
   async update(id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<GroupProject | null> {
@@ -379,6 +388,7 @@ class GroupProjectRegistry {
     this.pendingFlush = null;
     this.projects.clear();
     this.hidden.clear();
+    this.hideAll = false;
     this.inferredScopeIds.clear();
     this.inferredScopeCandidates.clear();
     this.listeners.clear();

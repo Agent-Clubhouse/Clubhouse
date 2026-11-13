@@ -6,7 +6,6 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
 import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
-import { getBulletinBoard } from '../services/group-project-bulletin';
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
@@ -58,6 +57,10 @@ export function registerGroupProjectHandlers(): void {
   groupProjectRegistry.onChange(() => {
     broadcastChanged();
   });
+  // Every delete, whichever path began it (IPC, the #3364 cascade, Annex), tells Annex once, when it begins.
+  groupProjectHost.onChange((change) => {
+    if (change.part === 'deleted' && change.project) annexEventBus.emitGroupProjectChanged('deleted', change.project);
+  });
 
   ipcMain.handle(IPC.GROUP_PROJECT.LIST, async () => {
     return groupProjectHost.list();
@@ -95,10 +98,9 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.DELETE, withValidatedArgs(
     [stringArg()],
     async (_event, id) => {
-      const project = await groupProjectHost.get(id as string);
+      // Annex hears of it from the host's deleted change, as for every delete path.
       const { deleted } = await groupProjectHost.delete(id as string);
       if (deleted) {
-        if (project) annexEventBus.emitGroupProjectChanged('deleted', project);
         appLog('core:group-project', 'info', 'Group project deleted', { meta: { id } });
       }
       return deleted;
@@ -108,31 +110,21 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, withValidatedArgs(
     [stringArg(), digestSinceArg()],
     async (_event, id, since) => {
-      const board = getBulletinBoard(id as string);
-      return board.getDigest(since as DigestSince | undefined);
+      return groupProjectHost.readDigest(id as string, since as DigestSince | undefined);
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, withValidatedArgs(
     [stringArg(), stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
     async (_event, id, topic, since, limit) => {
-      const board = getBulletinBoard(id as string);
-      return board.getTopicMessages(
-        topic as string,
-        since as string | undefined,
-        limit as number | undefined,
-      );
+      return groupProjectHost.readTopic(id as string, topic as string, since as string | undefined, limit as number | undefined);
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.GET_ALL_MESSAGES, withValidatedArgs(
     [stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
     async (_event, id, since, limit) => {
-      const board = getBulletinBoard(id as string);
-      return board.getAllMessages(
-        since as string | undefined,
-        limit as number | undefined,
-      );
+      return groupProjectHost.readAll(id as string, since as string | undefined, limit as number | undefined);
     },
   ));
 
@@ -211,8 +203,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.ESTIMATE_TRIM, withValidatedArgs(
     [stringArg(), numberArg({ integer: true, min: 1 }), numberArg({ integer: true, min: 1 })],
     async (_event, projectId, maxPerTopic, maxTotal) => {
-      const board = getBulletinBoard(projectId as string);
-      const wouldRemove = board.estimateTrimCount(maxPerTopic as number, maxTotal as number);
+      const wouldRemove = await groupProjectHost.estimateTrim(projectId as string, maxPerTopic as number, maxTotal as number);
       return { wouldRemove };
     },
   ));
@@ -220,8 +211,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.GET_MESSAGE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectId, messageId) => {
-      const board = getBulletinBoard(projectId as string);
-      return board.getMessageById(messageId as string);
+      return groupProjectHost.getMessage(projectId as string, messageId as string);
     },
   ));
 

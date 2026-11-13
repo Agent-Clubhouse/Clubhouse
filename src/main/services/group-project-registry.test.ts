@@ -209,7 +209,7 @@ describe('GroupProjectRegistry', () => {
     });
     (fsp.readFile as any).mockImplementation(async (p: string) => {
       if (p === registryFile) return oldData;
-      throw new Error('ENOENT');
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     });
 
     groupProjectRegistry._resetForTesting();

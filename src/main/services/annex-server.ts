@@ -87,7 +87,6 @@ import * as permissionQueue from './annex-permission-queue';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import { groupProjectRegistry } from './group-project-registry';
-import { getBulletinBoard } from './group-project-bulletin';
 import { groupProjectHost } from './group-project-host';
 import { executeShoulderTap } from './group-project-shoulder-tap';
 import { setProjectPolling } from './group-project-polling';
@@ -1197,8 +1196,7 @@ async function readSnapshotSourcesData() {
   const bulletinDigests: Record<string, unknown[]> = {};
   await Promise.all(groupProjects.map(async (gp) => {
     try {
-      const board = getBulletinBoard(gp.id);
-      bulletinDigests[gp.id] = await board.getDigest();
+      bulletinDigests[gp.id] = await groupProjectHost.readDigest(gp.id);
     } catch {
       // Bulletin not available — skip
     }
@@ -3203,8 +3201,7 @@ async function handleGroupProjectDigestRoute(ctx: AnnexRouteContext, match: RegE
     sendJson(ctx.res, 400, { error: 'invalid_since' });
     return;
   }
-  const board = getBulletinBoard(gpId);
-  const digest = await board.getDigest(since);
+  const digest = await groupProjectHost.readDigest(gpId, since);
   sendJson(ctx.res, 200, digest);
 }
 
@@ -3219,8 +3216,7 @@ async function handleGroupProjectTopicRoute(ctx: AnnexRouteContext, match: RegEx
   const url = new URL(ctx.req.url || '/', 'http://localhost');
   const since = url.searchParams.get('since') || undefined;
   const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : undefined;
-  const board = getBulletinBoard(gpId);
-  const messages = await board.getTopicMessages(topic, since, limit);
+  const messages = await groupProjectHost.readTopic(gpId, topic, since, limit);
   sendJson(ctx.res, 200, messages);
 }
 
@@ -3234,8 +3230,7 @@ async function handleGroupProjectAllMessagesRoute(ctx: AnnexRouteContext, match:
   const url = new URL(ctx.req.url || '/', 'http://localhost');
   const since = url.searchParams.get('since') || undefined;
   const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : undefined;
-  const board = getBulletinBoard(gpId);
-  const messages = await board.getAllMessages(since, limit);
+  const messages = await groupProjectHost.readAll(gpId, since, limit);
   sendJson(ctx.res, 200, messages);
 }
 

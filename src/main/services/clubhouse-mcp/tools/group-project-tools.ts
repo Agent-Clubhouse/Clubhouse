@@ -5,7 +5,6 @@
 
 import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
-import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
 import { isProjectAdmin } from '../../../../shared/group-project-admin';
@@ -206,8 +205,7 @@ export function registerGroupProjectTools(): void {
       const channels = Array.isArray(args.channels)
         ? (args.channels as unknown[]).filter((c): c is string => typeof c === 'string')
         : undefined;
-      const board = getBulletinBoard(targetId);
-      const digest = await board.getDigest(since, channels);
+      const digest = await groupProjectHost.readDigest(targetId, since, channels);
       return {
         content: [{ type: 'text', text: JSON.stringify(digest) }],
       };
@@ -258,8 +256,7 @@ export function registerGroupProjectTools(): void {
       const since = optionalString(args, 'since');
       const limit = optionalNumber(args, 'limit');
       const summary = args.summary === true;
-      const board = getBulletinBoard(targetId);
-      const messages = await board.getTopicMessages(topic, since, limit);
+      const messages = await groupProjectHost.readTopic(targetId, topic, since, limit);
 
       if (summary) {
         const summarized = messages.map(m => ({
@@ -822,8 +819,7 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: 'message_id is required.' }], isError: true };
       }
 
-      const board = getBulletinBoard(targetId);
-      const message = await board.getMessageById(messageId);
+      const message = await groupProjectHost.getMessage(targetId, messageId);
       if (!message) {
         return { content: [{ type: 'text', text: `Message ${messageId} not found.` }], isError: true };
       }

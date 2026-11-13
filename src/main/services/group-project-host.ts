@@ -13,7 +13,7 @@
 
 import type {
   BulletinMessage, GroupProject, GroupProjectChange, GroupProjectChangePart, GroupProjectCreateOptions, GroupProjectHost,
-  GroupProjectMemberView, GroupProjectMembership, GroupProjectTombstone, TopicDigest,
+  DigestSince, GroupProjectMemberView, GroupProjectMembership, GroupProjectTombstone, TopicDigest,
 } from '../../shared/group-project-types';
 import { canonicalMemberAddress, memberAddress } from '../../shared/group-project-members';
 import { groupProjectRegistry } from './group-project-registry';
@@ -102,6 +102,14 @@ class GroupProjectHostService {
       // telemetry-exempt: an unreadable identity means no lasting fingerprint; annex-identity logs it
       return null;
     }
+  }
+
+  /**
+   * The machine addresses are relative to. A null host is this machine, so this
+   * machine's own fingerprint canonicalizes to the bare id for every record.
+   */
+  private hostMachineOf(project: GroupProject): string | null {
+    return project.host?.machine ?? this.selfMachine();
   }
 
   /** Whether a host is this machine. Null is the machine whose registry holds the record. */
@@ -270,13 +278,18 @@ class GroupProjectHostService {
     return this.view(created);
   }
 
-  async update(id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<GroupProject | null> {
+  async update(
+    id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }, options: { withinExclusive?: boolean } = {},
+  ): Promise<GroupProject | null> {
     try {
-      return await this.commit(id, 'record', async ({ reserve }) => {
+      return await this.commit(id, 'record', async ({ project, reserve }) => {
+        const unchanged = (['name', 'description', 'instructions'] as const).every((key) => fields[key] === undefined || fields[key] === project[key])
+          && (fields.metadata === undefined || sameJson({ ...project.metadata, ...fields.metadata }, project.metadata));
+        if (unchanged) return this.view(project);
         await reserve();
         const updated = await groupProjectRegistry.update(id, fields);
         return updated && this.view(updated);
-      });
+      }, options.withinExclusive);
     } catch (err) {
       // telemetry-exempt: update of an absent group project answers null, as before; anything else rethrows
       if (err instanceof GroupProjectHostError && err.code === 'not_found') return null;
@@ -314,9 +327,10 @@ class GroupProjectHostService {
         groupProjectId: id, host: { machine: project.host?.machine ?? null }, seq: current + 1,
         deletedAt: new Date().toISOString(), state: 'deleting',
       };
+      const last = await this.view(project);
       await this.saveTombstone(tombstone);
       await groupProjectRegistry.hide(id);
-      this.emit({ groupProjectId: id, seq: tombstone.seq, part: 'deleted' });
+      this.emit({ groupProjectId: id, seq: tombstone.seq, part: 'deleted', project: last });
       return { ...tombstone, host: { ...tombstone.host } };
     };
     return options.withinExclusive ? body() : this.run(id, body);
@@ -376,13 +390,15 @@ class GroupProjectHostService {
 
   async getMembership(id: string): Promise<GroupProjectMembership> {
     const project = await this.requireProject(id);
-    return readMembershipFile(id, project.host?.machine ?? null);
+    return readMembershipFile(id, this.hostMachineOf(project));
   }
 
   /** Change the membership record. `fn` edits a copy; a throw changes nothing. */
-  updateMembership(id: string, fn: (draft: GroupProjectMembership) => GroupProjectMembership | void): Promise<{ membership: GroupProjectMembership; seq: number }> {
+  updateMembership(
+    id: string, fn: (draft: GroupProjectMembership) => GroupProjectMembership | void, options: { withinExclusive?: boolean } = {},
+  ): Promise<{ membership: GroupProjectMembership; seq: number }> {
     return this.commit(id, 'membership', async ({ project, reserve }) => {
-      const hostMachine = project.host?.machine ?? null;
+      const hostMachine = this.hostMachineOf(project);
       const current = await readMembershipFile(id, hostMachine);
       const draft = structuredClone(current);
       const next = validateMembership(fn(draft) ?? draft, hostMachine);
@@ -390,7 +406,7 @@ class GroupProjectHostService {
       const seq = await reserve();
       await writeMembershipFile(id, next);
       return { membership: next, seq };
-    });
+    }, options.withinExclusive);
   }
 
   /** #3357 registers who is a member; until then, wires decide. */
@@ -406,7 +422,7 @@ class GroupProjectHostService {
     const members: GroupProjectMemberView[] = [];
     for (const b of bindingManager.getAllBindings()) {
       if (b.targetKind !== 'group-project' || b.targetId !== id) continue;
-      const address = canonicalMemberAddress(b.agentId, project.host?.machine ?? null);
+      const address = canonicalMemberAddress(b.agentId, this.hostMachineOf(project));
       if (seen.has(address)) continue;
       seen.add(address);
       members.push({ address, name: b.agentName || b.agentId });
@@ -416,33 +432,34 @@ class GroupProjectHostService {
 
   /** The host-relative address of an agent here or on another machine. */
   memberAddress(project: GroupProject, agentId: string, machine?: string | null): string {
-    return memberAddress(agentId, machine ?? this.selfMachine(), project.host?.machine ?? this.selfMachine());
+    return memberAddress(agentId, machine ?? this.selfMachine(), this.hostMachineOf(project));
   }
 
   // ── Board ────────────────────────────────────────────────────────────────
+  // Every write takes `withinExclusive` for use inside `exclusive()`.
 
-  post(id: string, sender: string, topic: string, body: string): Promise<BulletinMessage> {
-    return this.commit(id, 'board', async ({ reserve }) => getBulletinBoard(id).postMessage(sender, topic, body, await reserve()));
+  post(id: string, sender: string, topic: string, body: string, options: { withinExclusive?: boolean } = {}): Promise<BulletinMessage> {
+    return this.commit(id, 'board', async ({ reserve }) => getBulletinBoard(id).postMessage(sender, topic, body, await reserve()), options.withinExclusive);
   }
 
   /** False when there's no such message, or no such group project, as before #3356. */
-  deleteMessage(id: string, topic: string, messageId: string): Promise<boolean> {
+  deleteMessage(id: string, topic: string, messageId: string, options: { withinExclusive?: boolean } = {}): Promise<boolean> {
     return this.unlessMissing(false, () => this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       const message = await board.getMessageById(messageId);
       if (!message || message.topic !== normalizeChannelName(topic)) return false;
       await reserve();
       return board.deleteMessage(topic, messageId);
-    }));
+    }, options.withinExclusive));
   }
 
-  deleteTopic(id: string, topic: string): Promise<boolean> {
+  deleteTopic(id: string, topic: string, options: { withinExclusive?: boolean } = {}): Promise<boolean> {
     return this.unlessMissing(false, () => this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       if (!(await board.hasTopic(topic))) return false;
       await reserve();
       return board.deleteTopic(topic);
-    }));
+    }, options.withinExclusive));
   }
 
   private async unlessMissing<T>(fallback: T, fn: () => Promise<T>): Promise<T> {
@@ -455,39 +472,42 @@ class GroupProjectHostService {
     }
   }
 
-  setTopicProtected(id: string, topic: string, isProtected: boolean): Promise<void> {
+  setTopicProtected(id: string, topic: string, isProtected: boolean, options: { withinExclusive?: boolean } = {}): Promise<void> {
     return this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       await board.hasTopic(topic);
       if (board.isTopicProtected(topic) === isProtected) return;
       await reserve();
       board.setTopicProtected(topic, isProtected);
-    });
+    }, options.withinExclusive);
   }
 
-  clearAll(id: string): Promise<number> {
+  clearAll(id: string, options: { withinExclusive?: boolean } = {}): Promise<number> {
     return this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       await board.hasTopic('general');
       if (board.totalMessageCount() === 0) return 0;
       await reserve();
       return board.clearAll();
-    });
+    }, options.withinExclusive);
   }
 
-  /** Save retention limits and trim the board to them, as one change. */
-  setRetention(id: string, maxPerTopic: number, maxTotal: number): Promise<number> {
-    return this.commit(id, 'record', async ({ reserve }) => {
-      await reserve();
-      await groupProjectRegistry.update(id, { metadata: { maxPerTopic, maxTotal } });
+  /** Save retention limits and trim the board to them, as one change. Unchanged limits that trim nothing take no number. */
+  setRetention(id: string, maxPerTopic: number, maxTotal: number, options: { withinExclusive?: boolean } = {}): Promise<number> {
+    return this.commit(id, 'record', async ({ project, reserve }) => {
       const board = getBulletinBoard(id);
+      await board.hasTopic('general');
       board.setLimits(maxPerTopic, maxTotal);
+      const saved = project.metadata.maxPerTopic === maxPerTopic && project.metadata.maxTotal === maxTotal;
+      if (saved && board.estimateTrimCount(maxPerTopic, maxTotal) === 0) return 0;
+      await reserve();
+      if (!saved) await groupProjectRegistry.update(id, { metadata: { maxPerTopic, maxTotal } });
       return board.trimToLimits();
-    });
+    }, options.withinExclusive);
   }
 
   /** Seed `general` and `control` and keep them protected. Changes nothing when they are. */
-  ensureChannels(id: string): Promise<void> {
+  ensureChannels(id: string, options: { withinExclusive?: boolean } = {}): Promise<void> {
     return this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       let ready = true;
@@ -496,30 +516,65 @@ class GroupProjectHostService {
       }
       if (ready) return;
       await ensureProjectChannels(id, await reserve());
-    });
+    }, options.withinExclusive);
   }
 
   /** Seed a member's inbox, kept apart from any other member with the same name (#1646). Returns its channel. */
-  ensureInbox(id: string, agentName: string, address: string): Promise<string> {
+  ensureInbox(id: string, agentName: string, address: string, options: { withinExclusive?: boolean } = {}): Promise<string> {
     return this.commit(id, 'board', async ({ project, reserve }) => {
-      const canonical = canonicalMemberAddress(address, project.host?.machine ?? null);
+      const canonical = canonicalMemberAddress(address, this.hostMachineOf(project));
       const board = getBulletinBoard(id);
       const channel = await resolveInboxChannel(id, agentName, canonical);
       if ((await board.inboxOwner(channel)) === canonical && (await board.hasTopic(channel)) && board.isTopicProtected(channel)) return channel;
       return ensureInboxChannel(id, agentName, canonical, await reserve());
-    });
+    }, options.withinExclusive);
   }
 
-  /** The board's topics, counts and protection, without changing anything. Safe inside `exclusive`. */
-  async digest(id: string): Promise<TopicDigest[]> {
-    await this.requireProject(id);
-    return getBulletinBoard(id).getDigest();
+  // ── Board reads ──────────────────────────────────────────────────────────
+  // Reads never queue, so they are safe inside `exclusive()`. A group project
+  // that doesn't exist, or is hidden by a delete (even one that began during
+  // the read), answers as empty, as an unknown id always has.
+
+  private async read<T>(id: string, empty: T, fn: (board: ReturnType<typeof getBulletinBoard>) => Promise<T>): Promise<T> {
+    assertGroupProjectId(id);
+    await this.reconcile();
+    if (!(await groupProjectRegistry.get(id))) return empty;
+    const result = await fn(getBulletinBoard(id));
+    return (await groupProjectRegistry.get(id)) ? result : empty;
+  }
+
+  readDigest(id: string, since?: DigestSince, channels?: string[]): Promise<TopicDigest[]> {
+    return this.read(id, [], (board) => board.getDigest(since, channels));
+  }
+
+  /** The board's topics, counts and protection. */
+  digest(id: string): Promise<TopicDigest[]> {
+    return this.readDigest(id);
+  }
+
+  readTopic(id: string, topic: string, since?: string, limit?: number): Promise<BulletinMessage[]> {
+    return this.read(id, [], (board) => board.getTopicMessages(topic, since, limit));
+  }
+
+  readAll(id: string, since?: string, limit?: number): Promise<BulletinMessage[]> {
+    return this.read(id, [], (board) => board.getAllMessages(since, limit));
+  }
+
+  getMessage(id: string, messageId: string): Promise<BulletinMessage | null> {
+    return this.read<BulletinMessage | null>(id, null, (board) => board.getMessageById(messageId));
+  }
+
+  estimateTrim(id: string, maxPerTopic: number, maxTotal: number): Promise<number> {
+    return this.read(id, 0, async (board) => {
+      await board.hasTopic('general');
+      return board.estimateTrimCount(maxPerTopic, maxTotal);
+    });
   }
 
   /** The inbox channel of a member, without changing anything. */
   async inboxFor(id: string, agentName: string, address?: string): Promise<string> {
     const project = await this.requireProject(id);
-    return resolveInboxChannel(id, agentName, address && canonicalMemberAddress(address, project.host?.machine ?? null));
+    return resolveInboxChannel(id, agentName, address && canonicalMemberAddress(address, this.hostMachineOf(project)));
   }
 
   // ── Persistence ──────────────────────────────────────────────────────────

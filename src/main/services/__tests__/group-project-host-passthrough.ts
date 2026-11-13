@@ -28,6 +28,7 @@ export async function passthroughHostModule() {
   type Membership = { version: 1; autoJoin: boolean; explicit: unknown[]; excluded: unknown[]; [extra: string]: unknown };
   const memberships = new Map<string, Membership>();
   const membershipOf = (id: string): Membership => structuredClone(memberships.get(id) ?? { version: 1, autoJoin: false, explicit: [], excluded: [] });
+  const listeners = new Set<(change: unknown) => void>();
   const groupProjectHost = {
     _resetForTesting: vi.fn(() => { memberships.clear(); }),
     selfMachine: vi.fn(() => null),
@@ -41,7 +42,9 @@ export async function passthroughHostModule() {
     }),
     update: vi.fn(async (id: string, fields: unknown) => registry.update(id, fields)),
     delete: vi.fn(async (id: string) => {
+      const project = await registry.get(id);
       const deleted = await registry.delete(id);
+      if (deleted && project) for (const listener of listeners) listener({ groupProjectId: id, seq: 0, part: 'deleted', project });
       const destroy = optional<(id: string) => Promise<void>>(bulletin, 'destroyBulletinBoard');
       if (deleted && destroy) await destroy(id);
       return { deleted: !!deleted };
@@ -65,6 +68,11 @@ export async function passthroughHostModule() {
     }),
     exclusivePending: vi.fn(async (id: string, fn: (t: unknown) => unknown) => fn({ groupProjectId: id, host: { machine: null }, seq: 0, deletedAt: new Date(0).toISOString(), state: 'deleting' })),
     digest: vi.fn(async (id: string) => board(id).getDigest()),
+    readDigest: vi.fn(async (id: string, since?: unknown, channels?: unknown) => (channels === undefined ? board(id).getDigest(since) : board(id).getDigest(since, channels))),
+    readTopic: vi.fn(async (id: string, topic: string, since?: string, limit?: number) => board(id).getTopicMessages(topic, since, limit)),
+    readAll: vi.fn(async (id: string, since?: string, limit?: number) => board(id).getAllMessages(since, limit)),
+    getMessage: vi.fn(async (id: string, messageId: string) => board(id).getMessageById(messageId)),
+    estimateTrim: vi.fn(async (id: string, maxPerTopic: number, maxTotal: number) => board(id).estimateTrimCount(maxPerTopic, maxTotal)),
     post: vi.fn(async (id: string, sender: string, topic: string, body: string) => board(id).postMessage(sender, topic, body)),
     deleteMessage: vi.fn(async (id: string, topic: string, messageId: string) => board(id).deleteMessage(topic, messageId)),
     deleteTopic: vi.fn(async (id: string, topic: string) => board(id).deleteTopic(topic)),
@@ -80,7 +88,10 @@ export async function passthroughHostModule() {
     inboxFor: vi.fn(async (_id: string, name: string) => inbox(name)),
     flushRegistry: vi.fn(async () => registry.flush()),
     flushBoards: vi.fn(async () => optional<() => Promise<void>>(bulletin, 'flushAllBulletinBoards')?.()),
-    onChange: vi.fn((): (() => void) => () => undefined),
+    onChange: vi.fn((listener: (change: unknown) => void): (() => void) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    }),
   };
   return { groupProjectHost, GroupProjectHostError: class extends Error {} };
 }

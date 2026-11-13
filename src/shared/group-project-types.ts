@@ -92,6 +92,8 @@ export interface GroupProjectChange {
   groupProjectId: string;
   seq: number;
   part: GroupProjectChangePart;
+  /** On `deleted`: the group project as it was when its delete began. */
+  project?: GroupProject;
 }
 
 /** A member as other parts of the app see it (resolved by #3357's policy, or wires). */
