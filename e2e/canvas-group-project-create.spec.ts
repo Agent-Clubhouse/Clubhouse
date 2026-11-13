@@ -4,7 +4,7 @@
  * Runs on the new layout, and on classic in the Classic layout E2E job
  * (#2843). Only reaching the project's Canvas tab differs between them.
  */
-import { test, expect, _electron as electron, type Page } from '@playwright/test';
+import { test, expect, _electron as electron, type Page, type Locator } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchApp } from './launch';
@@ -18,6 +18,26 @@ const GROUP_PROJECT_WIDGET = 'plugin:group-project:group-project';
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 let userDataDir: string | undefined;
+
+async function clickCanvasMenuItem(item: Locator): Promise<void> {
+  try {
+    await item.click({ timeout: 2_000 });
+  } catch (error) {
+    // Electron CI sometimes reports an on-screen, hit-testable portal item as
+    // outside Playwright's viewport. Only dispatch when the browser itself
+    // confirms the item's center is inside the viewport and receives hits.
+    const reachable = await item.evaluate((element) => {
+      const r = element.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
+        && !!hit && (hit === element || element.contains(hit));
+    });
+    if (!reachable) throw error;
+    await item.dispatchEvent('click');
+  }
+}
 
 async function navigateToCanvas(page: Page): Promise<void> {
   // On the new layout the tab is in the title bar or its More menu, which
@@ -68,7 +88,7 @@ test('creating a group project advances from naming form to initialized card', a
     `[data-testid="canvas-context-menu-${GROUP_PROJECT_WIDGET}"]`,
   );
   await expect(addGroupProject).toBeVisible({ timeout: 5_000 });
-  await addGroupProject.click();
+  await clickCanvasMenuItem(addGroupProject);
 
   const widget = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await expect(widget).toBeVisible({ timeout: 8_000 });
@@ -118,7 +138,7 @@ test('creating a group project advances from naming form to initialized card', a
   const box = await workspace.boundingBox();
   expect(box).not.toBeNull();
   await workspace.dispatchEvent('contextmenu', { bubbles: true, button: 2, clientX: box!.x + 220, clientY: box!.y + 180 });
-  await window.getByTestId(`canvas-context-menu-${GROUP_PROJECT_WIDGET}`).click();
+  await clickCanvasMenuItem(window.getByTestId(`canvas-context-menu-${GROUP_PROJECT_WIDGET}`));
   const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await card.getByLabel('Existing group project').selectOption({ label: 'E2E Group Project' });
   await card.getByRole('button', { name: 'Add existing' }).click();
