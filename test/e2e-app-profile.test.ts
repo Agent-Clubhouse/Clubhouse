@@ -15,6 +15,9 @@ import * as path from 'path';
 import { ChildProcess } from 'node:child_process';
 
 const launchMock = vi.hoisted(() => vi.fn());
+vi.mock('fs', async (importOriginal) => ({
+  ...await importOriginal<typeof import('fs')>(),
+}));
 vi.mock('@playwright/test', () => ({ _electron: { launch: launchMock } }));
 vi.mock('../e2e/renderer-diagnostics', () => ({
   installFrameMonitor: vi.fn(),
