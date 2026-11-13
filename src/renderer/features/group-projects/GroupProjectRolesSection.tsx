@@ -18,7 +18,7 @@ function ModeSelect({ label, value, disabled, onChange }: { label: string; value
   return (
     <select
       aria-label={label}
-      className="text-xs bg-ctp-surface0 text-ctp-text rounded px-1.5 py-0.5"
+      className="text-xs bg-surface-0 text-ctp-text rounded px-1.5 py-0.5"
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as Mode)}
@@ -90,7 +90,7 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
                   {label}
                   <select
                     aria-label={label}
-                    className="text-xs bg-ctp-surface0 text-ctp-text rounded px-1.5 py-0.5"
+                    className="text-xs bg-surface-0 text-ctp-text rounded px-1.5 py-0.5"
                     value={roles.own[grant]}
                     disabled={busy}
                     onChange={(e) => void change(() => api.setOwnGrant(groupProjectId, grant, e.target.value as 'allow' | 'off'))}
