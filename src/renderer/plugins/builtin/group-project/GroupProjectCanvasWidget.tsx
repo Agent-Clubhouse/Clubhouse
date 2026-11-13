@@ -12,6 +12,7 @@ import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
+import { useAnnexStore } from '../../../stores/annexStore';
 import { showApprovalDialog, showConfirmDialog } from '../../PluginDialog';
 import { WireToolPermissionsDialog } from '../canvas/WireToolPermissionsDialog';
 import { Button } from '../../../components/Button';
@@ -442,11 +443,16 @@ function ProjectCard({
 }
 
 function ProjectScopeLine({ ctx }: { ctx: GroupProjectContextValue }) {
+  const fingerprint = useAnnexStore((s) => s.status.fingerprint);
+  const loadStatus = useAnnexStore((s) => s.loadStatus);
   const scope = ctx.project?.scope;
+  useEffect(() => { if (scope?.reach === 'network' && !fingerprint) void loadStatus(); }, [scope?.reach, fingerprint, loadStatus]);
   if (!scope) return null;
   const label = `${scope.level === 'app' ? 'App' : 'Project'} / ${scope.reach === 'network' ? 'Network' : 'Local'}`;
-  const hostName = (ctx.project as (typeof ctx.project & { hostName?: string }))?.hostName
-    ?? (ctx.project?.host?.machine === null ? 'This computer' : 'Unknown');
+  const machine = ctx.project?.host?.machine;
+  const resolvedName = (ctx.project as (typeof ctx.project & { hostName?: string }))?.hostName;
+  const hostName = !machine ? 'This computer' : !fingerprint ? 'Unknown'
+    : machine.toLowerCase() === fingerprint.toLowerCase() ? 'This computer' : resolvedName || machine;
   return <div className="px-3 text-xs text-ctp-overlay1" data-testid="group-project-scope">{label}{scope.reach === 'network' && ` · Host: ${hostName}`}</div>;
 }
 
