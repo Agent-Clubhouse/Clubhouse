@@ -1,6 +1,7 @@
 import { Button } from '../../components/Button';
 import { describeGrantRequests, grantRequestsByAgent, useGrantRequestStore } from '../../stores/grantRequestStore';
 import { useDispatcherStore, visibleRequestAgentId } from './dispatcherStore';
+import { RemoteApprovals } from './RemoteApprovals';
 
 export function PendingApprovals({ agentId }: { agentId: string }) {
   const state = useDispatcherStore((s) => s.state);
@@ -17,6 +18,8 @@ export function PendingApprovals({ agentId }: { agentId: string }) {
           <Button onClick={() => review(first.agentId)}>Review</Button>
         </div>
       )}
+      {/* On the lead (#3354): the other computers' requests, each with its computer first. */}
+      {agentId === state?.chatAgentId && <RemoteApprovals />}
     </div>
   );
 }

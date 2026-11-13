@@ -803,6 +803,8 @@ export const IPC = {
     QUEUE_FOR_LEAD: 'dispatcher:queue-for-lead',
     /** Clears the notices for waiting messages (expired, refused) and for news kept on this computer. Resolves with a DispatcherLeadState. */
     DISMISS_LEAD_NOTICE: 'dispatcher:dismiss-lead-notice',
+    /** On the lead (#3354): a person's answer to an Ask-first request on another computer. Resolves when that computer took it. */
+    ANSWER_REMOTE_APPROVAL: 'dispatcher:answer-remote-approval',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */

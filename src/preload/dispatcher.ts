@@ -66,6 +66,9 @@ export const dispatcher = {
     followAgain: (): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.FOLLOW_AGAIN),
     /** Keep a message for the lead's chat until its computer is back (#3353). */
     queueForLead: (text: string): Promise<{ id: string }> => ipcRenderer.invoke(IPC.DISPATCHER.QUEUE_FOR_LEAD, text),
+    /** On the lead (#3354): answer an Ask-first request waiting on another computer. Throws with the reason when refused there. */
+    answerRemoteApproval: (machine: string, requestId: string, answer: 'allow_once' | 'allow_lasting' | 'decline'): Promise<void> =>
+      ipcRenderer.invoke(IPC.DISPATCHER.ANSWER_REMOTE_APPROVAL, machine, requestId, answer),
     /** Clear the notices about expired or refused waiting messages. */
     dismissLeadNotice: (): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.DISMISS_LEAD_NOTICE),
     onLeadChanged: (callback: (state: DispatcherLeadState) => void): (() => void) => {
