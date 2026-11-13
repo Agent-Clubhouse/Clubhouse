@@ -148,7 +148,10 @@ function CreationForm({
   const projects = useGroupProjectStore((s) => s.projects);
   const loadError = useGroupProjectStore((s) => s.loadError);
   const [selectedId, setSelectedId] = useState('');
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'app' | 'project'>('all');
   const selectId = useId();
+  const scopeId = useId();
+  const visibleProjects = projects.filter((project) => scopeFilter === 'all' || project.scope?.level === scopeFilter);
 
   useEffect(() => {
     if (!loaded) loadProjects();
@@ -189,9 +192,15 @@ function CreationForm({
         <div role="alert" className="text-xs text-ctp-error">Could not load group projects. <Button kind="ghost" onClick={() => void loadProjects()}>Retry</Button></div>
       ) : (
         <>
+          <label htmlFor={scopeId} className="text-xs text-ctp-subtext1">Scope</label>
+          <select id={scopeId} value={scopeFilter} onChange={(e) => { setScopeFilter(e.target.value as 'all' | 'app' | 'project'); setSelectedId(''); }} className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text">
+            <option value="all">All scopes</option>
+            <option value="app">App</option>
+            <option value="project">Project</option>
+          </select>
           <select id={selectId} value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text">
             <option value="">{loaded ? 'Select a group project' : 'Loading group projects...'}</option>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            {visibleProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
           <Button disabled={!projects.some((project) => project.id === selectedId)} onClick={() => {
             const project = projects.find((item) => item.id === selectedId);

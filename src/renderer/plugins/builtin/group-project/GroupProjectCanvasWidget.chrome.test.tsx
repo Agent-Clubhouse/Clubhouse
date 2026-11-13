@@ -118,6 +118,20 @@ describe('group project creation context', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('filters the picker by scope without restricting cross-canvas placement', async () => {
+    useGroupProjectStore.setState({ projects: [
+      { id: 'app-gp', name: 'App project', description: '', instructions: '', createdAt: '', metadata: {}, scope: { level: 'app', reach: 'local' } },
+      { id: 'project-gp', name: 'Project group', description: '', instructions: '', createdAt: '', metadata: {}, scope: { level: 'project', projectId: 'other', reach: 'local' } },
+    ] });
+    renderWidget({}, { mode: 'project', projectId: 'p1' });
+    expect(screen.getByRole('option', { name: 'Project group' })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Scope'), 'app');
+    expect(screen.getByRole('option', { name: 'App project' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Project group' })).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Scope'), 'all');
+    expect(screen.getByRole('option', { name: 'Project group' })).toBeInTheDocument();
+  });
+
   it.each([
     { mode: 'project' as const, projectId: 'p1', metadata: {}, options: { projectId: 'p1' } },
     { mode: 'app' as const, projectId: undefined, metadata: {}, options: undefined },
