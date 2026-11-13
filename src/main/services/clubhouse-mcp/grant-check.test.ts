@@ -35,7 +35,6 @@ function leadAndAdmin(groupProjectId: string): GrantChange[] {
 }
 import { toolGrantDeclarations, type ToolGrant } from './tool-grants';
 import type { ToolGroups } from './tool-registry';
-import { bindingManager } from './binding-manager';
 
 /**
  * The parity suite (#2968): for every tool the app registers, every kind of
