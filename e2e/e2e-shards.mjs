@@ -21,6 +21,7 @@ export const E2E_SHARDS = {
   1: [
     'agent-real-cli.spec.ts',
     'canvas-startup-bindings.spec.ts',
+    'group-project-delete.spec.ts',
     'command-palette.spec.ts',
     'connection-view.spec.ts',
     'mcp-fresh-default.spec.ts',
