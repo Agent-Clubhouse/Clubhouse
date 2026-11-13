@@ -686,31 +686,64 @@ describe('public Dispatcher repository import (#2808)', () => {
     });
   });
 
-  it('retains honest terminal public/user status when the final ledger write fails, without replay or unhandled async failure', async () => {
-    const plan = await preview();
-    await start(plan);
-    await approveDesktop();
-    const failedHistory = new Promise<void>((resolve) => {
-      vi.mocked(appLog).mockImplementation((_namespace, _level, message) => {
-        if (message.includes('Import receipt could not be saved')) setImmediate(resolve);
+  describe('terminal receipt recovery after prepared registration', () => {
+    let plan: ImportPlan;
+    let started: Awaited<ReturnType<typeof start>>;
+    let resume!: () => void;
+    let registered: boolean;
+    beforeEach(async () => {
+      registered = false;
+      let arrived!: () => void;
+      const entered = new Promise<void>((resolve) => { arrived = resolve; });
+      const released = new Promise<void>((resolve) => { resume = resolve; });
+      lifetime.releases.push(() => { resume(); arrived(); });
+      current.service = new ProjectImportService({
+        store, git: runner,
+        register: async (...params) => {
+          const result = await registerProjectFolder(...params);
+          registered = true;
+          arrived();
+          await released;
+          return result;
+        },
       });
+      plan = await preview();
+      expect((await start(plan)).body.status).toBe('approval_required');
+      await approveDesktop();
+      started = await start(plan);
+      expect(started.body.status).toBe('started');
+      await entered;
     });
-    vi.mocked(store.update).mockImplementation((change) => ImportStore.prototype.update.call(store, (state) => {
-      change(state);
-      if (state.receipts.some((r) => !ACTIVE_PHASES.has(r.phase))) {
-        throw new ImportError('history_unavailable', 'Fixture secret diagnostic must never escape');
-      }
-    }));
-    const started = await start(plan);
-    await failedHistory;
-    const status = await call('get_repository_import', { importId: started.body.receipt.id });
-    expect(status.body).toMatchObject({ phase: 'partial', cloneCompleted: true, reason: 'history_unavailable' });
-    expect(status.body.message).toContain('receipt could not be saved');
-    expect(status.text).not.toContain('secret diagnostic');
-    expect((await projectStore.list()).some((p) => p.id === status.body.projectId)).toBe(true);
-    expect((await handlers.get(IPC.PROJECT.IMPORT_LIST)!(event)).value[0].phase).toBe('partial');
-    expect((await start(plan)).body.receipt.id).toBe(started.body.receipt.id);
-    expect(current.gitCalls.filter((args) => args[0] === 'fetch')).toHaveLength(1);
+
+    it('retains honest terminal public/user status when the final ledger write fails, without replay or unhandled async failure', async () => {
+      expect(registered).toBe(true);
+      expect((await call('get_repository_import', { importId: started.body.receipt.id })).body.phase).toBe('registering');
+      const failedHistory = new Promise<void>((resolve) => {
+        vi.mocked(appLog).mockImplementation((_namespace, _level, message) => {
+          if (message.includes('Import receipt could not be saved')) setImmediate(resolve);
+        });
+      });
+      let completionSaveReached = false;
+      vi.mocked(store.update).mockImplementation((change) => ImportStore.prototype.update.call(store, (state) => {
+        change(state);
+        const terminal = state.receipts.find((r) => !ACTIVE_PHASES.has(r.phase));
+        if (terminal) {
+          if (terminal.phase === 'completed' && terminal.projectId) completionSaveReached = true;
+          throw new ImportError('history_unavailable', 'Fixture secret diagnostic must never escape');
+        }
+      }));
+      resume();
+      await failedHistory;
+      expect(completionSaveReached).toBe(true);
+      const status = await call('get_repository_import', { importId: started.body.receipt.id });
+      expect(status.body).toMatchObject({ phase: 'partial', cloneCompleted: true, reason: 'history_unavailable' });
+      expect(status.body.message).toContain('receipt could not be saved');
+      expect(status.text).not.toContain('secret diagnostic');
+      expect((await projectStore.list()).some((p) => p.id === status.body.projectId)).toBe(true);
+      expect((await handlers.get(IPC.PROJECT.IMPORT_LIST)!(event)).value[0].phase).toBe('partial');
+      expect((await start(plan)).body.receipt.id).toBe(started.body.receipt.id);
+      expect(current.gitCalls.filter((args) => args[0] === 'fetch')).toHaveLength(1);
+    });
   });
 
   describe('agent boundaries with a prepared real public import', () => {
