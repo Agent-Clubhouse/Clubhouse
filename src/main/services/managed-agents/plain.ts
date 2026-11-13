@@ -148,7 +148,7 @@ async function readState(deps: PlainDeps, projectPath: string, agentId: string):
   const worktree = agent.worktreePath;
   const provider = await deps.providerFor(projectPath, agent);
   const conv = provider.conventions;
-  const resolved = await resolveManagedSetup(deps.service, agent.managed);
+  const resolved = await resolveManagedSetup(deps.service, agent.managed, agent);
 
   // ── Instructions ──
   let instrNow: string | null = null;

@@ -64,7 +64,7 @@ export async function managedActivationFor(input: {
 }) {
   const { agent, service, running, materialized, report } = input;
   const configured = agent.managed ? withClubhouseSetup(agent.managed) : null;
-  const desired = configured ? await resolveManagedSetup(service, configured) : null;
+  const desired = configured ? await resolveManagedSetup(service, configured, agent) : null;
   const fingerprint = desired ? setupFingerprint(agent, desired).fingerprint : null;
   const provider = input.effectiveProvider ?? agent.orchestrator;
   const partsMatch = materialized && fingerprint ? materialized.fingerprint === fingerprint && !materialized.missing && !desired?.missing.length : null;

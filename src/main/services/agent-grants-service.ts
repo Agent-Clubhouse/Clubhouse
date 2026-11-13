@@ -12,7 +12,7 @@
 import { applyGrantChanges, carriedGrants, isHelperControlRow, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
 import { controlFromGrantModes, controlGrantModes, defaultGrants, type GrantCallerFacts } from '../../shared/default-grants';
 import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
-import type { Grant } from '../../shared/agent-grants';
+import type { Grant, GrantAction } from '../../shared/agent-grants';
 import type { DurableAgentConfig } from '../../shared/types';
 import { getDurableConfig } from './agent-config';
 import { setOrchestrationPolicy } from './orchestration-policy';
@@ -99,6 +99,11 @@ export async function readAgentGrants(projectPath: string, agentId: string): Pro
  */
 export function grantsFromFacts(agentId: string, facts: GrantCallerFacts): Grant[] {
   return applyGrantChanges(defaultGrants(facts), getAgentGrantChanges(agentId));
+}
+
+/** Whether an agent holds an action at all (Allow or Ask first), from its saved config, synchronously (#3344). */
+export function agentHoldsAction(agentId: string, config: DurableAgentConfig, action: GrantAction): boolean {
+  return applyGrantChanges(defaultsFor(agentId, config), getAgentGrantChanges(agentId)).some((g) => g.action === action);
 }
 
 /** The grants an agent holds now, defaults and changes together. */

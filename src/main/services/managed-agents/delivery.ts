@@ -24,6 +24,7 @@ import { MAX_QUICK_RUN_CHANGES, type DurableAgentConfig, type McpServerDef, type
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import {
   CLUBHOUSE_MCP_PART_ID,
+  PREPARE_HANDOFF_SKILL_ID,
   type ManagedAgentSetup,
   type ManagedMcpContent,
   type ManagedPreview,
@@ -52,10 +53,29 @@ interface Resolved {
   missing: string[];
 }
 
-async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSetup): Promise<Resolved> {
+/**
+ * Built-in skills an agent gets from what it may do, never from its setup
+ * (#3344): prepare-handoff while it holds handoff.offer. Set at startup from
+ * the grants; none until then, and none without an agent (a template).
+ */
+const GRANT_GATED_SKILLS: readonly string[] = [PREPARE_HANDOFF_SKILL_ID];
+let grantedSkills: (agent: DurableAgentConfig) => readonly string[] = () => [];
+export function setGrantedSkills(provider: (agent: DurableAgentConfig) => readonly string[]): () => void {
+  grantedSkills = provider;
+  return () => { if (grantedSkills === provider) grantedSkills = () => []; };
+}
+
+/** The setup's skills without grant-gated ones, then the ones this agent holds. */
+function withGrantedSkills(setup: ManagedAgentSetup, agent: DurableAgentConfig | undefined): ManagedAgentSetup {
+  const own = setup.skills.filter((id) => !GRANT_GATED_SKILLS.includes(id));
+  const granted = agent ? grantedSkills(agent).filter((id) => GRANT_GATED_SKILLS.includes(id)) : [];
+  return { ...setup, skills: [...own, ...granted] };
+}
+
+async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSetup, agent?: DurableAgentConfig): Promise<Resolved> {
   // Both sides of the delivery fingerprint (delivered and current) resolve here,
   // so a setup saved before the Clubhouse part was required fingerprints the same.
-  const setup = withClubhouseSetup(saved);
+  const setup = withGrantedSkills(withClubhouseSetup(saved), agent);
   const out: Resolved = { blocks: [], skills: [], mcps: [], missing: [] };
   for (const id of setup.blocks) {
     const head = await service.headContent(id);
@@ -152,7 +172,7 @@ export function mcpServersOf(resolved: Resolved): Record<string, McpServerDef> {
 
 export async function resolveManagedMcpServers(service: ManagedAgentsService, agent: DurableAgentConfig): Promise<Record<string, McpServerDef>> {
   if (!agent.managed) return {};
-  return mcpServersOf(await resolveSetup(service, agent.managed));
+  return mcpServersOf(await resolveSetup(service, agent.managed, agent));
 }
 
 function insideDir(dir: string, rel: string): string {
@@ -772,7 +792,7 @@ export async function deliverManagedSetup(params: {
 }): Promise<DeliveryRecord | null> {
   const { service, projectPath, agent, provider } = params;
   if (!agent.managed || !agent.worktreePath) return null;
-  const resolved = await resolveSetup(service, agent.managed);
+  const resolved = await resolveSetup(service, agent.managed, agent);
   if (resolved.missing.length > 0) {
     appLog('core:managed', 'warn', 'Managed setup lists parts that no longer exist; skipped', { meta: { agentId: agent.id, missing: resolved.missing.length } });
   }
@@ -944,7 +964,8 @@ export async function previewManagedSetup(params: {
 }): Promise<ManagedPreview> {
   const setup = params.setup ?? params.agent.managed;
   if (!setup) return { instructions: '', blocks: [], skills: [], mcps: [], missing: [] };
-  const resolved = await resolveSetup(params.service, setup);
+  // What it may do decides prepare-handoff (#3344), as at delivery.
+  const resolved = await resolveSetup(params.service, setup, params.agent);
   const rawInstructions = composeManagedText(resolved);
   // The same render delivery writes, so Preview matches the file byte for byte.
   const instructions = await renderManagedInstructions(params.projectPath, params.agent, resolved);
