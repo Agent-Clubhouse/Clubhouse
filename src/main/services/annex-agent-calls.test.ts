@@ -25,7 +25,7 @@ import {
 } from './annex-agent-calls';
 import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
 import {
-  getConnectionDirection, listAllConnectionDirections, putConnectionDirection, removeAgentNetworkSources, clearUserRemovedAgentNetworkSources, removeConnectionDirections, setConnectionLink, setConnectionTools, updateAgentNetworkLinks,
+  getConnectionDirection, listAllConnectionDirections, putConnectionDirection, markNetworkDirectionRemovedByUser, removeAgentNetworkSources, clearUserRemovedAgentNetworkSources, removeConnectionDirections, setConnectionLink, setConnectionTools, updateAgentNetworkLinks,
 } from './connection-grants-store';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import type { McpToolResult } from './clubhouse-mcp/types';
@@ -845,6 +845,36 @@ describe('keeping both machines\' copies of a connection', () => {
     }
   });
 
+  it('syncs a last-source removal and a later explicit reconnect between endpoints', async () => {
+    const originalBase = state.base;
+    const endpointA = fs.mkdtempSync(path.join(os.tmpdir(), 'card-fence-a-'));
+    const endpointB = fs.mkdtempSync(path.join(os.tmpdir(), 'card-fence-b-'));
+    const switchTo = (base: string, machine: string) => { state.base = base; state.localMachine = machine; resetAllSettingsStoresForTests(); };
+    const fromA = { agentId: 'here' }, toB = { agentId: 'receiver', machineId: OTHER };
+    const fromB = { agentId: 'here', machineId: SELF }, toHere = { agentId: 'receiver' };
+    try {
+      connected = false;
+      switchTo(endpointA, SELF);
+      await putConnectionDirection({ from: fromA, to: toB, disabledTools: [], updatedAt: new Date(Date.now() - 2000).toISOString() });
+      await markNetworkDirectionRemovedByUser(fromA, toB);
+      const removed = await shareForAnswer(OTHER);
+      switchTo(endpointB, OTHER);
+      await putConnectionDirection({ from: fromB, to: toHere, disabledTools: [], updatedAt: new Date(Date.now() - 3000).toISOString() });
+      await receiveDirections(SELF, { v: 1, directions: removed });
+      expect(getConnectionDirection(fromB, toHere)?.removedByUser).toBe(true);
+      await expect(updateAgentNetworkLinks([{ from: fromB, to: toHere }], { agentId: 'receiver', machineId: OTHER }, 'add')).rejects.toThrow('Only the user can reconnect');
+      await putConnectionDirection({ from: fromB, to: toHere, disabledTools: [], link: { createdAt: new Date(Date.now() + 1000).toISOString() }, updatedAt: new Date(Date.now() + 1000).toISOString() });
+      const reconnected = await shareForAnswer(SELF);
+      switchTo(endpointA, SELF);
+      await receiveDirections(OTHER, { v: 1, directions: reconnected });
+      expect(getConnectionDirection(fromA, toB)?.removedByUser).toBeUndefined();
+    } finally {
+      switchTo(originalBase, SELF);
+      fs.rmSync(endpointA, { recursive: true, force: true });
+      fs.rmSync(endpointB, { recursive: true, force: true });
+    }
+  });
+
   it('on connect, sends what waited only after the connections got through', async () => {
     await setConnectionLink({ agentId: 'here' }, { agentId: 'there', machineId: OTHER }, true);
     connected = false;
@@ -919,6 +949,16 @@ describe('keeping both machines\' copies of a connection', () => {
     const later = new Date(now + 1000).toISOString();
     await receiveDirections(OTHER, { v: 1, directions: [{ ...base, updatedAt: later }] });
     expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.link).toBeTruthy();
+  });
+
+  it('retains a card source when a legacy peer echoes its boolean link', async () => {
+    const from = { agentId: 'there', machine: OTHER };
+    const to = { agentId: 'receiver', machine: SELF };
+    await receiveDirections(OTHER, { v: 1, directions: [{ from, to, disabledTools: [], link: true, userLink: false, cardLink: true, updatedAt: new Date(now).toISOString() }] }, now);
+    await receiveDirections(OTHER, { v: 1, directions: [{ from, to, disabledTools: [], link: true, updatedAt: new Date(now + 1000).toISOString() }] }, now + 1000);
+    const saved = getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' });
+    expect(saved?.cardLink).toBeDefined();
+    expect(saved?.link).toBeUndefined();
   });
 
   it('refuses a list it can\'t read', async () => {

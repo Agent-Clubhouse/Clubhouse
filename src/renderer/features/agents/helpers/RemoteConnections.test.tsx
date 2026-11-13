@@ -48,23 +48,11 @@ describe('connections with agents on other computers (#3064)', () => {
     ]);
   });
 
-  it('lists each with its computer, and connects to a durable agent on a computer in the network', async () => {
-    const connect = vi.fn().mockResolvedValue(undefined);
-    Object.assign(window.clubhouse.mcpBinding, { connectAcrossMachines: connect });
-    const onChanged = vi.fn();
-    render(<RemoteConnections agent={agent} grants={[dir({ agentId: 'a' }, { agentId: 'z', machineId: NET })]} onChanged={onChanged} />);
+  it('lists each connection with its computer', () => {
+    render(<RemoteConnections agent={agent} grants={[dir({ agentId: 'a' }, { agentId: 'z', machineId: NET })]} onChanged={vi.fn()} />);
     expect(screen.getByTestId('remote-connection-row')).toHaveTextContent('zed');
     expect(screen.getByTestId('remote-connection-row')).toHaveTextContent('on Studio, sends to it');
-
-    fireEvent.click(screen.getByTestId('remote-connection-add'));
-    const picker = screen.getByRole('combobox', { name: 'Agent on another computer' });
-    const options = [...picker.querySelectorAll('option')].map((o) => o.textContent);
-    // Not the one already connected, not a quick agent, not one on a one-to-one pairing.
-    expect(options).toEqual(['Choose an agent', 'yara on Studio']);
-    fireEvent.change(picker, { target: { value: `y@${NET}` } });
-    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
-    await waitFor(() => expect(connect).toHaveBeenCalledWith('a', `y@${NET}`, { twoWay: true, name: 'yara' }));
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(screen.queryByTestId('remote-connection-add')).not.toBeInTheDocument();
   });
 
   it('shows an agent-created direction and its maker without a user link', () => {
@@ -72,16 +60,31 @@ describe('connections with agents on other computers (#3064)', () => {
     render(<RemoteConnections agent={agent} grants={[networkDirection]} onChanged={vi.fn()} />);
     expect(screen.getByTestId('remote-connection-row')).toHaveTextContent('Made by Morgan');
     fireEvent.click(screen.getByTestId('remote-connection-manage'));
-    expect(screen.getByText('What alpha can do to zed')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'alpha to zed' })).toBeInTheDocument();
   });
 
   it('removes both directions after confirming', async () => {
     const disconnect = vi.fn().mockResolvedValue(undefined);
-    Object.assign(window.clubhouse.mcpBinding, { disconnectAcrossMachines: disconnect });
+    Object.assign(window.clubhouse.mcpBinding, { removeRemoteSource: disconnect });
     render(<RemoteConnections agent={agent} grants={[dir({ agentId: 'a' }, { agentId: 'z', machineId: NET })]} onChanged={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('remote-connection-remove'));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' }).at(-1)!);
-    await waitFor(() => expect(disconnect).toHaveBeenCalledWith('a', `z@${NET}`));
+    fireEvent.click(screen.getByTestId('remote-connection-manage'));
+    fireEvent.click(screen.getByTestId('connection-source-remove-user_link'));
+    await waitFor(() => expect(disconnect).toHaveBeenCalledWith('a', `z@${NET}`, 'user_link'));
+  });
+
+  it('removes only the card source in both directions from the shared editor', async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    Object.assign(window.clubhouse.mcpBinding, { removeRemoteSource: remove });
+    const card = (from: ConnectionDirection['from'], to: ConnectionDirection['to']): ConnectionDirection =>
+      ({ from, to, disabledTools: [], cardLink: { createdAt: at }, updatedAt: at });
+    render(<RemoteConnections agent={agent} onChanged={vi.fn()} grants={[
+      { ...card({ agentId: 'a' }, { agentId: 'z', machineId: NET }), link: { createdAt: at } },
+      card({ agentId: 'z', machineId: NET }, { agentId: 'a' }),
+    ]} />);
+    fireEvent.click(screen.getByTestId('remote-connection-manage'));
+    expect(screen.getByTestId('connection-source-user_link')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('connection-source-remove-card_link'));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith('a', `z@${NET}`, 'card_link'));
   });
 
   it('switches each tool, wake included, on each direction, and saves the direction it belongs to', async () => {
@@ -93,16 +96,16 @@ describe('connections with agents on other computers (#3064)', () => {
       dir({ agentId: 'z', machineId: NET }, { agentId: 'a' }),
     ]} />);
     fireEvent.click(screen.getByTestId('remote-connection-manage'));
-    expect(screen.getByText('What alpha can do to zed')).toBeInTheDocument();
-    expect(screen.getByText('What zed can do to alpha')).toBeInTheDocument();
-    const wakes = screen.getAllByRole('checkbox', { name: 'Wake it' });
+    expect(screen.getByRole('region', { name: 'alpha to zed' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'zed to alpha' })).toBeInTheDocument();
+    const wakes = screen.getAllByRole('switch', { name: /Wake it/ });
     expect(wakes).toHaveLength(2);
-    expect(screen.getAllByRole('checkbox', { name: 'Clear its context' })[0]).not.toBeChecked();
+    expect(screen.getAllByRole('switch', { name: /Clear its context/ })[0]).toHaveAttribute('aria-checked', 'false');
     // Wake off for zed → alpha: the incoming direction.
     fireEvent.click(wakes[1]);
     await waitFor(() => expect(setTools).toHaveBeenCalledWith('a', `z@${NET}`, false, ['wake_agent']));
     // Clear on for alpha → zed.
-    fireEvent.click(screen.getAllByRole('checkbox', { name: 'Clear its context' })[0]);
+    fireEvent.click(screen.getAllByRole('switch', { name: /Clear its context/ })[0]);
     await waitFor(() => expect(setTools).toHaveBeenCalledWith('a', `z@${NET}`, true, []));
     expect(onChanged).toHaveBeenCalled();
   });

@@ -43,6 +43,10 @@ export interface ConnectionDirection {
    * so the store keeps it connected itself, with no other source needed.
    */
   link?: { createdAt: string };
+  /** A separate source created through the Connections card. */
+  cardLink?: { createdAt: string };
+  /** The user removed the last source; only an explicit reconnect clears this. */
+  removedByUser?: boolean;
   /** Last source inspection from the network sender, used to protect its local switches. */
   agentToolsProtected?: boolean;
   /** Agent-created network sources, identified by creator and its machine. */
@@ -193,6 +197,8 @@ export function normalizeConnectionDirection(raw: unknown): ConnectionDirection 
   const link = r.link && typeof r.link === 'object' && typeof (r.link as { createdAt?: unknown }).createdAt === 'string'
     ? { createdAt: (r.link as { createdAt: string }).createdAt }
     : undefined;
+  const cardLink = r.cardLink && typeof r.cardLink === 'object' && typeof (r.cardLink as { createdAt?: unknown }).createdAt === 'string'
+    ? { createdAt: (r.cardLink as { createdAt: string }).createdAt } : undefined;
   const agentLinks = Array.isArray(r.agentLinks) ? r.agentLinks.flatMap((value) => {
     if (!value || typeof value !== 'object') return [];
     const item = value as Record<string, unknown>;
@@ -201,6 +207,8 @@ export function normalizeConnectionDirection(raw: unknown): ConnectionDirection 
   }).slice(0, 50) : [];
   return {
     from, to, disabledTools,
+    ...(cardLink && { cardLink }),
+    ...(r.removedByUser === true && { removedByUser: true }),
     ...(agentLinks.length > 0 && { agentLinks }),
     ...(typeof r.agentToolsProtected === 'boolean' && { agentToolsProtected: r.agentToolsProtected }),
     ...(enabledTools.length > 0 && { enabledTools }),

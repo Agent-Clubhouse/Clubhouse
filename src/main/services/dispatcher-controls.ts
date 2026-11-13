@@ -308,7 +308,7 @@ const local = (agentId: string) => ({ agentId });
  */
 function toolsAreOurs(pair: Pair): boolean {
   const entry = getConnectionDirection(local(pair.agentId), local(pair.targetId));
-  if (entry?.link || (entry && entry.setBy !== 'dispatcher')) return false;
+  if (entry?.link || entry?.cardLink || (entry && entry.setBy !== 'dispatcher')) return false;
   return !isBound(pair) || listSoleOwnedPairs(DISPATCHER_CONNECTION_SOURCE_ID).some((p) => p.agentId === pair.agentId && p.targetId === pair.targetId);
 }
 
@@ -334,7 +334,7 @@ async function writeDirectionTools(writes: ReadonlyArray<{ pair: Pair; allow?: r
     return { from: local(pair.agentId), to: local(pair.targetId), disabledTools, enabledTools };
   });
   await setConnectionDirections(changes, (current, change) => {
-    if (current && (current.link || current.setBy !== 'dispatcher')) {
+    if (current && (current.link || current.cardLink || current.setBy !== 'dispatcher')) {
       throw userToolsRefusal(labels.get(`${change.from.agentId}>${change.to.agentId}`) ?? `${change.from.agentId} → ${change.to.agentId}`);
     }
   });
@@ -368,7 +368,7 @@ export async function connectOrchestrators(actorId: string, args: Record<string,
     for (const [i, pair] of pairs.entries()) {
       const label = pairLabel(ends.get(pair.agentId)!, ends.get(pair.targetId)!);
       const entry = getConnectionDirection(local(pair.agentId), local(pair.targetId));
-      const usersTools = !!entry && (entry.setBy !== 'dispatcher' || !!entry.link);
+      const usersTools = !!entry && (entry.setBy !== 'dispatcher' || !!entry.link || !!entry.cardLink);
       if (isOurs(pair) ? !toolsAreOurs(pair) : usersTools) {
         if (allow[i]) throw userToolsRefusal(label);
         continue;

@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { AddCardConnection, ConnectionPickerDirectory } from '../shared/connection-picker';
 import type { AgentMcpConnection, DispatcherLink } from '../shared/types';
 import type { McpBindCause, McpBindResult, McpUnbindCause, McpUnbindResult } from '../shared/mcp-unbind';
 import type { AgentConnectionSources, ConnectionSourceKind, RemoveConnectionSourceResult } from '../shared/connection-sources';
@@ -9,6 +10,10 @@ import type { ConnectionToolCatalog } from '../main/services/clubhouse-mcp/types
 
 export const mcpBinding = {
   mcpBinding: {
+  listCardTargets: (agentId: string): Promise<ConnectionPickerDirectory> => ipcRenderer.invoke(IPC.MCP_BINDING.LIST_CARD_TARGETS, agentId),
+  addCardConnection: (request: AddCardConnection): Promise<void> => ipcRenderer.invoke(IPC.MCP_BINDING.ADD_CARD_CONNECTION, request),
+  removeCardConnection: (from: string, to: string): Promise<void> => ipcRenderer.invoke(IPC.MCP_BINDING.REMOVE_CARD_CONNECTION, from, to),
+  removeRemoteSource: (agentId: string, address: string, kind: 'user_link' | 'card_link' | 'tool_link'): Promise<void> => ipcRenderer.invoke(IPC.MCP_BINDING.REMOVE_REMOTE_SOURCE, agentId, address, kind),
   getBindings: () =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_BINDINGS),
   bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }, cause?: McpBindCause): Promise<McpBindResult> =>

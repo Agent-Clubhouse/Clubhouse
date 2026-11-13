@@ -611,7 +611,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   const from: ConnectionEnd = { agentId: body.from.agentId, machineId: machine };
   const direction = getConnectionDirection(from, { agentId: to.agentId });
   // The same answer whether or not the agent exists, as for local wires.
-  if (!dispatcher && !direction?.link && !activeAgentLinks(direction).length) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
+  if (!dispatcher && !direction?.link && !direction?.cardLink && !activeAgentLinks(direction).length) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
   if (!dispatcher && direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: `${body.tool} is turned off on this connection.` };
   if (federationDirection(from, { agentId: to.agentId }) && !FEDERATION_TOOLS.has(body.tool)) return { status: 403, error: 'tool_denied', message: 'That tool is fixed off on controller connections.' };
   const key = `${machine}/${deliveryHash(currentEpoch)}/${body.callId}`;
@@ -661,7 +661,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
     const current = getConnectionDirection(from, { agentId: to.agentId });
     let result: AgentToolRunResult;
     if (generation !== lifecycle || !isNetworkComputer(machine) || deliveryHash(currentEpoch) !== deliveryHash(outgoingEpoch(machine))
-      || (dispatcher ? !dispatcher.isTarget(to.agentId) || !dispatcher.isAvailable(to.agentId) : (!current?.link && !activeAgentLinks(current).length) || current.disabledTools.includes(body.tool))) {
+      || (dispatcher ? !dispatcher.isTarget(to.agentId) || !dispatcher.isAvailable(to.agentId) : (!current?.link && !current?.cardLink && !activeAgentLinks(current).length) || current.disabledTools.includes(body.tool))) {
       result = { ...text('The connection was revoked before this call ran.', true), annexDelivery: { state: 'refused', reason: 'authorization_revoked' } };
     } else {
       try {
@@ -723,6 +723,8 @@ export interface WireDirection {
   link: boolean;
   /** New peers distinguish a user link from agent sources; absent means legacy link. */
   userLink?: boolean;
+  cardLink?: boolean;
+  removedByUser?: boolean;
   agentLinks?: Array<{ agentId: string; machineId: string; createdAt: string; name?: string; removedAt?: string; removedByUser?: boolean }>;
   setByAgent?: string;
   toolsProtected?: boolean;
@@ -786,13 +788,13 @@ async function toWire(d: ConnectionDirection, self: string): Promise<WireDirecti
     const { bySource, failed } = await collectSourcesByPair();
     const targetId = d.to.machineId ? formatAgentAddress({ agentId: d.to.agentId, machine: d.to.machineId }) : d.to.agentId;
     const key = `${d.from.agentId}\u0000${targetId}`;
-    toolsProtected = !!d.link || !d.setByAgent || failed.length > 0 || [...bySource].some(([id, keys]) => id !== 'network-agent-connections' && keys.has(key));
+    toolsProtected = !!d.link || !!d.cardLink || !d.setByAgent || failed.length > 0 || [...bySource].some(([id, keys]) => id !== 'network-agent-connections' && keys.has(key));
   }
   return {
     from: { ...from, ...(fromName && { name: fromName }) },
     to: { ...to, ...(toName && { name: toName }) },
-    disabledTools: !d.from.machineId && !d.to.machineId && !localWakeOn(d) ? [...new Set([...d.disabledTools, WAKE_TOOL])] : d.disabledTools, link: !!d.link || !!activeAgentLinks(d).length, userLink: !!d.link,
-    agentLinks: d.agentLinks ?? [], ...(d.setByAgent && { setByAgent: d.setByAgent }), ...(toolsProtected !== undefined && { toolsProtected }), updatedAt: d.updatedAt,
+    disabledTools: !d.from.machineId && !d.to.machineId && !localWakeOn(d) ? [...new Set([...d.disabledTools, WAKE_TOOL])] : d.disabledTools, link: !!d.link || !!d.cardLink || !!activeAgentLinks(d).length, userLink: !!d.link, cardLink: !!d.cardLink,
+    agentLinks: d.agentLinks ?? [], removedByUser: !!d.removedByUser, ...(d.setByAgent && { setByAgent: d.setByAgent }), ...(toolsProtected !== undefined && { toolsProtected }), updatedAt: d.updatedAt,
   };
 }
 
@@ -897,7 +899,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
   }
   let applied = 0;
   // Links count toward the cap; a link turned off (a deleted agent's, say) doesn't.
-  let kept = listDirections().filter((d) => peersFor(d, self).includes(machine) && (!!d.link || !!activeAgentLinks(d).length)).length;
+  let kept = listDirections().filter((d) => peersFor(d, self).includes(machine) && (!!d.link || !!d.cardLink || !!activeAgentLinks(d).length)).length;
   const learned: Record<string, string> = {};
   for (const entry of list.directions as WireDirection[]) {
     const ok = entry && entry.from && entry.to && typeof entry.from.agentId === 'string' && typeof entry.to.agentId === 'string'
@@ -917,7 +919,9 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     if (federationDirection(from, to)) continue;
     const current = getConnectionDirection(from, to);
     if (typeof entry.link !== 'boolean') continue;
-    const userLink = typeof entry.userLink === 'boolean' ? entry.userLink : entry.link;
+    const legacyCard = typeof entry.userLink !== 'boolean' && entry.link && !!current?.cardLink;
+    const userLink = typeof entry.userLink === 'boolean' ? entry.userLink : legacyCard ? !!current?.link : entry.link;
+    const cardLink = entry.cardLink === true || legacyCard;
     const agentLinks = Array.isArray(entry.agentLinks) ? entry.agentLinks.filter((link) => {
       if (!link || typeof link.agentId !== 'string' || !link.agentId || link.agentId.length > 200
         || typeof link.machineId !== 'string' || (link.machineId.toLowerCase() !== self && !isNetworkComputer(link.machineId.toLowerCase()))
@@ -935,21 +939,23 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
       ...(typeof link.removedAt === 'string' && !Number.isNaN(Date.parse(link.removedAt)) && { removedAt: Date.parse(link.removedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : link.removedAt }),
       ...(link.removedByUser === true && { removedByUser: true }),
     })) : [];
-    const active = !!userLink || agentLinks.some((link) => !link.removedAt);
+    const active = !!userLink || cardLink || agentLinks.some((link) => !link.removedAt);
     if (active && !entry.link) continue; // Both the legacy flag and the source list must agree.
     // A link only for an agent here that exists; a link turned off only matters where there's one to turn off.
     if (localEnds.length === 0 && !current) continue;
     if (active || agentLinks.length > 0) {
       if ((await Promise.all(localEnds.map((end) => describe(end.agentId)))).some((found) => !found)) continue;
     } else if (!current) continue;
-    if (active && !current?.link && !activeAgentLinks(current).length && kept >= DIRECTIONS_PER_MACHINE) continue;
+    if (active && !current?.link && !current?.cardLink && !activeAgentLinks(current).length && kept >= DIRECTIONS_PER_MACHINE) continue;
     if (!publication.current()) return { status: 403, error: 'pairing_changed', message: 'The network pairing changed during this connection exchange.' };
     const updatedAt = Date.parse(entry.updatedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : entry.updatedAt;
     const tools = [...new Set(entry.disabledTools.filter((t): t is string => typeof t === 'string' && t.length > 0 && t.length <= 100))].slice(0, 50);
     // An agent-authored update can add its source, but cannot overwrite a person's source or saved switches.
     const agentAuthored = typeof entry.setByAgent === 'string' && agentLinks.some((l) => l.agentId === entry.setByAgent && l.machineId === machine && !l.removedAt);
     const untrustedAgentClaim = typeof entry.setByAgent === 'string' && !agentAuthored;
-    let protectUserTools = untrustedAgentClaim || (!!current && (agentAuthored && (current.setByAgent !== entry.setByAgent || !!current.link)));
+    const explicitReconnect = entry.removedByUser === false && !entry.setByAgent && (!!userLink || cardLink);
+    if (current?.removedByUser && !explicitReconnect && agentAuthored) continue;
+    let protectUserTools = untrustedAgentClaim || (!!current && (agentAuthored && (current.setByAgent !== entry.setByAgent || !!current.link || !!current.cardLink)));
     let protectedLive: { disabledTools?: string[]; enabledTools?: string[] } | undefined;
     if (untrustedAgentClaim && !current) continue;
     if (agentAuthored && !from.machineId) {
@@ -966,10 +972,13 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     }
     if (!publication.current()) return { status: 403, error: 'pairing_changed', message: 'The network pairing changed during connection source inspection.' };
     const effectiveUserLink = protectUserTools || !legacyPair ? !!current?.link : userLink;
+    const effectiveCardLink = protectUserTools ? !!current?.cardLink : cardLink;
     const wrote = await putConnectionDirection({
       from, to, disabledTools: protectUserTools ? current?.disabledTools ?? protectedLive?.disabledTools ?? [] : tools,
       ...(!from.machineId && !to.machineId && (protectUserTools ? localWakeOn(current, protectedLive?.enabledTools) : !tools.includes(WAKE_TOOL)) && { enabledTools: [WAKE_TOOL] }),
       ...(effectiveUserLink && { link: { createdAt: current?.link?.createdAt ?? updatedAt } }),
+      ...(effectiveCardLink && { cardLink: { createdAt: current?.cardLink?.createdAt ?? updatedAt } }),
+      ...((entry.removedByUser === true && !entry.setByAgent) || (current?.removedByUser && !explicitReconnect) ? { removedByUser: true } : {}),
       ...(agentLinks.length && { agentLinks }),
       ...(entry.from.machine.toLowerCase() === machine && typeof entry.toolsProtected === 'boolean' && { agentToolsProtected: entry.toolsProtected }),
       ...(!protectUserTools && agentAuthored && typeof entry.setByAgent === 'string' && entry.setByAgent.length <= 200 && { setByAgent: entry.setByAgent }),
@@ -978,7 +987,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     }, { allowUserReconnect: true });
     if (!wrote) continue;
     applied++;
-    if (active && !current?.link && !activeAgentLinks(current).length) kept++;
+    if (active && !current?.link && !current?.cardLink && !activeAgentLinks(current).length) kept++;
     for (const remoteEnd of [entry.from, entry.to].filter((end) => end.machine.toLowerCase() !== self)) {
       if (typeof remoteEnd.name === 'string' && remoteEnd.name.length > 0 && remoteEnd.name.length <= 200) learned[formatAgentAddress({ agentId: remoteEnd.agentId, machine: remoteEnd.machine })] = remoteEnd.name;
     }

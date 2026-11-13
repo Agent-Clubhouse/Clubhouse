@@ -30,6 +30,7 @@ import { dispatcherAgentDisplayName, isDispatcherAgent, useDispatcherStore } fro
 import type { DispatcherState } from '../../../../shared/dispatcher-types';
 import { parseAgentAddress } from '../../../../shared/agent-address';
 import { RemoteConnections, remoteConnections } from './RemoteConnections';
+import { ConnectionPicker } from './ConnectionPicker';
 import { reportChromeActionFailed } from '../../../chrome/telemetry';
 
 export type ConnectionDirection = 'two-way' | 'to' | 'from';
@@ -198,6 +199,8 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
     [bindings, agent.id, helperIds, parentId, toolPairs, dispatcherLinks, dispatcher, sources],
   );
   const [confirming, setConfirming] = useState<Connection | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [remoteManaging, setRemoteManaging] = useState<string | null>(null);
   const grants = useConnectionGrants(open && !!onDisconnect, agent.id, bindings, removals);
   // A connection another computer made or changed changes no binding here, so its change re-reads the store (#3064).
   useEffect(() => {
@@ -228,6 +231,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
       open={open}
       onToggle={onToggle}
     >
+      {onDisconnect && <button type="button" onClick={() => setAdding(true)} className="text-xs text-ctp-text hover:underline mb-2" data-testid="connection-add">Add connection</button>}
       {!managingId && (sourceRead?.error || (sources && sources.unreadable.length > 0 && connections.length === 0)) && (
         <p role="alert" className="text-xs text-ctp-error mb-3">
           Couldn't check saved connection sources: {sourceRead?.error ?? sources?.unreadable.map((id) => CONNECTION_SOURCE_LABELS[id === 'dispatcher-wires' ? 'dispatcher_auto' : id === 'dispatcher-connections' ? 'dispatcher_link' : 'other']).join(', ')}.
@@ -264,8 +268,14 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
           })}
         </ul>
       )}
-      {onDisconnect && <RemoteConnections agent={agent} grants={grants} onChanged={() => setRemovals((n) => n + 1)} />}
+      {onDisconnect && <RemoteConnections agent={agent} grants={grants} openAddress={remoteManaging} onChanged={() => setRemovals((n) => n + 1)} />}
     </DetailsCard>
+    {adding && <ConnectionPicker agentId={agent.id} agentName={agent.name} bindings={bindings} grants={grants} onClose={() => setAdding(false)} onCreated={(target) => {
+      setAdding(false);
+      setRemovals((n) => n + 1);
+      if (target.machineId) setRemoteManaging(`${target.id}@${target.machineId}`);
+      else setManagingId(target.id);
+    }} />}
     {managing && (
       <ConnectionSourcesDialog
         agentId={agent.id}

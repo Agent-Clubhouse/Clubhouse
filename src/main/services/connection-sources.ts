@@ -27,6 +27,7 @@ import { isRemovalUnsaved, listDispatcherLinksForUser, recordUserRemoval } from 
 import { saveWireRemoval } from './dispatcher-wire-source';
 import { appLog } from './log-service';
 import { connectionEnd, forgetDispatcherDirection, removeUserLink } from './connection-grants';
+import { CARD_CONNECTION_SOURCE_ID, removeCardConnection } from './connection-card';
 import { getConnectionDirection, removeAgentNetworkSources } from './connection-grants-store';
 import type { DispatcherLink } from '../../shared/types';
 import { removeStoredPair } from './orchestrator-connections';
@@ -46,6 +47,7 @@ const KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> = {
   'network-agent-connections': 'tool_link',
   'dispatcher-federation': 'dispatcher_federation',
   'group-project-membership': 'group_member',
+  [CARD_CONNECTION_SOURCE_ID]: 'card_link',
 };
 
 const SUSPENDED_WHY: Readonly<Record<string, string>> = {
@@ -169,6 +171,9 @@ export async function removeConnectionSource(agentId: string, targetId: string, 
         await removeStoredPair(agentId, targetId);
         releaseSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, agentId, targetId);
       }
+    } else if (kind === 'card_link') {
+      await removeCardConnection(agentId, targetId);
+      markSourceRemovedByUser(CARD_CONNECTION_SOURCE_ID, agentId, targetId);
     } else if (kind === 'dispatcher_link') {
       // Dropped and tombstoned, so the Dispatcher can't draw it again.
       await recordUserRemoval({ agentId, targetId });

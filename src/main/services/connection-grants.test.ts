@@ -21,7 +21,7 @@ import {
 import { appLog } from './log-service';
 import {
   AUTOMATIC_CONNECTION_DEFAULTS_MIGRATION, applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, forgetConnectionAgent, makeTwoWay,
-  migrateAutomaticConnectionTools, readLocalDirectionTools, removeUserLink, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
+  migrateAutomaticConnectionTools, readLocalDirectionTools, removeSourceAcrossMachines, removeUserLink, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
   _resetConnectionFileWarningForTesting,
 } from './connection-grants';
 import {
@@ -284,6 +284,30 @@ describe('connections with agents on other machines (#3064)', () => {
     expect(getConnectionDirection(A, far)?.link).toBeFalsy();
     expect(getConnectionDirection(far, A)?.link).toBeFalsy();
     await vi.waitFor(() => expect(bindingManager.getBindingsForAgent('a').some((b) => b.targetId === `z@${FAR}`)).toBe(false));
+  });
+
+  it.each(['user_link', 'card_link', 'tool_link'] as const)('removes only the selected %s source across both directions', async (kind) => {
+    const at = '2026-01-01T00:00:00.000Z';
+    for (const [from, to] of [[A, far], [far, A]] as const) {
+      await putConnectionDirection({ from, to, disabledTools: [], link: { createdAt: at }, cardLink: { createdAt: at }, agentLinks: [{ agentId: 'maker', machineId: FAR, createdAt: at }], updatedAt: at });
+    }
+    await removeSourceAcrossMachines('a', `z@${FAR}`, kind);
+    for (const [from, to] of [[A, far], [far, A]] as const) {
+      const direction = getConnectionDirection(from, to)!;
+      expect(!!direction.link).toBe(kind !== 'user_link');
+      expect(!!direction.cardLink).toBe(kind !== 'card_link');
+      expect(direction.agentLinks?.some((source) => !source.removedAt)).toBe(kind !== 'tool_link');
+      expect(direction.removedByUser).toBeUndefined();
+    }
+  });
+
+  it('fences the last remote card source against agent reconnection', async () => {
+    const at = '2026-01-01T00:00:00.000Z';
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], cardLink: { createdAt: at }, updatedAt: at });
+    await removeSourceAcrossMachines('a', `z@${FAR}`, 'card_link');
+    expect(isBindingRemovedByUser('a', `z@${FAR}`)).toBe(true);
+    expect(getConnectionDirection(A, far)?.removedByUser).toBe(true);
+    await expect(updateAgentNetworkLinks([{ from: A, to: far }], { agentId: 'maker', machineId: FAR }, 'add')).rejects.toThrow('Only the user can reconnect');
   });
 
   it('switches tools on either direction with an agent there, and refuses a direction that isn\'t linked', async () => {

@@ -32,11 +32,11 @@ import { agentRegistry } from './agent-registry';
 import { mcpCallerKind } from './clubhouse-mcp/mcp-call-gate';
 import * as projectStore from './project-store';
 import {
-  clearBindingRemovedByUser, clearSourceRemovedByUser, collectSourcesByPair, isBindingRemovedByUser, listPairsWithoutTools, listStartingTools, markSourceRemovedByUser, onBindingRemovedByUser, registerPersistedBindingSource,
+  clearBindingRemovedByUser, clearSourceRemovedByUser, collectSourcesByPair, isBindingRemovedByUser, listPairsWithoutTools, listStartingTools, markBindingRemovedByUser, markSourceRemovedByUser, onBindingRemovedByUser, persistedPairKey, registerPersistedBindingSource,
   rebuildPersistedBindings,
   type PersistedBinding, type PersistedBindingSource,
 } from './persisted-bindings';
-import { clearUserRemovedAgentNetworkSources, removeAgentNetworkSources, removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
+import { clearUserRemovedAgentNetworkSources, markNetworkDirectionRemovedByUser, removeAgentNetworkSources, removeCardDirection, removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexIdentity from './annex-identity';
 import { isNetworkComputer, remoteAgentName, rememberRemoteAgentName } from './annex-agent-calls';
@@ -225,7 +225,7 @@ export function readLocalDirectionTools(fromAgentId: string, toAgentId: string):
  */
 export async function forgetDispatcherDirection(fromAgentId: string, toAgentId: string): Promise<void> {
   const entry = getConnectionDirection(local(fromAgentId), local(toAgentId));
-  if (entry?.setBy !== 'dispatcher' || entry.link) return;
+  if (entry?.setBy !== 'dispatcher' || entry.link || entry.cardLink) return;
   if (!bindingManager.getBindingsForAgent(fromAgentId).some((b) => b.targetId === toAgentId)) {
     await removeConnectionDirection(local(fromAgentId), local(toAgentId));
     return;
@@ -389,7 +389,7 @@ export async function setToolsAcrossMachines(agentId: string, address: string, o
   if (!other.machineId) throw new Error('That agent is on this computer.');
   const [from, to] = outgoing ? [local(agentId), other] : [other, local(agentId)];
   const direction = getConnectionDirection(from, to);
-  if (!direction?.link && !activeAgentLinks(direction).length) throw new Error('Those agents are not connected that way.');
+  if (!direction?.link && !direction?.cardLink && !activeAgentLinks(direction).length) throw new Error('Those agents are not connected that way.');
   await setConnectionTools(from, to, disabledTools);
 }
 
@@ -406,6 +406,34 @@ export async function disconnectAcrossMachines(agentId: string, address: string)
     }
   }
   await rebuildPersistedBindings();
+}
+
+/** Remove only one source across both directions of a network connection. */
+export async function removeSourceAcrossMachines(agentId: string, address: string, kind: 'user_link' | 'card_link' | 'tool_link'): Promise<void> {
+  const other = connectionEnd(address);
+  if (!other.machineId) throw new Error('That agent is on this computer.');
+  const changed: Array<readonly [AgentAddress, AgentAddress]> = [];
+  for (const [from, to] of [[local(agentId), other], [other, local(agentId)]] as const) {
+    const direction = getConnectionDirection(from, to);
+    if ((kind === 'user_link' && direction?.link) || (kind === 'card_link' && direction?.cardLink) || (kind === 'tool_link' && activeAgentLinks(direction).length)) changed.push([from, to]);
+    if (kind === 'user_link' && direction?.link) await setConnectionLink(from, to, false);
+    if (kind === 'card_link' && direction?.cardLink) await removeCardDirection(from, to);
+    if (kind === 'tool_link' && activeAgentLinks(direction).length) {
+      await removeAgentNetworkSources(from, to);
+      markSourceRemovedByUser(NETWORK_AGENT_CONNECTION_SOURCE_ID, bindingTargetOf(from), bindingTargetOf(to));
+    }
+  }
+  await rebuildPersistedBindings();
+  const { bySource, failed } = await collectSourcesByPair();
+  if (failed.length) return;
+  for (const [from, to] of changed) {
+    const direction = getConnectionDirection(from, to);
+    const fromId = bindingTargetOf(from);
+    const toId = bindingTargetOf(to);
+    if (direction?.link || direction?.cardLink || activeAgentLinks(direction).length || [...bySource.values()].some((pairs) => pairs.has(persistedPairKey(fromId, toId)))) continue;
+    await markNetworkDirectionRemovedByUser(from, to);
+    markBindingRemovedByUser(fromId, toId);
+  }
 }
 
 /** Every direction with the user's link, on this machine. */
@@ -465,6 +493,7 @@ export async function forgetConnectionAgent(agentId: string): Promise<void> {
   // A link with an agent on another machine is turned off, not dropped, so that machine hears of it (#3064).
   for (const d of listConnectionDirections(agentId)) {
     if (!((!d.from.machineId && d.from.agentId === agentId) || (!d.to.machineId && d.to.agentId === agentId))) continue;
+    if (d.cardLink && (d.from.machineId || d.to.machineId)) await removeCardDirection(d.from, d.to);
     if (activeAgentLinks(d).length) await removeAgentNetworkSources(d.from, d.to, { byUser: false });
     if ((d.from.machineId || d.to.machineId) && d.link) {
       await setConnectionLink(d.from, d.to, false).catch((err) => {
@@ -515,7 +544,7 @@ export function startConnectionGrants(options: { notify?: (from: string, to: str
   // Names and deletions: the user's links follow agents and projects, as the other sources do.
   let pending: ReturnType<typeof setTimeout> | null = null;
   const changed = () => {
-    if (listAllConnectionDirections().every((d) => !d.link && !activeAgentLinks(d).length)) return;
+    if (listAllConnectionDirections().every((d) => !d.link && !d.cardLink && !activeAgentLinks(d).length)) return;
     if (pending) clearTimeout(pending);
     pending = setTimeout(() => { pending = null; void rebuildPersistedBindings().catch(() => {}); }, 100);
   };

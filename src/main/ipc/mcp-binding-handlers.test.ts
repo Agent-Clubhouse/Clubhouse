@@ -104,6 +104,8 @@ vi.mock('../services/clubhouse-mcp/tools/managed-tools', () => ({
   registerManagedTools: vi.fn(),
 }));
 
+vi.mock('../services/connection-card', () => ({ CARD_CONNECTION_SOURCE_ID: 'connections-card', startCardConnections: vi.fn(() => () => {}), listConnectionPickerTargets: vi.fn(), addCardConnection: vi.fn(), removeCardConnection: vi.fn() }));
+
 vi.mock('../services/persisted-bindings', () => ({
   registerPersistedBindingSource: vi.fn(),
   rebuildPersistedBindings: vi.fn(async () => ({ sources: [] })),

@@ -529,7 +529,7 @@ describe('Orchestration cards in Agent details', () => {
     await waitFor(() => expect(window.clubhouse.agent.listDurable).toHaveBeenCalled());
     expect(screen.queryByTestId('details-card-orchestrate')).not.toBeInTheDocument();
     expect(screen.queryByTestId('details-card-helpers')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('details-card-connections')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-connections')).toBeInTheDocument();
   });
 });
 
