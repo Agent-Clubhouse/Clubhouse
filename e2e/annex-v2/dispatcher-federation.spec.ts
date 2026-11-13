@@ -212,8 +212,10 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   await expect.poll(transcript, { timeout: 30_000 }).toContain(news.message);
   expect(await transcript()).toContain(sender);
   await setMode('agent.message', 'allow');
+  const savedGrants = await here.window.evaluate(({ project, sender }) => window.clubhouse.agent.getGrants(project, sender), { project, sender });
+  expect(savedGrants.rows.find((row) => row.action === 'agent.message' && row.target.kind === 'remote_dispatcher')?.mode).toBe('allow');
   const file = await direct.call('send_file_to_remote_dispatcher', { machine: b.ids.machine, filename: 'direct-fixture.txt', content: 'Direct file fixture bytes', task_id: 'direct-file', idempotency_key: 'direct-file' });
-  expect(file.isError).toBe(false);
+  expect(file.isError, file.text).toBe(false);
   await expect.poll(transcript, { timeout: 30_000 }).toContain('direct-fixture.txt');
   expect((await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay).toBe(ownBefore);
   // The distinct agreement follows its normal approval, stays offered until an explicit response,
