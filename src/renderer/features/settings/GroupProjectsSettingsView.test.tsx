@@ -27,9 +27,51 @@ function select(name = 'Alpha') {
 
 describe('GroupProjectsSettingsView', () => {
   beforeEach(() => {
-    useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null });
+    useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null, directorySelection: null });
     useProjectStore.setState({ activeProjectId: 'selected-project' });
     vi.spyOn(window.clubhouse.groupProject, 'list').mockResolvedValue([alpha, beta]);
+  });
+
+  it('opens a group project selected by a directory navigation request', async () => {
+    useGroupProjectStore.getState().selectDirectoryProject('gp-beta');
+    render(<GroupProjectsSettingsView />);
+    expect(await screen.findByLabelText('Name')).toHaveValue('Beta');
+  });
+
+  it('offers the selected polling project a switch to notices', async () => {
+    const setPolling = vi.spyOn(window.clubhouse.groupProject, 'setPolling').mockResolvedValue(undefined);
+    render(<GroupProjectsSettingsView />);
+    await screen.findByRole('list');
+    select('Beta');
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to notices' }));
+    await waitFor(() => expect(setPolling).toHaveBeenCalledWith('gp-beta', false));
+  });
+
+  it('previews the agents who will join and warns about unreadable projects', async () => {
+    vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin').mockResolvedValue({
+      wouldJoin: [{ agentId: 'ada', name: 'Ada', kind: 'durable', via: 'auto', projectName: 'Work' }],
+      unreadableProjects: [{ projectId: 'unreadable', name: 'Offline' }],
+    });
+    render(<GroupProjectsSettingsView />);
+    expect(await screen.findByText('1 agent will join now.')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Agents who will join' })).toHaveTextContent('Ada (Work)');
+    expect(screen.getByText(/Could not check agents in: Offline/)).toBeInTheDocument();
+  });
+
+  it('refreshes the creation preview when projects or membership change', async () => {
+    let projectsChanged!: () => void;
+    const membershipListeners: Array<(id: string) => void> = [];
+    vi.spyOn(window.clubhouse.project, 'onChanged').mockImplementation((cb) => { projectsChanged = cb; return () => {}; });
+    vi.spyOn(window.clubhouse.groupProject, 'onMembershipChanged').mockImplementation((cb) => { membershipListeners.push(cb); return () => {}; });
+    const preview = vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin').mockResolvedValue({ wouldJoin: [], unreadableProjects: [] });
+    render(<GroupProjectsSettingsView />);
+    await screen.findByText('0 agents will join now.');
+    const initial = preview.mock.calls.length;
+    await act(async () => { projectsChanged(); });
+    expect(preview.mock.calls.length).toBeGreaterThan(initial);
+    const afterProject = preview.mock.calls.length;
+    await act(async () => { membershipListeners.forEach((listener) => listener('gp-alpha')); });
+    expect(preview.mock.calls.length).toBeGreaterThan(afterProject);
   });
 
   it('lists every local registry record without a Canvas, and leaves legacy scope unresolved', async () => {
@@ -37,12 +79,21 @@ describe('GroupProjectsSettingsView', () => {
     expect(await screen.findByRole('list', { name: 'Local group projects' })).toBeInTheDocument();
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
+    expect(await screen.findAllByText('0 members')).toHaveLength(2);
+    expect(screen.getAllByText(/Host: This computer.*Polling on/)).toHaveLength(2);
     select('Beta');
     expect(screen.getByLabelText('Name')).toHaveValue('Beta');
     expect(screen.getAllByText(/Scope unresolved: legacy or missing scope/)).toHaveLength(2);
     expect(screen.getByText(/Stored on this machine/)).toBeInTheDocument();
     // Network reach is disabled, with its reason, in both creation and the scope editor (#3355).
     await waitFor(() => expect(screen.getAllByText(/Network reach needs Annex Network/)).toHaveLength(2));
+  });
+
+  it('shows an unknown host while this computer\'s fingerprint is unavailable', async () => {
+    vi.mocked(window.clubhouse.groupProject.list).mockResolvedValue([{ ...alpha, host: { machine: 'remote-fingerprint' } }]);
+    render(<GroupProjectsSettingsView />);
+    expect(await screen.findByText(/Host: Unknown/)).toBeInTheDocument();
+    expect(screen.queryByText(/Host: remote-fingerprint/)).not.toBeInTheDocument();
   });
 
   it('shows loading and empty states, refuses blank creation, and preserves a failed create draft', async () => {
@@ -108,7 +159,7 @@ describe('GroupProjectsSettingsView', () => {
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: next.description } });
     fireEvent.change(screen.getByLabelText('Instructions'), { target: { value: next.instructions } });
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Changes saved to the local registry');
+    expect(await screen.findByText('Changes saved to the local registry.')).toBeInTheDocument();
     expect(update).toHaveBeenCalledExactlyOnceWith(alpha.id, {
       name: next.name, description: next.description, instructions: next.instructions,
     });
@@ -204,11 +255,14 @@ describe('GroupProjectsSettingsView', () => {
 
     it('creates with the project the person chooses, on this computer', async () => {
       const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ ...alpha, id: 'gp-new', name: 'New' });
+      const preview = vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin');
       render(<GroupProjectsSettingsView />);
       await screen.findByRole('list', { name: 'Local group projects' });
       fireEvent.change(screen.getByLabelText('New group project name'), { target: { value: 'New' } });
       fireEvent.change(screen.getAllByLabelText('Covers')[0], { target: { value: 'project:proj-b' } });
       expect(screen.getByText('Agents in Proj B on this computer.')).toBeInTheDocument();
+      await waitFor(() => expect(preview).toHaveBeenLastCalledWith({ level: 'project', projectId: 'proj-b', reach: 'local' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Create group project' })).toBeEnabled());
       fireEvent.click(screen.getByRole('button', { name: 'Create group project' }));
       await waitFor(() => expect(create).toHaveBeenCalledWith('New', { scope: { level: 'project', projectId: 'proj-b', reach: 'local' } }));
     });

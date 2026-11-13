@@ -408,6 +408,18 @@ describe('initAppEventBridge', () => {
     expect(ui.toggleSettings).toHaveBeenCalledTimes(2);
   });
 
+  it('opens the group project directory from a main-window request', () => {
+    const handler = vi.mocked(window.clubhouse.app.onOpenSettings).mock.calls.at(-1)![0] as (page?: string) => void;
+    const ui = { explorerTab: 'agents', setSettingsContext: vi.fn(), setSettingsSubPage: vi.fn(), setActiveHost: vi.fn(), setDispatcherOpen: vi.fn(), toggleSettings: vi.fn() };
+    vi.mocked(useUIStore.getState).mockReturnValue(ui as never);
+    handler('group-projects');
+    expect(ui.setSettingsContext).toHaveBeenCalledWith('app');
+    expect(ui.setSettingsSubPage).toHaveBeenCalledWith('group-projects');
+    expect(ui.setDispatcherOpen).toHaveBeenCalledWith(false);
+    expect(ui.setActiveHost).toHaveBeenCalledWith(null);
+    expect(ui.toggleSettings).toHaveBeenCalledOnce();
+  });
+
   it('should register all window/app IPC listeners', () => {
     expect(window.clubhouse.app.onOpenSettings).toHaveBeenCalled();
     expect(window.clubhouse.app.onOpenAbout).toHaveBeenCalled();

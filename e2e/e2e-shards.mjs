@@ -49,6 +49,7 @@ export const E2E_SHARDS = {
     'canvas-create.spec.ts',
     'canvas-golden-path.spec.ts',
     'canvas-group-project-create.spec.ts',
+    'group-project-directory.spec.ts',
     'chat-fake-cli.spec.ts',
     'find-replace.spec.ts',
     'plugin-multifile.spec.ts',

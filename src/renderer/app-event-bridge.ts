@@ -79,10 +79,11 @@ function initWindowListeners(): (() => void)[] {
   removers.push(
     window.clubhouse.app.onOpenSettings((page) => {
       const ui = useUIStore.getState();
-      if (page === 'annex') {
+      if (page === 'annex' || page === 'group-projects') {
         // Opened for a person to add a device (#3068): Settings › Annex Network, left open.
         ui.setSettingsContext('app');
-        ui.setSettingsSubPage('annex');
+        ui.setSettingsSubPage(page);
+        if (page === 'group-projects') { ui.setActiveHost(null); ui.setDispatcherOpen(false); }
         if (ui.explorerTab !== 'settings') ui.toggleSettings();
         return;
       }

@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import type { GroupProject, GroupProjectScope } from '../../../shared/group-project-types';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import type { AutoJoinPreview, GroupProject, GroupProjectScope } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
+import { GroupProjectLocations } from './GroupProjectLocations';
+import { GroupProjectMembersSection } from '../group-projects/GroupProjectMembersSection';
+import { GroupProjectDeliverySection } from '../group-projects/GroupProjectDeliverySection';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
+import { useAnnexStore } from '../../stores/annexStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { DeleteGroupProjectDialog } from './DeleteGroupProjectDialog';
 import { GroupProjectActionsSection } from '../group-projects/GroupProjectActionsSection';
@@ -23,6 +27,28 @@ function scopeDescription(scope: GroupProject['scope']): string {
     : `${level} / Network: covers your other computers too.`;
 }
 
+function MemberCount({ id }: { id: string }) {
+  const [count, setCount] = useState<number | null>();
+  useEffect(() => {
+    let active = true;
+    let request = 0;
+    const load = async () => {
+      const current = ++request;
+      try {
+        const result = await window.clubhouse.groupProject.listMembers(id);
+        if (active && current === request) setCount(result.members.length);
+      } catch {
+        // telemetry-exempt: the directory keeps its list available without a count.
+        if (active && current === request) setCount(null);
+      }
+    };
+    void load();
+    const unsubscribe = window.clubhouse.groupProject.onMembershipChanged((changed) => { if (changed === id) void load(); });
+    return () => { active = false; unsubscribe(); };
+  }, [id]);
+  return <span id={`group-project-members-${id}`} className={`${settingsHelp} block`}>{count === undefined ? 'Loading members...' : count === null ? 'Member count unavailable' : `${count} ${count === 1 ? 'member' : 'members'}`}</span>;
+}
+
 function CreateGroupProject() {
   const create = useGroupProjectStore((s) => s.create);
   const scopeOptions = useScopeOptions();
@@ -32,7 +58,34 @@ function CreateGroupProject() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
+  const [preview, setPreview] = useState<AutoJoinPreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(true);
   const pending = useRef(false);
+  const previewVersion = useRef(0);
+
+  const loadPreview = useCallback(async () => {
+    const version = ++previewVersion.current;
+    setPreviewLoading(true);
+    try {
+      const result = await window.clubhouse.groupProject.previewAutoJoin(scope);
+      if (version !== previewVersion.current) return;
+      setPreview(result);
+      setPreviewError(null);
+    } catch (err) {
+      // telemetry-exempt: an incomplete preview is shown before creation.
+      if (version !== previewVersion.current) return;
+      setPreview(null);
+      setPreviewError(ipcErrorMessage(err));
+    } finally { if (version === previewVersion.current) setPreviewLoading(false); }
+  }, [scope]);
+  useEffect(() => {
+    void loadPreview();
+    const offProject = window.clubhouse.project.onChanged(() => { void loadPreview(); });
+    const offAgents = window.clubhouse.agent.onConfigsChanged(() => { void loadPreview(); });
+    const offMembership = window.clubhouse.groupProject.onMembershipChanged(() => { void loadPreview(); });
+    return () => { previewVersion.current++; offProject(); offAgents(); offMembership(); };
+  }, [loadPreview]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -63,8 +116,17 @@ function CreateGroupProject() {
     <SettingsSection title="Create a group project">
       <SettingsBlock>
         <p className={`${settingsHelp} mb-3`}>
-          New group projects here cover the whole app on this computer unless you choose a project.
+          New group projects cover the whole app on this computer unless you choose a project. Top-level durable agents in scope join automatically. Helpers and quick agents join only when added.
         </p>
+        {previewLoading && <p className={settingsHelp}>Loading agents who will join...</p>}
+        {previewError && <div className="flex flex-col items-start gap-2"><p role="alert" className={settingsError}>Could not preview members: {previewError}</p><Button onClick={() => void loadPreview()}>Retry preview</Button></div>}
+        {preview && <div className={`${settingsHelp} mb-3`}>
+          <p>{preview.wouldJoin.length} {preview.wouldJoin.length === 1 ? 'agent will' : 'agents will'} join now.</p>
+          {preview.wouldJoin.length > 0 && <ul aria-label="Agents who will join" className="list-disc pl-5">
+            {preview.wouldJoin.map((agent) => <li key={agent.agentId}>{agent.name}{agent.projectName ? ` (${agent.projectName})` : ''}</li>)}
+          </ul>}
+          {preview.unreadableProjects.length > 0 && <p>Could not check agents in: {preview.unreadableProjects.map((project) => project.name).join(', ')}. The preview may be incomplete.</p>}
+        </div>}
         <form onSubmit={submit} className="flex flex-col items-start gap-2">
           <label htmlFor="new-group-project-name" className={settingsLabel}>New group project name</label>
           <input
@@ -77,11 +139,11 @@ function CreateGroupProject() {
           <GroupProjectScopeFields
             idPrefix="new-group-project-scope"
             value={scope}
-            onChange={(next) => { setScope(next); setCreated(false); }}
+            onChange={(next) => { setPreview(null); setPreviewLoading(true); setScope(next); setCreated(false); }}
             options={scopeOptions}
             disabled={creating}
           />
-          <Button type="submit" kind="primary" disabled={creating}>
+          <Button type="submit" kind="primary" disabled={creating || previewLoading}>
             {creating ? 'Creating...' : 'Create group project'}
           </Button>
           {error && <p role="alert" className={settingsError}>{error}</p>}
@@ -195,13 +257,18 @@ function GroupProjectEditor({ project }: { project: GroupProject }) {
 
 export function GroupProjectsSettingsView() {
   const projects = useGroupProjectStore((s) => s.projects);
+  const fingerprint = useAnnexStore((s) => s.status.fingerprint);
+  const loadStatus = useAnnexStore((s) => s.loadStatus);
   const loaded = useGroupProjectStore((s) => s.loaded);
   const loadError = useGroupProjectStore((s) => s.loadError);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const [retrying, setRetrying] = useState(false);
   const retryPending = useRef(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedId = useGroupProjectStore((s) => s.directorySelection);
+  const setSelectedId = useGroupProjectStore((s) => s.selectDirectoryProject);
   const selected = projects.find((project) => project.id === selectedId);
+
+  useEffect(() => { void loadStatus(); }, [loadStatus]);
 
   useEffect(() => {
     if (!loaded) void loadProjects();
@@ -242,12 +309,17 @@ export function GroupProjectsSettingsView() {
                       <button
                         type="button"
                         aria-label={project.name}
-                        aria-describedby={`group-project-scope-${project.id}`}
+                        aria-describedby={`group-project-scope-${project.id} group-project-members-${project.id} group-project-host-${project.id}`}
                         aria-pressed={selectedId === project.id}
                         onClick={() => setSelectedId(project.id)}
                         className={`w-full min-w-0 rounded-md px-2.5 py-2 text-left text-xs focus-ring hover:bg-surface-0 ${selectedId === project.id ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext1'}`}
                       >
                         <span className="block font-medium break-words">{project.name}</span>
+                        <MemberCount id={project.id} />
+                        <span id={`group-project-host-${project.id}`} className={`${settingsHelp} block break-words`}>
+                          Host: {!project.host?.machine ? 'This computer' : !fingerprint ? 'Unknown' : project.host.machine.toLowerCase() === fingerprint.toLowerCase() ? 'This computer' : project.host.machine}
+                          {' · '}{project.metadata?.pollingEnabled ? 'Polling on' : 'Polling off'}
+                        </span>
                         <span id={`group-project-scope-${project.id}`} className={`${settingsHelp} block break-words`}>{scopeDescription(project.scope)}</span>
                       </button>
                     </li>
@@ -258,19 +330,15 @@ export function GroupProjectsSettingsView() {
       </SettingsSection>
       {loaded && !loadError && !retrying && (
         <>
-          {selected && <GroupProjectEditor key={selected.id} project={selected} />}
-          {selected && <GroupProjectScopeEditor key={`scope-${selected.id}`} project={selected} />}
-          {selected && <GroupProjectActionsSection key={`actions:${selected.id}`} groupProjectId={selected.id} />}
+          {selected && <Fragment key={selected.id}><GroupProjectEditor project={selected} /><GroupProjectScopeEditor project={selected} /><GroupProjectMembersSection groupProjectId={selected.id} /><GroupProjectDeliverySection groupProjectId={selected.id} /><GroupProjectActionsSection groupProjectId={selected.id} /><GroupProjectLocations id={selected.id} /></Fragment>}
           <CreateGroupProject />
         </>
       )}
       <SettingsSection title="Local directory limits">
         <SettingsBlock>
           <p className={settingsHelp}>
-            Host status, network synchronization, durable membership,
-            membership management and admin grants are not available here.
-            Board and Canvas navigation are not provided by this directory.
-            This list is not an authoritative network or membership directory.
+            Network synchronization and admin grants are not available here.
+            This list is not an authoritative network directory.
           </p>
         </SettingsBlock>
       </SettingsSection>
