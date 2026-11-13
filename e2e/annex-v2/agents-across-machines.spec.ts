@@ -610,7 +610,7 @@ test('accepted handoff transfers a selected ignored file over 512 KiB and publis
   expect(await fs.promises.readFile(path.join(receiverProject, 'work.txt'), 'utf8')).toBe('person dirty work');
   expect((await git(applied!.result!.worktree, 'rev-parse', 'HEAD')).stdout.trim()).toBe(preview.manifest.repo.base);
   await expect.poll(async () => JSON.stringify((await fakesThere!.report('claude')).unexpected)).toContain('Continue in fresh worktree');
-  expect(fs.readdirSync(path.join(there.userDataDir, 'handoff-data', 'received'))).toEqual([]);
+  await expect.poll(() => fs.readdirSync(path.join(there!.userDataDir, 'handoff-data', 'received'))).toEqual([]);
   await here.window.evaluate(async ({ project, id }) => window.clubhouse.agent.setGrant(project, id, { action: 'handoff.offer', target: { kind: 'any' }, mode: 'off' }), { project: senderProject, id: senderId });
   expect((await senderMcp.call(offerTool, { to: `${receiverId}@${receiverFingerprint}`, task: 'Refused', brief: 'No grant.', mode: 'worktree' })).isError).toBe(true);
 });

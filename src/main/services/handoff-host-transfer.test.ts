@@ -60,7 +60,10 @@ it('binds a real preparation, accepts locally and automatically wakes the sleepi
   await vi.waitFor(() => expect(host.store.get(offered.id)?.state).toBe('applied'), { timeout: 20_000, interval: 50 });
   expect(state.wake).toHaveBeenCalledTimes(1); expect(state.asleep).toBe(false);
   expect(fs.readFileSync(path.join(state.receiver, 'work.txt'), 'utf8')).toBe('dirty person bytes');
-  expect(fs.readdirSync(path.join(state.dir, 'handoff-data', 'prepared'))).toEqual([]);
+  await vi.waitFor(() => {
+    expect(fs.readdirSync(path.join(state.dir, 'handoff-data', 'prepared'))).toEqual([]);
+    expect(fs.readdirSync(path.join(state.dir, 'handoff-data', 'received'))).toEqual([]);
+  });
 }, 30_000);
 it('lets the addressed Dispatcher select the agent in a matching registered project', async () => {
   const prepared = await prepareCallerHandoff('sender', 'worktree'); const host = handoffHost(); await host.ready;
