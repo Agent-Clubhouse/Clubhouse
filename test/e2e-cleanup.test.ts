@@ -9,11 +9,12 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'child_process';
+import { once } from 'node:events';
 import { withTestPhaseDiagnostic } from './test-phase-diagnostic';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { ProcessTableResult } from '../e2e/cleanup-process-table';
+import { createProcessTableReader, type ProcessTableResult } from '../e2e/cleanup-process-table';
 
 import {
   isLocalRun,
@@ -224,10 +225,17 @@ describe('kill safety', () => {
     // Simulates a stale PID file entry whose PID has been recycled by an
     // unrelated program. Killing it would be the worst-case bug.
     const victim = spawnMarked('/Applications/Clubhouse.app/Contents/MacOS/Clubhouse');
-    await diagnostic.step('cleanup.probe-visible', () => waitUntilVisible(victim.pid!));
+    await diagnostic.step('cleanup.probe-visible', async () => {
+      await once(victim, 'spawn');
+      expect(isAlive(victim.pid!)).toBe(true);
+    });
     await diagnostic.step('cleanup.record', () => recordElectronApp(victim.pid, undefined, paths));
 
-    const result = await diagnostic.step('cleanup.process-table-and-sweep', () => sweepE2EProcesses(paths));
+    // The first real Windows CIM query exceeded 10s under CI
+    // load. Keep a bounded owned query and require a complete real snapshot;
+    // the cleanup default deadline and the 30s test budget remain unchanged.
+    const query = createProcessTableReader({ deadlineMs: process.platform === 'win32' ? 20_000 : undefined });
+    const result = await diagnostic.step('cleanup.process-table-and-sweep', () => sweepE2EProcesses(paths, query));
     expect(result.processTable).toBe('complete');
 
     expect(result.killed).toBe(0);
