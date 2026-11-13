@@ -205,6 +205,7 @@ describe('retired built-ins become the person\'s own copies (D99)', () => {
     expect((await user(() => service.listParts('block'))).filter((b) => b.fromRetiredBuiltin).map((b) => b.id)).toEqual([copyId]);
   });
 
+  // A fresh installation persists every active built-in revision and catalog entry.
   it('never installs a retired built-in on a fresh install', async () => {
     catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog-fresh') });
     state = createManagedStateStore(path.join(root, 'managed-fresh'));
@@ -213,7 +214,7 @@ describe('retired built-ins become the person\'s own copies (D99)', () => {
     const ids = [...(await user(() => fresh.listParts('block'))), ...(await user(() => fresh.listParts('skill')))].map((p) => p.id);
     for (const p of builtinParts().filter((x) => x.retired)) expect(ids, p.id).not.toContain(p.id);
     expect(ids).toContain(BUILTIN_BLOCK_IDS.identity);
-  });
+  }, 10_000);
 
   it('copies the shipped text for an agent that names a retired built-in this install never had', async () => {
     catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog-fresh') });

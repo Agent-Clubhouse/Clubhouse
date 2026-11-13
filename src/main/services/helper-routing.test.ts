@@ -1,3 +1,5 @@
+import * as pressureLedger from '../telemetry/helper-decision-ledger';
+import { preparePressure } from './helper-burn-pressure';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelInfo, ModelList } from '../orchestrators';
 
@@ -12,6 +14,8 @@ const W = vi.hoisted(() => ({
   forcedOutcome: 'ok' as string,
   saved: {} as Record<string, Record<string, { model: string; effort: string | null }>>,
   revision: 0,
+  generations: new Map<string, string>(),
+  generationError: false,
   audit: [] as Array<Record<string, unknown>>,
   telemetry: [] as unknown[][],
   appAuto: false,
@@ -58,6 +62,8 @@ vi.mock('./settings-store', () => ({
 vi.mock('./orchestration-settings', () => ({
   getPresets: () => W.saved,
   getPresetsRevision: () => W.revision,
+  getPresetCellGeneration: (provider: string, level: string) => W.generationError ? undefined : W.generations.get(`${provider}:${level}`) ?? '11111111-1111-4111-8111-111111111111',
+  ensurePresetCellGenerations: async () => { if (W.generationError) throw new Error('test failure'); },
   savePresets: async (presets: typeof W.saved) => { W.saved = presets; W.revision++; },
   getAutoHelpers: () => W.appAuto,
   saveAutoHelpers: async (on: boolean) => { W.appAuto = on; W.revision++; },
@@ -93,6 +99,7 @@ vi.mock('./agent-settings-service', () => {
   };
 });
 vi.mock('./provider-quota', () => ({
+  peekQuotaCalibrationPlan: () => ({ plan: 'pro', generation: '11111111-1111-4111-8111-111111111111' }),
   readProviderQuota: async (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
   peekProviderQuota: (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
   forceProviderQuota: async (provider: string) => {
@@ -156,6 +163,8 @@ beforeEach(() => {
   vi.mocked(appLog).mockClear();
   W.saved = {};
   W.revision = 0;
+  W.generations = new Map();
+  W.generationError = false;
   W.audit = [];
   W.telemetry = [];
   W.appAuto = false;
@@ -872,6 +881,46 @@ describe('Auto (#2671)', () => {
     W.quota.set('codex-cli', known);
   });
 
+  it('uses qualified remaining subscription pressure on the actual fresh Auto start path', async () => {
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const reset = now + 86_400_000;
+    const history: pressureLedger.LedgerEntry[] = [];
+    W.enabled = ['claude-code', 'codex-cli'];
+    for (const [provider, burn, used] of [['claude-code', 800, 40], ['codex-cli', 100, 42]] as const) {
+      W.saved[provider] = { hard: { model: 'model-v1', effort: 'high' } };
+      W.lists.set(provider, { ...live([m('model-v1')]), fetchedAt: now });
+      W.quota.set(provider, { state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
+        weekly: { usedPercent: used, resetsAt: new Date(reset).toISOString() } });
+      for (let i = 0; i < 35; i++) {
+        const t = now - (40 - i) * 60_000;
+        const e: pressureLedger.LedgerEntry = {
+          helperId: `${provider}-${i}`, decisionId: `${provider}-${i}`, mode: 'auto', policyVersion: 3,
+          touchedMs: t + 1000, decidedAtMs: t, provider, model: 'model-v1', effort: 'high', difficulty: 'hard', taskProfile: 'review',
+          calibration: { revision: '11111111-1111-4111-8111-111111111111', model: 'model-v1' },
+          forecastRun: { startedMs: t, endedMs: t + 1000, usageSamples: 1, usable: true },
+        };
+        e.pressure = preparePressure(e, history, 0, { quality: 'fresh', state: 'known', source: 'cli_query', asOfMs: t,
+          windows: [{ name: 'weekly', usedBp: 1000, resetsAtMs: reset }] }, t, { plan: 'pro', generation: '11111111-1111-4111-8111-111111111111' });
+        e.pressureOutcome = { atMs: t + 1000, availableAtMs: t + 1000, reason: 'observed',
+          attribution: 'subscription_group_with_unknown_residual', windows: [{ name: 'weekly', remainingBp: burn }] };
+        history.push(e);
+      }
+    }
+    vi.spyOn(pressureLedger, 'forecastHistory').mockReturnValue(history);
+    const prepared = await auto({ taskProfile: 'review' });
+    if (!prepared.ok) throw new Error(prepared.message);
+    const result = decideAutoPlan(prepared.plan!, {}, now);
+    expect(result).toMatchObject({ ok: true, plan: { provider: 'codex-cli', decision: {
+      taskProfile: 'review', pressure: { windows: [{ band: { meanBp: 100, coverageBp: 10_000 } }] },
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ provider: 'claude-code', score: expect.objectContaining({ pressureBp: 4800 }) }),
+        expect.objectContaining({ provider: 'codex-cli', chosen: true, score: expect.objectContaining({ pressureBp: 4300 }) }),
+      ]),
+    } } });
+    expect(W.listCalls).toHaveLength(4); // mapping and effort checks only; inference never calls a provider.
+  });
+
   it('refuses when Auto is off, saying why, and reads nothing', async () => {
     const result = await planHelperStart({ ...base, cli: 'auto', difficulty: 'hard', auto: off });
     expect(result).toMatchObject({ ok: false, code: 'auto_off' });
@@ -919,6 +968,91 @@ describe('Auto (#2671)', () => {
     expect(result).toMatchObject({
       ok: true, plan: { provider: 'codex-cli', routing: { skipped: { 'claude-code': change === 'cooldown' ? 'cooling_down' : 'quota_exhausted' } } },
     });
+  });
+
+  it('records a fresh cached OpenAI identity and cell generation independently of unrelated global revisions', async () => {
+    W.enabled = ['copilot-cli'];
+    W.saved = { 'copilot-cli': { hard: { model: 'gpt-6.1-sol', effort: 'xhigh' } } };
+    W.lists.set('copilot-cli', { ...live(COPILOT), fetchedAt: Date.now() });
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    W.revision++;
+    W.generations.set('codex-cli:hard', '22222222-2222-4222-8222-222222222222');
+    const result = decideAutoPlan(prepared.plan!, {});
+    expect(result).toMatchObject({
+      ok: true, plan: {
+        model: 'gpt-6.1-sol', effort: 'xhigh',
+        decision: {
+          mappingRevision: helperRoutingRevision(), calibrationIdentityReason: 'cached_catalog',
+          calibration: { revision: '11111111-1111-4111-8111-111111111111', model: 'gpt-6.1-sol' },
+        },
+      },
+    });
+    expect(W.listCalls.every((call) => !call.refresh)).toBe(true);
+    // One existing model read and one effort read; calibration makes no third CLI call.
+    expect(W.listCalls).toHaveLength(2);
+  });
+
+  it('rejects a changed-back prepared cell generation without leaking a reservation', async () => {
+    W.enabled = ['copilot-cli'];
+    W.saved = { 'copilot-cli': { hard: { model: 'gpt-6.1-sol', effort: 'high' } } };
+    W.lists.set('copilot-cli', { ...live(COPILOT), fetchedAt: Date.now() });
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    W.generations.set('copilot-cli:hard', '22222222-2222-4222-8222-222222222222');
+    W.revision += 2;
+    expect(decideAutoPlan(prepared.plan!, {})).toMatchObject({
+      ok: false, decision: { candidates: expect.arrayContaining([
+        expect.objectContaining({ provider: 'copilot-cli', excluded: 'mapping_changed' }),
+      ]) },
+    });
+    expect(reservedLoad({ live: new Set(), notRunning: new Set() })).toEqual({});
+    expect(await decided()).toMatchObject({
+      model: 'gpt-6.1-sol', effort: 'high',
+      decision: { calibration: { revision: '22222222-2222-4222-8222-222222222222', model: 'gpt-6.1-sol' } },
+    });
+  });
+
+  it('keeps Copilot-only routing available but calibration cold when durable metadata initialization fails', async () => {
+    W.enabled = ['copilot-cli'];
+    W.generationError = true;
+    W.lists.set('copilot-cli', { ...live(COPILOT), fetchedAt: Date.now() });
+    const result = await decided();
+    expect(result).toMatchObject({ provider: 'copilot-cli', decision: { calibrationIdentityReason: 'missing_generation' } });
+    expect(result.decision).not.toHaveProperty('calibration');
+    expect(appLog).toHaveBeenCalledWith('core:mcp', 'warn', 'Could not initialize helper calibration generations', { meta: { error: 'Error' } });
+  });
+
+  it('does not reuse a prepared calibration identity after its generation becomes unavailable', async () => {
+    W.enabled = ['copilot-cli'];
+    W.lists.set('copilot-cli', { ...live(COPILOT), fetchedAt: Date.now() });
+    const prepared = await auto();
+    if (!prepared.ok) throw new Error(prepared.message);
+    W.generationError = true;
+    const result = decideAutoPlan(prepared.plan!, {});
+    expect(result).toMatchObject({
+      ok: true, plan: { provider: 'copilot-cli', decision: { calibrationIdentityReason: 'missing_generation' } },
+    });
+    if (!result.ok) throw new Error(result.message);
+    expect(result.plan?.decision).not.toHaveProperty('calibration');
+    settleAutoDecision(result.plan!.decision!.decisionId);
+    expect(reservedLoad({ live: new Set(), notRunning: new Set() })).toEqual({});
+  });
+
+  it('partitions changed cached alias resolutions without relabeling them as verified executions', async () => {
+    W.enabled = ['claude-code'];
+    const aliases = (resolvedId: string): ModelList => ({
+      ...live(CLAUDE), fetchedAt: Date.now(),
+      models: CLAUDE.map((model) => model.id === 'opus' ? { ...model, resolvedId } : model),
+    });
+    W.lists.set('claude-code', aliases('claude-opus-5-5'));
+    const first = await decided();
+    W.lists.set('claude-code', aliases('claude-opus-6'));
+    const second = await decided();
+    expect(first.decision?.calibration).toEqual({ revision: '11111111-1111-4111-8111-111111111111', model: 'claude-opus-5-5' });
+    expect(second.decision?.calibration).toEqual({ ...first.decision!.calibration, model: 'claude-opus-6' });
+    expect(second.decision?.calibrationIdentityReason).toBe('cached_catalog');
+    expect(second.decision?.mappingRevision).toBe(first.decision?.mappingRevision);
   });
 
   it('refuses a changed prepared mapping without reserving or launching the old cell under the new revision', async () => {

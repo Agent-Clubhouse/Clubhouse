@@ -16,6 +16,7 @@ import {
   codexSandboxPolicy,
   parseCodexVersion,
 } from './codex-chat-driver';
+import { getBridgeScriptPath } from '../../services/clubhouse-mcp/injection';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type { ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverStartOptions } from '../../../shared/chat/runtime';
@@ -233,7 +234,7 @@ describe('CodexChatDriver', () => {
     const session = await new CodexChatDriver({ onLog }).start({
       ...baseOpts,
       mcpServers: {
-        clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+        clubhouse: { type: 'stdio', command: 'node', args: [getBridgeScriptPath()], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
         remote: { type: 'http', url: 'https://mcp.example.test/mcp', headers: { Authorization: 'Bearer x' } },
         events: { type: 'sse', url: 'https://sse.example.test/sse' },
       },
@@ -243,7 +244,7 @@ describe('CodexChatDriver', () => {
     expect(server.requests('thread/start')[0].params).toMatchObject({
       config: {
         mcp_servers: {
-          clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+          clubhouse: { command: 'node', args: [getBridgeScriptPath()], env: { CLUBHOUSE_AGENT_ID: 'a1' }, default_tools_approval_mode: 'approve' },
           remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer x' } },
         },
       },
@@ -269,14 +270,43 @@ describe('CodexChatDriver', () => {
     const { session } = await startSession({
       env: { PATH: '/bin', CLUBHOUSE_HOOK_NONCE: nonce },
       mcpServers: {
-        clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'] },
+        clubhouse: { type: 'stdio', command: 'node', args: [getBridgeScriptPath()], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'] },
       },
     });
     expect(mockSpawn.mock.calls[0][2].env).toMatchObject({ CLUBHOUSE_HOOK_NONCE: nonce });
     expect(server.requests('thread/start')[0].params).toMatchObject({
-      config: { mcp_servers: { clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'] } } },
+      config: { mcp_servers: { clubhouse: { command: 'node', args: [getBridgeScriptPath()], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'], default_tools_approval_mode: 'approve' } } },
     });
     expect(JSON.stringify(server.received)).not.toContain(nonce);
+    await session.close();
+  });
+
+  it('does not approve a project server named clubhouse when no bridge is present', async () => {
+    const { session } = await startSession({
+      mcpServers: { clubhouse: { type: 'stdio', command: 'node', args: ['project-server.js'] } },
+    });
+    const config = (server.requests('thread/start')[0].params as { config: { mcp_servers: Record<string, object> } }).config;
+    expect(config.mcp_servers.clubhouse).toEqual({ command: 'node', args: ['project-server.js'] });
+    await session.close();
+  });
+
+  it('carries the same bridge-only approval on thread/resume', async () => {
+    const { session } = await startSession({
+      resumeNativeSessionId: fx.THREAD_ID,
+      mcpServers: {
+        clubhouse: { type: 'stdio', command: 'node', args: [getBridgeScriptPath()] },
+        other: { type: 'stdio', command: 'node', args: ['other.js'] },
+      },
+    });
+    expect(server.requests('thread/start')).toHaveLength(0);
+    expect(server.requests('thread/resume')[0].params).toMatchObject({
+      config: { mcp_servers: {
+        clubhouse: { command: 'node', args: [getBridgeScriptPath()], default_tools_approval_mode: 'approve' },
+        other: { command: 'node', args: ['other.js'] },
+      } },
+    });
+    const servers = (server.requests('thread/resume')[0].params as { config: { mcp_servers: Record<string, object> } }).config.mcp_servers;
+    expect(servers.other).not.toHaveProperty('default_tools_approval_mode');
     await session.close();
   });
 

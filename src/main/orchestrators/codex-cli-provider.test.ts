@@ -50,6 +50,7 @@ import * as childProcess from 'child_process';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { appLog } from '../services/log-service';
 import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
+import { getBridgeScriptPath } from '../services/clubhouse-mcp/injection';
 import { skillsFolderOf } from '../../shared/skills-folder';
 import { onAppEvent, publishFromHookEvent, resetAppEventBus, type AppEvent } from '../services/app-event-bus';
 
@@ -795,7 +796,7 @@ describe('CodexCliProvider', () => {
     const mockServerDef = {
       type: 'stdio',
       command: 'node',
-      args: ['/mock/bridge.js'],
+      args: [getBridgeScriptPath()],
       env: { CLUBHOUSE_MCP_PORT: '12345', CLUBHOUSE_AGENT_ID: 'agent-1' },
       env_vars: ['CLUBHOUSE_HOOK_NONCE'],
     };
@@ -818,7 +819,7 @@ describe('CodexCliProvider', () => {
       const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       const argsArg = args.find(a => a.includes('mcp_servers.clubhouse.args='));
       expect(argsArg).toBeDefined();
-      expect(argsArg).toContain('"/mock/bridge.js"');
+      expect(argsArg).toContain(JSON.stringify(getBridgeScriptPath()));
     });
 
     it('returns -c flags for each env var', () => {
@@ -855,6 +856,43 @@ describe('CodexCliProvider', () => {
       expect(args.some(a => a.includes('mcp_servers.clubhouse.command'))).toBe(true);
       expect(args.some(a => a.includes('mcp_servers.linear.command="npx"'))).toBe(true);
       expect(args.some(a => a.includes('mcp_servers.linear.env.TOKEN="abc"'))).toBe(true);
+    });
+
+    describe('tool approval for the Clubhouse bridge (#3366)', () => {
+      const approval = 'mcp_servers.clubhouse.default_tools_approval_mode="approve"';
+      const bridge = () => ({ type: 'stdio', command: 'node', args: [getBridgeScriptPath()] });
+
+      it('approves the injected bridge and no other server', () => {
+        const args = provider.buildMcpArgs({
+          clubhouse: bridge(),
+          linear: { command: 'npx', args: ['linear-mcp'] },
+          docs: { type: 'http', url: 'https://example.com/mcp' },
+        });
+        expect(args).toContain(approval);
+        expect(args.filter((a) => a.includes('default_tools_approval_mode'))).toHaveLength(1);
+      });
+
+      it('does not approve a project server that only shares the name, with no bridge present', () => {
+        for (const def of [
+          { command: 'node', args: ['project-server.js'] },
+          { type: 'http', url: 'https://c.example.test/mcp' },
+          { command: 'node', args: ['/tmp/x/clubhouse-mcp-bridge.js'] },
+        ]) {
+          expect(provider.buildMcpArgs({ clubhouse: def }).some((a) => a.includes('default_tools_approval_mode'))).toBe(false);
+        }
+      });
+
+      it('with a project collision, the bridge (spread last) is approved and the project entry is gone', () => {
+        const project = { clubhouse: { command: 'node', args: ['project-server.js'] }, other: { command: 'node' } };
+        const args = provider.buildMcpArgs({ ...project, clubhouse: bridge() });
+        expect(args).toContain(approval);
+        expect(args.some((a) => a.includes('project-server.js'))).toBe(false);
+        expect(args.filter((a) => a.includes('default_tools_approval_mode'))).toHaveLength(1);
+      });
+
+      it('does not approve the bridge under another name', () => {
+        expect(provider.buildMcpArgs({ renamed: bridge() }).some((a) => a.includes('default_tools_approval_mode'))).toBe(false);
+      });
     });
 
     it('emits type and url for remote servers', () => {

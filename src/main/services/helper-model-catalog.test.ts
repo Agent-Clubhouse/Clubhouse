@@ -31,6 +31,37 @@ beforeEach(async () => {
 afterEach(() => fs.rmSync(W.dir, { recursive: true, force: true }));
 
 describe('model catalog notices', () => {
+  it.each(['default', 'best', 'opus', 'sonnet', 'haiku', 'fable', 'opusplan'].flatMap((alias) => [
+    alias, `${alias}[1m]`, alias.toUpperCase(),
+  ]))('keeps the supported Claude alias %s unknown unless its cached entry resolves canonically', async (alias) => {
+    const { peekHelperCalibrationModel: peek } = await import('./helper-model-catalog');
+    const claude = { ...provider, id: 'claude-code' as const };
+    await observe(claude, catalog([alias], 100));
+    expect(peek(claude.id, alias, 100)).toEqual({ reason: 'unresolved_model' });
+    await observe(claude, catalog([], 101, { models: [{ id: alias, label: alias, resolvedId: 'claude-opus-5-5' }] }));
+    expect(peek(claude.id, alias, 101)).toEqual({ model: 'claude-opus-5-5', reason: 'cached_catalog' });
+    await observe(claude, catalog([], 102, { models: [{ id: alias, label: alias, resolvedId: 'fable[1m]' }] }));
+    expect(peek(claude.id, alias, 102)).toEqual({ reason: 'unresolved_model' });
+  });
+
+  it('peeks existing fresh canonical evidence only, with explicit missing, fallback, stale and alias provenance', async () => {
+    const { peekHelperCalibrationModel: peek, HELPER_CALIBRATION_CATALOG_MAX_AGE_MS: maxAge } = await import('./helper-model-catalog');
+    expect(peek(provider.id, 'gpt-6.1-sol', 100)).toEqual({ reason: 'missing_catalog' });
+    await observe(provider, catalog(['gpt-6.1-sol'], 100));
+    expect(peek(provider.id, 'gpt-6.1-sol', 100)).toEqual({ model: 'gpt-6.1-sol', reason: 'cached_catalog' });
+    expect(peek(provider.id, 'gpt-6.1-sol', 99)).toEqual({ reason: 'stale_catalog' });
+    expect(peek(provider.id, 'gpt-6.1-sol', 101 + maxAge)).toEqual({ reason: 'stale_catalog' });
+    expect(peek(provider.id, 'unlisted', 100)).toEqual({ reason: 'unresolved_model' });
+    await observe(provider, catalog(['gpt-6.1-sol'], 101, { source: 'fallback' }));
+    expect(peek(provider.id, 'gpt-6.1-sol', 101)).toEqual({ reason: 'fallback_catalog' });
+    await observe(provider, catalog(['opus'], 102));
+    expect(peek(provider.id, 'opus', 102)).toEqual({ reason: 'unresolved_model' });
+    await observe(provider, catalog([], 103, { models: [{ id: 'opus', resolvedId: 'claude-opus-5-5', label: 'Opus' }] }));
+    expect(peek(provider.id, 'opus', 103)).toEqual({ model: 'claude-opus-5-5', reason: 'cached_catalog' });
+    await observe(provider, catalog(['gpt-6.1-sol'], 102));
+    expect(peek(provider.id, 'gpt-6.1-sol', 104)).toEqual({ reason: 'stale_catalog' });
+  });
+
   it('silently saves a first live baseline, then combines additions into one notice exactly once', async () => {
     await observe(provider, catalog(['old'], 1));
     expect(W.notices).not.toHaveBeenCalled();
@@ -80,6 +111,20 @@ describe('model catalog notices', () => {
       { id: 'alias', label: 'Renamed', resolvedId: 'new-version' }, { id: 'hidden', label: 'Hidden', hidden: true },
     ] }));
     expect(W.notices).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates alias renames and concrete ids by authoritative resolved model identity across restart', async () => {
+    await observe(provider, catalog([], 1, { models: [{ id: 'friendly-alias', label: 'Friendly', resolvedId: 'model-v1' }] }));
+    await observe(provider, catalog([], 2, { models: [{ id: 'renamed-alias', label: 'Renamed', resolvedId: 'model-v1' }, { id: 'model-v1', label: 'Version one' }] }));
+    expect(W.notices).not.toHaveBeenCalled();
+    vi.resetModules(); observe = (await import('./helper-model-catalog')).observeHelperModelCatalog;
+    await observe(provider, catalog(['temporary'], 3, { source: 'fallback', via: 'static' }));
+    await observe(provider, catalog(['model-v1', 'model-v2'], 4));
+    expect(W.notices).toHaveBeenCalledExactlyOnceWith('app:model-catalog-notice', 'New models for Codex: MODEL-V2. Review Smart selection');
+    W.notices.mockClear(); // Dismissal changes no mapping and does not clear persisted seen state.
+    await observe(provider, catalog(['model-v1', 'model-v2'], 5));
+    expect(W.notices).not.toHaveBeenCalled();
+    expect(W.presets).toEqual({});
   });
 
   it('updates disabled providers silently without replaying discoveries when enabled', async () => {

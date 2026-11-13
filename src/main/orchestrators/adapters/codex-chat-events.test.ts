@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
+import { getBridgeScriptPath } from '../../services/clubhouse-mcp/injection';
 import { CodexChatEventMapper, codexErrorCode, codexErrorName, toCodexInput, toCodexMcpServers } from './codex-chat-events';
 import { isChatEvent, CHAT_CONTRACT_VERSION, COMPACTION_SETTLED, COMPACTION_STARTED, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ServerNotification } from './codex-protocol';
@@ -630,13 +631,13 @@ describe('codex chat helpers', () => {
 describe('toCodexMcpServers', () => {
   it('translates stdio and HTTP servers to the keys Codex reads', () => {
     expect(toCodexMcpServers({
-      clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_PORT: 4123 } },
+      clubhouse: { type: 'stdio', command: 'node', args: [getBridgeScriptPath()], env: { CLUBHOUSE_MCP_PORT: 4123 } },
       local: { command: 'uvx', args: [], cwd: 'tools' },
       remote: { type: 'http', url: 'https://mcp.example.test/mcp', headers: { Authorization: 'Bearer x' } },
       plain: { url: 'https://other.example.test/mcp', bearer_token_env_var: 'OTHER_TOKEN' },
     })).toEqual({
       servers: {
-        clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_PORT: '4123' } },
+        clubhouse: { command: 'node', args: [getBridgeScriptPath()], env: { CLUBHOUSE_MCP_PORT: '4123' }, default_tools_approval_mode: 'approve' },
         local: { command: 'uvx', cwd: 'tools' },
         remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer x' } },
         plain: { url: 'https://other.example.test/mcp', bearer_token_env_var: 'OTHER_TOKEN' },
@@ -666,8 +667,8 @@ describe('toCodexMcpServers', () => {
 
   it('passes env_vars through so Codex forwards the bridge nonce from its own env (#2222)', () => {
     expect(toCodexMcpServers({
-      clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env_vars: ['CLUBHOUSE_HOOK_NONCE', 7] },
-    }).servers.clubhouse).toEqual({ command: 'node', args: ['bridge.js'], env_vars: ['CLUBHOUSE_HOOK_NONCE'] });
+      clubhouse: { type: 'stdio', command: 'node', args: [getBridgeScriptPath()], env_vars: ['CLUBHOUSE_HOOK_NONCE', 7] },
+    }).servers.clubhouse).toEqual({ command: 'node', args: [getBridgeScriptPath()], env_vars: ['CLUBHOUSE_HOOK_NONCE'], default_tools_approval_mode: 'approve' });
   });
 
   it('accepts the streamable-http spelling and leaves disabled servers out', () => {
@@ -675,6 +676,46 @@ describe('toCodexMcpServers', () => {
       dashed: { type: 'streamable-http', url: 'https://a.example.test/mcp' },
       off: { command: 'node', disabled: true },
     })).toEqual({ servers: { dashed: { url: 'https://a.example.test/mcp' } }, skipped: [] });
+  });
+
+  describe('tool approval for the Clubhouse bridge (#3366)', () => {
+    const bridge = () => ({ type: 'stdio', command: 'node', args: [getBridgeScriptPath()] });
+
+    it('approves the injected bridge and no other server', () => {
+      const { servers } = toCodexMcpServers({
+        clubhouse: bridge(),
+        other: { command: 'node' },
+        remote: { type: 'http', url: 'https://a.example.test/mcp' },
+      });
+      expect(servers.clubhouse).toHaveProperty('default_tools_approval_mode', 'approve');
+      expect(servers.other).not.toHaveProperty('default_tools_approval_mode');
+      expect(servers.remote).not.toHaveProperty('default_tools_approval_mode');
+    });
+
+    it('does not approve a project server that only shares the name, with no bridge present', () => {
+      const stdio = toCodexMcpServers({ clubhouse: { command: 'node', args: ['project-server.js'] } }).servers.clubhouse;
+      const http = toCodexMcpServers({ clubhouse: { url: 'https://c.example.test/mcp' } }).servers.clubhouse;
+      const lookalike = toCodexMcpServers({ clubhouse: { command: 'node', args: ['/tmp/x/clubhouse-mcp-bridge.js'] } }).servers.clubhouse;
+      for (const entry of [stdio, http, lookalike]) expect(entry).not.toHaveProperty('default_tools_approval_mode');
+    });
+
+    it('with a project collision, the bridge key (spread last) is approved and the project entry is gone', () => {
+      const project = { clubhouse: { command: 'node', args: ['project-server.js'] }, other: { command: 'node' } };
+      const { servers } = toCodexMcpServers({ ...project, clubhouse: bridge() });
+      expect(servers.clubhouse).toEqual({ command: 'node', args: [getBridgeScriptPath()], default_tools_approval_mode: 'approve' });
+      expect(servers.other).not.toHaveProperty('default_tools_approval_mode');
+    });
+
+    it('does not approve a bridge-shaped entry that is not the bridge command', () => {
+      expect(toCodexMcpServers({ clubhouse: { command: 'python', args: [getBridgeScriptPath()] } }).servers.clubhouse)
+        .not.toHaveProperty('default_tools_approval_mode');
+      expect(toCodexMcpServers({ clubhouse: { command: 'node', args: [getBridgeScriptPath(), '--extra'] } }).servers.clubhouse)
+        .not.toHaveProperty('default_tools_approval_mode');
+    });
+
+    it('does not approve the bridge under another name', () => {
+      expect(toCodexMcpServers({ renamed: bridge() }).servers.renamed).not.toHaveProperty('default_tools_approval_mode');
+    });
   });
 
   it('resolves a relative cwd against the agent directory and keeps an absolute one', () => {

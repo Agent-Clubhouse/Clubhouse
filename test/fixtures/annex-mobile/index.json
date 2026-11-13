@@ -18,6 +18,7 @@
     "chat-event-tool-call-preview.json",
     "chat-event-tool-output-preview.json",
     "chat-events.json",
+    "chat-full-event.json",
     "chat-links.json",
     "chat-page.json",
     "chat-pages.json",

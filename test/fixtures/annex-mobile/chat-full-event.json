@@ -1,0 +1,157 @@
+{
+  "approveBeforeFetch": {
+    "request": {
+      "optionId": "allow",
+      "requestId": "perm_1",
+      "type": "chat.permission"
+    },
+    "response": {
+      "body": {
+        "commandId": "<commandId>",
+        "epoch": "<epoch>",
+        "error": {
+          "code": "incomplete_representation",
+          "message": "This request is too large to review here. Review it on the desktop to approve it, or deny it here."
+        },
+        "status": "rejected",
+        "version": 1
+      },
+      "status": 409
+    }
+  },
+  "approveWithDigest": {
+    "request": {
+      "optionId": "allow",
+      "requestId": "perm_1",
+      "reviewedDigest": "sha256:ab130d137138758d6514b2047869b6c19e410198445ccbd7fe8aaf946db44d0c",
+      "type": "chat.permission"
+    },
+    "response": {
+      "body": {
+        "commandId": "<commandId>",
+        "epoch": "<epoch>",
+        "result": {
+          "answered": true,
+          "requestId": "perm_1"
+        },
+        "status": "completed",
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "approveWithOtherDigest": {
+    "request": {
+      "optionId": "allow",
+      "requestId": "perm_1",
+      "reviewedDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "type": "chat.permission"
+    },
+    "response": {
+      "body": {
+        "commandId": "<commandId>",
+        "epoch": "<epoch>",
+        "error": {
+          "code": "incomplete_representation",
+          "message": "This request is too large to review here. Review it on the desktop to approve it, or deny it here."
+        },
+        "status": "rejected",
+        "version": 1
+      },
+      "status": 409
+    }
+  },
+  "errors": {
+    "agentNotFound": {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/mobile/agents/missing/chat/events/1?sessionId=sess_live"
+      },
+      "response": {
+        "body": {
+          "error": "agent_not_found"
+        },
+        "status": 404
+      }
+    },
+    "eventNotFound": {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/mobile/agents/durable_chat/chat/events/9999?sessionId=sess_live"
+      },
+      "response": {
+        "body": {
+          "error": "event_not_found"
+        },
+        "status": 404
+      }
+    },
+    "missingSessionId": {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/mobile/agents/durable_chat/chat/events/8"
+      },
+      "response": {
+        "body": {
+          "error": "invalid_query"
+        },
+        "status": 400
+      }
+    }
+  },
+  "fetch": {
+    "request": {
+      "method": "GET",
+      "path": "/api/v1/mobile/agents/durable_chat/chat/events/8?sessionId=sess_live"
+    },
+    "response": {
+      "body": {
+        "agentId": "durable_chat",
+        "digest": "sha256:ab130d137138758d6514b2047869b6c19e410198445ccbd7fe8aaf946db44d0c",
+        "event": {
+          "agentId": "durable_chat",
+          "data": {
+            "description": "big.ts",
+            "options": [
+              {
+                "kind": "allow_once",
+                "label": "Allow",
+                "optionId": "allow"
+              },
+              {
+                "kind": "allow_always",
+                "label": "Always allow",
+                "optionId": "always",
+                "scope": "npm test:*"
+              },
+              {
+                "kind": "reject_once",
+                "label": "Deny",
+                "optionId": "deny"
+              }
+            ],
+            "rawInput": {
+              "content": "ccc…",
+              "file_path": "/work/app/big.ts"
+            },
+            "requestId": "perm_1",
+            "title": "Write big.ts",
+            "toolCallId": "tool_1",
+            "toolName": "Write"
+          },
+          "seq": 8,
+          "sessionId": "sess_live",
+          "ts": 1799999948000,
+          "turnId": "turn_1",
+          "type": "permission_request",
+          "v": 2
+        },
+        "seq": 8,
+        "sessionId": "sess_live",
+        "version": 1
+      },
+      "status": 200
+    }
+  },
+  "note": "capabilities.fullEvents. Fetch an event that came with truncated, whole, over pinned mTLS. rawInput.content is shortened here; digest is of the original. For a permission_request, send that digest back as reviewedDigest. It counts only for the device that fetched it, since the desktop started and since pairing, while the request and its options are unchanged. Not shown: 413 event_too_large {bytes, maximumBytes} over 32 MiB, and 403 client_certificate_required or authorization_revoked."
+}
