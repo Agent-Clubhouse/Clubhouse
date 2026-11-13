@@ -1027,6 +1027,8 @@ export const ATTR = {
     'POST /api/v1/group-projects/:id/bulletin/messages',
     'POST /api/v1/group-projects/:id/shoulder-tap',
     'POST /api/v1/group-projects/:id/polling',
+    'GET /api/v1/group-projects/:id/roles',
+    'POST /api/v1/group-projects/:id/roles',
     'DELETE /api/v1/group-projects/:id/bulletin/topics/:id/messages/:id',
     'DELETE /api/v1/group-projects/:id/bulletin/topics/:id',
     'PATCH /api/v1/group-projects/:id/bulletin/topics/:id/protection',
