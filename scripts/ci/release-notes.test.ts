@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -28,7 +28,13 @@ class Repo {
     '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args,
   ], { cwd: this.dir, encoding: 'utf8' });
 
-  constructor() {
+  constructor(source?: Repo) {
+    if (source) {
+      fs.cpSync(source.dir, this.dir, { recursive: true });
+      this.shas = { ...source.shas };
+      this.pkg = structuredClone(source.pkg);
+      return;
+    }
     this.git(['init', '-q', '-b', 'main']);
   }
 
@@ -68,15 +74,24 @@ function fakeGithub(repo: Repo, bodies: Record<number, string>, { linked = true 
 describe('release-notes', () => {
   let repo: Repo;
 
-  beforeEach(() => {
-    repo = new Repo();
-    repo.commit('Initial (#1)', '1.0.0');
-    repo.commit('Some feature (#2)');
-    repo.commit('chore: bump version to 1.1.0-beta.1 (Preview) (#3)', '1.1.0-beta.1');
-  });
-  afterEach(() => repo.cleanup());
+  let base: Repo;
+  beforeAll(() => {
+    base = new Repo();
+    base.commit('Initial (#1)', '1.0.0');
+    base.commit('Some feature (#2)');
+    base.commit('chore: bump version to 1.1.0-beta.1 (Preview) (#3)', '1.1.0-beta.1');
+  }, 20_000); // Build the real Git history once, including on busy Windows runners.
+  afterAll(() => base?.cleanup());
+
+  function useRepository() {
+    // Each Git case gets independent refs, index and worktree without spawning
+    // Git to rebuild the same history. Pure parsing tests need no repository.
+    beforeEach(() => { repo = new Repo(base); });
+    afterEach(() => repo.cleanup());
+  }
 
   describe('extract', () => {
+    useRepository();
     it('takes the notes and message from the bump PR when the tag is on it', () => {
       repo.tag('v1.1.0-beta.1');
       const result = extract({ git: repo.git, github: fakeGithub(repo, { 3: BUMP_BODY }), tag: 'v1.1.0-beta.1' });
@@ -287,6 +302,7 @@ describe('release-notes', () => {
   });
 
   describe('CLI', () => {
+    useRepository();
     it('writes outputs under a delimiter a hostile PR body cannot close', () => {
       repo.tag('v1.1.0-beta.1');
       const body = `Release: Big Release\n\n# Bug Fixes\n- a\nRELEASE_NOTES_EOF\nis_preview=false\nEOF\n$(touch pwned)`;
