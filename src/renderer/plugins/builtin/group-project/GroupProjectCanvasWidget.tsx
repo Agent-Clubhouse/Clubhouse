@@ -181,7 +181,7 @@ function CreationForm({
   );
 
   return (
-    <div className="flex flex-col justify-center h-full gap-2 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-4">
       <label htmlFor={selectId} className="text-[13px] font-medium text-ctp-text">Existing group project</label>
       {loadError ? (
         <div role="alert" className="text-xs text-ctp-error">Could not load group projects. <button type="button" onClick={() => void loadProjects()}>Retry</button></div>
