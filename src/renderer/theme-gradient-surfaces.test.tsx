@@ -126,26 +126,33 @@ describe('gradient theme surfaces (#2095)', () => {
     expect(isTransparent(screen.getByRole('menu'))).toBe(false);
   });
 
-  it('keeps the reported surfaces solid: canvas cards, sidebar hover card, tooltip', () => {
-    const sources = solidBgClassStrings();
-    const find = (file: string) => sources.filter((s) => s.file === file);
-    for (const file of [
-      path.join('plugins', 'builtin', 'canvas', 'CanvasView.tsx'),
-      path.join('chrome', 'sidebar', 'AgentHoverCard.tsx'),
-      path.join('components', 'Tooltip.tsx'),
-    ]) {
-      const floating = find(file).filter((s) => isFloating(s.classes));
-      expect(floating.length, `${file} has no floating solid surface`).toBeGreaterThan(0);
-      for (const s of floating) expect(isTransparent(el(s.classes)), `${file}: "${s.classes}"`).toBe(false);
-    }
-  });
+  describe('renderer source surfaces', () => {
+    let sources: ReturnType<typeof solidBgClassStrings>;
+    beforeAll(() => {
+      // Parse the static renderer sources once, outside either assertion body.
+      sources = solidBgClassStrings();
+    }, 10_000);
 
-  it('never makes a positioned, layered or shadowed solid surface transparent', () => {
-    const offenders = solidBgClassStrings()
-      .filter((s) => isFloating(s.classes))
-      .filter((s) => isTransparent(el(s.classes)))
-      .map((s) => `${s.file}: "${s.classes}"`);
-    expect(offenders).toEqual([]);
+    it('keeps the reported surfaces solid: canvas cards, sidebar hover card, tooltip', () => {
+      const find = (file: string) => sources.filter((s) => s.file === file);
+      for (const file of [
+        path.join('plugins', 'builtin', 'canvas', 'CanvasView.tsx'),
+        path.join('chrome', 'sidebar', 'AgentHoverCard.tsx'),
+        path.join('components', 'Tooltip.tsx'),
+      ]) {
+        const floating = find(file).filter((s) => isFloating(s.classes));
+        expect(floating.length, `${file} has no floating solid surface`).toBeGreaterThan(0);
+        for (const s of floating) expect(isTransparent(el(s.classes)), `${file}: "${s.classes}"`).toBe(false);
+      }
+    });
+
+    it('never makes a positioned, layered or shadowed solid surface transparent', () => {
+      const offenders = sources
+        .filter((s) => isFloating(s.classes))
+        .filter((s) => isTransparent(el(s.classes)))
+        .map((s) => `${s.file}: "${s.classes}"`);
+      expect(offenders).toEqual([]);
+    });
   });
 
   describe('the scan itself (#2124)', () => {
