@@ -15,7 +15,7 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-grants-'));
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   connectionMigrationDone, deniedConnectionTools, getConnectionDirection, listConnectionDirections, localConnectionWakeOn, onConnectionGrantsChanged,
-  putConnectionDirection, updateAgentNetworkLinks, removeConnectionDirections, setConnectionDirections, setConnectionTools, _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
+  putConnectionDirection, updateAgentNetworkLinks, removeAgentNetworkSources, clearUserRemovedAgentNetworkSources, removeConnectionDirections, setConnectionDirections, setConnectionTools, _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import {
@@ -216,6 +216,28 @@ describe('connections with agents on other machines (#3064)', () => {
     await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [{ ...first, removedAt: '2026-01-01T00:00:03.000Z' }], updatedAt: '2026-01-01T00:00:03.000Z' });
     await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [first], updatedAt: '2026-01-01T00:00:02.000Z' });
     expect(getConnectionDirection(A, far)?.agentLinks).toEqual([{ ...first, removedAt: '2026-01-01T00:00:03.000Z' }, second]);
+  });
+
+  it('keeps a user-removal tombstone despite later recreated sources until the user reconnects', async () => {
+    const first = { agentId: 'maker', machineId: FAR, createdAt: '2026-01-01T00:00:00.000Z' };
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [first], updatedAt: first.createdAt });
+    await removeAgentNetworkSources(A, far);
+    const removed = getConnectionDirection(A, far)!.agentLinks![0];
+    const newer = new Date(Date.parse(removed.removedAt!) + 1000).toISOString();
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [{ ...first, createdAt: newer }], updatedAt: newer });
+    expect(getConnectionDirection(A, far)?.agentLinks).toEqual([removed]);
+    await clearUserRemovedAgentNetworkSources(A, far);
+    const cleared = getConnectionDirection(A, far)!.agentLinks![0];
+    const readded = { ...first, createdAt: new Date(Date.parse(cleared.removedAt!) + 1000).toISOString() };
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [readded], updatedAt: readded.createdAt });
+    expect(getConnectionDirection(A, far)?.agentLinks).toEqual([readded]);
+  });
+
+  it('deleting an endpoint removes sources without creating user-removal tombstones', async () => {
+    await updateAgentNetworkLinks([{ from: A, to: far }], { agentId: 'maker', machineId: FAR }, 'add');
+    await forgetConnectionAgent('a');
+    expect(getConnectionDirection(A, far)?.agentLinks?.[0]).toMatchObject({ removedAt: expect.any(String) });
+    expect(getConnectionDirection(A, far)?.agentLinks?.[0].removedByUser).toBeUndefined();
   });
 
   it('requires the sender computer to confirm switches are agent-owned before changing a remote sender direction', async () => {

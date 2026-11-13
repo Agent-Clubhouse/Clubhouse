@@ -25,7 +25,7 @@ import {
 } from './annex-agent-calls';
 import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS } from './annex-delivery-store';
 import {
-  getConnectionDirection, listAllConnectionDirections, removeConnectionDirections, setConnectionLink, setConnectionTools, updateAgentNetworkLinks,
+  getConnectionDirection, listAllConnectionDirections, putConnectionDirection, removeConnectionDirections, setConnectionLink, setConnectionTools, updateAgentNetworkLinks,
 } from './connection-grants-store';
 import type { McpToolResult } from './clubhouse-mcp/types';
 
@@ -738,27 +738,44 @@ describe('keeping both machines\' copies of a connection', () => {
     expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.link).toBeUndefined();
   });
 
-  it('accepts a network agent source relayed between two local agents while preserving a user link', async () => {
-    const from = { agentId: 'here' };
-    const to = { agentId: 'receiver' };
-    await setConnectionLink(from, to, true, ['send_file']);
-    const at = new Date(Date.now() + 500).toISOString();
-    const entry = { from: { agentId: 'here', machine: SELF }, to: { agentId: 'receiver', machine: SELF }, disabledTools: ['clear_agent'], link: true, userLink: false,
+  it('refuses a peer creating a direction between two local agents', async () => {
+    const at = new Date(now).toISOString();
+    const entry = { from: { agentId: 'here', machine: SELF }, to: { agentId: 'receiver', machine: SELF }, disabledTools: [], link: true, userLink: false,
       agentLinks: [{ agentId: 'maker', machineId: OTHER, createdAt: at }], updatedAt: at };
-    expect(await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [entry] }, Date.now())).toEqual({ applied: 1 });
-    expect(getConnectionDirection(from, to)).toMatchObject({ link: expect.anything(), disabledTools: ['send_file'], agentLinks: [expect.objectContaining({ agentId: 'maker', machineId: OTHER })] });
+    expect(await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [entry] }, now)).toEqual({ applied: 0 });
+    expect(getConnectionDirection({ agentId: 'here' }, { agentId: 'receiver' })).toBeUndefined();
   });
 
-  it('relays an agent source between two other network computers', async () => {
+  it('refuses a peer relaying a direction between this computer and a third computer', async () => {
     state.thirdRole = 'member';
     const at = new Date(now).toISOString();
-    const direction = { from: { agentId: 'receiver', machine: SELF }, to: { agentId: 'there', machine: THIRD }, disabledTools: ['clear_agent'], link: true, userLink: false,
-      agentLinks: [{ agentId: 'maker', machineId: OTHER, name: 'Maker', createdAt: at }], setByAgent: 'maker', updatedAt: at };
-    expect(await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [direction] }, now)).toEqual({ applied: 1 });
-    posts = [];
-    await syncDirectionsWith(THIRD);
-    const forwarded = posts.find((p) => p.machine === THIRD && p.path === '/api/v1/network/connections');
-    expect(forwarded?.body.directions).toEqual(expect.arrayContaining([expect.objectContaining({ from: expect.objectContaining({ machine: SELF }), to: expect.objectContaining({ machine: THIRD }), agentLinks: [expect.objectContaining({ machineId: OTHER })] })]));
+    const direction = { from: { agentId: 'receiver', machine: SELF }, to: { agentId: 'there', machine: THIRD }, disabledTools: [], link: true, userLink: false,
+      agentLinks: [{ agentId: 'maker', machineId: OTHER, createdAt: at }], updatedAt: at };
+    expect(await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [direction] }, now)).toEqual({ applied: 0 });
+    expect(getConnectionDirection({ agentId: 'receiver' }, { agentId: 'there', machineId: THIRD })).toBeUndefined();
+  });
+
+  it('accepts only a creator’s source updates, except an endpoint’s user-removal tombstone', async () => {
+    state.thirdRole = 'member';
+    const at = new Date(now).toISOString();
+    const later = new Date(now + 1000).toISOString();
+    const from = { agentId: 'receiver', machine: SELF };
+    const to = { agentId: 'there', machine: OTHER };
+    const foreign = { agentId: 'foreign', machineId: THIRD, createdAt: at };
+    const local = { agentId: 'local', machineId: SELF, createdAt: at };
+    const own = { agentId: 'maker', machineId: OTHER, createdAt: at };
+    const pair = { from: { agentId: 'receiver' }, to: { agentId: 'there', machineId: OTHER } };
+    await putConnectionDirection({ ...pair, disabledTools: [], agentLinks: [foreign, local], updatedAt: at });
+    const entry = { from, to, disabledTools: ['send_file'], link: true, userLink: false, setByAgent: 'foreign', agentLinks: [
+      { ...foreign, removedAt: later }, { ...local, createdAt: later }, { ...foreign, agentId: 'forged', createdAt: later }, own,
+    ], updatedAt: later };
+    await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [entry] }, now + 1000);
+    expect(getConnectionDirection(pair.from, pair.to)?.agentLinks).toEqual([foreign, local, own]);
+    expect(getConnectionDirection(pair.from, pair.to)).toMatchObject({ disabledTools: [] });
+    expect(getConnectionDirection(pair.from, pair.to)?.setByAgent).toBeUndefined();
+    const removedAt = new Date(now + 2000).toISOString();
+    await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [{ ...entry, agentLinks: [{ ...foreign, removedAt, removedByUser: true }], link: false, updatedAt: removedAt }] }, now + 2000);
+    expect(getConnectionDirection(pair.from, pair.to)?.agentLinks).toEqual([{ ...foreign, removedAt, removedByUser: true }, local, own]);
   });
 
   it('on connect, sends what waited only after the connections got through', async () => {

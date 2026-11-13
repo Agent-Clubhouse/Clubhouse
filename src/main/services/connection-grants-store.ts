@@ -388,9 +388,9 @@ export async function updateAgentNetworkLinks(
 }
 
 /** Remove every agent-created network source on a direction at the user's request. */
-export function removeAgentNetworkSources(from: AgentAddress, to: AgentAddress): Promise<ConnectionDirection | null> {
+export function removeAgentNetworkSources(from: AgentAddress, to: AgentAddress, options: { byUser?: boolean } = {}): Promise<ConnectionDirection | null> {
   return updateDirection(from, to, (current) => activeAgentLinks(current).length
-    ? { ...current!, agentLinks: current!.agentLinks!.map((l) => ({ ...l, removedAt: new Date(Math.max(Date.now(), Date.parse(l.removedAt ?? l.createdAt) + 1)).toISOString(), removedByUser: true })), updatedAt: new Date().toISOString() } : UNCHANGED);
+    ? { ...current!, agentLinks: current!.agentLinks!.map((l) => l.removedAt ? l : ({ ...l, removedAt: new Date(Math.max(Date.now(), Date.parse(l.createdAt) + 1)).toISOString(), ...(options.byUser !== false && { removedByUser: true }) })), updatedAt: new Date().toISOString() } : UNCHANGED);
 }
 
 /** The person explicitly reconnected a pair, so agent-source removals no longer block it. */
@@ -417,7 +417,10 @@ export async function putConnectionDirection(direction: ConnectionDirection): Pr
     for (const link of incoming ?? []) {
       const key = `${link.agentId}\u0000${link.machineId}`;
       const prior = merged.get(key);
-      if (!prior || Date.parse(link.removedAt ?? link.createdAt) > Date.parse(prior.removedAt ?? prior.createdAt) || (link.removedAt && !prior.removedAt && link.removedAt === prior.createdAt)) merged.set(key, link);
+      if (prior?.removedByUser && !link.removedAt) continue;
+      if (!prior || Date.parse(link.removedAt ?? link.createdAt) > Date.parse(prior.removedAt ?? prior.createdAt) || (link.removedAt && !prior.removedAt && link.removedAt === prior.createdAt)) {
+        merged.set(key, prior?.removedByUser ? { ...link, removedByUser: true } : link);
+      }
     }
     const newer = !current || Date.parse(current.updatedAt) < Date.parse(direction.updatedAt);
     const links = [...merged.values()];

@@ -741,9 +741,9 @@ function relative(end: { agentId: string; machine: string }, self: string): Conn
   return end.machine.toLowerCase() === self ? { agentId: end.agentId } : { agentId: end.agentId, machineId: end.machine.toLowerCase() };
 }
 
-/** Peers holding an endpoint or an agent source, including the creator of a relayed link. */
+/** Only the other endpoint receives this direction; sources are never relayed. */
 function peersFor(d: Pick<ConnectionDirection, 'from' | 'to' | 'agentLinks'>, self: string): string[] {
-  return [...new Set([d.from.machineId, d.to.machineId, ...(d.agentLinks ?? []).map((l) => l.machineId)]
+  return [...new Set([d.from.machineId, d.to.machineId]
     .filter((machine): machine is string => !!machine && machine.toLowerCase() !== self).map((machine) => machine.toLowerCase()))];
 }
 
@@ -856,19 +856,16 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     if (!ok) continue;
     const machines = [entry.from.machine.toLowerCase(), entry.to.machine.toLowerCase()];
     if (machines.some((m) => m !== self && !isNetworkComputer(m))) continue;
-    const creators = Array.isArray(entry.agentLinks) ? entry.agentLinks : [];
-    const authoredBySender = creators.some((l) => l && typeof l.machineId === 'string' && l.machineId.toLowerCase() === machine);
-    const authoredHere = creators.some((l) => l && typeof l.machineId === 'string' && l.machineId.toLowerCase() === self);
     const legacyPair = machines.includes(self) && machines.includes(machine);
-    // A third machine may relay an agent-made link to its ends or its creator, never an arbitrary legacy user link.
-    if (!legacyPair && !(machines.includes(self) && authoredBySender) && !(authoredHere && machines.includes(machine))) continue;
+    // Both this computer and the authenticated sender must be endpoints.
+    if (!legacyPair) continue;
     const from = relative(entry.from, self);
     const to = relative(entry.to, self);
     const localEnds = [from, to].filter((end) => !end.machineId);
     const current = getConnectionDirection(from, to);
     if (typeof entry.link !== 'boolean') continue;
     const userLink = typeof entry.userLink === 'boolean' ? entry.userLink : entry.link;
-    const agentLinks = Array.isArray(entry.agentLinks) ? entry.agentLinks.filter((l) => l && typeof l.agentId === 'string' && l.agentId.length > 0 && l.agentId.length <= 200 && typeof l.machineId === 'string' && (l.machineId.toLowerCase() === self || isNetworkComputer(l.machineId.toLowerCase())) && typeof l.createdAt === 'string' && !Number.isNaN(Date.parse(l.createdAt))).slice(0, 50).map((l) => ({ agentId: l.agentId, machineId: l.machineId.toLowerCase(), createdAt: Date.parse(l.createdAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : l.createdAt, ...(typeof l.name === 'string' && l.name.length <= 200 && { name: l.name }), ...(typeof l.removedAt === 'string' && !Number.isNaN(Date.parse(l.removedAt)) && { removedAt: Date.parse(l.removedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : l.removedAt }), ...(l.removedByUser === true && { removedByUser: true }) })) : [];
+    const agentLinks = Array.isArray(entry.agentLinks) ? entry.agentLinks.filter((l) => l && typeof l.agentId === 'string' && l.agentId.length > 0 && l.agentId.length <= 200 && typeof l.machineId === 'string' && (l.machineId.toLowerCase() === self || isNetworkComputer(l.machineId.toLowerCase())) && typeof l.createdAt === 'string' && !Number.isNaN(Date.parse(l.createdAt)) && (l.machineId.toLowerCase() === machine || (l.removedByUser === true && typeof l.removedAt === 'string' && !Number.isNaN(Date.parse(l.removedAt))))).slice(0, 50).map((l) => ({ agentId: l.agentId, machineId: l.machineId.toLowerCase(), createdAt: Date.parse(l.createdAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : l.createdAt, ...(typeof l.name === 'string' && l.name.length <= 200 && { name: l.name }), ...(typeof l.removedAt === 'string' && !Number.isNaN(Date.parse(l.removedAt)) && { removedAt: Date.parse(l.removedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : l.removedAt }), ...(l.removedByUser === true && { removedByUser: true }) })) : [];
     const active = !!userLink || agentLinks.some((link) => !link.removedAt);
     if (active && !entry.link) continue; // Both the legacy flag and the source list must agree.
     // A link only for an agent here that exists; a link turned off only matters where there's one to turn off.
@@ -880,9 +877,11 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     const updatedAt = Date.parse(entry.updatedAt) > now + CLOCK_SKEW_MS ? new Date(now).toISOString() : entry.updatedAt;
     const tools = [...new Set(entry.disabledTools.filter((t): t is string => typeof t === 'string' && t.length > 0 && t.length <= 100))].slice(0, 50);
     // An agent-authored update can add its source, but cannot overwrite a person's source or saved switches.
-    const agentAuthored = typeof entry.setByAgent === 'string' && agentLinks.some((l) => l.agentId === entry.setByAgent);
-    let protectUserTools = !!current && ((!legacyPair && !!current.link) || (agentAuthored && (current.setByAgent !== entry.setByAgent || !!current.link)));
+    const agentAuthored = typeof entry.setByAgent === 'string' && agentLinks.some((l) => l.agentId === entry.setByAgent && l.machineId === machine && !l.removedAt);
+    const untrustedAgentClaim = typeof entry.setByAgent === 'string' && !agentAuthored;
+    let protectUserTools = untrustedAgentClaim || (!!current && (agentAuthored && (current.setByAgent !== entry.setByAgent || !!current.link)));
     let protectedLive: { disabledTools?: string[]; enabledTools?: string[] } | undefined;
+    if (untrustedAgentClaim && !current) continue;
     if (agentAuthored && !from.machineId) {
       const { collectSourcesByPair } = await import('./persisted-bindings');
       const { bySource, failed } = await collectSourcesByPair();
@@ -902,7 +901,8 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
       ...(effectiveUserLink && { link: { createdAt: current?.link?.createdAt ?? updatedAt } }),
       ...(agentLinks.length && { agentLinks }),
       ...(entry.from.machine.toLowerCase() === machine && typeof entry.toolsProtected === 'boolean' && { agentToolsProtected: entry.toolsProtected }),
-      ...(!protectUserTools && typeof entry.setByAgent === 'string' && entry.setByAgent.length <= 200 && { setByAgent: entry.setByAgent }),
+      ...(!protectUserTools && agentAuthored && typeof entry.setByAgent === 'string' && entry.setByAgent.length <= 200 && { setByAgent: entry.setByAgent }),
+      ...(protectUserTools && current?.setByAgent && { setByAgent: current.setByAgent }),
       updatedAt: protectUserTools && current ? current.updatedAt : updatedAt,
     });
     if (!wrote) continue;

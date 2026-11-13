@@ -449,7 +449,7 @@ export async function forgetConnectionAgent(agentId: string): Promise<void> {
   // A link with an agent on another machine is turned off, not dropped, so that machine hears of it (#3064).
   for (const d of listConnectionDirections(agentId)) {
     if (!((!d.from.machineId && d.from.agentId === agentId) || (!d.to.machineId && d.to.agentId === agentId))) continue;
-    if (activeAgentLinks(d).length) await removeAgentNetworkSources(d.from, d.to);
+    if (activeAgentLinks(d).length) await removeAgentNetworkSources(d.from, d.to, { byUser: false });
     if ((d.from.machineId || d.to.machineId) && d.link) {
       await setConnectionLink(d.from, d.to, false).catch((err) => {
         // telemetry-exempt: logged; the entry goes below either way

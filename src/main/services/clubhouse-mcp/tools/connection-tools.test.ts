@@ -398,6 +398,17 @@ describe('ordinary agents with connection.manage (#3336)', () => {
     }
   });
 
+  it('refuses to create a direction between two other computers', async () => {
+    vi.spyOn(annexCalls, 'isNetworkComputer').mockReturnValue(true);
+    await grantConnections();
+    const first = Array(16).fill('bb').join(':');
+    const second = Array(16).fill('cc').join(':');
+    const result = await call('connect_agents', { from: `one@${first}`, to: `two@${second}` });
+    expect(result.isError).toBe(true);
+    expect(result.text).toMatch(/One endpoint must be on this computer/);
+    vi.restoreAllMocks();
+  });
+
   it('manages remote directions only with grants, preserves their creator, and reads saved tools', async () => {
     const self = Array(16).fill('aa').join(':');
     const far = Array(16).fill('bb').join(':');
@@ -418,17 +429,12 @@ describe('ordinary agents with connection.manage (#3336)', () => {
     vi.restoreAllMocks();
   });
 
-  it('can manage a direction whose two endpoints are on another network computer', async () => {
-    const self = Array(16).fill('aa').join(':');
+  it('refuses a direction whose endpoints are both on another computer', async () => {
     const far = Array(16).fill('bb').join(':');
-    vi.spyOn(annexIdentity, 'getIdentity').mockReturnValue({ fingerprint: self } as ReturnType<typeof annexIdentity.getIdentity>);
     vi.spyOn(annexCalls, 'isNetworkComputer').mockReturnValue(true);
     await grantConnections();
-    expect((await call('connect_agents', { from: `first@${far}`, to: `second@${far}` })).isError).toBe(false);
-    const direction = getConnectionDirection({ agentId: 'first', machineId: far }, { agentId: 'second', machineId: far });
-    expect(direction?.agentLinks?.[0]).toMatchObject({ agentId: 'durable_lead', machineId: self });
-    expect((await call('list_connections', { agent: `first@${far}` })).text).toContain('second');
-    expect((await call('disconnect_agents', { from: `first@${far}`, to: `second@${far}` })).isError).toBe(false);
+    expect((await call('connect_agents', { from: `first@${far}`, to: `second@${far}` })).isError).toBe(true);
+    expect(getConnectionDirection({ agentId: 'first', machineId: far }, { agentId: 'second', machineId: far })).toBeUndefined();
     vi.restoreAllMocks();
   });
 

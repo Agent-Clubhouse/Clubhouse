@@ -401,6 +401,7 @@ async function manageRemote(callerId: string, scope: CallerScope, args: Record<s
     }
     return { agentId: resolveAgent(scope, ref, 'agent').id };
   });
+  if (ends.every((end) => !!end.machineId)) throw new ConnectionScopeError('One endpoint must be on this computer. Connections are not relayed between other computers.');
   if (ends[0].agentId === ends[1].agentId && ends[0].machineId === ends[1].machineId) throw new ConnectionScopeError('from and to must be different agents.');
   const machineId = annexIdentity.getIdentity()?.fingerprint?.toLowerCase();
   if (!machineId) throw new ConnectionScopeError('This computer has no Annex identity.');
