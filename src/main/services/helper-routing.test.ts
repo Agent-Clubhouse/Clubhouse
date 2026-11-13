@@ -1,3 +1,5 @@
+import * as pressureLedger from '../telemetry/helper-decision-ledger';
+import { preparePressure } from './helper-burn-pressure';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelInfo, ModelList } from '../orchestrators';
 
@@ -97,6 +99,7 @@ vi.mock('./agent-settings-service', () => {
   };
 });
 vi.mock('./provider-quota', () => ({
+  peekQuotaCalibrationPlan: () => ({ plan: 'pro', generation: '11111111-1111-4111-8111-111111111111' }),
   readProviderQuota: async (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
   peekProviderQuota: (provider: string) => W.quota.get(provider) ?? { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
   forceProviderQuota: async (provider: string) => {
@@ -876,6 +879,46 @@ describe('Auto (#2671)', () => {
   beforeEach(() => {
     W.quota.set('claude-code', known);
     W.quota.set('codex-cli', known);
+  });
+
+  it('uses qualified remaining subscription pressure on the actual fresh Auto start path', async () => {
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const reset = now + 86_400_000;
+    const history: pressureLedger.LedgerEntry[] = [];
+    W.enabled = ['claude-code', 'codex-cli'];
+    for (const [provider, burn, used] of [['claude-code', 800, 40], ['codex-cli', 100, 42]] as const) {
+      W.saved[provider] = { hard: { model: 'model-v1', effort: 'high' } };
+      W.lists.set(provider, { ...live([m('model-v1')]), fetchedAt: now });
+      W.quota.set(provider, { state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(),
+        weekly: { usedPercent: used, resetsAt: new Date(reset).toISOString() } });
+      for (let i = 0; i < 35; i++) {
+        const t = now - (40 - i) * 60_000;
+        const e: pressureLedger.LedgerEntry = {
+          helperId: `${provider}-${i}`, decisionId: `${provider}-${i}`, mode: 'auto', policyVersion: 3,
+          touchedMs: t + 1000, decidedAtMs: t, provider, model: 'model-v1', effort: 'high', difficulty: 'hard', taskProfile: 'review',
+          calibration: { revision: '11111111-1111-4111-8111-111111111111', model: 'model-v1' },
+          forecastRun: { startedMs: t, endedMs: t + 1000, usageSamples: 1, usable: true },
+        };
+        e.pressure = preparePressure(e, history, 0, { quality: 'fresh', state: 'known', source: 'cli_query', asOfMs: t,
+          windows: [{ name: 'weekly', usedBp: 1000, resetsAtMs: reset }] }, t, { plan: 'pro', generation: '11111111-1111-4111-8111-111111111111' });
+        e.pressureOutcome = { atMs: t + 1000, availableAtMs: t + 1000, reason: 'observed',
+          attribution: 'subscription_group_with_unknown_residual', windows: [{ name: 'weekly', remainingBp: burn }] };
+        history.push(e);
+      }
+    }
+    vi.spyOn(pressureLedger, 'forecastHistory').mockReturnValue(history);
+    const prepared = await auto({ taskProfile: 'review' });
+    if (!prepared.ok) throw new Error(prepared.message);
+    const result = decideAutoPlan(prepared.plan!, {}, now);
+    expect(result).toMatchObject({ ok: true, plan: { provider: 'codex-cli', decision: {
+      taskProfile: 'review', pressure: { windows: [{ band: { meanBp: 100, coverageBp: 10_000 } }] },
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ provider: 'claude-code', score: expect.objectContaining({ pressureBp: 4800 }) }),
+        expect.objectContaining({ provider: 'codex-cli', chosen: true, score: expect.objectContaining({ pressureBp: 4300 }) }),
+      ]),
+    } } });
+    expect(W.listCalls).toHaveLength(4); // mapping and effort checks only; inference never calls a provider.
   });
 
   it('refuses when Auto is off, saying why, and reads nothing', async () => {

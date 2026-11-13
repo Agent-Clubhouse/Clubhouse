@@ -29,6 +29,7 @@ vi.mock('./helper-model-catalog', () => ({
 vi.mock('./provider-quota', () => {
   const quota = { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null };
   return {
+    peekQuotaCalibrationPlan: () => undefined,
     readProviderQuota: async () => quota, peekProviderQuota: () => quota,
     isProviderCoolingDown: async () => false, isProviderCoolingDownNow: () => false,
   };
@@ -47,7 +48,7 @@ function barrier(): { promise: Promise<void>; release: () => void } {
 }
 
 const request: StartPlanRequest = {
-  cli: 'auto', difficulty: 'hard', projectPath: '/fixture',
+  cli: 'auto', difficulty: 'hard', projectPath: path.join(os.tmpdir(), 'fixture'),
   auto: { effective: true, source: 'app', scopes: { app: { value: true, editable: true } } },
 };
 const load = () => reservedLoad({ live: new Set(), notRunning: new Set() });

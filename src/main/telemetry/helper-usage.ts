@@ -1,3 +1,5 @@
+import { peekQuotaCalibrationPlan } from '../services/provider-quota';
+import { observePressure } from '../services/helper-burn-pressure';
 /**
  * Helper decision, outcome and usage telemetry (#2747, epic #2886).
  *
@@ -200,6 +202,7 @@ export function recordHelperDecision(rec: HelperDecisionRecord): void {
         effort: rec.resolved.effort,
         difficulty: rec.resolved.difficulty,
         mappingRevision: rec.mappingRevision,
+        ...(rec.pressure && { pressure: structuredClone(rec.pressure) }),
         ...(calibration && { calibration }),
         ...(rec.calibrationIdentityReason && { calibrationIdentityReason: rec.calibrationIdentityReason }),
         mappingFingerprint: rec.mappingFingerprint,
@@ -337,6 +340,10 @@ function evaluateForecasts(provider: string, quota: QuotaView): void {
   const history = ledger.forecastHistory();
   for (const entry of history) {
     if (entry.provider !== provider) continue;
+    if (entry.pressure && !entry.pressureOutcome) {
+      const outcome = observePressure(entry.pressure, history, quota, clock(), peekQuotaCalibrationPlan(provider, clock()));
+      if (outcome) ledger.setPressureOutcome(entry.helperId, outcome);
+    }
     const observation = observeHelperBurn(entry, history, quota, clock());
     if (!observation) continue;
     ledger.setBurnObservation(entry.helperId, observation);

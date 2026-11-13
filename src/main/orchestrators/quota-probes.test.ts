@@ -87,7 +87,7 @@ describe('Codex account/rateLimits/read', () => {
   });
 
   it('names a window by its duration, not its position', () => {
-    expect(parseCodexRateLimits(CODEX_SNAPSHOT, AS_OF)).toEqual({ kind: 'windows', windows: [
+    expect(parseCodexRateLimits(CODEX_SNAPSHOT, AS_OF)).toEqual({ kind: 'windows', calibrationPlan: 'pro', windows: [
       { name: 'week', usedPercent: 41, resetsAt: 1_800_400_000_000, asOf: AS_OF },
       { name: '5h', usedPercent: 12, resetsAt: 1_800_010_000_000, asOf: AS_OF },
     ] });
@@ -96,7 +96,7 @@ describe('Codex account/rateLimits/read', () => {
   });
 
   it('keeps nothing else from the snapshot', () => {
-    expect(JSON.stringify(parseCodexRateLimits(CODEX_SNAPSHOT, AS_OF))).not.toContain('pro');
+    expect(parseCodexRateLimits({ ...CODEX_SNAPSHOT, planType: 'secret-unrecognized-plan' }, AS_OF)).not.toHaveProperty('calibrationPlan');
   });
 
   it('a limit the provider says is reached goes on the fullest window; used percent alone never sets it', () => {

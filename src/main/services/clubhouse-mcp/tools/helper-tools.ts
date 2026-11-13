@@ -1,3 +1,4 @@
+import { HELPER_TASK_PROFILES, type HelperTaskProfile } from '../../../../shared/telemetry/helper-usage-contract';
 /**
  * Helper tools (#2227): an orchestrator starts, lists, sleeps and wakes its
  * own helper agents, and a helper replies to its parent.
@@ -558,6 +559,9 @@ const NEEDS_MANAGED = 'Refused unless the person lets orchestrators choose helpe
 
 /** Check start_helper's arguments. Throws McpArgError. */
 function validateStartArgs(args: HelperStartArgs): void {
+  if (args.taskProfile && !(HELPER_TASK_PROFILES as readonly string[]).includes(args.taskProfile)) {
+    throw new McpArgError('taskProfile must be one of: ' + HELPER_TASK_PROFILES.join(', '));
+  }
   if (args.access && args.access !== 'same' && !helperAccessRequest(args.access)) {
     throw new McpArgError(`access must be one of: same, ${FIVE_LEVELS.join(', ')} (or ${ACCESS_LEVELS.join(', ')})`);
   }
@@ -577,7 +581,7 @@ function validateStartArgs(args: HelperStartArgs): void {
 
 function parseStartArgs(args: Record<string, unknown>): HelperStartArgs {
   const parsed: HelperStartArgs = { name: requireText(args, 'name'), task: requireText(args, 'task') };
-  for (const key of ['persona', 'cli', 'model', 'effort', 'difficulty', 'access', 'branchFrom', 'folder', 'project', 'template'] as const) {
+  for (const key of ['persona', 'cli', 'model', 'effort', 'difficulty', 'taskProfile', 'access', 'branchFrom', 'folder', 'project', 'template'] as const) {
     const value = optionalText(args, key);
     if (value) parsed[key] = value;
   }
@@ -691,7 +695,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     }
     const auto = cli === AUTO_CLI ? await autoStateFor(homePath, modelProject, orchestrator) : undefined;
     const planned = await planHelperStart({
-      cli, model, effort, difficulty, projectPath: modelProject, orchestratorId,
+      cli, model, effort, difficulty, taskProfile: args.taskProfile as HelperTaskProfile | undefined, projectPath: modelProject, orchestratorId,
       ...(auto && { auto }),
       orchestratorCli: orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator,
     });
@@ -1391,6 +1395,10 @@ export function registerHelperTools(): void {
             description:
               'Optional reasoning effort, kept for every start and wake: one of the model\'s "efforts" from list_models. Defaults to what the CLI picks. ' +
               'Checked like model. A later change to the helper\'s model or CLI clears it.',
+          },
+          taskProfile: {
+            type: 'string', enum: [...HELPER_TASK_PROFILES],
+            description: 'Optional explicit task category for local Auto burn calibration. Never inferred from task text; omitted means unspecified.',
           },
           difficulty: {
             type: 'string',

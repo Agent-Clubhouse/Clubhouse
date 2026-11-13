@@ -42,7 +42,7 @@ describe('join ledger', () => {
     await ledger.flushLedger();
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     raw.entries[0].calibration.prompt = 'never retain content';
-    raw.entries[0].forecast.weekly.interval.path = '/private/path';
+    raw.entries[0].forecast.weekly.interval.path = path.join(os.tmpdir(), 'private-path');
     fs.writeFileSync(file, JSON.stringify(raw));
     ledger.configureLedger({ file, now: () => clock + 1 });
     expect(ledger.getEntry('calibrated')).toMatchObject({ calibration, calibrationIdentityReason: 'cached_catalog', forecast });
@@ -51,7 +51,7 @@ describe('join ledger', () => {
     expect(predictHelperBurn(ledger.getEntry('legacy')!, ledger.forecastHistory(), clock + 1).weekly)
       .toEqual({ samples: 0, unavailableReason: 'missing_calibration_identity' });
     expect(JSON.stringify(ledger.forecastHistory())).not.toContain('never retain content');
-    expect(JSON.stringify(ledger.forecastHistory())).not.toContain('/private/path');
+    expect(JSON.stringify(ledger.forecastHistory())).not.toContain(path.join(os.tmpdir(), 'private-path'));
   });
 
   it('keeps old entries readable and preserves completed forecast history without evaluating interrupted intervals after restart', async () => {

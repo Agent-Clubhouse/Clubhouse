@@ -1,3 +1,4 @@
+import { QUOTA_CALIBRATION_PLANS } from '../../shared/helper-burn-pressure';
 /**
  * Plan limits from each CLI's own protocol (#2671). Every probe spawns the
  * user's CLI, completes the handshake, asks one read-only question and kills the
@@ -9,7 +10,7 @@
  * - Codex: app-server's `account/rateLimits/read`.
  *
  * Only the limit fields are read, by name. Everything else in a reply (account
- * ids, plan, spend) is dropped here and never stored or logged.
+ * ids and spend) is dropped here. Only a closed plan-class enum is retained locally for calibration partitioning.
  */
 
 import type { ChildProcess } from 'child_process';
@@ -125,7 +126,8 @@ export function parseCodexRateLimits(snapshot: unknown, asOf: number): PlanQuota
     if (fullest) fullest.limitReached = true;
     else windows.push({ name: 'window', limitReached: true, asOf });
   }
-  return { kind: 'windows', windows };
+  const calibrationPlan = QUOTA_CALIBRATION_PLANS.find((plan) => plan === snapshot.planType);
+  return { kind: 'windows', windows, ...(calibrationPlan && { calibrationPlan }) };
 }
 
 /** A login with no ChatGPT plan, such as an API key, has no limits to read. Codex 0.163 says so in this error. */

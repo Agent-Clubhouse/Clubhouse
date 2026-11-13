@@ -1,3 +1,5 @@
+import type { PressureDecision, PressureOutcome } from '../../shared/helper-burn-pressure';
+import { readPressure, readPressureOutcome } from '../services/helper-burn-pressure';
 /**
  * The join between a helper and the routing decision that started it (#2747).
  *
@@ -57,6 +59,8 @@ export interface LedgerEntry {
   calibrationIdentityReason?: HelperCalibrationIdentityReason;
   mappingFingerprint?: string;
   taskProfile?: HelperTaskProfile;
+  pressure?: PressureDecision;
+  pressureOutcome?: PressureOutcome;
   forecast?: BurnForecast;
   forecastRun?: ForecastRun;
   burnObservation?: BurnObservation;
@@ -109,6 +113,8 @@ function readEntry(v: unknown): LedgerEntry | undefined {
   if (e.difficulty !== null && e.difficulty !== undefined && !(HELPER_DIFFICULTIES as readonly unknown[]).includes(e.difficulty)) return undefined;
   if (e.spawn !== undefined && !SPAWNS.includes(e.spawn as string)) return undefined;
   if (!textOrNull(e.mappingRevision) || !textOrNull(e.mappingFingerprint)) return undefined;
+  const pressure = readPressure(e.pressure);
+  const pressureOutcome = readPressureOutcome(e.pressureOutcome);
   const forecast = readBurnForecast(e.forecast);
   const calibration = readBurnCalibrationIdentity(e.calibration);
   const identityReason = HELPER_CALIBRATION_IDENTITY_REASONS.find((reason) => reason === e.calibrationIdentityReason);
@@ -126,6 +132,7 @@ function readEntry(v: unknown): LedgerEntry | undefined {
     ...(e.spawn !== undefined && { spawn: e.spawn as LedgerSpawn }),
     ...(e.spawnInferred === true && { spawnInferred: true }),
     ...(HELPER_TASK_PROFILES.includes(e.taskProfile as never) && { taskProfile: e.taskProfile as HelperTaskProfile }),
+    ...(pressure && { pressure, pressureOutcome: pressureOutcome ?? { atMs: now(), availableAtMs: now(), attribution: 'subscription_group_with_unknown_residual' as const, reason: 'restart' as const, windows: [] } }),
     ...(forecast && { forecast, burnObservation: observation ?? { atMs: now(), attribution: 'whole_login_unknown' as const, reason: 'restart' as const } }),
     ...(forecastRun?.endedMs !== undefined ? { forecastRun }
       : (forecastRun || e.spawn === undefined || e.spawn === 'started' || e.spawn === 'orphaned') ? {
@@ -238,6 +245,14 @@ export function getEntry(helperId: string): LedgerEntry | undefined {
 
 export function forecastHistory(): readonly LedgerEntry[] {
   return [...entries.values()];
+}
+
+export function setPressureOutcome(helperId: string, outcome: PressureOutcome): void {
+  const entry = entries.get(helperId);
+  if (!entry?.pressure || entry.pressureOutcome) return;
+  entry.pressureOutcome = outcome;
+  entry.touchedMs = now();
+  persist();
 }
 
 export function setForecastRun(helperId: string, evidence: ForecastRun): void {

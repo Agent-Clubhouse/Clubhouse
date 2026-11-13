@@ -14,7 +14,7 @@
  * about equal absolute capacity.
  */
 
-import type { HelperRoutingReason, QuotaState, QuotaUnknownReason } from '../../shared/helper-routing';
+import { QUOTA_NEAR_LIMIT_PERCENT, type HelperRoutingReason, type QuotaState, type QuotaUnknownReason } from '../../shared/helper-routing';
 
 export const AUTO_COOLDOWN_AUTH_MS = 10 * 60_000;
 export const AUTO_COOLDOWN_QUOTA_MS = 30 * 60_000;
@@ -29,7 +29,7 @@ export const AUTO_WEEK_MS = 7 * 24 * 60 * 60_000;
 
 /** Pressures this close (basis points) count as a tie. 0: only an equal reading ties. */
 export const AUTO_TIE_BAND_BP = 0;
-/** Internal experiment only. Stage 3 predictions are recorded, not used. No Settings switch. */
+/** Legacy interval-proxy inputs stay off. Production explicitly enables only qualified aggregate pressure. */
 export const AUTO_USE_BURN_FORECASTS = false;
 
 /**
@@ -78,8 +78,10 @@ export interface AutoCandidate {
   verified: boolean;
   /** Helpers on this provider now: live ones and reservations. Load, not consumption. */
   load: number;
-  /** An optional calibrated estimate supplied only by an internal experiment. Never populated by production routing. */
+  /** Qualified mean remaining pressure for this subscription group, including the proposed start. */
   expectedBurnBp?: number;
+  /** One calibrated aggregate for active work plus this start, strictly beyond the quota sample. */
+  remainingPressure?: Array<{ usedBp: number; upperBp: number }>;
 }
 
 export interface AutoPolicyInput {
@@ -184,6 +186,10 @@ export function decideAutoProvider(input: AutoPolicyInput): AutoDecision {
     const base = { key: c.key, provider: c.provider, verified: c.verified, load: c.load, score: scoreOf(c, now, basis, useForecasts) };
     if (c.quotaState === 'exhausted') return { ...base, excluded: 'quota_exhausted' as const };
     if (c.quotaState === 'near_limit') return { ...base, excluded: 'quota_near_limit' as const };
+    if (useForecasts && c.remainingPressure?.some((w) => Number.isFinite(w.usedBp) && Number.isFinite(w.upperBp)
+      && w.upperBp >= 0 && w.upperBp <= 10_000 && w.usedBp >= 0 && w.usedBp <= 10_000 && w.usedBp + w.upperBp >= QUOTA_NEAR_LIMIT_PERCENT * 100)) {
+      return { ...base, excluded: 'quota_near_limit' as const };
+    }
     return { ...base, tier: tierOf(c) };
   });
   const usable = evaluations.filter((e) => !e.excluded);
