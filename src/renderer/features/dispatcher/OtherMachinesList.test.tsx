@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import type { DispatcherPresenceSnapshot, RemoteDispatcherPresence } from '../../../shared/dispatcher-presence';
 import { OtherMachinesList, presenceStateText } from './OtherMachinesList';
 import { DispatcherSettingsView } from '../settings/DispatcherSettingsView';
@@ -52,13 +52,17 @@ describe('Other machines (#3349)', () => {
 
   it('adds the section to Settings › Dispatcher only with other computers, and follows pushes', async () => {
     let push: ((s: DispatcherPresenceSnapshot) => void) | null = null;
-    window.clubhouse.dispatcher.getPresence = vi.fn(async () => ({ remotes: [] }));
+    const getPresence = vi.fn(async () => ({ remotes: [] }));
+    window.clubhouse.dispatcher.getPresence = getPresence;
     window.clubhouse.dispatcher.onPresenceChanged = vi.fn((cb) => { push = cb; return () => { push = null; }; });
     render(<DispatcherSettingsView />);
     await screen.findByTestId('dispatcher-settings');
+    // Barriers: the section has subscribed and its first read has landed, so the push below can't be lost or overwritten.
+    await waitFor(() => { expect(push).not.toBeNull(); expect(getPresence).toHaveBeenCalled(); });
+    await act(async () => { await getPresence.mock.results[0].value; });
     expect(screen.queryByText('Other machines')).toBeNull();
-    act(() => push?.({ remotes: [remote('desk', { state: 'asleep' })] }));
+    act(() => push!({ remotes: [remote('desk', { state: 'asleep' })] }));
     expect(await screen.findByText('Other machines')).toBeTruthy();
-    expect(screen.getByTestId('other-machine-desk-state').textContent).toBe('Asleep. Link active');
+    expect((await screen.findByTestId('other-machine-desk-state')).textContent).toBe('Asleep. Link active');
   });
 });
