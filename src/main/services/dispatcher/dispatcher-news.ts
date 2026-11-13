@@ -69,8 +69,24 @@ export interface ChatReport {
   request?: string;
 }
 
+/**
+ * News a follower sends the lead's chat instead of its own (#3352): the facts,
+ * as fields, for the lead to put into words. Never an answer to anything.
+ */
+export interface ForwardedNews {
+  v: 1;
+  kind: 'needs_user' | 'answer' | 'check_in';
+  text: string;
+  /** The agent whose news it is, by the follower's name for it. */
+  fromName?: string;
+  /** The follower's request it's about. */
+  request?: string;
+}
+
 /** What reaches the chat agent, and how the chat shows it. */
 export interface ChatMessage extends ChannelMessage {
+  /** The same news as fields, for a follower to send to the lead's chat instead (#3352). */
+  forward?: ForwardedNews;
   /**
    * Call when it didn't reach the chat: it is forgotten as shown, so the
    * Dispatcher can send it again, and the request it settled is put back.
@@ -308,12 +324,18 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
     };
     if (decision.show === 'check_in') {
       recordNewsTriage({ ...outcome, held: decision.held.length });
-      return { ...checkInMessage(cleaned, decision.held), notDelivered };
+      const forward: ForwardedNews = { v: 1, kind: 'check_in', text: `${decision.held.map(heldLine).join('\n')}\n\n${cleaned}`.trim() };
+      return { ...checkInMessage(cleaned, decision.held), notDelivered, forward };
     }
     recordNewsTriage(outcome);
+    const forward: ForwardedNews = {
+      v: 1, kind: decision.reason, text: cleaned,
+      ...(sender && { fromName: sender.name }), ...(request && { request: request.id }),
+    };
     return {
       ...(sender ? agentNews(sender, cleaned, decision.reason, request?.id) : ownWords(cleaned, decision.reason, request?.id)),
       notDelivered,
+      forward,
       ...(note && { note }),
     };
   };

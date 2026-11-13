@@ -55,6 +55,7 @@ import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import {
   CHAT_UPDATE_TAG, HAND_OFF_TAG, _resetDispatcherChannelForTesting, deliverToChat, deliverUpdateToChat, handOffToDispatcher, setChatDelivery,
+  setChatForwarder,
 } from './dispatcher-channel';
 import { _resetDispatcherRequestsForTesting, getRequest, getRequests, getRequestsPath, noteRequestDone } from './dispatcher-requests';
 
@@ -277,5 +278,30 @@ describe('telling the user, through the chat (#3036)', () => {
     h.enabled = false;
     expect((await deliverToChat('coordinator', 'x')).outcome).toBe('off');
     expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('a follower’s news goes to the lead (#3352)', () => {
+  const news = { v: 1 as const, kind: 'needs_user' as const, text: 'Merge to main?', fromName: 'docs-agent', request: 'req_7' };
+
+  it('on a follower, sends what would show here to the lead instead, and shows nothing here', async () => {
+    h.running.add('chat');
+    const forwarder = vi.fn(async () => true);
+    setChatForwarder(forwarder);
+    setChatDelivery(() => ({ text: 'local words', routed: [], forward: news }));
+    expect(await deliverToChat('coordinator', 'Merge to main?')).toEqual({ outcome: 'delivered', note: 'It went to the lead Dispatcher, which tells the user.' });
+    expect(forwarder).toHaveBeenCalledWith(expect.objectContaining({ forward: news }));
+    expect(h.delivered).toEqual([]);
+  });
+
+  it('shows it here when the lead can’t take it, such as while it is offline', async () => {
+    h.running.add('chat');
+    setChatForwarder(async () => false);
+    setChatDelivery(() => ({ text: 'local words', routed: [], forward: news }));
+    expect(await deliverToChat('coordinator', 'Merge to main?')).toEqual({ outcome: 'delivered' });
+    expect(h.delivered.map((d) => d.text)).toEqual(['local words']);
+    setChatForwarder(async () => { throw new Error('socket closed'); });
+    expect((await deliverToChat('coordinator', 'Merge to main?')).outcome).toBe('delivered');
+    expect(h.delivered).toHaveLength(2);
   });
 });

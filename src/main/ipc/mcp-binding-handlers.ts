@@ -9,6 +9,9 @@ import { federationBindingSource, learnFederationController, localFederationCont
 import { learnLeadShare, leadShare, startDispatcherLead } from '../services/dispatcher-federation-lead';
 import { getDispatcherPresence, onDispatcherPresenceChanged, watchDispatcherPresence } from '../services/dispatcher-presence';
 import { watchPeerPages } from '../services/dispatcher/dispatcher-peer-pages';
+import { startLeadOutbox } from '../services/dispatcher-lead-outbox';
+import { forwardNewsToLead, newsDeliveryFailed, startFollowerNews } from '../services/dispatcher-follower-news';
+import { setChatForwarder } from '../services/dispatcher/dispatcher-channel';
 import { federationDirection } from '../services/dispatcher-federation-policy';
 import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
@@ -474,6 +477,8 @@ let stopWatchingFederation: (() => void) | null = null;
 let stopDispatcherLead: (() => void) | null = null;
 let stopWatchingDispatcherPresence: (() => void) | null = null;
 let stopWatchingPeerPages: (() => void) | null = null;
+let stopLeadOutbox: (() => void) | null = null;
+let stopFollowerNews: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
 
 /**
@@ -540,6 +545,39 @@ export function restorePersistedBindings(): Promise<void> {
     stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.isMachineConnected(machine), (machine) => annexClient.lastConfirmedConnectivity(machine));
     // And its memory pages for them, keyed by machine-qualified address.
     stopWatchingPeerPages = watchPeerPages({ remotes: () => getDispatcherPresence().remotes, enabled: isDispatcherEnabled, onChanged: onDispatcherPresenceChanged });
+    // A follower's agent news goes to the lead's chat while it's reachable (#3352).
+    stopFollowerNews = startFollowerNews({
+      connected: (machine) => annexClient.isMachineConnected(machine),
+      machineName: (machine) => annexClient.machineAlias(machine),
+    });
+    setChatForwarder(forwardNewsToLead);
+    // Messages typed while the lead was offline go when it's back (#3353).
+    stopLeadOutbox = startLeadOutbox({
+      connected: (machine) => annexClient.isMachineConnected(machine),
+      dispatcherAgentId: (machine) => annexClient.machineDispatcherAgentId(machine),
+      chatSession: async (machine, agentId) => {
+        const key = annexClient.satelliteKeyFor(machine);
+        if (!key) return { sessionId: null, live: false };
+        const page = await annexClient.requestChatPage(key, agentId, { limit: 1 }) as { sessionId?: unknown; readOnly?: unknown } | null;
+        return { sessionId: typeof page?.sessionId === 'string' ? page.sessionId : null, live: page?.readOnly === false };
+      },
+      wake: (machine, agentId, message, commandId) => {
+        const key = annexClient.satelliteKeyFor(machine);
+        if (!key) return Promise.reject(new Error('Satellite not connected'));
+        return annexClient.wakeChatAgentWithMessage(key, agentId, message, commandId);
+      },
+      send: (machine, command, commandId) => {
+        const key = annexClient.satelliteKeyFor(machine);
+        if (!key) return Promise.reject(new Error('Satellite not connected'));
+        return annexClient.sendChatCommand(key, command, commandId);
+      },
+      // Its snapshot names the lead's Dispatcher, and comes just after the connection opens.
+      onConnected: (listener) => {
+        const offConnected = annexClient.onSatelliteConnected(listener);
+        const offSnapshot = annexClient.onSatelliteSnapshot(listener);
+        return () => { offConnected(); offSnapshot(); };
+      },
+    });
     startAgentCalls({
       remoteDispatcher: federationReceiver,
       federation: {
@@ -566,7 +604,8 @@ export function restorePersistedBindings(): Promise<void> {
       nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work')
         : isDispatcherChatAgentId(id) ? dispatcherDisplayName() : undefined,
       authorizeQueuedCall: authorizeQueuedAnnexCall,
-      onDeliveryFailure: reportAnnexDeliveryFailure,
+      // News a follower queued for the lead and the lead didn't take shows here instead (#3352).
+      onDeliveryFailure: async (notice) => (await newsDeliveryFailed(notice)) || reportAnnexDeliveryFailure(notice),
     });
     stopFederatedRequests = startFederatedRequests();
   }
@@ -620,6 +659,11 @@ export function _resetHandlersForTesting(): void {
   stopWatchingDispatcherPresence = null;
   stopWatchingPeerPages?.();
   stopWatchingPeerPages = null;
+  stopLeadOutbox?.();
+  stopLeadOutbox = null;
+  stopFollowerNews?.();
+  stopFollowerNews = null;
+  setChatForwarder(null);
   stopWatchingHelperWires?.();
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();

@@ -562,6 +562,14 @@ export function onSatelliteConnected(listener: (machine: string) => void): () =>
   return () => { connectedListeners.delete(listener); };
 }
 
+const snapshotListeners = new Set<(machine: string) => void>();
+
+/** Told each time a machine's snapshot arrives (each connect, and after changes), with its lowercased fingerprint. */
+export function onSatelliteSnapshot(listener: (machine: string) => void): () => void {
+  snapshotListeners.add(listener);
+  return () => { snapshotListeners.delete(listener); };
+}
+
 function satelliteFor(machine: string): SatelliteConnectionInternal | undefined {
   const fp = machine.toLowerCase();
   for (const sat of satellites.values()) if (sat.fingerprint.toLowerCase() === fp) return sat;
@@ -571,6 +579,17 @@ function satelliteFor(machine: string): SatelliteConnectionInternal | undefined 
 /** Whether this machine is connected to `machine` now (#3064). */
 export function isMachineConnected(machine: string): boolean {
   return satelliteFor(machine)?.state === 'connected';
+}
+
+/** The pinned connection's key for `machine`, which the chat routes take. */
+export function satelliteKeyFor(machine: string): string | undefined {
+  return satelliteFor(machine)?.fingerprint;
+}
+
+/** That machine's Dispatcher chat agent, from its last snapshot (#3352); undefined while it's off or unknown. */
+export function machineDispatcherAgentId(machine: string): string | undefined {
+  const agent = (satelliteFor(machine)?.snapshot as { dispatcher?: { agent?: { id?: unknown } | null } | null } | null | undefined)?.dispatcher?.agent;
+  return typeof agent?.id === 'string' ? agent.id : undefined;
 }
 
 /** The name this machine knows `machine` by. */
@@ -959,6 +978,9 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         });
         broadcastSatellitesChanged();
         broadcastSatelliteEvent(sat.id, 'snapshot', incoming);
+        for (const listener of [...snapshotListeners]) {
+          try { listener(sat.fingerprint.toLowerCase()); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
+        }
         if (omitted) void fetchOmittedCanvases(sat);
       }
       break;
@@ -2214,11 +2236,25 @@ async function currentEpoch(fingerprint: string, fresh = false): Promise<string>
  * rejection is a receipt too, not a throw). A stale epoch (the satellite
  * restarted) is read again once and the command sent again with a new id.
  */
-export async function sendChatCommand(fingerprint: string, command: Record<string, unknown>): Promise<unknown> {
+export async function sendChatCommand(fingerprint: string, command: Record<string, unknown>, commandId?: string): Promise<unknown> {
   if (!(REMOTE_CHAT_COMMANDS as readonly unknown[]).includes(command.type)) throw new Error('Not a chat command');
+  return postMobileCommand(fingerprint, command, commandId);
+}
+
+/**
+ * Wakes a satellite's sleeping chat agent with a first message (`agent.start`
+ * with `resume`), for the lead Dispatcher's outbox (#3353). Main only: the
+ * renderer's chat commands can't start agents.
+ */
+export function wakeChatAgentWithMessage(fingerprint: string, agentId: string, message: string, commandId: string): Promise<unknown> {
+  return postMobileCommand(fingerprint, { type: 'agent.start', agentId, resume: true, message }, commandId);
+}
+
+async function postMobileCommand(fingerprint: string, command: Record<string, unknown>, commandId?: string): Promise<unknown> {
+  // A caller that retries across connections (the lead's outbox, #3353) keeps one id, so the satellite takes it once.
   const send = async (fresh: boolean) => {
     const epoch = await currentEpoch(fingerprint, fresh);
-    return satelliteJson(fingerprint, 'POST', '/api/v1/mobile/commands', { ...command, version: 1, epoch, commandId: randomUUID() });
+    return satelliteJson(fingerprint, 'POST', '/api/v1/mobile/commands', { ...command, version: 1, epoch, commandId: commandId ?? randomUUID() });
   };
   let res = await send(false);
   const code = (res.body as { error?: { code?: unknown } } | null)?.error?.code;

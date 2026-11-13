@@ -775,10 +775,11 @@ export function DispatcherSettingsView() {
           <IdentitySection state={state} config={config} />
           <BehaviorSection state={state} config={config} />
           <ConnectedAgentsSection dispatcherName={name} />
-          <LeadSection />
         </>
       )}
       <OtherMachinesSection />
+      {/* Shown with the Dispatcher off too: a computer can follow another's lead, and the choice is the network's. */}
+      <LeadSection />
       {/* Its memory is kept while it's off, so it can be forgotten then too. */}
       {config && <ResetSection state={state} />}
     </SettingsPage>
