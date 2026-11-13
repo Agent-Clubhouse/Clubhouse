@@ -216,6 +216,8 @@ export function observeActions(fn: (o: EngineObservation) => void): () => void {
 }
 
 let engine: ActionsEngine | null = null;
+let starting: Promise<void> | null = null;
+let pendingPurge: Promise<void> = Promise.resolve();
 
 /** For the group-project delete impact check, including startup recovery. */
 export function groupProjectActions(id: string): Array<{ id: string; name: string }> {
@@ -225,8 +227,14 @@ export function groupProjectActions(id: string): Array<{ id: string; name: strin
 
 /** Idempotent, durable removal before finishing the group-project delete journal. */
 export async function purgeGroupProjectActions(id: string): Promise<void> {
-  if (engine) await engine.removeGroupProjectActions(id);
-  else await purgeStoredGroupProjectActions(id);
+  const inProgress = starting;
+  const operation = pendingPurge.then(async () => {
+    if (inProgress) await inProgress;
+    if (engine) await engine.removeGroupProjectActions(id);
+    else await purgeStoredGroupProjectActions(id);
+  });
+  pendingPurge = operation.catch(() => {});
+  await operation;
 }
 let presence: ActionPresence | null = null;
 let changeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -291,6 +299,7 @@ function broadcastChanged(): void {
   changeTimer = setTimeout(() => {
     changeTimer = null;
     broadcastToAllWindows(IPC.ACTIONS.CHANGED);
+    publishAppEvent({ type: 'actions.changed' });
   }, 50);
 }
 
@@ -327,10 +336,12 @@ function createEngine(): ActionsEngine {
       const project = groupProjectRegistry.getSync(id);
       if (!project || !groupProjectHost.isThisMachine(project.host)) return undefined;
       const grants = project.metadata.grants as { actions?: unknown; deliver?: unknown; wake?: unknown } | undefined;
+      const members = new Set(bindingManager.getAllBindings().filter((binding) => binding.targetKind === 'group-project' && binding.targetId === id).map((binding) => binding.agentId));
+      const projectIds = new Set([...members].map(facts.agentProjectId).filter((projectId): projectId is string => !!projectId));
+      if (project.scope?.level === 'project') projectIds.add(project.scope.projectId);
       return {
-        members: new Set(bindingManager.getAllBindings().filter((binding) => binding.targetKind === 'group-project' && binding.targetId === id).map((binding) => binding.agentId)),
+        members, projectIds,
         actions: grants?.actions !== 'off', deliver: grants?.deliver !== 'off', wake: grants?.wake === 'allow',
-        ...(project.scope?.level === 'project' && { projectId: project.scope.projectId }),
       };
     },
   });
@@ -387,7 +398,15 @@ function createEngine(): ActionsEngine {
 let unsubs: Array<() => void> = [];
 
 /** Start Actions. Call after the app event sources start and before "Clubhouse started" is published. */
-export async function startActions(): Promise<void> {
+export function startActions(): Promise<void> {
+  if (engine) return Promise.resolve();
+  if (starting) return starting;
+  const beforeStart = pendingPurge;
+  starting = (async () => { await beforeStart; await startActionsNow(); })().finally(() => { starting = null; });
+  return starting;
+}
+
+async function startActionsNow(): Promise<void> {
   if (engine) return;
   await refreshProjects();
   // Load group identities before any saved Action is scheduled. Unknown or
@@ -459,6 +478,20 @@ function requireVisible(id: string): Action {
 export function createAction(input: unknown, owner: ActionOwner): ActionView {
   const e = requireEngine();
   return view(e, e.create(input, owner));
+}
+
+/** Serialize a group Action mutation against the host's delete impact check and cascade. */
+export async function withGroupActionLock<T>(id: string, run: () => T): Promise<T> {
+  return groupProjectHost.exclusive(id, async () => run());
+}
+
+export async function createGroupProjectAction(input: unknown, groupProjectId: string): Promise<ActionView> {
+  return withGroupActionLock(groupProjectId, () => createAction(input, { kind: 'group_project', groupProjectId }));
+}
+
+export async function changeActionOnHost<T>(id: string, run: () => T): Promise<T> {
+  const current = requireVisible(id);
+  return current.owner.kind === 'group_project' ? withGroupActionLock(current.owner.groupProjectId, () => { requireVisible(id); return run(); }) : run();
 }
 
 /**

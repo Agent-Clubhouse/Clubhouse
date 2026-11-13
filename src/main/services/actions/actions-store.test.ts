@@ -9,15 +9,37 @@ vi.mock('../settings-store', () => ({
   createSettingsStore: (f: string, defaults: unknown, migrate: (raw: Record<string, unknown>) => unknown, options: { atomic?: boolean } = {}) => {
     stores.set(f, options);
     migrations.set(f, migrate);
-    return { get: () => loaded.get(f) ?? defaults, save: async (value: unknown) => { save(f, value); }, update: async () => defaults };
+    return { get: () => loaded.get(f) ?? defaults, save: async (value: unknown) => { save(f, value); }, update: async (fn: (value: unknown) => unknown) => { const next = fn(loaded.get(f) ?? defaults); loaded.set(f, next); save(f, next); return next; } };
   },
   backupUnreadableSettings: backup,
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 
-import { createRunHistory, sanitizeActions, settleInterruptedRuns } from './actions-store';
+import { createRunHistory, purgeStoredGroupProjectActions, sanitizeActions, settleInterruptedRuns, storedGroupProjectActions } from './actions-store';
 
 describe('actions store', () => {
+  it('purges a group’s Actions and pending state durably, including when replayed before startup', async () => {
+    const group = { id: 'a', name: 'Group action', owner: { kind: 'group_project', groupProjectId: 'gp1' } };
+    const other = { id: 'b', name: 'Other', owner: { kind: 'group_project', groupProjectId: 'gp2' } };
+    loaded.set('actions.json', { version: 1, actions: [group, other], state: { nextAt: { a: 10, b: 20 }, waits: [{ actionId: 'a' }, { actionId: 'b' }], lastFiredDate: { a: 'today' }, throttleStarts: { a: [1] } } });
+    loaded.set('action-history.json', { version: 1, runs: { a: [{ owner: group.owner }], b: [{ owner: other.owner }] } });
+    try {
+      expect(storedGroupProjectActions('gp1')).toEqual([{ id: 'a', name: 'Group action' }]);
+      await purgeStoredGroupProjectActions('gp1');
+      await purgeStoredGroupProjectActions('gp1');
+      expect(loaded.get('actions.json')).toMatchObject({ actions: [other], state: { nextAt: { b: 20 }, waits: [{ actionId: 'b' }], lastFiredDate: {}, throttleStarts: {} } });
+      expect(loaded.get('action-history.json')).toEqual({ version: 1, runs: { b: [{ owner: other.owner }] } });
+    } finally { loaded.delete('actions.json'); loaded.delete('action-history.json'); }
+  });
+
+  it('does not restore group history when an in-flight run finishes after deletion', async () => {
+    const history = createRunHistory(() => 100);
+    const run = { id: 'r', actionId: 'a', owner: { kind: 'group_project' as const, groupProjectId: 'gp1' }, trigger: { kind: 'manual' as const, at: 90 }, chain: [], startedAt: 90, outcome: 'done' as const, steps: [] };
+    history.put(run);
+    await history.purgeGroupProject!('gp1');
+    history.put(run);
+    expect(history.list()).toEqual([]);
+  });
   it('retains a group project owner across reload and rejects missing project ids', () => {
     const action = { id: 'a', name: 'Check', trigger: { kind: 'once', at: 100 }, steps: [{ kind: 'notify', text: 'Check' }], owner: { kind: 'group_project', groupProjectId: 'gp1' }, enabled: true, overlap: 'skip', createdAt: 1, updatedAt: 1 };
     expect(sanitizeActions([action, { ...action, id: 'bad', owner: { kind: 'group_project', groupProjectId: '' } }])).toEqual([action]);

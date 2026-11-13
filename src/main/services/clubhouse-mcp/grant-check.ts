@@ -116,8 +116,9 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
       // its own Actions.
       if (!actionOwnerLookup || args.id === undefined) return null;
       const action = actionOwnerLookup(args);
+      const groupAdmin = action?.groupProjectId && decideGrant(agentId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId: action.groupProjectId } as GrantCallTarget).outcome === 'allow';
       // An unknown id reads like someone else's: a refusal never says whether it exists.
-      return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId ? ['self'] : [] };
+      return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId || groupAdmin ? ['self'] : [] };
     }
     case 'handoff_peer':
     case 'agent_arg':
@@ -133,7 +134,7 @@ function isGroupMember(groupId: string, memberId: string): boolean {
 }
 
 /** Who owns the Action a call names: an agent, or a person (no `ownerAgentId`). Undefined when the id is unknown. */
-export type ActionOwnerLookup = (args: Record<string, unknown>) => { actionId: string; ownerAgentId?: string } | undefined;
+export type ActionOwnerLookup = (args: Record<string, unknown>) => { actionId: string; ownerAgentId?: string; groupProjectId?: string } | undefined;
 
 let actionOwnerLookup: ActionOwnerLookup | null = null;
 

@@ -17,3 +17,12 @@ export interface ActionNotice {
   /** False for a one-time action that already deleted itself: there is no card to open. */
   exists: boolean;
 }
+
+/** A host's read-only summary shared with its Annex Network peers. */
+export interface RemoteGroupAction {
+  id: string;
+  name: string;
+  groupProjectId: string;
+  groupProjectName: string;
+  enabled: boolean;
+}

@@ -1336,6 +1336,7 @@ export interface SatelliteSnapshot {
   sessionPaused?: boolean;
   /** Group projects from the satellite. */
   groupProjects?: unknown[];
+  groupProjectActions?: import('./actions/view').RemoteGroupAction[];
   /** Bulletin digests per group project ID. */
   bulletinDigests?: Record<string, unknown[]>;
   /** Group project members per group project ID. */

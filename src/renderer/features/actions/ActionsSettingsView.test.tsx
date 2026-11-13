@@ -6,6 +6,8 @@ import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { ActionForm } from './ActionForm';
 import { useAgentStore } from '../../stores/agentStore';
 import { useAnnexStore } from '../../stores/annexStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
 
 function action(over: Partial<ActionView>): ActionView {
   return {
@@ -18,6 +20,7 @@ function action(over: Partial<ActionView>): ActionView {
 let list: ActionView[];
 beforeEach(() => {
   list = [];
+  useAnnexClientStore.setState({ satellites: [] });
   window.clubhouse.actions.list = vi.fn(async () => list);
   window.clubhouse.actions.setEnabled = vi.fn(async (id: string, enabled: boolean) => ({ ...list.find((a) => a.id === id)!, enabled }));
   window.clubhouse.actions.history = vi.fn(async () => []);
@@ -25,6 +28,37 @@ beforeEach(() => {
 });
 
 describe('Settings > Actions', () => {
+  it('creates a group-owned Action from a board event', async () => {
+    const load = vi.spyOn(useGroupProjectStore.getState(), 'loadProjects').mockResolvedValue();
+    useGroupProjectStore.setState({ projects: [{ id: 'gp1', name: 'Release', description: '', instructions: '', createdAt: '', metadata: {} }], loaded: true });
+    window.clubhouse.actions.create = vi.fn(async (input) => action(input));
+    try {
+      render(<ActionForm open onClose={vi.fn()} />);
+      const form = screen.getByTestId('action-form');
+      fireEvent.change(within(form).getByLabelText('Owner'), { target: { value: 'gp1' } });
+      fireEvent.change(within(form).getByLabelText('Runs'), { target: { value: 'event' } });
+      fireEvent.change(within(form).getByLabelText('What happens'), { target: { value: 'group_project.message_posted' } });
+      fireEvent.change(within(form).getByLabelText('Group project'), { target: { value: 'group_project:gp1' } });
+      fireEvent.change(within(form).getByLabelText('Topic (optional)'), { target: { value: 'updates' } });
+      fireEvent.change(within(form).getByLabelText('Step 1 type'), { target: { value: 'group_post' } });
+      fireEvent.change(within(form).getByLabelText('Topic'), { target: { value: 'summary' } });
+      fireEvent.change(within(form).getByLabelText('Message'), { target: { value: 'Received' } });
+      fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(window.clubhouse.actions.create).toHaveBeenCalledWith(expect.objectContaining({
+        trigger: { kind: 'event', event: 'group_project.message_posted', source: { kind: 'group_project', groupProjectId: 'gp1', topic: 'updates' } },
+        steps: [{ kind: 'group_post', topic: 'summary', text: 'Received' }],
+      }), 'gp1'));
+    } finally { load.mockRestore(); useGroupProjectStore.setState({ projects: [], loaded: false }); }
+  });
+  it('shows network group Actions as read-only on their host', async () => {
+    useAnnexClientStore.setState({ satellites: [{ id: 'remote', alias: 'Studio', snapshot: { groupProjectActions: [{ id: 'a', name: 'Daily board', groupProjectId: 'gp1', groupProjectName: 'Release', enabled: true }] } }] } as never);
+    render(<ActionsSettingsView />);
+    const section = await screen.findByRole('region', { name: 'Actions on other computers' });
+    expect(section).toHaveTextContent('Daily board');
+    expect(section).toHaveTextContent('Release');
+    expect(section).toHaveTextContent('Runs on Studio');
+    expect(within(section).queryByRole('button')).toBeNull();
+  });
   it('offers device and kind filters and starts newly selected device events with a two-minute recheck', async () => {
     const loadDevices = vi.spyOn(useAnnexStore.getState(), 'loadDevices').mockResolvedValue();
     window.clubhouse.actions.create = vi.fn(async (input) => action(input));

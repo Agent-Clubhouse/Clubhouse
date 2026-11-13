@@ -178,6 +178,10 @@ export async function purgeStoredGroupProjectActions(groupProjectId: string): Pr
     for (const id of removed) { delete state.nextAt[id]; delete state.lastFiredDate[id]; delete state.throttleStarts[id]; }
     return { ...file, actions: file.actions.filter((action) => !removed.has(action.id)), state };
   });
+  await historyStore.update((file) => ({ ...file, runs: Object.fromEntries(Object.entries(file.runs).flatMap(([id, runs]) => {
+    const kept = runs.filter((run) => run.owner?.kind !== 'group_project' || run.owner.groupProjectId !== groupProjectId);
+    return kept.length ? [[id, kept]] : [];
+  })) }));
 }
 
 export function storedGroupProjectActions(groupProjectId: string): Array<{ id: string; name: string }> {
@@ -223,6 +227,7 @@ function sanitizeRun(raw: unknown): ActionRun | null {
     ...(typeof raw.endedAt === 'number' && { endedAt: raw.endedAt }),
     ...(typeof raw.deliveryUpdatedAt === 'number' && Number.isFinite(raw.deliveryUpdatedAt) && { deliveryUpdatedAt: raw.deliveryUpdatedAt }),
     outcome: raw.outcome as ActionRun['outcome'],
+    ...(raw.refusal === 'rights_refused' && { refusal: 'rights_refused' as const }),
     ...(typeof raw.reason === 'string' && { reason: raw.reason }),
     steps,
   };
@@ -273,6 +278,7 @@ const HISTORY_SAVE_DELAY_MS = 500;
 
 export function createRunHistory(now: () => number = Date.now): RunHistory & { flush(): Promise<void> } {
   const runs = new Map<string, ActionRun[]>(Object.entries(historyStore.get().runs));
+  const deletedGroups = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastSave: Promise<void> = Promise.resolve();
 
@@ -295,6 +301,7 @@ export function createRunHistory(now: () => number = Date.now): RunHistory & { f
 
   return {
     put(run) {
+      if (run.owner?.kind === 'group_project' && deletedGroups.has(run.owner.groupProjectId)) return;
       const copy: ActionRun = { ...run, steps: run.steps.map((s) => ({ ...s })), chain: [...run.chain] };
       const list = (runs.get(run.actionId) ?? []).filter((r) => r.id !== run.id);
       list.push(copy);
@@ -308,6 +315,15 @@ export function createRunHistory(now: () => number = Date.now): RunHistory & { f
     flush() {
       if (timer) { clearTimeout(timer); return save(); }
       return lastSave;
+    },
+    async purgeGroupProject(id) {
+      deletedGroups.add(id);
+      for (const [actionId, list] of runs) {
+        const kept = list.filter((run) => run.owner?.kind !== 'group_project' || run.owner.groupProjectId !== id);
+        if (kept.length) runs.set(actionId, kept); else runs.delete(actionId);
+      }
+      if (timer) clearTimeout(timer);
+      await save();
     },
   };
 }

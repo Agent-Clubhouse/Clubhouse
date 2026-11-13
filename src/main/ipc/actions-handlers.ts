@@ -18,23 +18,23 @@ export function registerActionsHandlers(): void {
   ipcMain.handle(IPC.ACTIONS.USAGE, () => actions.actionUsage());
   ipcMain.handle(IPC.ACTIONS.CREATE, withValidatedArgs(
     [objectArg<Record<string, unknown>>(), stringArg({ minLength: 1, maxLength: 200, optional: true })],
-    (_event, input, groupProjectId) => actions.createAction(input, groupProjectId ? { kind: 'group_project', groupProjectId } : { kind: 'user' }),
+    (_event, input, groupProjectId) => groupProjectId ? actions.createGroupProjectAction(input, groupProjectId) : actions.createAction(input, { kind: 'user' }),
   ));
   ipcMain.handle(IPC.ACTIONS.UPDATE, withValidatedArgs(
     [stringArg({ minLength: 1, maxLength: 200 }), objectArg<Record<string, unknown>>()],
-    (_event, id, input) => actions.updateAction(id, input),
+    (_event, id, input) => actions.changeActionOnHost(id, () => actions.updateAction(id, input)),
   ));
   ipcMain.handle(IPC.ACTIONS.SET_ENABLED, withValidatedArgs(
     [stringArg({ minLength: 1, maxLength: 200 }), booleanArg()],
-    (_event, id, enabled) => actions.setActionEnabled(id, enabled),
+    (_event, id, enabled) => actions.changeActionOnHost(id, () => actions.setActionEnabled(id, enabled)),
   ));
   ipcMain.handle(IPC.ACTIONS.DELETE, withValidatedArgs(
     [stringArg({ minLength: 1, maxLength: 200 })],
-    (_event, id) => actions.deleteAction(id),
+    (_event, id) => actions.changeActionOnHost(id, () => actions.deleteAction(id)),
   ));
   ipcMain.handle(IPC.ACTIONS.RUN_NOW, withValidatedArgs(
     [stringArg({ minLength: 1, maxLength: 200 })],
-    (_event, id) => actions.runActionNow(id),
+    (_event, id) => actions.changeActionOnHost(id, () => actions.runActionNow(id)),
   ));
   ipcMain.handle(IPC.ACTIONS.HISTORY, withValidatedArgs(
     [stringArg({ minLength: 1, maxLength: 200 })],

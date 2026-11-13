@@ -57,7 +57,7 @@ it('checks the group project’s own grants and membership at each call', () => 
   const groupRights = createGrantRights({
     agentName: () => undefined, parentOf: () => undefined, isConnected: () => false, agentProjectId: () => undefined,
     dispatcherAgentId: () => undefined, canStartAgents: () => false, agentAccess: () => 'ask', grantsOf: () => [], agentProjectPath: () => undefined, projectPath: () => undefined,
-    groupProject: (id) => id === 'gp1' ? { members: new Set(['pm']), actions: true, deliver, wake, projectId: 'p1' } : undefined,
+    groupProject: (id) => id === 'gp1' ? { members: new Set(['pm']), actions: true, deliver, wake, projectIds: new Set(['p1']) } : undefined,
   });
   expect(groupRights.checkStep(group, { kind: 'message', agentId: 'pm', text: 'hello' })).toBeNull();
   expect(groupRights.checkStep(group, { kind: 'message', agentId: 'other', text: 'hello' })).toMatch(/only on its members/);

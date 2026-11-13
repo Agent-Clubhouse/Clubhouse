@@ -98,6 +98,7 @@ export interface RunHistory {
   list(actionId?: string): ActionRun[];
   /** Await persistence when another durable service needs a receipt. */
   flush?(): Promise<void>;
+  purgeGroupProject?(id: string): Promise<void>;
 }
 
 /** What the engine needs to know about agents and projects. Synchronous: answered from caches. */
@@ -670,6 +671,7 @@ export class ActionsEngine {
   async removeGroupProjectActions(groupProjectId: string): Promise<void> {
     for (const action of this.list()) if (action.owner.kind === 'group_project' && action.owner.groupProjectId === groupProjectId) this.remove(action.id);
     await this.deps.storage.flush?.();
+    await this.deps.history.purgeGroupProject?.(groupProjectId);
   }
 
   /** Drop runs waiting behind a running one, recording them as cancelled. */
@@ -1366,7 +1368,7 @@ export class ActionsEngine {
       if (refused) {
         failure = `Couldn’t run: ${refused}`;
         failureCode = 'rights_refused';
-        run.steps.push({ kind: step.kind, outcome: 'failed', detail: refused });
+        run.steps.push({ kind: step.kind, outcome: 'failed', detail: refused, refusal: 'rights_refused' });
         break;
       }
       let result: ActionStepResult;
@@ -1414,13 +1416,14 @@ export class ActionsEngine {
       if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });
       if (result.outcome === 'failed') {
         failure = result.detail;
-        failureCode = threw ? 'step_threw' : 'step_failed';
+        failureCode = result.refusal === 'rights_refused' ? 'rights_refused' : threw ? 'step_threw' : 'step_failed';
         break;
       }
     }
 
     run.endedAt = this.now();
     run.outcome = failure ? 'failed' : deliveryLoss?.outcome ?? 'done';
+    if (failureCode === 'rights_refused') run.refusal = 'rights_refused';
     if (failure) run.reason = failure;
     else if (deliveryLoss) run.reason = deliveryLoss.reason;
     if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });

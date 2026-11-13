@@ -156,7 +156,13 @@ export function createStepRunner(deps: StepDeps): StepRunner {
     // Its next events count as caused by this run, for loop protection.
     setAgentChain(id, ctx.chain);
     const msg = text ? actionMessage(ctx.action.name, text, happenedOf(ctx), !!(ctx.trigger?.agentIds || ctx.trigger?.sourceAgentId || ctx.trigger?.events || ctx.trigger?.device), ctx.trigger?.device) : undefined;
-    if (deps.dispatcher?.is(id)) return toDispatcher(step, ctx, id, name, msg);
+    if (deps.dispatcher?.is(id)) {
+      if (step.kind === 'message' && !deps.isRunning(id)) {
+        const refused = deps.wakeRefusal?.(ctx.action.owner, id);
+        if (refused) return { ...fail(step, `${name} is asleep, so the message wasn’t sent. ${refused}`, id), refusal: 'rights_refused' };
+      }
+      return toDispatcher(step, ctx, id, name, msg);
+    }
     if (deps.isRunning(id)) {
       if (!msg) return done(step, `${name} was already awake`, { agentId: id });
       const delivery = await deliver(id, msg.text, msg.routed, messageOptions(step, ctx));
@@ -166,7 +172,7 @@ export function createStepRunner(deps: StepDeps): StepRunner {
       // It went to sleep in between: wake it with the message below.
     }
     const refused = step.kind === 'message' ? deps.wakeRefusal?.(ctx.action.owner, id) : null;
-    if (refused) return fail(step, `${name} is asleep, so the message wasn\u2019t sent. ${refused}`, id);
+    if (refused) return { ...fail(step, `${name} is asleep, so the message wasn\u2019t sent. ${refused}`, id), refusal: 'rights_refused' };
     const result = await deps.wake({ callerId, targetId: id, targetName: name, ...(msg && { mission: msg.text, missionRouted: msg.routed }) });
     if (!result.ok) return fail(step, `Couldn’t wake ${name}: ${result.text}`, id);
     if (result.status === 'stopping') return fail(step, `Couldn’t wake ${name}: it was still going to sleep.`, id);
@@ -218,6 +224,10 @@ export function createStepRunner(deps: StepDeps): StepRunner {
         }
         case 'group_tap': {
           if (ctx.action.owner.kind !== 'group_project' || !deps.groupTap) return fail(step, 'The group project is unavailable.');
+          if (!deps.isRunning(step.agentId)) {
+            const refused = deps.wakeRefusal?.(ctx.action.owner, step.agentId);
+            if (refused) return { ...fail(step, refused, step.agentId), refusal: 'rights_refused' };
+          }
           try { return await deps.groupTap(ctx.action.owner.groupProjectId, step.agentId, step.text) ? done(step, 'Sent the tap', { agentId: step.agentId }) : fail(step, 'Could not deliver the tap.', step.agentId); }
           catch (err) { return fail(step, `Could not deliver the tap: ${err instanceof Error ? err.message : String(err)}`, step.agentId); }
         }

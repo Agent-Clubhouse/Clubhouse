@@ -55,7 +55,7 @@ export interface RightsFacts {
   agentProjectPath(agentId: string): string | undefined;
   projectPath(projectId: string): string | undefined;
   /** Host-verified group project policy, unavailable while it is being refreshed. */
-  groupProject?(id: string): { members: ReadonlySet<string>; actions: boolean; deliver: boolean; wake: boolean; projectId?: string } | undefined;
+  groupProject?(id: string): { members: ReadonlySet<string>; actions: boolean; deliver: boolean; wake: boolean; projectIds: ReadonlySet<string> } | undefined;
 }
 
 /** The most actions one owner may have. People and Clubhouse have no limit. */
@@ -106,7 +106,7 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
         if (!group) return 'This group project is unavailable on its host.';
         if (!group.actions) return 'This group project does not have permission to run Actions.';
         if (step.kind === 'quick') {
-          if (!group.projectId || step.projectId !== group.projectId || (step.worktreeAgentId && !group.members.has(step.worktreeAgentId))) return 'This group project can start quick agents only in its own project and members’ worktrees.';
+          if (!group.projectIds.has(step.projectId) || (step.worktreeAgentId && !group.members.has(step.worktreeAgentId)) || (step.worktreeAgentId && facts.agentProjectId(step.worktreeAgentId) !== step.projectId)) return 'This group project can start quick agents only in its own project and members’ worktrees.';
           return null;
         }
         if (step.kind === 'group_post') return null;
@@ -152,6 +152,7 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
     },
 
     checkSource(owner: ActionOwner, trigger: ActionTrigger): string | null {
+      if (trigger.kind === 'event' && trigger.source.kind === 'group_project' && owner.kind !== 'group_project') return 'Only that group project can own an Action watching its board.';
       if (owner.kind === 'user' || owner.kind === 'app') return null;
       if (owner.kind === 'group_project') {
         const group = facts.groupProject?.(owner.groupProjectId);

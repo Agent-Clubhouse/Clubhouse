@@ -20,6 +20,7 @@ import { isProjectIdle } from '../../shared/project-state';
 import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
 import type { CompletedQuickAgent, HelperDeleteChoice, Project } from '../../shared/types';
 import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
+import { onAppEvent } from './app-event-bus';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { FULL_EVENT_MAX_BYTES, findFullEvent, forgetReviewedBy, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
@@ -271,6 +272,7 @@ let unsubPermissionRequest: (() => void) | null = null;
 let unsubGroupProjectChanged: (() => void) | null = null;
 let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
+let unsubActionSnapshots: (() => void) | null = null;
 let unsubHelperRequests: (() => void) | null = null;
 let unsubDispatcher: (() => void) | null = null;
 let unsubDispatcherPresence: (() => void) | null = null;
@@ -318,6 +320,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectChanged?.();
   unsubBulletinMessage?.();
   unsubGroupProjectRegistry?.();
+  unsubActionSnapshots?.();
   unsubHelperRequests?.();
   unsubDispatcher?.();
   unsubDispatcherPresence?.();
@@ -332,6 +335,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectChanged = null;
   unsubBulletinMessage = null;
   unsubGroupProjectRegistry = null;
+  unsubActionSnapshots = null;
   unsubHelperRequests = null;
   unsubDispatcher = null;
   unsubDispatcherPresence = null;
@@ -1200,6 +1204,14 @@ async function readSnapshotSourcesData() {
 
   // Read group project data
   const groupProjects = await groupProjectRegistry.list();
+  const groupProjectActions: import('../../shared/actions/view').RemoteGroupAction[] = [];
+  const networkGroups = groupProjects.filter((gp) => gp.scope?.reach === 'network' && groupProjectHost.isThisMachine(gp.host));
+  if (networkGroups.length) {
+    const actionService = await import('./actions');
+    if (actionService.actionsReady()) for (const gp of networkGroups) for (const action of actionService.listActions()) {
+      if (action.owner.kind === 'group_project' && action.owner.groupProjectId === gp.id) groupProjectActions.push({ id: action.id, name: action.name, groupProjectId: gp.id, groupProjectName: gp.name, enabled: action.enabled });
+    }
+  }
   const bulletinDigests: Record<string, unknown[]> = {};
   await Promise.all(groupProjects.map(async (gp) => {
     try {
@@ -1209,7 +1221,7 @@ async function readSnapshotSourcesData() {
     }
   }));
 
-  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests, repoKeys };
+  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, groupProjectActions, bulletinDigests, repoKeys };
 }
 
 /**
@@ -1220,7 +1232,7 @@ async function readSnapshotSourcesData() {
  * what changes it asks for another refresh, which follows this one.
  */
 function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
-  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests, repoKeys } = sources;
+  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, groupProjectActions, bulletinDigests, repoKeys } = sources;
   const { projectIcons, agentIcons, stats: icons, iconRefs } = iconSet;
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
@@ -1318,6 +1330,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     appCanvasState,
     sessionPaused,
     groupProjects,
+    groupProjectActions,
     bulletinDigests,
     groupProjectMembers,
     ptyHost: annexPtyHost(process.platform, detectWindowsPty()),
@@ -5465,6 +5478,9 @@ function startServer(strict = false): Promise<void> {
     void groupProjectRegistry.list().then((projects) => {
       broadcastWs({ type: 'group-project:list', payload: { projects } });
     });
+  });
+  unsubActionSnapshots = onAppEvent((event) => {
+    if (event.type === 'actions.changed' && wss && wss.clients.size > 0) broadcastSnapshotRefresh();
   });
 
   staleEvictionInterval = setInterval(() => {

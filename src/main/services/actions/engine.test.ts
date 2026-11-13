@@ -135,6 +135,24 @@ const weekdays9 = { kind: 'schedule', preset: 'weekdays', cron: '0 9 * * 1-5', m
 const user = { kind: 'user' } as const;
 
 describe('group project event triggers', () => {
+  it('keeps a group-owned Action when the agent that created it is deleted', () => {
+    const h = setup();
+    h.engine.start();
+    const action = h.engine.create({ trigger: weekdays9, steps: [{ kind: 'group_post', topic: 'general', text: 'Hello' }] }, { kind: 'group_project', groupProjectId: 'gp1' });
+    h.event({ type: 'agent.deleted', agentId: 'lead', projectPath: '/p1' });
+    expect(h.engine.get(action.id)).toMatchObject({ enabled: true, owner: { kind: 'group_project', groupProjectId: 'gp1' } });
+  });
+  it('records a typed refusal when the group loses permission before a run', async () => {
+    let allowed = true;
+    const h = setup({ refuse: () => allowed ? null : 'Delivery is off.' });
+    h.engine.start();
+    const action = h.engine.create({ trigger: weekdays9, steps: [{ kind: 'message', agentId: 'pm', text: 'Hello' }] }, { kind: 'group_project', groupProjectId: 'gp1' });
+    allowed = false;
+    h.engine.runNow(action.id);
+    await flush();
+    expect(h.stepCalls).toHaveLength(0);
+    expect(h.history(action.id)[0]).toMatchObject({ outcome: 'failed', refusal: 'rights_refused', steps: [{ refusal: 'rights_refused' }] });
+  });
   it('removes only the deleted group project’s actions and pending schedules', async () => {
     const h = setup();
     h.engine.start();

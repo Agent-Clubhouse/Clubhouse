@@ -51,6 +51,7 @@ export type AppEvent = Stamp & (
   | { type: 'git.branch_switched'; repoPath: string; branch: string; previousBranch?: string; agentId?: string }
   | { type: 'git.remote_updated'; repoPath: string; branch: string; remote: string; agentId?: string }
   | { type: 'app.started' }
+  | { type: 'actions.changed' }
   | { type: 'device.online'; device: DevicePresence }
   | { type: 'device.offline'; device: DevicePresence }
   /** Only qualifying subscriptions, never absence timestamps or duration. */

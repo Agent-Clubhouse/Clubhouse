@@ -291,6 +291,8 @@ export interface ActionRunEvent {
 export interface ActionStepResult {
   kind: ActionStepKind;
   outcome: 'done' | 'failed';
+  /** A permission was refused at run time, independent of display text. */
+  refusal?: 'rights_refused';
   /** One line in plain words. */
   detail: string;
   /** A queued handoff is updated when the runtime delivers, replaces or drops it. */
@@ -320,6 +322,8 @@ export interface ActionRun {
   /** A later queue receipt keeps delivery losses visible in retained history. */
   deliveryUpdatedAt?: number;
   outcome: ActionRunOutcome;
+  /** The group or agent lacked a required grant when the Action ran. */
+  refusal?: 'rights_refused';
   /** One line of reason for failed, cancelled and skipped runs. */
   reason?: string;
   steps: ActionStepResult[];
