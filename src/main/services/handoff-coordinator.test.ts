@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import type { Handoff, HandoffAgent, HandoffOffer } from '../../shared/handoffs';
 import { parseHandoff } from '../../shared/handoffs';
@@ -27,12 +28,13 @@ function fixture(sameMachine = false) {
   let allowed = true;
   const machines = new Map<string, HandoffCoordinator>();
   const notices: Handoff[] = [];
+  const posts: Array<{ from: string; body: Record<string, unknown> }> = [];
   function computer(machine: string, store = storage(), commands: HandoffCancellation[] = []) {
     const service = new HandoffService({ machine, store, authorize: async () => allowed, isDispatcher: (actor) => actor.agentId === 'dispatcher' });
     const coordinator = new HandoffCoordinator({
       machine, store, service,
       commands: { list: () => structuredClone(commands), put: async (command) => { if (!commands.some((old) => old.operationId === command.operationId)) commands.push(command); }, remove: async (id) => { const index = commands.findIndex((command) => command.operationId === id); if (index !== -1) commands.splice(index, 1); } },
-      post: (peer, body) => machines.get(peer)!.receive(machine, body), connected: () => online,
+      post: (peer, body) => { posts.push({ from: machine, body }); return machines.get(peer)!.receive(machine, body); }, connected: () => online,
       authorizeOutgoing: async () => allowed, changed: async (record) => { notices.push(record); },
     });
     machines.set(machine, coordinator);
@@ -40,7 +42,7 @@ function fixture(sameMachine = false) {
   }
   const a = computer(sender.machine);
   const b = sameMachine ? a : computer(receiver.machine);
-  return { a, b, notices, offline: () => { online = false; }, reconnect: () => { online = true; }, revoke: () => { allowed = false; } };
+  return { a, b, notices, posts, offline: () => { online = false; }, reconnect: () => { online = true; }, revoke: () => { allowed = false; } };
 }
 
 describe('handoff agreement synchronization', () => {
@@ -106,4 +108,42 @@ describe('handoff agreement synchronization', () => {
     expect(b.coordinator.service.list({ ...receiver, agentId: 'stranger' })).toEqual([]);
     expect(() => b.coordinator.service.get(offer.id, { ...receiver, agentId: 'stranger' })).toThrow('unavailable');
   });
+  it('recovers a same-machine cancellation intent committed just before a crash', async () => {
+    const { a } = fixture(true);
+    const offer = await a.coordinator.offer({ ...input, to: { ...receiver, machine: sender.machine } }, sender);
+    a.commands.push({ id: offer.id, operationId: randomUUID(), from: sender, reason: 'Reassigned before crash' });
+    const restarted = a.restart();
+    await restarted.coordinator.flush();
+    expect(restarted.store.get(offer.id)?.state).toBe('cancelled');
+    expect(restarted.commands).toEqual([]);
+    await restarted.coordinator.flush();
+    expect(restarted.store.get(offer.id)?.history).toHaveLength(2);
+  });
+
+  it('does not treat an unrelated participant as the author of an idempotent decline', async () => {
+    const { a } = fixture(true);
+    const localReceiver = { ...receiver, machine: sender.machine };
+    const offer = await a.coordinator.offer({ ...input, to: localReceiver }, sender);
+    const declined = await a.coordinator.respond(offer.id, localReceiver, false);
+    expect(await a.coordinator.respond(offer.id, localReceiver, false)).toEqual(declined);
+    await expect(a.coordinator.respond(offer.id, sender, false)).rejects.toThrow('addressed receiver');
+  });
+
+  it('services an active agreement before retained terminal history after restart', async () => {
+    const f = fixture();
+    for (let index = 0; index < 12; index++) {
+      const old = await f.a.coordinator.offer(input, sender);
+      await f.b.coordinator.respond(old.id, receiver, false);
+    }
+    const restarted = f.b.restart();
+    const active = await f.a.coordinator.offer(input, sender);
+    f.posts.length = 0;
+    await restarted.coordinator.flush();
+    expect((f.posts[0].body.record as Handoff).id).toBe(active.id);
+    expect(f.posts).toHaveLength(10);
+    f.posts.length = 0;
+    await restarted.coordinator.flush();
+    expect(f.posts).toHaveLength(4);
+  });
+
 });

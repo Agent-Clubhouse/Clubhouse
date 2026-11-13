@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
-import { isHandoffAgent, parseHandoff, sameHandoffAgent, type Handoff, type HandoffAgent, type HandoffOffer } from '../../shared/handoffs';
+import { isHandoffAgent, isTerminalHandoff, parseHandoff, sameHandoffAgent, type Handoff, type HandoffAgent, type HandoffOffer } from '../../shared/handoffs';
 import { scanHandoffSecrets } from '../../shared/handoff-secrets';
-import type { HandoffStorage } from './handoff-store';
+import { assertHandoffExtension, type HandoffStorage } from './handoff-store';
 import { HandoffService } from './handoff-service';
 
 export interface HandoffCancellation {
@@ -56,6 +56,8 @@ export function originalHandoffOffer(record: Handoff): Handoff {
 export class HandoffCoordinator {
   private readonly syncing = new Map<string, Promise<void>>();
   private cursor = 0;
+  private historyCursor = 0;
+  private readonly acknowledged = new Map<string, number>();
   constructor(private readonly options: HandoffCoordinatorOptions) {}
 
   get service(): HandoffService { return this.options.service; }
@@ -77,7 +79,8 @@ export class HandoffCoordinator {
     // A repeated tool call cannot create a second response or a second worker.
     if (current.acceptance && accept && sameHandoffAgent(current.acceptance.by, actor)
       && sameHandoffAgent(current.acceptance.target, target ?? actor)) return current;
-    if (!accept && current.state === 'declined') return current;
+    const response = current.history.at(-1);
+    if (!accept && current.state === 'declined' && response?.by.kind === 'agent' && sameHandoffAgent(response.by.address, actor)) return current;
     const record = await this.service.respond(id, actor, accept, current.version, target, reason);
     await this.changed(record);
     await this.trySync(id);
@@ -102,7 +105,10 @@ export class HandoffCoordinator {
     if (!current) throw new Error('Unknown handoff.');
     if (current.to.machine !== this.options.machine || command.from.machine !== machine || !sameHandoffAgent(command.from, current.from)) throw new Error('Invalid handoff cancellation source.');
     const prior = current.history.findIndex((event) => event.operationId === command.operationId);
-    if (prior === -1 && ['applying', 'applied', 'declined', 'failed'].includes(current.state)) return current;
+    if (prior === -1 && ['applying', 'applied', 'declined', 'failed'].includes(current.state)) {
+      if (machine === this.options.machine) await this.options.commands.remove(command.operationId);
+      return current;
+    }
     const record = await this.service.cancelAtReceiver(command.id, command.from, machine,
       prior === -1 ? current.version : prior, command.reason, command.operationId);
     await this.changed(record);
@@ -144,7 +150,11 @@ export class HandoffCoordinator {
 
   private async syncRecord(id: string): Promise<void> {
     const record = this.options.store.get(id);
-    if (!record || record.from.machine === record.to.machine) return;
+    if (!record) return;
+    if (record.from.machine === record.to.machine) {
+      for (const command of this.options.commands.list().filter((item) => item.id === id)) await this.applyCancellation(command, this.options.machine);
+      return;
+    }
     const sending = record.from.machine === this.options.machine;
     const peer = sending ? record.to.machine : record.from.machine;
     if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record)) return;
@@ -155,6 +165,11 @@ export class HandoffCoordinator {
     if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record)) return;
     const next = parseHandoff(response);
     if (next.id !== id) throw new Error('Invalid handoff reply.');
+    if (!sending) {
+      assertHandoffExtension(record, next);
+      if (next.version !== record.version) throw new Error('Invalid handoff reply.');
+      this.acknowledged.set(id, record.version);
+    }
     if (sending) {
       await this.service.receiveSnapshot(next, peer);
       for (const command of this.options.commands.list().filter((item) => item.id === id)) {
@@ -169,11 +184,18 @@ export class HandoffCoordinator {
 
   /** Bounded work per sweep, so retained history cannot flood a network peer. */
   async flush(): Promise<void> {
+    const commands = new Set(this.options.commands.list().map((command) => command.id));
     const records = this.options.store.list();
-    if (!records.length) return;
-    for (let count = 0; count < Math.min(10, records.length); count++) {
-      await this.trySync(records[this.cursor++ % records.length].id);
-    }
-    this.cursor %= records.length;
+    const active = records.filter((record) => commands.has(record.id)
+      || record.from.machine !== record.to.machine && !isTerminalHandoff(record.state));
+    const history = records.filter((record) => record.from.machine !== record.to.machine && isTerminalHandoff(record.state)
+      && record.to.machine === this.options.machine && this.acknowledged.get(record.id) !== record.version && !commands.has(record.id));
+    // Always service active work first; retained history cannot put one new
+    // agreement behind a full archive. Reserve one slot for final responses.
+    const count = Math.min(history.length ? 9 : 10, active.length);
+    for (let index = 0; index < count; index++) await this.trySync(active[this.cursor++ % active.length].id);
+    if (active.length) this.cursor %= active.length;
+    for (let index = 0; index < Math.min(10 - count, history.length); index++) await this.trySync(history[this.historyCursor++ % history.length].id);
+    if (history.length) this.historyCursor %= history.length;
   }
 }

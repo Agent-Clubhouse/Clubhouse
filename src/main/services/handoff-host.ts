@@ -70,7 +70,11 @@ export async function resolveHandoffTarget(reference: string): Promise<HandoffTa
   const at = reference.lastIndexOf('@');
   const machine = at > 0 ? resolveMachine(reference.slice(at + 1)) : ownMachine();
   const ref = at > 0 ? reference.slice(0, at) : reference;
-  if (machine === ownMachine()) return (await localAgent(ref)).address;
+  if (machine === ownMachine()) {
+    const local = (await localAgent(ref)).address;
+    return isDispatcherAgentId(local.agentId) ? { machine, via: 'dispatcher' } : local;
+  }
+  if (ref.toLowerCase() === 'dispatcher') return { machine, via: 'dispatcher' };
   const snapshot = annexClient.getSatellite(machine)?.snapshot;
   const candidates = Object.values(snapshot?.agents ?? {}).flat().filter((raw): raw is { id: string; name: string } => !!raw && typeof raw === 'object'
     && 'id' in raw && typeof raw.id === 'string' && 'name' in raw && typeof raw.name === 'string');
@@ -275,8 +279,10 @@ export async function prepareNewHandoffHelper(agentId: string, id: string, proje
   if (record.acceptance) return record.acceptance.target;
   if (record.state !== 'offered') throw new Error('Handoff cannot be accepted.');
   const projects = [...await peekProjects()].sort((a, b) => a.id.localeCompare(b.id));
-  const project = projectReference === undefined ? projects[0] : projects.find((candidate) => candidate.id === projectReference || candidate.path === projectReference || candidate.name === projectReference);
-  if (!project) throw new Error('Choose a registered project for the new helper.');
+  const exact = projectReference === undefined ? [] : projects.filter((candidate) => candidate.id === projectReference || candidate.path === projectReference);
+  const matches = projectReference === undefined ? projects.slice(0, 1) : exact.length ? exact : projects.filter((candidate) => candidate.name.toLowerCase() === projectReference.toLowerCase());
+  if (matches.length !== 1) throw new Error('Choose an unambiguous registered project for the new helper.');
+  const project = matches[0];
   const name = `handoff-${id}`;
   const prior = (await peekDurableConfigs(project.path)).find((config) => config.name === name && !isDisposedAgent(config));
   if (prior) return localHandoffAgent(prior.id);
