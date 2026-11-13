@@ -174,6 +174,7 @@ export function ActionsSettingsView() {
       {remoteActions.length > 0 && <section className="mt-5" aria-label="Actions on other computers"><h2 className="text-sm font-medium text-ctp-text">Actions on other computers</h2>
         <ul>{remoteActions.map((action) => <li key={`${action.satelliteId}:${action.id}`} className="py-2 border-t border-surface-0 text-xs text-ctp-subtext1">
           <span className="text-ctp-text">{action.name}</span> · {action.groupProjectName} · Runs on {action.machine}{!action.enabled && ' · Off'}
+          {typeof action.description === 'string' && <p>{action.description}</p>}
         </li>)}</ul>
       </section>}
       {card && (

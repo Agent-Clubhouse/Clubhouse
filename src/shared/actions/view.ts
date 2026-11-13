@@ -25,4 +25,6 @@ export interface RemoteGroupAction {
   groupProjectId: string;
   groupProjectName: string;
   enabled: boolean;
+  /** A plain-language trigger and step summary; absent on older hosts. */
+  description?: string;
 }

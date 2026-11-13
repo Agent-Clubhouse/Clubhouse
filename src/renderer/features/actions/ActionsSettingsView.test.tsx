@@ -51,12 +51,13 @@ describe('Settings > Actions', () => {
     } finally { load.mockRestore(); useGroupProjectStore.setState({ projects: [], loaded: false }); }
   });
   it('shows network group Actions as read-only on their host', async () => {
-    useAnnexClientStore.setState({ satellites: [{ id: 'remote', alias: 'Studio', snapshot: { groupProjectActions: [{ id: 'a', name: 'Daily board', groupProjectId: 'gp1', groupProjectName: 'Release', enabled: true }] } }] } as never);
+    useAnnexClientStore.setState({ satellites: [{ id: 'remote', alias: 'Studio', snapshot: { groupProjectActions: [{ id: 'a', name: 'Daily board', groupProjectId: 'gp1', groupProjectName: 'Release', enabled: true, description: 'Every day at 9:00 AM → Post to general' }] } }] } as never);
     render(<ActionsSettingsView />);
     const section = await screen.findByRole('region', { name: 'Actions on other computers' });
     expect(section).toHaveTextContent('Daily board');
     expect(section).toHaveTextContent('Release');
     expect(section).toHaveTextContent('Runs on Studio');
+    expect(section).toHaveTextContent('Every day at 9:00 AM');
     expect(within(section).queryByRole('button')).toBeNull();
   });
   it('offers device and kind filters and starts newly selected device events with a two-minute recheck', async () => {
