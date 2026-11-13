@@ -572,7 +572,7 @@ export const ATTR = {
     'hand_off_request', 'list_remote_requests', 'triage_remote_request', 'report_remote_request',
     'get_delivery', 'get_annex_network_settings', 'update_annex_network_settings',
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
-    'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'set_connection_tools',
+    'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'list_other_dispatchers', 'set_connection_tools',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents', 'list_connections', 'join_group_project', 'leave_group_project',
     // actions (#2952), the permission model's action.* (#2921)

@@ -19,6 +19,7 @@ import { registerDispatcherSearchTools } from './dispatcher-search-tools';
 import { registerAppearanceTools } from './appearance-tools';
 import { registerSettingsReadTools } from './settings-read-tools';
 import { registerDispatcherControlTools } from './dispatcher-control-tools';
+import { registerDispatcherPresenceTools } from './dispatcher-presence-tools';
 import { registerManagedTools } from './managed-tools';
 import { registerHelperQuestionTools } from './helper-question-tools';
 import { registerConnectionTools } from './connection-tools';
@@ -50,6 +51,7 @@ export function registerClubhouseMcpTools(): void {
   registerAppearanceTools();
   registerSettingsReadTools();
   registerDispatcherControlTools();
+  registerDispatcherPresenceTools();
   registerManagedTools();
   registerHelperQuestionTools();
   registerConnectionTools();
