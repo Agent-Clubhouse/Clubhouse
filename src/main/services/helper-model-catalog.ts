@@ -52,8 +52,9 @@ export async function observeHelperModelCatalog(provider: OrchestratorProvider, 
       // Cached reads, including an older concurrent refresh, cannot replace a newer snapshot.
       if (previous && list.fetchedAt <= previous.at) return file;
       const models = Object.fromEntries(list.models.map((m) => [m.id, { label: m.label, ...(m.resolvedId && { resolvedId: m.resolvedId }) }]));
-      const seen = new Set(previous?.seen ?? Object.keys(models));
-      const added = list.models.filter((m) => !m.hidden && m.id !== 'default' && m.id !== 'auto' && !seen.has(m.id));
+      const seen = new Set([...(previous?.seen ?? Object.keys(models)),
+        ...Object.entries(previous?.models ?? {}).map(([id, info]) => info.resolvedId ?? id)]);
+      const added = list.models.filter((m) => !m.hidden && m.id !== 'default' && m.id !== 'auto' && !seen.has(m.id) && !seen.has(m.resolvedId ?? m.id));
       const missingNotified = new Set(previous?.missingNotified ?? []);
       const id = provider.id;
       const saved = getPresets();
@@ -78,7 +79,7 @@ export async function observeHelperModelCatalog(provider: OrchestratorProvider, 
         ];
         message = `${changes.join(' ')} Review Smart selection`;
       }
-      for (const id of Object.keys(models)) seen.add(id);
+      for (const [id, info] of Object.entries(models)) { seen.add(id); if (info.resolvedId) seen.add(info.resolvedId); }
       for (const id of missing) missingNotified.add(id);
       const next: CatalogFile = {
         version: 1,
