@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { listToolGrants, registerGlobalTool, _resetForTesting } from './tool-registry';
+import { listToolGrants, registerGlobalTool, _annotationCatalogKeysForTesting, _resetForTesting } from './tool-registry';
 import { registerClubhouseMcpTools } from './tools/register-all';
 import { registerPluginTools, _resetForTesting as resetPlugins } from './plugin-tool-registry';
 
@@ -28,6 +28,13 @@ describe('MCP tool annotations (#3367)', () => {
     expect(tools.map(({ kind, name, annotations }) => (
       `${kind}:${name} readOnly=${annotations?.readOnlyHint} destructive=${annotations?.destructiveHint} openWorld=${annotations?.openWorldHint}`
     )).join('\n')).toMatchSnapshot();
+  });
+
+  it('has no catalog entry for a tool that is no longer registered', () => {
+    // A stale entry would hand its hints to any later tool reusing the name.
+    registerClubhouseMcpTools();
+    const registered = new Set(listToolGrants().map(({ kind, name }) => `${kind}:${name}`));
+    expect(_annotationCatalogKeysForTesting().filter((key) => !registered.has(key))).toEqual([]);
   });
 
   it.each(['read_unreviewed_tool', 'constructor'])('leaves unreviewed tool %s unclassified', (name) => {

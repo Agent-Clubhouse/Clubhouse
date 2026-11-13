@@ -51,11 +51,14 @@ The bridge publishes explicit `readOnlyHint`, `destructiveHint` and
 `openWorldHint` annotations with each built-in tool in `tools/list`, for both
 HTTP and stdio clients. The reviewed catalog lives in `clubhouse-mcp/tool-registry.ts`;
 the annotation inventory test registers the same catalog as startup, including
-helper and group-project tools, and fails if a new tool has no classification.
+helper and group-project tools, and fails if a new tool has no classification
+or if the catalog still classifies a tool that is no longer registered.
 
 Reads are distinguished from writes, not inferred from names or grants.
 For example, `hand_off` records a receipt without disposing anything, whereas
 `dispose_helper`, `clear_agent`, `clear_topic` and `delete_messages` are destructive.
+`update_annex_network_settings` is destructive because restricting Annex to this
+computer interrupts existing remote connections.
 Mixed tools describe their possible effects: arbitrary browser operations,
 reset/compaction, force-capable sleep, fresh restart and delegated actions are
 not advertised as harmless reads. Browser tools, live provider model/preset
