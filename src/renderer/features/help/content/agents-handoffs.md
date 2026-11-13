@@ -13,6 +13,13 @@ Two Clubhouse permissions control handoffs, on the **Clubhouse permissions** pag
 
 Both are **Off** for agents and **Ask first** for the Dispatcher. Set either to **Ask first** or **Allow** per agent. A handoff between two agents also needs a connection between them, unless the receiver is a Dispatcher. Clubhouse never creates that connection itself.
 
+A computer's Dispatcher can accept an offer for another agent there, or for a new helper:
+
+- An existing agent must itself have **Accept handoffs and apply work** set to **Allow** for the sender. **Ask first** isn't enough here, because the Dispatcher can't answer another agent's question for it. The Dispatcher also needs a connection to that agent, with waking and messaging it allowed.
+- A new helper gets your helper template's permissions and a normal connection to the Dispatcher.
+
+An agent offered work directly accepts it through its own setting, **Ask first** or **Allow**.
+
 To receive handoffs from other computers in your Annex Network, turn on **Accept handoffs from other computers** in Settings, Annex Network. Each computer checks its own permissions.
 
 ## The prepare-handoff skill
