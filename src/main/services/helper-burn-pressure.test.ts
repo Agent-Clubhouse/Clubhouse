@@ -21,14 +21,16 @@ function view(now: number, usedBp = 1200, reset = RESET): QuotaView {
   return { state: 'known', source: 'cli_query', asOf: new Date(now).toISOString(), weekly: window, fiveHour: window };
 }
 /** Synthetic subscription groups only: the 200bp label is measured ONCE for both overlapping members. */
-function replay(burns = Array(40).fill(200) as number[], provider = 'claude-code', overlap = true): PressureEntry[] {
+function replay(burns = Array(40).fill(200) as number[], provider = 'claude-code', overlap = true, windows: 'both' | 'weekly' = 'both'): PressureEntry[] {
   const history: PressureEntry[] = [];
   burns.forEach((burn, i) => {
     const now = T + i * 10 * MIN;
     if (overlap) history.push({ ...entry(`active-${provider}-${i}`, now - 2 * MIN, provider),
       forecastRun: { startedMs: now - 2 * MIN, usageSamples: 1, usable: true } });
     const proposed = entry(`next-${provider}-${i}`, now, provider);
-    proposed.pressure = preparePressure(proposed, history, overlap ? 1 : 0, quota(now), now, plan)!;
+    const baseline = quota(now);
+    if (windows === 'weekly') baseline.windows = baseline.windows!.filter((w) => w.name === 'weekly');
+    proposed.pressure = preparePressure(proposed, history, overlap ? 1 : 0, baseline, now, plan)!;
     proposed.forecastRun = { startedMs: now, endedMs: now + MIN, usageSamples: 1, usable: true };
     history.push(proposed);
     if (overlap) history.at(-2)!.forecastRun!.endedMs = now + MIN;
@@ -66,6 +68,44 @@ describe('qualified aggregate remaining burn', () => {
     expect(decide([a], true)).toMatchObject({ ok: false, evaluations: [{ excluded: 'quota_near_limit' }] });
     expect(decide([a], false)).toMatchObject({ ok: true });
   });
+  it('falls back entirely when any applicable supported window lacks valid baseline/reset coverage', () => {
+    const history = replay(Array(40).fill(200), 'claude-code', false, 'weekly'), now = T + 500 * MIN;
+    const baseline = quota(now, 9300);
+    baseline.windows = baseline.windows!.filter((w) => w.name === 'weekly');
+    expect(preparePressure(entry('new', now), history, 0, baseline, now, plan)?.windows[0].band).toBeDefined();
+    for (const invalid of [{ usedBp: 100 }, { usedBp: 100, resetsAtMs: NaN }, { usedBp: 100, resetsAtMs: now },
+      { resetsAtMs: RESET }, { usedBp: NaN, resetsAtMs: RESET }]) {
+      const pressure = preparePressure(entry('new', now), history, 0, { ...baseline,
+        windows: [...baseline.windows!, { name: 'fiveHour', ...invalid }] }, now, plan);
+      expect(pressure).toBeUndefined();
+      // No upper-bound input may wrongly refuse this otherwise usable sole provider.
+      const weekly = pressure?.windows.find((w) => w.name === 'weekly')?.band;
+      expect(decideAutoProvider({ now, candidates: [candidate('only', 93, weekly?.meanBp, weekly?.upperBp)], cursors: {}, options: { useBurnForecasts: true } }))
+        .toMatchObject({ ok: true, key: 'only' });
+    }
+  });
+
+  it('requalifies after definitively unstarted settled helpers without forgetting pending/unknown or actual runs', () => {
+    const history = replay(Array(40).fill(200), 'claude-code', false);
+    const settled = ['creation_refused', 'cancelled', 'spawn_failed', 'left_asleep'].map((spawn) => ({ ...entry(`old-${spawn}`, T - MIN), spawn }));
+    const all = [...settled, ...history];
+    for (const e of history) {
+      const at = e.decidedAtMs + 2 * MIN;
+      e.pressureOutcome = observePressure(e.pressure!, all, view(at), at, plan);
+      expect(e.pressureOutcome?.reason).toBe('observed');
+    }
+    const now = T + 500 * MIN;
+    expect(preparePressure(entry('fresh', now), all, 0, quota(now), now, plan)?.windows[0].band).toBeDefined();
+    const sample = history.at(-1)!.pressure!, observedAt = sample.atMs + 2 * MIN;
+    for (const spawn of [undefined, 'started', 'orphaned', 'unknown_result']) {
+      const unknown = { ...entry(`uncertain-${spawn}`, T - MIN), spawn };
+      expect(observePressure(sample, [...all, unknown], view(observedAt), observedAt, plan)?.reason).toBe('additional_run');
+    }
+    const actualFailed = { ...entry('failed-after-session', sample.asOfMs - 1), spawn: 'spawn_failed',
+      forecastRun: { startedMs: sample.asOfMs - 1, endedMs: sample.asOfMs + MIN, usageSamples: 0, usable: false } };
+    expect(observePressure(sample, [...all, actualFailed], view(observedAt), observedAt, plan)?.reason).toBe('additional_run');
+  });
+
   it('includes an atomic pending start with confirmed identity once, and never invents a missing reservation identity', () => {
     const now = T + MIN;
     const pending = entry('pending', now);

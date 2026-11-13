@@ -91,10 +91,13 @@ export function preparePressure(entry: ForecastEntry, history: readonly Pressure
   const members = [...active.map((e) => ({ decisionId: e.decisionId, cell: burnForecastKey(e)!, startedMs: e.forecastRun?.startedMs ?? e.decidedAtMs })),
     { decisionId: entry.decisionId, cell: burnForecastKey(entry)!, startedMs: now }];
   if (members.some((m) => now - m.startedMs > PRESSURE_POLICY.maxHorizonMs)) return undefined;
-  const windows = (quota.windows ?? []).flatMap((w): PressureDecision['windows'] =>
-    (w.name === 'weekly' || w.name === 'fiveHour') && bp(w.usedBp) && time(w.resetsAtMs) && w.resetsAtMs > now
-      ? [{ name: w.name, usedBp: w.usedBp, resetsAtMs: w.resetsAtMs }] : []);
-  if (!windows.length) return undefined;
+  const supported = (quota.windows ?? []).filter((w) => w.name === 'weekly' || w.name === 'fiveHour');
+  // A readable percentage without a valid baseline/reset is still an applicable window.
+  // Never qualify a surviving subset and silently omit its reserve.
+  if (!supported.length || supported.some((w) => !bp(w.usedBp) || !time(w.resetsAtMs) || w.resetsAtMs <= now)) return undefined;
+  const windows: PressureDecision['windows'] = supported.map((w) => ({
+    name: w.name as 'weekly' | 'fiveHour', usedBp: w.usedBp!, resetsAtMs: w.resetsAtMs!,
+  }));
   // Reset epochs partition plan capacity. Never silently transfer a cohort to a different quota window.
   const key = JSON.stringify([entry.provider, plan.plan, plan.generation, members.map((m) => [m.cell, ageBucket(asOf - m.startedMs)]).sort(), windows.map((w) => [w.name, w.resetsAtMs])]);
   return { version: 1, policy: 'aggregate-conformal-v1', provider: entry.provider, plan: plan.plan, planGeneration: plan.generation, atMs: now, asOfMs: asOf, key, members,
@@ -112,7 +115,10 @@ export function observePressure(sample: PressureDecision, history: readonly Pres
   if (group.some((e) => e!.forecastRun!.endedMs === undefined || e!.forecastRun!.endedMs! > atMs)) return undefined;
   const end = Math.max(...group.map((e) => e!.forecastRun!.endedMs!));
   if (end - sample.asOfMs > PRESSURE_POLICY.maxHorizonMs) return { ...result, reason: 'incomplete' };
-  if (history.some((e) => e.provider === sample.provider && !sample.members.some((m) => m.decisionId === e.decisionId)
+  if (history.some((e) => e.provider === sample.provider
+    // A settled start with no session cannot overlap future groups. Unknown/pending starts remain conservative.
+    && !(!e.forecastRun && ['creation_refused', 'cancelled', 'spawn_failed', 'left_asleep'].includes(e.spawn ?? ''))
+    && !sample.members.some((m) => m.decisionId === e.decisionId)
     && (e.forecastRun?.startedMs ?? e.decidedAtMs) < atMs
     && (e.forecastRun?.endedMs ?? Infinity) > sample.asOfMs)) return { ...result, reason: 'additional_run' };
   for (const w of sample.windows) {
