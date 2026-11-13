@@ -39,7 +39,9 @@ import {
   type CollectedBindings, type PersistedBinding, type PersistedBindingSource,
 } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { resolveGroupProjectScope } from '../../shared/group-project-scope';
 import { canvasWireBindingSource } from './canvas-wire-source';
+import { readAllCanvasStores } from './canvas-store-reader';
 import { appLog } from './log-service';
 
 export const GROUP_PROJECT_MEMBERSHIP_SOURCE_ID = 'group-project-membership';
@@ -279,9 +281,10 @@ export const membershipBindingSource: PersistedBindingSource = {
   afterRebuild(complete) {
     if (!complete || migrated) return;
     migrated = true;
-    void migrateLegacyGroupProjects().catch((err) => {
+    void migrateLegacyGroupProjects().then(() => { migrationDeferred = null; }, async (err) => {
       // telemetry-exempt: legacy group projects stay on their wires and the next rebuild retries; logged
       migrated = false;
+      migrationDeferred = await canvasProblemSummary();
       appLog('core:group-project', 'warn', 'Group project membership migration deferred: a Canvas store could not be read completely', { meta: { error: err instanceof Error ? err.message : String(err) } });
     });
   },
@@ -307,6 +310,27 @@ async function migrateLegacyGroupProjects(): Promise<void> {
 
 function isNewGroupProject(gp: GroupProject): boolean {
   return Date.parse(gp.createdAt) >= startedAt;
+}
+
+/** Why migration is waiting, for the directory; null when it isn't. */
+let migrationDeferred: string | null = null;
+
+/** The Canvas stores that couldn't be read, in words a person can act on. */
+async function canvasProblemSummary(): Promise<string> {
+  const problems: string[] = [];
+  try {
+    for (const snapshot of await readAllCanvasStores({ strict: true })) {
+      if (snapshot.problems.length === 0) continue;
+      const where = snapshot.location.scope === 'app' ? 'the app-wide Canvas' : `project “${snapshot.location.projectName}”`;
+      problems.push(snapshot.problems.some((p) => p.startsWith('Project folder is unavailable'))
+        ? `the folder of ${where} is missing`
+        : `${where} has a Canvas that couldn't be read completely`);
+    }
+  } catch {
+    // telemetry-exempt: the summary falls back to a general reason
+  }
+  const what = problems.length > 0 ? problems.join('; ') : 'a Canvas couldn\'t be read completely';
+  return `Members still come from Canvas wires, because ${what}. Restore the folder or remove the project; Clubhouse tries again when it next reloads connections.`;
 }
 
 /**
@@ -611,6 +635,7 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
   const view: GroupProjectMembershipView = {
     groupProjectId,
     managed,
+    ...(!managed && migrationDeferred && { deferred: migrationDeferred }),
     autoJoin: membership.autoJoin,
     members,
     excluded: membership.excluded.map((e) => ({ agentId: e.address, name: nameOf(e.address), excludedAt: e.excludedAt })),
@@ -631,8 +656,10 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
  * the same inventory and rules as auto-join. Projects whose agents can't be
  * read are listed, since their agents would join once readable.
  */
-export async function previewAutoJoin(scope: GroupProjectScope): Promise<AutoJoinPreview> {
+export async function previewAutoJoin(untrusted: unknown): Promise<AutoJoinPreview> {
   const [inventory, projects] = await Promise.all([readInventory(), projectStore.list()]);
+  // The same check creation makes: a known shape, a registered project.
+  const scope: GroupProjectScope = resolveGroupProjectScope({ scope: untrusted }, new Set(projects.map((p) => p.id)));
   const gp = { id: 'preview', name: '', description: '', instructions: '', createdAt: '', metadata: {}, scope } as GroupProject;
   return {
     wouldJoin: autoCandidates(gp, inventory).map((a): ResolvedGroupProjectMember => ({

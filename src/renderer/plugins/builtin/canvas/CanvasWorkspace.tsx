@@ -101,6 +101,12 @@ interface CanvasWorkspaceProps {
   bidirectionalWires?: boolean;
   createBidirectionalWires?: boolean;
   navigationBaseline?: { views: CanvasView[]; zoneWireDefinitions: ZoneWireDefinition[] };
+  /**
+   * Changes when the workspace shows other canvas content: another canvas tab,
+   * or a reload or satellite state. The next zone expansion is then a
+   * hydration, which never adds a group project member (#3357).
+   */
+  zoneSessionKey?: string;
   navigationFocus?: { viewId: string; onRevealed: (viewport: Viewport) => void };
 }
 
@@ -250,6 +256,7 @@ export function CanvasWorkspace({
   bidirectionalWires,
   createBidirectionalWires,
   navigationBaseline,
+  zoneSessionKey,
   navigationFocus,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -286,7 +293,16 @@ export function CanvasWorkspace({
   /** Zone members a group project's record doesn't list: not re-bound until they enter a zone again. */
   const zoneNotMemberRef = useRef(new Set<string>());
   const baselineRef = useRef({ baseline: navigationBaseline, retired: false });
+  const zoneSessionRef = useRef(zoneSessionKey);
   useEffect(() => {
+    // Other canvas content: what it shows now isn't a person's new zone wire or move.
+    const newSession = zoneSessionRef.current !== zoneSessionKey;
+    if (newSession) {
+      zoneSessionRef.current = zoneSessionKey;
+      zoneExpandedOnceRef.current = false;
+      zoneNotMemberRef.current = new Set();
+      suppressedExpansionRef.current = null;
+    }
     if (baselineRef.current.baseline !== navigationBaseline) {
       baselineRef.current = { baseline: navigationBaseline, retired: false };
     }
@@ -332,7 +348,7 @@ export function CanvasWorkspace({
       // A member leaving a zone is cleanup: main keeps helper wires (#2225).
       void useMcpBindingStore.getState().unbind(b.agentId, b.targetId, MCP_UNBIND_CANVAS_CLEANUP);
     }
-  }, [zoneWireDefinitions, views, mcpBind, navigationBaseline]);
+  }, [zoneWireDefinitions, views, mcpBind, navigationBaseline, zoneSessionKey]);
 
   const handleAddWireDef = useCallback((entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => {
     onAddWireDefinition(entry as McpBindingEntry);
