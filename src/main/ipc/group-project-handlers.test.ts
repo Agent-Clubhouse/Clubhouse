@@ -102,6 +102,7 @@ vi.mock('../util/ipc-broadcast', () => ({
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
+import { groupProjectHost } from '../services/group-project-host';
 import { getBulletinBoard } from '../services/group-project-bulletin';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
@@ -293,6 +294,11 @@ describe('group-project-handlers', () => {
       mockDeletion.confirm.mockResolvedValue(undefined);
       const result = await handler(fakeEvent, 'gp-1', 'review-token');
       expect(mockDeletion.confirm).toHaveBeenCalledWith('gp-1', 1, 'review-token');
+      // The host emits this once when the deletion journal begins; the mock
+      // confirmation above does not run the real host cascade.
+      for (const [listener] of vi.mocked(groupProjectHost.onChange).mock.calls) {
+        listener({ groupProjectId: 'gp-1', seq: 1, part: 'deleted', project: { id: 'gp-1', name: 'Test Project' } } as never);
+      }
       expect(annexEventBus.emitGroupProjectChanged).toHaveBeenCalledWith('deleted', { id: 'gp-1', name: 'Test Project' });
       expect(result).toBe(true);
     });
