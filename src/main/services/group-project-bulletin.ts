@@ -6,13 +6,14 @@
 
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { app } from 'electron';
+import { createHash, randomBytes } from 'crypto';
 import type { BulletinMessage, TopicDigest, DigestSince } from '../../shared/group-project-types';
 import { appLog } from './log-service';
 import { persist } from '../telemetry/persist';
 import { tel } from '../telemetry/facade';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { replaceFile } from './settings-store';
+import { bulletinPath, groupProjectDir } from './group-project-paths';
 
 type BulletinPostResult = Parameters<typeof ATTR.bulletinPostResult>[0];
 
@@ -29,15 +30,6 @@ const DEFAULT_MAX_PER_TOPIC = 100;
 const DEFAULT_MAX_TOTAL = 500;
 
 const FLUSH_DELAY_MS = 500;
-
-function groupProjectsDir(): string {
-  const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
-  return path.join(app.getPath('home'), dirName, 'group-projects');
-}
-
-function bulletinPath(projectId: string): string {
-  return path.join(groupProjectsDir(), projectId, 'bulletin.json');
-}
 
 async function ensureDir(dir: string): Promise<void> {
   await fsp.mkdir(dir, { recursive: true });
@@ -68,6 +60,8 @@ export function normalizeChannelName(topic: string): string {
 interface BulletinData {
   topics: Record<string, BulletinMessage[]>;
   protectedTopics?: string[];
+  /** Inbox channel -> the member address it belongs to (#3356, #1646). */
+  inboxOwners?: Record<string, string>;
 }
 
 /**
@@ -104,6 +98,7 @@ class BulletinBoard {
   private projectId: string;
   private topics = new Map<string, BulletinMessage[]>();
   private protectedTopics = new Set<string>();
+  private inboxOwners = new Map<string, string>();
   private pendingProtectionChanges = new Map<string, boolean>();
   private loaded = false;
   private loadPromise: Promise<void> | null = null;
@@ -185,6 +180,13 @@ class BulletinBoard {
               protectedTopics.add(key);
             }
           }
+          const inboxOwners = new Map<string, string>();
+          if (data.inboxOwners && typeof data.inboxOwners === 'object' && !Array.isArray(data.inboxOwners)) {
+            for (const [channel, owner] of Object.entries(data.inboxOwners)) {
+              if (typeof owner === 'string' && owner) inboxOwners.set(normalizeChannelName(channel), owner);
+            }
+          }
+          this.inboxOwners = inboxOwners;
           for (const [topic, isProtected] of this.pendingProtectionChanges) {
             if (isProtected) protectedTopics.add(topic);
             else protectedTopics.delete(topic);
@@ -246,6 +248,9 @@ class BulletinBoard {
     if (this.protectedTopics.size > 0) {
       data.protectedTopics = [...this.protectedTopics];
     }
+    if (this.inboxOwners.size > 0) {
+      data.inboxOwners = Object.fromEntries(this.inboxOwners);
+    }
     const revision = this.revision;
     const contents = JSON.stringify(data, null, 2);
 
@@ -262,8 +267,8 @@ class BulletinBoard {
     if (this.dirty) await this.flush();
   }
 
-  /** Post a message to a topic. */
-  async postMessage(sender: string, topic: string, body: string): Promise<BulletinMessage> {
+  /** Post a message to a topic. `seq` is the host's sequence number for the post (#3356). */
+  async postMessage(sender: string, topic: string, body: string, seq?: number): Promise<BulletinMessage> {
     await this.ensureLoaded();
 
     if (Buffer.byteLength(body, 'utf-8') > MAX_BODY_BYTES) {
@@ -273,11 +278,12 @@ class BulletinBoard {
 
     const canonicalTopic = normalizeChannelName(topic);
     const message: BulletinMessage = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `msg_${Date.now()}_${randomBytes(6).toString('hex')}`,
       sender,
       topic: canonicalTopic,
       body,
       timestamp: new Date().toISOString(),
+      ...(seq !== undefined && { seq }),
     };
 
     let topicMessages = this.topics.get(canonicalTopic);
@@ -447,6 +453,27 @@ class BulletinBoard {
     return [...this.protectedTopics];
   }
 
+  // ── Inbox ownership (#1646) ─────────────────────────────────────────────
+
+  /** The member address an inbox channel belongs to, if one was recorded. */
+  async inboxOwner(channel: string): Promise<string | undefined> {
+    await this.ensureLoaded();
+    return this.inboxOwners.get(normalizeChannelName(channel));
+  }
+
+  /** The inbox channel recorded for a member address, if any. */
+  async inboxOf(address: string): Promise<string | undefined> {
+    await this.ensureLoaded();
+    for (const [channel, owner] of this.inboxOwners) if (owner === address) return channel;
+    return undefined;
+  }
+
+  async claimInbox(channel: string, address: string): Promise<void> {
+    await this.ensureLoaded();
+    this.inboxOwners.set(normalizeChannelName(channel), address);
+    this.markDirty();
+  }
+
   // ── Delete operations ───────────────────────────────────────────────────
 
   /** Delete a single message by ID within a topic. Returns true if found. */
@@ -579,6 +606,7 @@ class BulletinBoard {
     this.pendingFlush = null;
     this.topics.clear();
     this.protectedTopics.clear();
+    this.inboxOwners.clear();
     this.pendingProtectionChanges.clear();
     this.loaded = false;
     this.loadPromise = null;
@@ -615,21 +643,25 @@ export async function flushAllBulletinBoards(): Promise<void> {
   }
 }
 
-/** Destroy a bulletin board instance and remove its data directory from disk. */
-export async function destroyBulletinBoard(projectId: string): Promise<void> {
+/**
+ * Destroy a bulletin board instance and remove its data directory from disk.
+ * With `strict`, a failed removal rejects rather than being logged and ignored.
+ */
+export async function destroyBulletinBoard(projectId: string, options: { strict?: boolean } = {}): Promise<void> {
   const board = boards.get(projectId);
   if (board) {
     board._resetForTesting();
     boards.delete(projectId);
   }
-  // Remove the project's data directory (contains bulletin.json and any future artifacts)
-  const dir = path.join(groupProjectsDir(), projectId);
+  // Remove the project's data directory (bulletin.json, membership.json, host.json)
+  const dir = groupProjectDir(projectId);
   try {
     if (await pathExists(dir)) {
       await fsp.rm(dir, { recursive: true, force: true });
     }
-  } catch {
+  } catch (err) {
     appLog('core:group-project', 'warn', 'Failed to remove bulletin data directory', { meta: { projectId, dir } });
+    if (options.strict) throw err;
   }
 }
 
@@ -651,7 +683,7 @@ export const PROJECT_CHANNELS = ['general', 'control'] as const;
  * protected so they survive retention pruning. Idempotent — safe to call on
  * project create and again for pre-existing boards on first agent join.
  */
-export async function ensureProjectChannels(projectId: string): Promise<void> {
+export async function ensureProjectChannels(projectId: string, seq?: number): Promise<void> {
   const board = getBulletinBoard(projectId);
   for (const name of PROJECT_CHANNELS) {
     if (!(await board.hasTopic(name))) {
@@ -661,6 +693,7 @@ export async function ensureProjectChannels(projectId: string): Promise<void> {
         name === 'general'
           ? 'general — broad announcements and introductions. Keep traffic low; prefer scoped work channels for focused coordination.'
           : 'control — coordination channel. Use it to point other agents at specific work channels (e.g. "follow #fix-login-bug").',
+        seq,
       );
     }
     board.setTopicProtected(name, true);
@@ -681,17 +714,36 @@ export function inboxChannelName(agentName: string): string {
 }
 
 /**
- * Seed an agent's personal inbox channel and mark it protected. Idempotent.
- * Returns the resolved channel name.
+ * The inbox channel for a member: `inbox-<name>`, unless another member with
+ * the same name already owns it, when a short suffix from the address keeps
+ * them apart (#1646). Reads only.
  */
-export async function ensureInboxChannel(projectId: string, agentName: string): Promise<string> {
+export async function resolveInboxChannel(projectId: string, agentName: string, address?: string): Promise<string> {
+  const base = inboxChannelName(agentName);
+  if (!address) return base;
   const board = getBulletinBoard(projectId);
-  const name = inboxChannelName(agentName);
+  const owned = await board.inboxOf(address);
+  if (owned) return owned;
+  const owner = await board.inboxOwner(base);
+  if (!owner || owner === address) return base;
+  return `${base}-${createHash('sha256').update(address).digest('hex').slice(0, 6)}`;
+}
+
+/**
+ * Seed an agent's personal inbox channel and mark it protected. Idempotent.
+ * Returns the resolved channel name. With an address, the channel is recorded
+ * as that member's, so a later member with the same name gets its own.
+ */
+export async function ensureInboxChannel(projectId: string, agentName: string, address?: string, seq?: number): Promise<string> {
+  const board = getBulletinBoard(projectId);
+  const name = await resolveInboxChannel(projectId, agentName, address);
+  if (address && (await board.inboxOwner(name)) !== address) await board.claimInbox(name, address);
   if (!(await board.hasTopic(name))) {
     await board.postMessage(
       'system',
       name,
       `Inbox channel for ${agentName}. Other agents post here for direct, async messages. Poll this on every cycle.`,
+      seq,
     );
   }
   board.setTopicProtected(name, true);

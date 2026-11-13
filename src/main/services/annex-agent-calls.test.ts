@@ -4,29 +4,30 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tel } from '../telemetry/facade';
 
-const state = vi.hoisted(() => ({ base: '', pairing: 'self-epoch', peerPairing: 'peer-epoch' }));
+const state = vi.hoisted(() => ({ base: '', pairing: 'self-epoch', peerPairing: 'peer-epoch', thirdRole: 'satellite' as 'member' | 'satellite', localMachine: Array(16).fill('aa').join(':') }));
 const SELF = Array(16).fill('aa').join(':');
 const OTHER = Array(16).fill('bb').join(':');
 const THIRD = Array(16).fill('cc').join(':');
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: SELF.toUpperCase() }) }));
+vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: state.localMachine.toUpperCase() }) }));
 vi.mock('./annex-network-membership', () => ({ ownPairing: () => ({ id: state.pairing }) }));
 vi.mock('./annex-peers', () => ({ listPeers: () => [
-  { fingerprint: OTHER.toUpperCase(), alias: 'Studio', role: 'member', kind: 'desktop', pairingId: state.peerPairing },
+  { fingerprint: (state.localMachine === OTHER ? SELF : OTHER).toUpperCase(), alias: 'Studio', role: 'member', kind: 'desktop', pairingId: state.peerPairing },
   // A one-to-one pairing: not in the network.
-  { fingerprint: THIRD.toUpperCase(), alias: 'Old Mac', role: 'satellite' },
+  { fingerprint: THIRD.toUpperCase(), alias: 'Old Mac', role: state.thirdRole, kind: 'desktop' },
 ] }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-agent-calls-'));
 
 import {
   AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, forwardAgentCall, receiveAgentCall, receiveDirections,
-  remoteAgentName, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
+  remoteAgentName, shareForAnswer, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
 } from './annex-agent-calls';
 import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
 import {
-  getConnectionDirection, listAllConnectionDirections, removeConnectionDirections, setConnectionLink, setConnectionTools,
+  getConnectionDirection, listAllConnectionDirections, putConnectionDirection, removeAgentNetworkSources, clearUserRemovedAgentNetworkSources, removeConnectionDirections, setConnectionLink, setConnectionTools, updateAgentNetworkLinks,
 } from './connection-grants-store';
+import { resetAllSettingsStoresForTests } from './settings-store';
 import type { McpToolResult } from './clubhouse-mcp/types';
 
 const ok = (text: string): McpToolResult => ({ content: [{ type: 'text', text }] });
@@ -67,6 +68,7 @@ beforeEach(async () => {
   connected = true;
   state.pairing = 'self-epoch';
   state.peerPairing = 'peer-epoch';
+  state.thirdRole = 'satellite';
   posts = [];
   seen.length = 0;
   respond = (_path, body) => delivered(body);
@@ -119,6 +121,17 @@ describe('receiving a call from another machine (#3064)', () => {
     expect(result).toMatchObject({ result: ok('ran here'), delivery: { state: 'delivered' } });
     expect(seen[0]).toMatchObject({ tool: 'send_message', targetId: 'receiver', callerId: `sender@${OTHER}`, args: { message: 'hi' } });
     expect(seen[0].caller).toMatchObject({ name: 'Scout', projectName: 'Atlas', machineName: 'Studio', targetName: 'Builder', machineId: OTHER, agentId: 'sender' });
+    expect(await receiveAgentCall(OTHER, call({ tool: 'clear_agent' }), now)).toMatchObject({ status: 403, error: 'tool_denied' });
+  });
+
+  it('checks calls against an agent-created network source and its disabled tools', async () => {
+    const at = new Date(now).toISOString();
+    await receiveDirections(OTHER, { v: 1, directions: [{
+      from: { agentId: 'sender', machine: OTHER }, to: { agentId: 'receiver', machine: SELF },
+      disabledTools: ['clear_agent'], link: true, userLink: false,
+      agentLinks: [{ agentId: 'maker', machineId: OTHER, createdAt: at }], updatedAt: at,
+    }] });
+    expect(await receiveAgentCall(OTHER, call(), now)).toMatchObject({ result: ok('ran here') });
     expect(await receiveAgentCall(OTHER, call({ tool: 'clear_agent' }), now)).toMatchObject({ status: 403, error: 'tool_denied' });
   });
 
@@ -736,6 +749,102 @@ describe('keeping both machines\' copies of a connection', () => {
     expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.link).toBeTruthy();
   });
 
+  it('exchanges a source with a fake peer without converting it into a user link', async () => {
+    const pair = { from: { agentId: 'here' }, to: { agentId: 'there', machineId: OTHER } };
+    await updateAgentNetworkLinks([pair], { agentId: 'here', machineId: SELF, name: 'Helper' }, 'add');
+    posts = [];
+    await syncDirectionsWith(OTHER);
+    const request = posts.find((p) => p.path === '/api/v1/network/connections')!;
+    expect(request.body.directions).toEqual([expect.objectContaining({ link: true, userLink: false, agentLinks: [expect.objectContaining({ agentId: 'here', machineId: SELF, name: 'Helper' })] })]);
+    const at = new Date(now).toISOString();
+    const incoming = { from: { agentId: 'there', machine: OTHER }, to: { agentId: 'receiver', machine: SELF }, disabledTools: ['clear_agent'], link: true, userLink: false, agentLinks: [{ agentId: 'maker', machineId: OTHER, name: 'Maker', createdAt: at }], updatedAt: at };
+    await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [incoming] }, now);
+    expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })).toMatchObject({ agentLinks: [expect.objectContaining({ name: 'Maker', machineId: OTHER })] });
+    expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.link).toBeUndefined();
+  });
+
+  it('refuses a peer creating a direction between two local agents', async () => {
+    const at = new Date(now).toISOString();
+    const entry = { from: { agentId: 'here', machine: SELF }, to: { agentId: 'receiver', machine: SELF }, disabledTools: [], link: true, userLink: false,
+      agentLinks: [{ agentId: 'maker', machineId: OTHER, createdAt: at }], updatedAt: at };
+    expect(await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [entry] }, now)).toEqual({ applied: 0 });
+    expect(getConnectionDirection({ agentId: 'here' }, { agentId: 'receiver' })).toBeUndefined();
+  });
+
+  it('refuses a peer relaying a direction between this computer and a third computer', async () => {
+    state.thirdRole = 'member';
+    const at = new Date(now).toISOString();
+    const direction = { from: { agentId: 'receiver', machine: SELF }, to: { agentId: 'there', machine: THIRD }, disabledTools: [], link: true, userLink: false,
+      agentLinks: [{ agentId: 'maker', machineId: OTHER, createdAt: at }], updatedAt: at };
+    expect(await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [direction] }, now)).toEqual({ applied: 0 });
+    expect(getConnectionDirection({ agentId: 'receiver' }, { agentId: 'there', machineId: THIRD })).toBeUndefined();
+  });
+
+  it('accepts only a creator’s source updates, except an endpoint’s user-removal tombstone', async () => {
+    state.thirdRole = 'member';
+    const at = new Date(now).toISOString();
+    const later = new Date(now + 1000).toISOString();
+    const from = { agentId: 'receiver', machine: SELF };
+    const to = { agentId: 'there', machine: OTHER };
+    const foreign = { agentId: 'foreign', machineId: THIRD, createdAt: at };
+    const local = { agentId: 'local', machineId: SELF, createdAt: at };
+    const own = { agentId: 'maker', machineId: OTHER, createdAt: at };
+    const pair = { from: { agentId: 'receiver' }, to: { agentId: 'there', machineId: OTHER } };
+    await putConnectionDirection({ ...pair, disabledTools: [], agentLinks: [foreign, local], updatedAt: at });
+    const entry = { from, to, disabledTools: ['send_file'], link: true, userLink: false, setByAgent: 'foreign', agentLinks: [
+      { ...foreign, removedAt: later }, { ...local, createdAt: later }, { ...foreign, agentId: 'forged', createdAt: later }, own,
+    ], updatedAt: later };
+    await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [entry] }, now + 1000);
+    expect(getConnectionDirection(pair.from, pair.to)?.agentLinks).toEqual([foreign, local, own]);
+    expect(getConnectionDirection(pair.from, pair.to)).toMatchObject({ disabledTools: [] });
+    expect(getConnectionDirection(pair.from, pair.to)?.setByAgent).toBeUndefined();
+    const removedAt = new Date(now + 2000).toISOString();
+    await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [{ ...entry, agentLinks: [{ ...foreign, removedAt, removedByUser: true }], link: false, updatedAt: removedAt }] }, now + 2000);
+    expect(getConnectionDirection(pair.from, pair.to)?.agentLinks).toEqual([{ ...foreign, removedAt, removedByUser: true }, local, own]);
+  });
+
+  it('syncs a user reconnect from one endpoint so the other can add its source again', async () => {
+    const originalBase = state.base;
+    const endpointA = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-sync-a-'));
+    const endpointB = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-sync-b-'));
+    const switchTo = (base: string, machine: string) => { state.base = base; state.localMachine = machine; resetAllSettingsStoresForTests(); };
+    connected = false;
+    const fromA = { agentId: 'here' };
+    const toB = { agentId: 'receiver', machineId: OTHER };
+    const fromB = { agentId: 'here', machineId: SELF };
+    const toHere = { agentId: 'receiver' };
+    const creator = { agentId: 'here', machineId: SELF };
+    try {
+      switchTo(endpointA, SELF);
+      await updateAgentNetworkLinks([{ from: fromA, to: toB }], creator, 'add');
+      const created = await shareForAnswer(OTHER);
+      switchTo(endpointB, OTHER);
+      expect(await receiveDirections(SELF, { v: 1, directions: created }, Date.now())).toEqual({ applied: 1 });
+      await removeAgentNetworkSources(fromB, toHere);
+      const removed = await shareForAnswer(SELF);
+      switchTo(endpointA, SELF);
+      await receiveDirections(OTHER, { v: 1, directions: removed }, Date.now());
+      expect(getConnectionDirection(fromA, toB)?.agentLinks?.[0].removedByUser).toBe(true);
+      switchTo(endpointB, OTHER);
+      await clearUserRemovedAgentNetworkSources(fromB, toHere);
+      const reconnected = await shareForAnswer(SELF);
+      switchTo(endpointA, SELF);
+      await receiveDirections(OTHER, { v: 1, directions: reconnected }, Date.now());
+      expect(getConnectionDirection(fromA, toB)?.agentLinks?.[0]).toMatchObject({ removedAt: expect.any(String) });
+      expect(getConnectionDirection(fromA, toB)?.agentLinks?.[0].removedByUser).toBeUndefined();
+      await updateAgentNetworkLinks([{ from: fromA, to: toB }], creator, 'add');
+      expect(getConnectionDirection(fromA, toB)?.agentLinks?.[0].removedAt).toBeUndefined();
+      const active = await shareForAnswer(OTHER);
+      switchTo(endpointB, OTHER);
+      await receiveDirections(SELF, { v: 1, directions: active }, Date.now());
+      expect(getConnectionDirection(fromB, toHere)?.agentLinks?.[0].removedAt).toBeUndefined();
+    } finally {
+      switchTo(originalBase, SELF);
+      fs.rmSync(endpointA, { recursive: true, force: true });
+      fs.rmSync(endpointB, { recursive: true, force: true });
+    }
+  });
+
   it('on connect, sends what waited only after the connections got through', async () => {
     await setConnectionLink({ agentId: 'here' }, { agentId: 'there', machineId: OTHER }, true);
     connected = false;
@@ -798,6 +907,18 @@ describe('keeping both machines\' copies of a connection', () => {
     const newer = new Date(now + 1000).toISOString();
     await receiveDirections(OTHER, { v: 1, directions: [{ from: { agentId: 'there', machine: OTHER }, to: { agentId: 'receiver', machine: SELF }, disabledTools: [], link: false, updatedAt: newer }] });
     expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.link).toBeFalsy();
+  });
+
+  it('keeps agent source identity distinct from a user link, and accepts legacy boolean links', async () => {
+    const at = new Date(now).toISOString();
+    const base = { from: { agentId: 'there', machine: OTHER }, to: { agentId: 'receiver', machine: SELF }, disabledTools: ['clear_agent'], link: true, updatedAt: at };
+    await receiveDirections(OTHER, { v: 1, directions: [{ ...base, userLink: false, agentLinks: [{ agentId: 'maker', machineId: OTHER, createdAt: at }], setByAgent: 'maker' }] });
+    const saved = getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' });
+    expect(saved?.link).toBeUndefined();
+    expect(saved?.agentLinks).toEqual([{ agentId: 'maker', machineId: OTHER, createdAt: at }]);
+    const later = new Date(now + 1000).toISOString();
+    await receiveDirections(OTHER, { v: 1, directions: [{ ...base, updatedAt: later }] });
+    expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.link).toBeTruthy();
   });
 
   it('refuses a list it can\'t read', async () => {

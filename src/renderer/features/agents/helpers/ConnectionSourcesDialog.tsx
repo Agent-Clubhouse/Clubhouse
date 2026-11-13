@@ -46,7 +46,7 @@ export function sourcesByKind(pairs: readonly ConnectionPairSources[]): Array<{ 
 
 const KIND_BY_ID: Readonly<Record<string, ConnectionSourceKind>> = {
   'canvas-wires': 'canvas', 'helper-wires': 'helper', 'dispatcher-wires': 'dispatcher_auto',
-  'orchestrator-connections': 'tool_link', 'dispatcher-connections': 'dispatcher_link', 'user-connections': 'user_link',
+  'orchestrator-connections': 'tool_link', 'network-agent-connections': 'tool_link', 'network-connections': 'user_link', 'dispatcher-connections': 'dispatcher_link', 'user-connections': 'user_link',
 };
 
 /** Removals that change a setting or can't be undone by drawing again: confirmed first. */
@@ -282,7 +282,7 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
           const route = removalRoute(kind);
           return (
             <li key={kind} className="flex flex-col gap-1 text-[13px]" data-testid={`connection-source-${kind}`}>
-              <span className="text-ctp-text">{CONNECTION_SOURCE_LABELS[kind]}{held.length < pairs.length ? ', one direction' : ''}</span>
+              <span className="text-ctp-text">{source.makers?.length ? `Made by ${source.makers.map((maker) => `${maker.name || maker.agentId} (${maker.machineId})`).join(', ')}` : CONNECTION_SOURCE_LABELS[kind]}{held.length < pairs.length ? ', one direction' : ''}</span>
               {source.suspended && <span className="text-xs text-ctp-overlay1">Not connected now: {source.suspended}</span>}
               <span className="text-xs text-ctp-overlay1">{removalEffect(kind, { agent: agentName, other: otherName, dispatcherEnd })}</span>
               {route === 'here' && confirming !== kind && (

@@ -94,8 +94,7 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  * - `actions` (#2952): the Actions tools, on for every agent that can own an
  *   action: not for quick agents, which end with their task, not for the
  *   Dispatcher while it is turned off, and never for its chat.
- * - `connections` (#3336): durable-agent connection management, never for the
- *   Dispatcher's read-only chat or quick agents. Grants decide each endpoint.
+ * - `connections` (#3336): connection management for every caller, subject to grants.
  * - `dispatcherConnected` (#3041): tools for agents connected to the
  *   Dispatcher (update_my_card), on while the agent has its wire to the
  *   Dispatcher. Also listed for agents whose CLI keeps its first tool list,
@@ -141,8 +140,9 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
     refusal: 'Actions aren’t available to you: quick agents can’t own actions, and the Dispatcher can’t use them while it is turned off.',
   },
   connections: {
-    isEnabled: (agentId) => (isTrackedDispatcher(agentId) ? isDispatcherAgent(agentId) : mcpCallerKind(agentId) !== 'quick'),
-    refusal: 'Connection management is only available to durable agents and the enabled Dispatcher.',
+    isEnabled: (agentId) => (!isTrackedDispatcher(agentId) || isDispatcherAgent(agentId) || isDispatcherChatAgent(agentId))
+      && callerGrants(agentId).some((grant) => grant.action === 'connection.manage'),
+    refusal: 'Connection management needs a connection.manage grant.',
   },
   dispatcherConnected: {
     isEnabled: (agentId) => !isTrackedDispatcher(agentId) && (connectedToDispatcher(agentId) || keepsFirstToolList(agentId)),
@@ -283,6 +283,8 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     disconnect_orchestrators: INTERNAL_DESTRUCTIVE,
     set_connection_tools: INTERNAL_WRITE,
     list_connections: INTERNAL_READ,
+    join_group_project: INTERNAL_WRITE,
+    leave_group_project: INTERNAL_DESTRUCTIVE,
     list_orchestrator_controls: INTERNAL_READ,
     list_agent_parts: INTERNAL_READ,
     get_agent_part: INTERNAL_READ,
@@ -629,8 +631,9 @@ export function dispatcherToolActions(): Set<GrantAction> {
 }
 
 /** Part of the cache key: which agents are the Dispatcher, since a wire to it lists no reset tools (#2968). */
-function conditionsKey(): string {
-  return `d${dispatcherGateVersion()}`;
+function conditionsKey(agentId: string): string {
+  const connectionGrants = callerGrants(agentId).filter((grant) => grant.action === 'connection.manage');
+  return `d${dispatcherGateVersion()}c${JSON.stringify(connectionGrants)}`;
 }
 
 /** True if `name` is a registered global tool. */
@@ -773,7 +776,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const allWireTools = keepsFirstToolList(agentId);
   const currentWakeKey = allWireTools ? 'all' : wakeKey(bindings);
-  const currentConditions = conditionsKey();
+  const currentConditions = conditionsKey(agentId);
   const cached = toolListCache.get(agentId);
   if (cached && cached.bindingVersion === currentVersion && cached.wakeKey === currentWakeKey && cached.conditionsKey === currentConditions) {
     return cached.tools;

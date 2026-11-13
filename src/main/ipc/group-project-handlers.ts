@@ -6,7 +6,7 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
 import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
-import { getBulletinBoard, destroyBulletinBoard } from '../services/group-project-bulletin';
+import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
@@ -21,7 +21,7 @@ import { getProvider } from '../orchestrators';
 import type { PasteSubmitTiming } from '../orchestrators';
 
 function broadcastChanged(): void {
-  groupProjectRegistry.list().then((projects) => {
+  groupProjectHost.list().then((projects) => {
     broadcastToAllWindows(IPC.GROUP_PROJECT.CHANGED, projects);
   }).catch((err) => {
     appLog('core:group-project', 'warn', 'Failed to broadcast group project changes', {
@@ -57,15 +57,19 @@ export function registerGroupProjectHandlers(): void {
   groupProjectRegistry.onChange(() => {
     broadcastChanged();
   });
+  // Every delete, whichever path began it (IPC, the #3364 cascade, Annex), tells Annex once, when it begins.
+  groupProjectHost.onChange((change) => {
+    if (change.part === 'deleted' && change.project) annexEventBus.emitGroupProjectChanged('deleted', change.project);
+  });
 
   ipcMain.handle(IPC.GROUP_PROJECT.LIST, async () => {
-    return groupProjectRegistry.list();
+    return groupProjectHost.list();
   });
 
   ipcMain.handle(IPC.GROUP_PROJECT.CREATE, withValidatedArgs(
     [stringArg(), objectArg<GroupProjectCreateOptions>({ optional: true })],
     async (_event, name, options) => {
-      const project = await groupProjectRegistry.create(name as string, options as GroupProjectCreateOptions | undefined);
+      const project = await groupProjectHost.create(name as string, options as GroupProjectCreateOptions | undefined);
       annexEventBus.emitGroupProjectChanged('created', project);
       appLog('core:group-project', 'info', 'Group project created', { meta: { id: project.id, name: project.name } });
       return project;
@@ -75,14 +79,14 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.GET, withValidatedArgs(
     [stringArg()],
     async (_event, id) => {
-      return groupProjectRegistry.get(id as string);
+      return groupProjectHost.get(id as string);
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.UPDATE, withValidatedArgs(
     [stringArg(), objectArg<{ name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }>()],
     async (_event, id, fields) => {
-      const updated = await groupProjectRegistry.update(id as string, fields as { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> });
+      const updated = await groupProjectHost.update(id as string, fields as { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> });
       if (updated) {
         annexEventBus.emitGroupProjectChanged('updated', updated);
         appLog('core:group-project', 'info', 'Group project updated', { meta: { id } });
@@ -94,11 +98,9 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.DELETE, withValidatedArgs(
     [stringArg()],
     async (_event, id) => {
-      const project = await groupProjectRegistry.get(id as string);
-      const deleted = await groupProjectRegistry.delete(id as string);
+      // Annex hears of it from the host's deleted change, as for every delete path.
+      const { deleted } = await groupProjectHost.delete(id as string);
       if (deleted) {
-        if (project) annexEventBus.emitGroupProjectChanged('deleted', project);
-        await destroyBulletinBoard(id as string);
         appLog('core:group-project', 'info', 'Group project deleted', { meta: { id } });
       }
       return deleted;
@@ -108,39 +110,28 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, withValidatedArgs(
     [stringArg(), digestSinceArg()],
     async (_event, id, since) => {
-      const board = getBulletinBoard(id as string);
-      return board.getDigest(since as DigestSince | undefined);
+      return groupProjectHost.readDigest(id as string, since as DigestSince | undefined);
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, withValidatedArgs(
     [stringArg(), stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
     async (_event, id, topic, since, limit) => {
-      const board = getBulletinBoard(id as string);
-      return board.getTopicMessages(
-        topic as string,
-        since as string | undefined,
-        limit as number | undefined,
-      );
+      return groupProjectHost.readTopic(id as string, topic as string, since as string | undefined, limit as number | undefined);
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.GET_ALL_MESSAGES, withValidatedArgs(
     [stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
     async (_event, id, since, limit) => {
-      const board = getBulletinBoard(id as string);
-      return board.getAllMessages(
-        since as string | undefined,
-        limit as number | undefined,
-      );
+      return groupProjectHost.readAll(id as string, since as string | undefined, limit as number | undefined);
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, body) => {
-      const board = getBulletinBoard(projectId as string);
-      const message = await board.postMessage('user', topic as string, body as string);
+      const message = await groupProjectHost.post(projectId as string, 'user', topic as string, body as string);
       annexEventBus.emitBulletinMessage(projectId as string, message);
       return message;
     },
@@ -161,24 +152,21 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.DELETE_MESSAGE, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, messageId) => {
-      const board = getBulletinBoard(projectId as string);
-      return board.deleteMessage(topic as string, messageId as string);
+      return groupProjectHost.deleteMessage(projectId as string, topic as string, messageId as string);
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.DELETE_TOPIC, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectId, topic) => {
-      const board = getBulletinBoard(projectId as string);
-      return board.deleteTopic(topic as string);
+      return groupProjectHost.deleteTopic(projectId as string, topic as string);
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION, withValidatedArgs(
     [stringArg(), stringArg(), booleanArg()],
     async (_event, projectId, topic, isProtected) => {
-      const board = getBulletinBoard(projectId as string);
-      board.setTopicProtected(topic as string, isProtected as boolean);
+      await groupProjectHost.setTopicProtected(projectId as string, topic as string, isProtected as boolean);
       return true;
     },
   ));
@@ -197,12 +185,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG, withValidatedArgs(
     [stringArg(), numberArg({ integer: true, min: 1 }), numberArg({ integer: true, min: 1 })],
     async (_event, projectId, maxPerTopic, maxTotal) => {
-      await groupProjectRegistry.update(projectId as string, {
-        metadata: { maxPerTopic: maxPerTopic as number, maxTotal: maxTotal as number },
-      });
-      const board = getBulletinBoard(projectId as string);
-      board.setLimits(maxPerTopic as number, maxTotal as number);
-      const trimmed = await board.trimToLimits();
+      const trimmed = await groupProjectHost.setRetention(projectId as string, maxPerTopic as number, maxTotal as number);
       broadcastChanged();
       return { saved: true, trimmed };
     },
@@ -211,8 +194,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.CLEAR_ALL_MESSAGES, withValidatedArgs(
     [stringArg()],
     async (_event, projectId) => {
-      const board = getBulletinBoard(projectId as string);
-      const removed = await board.clearAll();
+      const removed = await groupProjectHost.clearAll(projectId as string);
       appLog('core:group-project', 'info', 'Cleared all messages', { meta: { projectId, removed } });
       return { removed };
     },
@@ -221,8 +203,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.ESTIMATE_TRIM, withValidatedArgs(
     [stringArg(), numberArg({ integer: true, min: 1 }), numberArg({ integer: true, min: 1 })],
     async (_event, projectId, maxPerTopic, maxTotal) => {
-      const board = getBulletinBoard(projectId as string);
-      const wouldRemove = board.estimateTrimCount(maxPerTopic as number, maxTotal as number);
+      const wouldRemove = await groupProjectHost.estimateTrim(projectId as string, maxPerTopic as number, maxTotal as number);
       return { wouldRemove };
     },
   ));
@@ -230,8 +211,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.GET_MESSAGE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectId, messageId) => {
-      const board = getBulletinBoard(projectId as string);
-      return board.getMessageById(messageId as string);
+      return groupProjectHost.getMessage(projectId as string, messageId as string);
     },
   ));
 

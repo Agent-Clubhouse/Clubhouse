@@ -15,24 +15,26 @@
 
 import type { AgentAddress, ConnectionDirection, DirectionTools } from '../../shared/connection-grants';
 import {
-  NEW_CONNECTION_ENABLED_TOOLS, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localDirectionTools,
+  activeAgentLinks, NEW_CONNECTION_ENABLED_TOOLS, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localDirectionTools,
 } from '../../shared/connection-grants';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager, type RestoreOptions } from './clubhouse-mcp/binding-manager';
 import {
   connectionGrantsWritable, connectionMigrationDone, deniedConnectionTools, fillConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
-  linkConnectionDirections, listConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
+  linkConnectionDirections, listConnectionDirections, listAllConnectionDirections, runConnectionMigration, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
 import * as agentConfig from './agent-config';
+import { agentRegistry } from './agent-registry';
+import { mcpCallerKind } from './clubhouse-mcp/mcp-call-gate';
 import * as projectStore from './project-store';
 import {
-  clearBindingRemovedByUser, collectSourcesByPair, isBindingRemovedByUser, listPairsWithoutTools, listStartingTools, onBindingRemovedByUser, registerPersistedBindingSource,
+  clearBindingRemovedByUser, clearSourceRemovedByUser, collectSourcesByPair, isBindingRemovedByUser, listPairsWithoutTools, listStartingTools, markSourceRemovedByUser, onBindingRemovedByUser, registerPersistedBindingSource,
   rebuildPersistedBindings,
   type PersistedBinding, type PersistedBindingSource,
 } from './persisted-bindings';
-import { removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
+import { clearUserRemovedAgentNetworkSources, removeAgentNetworkSources, removeConnectionDirection, removeConnectionDirections } from './connection-grants-store';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexIdentity from './annex-identity';
 import { isNetworkComputer, remoteAgentName, rememberRemoteAgentName } from './annex-agent-calls';
@@ -40,6 +42,8 @@ import { isNetworkComputer, remoteAgentName, rememberRemoteAgentName } from './a
 export const USER_CONNECTION_SOURCE_ID = 'user-connections';
 /** The user's links to agents on other machines (#3064). */
 export const NETWORK_CONNECTION_SOURCE_ID = 'network-connections';
+export const NETWORK_AGENT_CONNECTION_SOURCE_ID = 'network-agent-connections';
+const activeQuickEndpoints = new Set<string>();
 
 const local = (agentId: string): AgentAddress => ({ agentId });
 
@@ -306,16 +310,23 @@ const userConnectionSource: PersistedBindingSource = {
  * The user's links from an agent here to one on another machine (#3064). The
  * target's name is the one its machine gave; the binding's id is its address.
  */
-const networkConnectionSource: PersistedBindingSource = {
-  id: NETWORK_CONNECTION_SOURCE_ID,
-  prune: true,
-  async collect() {
-    const linked = listLinkedDirections().filter((d) => !d.from.machineId && !!d.to.machineId);
+function networkConnectionSource(id: string, agentSource: boolean): PersistedBindingSource {
+  return {
+    id,
+    prune: true,
+    async collect() {
+    const linked = listAllConnectionDirections().filter((d) => !d.from.machineId && (agentSource ? !!activeAgentLinks(d).length : !!d.to.machineId && !!d.link));
     if (linked.length === 0) return [];
     const names = await agentNames();
-    return linked.filter((d) => names.has(d.from.agentId)).map((d): PersistedBinding => {
+    for (const d of linked) for (const end of [d.from, d.to]) {
+      if (!end.machineId && mcpCallerKind(end.agentId) === 'quick' && agentRegistry.get(end.agentId)) {
+        activeQuickEndpoints.add(end.agentId);
+        names.set(end.agentId, end.agentId);
+      }
+    }
+    return linked.filter((d) => names.has(d.from.agentId) && (!!d.to.machineId || names.has(d.to.agentId))).map((d): PersistedBinding => {
       const targetId = bindingTargetOf(d.to);
-      const targetName = remoteAgentName(targetId) ?? d.to.agentId;
+      const targetName = d.to.machineId ? remoteAgentName(targetId) ?? d.to.agentId : names.get(d.to.agentId) ?? d.to.agentId;
       return {
         agentId: d.from.agentId,
         targetId,
@@ -326,8 +337,9 @@ const networkConnectionSource: PersistedBindingSource = {
         ...(d.disabledTools.length > 0 && { disabledTools: d.disabledTools }),
       };
     });
-  },
-};
+    },
+  };
+}
 
 /**
  * Connect an agent here with an agent on another machine (#3064): the user's
@@ -344,6 +356,10 @@ export async function connectAcrossMachines(agentId: string, address: string, op
     { from: local(agentId), to: other },
     ...(options.twoWay ? [{ from: other, to: local(agentId) }] : []),
   ]);
+  await clearUserRemovedAgentNetworkSources(local(agentId), other);
+  if (options.twoWay) await clearUserRemovedAgentNetworkSources(other, local(agentId));
+  clearSourceRemovedByUser(NETWORK_AGENT_CONNECTION_SOURCE_ID, agentId, bindingTargetOf(other));
+  if (options.twoWay) clearSourceRemovedByUser(NETWORK_AGENT_CONNECTION_SOURCE_ID, bindingTargetOf(other), agentId);
   await rebuildPersistedBindings();
 }
 
@@ -356,7 +372,8 @@ export async function setToolsAcrossMachines(agentId: string, address: string, o
   const other = connectionEnd(address);
   if (!other.machineId) throw new Error('That agent is on this computer.');
   const [from, to] = outgoing ? [local(agentId), other] : [other, local(agentId)];
-  if (!getConnectionDirection(from, to)?.link) throw new Error('Those agents are not connected that way.');
+  const direction = getConnectionDirection(from, to);
+  if (!direction?.link && !activeAgentLinks(direction).length) throw new Error('Those agents are not connected that way.');
   await setConnectionTools(from, to, disabledTools);
 }
 
@@ -365,7 +382,12 @@ export async function disconnectAcrossMachines(agentId: string, address: string)
   const other = connectionEnd(address);
   if (!other.machineId) throw new Error('That agent is on this computer.');
   for (const [from, to] of [[local(agentId), other], [other, local(agentId)]] as const) {
-    if (getConnectionDirection(from, to)?.link) await setConnectionLink(from, to, false);
+    const direction = getConnectionDirection(from, to);
+    if (direction?.link) await setConnectionLink(from, to, false);
+    if (activeAgentLinks(direction).length) {
+      await removeAgentNetworkSources(from, to);
+      markSourceRemovedByUser(NETWORK_AGENT_CONNECTION_SOURCE_ID, bindingTargetOf(from), bindingTargetOf(to));
+    }
   }
   await rebuildPersistedBindings();
 }
@@ -377,6 +399,11 @@ function allLinked(): ConnectionDirection[] {
 
 async function agentNames(): Promise<Map<string, string>> {
   const names = new Map<string, string>();
+  const dispatcher = await import('./dispatcher/dispatcher-service');
+  const state = dispatcher.getDispatcherState();
+  const chat = dispatcher.getDispatcherChatConfig();
+  if (state.config) names.set(state.config.id, state.config.name);
+  if (chat) names.set(chat.id, chat.name);
   const projects = await Promise.resolve().then(() => projectStore.peekProjects()).catch((): Array<{ path: string }> => []);
   for (const p of projects) {
     const agents = await Promise.resolve().then(() => agentConfig.peekDurableConfigs(p.path)).catch((): ReadonlyArray<{ id: string; name: string; disposedAt?: string }> => []);
@@ -407,9 +434,9 @@ export async function makeTwoWay(fromAgentId: string, toAgentId: string): Promis
 
 /** Remove the user's own link for one direction. */
 export async function removeUserLink(fromAgentId: string, toAgentId: string): Promise<void> {
-  const hadLink = !!getConnectionDirection(local(fromAgentId), local(toAgentId))?.link;
-  await setConnectionLink(local(fromAgentId), local(toAgentId), false);
-  if (hadLink) recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: false });
+  const hadLink = !!getConnectionDirection(connectionEnd(fromAgentId), connectionEnd(toAgentId))?.link;
+  await setConnectionLink(connectionEnd(fromAgentId), connectionEnd(toAgentId), false);
+  if (hadLink) recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(connectionEnd(fromAgentId), connectionEnd(toAgentId))?.disabledTools ?? [], link: false });
   await rebuildPersistedBindings();
 }
 
@@ -421,6 +448,8 @@ let notifyRenderer: ((from: string, to: string, disabledTools: string[]) => void
 export async function forgetConnectionAgent(agentId: string): Promise<void> {
   // A link with an agent on another machine is turned off, not dropped, so that machine hears of it (#3064).
   for (const d of listConnectionDirections(agentId)) {
+    if (!((!d.from.machineId && d.from.agentId === agentId) || (!d.to.machineId && d.to.agentId === agentId))) continue;
+    if (activeAgentLinks(d).length) await removeAgentNetworkSources(d.from, d.to, { byUser: false });
     if ((d.from.machineId || d.to.machineId) && d.link) {
       await setConnectionLink(d.from, d.to, false).catch((err) => {
         // telemetry-exempt: logged; the entry goes below either way
@@ -447,7 +476,13 @@ export function startConnectionGrants(options: { notify?: (from: string, to: str
       appLog('core:mcp', 'warn', 'Could not drop the tools the Dispatcher set on a removed connection', { meta: { agentId, targetId, error: errorText(err) } });
     });
   });
-  const unregisterNetwork = registerPersistedBindingSource(networkConnectionSource);
+  const unregisterNetwork = registerPersistedBindingSource(networkConnectionSource(NETWORK_CONNECTION_SOURCE_ID, false));
+  const unregisterNetworkAgent = registerPersistedBindingSource(networkConnectionSource(NETWORK_AGENT_CONNECTION_SOURCE_ID, true));
+  const unwatchQuick = agentRegistry.onAuthChange((id) => {
+    if (!agentRegistry.get(id) && activeQuickEndpoints.delete(id)) void forgetConnectionAgent(id).catch((error) => {
+      appLog('core:mcp', 'warn', 'Could not remove a finished quick agent from network connections', { meta: { agentId: id, error: errorText(error) } });
+    });
+  });
   const unsubscribe = onConnectionGrantsChanged((from, to) => {
     // A direction from another machine has no binding here: that machine's agent holds it (#3064).
     if (from.machineId) {
@@ -464,7 +499,7 @@ export function startConnectionGrants(options: { notify?: (from: string, to: str
   // Names and deletions: the user's links follow agents and projects, as the other sources do.
   let pending: ReturnType<typeof setTimeout> | null = null;
   const changed = () => {
-    if (listLinkedDirections().length === 0) return;
+    if (listAllConnectionDirections().every((d) => !d.link && !activeAgentLinks(d).length)) return;
     if (pending) clearTimeout(pending);
     pending = setTimeout(() => { pending = null; void rebuildPersistedBindings().catch(() => {}); }, 100);
   };
@@ -473,6 +508,9 @@ export function startConnectionGrants(options: { notify?: (from: string, to: str
     bindingManager.setConnectionToolsSource(null, null);
     unregister();
     unregisterNetwork();
+    unregisterNetworkAgent();
+    unwatchQuick();
+    activeQuickEndpoints.clear();
     unwatchRemovals();
     unsubscribe();
     for (const u of unwatch) u();

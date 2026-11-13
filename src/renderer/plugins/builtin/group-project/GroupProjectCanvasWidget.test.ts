@@ -537,7 +537,7 @@ describe('GroupProjectCanvasWidget — snapshot data richness', () => {
   });
 
   it('snapshot includes bulletinDigests per project', () => {
-    expect(serverSource).toMatch(/bulletinDigests\[gp\.id\]\s*=\s*await\s+board\.getDigest/);
+    expect(serverSource).toMatch(/bulletinDigests\[gp\.id\]\s*=\s*await\s+groupProjectHost\.readDigest\(gp\.id\)/);
   });
 
   it('snapshot includes groupProjectMembers per project', () => {

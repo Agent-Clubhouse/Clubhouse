@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ base: '' }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ config: null }), getDispatcherChatConfig: () => null }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ path: '/p' }], onProjectsChanged: () => () => {} }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: Array(16).fill('aa').join(':') }) }));
 vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: Array(16).fill('bb').join(':'), alias: 'Far', role: 'member', kind: 'desktop' }] }));
@@ -15,7 +16,7 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-grants-'));
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   connectionMigrationDone, deniedConnectionTools, getConnectionDirection, listConnectionDirections, localConnectionWakeOn, onConnectionGrantsChanged,
-  putConnectionDirection, removeConnectionDirections, setConnectionDirections, setConnectionTools, _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
+  putConnectionDirection, updateAgentNetworkLinks, removeAgentNetworkSources, clearUserRemovedAgentNetworkSources, removeConnectionDirections, setConnectionDirections, setConnectionTools, _forgetConnectionMigrationForTesting, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import {
@@ -206,6 +207,58 @@ describe('connection permissions (D129)', () => {
 describe('connections with agents on other machines (#3064)', () => {
   const FAR = Array(16).fill('bb').join(':');
   const far = { agentId: 'z', machineId: FAR };
+
+  it('merges independently created agent sources and does not resurrect a removed one from a stale peer', async () => {
+    const first = { agentId: 'one', machineId: FAR, createdAt: '2026-01-01T00:00:00.000Z' };
+    const second = { agentId: 'two', machineId: FAR, createdAt: '2026-01-01T00:00:01.000Z' };
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [first], updatedAt: '2026-01-01T00:00:02.000Z' });
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [second], updatedAt: '2026-01-01T00:00:01.000Z' });
+    expect(getConnectionDirection(A, far)?.agentLinks).toEqual([first, second]);
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [{ ...first, removedAt: '2026-01-01T00:00:03.000Z' }], updatedAt: '2026-01-01T00:00:03.000Z' });
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [first], updatedAt: '2026-01-01T00:00:02.000Z' });
+    expect(getConnectionDirection(A, far)?.agentLinks).toEqual([{ ...first, removedAt: '2026-01-01T00:00:03.000Z' }, second]);
+  });
+
+  it('keeps a user-removal tombstone despite later recreated sources until the user reconnects', async () => {
+    const first = { agentId: 'maker', machineId: FAR, createdAt: '2026-01-01T00:00:00.000Z' };
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [first], updatedAt: first.createdAt });
+    await removeAgentNetworkSources(A, far);
+    const removed = getConnectionDirection(A, far)!.agentLinks![0];
+    const newer = new Date(Date.parse(removed.removedAt!) + 1000).toISOString();
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [{ ...first, createdAt: newer }], updatedAt: newer });
+    expect(getConnectionDirection(A, far)?.agentLinks).toEqual([removed]);
+    await clearUserRemovedAgentNetworkSources(A, far);
+    const cleared = getConnectionDirection(A, far)!.agentLinks![0];
+    const readded = { ...first, createdAt: new Date(Date.parse(cleared.removedAt!) + 1000).toISOString() };
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], agentLinks: [readded], updatedAt: readded.createdAt });
+    expect(getConnectionDirection(A, far)?.agentLinks).toEqual([readded]);
+  });
+
+  it('deleting an endpoint removes sources without creating user-removal tombstones', async () => {
+    await updateAgentNetworkLinks([{ from: A, to: far }], { agentId: 'maker', machineId: FAR }, 'add');
+    await forgetConnectionAgent('a');
+    expect(getConnectionDirection(A, far)?.agentLinks?.[0]).toMatchObject({ removedAt: expect.any(String) });
+    expect(getConnectionDirection(A, far)?.agentLinks?.[0].removedByUser).toBeUndefined();
+  });
+
+  it('requires the sender computer to confirm switches are agent-owned before changing a remote sender direction', async () => {
+    const owner = { agentId: 'maker', machineId: Array(16).fill('aa').join(':') };
+    const pair = { from: far, to: A };
+    await updateAgentNetworkLinks([pair], owner, 'add');
+    await expect(updateAgentNetworkLinks([pair], owner, 'tools', [['send_file']])).rejects.toThrow('owns these switches');
+    const before = getConnectionDirection(far, A)!;
+    await putConnectionDirection({ ...before, agentToolsProtected: false });
+    await updateAgentNetworkLinks([pair], owner, 'tools', [['send_file']]);
+    expect(getConnectionDirection(far, A)?.disabledTools).toEqual(['send_file']);
+  });
+
+  it('restores an agent source for two local agents when it was made by another computer', async () => {
+    const at = '2026-01-01T00:00:00.000Z';
+    await putConnectionDirection({ from: A, to: B, disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], agentLinks: [{ agentId: 'maker', machineId: FAR, createdAt: at }], updatedAt: at });
+    await rebuildPersistedBindings();
+    expect(bindingManager.getBindingsForAgent('a')).toEqual(expect.arrayContaining([expect.objectContaining({ targetId: 'b', targetName: 'beta' })]));
+    expect(readLocalDirectionTools('a', 'b').allowed).toContain('wake_agent');
+  });
 
   it('connects an agent here with one there: a link each way, new-connection tools, and a binding to its address with its name', async () => {
     await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true, name: 'Zed' });

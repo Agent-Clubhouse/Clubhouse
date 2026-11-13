@@ -43,7 +43,16 @@ export interface ConnectionDirection {
    * so the store keeps it connected itself, with no other source needed.
    */
   link?: { createdAt: string };
+  /** Last source inspection from the network sender, used to protect its local switches. */
+  agentToolsProtected?: boolean;
+  /** Agent-created network sources, identified by creator and its machine. */
+  agentLinks?: Array<{ agentId: string; machineId: string; createdAt: string; name?: string; removedAt?: string; removedByUser?: boolean }>;
   updatedAt: string;
+}
+
+/** Agent sources still holding a direction; removed sources are retained as sync tombstones. */
+export function activeAgentLinks(direction: Pick<ConnectionDirection, 'agentLinks'> | undefined): NonNullable<ConnectionDirection['agentLinks']> {
+  return (direction?.agentLinks ?? []).filter((link) => !link.removedAt);
 }
 
 /** The tools a wire from one agent to another offers its sender, by what they do. */
@@ -184,8 +193,16 @@ export function normalizeConnectionDirection(raw: unknown): ConnectionDirection 
   const link = r.link && typeof r.link === 'object' && typeof (r.link as { createdAt?: unknown }).createdAt === 'string'
     ? { createdAt: (r.link as { createdAt: string }).createdAt }
     : undefined;
+  const agentLinks = Array.isArray(r.agentLinks) ? r.agentLinks.flatMap((value) => {
+    if (!value || typeof value !== 'object') return [];
+    const item = value as Record<string, unknown>;
+    if (typeof item.agentId !== 'string' || !item.agentId || item.agentId.length > 200 || typeof item.machineId !== 'string' || !item.machineId || item.machineId.length > 200 || typeof item.createdAt !== 'string') return [];
+    return [{ agentId: item.agentId, machineId: item.machineId, createdAt: item.createdAt, ...(typeof item.name === 'string' && item.name.length <= 200 && { name: item.name }), ...(typeof item.removedAt === 'string' && !Number.isNaN(Date.parse(item.removedAt)) && { removedAt: item.removedAt }), ...(item.removedByUser === true && { removedByUser: true }) }];
+  }).slice(0, 50) : [];
   return {
     from, to, disabledTools,
+    ...(agentLinks.length > 0 && { agentLinks }),
+    ...(typeof r.agentToolsProtected === 'boolean' && { agentToolsProtected: r.agentToolsProtected }),
     ...(enabledTools.length > 0 && { enabledTools }),
     ...(r.setBy === 'dispatcher' && { setBy: 'dispatcher' as const }),
     ...(typeof r.setByAgent === 'string' && r.setByAgent.length > 0 && r.setByAgent.length <= 200 && { setByAgent: r.setByAgent }),

@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   /** Stored policy fields by agent id, resolved over connected-orchestrator defaults. */
   policies: new Map<string, Record<string, unknown>>(),
   dispatcherOn: true,
+  resolveConnectionTargets: false,
   globalCap: 20,
   helpers: new Map<string, unknown[]>(),
   unreadable: new Set<string>(),
@@ -82,6 +83,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.base }));
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => [...state.projects]),
+  peekProjects: vi.fn(async () => state.resolveConnectionTargets ? [...state.projects] : []),
   peekProjectsChecked: vi.fn(async () => ({ projects: [...state.projects], readable: true })),
   onProjectsChanged: vi.fn((): (() => void) => (): undefined => undefined),
 }));
@@ -91,6 +93,7 @@ vi.mock('./agent-config', () => ({
     if (state.unreadable.has(p)) throw new Error('EACCES');
     return state.agents.get(p) ?? [];
   }),
+  peekDurableConfigs: vi.fn(async (p: string) => state.resolveConnectionTargets ? (state.agents.get(p) as Array<{ id: string }> | undefined)?.map((agent) => ({ ...agent, orchestration: state.policies.get(agent.id) })) ?? [] : []),
   peekDurableConfigsChecked: vi.fn(async (p: string) => ({
     agents: (state.agents.get(p) as Array<{ id: string }> | undefined)?.map((agent) => ({
       ...agent, orchestration: state.policies.get(agent.id),
@@ -278,7 +281,10 @@ async function restart(): Promise<void> {
 }
 
 const text = (r: { content: Array<{ text?: string }> }) => r.content[0].text ?? '';
-const call = ownOperation((name: string, args: Record<string, unknown> = {}, caller: Parameters<typeof callTool>[0] = 'dispatcher') => callTool(caller, name, args));
+const call = ownOperation(async (name: string, args: Record<string, unknown> = {}, caller: Parameters<typeof callTool>[0] = 'dispatcher') => {
+  state.resolveConnectionTargets = name === 'set_connection_tools';
+  try { return await callTool(caller, name, args); } finally { state.resolveConnectionTargets = false; }
+});
 const isBound = (a: string, b: string) => bindingManager.getBindingsForAgent(a).some((x) => x.targetId === b);
 const storedPairs = async () => (await readDispatcherConnections()).map((c) => `${c.agentId}>${c.targetId}`);
 

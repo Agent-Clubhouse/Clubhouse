@@ -1,3 +1,4 @@
+import { activeAgentLinks } from '../../shared/connection-grants';
 /**
  * The sources behind an agent's connections, and removing one of them
  * (#2744). Sources are read from what each persisted source lists
@@ -24,7 +25,8 @@ import { getDispatcherAgentId } from './dispatcher/dispatcher-service';
 import { isRemovalUnsaved, listDispatcherLinksForUser, recordUserRemoval } from './dispatcher-connections';
 import { saveWireRemoval } from './dispatcher-wire-source';
 import { appLog } from './log-service';
-import { forgetDispatcherDirection, removeUserLink } from './connection-grants';
+import { connectionEnd, forgetDispatcherDirection, removeUserLink } from './connection-grants';
+import { getConnectionDirection, removeAgentNetworkSources } from './connection-grants-store';
 import type { DispatcherLink } from '../../shared/types';
 import { removeStoredPair } from './orchestrator-connections';
 import { collectSourcesByPair, inspectPersistedBindingSource, isBindingRemovedByUser, markBindingRemovedByUser, markSourceRemovedByUser, persistedPairKey, rebuildPersistedBindings, releaseSourceBinding, type PersistedBinding } from './persisted-bindings';
@@ -39,6 +41,8 @@ const KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> = {
   [ORCHESTRATOR_CONNECTION_SOURCE_ID]: 'tool_link',
   [DISPATCHER_CONNECTION_SOURCE_ID]: 'dispatcher_link',
   'user-connections': 'user_link',
+  'network-connections': 'user_link',
+  'network-agent-connections': 'tool_link',
 };
 
 const SUSPENDED_WHY: Readonly<Record<string, string>> = {
@@ -109,7 +113,8 @@ export async function listConnectionSources(agentId: string): Promise<AgentConne
       const kind = KIND_BY_SOURCE[sourceId] ?? 'other';
       const link = kind === 'dispatcher_link' ? linkStatus.get(key) : undefined;
       const savedOnly = kind === 'dispatcher_auto' && automatic?.has(key) && !boundPairs.has(key);
-      sources.push({ kind, sourceId, ...(savedOnly && { suspended: 'Configured, but not connected now.' }),
+      const makers = sourceId === 'network-agent-connections' ? activeAgentLinks(getConnectionDirection(connectionEnd(pair.agentId), connectionEnd(pair.targetId))) : undefined;
+      sources.push({ kind, sourceId, ...(makers?.length && { makers }), ...(savedOnly && { suspended: 'Configured, but not connected now.' }),
         ...(link && link.status === 'suspended' && { suspended: SUSPENDED_WHY[link.reason ?? ''] ?? 'Suspended.' }) });
     }
     // A suspended Dispatcher link isn't collected (no binding), but it is still saved.
@@ -153,8 +158,13 @@ export async function removeConnectionSource(agentId: string, targetId: string, 
   let notSaved = false;
   try {
     if (kind === 'tool_link') {
-      await removeStoredPair(agentId, targetId);
-      releaseSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, agentId, targetId);
+      if (before.sources.some((source) => source.sourceId === 'network-agent-connections')) {
+        await removeAgentNetworkSources(connectionEnd(agentId), connectionEnd(targetId));
+        markSourceRemovedByUser('network-agent-connections', agentId, targetId);
+      } else {
+        await removeStoredPair(agentId, targetId);
+        releaseSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, agentId, targetId);
+      }
     } else if (kind === 'dispatcher_link') {
       // Dropped and tombstoned, so the Dispatcher can't draw it again.
       await recordUserRemoval({ agentId, targetId });

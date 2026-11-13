@@ -40,6 +40,9 @@ vi.mock('../services/group-project-bulletin', () => ({
   destroyBulletinBoard: vi.fn(async () => undefined),
 }));
 
+vi.mock('../services/group-project-host', async () =>
+  (await import('../services/__tests__/group-project-host-passthrough')).passthroughHostModule());
+
 vi.mock('../services/clubhouse-mcp/tools/group-project-tools', () => ({
   registerGroupProjectTools: vi.fn(),
 }));

@@ -32,6 +32,7 @@ import { listDurable, onAgentConfigChanged, projectKey } from './agent-config';
 import { listHelpersEverywhere } from './helper-index';
 import { pathExists } from './fs-utils';
 import { groupProjectRegistry } from './group-project-registry';
+import { agentRegistry } from './agent-registry';
 import { onBindingRemovedByUser, startingTools, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -56,6 +57,8 @@ export interface OrchestratorConnection {
   targetProjectPath?: string;
   /** Grant-authorized ends need not be the owner's helpers (#3336). Older entries retain their helper scope. */
   scope?: 'granted';
+  /** The creator was a quick agent, which has no durable config. */
+  ephemeralOwner?: boolean;
 }
 
 /** The store format this build writes. */
@@ -80,7 +83,7 @@ function isConnection(value: unknown): value is OrchestratorConnection {
   return typeof c.ownerId === 'string' && typeof c.agentId === 'string' && typeof c.targetId === 'string'
     && (c.targetKind === 'agent' || c.targetKind === 'group-project')
     && optionalPath(c.agentProjectPath) && optionalPath(c.targetProjectPath)
-    && (c.scope === undefined || c.scope === 'granted');
+    && (c.scope === undefined || c.scope === 'granted') && (c.ephemeralOwner === undefined || c.ephemeralOwner === true);
 }
 
 /** Move an unreadable store aside so the next write starts clean, and say so in the log. */
@@ -238,7 +241,7 @@ export function removeConnections(
  */
 export async function removeStoredPair(agentId: string, targetId: string): Promise<number> {
   let dropped = 0;
-  for (const project of await projectStore.list()) {
+  for (const project of await projectsWithDispatcher()) {
     const removed = await withStoreLock(project.path, async () => {
       const state = await loadStore(project.path);
       const match = (c: OrchestratorConnection) => c.agentId === agentId && c.targetId === targetId;
@@ -274,6 +277,14 @@ export interface ConnectionScope {
   granted?: ReadonlyMap<string, ScopedAgent>;
 }
 
+/** Registered projects plus the Dispatcher's own store when it exists. */
+async function projectsWithDispatcher() {
+  const projects = await projectStore.list();
+  const state = await import('./dispatcher/dispatcher-service').then((m) => m.getDispatcherState());
+  const extra = [state.path && state.config && { id: 'dispatcher', name: 'Dispatcher', displayName: undefined, path: state.path }, state.chatPath && { id: 'dispatcher-chat', name: 'Dispatcher chat', displayName: undefined, path: state.chatPath }].filter((p): p is { id: string; name: string; displayName: undefined; path: string } => !!p && !projects.some((project) => project.path === p.path));
+  return [...projects, ...extra];
+}
+
 /** Whether a project's agents can be read now. A folder that is gone counts as unreadable. */
 async function isReadable(projectPath: string): Promise<boolean> {
   try {
@@ -297,6 +308,19 @@ export async function loadConnectionScope(
   projectName?: string,
 ): Promise<ConnectionScope> {
   const local = new Map(agents.map((a) => [a.id, a]));
+  const dispatcher = await import('./dispatcher/dispatcher-service').then((m) => m.getDispatcherState());
+  if (dispatcher.config) local.set(dispatcher.config.id, dispatcher.config);
+  const { mcpCallerKind } = await import('./clubhouse-mcp/mcp-call-gate');
+  const quickEnds = new Map<string, ScopedAgent>();
+  for (const entry of connections) for (const id of [entry.ownerId, entry.agentId, ...(entry.targetKind === 'agent' ? [entry.targetId] : [])]) {
+    const registration = agentRegistry.get(id);
+    if (registration && mcpCallerKind(id) === 'quick') {
+      liveEphemeralAgents.add(id);
+      const config = { id, name: id, color: 'indigo', createdAt: entry.createdAt } as DurableAgentConfig;
+      if (registration.projectPath === projectPath) local.set(id, config);
+      else quickEnds.set(id, { config });
+    }
+  }
   const foreign = new Map<string, Map<string, ScopedAgent>>();
   const unreadable = new Set<string>();
   const endProjects = new Set(connections.flatMap((c) => [c.agentProjectPath, c.targetProjectPath]).filter((p): p is string => !!p));
@@ -306,7 +330,7 @@ export async function loadConnectionScope(
   }
   const homeKey = await projectKey(projectPath);
   const names = new Map((await projectStore.list()).map((p) => [p.path, p.displayName || p.name]));
-  const granted = new Map<string, ScopedAgent>();
+  const granted = new Map<string, ScopedAgent>(quickEnds);
   for (const p of endProjects) {
     if (!names.has(p) || unreadable.has(p)) continue;
     for (const config of await listDurable(p)) granted.set(config.id, { config, projectName: names.get(p) });
@@ -334,9 +358,9 @@ export async function loadConnectionScope(
  */
 export function connectionStatus(c: OrchestratorConnection, scope: ConnectionScope): 'in' | 'out' | 'unknown' {
   const owner = scope.local.get(c.ownerId);
-  if (!owner || isDisposedAgent(owner)) return 'out';
+  if ((!owner && !c.ephemeralOwner) || (owner && isDisposedAgent(owner))) return 'out';
   const reach = (id: string, recordedProject: string | undefined): 'in' | 'out' | 'unknown' => {
-    if (id === owner.id) return 'in';
+    if (owner && id === owner.id) return 'in';
     if (c.scope === 'granted') {
       const agent = recordedProject ? scope.granted?.get(id)?.config : scope.local.get(id);
       if (agent) return isDisposedAgent(agent) ? 'out' : 'in';
@@ -344,9 +368,9 @@ export function connectionStatus(c: OrchestratorConnection, scope: ConnectionSco
     }
     if (!recordedProject) {
       const agent = scope.local.get(id);
-      return agent && !isDisposedAgent(agent) && agent.parentAgentId === owner.id && !agent.parentProjectPath ? 'in' : 'out';
+      return agent && !isDisposedAgent(agent) && agent.parentAgentId === owner?.id && !agent.parentProjectPath ? 'in' : 'out';
     }
-    if (scope.foreign.get(owner.id)?.has(id)) return 'in';
+    if (owner && scope.foreign.get(owner.id)?.has(id)) return 'in';
     return scope.unreadable.has(recordedProject) ? 'unknown' : 'out';
   };
   const from = reach(c.agentId, c.agentProjectPath);
@@ -421,12 +445,13 @@ async function readGroupProjectNames(): Promise<Map<string, string> | null> {
 
 /** projectPath → pairs from the last successful read, kept unverified when a read fails. */
 const lastPairs = new Map<string, Array<{ agentId: string; targetId: string }>>();
+const liveEphemeralAgents = new Set<string>();
 
 export const orchestratorConnectionSource: PersistedBindingSource = {
   id: ORCHESTRATOR_CONNECTION_SOURCE_ID,
   prune: true,
   async collect(): Promise<CollectedBindings> {
-    const [projects, groupProjects] = await Promise.all([projectStore.list(), readGroupProjectNames()]);
+    const [projects, groupProjects] = await Promise.all([projectsWithDispatcher(), readGroupProjectNames()]);
     const bindings: PersistedBinding[] = [];
     const unverified: Array<{ agentId: string; targetId: string }> = [];
     for (const project of projects) {
@@ -499,7 +524,7 @@ export function watchOrchestratorConnections(onConnectionsChanged: () => unknown
     // A store in one project lists helpers in others (#2513): a change
     // anywhere can put any project's entries out of scope.
     try {
-      for (const project of await projectStore.list()) {
+      for (const project of await projectsWithDispatcher()) {
         if (!paths.includes(project.path)) paths.push(project.path);
       }
     } catch (err) {
@@ -528,9 +553,7 @@ export function watchOrchestratorConnections(onConnectionsChanged: () => unknown
     if (changed && !stopped) await onConnectionsChanged();
   };
 
-  const unsubscribe = onAgentConfigChanged((projectPath) => {
-    dirty.add(projectPath);
-    // Coalesce a burst of writes and stay out of the writer's call stack.
+  const schedule = () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
@@ -541,6 +564,13 @@ export function watchOrchestratorConnections(onConnectionsChanged: () => unknown
         });
       });
     }, 50);
+  };
+  const unsubscribe = onAgentConfigChanged((projectPath) => {
+    dirty.add(projectPath);
+    schedule();
+  });
+  const unsubscribeQuick = agentRegistry.onAuthChange((agentId) => {
+    if (!agentRegistry.get(agentId) && liveEphemeralAgents.delete(agentId)) schedule();
   });
   // The user deleted a tool-made wire in the UI: drop it from the store so a
   // restart doesn't bring it back. The binding is already gone.
@@ -559,6 +589,7 @@ export function watchOrchestratorConnections(onConnectionsChanged: () => unknown
   return () => {
     stopped = true;
     unsubscribe();
+    unsubscribeQuick();
     unsubscribeRemovals();
     if (timer) clearTimeout(timer);
     timer = null;
@@ -568,5 +599,6 @@ export function watchOrchestratorConnections(onConnectionsChanged: () => unknown
 /** For testing: forget the pairs seen so far. */
 export function _resetOrchestratorConnectionsForTesting(): void {
   lastPairs.clear();
+  liveEphemeralAgents.clear();
   locks.clear();
 }

@@ -535,6 +535,24 @@ async function readStore(): Promise<ProjectStoreV1> {
   return store;
 }
 
+// Windows scanners can briefly hold the destination without delete sharing.
+// Retain the same staged bytes and atomic replacement; never unlink the target.
+const STORE_RENAME_DELAYS_MS = [50, 100, 200, 400];
+const STORE_RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+async function renameStore(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fsp.rename(from, to);
+      return;
+    } catch (error) {
+      const delay = STORE_RENAME_DELAYS_MS[attempt];
+      if (process.platform !== 'win32' || delay === undefined
+        || !STORE_RENAME_RETRY_CODES.has((error as NodeJS.ErrnoException | undefined)?.code ?? '')) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 async function writeStore(store: ProjectStoreV1): Promise<void> {
   return registryMutation(() => writeStoreInner(store));
 }
@@ -559,7 +577,7 @@ async function writeStoreInner(store: ProjectStoreV1): Promise<void> {
   const tmpPath = storePath + '.tmp.' + randomUUID().slice(0, 8);
   await persist.timed('projects', async () => {
     await fsp.writeFile(tmpPath, JSON.stringify(store, null, 2), 'utf-8');
-    await fsp.rename(tmpPath, storePath);
+    await renameStore(tmpPath, storePath);
   });
 
   appLog('core:project-store', 'info', `Wrote ${store.projects.length} project(s) to disk`, {

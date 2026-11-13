@@ -44,35 +44,52 @@ describe('bounded whole-checkout proof across authority awaits', () => {
     const stream = vi.spyOn(fs, 'opendirSync').mockImplementation((name, options) => {
       const handle = opendir(name, options);
       let remaining = entries;
-      vi.spyOn(handle, 'readSync').mockImplementation(() => {
+      handle.readSync = () => {
         directoryReads++;
         return remaining-- > 0 ? entry : null;
-      });
+      };
       return handle;
     });
-    const open = vi.spyOn(fs, 'openSync');
-    const read = vi.spyOn(fs, 'readSync');
+    // Count native operations without retaining 60,000 spy argument/result
+    // records. The filesystem streaming and file bytes remain real.
+    const open = Object.getOwnPropertyDescriptor(fs, 'openSync')!;
+    const read = Object.getOwnPropertyDescriptor(fs, 'readSync')!;
+    const nativeOpen = fs.openSync;
+    const nativeRead = fs.readSync;
+    let opens = 0;
+    let reads = 0;
+    let bytesRead = 0;
+    Object.defineProperty(fs, 'openSync', { configurable: true, value: (...args: unknown[]) => {
+      opens++;
+      return Reflect.apply(nativeOpen, fs, args);
+    } });
+    Object.defineProperty(fs, 'readSync', { configurable: true, value: (...args: unknown[]) => {
+      reads++;
+      const bytes = Reflect.apply(nativeRead, fs, args) as number;
+      bytesRead += bytes;
+      return bytes;
+    } });
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
     try {
       expect(checkoutFingerprint(directory)).toMatch(/^[a-f0-9]{64}$/);
       expect(directoryReads).toBe(20_001);
-      expect(open).toHaveBeenCalledTimes(20_000);
-      expect(read).toHaveBeenCalledTimes(40_000);
-      expect(read.mock.results.reduce((bytes, result) => bytes + (result.type === 'return' ? result.value : 0), 0)).toBe(Buffer.byteLength(content) * 20_000);
+      expect(opens).toBe(20_000);
+      expect(reads).toBe(40_000);
+      expect(bytesRead).toBe(Buffer.byteLength(content) * 20_000);
       entries = 20_001;
       directoryReads = 0;
-      open.mockClear();
-      read.mockClear();
+      opens = 0;
+      reads = 0;
       expect(() => checkoutFingerprint(directory)).toThrow(expect.objectContaining({ reason: 'checkout_inspection_limit' }));
       expect(directoryReads).toBe(20_001);
-      expect(open).not.toHaveBeenCalled();
-      expect(read).not.toHaveBeenCalled();
+      expect(opens).toBe(0);
+      expect(reads).toBe(0);
       expect(fs.readFileSync(file, 'utf8')).toBe(content);
     } finally {
       clock.mockRestore();
       stream.mockRestore();
-      open.mockRestore();
-      read.mockRestore();
+      Object.defineProperty(fs, 'openSync', open);
+      Object.defineProperty(fs, 'readSync', read);
     }
   });
 
