@@ -443,6 +443,8 @@ async function startActionsNow(): Promise<void> {
 }
 
 export function stopActions(): void {
+  if (changeTimer !== null) clearTimeout(changeTimer);
+  changeTimer = null;
   presence?.stop();
   presence = null;
   for (const u of unsubs) u();
