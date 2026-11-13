@@ -1,8 +1,20 @@
-import { afterAll, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach as rawBeforeEach, describe, expect, it as rawIt, onTestFailed, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync, spawn } from 'child_process';
 import type { Project } from '../../../shared/types';
+import { CheckpointFixtureLifetime } from '../../../../test/checkpoint-fixture-lifetime';
+import { ownedRegistration, preservingFailure } from '../../../../test/dispatcher-work-owner';
+
+const lifetime = vi.hoisted(() => ({
+  current: undefined as CheckpointFixtureLifetime | undefined,
+  closing: false,
+  controllers: new Set<AbortController>(),
+  releases: [] as Array<() => void>,
+  restores: [] as Array<() => void>,
+  directories: [] as string[],
+  ignores: new Map<string, typeof import('../agent-config').ensureGitignore>(),
+}));
 
 const temp = vi.hoisted(() => {
   const f = require('fs') as typeof import('fs');
@@ -19,6 +31,7 @@ const executions = vi.hoisted(() => ({
 
 vi.mock('child_process', async (original) => {
   const child = await original<typeof import('child_process')>();
+  const { ownCheckpointExecFile } = await import('../../../../test/checkpoint-fixture-lifetime');
   const paths = await import('path');
   const key = (command: string) => process.platform === 'win32' ? paths.normalize(command).toLowerCase() : paths.normalize(command);
   const admit = (api: string, command: string) => {
@@ -31,6 +44,7 @@ vi.mock('child_process', async (original) => {
   };
   return {
     ...child,
+    execFile: ownCheckpointExecFile(child.execFile, () => lifetime.current),
     spawn: (...args: Parameters<typeof child.spawn>) => { admit('spawn', args[0]); return child.spawn(...args); },
     execFileSync: (...args: Parameters<typeof child.execFileSync>) => { admit('execFileSync', args[0]); return child.execFileSync(...args); },
   };
@@ -39,7 +53,13 @@ vi.mock('../base-dir', () => ({ getBaseDirPath: () => temp.base }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../badge-settings', () => ({ getSettings: () => ({}), saveSettings: vi.fn() }));
 vi.mock('../sound-service', () => ({ getSettings: () => ({}), saveSettings: vi.fn() }));
-vi.mock('../agent-config', () => ({ ensureGitignore: vi.fn(async () => true) }));
+vi.mock('../agent-config', () => ({
+  ensureGitignore: vi.fn((folder: string, guard?: () => void) => {
+    const implementation = lifetime.ignores.get(folder);
+    if (!implementation || !lifetime.current) throw new Error('Ignore write has no destination-bound fixture owner');
+    return lifetime.current.observeDirect(implementation(folder, guard));
+  }),
+}));
 
 import { ProjectImportService, type ImportAuthorization } from './service';
 import { ImportStore } from './store';
@@ -49,7 +69,35 @@ import * as projectStore from '../project-store';
 import { registerProjectFolder } from '../project-add';
 import { ensureGitignore } from '../agent-config';
 
+function owner(): CheckpointFixtureLifetime {
+  if (!lifetime.current) throw new Error('Import fixture is missing');
+  return lifetime.current;
+}
+const it = ownedRegistration(rawIt, 1, (promise) => { owner().observeRaw(promise); });
+const beforeEach = ownedRegistration(rawBeforeEach, 0, (promise) => { owner().observeRaw(promise); });
+
+// start() intentionally detaches perform(). Capture that full causal root, not
+// just its terminal store update, without changing production or its scheduling.
+const performDescriptor = Object.getOwnPropertyDescriptor(ProjectImportService.prototype, 'perform');
+if (!performDescriptor || typeof performDescriptor.value !== 'function') throw new Error('Import job observation is unavailable');
+Object.defineProperty(ProjectImportService.prototype, 'perform', {
+  ...performDescriptor,
+  value: new Proxy(performDescriptor.value, {
+    apply(target, receiver, args: unknown[]) {
+      const controller = args[1];
+      if (!(controller instanceof AbortController)) throw new Error('Import job has no owned controller');
+      const current = owner();
+      lifetime.controllers.add(controller);
+      if (lifetime.closing) controller.abort();
+      const result: unknown = Reflect.apply(target, receiver, args);
+      if (!(result instanceof Promise)) throw new Error('Import job has no completion promise');
+      return current.observeDirect(result);
+    },
+  }),
+});
+
 let n = 0;
+let caseNumber = 0;
 const environment = () => ({ PATH: process.env.PATH, HOME: temp.root, USERPROFILE: temp.root, XDG_CONFIG_HOME: path.join(temp.root, 'xdg') });
 const fixtureConfig = path.join(temp.root, 'empty.config');
 fs.writeFileSync(fixtureConfig, '', { flag: 'wx', mode: 0o600 });
@@ -64,6 +112,24 @@ const assertCurrent = async (): Promise<void> => {};
 const authorized: ImportAuthorization = vi.fn(async () => ({ kind: 'approved', assertCurrent }));
 const projects: Project[] = [];
 const terminalUpdates = new Map<string, { promise: Promise<void>; resolve: () => void }>();
+const seed = path.join(temp.root, 'source-baseline');
+let seedCommit: string;
+let actualEnsureGitignore: typeof ensureGitignore;
+
+beforeAll(async () => {
+  fs.mkdirSync(seed);
+  git(seed, 'init', '-q', '--initial-branch=trunk', '--template=');
+  fs.writeFileSync(path.join(seed, 'readme.txt'), 'hello\n');
+  git(seed, 'add', '.');
+  git(seed, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'initial');
+  seedCommit = git(seed, 'rev-parse', 'HEAD');
+  actualEnsureGitignore = (await vi.importActual<typeof import('../agent-config')>('../agent-config')).ensureGitignore;
+});
+
+function realRegistration(f: ReturnType<typeof fixture>): void {
+  lifetime.ignores.set(f.destination, actualEnsureGitignore);
+  f.service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: async () => [], register: registerProjectFolder });
+}
 
 function gitAdmission(source: string, destination: string) {
   executions.active = true;
@@ -90,13 +156,10 @@ function gitAdmission(source: string, destination: string) {
 
 function fixture(sourceEnvironment = environment) {
   const work = path.join(temp.root, `case-${++n}`);
+  lifetime.directories.push(work);
   const source = path.join(work, 'source');
-  fs.mkdirSync(source, { recursive: true });
-  git(source, 'init', '-q', '--initial-branch=trunk', '--template=');
-  fs.writeFileSync(path.join(source, 'readme.txt'), 'hello\n');
-  git(source, 'add', '.');
-  git(source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'initial');
-  const commit = git(source, 'rev-parse', 'HEAD');
+  fs.cpSync(seed, source, { recursive: true });
+  const commit = seedCommit;
   const destination = path.join(work, 'imported');
   const url = 'https://github.com/example/repository.git';
   const safeGit = createImportGit(sourceEnvironment);
@@ -164,6 +227,16 @@ async function finished(service: ProjectImportService, id: string): Promise<Awai
 }
 
 beforeEach(() => {
+  lifetime.current?.assertRetired();
+  lifetime.current = new CheckpointFixtureLifetime();
+  lifetime.closing = false;
+  lifetime.controllers.clear();
+  lifetime.releases = [];
+  lifetime.restores = [];
+  lifetime.directories = [];
+  lifetime.ignores.clear();
+  temp.base = path.join(temp.root, `registry-${++caseNumber}`);
+  lifetime.directories.push(temp.base);
   projects.length = 0;
   terminalUpdates.clear();
   executions.active = false;
@@ -172,7 +245,33 @@ beforeEach(() => {
   vi.mocked(authorized).mockResolvedValue({ kind: 'approved', assertCurrent });
 });
 
-afterAll(() => { fs.rmSync(temp.root, { recursive: true, force: true }); });
+function stopImports(): void {
+  lifetime.closing = true;
+  for (const controller of lifetime.controllers) controller.abort();
+  for (const release of lifetime.releases) release();
+}
+
+function settleImports(): Promise<void> {
+  stopImports();
+  return owner().settleEpoch(() => Promise.resolve());
+}
+
+afterEach(async () => {
+  const directories = lifetime.directories;
+  const restores = lifetime.restores;
+  stopImports();
+  await owner().close(() => Promise.resolve(), () => {
+    for (const restore of restores) restore();
+    lifetime.ignores.clear();
+    for (const directory of directories) fs.rmSync(directory, { recursive: true, force: true });
+  });
+});
+
+afterAll(() => {
+  lifetime.current?.assertRetired();
+  Object.defineProperty(ProjectImportService.prototype, 'perform', performDescriptor);
+  fs.rmSync(temp.root, { recursive: true, force: true });
+});
 
 describe('bounded import user flow using isolated real Git fixtures', () => {
   it('previews actual trunk/tip without a checkout, reuses the same preview and requires a real approval decision', async () => {
@@ -208,8 +307,7 @@ describe('bounded import user flow using isolated real Git fixtures', () => {
 
   it('uses the existing project registration implementation and preserves the registered id on ignore-rule failure', async () => {
     const f = fixture();
-    fs.rmSync(temp.base, { recursive: true, force: true });
-    vi.mocked(ensureGitignore).mockRejectedValueOnce(new Error('unwritable'));
+    lifetime.ignores.set(f.destination, async () => { throw new Error('unwritable'); });
     const service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: projectStore.list, register: registerProjectFolder });
     const planResult = await service.preview('dispatcher', { url: f.url, destination: f.destination });
     if (planResult.status !== 'ready') throw new Error('expected ready');
@@ -355,11 +453,76 @@ describe('approval and placement change invalidation', () => {
 });
 
 describe('QA engine regressions with real Git and harmless isolated markers', () => {
+  it('keeps a late previous registration from consuming another destination\'s real ignore writer', async () => {
+    const previous = fixture();
+    const next = fixture();
+    let release!: () => void;
+    let entered!: () => void;
+    const paused = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    lifetime.releases.push(release);
+    lifetime.ignores.set(previous.source, async () => { throw new Error('previous destination refused'); });
+    lifetime.ignores.set(next.source, actualEnsureGitignore);
+    const late = owner().observeDirect(registerProjectFolder(previous.source, {
+      beforeGitignore: async () => { entered(); await paused; }, assertSafe: () => {},
+    }));
+    await preservingFailure(async () => {
+      await Promise.race([ready, late.then(() => { throw new Error('Previous registration settled before its gate'); })]);
+      const result = await registerProjectFolder(next.source, { beforeGitignore: assertCurrent, assertSafe: () => {} });
+      expect(result).toMatchObject({ created: true, gitignore: 'updated' });
+      expect(fs.readFileSync(path.join(next.source, '.gitignore'), 'utf8')).toContain('.clubhouse/agents/');
+      release();
+      expect(await late).toMatchObject({ created: true, gitignore: 'failed' });
+      expect(fs.existsSync(path.join(previous.source, '.gitignore'))).toBe(false);
+      expect(vi.mocked(ensureGitignore).mock.calls.map(([folder]) => folder)).toEqual([next.source, previous.source]);
+      expect(fs.readFileSync(path.join(previous.source, 'readme.txt'), 'utf8')).toBe('hello\n');
+    }, async () => { release(); await late; });
+  });
+
+  it('drains a detached approved job before permitting registry removal after its caller stops waiting', async () => {
+    const f = fixture();
+    realRegistration(f);
+    fs.mkdirSync(temp.base);
+    const marker = path.join(temp.base, 'keep.txt');
+    fs.writeFileSync(marker, 'owned registry bytes\n');
+    let checks = 0;
+    let release!: () => void;
+    let entered!: () => void;
+    const paused = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    lifetime.releases.push(release);
+    const approval: ImportAuthorization = async () => ({
+      kind: 'approved',
+      assertCurrent: async () => { if (++checks === 2) { entered(); await paused; } },
+    });
+    const { receipt } = await start(f, approval);
+    const terminal = terminalUpdates.get(receipt.id);
+    if (!terminal) throw new Error('Detached job has no terminal persistence observable');
+    await preservingFailure(async () => {
+      await Promise.race([ready, terminal.promise.then(() => { throw new Error('Detached job settled before its gate'); })]);
+      expect(owner().evidence().teardown.directPending).toBeGreaterThan(0);
+      expect(() => owner().mutateEpoch(() => { fs.rmSync(temp.base, { recursive: true }); })).toThrow('accounting is incomplete');
+      expect(fs.readFileSync(marker, 'utf8')).toBe('owned registry bytes\n');
+      await settleImports();
+      expect(await f.service.status('dispatcher', receipt.id)).toMatchObject({ phase: 'cancelled', cloneCompleted: false });
+      expect(fs.existsSync(f.destination)).toBe(false);
+      expect(ensureGitignore).not.toHaveBeenCalled();
+      const late = fixture();
+      const admitted = await start(late);
+      expect(await finished(late.service, admitted.receipt.id)).toMatchObject({ phase: 'cancelled', cloneCompleted: false });
+      expect(fs.existsSync(late.destination)).toBe(false);
+      await settleImports();
+      owner().mutateEpoch(() => { fs.rmSync(temp.base, { recursive: true }); });
+      expect(fs.existsSync(temp.base)).toBe(false);
+    }, async () => { await settleImports(); await terminal.promise; });
+  });
+
   it('awaits actual terminal persistence while a completed Git status callback remains pending beyond 300 polling turns', async () => {
     const f = fixture();
     let release!: () => void;
     let reached!: () => void;
     const blocked = new Promise<void>((resolve) => { release = resolve; });
+    lifetime.releases.push(() => { vi.useRealTimers(); release(); });
     const statusCompleted = new Promise<void>((resolve) => { reached = resolve; });
     const run = f.runner.run;
     f.runner.run = vi.fn(async (args, options) => {
@@ -564,6 +727,7 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     let release!: () => void;
     const ready = new Promise<void>((resolve) => { entered = resolve; });
     const paused = new Promise<void>((resolve) => { release = resolve; });
+    lifetime.releases.push(release);
     const remote = f.runner.remote;
     f.runner.remote = vi.fn(async (...args) => {
       const result = await remote(...args);
@@ -634,54 +798,54 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     expect(f.register).not.toHaveBeenCalled();
   });
 
-  it('preserves the registered id and refuses a gitignore symlink swapped during real addProject', async () => {
-    const f = fixture();
-    fs.rmSync(temp.base, { recursive: true, force: true });
-    fs.writeFileSync(path.join(f.source, '.gitignore'), '# fixture\n');
-    git(f.source, 'add', '.');
-    git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'gitignore fixture');
-    const outside = path.join(f.work, 'outside-user-file');
-    fs.writeFileSync(outside, 'keep\n');
-    const actualConfig = await vi.importActual<typeof import('../agent-config')>('../agent-config');
-    vi.mocked(ensureGitignore).mockImplementationOnce(actualConfig.ensureGitignore);
-    const addProject = projectStore.addProject;
-    const spy = vi.spyOn(projectStore, 'addProject').mockImplementation(async (folder) => {
-      const result = await addProject(folder);
-      fs.renameSync(path.join(folder, '.gitignore'), path.join(f.work, 'original-ignore'));
-      fs.symlinkSync(outside, path.join(folder, '.gitignore'));
-      return result;
+  describe('real registration with prepared checkout sources', () => {
+    let f: ReturnType<typeof fixture>;
+    beforeEach(() => {
+      f = fixture();
+      realRegistration(f);
     });
-    f.service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: async () => [], register: registerProjectFolder });
-    try {
+
+    describe('gitignore identity replacement', () => {
+      let outside: string;
+      beforeEach(() => {
+        fs.writeFileSync(path.join(f.source, '.gitignore'), '# fixture\n');
+        git(f.source, 'add', '.');
+        git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'gitignore fixture');
+        outside = path.join(f.work, 'outside-user-file');
+        fs.writeFileSync(outside, 'keep\n');
+        const addProject = projectStore.addProject;
+        const spy = vi.spyOn(projectStore, 'addProject').mockImplementation(async (folder) => {
+          const result = await addProject(folder);
+          fs.renameSync(path.join(folder, '.gitignore'), path.join(f.work, 'original-ignore'));
+          fs.symlinkSync(outside, path.join(folder, '.gitignore'));
+          return result;
+        });
+        lifetime.restores.push(() => { spy.mockRestore(); });
+      });
+
+      it('preserves the registered id and refuses a gitignore symlink swapped during real addProject', async () => {
+        const { receipt } = await start(f);
+        const result = await finished(f.service, receipt.id);
+        expect(result).toMatchObject({ phase: 'partial', cloneCompleted: true, gitignore: 'failed' });
+        expect(result.projectId).toBeDefined();
+        expect(await projectStore.findByPath(f.destination)).toMatchObject({ id: result.projectId });
+        expect(fs.readFileSync(outside, 'utf8')).toBe('keep\n');
+      });
+    });
+
+    it('registers a normal checkout through real addProject and guarded creation of its missing gitignore', async () => {
       const { receipt } = await start(f);
       const result = await finished(f.service, receipt.id);
-      expect(result).toMatchObject({ phase: 'partial', cloneCompleted: true, gitignore: 'failed' });
-      expect(result.projectId).toBeDefined();
+      expect(result).toMatchObject({ phase: 'completed', cloneCompleted: true, gitignore: 'updated' });
       expect(await projectStore.findByPath(f.destination)).toMatchObject({ id: result.projectId });
-      expect(fs.readFileSync(outside, 'utf8')).toBe('keep\n');
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it('registers a normal checkout through real addProject and guarded creation of its missing gitignore', async () => {
-    const f = fixture();
-    fs.rmSync(temp.base, { recursive: true, force: true });
-    const actualConfig = await vi.importActual<typeof import('../agent-config')>('../agent-config');
-    vi.mocked(ensureGitignore).mockImplementationOnce(actualConfig.ensureGitignore);
-    f.service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: async () => [], register: registerProjectFolder });
-    const { receipt } = await start(f);
-    const result = await finished(f.service, receipt.id);
-    expect(result).toMatchObject({ phase: 'completed', cloneCompleted: true, gitignore: 'updated' });
-    expect(await projectStore.findByPath(f.destination)).toMatchObject({ id: result.projectId });
-    expect(fs.readFileSync(path.join(f.destination, '.gitignore'), 'utf8')).toContain('.clubhouse/agents/');
+      expect(fs.readFileSync(path.join(f.destination, '.gitignore'), 'utf8')).toContain('.clubhouse/agents/');
+      expect(ensureGitignore).toHaveBeenCalledExactlyOnceWith(f.destination, expect.any(Function));
+    });
   });
 
   it('retains the real project id and reports partial cancellation after the actual registry commit', async () => {
     const f = fixture();
-    fs.rmSync(temp.base, { recursive: true, force: true });
-    const actualConfig = await vi.importActual<typeof import('../agent-config')>('../agent-config');
-    vi.mocked(ensureGitignore).mockImplementationOnce(actualConfig.ensureGitignore);
+    realRegistration(f);
     let importId = '';
     const addProject = projectStore.addProject;
     const spy = vi.spyOn(projectStore, 'addProject').mockImplementation(async (folder) => {
@@ -689,16 +853,14 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
       expect(await f.service.cancel('dispatcher', importId, folder)).toMatchObject({ status: 'cancellation_requested' });
       return result;
     });
-    f.service = new ProjectImportService({ store: f.store, git: f.runner, listProjects: async () => [], register: registerProjectFolder });
-    try {
-      const { receipt } = await start(f);
-      importId = receipt.id;
-      const result = await finished(f.service, receipt.id);
-      expect(result).toMatchObject({ phase: 'partial', reason: 'cancelled', gitignore: 'failed', cloneCompleted: true });
-      expect(result.projectId).toBeDefined();
-      expect(await projectStore.findByPath(f.destination)).toMatchObject({ id: result.projectId });
-      expect(fs.existsSync(path.join(f.destination, '.gitignore'))).toBe(false);
-    } finally { spy.mockRestore(); }
+    lifetime.restores.push(() => { spy.mockRestore(); });
+    const { receipt } = await start(f);
+    importId = receipt.id;
+    const result = await finished(f.service, receipt.id);
+    expect(result).toMatchObject({ phase: 'partial', reason: 'cancelled', gitignore: 'failed', cloneCompleted: true });
+    expect(result.projectId).toBeDefined();
+    expect(await projectStore.findByPath(f.destination)).toMatchObject({ id: result.projectId });
+    expect(fs.existsSync(path.join(f.destination, '.gitignore'))).toBe(false);
   });
 
   it('rejects index replacement during read-only status rather than accepting it as an optional index refresh', async () => {
@@ -827,6 +989,7 @@ describe('cancellation, interruption and unsafe incidental execution', () => {
       if (args[0] !== 'fetch') return original(args, options);
       fetching();
       await new Promise<void>((_resolve, reject) => {
+        options.signal!.throwIfAborted();
         options.signal!.addEventListener('abort', () => reject(new ImportError('cancelled', 'cancelled')), { once: true });
       });
 

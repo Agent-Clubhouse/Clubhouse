@@ -4,9 +4,30 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'events';
+import { afterAll, afterEach, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
 import { canonicalHandoffManifest, HANDOFF_TRANSFER_DEFAULTS, type HandoffWorktreeManifest } from '../../shared/handoff-manifest';
 import { prepareHandoffSnapshot, verifyHandoffSnapshot, type HandoffSnapshot, type PrepareHandoffSnapshot } from './handoff-snapshot';
+import { CheckpointFixtureLifetime, ownCheckpointExecFile } from '../../../test/checkpoint-fixture-lifetime';
+import { ownedRegistration, preservingFailure } from '../../../test/dispatcher-work-owner';
+
+interface HandoffFixtureResources { directories: string[] }
+const lifetime = vi.hoisted(() => ({
+  current: undefined as CheckpointFixtureLifetime | undefined,
+  resources: undefined as HandoffFixtureResources | undefined,
+}));
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  const { ownCheckpointExecFile } = await import('../../../test/checkpoint-fixture-lifetime');
+  return { ...actual, execFile: ownCheckpointExecFile(actual.execFile, () => lifetime.current) };
+});
+
+function owner(): CheckpointFixtureLifetime {
+  if (!lifetime.current) throw new Error('Handoff fixture is missing');
+  return lifetime.current;
+}
+const it = ownedRegistration(rawIt, 1, (promise) => { owner().observeRaw(promise); });
+const beforeEach = ownedRegistration(rawBeforeEach, 0, (promise) => { owner().observeRaw(promise); });
 
 const exec = promisify(execFile);
 const hash = (content: Uint8Array | string) => createHash('sha256').update(content).digest('hex');
@@ -64,7 +85,17 @@ async function unsupportedTrackedBase(mode: string): Promise<void> {
 }
 
 beforeEach(async () => {
-  root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-snapshot-')));
+  lifetime.current?.assertRetired();
+  lifetime.current = new CheckpointFixtureLifetime();
+  const resources: HandoffFixtureResources = { directories: [] };
+  lifetime.resources = resources;
+  await prepareHandoffFixture(resources);
+});
+
+async function prepareHandoffFixture(resources: HandoffFixtureResources): Promise<void> {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-snapshot-'));
+  resources.directories.push(directory);
+  root = await fs.promises.realpath(directory);
   // Isolate supported fixtures with regular config files; Git for Windows rejects null devices.
   const config = path.join(root, 'empty-git-config');
   await fs.promises.writeFile(config, '');
@@ -75,23 +106,38 @@ beforeEach(async () => {
   staging = path.join(root, 'staging');
   await fs.promises.mkdir(repo);
   await fs.promises.mkdir(staging);
-  await git('init', '-q', '-b', 'main');
+}
+
+async function initializeRepository(files: Record<string, string>, format?: 'sha256'): Promise<void> {
+  await git('init', '-q', '-b', 'main', ...(format ? [`--object-format=${format}`] : []));
   await git('config', 'user.name', 'Fixture');
   await git('config', 'user.email', 'fixture@example.com');
-  await file('.gitignore', 'models/\nignored-unselected.txt\nnode_modules/\n');
-  await file('tracked.txt', 'base\n');
-  await file('deleted.txt', 'delete me\n');
+  for (const [name, content] of Object.entries(files)) await file(name, content);
   await git('add', '.');
   await git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Fixture base');
+}
+
+const initializeStandardRepository = () => initializeRepository({
+  '.gitignore': 'models/\nignored-unselected.txt\nnode_modules/\n', 'tracked.txt': 'base\n', 'deleted.txt': 'delete me\n',
 });
 
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllEnvs();
-  fs.rmSync(root, { recursive: true, force: true });
+function closeHandoffFixture(current: CheckpointFixtureLifetime, resources: HandoffFixtureResources): Promise<void> {
+  return current.close(() => Promise.resolve(), () => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    for (const directory of resources.directories) fs.rmSync(directory, { recursive: true, force: true });
+  });
+}
+
+afterEach(async () => {
+  const resources = lifetime.resources;
+  if (!resources) throw new Error('Handoff fixture resources are missing');
+  await closeHandoffFixture(owner(), resources);
 });
+afterAll(() => { lifetime.current?.assertRetired(); });
 
 describe('local secret-safe handoff snapshots', () => {
+  beforeEach(initializeStandardRepository);
   it.each(['loose', 'packed'])('refuses %s replacement refs without binding their tree to the original base', async (storage) => {
     const { base, replacement } = await replacementFixture();
     await git('replace', base, replacement);
@@ -340,24 +386,6 @@ describe('local secret-safe handoff snapshots', () => {
     const snapshot = await prepareHandoffSnapshot(options());
     expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['.gitattributes', 'tracked.txt']);
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('base\r\n');
-  });
-
-  it('detects same-size raw tracked edits in a SHA-256-object-format repository', async () => {
-    repo = path.join(root, 'sha256-repo');
-    await fs.promises.mkdir(repo);
-    await git('init', '-q', '-b', 'main', '--object-format=sha256');
-    await git('config', 'user.name', 'Fixture');
-    await git('config', 'user.email', 'fixture@example.com');
-    await file('tracked.txt', 'base\n');
-    await file('unchanged.txt', 'unchanged\n');
-    await git('add', '.');
-    await git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'SHA256 fixture');
-    await file('tracked.txt', 'same\n');
-    const snapshot = await prepareHandoffSnapshot(options());
-    expect(snapshot.manifest.repo.base).toMatch(/^[a-f0-9]{64}$/);
-    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['tracked.txt']);
-    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('same\n');
-    expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
   });
 
   it('preserves final tracked bytes, untracked and selected >512KiB ignored files, deletions and executable mode', async () => {
@@ -692,9 +720,114 @@ describe('local secret-safe handoff snapshots', () => {
   });
 });
 
+describe('local secret-safe handoff snapshots', () => {
+  beforeEach(() => initializeRepository({ 'tracked.txt': 'base\n', 'unchanged.txt': 'unchanged\n' }, 'sha256'));
+
+  it('detects same-size raw tracked edits in a SHA-256-object-format repository', async () => {
+    await file('tracked.txt', 'same\n');
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.repo.base).toMatch(/^[a-f0-9]{64}$/);
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['tracked.txt']);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('same\n');
+    expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
+  });
+});
+
+describe('handoff Git process ownership', () => {
+  it('retires admitted directories after failed or late raw handoff setup without deleting the previous fixture', async () => {
+    const previous = path.join(root, 'previous-owner.txt');
+    await fs.promises.writeFile(previous, 'preserve previous fixture\n');
+    for (const rejected of [true, false]) {
+      const current = new CheckpointFixtureLifetime();
+      const resources: HandoffFixtureResources = { directories: [] };
+      const failure = new Error('Injected realpath failure after directory creation');
+      let release!: () => void;
+      let entered!: () => void;
+      const paused = new Promise<void>((resolve) => { release = resolve; });
+      const ready = new Promise<void>((resolve) => { entered = resolve; });
+      const realpath = fs.promises.realpath;
+      const spy = vi.spyOn(fs.promises, 'realpath').mockImplementationOnce(async (file) => {
+        entered();
+        await paused;
+        if (rejected) throw failure;
+        return realpath(file);
+      });
+      const setup = current.observeRaw(prepareHandoffFixture(resources));
+      let closing: Promise<void> | undefined;
+      await preservingFailure(async () => {
+        await Promise.race([ready, setup.then(() => { throw new Error('Setup settled before its realpath gate'); })]);
+        expect(resources.directories).toHaveLength(1);
+        const directory = resources.directories[0];
+        expect(fs.existsSync(directory)).toBe(true);
+        closing = closeHandoffFixture(current, resources);
+        expect(() => current.assertRetired()).toThrow();
+        expect(fs.existsSync(directory)).toBe(true);
+        release();
+        if (rejected) await expect(setup).rejects.toBe(failure);
+        else await setup;
+        await closing;
+        current.assertRetired();
+        expect(fs.existsSync(directory)).toBe(false);
+        expect(await fs.promises.readFile(previous, 'utf8')).toBe('preserve previous fixture\n');
+      }, async () => {
+        release();
+        await Promise.allSettled([setup]);
+        try { await (closing ?? closeHandoffFixture(current, resources)); }
+        finally { spy.mockRestore(); }
+      });
+    }
+  });
+
+  it('retains a fake native custom-promisify child after promise settlement until its actual close', async () => {
+    const child = new EventEmitter();
+    let resolve!: (output: { stdout: string; stderr: string }) => void;
+    const result = Object.assign(new Promise<{ stdout: string; stderr: string }>((complete) => { resolve = complete; }), { child });
+    const delegate = () => { throw new Error('The native custom implementation must be retained'); };
+    const custom = vi.fn((): Promise<unknown> & { child: EventEmitter } => result);
+    Object.defineProperty(delegate, promisify.custom, { value: custom });
+    const wrapped = ownCheckpointExecFile(delegate, owner);
+    const rejectedChild = new EventEmitter();
+    const failure = new Error('Original native rejection');
+    let reject: (error: unknown) => void = () => {};
+    let rejected: Promise<unknown> | undefined;
+    await preservingFailure(async () => {
+      expect(promisify(wrapped)()).toBe(result);
+      expect(result.child).toBe(child);
+      expect(custom).toHaveBeenCalledOnce();
+      child.emit('exit');
+      resolve({ stdout: 'raw bytes', stderr: '' });
+      expect(await result).toEqual({ stdout: 'raw bytes', stderr: '' });
+      expect(owner().evidence().teardown).toMatchObject({ callbackPending: 0, closePending: 1, childPending: 1 });
+      expect(() => owner().mutateEpoch(() => { throw new Error('must not retire'); })).toThrow('accounting is incomplete');
+      child.emit('close');
+      await owner().settleEpoch(() => Promise.resolve());
+      expect(owner().evidence().teardown.childPending).toBe(0);
+      const rejection = Object.assign(new Promise<unknown>((_resolve, fail) => { reject = fail; }), { child: rejectedChild });
+      custom.mockReturnValueOnce(rejection);
+      rejected = promisify(wrapped)();
+      expect(rejected).toBe(rejection);
+      expect(rejection.child).toBe(rejectedChild);
+      rejectedChild.emit('close');
+      expect(owner().evidence().teardown).toMatchObject({ callbackPending: 1, closePending: 0, childPending: 1 });
+      reject(failure);
+      await expect(rejected).rejects.toBe(failure);
+      await owner().settleEpoch(() => Promise.resolve());
+      expect(owner().evidence().teardown.childPending).toBe(0);
+    }, async () => {
+      resolve({ stdout: 'raw bytes', stderr: '' });
+      child.emit('close');
+      await result;
+      reject(failure);
+      rejectedChild.emit('close');
+      await rejected?.then(() => {}, () => {});
+    });
+  });
+});
+
 describe('receiver byte and hash verification', () => {
   let snapshot: HandoffSnapshot;
   beforeEach(async () => {
+    await initializeStandardRepository();
     await file('new.txt', 'safe file');
     snapshot = await prepareHandoffSnapshot(options());
   });
