@@ -86,9 +86,42 @@ function skillDependencies(content: ManagedSkillContent): DeclaredDependency[] {
   return out;
 }
 
-/** The package a launcher fetches: the first argument that isn't a flag. */
-function launchedPackage(args: string[]): string | undefined {
-  return args.find((a) => !a.startsWith('-'));
+/**
+ * How each launcher reads its options before the package: the options that
+ * name the package, the ones that take a value, and the ones that don't. An
+ * option it doesn't know might take the next argument, so the package is unknown.
+ */
+interface LauncherOptions { names: string[]; values: string[]; flags: string[] }
+const LAUNCHERS: Record<'npx' | 'bunx' | 'dlx' | 'uvx' | 'pipx', LauncherOptions> = {
+  npx: { names: ['-p', '--package'], values: ['-c', '--call', '--cache', '--registry', '--userconfig', '-w', '--workspace'],
+    flags: ['-y', '--yes', '--no', '--no-install', '-q', '--quiet', '--silent', '--offline', '--prefer-offline', '--prefer-online', '--ignore-existing'] },
+  bunx: { names: ['-p', '--package'], values: [], flags: ['--bun', '--no-install', '--silent', '--verbose'] },
+  dlx: { names: ['-p', '--package'], values: ['-c', '--reporter', '--registry'], flags: ['-q', '--quiet', '--silent', '--shell-mode'] },
+  uvx: { names: ['--from'],
+    values: ['-p', '--python', '--with', '--with-editable', '--with-requirements', '--index', '--index-url', '--default-index', '--extra-index-url',
+      '-i', '-f', '--find-links', '--index-strategy', '--keyring-provider', '--resolution', '--prerelease', '--exclude-newer', '--link-mode',
+      '-c', '--constraints', '--overrides', '--cache-dir', '--directory', '--project', '--config-file', '--python-preference',
+      '-P', '--upgrade-package', '--reinstall-package', '--refresh-package'],
+    flags: ['-q', '--quiet', '-v', '--verbose', '--isolated', '-n', '--no-cache', '--offline', '--refresh', '-U', '--upgrade', '--reinstall',
+      '--no-config', '--no-progress', '--native-tls', '--compile-bytecode', '--managed-python', '--no-managed-python', '--no-python-downloads'] },
+  pipx: { names: ['--spec'], values: ['--python', '--pip-args', '--index-url', '--backend', '--fetch-python'],
+    flags: ['-q', '--quiet', '-v', '--verbose', '--no-cache', '--system-site-packages', '--path', '--pypackages'] },
+};
+
+/** The package a launcher fetches, or 'unknown' when an option it can't read comes first. */
+function launchedPackage(args: string[], options: LauncherOptions): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--') return args[i + 1];
+    if (!arg.startsWith('-')) return arg;
+    const eq = arg.indexOf('=');
+    const option = eq > 0 ? arg.slice(0, eq) : arg;
+    if (options.names.includes(option)) return eq > 0 ? arg.slice(eq + 1) : args[i + 1];
+    if (options.values.includes(option)) { if (eq < 0) i++; continue; }
+    if (options.flags.includes(option) || eq > 0) continue;
+    return 'unknown';
+  }
+  return undefined;
 }
 
 function mcpDependencies(content: ManagedMcpContent): DeclaredDependency[] {
@@ -105,11 +138,14 @@ function mcpDependencies(content: ManagedMcpContent): DeclaredDependency[] {
   const args = content.args ?? [];
   const runner = command.replace(/\.(cmd|exe)$/i, '').toLowerCase();
   const out: DeclaredDependency[] = [{ kind: 'command', name: command, from: 'MCP command' }];
-  const pkg = runner === 'npx' || runner === 'bunx' ? launchedPackage(args)
-    : (runner === 'pnpm' || runner === 'yarn') && args[0] === 'dlx' ? launchedPackage(args.slice(1))
-      : runner === 'uvx' ? launchedPackage(args)
-        : runner === 'pipx' && args[0] === 'run' ? launchedPackage(args.slice(1)) : undefined;
-  if (pkg) out.push({ kind: runner === 'uvx' || runner === 'pipx' ? 'pip' : 'npm', name: pkg, from: 'MCP command' });
+  const pkg = runner === 'npx' || runner === 'bunx' ? launchedPackage(args, LAUNCHERS[runner])
+    : (runner === 'pnpm' || runner === 'yarn') && args[0] === 'dlx' ? launchedPackage(args.slice(1), LAUNCHERS.dlx)
+      : runner === 'uvx' ? launchedPackage(args, LAUNCHERS.uvx)
+        : runner === 'pipx' && args[0] === 'run' ? launchedPackage(args.slice(1), LAUNCHERS.pipx) : undefined;
+  if (pkg) {
+    out.push({ kind: runner === 'uvx' || runner === 'pipx' ? 'pip' : 'npm', name: pkg,
+      from: pkg === 'unknown' ? 'MCP command (an option before the package that Clubhouse can\'t read)' : 'MCP command' });
+  }
   return out;
 }
 

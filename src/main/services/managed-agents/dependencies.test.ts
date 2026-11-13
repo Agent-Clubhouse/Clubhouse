@@ -33,6 +33,21 @@ describe('declared dependencies in an import preview (#2855)', () => {
     expect(JSON.stringify(remote)).not.toContain('secret');
   });
 
+  it.each([
+    ['uvx', ['--python', '3.12', 'mcp-server-fetch'], 'pip:mcp-server-fetch'],
+    ['uvx', ['--python=3.12', '--with', 'httpx', 'mcp-server-fetch'], 'pip:mcp-server-fetch'],
+    ['uvx', ['--from', 'mcp-server-git==1.0', 'mcp-server-git'], 'pip:mcp-server-git==1.0'],
+    ['uvx', ['--some-new-option', '3.12', 'mcp-server-fetch'], 'pip:unknown'],
+    ['npx', ['-y', '--registry', 'https://registry.example.com', '@scope/server'], 'npm:@scope/server'],
+    ['npx', ['--package=@scope/server', 'server-bin'], 'npm:@scope/server'],
+    ['npx', ['--yes', '--', 'server-pkg', '--port', '1'], 'npm:server-pkg'],
+    ['pipx', ['run', '--spec', 'mcp-thing>=2', 'mcp-thing'], 'pip:mcp-thing>=2'],
+    ['pnpm', ['dlx', '--reporter', 'silent', 'server-pkg'], 'npm:server-pkg'],
+  ])('skips option values before the package: %s %j', (command, args, expected) => {
+    const declared = declaredDependencies({ kind: 'mcp', serverKey: 's', transport: 'stdio', command, args }).declared;
+    expect(declared.filter((d) => d.kind !== 'command').map((d) => `${d.kind}:${d.name}`)).toEqual([expected]);
+  });
+
   it('bounds the list', () => {
     const deps = Object.fromEntries(Array.from({ length: 80 }, (_, i) => [`pkg-${i}`, '1']));
     const result = declaredDependencies(skill({ 'SKILL.md': 'x', 'package.json': JSON.stringify({ dependencies: deps }) }));
