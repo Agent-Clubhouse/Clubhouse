@@ -128,9 +128,11 @@ describe('scoped managed asset discovery (#2855)', () => {
       } else write(`.github/skills/review/${Array(18).fill('d').join('/')}/nested.txt`, '');
     });
 
+    // The file-limit refusal must inspect 501 real files, including their
+    // ownership checks; allow that disk work a modest budget on Windows.
     it('refuses without importing a truncated bundle', async () => {
       await expect(selected('skill')).rejects.toThrow(limit === 'files' ? 'file limit' : 'depth limit');
-    });
+    }, limit === 'files' ? 10_000 : undefined);
   });
 
   it('preserves local MCP siblings, extracts external env names only and fingerprints literal changes', async () => {
