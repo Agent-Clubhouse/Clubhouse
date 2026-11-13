@@ -1,12 +1,37 @@
 import type { LaunchedApp } from '../launch';
+import * as fs from 'fs';
+import * as path from 'path';
+import { ELECTRON_DIST_DIR } from '../e2e-cleanup';
+import { assertOwnedMainProcess } from '../owned-process-receipts';
 
 export interface DeliveryBoundary {
   pid: number;
+  launcherPid: number;
   callId: string;
   status: number;
   receiptAt: string;
   resultHash: string;
   outboxIds: string[];
+}
+
+export async function readOwnedSenderIdentity(app: LaunchedApp) {
+  const child = app.electronApp.process();
+  const launcherPid = child.pid;
+  const main = await app.electronApp.evaluate(({ app: electronApp }) => {
+    const fs = process.getBuiltinModule('fs');
+    return {
+      pid: process.pid, ppid: process.ppid, platform: process.platform,
+      profile: fs.realpathSync(electronApp.getPath('userData')), executable: fs.realpathSync(process.execPath),
+    };
+  });
+  assertOwnedMainProcess(launcherPid, main);
+  const relativeExecutable = path.relative(fs.realpathSync(ELECTRON_DIST_DIR), main.executable);
+  if (app.electronApp.process() !== child || child.pid !== launcherPid || main.platform !== process.platform
+    || main.profile !== fs.realpathSync(app.userDataDir) || app.userDataDir !== app.profile.userDataDir
+    || !relativeExecutable || relativeExecutable.startsWith('..') || path.isAbsolute(relativeExecutable)) {
+    throw new Error('Owned sender launcher, profile, or repository Electron executable changed');
+  }
+  return { ...main, launcherPid };
 }
 
 /** Observe actual requests without replacing the receiver's routing, TLS, or authorization. */
@@ -46,13 +71,15 @@ export async function observeDeliveryRequests(app: LaunchedApp, artifact: string
 }
 
 /** Pause only the owned sender's terminal rename, after observing its real successful receipt. */
-export async function armDeliveryCommitBarrier(app: LaunchedApp, callId: string, artifact: string): Promise<void> {
+export async function armDeliveryCommitBarrier(app: LaunchedApp, callId: string, artifact: string) {
+  const sender = await readOwnedSenderIdentity(app);
   await app.electronApp.evaluate(({ app: electronApp }, input) => {
     const fs = process.getBuiltinModule('fs');
     const https = process.getBuiltinModule('https');
     const crypto = process.getBuiltinModule('crypto');
     const path = process.getBuiltinModule('path');
-    if (process.pid !== input.pid || fs.realpathSync(electronApp.getPath('userData')) !== fs.realpathSync(input.profile)) throw new Error('Wrong owned sender');
+    if (process.pid !== input.pid || process.ppid !== input.ppid || fs.realpathSync(process.execPath) !== input.executable
+      || fs.realpathSync(electronApp.getPath('userData')) !== input.profile) throw new Error('Wrong owned sender');
     const filename = path.join(electronApp.getPath('userData'), 'annex-agent-outbox.json');
     const originalRequest = https.request;
     const originalRename = fs.promises.rename;
@@ -102,7 +129,7 @@ export async function armDeliveryCommitBarrier(app: LaunchedApp, callId: string,
           if (!receipt || !current.outbox.some((row) => row.id === input.callId)) throw new Error('Terminal rename was not preceded by a real durable200');
           paused = true;
           fs.writeFileSync(input.artifact, JSON.stringify({
-            pid: process.pid, callId: input.callId, ...receipt, outboxIds: current.outbox.map((row) => row.id),
+            pid: process.pid, launcherPid: input.launcherPid, callId: input.callId, ...receipt, outboxIds: current.outbox.map((row) => row.id),
           }));
           await new Promise<void>((resolve) => { release = resolve; });
         }
@@ -114,7 +141,8 @@ export async function armDeliveryCommitBarrier(app: LaunchedApp, callId: string,
       fs.promises.rename = originalRename;
       release?.();
     };
-  }, { callId, artifact, profile: app.userDataDir, pid: app.electronApp.process().pid });
+  }, { callId, artifact, ...sender });
+  return sender;
 }
 
 export async function restoreDeliveryInstrumentation(app: LaunchedApp): Promise<void> {

@@ -1,7 +1,45 @@
 import { ChildProcess } from 'node:child_process';
 import { PassThrough } from 'node:stream';
-import { describe, expect, it } from 'vitest';
-import { observeOwnedProcess } from '../e2e/owned-process-receipts';
+import { describe, expect, it, vi } from 'vitest';
+import { assertOwnedMainProcess, observeOwnedProcess, terminateOwnedProcess } from '../e2e/owned-process-receipts';
+
+describe('owned Electron main identity without spawning', () => {
+  it('binds the Windows main to its exact launcher parent without targeting the shell', () => {
+    const launcherPid = process.pid + 100_000;
+    const main = { pid: launcherPid + 1, ppid: launcherPid, platform: 'win32' as const };
+    expect(() => assertOwnedMainProcess(launcherPid, main)).not.toThrow();
+    expect(() => assertOwnedMainProcess(launcherPid, { ...main, ppid: launcherPid + 2 })).toThrow('Windows direct child');
+    expect(() => assertOwnedMainProcess(launcherPid, { ...main, platform: 'linux' })).toThrow('Windows direct child');
+    expect(() => assertOwnedMainProcess(launcherPid, { ...main, pid: launcherPid, ppid: 1, platform: 'linux' })).not.toThrow();
+    expect(() => assertOwnedMainProcess(undefined, main)).toThrow();
+    expect(() => assertOwnedMainProcess(launcherPid, { ...main, pid: process.pid })).toThrow();
+  });
+
+  it('does not turn signal dispatch or launcher exit into observed close', async () => {
+    const child = new ChildProcess();
+    const terminate = vi.fn();
+    let settled = false;
+    const pending = terminateOwnedProcess(child, terminate).then(() => { settled = true; });
+    expect(terminate).toHaveBeenCalledOnce();
+    await Promise.resolve(); expect(settled).toBe(false);
+    Object.defineProperty(child, 'exitCode', { value: 1 });
+    child.emit('exit', 1, null);
+    await Promise.resolve(); expect(settled).toBe(false);
+    child.emit('close', 1, null);
+    await pending; expect(settled).toBe(true);
+  });
+
+  it('preserves signal failures and rejects a missing actual exit receipt', async () => {
+    const child = new ChildProcess();
+    const failure = new Error('termination refused');
+    await expect(terminateOwnedProcess(child, () => { throw failure; })).rejects.toBe(failure);
+    const pending = terminateOwnedProcess(child, () => {});
+    child.emit('close', 1, null);
+    await expect(pending).rejects.toThrow('exit and close');
+    Object.defineProperty(child, 'exitCode', { value: 1 });
+    expect(() => terminateOwnedProcess(child, () => {})).toThrow('before required termination');
+  });
+});
 
 describe('owned process receipts without spawning', () => {
   it('records identity before setup, bounded stderr, and distinct exit/close events', () => {

@@ -24,11 +24,12 @@ import type { McpToolResult } from '../../src/main/services/clubhouse-mcp/types'
 import { launchApp, type LaunchedApp } from '../launch';
 import { assertDisposableProfile, createDisposableProfile, type DisposableProfile } from '../app-profile';
 import { untrackOpenApp } from '../e2e-cleanup';
+import { terminateOwnedProcess } from '../owned-process-receipts';
 import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helpers';
 import { isNewLayout } from '../layout';
 import { SDK_FIXTURE_ENV, writeAuthenticatedSdkFixture } from '../chat-rich/copilot-sdk-fixture';
 import { enableAnnexViaPreload } from './helpers';
-import { armDeliveryCommitBarrier, observeDeliveryRequests, restoreDeliveryInstrumentation, type DeliveryBoundary } from './delivery-crash';
+import { armDeliveryCommitBarrier, observeDeliveryRequests, readOwnedSenderIdentity, restoreDeliveryInstrumentation, type DeliveryBoundary } from './delivery-crash';
 
 let fakesHere: FakeClis | undefined;
 let fakesThere: FakeClis | undefined;
@@ -41,27 +42,20 @@ test.setTimeout(300_000);
 
 const exited = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null;
 
-async function killOwnedDesktop(app: LaunchedApp, child: ChildProcess, pid: number | undefined, profile: DisposableProfile): Promise<void> {
+async function killOwnedDesktop(app: LaunchedApp, child: ChildProcess, pid: number | undefined, profile: DisposableProfile, expectedMainPid?: number): Promise<void> {
   if (app.electronApp.process() !== child || child.pid !== pid || !Number.isSafeInteger(pid) || !pid || pid <= 0 || pid === process.pid
     || app.profile !== profile || app.userDataDir !== profile.userDataDir) throw new Error('Owned desktop identity changed before termination');
-  if (exited(child)) return;
+  if (exited(child)) {
+    if (expectedMainPid !== undefined) throw new Error('Owned sender exited before its required crash');
+    return;
+  }
   assertDisposableProfile(profile);
-  await new Promise<void>((resolve, reject) => {
-    const cleanup = () => {
-      child.removeListener('exit', onExit);
-      child.removeListener('error', onError);
-    };
-    const onExit = () => { cleanup(); resolve(); };
-    const onError = (error: Error) => { cleanup(); reject(error); };
-    child.once('exit', onExit);
-    child.once('error', onError);
-    try {
-      if (exited(child)) onExit();
-      else process.kill(pid, 'SIGKILL');
-    } catch (error) {
-      cleanup();
-      reject(error);
-    }
+  const main = await readOwnedSenderIdentity(app);
+  if (app.electronApp.process() !== child || child.pid !== pid || app.profile !== profile
+    || (expectedMainPid !== undefined && main.pid !== expectedMainPid)) throw new Error('Owned sender changed before its required crash');
+  await terminateOwnedProcess(child, () => {
+    if (!process.kill(main.pid, 'SIGKILL')) throw new Error('Owned sender termination was refused');
+    console.log('[e2e owned-sender]', JSON.stringify({ ...main, signal: 'SIGKILL' }));
   });
   if (!exited(child)) throw new Error('Owned desktop termination did not observe process exit');
 }
@@ -343,7 +337,7 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   const boundaryPath = path.join(scratch, 'delivery-boundary.json');
   const requestsPath = path.join(scratch, 'received-call-ids.jsonl');
   await observeDeliveryRequests(there, requestsPath);
-  await armDeliveryCommitBarrier(here, firstId, boundaryPath);
+  const senderIdentity = await armDeliveryCommitBarrier(here, firstId, boundaryPath);
   await here.window.evaluate((fingerprint) => window.clubhouse.annexClient.connect(fingerprint), receiverFingerprint);
   await expect.poll(() => fs.existsSync(boundaryPath), { timeout: 30_000 }).toBe(true);
   const boundary: DeliveryBoundary = JSON.parse(await fs.promises.readFile(boundaryPath, 'utf8'));
@@ -356,11 +350,13 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   expect(createHash('sha256').update(JSON.stringify(receipt!.result)).digest('hex')).toBe(boundary.resultHash);
   const profile = here.profile;
   const pid = here.electronApp.process().pid;
-  expect(pid).toBe(boundary.pid);
+  expect(pid).toBe(senderIdentity.launcherPid);
+  expect(boundary.launcherPid).toBe(pid);
+  expect(boundary.pid).toBe(senderIdentity.pid);
   if (!pid) throw new Error('Owned sender PID is unavailable');
   const closed = here.electronApp.waitForEvent('close');
   const child = here.electronApp.process();
-  await Promise.all([closed, killOwnedDesktop(here, child, pid, profile)]);
+  await Promise.all([closed, killOwnedDesktop(here, child, pid, profile, boundary.pid)]);
   expect(exited(child)).toBe(true);
   untrackOpenApp(here.electronApp);
   here = undefined;
