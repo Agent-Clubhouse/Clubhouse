@@ -185,7 +185,7 @@ describe('DispatcherView on a follower (#3352)', () => {
     available: true, role: 'follower' as const, following: true, tookBack: false,
     lead: { machine: 'laptop', name: 'Laptop', self: false, online: true },
     choices: [], confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: '2026-11-13T10:00:00.000Z',
-    leadLastSeen: null, outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null },
+    leadLastSeen: null, outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false },
   };
   afterEach(async () => {
     const { _resetLeadStoreForTesting } = await import('./leadStore');

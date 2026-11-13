@@ -816,8 +816,8 @@ export function ChromeSidebar() {
           agent={followedLead?.agent ?? dispatcherAgent}
           detailed={followedLead?.agent ? remoteDetailed[followedLead.agent.id] : detailed[dispatcherAgentId]}
           requestsUnderWay={followedLead?.agent ? 0 : dispatcherRequestsUnderWay}
-          machine={followedLead?.agent ? followedLead.machineName : undefined}
-          offline={!!followedLead?.agent && !followedLead.online}
+          machine={followedLead ? followedLead.machineName : undefined}
+          offline={!!followedLead && !followedLead.online}
           active={dispatcherShown && !dispatcherWorkOpen}
           projectPath={dispatcherPath}
           loadError={dispatcherLoadError}

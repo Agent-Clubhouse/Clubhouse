@@ -9,6 +9,7 @@ import type { DispatcherLeadState, LeadChoice } from '../../../shared/dispatcher
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SELECT_CLASS } from '../agents/details/AutoSleepRow';
 import { useLeadState } from '../dispatcher/leadStore';
+import { localNewsLine, outboxLines } from '../dispatcher/FollowerDispatcherView';
 import { Button } from '../../components/Button';
 import { SettingsField, SettingsSection, settingsError, settingsHelp } from './SettingsLayout';
 
@@ -91,6 +92,25 @@ export function LeadSection() {
         </select>
       </SettingsField>
       <p className={`${settingsHelp} mt-1.5`} role="status" data-testid="dispatcher-lead-status">{leadStatus(state)}</p>
+      {(() => {
+        // After Take back the pane is gone, so what still waits for the lead, or didn't make it, is said here.
+        if (!state.tookBack || !state.lead) return null;
+        const { waiting, problem } = outboxLines(state.outbox, state.lead.name);
+        const local = localNewsLine(state.localNews);
+        if (!waiting && !problem && !local) return null;
+        return (
+          <div className={`${settingsHelp} mt-1.5 flex flex-col gap-1`} data-testid="dispatcher-lead-outbox">
+            {waiting && <p>{waiting}</p>}
+            {problem && <p>{problem}</p>}
+            {local && <p>{local}</p>}
+            {(problem || local) && (
+              <Button className="self-start" disabled={saving} onClick={() => void act(() => window.clubhouse.dispatcher.dismissLeadNotice(), 'Couldn’t dismiss it.')} data-testid="dispatcher-lead-outbox-dismiss">
+                Dismiss
+              </Button>
+            )}
+          </div>
+        );
+      })()}
       {state.tookBack && state.lead && (
         <Button className="mt-1.5" disabled={saving} onClick={() => void act(() => window.clubhouse.dispatcher.followAgain(), 'Couldn’t follow again.')} data-testid="dispatcher-lead-follow-again">
           Follow {state.lead.name} again

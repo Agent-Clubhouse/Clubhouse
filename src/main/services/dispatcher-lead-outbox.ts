@@ -3,9 +3,10 @@
  *
  * A follower's pane is the lead's chat (#3352). While the lead is offline,
  * what the person types waits here, in order, and goes to the lead's chat when
- * its computer is back, as a `chat.send` like any other. Each message keeps
- * one command id across tries, so the lead takes it once while it hasn't
- * restarted (its commands are idempotent per peer and epoch). A lead chat that
+ * its computer is back, as a `chat.send` like any other. A message keeps its
+ * command id while a try's outcome is unknown, so the lead takes it once while
+ * it hasn't restarted (its commands are idempotent per peer and epoch); after a
+ * refusal that means "not now", the next try is a new command with a new id. A lead chat that
  * is asleep there is woken with the message as its first, as a phone does. A
  * message waits
  * at most a day; one that's dropped, or that the lead refuses, is counted and
@@ -108,7 +109,7 @@ export async function dismissLeadOutboxNotice(): Promise<void> {
 
 const REFUSED = 'The lead’s Dispatcher refused a waiting message.';
 /** Refusals that mean "not now" rather than "no". */
-const RETRY_CODES = new Set(['not_chat', 'session_mismatch', 'command_capacity', 'revert_in_progress', 'epoch_mismatch', 'already_running', 'agent_busy']);
+const RETRY_CODES = new Set(['not_chat', 'session_mismatch', 'command_capacity', 'revert_in_progress', 'epoch_mismatch', 'agent_already_running', 'agent_busy']);
 const RETRY_MS = 5_000;
 const RETRY_MAX = 12;
 const retries = new Map<string, { timer: ReturnType<typeof setTimeout>; count: number }>();
@@ -149,7 +150,10 @@ export async function flushLeadOutbox(machine: string, now = Date.now()): Promis
         continue;
       }
       // The chat was between states (waking, a new session, busy): try again shortly.
+      // The lead keeps each command id's receipt for an hour, a refusal included, so the next try is a new
+      // command with a new id. Only an unknown outcome (no receipt) keeps the id, so a repeat is taken once.
       if (receipt?.status === 'rejected' && RETRY_CODES.has(receipt.error?.code ?? '')) {
+        await save({ ...file, items: file.items.map((i) => (i.id === item.id ? { ...i, id: randomUUID() } : i)) });
         retrySoon(fp);
         return;
       }

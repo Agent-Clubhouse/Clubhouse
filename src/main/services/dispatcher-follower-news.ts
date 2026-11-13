@@ -2,10 +2,10 @@
  * A follower's news goes to the lead (#3352). On a computer following
  * another's lead, what this Dispatcher's triage would show in its own chat now
  * (an agent's question for the person, the answer to a request, a check-in)
- * goes to the lead's chat instead, over the controller link (#3345) as a
- * `send_message` carrying the news as fields. The lead puts it in its chat
- * itself, labelled with this computer as its pinned connection names it, never
- * as the text says. While the lead is offline, or the link isn't there, it
+ * goes to the lead's controller instead, over the controller link (#3345) as a
+ * `send_message` carrying the news as fields. The lead's controller is told it,
+ * labelled with this computer as its pinned connection names it, never as the
+ * text says, and passes it to its chat with tell_user, as with any news. While the lead is offline, or the link isn't there, it
  * stays in this computer's own chat, readable from the follower pane.
  *
  * News never answers anything: it only reaches the person, who answers in the
@@ -18,8 +18,9 @@ import { forwardAgentCall, type AgentToolRunResult } from './annex-agent-calls';
 import { remoteFederationController } from './dispatcher-federation';
 import { isFollowingLead, leadRecord, leadRole } from './dispatcher-federation-lead';
 import { getDispatcherAgentId } from './dispatcher/dispatcher-service';
-import type { ForwardedNews } from './dispatcher/dispatcher-news';
-import { deliverForwardedNews } from './dispatcher/dispatcher-channel';
+import type { ChatMessage, ForwardedNews } from './dispatcher/dispatcher-news';
+import { deliverUpdateToChat } from './dispatcher/dispatcher-channel';
+import type { AnnexDeliveryFailure } from '../../shared/annex-delivery';
 
 const NEWS_KINDS = new Set(['needs_user', 'answer', 'check_in']);
 const MAX_TEXT = 8_000;
@@ -52,51 +53,133 @@ export function startFollowerNews(h: FollowerNewsHooks): () => void {
 }
 
 /**
+ * News a follower kept in its own chat while following (#3352): the lead was
+ * offline or couldn't take it. The follower pane says so, since the person is
+ * watching the lead's chat there, until it's dismissed.
+ */
+let localNews = { count: 0, needsUser: false };
+const listeners = new Set<() => void>();
+export function onLocalNewsChanged(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+export function localNewsState(): { count: number; needsUser: boolean } {
+  return { ...localNews };
+}
+export function dismissLocalNews(): void {
+  if (localNews.count === 0) return;
+  localNews = { count: 0, needsUser: false };
+  for (const listener of [...listeners]) listener();
+}
+function noteLocalNews(kind: ForwardedNews['kind']): void {
+  localNews = { count: localNews.count + 1, needsUser: localNews.needsUser || kind === 'needs_user' };
+  for (const listener of [...listeners]) listener();
+}
+
+/**
+ * News queued for the lead and not delivered yet, by delivery id, so news the
+ * lead refuses later can still reach the person here. Kept in memory: after a
+ * restart, a refused one is reported as any refused delivery is.
+ */
+const pending = new Map<string, ChatMessage>();
+const PENDING_MAX = 100;
+
+/**
  * Sends news to the lead's controller link. True when it went, so this
  * computer's chat doesn't show it too; false to show it here.
  */
-export async function forwardNewsToLead(news: ForwardedNews): Promise<boolean> {
-  if (!hooks || !isFollowingLead()) return false;
+export async function forwardNewsToLead(message: ChatMessage): Promise<boolean> {
+  const news = message.forward;
+  if (!news || !hooks || !isFollowingLead()) return false;
+  const kept = (why: string) => {
+    appLog('core:dispatcher', 'info', 'News stayed on this computer', { meta: { kind: news.kind, why } });
+    noteLocalNews(news.kind);
+    return false;
+  };
   const lead = leadRecord().lead;
   const local = getDispatcherAgentId();
-  if (!lead || !local || !hooks.connected(lead)) return false;
+  if (!lead || !local) return false;
+  if (!hooks.connected(lead)) return kept('lead_offline');
   const controller = remoteFederationController(lead);
-  if (!controller?.agentId || !controller.enabled) return false;
+  if (!controller?.agentId || !controller.enabled) return kept('lead_unavailable');
   const to = formatAgentAddress({ agentId: controller.agentId, machine: lead });
   const summary = news.fromName ? `News from ${news.fromName}: ${news.text}` : news.text;
   try {
     const result = await forwardAgentCall(local, to, controller.name, 'send_message', { message: summary, news });
-    if (result.isError) {
-      appLog('core:dispatcher', 'info', 'News stayed on this computer: the lead refused it', { meta: { kind: news.kind } });
-      return false;
+    if (result.isError) return kept('refused');
+    // Queued for delivery: kept until the lead takes it or refuses it.
+    const text = result.content.map((c) => (c as { text?: string }).text ?? '').join(' ');
+    const deliveryId = /delivery_id=([A-Za-z0-9_-]+)/.exec(text)?.[1];
+    if (deliveryId) {
+      pending.set(deliveryId, message);
+      if (pending.size > PENDING_MAX) pending.delete(pending.keys().next().value!);
     }
     return true;
   } catch (err) {
     // telemetry-exempt: logged; the news shows in this computer's chat instead.
     appLog('core:dispatcher', 'warn', 'Could not send news to the lead', { meta: { error: err instanceof Error ? err.message : String(err) } });
-    return false;
+    return kept('send_failed');
   }
 }
 
 /**
- * On the lead: news a follower's controller sent. Shown in this chat under the
- * follower's name for its computer, from the authenticated connection.
+ * A queued delivery failed (refused, expired, or unknown). When it was news for
+ * the lead, it goes to this computer's chat instead. True when it was news, so
+ * the failure isn't also reported as a failed message.
  */
-export async function receiveFollowerNews(machine: string, raw: unknown): Promise<AgentToolRunResult> {
-  const news = readForwardedNews(raw);
-  if (!news) return refused('That news was not in a form this computer reads.');
-  if (leadRole() !== 'lead') return refused('This computer’s Dispatcher isn’t the lead, so news goes to its own computer’s chat.');
-  const name = hooks?.machineName(machine) ?? 'another computer';
-  const result = await deliverForwardedNews(news, name);
-  if (result.outcome !== 'delivered' && result.outcome !== 'started') return refused(result.error ?? 'The lead’s chat couldn’t take it.');
-  return { content: [{ type: 'text', text: 'The lead’s chat has it.' }] };
+export async function newsDeliveryFailed(notice: AnnexDeliveryFailure): Promise<boolean> {
+  const message = pending.get(notice.callId);
+  if (!message) return false;
+  pending.delete(notice.callId);
+  // Unknown: the lead may already have it, and showing it twice beats losing a question.
+  const result = await deliverUpdateToChat(message);
+  noteLocalNews(message.forward?.kind ?? 'needs_user');
+  appLog('core:dispatcher', 'info', 'News the lead didn’t take went to this computer’s chat', { meta: { state: notice.state, outcome: result.outcome } });
+  return true;
 }
 
-function refused(text: string): AgentToolRunResult {
-  return { content: [{ type: 'text', text }], isError: true };
+/**
+ * On the lead: news a follower's controller sent, for this computer's
+ * controller (the controller-to-controller rule, #2834). It reaches the
+ * controller as a message from the follower's controller, rewritten from the
+ * checked fields and named with the follower's computer as the pinned
+ * connection names it, and the controller tells the person with tell_user,
+ * as with any agent's news. `deliver` sends that message on as send_message.
+ */
+export async function receiveFollowerNews(
+  machine: string, raw: unknown, deliver: (message: string) => Promise<AgentToolRunResult>,
+): Promise<AgentToolRunResult> {
+  const news = readForwardedNews(raw);
+  if (!news) return refused('That news was not in a form this computer reads.', 'invalid_news');
+  if (leadRole() !== 'lead') return refused('This computer’s Dispatcher isn’t the lead, so news goes to its own computer’s chat.', 'not_lead');
+  return deliver(followerNewsMessage(news, hooks?.machineName(machine) ?? 'another computer'));
+}
+
+/** What the lead's controller is told: the news, who it's from, and how to pass it on. */
+export function followerNewsMessage(news: ForwardedNews, machineName: string): string {
+  const from = news.fromName ? `${news.fromName} on ${machineName}` : `${machineName}'s Dispatcher`;
+  const kind = news.kind === 'check_in' ? 'routine' : news.kind;
+  const back = news.kind === 'needs_user'
+    ? ` When they answer, send it back to ${machineName}'s Dispatcher with send_message${news.request ? `, naming its request ${news.request}` : ''}.`
+    : '';
+  const what = news.kind === 'check_in' ? `${machineName}'s Dispatcher's check-in` : `News for the user from ${from}`;
+  return `${what}, sent on by ${machineName}'s Dispatcher because this computer leads. `
+    + `Tell the user with tell_user, kind ${kind}${news.kind === 'check_in' ? '' : `, from "${from}"`}.${back}\n\n${news.text}`;
+}
+
+function refused(text: string, reason: string): AgentToolRunResult {
+  return { content: [{ type: 'text', text }], isError: true, annexDelivery: { state: 'refused', reason } };
 }
 
 /** Is this a follower's news, rather than an ordinary message? */
 export function isForwardedNewsCall(tool: string, args: Record<string, unknown>): boolean {
   return tool === 'send_message' && args.news !== undefined;
+}
+
+/** For tests. */
+export function _resetFollowerNewsForTesting(): void {
+  hooks = undefined;
+  localNews = { count: 0, needsUser: false };
+  listeners.clear();
+  pending.clear();
 }

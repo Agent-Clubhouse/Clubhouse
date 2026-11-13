@@ -68,6 +68,7 @@ export function FollowerDispatcherView({ lead, localChatId, localName }: { lead:
           </p>
         )}
         <OutboxNotice outbox={lead.state.outbox} machine={machine} onError={setError} />
+        <LocalNewsNotice news={lead.state.localNews} onShow={() => setEarlier(true)} onError={setError} />
         {error && <p className="text-ctp-error" role="alert" data-testid="follower-error">{error}</p>}
       </div>
       <div className="flex-1 min-h-0 flex flex-col">{body}</div>
@@ -108,6 +109,31 @@ function OutboxNotice({ outbox, machine, onError }: { outbox: LeadOutboxState; m
         </p>
       )}
     </>
+  );
+}
+
+/** News this computer's Dispatcher kept in its own chat while the lead couldn't take it. */
+export function localNewsLine(news: { count: number; needsUser: boolean }): string | null {
+  if (news.count === 0) return null;
+  const what = news.count === 1 ? 'An update from this computer’s Dispatcher is' : `${news.count} updates from this computer’s Dispatcher are`;
+  return `${what} in its own chat, because the lead couldn’t take ${news.count === 1 ? 'it' : 'them'}.`
+    + (news.needsUser ? ' One needs your answer: read it in this computer’s earlier chat, and Take back to answer it there.' : '');
+}
+
+function LocalNewsNotice({ news, onShow, onError }: { news: { count: number; needsUser: boolean }; onShow: () => void; onError: (error: string | null) => void }) {
+  const line = localNewsLine(news);
+  if (!line) return null;
+  return (
+    <p className={`flex items-center gap-2 ${news.needsUser ? 'text-ctp-warning' : ''}`} data-testid="follower-local-news">
+      <span>{line}</span>
+      <Button onClick={onShow} data-testid="follower-local-news-show">Show</Button>
+      <Button onClick={() => {
+        window.clubhouse.dispatcher.dismissLeadNotice().catch((err: unknown) => {
+          // telemetry-exempt: shown in the pane; the notice stays.
+          onError(`Couldn’t dismiss it. ${ipcErrorMessage(err)}`);
+        });
+      }} data-testid="follower-local-news-dismiss">Dismiss</Button>
+    </p>
   );
 }
 

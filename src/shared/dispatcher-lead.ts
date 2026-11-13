@@ -109,6 +109,8 @@ export interface DispatcherLeadState {
   leadLastSeen: string | null;
   /** Messages typed while the lead was offline (#3353). */
   outbox: LeadOutboxState;
+  /** News this computer's Dispatcher kept in its own chat while following, because the lead couldn't take it (#3352). */
+  localNews: { count: number; needsUser: boolean };
 }
 
 export interface LeadOutboxState {

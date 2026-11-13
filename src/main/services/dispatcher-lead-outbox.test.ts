@@ -23,9 +23,18 @@ let connect: ((machine: string) => void) | undefined;
 let live = true;
 const woken: Array<{ text: unknown; commandId: string }> = [];
 let wakeReply: () => unknown = () => ({ status: 'completed', result: { started: true } });
+const receipts = new Map<string, { payload: string; receipt: unknown }>();
+function leadReceipt(commandId: string, command: Record<string, unknown>, run: () => unknown): unknown {
+  const payload = JSON.stringify(command);
+  const kept = receipts.get(commandId);
+  if (kept) return kept.payload === payload ? kept.receipt : { status: 'rejected', error: { code: 'command_conflict' } };
+  const receipt = run();
+  receipts.set(commandId, { payload, receipt });
+  return receipt;
+}
 
 beforeEach(() => {
-  files.clear(); sent.length = 0; woken.length = 0; live = true;
+  files.clear(); sent.length = 0; woken.length = 0; live = true; receipts.clear();
   wakeReply = () => ({ status: 'completed', result: { started: true } });
   connected = false; agentId = 'lead-chat';
   reply = () => ({ status: 'completed', result: { delivery: 'prompt' } });
@@ -34,8 +43,10 @@ beforeEach(() => {
     connected: () => connected,
     dispatcherAgentId: () => agentId,
     chatSession: async () => ({ sessionId: 'sess', live }),
-    send: async (_machine, command, commandId) => { sent.push({ text: command.text, commandId }); return reply(command); },
-    wake: async (_machine, _agentId, message, commandId) => { woken.push({ text: message, commandId }); return wakeReply(); },
+    // Like the lead's MobileCommandService: a command id's receipt is kept, refusals included,
+    // and the same id with other content is command_conflict.
+    send: async (_machine, command, commandId) => leadReceipt(commandId, command, () => { sent.push({ text: command.text, commandId }); return reply(command); }),
+    wake: async (_machine, agentId, message, commandId) => leadReceipt(commandId, { type: 'agent.start', agentId, message }, () => { woken.push({ text: message, commandId }); return wakeReply(); }),
     onConnected: (listener) => { connect = listener; return () => { connect = undefined; }; },
   });
 });
@@ -134,7 +145,27 @@ describe('the lead outbox (#3353)', () => {
       reply = () => ({ status: 'completed' });
       await vi.advanceTimersByTimeAsync(5_000);
       expect(sent.map((s) => s.text)).toEqual(['later', 'later']);
+      // A new command, so the lead doesn't answer with the kept refusal.
+      expect(sent[1].commandId).not.toBe(sent[0].commandId);
       expect(leadOutboxState('laptop', NOW).waiting).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('wakes again with a new command after the lead said its chat was already starting', async () => {
+    vi.useFakeTimers();
+    try {
+      await queueForLead('laptop', 'hello', NOW);
+      connected = true; live = false;
+      wakeReply = () => ({ status: 'rejected', error: { code: 'agent_already_running' } });
+      await flushLeadOutbox('laptop', NOW);
+      expect(leadOutboxState('laptop', NOW)).toMatchObject({ waiting: 1, failed: null });
+      live = true;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(sent.map((s) => s.text)).toEqual(['hello']);
+      expect(sent[0].commandId).not.toBe(woken[0].commandId);
+      expect(leadOutboxState('laptop', NOW)).toMatchObject({ waiting: 0, failed: null });
     } finally {
       vi.useRealTimers();
     }

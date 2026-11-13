@@ -347,25 +347,6 @@ export function createGroupChatDelivery(deps: GroupChatDeps = {}): (report: Chat
   };
 }
 
-/**
- * On the lead: a follower's news as this chat is told it (#3352), named with
- * the follower's computer as this computer knows it. An answer goes back
- * through this computer's controller to that computer's Dispatcher.
- */
-export function forwardedNewsMessage(news: ForwardedNews, machineName: string): ChatMessage {
-  const back = news.request
-    ? ` When they answer, pass it on with start_work, saying it is for ${machineName}'s Dispatcher about its request ${news.request}.`
-    : ` When they answer, pass it on with start_work, saying it is for ${machineName}'s Dispatcher.`;
-  if (news.kind === 'check_in') {
-    const text = `${CHAT_UPDATE_TAG} Check-in from ${machineName}'s Dispatcher. Since its last one:\n${news.text}\n\n`
-      + `Give the user a short summary in your own words, saying it is from ${machineName}: what changed and anything that needs them.`;
-    return { text, routed: [{ fromClubhouse: true, text: news.text }] };
-  }
-  const sender = { name: news.fromName ? `${news.fromName} on ${machineName}` : `${machineName}'s Dispatcher` };
-  const message = agentNews(sender, news.text, news.kind);
-  return news.kind === 'needs_user' ? { ...message, text: message.text.replace('\n\n', `${back}\n\n`) } : message;
-}
-
 let uninstall: (() => void) | null = null;
 
 /** Make the Dispatcher's chat a group chat: install the triage. */

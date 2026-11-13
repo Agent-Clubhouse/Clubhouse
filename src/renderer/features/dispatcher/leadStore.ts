@@ -72,13 +72,6 @@ export function useFollowedLead(): FollowedLead | null {
   return { state, machineName: state.lead?.name ?? satellite?.alias ?? 'another computer', agent, online };
 }
 
-/** Whether a namespaced agent id is the lead's Dispatcher this computer follows, as its pane last showed it. */
-export function isFollowedLeadAgent(agentId: string): boolean {
-  const state = useLeadStore.getState().state;
-  const machine = state?.following ? state.lead?.machine : undefined;
-  return !!machine && lastKnown.get(machine)?.id === agentId;
-}
-
 /** For tests: as if nothing had read the lead yet. */
 export function _resetLeadStoreForTesting(): void {
   subscribed = false;

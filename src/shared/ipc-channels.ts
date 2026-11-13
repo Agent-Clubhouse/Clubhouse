@@ -788,7 +788,7 @@ export const IPC = {
     FOLLOW_AGAIN: 'dispatcher:follow-again',
     /** A message for the lead's chat while its computer is offline (#3353). Resolves with `{ id }`. */
     QUEUE_FOR_LEAD: 'dispatcher:queue-for-lead',
-    /** Clears the expired and refused notices for waiting messages. Resolves with a DispatcherLeadState. */
+    /** Clears the notices for waiting messages (expired, refused) and for news kept on this computer. Resolves with a DispatcherLeadState. */
     DISMISS_LEAD_NOTICE: 'dispatcher:dismiss-lead-notice',
   },
   HOOK_SERVER: {

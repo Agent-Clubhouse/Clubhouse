@@ -12,7 +12,7 @@ const PEERS: DispatcherLeadState = {
     { machine: 'studio', name: 'Studio', self: false, online: false, dispatcherOn: false },
   ],
   confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: null,
-  following: false, tookBack: false, leadLastSeen: null, outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null },
+  following: false, tookBack: false, leadLastSeen: null, outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false },
 };
 const FOLLOWING: DispatcherLeadState = {
   ...PEERS, role: 'follower', following: true, lead: PEERS.choices[1], confirmedBy: ['Laptop'], waitingOn: ['Studio'],
@@ -86,6 +86,19 @@ describe('Settings › Dispatcher › Lead (#3351)', () => {
     expect(leadOffWarning({ ...FOLLOWING, lead: PEERS.choices[2] })).toBe('Studio’s Dispatcher is off. The other computers show its chat once it’s on there.');
     expect(leadOffWarning({ ...FOLLOWING, lead: { ...PEERS.choices[0], dispatcherOn: false } })).toContain('This computer’s Dispatcher is off.');
     expect(leadOffWarning(FOLLOWING)).toBeNull();
+  });
+
+  it('after Take back, says what still waits for the lead and what didn’t make it', async () => {
+    window.clubhouse.dispatcher.getLead = vi.fn(async () => ({ ...FOLLOWING, following: false, tookBack: true,
+      outbox: { waiting: 2, oldestAt: null, expired: 1, failed: null }, localNews: { count: 1, needsUser: false } }));
+    window.clubhouse.dispatcher.dismissLeadNotice = vi.fn(async () => FOLLOWING);
+    render(<LeadSection />);
+    const box = await screen.findByTestId('dispatcher-lead-outbox');
+    expect(box.textContent).toContain('2 messages waiting for Laptop.');
+    expect(box.textContent).toContain('1 message expired before Laptop came back');
+    expect(box.textContent).toContain('An update from this computer’s Dispatcher is in its own chat');
+    fireEvent.click(screen.getByTestId('dispatcher-lead-outbox-dismiss'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.dismissLeadNotice).toHaveBeenCalled());
   });
 
   it('words each state plainly', () => {

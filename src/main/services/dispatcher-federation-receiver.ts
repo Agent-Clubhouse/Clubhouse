@@ -25,8 +25,9 @@ export const federationReceiver: DispatcherAgentCallReceiver = {
       try { await receiveFederatedNewsCause(request); }
       catch (err) { return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true, annexDelivery: { state: 'refused', reason: 'controller_limit' } }; }
     }
-    // A follower's news for the lead's chat (#3352), named by the authenticated machine only.
-    if (isForwardedNewsCall(request.tool, request.args)) return receiveFollowerNews(caller.machineId, request.args.news);
-    return runAgentToolForRemoteCaller(request.tool, request.targetId, `${caller.agentId}@${caller.machineId}`, request.args);
+    const run = (args: Record<string, unknown>) => runAgentToolForRemoteCaller(request.tool, request.targetId, `${caller.agentId}@${caller.machineId}`, args);
+    // A follower's news (#3352): checked, named by the authenticated machine only, and told to this controller.
+    if (isForwardedNewsCall(request.tool, request.args)) return receiveFollowerNews(caller.machineId, request.args.news, (message) => run({ message }));
+    return run(request.args);
   },
 };

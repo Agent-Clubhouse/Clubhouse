@@ -23,6 +23,7 @@ import type { DispatcherTeaching } from '../../shared/dispatcher-teaching';
 import { readDispatcherTeaching } from '../services/dispatcher/dispatcher-teaching';
 import { chooseLead, followLeadAgain, getLeadState, onLeadChanged, takeBackFromLead } from '../services/dispatcher-federation-lead';
 import { dismissLeadOutboxNotice, leadOutboxState, onLeadOutboxChanged, queueForLead } from '../services/dispatcher-lead-outbox';
+import { dismissLocalNews, localNewsState, onLocalNewsChanged } from '../services/dispatcher-follower-news';
 import type { DispatcherLeadState } from '../../shared/dispatcher-lead';
 
 /** A machine id, or null for "no lead". */
@@ -37,7 +38,7 @@ import type { DispatcherPresenceSnapshot } from '../../shared/dispatcher-presenc
 /** The lead as Settings and the follower pane show it, with what waits for it. */
 function leadView(): DispatcherLeadState {
   const state = getLeadState();
-  return { ...state, outbox: leadOutboxState(state.lead?.machine ?? null) };
+  return { ...state, outbox: leadOutboxState(state.lead?.machine ?? null), localNews: localNewsState() };
 }
 
 let registered = false;
@@ -147,10 +148,15 @@ export function registerDispatcherHandlers(): void {
       return queueForLead(lead.machine, text);
     },
   ));
-  ipcMain.handle(IPC.DISPATCHER.DISMISS_LEAD_NOTICE, async (): Promise<DispatcherLeadState> => { await dismissLeadOutboxNotice(); return leadView(); });
+  ipcMain.handle(IPC.DISPATCHER.DISMISS_LEAD_NOTICE, async (): Promise<DispatcherLeadState> => {
+    await dismissLeadOutboxNotice();
+    dismissLocalNews();
+    return leadView();
+  });
   const broadcastLead = () => broadcastToAllWindows(IPC.DISPATCHER.LEAD_CHANGED, leadView());
   onLeadChanged(broadcastLead);
   onLeadOutboxChanged(broadcastLead);
+  onLocalNewsChanged(broadcastLead);
 
   let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {

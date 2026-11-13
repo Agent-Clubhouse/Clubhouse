@@ -23,7 +23,7 @@ const STATE: DispatcherLeadState = {
   available: true, role: 'follower', following: true, tookBack: false,
   lead: { machine: 'laptop', name: 'Laptop', self: false, online: true },
   choices: [], confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: 'Desk', changedAt: '2026-11-13T10:00:00.000Z',
-  leadLastSeen: '2026-11-13T09:00:00.000Z', outbox: OUTBOX,
+  leadLastSeen: '2026-11-13T09:00:00.000Z', outbox: OUTBOX, localNews: { count: 0, needsUser: false },
 };
 const LEAD_AGENT = { id: 'remote||sat-laptop||chat-1', projectId: 'remote||sat-laptop||__dispatcher__', name: 'Rosie', kind: 'durable', status: 'running', executionMode: 'chat' } as unknown as Agent;
 const lead = (over: Partial<FollowedLead> = {}, state: Partial<DispatcherLeadState> = {}): FollowedLead => ({
@@ -90,6 +90,15 @@ describe('the follower’s Dispatcher pane (#3352, #3353)', () => {
     fireEvent.click(screen.getByTestId('follower-outbox-dismiss'));
     await waitFor(() => expect(window.clubhouse.dispatcher.dismissLeadNotice).toHaveBeenCalled());
     expect(outboxLines({ ...OUTBOX, failed: 'Refused.' }, 'Laptop')).toEqual({ waiting: null, problem: 'Refused.' });
+  });
+
+  it('says when news stayed in this computer’s chat, and that a question there needs Take back', async () => {
+    render(<FollowerDispatcherView lead={lead({}, { localNews: { count: 1, needsUser: true } })} localChatId="local-chat" localName="Rex" />);
+    expect(screen.getByTestId('follower-local-news').textContent).toContain('An update from this computer’s Dispatcher is in its own chat, because the lead couldn’t take it. One needs your answer');
+    fireEvent.click(screen.getByTestId('follower-local-news-show'));
+    expect(screen.getByTestId('follower-earlier-chat')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('follower-local-news-dismiss'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.dismissLeadNotice).toHaveBeenCalled());
   });
 
   it('with no chat from the lead yet, says why', () => {

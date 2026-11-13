@@ -256,6 +256,7 @@ export function getLeadState(): DispatcherLeadState {
     tookBack: leadRole(record) === 'follower' && sameLeadRecord(tookBack, record),
     leadLastSeen: record.lead ? members.find((p) => lower(p.fingerprint) === record.lead)?.lastSeen ?? null : null,
     outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null },
+    localNews: { count: 0, needsUser: false },
   };
 }
 

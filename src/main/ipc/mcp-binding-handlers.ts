@@ -10,7 +10,7 @@ import { learnLeadShare, leadShare, startDispatcherLead } from '../services/disp
 import { getDispatcherPresence, onDispatcherPresenceChanged, watchDispatcherPresence } from '../services/dispatcher-presence';
 import { watchPeerPages } from '../services/dispatcher/dispatcher-peer-pages';
 import { startLeadOutbox } from '../services/dispatcher-lead-outbox';
-import { forwardNewsToLead, startFollowerNews } from '../services/dispatcher-follower-news';
+import { forwardNewsToLead, newsDeliveryFailed, startFollowerNews } from '../services/dispatcher-follower-news';
 import { setChatForwarder } from '../services/dispatcher/dispatcher-channel';
 import { federationDirection } from '../services/dispatcher-federation-policy';
 import { auditChanged } from '../services/settings-audit';
@@ -608,7 +608,8 @@ export function restorePersistedBindings(): Promise<void> {
       nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work')
         : isDispatcherChatAgentId(id) ? dispatcherDisplayName() : undefined,
       authorizeQueuedCall: authorizeQueuedAnnexCall,
-      onDeliveryFailure: reportAnnexDeliveryFailure,
+      // News a follower queued for the lead and the lead didn't take shows here instead (#3352).
+      onDeliveryFailure: async (notice) => (await newsDeliveryFailed(notice)) || reportAnnexDeliveryFailure(notice),
     });
     stopFederatedRequests = startFederatedRequests();
   }
