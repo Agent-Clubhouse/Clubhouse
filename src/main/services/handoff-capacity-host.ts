@@ -12,7 +12,7 @@ import { isHeadless } from './headless-manager';
 import { getAgentRuntime } from './agent-runtime';
 import { peekProviderQuota } from './provider-quota';
 import { holdsGrant } from './clubhouse-mcp/grant-check';
-import { HandoffCapacityService, sampleHandoffCapacity } from './handoff-capacity';
+import { HandoffCapacityService, sampleHandoffCapacity, withCapacityDeadline } from './handoff-capacity';
 
 export function acceptingRemoteHandoffs(): boolean {
   const settings = getSettings();
@@ -62,8 +62,8 @@ export function handoffCapacityService(): HandoffCapacityService {
       lastSeen: Number.isFinite(Date.parse(device.lastSeen)) ? Date.parse(device.lastSeen) : null,
     })),
     sampleLocal: () => sampleLocalHandoffCapacity(),
-    probeRemote: async (target) => {
-      const response = await postToMachine(target, '/api/v1/network/handoff-capacity', {});
+    probeRemote: async (target, signal) => {
+      const response = await postToMachine(target, '/api/v1/network/handoff-capacity', {}, { signal, maxResponseBytes: 16 * 1024 });
       if (response.status !== 200) throw new Error('Capacity probe is unavailable.');
       return response.body;
     },
@@ -93,5 +93,5 @@ export async function receiveCapacityProbe(machine: string, raw: unknown, now = 
   for (const [key, values] of rates) if (values.every((at) => now - at >= 60_000)) rates.delete(key);
   if (!rates.has(machine) && rates.size >= 200) throw new Error('Capacity probe rate limit reached.');
   rates.set(machine, [...times, now]);
-  return sampleLocalHandoffCapacity();
+  return withCapacityDeadline(() => sampleLocalHandoffCapacity());
 }

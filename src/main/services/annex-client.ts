@@ -2089,28 +2089,41 @@ const satelliteEpochs = new Map<string, string>();
 export const REMOTE_CHAT_COMMANDS = ['chat.send', 'chat.interrupt', 'chat.queue.remove', 'chat.permission', 'chat.question', 'chat.setModel', 'chat.setLevel'] as const;
 
 /** A JSON POST to another machine over the pinned connection (#3064, agent calls and connections). */
-export function postToMachine(machine: string, urlPath: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+export function postToMachine(machine: string, urlPath: string, body: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown }> {
   const sat = satelliteFor(machine);
   if (!sat) return Promise.reject(new Error('Satellite not connected'));
-  return satelliteJson(sat.fingerprint, 'POST', urlPath, body);
+  return satelliteJson(sat.fingerprint, 'POST', urlPath, body, options);
 }
 
 /** A JSON request over the pinned connection, answering its status and body whatever the status. */
-function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown }> {
   const sat = satellites.get(fingerprint);
   if (!sat || sat.state !== 'connected') return Promise.reject(new Error('Satellite not connected'));
+  if (options?.signal?.aborted) return Promise.reject(new Error('Annex request aborted.'));
   const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : undefined;
     const req = https.request(satelliteUrl(sat, urlPath), {
       ...tlsOptions,
       method,
+      signal: options?.signal,
       timeout: 30000,
       ...(bodyStr && { headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } }),
     }, (res) => {
       const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      let bytes = 0;
+      res.on('error', reject);
+      res.on('data', (chunk: Buffer) => {
+        if (options?.signal?.aborted) return;
+        bytes += chunk.byteLength;
+        if (options?.maxResponseBytes !== undefined && bytes > options.maxResponseBytes) {
+          req.destroy(new Error('Annex response exceeds its byte limit.'));
+          return;
+        }
+        chunks.push(chunk);
+      });
       res.on('end', () => {
+        if (options?.signal?.aborted) return;
         const text = Buffer.concat(chunks).toString('utf-8');
         noteRestRefusal(sat, res.statusCode, text);
         let parsed: unknown = text;

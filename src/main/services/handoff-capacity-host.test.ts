@@ -66,3 +66,16 @@ it('checks device.read before sampling, including an agent holding a stale tool 
 it('refuses additional peer fields before any resource sampling', async () => {
   await expect(receiveCapacityProbe(machine, { path: os.tmpdir() })).rejects.toThrow('Invalid capacity request');
 });
+
+it('carries the sample cancellation signal and a bounded response size to the pinned HTTP transport', async () => {
+  const other = Array(32).fill('be').join(':');
+  state.devices = [{ fingerprint: other, role: 'member', kind: 'desktop', lastSeen: '' }];
+  state.post.mockResolvedValue({ status: 200, body: {
+    machine: other, online: true, sampledAt: 100, lastSeen: 100,
+    agents: { running: 0, sleeping: 0, idleDurable: 0 }, load: 'low', disk: 'ample', providers: capacityProviders(), accepting_handoffs: true,
+  } });
+  expect((await handoffCapacityService().probe('caller', other))[0].online).toBe(true);
+  expect(state.post).toHaveBeenCalledWith(other, '/api/v1/network/handoff-capacity', {}, {
+    signal: expect.any(AbortSignal), maxResponseBytes: 16 * 1024,
+  });
+});
