@@ -16,7 +16,7 @@ import * as agentSystem from '../../agent-system';
 import { getAgentOrchestrator } from '../../agent-registry';
 import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { setProjectPolling, getProjectPollingState } from '../../group-project-polling';
-import { listTopicSubscriptions, setTopicSubscription } from '../../group-project-delivery';
+import { listTopicSubscriptions, noteSenderAddress, setTopicSubscription, validTopic } from '../../group-project-delivery';
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
@@ -151,11 +151,20 @@ export function registerGroupProjectTools(): void {
           isError: true,
         };
       }
+      // Channel names appear in other members' notices (#3362): only plain names.
+      if (!validTopic(topic)) {
+        return {
+          content: [{ type: 'text', text: 'Channel names use lowercase letters, digits, dots, dashes and underscores, up to 64 characters.' }],
+          isError: true,
+        };
+      }
 
       const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
         const msg = await groupProjectHost.post(targetId, sender, topic, body);
+        // Members' notices leave the sender out by address, not by name.
+        noteSenderAddress(msg.id, agentId);
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
@@ -739,10 +748,15 @@ export function registerGroupProjectTools(): void {
       const subscribe = optionalBoolean(args, 'subscribe') ?? true;
       const binding = findProjectMember(targetId, agentId);
       const name = binding?.agentName || agentId;
-      const topics = topic
-        ? await setTopicSubscription(targetId, agentId, name, topic, subscribe)
-        : await listTopicSubscriptions(targetId, agentId, name);
-      return { content: [{ type: 'text', text: JSON.stringify({ subscribed: topics }) }] };
+      try {
+        const topics = topic
+          ? await setTopicSubscription(targetId, agentId, name, topic, subscribe)
+          : await listTopicSubscriptions(targetId, agentId, name);
+        return { content: [{ type: 'text', text: JSON.stringify({ subscribed: topics }) }] };
+      } catch (err) {
+        // telemetry-exempt: a bad channel name or too many changes, returned to the agent
+        return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true };
+      }
     },
   });
 

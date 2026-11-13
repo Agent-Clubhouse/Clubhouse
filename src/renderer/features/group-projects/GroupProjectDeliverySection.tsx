@@ -36,9 +36,9 @@ export function GroupProjectDeliverySection({ groupProjectId }: { groupProjectId
         {polling ? (
           <div className="flex flex-col items-start gap-2">
             <p className={settingsHelp}>
-              This group project uses polling, the older way to hear about posts: members check the board
-              in a loop, which spends turns while nothing happens. With notices, a member hears about posts
-              to its channels as one short message per burst, and a sleeping member isn't woken.
+              This group project still uses polling, so its members check the board in a loop and spend
+              turns while nothing happens. With notices, a member hears about posts to its channels as one
+              short message per burst, and a sleeping member isn't woken.
             </p>
             <Button kind="primary" disabled={busy} onClick={() => void switchToNotices()}>
               Switch to notices

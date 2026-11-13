@@ -24,7 +24,7 @@ describe('GroupProjectDeliverySection', () => {
     const setPolling = vi.fn(async () => undefined);
     useGroupProjectStore.setState({ setPolling });
     render(<GroupProjectDeliverySection groupProjectId="gp1" />);
-    expect(screen.getByText(/uses polling, the older way/)).toBeInTheDocument();
+    expect(screen.getByText(/still uses polling/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Switch to notices' }));
     expect(setPolling).toHaveBeenCalledWith('gp1', false);
   });

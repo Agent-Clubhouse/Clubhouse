@@ -81,7 +81,7 @@ test('three posts in a burst reach a member as one notice', async () => {
       .map((e) => (e.data?.content ?? []).map((c) => c.text ?? '').join(''));
   };
   await expect.poll(notices, { timeout: 45_000 }).toHaveLength(1);
-  expect((await notices())[0]).toContain('3 new messages in #general from the user.');
+  expect((await notices())[0]).toContain('3 new messages in "general" from "the user", in group project "Release".');
   const report = await fakes.report('claude');
   expect(report.mismatch).toBeNull();
 });

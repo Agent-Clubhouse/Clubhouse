@@ -259,16 +259,24 @@ changes; the message a post adds carries that change's sequence number.
   kept in the membership record (`subscriptions`, by address). Members on
   other machines are left to #3363.
 - **Coalescing.** Posts to one member within 15 seconds of the first become
-  one notice: "3 new messages in #general from lead, qa." with the
-  `read_topic` tool to use.
-- **Rate limit.** At most 6 notices per member per 10 minutes. A notice over
-  the limit is dropped; the next one says how many messages went unannounced.
+  one notice: `3 new messages in "general" from "lead", "qa", in group
+  project "Release".` with the `read_topic` tool to use. The sender is left
+  out by address for `post_bulletin` posts.
+- **Safe text.** Only the fixed first line is marked as from Clubhouse in
+  chat. Channel, sender and group project names are flattened to one line,
+  capped and quoted, and `post_bulletin` only takes channel names of
+  lowercase letters, digits, `.`, `-` and `_` (up to 64).
+- **Rate limit.** At most 6 notices per member per 10 minutes. Posts over the
+  limit wait, merged, and go as one trailing notice when the window frees.
 - **Sleeping members** aren't woken. Their notices are merged and sent as one
   summary when the member's MCP connects again. In memory only: a restart
   drops held summaries, not the board.
 - **Busy members.** A chat member in a turn gets the notice queued for the
   turn's end (as Action messages are, #3297). A newer notice replaces the
-  queued one with one covering both. A terminal agent gets it typed in.
+  queued one with one covering both. A terminal agent's turn can't be seen,
+  so it gets the notice typed in as it comes.
+- **Still a member.** Every notice is checked when it goes: an agent that
+  left, or a group project switched back to polling, gets nothing held.
 - **Polling is legacy.** A group project with `pollingEnabled` keeps polling
   and gets no notices. `toggle_polling`, `query_polling` and `nudge_polling`
   say so in their descriptions. `GroupProjectDeliverySection` (for the
