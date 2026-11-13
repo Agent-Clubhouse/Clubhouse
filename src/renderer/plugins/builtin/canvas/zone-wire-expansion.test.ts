@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { expandZoneWires, diffZoneBindings, type ExpandedBinding } from './zone-wire-expansion';
+import { expandZoneWires, diffZoneBindings, classifyZoneAdds, type ExpandedBinding } from './zone-wire-expansion';
 import type { AgentCanvasView, ZoneCanvasView, PluginCanvasView } from './canvas-types';
 import type { ZoneWireDefinition } from './zone-wire-store';
 
@@ -190,5 +190,28 @@ describe('diffZoneBindings (containment auto-update)', () => {
     const next = [eb('durable_1', 'durable_t')];
     const { toAdd } = diffZoneBindings(prev, next, new Set());
     expect(toAdd).toHaveLength(1);
+  });
+});
+
+describe('classifyZoneAdds (#3357)', () => {
+  const gpMember = (agentId: string): ExpandedBinding => ({ agentId, targetId: 'gp_1', targetKind: 'group-project', label: 'GP', agentName: agentId, targetName: 'GP' });
+
+  it('treats the first expansion after hydration as restores', () => {
+    expect(classifyZoneAdds([], [gpMember('a')], true, new Set())).toEqual([{ binding: gpMember('a'), fresh: false }]);
+  });
+
+  it('a card newly entering a zone is fresh; one still in its zone is a restore', () => {
+    const adds = classifyZoneAdds([gpMember('a')], [gpMember('a'), gpMember('b')], false, new Set());
+    expect(adds).toEqual([{ binding: gpMember('a'), fresh: false }, { binding: gpMember('b'), fresh: true }]);
+  });
+
+  it('an excluded member stays out after a restart and after a card drag', () => {
+    const refused = new Set(['a:gp_1']);
+    // Restart: hydration expands the zone again; the record refuses, and it isn't retried.
+    expect(classifyZoneAdds([], [gpMember('a')], true, refused)).toEqual([]);
+    // Dragging the card within its zone changes the views but not its membership.
+    expect(classifyZoneAdds([gpMember('a')], [gpMember('a')], false, refused)).toEqual([]);
+    // Moving it into the zone anew is a person adding it.
+    expect(classifyZoneAdds([], [gpMember('a')], false, refused)).toEqual([{ binding: gpMember('a'), fresh: true }]);
   });
 });

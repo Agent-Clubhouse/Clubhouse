@@ -26,7 +26,7 @@
  */
 
 import type {
-  GroupProject, GroupProjectMemberKind, GroupProjectMembership, GroupProjectMembershipView, GroupProjectMemberView, ResolvedGroupProjectMember,
+  AutoJoinPreview, GroupProject, GroupProjectScope, GroupProjectMemberKind, GroupProjectMembership, GroupProjectMembershipView, GroupProjectMemberView, ResolvedGroupProjectMember,
 } from '../../shared/group-project-types';
 import { groupProjectHost } from './group-project-host';
 import * as projectStore from './project-store';
@@ -39,6 +39,7 @@ import {
   type CollectedBindings, type PersistedBinding, type PersistedBindingSource,
 } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { canvasWireBindingSource } from './canvas-wire-source';
 import { appLog } from './log-service';
 
 export const GROUP_PROJECT_MEMBERSHIP_SOURCE_ID = 'group-project-membership';
@@ -188,6 +189,7 @@ function memberBinding(gp: GroupProject, m: GroupProjectMembership, member: Reso
   const fallback = gp.metadata?.defaultDisabledTools;
   const disabledTools = Array.isArray(own) ? own
     : Array.isArray(fallback) && fallback.every((t) => typeof t === 'string') ? fallback as string[] : undefined;
+  const instructions = m.instructions?.[member.agentId];
   return {
     agentId: member.agentId,
     targetId: gp.id,
@@ -197,6 +199,7 @@ function memberBinding(gp: GroupProject, m: GroupProjectMembership, member: Reso
     targetName: gp.name,
     projectName: gp.name,
     ...(disabledTools && disabledTools.length > 0 && { disabledTools: [...disabledTools] }),
+    ...(instructions && Object.keys(instructions).length > 0 && { instructions: { ...instructions } }),
   };
 }
 
@@ -277,9 +280,9 @@ export const membershipBindingSource: PersistedBindingSource = {
     if (!complete || migrated) return;
     migrated = true;
     void migrateLegacyGroupProjects().catch((err) => {
-      // telemetry-exempt: retried at the next start; logged
+      // telemetry-exempt: legacy group projects stay on their wires and the next rebuild retries; logged
       migrated = false;
-      appLog('core:group-project', 'error', 'Group project membership migration failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      appLog('core:group-project', 'warn', 'Group project membership migration deferred: a Canvas store could not be read completely', { meta: { error: err instanceof Error ? err.message : String(err) } });
     });
   },
 };
@@ -291,38 +294,75 @@ export const membershipBindingSource: PersistedBindingSource = {
  */
 async function migrateLegacyGroupProjects(): Promise<void> {
   const inventory = await readInventory();
+  let wires: PersistedBinding[] | null = null;
   let changed = false;
   for (const gp of await groupProjectHost.list()) {
     if (await isMembershipManaged(gp.id)) continue;
-    await adopt(gp, inventory);
+    if (!isNewGroupProject(gp)) wires ??= await readCanvasWiresStrictly();
+    await adopt(gp, inventory, wires ?? []);
     changed = true;
   }
   if (changed) await reconcileMembership();
 }
 
-async function adopt(gp: GroupProject, inventory: Inventory): Promise<void> {
-  if (Date.parse(gp.createdAt) >= startedAt) {
+function isNewGroupProject(gp: GroupProject): boolean {
+  return Date.parse(gp.createdAt) >= startedAt;
+}
+
+/**
+ * Every canvas wire, read strictly: a store that can't be read completely
+ * refuses, so a legacy group project is never migrated with members missing.
+ */
+async function readCanvasWiresStrictly(): Promise<PersistedBinding[]> {
+  const inspected = await canvasWireBindingSource.inspect!();
+  return Array.isArray(inspected) ? inspected : inspected.bindings;
+}
+
+/**
+ * Give a group project its record. A new one auto-joins. A legacy one keeps
+ * exactly its members (live bindings and every canvas wire to it), each
+ * with the tool switches and instructions its wire had, and gets the
+ * one-time offer.
+ */
+async function adopt(gp: GroupProject, inventory: Inventory, canvasWires?: PersistedBinding[]): Promise<void> {
+  if (isNewGroupProject(gp)) {
     await groupProjectHost.updateMembership(gp.id, (draft) => { draft.autoJoin = true; });
     appLog('core:group-project', 'info', 'New group project auto-joins agents in scope', { meta: { groupProjectId: gp.id } });
     return;
   }
+  const wires = (canvasWires ?? await readCanvasWiresStrictly()).filter((w) => w.targetKind === 'group-project' && w.targetId === gp.id);
+  const live = bindingManager.getAllBindings().filter((b) => b.targetKind === 'group-project' && b.targetId === gp.id);
+  const pairs = new Map<string, { name?: string; disabledTools?: string[]; instructions?: Record<string, string> }>();
+  for (const w of wires) {
+    pairs.set(w.agentId, { name: w.agentName, disabledTools: w.disabledTools, instructions: w.instructions });
+  }
+  for (const b of live) {
+    const wire = pairs.get(b.agentId);
+    // The live binding's switches are the effective ones; a wire's instructions are its own (not a saved override).
+    pairs.set(b.agentId, {
+      name: b.agentName ?? wire?.name,
+      disabledTools: b.disabledTools ?? wire?.disabledTools,
+      instructions: wire?.instructions ?? b.instructions,
+    });
+  }
   const now = new Date().toISOString();
   const quick = knownQuickAgents();
-  const current = bindingManager.getAllBindings().filter((b) => b.targetKind === 'group-project' && b.targetId === gp.id);
   await groupProjectHost.updateMembership(gp.id, (draft) => {
     draft.autoJoin = false;
     draft.autoJoinOffer = 'pending';
-    for (const b of current) {
-      if (draft.explicit.some((e) => e.address === b.agentId)) continue;
-      const run = quick.get(b.agentId);
-      const kind: GroupProjectMemberKind = run ? 'quick' : inventory.agents.get(b.agentId)?.helper ? 'helper' : 'durable';
+    for (const [agentId, pair] of pairs) {
+      if (pair.disabledTools?.length) draft.disabledTools = { ...draft.disabledTools, [agentId]: [...pair.disabledTools] };
+      if (pair.instructions && Object.keys(pair.instructions).length > 0) draft.instructions = { ...draft.instructions, [agentId]: { ...pair.instructions } };
+      if (draft.explicit.some((e) => e.address === agentId)) continue;
+      const run = quick.get(agentId);
+      const kind: GroupProjectMemberKind = run ? 'quick' : inventory.agents.get(agentId)?.helper ? 'helper' : 'durable';
       draft.explicit.push({
-        address: b.agentId, kind, addedAt: now, ...(b.agentName && { name: b.agentName }),
-        ...(run && { runId: quickRunId(b.agentId, run.startedAt) }),
+        address: agentId, kind, addedAt: now, ...(pair.name && { name: pair.name }),
+        ...(run && { runId: quickRunId(agentId, run.startedAt) }),
       });
     }
   });
-  appLog('core:group-project', 'info', 'Migrated group project members from wires', { meta: { groupProjectId: gp.id, members: current.length } });
+  appLog('core:group-project', 'info', 'Migrated group project members from wires', { meta: { groupProjectId: gp.id, members: pairs.size } });
 }
 
 /**
@@ -337,7 +377,7 @@ export async function reconcileMembership(): Promise<void> {
   if (migrated) {
     const inventory = await readInventory();
     for (const gp of await groupProjectHost.list()) {
-      if (!(await isMembershipManaged(gp.id)) && Date.parse(gp.createdAt) >= startedAt) await adopt(gp, inventory);
+      if (!(await isMembershipManaged(gp.id)) && isNewGroupProject(gp)) await adopt(gp, inventory);
     }
   }
   const { snapshots, inventory, quick } = await snapshotAll();
@@ -383,8 +423,14 @@ async function tidy(s: Snapshot, inventory: Inventory, quick: ReadonlyMap<string
     const agent = inventory.agents.get(e.address);
     return !agent || agent.disposed;
   };
-  if (!s.membership.explicit.some(gone)) return;
-  await groupProjectHost.updateMembership(s.gp.id, (draft) => { draft.explicit = draft.explicit.filter((e) => !gone(e)); });
+  // Only the entries judged here: one added since (a new run of the same agent) stays.
+  const stale = s.membership.explicit.filter(gone);
+  if (stale.length === 0) return;
+  const same = (a: GroupProjectMembership['explicit'][number], b: GroupProjectMembership['explicit'][number]) =>
+    a.address === b.address && a.addedAt === b.addedAt && a.runId === b.runId;
+  await groupProjectHost.updateMembership(s.gp.id, (draft) => {
+    draft.explicit = draft.explicit.filter((e) => !stale.some((old) => same(old, e)));
+  });
 }
 
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
@@ -492,10 +538,15 @@ export async function excludeMember(groupProjectId: string, agentId: string): Pr
   const inventory = await readInventory();
   if (!(await isMembershipManaged(gp.id))) await adopt(gp, inventory);
   const agent = inventory.agents.get(agentId);
+  const quick = await liveQuickAgents();
   const now = new Date().toISOString();
   await groupProjectHost.updateMembership(gp.id, (draft) => {
+    const entry = draft.explicit.find((e) => e.address === agentId);
     draft.explicit = draft.explicit.filter((e) => e.address !== agentId);
-    if (agent && !agent.helper && !draft.excluded.some((e) => e.address === agentId)) {
+    // A helper or quick agent only loses its entry. Anyone else is excluded,
+    // including an agent whose project can't be read now.
+    const addedOnly = agent ? agent.helper : quick.has(agentId) || entry?.kind === 'helper' || entry?.kind === 'quick';
+    if (!addedOnly && !draft.excluded.some((e) => e.address === agentId)) {
       draft.excluded.push({ address: agentId, excludedAt: now });
     }
   });
@@ -573,6 +624,24 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
     view.autoJoinOffer = { state: membership.autoJoinOffer, wouldJoin };
   }
   return view;
+}
+
+/**
+ * Who would auto-join a group project with this scope, before it's created:
+ * the same inventory and rules as auto-join. Projects whose agents can't be
+ * read are listed, since their agents would join once readable.
+ */
+export async function previewAutoJoin(scope: GroupProjectScope): Promise<AutoJoinPreview> {
+  const [inventory, projects] = await Promise.all([readInventory(), projectStore.list()]);
+  const gp = { id: 'preview', name: '', description: '', instructions: '', createdAt: '', metadata: {}, scope } as GroupProject;
+  return {
+    wouldJoin: autoCandidates(gp, inventory).map((a): ResolvedGroupProjectMember => ({
+      agentId: a.id, name: a.name, kind: 'durable', via: 'auto', projectId: a.projectId, projectName: a.projectName,
+    })),
+    unreadableProjects: projects
+      .filter((p) => inventory.unreadable.has(p.id) && (scope.level === 'app' || scope.projectId === p.id))
+      .map((p) => ({ projectId: p.id, name: p.displayName || p.name })),
+  };
 }
 
 function toMemberView(m: ResolvedGroupProjectMember): GroupProjectMemberView {

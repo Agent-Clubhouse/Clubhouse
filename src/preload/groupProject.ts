@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { GroupProjectCreateOptions, GroupProjectMembershipView } from '../shared/group-project-types';
+import type { AutoJoinPreview, GroupProjectCreateOptions, GroupProjectMembershipView, GroupProjectScope } from '../shared/group-project-types';
 
 export const groupProject = {
   groupProject: {
@@ -58,6 +58,8 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.EXCLUDE_MEMBER, projectId, agentId),
   answerAutoJoinOffer: (projectId: string, accept: boolean): Promise<GroupProjectMembershipView> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.ANSWER_AUTO_JOIN_OFFER, projectId, accept),
+  previewAutoJoin: (scope: GroupProjectScope): Promise<AutoJoinPreview> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, scope),
   onMembershipChanged: (callback: (projectId: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, projectId: string) => callback(projectId);
     ipcRenderer.on(IPC.GROUP_PROJECT.MEMBERSHIP_CHANGED, listener);

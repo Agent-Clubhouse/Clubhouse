@@ -15,8 +15,8 @@ import { MCP_BIND_RESTORE } from '../../../../shared/mcp-unbind';
  * meantime (the wire popover) isn't overwritten with the captured copy; when it
  * returns undefined the wire was removed and nothing more is applied.
  */
-export async function bindWireDefinition(def: McpBindingEntry, current: () => McpBindingEntry | undefined = () => def): Promise<void> {
-  await window.clubhouse.mcpBinding.bind(def.agentId, {
+export async function bindWireDefinition(def: McpBindingEntry, current: () => McpBindingEntry | undefined = () => def): Promise<'not_member' | void> {
+  const result = await window.clubhouse.mcpBinding.bind(def.agentId, {
     targetId: def.targetId,
     targetKind: def.targetKind,
     label: def.label,
@@ -24,6 +24,8 @@ export async function bindWireDefinition(def: McpBindingEntry, current: () => Mc
     targetName: def.targetName,
     projectName: def.projectName,
   }, MCP_BIND_RESTORE);
+  // A group project whose record doesn't list the agent (#3357): nothing to apply.
+  if (result?.notMember) return 'not_member';
   const latest = current();
   if (!latest) return;
   if (latest.instructions && Object.keys(latest.instructions).length > 0) {

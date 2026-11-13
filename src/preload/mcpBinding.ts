@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AgentMcpConnection, DispatcherLink } from '../shared/types';
-import type { McpBindCause, McpUnbindCause, McpUnbindResult } from '../shared/mcp-unbind';
+import type { McpBindCause, McpBindResult, McpUnbindCause, McpUnbindResult } from '../shared/mcp-unbind';
 import type { AgentConnectionSources, ConnectionSourceKind, RemoveConnectionSourceResult } from '../shared/connection-sources';
 import type { ConnectionDirection } from '../shared/connection-grants';
 import type { ConnectionGuidanceSnapshot, SaveConnectionGuidance } from '../shared/connection-guidance';
@@ -11,7 +11,7 @@ export const mcpBinding = {
   mcpBinding: {
   getBindings: () =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_BINDINGS),
-  bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }, cause?: McpBindCause) =>
+  bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }, cause?: McpBindCause): Promise<McpBindResult> =>
     cause
       ? ipcRenderer.invoke(IPC.MCP_BINDING.BIND, agentId, target, cause)
       : ipcRenderer.invoke(IPC.MCP_BINDING.BIND, agentId, target),

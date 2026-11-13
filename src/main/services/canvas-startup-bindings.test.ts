@@ -50,7 +50,8 @@ import {
   registerPersistedBindingSource,
   _resetPersistedBindingSourcesForTesting,
 } from './persisted-bindings';
-import { canvasWireBindingSource, bindingsFromCanvasStores, setManagedGroupProjects } from './canvas-wire-source';
+import { canvasWireBindingSource, bindingsFromCanvasStores } from './canvas-wire-source';
+import { setManagedGroupProjects } from './managed-group-projects';
 import {
   getAgentCanvasMemberships,
   getTargetCanvasIndex,

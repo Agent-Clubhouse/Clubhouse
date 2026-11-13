@@ -84,3 +84,20 @@ describe('createWireReconciler', () => {
     expect(onReport).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('group project members (#3357)', () => {
+  it('stops binding a stored wire the group project\'s record refuses, without retrying or reporting', async () => {
+    const bind = vi.fn(async () => 'not_member' as const);
+    const onReport = vi.fn();
+    const r = createWireReconciler({ bind, onReport });
+    const def = wire('a1', 'gp_1', { targetKind: 'group-project' });
+    r.reconcile([def], []);
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 5; i++) {
+      r.reconcile([def], []);
+      await vi.advanceTimersByTimeAsync(60_000);
+    }
+    expect(bind).toHaveBeenCalledTimes(1);
+    expect(onReport).not.toHaveBeenCalled();
+  });
+});
