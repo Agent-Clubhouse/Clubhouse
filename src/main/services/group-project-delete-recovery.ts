@@ -27,7 +27,7 @@ export function createDeleteRecovery(operations: DeleteRecoveryOperations) {
         try { await operations.exclusive(id, () => complete(id)); }
         catch (error) { errors.push(error); }
       }
-      if (errors.length) throw new AggregateError(errors, 'Some group project deletions could not be completed.');
+      if (errors.length) throw new Error(`${errors.length} group project deletion(s) could not be completed.`);
     },
   };
 }
