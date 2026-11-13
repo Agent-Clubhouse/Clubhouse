@@ -796,6 +796,13 @@ async function writeAgentsToDiskSkippingBackup(projectPath: string, agents: Dura
   await writeAgentsToDiskWithOptions(projectPath, agents, { skipBackup: true });
 }
 
+class ImportedBackupGuardError extends Error {
+  constructor() {
+    super('Imported main agent records were committed, but backup storage changed. The committed main record and existing backup were preserved; inspect storage before any further imported writes.');
+    this.name = 'ImportedBackupGuardError';
+  }
+}
+
 async function writeAgentsToDiskWithOptions(
   projectPath: string,
   agents: DurableAgentConfig[],
@@ -839,10 +846,19 @@ async function writeAgentsToDiskWithOptions(
 
   if (!skipBackup && previousConfig !== null) {
     const backupTmpPath = backupPath + '.tmp.' + randomUUID().slice(0, 8);
+    const scope = currentCreationGit();
+    const assertBackupStorage = () => {
+      try { scope?.assertFilesystem(true); }
+      catch { throw new ImportedBackupGuardError(); }
+    };
+    assertBackupStorage();
     try {
       await fsp.writeFile(backupTmpPath, previousConfig, 'utf-8');
+      assertBackupStorage();
       await fsp.rename(backupTmpPath, backupPath);
-    } catch {
+    } catch (error) {
+      if (error instanceof ImportedBackupGuardError) throw error;
+      assertBackupStorage();
       // Non-fatal — best-effort backup refresh. The main file is already written.
     }
   }
@@ -1076,7 +1092,13 @@ function startFlush(projectPath: string, entry: CacheEntry): Promise<void> {
         agentsToWrite = mergeExternalAgents(baseline, snapshot, currentAgents);
       }
     }
-    await writeAgentsToDisk(projectPath, agentsToWrite);
+    let backupFailure: ImportedBackupGuardError | undefined;
+    try {
+      await writeAgentsToDisk(projectPath, agentsToWrite);
+    } catch (error) {
+      if (!(error instanceof ImportedBackupGuardError)) throw error;
+      backupFailure = error;
+    }
     entry.baselineAgents = cloneAgents(agentsToWrite);
     entry.diskSnapshot = JSON.stringify(agentsToWrite);
     if (entry.revision === revision) {
@@ -1091,6 +1113,7 @@ function startFlush(projectPath: string, entry: CacheEntry): Promise<void> {
       entry.agents = mergeExternalAgents(baseline, entry.agents, externalAgents);
       entry.agentsById = buildAgentsById(entry.agents);
     }
+    if (backupFailure) throw backupFailure;
   })()
     .catch((err) => {
       appLog('core:agent-config', 'error', 'Failed to write agents.json', {
@@ -2114,7 +2137,7 @@ async function writeCreationMutation(
     await writeAgents(projectPath, agents, deferFlush);
     if (before) await flushAgentConfig(projectPath);
   } catch (error) {
-    if (before && attempted) {
+    if (before && attempted && !(error instanceof ImportedBackupGuardError)) {
       for (const key of new Set([...Object.keys(before), ...Object.keys(attempted)])) {
         const field = key as keyof DurableAgentConfig;
         if (JSON.stringify(before[field]) !== JSON.stringify(attempted[field])
@@ -2144,6 +2167,7 @@ export async function finishImportedCreation(projectPath: string, agentId: strin
 export async function preserveImportedCreationFailure(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
   const scope = currentCreationGit();
   if (!scope) return null;
+  scope.assertFilesystem(true);
   return withDurableCreationGit({
     ...scope, assertCurrent: async () => scope.assertFilesystem(true), assertConsent: () => scope.assertFilesystem(true),
     assertFilesystem: () => scope.assertFilesystem(true),

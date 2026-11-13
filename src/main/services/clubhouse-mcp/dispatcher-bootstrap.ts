@@ -52,7 +52,13 @@ export async function createDispatcherManagedAgent(
   grant: ToolGrant,
   create: () => Promise<DurableAgentConfig>,
   extra: Record<string, unknown> = {},
-  scoped?: { assertCurrent(): Promise<void>; preserveOnFailure: true },
+  scoped?: {
+    assertCurrent(): Promise<void>;
+    assertConsent(): void;
+    assertFilesystem(): void;
+    withCommitScope<T>(config: DurableAgentConfig, operation: () => Promise<T>): Promise<T>;
+    preserveOnFailure: true;
+  },
 ): Promise<McpToolResult> {
   const connect = args.connectToDispatcher === true;
   const approvalArgs = connect ? {
@@ -101,60 +107,78 @@ export async function createDispatcherManagedAgent(
       await scoped?.assertCurrent();
       config = await create();
       await scoped?.assertCurrent();
-      if (connect) {
-        const created = config;
-        const targetId = created.id;
-        const pairs = [{ agentId: actorId, targetId }, { agentId: targetId, targetId: actorId }];
-        const assertTarget = (agent: DurableAgentConfig) => {
-          if (agent.id !== targetId || agent.id === actorId || agent.parentAgentId || isDisposedAgent(agent)) {
-            throw new BootstrapRefused('Only the ordinary agent created by this call can be connected.');
+      const created = config;
+      const finish = async (): Promise<McpToolResult> => {
+        if (connect) {
+          const targetId = created.id;
+          const pairs = [{ agentId: actorId, targetId }, { agentId: targetId, targetId: actorId }];
+          const assertTarget = (agent: DurableAgentConfig) => {
+            if (agent.id !== targetId || agent.id === actorId || agent.parentAgentId || isDisposedAgent(agent)) {
+              throw new BootstrapRefused('Only the ordinary agent created by this call can be connected.');
+            }
+            if (pairs.some((p) => isBindingRemovedByUser(p.agentId, p.targetId))) {
+              throw new BootstrapRefused('The user removed this connection. It stays removed.');
+            }
+          };
+          assertTarget(created);
+          for (const pair of pairs) if (await isTombstoned(pair)) throw new BootstrapRefused('The user removed this connection. It stays removed.');
+          const commitPrecondition = scoped && {
+            prepare: async () => {
+              for (const pair of pairs) if (await isTombstoned(pair)) throw new BootstrapRefused('The user removed this connection. It stays removed.');
+              await scoped.assertCurrent();
+            },
+            check: () => { scoped.assertConsent(); scoped.assertFilesystem(); assertTarget(created); },
+          };
+          await scoped?.assertCurrent();
+          // Save narrow switches before policy can expose the automatic wires.
+          // Keep user-owned entries, with live approval under the queue and at the physical commit.
+          const changes = pairs.map((p) => ({
+            from: { agentId: p.agentId }, to: { agentId: p.targetId }, ...NEW_CONNECTION_SWITCHES,
+          }));
+          const guard = (current: ConnectionDirection | undefined) => { assertTarget(created); return current ? false as const : undefined; };
+          written = commitPrecondition
+            ? await setConnectionDirections(changes, guard, { precondition: commitPrecondition })
+            : await setConnectionDirections(changes, guard);
+          await scoped?.assertCurrent();
+          const saved = await setOrchestrationPolicy(project.path, targetId, { connectToDispatcher: true }, {
+            surface: 'dispatcher', actorId, precondition: assertTarget, connectionBootstrap: true,
+            ...(commitPrecondition && { commitPrecondition }),
+          });
+          if (!saved.ok) throw new BootstrapRefused(saved.message);
+          await scoped?.assertCurrent();
+          await rebuildPersistedBindings();
+          await scoped?.assertCurrent();
+          const latest = await agentConfig.getDurableConfig(project.path, targetId);
+          if (!latest) throw new BootstrapRefused('The new agent was removed before it could be connected.');
+          assertTarget(latest);
+          if (!(await getOrchestrationPolicy(project.path, targetId))?.connectToDispatcher) {
+            throw new BootstrapRefused('The user turned off this connection. It stays off.');
           }
-          if (pairs.some((p) => isBindingRemovedByUser(p.agentId, p.targetId))) {
-            throw new BootstrapRefused('The user removed this connection. It stays removed.');
+          if (pairs.some((p) => !bindingManager.getBindingsForAgent(p.agentId).some((b) => b.targetKind === 'agent' && b.targetId === p.targetId))) {
+            throw new BootstrapRefused('The Dispatcher connection could not be made. Nothing was left connected.');
           }
+        }
+        if (scoped) await scoped.assertCurrent();
+        const recorded = audit('ok', created.id);
+        const payload = {
+          id: created.id, name: created.name, project: project.name, managed: !!created.managed, status: 'sleeping',
+          ...extra, connectedToDispatcher: connect,
+          ...(connect ? {
+            receipt: {
+              id: receiptId, outcome: 'connected', dispatcherId: actorId, agentId: created.id,
+              directions: [[actorId, created.id], [created.id, actorId]].map(([from, to]) => ({
+                from, to, tools: localDirectionTools(getConnectionDirection({ agentId: from }, { agentId: to })),
+              })),
+            },
+            note: 'Connected to the Dispatcher. Use its generated wake_agent tool to start it with a task. Retrying this same call returns this receipt without creating another agent.',
+          } : { nextStep: 'Not connected to the Dispatcher. Ask the user to enable Connect to Dispatcher before trying to wake or message it.' }),
+          ...(!recorded && { audit_warning: 'Local telemetry recording is off, so this is not in the audit record.' }),
         };
-        assertTarget(config);
-        for (const pair of pairs) if (await isTombstoned(pair)) throw new BootstrapRefused('The user removed this connection. It stays removed.');
-        await scoped?.assertCurrent();
-        // Save narrow switches before policy can expose the automatic wires.
-        // The guard runs under the store lock, and keeps any user-owned entry.
-        written = await setConnectionDirections(pairs.map((p) => ({
-          from: { agentId: p.agentId }, to: { agentId: p.targetId }, ...NEW_CONNECTION_SWITCHES,
-        })), (current) => { assertTarget(created); return current ? false : undefined; });
-        await scoped?.assertCurrent();
-        const saved = await setOrchestrationPolicy(project.path, targetId, { connectToDispatcher: true }, {
-          surface: 'dispatcher', actorId, precondition: assertTarget, connectionBootstrap: true,
-        });
-        if (!saved.ok) throw new BootstrapRefused(saved.message);
-        await rebuildPersistedBindings();
-        const latest = await agentConfig.getDurableConfig(project.path, targetId);
-        if (!latest) throw new BootstrapRefused('The new agent was removed before it could be connected.');
-        assertTarget(latest);
-        if (!(await getOrchestrationPolicy(project.path, targetId))?.connectToDispatcher) {
-          throw new BootstrapRefused('The user turned off this connection. It stays off.');
-        }
-        if (pairs.some((p) => !bindingManager.getBindingsForAgent(p.agentId).some((b) => b.targetKind === 'agent' && b.targetId === p.targetId))) {
-          throw new BootstrapRefused('The Dispatcher connection could not be made. Nothing was left connected.');
-        }
-      }
-      const recorded = audit('ok', config.id);
-      const payload = {
-        id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping',
-        ...extra, connectedToDispatcher: connect,
-        ...(connect ? {
-          receipt: {
-            id: receiptId, outcome: 'connected', dispatcherId: actorId, agentId: config.id,
-            directions: [[actorId, config.id], [config.id, actorId]].map(([from, to]) => ({
-              from, to, tools: localDirectionTools(getConnectionDirection({ agentId: from }, { agentId: to })),
-            })),
-          },
-          note: 'Connected to the Dispatcher. Use its generated wake_agent tool to start it with a task. Retrying this same call returns this receipt without creating another agent.',
-        } : { nextStep: 'Not connected to the Dispatcher. Ask the user to enable Connect to Dispatcher before trying to wake or message it.' }),
-        ...(!recorded && { audit_warning: 'Local telemetry recording is off, so this is not in the audit record.' }),
+        const result = json(payload);
+        if (connect) completed.set(key, { result, config: created, payload, receiptId });
+        return result;
       };
-      const result = json(payload);
-      if (connect) completed.set(key, { result, config, payload, receiptId });
-      return result;
+      return scoped ? await scoped.withCommitScope(created, finish) : await finish();
     } catch (err) {
       const receiptFailure = err instanceof ImportAgentReceiptError;
       if (receiptFailure) config = err.config;

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import type { ImportPlan, ImportStatus } from '../../../../shared/project-import';
 import type { DurableAgentConfig } from '../../../../shared/types';
 
@@ -17,6 +17,8 @@ const current = vi.hoisted(() => ({
   service: undefined as import('../../project-import/service').ProjectImportService | undefined,
   remoteFailure: undefined as Error | undefined,
   afterRemote: undefined as (() => void | Promise<void>) | undefined,
+  afterRename: undefined as ((from: string, to: string) => void | Promise<void>) | undefined,
+  afterWrite: undefined as ((file: string) => void | Promise<void>) | undefined,
   blockedFetch: false,
   partialRegistration: false,
   commit: '',
@@ -24,6 +26,21 @@ const current = vi.hoisted(() => ({
   remoteCalls: [] as string[],
   gitCalls: [] as string[][],
 }));
+
+vi.mock('fs/promises', async (original) => {
+  const real = await original<typeof import('fs/promises')>();
+  return {
+    ...real,
+    rename: async (...params: Parameters<typeof real.rename>) => {
+      await real.rename(...params);
+      await current.afterRename?.(String(params[0]), String(params[1]));
+    },
+    writeFile: async (...params: Parameters<typeof real.writeFile>) => {
+      await real.writeFile(...params);
+      await current.afterWrite?.(String(params[0]));
+    },
+  };
+});
 
 vi.mock('../../base-dir', () => ({ getBaseDirPath: () => fixture.base }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
@@ -65,6 +82,9 @@ import * as projectStore from '../../project-store';
 import * as agentConfig from '../../agent-config';
 import * as gitService from '../../git-service';
 import * as grantsStore from '../../agent-grants-store';
+import * as agentSettings from '../../agent-settings-service';
+import * as policyService from '../../orchestration-policy';
+import { getConnectionDirection } from '../../connection-grants-store';
 import { appLog } from '../../log-service';
 import { registerClubhouseMcpTools } from './register-all';
 import { buildToolName, callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
@@ -173,6 +193,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   current.remoteFailure = undefined;
   current.afterRemote = undefined;
+  current.afterRename = undefined;
+  current.afterWrite = undefined;
   current.blockedFetch = false;
   current.partialRegistration = false;
   current.remoteCalls = [];
@@ -778,6 +800,167 @@ describe('public Dispatcher repository import (#2808)', () => {
     expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === agents[0].id)).toBe(false);
     expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation).toMatchObject({ phase: 'completed', agentId: agents[0].id });
     expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.receiptSaved).toBeUndefined();
+    expect(wakeWiredAgent).not.toHaveBeenCalled();
+  });
+
+  it('residual connection commits keep exact approval live through real directions, policy and final success', async () => {
+    const { receipt } = await completeImport();
+    const args = { project: destination, importId: receipt.id, name: 'guarded-connection', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+    await call('create_managed_agent', args);
+    await approveDesktop('create_managed_agent');
+    const result = await call('create_managed_agent', args);
+    expect(result.body, result.text).toMatchObject({ status: 'sleeping', connectedToDispatcher: true, agentCreated: true, agentStarted: false });
+    expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(true);
+    expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })?.enabledTools).toContain('wake_agent');
+    expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(true);
+    expect(wakeWiredAgent).not.toHaveBeenCalled();
+  });
+
+  it('residual direction commit rechecks revoked connection permission after its actual atomic staging await', async () => {
+    const { receipt } = await completeImport();
+    const args = { project: destination, importId: receipt.id, name: 'late-direction', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+    await call('create_managed_agent', args);
+    await approveDesktop('create_managed_agent');
+    const connectionFile = path.join(app.getPath('userData'), 'connection-grants.json');
+    const before = fs.existsSync(connectionFile) ? fs.readFileSync(connectionFile, 'utf8') : undefined;
+    const open = fs.promises.open.bind(fs.promises);
+    let revoked = false;
+    const stage = vi.spyOn(fs.promises, 'open').mockImplementation(async (...params) => {
+      const handle = await open(...params);
+      if (String(params[0]).startsWith(connectionFile + '.tmp-')) {
+        const sync = handle.sync.bind(handle);
+        vi.spyOn(handle, 'sync').mockImplementation(async () => {
+          await sync();
+          revoked = true;
+          await withSettingsSurface('ui', undefined, () => setAgentGrant(fixture.dispatcher, 'dispatcher', {
+            action: 'connection.bootstrap', target: { kind: 'created_by_me' }, mode: 'off',
+          }));
+        });
+      }
+      return handle;
+    });
+    const result = await call('create_managed_agent', args);
+    stage.mockRestore();
+    expect(revoked).toBe(true);
+    expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
+    expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeUndefined();
+    expect(getConnectionDirection({ agentId: result.body.id }, { agentId: 'dispatcher' })).toBeUndefined();
+    expect(fs.existsSync(connectionFile) ? fs.readFileSync(connectionFile, 'utf8') : undefined).toBe(before);
+    expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(false);
+    expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(false);
+    expect((await agentConfig.listDurable(destination))).toHaveLength(1);
+    expect(wakeWiredAgent).not.toHaveBeenCalled();
+  });
+
+  it('residual policy commit refuses a changed original caller after post-builder resolveFor preparation and preserves saved directions', async () => {
+    const { receipt } = await completeImport();
+    const args = { project: destination, importId: receipt.id, name: 'late-policy', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+    await call('create_managed_agent', args);
+    await approveDesktop('create_managed_agent');
+    const setPolicy = policyService.setOrchestrationPolicy;
+    const readDefaults = agentSettings.readProjectAgentDefaults;
+    let connecting = false;
+    let reads = 0;
+    let changed = false;
+    const policy = vi.spyOn(policyService, 'setOrchestrationPolicy').mockImplementation(async (...params) => {
+      connecting = !!params[2] && typeof params[2] === 'object' && 'connectToDispatcher' in params[2] && params[2].connectToDispatcher === true;
+      try { return await setPolicy(...params); } finally { connecting = false; }
+    });
+    const preparation = vi.spyOn(agentSettings, 'readProjectAgentDefaults').mockImplementation(async (...params) => {
+      const result = await readDefaults(...params);
+      if (connecting && ++reads === 2) {
+        const original = agentRegistry.get('dispatcher');
+        if (!original) throw new Error('Expected the fixture caller');
+        agentRegistry.register('dispatcher', { ...original, nonce: `changed-policy-${serial}` });
+        changed = true;
+      }
+      return result;
+    });
+    const result = await call('create_managed_agent', args);
+    preparation.mockRestore();
+    policy.mockRestore();
+    expect(changed).toBe(true);
+    expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
+    expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeDefined();
+    expect(getConnectionDirection({ agentId: result.body.id }, { agentId: 'dispatcher' })).toBeDefined();
+    expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(false);
+    expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(false);
+    expect((await agentConfig.listDurable(destination))[0].repositoryImportCreation?.state).toBe('completed');
+    expect(wakeWiredAgent).not.toHaveBeenCalled();
+  });
+
+  it('residual final connection inspection cannot return success after the original caller changes', async () => {
+    const { receipt } = await completeImport();
+    const args = { project: destination, importId: receipt.id, name: 'late-inspection', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+    await call('create_managed_agent', args);
+    await approveDesktop('create_managed_agent');
+    const readPolicy = policyService.getOrchestrationPolicy;
+    let changed = false;
+    const inspection = vi.spyOn(policyService, 'getOrchestrationPolicy').mockImplementation(async (...params) => {
+      const result = await readPolicy(...params);
+      if (!changed && params[0] === destination && result?.connectToDispatcher) {
+        const original = agentRegistry.get('dispatcher');
+        if (!original) throw new Error('Expected the fixture caller');
+        agentRegistry.register('dispatcher', { ...original, nonce: `changed-inspection-${serial}` });
+        changed = true;
+      }
+      return result;
+    });
+    const result = await call('create_managed_agent', args);
+    inspection.mockRestore();
+    expect(changed).toBe(true);
+    expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
+    expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(true);
+    expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeDefined();
+    expect((await agentConfig.listDurable(destination))).toHaveLength(1);
+    expect(wakeWiredAgent).not.toHaveBeenCalled();
+  });
+
+  it.each(['backup-write', 'backup-rename'])('residual %s refuses a substituted .clubhouse after main commit without touching outside backup bytes', async (boundary) => {
+    const { receipt } = await completeImport();
+    const args = { project: destination, importId: receipt.id, name: 'backup-owner', blocks: [], skills: [], mcps: [] };
+    await call('create_managed_agent', args);
+    await approveDesktop('create_managed_agent');
+    const directory = path.join(destination, '.clubhouse');
+    const mainFile = path.join(directory, 'agents.json');
+    const backupFile = path.join(directory, 'agents.json.bak');
+    const outside = path.join(fixture.root, `outside-backup-${serial}`);
+    const retained = path.join(fixture.root, `retained-clubhouse-${serial}`);
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'agents.json.bak'), 'preserve outside backup bytes');
+    fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'preserve unrelated bytes');
+    let changed = false;
+    const substitute = () => {
+      if (changed) return;
+      const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(mainFile, 'utf8'));
+      if (!agents[0]?.branchOwned) return;
+      fs.renameSync(directory, retained);
+      fs.symlinkSync(outside, directory, 'dir');
+      changed = true;
+    };
+    current.afterRename = (_from, to) => {
+      if (boundary === 'backup-write' && to === mainFile) substitute();
+    };
+    current.afterWrite = (file) => {
+      if (boundary === 'backup-rename' && file.startsWith(backupFile + '.tmp.')) substitute();
+    };
+    const result = await call('create_managed_agent', args);
+    current.afterRename = undefined;
+    current.afterWrite = undefined;
+    expect(changed).toBe(true);
+    expect(result.body, result.text).toMatchObject({ status: 'partial', agentStarted: false, reason: 'agent_creation_failed' });
+    expect(fs.readFileSync(path.join(outside, 'agents.json.bak'), 'utf8')).toBe('preserve outside backup bytes');
+    expect(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8')).toBe('preserve unrelated bytes');
+    expect(fs.readdirSync(outside).sort()).toEqual(['agents.json.bak', 'sentinel.txt']);
+    const committed: DurableAgentConfig[] = JSON.parse(fs.readFileSync(path.join(retained, 'agents.json'), 'utf8'));
+    expect(committed).toHaveLength(1);
+    expect(committed[0].branchOwned).toBe(true);
+    expect(committed[0].repositoryImportCreation?.importId).toBe(receipt.id);
+    fs.unlinkSync(directory);
+    fs.renameSync(retained, directory);
+    await agentConfig.settleAgentsFileChecksForTests();
+    expect((await agentConfig.listDurable(destination))[0].branchOwned).toBe(true);
+    expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
     expect(wakeWiredAgent).not.toHaveBeenCalled();
   });
 });

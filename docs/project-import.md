@@ -226,6 +226,17 @@ receipt-save failure. Once committed history is readable/writable, retry after
 restart reconciles that association without another builder run, connection
 restoration or wake.
 
+The same live import approval continues through separate connection bootstrap:
+queued direction writes, their atomic replacement, policy preparation/commit,
+and final connection inspection all recheck the original caller and consent.
+Invalidation reports a partial connection outcome without undoing already
+committed or user-owned switches. No agent is started.
+
+Agent-record backups also recheck owned record storage immediately before their
+temporary write and rename. A replaced `.clubhouse` stops remaining backup effects.
+A blocked backup reports the already-committed main record honestly, without
+rolling it back in memory, overwriting outside files or unsafe cleanup.
+
 Fixtures use isolated local Git repositories and mocked authentication/approval
 boundaries, without private credentials, login probes or paid agent calls.
 Git serializes fixture configuration with exact value readbacks, including

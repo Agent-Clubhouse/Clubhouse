@@ -41,7 +41,7 @@ import { isDispatcherAgent } from '../dispatcher-gate';
 import { isCrossProjectEnabled } from '../orchestration-gate';
 import { optionalBoolean, optionalString, requireString } from './validation';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type ManagedPartContent, type ManagedPartKind, type ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
-import type { Project } from '../../../../shared/types';
+import type { DurableAgentConfig, Project } from '../../../../shared/types';
 import { agentRegistry } from '../../agent-registry';
 import { capToHolder, checkToolGrant } from '../grant-check';
 import { describeCallsForAsk } from '../ask-first';
@@ -774,15 +774,26 @@ export function registerManagedTools(): void {
           assertFilesystem();
         };
         await assertCurrent();
+        const inImportScope = <T>(creation: NonNullable<DurableAgentConfig['repositoryImportCreation']>, operation: () => Promise<T>) => withDurableCreationGit({
+          assertCurrent, assertConsent: approval.assertConsent, assertFilesystem, preserveOnFailure: true,
+          operation: creation,
+          run: (gitArgs, cwd, signal) => projectImportService.runAgentGit(callerId, importId, gitArgs, cwd, signal, assertCurrent),
+        }, operation);
         return createDispatcherManagedAgent(callerId, args, project, CREATE_GRANTS,
           () => projectImportService.createAgentOnce(callerId, importId, creationKey, agentConfig.listDurable,
-            async (_importedProject, requestId) => withDurableCreationGit({
-              assertCurrent, assertConsent: approval.assertConsent, assertFilesystem, preserveOnFailure: true,
-              operation: { importId, requestId, key: creationKey, state: 'creating' },
-              run: (gitArgs, cwd, signal) => projectImportService.runAgentGit(callerId, importId, gitArgs, cwd, signal, assertCurrent),
-            }, () => asDispatcher(callerId, () => createManagedAgent(project.path, { ...input, creationRequestId: requestId, preserveOnFailure: true }, checkAccess, prepared)))),
+            async (_importedProject, requestId) => inImportScope({ importId, requestId, key: creationKey, state: 'creating' },
+              () => asDispatcher(callerId, () => createManagedAgent(project.path, { ...input, creationRequestId: requestId, preserveOnFailure: true }, checkAccess, prepared)))),
           { importId, projectId: project.id, agentCreated: true, agentStarted: false },
-          { assertCurrent, preserveOnFailure: true });
+          {
+            assertCurrent, assertConsent: approval.assertConsent, assertFilesystem, preserveOnFailure: true,
+            withCommitScope: (config, operation) => {
+              const creation = config.repositoryImportCreation;
+              if (!creation || creation.importId !== importId || creation.key !== creationKey || creation.state !== 'completed') {
+                throw new ImportError('agent_creation_changed', 'The completed imported agent association changed. No connection was attempted; inspect its existing outcome.');
+              }
+              return inImportScope(creation, operation);
+            },
+          });
       }
       return createDispatcherManagedAgent(callerId, args, project, CREATE_GRANTS,
         () => asDispatcher(callerId, () => createManagedAgent(project.path, input, checkAccess)),

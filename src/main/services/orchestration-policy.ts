@@ -311,6 +311,8 @@ export async function setOrchestrationPolicy(
     actorId?: string;
     /** Internal to the separately authorized create-and-bootstrap flow; never taken from tool arguments. */
     connectionBootstrap?: true;
+    /** Main-only live approval for imported bootstrap, retained through preparation and gate publication. */
+    commitPrecondition?: import('./settings-store').SettingsCommitPrecondition;
   } = {},
 ): Promise<SetOrchestrationPolicyResult> {
   const patch = validateOrchestrationPatch(rawPatch);
@@ -350,7 +352,15 @@ export async function setOrchestrationPolicy(
 
     // Copied now: the write can change this agent's own record.
     const storedBefore = agent.orchestration && { ...agent.orchestration };
+    if (options.commitPrecondition) {
+      await options.commitPrecondition.prepare();
+      options.commitPrecondition.check();
+    }
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+    if (options.commitPrecondition) {
+      await options.commitPrecondition.prepare();
+      options.commitPrecondition.check();
+    }
     // Preview's settings rows show the policy. A running session takes it live, so no setup-changed bar (#3197).
     if (agent.managed) noteManagedSettingsChanged();
     applyGate(projectPath, agent, next);
