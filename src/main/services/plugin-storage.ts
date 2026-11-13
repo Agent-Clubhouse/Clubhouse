@@ -185,18 +185,18 @@ export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
 
 export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
   if (req.pluginId === 'canvas') {
-    return withCanvasWriteBarrier(async () => {
-      const { groupProjectHost } = await import('./group-project-host');
-      const tombstones = await groupProjectHost.listTombstones();
-      const value = stripDeletedGroupProjectsFromCanvasKey(req.key, req.value, tombstones.map((t) => t.groupProjectId));
-      await writeKeyWithinCanvasBarrier({ ...req, value });
-    });
+    return withCanvasWriteBarrier(() => writeKeyWithinCanvasBarrier(req));
   }
   await writeKeyWithinCanvasBarrier(req);
 }
 
 /** For a deletion cascade that already holds the canvas write barrier. */
 export async function writeKeyWithinCanvasBarrier(req: PluginStorageWriteRequest): Promise<void> {
+  if (req.pluginId === 'canvas') {
+    const { groupProjectHost } = await import('./group-project-host');
+    const tombstones = await groupProjectHost.listTombstones();
+    req = { ...req, value: stripDeletedGroupProjectsFromCanvasKey(req.key, req.value, tombstones.map((t) => t.groupProjectId)) };
+  }
   if (req.scope === 'project-local' && req.projectPath) {
     await ensurePluginDataLocalGitignored(req.projectPath);
   }

@@ -590,6 +590,7 @@ export const IPC = {
     LIST: 'group-project:list',
     UPDATE: 'group-project:update',
     DELETE: 'group-project:delete',
+    PREVIEW_DELETE: 'group-project:preview-delete',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
     GET_ALL_MESSAGES: 'group-project:get-all-messages',

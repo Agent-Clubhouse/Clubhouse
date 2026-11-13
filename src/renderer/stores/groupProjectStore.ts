@@ -30,7 +30,7 @@ interface GroupProjectStoreState {
   create: (name: string, options?: GroupProjectCreateOptions) => Promise<GroupProject>;
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   setPolling: (id: string, enabled: boolean) => Promise<void>;
-  remove: (id: string) => Promise<void>;
+  remove: (id: string, token: string) => Promise<void>;
   postBulletinMessage: (projectId: string, topic: string, body: string) => Promise<void>;
   sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;
   deleteMessage: (projectId: string, topic: string, messageId: string) => Promise<boolean>;
@@ -91,8 +91,8 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
     }));
   },
 
-  remove: async (id) => {
-    await window.clubhouse.groupProject.delete(id);
+  remove: async (id, token) => {
+    await window.clubhouse.groupProject.delete(id, token);
     set((state) => ({
       projects: state.projects.filter((p) => p.id !== id),
     }));

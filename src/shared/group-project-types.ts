@@ -92,6 +92,19 @@ export interface GroupProjectTombstone {
   state: 'deleting' | 'deleted';
 }
 
+/** A one-use deletion confirmation and the impact the person reviewed. */
+export interface GroupProjectDeleteImpact {
+  token: string;
+  members: string[];
+  canvases: string[];
+  actions: string[];
+  grants: string[];
+  messages: number;
+  topics: number;
+  machines: string[];
+  incompleteWindows: boolean;
+}
+
 /** What changed in one sequenced host write. */
 export type GroupProjectChangePart = 'record' | 'membership' | 'board' | 'deleted';
 

@@ -20,6 +20,15 @@ import { getAgentRuntime } from '../services/agent-runtime';
 import { injectPtyText } from '../services/agent-runtime/pty-input';
 import { getProvider } from '../orchestrators';
 import type { PasteSubmitTiming } from '../orchestrators';
+import { createLocalGroupProjectDeleteService } from '../services/group-project-delete-service';
+import { flushOpenCanvases } from '../services/canvas-flush';
+import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
+
+const deletion = createLocalGroupProjectDeleteService((id) => {
+  for (const binding of bindingManager.getAllBindings()) {
+    if (binding.targetKind === 'group-project' && binding.targetId === id) bindingManager.unbind(binding.agentId, id);
+  }
+});
 
 function broadcastChanged(): void {
   groupProjectHost.list().then((projects) => {
@@ -110,15 +119,22 @@ export function registerGroupProjectHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.GROUP_PROJECT.DELETE, withValidatedArgs(
+  ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_DELETE, withValidatedArgs(
     [stringArg()],
-    async (_event, id) => {
-      // Annex hears of it from the host's deleted change, as for every delete path.
-      const { deleted } = await groupProjectHost.delete(id as string);
-      if (deleted) {
-        appLog('core:group-project', 'info', 'Group project deleted', { meta: { id } });
-      }
-      return deleted;
+    async (event, id) => {
+      const flushed = await flushOpenCanvases();
+      const impact = await deletion.preview(id as string, event.sender.id);
+      return { ...impact, incompleteWindows: !flushed.complete };
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.DELETE, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (event, id, token) => {
+      await deletion.confirm(id as string, event.sender.id, token as string);
+      broadcastToAllWindows(IPC.GROUP_PROJECT.DELETED, id);
+      appLog('core:group-project', 'info', 'Group project deleted', { meta: { id } });
+      return true;
     },
   ));
 

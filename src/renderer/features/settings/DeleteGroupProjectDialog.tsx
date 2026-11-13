@@ -2,18 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { ipcErrorMessage } from '../../utils/ipc-error';
-
-export interface GroupProjectDeleteImpact {
-  token: string;
-  members: string[];
-  canvases: string[];
-  actions: string[];
-  grants: string[];
-  messages: number;
-  topics: number;
-  machines: string[];
-  incompleteWindows: boolean;
-}
+import type { GroupProjectDeleteImpact } from '../../../shared/group-project-types';
 
 export function DeleteGroupProjectDialog({ name, loadImpact, confirmDelete, onClose }: {
   name: string;

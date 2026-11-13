@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { GroupProject } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
+import { DeleteGroupProjectDialog } from './DeleteGroupProjectDialog';
 import {
   SettingsBlock, SettingsPage, SettingsSection,
   settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea,
@@ -87,6 +88,10 @@ function editableFields(project: GroupProject) {
 
 function GroupProjectEditor({ project }: { project: GroupProject }) {
   const update = useGroupProjectStore((s) => s.update);
+  const remove = useGroupProjectStore((s) => s.remove);
+  const [deleting, setDeleting] = useState(false);
+  const loadImpact = useCallback(() => window.clubhouse.groupProject.previewDelete(project.id), [project.id]);
+  const confirmDelete = useCallback((token: string) => remove(project.id, token), [remove, project.id]);
   const [baseline, setBaseline] = useState(() => editableFields(project));
   const [draft, setDraft] = useState(baseline);
   const [saving, setSaving] = useState(false);
@@ -171,6 +176,8 @@ function GroupProjectEditor({ project }: { project: GroupProject }) {
           {error && <p role="alert" className={settingsError}>{error}</p>}
           {saved && <p role="status" className={settingsHelp}>Changes saved to the local registry.</p>}
         </form>
+        <div className="mt-4"><Button kind="danger" onClick={() => setDeleting(true)}>Delete group project</Button></div>
+        {deleting && <DeleteGroupProjectDialog name={project.name} loadImpact={loadImpact} confirmDelete={confirmDelete} onClose={() => setDeleting(false)} />}
       </SettingsBlock>
     </SettingsSection>
   );
