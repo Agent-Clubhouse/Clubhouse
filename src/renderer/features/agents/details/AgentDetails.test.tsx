@@ -141,6 +141,12 @@ describe('AgentDetails in the terminal', () => {
     expect(screen.getByTestId('details-card-session')).toHaveAttribute('data-open', 'true');
   });
 
+  it('offers an empty Connections card for a local durable agent before it has wires', () => {
+    render(<AgentDetails agent={agent} />);
+    fireEvent.click(screen.getByTestId('details-card-connections-toggle'));
+    expect(screen.getByRole('button', { name: 'Add connection' })).toBeInTheDocument();
+  });
+
   it('opens an empty Connections card from permissions settings (#3275)', async () => {
     render(<AgentDetails agent={agent} />);
     act(() => { useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'connections' }); });

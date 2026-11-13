@@ -931,6 +931,9 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
           canvasRefetches.get(sat.ws)?.forEach((refetch) => { refetch.superseded = true; });
         }
         sat.snapshot = incoming;
+        void import('./connection-card').then((m) => m.rememberConnectionSnapshot(sat.fingerprint, incoming)).catch((error) => {
+          appLog('core:annex', 'warn', 'Could not save the network connection directory', { meta: { error: error instanceof Error ? error.message : String(error) } });
+        });
         broadcastSatellitesChanged();
         broadcastSatelliteEvent(sat.id, 'snapshot', incoming);
         if (omitted) void fetchOmittedCanvases(sat);

@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CONNECTION_TOOLS, WAKE_SWITCH, localWakeOn, type ConnectionDirection } from '../../../../shared/connection-grants';
+import { formatAgentAddress } from '../../../../shared/agent-address';
 import { Toggle } from '../../../components/Toggle';
 import {
   CONNECTION_SOURCE_LABELS, removalRoute, type ConnectionPairSources, type ConnectionSource, type ConnectionSourceKind,
@@ -23,6 +24,7 @@ export function removalEffect(kind: ConnectionSourceKind, names: { agent: string
   switch (kind) {
     case 'tool_link': return `Removes the link an agent made between ${names.agent} and ${names.other}. If nothing else connects them, it can't link them again this session.`;
     case 'dispatcher_link': return `Removes the link the Dispatcher made. It can't connect them again unless you draw the wire yourself.`;
+    case 'card_link': return `Removes the connection made in the Connections card between ${names.agent} and ${names.other}.`;
     case 'user_link': return `Removes the link you made from ${names.agent} to ${names.other}.`;
     case 'dispatcher_auto': return `Turns off Connect to Dispatcher for ${names.dispatcherEnd ?? names.other}. The Dispatcher can no longer message it or get its reports.`;
     case 'canvas': return 'Remove it on its canvas. This card doesn’t change canvas wires.';
@@ -48,7 +50,7 @@ export function sourcesByKind(pairs: readonly ConnectionPairSources[]): Array<{ 
 const KIND_BY_ID: Readonly<Record<string, ConnectionSourceKind>> = {
   'dispatcher-federation': 'dispatcher_federation',
   'canvas-wires': 'canvas', 'helper-wires': 'helper', 'dispatcher-wires': 'dispatcher_auto',
-  'orchestrator-connections': 'tool_link', 'network-agent-connections': 'tool_link', 'network-connections': 'user_link', 'dispatcher-connections': 'dispatcher_link', 'user-connections': 'user_link',
+  'orchestrator-connections': 'tool_link', 'network-agent-connections': 'tool_link', 'network-connections': 'user_link', 'dispatcher-connections': 'dispatcher_link', 'user-connections': 'user_link', 'connections-card': 'card_link',
 };
 
 /** Removals that change a setting or can't be undone by drawing again: confirmed first. */
@@ -63,7 +65,7 @@ const CONFIRMED: ReadonlySet<ConnectionSourceKind> = new Set(['dispatcher_auto',
  * does a helper's link with its orchestrator, where it can't take effect.
  * A direction that isn't connected offers Make two-way instead.
  */
-function DirectionColumn({ readOnly = false, from, to, fromName, toName, connected, inspectionOnly, disabledTools, wakeOn, showWake, canMakeTwoWay, onChanged }: {
+function DirectionColumn({ readOnly = false, from, to, fromName, toName, connected, inspectionOnly, disabledTools, wakeOn, showWake, canMakeTwoWay, onChanged, remote }: {
   readOnly?: boolean;
   from: string;
   to: string;
@@ -76,6 +78,7 @@ function DirectionColumn({ readOnly = false, from, to, fromName, toName, connect
   showWake: boolean;
   canMakeTwoWay: boolean;
   onChanged: () => void;
+  remote?: { agentId: string; address: string };
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,13 +101,16 @@ function DirectionColumn({ readOnly = false, from, to, fromName, toName, connect
     }
     setBusy(false);
   };
+  const saveTools = (next: string[]) => remote
+    ? window.clubhouse.mcpBinding.setToolsAcrossMachines(remote.agentId, remote.address, from === remote.agentId, next)
+    : window.clubhouse.mcpBinding.setDisabledTools(from, to, next);
   const toggle = (tool: string, on: boolean) => {
     const next = on ? tools.filter((t) => t !== tool) : [...new Set([...tools, tool])];
     const before = tools;
     setTools(next);
     writes.current += 1;
     setError(null);
-    void Promise.resolve().then(() => window.clubhouse.mcpBinding.setDisabledTools(from, to, next)).then(
+    void Promise.resolve().then(() => saveTools(next)).then(
       () => { writes.current -= 1; onChanged(); },
       (err) => {
         writes.current -= 1;
@@ -118,8 +124,8 @@ function DirectionColumn({ readOnly = false, from, to, fromName, toName, connect
     setWake(on);
     wakeWrites.current += 1;
     setError(null);
-    void Promise.resolve().then(() => window.clubhouse.mcpBinding.setLocalWake(from, to, on)).then(
-      () => { wakeWrites.current -= 1; onChanged(); },
+    void Promise.resolve().then(() => remote ? saveTools(on ? tools.filter((t) => t !== WAKE_SWITCH.tool) : [...new Set([...tools, WAKE_SWITCH.tool])]) : window.clubhouse.mcpBinding.setLocalWake(from, to, on)).then(
+      () => { wakeWrites.current -= 1; if (remote) setTools(on ? tools.filter((t) => t !== WAKE_SWITCH.tool) : [...new Set([...tools, WAKE_SWITCH.tool])]); onChanged(); },
       (err) => {
         wakeWrites.current -= 1;
         reportChromeActionFailed('agent_settings_save', err);
@@ -166,7 +172,8 @@ function DirectionColumn({ readOnly = false, from, to, fromName, toName, connect
   );
 }
 
-export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName, dispatcherEnd, familyLink = false, targetKind = 'agent', pairs, grants = [], liveTools, liveEnabled, unreadable = [], onClose, onRemoved, backdropTestId, readError, onRetry }: {
+export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName, dispatcherEnd, familyLink = false, targetKind = 'agent', pairs, grants = [], liveTools, liveEnabled, unreadable = [], onClose, onRemoved, backdropTestId, readError, onRetry, remote }: {
+  remote?: { agentId: string; address: string };
   /** This agent and the other end, for the directions (#2972). */
   agentId?: string;
   otherId?: string;
@@ -204,6 +211,13 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
     setBusy(kind);
     setResult(null);
     try {
+      if (remote && (kind === 'card_link' || kind === 'user_link' || kind === 'tool_link')) {
+        await window.clubhouse.mcpBinding.removeRemoteSource(remote.agentId, remote.address, kind);
+        setResult({ kind, text: 'Removed this source. Other sources stay connected.' });
+        setBusy(null);
+        onRemoved();
+        return;
+      }
       let still = false;
       let notSaved = false;
       let remaining: string[] = [];
@@ -237,12 +251,12 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
     { from: agentId, to: otherId, fromName: agentName, toName: otherName },
     { from: otherId, to: agentId, fromName: otherName, toName: agentName },
   ] : [];
-  const savedOf = (from: string, to: string) => grants.find((g) => g.from.agentId === from && g.to.agentId === to && !g.from.machineId && !g.to.machineId);
+  const savedOf = (from: string, to: string) => grants.find((g) => formatAgentAddress({ agentId: g.from.agentId, machine: g.from.machineId }) === from && formatAgentAddress({ agentId: g.to.agentId, machine: g.to.machineId }) === to);
   const toolsOf = (from: string, to: string): readonly string[] => savedOf(from, to)?.disabledTools ?? liveTools?.get(`${from}>${to}`) ?? [];
   const connectedWay = (from: string, to: string) => pairs.some((p) => p.agentId === from && p.targetId === to && (p.bound || p.sources.length > 0));
   const inspectionWay = (from: string, to: string) => pairs.some((p) => p.agentId === from && p.targetId === to && !!p.inspection && !p.bound);
   const inspectionOnly = pairs.length > 0 && pairs.every((pair) => !pair.bound) && pairs.some((pair) => !!pair.inspection);
-  const guidanceDirections = directions.filter((d, index) => (targetKind === 'agent' || index === 0)
+  const guidanceDirections = (remote ? [] : directions).filter((d, index) => (targetKind === 'agent' || index === 0)
     && (connectedWay(d.from, d.to) || liveTools?.has(`${d.from}>${d.to}`)))
     .map((d) => ({
       from: d.from, to: d.to, label: `${d.fromName} to ${d.toName}`,
@@ -264,9 +278,10 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
               connected={connectedWay(d.from, d.to)}
               inspectionOnly={inspectionWay(d.from, d.to)}
               disabledTools={toolsOf(d.from, d.to)}
-              wakeOn={localWakeOn(savedOf(d.from, d.to), liveEnabled?.get(`${d.from}>${d.to}`))}
+              wakeOn={remote ? !toolsOf(d.from, d.to).includes(WAKE_SWITCH.tool) : localWakeOn(savedOf(d.from, d.to), liveEnabled?.get(`${d.from}>${d.to}`))}
               showWake={pairs.some((p) => p.sources.some((s) => s.kind === 'dispatcher_federation')) || (!dispatcherEnd && !familyLink)}
-              canMakeTwoWay={connectedWay(d.to, d.from) && !inspectionWay(d.to, d.from)}
+              canMakeTwoWay={!remote && connectedWay(d.to, d.from) && !inspectionWay(d.to, d.from)}
+              remote={remote}
               onChanged={onRemoved}
             />
           ))}
@@ -318,7 +333,7 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
         )}
       </ul>
       <ConnectionGuidanceEditor directions={guidanceDirections} />
-      {guidanceDirections.length === 0 && (
+      {guidanceDirections.length === 0 && !remote && (
         <p className="mt-4 text-xs text-ctp-overlay1">No saved or active direction is available for guidance inspection. No session was started.</p>
       )}
     </Modal>

@@ -596,7 +596,7 @@ async function handleSetConnectionTools(callerId: string, args: Record<string, u
     await setConnectionDirections(pairs.map((p) => ({
       from: { agentId: p.from.id }, to: { agentId: p.to.id }, ...localToolsFromAllow(p.allow),
     })), (current) => {
-      if (current?.setByAgent !== callerId || current.link) throw new ConnectionScopeError('The user owns those switches now. Ask them to edit the direction in Connections.');
+      if (current?.setByAgent !== callerId || current.link || current.cardLink) throw new ConnectionScopeError('The user owns those switches now. Ask them to edit the direction in Connections.');
     }, { agentId: callerId });
     recordDispatcherControl({ tool: 'set_connection_tools', actorId: callerId, targets: [from.id, to.id], outcome: 'ok' });
     return text(JSON.stringify({ connections: pairs.map((p) => ({ from: { agentId: p.from.id }, to: { agentId: p.to.id }, tools: readLocalDirectionTools(p.from.id, p.to.id) })) }));
@@ -613,7 +613,7 @@ async function handleListConnections(callerId: string, args: Record<string, unkn
       const target = connectionEnd(args.agent);
       if (!isNetworkComputer(target.machineId!)) throw new ConnectionScopeError('That computer is not in this Annex Network.');
       const same = (end: typeof target) => end.agentId === target.agentId && end.machineId === target.machineId;
-      const connections = listAllConnectionDirections().filter((d) => (same(d.from) || same(d.to)) && (!!d.link || !!activeAgentLinks(d).length)).map((d) => {
+      const connections = listAllConnectionDirections().filter((d) => (same(d.from) || same(d.to)) && (!!d.link || !!d.cardLink || !!activeAgentLinks(d).length)).map((d) => {
         const makers = activeAgentLinks(d);
         const owner = makers.find((l) => l.agentId === callerId && l.machineId === annexIdentity.getIdentity()?.fingerprint?.toLowerCase());
         const covered = [d.from, d.to].every((end) => {
@@ -621,10 +621,10 @@ async function handleListConnections(callerId: string, args: Record<string, unkn
           const local = scope.agents.find((a) => a.id === end.agentId);
           return !!local && holdsGrant(callerId, 'connection.manage', agentGrantTarget(callerId, scope, local));
         });
-        return { from: d.from, to: d.to, target_kind: 'agent', sources: [...(d.link ? ['network-connections'] : []), ...(makers.length ? ['network-agent-connections'] : [])],
+        return { from: d.from, to: d.to, target_kind: 'agent', sources: [...(d.link ? ['network-connections'] : []), ...(d.cardLink ? ['connections-card'] : []), ...(makers.length ? ['network-agent-connections'] : [])],
           ...(makers[0] && { made_by_agent: makers[0].agentId, made_by_machine: makers[0].machineId }),
           tools: { allowed: CONNECTION_SWITCHES.filter((s) => !d.disabledTools.includes(s.tool)).map((s) => s.tool), disabled: CONNECTION_SWITCHES.filter((s) => d.disabledTools.includes(s.tool)).map((s) => s.tool) },
-          may_change: !!owner && makers.length === 1 && !d.link && d.setByAgent === callerId && (!d.from.machineId || d.agentToolsProtected === false) && covered };
+          may_change: !!owner && makers.length === 1 && !d.link && !d.cardLink && d.setByAgent === callerId && (!d.from.machineId || d.agentToolsProtected === false) && covered };
       });
       return text(JSON.stringify({ connections, unreadable: [] }));
     }
@@ -654,21 +654,21 @@ async function handleListConnections(callerId: string, args: Record<string, unkn
         ...((creator || makers[0]) && { made_by_agent: creator ?? makers[0].agentId }),
         ...(makers[0] && { made_by_machine: makers[0].machineId }),
         ...(b.targetKind === 'agent' && { tools }),
-        may_change: !!(to.machineId && makers.length === 1 && makers[0].agentId === callerId && makers[0].machineId === annexIdentity.getIdentity()?.fingerprint?.toLowerCase() && !direction.link && direction.setByAgent === callerId && holdsGrant(callerId, 'connection.manage', remoteGrantTarget(callerId, to)) && managedEnds[0] && holdsGrant(callerId, 'connection.manage', agentGrantTarget(callerId, scope, managedEnds[0]))) || b.targetKind === 'agent' && failed.length === 0 && direction?.setByAgent === callerId && !direction.link
+        may_change: !!(to.machineId && makers.length === 1 && makers[0].agentId === callerId && makers[0].machineId === annexIdentity.getIdentity()?.fingerprint?.toLowerCase() && !direction.link && !direction.cardLink && direction.setByAgent === callerId && holdsGrant(callerId, 'connection.manage', remoteGrantTarget(callerId, to)) && managedEnds[0] && holdsGrant(callerId, 'connection.manage', agentGrantTarget(callerId, scope, managedEnds[0]))) || b.targetKind === 'agent' && failed.length === 0 && direction?.setByAgent === callerId && !direction.link && !direction.cardLink
           && managedEnds.every((end) => end && holdsGrant(callerId, 'connection.manage', agentGrantTarget(callerId, scope, end)))
           && sources.length === 1 && sources[0] === ORCHESTRATOR_CONNECTION_SOURCE_ID
           && owned.some((c) => c.agentId === b.agentId && c.targetId === b.targetId),
       };
     });
     // The incoming network direction is held by the remote sender, so it has no local binding.
-    for (const d of listAllConnectionDirections().filter((x) => !!x.from.machineId && !x.to.machineId && x.to.agentId === agent.id && (!!x.link || !!activeAgentLinks(x).length))) {
+    for (const d of listAllConnectionDirections().filter((x) => !!x.from.machineId && !x.to.machineId && x.to.agentId === agent.id && (!!x.link || !!x.cardLink || !!activeAgentLinks(x).length))) {
       const makers = activeAgentLinks(d);
       const ownedLink = makers.find((l) => l.agentId === callerId && l.machineId === annexIdentity.getIdentity()?.fingerprint?.toLowerCase());
       connections.push({
-        from: d.from, to: d.to, target_kind: 'agent', sources: [...(d.link ? ['network-connections'] : []), ...(makers.length ? ['network-agent-connections'] : [])],
+        from: d.from, to: d.to, target_kind: 'agent', sources: [...(d.link ? ['network-connections'] : []), ...(d.cardLink ? ['connections-card'] : []), ...(makers.length ? ['network-agent-connections'] : [])],
         ...(makers[0] && { made_by_agent: makers[0].agentId, made_by_machine: makers[0].machineId }),
         tools: { allowed: CONNECTION_SWITCHES.filter((s) => !d.disabledTools.includes(s.tool)).map((s) => s.tool), disabled: CONNECTION_SWITCHES.filter((s) => d.disabledTools.includes(s.tool)).map((s) => s.tool) },
-        may_change: !!ownedLink && !d.link && makers.length === 1 && d.setByAgent === callerId && d.agentToolsProtected === false
+        may_change: !!ownedLink && !d.link && !d.cardLink && makers.length === 1 && d.setByAgent === callerId && d.agentToolsProtected === false
           && holdsGrant(callerId, 'connection.manage', remoteGrantTarget(callerId, d.from))
           && holdsGrant(callerId, 'connection.manage', agentGrantTarget(callerId, scope, agent)),
       });

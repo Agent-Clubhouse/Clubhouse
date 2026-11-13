@@ -921,6 +921,16 @@ describe('keeping both machines\' copies of a connection', () => {
     expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.link).toBeTruthy();
   });
 
+  it('retains a card source when a legacy peer echoes its boolean link', async () => {
+    const from = { agentId: 'there', machine: OTHER };
+    const to = { agentId: 'receiver', machine: SELF };
+    await receiveDirections(OTHER, { v: 1, directions: [{ from, to, disabledTools: [], link: true, userLink: false, cardLink: true, updatedAt: new Date(now).toISOString() }] }, now);
+    await receiveDirections(OTHER, { v: 1, directions: [{ from, to, disabledTools: [], link: true, updatedAt: new Date(now + 1000).toISOString() }] }, now + 1000);
+    const saved = getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' });
+    expect(saved?.cardLink).toBeDefined();
+    expect(saved?.link).toBeUndefined();
+  });
+
   it('refuses a list it can\'t read', async () => {
     expect(await receiveDirections(OTHER, { v: 2, directions: [] })).toMatchObject({ status: 400 });
     expect(await receiveDirections(OTHER, null)).toMatchObject({ status: 400 });

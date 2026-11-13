@@ -627,6 +627,10 @@ export const IPC = {
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',
+    LIST_CARD_TARGETS: 'mcp-binding:list-card-targets',
+    ADD_CARD_CONNECTION: 'mcp-binding:add-card-connection',
+    REMOVE_CARD_CONNECTION: 'mcp-binding:remove-card-connection',
+    REMOVE_REMOTE_SOURCE: 'mcp-binding:remove-remote-source',
     BIND: 'mcp-binding:bind',
     UNBIND: 'mcp-binding:unbind',
     BINDINGS_CHANGED: 'mcp-binding:bindings-changed',

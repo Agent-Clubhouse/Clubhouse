@@ -6,6 +6,7 @@ import * as path from 'path';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
 import { launchApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
+import { createDisposableProfile } from './app-profile';
 
 /**
  * The connection view (#2972, D129), over a fake `claude`, so no tokens are
@@ -121,4 +122,56 @@ test('the connection view: both directions with their own tools, saved in the st
     .toMatchObject({ disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], link: expect.anything() });
   await expect(back.getByRole('switch', { name: 'Send messages (partner to conductor)' })).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 });
   await expect(back.getByRole('switch', { name: 'Wake it (partner to conductor)' })).toHaveAttribute('aria-checked', 'true');
+});
+
+test('the Connections card creates and restores a two-way connection', async () => {
+  fakes = await installFakeClis({ claude: 'session-info' });
+  projectDir = makeProject();
+  const profile = createDisposableProfile({ label: 'connection-picker' });
+  const registry = path.join(profile.userDataDir, '.clubhouse-dev', 'group-projects');
+  fs.mkdirSync(registry, { recursive: true });
+  fs.writeFileSync(path.join(registry, 'registry.json'), JSON.stringify([{ id: 'gp_picker', name: 'Picker group', description: '', instructions: '', createdAt: new Date().toISOString(), scope: { level: 'app', reach: 'local' }, metadata: {} }]));
+  const machine = Array(16).fill('ab').join(':');
+  app = await launchApp({ profile, label: 'connection-picker', experimental: { chat: true }, userDataFiles: {
+    'annex-peers.json': [{ fingerprint: machine, alias: 'Offline studio', role: 'member', kind: 'desktop', pairingId: 'test-pair' }],
+    'connection-card.json': { version: 1, memberships: [], peers: { [machine]: { pairingId: 'test-pair', targets: [{ id: 'remote_agent', name: 'Remote partner', kind: 'agent', project: 'Remote project' }] } } },
+    'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },
+    'chat-runtime-settings.json': { 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } },
+  }, env: fakes.env });
+  await addProject(app.electronApp, app.window, projectDir);
+  const openConnections = async () => {
+    const w = app!.window;
+    const conductor = w.locator('[data-agent-name="conductor"]').first();
+    if (!(await conductor.isVisible().catch(() => false))) {
+      const fold = w.locator('[data-testid^="sleeping-fold-"]').first();
+      if (await fold.isVisible().catch(() => false)) await fold.click();
+    }
+    await conductor.click();
+    const head = w.getByTestId('details-card-connections-toggle').first();
+    if (!(await head.isVisible().catch(() => false))) await w.getByRole('button', { name: 'Agent details' }).first().click();
+    await expect(head).toBeVisible({ timeout: 15_000 });
+    if ((await head.getAttribute('aria-expanded')) !== 'true') await head.click();
+  };
+  await openConnections();
+  await app.window.getByRole('button', { name: 'Add connection' }).click();
+  const picker = app.window.getByTestId('connection-picker');
+  await picker.getByRole('button', { name: /partner/ }).click();
+  await picker.getByRole('button', { name: 'Add connection', exact: true }).click();
+  await expect.poll(async () => (await savedDirections()).filter((d) => [CONDUCTOR, PARTNER].includes(d.from.agentId) && [CONDUCTOR, PARTNER].includes(d.to.agentId)).length).toBe(2);
+  await app.window.getByRole('button', { name: 'Close' }).last().click();
+  await app.window.getByRole('button', { name: 'Add connection' }).click();
+  await picker.getByRole('button', { name: /Picker group/ }).click();
+  await picker.getByRole('button', { name: 'Add connection', exact: true }).click();
+  await expect.poll(async () => JSON.parse(await fs.promises.readFile(path.join(app!.userDataDir, 'connection-card.json'), 'utf8')).memberships).toEqual(expect.arrayContaining([expect.objectContaining({ agentId: CONDUCTOR, groupId: 'gp_picker' })]));
+  await app.window.getByRole('button', { name: 'Close' }).last().click();
+  await app.window.getByRole('button', { name: 'Add connection' }).click();
+  await picker.getByRole('button', { name: /Remote partner/ }).click();
+  await picker.getByRole('button', { name: 'Add connection', exact: true }).click();
+  await expect.poll(async () => (await savedDirections()).some((d) => d.to.agentId === 'remote_agent')).toBe(true);
+  await app.electronApp.close();
+  app = await launchApp({ profile, env: fakes.env });
+  await openConnections();
+  await expect(app.window.getByTestId('connection-row').filter({ hasText: 'partner' })).toBeVisible({ timeout: 15_000 });
+  await expect(app.window.getByTestId('connection-row').filter({ hasText: 'Picker group' })).toBeVisible();
+  await expect(app.window.getByTestId('remote-connection-row').filter({ hasText: 'Remote partner' })).toBeVisible();
 });

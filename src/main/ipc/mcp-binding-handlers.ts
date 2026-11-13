@@ -48,11 +48,13 @@ import { listConnectionSources, removeConnectionSource } from '../services/conne
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
 import { migrateDispatcherLinkTools } from '../services/dispatcher-controls';
 import {
-  applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
+  applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, removeSourceAcrossMachines, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
 } from '../services/connection-grants';
 import { listConnectionDirectionsForInspection } from '../services/connection-grants-store';
 import { syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
 import { startHandoffs } from '../services/handoff-host';
+import { addCardConnection, listConnectionPickerTargets, removeCardConnection, startCardConnections } from '../services/connection-card';
+import type { AddCardConnection } from '../../shared/connection-picker';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexPeers from '../services/annex-peers';
 import * as annexClient from '../services/annex-client';
@@ -254,6 +256,24 @@ export function registerMcpBindingHandlers(): void {
         .then((removalNotSaved) => ({ kept: false, ...(removalNotSaved && { removalNotSaved }) }));
     },
   ));
+
+  ipcMain.handle(IPC.MCP_BINDING.LIST_CARD_TARGETS, withValidatedArgs([stringArg({ maxLength: 200 })], async (event, agentId) => {
+    assertCallerIsAppWindow(event);
+    return listConnectionPickerTargets(agentId as string);
+  }));
+  ipcMain.handle(IPC.MCP_BINDING.ADD_CARD_CONNECTION, withValidatedArgs([objectArg()], async (event, request) => {
+    assertCallerIsAppWindow(event);
+    await addCardConnection(request as AddCardConnection);
+  }));
+  ipcMain.handle(IPC.MCP_BINDING.REMOVE_CARD_CONNECTION, withValidatedArgs([stringArg({ maxLength: 400 }), stringArg({ maxLength: 400 })], async (event, from, to) => {
+    assertCallerIsAppWindow(event);
+    await removeCardConnection(from as string, to as string);
+  }));
+  ipcMain.handle(IPC.MCP_BINDING.REMOVE_REMOTE_SOURCE, withValidatedArgs([stringArg({ maxLength: 200 }), stringArg({ maxLength: 400 }), stringArg({ maxLength: 30 })], async (event, agentId, address, kind) => {
+    assertCallerIsAppWindow(event);
+    if (kind !== 'user_link' && kind !== 'card_link' && kind !== 'tool_link') throw new Error('That connection source cannot be removed here.');
+    await removeSourceAcrossMachines(agentId as string, address as string, kind);
+  }));
 
   ipcMain.handle(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS, (event) => {
     assertCallerIsAppWindow(event);
@@ -497,6 +517,7 @@ export function restorePersistedBindings(): Promise<void> {
       notify: (from, to, disabledTools) => broadcastToAllWindows(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, from, to, disabledTools),
     });
     stopWatchingMcpCallers = watchMcpCallers();
+    stopWatchingCardConnections = startCardConnections();
     // Agents across machines (#3064): calls to and from other machines' agents, and the connections between them.
     registerPersistedBindingSource(federationBindingSource);
     stopWatchingFederation = watchFederation(() => {
@@ -570,6 +591,8 @@ export function restorePersistedBindings(): Promise<void> {
 }
 
 /** For testing only: reset the registration guard so handlers can be re-registered. */
+let stopWatchingCardConnections: (() => void) | null = null;
+
 export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
   persistedSourcesRegistered = false;
@@ -577,6 +600,8 @@ export function _resetHandlersForTesting(): void {
   stopWatchingFederation = null;
   stopDispatcherLead?.();
   stopDispatcherLead = null;
+  stopWatchingCardConnections?.();
+  stopWatchingCardConnections = null;
   stopWatchingHelperWires?.();
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();

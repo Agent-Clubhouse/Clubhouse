@@ -9,7 +9,7 @@ vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getBinding
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import {
-  getConnectionDirection, linkConnectionDirections, onConnectionGrantsChanged,
+  getConnectionDirection, linkCardDirections, linkConnectionDirections, removeCardDirection, onConnectionGrantsChanged,
   setConnectionTools, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
 import { resetAllSettingsStoresForTests } from './settings-store';
@@ -113,5 +113,33 @@ describe('atomic explicit user links', () => {
     fs.writeFileSync(grantsPath(), raw);
     await expect(linkConnectionDirections([{ from: A, to: B }])).rejects.toThrow('directions');
     expect(fs.readFileSync(grantsPath(), 'utf-8')).toBe(raw);
+  });
+});
+
+
+describe('Connections card sources', () => {
+  it('writes both selected directions atomically and preserves them when switches change', async () => {
+    await linkCardDirections([
+      { from: A, to: B, disabledTools: ['clear_agent'], enabledTools: ['wake_agent'] },
+      { from: B, to: A, disabledTools: ['compact_agent'], enabledTools: [] },
+    ]);
+    await setConnectionTools(A, B, ['send_file'], []);
+    expect(getConnectionDirection(A, B)).toMatchObject({ cardLink: expect.anything(), disabledTools: ['send_file'] });
+    expect(getConnectionDirection(B, A)).toMatchObject({ cardLink: expect.anything(), disabledTools: ['compact_agent'] });
+    resetAllSettingsStoresForTests();
+    expect(getConnectionDirection(A, B)?.cardLink).toBeDefined();
+    await removeCardDirection(A, B);
+    expect(getConnectionDirection(A, B)?.cardLink).toBeUndefined();
+    expect(getConnectionDirection(B, A)?.cardLink).toBeDefined();
+  });
+
+  it('rejects both writes when a direction already has a user link', async () => {
+    await linkConnectionDirections([{ from: B, to: A }]);
+    await expect(linkCardDirections([
+      { from: A, to: B, disabledTools: [], enabledTools: [] },
+      { from: B, to: A, disabledTools: [], enabledTools: [] },
+    ])).rejects.toThrow('already connected');
+    expect(getConnectionDirection(A, B)).toBeUndefined();
+    expect(getConnectionDirection(B, A)?.link).toBeDefined();
   });
 });

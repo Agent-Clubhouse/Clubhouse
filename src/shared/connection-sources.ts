@@ -18,6 +18,8 @@ export type ConnectionSourceKind =
   | 'user_link'
   /** A group project's membership record (#3357). Managed in Group Projects. */
   | 'group_member'
+  /** A link or group membership made in the Connections card. */
+  | 'card_link'
   /** A source this build doesn't know. */
   | 'dispatcher_federation'
   | 'other';
@@ -66,6 +68,7 @@ export function removalRoute(kind: ConnectionSourceKind): 'here' | 'canvas' | 'h
     case 'dispatcher_link':
     case 'dispatcher_auto':
     case 'user_link':
+    case 'card_link':
       return 'here';
     case 'canvas':
       return 'canvas';
@@ -85,6 +88,7 @@ export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, str
   user_link: 'Made by you',
   dispatcher_federation: 'Annex Network controllers',
   group_member: 'Group project member',
+  card_link: 'Made in Connections',
   other: 'Other',
 };
 

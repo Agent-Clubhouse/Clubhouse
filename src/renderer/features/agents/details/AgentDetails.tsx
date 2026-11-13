@@ -214,7 +214,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
   // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
   const orchestration = useOrchestrationCards(agent, projectPath);
-  const { orchestrationPath, ownConfig, helperIds, orchestrating } = orchestration;
+  const { ownConfig, helperIds } = orchestration;
   const { openCards, setOpenCards, toggleCard } = useDetailsCardState(agent.id, orchestration.approvals.pending.length > 0);
   // The Dispatcher's card (#3049): while it's on, for the agents the Orchestration card is for. Helpers never connect.
   const { show: dispatcherOn } = useDispatcherConnection();
@@ -223,10 +223,9 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const wiresId = dispatcherWiresAgentId(agent);
   const wiresAgent = useMemo(() => (wiresId === agent.id ? agent : { ...agent, id: wiresId }), [agent, wiresId]);
   const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === wiresId || (b.targetKind === 'agent' && b.targetId === wiresId)));
-  // The Dispatcher has no orchestration of its own, but its wires to orchestrators show (#2538).
+  // A person can start a connection even before this agent has any wires.
   const connectionsRequested = focus?.agentId === agent.id && focus.card === 'connections';
-  const showConnections = (!!orchestrationPath && (orchestrating || hasWires)) || (dispatcher && hasWires)
-    || (connectionsRequested && !isRemoteProjectId(agent.projectId));
+  const showConnections = !isRemoteProjectId(agent.projectId) && (agent.kind === 'durable' || dispatcher || hasWires || connectionsRequested);
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
   const disconnectToolWire = useCallback(async (c: Connection) => {
     const unbind = useMcpBindingStore.getState().unbind;

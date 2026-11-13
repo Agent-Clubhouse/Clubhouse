@@ -182,7 +182,7 @@ export function setConnectionTools(
     // An entry is kept even when empty: "everything on" must not fall back to a source's list.
     return {
       from, to, disabledTools: tools, ...(enabled.length > 0 && { enabledTools: enabled }),
-      ...(current?.link && { link: current.link }), ...(current?.agentLinks && { agentLinks: current.agentLinks }), updatedAt: new Date().toISOString(),
+      ...(current?.link && { link: current.link }), ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), updatedAt: new Date().toISOString(),
     };
   });
 }
@@ -220,7 +220,7 @@ export async function setConnectionDirections(
         from: c.from, to: c.to, disabledTools: [...new Set(c.disabledTools)],
         ...(c.enabledTools.length > 0 && { enabledTools: [...new Set(c.enabledTools)] }),
         ...(options.agentId ? { setByAgent: options.agentId } : { setBy: 'dispatcher' as const }),
-        ...(current?.link && { link: current.link }), ...(current?.agentLinks && { agentLinks: current.agentLinks }), updatedAt: now,
+        ...(current?.link && { link: current.link }), ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), updatedAt: now,
       }];
     });
     const keys = new Set(next.map((d) => directionKey(d.from, d.to)));
@@ -289,7 +289,7 @@ export function setConnectionLink(from: AgentAddress, to: AgentAddress, on: bool
       disabledTools: current?.disabledTools ?? [...defaultTools],
       ...(current?.enabledTools && { enabledTools: current.enabledTools }),
       link: current?.link ?? { createdAt: new Date().toISOString() },
-      ...(current?.agentLinks && { agentLinks: current.agentLinks }),
+      ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }),
       updatedAt: new Date().toISOString(),
     };
   });
@@ -321,7 +321,7 @@ export async function linkConnectionDirections(pairs: readonly Pick<ConnectionDi
       const next: ConnectionDirection = {
         from, to, disabledTools: [...(current?.disabledTools ?? NEW_CONNECTION_SWITCHES.disabledTools)],
         ...(enabled && enabled.length > 0 && { enabledTools: [...enabled] }),
-        link: { createdAt: now }, ...(current?.agentLinks && { agentLinks: current.agentLinks }), updatedAt: now,
+        link: { createdAt: now }, ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), updatedAt: now,
       };
       if (index >= 0) directions[index] = next;
       else directions.push(next);
@@ -367,8 +367,8 @@ export async function updateAgentNetworkLinks(
       const active = activeAgentLinks(current);
       const mine = active.some((l) => l.agentId === owner.agentId && l.machineId === owner.machineId);
       if (action !== 'add' && !mine) throw new Error('You did not make that connection source.');
-      if (action === 'tools' && (current?.link || active.length !== 1 || current.setByAgent !== owner.agentId || (cHasRemoteSender(pair) && current.agentToolsProtected !== false))) throw new Error('Another source or the user owns these switches.');
-      if (action === 'add' && disabled?.[i] && current && (current.link || active.length || current.setByAgent !== owner.agentId)) throw new Error('That direction already has saved switches.');
+      if (action === 'tools' && (current?.link || current?.cardLink || active.length !== 1 || current.setByAgent !== owner.agentId || (cHasRemoteSender(pair) && current.agentToolsProtected !== false))) throw new Error('Another source or the user owns these switches.');
+      if (action === 'add' && disabled?.[i] && current && (current.link || current.cardLink || active.length || current.setByAgent !== owner.agentId)) throw new Error('That direction already has saved switches.');
       if (action === 'add' && !mine && links.length >= 50 && !links.some((l) => l.agentId === owner.agentId && l.machineId === owner.machineId)) throw new Error('This direction has too many saved agent sources.');
       if (action === 'add' && links.some((l) => l.removedByUser)) throw new Error('The user removed an agent source. Only the user can reconnect it.');
       const nextLinks = action === 'add' && !mine ? [...links.filter((l) => l.agentId !== owner.agentId || l.machineId !== owner.machineId), { ...owner, createdAt: new Date(Math.max(Date.parse(now), ...links.filter((l) => l.agentId === owner.agentId && l.machineId === owner.machineId).map((l) => Date.parse(l.removedAt ?? l.createdAt) + 1))).toISOString() }]
@@ -406,6 +406,39 @@ export function clearUserRemovedAgentNetworkSources(from: AgentAddress, to: Agen
     return { ...current, agentLinks: current.agentLinks.map((link) => link.removedByUser
       ? { ...link, removedByUser: undefined, removedAt: new Date(Math.max(now, Date.parse(link.removedAt ?? link.createdAt) + 1)).toISOString() } : link), updatedAt: new Date(now).toISOString() };
   });
+}
+
+/** Create the card's directions and their selected switches in one store write. */
+export async function linkCardDirections(changes: readonly DirectionToolsChange[]): Promise<ConnectionDirection[]> {
+  if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse.');
+  const written: ConnectionDirection[] = [];
+  await store.update((file) => {
+    if (file.version !== undefined && file.version > CONNECTION_GRANTS_VERSION) throw new Error('This connection file was saved by a newer Clubhouse.');
+    if (!Array.isArray(file.directions)) throw new Error('Saved connection directions are invalid.');
+    const directions = [...file.directions];
+    const now = new Date().toISOString();
+    for (const change of changes) {
+      if (!normalizeConnectionDirection(change)) throw new Error('That connection address is invalid.');
+      const key = directionKey(change.from, change.to);
+      const index = directions.findIndex((raw) => { const d = normalizeConnectionDirection(raw); return d && directionKey(d.from, d.to) === key; });
+      const current = index < 0 ? undefined : normalizeConnectionDirection(directions[index]) ?? undefined;
+      if (current?.link || current?.cardLink || activeAgentLinks(current).length) throw new Error('That direction is already connected.');
+      const next: ConnectionDirection = { ...current, setBy: undefined, setByAgent: undefined, from: change.from, to: change.to,
+        disabledTools: [...new Set(change.disabledTools)], enabledTools: [...new Set(change.enabledTools)], cardLink: { createdAt: now }, updatedAt: now };
+      if (index < 0) directions.push(next); else directions[index] = next;
+      written.push(next);
+    }
+    return { ...file, version: CONNECTION_GRANTS_VERSION, directions };
+  });
+  for (const d of written) for (const listener of [...listeners]) {
+    try { listener(d.from, d.to); } catch { /* telemetry-exempt: other listeners still run */ }
+  }
+  return written;
+}
+
+/** Remove only the source made in the Connections card. */
+export function removeCardDirection(from: AgentAddress, to: AgentAddress): Promise<ConnectionDirection | null> {
+  return updateDirection(from, to, (current) => current?.cardLink ? { ...current, cardLink: undefined, updatedAt: new Date().toISOString() } : UNCHANGED);
 }
 
 /**
