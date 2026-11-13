@@ -220,7 +220,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('reads and sets lead on the satellite that holds the group project, by its bare id (#3360)', async () => {
     seedRemoteGP();
-    const view = { groupProjectId: GP_ID, own: { deliver: 'allow' as const, wake: 'off' as const }, holders: [{ agentId: 'a1', lead: 'allow' as const, admin: 'off' as const }] };
+    const view = { groupProjectId: GP_ID, own: { deliver: 'allow' as const, wake: 'off' as const, actions: 'allow' as const }, holders: [{ agentId: 'a1', lead: 'allow' as const, admin: 'off' as const }] };
     // This file runs without the renderer's window.clubhouse: give it the two surfaces involved.
     const w = window as unknown as { clubhouse?: Record<string, Record<string, unknown>> };
     w.clubhouse ??= {};

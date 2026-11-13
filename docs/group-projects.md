@@ -15,12 +15,11 @@ canvas missing its context refuses creation rather than silently using app scope
 The MCP create tool derives the registered project from its caller's project
 path and refuses an unregistered caller path.
 
-Network reach is refused, with its reason, until network group projects are
-available (#3363): "Network reach needs Annex Network" when Annex Network is off,
-otherwise "not available in this version yet". `groupProjectHost.scopeOptions()`
-(IPC `group-project:scope-options`) gives the same answer to the UI, which shows
-Network disabled with that reason. No local group is presented as a network
-group. `get_project_info` includes scope; legacy records without one return
+Network reach needs Annex Network on and this computer in a network (an Annex
+identity). Otherwise it is refused with the reason: "Network reach needs Annex
+Network…" or "…Add a device in Settings > Annex Network first."
+`groupProjectHost.scopeOptions()` (IPC `group-project:scope-options`) gives the
+same answer to the UI, which shows Network disabled with that reason. `get_project_info` includes scope; legacy records without one return
 `scope: null` unless membership-aware migration can verify the complete
 membership inventory. Creation does not infer migration scope from an incomplete
 startup binding cache or change existing members or subscriptions.
@@ -167,6 +166,10 @@ just-posted message even if older history has timestamps ahead of the clock.
 - `src/main/services/group-project-host.guard.test.ts`: fails any write outside the host.
 - `src/main/services/group-project-membership-file.ts`, `group-project-json-file.ts`, `group-project-paths.ts`: host-only stores.
 - `src/shared/group-project-members.ts`: host-relative member addresses.
+- `src/shared/group-project-network.ts`: the network protocol, its validators and membership patches.
+- `src/main/services/group-project-network.ts`: requests between computers; the host service keeps every store.
+- `src/main/services/group-project-network.sim.test.ts`: two desktops in one process.
+- `e2e/annex-v2/network-group-projects.spec.ts`: two desktops, the host away and back.
 - `src/main/services/group-project-registry.ts`: registry loading, CRUD and flush.
 - `src/main/services/group-project-scope-migration.ts`: checked legacy inventory.
 - `src/main/services/group-project-scope-migration.test.ts`: real-file inference,
@@ -369,6 +372,7 @@ changes; the message a post adds carries that change's sequence number.
 - **Its own grants** are what it does by itself, kept in its record's `metadata.grants`:
   - `deliver`: post notices to members (#3362). On by default.
   - `wake`: a lead's `shoulder_tap` wakes a sleeping member, with the tap as its first message. Off by default.
+  - `actions`: run the group project's Actions. On by default. Message and tap steps also need `deliver`; wake steps need `wake`.
 
   With `wake` off, a tap to a sleeping member reports `not-running` with `refusal: 'group_project_wake_off'`.
 - **Migration.** At startup, each agent in a group project's old `admins` list gets lead and admin (Allow) on it, once: `metadata.rolesMigratedAt` marks it done, so a later change isn't undone.
@@ -377,6 +381,107 @@ changes; the message a post adds carries that change's sequence number.
   - `GroupProjectRolesSection` (for the directory) sets each member's lead and admin (Allow, Ask first, Off) and the group project's own grants.
   - The canvas card's star sets lead.
   - IPC: `GROUP_PROJECT.GET_ROLES`, `SET_ROLE`, `SET_OWN_GRANT`.
+
+## Group project Actions (#3361)
+
+A person or an agent with the group's Admin grant can create Actions owned by the group. They run on its authoritative host under its own grants and survive removal of their creator. Settings > Actions and the group project directory list them; peers see read-only summaries labeled with the host computer. Scheduled and one-time Actions use the normal Actions catch-up rules. Board triggers can watch a topic, membership changes, or a quiet board, with the usual coalescing rules. Deleting the group project includes its Actions in the impact preview and removes them during the recoverable delete cascade (#3364).
+
+## Network group projects (#3363)
+
+A group project with network reach is held by its host and copied to every
+other computer in the Annex Network (members, never phones). Requests go over
+the pinned mTLS connection, between network computers only
+(`src/shared/group-project-network.ts`, routes on the main TLS port):
+
+- `POST /api/v1/network/group-projects/sync`: `{ v: 1, known: { id: seq } }`
+  answers the network group projects the host holds that changed since `known`.
+  Each answer has the record, membership, the board's messages after that
+  sequence number, and every id it still holds (so a copy drops what the host
+  removed). It also lists unchanged ids and the host's tombstones. A computer
+  speaks only for group projects it hosts.
+- `POST /api/v1/network/group-projects/write`: up to 100 queued writes, applied
+  or refused by the host in order (post, delete message or topic, topic
+  protection, record fields, a membership patch, channel and inbox seeding).
+- `POST /api/v1/network/group-projects/changed`: the host's notice that some of
+  its network group projects changed, one per burst. The other computer then
+  catches up.
+
+**Copies.** On a non-host computer the copy is an ordinary record whose
+`host.machine` is the host's fingerprint, with its board, membership and
+`host.json` sequence number, so every read works unchanged. `hostName` names the
+host by device name, never by fingerprint. `network` gives `role`, `state`
+(`online`, `cached` while the host is away, `host-removed`), `waitingWrites`,
+`syncedAt` and `refusals`. A copy catches up when the computers connect and on
+every change notice, from the last sequence number it saw. A copy that finds
+messages missing asks for everything next time.
+
+**Writes.** A write on a copy goes to the host: at once when it is connected and
+nothing waits before it, otherwise into `group-projects/network-outbox.json`.
+That queue holds 200 writes per group project and 1,000 in all. A queued post
+answers `pending: { waitingFor: <host> }`, and `post_bulletin` reports it as
+queued. On reconnect the queue is sent in order. A write the host refuses, or
+one that waited more than a day, is kept in `network-refusals.json` for the
+directory, and the agent that made it is told. A write refused while the host is
+online is refused to the caller at once. Membership changes on a copy go as a
+patch (entries added and removed, fields set) that the host applies to its own
+current record. Only the host deletes, clears, changes retention or changes
+scope (`not_host`, "Only <host> can …").
+
+**Who may write.** The host decides, and fails closed. An agent's write carries
+the agent (its author), and the host checks it as `<agent>@<sending computer>`.
+The agent must be a member, and anything beyond posting (lead: deleting
+messages and channels, protection; admin: record fields, membership) needs
+#3360's grants: the registered gate (`group-project-remote-grants.ts`) asks
+`decideGrant` for `<agent>@<computer>` on that group project, and only Allow
+passes. Ask first refuses, since no person sees a remote write on the host.
+Without a gate registered, only posting is allowed. The person, on any of their computers,
+may write: their computers already control each other. A computer's own
+housekeeping (channel seeding, its agents' inboxes, its agents' membership
+entries and per-member settings, its agents' join and leave notes) covers only
+its own agents. A patch naming anyone else's entries has those parts dropped.
+Patch fields are whitelisted.
+
+**Exactly once.** Writes from one computer are applied in order, and each
+answer is saved (`network-applied.json`, 2,000 or seven days). A write sent
+again because its response was lost gets the same answer. A remote post's
+message id is derived from the write's, so even after a crash between posting
+and saving the answer, the replay finds the post rather than making a second.
+
+**Order and races.** On a copy, the outbox is changed under one lock, so writes
+made at once all stay queued. Sending to one host and flushing its queue happen
+one at a time, in the order the writes were made. Catch-up from one host runs
+one at a time whoever asks. A copy dropped because its host deleted it is
+recorded first (`replica-tombstones.json`, by host), so a late answer can't bring
+it back. One dropped as no longer shared comes back only from a newer sequence
+number. An answer older than the copy is ignored.
+
+**Canvas.** When a copy goes, so do its saved Canvas cards, wires and
+connection guidance (`purgeGroupProjectViews`, the delete cascade's tolerant
+cleanup, #3425).
+
+**Notices (#3362).** Each computer tells its own agents. When a catch-up brings
+new posts, the copy announces each one, and the notice service delivers to this
+computer's members (`localAgentId`). A first copy's history isn't announced.
+
+**Addresses.** On a copy a bare id is the host's agent. An agent here is
+`id@<this machine>` (`addressOf`, `localAgentId`). The membership policy (#3357)
+binds only this machine's agents on a copy, and never auto-joins, adopts or
+tidies there.
+
+**Project scope over the network.** Project links (#3066) are kept by the
+renderer, so the main process can't read them. A copy of a project-scoped
+network group project carries its host project's repository key
+(`scopeProjectKey`), the key link suggestions use.
+
+**Leaving.** When a computer leaves the network, the group projects it hosted
+become read-only copies here ("<host> left your network"), and writes waiting
+for it are refused. Its agents' explicit entries leave the network group
+projects this computer hosts. When the host deletes a group project, or stops
+sharing it (narrowing to this computer), each copy goes at its next catch-up,
+using the tombstone (#3364).
+
+**Read state** stays per computer. Copies keep the host's message timestamps,
+so the same read markers give the same unread counts on both computers (#1559).
 
 ## Local directory
 
@@ -389,6 +494,11 @@ store and IPC used by Canvas. Instructions retain their whitespace. Legacy or
 missing scope is shown as unresolved, not inferred, until someone sets one.
 Failed loads hide the inventory and offer a retry. Failed writes retain the
 current draft and report that it was not saved.
+
+Each record shows its host line ("Host: This computer", "Host: Desk, offline.
+Showing a saved copy, 2 changes wait for it.", "Host: Desk left your network.
+This copy is read-only."), and a copy lists changes its host refused, with
+Clear this list. A copy has no scope editor: only its host changes scope.
 
 Creation here defaults to the whole app on this computer, and the person can
 choose a project instead. Selecting a record also shows its scope with Review

@@ -82,12 +82,15 @@ export interface EngineState {
   lastFiredDate?: Record<string, string>;
   /** Started runs retained independently of the short run history, for per-action throttles. */
   throttleStarts?: Record<string, number[]>;
+  /** Latest quiet stretch already delivered by each board-idle Action. */
+  idleFiredAt?: Record<string, number>;
 }
 
 export interface EngineStorage {
   load(): { actions: Action[]; state: EngineState };
   saveActions(actions: Action[]): void;
   saveState(state: EngineState): void;
+  flush?(): Promise<void>;
 }
 
 export interface RunHistory {
@@ -97,10 +100,12 @@ export interface RunHistory {
   list(actionId?: string): ActionRun[];
   /** Await persistence when another durable service needs a receipt. */
   flush?(): Promise<void>;
+  purgeGroupProject?(id: string): Promise<void>;
 }
 
 /** What the engine needs to know about agents and projects. Synchronous: answered from caches. */
 export interface EngineFacts {
+  boardLatestActivity?(id: string): Promise<number | null>;
   /** Undefined during startup or while this computer is away. */
   deviceOnline?(deviceId: string): boolean | undefined;
   agentExists(agentId: string): boolean;
@@ -144,6 +149,7 @@ export interface ActionRights {
   checkSource(owner: ActionOwner, trigger: ActionTrigger): string | null;
   /** The most actions this owner may have, or null for no limit. */
   maxActions(owner: ActionOwner): number | null;
+  quickCeiling?(owner: ActionOwner): 'full_access' | 'none';
 }
 
 export interface EngineHooks {
@@ -240,6 +246,8 @@ interface Occurrence {
   agentId?: string;
   device?: NonNullable<ActionRunTrigger['device']>;
   projectId?: string;
+  groupProjectId?: string;
+  topic?: string;
   branch?: string;
   /** For the history line: "release-lead goes to sleep". */
   subject: string;
@@ -249,6 +257,7 @@ interface Occurrence {
 /** Whether two owners are the same person, Dispatcher, agent or Clubhouse. */
 function sameOwner(a: ActionOwner, b: ActionOwner): boolean {
   if (a.kind === 'agent' || b.kind === 'agent') return a.kind === 'agent' && b.kind === 'agent' && a.agentId === b.agentId;
+  if (a.kind === 'group_project' || b.kind === 'group_project') return a.kind === 'group_project' && b.kind === 'group_project' && a.groupProjectId === b.groupProjectId;
   return a.kind === b.kind;
 }
 
@@ -309,6 +318,7 @@ export class ActionsEngine {
   private lastTurnStart = new Map<string, number>();
   /** Live-only fixed windows. Ordinary events are never replayed after relaunch. */
   private turnBatches = new Map<string, EventBatch>();
+  private idleVersions = new Map<string, number>();
   private idCounter = 0;
 
   constructor(private readonly deps: EngineDeps) {}
@@ -348,6 +358,7 @@ export class ActionsEngine {
       ...loaded.state, nextAt: { ...loaded.state.nextAt }, waits: [...loaded.state.waits],
       ...(loaded.state.lastFiredDate && { lastFiredDate: { ...loaded.state.lastFiredDate } }),
       ...(loaded.state.throttleStarts && { throttleStarts: Object.fromEntries(Object.entries(loaded.state.throttleStarts).map(([id, times]) => [id, [...times]])) }),
+      ...(loaded.state.idleFiredAt && { idleFiredAt: { ...loaded.state.idleFiredAt } }),
     };
     const dates = this.state.lastFiredDate;
     for (const id of Object.keys(dates ?? {})) {
@@ -355,6 +366,9 @@ export class ActionsEngine {
     }
     for (const id of Object.keys(this.state.throttleStarts ?? {})) {
       if (!this.actions.has(id)) delete this.state.throttleStarts![id];
+    }
+    for (const id of Object.keys(this.state.idleFiredAt ?? {})) {
+      if (!this.actions.has(id)) delete this.state.idleFiredAt![id];
     }
     // Waits for actions that are gone or off are dropped.
     this.state.waits = this.state.waits.filter((w) => this.actions.get(w.actionId)?.enabled);
@@ -366,7 +380,13 @@ export class ActionsEngine {
       if (a.enabled && this.enforceLifetime(a)) continue;
       if (a.enabled && a.trigger.kind === 'schedule' && this.state.nextAt[a.id] === undefined) this.armSchedule(a);
     }
+    // Re-read board activity before restoring idle waits: a post may have arrived while this host was closed.
+    if (this.deps.facts.boardLatestActivity) this.state.waits = this.state.waits.filter((wait) => {
+      const trigger = this.actions.get(wait.actionId)?.trigger;
+      return trigger?.kind !== 'event' || trigger.event !== 'group_project.board_idle';
+    });
     this.restoreWaits();
+    for (const action of this.actions.values()) this.armBoardIdle(action);
     this.saveState();
     this.tick();
   }
@@ -491,7 +511,7 @@ export class ActionsEngine {
       if (s.kind === 'quick') {
         project(s.projectId);
         if (s.worktreeAgentId) agent(s.worktreeAgentId);
-      } else if (s.kind !== 'notify') agent(s.agentId);
+      } else if (s.kind !== 'notify' && s.kind !== 'group_post') agent(s.agentId);
     }
   }
 
@@ -519,9 +539,10 @@ export class ActionsEngine {
     if (count >= max) throw new ActionError('not_allowed', `That’s ${max} actions already, the most this owner can have. Delete one first.`);
   }
 
-  create(input: unknown, owner: ActionOwner, opts: { subscription?: boolean } = {}): Action {
+  create(input: unknown, owner: ActionOwner, opts: { subscription?: boolean; author?: ActionOwner } = {}): Action {
     const valid = assertActionInput(input, this.now());
     this.checkRights(owner, valid.trigger, valid.steps);
+    const quickAccess = owner.kind === 'group_project' ? this.checkGroupAuthor(opts.author ?? { kind: 'user' }, valid.steps) : undefined;
     this.checkTargets(valid.trigger, valid.steps);
     this.checkCount(owner);
     if (opts.subscription && !isSubscriptionShape(valid, this.subscriberOf(owner))) {
@@ -535,6 +556,7 @@ export class ActionsEngine {
       steps: valid.steps,
       overlap: valid.overlap,
       owner,
+      ...(quickAccess && { quickAccess }),
       enabled: valid.enabled,
       ...(valid.endsAt !== undefined && { endsAt: valid.endsAt }),
       ...(valid.maxRuns !== undefined && { maxRuns: valid.maxRuns }),
@@ -544,6 +566,7 @@ export class ActionsEngine {
     };
     this.actions.set(action.id, action);
     if (action.enabled && action.trigger.kind === 'schedule') this.armSchedule(action);
+    this.armBoardIdle(action);
     this.persist();
     return action;
   }
@@ -587,15 +610,18 @@ export class ActionsEngine {
   }
 
   /** Replace an action's definition. The owner stays; rights are checked against it. */
-  update(id: string, input: unknown): Action {
+  update(id: string, input: unknown, author: ActionOwner = { kind: 'user' }): Action {
     const current = this.require(id);
     const valid = assertActionInput(input, this.now());
     this.checkRights(current.owner, valid.trigger, valid.steps);
+    const authorCeiling = current.owner.kind === 'group_project' ? this.checkGroupAuthor(author, valid.steps) : undefined;
+    if (current.owner.kind === 'group_project' && current.quickAccess !== 'full_access' && valid.steps.some((step) => step.kind === 'quick')) throw new ActionError('not_allowed', 'This Action was not authorized to start quick agents.');
     this.checkTargets(valid.trigger, valid.steps);
     // An edit that doesn't say keeps the on/off state: it never quietly turns back on.
     const saysEnabled = typeof input === 'object' && input !== null && typeof (input as { enabled?: unknown }).enabled === 'boolean';
     const next: Action = {
       ...current,
+      ...(authorCeiling && { quickAccess: current.quickAccess === 'full_access' && authorCeiling === 'full_access' ? 'full_access' as const : 'none' as const }),
       name: valid.name ?? suggestActionName(valid, this.names()),
       trigger: valid.trigger,
       steps: valid.steps,
@@ -616,14 +642,19 @@ export class ActionsEngine {
     this.cancelQueued(id, 'edited', 'The action was edited before this run started');
     delete this.state.nextAt[id];
     if (next.enabled && next.trigger.kind === 'schedule') this.armSchedule(next);
+    this.armBoardIdle(next);
     this.persist();
     return next;
   }
 
-  setEnabled(id: string, enabled: boolean): Action {
+  setEnabled(id: string, enabled: boolean, author: ActionOwner = { kind: 'user' }): Action {
     const current = this.require(id);
     // Turning it on checks rights again: what was allowed may not be now.
     if (enabled) this.checkRights(current.owner, current.trigger, current.steps);
+    if (enabled && current.owner.kind === 'group_project') {
+      this.checkGroupAuthor(author, current.steps);
+      if (current.quickAccess !== 'full_access' && current.steps.some((step) => step.kind === 'quick')) throw new ActionError('not_allowed', 'This Action was not authorized to start quick agents.');
+    }
     const next: Action = { ...current, enabled, updatedAt: this.now() };
     if (enabled) {
       delete next.offReason;
@@ -639,8 +670,19 @@ export class ActionsEngine {
       // Turning it back on doesn't run the times it was off for.
       this.armSchedule(next);
     }
+    this.armBoardIdle(next);
     this.persist();
     return next;
+  }
+
+  private checkGroupAuthor(author: ActionOwner, steps: ActionStep[]): 'full_access' | 'none' {
+    const ceiling = this.deps.rights.quickCeiling?.(author) ?? 'none';
+    for (const step of steps) if (step.kind === 'quick') {
+      const reason = this.deps.rights.checkStep(author, step);
+      if (reason) throw new ActionError('not_allowed', reason);
+      if (ceiling !== 'full_access') throw new ActionError('not_allowed', 'The author cannot authorize Full access quick agents.');
+    }
+    return ceiling;
   }
 
   remove(id: string): void {
@@ -648,6 +690,8 @@ export class ActionsEngine {
     this.actions.delete(id);
     if (this.state.lastFiredDate) delete this.state.lastFiredDate[id];
     if (this.state.throttleStarts) delete this.state.throttleStarts[id];
+    if (this.state.idleFiredAt) delete this.state.idleFiredAt[id];
+    this.idleVersions.delete(id);
     this.dropWaits(id);
     delete this.state.nextAt[id];
     // A run going now finishes; nothing queued behind it starts. The action is
@@ -662,6 +706,13 @@ export class ActionsEngine {
     this.persist();
   }
 
+  /** Delete this project's Actions and wait for durable storage before a deletion journal commits. */
+  async removeGroupProjectActions(groupProjectId: string): Promise<void> {
+    for (const action of this.list()) if (action.owner.kind === 'group_project' && action.owner.groupProjectId === groupProjectId) this.remove(action.id);
+    await this.deps.storage.flush?.();
+    await this.deps.history.purgeGroupProject?.(groupProjectId);
+  }
+
   /** Drop runs waiting behind a running one, recording them as cancelled. */
   private cancelQueued(id: string, reasonCode: RunReasonCode, reason: string): void {
     const queue = this.running.get(id);
@@ -671,8 +722,9 @@ export class ActionsEngine {
   }
 
   /** Run now, as a normal run. Works on an action that is off. Returns the run id. */
-  runNow(id: string): string {
+  runNow(id: string, author?: ActionOwner): string {
     const action = this.require(id);
+    if (author && action.owner.kind === 'group_project') this.checkGroupAuthor(author, action.steps);
     this.observe(action, { type: 'trigger', trigger: 'manual' });
     return this.fire(action, { kind: 'manual', at: this.now(), detail: 'Run now' }, []);
   }
@@ -907,6 +959,11 @@ export class ActionsEngine {
       case 'helper.finished':
         // "A helper finishes" is about the parent.
         return f.agentExists(event.parentAgentId) ? [agentOcc('helper.finished', event.parentAgentId)] : [];
+      case 'group_project.message_posted':
+        return [{ kind: event.type, groupProjectId: event.groupProjectId, topic: event.topic, subject: 'A group project' }, { kind: 'group_project.board_idle', groupProjectId: event.groupProjectId, subject: 'A group project' }];
+      case 'group_project.member_joined':
+      case 'group_project.member_left':
+        return [{ kind: event.type, groupProjectId: event.groupProjectId, subject: 'A group project' }];
       case 'git.commit':
       case 'git.branch_switched':
       case 'git.remote_updated': {
@@ -935,6 +992,7 @@ export class ActionsEngine {
     // (#2955): it can't satisfy a filter for one branch.
     if (trigger.branch && occ.branch !== trigger.branch) return false;
     const src = trigger.source;
+    if (src.kind === 'group_project') return occ.groupProjectId === src.groupProjectId && (!src.topic || src.topic === occ.topic);
     if (src.kind === 'device') return !!occ.device
       && (!src.deviceId || src.deviceId.toLowerCase() === occ.device.id.toLowerCase())
       && (!src.deviceKind || src.deviceKind === occ.device.kind);
@@ -945,6 +1003,7 @@ export class ActionsEngine {
   }
 
   private onMatch(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
+    if (trigger.event === 'group_project.board_idle') this.idleVersions.set(action.id, (this.idleVersions.get(action.id) ?? 0) + 1);
     if (occ.agentId && this.deps.facts.isQuickAgent?.(occ.agentId) && !this.canReadAgent(action.owner, occ.agentId)) return;
     // A refused device watch must not reveal activity through skipped runs or pending waits.
     if (trigger.source.kind === 'device' && this.deps.rights.checkSource(action.owner, trigger)) return;
@@ -1046,6 +1105,7 @@ export class ActionsEngine {
     const event: ActionRunEvent = {
       at: this.now(), event: occ.kind,
       source: occ.device ? { kind: 'device', deviceId: occ.device.id, deviceKind: occ.device.kind }
+        : occ.groupProjectId ? { kind: 'group_project', groupProjectId: occ.groupProjectId, ...(occ.topic && { topic: occ.topic }) }
         : occ.agentId ? { kind: 'agent', agentId: occ.agentId }
         : occ.projectId ? { kind: 'project', projectId: occ.projectId } : { kind: 'app' },
       detail: `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`,
@@ -1121,6 +1181,10 @@ export class ActionsEngine {
     this.state.waits = this.state.waits.filter((w) => w !== wait);
     const action = this.actions.get(wait.actionId);
     if (!action?.enabled) return;
+    if (action.trigger.kind === 'event' && action.trigger.event === 'group_project.board_idle') {
+      (this.state.idleFiredAt ??= {})[action.id] = wait.startedAt;
+      this.saveState();
+    }
     const trigger: ActionRunTrigger = { kind: 'event', at: wait.startedAt, detail: wait.detail,
       ...(wait.sourceAgentId && { sourceAgentId: wait.sourceAgentId }),
       ...(wait.device && { device: wait.device }),
@@ -1137,6 +1201,22 @@ export class ActionsEngine {
     }
     this.observe(action, { type: 'wait', what: 'fired', ...(action.trigger.kind === 'event' && { event: action.trigger.event }) });
     this.fire(action, trigger, wait.chain);
+  }
+
+  private armBoardIdle(action: Action): void {
+    const trigger = action.trigger;
+    if (!action.enabled || trigger.kind !== 'event' || trigger.event !== 'group_project.board_idle' || trigger.source.kind !== 'group_project' || !this.deps.facts.boardLatestActivity) return;
+    const version = this.idleVersions.get(action.id) ?? 0;
+    void this.deps.facts.boardLatestActivity(trigger.source.groupProjectId).then((latest) => {
+      if (!this.started || this.actions.get(action.id) !== action || (this.idleVersions.get(action.id) ?? 0) !== version) return;
+      const start = latest ?? action.createdAt;
+      if ((this.state.idleFiredAt?.[action.id] ?? -1) >= start) return;
+      this.state.waits = this.state.waits.filter((wait) => wait.actionId !== action.id);
+      const delay = trigger.delaySeconds !== undefined ? trigger.delaySeconds * 1000 : (trigger.delayMinutes ?? 0) * 60_000;
+      this.state.waits.push({ actionId: action.id, startedAt: start, dueAt: start + delay, chain: [], detail: 'A group project has a quiet board' });
+      this.saveState();
+      this.tick();
+    }).catch(() => { /* telemetry-exempt: unavailable boards fail closed; a later post retries. */ });
   }
 
   /** On launch: waits that ended while the app was closed run once if they still hold, else are dropped. */
@@ -1346,10 +1426,16 @@ export class ActionsEngine {
       run.trigger = trigger;
       // Rights are checked again on every run: what was allowed may not be now.
       const refused = this.deps.rights.checkStep(action.owner, step);
+      if (step.kind === 'quick' && action.owner.kind === 'group_project' && action.quickAccess !== 'full_access') {
+        failure = 'Couldn’t run: This Action was not authorized to start quick agents.';
+        failureCode = 'rights_refused';
+        run.steps.push({ kind: step.kind, outcome: 'failed', detail: failure, refusal: 'rights_refused' });
+        break;
+      }
       if (refused) {
         failure = `Couldn’t run: ${refused}`;
         failureCode = 'rights_refused';
-        run.steps.push({ kind: step.kind, outcome: 'failed', detail: refused });
+        run.steps.push({ kind: step.kind, outcome: 'failed', detail: refused, refusal: 'rights_refused' });
         break;
       }
       let result: ActionStepResult;
@@ -1397,13 +1483,14 @@ export class ActionsEngine {
       if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });
       if (result.outcome === 'failed') {
         failure = result.detail;
-        failureCode = threw ? 'step_threw' : 'step_failed';
+        failureCode = result.refusal === 'rights_refused' ? 'rights_refused' : threw ? 'step_threw' : 'step_failed';
         break;
       }
     }
 
     run.endedAt = this.now();
     run.outcome = failure ? 'failed' : deliveryLoss?.outcome ?? 'done';
+    if (failureCode === 'rights_refused') run.refusal = 'rights_refused';
     if (failure) run.reason = failure;
     else if (deliveryLoss) run.reason = deliveryLoss.reason;
     if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });

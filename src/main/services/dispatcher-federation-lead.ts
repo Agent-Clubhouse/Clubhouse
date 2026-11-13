@@ -21,6 +21,8 @@ import type { FederationPublicationGuard } from './dispatcher-federation-policy'
 import * as annexIdentity from './annex-identity';
 import * as annexSettings from './annex-settings';
 import { listPeers, peerNeedsPairing } from './annex-peers';
+import { remoteFederationController } from './dispatcher-federation';
+import { isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { onDevicePresenceChanged, onDevicesChanged } from './annex-device-signal';
 import { currentView, onMembershipChanged, ownPairing } from './annex-network-membership';
 import {
@@ -34,6 +36,11 @@ interface LeadFile {
   heard: Record<string, LeadRecord>;
   /** The lead's name when it was chosen or learned, so it can be named after its machine is removed. */
   leadName?: string;
+  /**
+   * Take back (#3353): this computer stopped following the lead in this record.
+   * Only this computer's; it never travels. A different record (a new choice) follows again.
+   */
+  tookBack?: LeadRecord;
 }
 
 const store = createSettingsStore<LeadFile>('dispatcher-lead.json', { record: NO_LEAD, heard: {} }, undefined, { atomic: true, audit: { key: 'dispatcher_lead' } });
@@ -48,7 +55,11 @@ function computerMembers() {
 
 function read(): LeadFile {
   const file = store.get();
-  return { record: readLeadRecord(file.record) ?? NO_LEAD, heard: file.heard ?? {}, ...(file.leadName && { leadName: file.leadName }) };
+  const tookBack = readLeadRecord(file.tookBack);
+  return {
+    record: readLeadRecord(file.record) ?? NO_LEAD, heard: file.heard ?? {},
+    ...(file.leadName && { leadName: file.leadName }), ...(tookBack && { tookBack }),
+  };
 }
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
@@ -77,8 +88,12 @@ function changed(): void {
 async function save(next: LeadFile, push: boolean, precondition?: SettingsCommitPrecondition): Promise<void> {
   const lead = next.record.lead;
   const name = lead ? (lead === selfId() ? selfName() : computerMembers().find((p) => lower(p.fingerprint) === lead)?.alias) : undefined;
-  const { leadName: _old, ...rest } = next;
-  await store.save({ ...rest, ...(lead && (name ?? next.leadName) && { leadName: name ?? next.leadName }) }, precondition);
+  const { leadName: _old, tookBack, ...rest } = next;
+  await store.save({
+    ...rest, ...(lead && (name ?? next.leadName) && { leadName: name ?? next.leadName }),
+    // A take-back only lasts while the record it was taken from does.
+    ...(tookBack && sameLeadRecord(tookBack, next.record) && { tookBack }),
+  }, precondition);
   changed();
   if (push) hooks?.push();
 }
@@ -93,6 +108,33 @@ export function leadRecord(): LeadRecord {
 export function leadRole(record: LeadRecord = leadRecord()): LeadRole {
   if (!record.lead) return 'peer';
   return record.lead === selfId() ? 'lead' : 'follower';
+}
+
+/** A follower that hasn't taken back: its Dispatcher pane is the lead's chat. */
+export function isFollowingLead(): boolean {
+  const file = read();
+  return leadRole(file.record) === 'follower' && !sameLeadRecord(file.tookBack, file.record);
+}
+
+/**
+ * Take back (#3353): this computer uses its own Dispatcher chat again. Only a
+ * person does this, from the follower pane. Other followers, and the lead, are
+ * unchanged.
+ */
+export async function takeBackFromLead(): Promise<void> {
+  const file = read();
+  if (leadRole(file.record) !== 'follower') throw new Error('This computer isn’t following another computer’s Dispatcher.');
+  if (sameLeadRecord(file.tookBack, file.record)) return;
+  await save({ ...file, tookBack: file.record }, false);
+  appLog('core:dispatcher', 'info', 'Took this computer’s Dispatcher back from the lead', { meta: { rev: file.record.rev } });
+}
+
+/** Follow the lead again after Take back, from Settings › Dispatcher. */
+export async function followLeadAgain(): Promise<void> {
+  const file = read();
+  if (!file.tookBack) return;
+  const { tookBack: _gone, ...rest } = file;
+  await save(rest, false);
 }
 
 /**
@@ -184,19 +226,24 @@ export async function reconcileMembership(now = Date.now()): Promise<void> {
 export function getLeadState(): DispatcherLeadState {
   const self = selfId();
   const members = computerMembers();
-  const { record, heard, leadName } = read();
+  const { record, heard, leadName, tookBack } = read();
   const connected = hooks?.connected ?? (() => false);
   const choices: LeadChoice[] = !self ? [] : [
-    { machine: self, name: selfName(), self: true, online: true },
-    ...members.map((p) => ({ machine: lower(p.fingerprint), name: p.alias || 'A computer', self: false, online: connected(lower(p.fingerprint)) })),
+    { machine: self, name: selfName(), self: true, online: true, dispatcherOn: isDispatcherEnabled() },
+    ...members.map((p) => ({
+      machine: lower(p.fingerprint), name: p.alias || 'A computer', self: false, online: connected(lower(p.fingerprint)),
+      dispatcherOn: remoteFederationController(p.fingerprint)?.enabled ?? null,
+    })),
   ];
   const lead = record.lead ? choices.find((c) => c.machine === record.lead)
-    ?? { machine: record.lead, name: leadName ?? 'Another computer', self: false, online: false } : null;
+    ?? { machine: record.lead, name: leadName ?? 'Another computer', self: false, online: false, dispatcherOn: null } : null;
   const confirmedBy = members.filter((p) => sameLeadRecord(heard[lower(p.fingerprint)], record)).map((p) => p.alias || 'A computer');
   const waitingOn = members.filter((p) => !sameLeadRecord(heard[lower(p.fingerprint)], record)).map((p) => p.alias || 'A computer');
   const changedBy = record.rev === 0 ? null : choices.find((c) => c.machine === record.by)?.name ?? null;
   return {
-    available: !!self && members.length > 0,
+    // Kept after the last other computer leaves, so the page can say who left.
+    available: !!self && (members.length > 0 || record.rev > 0),
+    canChoose: !!self && members.length > 0,
     role: leadRole(record),
     lead,
     choices,
@@ -205,6 +252,11 @@ export function getLeadState(): DispatcherLeadState {
     clearedFor: record.lead === null && record.clearedFor ? record.clearedFor.name : null,
     changedByName: changedBy,
     changedAt: record.rev === 0 ? null : record.changedAt,
+    following: leadRole(record) === 'follower' && !sameLeadRecord(tookBack, record),
+    tookBack: leadRole(record) === 'follower' && sameLeadRecord(tookBack, record),
+    leadLastSeen: record.lead ? members.find((p) => lower(p.fingerprint) === record.lead)?.lastSeen ?? null : null,
+    outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null },
+    localNews: { count: 0, needsUser: false },
   };
 }
 
@@ -218,11 +270,14 @@ export function startDispatcherLead(h: LeadHooks): () => void {
   const offMembership = onMembershipChanged(recheck);
   const offDevices = onDevicesChanged(recheck);
   const offPresence = onDevicePresenceChanged(changed);
+  // This computer's switch shows on its own choice.
+  const offDispatcher = onDispatcherChanged(changed);
   void reconcileMembership().catch(logError);
   return () => {
     offMembership();
     offDevices();
     offPresence();
+    offDispatcher();
     if (hooks === h) hooks = undefined;
   };
 }

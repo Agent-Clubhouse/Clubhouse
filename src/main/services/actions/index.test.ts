@@ -29,6 +29,9 @@ vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../agent-system', () => ({ isAgentRunning: () => false }));
 vi.mock('../annex-device-presence', () => ({ devicePresenceOnline: () => undefined }));
 vi.mock('../annex-devices', () => ({ listDevices: () => [] }));
+vi.mock('../group-project-registry', () => ({ groupProjectRegistry: { getSync: () => null } }));
+vi.mock('../group-project-host', () => ({ groupProjectHost: { isThisMachine: () => true, list: async () => [], post: vi.fn() } }));
+vi.mock('../group-project-shoulder-tap', () => ({ executeShoulderTap: vi.fn() }));
 vi.mock('../agent-runtime', () => ({ getAgentRuntime: () => undefined, isAgentStoppingError: () => false }));
 vi.mock('../app-event-bus', () => ({
   onAppEvent: (fn: (event: AppEvent) => void) => { h.events.add(fn); return () => { h.events.delete(fn); }; },
@@ -105,6 +108,7 @@ import { publishAppEvent } from '../app-event-bus';
 const message = (text: string) => [{ kind: 'message', agentId: 'disp', text }];
 const nightly = { kind: 'schedule', preset: 'daily', cron: '30 3 * * *', missed: 'once' };
 const idle = { kind: 'event', event: 'agent.idle', source: { kind: 'agent', agentId: 'disp' }, delayMinutes: 20 } as const;
+const returnEvents = () => vi.mocked(publishAppEvent).mock.calls.flatMap(([event]) => event.type === 'app.returned' ? [event] : []);
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 it('retains one external Annex receipt across engine restart without creating executable work', async () => {
@@ -134,6 +138,7 @@ it('includes retained runs after an Action is deleted from the saved list', asyn
 });
 
 beforeEach(async () => {
+  vi.useFakeTimers();
   h.saved = { actions: [], state: { nextAt: {}, waits: [] } };
   h.runs.clear();
   h.known.clear();
@@ -152,10 +157,10 @@ afterEach(() => {
   for (const stop of stops.splice(0)) stop();
   stopActions();
   setAppActionGate('Upkeep', null);
+  vi.useRealTimers();
 });
 
 it('excludes both Dispatcher identities and owned helper ancestry from any-agent turn batches', async () => {
-  vi.useFakeTimers();
   try {
     h.known.set('lead', { projectPath: 'project-folder', name: 'Lead' });
     h.known.set('disp-chat', { projectPath: 'dispatcher-folder', name: 'Chat' });
@@ -174,7 +179,6 @@ it('excludes both Dispatcher identities and owned helper ancestry from any-agent
     expect(actionHistory(a.id)[0].trigger).toMatchObject({ agentIds: ['lead'], detail: 'Finished turns: Lead' });
   } finally {
     stopActions();
-    vi.useRealTimers();
   }
 });
 
@@ -195,7 +199,6 @@ it.each(['Dispatcher', 'Rosie'])('labels real Action targets as controller with 
 });
 
 it('wires Electron presence only for enabled return actions and persists use without publishing absence details', async () => {
-  vi.useFakeTimers();
   try {
     expect(powerMonitor.listenerCount('lock-screen')).toBe(0);
     expect(app.listenerCount('browser-window-focus')).toBe(0);
@@ -211,24 +214,35 @@ it('wires Electron presence only for enabled return actions and persists use wit
     powerMonitor.emit('unlock-screen');
     app.emit('browser-window-focus');
     await flush();
-    expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
+    expect(returnEvents()).toEqual([{ type: 'app.returned', actionIds: [a.id] }]);
     expect(getAction(a.id)?.runsUsed).toBe(1);
     setActionEnabled(a.id, false);
     expect(powerMonitor.listenerCount('lock-screen')).toBe(0);
     expect(app.listenerCount('browser-window-focus')).toBe(0);
   } finally {
     stopActions();
-    vi.useRealTimers();
   }
 });
 
+it('cancels the pending change broadcast when stopped, and broadcasts again after restart', async () => {
+  stopActions();
+  await vi.advanceTimersByTimeAsync(50);
+  expect(publishAppEvent).not.toHaveBeenCalled();
+  await startActions();
+  await vi.advanceTimersByTimeAsync(50);
+  expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'actions.changed' });
+});
+
 it.each([-1, 1])('ignores a %i-hour wall-clock adjustment during a short lock', async (direction) => {
-  vi.useFakeTimers();
   try {
-    createAction({
+    const a = createAction({
       trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
       steps: [{ kind: 'notify', text: 'Welcome back' }],
     }, { kind: 'user' });
+    // Startup publishes a normal list refresh; observe clock effects only after it.
+    await vi.advanceTimersByTimeAsync(50);
+    expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'actions.changed' });
+    vi.mocked(publishAppEvent).mockClear();
     powerMonitor.emit('lock-screen');
     vi.setSystemTime(Date.now() + direction * 60 * 60_000);
     await vi.advanceTimersByTimeAsync(60_000);
@@ -238,15 +252,13 @@ it.each([-1, 1])('ignores a %i-hour wall-clock adjustment during a short lock', 
     vi.setSystemTime(Date.now() + direction * 60 * 60_000);
     await vi.advanceTimersByTimeAsync(5 * 60_000);
     powerMonitor.emit('unlock-screen');
-    expect(publishAppEvent).toHaveBeenCalledTimes(1);
+    expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
   } finally {
     stopActions();
-    vi.useRealTimers();
   }
 });
 
 it.each([-1, 1])('never replays persisted last use %i day from launch or delays a newly observed absence', async (direction) => {
-  vi.useFakeTimers();
   try {
     const a = createAction({
       trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
@@ -262,16 +274,14 @@ it.each([-1, 1])('never replays persisted last use %i day from launch or delays 
     powerMonitor.emit('resume');
     h.focused = true;
     app.emit('browser-window-focus');
-    expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
+    expect(returnEvents()).toEqual([{ type: 'app.returned', actionIds: [a.id] }]);
     expect((h.saved.state as { lastUse?: number }).lastUse).toBe(Date.now());
   } finally {
     stopActions();
-    vi.useRealTimers();
   }
 });
 
 it.each([1, 5])('measures %i minutes of suspend without running polling timers', (minutes) => {
-  vi.useFakeTimers();
   try {
     const a = createAction({
       trigger: { kind: 'event', event: 'app.returned', source: { kind: 'app' }, absenceMinutes: 5 },
@@ -286,7 +296,6 @@ it.each([1, 5])('measures %i minutes of suspend without running polling timers',
     else expect(publishAppEvent).toHaveBeenCalledExactlyOnceWith({ type: 'app.returned', actionIds: [a.id] });
   } finally {
     stopActions();
-    vi.useRealTimers();
   }
 });
 

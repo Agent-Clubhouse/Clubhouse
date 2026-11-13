@@ -258,6 +258,40 @@ class GroupProjectRegistry {
     return project;
   }
 
+  /**
+   * Store or replace the cached copy of a group project hosted on another
+   * computer (#3363). Never replaces a record of a different host. Only the
+   * host service calls this.
+   */
+  async putReplica(record: GroupProject): Promise<GroupProject> {
+    await this.ensureLoaded();
+    const existing = this.projects.get(record.id);
+    if (existing && (existing.host?.machine ?? null) !== (record.host?.machine ?? null)) {
+      throw new Error(`Group project ${record.id} is held here for another host; its copy was not replaced.`);
+    }
+    const copy: GroupProject = { ...record, metadata: { ...record.metadata } };
+    delete copy.seq;
+    this.projects.set(record.id, copy);
+    this.markDirty();
+    return copy;
+  }
+
+  /** Tell listeners something about the records' views changed (network state, #3363), without a write. */
+  touch(): void {
+    this.notifyListeners();
+  }
+
+  /** Record this machine's fingerprint as the host of a record that had none (sharing it with the network). */
+  async pinHost(id: string, machine: string): Promise<GroupProject | null> {
+    await this.ensureLoaded();
+    const project = this.projects.get(id);
+    if (!project) return null;
+    if (project.host?.machine && project.host.machine !== machine) throw new Error('A group project keeps its host.');
+    project.host = { machine };
+    this.markDirty();
+    return project;
+  }
+
   /** Change a record's scope (#3355). Only the host service calls this. */
   async setScope(id: string, scope: GroupProjectScope): Promise<GroupProject | null> {
     await this.ensureLoaded();

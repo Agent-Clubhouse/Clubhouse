@@ -55,6 +55,10 @@ export type ActionEventKind =
   | 'agent.compacted'
   | 'agent.quick_finished'
   | 'helper.finished'
+  | 'group_project.message_posted'
+  | 'group_project.member_joined'
+  | 'group_project.member_left'
+  | 'group_project.board_idle'
   // Git
   | 'git.commit'
   | 'git.branch_switched'
@@ -75,7 +79,8 @@ export const AGENT_EVENT_KINDS: readonly ActionEventKind[] = [
 export const GIT_EVENT_KINDS: readonly ActionEventKind[] = ['git.commit', 'git.branch_switched', 'git.remote_updated'];
 export const APP_EVENT_KINDS: readonly ActionEventKind[] = ['app.started', 'app.returned', 'project.added', 'project.removed'];
 export const DEVICE_EVENT_KINDS: readonly ActionEventKind[] = ['device.online', 'device.offline'];
-export const ACTION_EVENT_KINDS: readonly ActionEventKind[] = [...AGENT_EVENT_KINDS, ...GIT_EVENT_KINDS, ...APP_EVENT_KINDS, ...DEVICE_EVENT_KINDS];
+export const GROUP_PROJECT_EVENT_KINDS: readonly ActionEventKind[] = ['group_project.message_posted', 'group_project.member_joined', 'group_project.member_left', 'group_project.board_idle'];
+export const ACTION_EVENT_KINDS: readonly ActionEventKind[] = [...AGENT_EVENT_KINDS, ...GIT_EVENT_KINDS, ...APP_EVENT_KINDS, ...DEVICE_EVENT_KINDS, ...GROUP_PROJECT_EVENT_KINDS];
 export const TURN_EVENT_KINDS: readonly ActionEventKind[] = ['agent.turn_ended', 'agent.turn_failed'];
 export const ANY_AGENT_EVENT_KINDS: readonly ActionEventKind[] = [...TURN_EVENT_KINDS, 'agent.quick_finished'];
 export const DEFAULT_COALESCE_SECONDS = 60;
@@ -90,6 +95,7 @@ export const MAX_COALESCE_SECONDS = 600;
 export type ActionEventSource =
   | { kind: 'agent'; agentId: string }
   | { kind: 'project'; projectId: string }
+  | { kind: 'group_project'; groupProjectId: string; topic?: string }
   | { kind: 'app' }
   /** Devices directly seen by this computer, optionally filtered by id and kind. */
   | { kind: 'device'; deviceId?: string; deviceKind?: 'computer' | 'phone' }
@@ -177,10 +183,15 @@ export interface NotifyStep {
   text: string;
 }
 
-export type ActionStep = WakeStep | MessageStep | QuickAgentStep | SleepStep | NotifyStep;
+/** A group project's action posts to its own board. */
+export interface GroupPostStep { kind: 'group_post'; topic: string; text: string }
+/** A group project's action taps one of its members. */
+export interface GroupTapStep { kind: 'group_tap'; agentId: string; text: string }
+
+export type ActionStep = WakeStep | MessageStep | QuickAgentStep | SleepStep | NotifyStep | GroupPostStep | GroupTapStep;
 export type ActionStepKind = ActionStep['kind'];
 
-export const ACTION_STEP_KINDS: readonly ActionStepKind[] = ['wake', 'message', 'quick', 'sleep', 'notify'];
+export const ACTION_STEP_KINDS: readonly ActionStepKind[] = ['wake', 'message', 'quick', 'sleep', 'notify', 'group_post', 'group_tap'];
 export const MAX_ACTION_STEPS = 3;
 
 // ── Action ──────────────────────────────────────────────────────────────────
@@ -190,6 +201,8 @@ export type ActionOwner =
   | { kind: 'user' }
   | { kind: 'dispatcher' }
   | { kind: 'agent'; agentId: string; helper?: boolean }
+  /** The authoritative host of this group project owns and runs the action. */
+  | { kind: 'group_project'; groupProjectId: string }
   /** Clubhouse itself: hidden from every list and from history. */
   | { kind: 'app' };
 
@@ -204,6 +217,8 @@ export interface Action {
   steps: ActionStep[];
   overlap: OverlapRule;
   owner: ActionOwner;
+  /** Maximum quick-agent access approved when a group Action was created; missing is denied. */
+  quickAccess?: 'full_access' | 'none';
   enabled: boolean;
   /** Recurring actions only: stop at this absolute time, in epoch milliseconds. */
   endsAt?: number;
@@ -278,6 +293,8 @@ export interface ActionRunEvent {
 export interface ActionStepResult {
   kind: ActionStepKind;
   outcome: 'done' | 'failed';
+  /** A permission was refused at run time, independent of display text. */
+  refusal?: 'rights_refused';
   /** One line in plain words. */
   detail: string;
   /** A queued handoff is updated when the runtime delivers, replaces or drops it. */
@@ -307,6 +324,8 @@ export interface ActionRun {
   /** A later queue receipt keeps delivery losses visible in retained history. */
   deliveryUpdatedAt?: number;
   outcome: ActionRunOutcome;
+  /** The group or agent lacked a required grant when the Action ran. */
+  refusal?: 'rights_refused';
   /** One line of reason for failed, cancelled and skipped runs. */
   reason?: string;
   steps: ActionStepResult[];

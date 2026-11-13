@@ -77,6 +77,7 @@ function notify(projectPath: string) {
   for (const l of h.configListeners) l(projectPath);
 }
 vi.mock('../agent-config', () => ({
+  flushAgentConfig: vi.fn(async (_dir: string) => {}),
   listDurable: vi.fn(async (dir: string) => (h.agents.get(dir) ?? []).map((a) => ({ ...a }))),
   getDurableConfig: vi.fn(async (dir: string, id: string) => h.agents.get(dir)?.find((a) => a.id === id) ?? null),
   createDurable: vi.fn(async (dir: string, name: string, color: string, model: string | undefined, _wt: boolean, orchestrator: string | undefined, freeAgentMode: boolean | undefined) => {
@@ -984,6 +985,37 @@ describe('personality and first-run setup (#3047)', () => {
     expect(chatAgents).toContain('Your name is Rosie.');
     expect(chatAgents).toContain(PERSONALITY_PRESET_TEXT.friendly);
     expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('publishes setup done only after its chosen settings are saved', async () => {
+    await svc.setDispatcherEnabled(true);
+    const persisted = new Map<string, DurableAgentConfig[]>();
+    vi.mocked(agentConfig.flushAgentConfig).mockImplementation(async (dir) => {
+      persisted.set(dir, structuredClone(h.agents.get(dir) ?? []));
+    });
+    const observed: Array<{ settings: ReturnType<typeof getSettings>; records: DurableAgentConfig[] }> = [];
+    const stop = svc.onDispatcherChanged((state) => {
+      if (state.setup.status === 'done') observed.push({
+        settings: { ...getSettings() },
+        records: [persisted.get(dispatcherDir())?.[0], persisted.get(chatDir())?.[0]].filter((agent): agent is DurableAgentConfig => !!agent),
+      });
+    });
+    try {
+      await svc.completeDispatcherSetup({
+        name: 'Rosie', color: 'rose', provider: 'claude-code', behavior: 'thorough',
+        personality: { preset: 'friendly', text: PERSONALITY_PRESET_TEXT.friendly },
+      });
+    } finally {
+      stop();
+    }
+    expect(observed.length).toBeGreaterThan(0);
+    for (const { settings, records } of observed) {
+      expect(settings).toMatchObject({
+        behavior: 'thorough', personality: { preset: 'friendly' }, setup: { status: 'done' },
+      });
+      expect(records).toHaveLength(2);
+      for (const record of records) expect(record).toMatchObject({ name: 'Rosie', color: 'rose', orchestrator: 'claude-code' });
+    }
   });
 
   it('finishing setup can remove an image, and refuses a provider Clubhouse doesn\'t know', async () => {

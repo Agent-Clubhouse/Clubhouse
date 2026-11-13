@@ -111,6 +111,19 @@ describe('remoteProjectStore', () => {
   // -------------------------------------------------------------------------
 
   describe('applySatelliteSnapshot', () => {
+    it('keeps that machine’s Dispatcher chat, in no project, so its run state follows events (#3352)', () => {
+      const store = useRemoteProjectStore.getState();
+      const projects = [{ id: 'proj_1', name: 'P', path: '/p' }];
+      store.applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({ projects,
+        dispatcher: { agent: { id: 'disp-chat', projectId: '__dispatcher__', name: 'Rosie', kind: 'durable', status: 'sleeping', executionMode: 'chat' } } } as never));
+      const nsId = 'remote||sat-1||disp-chat';
+      expect(useRemoteProjectStore.getState().remoteAgents[nsId]).toMatchObject({ projectId: 'remote||sat-1||__dispatcher__', status: 'sleeping' });
+      // No project of that machine's holds it.
+      expect(useRemoteProjectStore.getState().satelliteProjects['sat-1'].map((p) => p.id)).toEqual(['remote||sat-1||proj_1']);
+      useRemoteProjectStore.getState().updateRemoteAgentRunState('sat-1', 'disp-chat', 'running');
+      expect(useRemoteProjectStore.getState().remoteAgents[nsId].status).toBe('running');
+    });
+
     it('keeps canvases through a snapshot that left them out, and takes them when they follow', () => {
       const store = useRemoteProjectStore.getState();
       const canvas = { canvases: [{ id: 'canvas_1', views: [] }], activeCanvasId: 'canvas_1' };

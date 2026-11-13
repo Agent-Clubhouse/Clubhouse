@@ -103,6 +103,13 @@ export const defaultChatDelivery: ChatDelivery = ({ message }) => ({
 
 let chatDelivery: ChatDelivery = defaultChatDelivery;
 
+/** Sends news to the lead instead of this chat, on a follower (#3352). True when it went. */
+export type ChatForwarder = (message: ChatMessage) => Promise<boolean>;
+let chatForwarder: ChatForwarder | null = null;
+export function setChatForwarder(forwarder: ChatForwarder | null): void {
+  chatForwarder = forwarder;
+}
+
 /** Replace the step between the coordinator's report and the chat (#3043). Null restores the default. */
 export function setChatDelivery(delivery: ChatDelivery | null): void {
   chatDelivery = delivery ?? defaultChatDelivery;
@@ -263,6 +270,11 @@ export async function deliverToChat(
     appLog(NS, 'info', 'Dispatcher update held back', { meta: { held, length: full.message.length } });
     return { outcome: 'delivered', held, ...(hold?.reason && { reason: hold.reason }) };
   }
+  // Following a lead (#3352): what would show here goes to the lead's chat, while it's reachable.
+  if (decision.forward && chatForwarder && await chatForwarder(decision).catch(() => false)) {
+    appLog(NS, 'info', 'Dispatcher update sent to the lead', { meta: { kind: decision.forward.kind, length: full.message.length } });
+    return { outcome: 'delivered', note: 'It went to the lead Dispatcher, which tells the user.' };
+  }
   let result: ChannelResult;
   try {
     result = await wakeAndDeliver(chatId, getDispatcherChatPath(), decision, true);
@@ -291,5 +303,6 @@ function notDelivered(chatId: string, report: ChatReport, message: ChatMessage):
 /** For tests. */
 export function _resetDispatcherChannelForTesting(): void {
   chatDelivery = defaultChatDelivery;
+  chatForwarder = null;
   starting.clear();
 }

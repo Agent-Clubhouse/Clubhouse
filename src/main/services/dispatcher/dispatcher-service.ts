@@ -681,16 +681,20 @@ export async function completeDispatcherSetup(input: DispatcherSetupInput): Prom
       await agentConfig.updateDurableConfig(dir, coordinator.id, { orchestrator: input.provider as OrchestratorId, model: 'default' });
     }
     await saveDispatcherPersonality(input.personality);
-    await saveDispatcherSetupStatus('done');
+    await saveDispatcherBehavior(input.behavior);
     // Read both records back, copy the identity onto the chat and write its instructions with the new name and personality.
     await refreshAfterChange(dir);
     await rewriteChatInstructions();
+    // Identity/provider writes are debounced. Finish acknowledges both records
+    // on disk, along with its settings and instructions, before publishing done.
+    await agentConfig.flushAgentConfig(dir);
+    await agentConfig.flushAgentConfig(getDispatcherChatPath());
+    await saveDispatcherSetupStatus('done');
   });
   appLog(NS, 'info', 'Dispatcher setup finished', {
     meta: { provider: input.provider, behavior: input.behavior, preset: input.personality.preset, image: input.image === undefined ? 'kept' : input.image ? 'new' : 'removed' },
   });
-  // Saves the level and gives both agents their models for it, on the provider just chosen.
-  await saveDispatcherBehavior(input.behavior);
+  // Give both agents their models for the saved level, on the provider just chosen.
   const queuedIn = generation;
   void enqueue(async () => {
     if (queuedIn === generation) await applyBehavior(behaviorTargets(), { live: true });
