@@ -37,15 +37,21 @@ beforeEach(async () => {
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
 describe('controlled managed library imports (#2855)', () => {
-  it('previews without a write, then commits a complete independent copy with path-free provenance', async () => {
-    const plan = await prepare({ candidateId, mode: 'copy', name: 'Imported review' });
-    expect(await service.listParts('skill')).toEqual([]);
-    expect(plan.preview).toMatchObject({ mode: 'copy', files: [{ path: 'SKILL.md' }], dependencies: { status: 'none_declared', declared: [] }, providerLoaded: 'not_confirmed' });
-    expect(JSON.stringify(plan.preview)).not.toContain('Review it.');
-    expect(JSON.stringify(plan.preview)).not.toContain(root);
-    const saved = await user(() => plan.commit('Dispatcher'));
-    expect((await service.getPart(saved.id)).content).toMatchObject({ kind: 'skill', files: [{ path: 'SKILL.md', content: expect.stringContaining('Review it.') }] });
-    expect((await service.liveEntries())[saved.id].source).toEqual({ kind: 'import', from: 'project-skill', projectId: 'project-1', nativeName: 'review' });
+  describe('a prepared independent copy', () => {
+    let plan: Awaited<ReturnType<typeof prepare>>;
+    beforeEach(async () => {
+      plan = await prepare({ candidateId, mode: 'copy', name: 'Imported review' });
+    });
+
+    it('previews without a write, then commits a complete independent copy with path-free provenance', async () => {
+      expect(await service.listParts('skill')).toEqual([]);
+      expect(plan.preview).toMatchObject({ mode: 'copy', files: [{ path: 'SKILL.md' }], dependencies: { status: 'none_declared', declared: [] }, providerLoaded: 'not_confirmed' });
+      expect(JSON.stringify(plan.preview)).not.toContain('Review it.');
+      expect(JSON.stringify(plan.preview)).not.toContain(root);
+      const saved = await user(() => plan.commit('Dispatcher'));
+      expect((await service.getPart(saved.id)).content).toMatchObject({ kind: 'skill', files: [{ path: 'SKILL.md', content: expect.stringContaining('Review it.') }] });
+      expect((await service.liveEntries())[saved.id].source).toEqual({ kind: 'import', from: 'project-skill', projectId: 'project-1', nativeName: 'review' });
+    }, 10_000); // Real payload, catalog and managed-state atomic writes plus readback.
   });
 
   it('requires explicit exact shared reuse and never edits or silently forks a matching part', async () => {
