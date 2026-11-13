@@ -56,6 +56,8 @@ import {
 } from './persisted-bindings';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import { initGroupProjectLifecycle, _resetLifecycleForTesting } from './group-project-lifecycle';
+import { roleModeOf, setGroupProjectRole } from './group-project-roles';
 import {
   _resetMembershipForTesting, addMember, answerAutoJoinOffer, previewAutoJoin, describeMembership, excludeMember, membershipBindingSource,
   releaseMembershipBindings, quickMemberName, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
@@ -333,6 +335,39 @@ describe('exclusions and preview', () => {
     await expect(previewAutoJoin({ level: 'galaxy', reach: 'local' })).rejects.toThrow(/project or app/);
     await expect(previewAutoJoin({ level: 'project', projectId: 'nope', reach: 'local' })).rejects.toThrow(/registered project/);
     vi.mocked(listDurable).mockImplementation(async (p: string) => fx.configs.get(p) ?? []);
+  });
+});
+
+describe('lead and admin end with membership (#3360)', () => {
+  afterEach(() => _resetLifecycleForTesting());
+
+  it('an excluded lead loses lead and admin, and doesn\'t get them back by rejoining', async () => {
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    // The lifecycle sees the members join at startup, then dev leave.
+    initGroupProjectLifecycle();
+    await start();
+    await setGroupProjectRole('gp1', 'dev', 'lead', 'allow');
+    await setGroupProjectRole('gp1', 'dev', 'admin', 'ask');
+
+    await excludeMember('gp1', 'dev');
+    await vi.waitFor(() => expect([roleModeOf('dev', 'gp1', 'lead'), roleModeOf('dev', 'gp1', 'admin')]).toEqual(['off', 'off']));
+
+    await addMember('gp1', 'dev');
+    expect(membersOf('gp1')).toContain('dev');
+    expect(roleModeOf('dev', 'gp1', 'lead')).toBe('off');
+  });
+
+  it('a lead that leaves scope loses its roles; one that stays keeps them', async () => {
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    initGroupProjectLifecycle();
+    await start();
+    await setGroupProjectRole('gp1', 'dev', 'lead', 'allow');
+    await setGroupProjectRole('gp1', 'lead', 'lead', 'allow');
+
+    fx.configs.set(PROJ_A.path, fx.configs.get(PROJ_A.path)!.filter((a) => a.id !== 'dev'));
+    await reconcileMembership();
+    await vi.waitFor(() => expect(roleModeOf('dev', 'gp1', 'lead')).toBe('off'));
+    expect(roleModeOf('lead', 'gp1', 'lead')).toBe('allow');
   });
 });
 

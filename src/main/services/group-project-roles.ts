@@ -91,6 +91,22 @@ export function listGroupProjectRoles(groupProjectId: string): GroupProjectRoleH
   return out;
 }
 
+/**
+ * An agent left a group project: its lead and admin there end with its
+ * membership, so rejoining later never brings them back without a new grant.
+ * Writes only when it held one. Idempotent.
+ */
+export async function revokeGroupProjectRoles(groupProjectId: string, agentId: string): Promise<boolean> {
+  let revoked = false;
+  for (const role of ['lead', 'admin'] as const) {
+    if (roleModeOf(agentId, groupProjectId, role) === 'off') continue;
+    await setGroupProjectRole(groupProjectId, agentId, role, 'off');
+    revoked = true;
+  }
+  if (revoked) appLog('core:group-project', 'info', 'Took lead and admin from an agent that left the group project', { meta: { groupProjectId, agentId } });
+  return revoked;
+}
+
 /** Remove every role grant on a deleted group project (#3364). Idempotent. */
 export async function purgeGroupProjectRoles(groupProjectId: string): Promise<void> {
   for (const holder of listGroupProjectRoles(groupProjectId)) {
