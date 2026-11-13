@@ -1342,6 +1342,8 @@ export interface SatelliteSnapshot {
   groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
   /** The satellite's OS and PTY backend (#2352). Absent from older satellites. */
   ptyHost?: import('./annex-pty').AnnexPtyHost;
+  /** That machine's Dispatcher chat agent while it's on (#3043); a lead's pane follows it (#3352). */
+  dispatcher?: { enabled?: boolean; projectId?: string; agent?: Agent | null } | null;
 }
 
 // --- Auto-update types ---

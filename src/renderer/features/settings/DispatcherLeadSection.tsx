@@ -4,24 +4,15 @@
  * computer is in a network with another computer. A person's choice only.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { DispatcherLeadState, LeadChoice } from '../../../shared/dispatcher-lead';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SELECT_CLASS } from '../agents/details/AutoSleepRow';
+import { useLeadState } from '../dispatcher/leadStore';
+import { Button } from '../../components/Button';
 import { SettingsField, SettingsSection, settingsError, settingsHelp } from './SettingsLayout';
 
 const NONE = '';
-
-function useLeadState(): DispatcherLeadState | null {
-  const [state, setState] = useState<DispatcherLeadState | null>(null);
-  useEffect(() => {
-    let live = true;
-    const off = window.clubhouse.dispatcher.onLeadChanged((next) => { if (live) setState(next); });
-    window.clubhouse.dispatcher.getLead().then((next) => { if (live) setState(next); }, () => { /* telemetry-exempt: the section stays hidden */ });
-    return () => { live = false; off(); };
-  }, []);
-  return state;
-}
 
 /** "Desk", "Desk and Laptop", "Desk, Laptop and Studio". */
 export function listNames(names: string[]): string {
@@ -37,6 +28,7 @@ function choiceLabel(choice: LeadChoice): string {
 /** The line under the picker: where this computer stands. */
 export function leadStatus(state: DispatcherLeadState): string {
   if (state.role === 'lead') return 'This computer’s Dispatcher leads. The others follow it.';
+  if (state.role === 'follower' && state.lead && state.tookBack) return `${state.lead.name} leads, but this computer took back and uses its own Dispatcher.`;
   if (state.role === 'follower' && state.lead) return `This computer follows ${state.lead.name}’s Dispatcher.`;
   if (state.clearedFor) return `${state.clearedFor} left the network, so there’s no lead now. Each computer uses its own Dispatcher.`;
   return 'Each computer uses its own Dispatcher.';
@@ -56,18 +48,19 @@ export function LeadSection() {
   const [error, setError] = useState<string | null>(null);
   if (!state?.available) return null;
 
-  const choose = async (machine: string | null) => {
+  const act = async (action: () => Promise<unknown>, failed: string) => {
     setSaving(true);
     setError(null);
     try {
-      await window.clubhouse.dispatcher.setLead(machine);
+      await action();
     } catch (err) {
       // telemetry-exempt: shown under the picker, which keeps the saved choice.
-      setError(`Couldn’t change the lead. ${ipcErrorMessage(err)}`);
+      setError(`${failed} ${ipcErrorMessage(err)}`);
     } finally {
       setSaving(false);
     }
   };
+  const choose = (machine: string | null) => act(() => window.clubhouse.dispatcher.setLead(machine), 'Couldn’t change the lead.');
   const confirmation = leadConfirmation(state);
 
   return (
@@ -90,6 +83,11 @@ export function LeadSection() {
         </select>
       </SettingsField>
       <p className={`${settingsHelp} mt-1.5`} role="status" data-testid="dispatcher-lead-status">{leadStatus(state)}</p>
+      {state.tookBack && state.lead && (
+        <Button className="mt-1.5" disabled={saving} onClick={() => void act(() => window.clubhouse.dispatcher.followAgain(), 'Couldn’t follow again.')} data-testid="dispatcher-lead-follow-again">
+          Follow {state.lead.name} again
+        </Button>
+      )}
       {confirmation && <p className={`${settingsHelp} mt-1`} data-testid="dispatcher-lead-confirmation">{confirmation}</p>}
       {error && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-lead-error">{error}</p>}
     </SettingsSection>

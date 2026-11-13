@@ -12,6 +12,8 @@ import { useDispatcherWorkOpen } from './dispatcherDebug';
 import { DispatcherWorkView } from './DispatcherWorkView';
 import { usePopouts } from '../../hooks/usePopouts';
 import { PoppedOutPlaceholder } from '../popout/PoppedOutPlaceholder';
+import { useFollowedLead } from './leadStore';
+import { FollowerDispatcherView } from './FollowerDispatcherView';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -28,6 +30,9 @@ import { PoppedOutPlaceholder } from '../popout/PoppedOutPlaceholder';
  *
  * While its chat is popped out (#3235) the view shows where it went, as a
  * project agent's pane does; setup still shows here.
+ *
+ * On a computer following another's lead (#3352), the view is the lead's chat
+ * (FollowerDispatcherView) until a person takes back.
  */
 export function DispatcherView() {
   const agentId = useDispatcherAgentId();
@@ -39,6 +44,7 @@ export function DispatcherView() {
   const setSetupOpen = useDispatcherStore((s) => s.setSetupOpen);
   const workOpen = useDispatcherWorkOpen();
   const { findAgentPopout } = usePopouts();
+  const followed = useFollowedLead();
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
@@ -48,6 +54,11 @@ export function DispatcherView() {
   }, [agentId]);
 
   if (workOpen && state?.agentId) return <DispatcherWorkView agentId={state.agentId} />;
+
+  // Following another computer's lead (#3352): its chat, with this computer's kept one click away.
+  if (followed && state?.chatAgentId) {
+    return <FollowerDispatcherView lead={followed} localChatId={state.chatAgentId} localName={agent?.name ?? state.config?.name ?? 'Dispatcher'} />;
+  }
 
   const setupStatus = state?.setup?.status;
   if (state?.config && (setupStatus === 'pending' || setupOpen)) {

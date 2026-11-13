@@ -21,7 +21,8 @@ import { cleanSetupInput, cleanTryItOutRequest, type TryItOutResult } from '../.
 import { checkDispatcherBehavior, tryDispatcherPersonality } from '../services/dispatcher/dispatcher-setup';
 import type { DispatcherTeaching } from '../../shared/dispatcher-teaching';
 import { readDispatcherTeaching } from '../services/dispatcher/dispatcher-teaching';
-import { chooseLead, getLeadState, onLeadChanged } from '../services/dispatcher-federation-lead';
+import { chooseLead, followLeadAgain, getLeadState, onLeadChanged, takeBackFromLead } from '../services/dispatcher-federation-lead';
+import { dismissLeadOutboxNotice, leadOutboxState, onLeadOutboxChanged, queueForLead } from '../services/dispatcher-lead-outbox';
 import type { DispatcherLeadState } from '../../shared/dispatcher-lead';
 
 /** A machine id, or null for "no lead". */
@@ -32,6 +33,12 @@ const nullableMachineArg = (value: unknown, argName: string): string | null => {
 };
 import { getDispatcherPresence, onDispatcherPresenceChanged } from '../services/dispatcher-presence';
 import type { DispatcherPresenceSnapshot } from '../../shared/dispatcher-presence';
+
+/** The lead as Settings and the follower pane show it, with what waits for it. */
+function leadView(): DispatcherLeadState {
+  const state = getLeadState();
+  return { ...state, outbox: leadOutboxState(state.lead?.machine ?? null) };
+}
 
 let registered = false;
 
@@ -121,15 +128,29 @@ export function registerDispatcherHandlers(): void {
   ipcMain.handle(IPC.DISPATCHER.GET_TEACHING, (): Promise<DispatcherTeaching> => readDispatcherTeaching());
 
   // The network-wide lead (#3351). Only Settings sets it: no tool or grant reaches these.
-  ipcMain.handle(IPC.DISPATCHER.GET_LEAD, (): DispatcherLeadState => getLeadState());
+  ipcMain.handle(IPC.DISPATCHER.GET_LEAD, (): DispatcherLeadState => leadView());
   ipcMain.handle(IPC.DISPATCHER.SET_LEAD, withValidatedArgs(
     [nullableMachineArg],
-    async (_event, machine): Promise<DispatcherLeadState> => { await chooseLead(machine); return getLeadState(); },
+    async (_event, machine): Promise<DispatcherLeadState> => { await chooseLead(machine); return leadView(); },
   ));
-  onLeadChanged(() => broadcastToAllWindows(IPC.DISPATCHER.LEAD_CHANGED, getLeadState()));
   // The Dispatchers on this person's other computers (#3349): read-only, pushed on a real change.
   ipcMain.handle(IPC.DISPATCHER.GET_PRESENCE, (): DispatcherPresenceSnapshot => getDispatcherPresence());
   onDispatcherPresenceChanged(() => broadcastToAllWindows(IPC.DISPATCHER.PRESENCE_CHANGED, getDispatcherPresence()));
+  // Following (#3352, #3353): Take back and follow again are a person's, from the pane and Settings.
+  ipcMain.handle(IPC.DISPATCHER.TAKE_BACK, async (): Promise<DispatcherLeadState> => { await takeBackFromLead(); return leadView(); });
+  ipcMain.handle(IPC.DISPATCHER.FOLLOW_AGAIN, async (): Promise<DispatcherLeadState> => { await followLeadAgain(); return leadView(); });
+  ipcMain.handle(IPC.DISPATCHER.QUEUE_FOR_LEAD, withValidatedArgs(
+    [stringArg({ maxLength: 64_000 })],
+    async (_event, text): Promise<{ id: string }> => {
+      const lead = getLeadState().lead;
+      if (!lead || !getLeadState().following) throw new Error('This computer isn’t following another computer’s Dispatcher.');
+      return queueForLead(lead.machine, text);
+    },
+  ));
+  ipcMain.handle(IPC.DISPATCHER.DISMISS_LEAD_NOTICE, async (): Promise<DispatcherLeadState> => { await dismissLeadOutboxNotice(); return leadView(); });
+  const broadcastLead = () => broadcastToAllWindows(IPC.DISPATCHER.LEAD_CHANGED, leadView());
+  onLeadChanged(broadcastLead);
+  onLeadOutboxChanged(broadcastLead);
 
   let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {

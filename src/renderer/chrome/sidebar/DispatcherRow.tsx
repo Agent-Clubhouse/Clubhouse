@@ -18,8 +18,12 @@ import { DISPATCHER_CONTROLLER_NAME } from '../../../shared/dispatcher-name';
  * Its status is the chat's, and working while a request the user made is
  * under way (#3220).
  */
-export function DispatcherRow({ agent, detailed, requestsUnderWay = 0, active, projectPath, loadError, onSelect }: {
+export function DispatcherRow({ agent, detailed, requestsUnderWay = 0, active, projectPath, loadError, onSelect, machine, offline = false }: {
   agent?: Agent;
+  /** Following a lead on another computer (#3352): that computer's short name. */
+  machine?: string;
+  /** That computer is offline. */
+  offline?: boolean;
   detailed?: AgentDetailedStatus;
   /** The user's requests it is still working on. */
   requestsUnderWay?: number;
@@ -58,6 +62,8 @@ export function DispatcherRow({ agent, detailed, requestsUnderWay = 0, active, p
         projectPath={projectPath}
         onSelect={onSelect}
         level={1}
+        machine={machine}
+        offline={offline}
       />
     </div>
   );

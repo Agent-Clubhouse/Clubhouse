@@ -179,3 +179,40 @@ describe('DispatcherView', () => {
     expect(screen.getByRole('status').textContent).toBe('Loading the Dispatcher');
   });
 });
+
+describe('DispatcherView on a follower (#3352)', () => {
+  const LEAD = {
+    available: true, role: 'follower' as const, following: true, tookBack: false,
+    lead: { machine: 'laptop', name: 'Laptop', self: false, online: true },
+    choices: [], confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: '2026-11-13T10:00:00.000Z',
+    leadLastSeen: null, outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null },
+  };
+  afterEach(async () => {
+    const { _resetLeadStoreForTesting } = await import('./leadStore');
+    _resetLeadStoreForTesting();
+    const { useAnnexClientStore } = await import('../../stores/annexClientStore');
+    useAnnexClientStore.setState({ satellites: [] });
+  });
+
+  it('shows the lead’s chat while following, and this computer’s own again after Take back', async () => {
+    const { useLeadStore } = await import('./leadStore');
+    const { useAnnexClientStore } = await import('../../stores/annexClientStore');
+    useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
+    useAnnexClientStore.setState({ satellites: [{
+      id: 'sat-laptop', alias: 'Laptop', icon: 'computer', color: 'indigo', fingerprint: 'LAPTOP', state: 'connected', host: 'h', mainPort: 1, pairingPort: 2, lastError: null,
+      snapshot: { dispatcher: { agent: { id: 'lead-chat', projectId: DISPATCHER_PROJECT_ID, name: 'Rosie', kind: 'durable', status: 'running', executionMode: 'chat' } } },
+    }] } as never);
+    useLeadStore.setState({ state: LEAD });
+    // The first reader subscribes; main answers with whatever the test has set.
+    const getLead = window.clubhouse.dispatcher.getLead;
+    window.clubhouse.dispatcher.getLead = async () => useLeadStore.getState().state!;
+    render(<DispatcherView />);
+    await act(async () => {});
+    expect(screen.getByTestId('follower-heading').textContent).toBe('Following Rosie on Laptop');
+    expect(screen.getByTestId('runtime-pane').textContent).toBe('remote||sat-laptop||lead-chat');
+    act(() => useLeadStore.setState({ state: { ...LEAD, following: false, tookBack: true } }));
+    expect(screen.queryByTestId('follower-dispatcher-view')).toBeNull();
+    expect(screen.getByTestId('runtime-pane').textContent).toBe('disp');
+    window.clubhouse.dispatcher.getLead = getLead;
+  });
+});

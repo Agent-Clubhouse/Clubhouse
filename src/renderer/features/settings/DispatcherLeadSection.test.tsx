@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DispatcherLeadState } from '../../../shared/dispatcher-lead';
 import { LeadSection, leadConfirmation, leadStatus, listNames } from './DispatcherLeadSection';
+import { _resetLeadStoreForTesting } from '../dispatcher/leadStore';
 
 const PEERS: DispatcherLeadState = {
   available: true, role: 'peer', lead: null,
@@ -11,15 +12,17 @@ const PEERS: DispatcherLeadState = {
     { machine: 'studio', name: 'Studio', self: false, online: false },
   ],
   confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: null,
+  following: false, tookBack: false, leadLastSeen: null, outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null },
 };
 const FOLLOWING: DispatcherLeadState = {
-  ...PEERS, role: 'follower', lead: PEERS.choices[1], confirmedBy: ['Laptop'], waitingOn: ['Studio'],
+  ...PEERS, role: 'follower', following: true, lead: PEERS.choices[1], confirmedBy: ['Laptop'], waitingOn: ['Studio'],
   changedByName: 'Desk', changedAt: '2026-11-13T10:00:00.000Z',
 };
 
 let changed: ((state: DispatcherLeadState) => void) | undefined;
 beforeEach(() => {
   changed = undefined;
+  _resetLeadStoreForTesting();
   Object.assign(window.clubhouse.dispatcher, {
     getLead: vi.fn(async () => PEERS),
     setLead: vi.fn(async () => FOLLOWING),
@@ -61,6 +64,15 @@ describe('Settings › Dispatcher › Lead (#3351)', () => {
     render(<LeadSection />);
     fireEvent.change(await screen.findByTestId('dispatcher-lead'), { target: { value: 'studio' } });
     expect((await screen.findByTestId('dispatcher-lead-error')).textContent).toContain('Couldn’t change the lead.');
+  });
+
+  it('offers Follow again on a computer that took back', async () => {
+    window.clubhouse.dispatcher.getLead = vi.fn(async () => ({ ...FOLLOWING, following: false, tookBack: true }));
+    window.clubhouse.dispatcher.followAgain = vi.fn(async () => FOLLOWING);
+    render(<LeadSection />);
+    expect((await screen.findByTestId('dispatcher-lead-status')).textContent).toBe('Laptop leads, but this computer took back and uses its own Dispatcher.');
+    fireEvent.click(screen.getByTestId('dispatcher-lead-follow-again'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.followAgain).toHaveBeenCalled());
   });
 
   it('words each state plainly', () => {

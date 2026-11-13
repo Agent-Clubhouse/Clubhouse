@@ -265,3 +265,36 @@ describe('no agent can change the lead (#3351)', () => {
     expect(tools).toEqual([]);
   });
 });
+
+describe('Take back (#3353)', () => {
+  it('changes only the computer that takes back, lasts until a new choice, and can be undone', async () => {
+    await boot(['a', 'b', 'c']);
+    await on('a', (l) => l.chooseLead('B'));
+    await settle();
+    await on('c', (l) => l.takeBackFromLead());
+    expect(await state('c')).toMatchObject({ role: 'follower', following: false, tookBack: true });
+    expect(await state('a')).toMatchObject({ following: true, tookBack: false });
+    expect((await record('b')).lead).toBe('b');
+    // It never travels: B and A still see C as having the same record.
+    await settle();
+    expect((await state('a')).confirmedBy).toEqual(['B', 'C']);
+    await on('c', (l) => l.followLeadAgain());
+    expect(await state('c')).toMatchObject({ following: true, tookBack: false });
+    // A new choice follows again, on its own.
+    await on('c', (l) => l.takeBackFromLead());
+    await on('a', (l) => l.chooseLead('A'));
+    await settle();
+    expect(await state('c')).toMatchObject({ role: 'follower', following: true, tookBack: false, lead: { machine: 'a' } });
+  });
+
+  it('is refused on the lead and on peers, and nothing takes back while the lead is offline', async () => {
+    await boot(['a', 'b']);
+    await expect(on('a', (l) => l.takeBackFromLead())).rejects.toThrow('isn’t following');
+    await on('a', (l) => l.chooseLead('A'));
+    await settle();
+    await expect(on('a', (l) => l.takeBackFromLead())).rejects.toThrow('isn’t following');
+    online.delete('a');
+    await on('b', (l) => l.reconcileMembership());
+    expect(await state('b')).toMatchObject({ role: 'follower', following: true, lead: { machine: 'a', online: false } });
+  });
+});

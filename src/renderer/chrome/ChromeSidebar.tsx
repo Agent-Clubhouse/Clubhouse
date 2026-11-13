@@ -46,6 +46,7 @@ import { AppNotices } from '../features/app/AppNotices';
 import { TruncatedLabel } from '../components/TruncatedLabel';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { DispatcherRow, DispatcherWorkRow } from './sidebar/DispatcherRow';
+import { useFollowedLead } from '../features/dispatcher/leadStore';
 import { useDispatcherDebug, useDispatcherWorkOpen } from '../features/dispatcher/dispatcherDebug';
 import { visibleRequestAgentId, isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { requestCloseProject } from '../features/projects/close-project';
@@ -337,6 +338,8 @@ export function ChromeSidebar() {
   // The Dispatcher's pinned row (#2538), while it's turned on.
   const dispatcherAgentId = useDispatcherAgentId();
   const dispatcherAgent = dispatcherAgentId ? agents[dispatcherAgentId] : undefined;
+  // Following a lead (#3352): the row is the lead's Dispatcher, labelled with its computer.
+  const followedLead = useFollowedLead();
   const dispatcherPath = useDispatcherStore((s) => s.project?.path);
   const dispatcherLoadError = useDispatcherStore((s) => s.loadError);
   // Shown from its state, so a failed agent load still opens the view with its error (#2572).
@@ -810,9 +813,11 @@ export function ChromeSidebar() {
 
       {dispatcherAgentId && (
         <DispatcherRow
-          agent={dispatcherAgent}
-          detailed={detailed[dispatcherAgentId]}
-          requestsUnderWay={dispatcherRequestsUnderWay}
+          agent={followedLead?.agent ?? dispatcherAgent}
+          detailed={followedLead?.agent ? remoteDetailed[followedLead.agent.id] : detailed[dispatcherAgentId]}
+          requestsUnderWay={followedLead?.agent ? 0 : dispatcherRequestsUnderWay}
+          machine={followedLead?.agent ? followedLead.machineName : undefined}
+          offline={!!followedLead?.agent && !followedLead.online}
           active={dispatcherShown && !dispatcherWorkOpen}
           projectPath={dispatcherPath}
           loadError={dispatcherLoadError}

@@ -97,4 +97,29 @@ export interface DispatcherLeadState {
   /** The machine where the current choice was made, by name, when known. */
   changedByName: string | null;
   changedAt: string | null;
+  /** A follower that hasn't taken back (#3352): its Dispatcher pane is the lead's chat. */
+  following: boolean;
+  /** A follower that took back (#3353): it uses its own chat until it follows again. */
+  tookBack: boolean;
+  /** When this computer last heard from the lead's computer. */
+  leadLastSeen: string | null;
+  /** Messages typed while the lead was offline (#3353). */
+  outbox: LeadOutboxState;
 }
+
+export interface LeadOutboxState {
+  /** Messages waiting for the lead's computer to come back. */
+  waiting: number;
+  oldestAt: string | null;
+  /** Messages dropped because the lead stayed offline too long, since last dismissed. */
+  expired: number;
+  /** Why the last waiting message couldn't be delivered, when the lead refused it. */
+  failed: string | null;
+}
+
+/** How long a message waits for an offline lead before it's dropped. */
+export const LEAD_OUTBOX_EXPIRY_MS = 24 * 60 * 60 * 1000;
+/** How many messages wait at most. */
+export const LEAD_OUTBOX_MAX = 20;
+/** The longest message that waits (the chat command's own text limit is larger). */
+export const LEAD_OUTBOX_MAX_CHARS = 32_000;
