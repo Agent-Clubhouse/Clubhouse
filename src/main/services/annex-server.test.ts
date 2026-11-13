@@ -21,8 +21,8 @@ vi.mock('./group-project-network', () => ({
   receiveGroupProjectChanged: vi.fn(),
 }));
 vi.mock('./handoff-capacity-host', () => ({ receiveCapacityProbe: vi.fn() }));
-import { receiveNetworkHandoff } from './handoff-host';
-vi.mock('./handoff-host', () => ({ receiveNetworkHandoff: vi.fn() }));
+import { receiveNetworkHandoff, receiveHandoffTransfer } from './handoff-host';
+vi.mock('./handoff-host', () => ({ receiveNetworkHandoff: vi.fn(), receiveHandoffTransfer: vi.fn() }));
 import type { AnnexSettings } from '../../shared/types';
 const networkToolHost = vi.hoisted(() => ({ host: undefined as import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost | undefined }));
 vi.mock('./group-project-host', async () =>
@@ -1773,6 +1773,27 @@ describe('annex-server', () => {
     asUnpaired();
     expect((await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} })).status).toBe(401);
     expect(vi.mocked(groupProjectNetwork.receiveGroupProjectSync).mock.calls.length).toBe(calls);
+  });
+
+  it('serves handoff artifact chunks only to pinned desktop members and hides refusal details', async () => {
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    const chunk = { offset: 0, totalBytes: 3, data: 'YWJj', sha256: createHash('sha256').update('abc').digest('hex'), eof: true };
+    vi.mocked(receiveHandoffTransfer).mockResolvedValue(chunk);
+    const { port } = await startAndPair();
+    const route = '/api/v1/network/handoffs/transfer';
+    const body = { op: 'read', id: nodeCrypto.randomUUID(), file: 0, offset: 0 };
+    const response = await request(port, 'POST', route, body);
+    expect(response.status).toBe(200); expect(JSON.parse(response.body)).toEqual(chunk);
+    expect(receiveHandoffTransfer).toHaveBeenCalledWith(member.fingerprint, body);
+    vi.mocked(receiveHandoffTransfer).mockRejectedValueOnce(new Error('private-host/private-path secret'));
+    const failed = await request(port, 'POST', route, body);
+    expect(failed.status).toBe(400); expect(JSON.parse(failed.body)).toEqual({ error: 'handoff_transfer_refused' });
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
+    expect((await request(port, 'POST', route, body)).status).toBe(403);
+    expect(receiveHandoffTransfer).toHaveBeenCalledTimes(2);
+    asUnpaired(); expect((await request(port, 'POST', route, body)).status).toBe(401);
   });
 
   it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {

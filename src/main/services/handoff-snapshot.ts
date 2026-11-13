@@ -618,7 +618,7 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
 export async function verifyHandoffSnapshot(
   snapshotRoot: string, rawManifest: unknown, expected: HandoffManifestSummary,
   limits: HandoffTransferBounds = HANDOFF_TRANSFER_DEFAULTS,
-  localPolicy?: { policy: HandoffSecretPolicy; handoffId: string },
+  localPolicy?: { policy: HandoffSecretPolicy; handoffId: string; side?: 'sender' | 'receiver' },
 ): Promise<HandoffSnapshot> {
   try {
     const bounds = validateHandoffBounds(limits);
@@ -652,7 +652,7 @@ export async function verifyHandoffSnapshot(
     }
     try { assertInternalHandoffLinks(links); } catch { throw new HandoffSnapshotError('unsafe_entry'); }
     await checkDirectories(filesRoot, [...filesRoot.directories.keys()]);
-    await localPolicy?.policy.recordUse(localPolicy.handoffId, 'receiver');
+    await localPolicy?.policy.recordUse(localPolicy.handoffId, localPolicy.side ?? 'receiver');
     return { root, manifest };
   } catch (error) {
     throw failure(error);

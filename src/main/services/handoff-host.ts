@@ -1,4 +1,5 @@
-import { bindPreparedHandoff, settleHandoffPreparationBinding, pruneHandoffPreparations } from './handoff-preparations';
+import { HandoffTransferSource } from './handoff-transfer-source';
+import { bindPreparedHandoff, settleHandoffPreparationBinding, pruneHandoffPreparations, preparedSourceForRecord } from './handoff-preparations';
 import { evaluateGrant, type GrantCallTarget } from '../../shared/agent-grants';
 import { parseAgentAddress } from '../../shared/agent-address';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -129,7 +130,7 @@ function acceptsRemote(): boolean {
   return networkEnabled(settings) && settings.enableServer && !('acceptHandoffs' in settings && settings.acceptHandoffs === false);
 }
 
-interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string }
+interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string; transfer: HandoffTransferSource }
 let host: Host | undefined;
 let sweep: ReturnType<typeof setInterval> | undefined;
 let offConnected: (() => void) | undefined;
@@ -201,6 +202,7 @@ async function notifyRecord(record: Handoff): Promise<void> {
 export function handoffHost(): Host {
   const machine = ownMachine();
   if (host?.machine === machine) return host;
+  void host?.transfer.close();
   const store = new HandoffStore();
   const commands = new HandoffCommandStore();
   const service = new HandoffService({ machine, store, authorize,
@@ -234,13 +236,21 @@ export function handoffHost(): Host {
       }
     },
     changed: async (record) => {
+      if (isTerminalHandoff(record.state)) await host?.transfer.close(record.id);
       if (record.from.machine === machine && isTerminalHandoff(record.state)) await pruneHandoffPreparations(store.list());
       const participants = [record.from, ...('agentId' in record.to ? [record.to] : getDispatcherState().agentId ? [localHandoffAgent(getDispatcherState().agentId!)] : []), ...(record.acceptance ? [record.acceptance.target] : [])];
       for (const participant of participants) if (participant.machine === machine) notifyToolGateChange(participant.agentId);
       await notifyRecord(record);
     },
   });
-  host = { machine, store, commands, coordinator };
+  const transfer = new HandoffTransferSource({
+    machine, record: (id) => store.get(id), prepared: preparedSourceForRecord,
+    authorize: async (record, peer) => {
+      if (peer !== machine && !isNetworkComputer(peer)
+        || !await authorize({ record, actor: record.from, action: 'handoff.offer', stage: 'transferring' })) throw new Error('Handoff transfer unavailable.');
+    },
+  });
+  host = { machine, store, commands, coordinator, transfer };
   void service.recover().catch(() => { /* telemetry-exempt: tools fail closed if recovery/storage is unavailable */ });
   return host;
 }
@@ -283,8 +293,15 @@ export async function stopHandoffs(): Promise<void> {
   offConnected = undefined;
   await flushWork;
   setHandoffParticipantCheck(() => false);
+  await host?.transfer.close();
   host = undefined;
   incomingRates.clear();
+}
+
+/** Internal same-machine reads use this boundary too; the HTTP route supplies its pinned peer. */
+export async function receiveHandoffTransfer(machine: string, body: unknown) {
+  if (machine !== ownMachine() && !isNetworkComputer(machine)) throw new Error('Handoff transfer unavailable.');
+  return handoffHost().transfer.receive(machine, body);
 }
 
 const incomingRates = new Map<string, number[]>();

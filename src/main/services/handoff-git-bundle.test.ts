@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { HANDOFF_TRANSFER_DEFAULTS, summarizeHandoffManifest } from '../../shared/handoff-manifest';
 import { prepareHandoffSnapshot, verifyHandoffSnapshot, openHandoffSnapshotArtifact } from './handoff-snapshot';
 import { prepareHandoffBundle } from './handoff-git-bundle';
@@ -16,11 +16,13 @@ const git = (...args: string[]) => exec('git', args, { cwd: repo });
 const commit = async (message = 'Fixture') => { await git('add', '-A'); await git('-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'commit', '-qm', message); };
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-bundle-')); repo = path.join(root, 'repo'); staging = path.join(root, 'staging');
+  const config = path.join(root, 'empty-git-config'); fs.writeFileSync(config, '');
+  vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   fs.mkdirSync(repo); fs.mkdirSync(staging);
   await git('init', '-b', 'main'); await git('config', 'user.name', 'Fixture'); await git('config', 'user.email', 'test@example.invalid');
   fs.writeFileSync(path.join(repo, 'file.txt'), 'committed bytes'); await commit();
 });
-afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+afterEach(() => { vi.unstubAllEnvs(); fs.rmSync(root, { recursive: true, force: true }); });
 async function prepared() {
   const handoffId = randomUUID();
   const snapshot = await prepareHandoffSnapshot({ worktreeRoot: repo, stagingRoot: staging, handoffId });

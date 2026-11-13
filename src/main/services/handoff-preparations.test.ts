@@ -20,10 +20,12 @@ function agreement(manifest: HandoffManifestSummary) {
 }
 beforeEach(async () => {
   state.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-preparations-')); state.repo = path.join(state.dir, 'repo'); state.project = 'registered'; fs.mkdirSync(state.repo); _resetHandoffPreparationsForTesting();
+  const config = path.join(state.dir, 'empty-git-config'); fs.writeFileSync(config, '');
+  vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   for (const args of [['init', '-b', 'main'], ['config', 'user.name', 'Fixture'], ['config', 'user.email', 'test@example.invalid'], ['-c', `core.hooksPath=${path.join(state.dir, 'no-hooks')}`, 'commit', '--allow-empty', '-qm', 'Base']]) await exec('git', args, { cwd: state.repo });
   fs.writeFileSync(path.join(state.repo, 'work.txt'), 'handoff bytes');
 });
-afterEach(() => { vi.restoreAllMocks(); fs.rmSync(state.dir, { recursive: true, force: true }); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); fs.rmSync(state.dir, { recursive: true, force: true }); });
 it('binds only an owned preparation, survives restart and refuses another agreement or project', async () => {
   const preview = await prepareCallerHandoff('owner', 'worktree');
   expect(preview.ready).toBe(true); expect(preview.manifest.files).toMatchObject([{ path: 'work.txt' }]);

@@ -6,11 +6,15 @@ import { HANDOFF_SECRET_CONTENT_MAX_BYTES, scanHandoffSecrets, safeHandoffDiagno
 import { HandoffSecretPolicy, isTrustedHandoffSecretPolicy } from './handoff-secret-settings';
 import { HandoffSnapshotError, openHandoffRepository, type HandoffSnapshot } from './handoff-snapshot';
 
-type Repository = Awaited<ReturnType<typeof openHandoffRepository>>;
+export interface HandoffHistoryRepository {
+  repo: { base: string };
+  read(args: string[]): Promise<Buffer | null>;
+  assertCurrent(): Promise<void>;
+}
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** Every historical pathname is checked: rev-list's first name per object loses rename aliases. */
-async function scanBundleHistory(repository: Repository, policy?: HandoffSecretPolicy): Promise<void> {
+export async function scanHandoffGitHistory(repository: HandoffHistoryRepository, policy?: HandoffSecretPolicy): Promise<void> {
   if (policy !== undefined && !isTrustedHandoffSecretPolicy(policy)) throw new HandoffSnapshotError('secret_blocked');
   const raw = await repository.read(['log', '-m', '--format=', '--raw', '-z', '--no-renames', '--root', '--no-abbrev', repository.repo.base]);
   if (!raw) throw new HandoffSnapshotError('git_failed');
@@ -45,6 +49,7 @@ async function scanBundleHistory(repository: Repository, policy?: HandoffSecretP
     const size = BigInt(sizeText);
     const content = size <= BigInt(HANDOFF_SECRET_CONTENT_MAX_BYTES) ? await repository.read(['cat-file', 'blob', oid]) : undefined;
     if (content === null || content !== undefined && BigInt(content.byteLength) !== size) throw new HandoffSnapshotError('git_failed');
+    if (content?.subarray(0, 43).toString() === 'version https://git-lfs.github.com/spec/v1\n') throw new HandoffSnapshotError('unsupported_repository');
     for (const name of names) check(name, content);
   }
   policy?.assertCurrent(); await repository.assertCurrent();
@@ -76,7 +81,7 @@ export async function prepareHandoffBundle(options: {
   const { snapshot, bounds, secretPolicy } = options;
   const repository = await openHandoffRepository(options.worktreeRoot);
   if (!COMMIT.test(snapshot.manifest.repo.base) || JSON.stringify(repository.repo) !== JSON.stringify(snapshot.manifest.repo) || snapshot.manifest.bundle) throw new HandoffSnapshotError('source_changed');
-  await scanBundleHistory(repository, secretPolicy);
+  await scanHandoffGitHistory(repository, secretPolicy);
   const stageStat = await fs.promises.lstat(snapshot.root, { bigint: true });
   if (!stageStat.isDirectory() || stageStat.isSymbolicLink()) throw new HandoffSnapshotError('invalid_staging');
   const root = await fs.promises.realpath(snapshot.root);
