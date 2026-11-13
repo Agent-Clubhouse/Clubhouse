@@ -73,7 +73,8 @@ export function parseClaudeUsage(reply: unknown, asOf: number): PlanQuotaReading
       if (isObj(raw) && typeof raw.display_name === 'string' && raw.display_name) windows.push(claudeWindow(`week:${raw.display_name}`, raw, asOf));
     }
   }
-  return { kind: 'windows', windows };
+  const calibrationPlan = QUOTA_CALIBRATION_PLANS.find((plan) => plan === reply.subscription_type);
+  return { kind: 'windows', windows, ...(calibrationPlan && { calibrationPlan }) };
 }
 
 export async function probeClaudeQuota(ctx: ModelProbeContext): Promise<PlanQuotaReading> {

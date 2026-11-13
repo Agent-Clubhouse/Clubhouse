@@ -61,6 +61,7 @@ describe('qualified aggregate remaining burn', () => {
     const decide = (candidates: AutoCandidate[], useBurnForecasts: boolean) => decideAutoProvider({ now: T, candidates, cursors: {}, options: { useBurnForecasts } });
     expect(decide([a, b], false)).toMatchObject({ ok: true, key: 'a' });
     expect(decide([a, b], true)).toMatchObject({ ok: true, key: 'b' });
+    expect(decide([a, { ...b, expectedBurnBp: undefined }], true)).toMatchObject({ ok: true, key: 'a' });
     a.remainingPressure!.push({ usedBp: 9300, upperBp: 300 });
     expect(decide([a], true)).toMatchObject({ ok: false, evaluations: [{ excluded: 'quota_near_limit' }] });
     expect(decide([a], false)).toMatchObject({ ok: true });
@@ -74,6 +75,18 @@ describe('qualified aggregate remaining burn', () => {
     expect(preparePressure(entry('next', now), [{ ...pending, calibration: undefined }], 1, quota(now), now, plan)).toBeUndefined();
     expect(preparePressure(entry('next', now), [], 0, quota(now), now)).toBeUndefined();
     expect(p.windows[0].band).toBeUndefined();
+  });
+
+  it('demonstrates recency weighting improves chronological replay of changing observed demand', () => {
+    const history = replay([...Array(8).fill(100), ...Array(8).fill(120), ...Array(24).fill(140)]);
+    const samples = history.filter((e) => e.pressureOutcome?.reason === 'observed');
+    const band = qualifyPressure(history, samples[0].pressure!.key, 'weekly', T + 500 * MIN)!;
+    const unweightedErrors = samples.slice(8).map((e, i) => {
+      const earlier = samples.slice(0, i + 8).map((r) => r.pressureOutcome!.windows[0].remainingBp);
+      return Math.abs(e.pressureOutcome!.windows[0].remainingBp - Math.round(earlier.reduce((a, b) => a + b, 0) / earlier.length));
+    });
+    expect(band).toBeDefined();
+    expect(band.maeBp).toBeLessThan(unweightedErrors.reduce((a, b) => a + b, 0) / unweightedErrors.length);
   });
 
   it('keeps future and delayed labels out, and rolls back immediately on outside bursts/drift', () => {

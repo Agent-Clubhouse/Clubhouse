@@ -179,11 +179,14 @@ export function decideAutoProvider(input: AutoPolicyInput): AutoDecision {
   const useForecasts = input.options?.useBurnForecasts ?? AUTO_USE_BURN_FORECASTS;
   const bandBp = Math.max(0, input.options?.tieBandBp ?? AUTO_TIE_BAND_BP);
   const measured = candidates.filter((c) => tierOf(c) !== 'unmeasured' && tierOf(c) !== 'last_resort');
+  // Missing mean coverage cannot be treated as zero burn against another provider's qualified mean.
+  const comparableForecasts = useForecasts && measured.filter((c) => c.quotaState !== 'exhausted' && c.quotaState !== 'near_limit')
+    .every((c) => typeof c.expectedBurnBp === 'number' && Number.isFinite(c.expectedBurnBp) && c.expectedBurnBp >= 0 && c.expectedBurnBp <= 10_000);
   const wanted = input.options?.basis ?? 'weekly_used';
   const basis: AutoScoreBasis = wanted === 'reset_schedule' && measured.every((c) => cyclePhaseBp(c, now) !== undefined) ? 'reset_schedule' : 'weekly_used';
 
   const evaluations: AutoEvaluation[] = candidates.map((c) => {
-    const base = { key: c.key, provider: c.provider, verified: c.verified, load: c.load, score: scoreOf(c, now, basis, useForecasts) };
+    const base = { key: c.key, provider: c.provider, verified: c.verified, load: c.load, score: scoreOf(c, now, basis, comparableForecasts) };
     if (c.quotaState === 'exhausted') return { ...base, excluded: 'quota_exhausted' as const };
     if (c.quotaState === 'near_limit') return { ...base, excluded: 'quota_near_limit' as const };
     if (useForecasts && c.remainingPressure?.some((w) => Number.isFinite(w.usedBp) && Number.isFinite(w.upperBp)

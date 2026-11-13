@@ -1,5 +1,5 @@
 /** Closed plan classes, without login/account identifiers. Unknown is never a calibration identity. */
-export const QUOTA_CALIBRATION_PLANS = ['free', 'go', 'plus', 'pro', 'prolite', 'promax', 'team', 'self_serve_business_prolite', 'self_serve_business_usage_based', 'business', 'ent26', 'enterprise_cbp_automation', 'enterprise_cbp_usage_based', 'enterprise', 'edu', 'edu_plus', 'edu_pro', 'sci', 'sci_plus'] as const;
+export const QUOTA_CALIBRATION_PLANS = ['max', 'free', 'go', 'plus', 'pro', 'prolite', 'promax', 'team', 'self_serve_business_prolite', 'self_serve_business_usage_based', 'business', 'ent26', 'enterprise_cbp_automation', 'enterprise_cbp_usage_based', 'enterprise', 'edu', 'edu_plus', 'edu_pro', 'sci', 'sci_plus'] as const;
 export type QuotaCalibrationPlan = (typeof QUOTA_CALIBRATION_PLANS)[number];
 /** Content-free, device-local subscription pressure evidence. Never an exported telemetry attribute. */
 export interface QuotaCalibrationIdentity { plan: QuotaCalibrationPlan; generation: string }

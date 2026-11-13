@@ -28,7 +28,7 @@ export function replayPressureScenario(forecasts: boolean, scenario: 'equal' | '
   const planAt = (now: number) => ({ plan: scenario === 'upgrade' && now >= T + 600 * MIN ? 'plus' as const : 'pro' as const, generation: scenario === 'upgrade' && now >= T + 600 * MIN ? '22222222-2222-4222-8222-222222222222' : '11111111-1111-4111-8111-111111111111' });
   const quota = (provider: string, now: number): DecisionQuota => ({ state: used[provider] >= 10000 ? 'exhausted' : used[provider] >= 9500 ? 'near_limit' : used[provider] >= 8000 ? 'low' : 'known',
     source: 'cli_query', quality: 'fresh', asOfMs: now, windows: [{ name: 'weekly', usedBp: Math.round(used[provider]), resetsAtMs: reset[provider] }] });
-  for (let minute = 0; minute <= 1250; minute++) {
+  for (let minute = 0; minute <= 1650; minute++) {
     const now = T + minute * MIN;
     for (const r of running) {
       const addition = r.total * Math.min(1, MIN / (r.until - r.e.decidedAtMs));
@@ -48,8 +48,8 @@ export function replayPressureScenario(forecasts: boolean, scenario: 'equal' | '
         if (observation) e.pressureOutcome = observation;
       }
     }
-    if (minute % 5 === 0 && minute < 1250) {
-      for (let n = 0; n < 3; n++) {
+    if (minute % 5 === 0 && minute < 1650) {
+      for (let n = 0; n < (minute < 600 ? 1 : 3); n++) {
         const decisionId = `sim-${minute}-${n}`;
         const proposed = new Map<string, PressureEntry>();
         const candidates: AutoCandidate[] = ids.map((provider) => {
@@ -82,7 +82,7 @@ export function replayPressureScenario(forecasts: boolean, scenario: 'equal' | '
         lastAdmitted[decision.provider] = minute;
       }
     }
-    report.meanSpreadBp += Math.abs(used[ids[0]] - used[ids[1]]) / 1251;
+    report.meanSpreadBp += Math.abs(used[ids[0]] - used[ids[1]]) / 1651;
   }
   report.depletion = ids.filter((id) => used[id] >= 10000).length;
   for (const provider of ids) {
