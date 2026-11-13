@@ -119,7 +119,7 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('exposes all 18 tools to an admin member', () => {
+  it('exposes all 19 tools to an admin member', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'My Project', description: '', instructions: '',
       createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
@@ -133,7 +133,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(18);
+    expect(tools).toHaveLength(19);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -149,6 +149,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('toggle_polling');
     expect(suffixes).toContain('query_polling');
     expect(suffixes).toContain('nudge_polling');
+    expect(suffixes).toContain('subscribe_topic');
     expect(suffixes).not.toContain('start_polling');
     expect(suffixes).not.toContain('stop_polling');
     expect(suffixes).toContain('clear_agent');
@@ -169,7 +170,7 @@ describe('GroupProjectTools', () => {
 
     const suffixes = getScopedToolList('agent-1').map(t => t.name.split('__').pop());
     expect(suffixes.sort()).toEqual(
-      ['get_project_info', 'list_members', 'post_bulletin', 'query_polling', 'read_bulletin', 'read_message', 'read_topic'].sort(),
+      ['get_project_info', 'list_members', 'post_bulletin', 'query_polling', 'read_bulletin', 'read_message', 'read_topic', 'subscribe_topic'].sort(),
     );
     for (const priv of ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'nudge_polling', 'delete_messages', 'set_project_info']) {
       expect(suffixes).not.toContain(priv);
