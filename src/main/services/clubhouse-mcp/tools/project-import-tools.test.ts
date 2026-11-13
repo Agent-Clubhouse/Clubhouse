@@ -36,6 +36,7 @@ const current = vi.hoisted(() => ({
   afterWrite: undefined as ((file: string) => void | Promise<void>) | undefined,
   blockedFetch: false,
   partialRegistration: false,
+  reservationFailure: undefined as unknown,
   commit: '',
   releaseCommit: '',
   remoteCalls: [] as string[],
@@ -217,7 +218,8 @@ async function completeImport() {
   expect((await start(plan)).body.status).toBe('approval_required');
   await approveDesktop();
   const started = await start(plan);
-  expect(started.body.status).toBe('started');
+  const reservation = current.reservationFailure instanceof Error ? current.reservationFailure.stack : '';
+  expect(started.body.status, [started.text, reservation].filter(Boolean).join('\n')).toBe('started');
   await terminal;
   const status = await call('get_repository_import', { importId: started.body.receipt.id });
   expect(status.body.phase).toBe('completed');
@@ -261,6 +263,7 @@ beforeEach(async () => {
   current.afterWrite = undefined;
   current.blockedFetch = false;
   current.partialRegistration = false;
+  current.reservationFailure = undefined;
   current.remoteCalls = [];
   current.gitCalls = [];
   destination = path.join(fixture.root, `checkout-${++serial}`);
@@ -300,6 +303,10 @@ beforeEach(async () => {
   };
   current.service = new ProjectImportService({
     store, git: runner,
+    reserveMembership: async (...params) => {
+      try { await projectStore.reserveRepositoryImport(...params); }
+      catch (error) { current.reservationFailure = error; throw error; }
+    },
     register: (folder, guard) => registerProjectFolder(folder, current.partialRegistration ? {
       ...guard!,
       beforeGitignore: async () => { throw new ImportError('unsafe_gitignore', 'Fixture registration guard refused'); },
@@ -331,18 +338,25 @@ afterEach(async () => {
   await owner().close(() => agentConfig.settleAgentsFileChecksForTests(), () => {
     agentConfig.clearAgentConfigCache();
   });
-  // Each test owns its project registrations; do not make later guards and
-  // binding rebuilds scan every earlier checkout in this file.
-  for (const project of await projectStore.list()) await projectStore.remove(project.id);
+  // All owned work has settled. Reset this fixture's registry in place, so
+  // later guards do not scan prior checkouts and teardown adds no atomic
+  // registry replacements of its own. Registration in each test stays real.
+  const emptyRegistry = JSON.stringify({ version: 1, projects: [] });
+  for (const file of ['projects.json', 'projects.json.bak']) {
+    fs.writeFileSync(path.join(fixture.base, file), emptyRegistry);
+  }
   owner().assertRetired();
+  // Retire each real checkout now instead of accumulating worktrees for one
+  // large synchronous final hook under host load.
+  await fsPromises.rm(destination, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
 });
 
-afterAll(() => {
+afterAll(async () => {
   lifetime.current?.assertRetired();
   Object.defineProperty(ProjectImportService.prototype, 'perform', performDescriptor);
   agentRegistry.untrack('dispatcher');
   agentRegistry.untrack('other');
-  fs.rmSync(fixture.root, { recursive: true, force: true });
+  await fsPromises.rm(fixture.root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
 });
 
 describe('public Dispatcher repository import (#2808)', () => {
