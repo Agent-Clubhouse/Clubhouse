@@ -268,7 +268,7 @@ class BulletinBoard {
   }
 
   /** Post a message to a topic. `seq` is the host's sequence number for the post (#3356). */
-  async postMessage(sender: string, topic: string, body: string, seq?: number): Promise<BulletinMessage> {
+  async postMessage(sender: string, topic: string, body: string, seq?: number, id?: string): Promise<BulletinMessage> {
     await this.ensureLoaded();
 
     if (Buffer.byteLength(body, 'utf-8') > MAX_BODY_BYTES) {
@@ -278,7 +278,7 @@ class BulletinBoard {
 
     const canonicalTopic = normalizeChannelName(topic);
     const message: BulletinMessage = {
-      id: `msg_${Date.now()}_${randomBytes(6).toString('hex')}`,
+      id: id ?? `msg_${Date.now()}_${randomBytes(6).toString('hex')}`,
       sender,
       topic: canonicalTopic,
       body,
@@ -451,6 +451,54 @@ class BulletinBoard {
   /** Return all protected topic names. */
   getProtectedTopics(): string[] {
     return [...this.protectedTopics];
+  }
+
+  // ── Network copies (#3363) ──────────────────────────────────────────────
+
+  /** What a copy needs to catch up from `since`: newer messages, and every id still held. */
+  async replicaSince(since: number): Promise<{ messages: BulletinMessage[]; ids: Record<string, string[]>; protectedTopics: string[]; inboxOwners: Record<string, string> }> {
+    await this.ensureLoaded();
+    const messages: BulletinMessage[] = [];
+    const ids: Record<string, string[]> = {};
+    for (const [topic, list] of this.topics) {
+      ids[topic] = list.map((m) => m.id);
+      for (const m of list) if (since === 0 || (m.seq ?? 0) > since) messages.push(m);
+    }
+    return { messages, ids, protectedTopics: [...this.protectedTopics], inboxOwners: Object.fromEntries(this.inboxOwners) };
+  }
+
+  /**
+   * Bring a cached copy in line with its host: keep what the host still holds,
+   * add what is new. Returns how many held messages the copy couldn't fill in,
+   * so the caller can ask for everything next time.
+   */
+  async applyReplica(board: { messages: BulletinMessage[]; ids: Record<string, string[]>; protectedTopics: string[]; inboxOwners: Record<string, string> }): Promise<number> {
+    await this.ensureLoaded();
+    const incoming = new Map<string, BulletinMessage[]>();
+    for (const m of board.messages) {
+      const topic = normalizeChannelName(m.topic);
+      const list = incoming.get(topic) ?? [];
+      list.push({ ...m, topic });
+      incoming.set(topic, list);
+    }
+    const topics = new Map<string, BulletinMessage[]>();
+    let missing = 0;
+    for (const [rawTopic, keepIds] of Object.entries(board.ids)) {
+      const topic = normalizeChannelName(rawTopic);
+      const keep = new Set(keepIds);
+      const byId = new Map<string, BulletinMessage>();
+      for (const m of this.topics.get(topic) ?? []) if (keep.has(m.id)) byId.set(m.id, m);
+      for (const m of incoming.get(topic) ?? []) if (keep.has(m.id)) byId.set(m.id, m);
+      // The host's order: the ids it listed.
+      const ordered = keepIds.map((id) => byId.get(id)).filter((m): m is BulletinMessage => !!m);
+      missing += keepIds.length - ordered.length;
+      if (ordered.length > 0) topics.set(topic, ordered);
+    }
+    this.topics = topics;
+    this.protectedTopics = new Set(board.protectedTopics.map(normalizeChannelName));
+    this.inboxOwners = new Map(Object.entries(board.inboxOwners).map(([c, o]) => [normalizeChannelName(c), o]));
+    this.markDirty();
+    return missing;
   }
 
   // ── Inbox ownership (#1646) ─────────────────────────────────────────────

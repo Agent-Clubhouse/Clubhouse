@@ -158,9 +158,21 @@ export function registerGroupProjectTools(): void {
       const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
-        const msg = await groupProjectHost.post(targetId, sender, topic, body);
+        const msg = await groupProjectHost.post(targetId, sender, topic, body, { author: { agentId, label: sender } });
         // Members' notices leave the sender out by address, not by name.
-        noteSenderAddress(msg.id, agentId);
+        if (!msg.pending) noteSenderAddress(msg.id, agentId);
+        if (msg.pending) {
+          // A copy of a group project hosted on another computer that is away (#3363): queued for it.
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                posted: false, queued: true, waitingFor: msg.pending.waitingFor, topic: msg.topic,
+                note: `Waiting for ${msg.pending.waitingFor}. It is posted when that computer is back; if it is refused, you are told why.`,
+              }),
+            }],
+          };
+        }
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
@@ -895,7 +907,7 @@ export function registerGroupProjectTools(): void {
       },
       required: ['topic'],
     },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const topic = requireString(args, 'topic');
       if (!topic) {
         return { content: [{ type: 'text', text: 'topic is required.' }], isError: true };
@@ -905,7 +917,7 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: 'Cannot delete the "system" topic.' }], isError: true };
       }
 
-      const deleted = await groupProjectHost.deleteTopic(targetId, topic);
+      const deleted = await groupProjectHost.deleteTopic(targetId, topic, { author: { agentId, label: agentId } });
       return {
         content: [{ type: 'text', text: JSON.stringify({ deleted, topic }) }],
       };
@@ -1070,7 +1082,7 @@ export function registerGroupProjectTools(): void {
       },
       required: ['topic', 'message_ids'],
     },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const topic = requireString(args, 'topic');
       const messageIds = args.message_ids as string[] | undefined;
 
@@ -1080,7 +1092,7 @@ export function registerGroupProjectTools(): void {
 
       let deletedCount = 0;
       for (const id of messageIds) {
-        const ok = await groupProjectHost.deleteMessage(targetId, topic, id);
+        const ok = await groupProjectHost.deleteMessage(targetId, topic, id, { author: { agentId, label: agentId } });
         if (ok) deletedCount++;
       }
 
@@ -1124,7 +1136,7 @@ export function registerGroupProjectTools(): void {
       const updated = await groupProjectHost.update(targetId, {
         ...(description !== undefined ? { description } : {}),
         ...(instructions !== undefined ? { instructions } : {}),
-      });
+      }, { author: { agentId, label: agentId } });
 
       return {
         content: [{ type: 'text', text: JSON.stringify({ description: updated?.description, instructions: updated?.instructions }) }],

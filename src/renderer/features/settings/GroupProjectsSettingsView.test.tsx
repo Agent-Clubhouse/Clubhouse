@@ -80,20 +80,14 @@ describe('GroupProjectsSettingsView', () => {
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
     expect(await screen.findAllByText('0 members')).toHaveLength(2);
-    expect(screen.getAllByText(/Host: This computer.*Polling on/)).toHaveLength(2);
+    expect(screen.getAllByText('Host: This computer')).toHaveLength(2);
+    expect(screen.getAllByText('Polling on')).toHaveLength(2);
     select('Beta');
     expect(screen.getByLabelText('Name')).toHaveValue('Beta');
     expect(screen.getAllByText(/Scope unresolved: legacy or missing scope/)).toHaveLength(2);
-    expect(screen.getByText(/Stored on this machine/)).toBeInTheDocument();
+    expect(screen.getByText(/including network copies/)).toBeInTheDocument();
     // Network reach is disabled, with its reason, in both creation and the scope editor (#3355).
     await waitFor(() => expect(screen.getAllByText(/Network reach needs Annex Network/)).toHaveLength(2));
-  });
-
-  it('shows an unknown host while this computer\'s fingerprint is unavailable', async () => {
-    vi.mocked(window.clubhouse.groupProject.list).mockResolvedValue([{ ...alpha, host: { machine: 'remote-fingerprint' } }]);
-    render(<GroupProjectsSettingsView />);
-    expect(await screen.findByText(/Host: Unknown/)).toBeInTheDocument();
-    expect(screen.queryByText(/Host: remote-fingerprint/)).not.toBeInTheDocument();
   });
 
   it('shows loading and empty states, refuses blank creation, and preserves a failed create draft', async () => {
@@ -329,6 +323,40 @@ describe('GroupProjectsSettingsView', () => {
       });
       await waitFor(() => expect(within(editor).getByLabelText('Covers')).toHaveValue('project:proj-b'));
       expect(within(editor).getByRole('button', { name: 'Review change' })).toBeDisabled();
+    });
+  });
+
+  describe('network group projects (#3363)', () => {
+    const copy: GroupProject = {
+      ...alpha, id: 'gp-copy', name: 'Launch', scope: { level: 'app', reach: 'network' },
+      host: { machine: Array.from({ length: 32 }, () => 'aa').join(':') }, hostName: 'Desk',
+      network: {
+        role: 'replica', state: 'cached', waitingWrites: 2, refusals: [
+          { id: 'r1', groupProjectId: 'gp-copy', op: 'post', reason: 'This group project was deleted.', at: 't', author: { label: 'builder@Studio' } },
+        ],
+      },
+    };
+
+    it('names the host, never its fingerprint, with whether it is reachable and what waits for it', async () => {
+      vi.spyOn(window.clubhouse.groupProject, 'list').mockResolvedValue([alpha, copy]);
+      render(<GroupProjectsSettingsView />);
+      await screen.findByRole('list', { name: 'Local group projects' });
+      expect(screen.getByText('Host: Desk, offline. Showing a saved copy, 2 changes wait for it.')).toBeInTheDocument();
+      expect(screen.getByText('Host: This computer')).toBeInTheDocument();
+      expect(screen.queryByText(/aa:aa/)).not.toBeInTheDocument();
+    });
+
+    it('shows the host\'s refusals to the person, clears them, and offers no scope change on a copy', async () => {
+      vi.spyOn(window.clubhouse.groupProject, 'list').mockResolvedValue([copy]);
+      const dismiss = vi.spyOn(window.clubhouse.groupProject, 'dismissRefusals');
+      render(<GroupProjectsSettingsView />);
+      await screen.findByRole('list', { name: 'Local group projects' });
+      select('Launch');
+      expect(screen.getByRole('list', { name: 'Changes the host refused' })).toHaveTextContent('A post by builder@Studio: This group project was deleted.');
+      expect(screen.queryByRole('region', { name: 'Scope' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Clear this list' }));
+      await waitFor(() => expect(dismiss).toHaveBeenCalledWith('gp-copy'));
+      await waitFor(() => expect(screen.queryByRole('list', { name: 'Changes the host refused' })).not.toBeInTheDocument());
     });
   });
 });

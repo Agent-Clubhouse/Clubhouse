@@ -35,6 +35,7 @@ interface GroupProjectStoreState {
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   setPolling: (id: string, enabled: boolean) => Promise<void>;
   scopeOptions: () => Promise<GroupProjectScopeOptions>;
+  dismissRefusals: (id: string) => Promise<void>;
   previewScope: (id: string, scope: GroupProjectScope) => Promise<{ leaving: GroupProjectMemberView[]; returning: GroupProjectMemberView[] }>;
   setScope: (id: string, scope: GroupProjectScope, confirmLeaving: string[]) => Promise<GroupProject>;
   remove: (id: string, token: string) => Promise<void>;
@@ -101,6 +102,13 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   },
 
   scopeOptions: () => window.clubhouse.groupProject.scopeOptions(),
+
+  dismissRefusals: async (id) => {
+    await window.clubhouse.groupProject.dismissRefusals(id);
+    set((state) => ({
+      projects: state.projects.map((p) => (p.id === id && p.network ? { ...p, network: { ...p.network, refusals: [] } } : p)),
+    }));
+  },
 
   previewScope: async (id, scope) => {
     const { leaving, returning } = await window.clubhouse.groupProject.previewScope(id, scope);
