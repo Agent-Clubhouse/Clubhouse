@@ -23,6 +23,7 @@ import {
 } from './group-project-bulletin';
 import { readMembershipFile, validateMembership, writeMembershipFile } from './group-project-membership-file';
 import * as fs from 'fs';
+import { AsyncLocalStorage } from 'async_hooks';
 import { assertGroupProjectId, groupProjectDir, hostStatePath, tombstonesPath } from './group-project-paths';
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
 import * as annexIdentity from './annex-identity';
@@ -42,6 +43,9 @@ export class GroupProjectHostError extends Error {
 export type GroupProjectMemberResolver = (project: GroupProject, membership: GroupProjectMembership) => Promise<GroupProjectMemberView[]>;
 
 type ChangeListener = (change: GroupProjectChange) => void;
+
+/** The group projects whose queue the current async context holds through exclusive(). */
+const exclusiveScope = new AsyncLocalStorage<ReadonlySet<string>>();
 
 interface HostState { version: 1; seq: number }
 
@@ -121,6 +125,12 @@ class GroupProjectHostService {
   // ── Serialization and sequence numbers ──────────────────────────────────
 
   private run<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    if (exclusiveScope.getStore()?.has(id)) {
+      // Queuing behind the exclusive() that is running this call would wait forever.
+      const error = new GroupProjectHostError('invalid', `A host write to ${id} inside exclusive() must pass { withinExclusive: true }.`);
+      appLog('core:group-project', 'warn', error.message, { meta: { id, stack: error.stack } });
+      return Promise.reject(error);
+    }
     const previous = this.queues.get(id) ?? Promise.resolve();
     const step = (): Promise<T> => fn();
     const next: Promise<T> = previous.then(step, step);
@@ -304,7 +314,7 @@ class GroupProjectHostService {
   exclusive<T>(id: string, fn: (current: { project: GroupProject; seq: number }) => Promise<T>): Promise<T> {
     return this.run(id, async () => {
       const project = await this.view(await this.requireProject(id));
-      return fn({ project, seq: project.seq ?? 0 });
+      return this.holding(id, () => fn({ project, seq: project.seq ?? 0 }));
     });
   }
 
@@ -360,13 +370,20 @@ class GroupProjectHostService {
     return options.withinExclusive ? body() : this.run(id, body);
   }
 
+  /** Run `fn` with `id` marked as held by this async context, so a queued write from inside it fails fast. */
+  private holding<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const held = new Set(exclusiveScope.getStore() ?? []);
+    held.add(id);
+    return exclusiveScope.run(held, fn);
+  }
+
   /** Run `fn` in a tombstoned group project's queue, after its record is hidden or gone (#3364 recovery). */
   exclusivePending<T>(id: string, fn: (tombstone: GroupProjectTombstone) => Promise<T>): Promise<T> {
     assertGroupProjectId(id);
     return this.run(id, async () => {
       const tombstone = await this.tombstoneOf(id);
       if (!tombstone) throw new GroupProjectHostError('not_found', `Group project ${id} has no delete in progress.`);
-      return fn({ ...tombstone, host: { ...tombstone.host } });
+      return this.holding(id, () => fn({ ...tombstone, host: { ...tombstone.host } }));
     });
   }
 
@@ -497,10 +514,15 @@ class GroupProjectHostService {
     return this.commit(id, 'record', async ({ project, reserve }) => {
       const board = getBulletinBoard(id);
       await board.hasTopic('general');
-      board.setLimits(maxPerTopic, maxTotal);
       const saved = project.metadata.maxPerTopic === maxPerTopic && project.metadata.maxTotal === maxTotal;
-      if (saved && board.estimateTrimCount(maxPerTopic, maxTotal) === 0) return 0;
+      if (saved && board.estimateTrimCount(maxPerTopic, maxTotal) === 0) {
+        // The limits are already the saved ones: applying them in memory changes nothing on disk.
+        board.setLimits(maxPerTopic, maxTotal);
+        return 0;
+      }
+      // Applied only once the change has its number, so a failed write leaves no unsaved limits in effect.
       await reserve();
+      board.setLimits(maxPerTopic, maxTotal);
       if (!saved) await groupProjectRegistry.update(id, { metadata: { maxPerTopic, maxTotal } });
       return board.trimToLimits();
     }, options.withinExclusive);
