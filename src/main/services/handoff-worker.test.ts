@@ -70,3 +70,33 @@ it('expires a stuck resolver and prevents its late continuation from applying or
   release({ projectId: 'registered', projectRoot: root, bounds: HANDOFF_TRANSFER_DEFAULTS }); await vi.advanceTimersByTimeAsync(0);
   expect(f.options.apply).not.toHaveBeenCalled(); expect(f.options.wake).not.toHaveBeenCalled();
 });
+
+it('awaits an in-flight staging cleanup when stopped', async () => {
+  const f = fixture();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const remove = vi.spyOn(fs.promises, 'rm').mockImplementationOnce(async () => { await gate; });
+  try {
+    const running = f.worker.run(f.id);
+    await vi.waitFor(() => expect(remove).toHaveBeenCalled());
+    let stopped = false;
+    const stopping = f.worker.stop().then(() => { stopped = true; });
+    await Promise.resolve(); expect(stopped).toBe(false);
+    release(); await stopping; await running;
+    expect(stopped).toBe(true);
+  } finally { release(); remove.mockRestore(); }
+});
+it('bounds shutdown when staging cleanup never settles', async () => {
+  vi.useFakeTimers(); const f = fixture();
+  const remove = vi.spyOn(fs.promises, 'rm').mockImplementationOnce(() => new Promise(() => {}));
+  try {
+    void f.worker.run(f.id);
+    await vi.waitFor(() => expect(remove).toHaveBeenCalled());
+    let stopped = false;
+    const stopping = f.worker.stop().then(() => { stopped = true; });
+    await vi.advanceTimersByTimeAsync(1_999); expect(stopped).toBe(false);
+    await vi.advanceTimersByTimeAsync(1); await stopping; expect(stopped).toBe(true);
+    // Let the cancelled attempt's own bounded run finish too.
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+  } finally { remove.mockRestore(); }
+});

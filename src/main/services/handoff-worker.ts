@@ -36,13 +36,20 @@ interface Attempt { active: boolean; step: HandoffFailure['step'] }
 /** Receiver-owned continuation. Acceptance is the last user gate; every side effect rechecks it. */
 export class HandoffWorker {
   private readonly active = new Map<string, Attempt>();
+  private readonly cleanups = new Set<Promise<void>>();
   constructor(private readonly options: HandoffWorkerOptions) {}
   private record(id: string): Handoff {
     const record = this.options.records().find((value) => value.id === id);
     if (!record || record.to.machine !== this.options.machine || !record.acceptance || isTerminalHandoff(record.state)) throw new Error('Handoff is no longer active.');
     return record;
   }
-  private async cleanup(id: string): Promise<void> {
+  private cleanup(id: string): Promise<void> {
+    const work = this.cleanupStaging(id);
+    this.cleanups.add(work);
+    void work.then(() => this.cleanups.delete(work), () => this.cleanups.delete(work));
+    return work;
+  }
+  private async cleanupStaging(id: string): Promise<void> {
     const parent = await this.options.stagingRoot();
     const stat = await fs.promises.lstat(parent);
     if (!stat.isDirectory() || stat.isSymbolicLink() || !path.isAbsolute(parent) || path.relative(parent, await fs.promises.realpath(parent)) !== '') throw new HandoffSnapshotError('invalid_staging');
@@ -145,5 +152,17 @@ export class HandoffWorker {
       } else void this.run(record.id);
     }
   }
-  stop(): void { for (const attempt of this.active.values()) attempt.active = false; this.active.clear(); }
+  async stop(): Promise<void> {
+    // Invalidate continuations before awaiting: stopped attempts cannot start another cleanup.
+    for (const attempt of this.active.values()) attempt.active = false;
+    this.active.clear();
+    if (!this.cleanups.size) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.allSettled([...this.cleanups]),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, 2_000); }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
+  }
 }

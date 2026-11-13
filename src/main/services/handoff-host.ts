@@ -253,7 +253,7 @@ async function notifyRecord(record: Handoff): Promise<void> {
 export function handoffHost(): Host {
   const machine = ownMachine();
   if (host?.machine === machine) return host;
-  host?.worker.stop();
+  void host?.worker.stop();
   void host?.transfer.close();
   const store = new HandoffStore();
   const commands = new HandoffCommandStore();
@@ -397,7 +397,7 @@ export async function stopHandoffs(): Promise<void> {
   offConnected = undefined;
   await flushWork;
   setHandoffParticipantCheck(() => false);
-  host?.worker.stop();
+  await host?.worker.stop();
   await host?.transfer.close();
   host = undefined;
   incomingRates.clear();
