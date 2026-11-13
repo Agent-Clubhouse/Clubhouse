@@ -856,24 +856,27 @@ describe('public Dispatcher repository import (#2808)', () => {
       await call('create_managed_agent', args);
       await approveDesktop('create_managed_agent');
       let targetId: string | undefined;
+      let enterFinalPreparation!: () => void;
+      const finalPreparation = new Promise<void>((resolve) => { enterFinalPreparation = resolve; });
+      let releaseFinalPreparation!: () => void;
+      const released = new Promise<void>((resolve) => { releaseFinalPreparation = resolve; });
+      lifetime.releases.push(releaseFinalPreparation);
       const service = managedAgents();
       const saveSetup = service.saveSetup.bind(service);
       const completedSetup = vi.spyOn(service, 'saveSetup').mockImplementation(async (...params) => {
         if (params[0] === destination) {
+          targetId = params[1];
           await grantsStore.updateAgentGrantChanges(`unrelated-template-${serial}`, (saved) => saved);
-          expect(revocation).toBeUndefined();
           expect(preparations).toBe(0);
         }
         const saved = await saveSetup(...params);
         if (params[0] === destination) {
-          targetId = params[1];
           const committed: DurableAgentConfig[] = JSON.parse(fs.readFileSync(path.join(destination, '.clubhouse', 'agents.json'), 'utf8'));
           expect(committed.find((agent) => agent.id === targetId)?.managed).toBeDefined();
         }
         return saved;
       });
       const update = grantsStore.updateAgentGrantChanges;
-      let revocation: Promise<{ error?: unknown }> | undefined;
       let enteredRevocation!: () => void;
       let preparations = 0;
       const revoked = new Promise<void>((resolve) => { enteredRevocation = resolve; });
@@ -888,17 +891,33 @@ describe('public Dispatcher repository import (#2808)', () => {
           prepare: async () => {
             await precondition.prepare();
             if (++preparations !== 2) return;
-            revocation = withSettingsSurface('ui', undefined, () => setAgentGrant(fixture.dispatcher, 'dispatcher', {
-              action: 'agent.read', target: { kind: 'any' }, mode: 'off',
-            })).then(() => ({}), (error: unknown) => ({ error }));
-            await revoked;
+            enterFinalPreparation();
+            await released;
           },
           check: () => precondition.check(),
         });
       });
-      const result = await call('create_managed_agent', args);
-      expect(revocation).toBeDefined();
-      expect((await revocation)?.error).toBeUndefined();
+      const creating = call('create_managed_agent', args);
+      // Stop at the actual final grant-store preparation. A returned failure
+      // before this boundary must fail here with its real diagnostic outcome.
+      await Promise.race([
+        finalPreparation,
+        creating.then((result) => { throw new Error(`Creation returned before final grant preparation: ${result.text}`); }),
+      ]);
+      expect(preparations).toBe(2);
+      // Request the real UI change outside the builder's async creation scope.
+      // Its store write queues behind the paused template grant; approval is
+      // revoked before it enters that queue, so the paused write must refuse.
+      const revocation: Promise<{ error?: unknown }> = withSettingsSurface('ui', undefined, () => setAgentGrant(fixture.dispatcher, 'dispatcher', {
+        action: 'agent.read', target: { kind: 'any' }, mode: 'off',
+      })).then(() => ({}), (error: unknown) => ({ error }));
+      await Promise.race([
+        revoked,
+        revocation.then(({ error }) => { if (error) throw error; }),
+      ]);
+      releaseFinalPreparation();
+      const result = await creating;
+      expect((await revocation).error).toBeUndefined();
       lateGrants.mockRestore();
       completedSetup.mockRestore();
       expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
