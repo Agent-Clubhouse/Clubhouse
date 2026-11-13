@@ -9,11 +9,13 @@ export type { PopoutEntry };
  */
 export function usePopouts() {
   const [popouts, setPopouts] = useState<PopoutEntry[]>([]);
+  const [popoutsLoaded, setPopoutsLoaded] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       const list = await window.clubhouse.window.listPopouts();
       setPopouts(list);
+      setPopoutsLoaded(true);
     } catch {
       // Main process not ready yet — ignore
     }
@@ -34,14 +36,16 @@ export function usePopouts() {
   );
 
   const findCanvasPopout = useCallback(
-    (canvasId: string): PopoutEntry | undefined =>
-      popouts.find((p) => p.params.type === 'canvas' && p.params.canvasId === canvasId),
+    (canvasId: string, context?: { projectId?: string }): PopoutEntry | undefined =>
+      popouts.find((p) => p.params.type === 'canvas' && p.params.canvasId === canvasId
+        && (!context || p.params.projectId === context.projectId)),
     [popouts],
   );
 
   return useMemo(() => ({
     popouts,
+    popoutsLoaded,
     findAgentPopout,
     findCanvasPopout,
-  }), [popouts, findAgentPopout, findCanvasPopout]);
+  }), [popouts, popoutsLoaded, findAgentPopout, findCanvasPopout]);
 }

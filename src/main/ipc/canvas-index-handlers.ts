@@ -7,6 +7,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { getAgentCanvasMemberships } from '../services/canvas-store-reader';
+import { readTargetCanvasForNavigation, resolveAgentNavigationTarget, resolveTargetCanvasIndex } from '../services/connection-target-navigation';
 import { appLog } from '../services/log-service';
 import { withValidatedArgs, stringArg } from './validation';
 
@@ -24,6 +25,31 @@ export function registerCanvasIndexHandlers(): void {
     async (event, agentId, projectId) => {
       assertCallerIsAppWindow(event);
       return getAgentCanvasMemberships(agentId, projectId ?? null);
+    },
+  ));
+  ipcMain.handle(IPC.CANVAS_CMD.GET_TARGET_CANVASES, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (event, kind, targetId) => {
+      assertCallerIsAppWindow(event);
+      if (kind !== 'group-project' && kind !== 'browser' && kind !== 'terminal') {
+        throw new Error('Unsupported Canvas target kind.');
+      }
+      return resolveTargetCanvasIndex(kind, targetId);
+    },
+  ));
+  ipcMain.handle(IPC.CANVAS_CMD.READ_FOR_NAVIGATION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    async (event, kind, targetId, projectId) => {
+      assertCallerIsAppWindow(event);
+      if (kind !== 'group-project' && kind !== 'browser' && kind !== 'terminal') throw new Error('Unsupported Canvas target kind.');
+      return readTargetCanvasForNavigation(kind, targetId, projectId);
+    },
+  ));
+  ipcMain.handle(IPC.CANVAS_CMD.RESOLVE_AGENT_TARGET, withValidatedArgs(
+    [stringArg()],
+    async (event, agentId) => {
+      assertCallerIsAppWindow(event);
+      return resolveAgentNavigationTarget(agentId);
     },
   ));
 }

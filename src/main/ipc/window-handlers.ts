@@ -9,6 +9,8 @@ import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation
 import { newChromeEnabled, titleBarOptions } from '../window-chrome';
 import { NEW_CHROME_ARG } from '../../shared/chrome-flag';
 import { windowsPtyLaunchArgs } from '../util/windows-pty';
+import type { CanvasPopoutReveal, CanvasPopoutRevealResult } from '../../shared/canvas-index-types';
+import { isCanvasTargetView } from '../../shared/canvas-persistence';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -47,6 +49,12 @@ const EMPTY_AGENT_STATE: AgentStateSnapshot = { agents: {}, agentDetailedStatus:
 const RELAY_TIMEOUT_MS = 1500;
 
 const popoutWindows = new Map<number, PopoutEntry>();
+const pendingCanvasReveals = new Map<string, {
+  request: CanvasPopoutReveal;
+  owner: Electron.WebContents;
+  destination: BrowserWindow;
+  finish: (result: CanvasPopoutRevealResult) => void;
+}>();
 
 // ── State caches ──────────────────────────────────────────────────────────
 // The main renderer broadcasts state changes which we cache here.
@@ -67,6 +75,9 @@ let relayInProgress = false;
 
 /** @internal Reset module state for testing. */
 export function _resetForTesting(): void {
+  for (const pending of pendingCanvasReveals.values()) {
+    pending.finish({ requestId: pending.request.requestId, error: 'Canvas navigation reset.' });
+  }
   popoutWindows.clear();
   cachedAgentState = null;
   cachedCanvasState.clear();
@@ -288,6 +299,105 @@ export function registerWindowHandlers(): void {
       entry.window.focus();
     }
   }));
+
+  ipcMain.handle(IPC.WINDOW.REVEAL_CANVAS_POPOUT, withValidatedArgs(
+    [objectArg<CanvasPopoutReveal>()],
+    (event, request): Promise<CanvasPopoutRevealResult> => {
+      if (!BrowserWindow.fromWebContents(event.sender)) throw new Error('Canvas navigation requires an application window.');
+      if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 128
+        || !Number.isInteger(request.windowId) || typeof request.canvasId !== 'string' || !request.canvasId
+        || (request.projectId !== undefined && (typeof request.projectId !== 'string' || !request.projectId))
+        || typeof request.viewId !== 'string' || !request.viewId || typeof request.targetId !== 'string' || !request.targetId
+        || !['group-project', 'browser', 'terminal'].includes(request.targetKind)
+        || !request.snapshot || request.snapshot.canvasId !== request.canvasId
+        || !Array.isArray(request.snapshot.views) || !Array.isArray(request.groupProjects)) {
+        throw new Error('Canvas reveal request is incomplete.');
+      }
+      const entry = popoutWindows.get(request.windowId);
+      if (!entry || entry.window.isDestroyed() || entry.params.type !== 'canvas'
+        || entry.params.canvasId !== request.canvasId || entry.params.projectId !== request.projectId) {
+        throw new Error('The owning Canvas window is no longer available. Retry Open.');
+      }
+      if (pendingCanvasReveals.has(request.requestId)) throw new Error('Canvas navigation request ID is already in use.');
+      for (const previous of pendingCanvasReveals.values()) {
+        if (previous.destination === entry.window || previous.owner === event.sender) {
+          previous.finish({ requestId: previous.request.requestId, error: 'Canvas navigation was superseded.' });
+        }
+      }
+      return new Promise((resolve) => {
+        const unavailable = () => finish({ requestId: request.requestId, error: 'The Canvas window closed before its target was revealed. Retry Open.' });
+        const timer = setTimeout(() => finish({
+          requestId: request.requestId, error: 'The Canvas window did not reveal its target in time. Retry Open.',
+        }), RELAY_TIMEOUT_MS);
+        const finish = (result: CanvasPopoutRevealResult) => {
+          if (!pendingCanvasReveals.delete(request.requestId)) return;
+          clearTimeout(timer);
+          entry.window.removeListener('closed', unavailable);
+          event.sender.removeListener('destroyed', unavailable);
+          if ('error' in result && !entry.window.isDestroyed()) {
+            try {
+              entry.window.webContents.send(IPC.WINDOW.CANCEL_CANVAS_POPOUT_REVEAL, request.requestId);
+            } catch (error) {
+              appLog('core:window', 'warn', 'Canvas reveal cancellation could not be delivered', {
+                meta: { requestId: request.requestId, error: String(error) },
+              });
+            }
+          }
+          resolve(result);
+        };
+        pendingCanvasReveals.set(request.requestId, { request, owner: event.sender, destination: entry.window, finish });
+        entry.window.on('closed', unavailable);
+        event.sender.on('destroyed', unavailable);
+        try {
+          entry.window.webContents.send(IPC.WINDOW.REQUEST_CANVAS_POPOUT_REVEAL, request);
+        } catch (error) {
+          // telemetry-exempt: the exact delivery failure is returned to Open with retry.
+          finish({ requestId: request.requestId, error: `Canvas reveal could not be delivered: ${String(error)}` });
+        }
+      });
+    },
+  ));
+  ipcMain.on(IPC.WINDOW.CANCEL_CANVAS_POPOUT_REVEAL, (event, requestId: unknown) => {
+    if (typeof requestId !== 'string') return;
+    const pending = pendingCanvasReveals.get(requestId);
+    if (pending?.owner === event.sender) pending.finish({ requestId, error: 'Canvas navigation was canceled.' });
+  });
+  ipcMain.on(IPC.WINDOW.CANVAS_POPOUT_REVEALED, (event, result: CanvasPopoutRevealResult) => {
+    if (!result || typeof result.requestId !== 'string') return;
+    const pending = pendingCanvasReveals.get(result.requestId);
+    if (!pending || pending.destination.webContents !== event.sender) return;
+    const { request, destination } = pending;
+    const current = popoutWindows.get(request.windowId);
+    if (destination.isDestroyed() || current?.window !== destination || current.params.type !== 'canvas'
+      || current.params.canvasId !== request.canvasId || current.params.projectId !== request.projectId) {
+      pending.finish({ requestId: result.requestId, error: 'The owning Canvas window disappeared. Retry Open.' });
+      return;
+    }
+    if ('error' in result) {
+      pending.finish({ requestId: result.requestId, error: String(result.error) });
+      return;
+    }
+    const vp = result.viewport;
+    if (!vp || ![vp.panX, vp.panY, vp.zoom].every(Number.isFinite) || vp.zoom <= 0) {
+      pending.finish({ requestId: result.requestId, error: 'The Canvas window returned an invalid reveal position. Retry Open.' });
+      return;
+    }
+    const target = request.snapshot.views.find((raw) => raw && typeof raw === 'object'
+      && 'id' in raw && raw.id === request.viewId);
+    if (!target || typeof target !== 'object' || !('id' in target) || typeof target.id !== 'string'
+      || !isCanvasTargetView({ ...target, id: target.id }, request.targetKind, request.targetId)) {
+      pending.finish({ requestId: result.requestId, error: 'The requested target is no longer on this Canvas. Retry Open.' });
+      return;
+    }
+    try {
+      if (destination.isMinimized()) destination.restore();
+      destination.focus();
+      pending.finish(result);
+    } catch (error) {
+      // telemetry-exempt: Open displays the focus failure rather than claiming success.
+      pending.finish({ requestId: result.requestId, error: `The Canvas window could not be focused: ${String(error)}` });
+    }
+  });
 
   // ── Agent state sync ────────────────────────────────────────────────────
   //

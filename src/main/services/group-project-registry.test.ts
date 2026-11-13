@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as path from 'path';
 
 // Mock electron app
 vi.mock('electron', () => ({
@@ -44,12 +45,39 @@ vi.mock('./settings-store', async (importOriginal) => ({
 
 import { groupProjectRegistry } from './group-project-registry';
 import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
+import * as fsp from 'fs/promises';
 
 describe('GroupProjectRegistry', () => {
   beforeEach(() => {
     store.clear();
     groupProjectRegistry._resetForTesting();
     _resetAllBoardsForTesting();
+  });
+
+  it('reads legacy identities for navigation without loading, migrating, repairing or writing the registry', async () => {
+    const file = path.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', 'registry.json');
+    const legacy = { id: 'gp_legacy', name: 'Renamed', createdAt: '2020-01-01', metadata: { admins: ['keep'] } };
+    store.set(file, JSON.stringify([legacy]));
+    const before = new Map(store);
+    expect(await groupProjectRegistry.peek()).toEqual([{ ...legacy, description: '', instructions: '' }]);
+    expect(groupProjectRegistry.getSync('gp_legacy')).toBeNull();
+    expect(store).toEqual(before);
+    expect(fsp.mkdir).not.toHaveBeenCalled();
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    store.set(file, JSON.stringify([legacy, legacy]));
+    await expect(groupProjectRegistry.peek()).rejects.toThrow(/ambiguous identities/);
+    store.set(file, '{invalid');
+    await expect(groupProjectRegistry.peek()).rejects.toThrow();
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('uses unsaved canonical cache deletions instead of resurrecting a disk identity during navigation', async () => {
+    const project = { id: 'gp_live', name: 'Live', description: '', instructions: '', createdAt: 'today', metadata: {} };
+    store.set(path.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', 'registry.json'), JSON.stringify([project]));
+    groupProjectRegistry._setForTesting(project);
+    await groupProjectRegistry.delete(project.id);
+    expect(await groupProjectRegistry.peek()).toEqual([]);
+    groupProjectRegistry._resetForTesting();
   });
 
   it('creates a project with expected shape', async () => {

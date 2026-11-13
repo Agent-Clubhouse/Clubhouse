@@ -17,6 +17,9 @@ export interface CanvasViewLike {
   type?: string;
   agentId?: string | null;
   metadata?: Record<string, unknown> | null;
+  pluginWidgetType?: string;
+  title?: string;
+  displayName?: string;
 }
 
 /** The fields of a persisted canvas instance that the main process reads. */
@@ -79,4 +82,34 @@ export function findAgentCanvasHits(canvases: readonly CanvasInstanceLike[], age
     if (view) out.push({ canvasId: c.id, name: c.name, viewId: view.id });
   }
   return out;
+}
+
+export type NavigableCanvasTargetKind = 'group-project' | 'browser' | 'terminal';
+
+/** Match binding identities, never a widget's editable title or display name. */
+export function isCanvasTargetView(view: CanvasViewLike, kind: NavigableCanvasTargetKind, targetId: string): boolean {
+  if (view.type !== 'plugin') return false;
+  if (kind === 'group-project') {
+    return view.pluginWidgetType === 'plugin:group-project:group-project'
+      && view.metadata?.groupProjectId === targetId;
+  }
+  const widgetType = kind === 'browser' ? 'plugin:browser:webview' : 'plugin:terminal:shell';
+  return view.pluginWidgetType === widgetType && view.id === targetId;
+}
+
+export interface TargetCanvasHit extends AgentCanvasHit {
+  nodeName: string;
+}
+
+export function findTargetCanvasHits(
+  canvases: readonly CanvasInstanceLike[], kind: NavigableCanvasTargetKind, targetId: string,
+): TargetCanvasHit[] {
+  return canvases.flatMap((canvas) => canvas.views
+    .filter((view) => isCanvasTargetView(view, kind, targetId))
+    .map((view) => ({
+      canvasId: canvas.id,
+      name: canvas.name,
+      viewId: view.id,
+      nodeName: view.displayName || view.title || view.id,
+    })));
 }

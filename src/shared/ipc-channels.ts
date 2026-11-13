@@ -484,6 +484,10 @@ export const IPC = {
     REQUEST_DURABLE_RELOAD: 'window:request-durable-reload',
     // Popout lifecycle
     FOCUS_POPOUT: 'window:focus-popout',
+    REVEAL_CANVAS_POPOUT: 'window:reveal-canvas-popout',
+    REQUEST_CANVAS_POPOUT_REVEAL: 'window:request-canvas-popout-reveal',
+    CANVAS_POPOUT_REVEALED: 'window:canvas-popout-revealed',
+    CANCEL_CANVAS_POPOUT_REVEAL: 'window:cancel-canvas-popout-reveal',
     POPOUTS_CHANGED: 'window:popouts-changed',
   },
   MARKETPLACE: {
@@ -653,6 +657,9 @@ export const IPC = {
     ELK_LAYOUT: 'canvas-cmd:elk-layout',
     /** Renderer→main: the canvases holding an agent's card, read from disk (CanvasMembership[]). */
     GET_AGENT_CANVASES: 'canvas-cmd:get-agent-canvases',
+    GET_TARGET_CANVASES: 'canvas-cmd:get-target-canvases',
+    READ_FOR_NAVIGATION: 'canvas-cmd:read-for-navigation',
+    RESOLVE_AGENT_TARGET: 'canvas-cmd:resolve-agent-target',
   },
   PLUGIN_MCP: {
     /** Plugin host only, once per page load: the secret that issues tokens. */

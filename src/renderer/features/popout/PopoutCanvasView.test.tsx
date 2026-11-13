@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { PopoutCanvasView } from './PopoutCanvasView';
+import type { CanvasPopoutReveal } from '../../../shared/canvas-index-types';
 
 // Mock CanvasWorkspace so we can drive its callbacks directly and inspect
 // what PopoutCanvasView passes through. This is the same shape used by the
@@ -92,6 +93,9 @@ describe('PopoutCanvasView', () => {
       selectedViewId: null,
     });
     window.clubhouse.window.onCanvasStateChanged = vi.fn().mockReturnValue(() => {});
+    window.clubhouse.window.onCanvasPopoutReveal = vi.fn().mockReturnValue(() => {});
+    window.clubhouse.window.onCanvasPopoutRevealCanceled = vi.fn().mockReturnValue(() => {});
+    window.clubhouse.window.canvasPopoutRevealed = vi.fn();
     window.clubhouse.window.sendCanvasMutation = vi.fn();
     window.clubhouse.window.requestDurableReload = vi.fn();
     window.clubhouse.agent.createDurable = vi.fn();
@@ -102,6 +106,38 @@ describe('PopoutCanvasView', () => {
     await waitFor(() => {
       expect(screen.getByTestId('view-view-1')).toBeInTheDocument();
     });
+  });
+
+  it('rejects wrong-scope nodes and ignores a canceled reveal callback without sending a success acknowledgement', async () => {
+    render(<PopoutCanvasView canvasId="canvas-1" projectId="proj-1" />);
+    await waitFor(() => expect(capturedProps).not.toBeNull());
+    const receive = vi.mocked(window.clubhouse.window.onCanvasPopoutReveal).mock.calls[0][0];
+    const cancel = vi.mocked(window.clubhouse.window.onCanvasPopoutRevealCanceled).mock.calls[0][0];
+    const request: CanvasPopoutReveal = {
+      requestId: 'navigation-1', windowId: 7, canvasId: 'canvas-1', projectId: 'proj-1',
+      viewId: 'gp-node', targetKind: 'group-project', targetId: 'actual-gp', groupProjects: [],
+      snapshot: {
+        canvasId: 'canvas-1', name: 'Canvas', views: [{
+          id: 'gp-node', type: 'plugin', pluginWidgetType: 'plugin:group-project:group-project',
+          metadata: { groupProjectId: 'actual-gp' }, position: { x: 100, y: 100 }, size: { width: 200, height: 200 },
+        }],
+        viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1, zoomedViewId: null,
+      },
+    };
+    act(() => { receive({ ...request, projectId: undefined }); });
+    expect(window.clubhouse.window.canvasPopoutRevealed).toHaveBeenCalledWith(expect.objectContaining({ error: expect.stringContaining('no longer owns') }));
+    act(() => { receive(request); });
+    await waitFor(() => expect(capturedProps.navigationFocus).toBeDefined());
+    const stale = capturedProps.navigationFocus.onRevealed;
+    act(() => { cancel(request.requestId); });
+    stale({ panX: 0, panY: 0, zoom: 1 });
+    expect(vi.mocked(window.clubhouse.window.canvasPopoutRevealed).mock.calls.every(([result]) => 'error' in result)).toBe(true);
+    act(() => { capturedProps.onMoveView('gp-node', { x: 500, y: 700 }); });
+    act(() => { receive({ ...request, requestId: 'edits-pending' }); });
+    expect(window.clubhouse.window.canvasPopoutRevealed).toHaveBeenCalledWith({
+      requestId: 'edits-pending', error: 'The Canvas is still applying your edits. Retry Open after they finish.',
+    });
+    expect(screen.getByTestId('view-gp-node')).toHaveAttribute('data-position', '500,700');
   });
 
   // ─── Bug 3 part 1 — createDurable must work in pop-out ───────────────
