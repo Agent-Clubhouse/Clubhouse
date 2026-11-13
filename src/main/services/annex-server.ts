@@ -1204,12 +1204,13 @@ async function readSnapshotSourcesData() {
 
   // Read group project data
   const groupProjects = await groupProjectRegistry.list();
-  const groupProjectActions: import('../../shared/actions/view').RemoteGroupAction[] = [];
+  let groupProjectActions: import('../../shared/actions/view').RemoteGroupAction[] = [];
   const networkGroups = groupProjects.filter((gp) => gp.scope?.reach === 'network' && groupProjectHost.isThisMachine(gp.host));
   if (networkGroups.length) {
     const actionService = await import('./actions');
-    if (actionService.actionsReady()) for (const gp of networkGroups) for (const action of actionService.listActions()) {
-      if (action.owner.kind === 'group_project' && action.owner.groupProjectId === gp.id) groupProjectActions.push({ id: action.id, name: action.name, groupProjectId: gp.id, groupProjectName: gp.name, enabled: action.enabled });
+    if (actionService.actionsReady()) {
+      const { groupActionSummaries } = await import('./actions/group-snapshot');
+      groupProjectActions = groupActionSummaries(networkGroups, actionService.listActions(), (gp) => groupProjectHost.isThisMachine(gp.host));
     }
   }
   const bulletinDigests: Record<string, unknown[]> = {};

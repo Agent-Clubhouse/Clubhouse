@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { join } from 'path';
 import { MAX_RUNS_PER_HOUR, type Action, type ActionRun, type ActionStep, type ActionStepResult } from '../../../shared/actions';
 import type { AppEvent, AppEventInput } from '../app-event-bus';
 import { CHAIN_WINDOW_MS, onAppEvent, resetAppEventBus } from '../app-event-bus';
@@ -135,12 +136,15 @@ const weekdays9 = { kind: 'schedule', preset: 'weekdays', cron: '0 9 * * 1-5', m
 const user = { kind: 'user' } as const;
 
 describe('group project event triggers', () => {
-  it('keeps a group-owned Action when the agent that created it is deleted', () => {
+  it('runs a group-owned Action after the agent that created it is deleted', async () => {
     const h = setup();
     h.engine.start();
     const action = h.engine.create({ trigger: weekdays9, steps: [{ kind: 'group_post', topic: 'general', text: 'Hello' }] }, { kind: 'group_project', groupProjectId: 'gp1' });
-    h.event({ type: 'agent.deleted', agentId: 'lead', projectPath: '/p1' });
+    h.event({ type: 'agent.deleted', agentId: 'lead', projectPath: join('project', 'p1') });
     expect(h.engine.get(action.id)).toMatchObject({ enabled: true, owner: { kind: 'group_project', groupProjectId: 'gp1' } });
+    h.engine.runNow(action.id);
+    await flush();
+    expect(h.stepCalls).toHaveLength(1);
   });
   it('records a typed refusal when the group loses permission before a run', async () => {
     let allowed = true;
