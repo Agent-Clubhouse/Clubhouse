@@ -3545,11 +3545,16 @@ async function setOrchestrationConfigInner(
   agentId: string,
   config: OrchestrationPolicyConfig | undefined,
 ): Promise<void> {
+  const scope = currentCreationGit();
+  // Authority preparation can let a watcher invalidate a clean cache. Read
+  // the mutation snapshot afterward so its disk baseline still precedes it.
+  if (scope) await scope.assertCurrent();
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
-  await currentCreationGit()?.assertCurrent();
-  const before = currentCreationGit() ? cloneAgent(agent) : undefined;
+  scope?.assertConsent();
+  scope?.assertFilesystem();
+  const before = scope ? cloneAgent(agent) : undefined;
   if (config && Object.keys(config).length > 0) agent.orchestration = { ...config };
   else delete agent.orchestration;
   await writeCreationMutation(projectPath, agents, agent, before);
@@ -3561,11 +3566,15 @@ async function setOrchestrationConfigInner(
  * managed start wrote, now the person's to manage. A missing agent throws.
  */
 async function setManagedSetupInner(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void> {
+  const scope = currentCreationGit();
+  // As with policy writes, preparation must precede the mutation snapshot.
+  if (scope) await scope.assertCurrent();
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
-  await currentCreationGit()?.assertCurrent();
-  const before = currentCreationGit() ? cloneAgent(agent) : undefined;
+  scope?.assertConsent();
+  scope?.assertFilesystem();
+  const before = scope ? cloneAgent(agent) : undefined;
   const managedBefore = managedAuditFields(agent);
   if (setup) {
     // Switched once, by hand or on its own: never switched automatically again, even after Stop managing (D59).

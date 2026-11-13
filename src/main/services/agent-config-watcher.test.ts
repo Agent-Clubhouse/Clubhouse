@@ -15,6 +15,10 @@ vi.mock('fs', async (importOriginal) => {
   return { ...actual, default: actual, watch: vi.fn() };
 });
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./settings-audit', async (original) => ({
+  ...await original<typeof import('./settings-audit')>(),
+  auditChanges: vi.fn(),
+}));
 /** A slow disk: every stat takes this long, as on a busy CI runner. */
 const slow = vi.hoisted(() => ({ statMs: 0 }));
 vi.mock('fs/promises', async (importOriginal) => {
@@ -34,6 +38,9 @@ import {
   onAgentConfigChanged,
   renameDurable,
   settleAgentsFileChecksForTests,
+  setOrchestrationConfig,
+  setManagedSetup,
+  withDurableCreationGit,
 } from './agent-config';
 
 type Listener = (eventType: string, filename: string) => void;
@@ -74,6 +81,34 @@ afterEach(() => {
 describe.each([0, 25])('agents.json watcher (#2729), stat taking %i ms extra', (statMs) => {
   beforeEach(() => { slow.statMs = statMs; });
   afterEach(() => { slow.statMs = 0; });
+
+  it.each(['policy', 'managed setup'] as const)('persists imported %s when authority preparation invalidates the clean cache', async (setting) => {
+    await listDurable(projectPath);
+    let invalidated = false;
+    await withDurableCreationGit({
+      assertCurrent: async () => {
+        if (invalidated) return;
+        invalidated = true;
+        watchers[0].fire('change', 'agents.json');
+      },
+      assertConsent: () => {},
+      assertFilesystem: () => {},
+      operation: { importId: 'import', requestId: 'request', key: 'creation', state: 'completed' },
+      run: vi.fn(),
+      preserveOnFailure: true,
+    }, () => setting === 'policy'
+      ? setOrchestrationConfig(projectPath, agent('first').id, { connectToDispatcher: true })
+      : setManagedSetup(projectPath, agent('first').id, { version: 1, blocks: ['owned-block'], skills: [], mcps: [] }));
+
+    expect(invalidated).toBe(true);
+    const expected = setting === 'policy'
+      ? { orchestration: { connectToDispatcher: true } }
+      : { managed: { version: 1, blocks: ['owned-block'] } };
+    expect(JSON.parse(fs.readFileSync(agentsFile, 'utf8'))[0]).toMatchObject(expected);
+    clearAgentConfigCache(projectPath);
+    expect((await listDurable(projectPath))[0]).toMatchObject(expected);
+    await settle();
+  });
 
   it('stays open across its own events, so a second hand edit is still seen', async () => {
     expect(await shownName()).toBe('first');
