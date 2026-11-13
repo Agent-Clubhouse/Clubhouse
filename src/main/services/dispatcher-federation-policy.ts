@@ -21,7 +21,11 @@ export function assertEditableConnection(from: AgentAddress, to: AgentAddress): 
 
 export interface FederationStatus { state: 'paused' | 'unavailable'; reason: string }
 let status: (from: AgentAddress, to: AgentAddress) => FederationStatus | undefined = () => undefined;
-export function federationStatus(from: AgentAddress, to: AgentAddress): FederationStatus | undefined { return status(from, to); }
+export function federationStatus(from: AgentAddress, to: AgentAddress): FederationStatus | undefined {
+  const machine = from.machineId ?? to.machineId;
+  if (machine && federationDirection(from, to) && requests?.allowed(machine, {}) === false) return { state: 'paused', reason: 'This controller link is paused after a fixed cross-machine limit was reached.' };
+  return status(from, to);
+}
 export function setFederationStatus(value: typeof status): () => void {
   status = value;
   return () => { if (status === value) status = () => undefined; };
@@ -31,4 +35,18 @@ export function setFederationStatus(value: typeof status): () => void {
 export interface FederationPublicationGuard {
   epoch: AnnexDeliveryEpoch;
   current(): boolean;
+}
+
+/** Installed by the request service; kept below transport to avoid an import cycle. */
+export interface FederationRequestRouter {
+  offer(callerId: string, targetId: string, args: Record<string, unknown>): Promise<import('./clubhouse-mcp/types').McpToolResult>;
+  allowed(machine: string, args: Record<string, unknown>, tool?: string): boolean;
+  before(callerId: string, machine: string, targetId: string, cause: import('../../shared/annex-delivery').AnnexCallContext | undefined, args: Record<string, unknown>, tool: string): Promise<void>;
+  cause(callerId: string): import('../../shared/annex-delivery').AnnexCallContext | undefined;
+}
+let requests: FederationRequestRouter | undefined;
+export function federationRequestRouter(): FederationRequestRouter | undefined { return requests; }
+export function setFederationRequestRouter(router: FederationRequestRouter): () => void {
+  requests = router;
+  return () => { if (requests === router) requests = undefined; };
 }

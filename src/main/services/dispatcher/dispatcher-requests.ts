@@ -44,6 +44,8 @@ export type RequestTurn = 'sending' | 'awaiting' | 'in_turn' | 'past';
 
 export interface DispatcherRequest {
   id: string;
+  /** Authenticated remote provenance; never parsed from request text. */
+  remote?: { machineId: string; machineName: string; agentId: string; agentName: string; originRequestId: string };
   /** The request as the chat first handed it off, for spotting a retry. */
   text: string;
   /** When it was first made. */
@@ -220,7 +222,7 @@ function changed(now = Date.now()): void {
 }
 
 function copy(r: DispatcherRequest): DispatcherRequest {
-  return { ...r, agents: [...r.agents], ...(r.done && { done: [...r.done] }), ...(r.reachedAt && { reachedAt: { ...r.reachedAt } }) };
+  return { ...r, ...(r.remote && { remote: { ...r.remote } }), agents: [...r.agents], ...(r.done && { done: [...r.done] }), ...(r.reachedAt && { reachedAt: { ...r.reachedAt } }) };
 }
 
 function find(id: string): DispatcherRequest | undefined {
@@ -616,4 +618,25 @@ export async function _resetDispatcherRequestsForTesting(): Promise<void> {
 /** For tests: wait for the file to be written. */
 export function _whenRequestsSavedForTesting(): Promise<void> {
   return saving;
+}
+
+/** Network requests use a stable receiver-local id and never dedupe by text. */
+export async function beginRemoteRequest(id: string, text: string, remote: NonNullable<DispatcherRequest['remote']>, now = Date.now()): Promise<DispatcherRequest> {
+  const all = load(now);
+  const existing = all.find((r) => r.id === id);
+  if (existing) return copy(existing);
+  const request: DispatcherRequest = { id, text: text.slice(0, TEXT_MAX), remote: structuredClone(remote), at: now, handedOffAt: now, status: 'under_way', turn: 'sending', agents: [] };
+  all.push(request);
+  changed(now);
+  await saving;
+  return copy(request);
+}
+
+/** Only the federation protocol's explicit report calls this, never a receipt or turn end. */
+export function settleFederatedRequest(id: string, outcome: import('../../../shared/dispatcher-federation-requests').FederationOutcome, now = Date.now()): void {
+  const request = find(id);
+  if (!request) return;
+  request.status = outcome === 'answered' ? 'done' : outcome === 'declined' ? 'cancelled' : outcome === 'waiting_user' ? 'waiting_user' : outcome;
+  if (outcome === 'answered' || outcome === 'declined' || outcome === 'failed') { request.endedAt = now; request.turn = 'past'; }
+  changed(now);
 }

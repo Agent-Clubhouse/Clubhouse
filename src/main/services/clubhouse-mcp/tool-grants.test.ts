@@ -119,6 +119,7 @@ describe('tool grant declarations (#2967)', () => {
       agent compact_agent: agent.reset on bound
       agent wake_agent: agent.wake on bound; agent.message on bound if message
       agent sleep_agent: agent.sleep on bound
+      agent hand_off_request: agent.message on bound
       browser navigate: browser.act on bound
       browser screenshot: browser.read on bound
       browser get_console: browser.read on bound
@@ -147,6 +148,9 @@ describe('tool grant declarations (#2967)', () => {
       group-project set_project_info: group_project.admin on bound
       probe_capacity: device.read on app
       call_wire_tool: (called_tool)
+      list_remote_requests: agent.read on self
+      triage_remote_request: agent.message on self
+      report_remote_request: agent.message on self
       notify_user: user.notify on app
       hand_off: agent.dispose on my_helpers
       dispose_helper: agent.dispose on my_helpers

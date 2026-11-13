@@ -4,6 +4,7 @@
  * that each tool declares its grant (#2967).
  */
 import { registerHandoffCapacityTools } from './handoff-capacity-tools';
+import { registerFederatedRequestTools } from './federated-request-tools';
 import { registerAgentTools } from './agent-tools';
 import { registerBrowserTools } from './browser-tools';
 import { registerGroupProjectTools } from './group-project-tools';
@@ -34,6 +35,7 @@ import { registerAnnexNetworkTools } from './annex-network-tools';
 export function registerClubhouseMcpTools(): void {
   registerHandoffCapacityTools();
   registerAgentTools();
+  registerFederatedRequestTools();
   registerBrowserTools();
   registerGroupProjectTools();
   registerNotifyTools();

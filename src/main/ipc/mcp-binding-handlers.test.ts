@@ -41,6 +41,9 @@ vi.mock('../services/connection-guidance', () => ({
   getConnectionGuidanceCatalog: vi.fn(() => ({ state: 'available', tools: [] })),
 }));
 
+vi.mock('../services/dispatcher-federation-runtime', () => ({ startFederatedRequests: vi.fn(() => () => {}), receiveFederatedRequest: vi.fn(), countFederatedDuplicate: vi.fn() }));
+vi.mock('../services/clubhouse-mcp/tools/federated-request-tools', () => ({ registerFederatedRequestTools: vi.fn() }));
+
 vi.mock('../services/clubhouse-mcp/tools/agent-tools', () => ({
   registerAgentTools: vi.fn(),
 }));

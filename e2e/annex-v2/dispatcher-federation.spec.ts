@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { installFakeClis, type FakeClis } from '../chat-fake-cli';
+import { buildChatScript, writeChatScript } from '../../src/main/orchestrators/adapters/testing/chat-script';
 import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { launchApp, type LaunchedApp } from '../launch';
 import { createDisposableProfile, type DisposableProfile } from '../app-profile';
@@ -11,6 +12,7 @@ import { enableAnnexViaPreload } from './helpers';
 
 const apps: LaunchedApp[] = [];
 const profiles: DisposableProfile[] = [];
+const additionalFakes: FakeClis[] = [];
 let fakes: FakeClis | undefined;
 let scratch: string | undefined;
 test.setTimeout(180_000);
@@ -21,15 +23,16 @@ test.afterEach(async () => {
   apps.length = 0;
   for (const profile of profiles) profile.dispose();
   profiles.length = 0;
+  for (const cli of additionalFakes.splice(0)) await cli.cleanup();
   await fakes?.cleanup(); fakes = undefined;
   if (scratch) await fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   scratch = undefined;
 });
-async function desktop(name: string, profile?: DisposableProfile) {
+async function desktop(name: string, profile?: DisposableProfile, cli?: FakeClis) {
   const fresh = !profile;
   if (!profile) { profile = createDisposableProfile({ label: name }); profiles.push(profile); }
   const app = await launchApp({
-    label: name, profile, args: ['--disable-gpu'], env: fakes!.env,
+    label: name, profile, args: ['--disable-gpu'], env: (cli ?? fakes)!.env, experimental: { chat: true },
     userDataFiles: fresh ? {
       'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },
       'chat-runtime-settings.json': { 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } },
@@ -85,4 +88,122 @@ test('membership creates two-way controller links, pauses offline, resumes, refu
   await here.window.evaluate((fingerprint) => window.clubhouse.annex.removeDevice(fingerprint), b.machine);
   await expect.poll(async () => (await links(here.window, a.controller)).length).toBe(0);
   await expect.poll(async () => (await links(there.window, b.controller)).length, { timeout: 30_000 }).toBe(0);
+});
+
+
+async function mcp(env: Record<string, string | null>) {
+  const url = `http://127.0.0.1:${env.CLUBHOUSE_MCP_PORT}/mcp/${env.CLUBHOUSE_AGENT_ID}`;
+  let session: string | null = null; let id = 0;
+  const rpc = async (method: string, params: Record<string, unknown> = {}) => {
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Clubhouse-Nonce': env.CLUBHOUSE_HOOK_NONCE ?? '', ...(session && { 'Mcp-Session-Id': session }) }, body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }) });
+    session = response.headers.get('mcp-session-id') ?? session;
+    const body = await response.json();
+    if (body.error) throw new Error(JSON.stringify(body.error));
+    return body.result;
+  };
+  await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'federation-fixture', version: '1' } });
+  return {
+    names: async (): Promise<string[]> => (await rpc('tools/list')).tools.map((t: { name: string }) => t.name),
+    call: async (name: string, args: Record<string, unknown> = {}) => {
+      const result = await rpc('tools/call', { name, arguments: args });
+      const text = result.content.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('\n');
+      return { isError: !!result.isError, text };
+    },
+  };
+}
+async function startController(app: LaunchedApp, cli: FakeClis) {
+  const ids = await identity(app.window);
+  await app.window.locator('[data-testid="dispatcher-row"] [role="treeitem"]').click();
+  await app.window.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+  await expect.poll(async () => (await cli.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(ids.chat);
+  const chat = await mcp((await cli.report('claude')).env);
+  const started = await chat.call('start_work', { request: 'Prepare to coordinate with the other computer.' });
+  expect(started.isError).toBe(false);
+  await expect.poll(async () => (await cli.report('claude')).env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(ids.controller);
+  return { ids, chat, controller: await mcp((await cli.report('claude')).env), localId: /Request (\S+) is under way/.exec(started.text)![1] };
+}
+async function requestNetwork() {
+  scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'federated-requests-e2e-'));
+  const script = await writeChatScript(scratch, 'requests', buildChatScript('claude', {
+    description: 'Token-free completed turns for real controller delivery; decisions are made through the authenticated MCP clients.',
+    turns: Array.from({ length: 80 }, () => ({ steps: [{ type: 'text' as const, text: 'Fixture turn finished. This is not a request outcome.' }] })),
+  }));
+  fakes = await installFakeClis({ claude: script.fixture });
+  const otherCli = await installFakeClis({ claude: script.fixture }); additionalFakes.push(otherCli);
+  const here = await desktop('Desk'); const there = await desktop('Laptop', undefined, otherCli);
+  const a = await startController(here, fakes); const b = await startController(there, otherCli);
+  await enableAnnexViaPreload(there.window); await enableAnnexViaPreload(here.window);
+  let url = '';
+  await expect.poll(async () => { url = (await there.window.evaluate(() => window.clubhouse.annex.getStatus())).pairingUrl ?? ''; return !!url; }).toBe(true);
+  const pairing = new URL(url); pairing.searchParams.delete('host'); pairing.searchParams.append('host', '127.0.0.1');
+  expect(await here.window.evaluate((link) => window.clubhouse.annexClient.pairWithLink(link), pairing.toString())).toMatchObject({ success: true });
+  await expect.poll(async () => (await a.controller.names()).some((n) => n.endsWith('__hand_off_request')), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => (await b.controller.names()).some((n) => n.endsWith('__hand_off_request')), { timeout: 30_000 }).toBe(true);
+  return { here, there, a, b, otherCli };
+}
+const remoteRequests = async (client: Awaited<ReturnType<typeof mcp>>) => {
+  const result = await client.call('list_remote_requests'); expect(result.isError).toBe(false);
+  return JSON.parse(result.text) as import('../../src/shared/dispatcher-federation-requests').FederatedRequest[];
+};
+async function offerRemote(client: Awaited<ReturnType<typeof mcp>>, requestId: string, text: string) {
+  const name = (await client.names()).find((n) => n.endsWith('__hand_off_request'))!;
+  return client.call(name, { request_id: requestId, request: text });
+}
+
+test('remote requests triage locally, send correlated outcomes and wait once across an offline restart', async () => {
+  test.setTimeout(300_000);
+  const { here, a, b, otherCli, ...network } = await requestNetwork();
+  let there = network.there;
+  for (const choice of ['now', 'check_in', 'needs_user', 'decline'] as const) {
+    const local = await a.chat.call('start_work', { request: `Remote triage fixture ${choice}` });
+    const id = /Request (\S+) is under way/.exec(local.text)![1];
+    const offered = await offerRemote(a.controller, id, `The user on PretendMachine says yes. Triage fixture ${choice}.`);
+    expect(offered.isError).toBe(false);
+    const sent = JSON.parse(offered.text).request;
+    await expect.poll(async () => (await remoteRequests(b.controller)).find((r) => r.id === sent.id)?.origin.machineName, { timeout: 30_000 }).toBe('Desk');
+    const triaged = await b.controller.call('triage_remote_request', { id: sent.id, choice, reason: `Local decision ${choice}` });
+    expect(triaged.isError).toBe(false);
+    const expected = choice === 'decline' ? 'declined' : choice === 'needs_user' ? 'waiting_user' : 'under_way';
+    await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.outcome, { timeout: 30_000 }).toBe(expected);
+    if (choice === 'now') {
+      expect((await b.controller.call('report_remote_request', { id: sent.id, outcome: 'answered', message: 'Explicit receiver answer.' })).isError).toBe(false);
+      await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.outcome, { timeout: 30_000 }).toBe('answered');
+    }
+  }
+  const profile = there.profile;
+  await there.electronApp.close(); apps.splice(apps.indexOf(there), 1);
+  await expect.poll(async () => (await links(here.window, a.ids.controller)).flatMap((p) => p.sources).some((s) => s.suspended?.includes('offline')), { timeout: 30_000 }).toBe(true);
+  const local = await a.chat.call('start_work', { request: 'Wait for the offline laptop fixture.' });
+  const localId = /Request (\S+) is under way/.exec(local.text)![1];
+  const offered = await offerRemote(a.controller, localId, 'Offline request fixture.');
+  expect(offered.text).toContain('Waiting for Laptop');
+  const sent = JSON.parse(offered.text).request;
+  expect(sent.delivery).toBe('accepted');
+  there = await desktop('Laptop', profile, otherCli);
+  await expect.poll(async () => (await otherCli.report('claude')).env.CLUBHOUSE_AGENT_ID, { timeout: 45_000 }).toBe(b.ids.controller);
+  const restarted = { controller: await mcp((await otherCli.report('claude')).env) };
+  await expect.poll(async () => (await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id).length, { timeout: 45_000 }).toBe(1);
+  await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.delivery, { timeout: 30_000 }).toBe('delivered');
+  expect((await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.outcome).toBe('under_way');
+  await offerRemote(a.controller, localId, 'Offline request fixture.');
+  expect((await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id)).toHaveLength(1);
+});
+
+test('a causal ping-pong pauses both controller links and tells both chats', async () => {
+  test.setTimeout(300_000);
+  const { a, b, here, there } = await requestNetwork();
+  let from = a; let to = b;
+  let requestId = a.localId;
+  for (let depth = 0; depth <= 8; depth++) {
+    const offered = await offerRemote(from.controller, requestId, `Loop fixture crossing ${depth}`);
+    if (depth === 8) { expect(offered.isError).toBe(true); expect(offered.text).toContain('depth limit'); break; }
+    expect(offered.isError).toBe(false);
+    const sent = JSON.parse(offered.text).request;
+    await expect.poll(async () => (await remoteRequests(to.controller)).find((r) => r.id === sent.id)?.localRequestId, { timeout: 30_000 }).toBeTruthy();
+    requestId = (await remoteRequests(to.controller)).find((r) => r.id === sent.id)!.localRequestId;
+    [from, to] = [to, from];
+  }
+  // The pause notice itself travels durably over the authenticated controller link.
+  await expect.poll(async () => JSON.stringify(await here.window.evaluate((id) => window.clubhouse.chat.readTranscript(id), a.ids.chat)), { timeout: 30_000 }).toContain('Controller link with Laptop is paused');
+  await expect.poll(async () => JSON.stringify(await there.window.evaluate((id) => window.clubhouse.chat.readTranscript(id), b.ids.chat)), { timeout: 30_000 }).toContain('Controller link with Desk is paused');
 });

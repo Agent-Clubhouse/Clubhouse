@@ -1,4 +1,5 @@
 import { activeAgentLinks } from '../../shared/connection-grants';
+import { federationRequestRouter } from './dispatcher-federation-policy';
 /**
  * Agents across machines (#3064, Annex Network stage 7).
  *
@@ -49,9 +50,9 @@ export { WAKE_TOOL };
 /** The tools another machine's agent may call here: what a connection carries, and wake (D232). */
 export const AGENT_CALL_TOOLS: ReadonlySet<string> = new Set([...CONNECTION_TOOLS.map((t) => t.tool), WAKE_TOOL]);
 /** Tools whose call waits for an offline machine; the rest answer at once. */
-const QUEUED_TOOLS = new Set(['send_message', 'send_file']);
+const QUEUED_TOOLS = new Set(['send_message', 'send_file', 'hand_off_request']);
 /** Tools that put something in front of the other agent, counted by the loop limit. */
-const LOOP_TOOLS = new Set(['send_message', 'send_file', WAKE_TOOL]);
+const LOOP_TOOLS = new Set(['send_message', 'send_file', 'hand_off_request', WAKE_TOOL]);
 const READ_TOOLS = new Set(['get_status', 'read_output', 'check_connectivity']);
 
 export const AGENT_CALL_MAX_BYTES = 512 * 1024;
@@ -127,6 +128,7 @@ let nameOfLocalSender: ((agentId: string) => string | undefined) | undefined;
 export interface DispatcherAgentCallReceiver {
   isTarget(id: string): boolean;
   isAvailable(id: string): boolean;
+  duplicate?(origin: { machineId: string; agentId: string }, args: Record<string, unknown>, tool: string): Promise<void>;
   receive(request: { origin: AuthenticatedAnnexOrigin; targetId: string; deliveryId: string; cause: AnnexCallContext; tool: string; args: Record<string, unknown> }): Promise<AgentToolRunResult>;
 }
 let remoteDispatcher: DispatcherAgentCallReceiver | undefined;
@@ -228,6 +230,13 @@ export function getDelivery(callerId: string, callId: string): AnnexDeliveryStat
  * passed; the other machine checks it again against its own store.
  */
 export async function forwardAgentCall(callerId: string, targetId: string, targetName: string, tool: string, args: Record<string, unknown>, now = Date.now(), context?: AnnexCallContext): Promise<McpToolResult> {
+  const router = federationRequestRouter();
+  if (tool === 'hand_off_request' && router) return router.offer(callerId, targetId, args);
+  return forwardPreparedAgentCall(callerId, targetId, targetName, tool, args, now, context ?? router?.cause(callerId));
+}
+
+/** Main-only transport entry. A model never supplies the causal context or prepared envelope. */
+export async function forwardPreparedAgentCall(callerId: string, targetId: string, targetName: string, tool: string, args: Record<string, unknown>, now = Date.now(), context?: AnnexCallContext, prepared?: (id: string) => void): Promise<McpToolResult> {
   const { agentId: to } = parseAgentAddress(targetId);
   const machine = remoteMachineOf(targetId);
   const self = selfFingerprint();
@@ -241,6 +250,11 @@ export async function forwardAgentCall(callerId: string, targetId: string, targe
   if (controllerLink && !FEDERATION_TOOLS.has(tool)) return text('That tool is fixed off on controller connections.', true);
   const controllerStatus = controllerLink && federationStatus({ agentId: callerId }, { agentId: to, machineId: machine });
   if (controllerStatus && controllerStatus.state === 'unavailable') return text(controllerStatus.reason, true);
+  if (controllerLink && LOOP_TOOLS.has(tool)) {
+    context ??= { rootId: randomUUID(), depth: 0 };
+    try { await federationRequestRouter()?.before(callerId, machine, to, context, args, tool); }
+    catch (err) { return text(err instanceof Error ? err.message : String(err), true); }
+  }
   const sender = await describe(callerId);
   const epoch = outgoingEpoch(machine);
   const body: AgentCallBody = {
@@ -255,6 +269,7 @@ export async function forwardAgentCall(callerId: string, targetId: string, targe
     epoch,
   };
   body.context = context ?? { rootId: body.callId, depth: 0 };
+  prepared?.(body.callId);
   if (args.idempotency_key !== undefined && (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim() || args.idempotency_key.length > 200)) {
     return text('idempotency_key must be a non-empty string of at most 200 characters.', true);
   }
@@ -336,7 +351,7 @@ function transient(status: number, body: unknown, queuedAt: string): boolean {
   return status >= 500 || status === 429 || (status === 404 && error === 'unavailable') || (status === 403 && error === 'not_connected' && young);
 }
 
-const flushing = new Set<string>();
+const flushing = new Map<string, { generation: number; promise: Promise<void> }>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function retryLater(machine: string, delay = RETRY_MS): void {
@@ -428,12 +443,26 @@ async function syncThenFlush(machine: string): Promise<void> {
  * alone says nothing about either runtime acceptance or model execution.
  */
 export async function flushOutbox(machine: string): Promise<void> {
-  if (flushing.has(machine) || !transport) return;
+  if (!transport) return;
   const generation = lifecycle;
+  const active = flushing.get(machine);
+  if (active?.generation === generation) {
+    await active.promise;
+    if (generation !== lifecycle) return;
+    // The caller may have queued work after the active pass inspected its tail.
+    return flushOutbox(machine);
+  }
+  const run = Promise.resolve().then(() => flushOutboxPass(machine, generation));
+  const entry = { generation, promise: run };
+  flushing.set(machine, entry);
+  try { await run; } finally { if (flushing.get(machine) === entry) flushing.delete(machine); }
+}
+
+async function flushOutboxPass(machine: string, generation: number): Promise<void> {
+  if (!transport || generation !== lifecycle) return;
   const session = transport;
   const authorize = authorizeQueuedCall;
-  flushing.add(machine);
-  try {
+  {
     for (;;) {
       if (generation !== lifecycle) return;
       const item = waitingFor(machine)[0];
@@ -453,6 +482,10 @@ export async function flushOutbox(machine: string): Promise<void> {
       if (item.body.epoch && deliveryHash(item.body.epoch) !== deliveryHash(outgoingEpoch(machine))) {
         const attempted = deliveries.get().deliveries.find((r) => r.callId === item.id)!.attempts > 0;
         await finishDelivery(item, attempted ? 'indeterminate' : 'refused', text('This delivery belongs to an earlier network pairing. No input was sent under the new authorization; any earlier acceptance is unconfirmed.', true), 'pairing_changed');
+        continue;
+      }
+      if (federationDirection({ agentId: item.body.from.agentId }, { agentId: item.body.to, machineId: machine }) && federationRequestRouter()?.allowed(machine, item.body.args, item.body.tool) === false) {
+        await finishDelivery(item, 'refused', text('The controller link is paused after a fixed limit was reached.', true), 'controller_link_paused');
         continue;
       }
       const authorization = authorize ? await authorize(item) : { allowed: false as const, reason: 'Sender authorization is unavailable; this delivery cannot be sent.' };
@@ -541,8 +574,6 @@ export async function flushOutbox(machine: string): Promise<void> {
       return;
     }
 
-  } finally {
-    if (generation === lifecycle) flushing.delete(machine);
   }
 }
 
@@ -623,7 +654,10 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   if (saved && saved.payloadHash !== hash) return { status: 400, error: 'idempotency_conflict', message: 'This call id already names different content.' };
   const seen = seenCalls.get(key);
   if (seen) return seen.hash === hash ? seen.outcome : { status: 400, error: 'idempotency_conflict', message: 'This call id is already running with different content.' };
-  if (saved && saved.state !== 'retry_later') return replayReceipt(body, saved);
+  if (saved && saved.state !== 'retry_later') {
+    if (dispatcher?.duplicate) await dispatcher.duplicate({ machineId: machine, agentId: body.from.agentId }, body.args, body.tool);
+    return replayReceipt(body, saved);
+  }
   if (!hit(`rate:${machine}/${body.from.agentId}>${to.agentId}`, RATE_LIMIT.windowMs, RATE_LIMIT.calls, now)) {
     return { status: 429, error: 'rate_limited', message: 'Too many calls on this connection. Wait a minute and try again.' };
   }

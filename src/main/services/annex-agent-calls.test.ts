@@ -342,6 +342,54 @@ describe('sending a call to another machine', () => {
     expect(posts.filter((p) => p.path === '/api/v1/network/agent-call').slice(-2).map((p) => (p.body.args as { message: string }).message)).toEqual(['first', 'second']);
   });
 
+  it('awaits an active flush and its follow-up instead of resolving at a partial send', async () => {
+    connected = false;
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'first' });
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const capability = vi.spyOn(transport, 'supportsDurableDelivery').mockImplementationOnce(async () => { entered(); await held; return true; });
+    connected = true;
+    const background = flushOutbox(OTHER);
+    await started;
+    connected = false;
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'second' });
+    connected = true;
+    let settled = false;
+    const awaited = flushOutbox(OTHER).then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release();
+    await awaited; await background;
+    expect(posts.filter((p) => p.path.endsWith('agent-call')).map((p) => (p.body.args as { message: string }).message)).toEqual(['first', 'second']);
+    expect(waitingFor(OTHER)).toEqual([]);
+    capability.mockRestore();
+  });
+
+  it('does not run an awaited follow-up in a replacement transport lifecycle', async () => {
+    connected = false;
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'held' });
+    let release!: () => void; let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(transport, 'supportsDurableDelivery').mockImplementationOnce(async () => { entered(); await held; return true; });
+    connected = true;
+    const oldFlush = flushOutbox(OTHER); await started;
+    const oldWaiter = flushOutbox(OTHER);
+    stop(); connected = false;
+    const authorize = vi.fn(async () => ({ allowed: true as const }));
+    stop = startAgentCalls({ transport, authorizeQueuedCall: authorize, describeLocalAgent: async () => undefined, runTool: async () => ok('replacement') });
+    // Finish the replacement lifecycle's own startup pass, then ensure the old
+    // caller doesn't borrow its authorization/session for a follow-up.
+    await flushOutbox(OTHER);
+    expect(authorize).toHaveBeenCalled(); authorize.mockClear();
+    release(); await oldFlush; await oldWaiter;
+    expect(authorize).not.toHaveBeenCalled();
+    expect(posts.filter((p) => p.path.endsWith('agent-call'))).toEqual([]);
+    expect(waitingFor(OTHER)).toHaveLength(1);
+  });
+
   it('counts messages to one agent on this side too, so the limit holds both ways', async () => {
     useMemoryDeliveryStore();
     let t = now;
