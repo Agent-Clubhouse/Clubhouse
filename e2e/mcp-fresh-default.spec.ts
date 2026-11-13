@@ -17,26 +17,23 @@ test.afterAll(async () => {
 });
 
 test('registers MCP bindings at startup, whatever an old MCP setting says', async () => {
-  const result = await window.evaluate(async () => {
-    const groupProject = await window.clubhouse.groupProject.create('Fresh MCP Project') as {
-      id: string;
-      name: string;
-    };
+  // An agent-to-agent wire, which binds for agents that haven't started yet. (A group
+  // project's members come from its membership record since #3357, not from wires.)
+  const bindings = await window.evaluate(async () => {
     await window.clubhouse.mcpBinding.bind('copilot-fresh-agent', {
-      targetId: groupProject.id,
-      targetKind: 'group-project',
-      label: groupProject.name,
+      targetId: 'copilot-fresh-peer',
+      targetKind: 'agent',
+      label: 'Copilot Fresh Peer',
       agentName: 'Copilot Fresh Agent',
-      targetName: groupProject.name,
+      targetName: 'Copilot Fresh Peer',
     });
-    const bindings = await window.clubhouse.mcpBinding.getBindings();
-    return { groupProject, bindings };
+    return window.clubhouse.mcpBinding.getBindings();
   });
 
-  expect(result.bindings).toContainEqual(expect.objectContaining({
+  expect(bindings).toContainEqual(expect.objectContaining({
     agentId: 'copilot-fresh-agent',
-    targetId: result.groupProject.id,
-    targetKind: 'group-project',
+    targetId: 'copilot-fresh-peer',
+    targetKind: 'agent',
     agentName: 'Copilot Fresh Agent',
   }));
 });
