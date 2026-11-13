@@ -76,8 +76,9 @@ it('an offline copy with a Canvas card loses the copy, the card and its wires wh
     expect(instances).not.toContain(copy.id);
     expect(instances).toContain(kept.id);
     expect(await fs.readFile(path.join(dir, 'canvas-wires.json'), 'utf8')).not.toContain(copy.id);
+    // Recorded as done just after the files are written.
+    expect(await groupProjectHost.pendingViewPurges()).toEqual([]);
   });
-  expect(await groupProjectHost.pendingViewPurges()).toEqual([]);
 
   // A save the renderer had in flight from before the purge can't bring the card or wire back.
   await writeKey({ pluginId: 'canvas', scope: 'global', key: 'canvas-instances', value: [{ id: 'one', name: 'One', views: [card('a', copy.id), card('keep', kept.id)] }] });
