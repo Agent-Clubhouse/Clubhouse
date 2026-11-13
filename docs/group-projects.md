@@ -15,12 +15,81 @@ canvas missing its context refuses creation rather than silently using app scope
 The MCP create tool derives the registered project from its caller's project
 path and refuses an unregistered caller path.
 
-Network creation is explicitly refused until the authoritative Annex host path
-is available, even if Annex is enabled. No local group is presented as a network
+Network reach is refused, with its reason, until network group projects are
+available (#3363): "Network reach needs Annex Network" when Annex Network is off,
+otherwise "not available in this version yet". `groupProjectHost.scopeOptions()`
+(IPC `group-project:scope-options`) gives the same answer to the UI, which shows
+Network disabled with that reason. No local group is presented as a network
 group. `get_project_info` includes scope; legacy records without one return
 `scope: null` unless membership-aware migration can verify the complete
 membership inventory. Creation does not infer migration scope from an incomplete
 startup binding cache or change existing members or subscriptions.
+
+## Scope and members (#3355)
+
+| | This computer | Network |
+|---|---|---|
+| Project | Agents in this project on this computer | Agents in this project and in projects linked to it on other computers |
+| App | Agents in every project on this computer | Agents in every project on every computer in the network |
+
+`memberInScope` in `src/shared/group-project-scope.ts` applies the table to a
+member's host-relative address (one with a machine is on another computer) and
+its project. A member whose project isn't known (an unreadable or unregistered
+project) is neither in nor out.
+
+**Joining is checked where a binding is made.** The MCP bind handler asks
+`groupProjectHost.admits(id, agentId, { restore })` before anything is bound,
+recorded as a member or made admin:
+
+- A restore of a stored wire is admitted unless the address is excluded, so a
+  check never evicts a current member.
+- A drawn wire is a person's choice. An explicit member is admitted. Otherwise
+  the agent must be within the scope, failing closed on an unknown project or
+  any error. Within scope, drawing lifts an exclusion the person made earlier by
+  deleting the wire (#3357). A scope refusal stays until the scope covers the
+  agent.
+
+A refusal answers `{ notMember: true, reason: 'out_of_scope' }`, which the
+canvas treats as final and stops retrying. A refused draw is also recorded as
+excluded (`reason: "scope"`), so the canvas restoring that wire later is
+refused too. At startup the canvas wire and orchestrator connection sources
+don't restore a group project binding whose agent is excluded (`withinScope` in
+`managed-group-projects.ts`). Card inspection stays read-only and shows stored
+wires as they are. The bind decision is `bindToGroupProject` in
+`group-project-bind.ts`, called by the MCP bind handler.
+
+**Explicit adds are checked too.** `addMember` (the person's Add in the
+directory, and agents' `add_to_group_project` / `join_group_project`) refuses an
+agent outside the scope, failing closed when its project isn't known. It answers
+"…is outside the scope of "<name>", so it can't join. Widen the scope in Settings
+> Group Projects first." So an explicit add can't put in an outsider or undo a
+narrowing. For a group project still on wire membership, the connection tools
+apply the same check before connecting.
+
+Changing scope is a person's action in Settings > Group Projects (agents get it
+with the admin grant in #3360). `previewScope(id, scope)` lists the members who
+would leave and changes nothing. `setScope(id, scope, { confirmLeaving })` applies
+only when `confirmLeaving` names exactly those members, so what the person
+reviewed is what happens. Otherwise it refuses with `changed`. Widening needs
+no confirmation. The preview also lists agents an earlier narrowing (or a
+refused draw) excluded for scope that the wider scope covers again
+(`returning`). Applying it lifts those exclusions, so they can join again. Members who leave move from `explicit` to `excluded`
+(`reason: "scope"`) and lose their live bindings, so neither a restore nor
+auto-join brings them back. The change takes a sequence number like any other.
+
+**Upgrade.** After a persisted-binding rebuild, every agent bound to a
+project-scoped group project from before #3355 whose members are still wires
+(not a managed record, #3357) is recorded once as an explicit member
+(`migratedFrom: "wire-3355"`, helpers as helpers, quick agents and other
+machines' agents left to their runs, excluded agents skipped). The record is
+then marked `scopeMembersRecorded`. It waits for a complete agent inventory: a
+partial read records nothing and marks nothing. New group projects are marked
+at creation. So scope affects only new joins, and no existing member is dropped
+silently.
+
+Until #3357 registers its membership policy, "members" are the agents wired to
+the group project, with their projects read from durable agent configs and live
+registrations.
 
 ## Legacy scope inference
 
@@ -292,14 +361,14 @@ Settings > Group Projects, also available as **Group Projects** in the command
 palette, lists this machine's local registry, including records on no Canvas.
 This is not an authoritative host, network or membership directory.
 
-Creation here explicitly uses app/local scope regardless of the active project.
 Select a record to edit its name, description and instructions through the same
-store and IPC used by Canvas. Instructions retain their whitespace. Scope is
-read-only; legacy or missing scope is shown as unresolved, not inferred.
+store and IPC used by Canvas. Instructions retain their whitespace. Legacy or
+missing scope is shown as unresolved, not inferred, until someone sets one.
 Failed loads hide the inventory and offer a retry. Failed writes retain the
 current draft and report that it was not saved.
 
-Network creation remains unavailable because the authoritative host backend is
-not available, even when Annex is on. Host state, durable membership and its
-management, grants, owned Actions, deletion, board viewing and Canvas navigation
-are outside this local directory slice.
+Creation here defaults to the whole app on this computer, and the person can
+choose a project instead. Selecting a record also shows its scope with Review
+change and Apply. Network reach is shown disabled with its reason. Host state,
+durable membership management, grants, owned Actions, deletion, board viewing
+and Canvas navigation are outside this directory slice.

@@ -36,11 +36,13 @@ import {
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { setManagedGroupProjects } from '../services/managed-group-projects';
-import { MCP_BIND_RESTORE, MCP_UNBIND_CANVAS_CLEANUP, type McpBindResult, type McpUnbindResult } from '../../shared/mcp-unbind';
+import { MCP_UNBIND_CANVAS_CLEANUP, type McpBindCause, type McpBindResult, type McpUnbindResult } from '../../shared/mcp-unbind';
 import { watchGroupProjectDelivery } from '../services/group-project-delivery';
 import {
-  addMember, excludeMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
+  excludeMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
 } from '../services/group-project-membership';
+import { groupProjectHost } from '../services/group-project-host';
+import { bindToGroupProject } from '../services/group-project-bind';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
@@ -209,20 +211,13 @@ export function registerMcpBindingHandlers(): void {
         });
       };
       if (target.targetKind !== 'group-project') { bindNow(); return undefined; }
-      // A group project whose members come from its record (#3357): drawing a
-      // wire adds the member, and a stored wire coming back adds no one.
-      return isMembershipManaged(target.targetId).then(async (managed): Promise<McpBindResult> => {
-        if (!managed) { bindNow(); return undefined; }
-        if (cause !== MCP_BIND_RESTORE) {
-          await addMember(target.targetId, agentId as string);
+      // Scope, exclusions and the membership record (#3355, #3357) decide; see group-project-bind.ts.
+      return bindToGroupProject(target.targetId, agentId as string, cause as McpBindCause | undefined, {
+        bindNow,
+        joined: () => {
           void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
           broadcastBindingsChanged();
-          return undefined;
-        }
-        // The record binds every member itself: a restore with no binding is a non-member.
-        if (bindingManager.getBindingsForAgent(agentId as string).some((b) => b.targetId === target.targetId)) return undefined;
-        appLog('core:mcp', 'debug', 'Stored group project wire not bound: not a member', { meta: { agentId, targetId: target.targetId } });
-        return { notMember: true };
+        },
       });
     },
   ));
@@ -584,6 +579,13 @@ export function restorePersistedBindings(): Promise<void> {
     await migrateDispatcherLinkTools().catch((err) => {
       // telemetry-exempt: logged; it runs again after the next rebuild until it's done
       appLog('core:mcp', 'warn', 'Could not give older Dispatcher links the new connection defaults', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+    // Bound members of project-scoped group projects become explicit, once, so scope only decides new joins (#3355).
+    await groupProjectHost.recordScopedWireMembers().catch((err) => {
+      // telemetry-exempt: logged; it runs again after the next rebuild until each group project is marked
+      appLog('core:group-project', 'warn', 'Could not record current group project members before scope checks', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
     });

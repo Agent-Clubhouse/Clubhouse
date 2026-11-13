@@ -12,7 +12,7 @@
 
 import { readAllCanvasStores, type CanvasStoreSnapshot } from './canvas-store-reader';
 import { groupProjectRegistry } from './group-project-registry';
-import { withoutManagedMembers } from './managed-group-projects';
+import { withinScope, withoutManagedMembers } from './managed-group-projects';
 import type { PersistedBinding, PersistedBindingSource } from './persisted-bindings';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { reconcilePersistedWires } from '../../shared/canvas-persistence';
@@ -104,11 +104,12 @@ export const canvasWireBindingSource: PersistedBindingSource = {
   readOnlyCollect: true,
   async collect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores(), readGroupProjectNames()]);
-    return withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects));
+    return withinScope(await withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects)));
   },
   async inspect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores({ strict: true }), readGroupProjectNames({ strict: true })]);
     if (snapshots.some((s) => s.problems.length > 0)) throw new Error('Some Canvas guidance could not be read. Open the affected Canvas and try again.');
+    // Inspection is read-only: it shows the stored wires and loads no registry, so scope isn't applied here.
     return withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true }));
   },
 };

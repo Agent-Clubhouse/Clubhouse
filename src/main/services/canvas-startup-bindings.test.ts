@@ -27,6 +27,8 @@ vi.mock('./project-store', () => ({
   list: vi.fn(async () => projects.list),
   peekProjectsChecked: vi.fn(async () => ({ projects: projects.list, readable: projects.readable })),
 }));
+vi.mock('./group-project-host', async () =>
+  (await import('./__tests__/group-project-host-passthrough')).passthroughHostModule());
 vi.mock('./group-project-registry', () => ({
   groupProjectRegistry: {
     peek: vi.fn(async () => {
@@ -51,6 +53,7 @@ import {
   _resetPersistedBindingSourcesForTesting,
 } from './persisted-bindings';
 import { canvasWireBindingSource, bindingsFromCanvasStores } from './canvas-wire-source';
+import { groupProjectHost } from './group-project-host';
 import { setManagedGroupProjects } from './managed-group-projects';
 import {
   getAgentCanvasMemberships,
@@ -456,6 +459,19 @@ describe('canvas wire binding source', () => {
       expect(bindings.map(key)).toContain('durable_a->durable_b');
     } finally {
       setManagedGroupProjects(null);
+    }
+  });
+
+  it('does not restore a group project wire whose agent scope refused or moved out (#3355)', async () => {
+    const admits = vi.mocked(groupProjectHost.admits);
+    admits.mockImplementation(async (gpId: string, agentId: string) => !(gpId === 'gp_wardfall' && agentId === 'durable_w2'));
+    try {
+      const keys = (await canvasWireBindingSource.collect()).map(key);
+      expect(keys).not.toContain('durable_w2->gp_wardfall');
+      expect(keys).toContain('durable_w1->gp_wardfall');
+      expect(admits).toHaveBeenCalledWith('gp_wardfall', 'durable_w2', { restore: true });
+    } finally {
+      admits.mockImplementation(async () => true);
     }
   });
 

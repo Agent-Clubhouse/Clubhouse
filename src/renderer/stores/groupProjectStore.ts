@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import type { GroupProject, GroupProjectCreateOptions } from '../../shared/group-project-types';
+import type {
+  GroupProject, GroupProjectCreateOptions, GroupProjectMemberView, GroupProjectScope, GroupProjectScopeOptions,
+} from '../../shared/group-project-types';
 
 function isGroupProject(v: unknown): v is GroupProject {
   return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).id === 'string' && typeof (v as Record<string, unknown>).name === 'string';
@@ -30,6 +32,9 @@ interface GroupProjectStoreState {
   create: (name: string, options?: GroupProjectCreateOptions) => Promise<GroupProject>;
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   setPolling: (id: string, enabled: boolean) => Promise<void>;
+  scopeOptions: () => Promise<GroupProjectScopeOptions>;
+  previewScope: (id: string, scope: GroupProjectScope) => Promise<{ leaving: GroupProjectMemberView[]; returning: GroupProjectMemberView[] }>;
+  setScope: (id: string, scope: GroupProjectScope, confirmLeaving: string[]) => Promise<GroupProject>;
   remove: (id: string, token: string) => Promise<void>;
   postBulletinMessage: (projectId: string, topic: string, body: string) => Promise<void>;
   sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;
@@ -89,6 +94,22 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
         p.id === id ? { ...p, metadata: { ...p.metadata, pollingEnabled: enabled } } : p,
       ),
     }));
+  },
+
+  scopeOptions: () => window.clubhouse.groupProject.scopeOptions(),
+
+  previewScope: async (id, scope) => {
+    const { leaving, returning } = await window.clubhouse.groupProject.previewScope(id, scope);
+    return { leaving, returning: returning ?? [] };
+  },
+
+  setScope: async (id, scope, confirmLeaving) => {
+    const { project } = await window.clubhouse.groupProject.setScope(id, scope, { confirmLeaving });
+    if (!isCompleteGroupProject(project) || project.id !== id) {
+      throw new Error('The scope change was not confirmed. Reload the directory and try again.');
+    }
+    set((state) => ({ projects: state.projects.map((p) => (p.id === id ? project : p)) }));
+    return project;
   },
 
   remove: async (id, token) => {

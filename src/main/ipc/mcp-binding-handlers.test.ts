@@ -1,5 +1,5 @@
 import { federationBindingSource } from '../services/dispatcher-federation';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const { sendGrantEvent, dispatcherIdentity } = vi.hoisted(() => ({ sendGrantEvent: vi.fn(), dispatcherIdentity: { name: 'Dispatcher' } }));
 vi.mock('./window-handlers', () => ({
@@ -138,6 +138,20 @@ vi.mock('../services/dispatcher-wire-source', () => ({
   watchDispatcherWires: vi.fn(() => () => undefined),
 }));
 
+const scopeGate = vi.hoisted(() => ({ admit: true, calls: [] as Array<[string, string, { restore?: boolean } | undefined]> }));
+vi.mock('../services/group-project-host', () => ({
+  groupProjectHost: {
+    admits: vi.fn(async (gpId: string, agentId: string, options?: { restore?: boolean }) => {
+      scopeGate.calls.push([gpId, agentId, options]);
+      return scopeGate.admit;
+    }),
+    recordScopedWireMembers: vi.fn(async () => 0),
+    excludeOutOfScope: vi.fn(async () => undefined),
+    get: vi.fn(async () => null),
+    update: vi.fn(async () => null),
+  },
+}));
+
 const membership = vi.hoisted(() => ({
   managed: new Set<string>(),
   members: new Set<string>(),
@@ -182,6 +196,7 @@ import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispat
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
 import { addMember, excludeMember, membershipBindingSource } from '../services/group-project-membership';
 import { MCP_BIND_RESTORE } from '../../shared/mcp-unbind';
+import { groupProjectHost } from '../services/group-project-host';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { applyConnectionTools, migrateAutomaticConnectionTools } from '../services/connection-grants';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance } from '../services/connection-guidance';
@@ -871,5 +886,53 @@ describe('group project membership gestures (#3357)', () => {
     await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'agent-1', legacy, MCP_BIND_RESTORE);
     expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', legacy);
     expect(addMember).not.toHaveBeenCalled();
+  });
+});
+
+describe('group project scope at the bind site (#3355)', () => {
+  const managedTarget = { targetId: 'gp_managed', targetKind: 'group-project', label: 'GP' };
+  const plainTarget = { targetId: 'gp_plain', targetKind: 'group-project', label: 'GP' };
+
+  beforeEach(() => {
+    membership.managed = new Set(['gp_managed']);
+    scopeGate.admit = true;
+    scopeGate.calls = [];
+    vi.mocked(addMember).mockClear();
+    vi.mocked(bindingManager.bind).mockClear();
+    mockGet.mockReturnValue(undefined);
+  });
+
+  afterEach(() => {
+    scopeGate.admit = true;
+  });
+
+  it('refuses a drawn wire outside the scope before anything is bound, recorded or made admin', async () => {
+    scopeGate.admit = false;
+    expect(await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'outsider', managedTarget)).toEqual({ notMember: true, reason: 'out_of_scope' });
+    expect(await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'outsider', plainTarget)).toEqual({ notMember: true, reason: 'out_of_scope' });
+    expect(addMember).not.toHaveBeenCalled();
+    expect(bindingManager.bind).not.toHaveBeenCalled();
+    expect(scopeGate.calls).toEqual([['gp_managed', 'outsider', { restore: false }], ['gp_plain', 'outsider', { restore: false }]]);
+    // Remembered, so the canvas restoring the drawn wire is refused too.
+    expect(groupProjectHost.excludeOutOfScope).toHaveBeenCalledWith('gp_plain', 'outsider');
+  });
+
+  it('asks only about exclusion for a restore, so a pair that was already a member isn\'t evicted', async () => {
+    await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'member', plainTarget, MCP_BIND_RESTORE);
+    expect(scopeGate.calls).toEqual([['gp_plain', 'member', { restore: true }]]);
+    expect(bindingManager.bind).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a restore the host has excluded, finally, so the canvas stops binding it', async () => {
+    scopeGate.admit = false;
+    expect(await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'leaver', plainTarget, MCP_BIND_RESTORE)).toEqual({ notMember: true, reason: 'out_of_scope' });
+    expect(bindingManager.bind).not.toHaveBeenCalled();
+    expect(groupProjectHost.excludeOutOfScope).not.toHaveBeenCalledWith('gp_plain', 'leaver');
+  });
+
+  it('refuses when the scope check itself fails (fails closed)', async () => {
+    vi.mocked(groupProjectHost.admits).mockRejectedValueOnce(new Error('registry unreadable'));
+    expect(await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'anyone', plainTarget)).toEqual({ notMember: true, reason: 'out_of_scope' });
+    expect(bindingManager.bind).not.toHaveBeenCalled();
   });
 });

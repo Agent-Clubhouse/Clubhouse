@@ -1,6 +1,9 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AutoJoinPreview, GroupProjectCreateOptions, GroupProjectMembershipView, GroupProjectScope, GroupProjectDeleteImpact } from '../shared/group-project-types';
+import type {
+  AutoJoinPreview, GroupProject, GroupProjectCreateOptions, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
+  GroupProjectScope, GroupProjectScopeOptions,
+} from '../shared/group-project-types';
 
 export const groupProject = {
   groupProject: {
@@ -16,6 +19,12 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_DELETE, id),
   delete: (id: string, token: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id, token),
+  scopeOptions: (): Promise<GroupProjectScopeOptions> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.SCOPE_OPTIONS),
+  previewScope: (id: string, scope: GroupProjectScope): Promise<{ scope: GroupProjectScope; leaving: GroupProjectMemberView[]; returning: GroupProjectMemberView[] }> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_SCOPE, id, scope),
+  setScope: (id: string, scope: GroupProjectScope, options?: { confirmLeaving?: string[] }): Promise<{ project: GroupProject; left: GroupProjectMemberView[] }> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_SCOPE, id, scope, options),
   // `since` is either one ISO timestamp for all topics, or a per-topic
   // `topic -> ISO timestamp` map (used for per-channel unread counts).
   getBulletinDigest: (id: string, since?: string | Record<string, string>): Promise<unknown[]> =>

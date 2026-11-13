@@ -13,24 +13,33 @@
 
 import type {
   BulletinMessage, GroupProject, GroupProjectChange, GroupProjectChangePart, GroupProjectCreateOptions, GroupProjectHost,
-  DigestSince, GroupProjectMemberView, GroupProjectMembership, GroupProjectTombstone, TopicDigest,
+  DigestSince, GroupProjectMemberView, GroupProjectMembership, GroupProjectScope, GroupProjectScopeOptions, GroupProjectTombstone, TopicDigest,
 } from '../../shared/group-project-types';
+import {
+  GroupProjectScopeError, memberInScope, membersLeavingScope, resolveGroupProjectScope, sameGroupProjectScope,
+} from '../../shared/group-project-scope';
 import { canonicalMemberAddress, memberAddress } from '../../shared/group-project-members';
+import { parseAgentAddress } from '../../shared/agent-address';
 import { groupProjectRegistry } from './group-project-registry';
 import {
   PROJECT_CHANNELS, destroyBulletinBoard, ensureInboxChannel, ensureProjectChannels, flushAllBulletinBoards,
   getBulletinBoard, normalizeChannelName, resolveInboxChannel,
 } from './group-project-bulletin';
-import { readMembershipFile, validateMembership, writeMembershipFile } from './group-project-membership-file';
+import { emptyMembership, readMembershipFile, validateMembership, writeMembershipFile } from './group-project-membership-file';
 import * as fs from 'fs';
 import { AsyncLocalStorage } from 'async_hooks';
 import { assertGroupProjectId, groupProjectDir, hostStatePath, tombstonesPath } from './group-project-paths';
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
 import * as annexIdentity from './annex-identity';
+import { networkEnabled } from './annex-settings';
+import * as projectStore from './project-store';
+import * as agentConfig from './agent-config';
+import { agentRegistry } from './agent-registry';
+import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 
-export type GroupProjectHostErrorCode = 'not_found' | 'changed' | 'invalid';
+export type GroupProjectHostErrorCode = 'not_found' | 'changed' | 'invalid' | 'network_unavailable' | 'out_of_scope';
 
 export class GroupProjectHostError extends Error {
   constructor(readonly code: GroupProjectHostErrorCode, message: string) {
@@ -273,9 +282,15 @@ class GroupProjectHostService {
   async create(name: string, options?: GroupProjectCreateOptions): Promise<GroupProject> {
     await this.reconcile();
     const tombstoned = new Set((await this.loadTombstones()).map((t) => t.groupProjectId));
-    const created = await groupProjectRegistry.create(name, options, { machine: this.selfMachine() }, undefined, (id) => !tombstoned.has(id));
+    const network = this.scopeOptions().network;
+    const created = await groupProjectRegistry.create(
+      name, options, { machine: this.selfMachine() },
+      (input, registered) => resolveGroupProjectScope(input, registered, network), (id) => !tombstoned.has(id),
+    );
     await this.commit(created.id, 'record', async ({ reserve }) => {
       const seq = await reserve();
+      // A new group project has no wire members to carry over: its scope decides from the start (#3355).
+      await writeMembershipFile(created.id, { ...emptyMembership(), scopeMembersRecorded: 'wire-3355' });
       try {
         await ensureProjectChannels(created.id, seq);
       } catch (err) {
@@ -434,7 +449,7 @@ class GroupProjectHostService {
   async resolveMembers(id: string): Promise<GroupProjectMemberView[]> {
     const project = await this.requireProject(id);
     if (this.memberResolver) return this.memberResolver(await this.view(project), await this.getMembership(id));
-    const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+    const projects = await this.agentProjects();
     const seen = new Set<string>();
     const members: GroupProjectMemberView[] = [];
     for (const b of bindingManager.getAllBindings()) {
@@ -442,9 +457,249 @@ class GroupProjectHostService {
       const address = canonicalMemberAddress(b.agentId, this.hostMachineOf(project));
       if (seen.has(address)) continue;
       seen.add(address);
-      members.push({ address, name: b.agentName || b.agentId });
+      const projectId = projects.get(b.agentId);
+      members.push({ address, name: b.agentName || b.agentId, ...(projectId && { projectId }) });
     }
     return members;
+  }
+
+  /** Each local agent's registered project: durable agents from their configs, others from their live registration. */
+  private async agentProjects(): Promise<Map<string, string>> {
+    return new Map([...(await this.agentFacts())].map(([id, fact]) => [id, fact.projectId]));
+  }
+
+  private async agentFacts(): Promise<Map<string, { projectId: string; name?: string }>> {
+    const projects = await projectStore.list();
+    const byAgent = new Map<string, { projectId: string; name?: string }>();
+    for (const project of projects) {
+      // Unreadable is not empty: its agents stay unknown, so a new join from it is refused
+      // and a current member of it is never counted as leaving.
+      let agents: readonly { id: string }[] = [];
+      try {
+        const read = await agentConfig.peekDurableConfigsChecked(project.path);
+        if (read.readable) agents = read.agents;
+        else appLog('core:group-project', 'warn', 'Could not read agents for group project scope', { meta: { projectId: project.id } });
+      } catch (err) {
+        // telemetry-exempt: logged; the project's agents stay unknown
+        appLog('core:group-project', 'warn', 'Could not read agents for group project scope', {
+          meta: { projectId: project.id, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+      for (const agent of agents as ReadonlyArray<{ id: string; name?: string }>) byAgent.set(agent.id, { projectId: project.id, ...(agent.name && { name: agent.name }) });
+    }
+    for (const [agentId, registration] of agentRegistry.getAllRegistrations()) {
+      if (byAgent.has(agentId)) continue;
+      const project = projects.find((p) => p.path === registration.projectPath);
+      if (project) byAgent.set(agentId, { projectId: project.id });
+    }
+    return byAgent;
+  }
+
+  // ── Scope (#3355) ────────────────────────────────────────────────────────
+
+  /** Whether network reach can be chosen now, and why not. */
+  scopeOptions(): GroupProjectScopeOptions {
+    if (!networkEnabled()) {
+      return { network: { available: false, reason: 'Network reach needs Annex Network. Turn it on in Settings > Annex Network.' } };
+    }
+    return { network: { available: false, reason: 'Network group projects are not available in this version yet.' } };
+  }
+
+  private async resolveScope(scope: unknown): Promise<GroupProjectScope> {
+    const registered = new Set((await projectStore.list()).map((project) => project.id));
+    try {
+      return resolveGroupProjectScope({ scope }, registered, this.scopeOptions().network);
+    } catch (err) {
+      if (err instanceof GroupProjectScopeError) {
+        throw new GroupProjectHostError(err.code === 'network_unavailable' ? 'network_unavailable' : 'invalid', err.message);
+      }
+      throw err;
+    }
+  }
+
+  /** Who would leave if the scope changed to `scope`; nothing changes. */
+  async previewScope(id: string, scope: unknown): Promise<{ scope: GroupProjectScope; leaving: GroupProjectMemberView[]; returning: GroupProjectMemberView[] }> {
+    const next = await this.resolveScope(scope);
+    const project = await this.requireProject(id);
+    return {
+      scope: next,
+      leaving: membersLeavingScope(next, await this.resolveMembers(id)),
+      returning: await this.returningWith(project, next),
+    };
+  }
+
+  /** Agents a scope moved out (excluded for scope) that `next` covers again: widening lets them back. */
+  private async returningWith(project: GroupProject, next: GroupProjectScope): Promise<GroupProjectMemberView[]> {
+    const hostMachine = this.hostMachineOf(project);
+    const membership = await readMembershipFile(project.id, hostMachine);
+    const facts = await this.agentFacts();
+    return membership.excluded.flatMap((entry): GroupProjectMemberView[] => {
+      if (entry.reason !== 'scope') return [];
+      const agentId = this.localAgentId(project, entry.address);
+      const fact = agentId ? facts.get(agentId) : undefined;
+      if (memberInScope(next, { address: entry.address, projectId: fact?.projectId }) !== true) return [];
+      return [{ address: entry.address, name: fact?.name ?? agentId ?? entry.address, ...(fact && { projectId: fact.projectId }) }];
+    });
+  }
+
+  /**
+   * Change a group project's scope. When members would leave, `confirmLeaving`
+   * must list exactly their addresses, as shown by `previewScope`; otherwise
+   * it refuses (`changed`) so the person reviews again. Members that leave lose
+   * their live bindings and explicit entries.
+   */
+  async setScope(
+    id: string, scope: unknown, options: { confirmLeaving?: readonly string[]; withinExclusive?: boolean } = {},
+  ): Promise<{ project: GroupProject; left: GroupProjectMemberView[] }> {
+    const next = await this.resolveScope(scope);
+    return this.commit(id, 'record', async ({ project, reserve }) => {
+      if (project.scope && sameGroupProjectScope(project.scope, next)) return { project: await this.view(project), left: [] };
+      const leaving = membersLeavingScope(next, await this.resolveMembers(id));
+      const returning = new Set((await this.returningWith(project, next)).map((member) => member.address));
+      const confirmed = new Set(options.confirmLeaving ?? []);
+      if (leaving.length !== confirmed.size || leaving.some((member) => !confirmed.has(member.address))) {
+        throw new GroupProjectHostError('changed', 'The members who would leave have changed. Review the scope change again.');
+      }
+      const seq = await reserve();
+      const updated = await groupProjectRegistry.setScope(id, next);
+      const hostMachine = this.hostMachineOf(project);
+      const leavingAddresses = new Set(leaving.map((member) => member.address));
+      if (leaving.length > 0 || returning.size > 0) {
+        // Leavers are excluded, so neither a restore nor auto-join brings them back.
+        // Scope exclusions the new scope covers are lifted: those agents may join again.
+        const membership = await readMembershipFile(id, hostMachine);
+        const explicit = membership.explicit.filter((entry) => !leavingAddresses.has(entry.address));
+        const kept = membership.excluded.filter((entry) => !returning.has(entry.address));
+        const already = new Set(kept.map((entry) => entry.address));
+        const excludedAt = new Date().toISOString();
+        const excluded = [
+          ...kept,
+          ...[...leavingAddresses].filter((address) => !already.has(address)).map((address) => ({ address, excludedAt, reason: 'scope' })),
+        ];
+        await writeMembershipFile(id, validateMembership({ ...membership, explicit, excluded }, hostMachine));
+        for (const b of bindingManager.getAllBindings()) {
+          if (b.targetKind === 'group-project' && b.targetId === id && leavingAddresses.has(canonicalMemberAddress(b.agentId, hostMachine))) {
+            bindingManager.unbind(b.agentId, id);
+          }
+        }
+      }
+      appLog('core:group-project', 'info', 'Group project scope changed', { meta: { id, seq, scope: next, left: leaving.length } });
+      return { project: await this.view(updated ?? project), left: leaving };
+    }, options.withinExclusive);
+  }
+
+  /**
+   * Once per group project (#3355 upgrade): record every agent bound to a
+   * project-scoped group project as an explicit member, so its scope only
+   * decides new joins and no current member is dropped. Helpers are recorded as
+   * helpers; quick agents and agents on other machines are left to their runs.
+   * Returns how many members were recorded.
+   */
+  async recordScopedWireMembers(): Promise<number> {
+    const durable = new Map<string, { parentAgentId?: string }>();
+    for (const project of await projectStore.list()) {
+      try {
+        const read = await agentConfig.peekDurableConfigsChecked(project.path);
+        // A partial inventory would record too few members and mark the group project done: try again next rebuild.
+        if (!read.readable) return 0;
+        for (const agent of read.agents) durable.set(agent.id, agent);
+      } catch {
+        // telemetry-exempt: an unreadable project means the inventory is partial; the next rebuild tries again
+        return 0;
+      }
+    }
+    let recorded = 0;
+    for (const gp of await this.list()) {
+      if (gp.scope?.level !== 'project' || !this.isThisMachine(gp.host)) continue;
+      const current = await this.getMembership(gp.id);
+      // A managed record (#3357) holds its own members; only wire-membership group projects need carrying over.
+      if (current.scopeMembersRecorded || current.autoJoin || current.autoJoinOffer !== undefined) continue;
+      const hostMachine = this.hostMachineOf(gp);
+      const bound = bindingManager.getAllBindings().filter((b) => b.targetKind === 'group-project' && b.targetId === gp.id);
+      await this.updateMembership(gp.id, (draft) => {
+        if (draft.scopeMembersRecorded || draft.autoJoin || draft.autoJoinOffer !== undefined) return;
+        draft.scopeMembersRecorded = 'wire-3355';
+        const addedAt = new Date().toISOString();
+        for (const binding of bound) {
+          const config = durable.get(binding.agentId);
+          if (!config) continue;
+          const address = canonicalMemberAddress(binding.agentId, hostMachine);
+          if (draft.explicit.some((e) => e.address === address) || draft.excluded.some((e) => e.address === address)) continue;
+          draft.explicit.push({
+            address, kind: config.parentAgentId ? 'helper' : 'durable', addedAt,
+            ...(binding.agentName && { name: binding.agentName }), migratedFrom: 'wire-3355',
+          });
+          recorded++;
+        }
+      });
+    }
+    return recorded;
+  }
+
+  /**
+   * Whether an agent here is within a group project's scope (#3355), for an
+   * explicit add. Fails closed: an unknown group project or project refuses.
+   * A legacy record with no scope has nothing to check against.
+   */
+  async inScope(id: string, agentId: string): Promise<boolean> {
+    const project = await groupProjectRegistry.get(id);
+    if (!project) return false;
+    if (!project.scope) return true;
+    const address = canonicalMemberAddress(agentId, this.hostMachineOf(project));
+    const projectId = project.scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
+    return memberInScope(project.scope, { address, projectId }) === true;
+  }
+
+  /** Refused for its scope: exclude the agent, so a stored wire coming back is refused too. */
+  async excludeOutOfScope(id: string, agentId: string): Promise<void> {
+    const project = await this.requireProject(id);
+    const address = canonicalMemberAddress(agentId, this.hostMachineOf(project));
+    await this.updateMembership(id, (draft) => {
+      if (draft.excluded.some((e) => e.address === address) || draft.explicit.some((e) => e.address === address)) return;
+      draft.excluded.push({ address, excludedAt: new Date().toISOString(), reason: 'scope' });
+    });
+  }
+
+  /** The message for an agent outside a group project's scope. */
+  outOfScopeMessage(project: GroupProject, agentName: string): string {
+    return `${agentName} is outside the scope of "${project.name}", so it can't join. Widen the scope in Settings > Group Projects first.`;
+  }
+
+  /**
+   * Whether an agent here may join (#3355). A restore of a stored wire: yes,
+   * unless excluded. A drawn wire: an explicit member yes; otherwise only within
+   * the scope (so a redraw lifts a person's exclusion but never a scope
+   * refusal), failing closed when its project can't be known.
+   */
+  async admits(id: string, agentId: string, options: { restore?: boolean } = {}): Promise<boolean> {
+    const project = await groupProjectRegistry.get(id);
+    if (!project) return false;
+    const hostMachine = this.hostMachineOf(project);
+    const address = canonicalMemberAddress(agentId, hostMachine);
+    const membership = await readMembershipFile(id, hostMachine);
+    // A stored wire coming back: refused when excluded, otherwise a pair that was already
+    // a member, which a check never evicts.
+    if (options.restore) return !membership.excluded.some((entry) => entry.address === address);
+    // A drawn wire is a person's choice: it may lift an exclusion (#3357), but only within scope.
+    if (membership.explicit.some((entry) => entry.address === address)) return true;
+    // No recorded scope (an unresolved legacy record) has nothing to check against.
+    if (!project.scope) return true;
+    const projectId = project.scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
+    // A new join fails closed: an agent whose project can't be known is not admitted.
+    return memberInScope(project.scope, { address, projectId }) === true;
+  }
+
+  /**
+   * The id of the agent on this machine that a member address names, or null
+   * when it names an agent on another machine (#3363). Addresses are relative
+   * to the group project's host: a bare id is an agent on the host, so on a
+   * cached copy of a group project hosted elsewhere it is not local.
+   */
+  localAgentId(project: GroupProject, address: string): string | null {
+    const parsed = parseAgentAddress(address.trim());
+    const machine = parsed.machine ?? this.hostMachineOf(project);
+    const self = this.selfMachine();
+    return machine === null || machine === self ? parsed.agentId : null;
   }
 
   /** The host-relative address of an agent here or on another machine. */

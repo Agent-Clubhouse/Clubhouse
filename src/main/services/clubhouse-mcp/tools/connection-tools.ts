@@ -27,7 +27,7 @@ import * as agentConfig from '../../agent-config';
 import * as projectStore from '../../project-store';
 import { listHelpersEverywhere } from '../../helper-index';
 import { groupProjectRegistry } from '../../group-project-registry';
-import { groupProjectHost } from '../../group-project-host';
+import { GroupProjectHostError, groupProjectHost } from '../../group-project-host';
 import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
   addMember as addGroupMember, beginAutoJoin, excludeMember as excludeGroupMember, isMember as isGroupMember, isMembershipManaged,
@@ -190,11 +190,19 @@ function membership(agent: DurableAgentConfig, project: GroupProject): Persisted
   return { agentId: agent.id, targetId: project.id, targetKind: 'group-project', label: project.name, agentName: agent.name, targetName: project.name };
 }
 
+type JoinOutcome = 'created' | 'existing' | 'removed' | 'invalid' | 'out_of_scope';
+
 /** Add an agent to a group project's membership record (#3357), the way a drawn wire does. */
-async function joinRecord(agent: DurableAgentConfig, project: GroupProject): Promise<'created' | 'existing' | 'removed' | 'invalid'> {
+async function joinRecord(agent: DurableAgentConfig, project: GroupProject): Promise<JoinOutcome> {
   if (isBindingRemovedByUser(agent.id, project.id)) return 'removed';
   const before = await isGroupMember(project.id, agent.id);
-  await addGroupMember(project.id, agent.id);
+  try {
+    await addGroupMember(project.id, agent.id);
+  } catch (err) {
+    // telemetry-exempt: answered to the calling agent as an outcome
+    if (err instanceof GroupProjectHostError && err.code === 'out_of_scope') return 'out_of_scope';
+    throw err;
+  }
   if (before) return 'existing';
   void bootstrapGroupProjectAdmin(project.id, agent.id);
   return 'created';
@@ -306,7 +314,8 @@ function errorResult(tool: string, callerId: string, err: unknown, args?: Record
 
 const STAYS_NOTE = 'It stays connected because a canvas wire, zone or helper link also connects it; change that on the canvas.';
 
-function membershipMessage(agent: DurableAgentConfig, project: GroupProject, outcome: 'created' | 'existing' | 'removed' | 'invalid'): string {
+function membershipMessage(agent: DurableAgentConfig, project: GroupProject, outcome: JoinOutcome): string {
+  if (outcome === 'out_of_scope') return groupProjectHost.outOfScopeMessage(project, agent.name);
   if (outcome === 'created') return `${agent.name} joined "${project.name}".`;
   if (outcome === 'existing') return `${agent.name} was already in "${project.name}"; the membership is now saved.`;
   if (outcome === 'removed') return `The user removed this connection: ${agent.name} stays out of "${project.name}".`;
@@ -360,11 +369,14 @@ async function handleAddToGroupProject(callerId: string, args: Record<string, un
     const scope = await callerScope(callerId, granted);
     const agent = resolveAgent(scope, helperRef, 'helper');
     const project = await resolveGroupProject(callerId, projectRef, granted);
-    const [outcome] = await isMembershipManaged(project.id)
-      ? [await joinRecord(agent, project)]
-      : await connect(callerId, scope, [membership(agent, project)]);
+    // Scope decides who can join (#3355), before a record or a connection is made. Fails closed.
+    const [outcome]: JoinOutcome[] = !(await groupProjectHost.inScope(project.id, agent.id).catch(() => false))
+      ? ['out_of_scope']
+      : await isMembershipManaged(project.id)
+        ? [await joinRecord(agent, project)]
+        : await connect(callerId, scope, [membership(agent, project)]);
     if (granted) recordDispatcherControl({ tool: 'join_group_project', actorId: callerId, targets: [agent.id, project.id], outcome: outcome === 'created' || outcome === 'existing' ? 'ok' : 'refused' });
-    return text(membershipMessage(agent, project, outcome), outcome === 'invalid' || outcome === 'removed');
+    return text(membershipMessage(agent, project, outcome), outcome === 'invalid' || outcome === 'removed' || outcome === 'out_of_scope');
   } catch (err) {
     // telemetry-exempt: errorResult logs unexpected failures and returns them to the calling agent
     return errorResult(granted ? 'join_group_project' : 'add_to_group_project', callerId, err, granted ? args : undefined);

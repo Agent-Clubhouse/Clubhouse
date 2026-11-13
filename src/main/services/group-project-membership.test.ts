@@ -406,3 +406,26 @@ describe('bindings follow the record', () => {
     stop();
   });
 });
+
+describe('scope decides explicit adds (#3355)', () => {
+  it('refuses to add an agent from another project, for a person or an agent, and keeps a scope exclusion', async () => {
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    await start();
+    await expect(addMember('gp1', 'other')).rejects.toMatchObject({ code: 'out_of_scope', message: expect.stringContaining('Widen the scope') });
+    expect(membersOf('gp1')).toEqual(['dev', 'lead']);
+    await updateMembership('gp1', (m) => { m.excluded.push({ address: 'other', excludedAt: '2026-11-13T00:00:00.000Z', reason: 'scope' }); });
+    await expect(addMember('gp1', 'other')).rejects.toMatchObject({ code: 'out_of_scope' });
+    expect((await getMembership('gp1')).excluded.map((e) => e.address)).toEqual(['other']);
+  });
+
+  it('refuses a quick agent whose project is outside, and admits one inside', async () => {
+    fx.quick.set('quick_b', { agentId: 'quick_b', name: 'far-fox', projectPath: PROJ_B.path, startedAt: 1 });
+    fx.quick.set('quick_a', { agentId: 'quick_a', name: 'near-fox', projectPath: PROJ_A.path, startedAt: 1 });
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    await start();
+    await expect(addMember('gp1', 'quick_b')).rejects.toMatchObject({ code: 'out_of_scope' });
+    await addMember('gp1', 'quick_a');
+    expect(membersOf('gp1')).toContain('quick_a');
+  });
+});
+

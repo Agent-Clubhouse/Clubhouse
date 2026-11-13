@@ -1,4 +1,4 @@
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupProject } from '../../../shared/group-project-types';
 import { createMockAPI } from '../../plugins/testing';
@@ -41,7 +41,8 @@ describe('GroupProjectsSettingsView', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('Beta');
     expect(screen.getAllByText(/Scope unresolved: legacy or missing scope/)).toHaveLength(2);
     expect(screen.getByText(/Stored on this machine/)).toBeInTheDocument();
-    expect(screen.getByText(/Network creation needs an authoritative host backend/)).toBeInTheDocument();
+    // Network reach is disabled, with its reason, in both creation and the scope editor (#3355).
+    await waitFor(() => expect(screen.getAllByText(/Network reach needs Annex Network/)).toHaveLength(2));
   });
 
   it('shows loading and empty states, refuses blank creation, and preserves a failed create draft', async () => {
@@ -182,5 +183,98 @@ describe('GroupProjectsSettingsView', () => {
     expect(screen.getByLabelText('Instructions')).toHaveValue('Beta unsaved draft');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('Changes saved to the local registry.')).not.toBeInTheDocument();
+  });
+
+  describe('scope (#3355)', () => {
+    const projects = [
+      { id: 'proj-a', name: 'Proj A', path: '/a' },
+      { id: 'proj-b', name: 'Proj B', path: '/b' },
+    ];
+    beforeEach(() => {
+      useProjectStore.setState({ projects: projects as never });
+    });
+
+    it('disables network reach with its reason when Annex Network is off', async () => {
+      render(<GroupProjectsSettingsView />);
+      await screen.findByRole('list', { name: 'Local group projects' });
+      const network = screen.getAllByRole('radio', { name: 'Network' });
+      expect(network[0]).toBeDisabled();
+      expect(network[0]).toHaveAccessibleDescription(/Network reach needs Annex Network/);
+    });
+
+    it('creates with the project the person chooses, on this computer', async () => {
+      const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ ...alpha, id: 'gp-new', name: 'New' });
+      render(<GroupProjectsSettingsView />);
+      await screen.findByRole('list', { name: 'Local group projects' });
+      fireEvent.change(screen.getByLabelText('New group project name'), { target: { value: 'New' } });
+      fireEvent.change(screen.getAllByLabelText('Covers')[0], { target: { value: 'project:proj-b' } });
+      expect(screen.getByText('Agents in Proj B on this computer.')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Create group project' }));
+      await waitFor(() => expect(create).toHaveBeenCalledWith('New', { scope: { level: 'project', projectId: 'proj-b', reach: 'local' } }));
+    });
+
+    it('shows who would leave before narrowing, and applies with exactly those members confirmed', async () => {
+      const preview = vi.spyOn(window.clubhouse.groupProject, 'previewScope').mockResolvedValue({
+        scope: { level: 'project', projectId: 'proj-a', reach: 'local' },
+        leaving: [{ address: 'agent-b', name: 'builder-b', projectId: 'proj-b' }],
+      });
+      const narrowed = { ...alpha, scope: { level: 'project' as const, projectId: 'proj-a', reach: 'local' as const } };
+      const setScope = vi.spyOn(window.clubhouse.groupProject, 'setScope').mockResolvedValue({ project: narrowed, left: [] });
+      render(<GroupProjectsSettingsView />);
+      await screen.findByRole('list', { name: 'Local group projects' });
+      select('Alpha');
+      const editor = screen.getByRole('region', { name: 'Scope' });
+      fireEvent.change(within(editor).getByLabelText('Covers'), { target: { value: 'project:proj-a' } });
+      fireEvent.click(within(editor).getByRole('button', { name: 'Review change' }));
+      expect(await within(editor).findByRole('list', { name: 'Members who would leave' })).toHaveTextContent('builder-b (Proj B)');
+      expect(setScope).not.toHaveBeenCalled();
+      expect(preview).toHaveBeenCalledWith('gp-alpha', { level: 'project', projectId: 'proj-a', reach: 'local' });
+      fireEvent.click(within(editor).getByRole('button', { name: 'Apply and remove 1' }));
+      await waitFor(() => expect(setScope).toHaveBeenCalledWith('gp-alpha', { level: 'project', projectId: 'proj-a', reach: 'local' }, { confirmLeaving: ['agent-b'] }));
+      expect(await within(editor).findByRole('status')).toHaveTextContent('Scope changed.');
+    });
+
+    it('keeps the scope and says why when the host refuses the change', async () => {
+      vi.spyOn(window.clubhouse.groupProject, 'previewScope').mockResolvedValue({ scope: { level: 'app', reach: 'local' }, leaving: [] });
+      vi.spyOn(window.clubhouse.groupProject, 'setScope').mockRejectedValue(new Error('The members who would leave have changed.'));
+      render(<GroupProjectsSettingsView />);
+      await screen.findByRole('list', { name: 'Local group projects' });
+      select('Beta');
+      const editor = screen.getByRole('region', { name: 'Scope' });
+      fireEvent.click(within(editor).getByRole('button', { name: 'Review change' }));
+      expect(await within(editor).findByText('No members leave.')).toBeInTheDocument();
+      fireEvent.click(within(editor).getByRole('button', { name: 'Apply scope' }));
+      expect(await within(editor).findByRole('alert')).toHaveTextContent(/Scope not changed.*have changed/);
+    });
+
+    it('shows agents a wider scope lets back in before applying it', async () => {
+      vi.spyOn(window.clubhouse.groupProject, 'previewScope').mockResolvedValue({
+        scope: { level: 'app', reach: 'local' }, leaving: [],
+        returning: [{ address: 'agent-o', name: 'outsider', projectId: 'proj-b' }],
+      });
+      useGroupProjectStore.setState({ projects: [{ ...alpha, scope: { level: 'project', projectId: 'proj-a', reach: 'local' } }], loaded: true, loadError: null });
+      render(<GroupProjectsSettingsView />);
+      select('Alpha');
+      const editor = screen.getByRole('region', { name: 'Scope' });
+      fireEvent.change(within(editor).getByLabelText('Covers'), { target: { value: 'app' } });
+      fireEvent.click(within(editor).getByRole('button', { name: 'Review change' }));
+      expect(await within(editor).findByRole('list', { name: 'Agents who can join again' })).toHaveTextContent('outsider (Proj B)');
+      expect(within(editor).getByText('No members leave.')).toBeInTheDocument();
+    });
+
+    it('replaces an untouched draft when the scope changes elsewhere', async () => {
+      render(<GroupProjectsSettingsView />);
+      await screen.findByRole('list', { name: 'Local group projects' });
+      select('Alpha');
+      const editor = screen.getByRole('region', { name: 'Scope' });
+      expect(within(editor).getByLabelText('Covers')).toHaveValue('app');
+      act(() => {
+        useGroupProjectStore.setState((state) => ({
+          projects: state.projects.map((p) => (p.id === 'gp-alpha' ? { ...p, scope: { level: 'project', projectId: 'proj-b', reach: 'local' } } : p)),
+        }));
+      });
+      await waitFor(() => expect(within(editor).getByLabelText('Covers')).toHaveValue('project:proj-b'));
+      expect(within(editor).getByRole('button', { name: 'Review change' })).toBeDisabled();
+    });
   });
 });
