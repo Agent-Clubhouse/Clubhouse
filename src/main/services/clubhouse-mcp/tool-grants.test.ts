@@ -158,11 +158,11 @@ describe('tool grant declarations (#2967)', () => {
       list_remote_requests: agent.read on self
       triage_remote_request: agent.message on self
       report_remote_request: agent.message on self
-      list_group_projects: settings.app.read on app
-      open_group_project_directory: settings.app.read on app
       message_remote_dispatcher: agent.message on remote_dispatcher
       send_file_to_remote_dispatcher: agent.message on remote_dispatcher
       offer_handoff_to_remote_dispatcher: (called_tool)
+      list_group_projects: settings.app.read on app
+      open_group_project_directory: settings.app.read on app
       notify_user: user.notify on app
       hand_off: agent.dispose on my_helpers
       dispose_helper: agent.dispose on my_helpers
