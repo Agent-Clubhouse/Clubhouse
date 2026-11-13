@@ -40,7 +40,8 @@ function readAllHandlerFiles(): string {
   const handlersDir = path.join(ROOT, 'main', 'ipc');
   const files = fs.readdirSync(handlersDir)
     .filter((f) => f.endsWith('-handlers.ts') && !f.endsWith('.test.ts'));
-  return files.map((f) => fs.readFileSync(path.join(handlersDir, f), 'utf-8')).join('\n');
+  return [...files.map((f) => fs.readFileSync(path.join(handlersDir, f), 'utf-8')),
+    fs.readFileSync(path.join(ROOT, 'main', 'services', 'canvas-flush.ts'), 'utf-8')].join('\n');
 }
 
 /** Read all preload bridge files and concatenate their contents */
@@ -125,6 +126,8 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   // Canvas command bridge: REQUEST is main→renderer push, RESULT is handled in canvas-command.ts
   'IPC.CANVAS_CMD.REQUEST',
   'IPC.CANVAS_CMD.RESULT',
+  // The flush request is pushed to renderers; canvas-flush.ts handles the response.
+  'IPC.CANVAS_CMD.FLUSH_REQUEST',
   // Command palette bridge: REQUEST is main→renderer push, RESULT is handled in command-palette-bridge.ts
   'IPC.CMD_PALETTE.REQUEST',
   'IPC.CMD_PALETTE.RESULT',
