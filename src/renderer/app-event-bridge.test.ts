@@ -70,6 +70,7 @@ vi.stubGlobal('window', {
       onNavigateToAgent: vi.fn(() => mockRemovers.onNavigateToAgent),
       onNavigateToPluginSettings: vi.fn(() => mockRemovers.onNavigateToPluginSettings),
     },
+    groupProject: { onDeleted: vi.fn(() => vi.fn()) },
     project: {
       onChanged: vi.fn(() => vi.fn()),
     },
@@ -308,10 +309,12 @@ vi.mock('./plugins/plugin-events', () => ({
   pluginEventBus: { emit: vi.fn() },
 }));
 
+const mockRemoveDeletedGroup = vi.hoisted(() => vi.fn());
 vi.mock('./plugins/builtin/canvas/main', () => ({
-  useAppCanvasStore: { getState: () => ({ canvases: [] }) },
+  useAppCanvasStore: { getState: () => ({ canvases: [], removeDeletedGroupProject: mockRemoveDeletedGroup }) },
   getProjectCanvasStore: vi.fn(() => ({ getState: () => ({ canvases: [] }) })),
   hasProjectCanvasStore: vi.fn(() => false),
+  getKnownProjectIds: vi.fn(() => []),
 }));
 
 vi.mock('./plugins/builtin/canvas/canvas-sync', () => ({
@@ -346,6 +349,8 @@ import { useToastStore } from './stores/toastStore';
 import { fileState } from './plugins/builtin/files/state';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { useAgentDetailsStore } from './features/agents/details/detailsStore';
+import { useBulletinReadStore } from './stores/bulletinReadStore';
+import { getKnownProjectIds, getProjectCanvasStore } from './plugins/builtin/canvas/main';
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -363,6 +368,27 @@ describe('initAppEventBridge', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('clears the deleted project from live canvases and read state', () => {
+    const clear = vi.spyOn(useBulletinReadStore.getState(), 'clearLastRead');
+    const handler = vi.mocked(window.clubhouse.groupProject.onDeleted).mock.calls.at(-1)![0];
+    handler('gp-gone');
+    expect(mockRemoveDeletedGroup).toHaveBeenCalledWith('gp-gone');
+    expect(clear).toHaveBeenCalledWith('gp-gone');
+    clear.mockRestore();
+  });
+
+  it('continues cleaning other canvases if one store fails', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const later = vi.fn();
+    vi.mocked(getKnownProjectIds).mockReturnValueOnce(['broken', 'healthy']);
+    vi.mocked(getProjectCanvasStore).mockImplementationOnce(() => { throw new Error('broken'); })
+      .mockImplementationOnce(() => ({ getState: () => ({ removeDeletedGroupProject: later }) }) as never);
+    const handler = vi.mocked(window.clubhouse.groupProject.onDeleted).mock.calls.at(-1)![0];
+    handler('gp-gone');
+    expect(later).toHaveBeenCalledWith('gp-gone');
+    error.mockRestore();
   });
 
   it('opens Settings at Annex Network when asked for that page (#3068), and toggles Settings otherwise', () => {

@@ -590,10 +590,12 @@ export const IPC = {
     LIST: 'group-project:list',
     UPDATE: 'group-project:update',
     DELETE: 'group-project:delete',
+    PREVIEW_DELETE: 'group-project:preview-delete',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
     GET_ALL_MESSAGES: 'group-project:get-all-messages',
     CHANGED: 'group-project:changed',
+    DELETED: 'group-project:deleted',
     POST_BULLETIN_MESSAGE: 'group-project:post-bulletin-message',
     SEND_SHOULDER_TAP: 'group-project:send-shoulder-tap',
     DELETE_MESSAGE: 'group-project:delete-message',
@@ -667,6 +669,8 @@ export const IPC = {
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },
   CANVAS_CMD: {
+    FLUSH_REQUEST: 'canvas-cmd:flush-request',
+    FLUSH_RESULT: 'canvas-cmd:flush-result',
     /** Renderer→main: run ELK layout algorithm (async). */
     ELK_LAYOUT: 'canvas-cmd:elk-layout',
     /** Renderer→main: the canvases holding an agent's card, read from disk (CanvasMembership[]). */

@@ -38,6 +38,7 @@ import {
 import { bindWireDefinition } from './wire-binding';
 import { pruneDeferredWires, resolveDeferredWires } from '../../../features/blueprints/blueprint-wire-plan';
 import { reconcilePersistedWires, REMOVED_CANVAS_VIEW_TYPES } from '../../../../shared/canvas-persistence';
+import { removeGroupProjectCanvasReferences } from '../../../../shared/group-project-canvas-cascade';
 
 // ── Store state ──────────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ export interface CanvasState {
   removeCanvas: (canvasId: string) => void;
   renameCanvas: (canvasId: string, name: string) => void;
   setActiveCanvas: (canvasId: string) => void;
+  removeDeletedGroupProject: (id: string) => void;
 
   // View operations (on active canvas)
   addView: (type: CanvasViewType, position: Position) => string;
@@ -907,6 +909,15 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     renameCanvas: (canvasId, name) => {
       const canvases = get().canvases.map((c) => c.id === canvasId ? { ...c, name } : c);
       set({ canvases });
+    },
+
+    removeDeletedGroupProject: (id) => {
+      const state = get();
+      if (state.dataOrigin !== 'local') return;
+      const result = removeGroupProjectCanvasReferences(state.canvases, state.wireDefinitions, state.zoneWireDefinitions, id);
+      const canvases = result.instances as CanvasInstance[];
+      set({ canvases, wireDefinitions: result.wires as McpBindingEntry[], zoneWireDefinitions: result.zoneWires as ZoneWireDefinition[],
+        ...syncDerivedState(canvases, state.activeCanvasId) });
     },
 
     setActiveCanvas: (canvasId) => {

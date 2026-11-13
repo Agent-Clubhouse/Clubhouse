@@ -1735,6 +1735,8 @@ export interface EventDef {
 }
 
 export const EVENTS = {
+  /** A person confirmed deletion of a group project; no project content or identifier. */
+  'clubhouse.group_project.deleted': { level: 'standard' },
   /** Failed chat handshake; only driver and bounded error.type, never stderr or env. */
   'clubhouse.chat.probe_failed': { level: 'errors' },
   /**

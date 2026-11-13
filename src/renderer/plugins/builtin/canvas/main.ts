@@ -71,6 +71,7 @@ export const useAppCanvasStore = createCanvasStore();
 
 /** Saves still writing, per canvas store, so a remount reads after them. */
 const inflightSaves = new WeakMap<object, Promise<unknown>>();
+const flushResults = new WeakMap<object, Promise<unknown>>();
 
 // Project-mode canvas stores: one per project, keyed by projectId
 const projectCanvasStores = new Map<string, ReturnType<typeof createCanvasStore>>();
@@ -241,6 +242,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     pending.run();
   }, []);
 
+  useEffect(() => window.clubhouse.canvas.onFlushRequested(async function flushCanvas() {
+    flushSave();
+    await flushResults.get(store);
+  }), [flushSave, store]);
+
   // Whether this mount has loaded the canvas. The store outlives the panel,
   // but a remount reloads it, so queued agent cards wait for this.
   const [hydrated, setHydrated] = useState(false);
@@ -335,6 +341,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     const run = (): void => {
       const saving = Promise.all([store.getState().saveCanvas(storage), store.getState().saveWires(storage)]);
       inflightSaves.set(store, saving.catch((): undefined => undefined));
+      flushResults.set(store, saving);
+      const clearSettled = () => { if (flushResults.get(store) === saving) flushResults.delete(store); };
+      void saving.then(clearSettled, clearSettled);
     };
     const previous = pendingSaveRef.current;
     if (previous) {

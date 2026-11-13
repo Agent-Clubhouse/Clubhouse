@@ -201,6 +201,27 @@ export function saveConnectionGuidance(agentId: string, targetId: string, reques
   return result;
 }
 
+/** Remove saved overrides targeting a deleted group project, serialized with edits. */
+export function assertGroupProjectGuidanceDeletable(): void {
+  const file = committedFile();
+  if (file.version > VERSION) throw new Error('Guidance was saved by a newer Clubhouse. Update before deleting a group project.');
+}
+
+export function purgeGroupProjectGuidance(groupProjectId: string): Promise<void> {
+  const purge = async () => {
+    const file = committedFile();
+    if (file.version > VERSION) throw new Error('Guidance was saved by a newer Clubhouse. Update before deleting a group project.');
+    const entries = file.entries.filter((value) => {
+      const key = parsedEntry(value).key;
+      return !key.startsWith('group-project:') || !key.endsWith(`/${groupProjectId}`);
+    });
+    if (entries.length !== file.entries.length) await store.save({ ...file, entries });
+  };
+  const result = writeQueue.then(purge, purge);
+  writeQueue = result;
+  return result;
+}
+
 function runtimeNotice(agentId: string): string {
   const sender = agentRegistry.get(agentId);
   const refresh = sender && sender.runtime !== 'chat' && keepsFirstToolList(agentId)

@@ -3,8 +3,20 @@ import { IPC } from '../shared/ipc-channels';
 import type { AgentNavigationTarget, CanvasMembership, CanvasNavigationSnapshot, GroupProjectNavigationIndex } from '../shared/canvas-index-types';
 import type { NavigableCanvasTargetKind } from '../shared/canvas-persistence';
 
+const flushers = new Set<() => Promise<void>>();
+ipcRenderer.on(IPC.CANVAS_CMD.FLUSH_REQUEST, (_event, requestId: string) => {
+  void Promise.all([...flushers].map((flush) => flush())).then(
+    () => ipcRenderer.send(IPC.CANVAS_CMD.FLUSH_RESULT, requestId, true),
+    () => ipcRenderer.send(IPC.CANVAS_CMD.FLUSH_RESULT, requestId, false),
+  );
+});
+
 export const canvas = {
   canvas: {
+  onFlushRequested: (flush: () => Promise<void>) => {
+    flushers.add(flush);
+    return () => { flushers.delete(flush); };
+  },
   /** Run ELK layout algorithm in the main process. */
   layoutElk: (input: {
     cards: Array<{ id: string; width: number; height: number; zoneId?: string }>;
