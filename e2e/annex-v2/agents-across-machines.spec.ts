@@ -116,11 +116,12 @@ test.afterEach(async () => {
   } catch (error) {
     errors.push(error);
   } finally {
+    const children = [here, there].filter((app): app is LaunchedApp => app !== undefined).map((app) => app.electronApp.process());
     const closed = await Promise.allSettled([close(here), close(there)]);
     for (const result of closed) {
       if (result.status === 'rejected') errors.push(result.reason);
     }
-    if ([here, there].some((app) => app && !exited(app.electronApp.process()))) {
+    if (children.some((child) => !exited(child))) {
       errors.push(new Error('Fixture cleanup withheld because an owned desktop has not exited'));
     } else {
       const disposed = await Promise.allSettled(profiles.map(async (profile) => profile.dispose()));
