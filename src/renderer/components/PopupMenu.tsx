@@ -119,7 +119,7 @@ export function PopupMenu({ items, position, label, testId, minWidth = 180, laye
       data-testid={testId}
       {...{ [LAYER_PORTAL_ATTR]: '' }}
       onKeyDown={onKeyDown}
-      style={{ left: pos?.left ?? position.x, top: pos?.top ?? position.y, minWidth, zIndex }}
+      style={{ left: pos?.left ?? position.x, top: pos?.top ?? position.y, minWidth: `min(${minWidth}px, calc(100vw - ${MARGIN * 2}px))`, maxWidth: `calc(100vw - ${MARGIN * 2}px)`, maxHeight: `calc(100vh - ${MARGIN * 2}px)`, overflowY: 'auto', zIndex }}
       className="fixed p-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl"
     >
       {items.map((item) => isSeparator(item) ? (

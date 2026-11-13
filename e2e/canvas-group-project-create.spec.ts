@@ -68,7 +68,7 @@ test('creating a group project advances from naming form to initialized card', a
     `[data-testid="canvas-context-menu-${GROUP_PROJECT_WIDGET}"]`,
   );
   await expect(addGroupProject).toBeVisible({ timeout: 5_000 });
-  await addGroupProject.dispatchEvent('click');
+  await addGroupProject.click();
 
   const widget = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await expect(widget).toBeVisible({ timeout: 8_000 });
@@ -118,7 +118,7 @@ test('creating a group project advances from naming form to initialized card', a
   const box = await workspace.boundingBox();
   expect(box).not.toBeNull();
   await workspace.dispatchEvent('contextmenu', { bubbles: true, button: 2, clientX: box!.x + 220, clientY: box!.y + 180 });
-  await window.getByTestId(`canvas-context-menu-${GROUP_PROJECT_WIDGET}`).dispatchEvent('click');
+  await window.getByTestId(`canvas-context-menu-${GROUP_PROJECT_WIDGET}`).click();
   const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await card.getByLabel('Existing group project').selectOption({ label: 'E2E Group Project' });
   await card.getByRole('button', { name: 'Add existing' }).click();

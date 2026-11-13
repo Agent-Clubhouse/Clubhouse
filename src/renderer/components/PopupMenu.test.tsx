@@ -19,6 +19,14 @@ function renderMenu(onClose = vi.fn(), onSelect = vi.fn()) {
 }
 
 describe('PopupMenu', () => {
+  it('limits long menus to the viewport and makes their items scrollable', () => {
+    renderMenu();
+    const menu = screen.getByRole('menu');
+    expect(menu.style.maxHeight).toBe('calc(100vh - 16px)');
+    expect(menu.style.maxWidth).toBe('calc(100vw - 16px)');
+    expect(menu.style.overflowY).toBe('auto');
+  });
+
   it('is a labelled menu portaled to body at the dropdown layer', () => {
     renderMenu();
     const menu = screen.getByRole('menu', { name: 'Agent menu' });
