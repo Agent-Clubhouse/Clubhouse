@@ -30,7 +30,7 @@ import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import type { RoutedMessagePart } from '../../../shared/chat';
 import type { DurableAgentConfig } from '../../../shared/types';
-import type { ChatDecision, ChatHold, ChatMessage, ChatReport } from './dispatcher-news';
+import { forwardedNewsMessage, type ChatDecision, type ChatHold, type ChatMessage, type ChatReport, type ForwardedNews } from './dispatcher-news';
 import { getDispatcherChatPath } from './dispatcher-paths';
 import { beginRequest, doneList, noteHandedOff, withdrawRequest, workTurnMark } from './dispatcher-requests';
 import { isDispatcherEnabled } from './dispatcher-settings';
@@ -102,6 +102,13 @@ export const defaultChatDelivery: ChatDelivery = ({ message }) => ({
 });
 
 let chatDelivery: ChatDelivery = defaultChatDelivery;
+
+/** Sends news to the lead's chat instead of this one, on a follower (#3352). True when it went. */
+export type ChatForwarder = (news: ForwardedNews) => Promise<boolean>;
+let chatForwarder: ChatForwarder | null = null;
+export function setChatForwarder(forwarder: ChatForwarder | null): void {
+  chatForwarder = forwarder;
+}
 
 /** Replace the step between the coordinator's report and the chat (#3043). Null restores the default. */
 export function setChatDelivery(delivery: ChatDelivery | null): void {
@@ -263,6 +270,11 @@ export async function deliverToChat(
     appLog(NS, 'info', 'Dispatcher update held back', { meta: { held, length: full.message.length } });
     return { outcome: 'delivered', held, ...(hold?.reason && { reason: hold.reason }) };
   }
+  // Following a lead (#3352): what would show here goes to the lead's chat, while it's reachable.
+  if (decision.forward && chatForwarder && await chatForwarder(decision.forward).catch(() => false)) {
+    appLog(NS, 'info', 'Dispatcher update sent to the lead', { meta: { kind: decision.forward.kind, length: full.message.length } });
+    return { outcome: 'delivered', note: 'It went to the lead Dispatcher’s chat, where the user is.' };
+  }
   let result: ChannelResult;
   try {
     result = await wakeAndDeliver(chatId, getDispatcherChatPath(), decision, true);
@@ -273,6 +285,18 @@ export async function deliverToChat(
   if (result.outcome !== 'delivered' && result.outcome !== 'started') notDelivered(chatId, full, decision);
   appLog(NS, 'info', 'Dispatcher update', { meta: { outcome: result.outcome, length: full.message.length } });
   return decision.note ? { ...result, note: decision.note } : result;
+}
+
+/**
+ * On the lead: a follower's news, into this chat (#3352). Not triaged again:
+ * the follower's own triage already decided it shows now.
+ */
+export async function deliverForwardedNews(news: ForwardedNews, machineName: string): Promise<ChannelResult> {
+  const chatId = getDispatcherChatAgentId();
+  if (!isDispatcherEnabled() || !chatId) return { outcome: 'off', error: 'The Dispatcher is turned off.' };
+  const result = await wakeAndDeliver(chatId, getDispatcherChatPath(), forwardedNewsMessage(news, machineName), true);
+  appLog(NS, 'info', 'A follower’s news reached the lead', { meta: { kind: news.kind, outcome: result.outcome } });
+  return result;
 }
 
 /**
@@ -291,5 +315,6 @@ function notDelivered(chatId: string, report: ChatReport, message: ChatMessage):
 /** For tests. */
 export function _resetDispatcherChannelForTesting(): void {
   chatDelivery = defaultChatDelivery;
+  chatForwarder = null;
   starting.clear();
 }

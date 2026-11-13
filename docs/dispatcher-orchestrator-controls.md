@@ -295,9 +295,19 @@ the person's message.
   Settings › Dispatcher offers "Follow <lead> again", and a new lead choice
   follows again by itself. Nothing takes back by itself, however long the lead
   is offline.
-- **Not yet:** a phone paired with a follower keeps that computer's own
-  Dispatcher chat. A member phone already connects to every computer, so it can
-  open the lead's chat on the lead's computer. Agents' news on a follower still
-  reaches that computer's own chat, which stays readable in the pane.
+- **News goes to the lead.** What a follower's triage would show in its own
+  chat now (an agent's question for the person, the answer to a request, a
+  check-in) goes to the lead's chat instead, over the controller link as a
+  `send_message` whose `news` field holds the facts (`kind`, `text`,
+  `fromName`, `request`). The lead puts it in its chat itself, without asking
+  its controller, named with the follower's computer as the pinned connection
+  names it ("docs-agent on Laptop"), never as the text says. It refuses
+  malformed news, and news when it isn't the lead. An answer goes back through
+  the lead's controller to that computer's Dispatcher, as any request. While
+  the lead is offline, after Take back, or when the lead refuses it, the news
+  shows in this computer's own chat, readable from the pane.
+- **Phones:** a phone paired with a follower keeps that computer's own
+  Dispatcher chat. A member phone already connects to every computer in the
+  network (D212), so it opens the lead's chat on the lead's computer.
 
 Approvals from other computers come with #3354.

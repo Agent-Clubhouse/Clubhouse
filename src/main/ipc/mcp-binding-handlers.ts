@@ -10,6 +10,8 @@ import { learnLeadShare, leadShare, startDispatcherLead } from '../services/disp
 import { getDispatcherPresence, onDispatcherPresenceChanged, watchDispatcherPresence } from '../services/dispatcher-presence';
 import { watchPeerPages } from '../services/dispatcher/dispatcher-peer-pages';
 import { startLeadOutbox } from '../services/dispatcher-lead-outbox';
+import { forwardNewsToLead, startFollowerNews } from '../services/dispatcher-follower-news';
+import { setChatForwarder } from '../services/dispatcher/dispatcher-channel';
 import { federationDirection } from '../services/dispatcher-federation-policy';
 import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
@@ -482,6 +484,7 @@ let stopDispatcherLead: (() => void) | null = null;
 let stopWatchingDispatcherPresence: (() => void) | null = null;
 let stopWatchingPeerPages: (() => void) | null = null;
 let stopLeadOutbox: (() => void) | null = null;
+let stopFollowerNews: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
 
 /**
@@ -546,6 +549,12 @@ export function restorePersistedBindings(): Promise<void> {
     stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.isMachineConnected(machine), (machine) => annexClient.lastConfirmedConnectivity(machine));
     // And its memory pages for them, keyed by machine-qualified address.
     stopWatchingPeerPages = watchPeerPages({ remotes: () => getDispatcherPresence().remotes, enabled: isDispatcherEnabled, onChanged: onDispatcherPresenceChanged });
+    // A follower's agent news goes to the lead's chat while it's reachable (#3352).
+    stopFollowerNews = startFollowerNews({
+      connected: (machine) => annexClient.isMachineConnected(machine),
+      machineName: (machine) => annexClient.machineAlias(machine),
+    });
+    setChatForwarder(forwardNewsToLead);
     // Messages typed while the lead was offline go when it's back (#3353).
     stopLeadOutbox = startLeadOutbox({
       connected: (machine) => annexClient.isMachineConnected(machine),
@@ -655,6 +664,9 @@ export function _resetHandlersForTesting(): void {
   stopWatchingPeerPages = null;
   stopLeadOutbox?.();
   stopLeadOutbox = null;
+  stopFollowerNews?.();
+  stopFollowerNews = null;
+  setChatForwarder(null);
   stopWatchingHelperWires?.();
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();

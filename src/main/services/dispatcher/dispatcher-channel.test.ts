@@ -55,6 +55,7 @@ import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import {
   CHAT_UPDATE_TAG, HAND_OFF_TAG, _resetDispatcherChannelForTesting, deliverToChat, deliverUpdateToChat, handOffToDispatcher, setChatDelivery,
+  deliverForwardedNews, setChatForwarder,
 } from './dispatcher-channel';
 import { _resetDispatcherRequestsForTesting, getRequest, getRequests, getRequestsPath, noteRequestDone } from './dispatcher-requests';
 
@@ -277,5 +278,45 @@ describe('telling the user, through the chat (#3036)', () => {
     h.enabled = false;
     expect((await deliverToChat('coordinator', 'x')).outcome).toBe('off');
     expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('a follower’s news and the lead’s chat (#3352)', () => {
+  const news = { v: 1 as const, kind: 'needs_user' as const, text: 'Merge to main?', fromName: 'docs-agent', request: 'req_7' };
+
+  it('on a follower, sends what would show here to the lead instead, and shows nothing here', async () => {
+    h.running.add('chat');
+    const forwarder = vi.fn(async () => true);
+    setChatForwarder(forwarder);
+    setChatDelivery(() => ({ text: 'local words', routed: [], forward: news }));
+    expect(await deliverToChat('coordinator', 'Merge to main?')).toEqual({ outcome: 'delivered', note: 'It went to the lead Dispatcher’s chat, where the user is.' });
+    expect(forwarder).toHaveBeenCalledWith(news);
+    expect(h.delivered).toEqual([]);
+  });
+
+  it('shows it here when the lead can’t take it, such as while it is offline', async () => {
+    h.running.add('chat');
+    setChatForwarder(async () => false);
+    setChatDelivery(() => ({ text: 'local words', routed: [], forward: news }));
+    expect(await deliverToChat('coordinator', 'Merge to main?')).toEqual({ outcome: 'delivered' });
+    expect(h.delivered.map((d) => d.text)).toEqual(['local words']);
+    setChatForwarder(async () => { throw new Error('socket closed'); });
+    expect((await deliverToChat('coordinator', 'Merge to main?')).outcome).toBe('delivered');
+    expect(h.delivered).toHaveLength(2);
+  });
+
+  it('on the lead, puts a follower’s news in its chat named with that computer, and the answer goes back to it', async () => {
+    h.running.add('chat');
+    expect(await deliverForwardedNews(news, 'Laptop')).toEqual({ outcome: 'delivered' });
+    const [sent] = h.delivered;
+    expect(sent.id).toBe('chat');
+    expect(sent.text.startsWith(CHAT_UPDATE_TAG)).toBe(true);
+    expect(sent.text).toContain('docs-agent on Laptop needs the user for this');
+    expect(sent.text).toContain('saying it is for Laptop\'s Dispatcher about its request req_7');
+    expect(sent.routed).toEqual([{ fromClubhouse: true, text: 'Merge to main?' }]);
+    await deliverForwardedNews({ v: 1, kind: 'check_in', text: '- docs-agent: built the site' }, 'Laptop');
+    expect(h.delivered[1].text).toContain('Check-in from Laptop\'s Dispatcher');
+    h.enabled = false;
+    expect((await deliverForwardedNews(news, 'Laptop')).outcome).toBe('off');
   });
 });

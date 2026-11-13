@@ -4,6 +4,7 @@ import type { DispatcherAgentCallReceiver } from './annex-agent-calls';
 import { federationDirection } from './dispatcher-federation-policy';
 import { getDispatcherAgentId, isDispatcherEnabled } from './dispatcher/dispatcher-service';
 import { runAgentToolForRemoteCaller } from './clubhouse-mcp/tool-registry';
+import { isForwardedNewsCall, receiveFollowerNews } from './dispatcher-follower-news';
 
 export const federationReceiver: DispatcherAgentCallReceiver = {
   duplicate: countFederatedDuplicate,
@@ -24,6 +25,8 @@ export const federationReceiver: DispatcherAgentCallReceiver = {
       try { await receiveFederatedNewsCause(request); }
       catch (err) { return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true, annexDelivery: { state: 'refused', reason: 'controller_limit' } }; }
     }
+    // A follower's news for the lead's chat (#3352), named by the authenticated machine only.
+    if (isForwardedNewsCall(request.tool, request.args)) return receiveFollowerNews(caller.machineId, request.args.news);
     return runAgentToolForRemoteCaller(request.tool, request.targetId, `${caller.agentId}@${caller.machineId}`, request.args);
   },
 };
