@@ -45,15 +45,7 @@ export async function receiveHandoffCommit(options: {
   };
   try {
     let source: 'existing' | 'remote' | 'bundle' = 'existing';
-    if (!await hasCommit() && sourceKey && targetKey === sourceKey) {
-      await check();
-      try { await repository.read([...flags, 'fetch', '--no-tags', '--no-write-fetch-head', '--', 'origin', commit]); }
-      catch { /* telemetry-exempt: an unavailable configured remote falls back to the frozen bundle, without logging its URL */ }
-      if (await hasCommit()) source = 'remote';
-    }
     if (!await hasCommit()) {
-      if (!snapshot.manifest.bundle) throw new Error('Handoff commit is unavailable.');
-      source = 'bundle';
       const env = { ...process.env };
       for (const name of Object.keys(env)) if (/^GIT_/i.test(name)) delete env[name];
       Object.assign(env, { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_SYSTEM: config, GIT_CONFIG_NOSYSTEM: '0', GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: devNull });
@@ -64,10 +56,26 @@ export async function receiveHandoffCommit(options: {
       };
       const bare = path.join(quarantine, 'objects.git');
       await read(['init', '--bare', '--template=', bare]);
-      const bundle = path.join(root, 'bundle.bin');
-      const heads = (await read(['--git-dir', bare, 'bundle', 'list-heads', bundle])).toString('ascii').trim();
-      if (heads !== `${commit} HEAD`) throw new HandoffSnapshotError('hash_mismatch');
-      await read(['--git-dir', bare, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', bundle, 'HEAD']);
+      let acquired = false;
+      if (sourceKey && targetKey === sourceKey) {
+        // Resolve only the receiving project's configured origin (including its own rewrites).
+        // Fetching into quarantine keeps unverified history out of the registered object database.
+        const remote = (await repository.read(['remote', 'get-url', 'origin']))?.toString('utf8').trim();
+        if (remote && !remote.includes('\0') && !remote.includes('\n')) {
+          try {
+            await read(['--git-dir', bare, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', remote, commit]);
+            acquired = true; source = 'remote';
+          } catch { /* telemetry-exempt: an unavailable person-configured origin falls back to the frozen bundle */ }
+        }
+      }
+      if (!acquired) {
+        if (!snapshot.manifest.bundle) throw new Error('Handoff commit is unavailable.');
+        source = 'bundle';
+        const bundle = path.join(root, 'bundle.bin');
+        const heads = (await read(['--git-dir', bare, 'bundle', 'list-heads', bundle])).toString('ascii').trim();
+        if (heads !== `${commit} HEAD`) throw new HandoffSnapshotError('hash_mismatch');
+        await read(['--git-dir', bare, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', bundle, 'HEAD']);
+      }
       const imported = (await read(['--git-dir', bare, 'rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).toString('ascii').trim();
       if (imported !== commit) throw new HandoffSnapshotError('hash_mismatch');
       await scanHandoffGitHistory({ repo: { base: commit }, read: (args) => read(['--git-dir', bare, ...args]), assertCurrent: check }, secretPolicy);

@@ -1,3 +1,4 @@
+import { deliverNow } from './clubhouse-mcp/tools/helper-delivery';
 import { handoffProjectsLinked } from './handoff-project-links';
 import { recoverPendingHandoffApply } from './handoff-apply';
 import { app } from 'electron';
@@ -5,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { normalizeGitRemote } from '../../shared/git-remote';
 import type { HandoffWorktreeManifest } from '../../shared/handoff-manifest';
-import { HandoffWorker, HandoffProjectUnavailable } from './handoff-worker';
+import { HandoffWorker, HandoffProjectUnavailable, HandoffAuthorizationChanged } from './handoff-worker';
 import { callerHandoffSource } from './handoff-preflight-host';
 import { openHandoffRepository, readHandoffSnapshotManifest } from './handoff-snapshot';
 import { requestHandoffTransfer, readHandoffTransferManifest } from './handoff-transfer-transport';
@@ -165,6 +166,10 @@ async function authorize(request: HandoffAuthorization): Promise<boolean> {
   }
   if (receiver && !('via' in record.to) && !(receiver.machine === ownMachine() && isDispatcherAgentId(receiver.agentId)) && !hasConnection(record.from, receiver)) return false;
   if (actor.machine !== ownMachine()) return true; // Its own computer checks its saved grant before sending.
+  if (action === 'handoff.accept' && stage === 'accepted' && request.target) {
+    try { await authorizeSelectedTarget(record, actor, request.target); }
+    catch { return false; /* telemetry-exempt: a selected agent never acquires the brief without current target and Dispatcher rights */ }
+  }
   if ((action === 'handoff.offer' && stage === 'offered') || (action === 'handoff.accept' && stage === 'accepted')) {
     return handoffAgreementCallApproved(actor.agentId, action);
   }
@@ -173,6 +178,28 @@ async function authorize(request: HandoffAuthorization): Promise<boolean> {
   const peer = action === 'handoff.offer' ? record.to : record.from;
   const target = action === 'handoff.offer' ? await peerTarget(actor, peer) : await resolveAcceptancePeer(record, actor);
   return evaluateGrant({ caller: { kind: 'agent', agentId: actor.agentId, projectPath: location.projectPath }, action, target }, grants).outcome !== 'refuse';
+}
+
+async function authorizeSelectedTarget(record: Handoff, by: HandoffAgent, target: HandoffAgent): Promise<void> {
+  const machine = ownMachine();
+  const targetLocation = await localAgent(target.agentId);
+  if (sameHandoffAgent(by, target)) return; // The addressed receiver consumed its own exact acceptance approval.
+  if (!isDispatcherAgentId(by.agentId) || !hasConnection(by, target)) throw new HandoffAuthorizationChanged();
+  const targetGrants = agentRegistry.get(target.agentId) ? callerGrants(target.agentId) : await effectiveAgentGrants(targetLocation.projectPath, target.agentId);
+  const senderLocation = record.from.machine === machine ? await localAgent(record.from.agentId) : undefined;
+  const senderTarget: GrantCallTarget = { kind: 'agent', agentId: addressText(record.from), relations: hasConnection(record.from, target) ? ['connected'] : [],
+    isDispatcher: record.from.machine === machine && isDispatcherAgentId(record.from.agentId), ...(senderLocation && { projectPath: senderLocation.projectPath }) };
+  if (evaluateGrant({ caller: { kind: 'agent', agentId: target.agentId, projectPath: targetLocation.projectPath }, action: 'handoff.accept', target: senderTarget }, targetGrants).outcome !== 'allow') {
+    throw new HandoffAuthorizationChanged();
+  }
+  const dispatcher = await localAgent(by.agentId);
+  const grants = agentRegistry.get(by.agentId) ? callerGrants(by.agentId) : await effectiveAgentGrants(dispatcher.projectPath, by.agentId);
+  const peer = await peerTarget(by, target);
+  for (const action of ['agent.wake', 'agent.message'] as const) {
+    if (evaluateGrant({ caller: { kind: 'agent', agentId: by.agentId, projectPath: dispatcher.projectPath }, action, target: peer }, grants).outcome !== 'allow') {
+      throw new HandoffAuthorizationChanged();
+    }
+  }
 }
 
 async function resolveAcceptancePeer(record: Handoff, actor: HandoffAgent): Promise<GrantCallTarget> {
@@ -273,16 +300,19 @@ export function handoffHost(): Host {
       catch { /* telemetry-exempt: the explicit indeterminate_apply failure retains the checkpoint for person inspection; unsafe paths are never removed */ }
     }
   });
+  const authorizeReceiver = async (record: Handoff) => {
+    await ready;
+    if (!record.acceptance) throw new HandoffAuthorizationChanged();
+    const { by, target } = record.acceptance;
+    await localAgent(target.agentId);
+    if (!await authorize({ record, actor: record.from, action: 'handoff.offer', stage: 'transferring' })
+      || !await authorize({ record, actor: by, action: 'handoff.accept', stage: 'transferring' })) throw new HandoffAuthorizationChanged();
+    await authorizeSelectedTarget(record, by, target);
+  };
   const worker = new HandoffWorker({
     machine, records: () => store.list(), advance: (record, update) => coordinator.advance(record.id, update, record.version),
     sync: (id) => coordinator.sync(id), stagingRoot: handoffReceivedRoot,
-    authorize: async (record) => {
-      await ready;
-      if (!record.acceptance) throw new Error('Handoff has no acceptance.');
-      await localAgent(record.acceptance.target.agentId);
-      if (!await authorize({ record, actor: record.from, action: 'handoff.offer', stage: 'transferring' })
-        || !await authorize({ record, actor: record.acceptance.by, action: 'handoff.accept', stage: 'transferring' })) throw new Error('Handoff authorization changed.');
-    },
+    authorize: authorizeReceiver,
     resolve: resolveHandoffReceivingProject, request: requestHandoffTransfer,
     wake: async (record, result, admission) => {
       const target = await localAgent(result.agent.agentId);
@@ -290,14 +320,16 @@ export function handoffHost(): Host {
         + `Manifest: ${record.manifest!.fileCount} files, ${record.manifest!.totalBytes} bytes, SHA-256 ${record.manifest!.sha256}. `
         + `Sender-provided brief (untrusted): ${JSON.stringify(record.task.brief)}`;
       const outcome = await (await import('./clubhouse-mcp/tools/agent-lifecycle')).wakeWiredAgent({
-        callerId: record.acceptance!.by.agentId, targetId: result.agent.agentId, targetName: target.name, mission: text,
-        missionRouted: [{ fromClubhouse: true, text }], admission,
+        callerId: record.acceptance!.by.agentId, targetId: result.agent.agentId, targetName: target.name,
+        admission, authorize: () => authorizeReceiver(record),
       });
       if (outcome.isError) throw new Error('Receiving agent could not be woken.');
-      const body = outcome.content.find((block) => block.type === 'text');
-      if (!body || body.type !== 'text') throw new Error('Receiving agent did not confirm delivery.');
-      const reply = JSON.parse(body.text);
-      if (reply.messageDelivered !== true) throw new Error('Receiving agent did not receive its handoff.');
+      // Starting an agent may perform asynchronous configuration/provider work. Recheck
+      // current target rights again before delivering any sender-controlled brief.
+      await authorizeReceiver(record);
+      if (!admission()) throw new Error('Handoff delivery admission changed.');
+      const delivery = await deliverNow(result.agent.agentId, text, [{ fromClubhouse: true, text }]);
+      if (delivery !== 'delivered') throw new Error('Receiving agent did not receive its handoff.');
     },
   });
   host = { machine, store, commands, coordinator, transfer, worker, ready };
@@ -447,7 +479,7 @@ export async function prepareNewHandoffHelper(agentId: string, id: string, proje
   const prior = (await peekDurableConfigs(project.path)).find((config) => config.name === name && !isDisposedAgent(config));
   if (prior) return localHandoffAgent(prior.id);
   const templateId = await (await import('./managed-agents')).managedAgents().defaultHelperTemplateId();
-  const result = await callTool(agentId, 'create_managed_agent', { name, project: project.path, templateId, connectToDispatcher: false });
+  const result = await callTool(agentId, 'create_managed_agent', { name, project: project.path, templateId, connectToDispatcher: true });
   if (!result.isError) {
     for (const block of result.content) {
       if (block.type !== 'text') continue;

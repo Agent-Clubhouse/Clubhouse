@@ -9,6 +9,9 @@ import { receiveHandoffSnapshot, HandoffTransferInterrupted } from './handoff-tr
 import { receiveHandoffCommit } from './handoff-git-receive';
 import { applyHandoffSnapshot } from './handoff-apply';
 import { HandoffSnapshotError, readHandoffSnapshotManifest, verifyHandoffSnapshot } from './handoff-snapshot';
+export class HandoffAuthorizationChanged extends Error {
+  constructor() { super('Handoff receiver permissions or connection changed. Selected agents must allow handoff acceptance; Dispatchers must allow waking and messaging them.'); }
+}
 export class HandoffProjectUnavailable extends Error {
   constructor() { super('No matching registered project for this handoff. Choose a matching project before accepting a new offer.'); }
 }
@@ -49,10 +52,10 @@ export class HandoffWorker {
     const record = this.options.records().find((value) => value.id === id);
     if (!record || isTerminalHandoff(record.state)) return;
     const verification = error instanceof HandoffSnapshotError && ['secret_blocked', 'hash_mismatch', 'unsafe_entry'].includes(error.code);
-    const step = error instanceof HandoffProjectUnavailable ? 'apply' : verification ? 'verification' : attempt.step;
-    const code = step === 'verification' ? 'verification_failed' : step === 'apply' ? 'apply_failed' : step === 'wake' ? 'wake_failed' : 'transfer_failed';
+    const step = error instanceof HandoffAuthorizationChanged ? 'authorization' : error instanceof HandoffProjectUnavailable ? 'apply' : verification ? 'verification' : attempt.step;
+    const code = step === 'authorization' ? 'authorization_changed' : step === 'verification' ? 'verification_failed' : step === 'apply' ? 'apply_failed' : step === 'wake' ? 'wake_failed' : 'transfer_failed';
     await this.options.advance(record, { state: 'failed', failure: { step, code },
-      ...(error instanceof HandoffProjectUnavailable || error instanceof HandoffSnapshotError ? { reason: error.message.slice(0, 512) } : {}) });
+      ...(error instanceof HandoffAuthorizationChanged || error instanceof HandoffProjectUnavailable || error instanceof HandoffSnapshotError ? { reason: error.message.slice(0, 512) } : {}) });
   }
   async run(id: string): Promise<void> {
     if (this.active.has(id) || this.active.size >= 2) return;

@@ -11,6 +11,8 @@ export interface HandoffAuthorization {
   actor: HandoffAgent;
   record: Handoff;
   stage: Handoff['state'];
+  /** Main-only chosen receiver, checked before granting participant visibility. */
+  target?: HandoffAgent;
 }
 
 export interface HandoffServiceOptions {
@@ -133,7 +135,7 @@ export class HandoffService {
       this.requireReceiver(record);
       if (!this.receiverAgent(record, actor)) throw new Error('Only the addressed receiver can respond.');
       if (record.state === 'offered' && this.now() >= record.createdAt + HANDOFF_OFFER_TTL_MS) return transitionHandoff(record, { state: 'failed', failure: { step: 'authorization', code: 'expired' }, operationId: this.newId(), at: Math.max(this.now(), record.updatedAt), by: { kind: 'machine', machine: this.options.machine } }, record.version);
-      if (!await this.options.authorize({ action: 'handoff.accept', actor, record, stage: 'accepted' })) throw new Error('Handoff response is not authorized.');
+      if (!await this.options.authorize({ action: 'handoff.accept', actor, record, stage: 'accepted', ...(accept && { target: target ?? actor }) })) throw new Error('Handoff response is not authorized.');
       const base = {
         operationId, at: Math.max(this.now(), record.updatedAt),
         by: { kind: 'agent' as const, address: actor }, ...(reason !== undefined && { reason }),

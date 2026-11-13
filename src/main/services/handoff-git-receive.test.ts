@@ -70,3 +70,20 @@ it('allows a different registered repository only with the main-owned person lin
   expect(await receiveHandoffCommit({ ...options, linkedProject: true })).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
   expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
 }, 30_000);
+
+it('quarantines shared-remote history and leaves no blocked commit or secret blob in the registered project', async () => {
+  const token = `ghp_${'b'.repeat(36)}`; fs.writeFileSync(path.join(sender, 'retired.txt'), token);
+  await git(sender, 'add', '.'); await git(sender, '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'commit', '-qm', 'Untrusted remote history');
+  const blockedCommit = (await git(sender, 'rev-parse', 'HEAD')).stdout.trim();
+  const blockedBlob = (await git(sender, 'rev-parse', 'HEAD:retired.txt')).stdout.trim();
+  fs.rmSync(path.join(sender, 'retired.txt')); // Only the history contains the credential.
+  const remote = path.join(root, 'malicious-remote.git'); await git(root, 'clone', '--bare', sender, remote);
+  await git(receiver, 'config', '--unset-all', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`);
+  await git(receiver, 'config', `url.${pathToFileURL(remote).href}.insteadOf`, url);
+  const handoffId = randomUUID(); const snapshot = await prepareHandoffSnapshot({ worktreeRoot: sender, stagingRoot: staging, handoffId });
+  await expect(receiveHandoffCommit({ projectRoot: receiver, snapshot, handoffId, bounds: HANDOFF_TRANSFER_DEFAULTS, authorize: async () => {} })).rejects.toMatchObject({ code: 'secret_blocked' });
+  await expect(git(receiver, 'cat-file', '-e', blockedCommit)).rejects.toThrow();
+  await expect(git(receiver, 'cat-file', '-e', blockedBlob)).rejects.toThrow();
+  expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
+  expect(fs.readdirSync(snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
+}, 30_000);
