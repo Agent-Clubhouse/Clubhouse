@@ -8,6 +8,7 @@ import { completeCanvasNavigationReveal, consumeCanvasNavigationHandoff, prepare
 import { useAgentStore } from '../../../stores/agentStore';
 import { durableAgentFromConfig } from '../../../stores/agent/agentCrudSlice';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
+import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { usePluginStore } from '../../../plugins/plugin-store';
@@ -156,7 +157,7 @@ export async function jumpToConnectionCanvas(
     if (!view.position || !view.size || ![view.position.x, view.position.y, view.size.width, view.size.height].every(Number.isFinite)) {
       throw new Error('The target node has unreadable layout data. Repair the saved Canvas and retry Open.');
     }
-    const handoff = prepareCanvasNavigation(store, { ...hit, kind, targetId });
+    const handoff = prepareCanvasNavigation(store, { ...hit, kind, targetId }, useMcpBindingStore.getState().bindings);
     handoff.popoutWindowId = destination?.windowId;
     prepared = handoff;
     if (groupProjects) useGroupProjectStore.setState({ projects: groupProjects, loaded: true, loadError: null });

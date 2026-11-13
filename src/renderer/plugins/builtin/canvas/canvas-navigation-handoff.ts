@@ -1,12 +1,13 @@
 import type { StoreApi } from 'zustand';
 import type { CanvasState } from './canvas-store';
-import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { isCanvasTargetView, type NavigableCanvasTargetKind } from '../../../../shared/canvas-persistence';
 import type { CanvasView } from './canvas-types';
 
+type WireDefinition = CanvasState['wireDefinitions'][number];
+
 export interface CanvasNavigationHandoff {
   state: CanvasState;
-  inactiveWires: ReadonlySet<McpBindingEntry>;
+  inactiveWires: ReadonlySet<WireDefinition>;
   target: { canvasId: string; viewId: string; kind: NavigableCanvasTargetKind; targetId: string };
   structure: string;
   revealed: boolean;
@@ -16,13 +17,17 @@ export interface CanvasNavigationHandoff {
 }
 
 const handoffs = new WeakMap<StoreApi<CanvasState>, CanvasNavigationHandoff>();
-const pairKey = (wire: Pick<McpBindingEntry, 'agentId' | 'targetId'>) => `${wire.agentId}\0${wire.targetId}`;
+const pairKey = (wire: Pick<WireDefinition, 'agentId' | 'targetId'>) => `${wire.agentId}\0${wire.targetId}`;
 
 /** Only the next mount skips restore: ordinary manual Canvas mounts are unchanged. */
-export function prepareCanvasNavigation(store: StoreApi<CanvasState>, target: CanvasNavigationHandoff['target']): CanvasNavigationHandoff {
+export function prepareCanvasNavigation(
+  store: StoreApi<CanvasState>,
+  target: CanvasNavigationHandoff['target'],
+  bindings: readonly Pick<WireDefinition, 'agentId' | 'targetId'>[],
+): CanvasNavigationHandoff {
   handoffs.get(store)?.dispose?.();
   const state = store.getState();
-  const active = new Set(useMcpBindingStore.getState().bindings.map(pairKey));
+  const active = new Set(bindings.map(pairKey));
   const handoff: CanvasNavigationHandoff = {
     state,
     inactiveWires: new Set(state.wireDefinitions.filter((wire) => !active.has(pairKey(wire)))),
@@ -59,7 +64,7 @@ export function completeCanvasNavigationReveal(store: StoreApi<CanvasState>, han
   handoff.revealed = true;
 }
 
-export function navigationWireDefinitions(state: CanvasState, handoff: CanvasNavigationHandoff): McpBindingEntry[] {
+export function navigationWireDefinitions(state: CanvasState, handoff: CanvasNavigationHandoff): WireDefinition[] {
   if (canvasStructure(state) !== handoff.structure) handoff.structureRetired = true;
   if (handoff.structureRetired) return state.wireDefinitions;
   return state.wireDefinitions.filter((wire) => !handoff.inactiveWires.has(wire));

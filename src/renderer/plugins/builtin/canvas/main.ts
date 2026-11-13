@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from '../../../../shared/plugin-types';
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
