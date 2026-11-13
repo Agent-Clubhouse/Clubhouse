@@ -114,6 +114,7 @@ const projects: Project[] = [];
 const terminalUpdates = new Map<string, { promise: Promise<void>; resolve: () => void }>();
 const seed = path.join(temp.root, 'source-baseline');
 let seedCommit: string;
+let seedRefs: string;
 let actualEnsureGitignore: typeof ensureGitignore;
 
 beforeAll(async () => {
@@ -123,6 +124,7 @@ beforeAll(async () => {
   git(seed, 'add', '.');
   git(seed, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'initial');
   seedCommit = git(seed, 'rev-parse', 'HEAD');
+  seedRefs = git(seed, 'ls-remote', '--symref', seed, 'HEAD', 'refs/heads/*');
   actualEnsureGitignore = (await vi.importActual<typeof import('../agent-config')>('../agent-config')).ensureGitignore;
 });
 
@@ -154,7 +156,9 @@ function gitAdmission(source: string, destination: string) {
   };
 }
 
-function fixture(sourceEnvironment = environment) {
+// Only cases whose source stays at the seed revision opt into the prepared
+// advertisement. Cases that edit source refs retain real remote discovery.
+function fixture(sourceEnvironment = environment, preparedRefs?: string) {
   const work = path.join(temp.root, `case-${++n}`);
   lifetime.directories.push(work);
   const source = path.join(work, 'source');
@@ -164,7 +168,7 @@ function fixture(sourceEnvironment = environment) {
   const url = 'https://github.com/example/repository.git';
   const safeGit = createImportGit(sourceEnvironment);
   const runner: ImportGit = {
-    remote: vi.fn(async (remote, branch) => parseRemoteIdentity(remote, git(source, 'ls-remote', '--symref', source, 'HEAD', 'refs/heads/*'), branch)),
+    remote: vi.fn(async (remote, branch) => parseRemoteIdentity(remote, preparedRefs ?? git(source, 'ls-remote', '--symref', source, 'HEAD', 'refs/heads/*'), branch)),
     run: vi.fn(async (args, options) => {
       // Only this test adapter permits local fixture transport. Production never enables file://.
       if (args[0] === 'fetch') {
@@ -650,43 +654,55 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     expect(git(f.destination, 'config', '--get', 'remote.origin.url')).toBe('https://github.com/example/other.git');
   });
 
-  it('rejects configuration injected during credential preparation, after the earlier ownership checkpoint', async () => {
-    let inject: (() => void) | undefined;
-    const f = fixture(() => {
-      inject?.();
-      inject = undefined;
-      return environment();
+  describe('credential preparation with an owned source fixture', () => {
+    let f: ReturnType<typeof fixture>;
+    beforeEach(() => {
+      let inject: (() => void) | undefined;
+      f = fixture(() => {
+        inject?.();
+        inject = undefined;
+        return environment();
+      }, seedRefs);
+      const original = f.runner.run;
+      f.runner.run = vi.fn(async (args, options) => {
+        if (args[0] === 'checkout') inject = () => fs.appendFileSync(path.join(f.destination, '.git', 'config'), '\n[filter "danger"]\n smudge = unexpected-command\n');
+        return original(args, options);
+      });
     });
-    const original = f.runner.run;
-    f.runner.run = vi.fn(async (args, options) => {
-      if (args[0] === 'checkout') inject = () => fs.appendFileSync(path.join(f.destination, '.git', 'config'), '\n[filter "danger"]\n smudge = unexpected-command\n');
-      return original(args, options);
-    });
-    const { receipt } = await start(f);
-    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', reason: 'checkout_changed', cloneCompleted: false });
-    expect(fs.existsSync(path.join(f.destination, 'readme.txt'))).toBe(false);
-    expect(f.register).not.toHaveBeenCalled();
+
+    it('rejects configuration injected during credential preparation, after the earlier ownership checkpoint', async () => {
+      const { receipt } = await start(f);
+      expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', reason: 'checkout_changed', cloneCompleted: false });
+      expect(fs.existsSync(path.join(f.destination, 'readme.txt'))).toBe(false);
+      expect(f.register).not.toHaveBeenCalled();
+    }, 10_000); // Real init/fetch and security checkpoints on busy Windows runners.
   });
 
-  it.each(['commondir', 'objects', 'refs'])('rejects after-fetch Git %s indirection without using or replacing its outside target', async (changed) => {
-    const f = fixture();
-    const original = f.runner.run;
-    f.runner.run = vi.fn(async (args, options) => {
-      const result = await original(args, options);
-      if (args[0] === 'fetch') {
-        const target = path.join(f.destination, '.git', changed);
-        if (changed === 'commondir') fs.writeFileSync(target, `${path.join(f.source, '.git')}\n`);
-        else {
-          fs.renameSync(target, `${target}-owned`);
-          fs.symlinkSync(path.join(f.source, '.git', changed), target, 'junction');
+  describe.each(['commondir', 'objects', 'refs'])('after-fetch Git %s indirection with an owned source fixture', (changed) => {
+    let f: ReturnType<typeof fixture>;
+    beforeEach(() => {
+      f = fixture(environment, seedRefs);
+      const original = f.runner.run;
+      f.runner.run = vi.fn(async (args, options) => {
+        const result = await original(args, options);
+        if (args[0] === 'fetch') {
+          const target = path.join(f.destination, '.git', changed);
+          if (changed === 'commondir') fs.writeFileSync(target, `${path.join(f.source, '.git')}\n`);
+          else {
+            fs.renameSync(target, `${target}-owned`);
+            fs.symlinkSync(path.join(f.source, '.git', changed), target, 'junction');
+          }
         }
-      }
-      return result;
+        return result;
+      });
     });
-    const { receipt } = await start(f);
-    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', cloneCompleted: false, reason: changed === 'commondir' ? 'checkout_changed' : 'owned_directory_changed' });
-    expect(f.register).not.toHaveBeenCalled();
-    expect(git(f.source, 'rev-parse', 'HEAD')).toBe(f.commit);
+
+    it('rejects indirection without using or replacing its outside target', async () => {
+      const { receipt } = await start(f);
+      expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'failed', cloneCompleted: false, reason: changed === 'commondir' ? 'checkout_changed' : 'owned_directory_changed' });
+      expect(f.register).not.toHaveBeenCalled();
+      expect(git(f.source, 'rev-parse', 'HEAD')).toBe(f.commit);
+    }, 10_000); // Real fetch plus on-disk ownership checks.
   });
 
   describe('final registration identity after prepared checkout', () => {
@@ -737,30 +753,37 @@ describe('QA engine regressions with real Git and harmless isolated markers', ()
     });
   });
 
-  it('honors cancellation while the final registration authority assertion is awaiting', async () => {
-    const f = fixture();
-    let finalRemote = false;
-    let entered!: () => void;
+  describe('cancellation at a prepared final registration boundary', () => {
+    let f: ReturnType<typeof fixture>;
+    let receipt: ImportReceipt;
     let release!: () => void;
-    const ready = new Promise<void>((resolve) => { entered = resolve; });
-    const paused = new Promise<void>((resolve) => { release = resolve; });
-    lifetime.releases.push(release);
-    const remote = f.runner.remote;
-    f.runner.remote = vi.fn(async (...args) => {
-      const result = await remote(...args);
-      if ((await f.store.get()).receipts.some((receipt) => receipt.phase === 'registering')) finalRemote = true;
-      return result;
+    beforeEach(async () => {
+      f = fixture(environment, seedRefs);
+      let finalRemote = false;
+      let entered!: () => void;
+      const ready = new Promise<void>((resolve) => { entered = resolve; });
+      const paused = new Promise<void>((resolve) => { release = resolve; });
+      lifetime.releases.push(() => { release(); entered(); });
+      const remote = f.runner.remote;
+      f.runner.remote = vi.fn(async (...args) => {
+        const result = await remote(...args);
+        if ((await f.store.get()).receipts.some((receipt) => receipt.phase === 'registering')) finalRemote = true;
+        return result;
+      });
+      const approval: ImportAuthorization = async () => ({
+        kind: 'approved',
+        assertCurrent: async () => { if (finalRemote) { entered(); await paused; } },
+      });
+      ({ receipt } = await start(f, approval));
+      await ready;
+    }, 20_000);
+
+    it('honors cancellation while the final registration authority assertion is awaiting', async () => {
+      expect(await f.service.cancel('dispatcher', receipt.id, f.destination)).toMatchObject({ status: 'cancellation_requested' });
+      release();
+      expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'cancelled', cloneCompleted: true, reason: 'cancelled' });
+      expect(f.register).not.toHaveBeenCalled();
     });
-    const approval: ImportAuthorization = async () => ({
-      kind: 'approved',
-      assertCurrent: async () => { if (finalRemote) { entered(); await paused; } },
-    });
-    const { receipt } = await start(f, approval);
-    await ready;
-    expect(await f.service.cancel('dispatcher', receipt.id, f.destination)).toMatchObject({ status: 'cancellation_requested' });
-    release();
-    expect(await finished(f.service, receipt.id)).toMatchObject({ phase: 'cancelled', cloneCompleted: true, reason: 'cancelled' });
-    expect(f.register).not.toHaveBeenCalled();
   });
 
   it.each(['tracked-file', 'runtime-state', 'ignored-content'])('preserves and refuses %s changes during the last registration authority await', async (changed) => {
