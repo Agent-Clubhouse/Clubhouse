@@ -124,12 +124,13 @@ async function mcp(env: Record<string, string | null>) {
   };
 }
 /** A report belongs to this agent, and the current bridge must accept a real handshake. */
-async function readyMcp(cli: FakeClis, agentId: string, timeout = 45_000) {
+async function readyMcp(cli: FakeClis, agentId: string, timeout = 45_000, previousPid?: number) {
   let client: Awaited<ReturnType<typeof mcp>> | undefined;
   await expect.poll(async () => {
     try {
       const report = await cli.report('claude', agentId);
       expect(report.env.CLUBHOUSE_AGENT_ID).toBe(agentId);
+      if (previousPid !== undefined) expect(report.pid).not.toBe(previousPid);
       client = await mcp(report.env);
       await client.names();
       return 'ready';
@@ -163,7 +164,7 @@ async function requestNetwork() {
   expect(await here.window.evaluate((link) => window.clubhouse.annexClient.pairWithLink(link), pairing.toString())).toMatchObject({ success: true });
   await expect.poll(async () => (await a.controller.names()).some((n) => n.endsWith('__hand_off_request')), { timeout: 30_000 }).toBe(true);
   await expect.poll(async () => (await b.controller.names()).some((n) => n.endsWith('__hand_off_request')), { timeout: 30_000 }).toBe(true);
-  return { here, there, a, b, otherCli, fixture: script.fixture };
+  return { here, there, a, b, otherCli };
 }
 const remoteRequests = async (client: Awaited<ReturnType<typeof mcp>>) => {
   const result = await client.call('list_remote_requests'); expect(result.isError).toBe(false);
@@ -257,6 +258,7 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   expect(await sourceTranscript()).toContain('Result from ');
   expect(await sourceTranscript()).toContain(' on Laptop');
   const profile = there.profile;
+  const previousPid = (await network.otherCli.report('claude', b.ids.controller)).pid;
   await there.electronApp.close(); apps.splice(apps.indexOf(there), 1);
   await expect.poll(async () => (await links(here.window, a.ids.controller)).flatMap((p) => p.sources).some((s) => s.suspended?.includes('offline')), { timeout: 30_000 }).toBe(true);
   const local = await a.chat.call('start_work', { request: 'Wait for the offline laptop fixture.' });
@@ -265,12 +267,42 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   expect(offered.text).toContain('Waiting for Laptop');
   const sent = JSON.parse(offered.text).request;
   expect(sent.delivery).toBe('accepted');
-  // A new report directory cannot expose the closed desktop's old bridge port.
-  const restartCli = await installFakeClis({ claude: network.fixture }); additionalFakes.push(restartCli);
-  there = await desktop('Laptop', profile, restartCli);
-  const restarted = { controller: await readyMcp(restartCli, b.ids.controller) };
-  await expect.poll(async () => (await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id).length, { timeout: 45_000 }).toBe(1);
-  await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.delivery, { timeout: 30_000 }).toBe('delivered');
+  // A real CLI's install path survives a restart. Reject its old process report,
+  // and observe transport recovery before checking the new controller's bridge.
+  let stage = 'launch';
+  let restarted: { controller: Awaited<ReturnType<typeof mcp>> };
+  try {
+    there = await desktop('Laptop', profile, network.otherCli);
+    stage = 'network reconnect';
+    await expect.poll(async () => (await presence(here.window)).find((r) => r.machineId === b.ids.machine)?.link.state, { timeout: 60_000 }).toBe('active');
+    stage = 'durable delivery';
+    await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.delivery, { timeout: 45_000 }).toBe('delivered');
+    stage = 'new controller process and MCP';
+    restarted = { controller: await readyMcp(network.otherCli, b.ids.controller, 45_000, previousPid) };
+    stage = 'controller request presentation';
+    await expect.poll(async () => (await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id).length, { timeout: 45_000 }).toBe(1);
+  } catch (error) {
+    // Only fixture state, never the report's bridge nonce or Annex pairing secrets.
+    const capture = async (read: () => Promise<unknown>) => {
+      try { return await read(); } catch (failure) { return String(failure); }
+    };
+    const diagnostics = {
+      stage, previousPid,
+      report: await capture(async () => {
+        const report = await network.otherCli.report('claude', b.ids.controller);
+        return { pid: report.pid, agentId: report.env.CLUBHOUSE_AGENT_ID, argv: report.argv };
+      }),
+      sourceRequest: await capture(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)),
+      sourcePresence: await capture(() => presence(here.window)),
+      receiver: await capture(() => there.window.evaluate(async () => {
+        const annex = await window.clubhouse.annex.getStatus();
+        return { dispatcher: await window.clubhouse.dispatcher.get(), presence: await window.clubhouse.dispatcher.getPresence(), annex: { port: annex.port, advertising: annex.advertising } };
+      })),
+      receiverRequests: await capture(async () => JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, 'dispatcher-federation-requests.json'), 'utf8'))),
+    };
+    await test.info().attach('offline-restart-diagnostics', { body: Buffer.from(JSON.stringify(diagnostics, null, 2)), contentType: 'application/json' });
+    throw error;
+  }
   expect((await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.outcome).toBe('under_way');
   await offerRemote(a.controller, localId, 'Offline request fixture.');
   expect((await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id)).toHaveLength(1);
