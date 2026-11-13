@@ -17,8 +17,9 @@
  * below is the whole rule, and the one place to replace.
  */
 
-import { registerGlobalTool } from '../tool-registry';
-import { decideGrant, registerActionOwnerLookup } from '../grant-check';
+import { callGrantIsApproved, grantApprovalContext, registerGlobalTool } from '../tool-registry';
+import { checkToolGrant, decideGrant, registerActionOwnerLookup } from '../grant-check';
+import { resolveArgTargets } from '../arg-targets';
 import type { GrantCallTarget } from '../../../../shared/agent-grants';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
@@ -80,10 +81,11 @@ export interface ActionScope {
   canChange(action: Pick<Action, 'owner'>): boolean;
 }
 
-function groupAdmin(callerId: string, groupProjectId: string): boolean {
+function groupAdmin(callerId: string, groupProjectId: string, approved = false): boolean {
   const project = groupProjectRegistry.getSync(groupProjectId);
-  return !!project && groupProjectHost.isThisMachine(project.host)
-    && decideGrant(callerId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId } as GrantCallTarget).outcome === 'allow';
+  if (!project || !groupProjectHost.isThisMachine(project.host)) return false;
+  const outcome = decideGrant(callerId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId } as GrantCallTarget).outcome;
+  return outcome === 'allow' || (outcome === 'ask' && approved);
 }
 
 function canSeeAction(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trigger'>>, reader: ActionOwner): boolean {
@@ -104,9 +106,9 @@ function canSeeAction(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trig
  * Actions: rights.ts, which the engine checks on create, update, turning on
  * and every run (#2960, D131).
  */
-export function actionScope(callerId: string): ActionScope {
+export function actionScope(callerId: string, groupApproved = false): ActionScope {
   if (isDispatcherAgent(callerId)) {
-    return { callerId, owner: { kind: 'dispatcher' }, canSee: (a) => canSeeAction(a, { kind: 'dispatcher' }), canChange: (a) => a.owner.kind === 'group_project' ? groupAdmin(callerId, a.owner.groupProjectId) : a.owner.kind !== 'app' };
+    return { callerId, owner: { kind: 'dispatcher' }, canSee: (a) => canSeeAction(a, { kind: 'dispatcher' }), canChange: (a) => a.owner.kind === 'group_project' ? groupAdmin(callerId, a.owner.groupProjectId, groupApproved) : a.owner.kind !== 'app' };
   }
   if (isTrackedDispatcher(callerId)) {
     throw new ActionError('not_allowed', 'The Dispatcher is turned off, so it can’t manage actions.');
@@ -123,7 +125,7 @@ export function actionScope(callerId: string): ActionScope {
     // Agents read every action people and agents can see, but change and run
     // only their own: running a person's action would act at the person's access.
     canSee: (a) => canSeeAction(a, owner),
-    canChange: (a) => a.owner.kind === 'group_project' ? groupAdmin(callerId, a.owner.groupProjectId) : a.owner.kind === 'agent' && a.owner.agentId === callerId,
+    canChange: (a) => a.owner.kind === 'group_project' ? groupAdmin(callerId, a.owner.groupProjectId, groupApproved) : a.owner.kind === 'agent' && a.owner.agentId === callerId,
   };
 }
 
@@ -285,7 +287,7 @@ function prepareEndsAt(value: unknown): unknown {
 function createAction(scope: ActionScope, args: Obj): unknown {
   let owner = scope.owner;
   if (args.groupProjectId !== undefined) {
-    if (typeof args.groupProjectId !== 'string' || !groupAdmin(scope.callerId, args.groupProjectId)) throw new ActionError('not_allowed', 'An allowed group-project Admin grant on the host is required.');
+    if (typeof args.groupProjectId !== 'string' || !scope.canChange({ owner: { kind: 'group_project', groupProjectId: args.groupProjectId } })) throw new ActionError('not_allowed', 'A group-project Admin grant on the host is required.');
     owner = { kind: 'group_project', groupProjectId: args.groupProjectId };
   }
   const ctx = owner.kind === 'group_project' ? {} : contextFor(scope);
@@ -502,14 +504,25 @@ type Handler = (scope: ActionScope, args: Obj) => unknown;
 
 async function guarded(tool: ActionToolName, callerId: string, args: Obj, handler: Handler): Promise<McpToolResult> {
   try {
-    const scope = actionScope(callerId);
-    const run = () => handler(scope, args);
+    let scope: ActionScope;
+    const run = async () => {
+      const options = tool === 'create_action' ? CREATE : tool === 'update_action' ? UPDATE_ONE : tool === 'delete_action' ? WRITE_ONE : tool === 'run_action' ? RUN_ONE : undefined;
+      let approved = false;
+      if (options) {
+        const targets = await resolveArgTargets(callerId, options.grant, args);
+        const check = checkToolGrant(callerId, options.grant, args, undefined, targets);
+        approved = check.ok === false && check.reason === 'ask_first' && check.asks.some((ask) => ask.action === 'group_project.admin')
+          && callGrantIsApproved(callerId, tool, args, check, grantApprovalContext(callerId, tool, args, options.grant, targets));
+      }
+      scope = actionScope(callerId, approved);
+      return handler(scope, args);
+    };
     const value = tool === 'create_action' && typeof args.groupProjectId === 'string'
       ? await actions.withGroupActionLock(args.groupProjectId, run)
       : (tool === 'update_action' || tool === 'delete_action' || tool === 'run_action') && typeof args.id === 'string'
-        ? await actions.changeActionOnHost(args.id, run) : run();
+        ? await actions.changeActionOnHost(args.id, run) : await run();
     const result = json(value);
-    if (scope.owner.kind === 'dispatcher' && (tool === 'create_action' || tool === 'update_action' || tool === 'subscribe')
+    if (scope!.owner.kind === 'dispatcher' && (tool === 'create_action' || tool === 'update_action' || tool === 'subscribe')
       && isObject(value) && isObject(value.action) && typeof value.action.id === 'string') {
       const action = actions.getAction(value.action.id);
       if (action) {
@@ -549,12 +562,14 @@ async function guarded(tool: ActionToolName, callerId: string, args: Obj, handle
 const LIST = { group: 'actions', grant: { actions: ['action.read'], target: 'app' } } as const;
 // Ask first cannot authorize unattended watching: rights.ts explains that a saved Allow is needed.
 const WATCH_ACTIVITY = { actions: ['agent.watch'], target: 'app', ifAnyAgentSource: true, askHandledByTool: true } as const;
-const CREATE = { group: 'actions', grant: [{ actions: ['action.write'], target: 'app' }, WATCH_ACTIVITY] } as const;
+const SUBSCRIBE = { group: 'actions', grant: [{ actions: ['action.write'], target: 'app' }, WATCH_ACTIVITY] } as const;
+const CREATE = { group: 'actions', grant: [...SUBSCRIBE.grant, { actions: ['group_project.admin'], target: 'group_project_arg', ifArgs: ['groupProjectId'], strictTargets: true, from: { args: ['groupProjectId'] } }] } as const;
 // Trigger/step grants are rechecked by rights.ts, not granted by action.write.
 // The action named in the arguments: its owner tells the caller's own from others'.
-const WRITE_ONE = { group: 'actions', grant: { actions: ['action.write'], target: 'action_arg' } } as const;
-const UPDATE_ONE = { group: 'actions', grant: [WRITE_ONE.grant, WATCH_ACTIVITY] } as const;
-const RUN_ONE = { group: 'actions', grant: { actions: ['action.run'], target: 'action_arg' } } as const;
+const GROUP_OWNER_ADMIN = { actions: ['group_project.admin'], target: 'action_group_project' } as const;
+const WRITE_ONE = { group: 'actions', grant: [{ actions: ['action.write'], target: 'action_arg' }, GROUP_OWNER_ADMIN] } as const;
+const UPDATE_ONE = { group: 'actions', grant: [...WRITE_ONE.grant, WATCH_ACTIVITY] } as const;
+const RUN_ONE = { group: 'actions', grant: [{ actions: ['action.run'], target: 'action_arg' }, GROUP_OWNER_ADMIN] } as const;
 
 function schema(properties: Obj, required: string[] = []): McpToolDefinition['inputSchema'] {
   return { type: 'object', properties, ...(required.length > 0 && { required }) };
@@ -678,6 +693,6 @@ export function registerActionTools(): void {
       }, ['event']),
     },
     (callerId, args) => guarded('subscribe', callerId, args, subscribe),
-    CREATE,
+    SUBSCRIBE,
   );
 }

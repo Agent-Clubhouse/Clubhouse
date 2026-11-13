@@ -116,9 +116,13 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
       // its own Actions.
       if (!actionOwnerLookup || args.id === undefined) return null;
       const action = actionOwnerLookup(args);
-      const groupAdmin = action?.groupProjectId && decideGrant(agentId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId: action.groupProjectId } as GrantCallTarget).outcome === 'allow';
+      const groupAdmin = action?.groupProjectId && decideGrant(agentId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId: action.groupProjectId } as GrantCallTarget).outcome !== 'refuse';
       // An unknown id reads like someone else's: a refusal never says whether it exists.
       return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId || groupAdmin ? ['self'] : [] };
+    }
+    case 'action_group_project': {
+      const groupProjectId = actionOwnerLookup?.(args)?.groupProjectId;
+      return groupProjectId ? { kind: 'group_project', groupRole: 'member', groupProjectId } as GrantCallTarget : null;
     }
     case 'handoff_peer':
     case 'agent_arg':

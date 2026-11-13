@@ -609,6 +609,9 @@ describe('action tools', () => {
         const args = { groupProjectId: 'gp1', trigger: DAILY, steps: [{ kind: 'group_post', topic: 'general', text: 'Ready' }] };
         const denied = await call('agent-a', 'create_action', args);
         expect(denied).toMatchObject({ isError: true, body: { error: { code: 'not_allowed' } } });
+        decision.mockReturnValue({ outcome: 'ask' });
+        expect(actionScope('agent-a').canChange({ owner: { kind: 'group_project', groupProjectId: 'gp1' } })).toBe(false);
+        expect(actionScope('agent-a', true).canChange({ owner: { kind: 'group_project', groupProjectId: 'gp1' } })).toBe(true);
         decision.mockReturnValue({ outcome: 'allow' });
         const created = await call('agent-a', 'create_action', args);
         expect(created.body.action.owner).toEqual({ kind: 'group_project', groupProjectId: 'gp1' });

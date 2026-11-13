@@ -66,6 +66,8 @@ export const TOOL_GRANT_TARGETS = [
    * is `self`; anyone else's needs a grant on that Action, or on `any`.
    */
   'action_arg',
+  /** The group project owning the named Action, if it has one. */
+  'action_group_project',
 ] as const;
 
 export type ToolGrantTarget = (typeof TOOL_GRANT_TARGETS)[number];
