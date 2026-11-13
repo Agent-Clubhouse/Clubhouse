@@ -11,7 +11,27 @@ import { appLog } from './log-service';
 import { persist } from '../telemetry/persist';
 import { replaceFile } from './settings-store';
 import * as projectStore from './project-store';
-import { groupProjectsDir, registryPath } from './group-project-paths';
+import { groupProjectsDir, registryPath, tombstonesPath } from './group-project-paths';
+
+/**
+ * Ids with a delete tombstone (#3356, #3364). Read at load so every reader hides
+ * a group project whose delete was interrupted, before the host reconciles it.
+ * An unreadable file hides nothing here; the host refuses to work with it.
+ */
+async function readTombstonedIds(): Promise<Set<string>> {
+  try {
+    const list: unknown = JSON.parse(await fsp.readFile(tombstonesPath(), 'utf-8'));
+    if (!Array.isArray(list)) throw new Error('not a list');
+    return new Set(list.flatMap((t) => (t && typeof t.groupProjectId === 'string' ? [t.groupProjectId] : [])));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return new Set();
+    // telemetry-exempt: logged; the host's own read of this file refuses and surfaces it
+    appLog('core:group-project', 'error', 'Group project tombstones could not be read', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return new Set();
+  }
+}
 
 async function ensureDir(dir: string): Promise<void> {
   await fsp.mkdir(dir, { recursive: true });
@@ -49,6 +69,8 @@ function sameScope(left: GroupProjectScope | undefined, right: GroupProjectScope
 
 class GroupProjectRegistry {
   private projects = new Map<string, GroupProject>();
+  /** Tombstoned ids: kept for the host's cleanup, invisible to every reader. */
+  private hidden = new Set<string>();
   private inferredScopeIds = new Set<string>();
   private inferredScopeCandidates = new Map<string, GroupProjectScope>();
   private loaded = false;
@@ -138,6 +160,7 @@ class GroupProjectRegistry {
         });
       }
     }
+    this.hidden = await readTombstonedIds();
     this.projects = projects;
     this.inferredScopeIds = inferredIds;
     this.inferredScopeCandidates = priorCandidates;
@@ -244,22 +267,40 @@ class GroupProjectRegistry {
 
   async get(id: string): Promise<GroupProject | null> {
     await this.ensureLoaded();
-    return this.projects.get(id) ?? null;
+    return this.hidden.has(id) ? null : this.projects.get(id) ?? null;
   }
 
   /** Synchronous lookup from in-memory cache (returns null if not yet loaded). */
   getSync(id: string): GroupProject | null {
-    return this.projects.get(id) ?? null;
+    return this.hidden.has(id) ? null : this.projects.get(id) ?? null;
   }
 
   async list(): Promise<GroupProject[]> {
     await this.ensureLoaded();
-    return [...this.projects.values()];
+    return this.visible();
+  }
+
+  private visible(): GroupProject[] {
+    return [...this.projects.values()].filter((project) => !this.hidden.has(project.id));
+  }
+
+  /** Whether a record exists, hidden or not. Only the host uses this. */
+  async hasRecord(id: string): Promise<boolean> {
+    await this.ensureLoaded();
+    return this.projects.has(id);
+  }
+
+  /** Hide a group project from every reader once its delete begins. Only the host calls this. */
+  async hide(id: string): Promise<void> {
+    await this.ensureLoaded();
+    this.hidden.add(id);
+    this.notifyListeners();
   }
 
   /** Navigation and inspection must not load/migrate the registry or schedule a write. */
   async peek(options: { strict?: boolean } = {}): Promise<GroupProject[]> {
-    if (this.loaded && !options.strict) return [...this.projects.values()];
+    if (this.loaded && !options.strict) return this.visible();
+    const hidden = await readTombstonedIds();
     let raw: string;
     try {
       raw = await fsp.readFile(registryPath(), 'utf-8');
@@ -295,7 +336,7 @@ class GroupProjectRegistry {
         instructions: typeof value.instructions === 'string' ? value.instructions : '',
         metadata: value.metadata as Record<string, unknown>,
       };
-    });
+    }).filter((project) => !hidden.has(project.id));
   }
 
   async update(id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<GroupProject | null> {
@@ -337,6 +378,7 @@ class GroupProjectRegistry {
     this.flushTimer = null;
     this.pendingFlush = null;
     this.projects.clear();
+    this.hidden.clear();
     this.inferredScopeIds.clear();
     this.inferredScopeCandidates.clear();
     this.listeners.clear();

@@ -263,6 +263,56 @@ describe('group project host: delete', () => {
   });
 });
 
+describe('group project host: delete in two steps (#3364 cascade)', () => {
+  it('hides the group project from every reader at begin, refuses writes, and announces deleted', async () => {
+    const project = await groupProjectHost.create('Cascade');
+    const changes: GroupProjectChange[] = [];
+    groupProjectHost.onChange((c) => changes.push(c));
+    const tombstone = await groupProjectHost.beginDelete(project.id, { expectedSeq: 1 });
+    expect(tombstone).toMatchObject({ groupProjectId: project.id, seq: 2, state: 'deleting' });
+    expect(changes).toEqual([{ groupProjectId: project.id, seq: 2, part: 'deleted' }]);
+    expect(await groupProjectHost.get(project.id)).toBeNull();
+    expect(await groupProjectHost.list()).toEqual([]);
+    expect(groupProjectRegistry.getSync(project.id)).toBeNull();
+    expect(await groupProjectRegistry.peek()).toEqual([]);
+    await expect(groupProjectHost.post(project.id, 'a', 'work', 'late')).rejects.toMatchObject({ code: 'not_found' });
+    await expect(groupProjectHost.exclusive(project.id, async () => 'x')).rejects.toMatchObject({ code: 'not_found' });
+    // The data stays for the cascade until finish.
+    expect(fs.existsSync(path.join(dataDir(), project.id))).toBe(true);
+    expect((await groupProjectHost.listPendingDeletes()).map((t) => t.groupProjectId)).toEqual([project.id]);
+  });
+
+  it('keeps a pending delete hidden and untouched across restart, until its cascade finishes it', async () => {
+    const project = await groupProjectHost.create('Recover');
+    await groupProjectHost.beginDelete(project.id);
+    await restart();
+    expect(await groupProjectHost.list()).toEqual([]);
+    expect(await groupProjectRegistry.peek({ strict: true })).toEqual([]);
+    expect(await groupProjectRegistry.hasRecord(project.id)).toBe(true);
+    expect(fs.existsSync(path.join(dataDir(), project.id))).toBe(true);
+    const [pending] = await groupProjectHost.listPendingDeletes();
+    const done = await groupProjectHost.exclusivePending(pending.groupProjectId, async (tombstone) => {
+      expect(tombstone.state).toBe('deleting');
+      return groupProjectHost.finishDelete(project.id, { withinExclusive: true });
+    });
+    expect(done.state).toBe('deleted');
+    expect(await groupProjectRegistry.hasRecord(project.id)).toBe(false);
+    expect(fs.existsSync(path.join(dataDir(), project.id))).toBe(false);
+    expect(await groupProjectHost.listPendingDeletes()).toEqual([]);
+    // Repeating is harmless.
+    expect((await groupProjectHost.finishDelete(project.id)).state).toBe('deleted');
+  });
+
+  it('refuses begin when changed, finish and exclusivePending without a tombstone', async () => {
+    const project = await groupProjectHost.create('Refusals');
+    await groupProjectHost.post(project.id, 'a', 'work', 'x');
+    await expect(groupProjectHost.beginDelete(project.id, { expectedSeq: 1 })).rejects.toMatchObject({ code: 'changed' });
+    await expect(groupProjectHost.finishDelete(project.id)).rejects.toMatchObject({ code: 'not_found' });
+    await expect(groupProjectHost.exclusivePending(project.id, async () => 1)).rejects.toMatchObject({ code: 'not_found' });
+    expect(await groupProjectHost.listPendingDeletes()).toEqual([]);
+  });
+});
+
 describe('group project host: members by address', () => {
   it('keeps two agents with the same name apart, keyed by address', async () => {
     fixture.fingerprint = FP_A;

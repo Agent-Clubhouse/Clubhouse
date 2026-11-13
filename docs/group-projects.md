@@ -166,10 +166,22 @@ New ids add 48 random bits to the creation time (`gp_<ms>_<12 hex>`,
 `msg_<ms>_<12 hex>`), so ids made on different machines don't collide. Existing
 ids are unchanged.
 
-Deleting writes a tombstone first (`group-projects/tombstones.json`:
-`{ groupProjectId, host, seq, deletedAt }`, kept 90 days and at most 1,000), then
-removes the record, board, membership and `host.json`. If the app stops part
-way, the next start finishes the delete. A deleted id is never reused. Other
+Deleting has two steps, so a cascade (#3364) can clean up around it and
+recover after a crash. `beginDelete(id, { expectedSeq })` saves a tombstone in
+`group-projects/tombstones.json` (`{ groupProjectId, host, seq, deletedAt,
+state: "deleting" }`), hides the group project from every reader (the registry
+reads tombstones when it loads, so this holds after a crash too), refuses
+further writes and announces `deleted`. `finishDelete(id)` marks the tombstone
+`deleted`, then removes the record, board, membership and `host.json`. It is safe
+to repeat. `listPendingDeletes()` and `exclusivePending(id, fn)` let the cascade
+resume a `deleting` tombstone after restart. `delete(id)` does both steps in
+one call.
+
+On start, the host never finishes a `deleting` tombstone, since its cascade owns
+that. For a `deleted` tombstone it removes any record or data a crash or failed
+removal left behind. A removal that still fails is logged and retried at the
+next start. Tombstones are kept 90 days and at most 1,000, but a `deleting` one,
+or one whose data remains, is never pruned. A deleted id is never reused. Other
 machines use tombstones to drop their cached copies (#3363).
 
 ### Durability

@@ -24,7 +24,12 @@ export async function passthroughHostModule() {
   const registry = registryModule.groupProjectRegistry as unknown as Record<string, (...args: unknown[]) => unknown>;
   const inbox = (name: string) => optional<(name: string) => string>(bulletin, 'inboxChannelName')?.(name) ?? `inbox-${name.toLowerCase()}`;
   const board = (id: string) => bulletin.getBulletinBoard(id) as unknown as Record<string, (...args: unknown[]) => unknown>;
+  // Membership records, kept in memory so membership policy (#3357) can be exercised.
+  type Membership = { version: 1; autoJoin: boolean; explicit: unknown[]; excluded: unknown[]; [extra: string]: unknown };
+  const memberships = new Map<string, Membership>();
+  const membershipOf = (id: string): Membership => structuredClone(memberships.get(id) ?? { version: 1, autoJoin: false, explicit: [], excluded: [] });
   const groupProjectHost = {
+    _resetForTesting: vi.fn(() => { memberships.clear(); }),
     selfMachine: vi.fn(() => null),
     isThisMachine: vi.fn(() => true),
     list: vi.fn(async () => registry.list()),
@@ -42,11 +47,24 @@ export async function passthroughHostModule() {
       return { deleted: !!deleted };
     }),
     exclusive: vi.fn(async (id: string, fn: (c: unknown) => unknown) => fn({ project: await registry.get(id), seq: 0 })),
-    getMembership: vi.fn(async () => ({ version: 1, autoJoin: false, explicit: [], excluded: [] })),
-    updateMembership: vi.fn(async () => ({ membership: { version: 1, autoJoin: false, explicit: [], excluded: [] }, seq: 0 })),
+    getMembership: vi.fn(async (id: string) => membershipOf(id)),
+    updateMembership: vi.fn(async (id: string, fn: (draft: Membership) => Membership | void) => {
+      const draft = membershipOf(id);
+      const next: Membership = fn(draft) || draft;
+      memberships.set(id, structuredClone(next));
+      return { membership: structuredClone(next), seq: 0 };
+    }),
     setMemberResolver: vi.fn(),
     resolveMembers: vi.fn(async () => []),
     listTombstones: vi.fn(async () => []),
+    listPendingDeletes: vi.fn(async () => []),
+    beginDelete: vi.fn(async (id: string) => ({ groupProjectId: id, host: { machine: null }, seq: 0, deletedAt: new Date(0).toISOString(), state: 'deleting' })),
+    finishDelete: vi.fn(async (id: string) => {
+      await registry.delete(id);
+      return { groupProjectId: id, host: { machine: null }, seq: 0, deletedAt: new Date(0).toISOString(), state: 'deleted' };
+    }),
+    exclusivePending: vi.fn(async (id: string, fn: (t: unknown) => unknown) => fn({ groupProjectId: id, host: { machine: null }, seq: 0, deletedAt: new Date(0).toISOString(), state: 'deleting' })),
+    digest: vi.fn(async (id: string) => board(id).getDigest()),
     post: vi.fn(async (id: string, sender: string, topic: string, body: string) => board(id).postMessage(sender, topic, body)),
     deleteMessage: vi.fn(async (id: string, topic: string, messageId: string) => board(id).deleteMessage(topic, messageId)),
     deleteTopic: vi.fn(async (id: string, topic: string) => board(id).deleteTopic(topic)),

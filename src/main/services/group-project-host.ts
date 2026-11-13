@@ -62,10 +62,14 @@ function validateTombstones(value: unknown): GroupProjectTombstone[] {
   return value.map((t) => {
     if (!t || typeof t !== 'object' || typeof t.groupProjectId !== 'string' || !Number.isSafeInteger(t.seq)
       || typeof t.deletedAt !== 'string' || !t.host || typeof t.host !== 'object'
-      || (t.host.machine !== null && typeof t.host.machine !== 'string')) {
+      || (t.host.machine !== null && typeof t.host.machine !== 'string')
+      || (t.state !== undefined && t.state !== 'deleting' && t.state !== 'deleted')) {
       throw new Error('Group project tombstones contain an invalid entry.');
     }
-    return { groupProjectId: t.groupProjectId, host: { machine: t.host.machine }, seq: t.seq, deletedAt: t.deletedAt };
+    return {
+      groupProjectId: t.groupProjectId, host: { machine: t.host.machine }, seq: t.seq, deletedAt: t.deletedAt,
+      state: t.state === 'deleting' ? 'deleting' : 'deleted',
+    };
   });
 }
 
@@ -179,13 +183,32 @@ class GroupProjectHostService {
     return this.tombstones;
   }
 
-  /** A delete interrupted after its tombstone was saved is finished on the next start. */
+  private async tombstoneOf(id: string): Promise<GroupProjectTombstone | undefined> {
+    return (await this.loadTombstones()).find((t) => t.groupProjectId === id);
+  }
+
+  /** Save the tombstones with `next` replacing any for its id. A pending one, or one whose data remains, is never pruned. */
+  private async saveTombstone(next: GroupProjectTombstone): Promise<void> {
+    const now = Date.now();
+    const kept = (await this.loadTombstones())
+      .filter((t) => t.groupProjectId !== next.groupProjectId)
+      .filter((t, i, all) => t.state === 'deleting' || fs.existsSync(groupProjectDir(t.groupProjectId))
+        || (now - Date.parse(t.deletedAt) < TOMBSTONE_TTL_MS && i >= all.length - (TOMBSTONE_MAX - 1)));
+    const tombstones = [...kept, next];
+    await writeJsonFile(tombstonesPath(), tombstones);
+    this.tombstones = tombstones;
+  }
+
+  /**
+   * A delete that finished its tombstone but not its cleanup is completed on the
+   * next start. A `deleting` one is left alone: its cascade (#3364) finishes it.
+   */
   private reconcile(): Promise<void> {
     if (!this.reconciled) {
       this.reconciled = (async () => {
-        const tombstones = await this.loadTombstones();
-        for (const tombstone of tombstones) {
-          if (await groupProjectRegistry.get(tombstone.groupProjectId)) {
+        for (const tombstone of await this.loadTombstones()) {
+          if (tombstone.state === 'deleting') continue;
+          if (await groupProjectRegistry.hasRecord(tombstone.groupProjectId)) {
             appLog('core:group-project', 'warn', 'Finishing an interrupted group project delete', { meta: { id: tombstone.groupProjectId } });
             await groupProjectRegistry.delete(tombstone.groupProjectId);
             await groupProjectRegistry.flush();
@@ -204,6 +227,11 @@ class GroupProjectHostService {
 
   async listTombstones(): Promise<GroupProjectTombstone[]> {
     return (await this.loadTombstones()).map((t) => ({ ...t, host: { ...t.host } }));
+  }
+
+  /** Deletes begun but not finished, for the delete cascade's recovery (#3364). */
+  async listPendingDeletes(): Promise<GroupProjectTombstone[]> {
+    return (await this.listTombstones()).filter((t) => t.state === 'deleting');
   }
 
   // ── Records ──────────────────────────────────────────────────────────────
@@ -268,39 +296,78 @@ class GroupProjectHostService {
   }
 
   /**
-   * Delete a group project: record, board, membership and sequence state, leaving
-   * a tombstone first so a crash part way through is finished on the next start.
-   * With `expectedSeq`, refuses (`changed`) if anything changed since.
+   * Begin deleting: save a `deleting` tombstone, hide the group project from
+   * every reader and refuse further writes, then announce `deleted`. The record
+   * and data stay until `finishDelete`, so a cascade can clean up around them and
+   * recover after a crash. With `expectedSeq`, refuses (`changed`) if anything
+   * changed since.
+   */
+  beginDelete(id: string, options: { expectedSeq?: number; withinExclusive?: boolean } = {}): Promise<GroupProjectTombstone> {
+    assertGroupProjectId(id);
+    const body = async () => {
+      const project = await this.requireProject(id);
+      const current = await this.seqOf(id);
+      if (options.expectedSeq !== undefined && options.expectedSeq !== current) {
+        throw new GroupProjectHostError('changed', 'The group project changed after its impact was shown. Review it again before deleting.');
+      }
+      const tombstone: GroupProjectTombstone = {
+        groupProjectId: id, host: { machine: project.host?.machine ?? null }, seq: current + 1,
+        deletedAt: new Date().toISOString(), state: 'deleting',
+      };
+      await this.saveTombstone(tombstone);
+      await groupProjectRegistry.hide(id);
+      this.emit({ groupProjectId: id, seq: tombstone.seq, part: 'deleted' });
+      return { ...tombstone, host: { ...tombstone.host } };
+    };
+    return options.withinExclusive ? body() : this.run(id, body);
+  }
+
+  /**
+   * Finish a begun delete, once its cascade is done: mark the tombstone
+   * `deleted`, then remove the record and the board, membership and sequence
+   * state. Safe to repeat. A failed removal rejects, and the next start retries
+   * it from the `deleted` tombstone.
+   */
+  finishDelete(id: string, options: { withinExclusive?: boolean } = {}): Promise<GroupProjectTombstone> {
+    assertGroupProjectId(id);
+    const body = async () => {
+      const tombstone = await this.tombstoneOf(id);
+      if (!tombstone) throw new GroupProjectHostError('not_found', `Group project ${id} has no delete in progress.`);
+      const done: GroupProjectTombstone = { ...tombstone, state: 'deleted' };
+      if (tombstone.state !== 'deleted') await this.saveTombstone(done);
+      if (await groupProjectRegistry.hasRecord(id)) {
+        await groupProjectRegistry.delete(id);
+        await groupProjectRegistry.flush();
+      }
+      this.seqs.delete(id);
+      await destroyBulletinBoard(id, { strict: true });
+      return { ...done, host: { ...done.host } };
+    };
+    return options.withinExclusive ? body() : this.run(id, body);
+  }
+
+  /** Run `fn` in a tombstoned group project's queue, after its record is hidden or gone (#3364 recovery). */
+  exclusivePending<T>(id: string, fn: (tombstone: GroupProjectTombstone) => Promise<T>): Promise<T> {
+    assertGroupProjectId(id);
+    return this.run(id, async () => {
+      const tombstone = await this.tombstoneOf(id);
+      if (!tombstone) throw new GroupProjectHostError('not_found', `Group project ${id} has no delete in progress.`);
+      return fn({ ...tombstone, host: { ...tombstone.host } });
+    });
+  }
+
+  /**
+   * Delete a group project in one step: `beginDelete` then `finishDelete`. A
+   * failed cleanup rejects after `deleted` was announced, and the next start
+   * finishes it. Returns `{ deleted: false }` for an unknown or already deleted id.
    */
   async delete(id: string, options: { expectedSeq?: number; withinExclusive?: boolean } = {}): Promise<{ deleted: boolean; tombstone?: GroupProjectTombstone }> {
     assertGroupProjectId(id);
     const body = async () => {
       await this.reconcile();
-      const project = await groupProjectRegistry.get(id);
-      if (!project) return { deleted: false };
-      const current = await this.seqOf(id);
-      if (options.expectedSeq !== undefined && options.expectedSeq !== current) {
-        throw new GroupProjectHostError('changed', 'The group project changed after its impact was shown. Review it again before deleting.');
-      }
-      const seq = current + 1;
-      const tombstone: GroupProjectTombstone = {
-        groupProjectId: id, host: { machine: project.host?.machine ?? null }, seq, deletedAt: new Date().toISOString(),
-      };
-      const now = Date.now();
-      const kept = (await this.loadTombstones())
-        .filter((t) => t.groupProjectId !== id)
-        // Past its age or count, a tombstone stays while its data still waits to be removed.
-        .filter((t, i, all) => fs.existsSync(groupProjectDir(t.groupProjectId))
-          || (now - Date.parse(t.deletedAt) < TOMBSTONE_TTL_MS && i >= all.length - (TOMBSTONE_MAX - 1)));
-      await writeJsonFile(tombstonesPath(), [...kept, tombstone]);
-      this.tombstones = [...kept, tombstone];
-      await groupProjectRegistry.delete(id);
-      await groupProjectRegistry.flush();
-      this.seqs.delete(id);
-      // A failure here rejects; the tombstone stays and the next start removes the data.
-      await destroyBulletinBoard(id, { strict: true });
-      this.emit({ groupProjectId: id, seq, part: 'deleted' });
-      return { deleted: true, tombstone: { ...tombstone, host: { ...tombstone.host } } };
+      if (!(await groupProjectRegistry.get(id))) return { deleted: false };
+      await this.beginDelete(id, { expectedSeq: options.expectedSeq, withinExclusive: true });
+      return { deleted: true, tombstone: await this.finishDelete(id, { withinExclusive: true }) };
     };
     return options.withinExclusive ? body() : this.run(id, body);
   }

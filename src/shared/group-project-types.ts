@@ -73,12 +73,16 @@ export interface GroupProjectMembership {
   [extra: string]: unknown;
 }
 
-/** Left behind when a group project is deleted, so other machines learn of it. */
+/**
+ * Left behind when a group project is deleted, so other machines learn of it.
+ * `deleting` while the delete's cleanup still runs (#3364), `deleted` once done.
+ */
 export interface GroupProjectTombstone {
   groupProjectId: string;
   host: GroupProjectHost;
   seq: number;
   deletedAt: string;
+  state: 'deleting' | 'deleted';
 }
 
 /** What changed in one sequenced host write. */
