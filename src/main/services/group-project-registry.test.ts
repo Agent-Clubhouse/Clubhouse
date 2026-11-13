@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as path from 'path';
 
 // Mock electron app
 vi.mock('electron', () => ({
@@ -54,7 +55,7 @@ describe('GroupProjectRegistry', () => {
   });
 
   it('reads legacy identities for navigation without loading, migrating, repairing or writing the registry', async () => {
-    const file = '/tmp/test-clubhouse/.clubhouse-dev/group-projects/registry.json';
+    const file = path.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', 'registry.json');
     const legacy = { id: 'gp_legacy', name: 'Renamed', createdAt: '2020-01-01', metadata: { admins: ['keep'] } };
     store.set(file, JSON.stringify([legacy]));
     const before = new Map(store);
@@ -72,7 +73,7 @@ describe('GroupProjectRegistry', () => {
 
   it('uses unsaved canonical cache deletions instead of resurrecting a disk identity during navigation', async () => {
     const project = { id: 'gp_live', name: 'Live', description: '', instructions: '', createdAt: 'today', metadata: {} };
-    store.set('/tmp/test-clubhouse/.clubhouse-dev/group-projects/registry.json', JSON.stringify([project]));
+    store.set(path.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', 'registry.json'), JSON.stringify([project]));
     groupProjectRegistry._setForTesting(project);
     await groupProjectRegistry.delete(project.id);
     expect(await groupProjectRegistry.peek()).toEqual([]);
