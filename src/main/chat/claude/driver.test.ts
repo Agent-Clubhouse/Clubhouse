@@ -223,6 +223,7 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
       nativeSessionId: 'fake-session-1', cliVersion: '2.1.300-fake', model: 'claude-fake-1',
       mcpServers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs_auth' }],
       providerSkills: { provider: 'claude-code', driver: id, source: 'system/init', nativeSessionId: 'fake-session-1', names: [] },
+      providerInventory: { provider: 'claude-code', driver: id, source: 'system/init', nativeSessionId: 'fake-session-1', skills: [], mcpTools: [] },
     }]);
     // The CLI's model id maps onto its menu row, so the chip names it.
     expect(drafts.of('model_changed').map((d) => d.data.modelId)).toEqual(['fake']);
@@ -556,6 +557,23 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
   const result = (over: Partial<Extract<ClaudeChatEventBody, { kind: 'turn_ended' }>> = {}): ClaudeChatEventBody =>
     ({ kind: 'turn_ended', subtype: 'success', isError: false, ...over });
   const settle = () => new Promise((r) => setImmediate(r));
+
+  it('sends the provider inventory (skills and MCP tool names only) when it changes, for verified activation (#2855)', async () => {
+    const { transport, drafts } = await scripted();
+    const normalizer = new ClaudeNormalizer();
+    transport.sessionId = 'native';
+    const init = (tools: unknown) => normalizer.normalize({ type: 'system', subtype: 'init', session_id: 'native', skills: ['review'], tools })[0];
+    for (const tools of [['Read', 'mcp__tickets__search'], ['Read', 'mcp__tickets__search'], ['mcp__tickets__search', 'mcp__clubhouse__send_message'], 'not-a-list']) {
+      transport.emit(init(tools));
+      await settle();
+    }
+    const reports = drafts.of('session_info').filter((d) => d.data.providerInventory).map((d) => d.data.providerInventory);
+    expect(reports).toEqual([
+      { provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'native', skills: ['review'], mcpTools: ['mcp__tickets__search'] },
+      { provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'native', skills: ['review'], mcpTools: ['mcp__tickets__search', 'mcp__clubhouse__send_message'] },
+      { provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'native', skills: ['review'], mcpTools: null },
+    ]);
+  });
 
   it('passively forwards root init skills, unknown and explicit empty, never commands or subagent lists', async () => {
     const { transport, session, drafts } = await scripted();

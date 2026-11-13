@@ -247,9 +247,11 @@ export async function activationFor(projectPath: string, agentId: string) {
   if (!agent) throw new ManagedError('not_found', 'Agent not found.');
   const system = await import('../agent-system');
   const provider = await system.resolveOrchestrator(projectPath, agent.orchestrator);
+  const running = system.isAgentRunning(agentId);
+  const report = running ? getAgentRuntime(agentId)?.getProviderReport?.() : undefined;
   return managedActivationFor({
-    service: managedAgents(), agent, running: system.isAgentRunning(agentId), effectiveProvider: provider.id, materialized: delivered.get(agentId),
-    deliveryFailed: failedDeliveries.has(agentId), mcpProblems: mcpProblems.get(agentId),
+    service: managedAgents(), agent, running, effectiveProvider: provider.id, materialized: delivered.get(agentId),
+    deliveryFailed: failedDeliveries.has(agentId), mcpProblems: mcpProblems.get(agentId), report,
   });
 }
 

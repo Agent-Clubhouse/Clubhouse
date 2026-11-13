@@ -1,5 +1,6 @@
 import type { ChatImage } from '../../../shared/chat';
 import { reportedSkillNames } from '../../../shared/chat/provider-skills';
+import { reportedMcpToolNames } from '../../../shared/chat/provider-inventory';
 import type { ClaudeBackgroundTask, ClaudeChatEvent, ClaudeChatEventBody, ClaudeCommand, ClaudePermissionUpdate, ClaudeUsage } from './events';
 
 /**
@@ -159,6 +160,7 @@ export class ClaudeNormalizer {
         slashCommands: arr(msg.slash_commands).filter((t): t is string => typeof t === 'string'),
         parentToolCallId: str(msg.parent_tool_use_id),
         skills: reportedSkillNames(msg.skills),
+        mcpTools: reportedMcpToolNames(msg.tools),
         apiKeySource: str(msg.apiKeySource),
         capabilities: msg.capabilities,
         ...(Array.isArray(msg.mcp_servers) && {
