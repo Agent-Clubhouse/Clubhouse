@@ -5,6 +5,7 @@
  * by the annex client. Agent IDs are namespaced as `remote:<satelliteId>:<originalAgentId>`
  * to prevent collisions with local agents.
  */
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { create } from 'zustand';
 import { usePluginStore } from '../plugins/plugin-store';
 import type {
@@ -285,6 +286,14 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           projectId: namespacedProjectId(satelliteId, agent.projectId),
         };
       }
+    }
+
+    // That machine's Dispatcher chat (#3043), in no project: kept so its run state follows events,
+    // for a computer following it as the lead (#3352). Project lists don't show it.
+    const dispatcher = snapshot.dispatcher?.agent;
+    if (dispatcher?.id) {
+      const nsId = namespacedAgentId(satelliteId, dispatcher.id);
+      newAgents[nsId] = { ...dispatcher, id: nsId, projectId: namespacedProjectId(satelliteId, dispatcher.projectId || DISPATCHER_PROJECT_ID) };
     }
 
     // Compute plugin match state

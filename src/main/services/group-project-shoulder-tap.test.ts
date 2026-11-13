@@ -156,6 +156,19 @@ describe('executeShoulderTap', () => {
     }
   });
 
+  it('identifies an Action tap as coming from the group project', async () => {
+    const project = await groupProjectRegistry.create('Action sender');
+    agentRegistry.register('action-target', { projectPath: process.cwd(), orchestrator: 'claude-code', runtime: 'pty' });
+    bindingManager.bind('action-target', { targetId: project.id, targetKind: 'group-project', label: 'Action sender', agentName: 'Robin', targetName: 'Action sender' });
+    try {
+      await executeShoulderTap({ projectId: project.id, senderLabel: 'Group project Action', senderKind: 'group_project_action', targetAgentId: 'action-target', message: 'Review this' });
+      const body = mockPtyWrite.mock.calls.map((call: unknown[]) => call[1]).join('');
+      expect(body).toContain('initiated by a group project Action');
+      expect(body).not.toContain('initiated by a human user');
+      expect(body).not.toContain("sender's inbox");
+    } finally { agentRegistry.untrack('action-target'); }
+  });
+
   it('reports unsupported-runtime for headless agents', async () => {
     const project = await groupProjectRegistry.create('HeadlessProj');
 

@@ -14,6 +14,10 @@ const run = (actionId: string, age: number, outcome: ActionRun['outcome'] = 'don
 });
 
 describe('recent Action usage', () => {
+  it('keeps separate group projects as separate owners', () => {
+    const groups = summarizeActionUsage([action('a', { kind: 'group_project', groupProjectId: 'one' }), action('b', { kind: 'group_project', groupProjectId: 'two' })], [], NOW);
+    expect(groups.map((g) => g.owner)).toEqual([{ kind: 'group_project', groupProjectId: 'one' }, { kind: 'group_project', groupProjectId: 'two' }]);
+  });
   it('groups saved Actions and retained runs by their owner with exact rolling boundaries', () => {
     const groups = summarizeActionUsage([
       action('yours', { kind: 'user' }), action('agent', { kind: 'agent', agentId: 'lead' }),

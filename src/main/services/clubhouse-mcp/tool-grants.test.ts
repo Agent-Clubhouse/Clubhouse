@@ -60,7 +60,7 @@ describe('tool grant declarations (#2967)', () => {
     // Canvas-only actions the Dispatcher has no canvas for, the model list, and project defaults,
     // which no tool changes yet: none of them is offered in "What else can you do?".
     expect(withoutTool).toEqual([
-      'browser.act', 'browser.read', 'group_project.admin', 'group_project.post', 'group_project.read', 'models.read', 'project.configure',
+      'browser.act', 'browser.read', 'group_project.post', 'group_project.read', 'models.read', 'project.configure',
     ]);
   });
 
@@ -215,11 +215,11 @@ describe('tool grant declarations (#2967)', () => {
       disconnect_agents: connection.manage on agent_arg
       set_connection_tools: connection.manage on agent_arg
       list_connections: connection.manage on agent_arg
-      create_action: action.write on app; agent.watch on app if any-agent source
+      create_action: action.write on app; agent.watch on app if any-agent source; group_project.admin on group_project_arg if groupProjectId
       list_actions: action.read on app
-      update_action: action.write on action_arg; agent.watch on app if any-agent source
-      delete_action: action.write on action_arg
-      run_action: action.run on action_arg
+      update_action: action.write on action_arg; group_project.admin on action_group_project; agent.watch on app if any-agent source
+      delete_action: action.write on action_arg; group_project.admin on action_group_project
+      run_action: action.run on action_arg; group_project.admin on action_group_project
       action_history: action.read on app
       subscribe: action.write on app; agent.watch on app if any-agent source
       read_helper_presets: settings.app.read on app

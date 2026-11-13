@@ -57,8 +57,9 @@ export function sanitizeActions(raw: unknown): Action[] {
     const valid = validateActionInput(item, { allowPastEndsAt: true });
     if (!valid.ok) continue;
     const owner = item.owner as Action['owner'];
-    if (!['user', 'dispatcher', 'agent', 'app'].includes(owner.kind)) continue;
+    if (!['user', 'dispatcher', 'agent', 'group_project', 'app'].includes(owner.kind)) continue;
     if (owner.kind === 'agent' && typeof owner.agentId !== 'string') continue;
+    if (owner.kind === 'group_project' && (typeof owner.groupProjectId !== 'string' || !owner.groupProjectId.trim())) continue;
     out.push({
       id: item.id,
       name: valid.value.name ?? 'Action',
@@ -66,6 +67,7 @@ export function sanitizeActions(raw: unknown): Action[] {
       steps: valid.value.steps,
       overlap: valid.value.overlap,
       owner,
+      ...(owner.kind === 'group_project' && (item.quickAccess === 'full_access' || item.quickAccess === 'none') && { quickAccess: item.quickAccess }),
       enabled: valid.value.enabled,
       ...(valid.value.endsAt !== undefined && { endsAt: valid.value.endsAt }),
       ...(valid.value.maxRuns !== undefined && { maxRuns: valid.value.maxRuns }),
@@ -83,6 +85,7 @@ function sanitizeState(raw: unknown): EngineState {
   const state: EngineState = { nextAt: {}, waits: [] };
   if (!isObject(raw)) return state;
   if (typeof raw.lastUse === 'number' && Number.isFinite(raw.lastUse) && raw.lastUse >= 0) state.lastUse = raw.lastUse;
+  if (isObject(raw.idleFiredAt)) state.idleFiredAt = Object.fromEntries(Object.entries(raw.idleFiredAt).filter(([, at]) => typeof at === 'number' && Number.isFinite(at) && at >= 0)) as Record<string, number>;
   if (isObject(raw.lastFiredDate)) {
     state.lastFiredDate = {};
     for (const [id, date] of Object.entries(raw.lastFiredDate)) {
@@ -164,7 +167,27 @@ export function createActionsStorage(): EngineStorage {
       current = { ...current, state };
       actionsStore.save(current).catch(logSaveError('action state'));
     },
+    flush: () => actionsStore.save(current),
   };
+}
+
+/** Recovery before the engine starts: delete the Actions and all pending schedule state atomically. */
+export async function purgeStoredGroupProjectActions(groupProjectId: string): Promise<void> {
+  await actionsStore.update((file) => {
+    const removed = new Set(file.actions.filter((action) => action.owner.kind === 'group_project' && action.owner.groupProjectId === groupProjectId).map((action) => action.id));
+    if (!removed.size) return file;
+    const state = { ...file.state, nextAt: { ...file.state.nextAt }, waits: file.state.waits.filter((wait) => !removed.has(wait.actionId)), lastFiredDate: { ...file.state.lastFiredDate }, throttleStarts: { ...file.state.throttleStarts }, idleFiredAt: { ...file.state.idleFiredAt } };
+    for (const id of removed) { delete state.nextAt[id]; delete state.lastFiredDate[id]; delete state.throttleStarts[id]; delete state.idleFiredAt[id]; }
+    return { ...file, actions: file.actions.filter((action) => !removed.has(action.id)), state };
+  });
+  await historyStore.update((file) => ({ ...file, runs: Object.fromEntries(Object.entries(file.runs).flatMap(([id, runs]) => {
+    const kept = runs.filter((run) => run.owner?.kind !== 'group_project' || run.owner.groupProjectId !== groupProjectId);
+    return kept.length ? [[id, kept]] : [];
+  })) }));
+}
+
+export function storedGroupProjectActions(groupProjectId: string): Array<{ id: string; name: string }> {
+  return actionsStore.get().actions.filter((action) => action.owner.kind === 'group_project' && action.owner.groupProjectId === groupProjectId).map(({ id, name }) => ({ id, name }));
 }
 
 // ── History ─────────────────────────────────────────────────────────────────
@@ -184,7 +207,8 @@ function sanitizeRun(raw: unknown): ActionRun | null {
     : [];
   const owner = isObject(raw.owner)
     && (raw.owner.kind === 'user' || raw.owner.kind === 'dispatcher' || raw.owner.kind === 'app'
-      || (raw.owner.kind === 'agent' && typeof raw.owner.agentId === 'string'))
+      || (raw.owner.kind === 'agent' && typeof raw.owner.agentId === 'string')
+      || (raw.owner.kind === 'group_project' && typeof raw.owner.groupProjectId === 'string' && !!raw.owner.groupProjectId.trim()))
     ? raw.owner as Action['owner'] : undefined;
   const trigger = raw.trigger as unknown as ActionRun['trigger'];
   return {
@@ -205,6 +229,7 @@ function sanitizeRun(raw: unknown): ActionRun | null {
     ...(typeof raw.endedAt === 'number' && { endedAt: raw.endedAt }),
     ...(typeof raw.deliveryUpdatedAt === 'number' && Number.isFinite(raw.deliveryUpdatedAt) && { deliveryUpdatedAt: raw.deliveryUpdatedAt }),
     outcome: raw.outcome as ActionRun['outcome'],
+    ...(raw.refusal === 'rights_refused' && { refusal: 'rights_refused' as const }),
     ...(typeof raw.reason === 'string' && { reason: raw.reason }),
     steps,
   };
@@ -255,6 +280,7 @@ const HISTORY_SAVE_DELAY_MS = 500;
 
 export function createRunHistory(now: () => number = Date.now): RunHistory & { flush(): Promise<void> } {
   const runs = new Map<string, ActionRun[]>(Object.entries(historyStore.get().runs));
+  const deletedGroups = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastSave: Promise<void> = Promise.resolve();
 
@@ -277,6 +303,7 @@ export function createRunHistory(now: () => number = Date.now): RunHistory & { f
 
   return {
     put(run) {
+      if (run.owner?.kind === 'group_project' && deletedGroups.has(run.owner.groupProjectId)) return;
       const copy: ActionRun = { ...run, steps: run.steps.map((s) => ({ ...s })), chain: [...run.chain] };
       const list = (runs.get(run.actionId) ?? []).filter((r) => r.id !== run.id);
       list.push(copy);
@@ -290,6 +317,15 @@ export function createRunHistory(now: () => number = Date.now): RunHistory & { f
     flush() {
       if (timer) { clearTimeout(timer); return save(); }
       return lastSave;
+    },
+    async purgeGroupProject(id) {
+      deletedGroups.add(id);
+      for (const [actionId, list] of runs) {
+        const kept = list.filter((run) => run.owner?.kind !== 'group_project' || run.owner.groupProjectId !== id);
+        if (kept.length) runs.set(actionId, kept); else runs.delete(actionId);
+      }
+      if (timer) clearTimeout(timer);
+      await save();
     },
   };
 }

@@ -84,7 +84,8 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
               <p className={settingsHelp}>What the group project does by itself.</p>
               {([
                 ['deliver', 'Tell members about new posts'],
-                ['wake', 'Wake a sleeping member when a lead taps it'],
+                ['wake', 'Wake sleeping members'],
+                ['actions', 'Run group project Actions'],
               ] as const).map(([grant, label]) => (
                 <label key={grant} className="flex items-center justify-between gap-2 text-sm text-ctp-text">
                   {label}

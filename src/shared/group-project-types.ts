@@ -36,7 +36,37 @@ export interface GroupProject {
   host?: GroupProjectHost;
   /** Latest change sequence number (#3356); 0 before the first sequenced change. */
   seq?: number;
+  /** Who holds it, for people (#3363): "This computer" or the host's device name, never a fingerprint. */
+  hostName?: string;
+  /** Network reach only: how this computer stands with the host (#3363). */
+  network?: GroupProjectNetworkState;
+  /**
+   * Network project scope: the repository key of the host's project, so other
+   * computers can tell which of their projects it covers (#3363).
+   */
+  scopeProjectKey?: string;
   metadata: Record<string, unknown>;
+}
+
+/** A write the host refused, kept for its author to see (#3363). */
+export interface GroupProjectNetworkRefusal {
+  id: string;
+  groupProjectId: string;
+  op: string;
+  reason: string;
+  at: string;
+  author: { agentId?: string; label: string };
+}
+
+export interface GroupProjectNetworkState {
+  /** This computer holds the truth, or a copy of it. */
+  role: 'host' | 'replica';
+  /** A copy's host connected now, offline (reads from the copy, writes wait), or gone from the network (read-only). */
+  state: 'online' | 'cached' | 'host-removed';
+  /** Writes made here waiting for the host. */
+  waitingWrites: number;
+  syncedAt?: string;
+  refusals: GroupProjectNetworkRefusal[];
 }
 
 /** One member recorded explicitly (helpers, quick agents, or a person's addition). */
@@ -143,6 +173,8 @@ export interface BulletinMessage {
   timestamp: string;     // ISO 8601
   /** The group project's sequence number when it was posted (#3356). Absent on older messages. */
   seq?: number;
+  /** A post made on a copy while its host is away: not on the board yet (#3363). */
+  pending?: { waitingFor: string };
 }
 
 /** Summary of a topic in the bulletin digest. */
@@ -194,7 +226,7 @@ export interface GroupProjectRoleHolderView {
 export interface GroupProjectRolesView {
   groupProjectId: string;
   /** What it does by itself: post notices to members, and wake a member with a lead's shoulder tap. */
-  own: { deliver: 'allow' | 'off'; wake: 'allow' | 'off' };
+  own: { deliver: 'allow' | 'off'; wake: 'allow' | 'off'; actions: 'allow' | 'off' };
   holders: GroupProjectRoleHolderView[];
 }
 

@@ -457,10 +457,14 @@ export function initAnnexClientListener(): () => void {
     } else if (type === 'agent:status') {
       // A chat agent's status on a session state change or turn start/end (#2211).
       // Older satellites never send detailedStatus here.
-      const p = payload as { id?: string; agentId?: string; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
+      const p = payload as { id?: string; agentId?: string; status?: string; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
       const agentId = p.agentId || p.id;
       if (agentId && p.detailedStatus) {
         throttledHookUpdate(satelliteId, agentId, p.detailedStatus);
+      }
+      // Its run state too, so a durable chat agent that slept there shows asleep here (a lead's Dispatcher, #3352).
+      if (agentId && (p.status === 'running' || p.status === 'sleeping')) {
+        useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, p.status);
       }
     } else if (type === 'structured:event') {
       // Sent only by satellites on versions before structured mode was removed.

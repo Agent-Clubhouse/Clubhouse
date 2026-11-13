@@ -44,7 +44,7 @@ import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
 import * as projectStore from '../project-store';
 import { startActionQuickAgent } from './quick-routing';
-import { createActionsStorage, createRunHistory } from './actions-store';
+import { createActionsStorage, createRunHistory, purgeStoredGroupProjectActions, storedGroupProjectActions } from './actions-store';
 import { ActionsEngine, type EngineFacts, type EngineObservation } from './engine';
 import { matchProjectRef } from './project-ref';
 import { createGrantRights } from './rights';
@@ -53,6 +53,10 @@ import { actionMessage, createStepRunner, type DispatcherStepDelivery } from './
 import { ActionPresence } from './presence';
 import { devicePresenceOnline } from '../annex-device-presence';
 import { listDevices } from '../annex-devices';
+import { groupProjectRegistry } from '../group-project-registry';
+import { groupProjectHost } from '../group-project-host';
+import { executeShoulderTap } from '../group-project-shoulder-tap';
+import { groupProjectMay } from '../group-project-roles';
 
 export { ActionError };
 
@@ -91,6 +95,13 @@ function projectLabel(p: Project): string {
 }
 
 const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWorktree(id: string): string | undefined } = {
+  boardLatestActivity: async (id) => {
+    const project = groupProjectRegistry.getSync(id);
+    if (!project || !groupProjectHost.isThisMachine(project.host)) throw new Error('Group project is unavailable on this host.');
+    const digest = await groupProjectHost.digest(id);
+    const times = digest.map((topic) => Date.parse(topic.latestTimestamp)).filter(Number.isFinite);
+    return times.length ? Math.max(...times) : null;
+  },
   deviceOnline: devicePresenceOnline,
   // The Dispatcher counts as an agent here, so its subscriptions can message it (#3042).
   agentExists: (id) => !!knownAgent(id) || isDispatcherAgentId(id),
@@ -213,6 +224,26 @@ export function observeActions(fn: (o: EngineObservation) => void): () => void {
 }
 
 let engine: ActionsEngine | null = null;
+let starting: Promise<void> | null = null;
+let pendingPurge: Promise<void> = Promise.resolve();
+
+/** For the group-project delete impact check, including startup recovery. */
+export function groupProjectActions(id: string): Array<{ id: string; name: string }> {
+  const actions = engine ? engine.list().filter((a) => a.owner.kind === 'group_project' && a.owner.groupProjectId === id).map(({ id: actionId, name }) => ({ id: actionId, name })) : storedGroupProjectActions(id);
+  return actions.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Idempotent, durable removal before finishing the group-project delete journal. */
+export async function purgeGroupProjectActions(id: string): Promise<void> {
+  const inProgress = starting;
+  const operation = pendingPurge.then(async () => {
+    if (inProgress) await inProgress;
+    if (engine) await engine.removeGroupProjectActions(id);
+    else await purgeStoredGroupProjectActions(id);
+  });
+  pendingPurge = operation.catch(() => {});
+  await operation;
+}
 let presence: ActionPresence | null = null;
 let changeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -276,6 +307,7 @@ function broadcastChanged(): void {
   changeTimer = setTimeout(() => {
     changeTimer = null;
     broadcastToAllWindows(IPC.ACTIONS.CHANGED);
+    publishAppEvent({ type: 'actions.changed' });
   }, 50);
 }
 
@@ -308,6 +340,17 @@ function createEngine(): ActionsEngine {
     // The live gate for a running agent, else its saved switch (an asleep agent isn't synced to the gate).
     canStartAgents,
     agentAccess: (id) => knownAgent(id)?.access ?? 'ask',
+    groupProject: (id) => {
+      const project = groupProjectRegistry.getSync(id);
+      if (!project || !groupProjectHost.isThisMachine(project.host)) return undefined;
+      const members = new Set(bindingManager.getAllBindings().filter((binding) => binding.targetKind === 'group-project' && binding.targetId === id).map((binding) => binding.agentId));
+      const projectIds = new Set([...members].map(facts.agentProjectId).filter((projectId): projectId is string => !!projectId));
+      if (project.scope?.level === 'project') projectIds.add(project.scope.projectId);
+      return {
+        members, projectIds,
+        actions: groupProjectMay(project, 'actions'), deliver: groupProjectMay(project, 'deliver'), wake: groupProjectMay(project, 'wake'),
+      };
+    },
   });
   const steps = createStepRunner({
     agentExists: facts.agentExists,
@@ -320,6 +363,8 @@ function createEngine(): ActionsEngine {
     },
     wake: async (req) => parseToolResult(await wakeWiredAgent(req)),
     wakeRefusal: (owner, agentId) => rights.checkStep(owner, { kind: 'wake', agentId }),
+    groupPost: async (id, topic, text, chain) => { await groupProjectHost.post(id, 'Group project action', topic, text, { chain }); },
+    groupTap: async (id, agentId, text) => (await executeShoulderTap({ projectId: id, senderLabel: 'Group project Action', senderKind: 'group_project_action', targetAgentId: agentId, message: text })).delivered.length > 0,
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
     startQuick: (req) => startActionQuickAgent(req),
@@ -360,9 +405,22 @@ function createEngine(): ActionsEngine {
 let unsubs: Array<() => void> = [];
 
 /** Start Actions. Call after the app event sources start and before "Clubhouse started" is published. */
-export async function startActions(): Promise<void> {
+export function startActions(): Promise<void> {
+  if (engine) return Promise.resolve();
+  if (starting) return starting;
+  const beforeStart = pendingPurge;
+  starting = (async () => { await beforeStart; await startActionsNow(); })().finally(() => { starting = null; });
+  return starting;
+}
+
+async function startActionsNow(): Promise<void> {
   if (engine) return;
   await refreshProjects();
+  // Load group identities before any saved Action is scheduled. Unknown or
+  // remotely hosted projects fail closed in the rights check.
+  await groupProjectHost.list().catch((err: unknown) => {
+    appLog('core:actions', 'warn', 'Could not load group projects for Actions', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  });
   engine = createEngine();
   presence = createPresence();
   unsubs.push(projectStore.onProjectsChanged(() => { void refreshProjects(); }));
@@ -379,6 +437,8 @@ export async function startActions(): Promise<void> {
   unsubs.push(() => powerMonitor.removeListener('resume', onResume));
   engine.start();
   syncPresence();
+  // A peer may have connected while persisted Actions were still loading.
+  broadcastChanged();
   appLog('core:actions', 'info', 'Actions started', { meta: { count: engine.list().length } });
 }
 
@@ -424,9 +484,23 @@ function requireVisible(id: string): Action {
   return a;
 }
 
-export function createAction(input: unknown, owner: ActionOwner): ActionView {
+export function createAction(input: unknown, owner: ActionOwner, author?: ActionOwner): ActionView {
   const e = requireEngine();
-  return view(e, e.create(input, owner));
+  return view(e, e.create(input, owner, { author }));
+}
+
+/** Serialize a group Action mutation against the host's delete impact check and cascade. */
+export async function withGroupActionLock<T>(id: string, run: () => T): Promise<T> {
+  return groupProjectHost.exclusive(id, async () => run());
+}
+
+export async function createGroupProjectAction(input: unknown, groupProjectId: string): Promise<ActionView> {
+  return withGroupActionLock(groupProjectId, () => createAction(input, { kind: 'group_project', groupProjectId }));
+}
+
+export async function changeActionOnHost<T>(id: string, run: () => T): Promise<T> {
+  const current = requireVisible(id);
+  return current.owner.kind === 'group_project' ? withGroupActionLock(current.owner.groupProjectId, () => { requireVisible(id); return run(); }) : run();
 }
 
 /**
@@ -438,16 +512,16 @@ export function subscribe(input: unknown, owner: ActionOwner): ActionView {
   return view(e, e.subscribe(input, owner));
 }
 
-export function updateAction(id: string, input: unknown): ActionView {
+export function updateAction(id: string, input: unknown, author?: ActionOwner): ActionView {
   requireVisible(id);
   const e = requireEngine();
-  return view(e, e.update(id, input));
+  return view(e, e.update(id, input, author));
 }
 
-export function setActionEnabled(id: string, enabled: boolean): ActionView {
+export function setActionEnabled(id: string, enabled: boolean, author?: ActionOwner): ActionView {
   requireVisible(id);
   const e = requireEngine();
-  return view(e, e.setEnabled(id, enabled));
+  return view(e, e.setEnabled(id, enabled, author));
 }
 
 export function deleteAction(id: string): void {
@@ -455,9 +529,9 @@ export function deleteAction(id: string): void {
   requireEngine().remove(id);
 }
 
-export function runActionNow(id: string): { runId: string } {
+export function runActionNow(id: string, author?: ActionOwner): { runId: string } {
   requireVisible(id);
-  return { runId: requireEngine().runNow(id) };
+  return { runId: requireEngine().runNow(id, author) };
 }
 
 export function actionHistory(id: string, reader?: ActionOwner): ActionRun[] {

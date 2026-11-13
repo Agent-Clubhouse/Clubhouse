@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 const host = vi.hoisted(() => ({ get: vi.fn(), resolveMembers: vi.fn(), getMembership: vi.fn(), digest: vi.fn() }));
 const readCanvas = vi.hoisted(() => vi.fn());
 const checkGuidance = vi.hoisted(() => vi.fn());
+const groupActions = vi.hoisted(() => vi.fn(() => [{ id: 'b', name: 'Second' }, { id: 'a', name: 'First' }]));
+vi.mock('./actions', () => ({ groupProjectActions: groupActions }));
 vi.mock('./group-project-host', () => ({ groupProjectHost: host }));
 vi.mock('./group-project-canvas-inventory', () => ({ readGroupProjectCanvasInventory: readCanvas }));
 vi.mock('./connection-guidance', () => ({ assertGroupProjectGuidanceDeletable: checkGuidance }));
@@ -20,6 +22,7 @@ describe('group project deletion inventory', () => {
     expect(await readGroupProjectDeletionInventory('gp')).toMatchObject({
       members: ['Ada (ada@machine)', 'Bob (bob)'], canvases: ['Home / One', 'Work / Two'],
       exclusions: ['excluded'], grants: ['lead: admin (ask)', 'lead: lead (allow)'], messages: 5, topics: 2, machines: ['machine'],
+      actions: ['First (a)', 'Second (b)'],
       revisions: expect.arrayContaining(['4', 'canvas-revision']),
     });
   });

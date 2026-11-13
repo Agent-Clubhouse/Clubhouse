@@ -93,7 +93,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.SET_OWN_GRANT, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
     async (_event, id, grant, mode) => {
-      if (grant !== 'deliver' && grant !== 'wake') throw new Error('Grant must be deliver or wake.');
+      if (grant !== 'deliver' && grant !== 'wake' && grant !== 'actions') throw new Error('Grant must be deliver, wake or actions.');
       if (mode !== 'allow' && mode !== 'off') throw new Error('Mode must be allow or off.');
       await setOwnGrant(id as string, grant, mode);
       return describeGroupProjectRoles(id as string);
@@ -170,6 +170,12 @@ export function registerGroupProjectHandlers(): void {
   // Scope (#3355): a person changes it here, after reviewing who would leave.
   ipcMain.handle(IPC.GROUP_PROJECT.SCOPE_OPTIONS, () => groupProjectHost.scopeOptions());
 
+  // Network group projects (#3363): the person has seen the host's refusals.
+  ipcMain.handle(IPC.GROUP_PROJECT.DISMISS_REFUSALS, withValidatedArgs([stringArg()], async (_event, id) => {
+    await groupProjectHost.dismissRefusals(id as string);
+    return true;
+  }));
+
   ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_SCOPE, withValidatedArgs(
     [stringArg(), objectArg<GroupProjectScope>()],
     async (_event, id, scope) => groupProjectHost.previewScope(id as string, scope),
@@ -214,7 +220,7 @@ export function registerGroupProjectHandlers(): void {
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, body) => {
       const message = await groupProjectHost.post(projectId as string, 'user', topic as string, body as string);
-      annexEventBus.emitBulletinMessage(projectId as string, message);
+      if (!message.pending) annexEventBus.emitBulletinMessage(projectId as string, message);
       return message;
     },
   ));

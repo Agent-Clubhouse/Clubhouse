@@ -49,6 +49,8 @@ const NOT_SETTINGS = new Set([
   'helper-model-catalogs.json',
   // Import previews and per-operation progress/recovery receipts are lifecycle history, not user settings.
   'project-imports.json',
+  // Messages waiting for an offline lead Dispatcher (#3353): chat content in transit, not settings.
+  'dispatcher-lead-outbox.json',
 ]);
 
 /** Per-project policy stores audit their person-facing writer, without exposing the policy map. */

@@ -13,6 +13,7 @@ import { ipcErrorMessage } from '../../utils/ipc-error';
 import { closeDispatcher } from '../dispatcher/dispatcherNav';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { useAnnexStore } from '../../stores/annexStore';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
 
 export function useActionsList(): { actions: ActionView[] | null; error: string | null; reload: () => void } {
   const [actions, setActions] = useState<ActionView[] | null>(null);
@@ -52,6 +53,7 @@ export function useActionNames(): { names: ActionNames; agents: AgentOption[]; p
   const agentMap = useAgentStore((s) => s.agents);
   const projectList = useProjectStore((s) => s.projects);
   const devices = useAnnexStore((s) => s.devices);
+  const groupProjects = useGroupProjectStore((s) => s.projects);
   // The Dispatcher by the name the user gave it (#3184).
   const dispatcherName = useDispatcherStore((s) => s.state?.config?.name?.trim() || undefined);
   return useMemo(() => {
@@ -71,11 +73,12 @@ export function useActionNames(): { names: ActionNames; agents: AgentOption[]; p
       names: {
         agent: (id) => agentNames.get(id), project: (id) => projectNames.get(id), dispatcher: () => dispatcherName,
         device: (id) => devices.find((d) => d.fingerprint.toLowerCase() === id.toLowerCase())?.alias || undefined,
+        groupProject: (id) => groupProjects.find((p) => p.id === id)?.name,
       },
       agents,
       projects,
     };
-  }, [agentMap, projectList, dispatcherName, devices]);
+  }, [agentMap, projectList, dispatcherName, devices, groupProjects]);
 }
 
 /** "You", the Dispatcher's name, or the agent's name. */
@@ -83,6 +86,7 @@ export function ownerLabel(owner: ActionOwner, names: ActionNames): string {
   if (owner.kind === 'user') return 'You';
   if (owner.kind === 'dispatcher') return names.dispatcher?.() || 'Dispatcher';
   if (owner.kind === 'agent') return names.agent(owner.agentId) ?? 'An agent';
+  if (owner.kind === 'group_project') return names.groupProject?.(owner.groupProjectId) ?? 'A group project';
   return 'Clubhouse';
 }
 
@@ -107,7 +111,7 @@ export function actionProjectId(a: Pick<ActionView, 'trigger' | 'steps'>, agentP
 
 interface ActionsNavState {
   /** A form to open when the page shows: a new action pre-filled, or an action to edit. */
-  pending: { draft?: Partial<ActionInput>; editId?: string; cardId?: string } | null;
+  pending: { draft?: Partial<ActionInput>; editId?: string; cardId?: string; groupProjectId?: string } | null;
   setPending: (p: ActionsNavState['pending']) => void;
 }
 

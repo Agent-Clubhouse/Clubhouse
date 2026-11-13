@@ -87,7 +87,7 @@ function renderWidget(
 
 /** Leads hold the lead grant (#3360), read over IPC. */
 function rolesFor(leads: string[]) {
-  return { groupProjectId: 'gp1', own: { deliver: 'allow' as const, wake: 'off' as const }, holders: leads.map((agentId) => ({ agentId, lead: 'allow' as const, admin: 'off' as const })) };
+  return { groupProjectId: 'gp1', own: { deliver: 'allow' as const, wake: 'off' as const, actions: 'allow' as const }, holders: leads.map((agentId) => ({ agentId, lead: 'allow' as const, admin: 'off' as const })) };
 }
 
 beforeEach(() => {

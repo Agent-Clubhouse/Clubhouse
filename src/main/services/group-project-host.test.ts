@@ -34,6 +34,7 @@ import { _resetAllBoardsForTesting, getBulletinBoard } from './group-project-bul
 import { GroupProjectHostError, groupProjectHost } from './group-project-host';
 import type { GroupProjectChange } from '../../shared/group-project-types';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { onAppEvent } from './app-event-bus';
 
 const dataDir = () => path.join(fixture.home, '.clubhouse-dev', 'group-projects');
 const hostFile = (id: string) => path.join(dataDir(), id, 'host.json');
@@ -121,6 +122,17 @@ describe('group project host: identity and creation', () => {
 });
 
 describe('group project host: sequence numbers', () => {
+  it('publishes a board event with the action chain only after the post commits', async () => {
+    const project = await groupProjectHost.create('Events');
+    const events: unknown[] = [];
+    const unsubscribe = onAppEvent((event) => { if (event.type === 'group_project.message_posted') events.push(event); });
+    try {
+      await groupProjectHost.post(project.id, 'Action', 'updates', 'Ready', { chain: ['action-1'] });
+      expect(events).toEqual([expect.objectContaining({ type: 'group_project.message_posted', groupProjectId: project.id, topic: 'updates', chain: ['action-1'] })]);
+      await expect(groupProjectHost.post('invalid/id', 'Action', 'updates', 'Rejected')).rejects.toThrow();
+      expect(events).toHaveLength(1);
+    } finally { unsubscribe(); }
+  });
   it('increases with each change, across record, membership and board, and announces each one', async () => {
     const project = await groupProjectHost.create('Seq');
     const changes: GroupProjectChange[] = [];
@@ -505,13 +517,20 @@ describe('group project host: scope (#3355)', () => {
   const wire = (agentId: string, gpId: string, agentName = agentId) =>
     bindingManager.bind(agentId, { targetId: gpId, targetKind: 'group-project', label: 'GP', agentName });
 
-  it('explains why network reach is unavailable, and refuses it at creation and when changing scope', async () => {
+  it('offers network reach only with Annex Network on and this computer in it, and says why not', async () => {
     expect(groupProjectHost.scopeOptions().network).toEqual({ available: false, reason: expect.stringContaining('Annex Network') });
+    await expect(groupProjectHost.create('Net', { scope: { level: 'app', reach: 'network' } })).rejects.toThrow('needs Annex Network');
     fixture.network = true;
-    expect(groupProjectHost.scopeOptions().network.available).toBe(false);
-    await expect(groupProjectHost.create('Net', { scope: { level: 'app', reach: 'network' } })).rejects.toThrow('not available');
-    const project = await groupProjectHost.create('Local');
-    await expect(groupProjectHost.previewScope(project.id, { level: 'app', reach: 'network' })).rejects.toMatchObject({ code: 'network_unavailable' });
+    expect(groupProjectHost.scopeOptions().network).toEqual({ available: false, reason: expect.stringContaining('Add a device') });
+    const local = await groupProjectHost.create('Local');
+    await expect(groupProjectHost.previewScope(local.id, { level: 'app', reach: 'network' })).rejects.toMatchObject({ code: 'network_unavailable' });
+    fixture.fingerprint = FP_A;
+    expect(groupProjectHost.scopeOptions().network).toEqual({ available: true });
+    const shared = await groupProjectHost.create('Net', { scope: { level: 'app', reach: 'network' } });
+    expect(shared).toMatchObject({ host: { machine: FP_A }, network: { role: 'host', state: 'online', waitingWrites: 0 } });
+    // Sharing a group project made before this computer had an identity names it as host.
+    const { project } = await groupProjectHost.setScope(local.id, { level: 'app', reach: 'network' });
+    expect(project.host).toEqual({ machine: FP_A });
   });
 
   it('defaults to the current project from a project, and the app from the app', async () => {

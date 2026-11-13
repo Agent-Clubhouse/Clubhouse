@@ -32,7 +32,7 @@ import { GroupProjectHostError, groupProjectHost } from './group-project-host';
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { knownQuickAgents } from './quick-agent-events';
-import { onAppEvent } from './app-event-bus';
+import { onAppEvent, publishAppEvent } from './app-event-bus';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   claimSourceBinding, clearBindingRemovedByUser, releaseSourceBinding,
@@ -142,9 +142,40 @@ interface Resolution {
   unverified: string[];
 }
 
+/**
+ * A cached copy of a group project hosted on another machine (#3363). Its
+ * addresses are relative to the host, and the host decides who joins: here
+ * only this machine's own agents the record lists are bound, and nothing is
+ * written from what this machine sees.
+ */
+function isReplica(gp: GroupProject): boolean {
+  return !groupProjectHost.isThisMachine(gp.host);
+}
+
+/** On a replica: the record's members that are agents on this machine, by local id. */
+function resolveReplica(gp: GroupProject, m: GroupProjectMembership, inventory: Inventory): Resolution {
+  const local = (address: string) => groupProjectHost.localAgentId(gp, address);
+  const excluded = new Set(m.excluded.map((e) => local(e.address)).filter((id): id is string => !!id));
+  const members = new Map<string, ResolvedGroupProjectMember>();
+  const unverified: string[] = [];
+  for (const entry of m.explicit) {
+    const id = local(entry.address);
+    if (!id || excluded.has(id) || members.has(id) || entry.kind === 'quick') continue;
+    const agent = inventory.agents.get(id);
+    if (!agent) {
+      if (inventory.unreadable.size > 0) unverified.push(id);
+      continue;
+    }
+    if (agent.disposed) continue;
+    members.set(id, { agentId: id, name: agent.name, kind: agent.helper ? 'helper' : 'durable', via: 'explicit', projectId: agent.projectId, projectName: agent.projectName });
+  }
+  return { members: [...members.values()], unverified };
+}
+
 export function resolveMembership(
   gp: GroupProject, m: GroupProjectMembership, inventory: Inventory, quick: ReadonlyMap<string, QuickFact>,
 ): Resolution {
+  if (isReplica(gp)) return resolveReplica(gp, m, inventory);
   const excluded = new Set(m.excluded.map((e) => e.address));
   const members = new Map<string, ResolvedGroupProjectMember>();
   const unverified: string[] = [];
@@ -307,7 +338,8 @@ async function migrateLegacyGroupProjects(): Promise<void> {
   let wires: PersistedBinding[] | null = null;
   let changed = false;
   for (const gp of await groupProjectHost.list()) {
-    if (await isMembershipManaged(gp.id)) continue;
+    // Only the host gives a group project its record (#3363).
+    if (isReplica(gp) || await isMembershipManaged(gp.id)) continue;
     if (!isNewGroupProject(gp)) wires ??= await readCanvasWiresStrictly();
     await adopt(gp, inventory, wires ?? []);
     changed = true;
@@ -408,7 +440,7 @@ export async function reconcileMembership(): Promise<void> {
   if (migrated) {
     const inventory = await readInventory();
     for (const gp of await groupProjectHost.list()) {
-      if (!(await isMembershipManaged(gp.id)) && isNewGroupProject(gp)) await adopt(gp, inventory);
+      if (!isReplica(gp) && !(await isMembershipManaged(gp.id)) && isNewGroupProject(gp)) await adopt(gp, inventory);
     }
   }
   const { snapshots, inventory, quick } = await snapshotAll();
@@ -423,6 +455,7 @@ export async function reconcileMembership(): Promise<void> {
       const binding = memberBinding(s.gp, s.membership, member);
       const outcome = claimSourceBinding(GROUP_PROJECT_MEMBERSHIP_SOURCE_ID, binding);
       if (outcome === 'created' && binding.disabledTools) bindingManager.setDisabledTools(member.agentId, s.gp.id, binding.disabledTools);
+      publishAppEvent({ type: 'group_project.member_joined', groupProjectId: s.gp.id, memberAddress: member.agentId });
       changed.add(s.gp.id);
     }
     const unverified = new Set(s.resolution.unverified);
@@ -430,9 +463,11 @@ export async function reconcileMembership(): Promise<void> {
       if (ids.has(agentId)) continue;
       if (unverified.has(agentId)) { ids.add(agentId); continue; }
       releaseSourceBinding(GROUP_PROJECT_MEMBERSHIP_SOURCE_ID, agentId, s.gp.id);
+      publishAppEvent({ type: 'group_project.member_left', groupProjectId: s.gp.id, memberAddress: agentId });
       changed.add(s.gp.id);
     }
-    await tidy(s, inventory, quick);
+    // Judged against this machine's agents: never for a group project hosted elsewhere (#3363).
+    if (!isReplica(s.gp)) await tidy(s, inventory, quick);
   }
   for (const [gpId, before] of listed) {
     if (next.has(gpId)) continue;
@@ -540,27 +575,35 @@ export async function beginAutoJoin(groupProjectId: string): Promise<void> {
 export async function addMember(groupProjectId: string, agentId: string): Promise<GroupProjectMembershipView> {
   const gp = await requireGroupProject(groupProjectId);
   const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
-  if (!(await isMembershipManaged(gp.id))) await adopt(gp, inventory);
+  const replica = isReplica(gp);
+  if (!replica && !(await isMembershipManaged(gp.id))) await adopt(gp, inventory);
   const agent = inventory.agents.get(agentId);
   const run = quick.get(agentId);
   if (!run && (!agent || agent.disposed)) throw new Error('That agent does not exist here.');
+  if (run && replica) throw new Error('A quick agent joins a group project only on the machine that hosts it.');
   // Scope decides who can be added (#3355), for a person or an agent alike: an
   // explicit add can't put an outsider in or undo a narrowing. Fails closed.
   // Decided from this inventory's facts: an agent whose project isn't known is refused.
   const projectId = (run ?? agent)?.projectId;
-  const allowed = !gp.scope || gp.scope.level === 'app' || (projectId !== undefined && projectId === gp.scope.projectId);
+  // On a copy of a group project hosted elsewhere, a project scope covers this computer's projects of the same
+  // repository (#3363): the host service's check.
+  const allowed = !gp.scope || gp.scope.level === 'app'
+    || (replica ? await groupProjectHost.inScope(gp.id, agentId).catch(() => false) : projectId !== undefined && projectId === gp.scope.projectId);
   if (!allowed) {
     throw new GroupProjectHostError('out_of_scope', groupProjectHost.outOfScopeMessage(gp, agent?.name ?? run?.name ?? agentId));
   }
+  // Host-relative (#3363): a bare id on the host, `id@<this machine>` on a copy.
+  const address = groupProjectHost.memberAddress(gp, agentId);
   const now = new Date().toISOString();
   await groupProjectHost.updateMembership(gp.id, (draft) => {
-    draft.excluded = draft.excluded.filter((e) => e.address !== agentId);
-    const auto = draft.autoJoin && agent && !agent.helper && inScope(gp, agent);
-    if (auto || draft.explicit.some((e) => e.address === agentId && (!run || e.runId === run.runId))) return;
-    draft.explicit = draft.explicit.filter((e) => e.address !== agentId);
+    draft.excluded = draft.excluded.filter((e) => e.address !== address);
+    // Who auto-joins is the host's to decide; a copy only records the addition.
+    const auto = !replica && draft.autoJoin && agent && !agent.helper && inScope(gp, agent);
+    if (auto || draft.explicit.some((e) => e.address === address && (!run || e.runId === run.runId))) return;
+    draft.explicit = draft.explicit.filter((e) => e.address !== address);
     draft.explicit.push(run
-      ? { address: agentId, kind: 'quick', addedAt: now, runId: run.runId, name: run.name }
-      : { address: agentId, kind: agent!.helper ? 'helper' : 'durable', addedAt: now, name: agent!.name });
+      ? { address, kind: 'quick', addedAt: now, runId: run.runId, name: run.name }
+      : { address, kind: agent!.helper ? 'helper' : 'durable', addedAt: now, name: agent!.name });
   });
   // A wire the user deleted earlier this session is theirs to bring back: this is that.
   clearBindingRemovedByUser(agentId, gp.id);
@@ -575,18 +618,19 @@ export async function addMember(groupProjectId: string, agentId: string): Promis
 export async function excludeMember(groupProjectId: string, agentId: string): Promise<GroupProjectMembershipView> {
   const gp = await requireGroupProject(groupProjectId);
   const inventory = await readInventory();
-  if (!(await isMembershipManaged(gp.id))) await adopt(gp, inventory);
+  if (!isReplica(gp) && !(await isMembershipManaged(gp.id))) await adopt(gp, inventory);
   const agent = inventory.agents.get(agentId);
   const quick = await liveQuickAgents();
+  const address = groupProjectHost.memberAddress(gp, agentId);
   const now = new Date().toISOString();
   await groupProjectHost.updateMembership(gp.id, (draft) => {
-    const entry = draft.explicit.find((e) => e.address === agentId);
-    draft.explicit = draft.explicit.filter((e) => e.address !== agentId);
+    const entry = draft.explicit.find((e) => e.address === address);
+    draft.explicit = draft.explicit.filter((e) => e.address !== address);
     // A helper or quick agent only loses its entry. Anyone else is excluded,
     // including an agent whose project can't be read now.
     const addedOnly = agent ? agent.helper : quick.has(agentId) || entry?.kind === 'helper' || entry?.kind === 'quick';
-    if (!addedOnly && !draft.excluded.some((e) => e.address === agentId)) {
-      draft.excluded.push({ address: agentId, excludedAt: now });
+    if (!addedOnly && !draft.excluded.some((e) => e.address === address)) {
+      draft.excluded.push({ address, excludedAt: now });
     }
   });
   await runReconcile();

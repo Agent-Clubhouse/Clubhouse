@@ -233,8 +233,6 @@ tool, grant or controller link reaches it.
   overrule the lead of a network it joins later.
 - Older desktops ignore `extra` and stay peers.
 
-What followers show, Take back while the lead is offline, and approvals from
-other computers come with #3352, #3353 and #3354.
 
 ### Requests between controllers
 
@@ -268,3 +266,59 @@ Nothing polls. The snapshot is recomputed on device and connectivity changes, Di
 Messages and files from another machine are tagged "<name> on <machine>" by the receiving computer. This computer's own Dispatcher never gets a machine label.
 
 The controller's memory has one page per known peer, `agents/peer-<hash>.md`. The hash is the first 16 hex digits of the SHA-256 of the lowercased machine-qualified address, so the name is safe on every file system (fingerprints contain colons). The page is titled by the label. Clubhouse writes the card from the link's stable facts (name, machine, address) only when they change, while the Dispatcher is on; the Dispatcher's notes are kept. A page write that doesn't set a title keeps the page's existing heading, so the Dispatcher's own notes write never turns the label into the hashed name. A peer that leaves keeps its page.
+### Following the lead (#3352, #3353)
+
+On a follower, the Dispatcher pane is the lead's chat, through chat across
+desktops (D219): the lead's Dispatcher chat agent from its computer's snapshot,
+under its namespaced id. The header says "Following <name> on <computer>".
+Typing there sends to the lead's chat as a `chat.send`, which the lead shows as
+the person's message.
+
+- **This computer's earlier chat** stays as it was, read-only, one click away
+  in the pane. Nothing is deleted or merged into the lead's chat.
+- **The sidebar row** is the lead's Dispatcher, with its status and its
+  computer's name, dimmed while that computer is offline. Before the lead's
+  Dispatcher is known (no snapshot yet, or it's off there), the row still names
+  the lead's computer.
+- **Lead offline.** Followers stay followers. The pane says "Lead (<computer>)
+  is offline, last seen …", and the lead's chat as last loaded stays readable.
+  What the person types waits on this computer (`dispatcher-lead-outbox.json`,
+  at most 20 messages, a day each) and goes in order when that computer is
+  back. A message keeps its command id while a try's outcome is unknown, so the
+  lead takes it once while it hasn't restarted; after a "not now" refusal the
+  next try is a new command with a new id, since the lead keeps each id's
+  receipt, a refusal included, for an hour. A lead chat asleep there is woken with the message as
+  its first (`agent.start` with `resume`, main only). "Not now" refusals
+  (a new session, busy, waking) are tried again for a minute; any other refusal
+  drops the message and the pane says why. Expired messages are counted in the
+  pane until dismissed. A message goes to the computer it was written for, even
+  if the lead changes meanwhile.
+- **Take back** is a button in the pane, and only a person presses it. This
+  computer uses its own Dispatcher chat again (its earlier chat plus new
+  messages). It never travels: other followers and the lead are unchanged.
+  Settings › Dispatcher offers "Follow <lead> again", and a new lead choice
+  follows again by itself. Nothing takes back by itself, however long the lead
+  is offline.
+- **News goes to the lead.** What a follower's triage would show in its own
+  chat now (an agent's question for the person, the answer to a request, a
+  check-in) goes to the lead's controller instead, over the controller link as
+  a `send_message` whose `news` field holds the facts (`kind`, `text`,
+  `fromName`, `request`): controllers talk to controllers, never to a visible
+  chat (#2834). The lead checks the fields, refuses malformed news and news when
+  it isn't the lead, and tells its controller a message rewritten from them,
+  named with the follower's computer as the pinned connection names it
+  ("docs-agent on Laptop"), never as the text says. The controller passes it to
+  the person with `tell_user`, as with any agent's news, and sends an answer
+  back to that computer's Dispatcher.
+- **When the lead can't take it.** While the lead is offline, after Take back,
+  or when it refuses news (at once, or later from the queue), the news shows in
+  this computer's own chat. The follower pane says so ("An update from this
+  computer's Dispatcher is in its own chat…"), with Show for the earlier chat,
+  and says when one needs an answer, which needs Take back. After Take back,
+  Settings › Dispatcher › Lead says what still waits for the lead and what
+  didn't make it.
+- **Phones:** a phone paired with a follower keeps that computer's own
+  Dispatcher chat. A member phone already connects to every computer in the
+  network (D212), so it opens the lead's chat on the lead's computer.
+
+Approvals from other computers come with #3354.

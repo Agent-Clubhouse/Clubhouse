@@ -600,6 +600,7 @@ export const IPC = {
     SCOPE_OPTIONS: 'group-project:scope-options',
     PREVIEW_SCOPE: 'group-project:preview-scope',
     SET_SCOPE: 'group-project:set-scope',
+    DISMISS_REFUSALS: 'group-project:dismiss-refusals',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
     GET_ALL_MESSAGES: 'group-project:get-all-messages',
@@ -794,6 +795,14 @@ export const IPC = {
     GET_PRESENCE: 'dispatcher:get-presence',
     /** Main → renderer broadcast: DispatcherPresenceSnapshot after a real change. */
     PRESENCE_CHANGED: 'dispatcher:presence-changed',
+    /** Take back (#3353): this computer uses its own Dispatcher chat again. Resolves with a DispatcherLeadState. */
+    TAKE_BACK: 'dispatcher:take-back',
+    /** Follow the lead again after Take back. Resolves with a DispatcherLeadState. */
+    FOLLOW_AGAIN: 'dispatcher:follow-again',
+    /** A message for the lead's chat while its computer is offline (#3353). Resolves with `{ id }`. */
+    QUEUE_FOR_LEAD: 'dispatcher:queue-for-lead',
+    /** Clears the notices for waiting messages (expired, refused) and for news kept on this computer. Resolves with a DispatcherLeadState. */
+    DISMISS_LEAD_NOTICE: 'dispatcher:dismiss-lead-notice',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */

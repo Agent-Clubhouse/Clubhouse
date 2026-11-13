@@ -212,13 +212,15 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
   const [resolved, membership] = await Promise.all([groupProjectHost.resolveMembers(gp.id), groupProjectHost.getMembership(gp.id)]);
   forgetFormerMembers(gp.id, resolved);
   for (const member of resolved) {
-    // Agents on other machines hear about posts over the network (#3363).
-    if (member.address.includes('@')) continue;
+    // Each computer tells its own agents (#3363): the host's, and on a copy this computer's,
+    // which hears of the post when the host tells it the group project changed.
+    const agentId = groupProjectHost.localAgentId(gp, member.address);
+    if (!agentId) continue;
     const inbox = await groupProjectHost.inboxFor(gp.id, member.name, member.address);
     const mentioned = mentions(message.body, member.name);
     const subscribed = memberSubscriptions(membership, member.address, inbox).has(message.topic);
     if (!subscribed && !mentioned && !isLead(gp, member.address)) continue;
-    const state = stateOf(gp.id, member.address, member.name);
+    const state = stateOf(gp.id, agentId, member.name);
     if (!state.window) {
       state.window = { messages: [] };
       state.timer = setTimeout(() => { void flush(state); }, COALESCE_MS);
@@ -234,7 +236,7 @@ async function stillMember(state: MemberState): Promise<GroupProject | null> {
   const gp = await groupProjectHost.get(state.groupProjectId);
   if (!gp || usesPolling(gp) || !groupProjectMay(gp, 'deliver')) return null;
   const resolved = await groupProjectHost.resolveMembers(gp.id);
-  return resolved.some((m) => m.address === state.agentId) ? gp : null;
+  return resolved.some((m) => groupProjectHost.localAgentId(gp, m.address) === state.agentId) ? gp : null;
 }
 
 function forget(state: MemberState): void {

@@ -4,11 +4,12 @@ import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { DeleteGroupProjectDialog } from './DeleteGroupProjectDialog';
+import { GroupProjectActionsSection } from '../group-projects/GroupProjectActionsSection';
 import {
   SettingsBlock, SettingsPage, SettingsSection,
   settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea,
 } from './SettingsLayout';
-import { GroupProjectScopeEditor, GroupProjectScopeFields, useScopeOptions } from './GroupProjectScopeFields';
+import { GroupProjectRefusals, GroupProjectScopeEditor, GroupProjectScopeFields, hostLine, useScopeOptions } from './GroupProjectScopeFields';
 
 function scopeDescription(scope: GroupProject['scope']): string {
   if (!scope || (scope.reach !== 'local' && scope.reach !== 'network')
@@ -19,7 +20,7 @@ function scopeDescription(scope: GroupProject['scope']): string {
   const level = scope.level === 'app' ? 'App' : `Project (${scope.projectId})`;
   return scope.reach === 'local'
     ? `${level} / This computer: covers ${scope.level === 'app' ? 'this app' : 'that project'} on this machine.`
-    : `${level} / Network: covers your other computers too.`;
+    : `${level} / Network: covers your other computers in your Annex Network too.`;
 }
 
 function CreateGroupProject() {
@@ -248,6 +249,7 @@ export function GroupProjectsSettingsView() {
                       >
                         <span className="block font-medium break-words">{project.name}</span>
                         <span id={`group-project-scope-${project.id}`} className={`${settingsHelp} block break-words`}>{scopeDescription(project.scope)}</span>
+                        <span className={`${settingsHelp} block break-words`}>{hostLine(project)}</span>
                       </button>
                     </li>
                   ))}
@@ -258,7 +260,9 @@ export function GroupProjectsSettingsView() {
       {loaded && !loadError && !retrying && (
         <>
           {selected && <GroupProjectEditor key={selected.id} project={selected} />}
-          {selected && <GroupProjectScopeEditor key={`scope-${selected.id}`} project={selected} />}
+          {selected && <GroupProjectRefusals key={`refusals-${selected.id}`} project={selected} />}
+          {selected && selected.network?.role !== 'replica' && <GroupProjectScopeEditor key={`scope-${selected.id}`} project={selected} />}
+          {selected && <GroupProjectActionsSection key={`actions:${selected.id}`} groupProjectId={selected.id} />}
           <CreateGroupProject />
         </>
       )}
@@ -266,7 +270,7 @@ export function GroupProjectsSettingsView() {
         <SettingsBlock>
           <p className={settingsHelp}>
             Host status, network synchronization, durable membership,
-            membership management, admin grants and owned Actions are not available here.
+            membership management and admin grants are not available here.
             Board and Canvas navigation are not provided by this directory.
             This list is not an authoritative network or membership directory.
           </p>

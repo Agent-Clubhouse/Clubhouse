@@ -77,12 +77,16 @@ export interface LeadChoice {
   self: boolean;
   /** Connected now. Always true for this machine. */
   online: boolean;
+  /** Its Dispatcher is on, as that computer last said; null when it hasn't said. */
+  dispatcherOn: boolean | null;
 }
 
 /** What Settings › Dispatcher shows for Lead. */
 export interface DispatcherLeadState {
-  /** False when this computer isn't in an Annex Network with another computer. */
+  /** False when this computer has never been in an Annex Network with another computer, and has no lead record. */
   available: boolean;
+  /** Another computer is in the network now, so a lead can be chosen. */
+  canChoose: boolean;
   role: LeadRole;
   /** The chosen lead, by name, or null for peers. */
   lead: LeadChoice | null;
@@ -97,4 +101,31 @@ export interface DispatcherLeadState {
   /** The machine where the current choice was made, by name, when known. */
   changedByName: string | null;
   changedAt: string | null;
+  /** A follower that hasn't taken back (#3352): its Dispatcher pane is the lead's chat. */
+  following: boolean;
+  /** A follower that took back (#3353): it uses its own chat until it follows again. */
+  tookBack: boolean;
+  /** When this computer last heard from the lead's computer. */
+  leadLastSeen: string | null;
+  /** Messages typed while the lead was offline (#3353). */
+  outbox: LeadOutboxState;
+  /** News this computer's Dispatcher kept in its own chat while following, because the lead couldn't take it (#3352). */
+  localNews: { count: number; needsUser: boolean };
 }
+
+export interface LeadOutboxState {
+  /** Messages waiting for the lead's computer to come back. */
+  waiting: number;
+  oldestAt: string | null;
+  /** Messages dropped because the lead stayed offline too long, since last dismissed. */
+  expired: number;
+  /** Why the last waiting message couldn't be delivered, when the lead refused it. */
+  failed: string | null;
+}
+
+/** How long a message waits for an offline lead before it's dropped. */
+export const LEAD_OUTBOX_EXPIRY_MS = 24 * 60 * 60 * 1000;
+/** How many messages wait at most. */
+export const LEAD_OUTBOX_MAX = 20;
+/** The longest message that waits (the chat command's own text limit is larger). */
+export const LEAD_OUTBOX_MAX_CHARS = 32_000;

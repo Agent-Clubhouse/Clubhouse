@@ -45,10 +45,13 @@ export type AppEvent = Stamp & (
   | { type: 'agent.compacted'; agentId: string }
   | { type: 'agent.quick_finished'; agentId: string; name: string; owner: QuickAgentOwner; parentAgentId?: string; projectPath: string; durationMs: number; outcome: 'completed' | 'failed' | 'cancelled' }
   | { type: 'helper.finished'; agentId: string; parentAgentId: string; projectPath: string }
+  | { type: 'group_project.message_posted'; groupProjectId: string; topic: string }
+  | { type: 'group_project.member_joined' | 'group_project.member_left'; groupProjectId: string; memberAddress: string }
   | { type: 'git.commit'; repoPath: string; branch: string; agentId?: string }
   | { type: 'git.branch_switched'; repoPath: string; branch: string; previousBranch?: string; agentId?: string }
   | { type: 'git.remote_updated'; repoPath: string; branch: string; remote: string; agentId?: string }
   | { type: 'app.started' }
+  | { type: 'actions.changed' }
   | { type: 'device.online'; device: DevicePresence }
   | { type: 'device.offline'; device: DevicePresence }
   /** Only qualifying subscriptions, never absence timestamps or duration. */

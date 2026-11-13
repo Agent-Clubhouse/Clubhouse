@@ -1,4 +1,4 @@
-/** The network-wide lead Dispatcher (#3351) over two real desktops and fake CLIs. CI only. */
+/** The network-wide lead Dispatcher (#3351), following it (#3352) and its offline rules (#3353), over two real desktops and fake CLIs. CI only. */
 import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -44,7 +44,7 @@ async function desktop(name: string, profile?: DisposableProfile) {
 const machine = async (page: Page) => (await page.evaluate(() => window.clubhouse.annex.getStatus())).fingerprint!.toLowerCase();
 const lead = (page: Page) => page.evaluate(() => window.clubhouse.dispatcher.getLead());
 
-test('a lead chosen on one computer reaches the other, catches up after a restart, and clears when its computer is removed', async () => {
+test('a lead reaches the other computer, which follows its chat, keeps messages while it is off, takes back, and catches up', async () => {
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'dispatcher-lead-e2e-'));
   const fixture = path.join(scratch, 'quiet.jsonl');
   const lines = (await fs.promises.readFile(chatFixturePath('claude', 'session-info'), 'utf8')).split('\n').slice(0, 3);
@@ -59,23 +59,62 @@ test('a lead chosen on one computer reaches the other, catches up after a restar
   const desk = await machine(here.window); const laptop = await machine(there.window);
   await expect.poll(async () => (await lead(here.window)).available, { timeout: 30_000 }).toBe(true);
 
-  // Chosen on Desk, Laptop leads; both agree, and Desk sees Laptop has it.
+  // #3351: chosen on Desk, Laptop leads; both agree, and Desk sees Laptop has it.
   await here.window.evaluate((id) => window.clubhouse.dispatcher.setLead(id), laptop);
   await expect.poll(async () => (await lead(there.window)).role, { timeout: 30_000 }).toBe('lead');
-  expect((await lead(here.window)).role).toBe('follower');
+  expect((await lead(here.window))).toMatchObject({ role: 'follower', following: true });
   await expect.poll(async () => (await lead(here.window)).waitingOn, { timeout: 30_000 }).toEqual([]);
 
-  // Laptop is off while Desk changes it; it catches up when it's back.
+  // #3352: Desk's Dispatcher pane is Laptop's chat, live once Laptop's chat is awake.
+  const laptopChatId = (await there.window.evaluate(() => window.clubhouse.dispatcher.get())).chatAgentId!;
+  await there.window.locator('[data-testid="dispatcher-row"] [role="treeitem"]').click();
+  await there.window.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+  // Laptop's chat is running there before Desk is expected to show it live.
+  await expect.poll(async () => (await there.window.evaluate(() => window.clubhouse.dispatcher.get())).chatRunning, { timeout: 30_000 }).toBe(true);
+  await here.window.locator('[data-testid="dispatcher-row"]').click();
+  await expect(here.window.getByTestId('follower-heading')).toContainText('on Laptop', { timeout: 30_000 });
+  // Typed on Desk, it's the person's message in Laptop's chat, not one from Desk or its Dispatcher.
+  const composer = here.window.locator('[data-testid="follower-dispatcher-view"]').getByLabel('Message');
+  await expect(composer).toBeEnabled({ timeout: 30_000 });
+  await composer.fill('Typed on Desk');
+  await composer.press('Enter');
+  const userMessages = async (page: Page, chatId: string) => (await page.evaluate((id) => window.clubhouse.chat.readTranscript(id), chatId) as Array<{ type: string; data: { content?: Array<{ text?: string }>; source?: string; routed?: unknown } }>)
+    .filter((e) => e.type === 'user_message');
+  await expect.poll(async () => (await userMessages(there.window, laptopChatId)).find((e) => e.data.content?.some((c) => c.text === 'Typed on Desk'))?.data.source, { timeout: 30_000 }).toBe('annex');
+  const typed = (await userMessages(there.window, laptopChatId)).find((e) => e.data.content?.some((c) => c.text === 'Typed on Desk'))!;
+  expect(typed.data.routed).toBeUndefined();
+  await here.window.getByTestId('follower-earlier-toggle').click();
+  await expect(here.window.getByTestId('follower-earlier-chat')).toBeVisible();
+  await here.window.getByTestId('follower-earlier-toggle').click();
+
+  // #3353: Laptop off. Desk stays a follower, says so, and keeps a message until it's back.
   const profile = there.profile;
   await there.electronApp.close(); apps.splice(apps.indexOf(there), 1);
-  await expect.poll(async () => (await lead(here.window)).lead?.online, { timeout: 30_000 }).toBe(false);
-  expect((await lead(here.window)).role).toBe('follower');
+  await expect(here.window.getByTestId('follower-lead-offline')).toContainText('Lead (Laptop) is offline', { timeout: 30_000 });
+  expect((await lead(here.window))).toMatchObject({ role: 'follower', following: true });
+  await here.window.getByTestId('follower-offline-input').fill('Hello from Desk');
+  await here.window.getByTestId('follower-offline-send').click();
+  await expect.poll(async () => (await lead(here.window)).outbox.waiting).toBe(1);
+  there = await desktop('Laptop', profile);
+  await expect.poll(async () => (await lead(here.window)).outbox, { timeout: 60_000 }).toMatchObject({ waiting: 0, failed: null });
+  await expect.poll(async () => (await userMessages(there.window, laptopChatId)).some((e) => e.data.content?.some((c) => c.text === 'Hello from Desk')), { timeout: 30_000 }).toBe(true);
+  await expect(here.window.getByTestId('follower-lead-offline')).toHaveCount(0, { timeout: 30_000 });
+
+  // Take back changes only Desk.
+  await here.window.getByTestId('follower-take-back').click();
+  await expect(here.window.getByTestId('follower-dispatcher-view')).toHaveCount(0);
+  expect((await lead(here.window))).toMatchObject({ role: 'follower', tookBack: true });
+  expect((await lead(there.window)).role).toBe('lead');
+
+  // #3351: Laptop off while Desk chooses itself; Laptop catches up when it's back, and follows.
+  await there.electronApp.close(); apps.splice(apps.indexOf(there), 1);
   await here.window.evaluate((id) => window.clubhouse.dispatcher.setLead(id), desk);
   there = await desktop('Laptop', profile);
   await expect.poll(async () => (await lead(there.window)).lead?.machine, { timeout: 45_000 }).toBe(desk);
-  expect((await lead(there.window)).role).toBe('follower');
+  expect((await lead(there.window))).toMatchObject({ role: 'follower', following: true });
 
-  // Removing the lead's computer returns the other to peers, and says which left.
+  // Removing the lead's computer returns the other to peers.
   await there.window.evaluate((fingerprint) => window.clubhouse.annex.removeDevice(fingerprint), desk);
   await expect.poll(async () => (await lead(there.window)).role, { timeout: 30_000 }).toBe('peer');
+  expect(await lead(there.window)).toMatchObject({ available: true, canChoose: false, clearedFor: 'Desk' });
 });
