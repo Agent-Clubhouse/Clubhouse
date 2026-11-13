@@ -192,6 +192,7 @@ vi.mock('../services/project-store', () => ({
   ]),
   add: vi.fn((dirPath: string) => ({ id: 'p3', name: 'New', path: dirPath })),
   addProject: vi.fn((dirPath: string) => ({ project: { id: 'p3', name: 'New', path: dirPath }, created: true })),
+  reserveRepositoryImport: vi.fn(async () => {}),
   remove: vi.fn(),
   update: vi.fn(),
   reorder: vi.fn(),
@@ -255,6 +256,7 @@ vi.mock('../services/file-watch-service', () => ({
 
 // ── Service mocks (git-handlers deps) ──────────────────────────────────
 vi.mock('../services/git-service', () => ({
+  getOriginUrl: vi.fn(async () => null),
   info: vi.fn(() => ({})),
   checkout: vi.fn(),
   stage: vi.fn(),
@@ -418,6 +420,8 @@ describe('registerAllHandlers — integration', () => {
     // Spot-check channels from different handler modules
     expect(handleHandlers.has(IPC.APP.GET_VERSION)).toBe(true);
     expect(handleHandlers.has(IPC.PROJECT.LIST)).toBe(true);
+    expect(handleHandlers.has(IPC.PROJECT.IMPORT_LIST)).toBe(true);
+    expect(handleHandlers.has(IPC.PROJECT.IMPORT_CANCEL)).toBe(true);
     expect(handleHandlers.has(IPC.PROCESS.EXEC)).toBe(true);
     expect(handleHandlers.has(IPC.GIT.INFO)).toBe(true);
     expect(handleHandlers.has(IPC.FILE.READ)).toBe(true);

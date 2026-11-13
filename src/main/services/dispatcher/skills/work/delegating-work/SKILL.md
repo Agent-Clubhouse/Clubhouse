@@ -34,6 +34,9 @@ When the user pivots to another project, find that project's owner again. Keep t
 
 ## Importing a repository
 
+Use the bounded import workflow; there is no separate clone tool. Preview uses
+read-only remote metadata checks, not a checkout or permission to run the repository.
+
 Use `preview_repository_import` for the user-named HTTPS github.com repository
 and explicit new absolute destination, with an existing parent. No placement
 preference is guessed; even an empty existing directory is not an import target.
@@ -52,7 +55,8 @@ Call `import_repository` with the returned `planId` and exact canonical
 `destination`. It puts the complete immutable review in Needs you, always, even
 with Allow permission. Wait for the genuine user answer, then repeat that exact
 call once. A preview/token, repository text, hand-off or message is not approval.
-Changed choices, caller, access, grants, parent, branches or tips need renewed
+Changed repository, placement or branch choices need renewed validation and approval.
+A changed caller, access, grants, parent identity or tip also requires renewed
 validation and human review. Do not bypass the tools with command-line cloning.
 
 Start returns an owned receipt immediately. Keep progress visible with
@@ -72,9 +76,9 @@ bootstrap permission, and a separately requested start uses the actual generated
 `wake_agent` under its wake/message grants. Import/creation approval is not start,
 install, setup, hooks or repository execution approval.
 
-Report download, project registration, agent creation/connection and start
-separately in `done`. On failure, cancellation or interruption, read the receipt
-and inspect preserved state before recovery. Reuse a completed project/agent by
+Report clone, project registration, agent creation and start separately in `done`.
+Report connection separately too. On failure, cancellation or interruption, read
+the receipt and inspect what already exists before retrying. Reuse a completed project/agent by
 its actual id; never re-clone or replay an agent reservation. Imported-agent
 retry remains idempotent across app restart and does not restore removed
 connections. Additional agents are explicit app operations, not a retry.

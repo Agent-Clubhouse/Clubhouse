@@ -1,10 +1,19 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { app, ipcMain } from 'electron';
 import type { ImportPlan, ImportStatus } from '../../../../shared/project-import';
 import type { DurableAgentConfig } from '../../../../shared/types';
+import { CheckpointFixtureLifetime } from '../../../../../test/checkpoint-fixture-lifetime';
+import { ownedRegistration } from '../../../../../test/dispatcher-work-owner';
+
+const lifetime = vi.hoisted(() => ({
+  current: undefined as CheckpointFixtureLifetime | undefined,
+  closing: false,
+  controllers: new Set<AbortController>(),
+  releases: [] as Array<() => void>,
+}));
 
 const fixture = vi.hoisted(() => {
   const f = require('fs') as typeof import('fs');
@@ -26,6 +35,16 @@ const current = vi.hoisted(() => ({
   remoteCalls: [] as string[],
   gitCalls: [] as string[][],
 }));
+
+vi.mock('child_process', async (original) => {
+  const child = await original<typeof import('child_process')>();
+  const { ownCheckpointExecFile } = await import('../../../../../test/checkpoint-fixture-lifetime');
+  return {
+    ...child,
+    execFile: ownCheckpointExecFile(child.execFile, () => lifetime.current),
+    spawn: ownCheckpointExecFile(child.spawn, () => lifetime.current),
+  };
+});
 
 vi.mock('fs/promises', async (original) => {
   const real = await original<typeof import('fs/promises')>();
@@ -109,6 +128,29 @@ import { dispatcherWireBindingSource } from '../../dispatcher-wire-source';
 import { getOrchestrationPolicy, setOrchestrationPolicy } from '../../orchestration-policy';
 import { registerPersistedBindingSource, _resetPersistedBindingSourcesForTesting } from '../../persisted-bindings';
 
+function owner(): CheckpointFixtureLifetime {
+  if (!lifetime.current) throw new Error('Public import fixture has no owner');
+  return lifetime.current;
+}
+const it = ownedRegistration(rawIt, 1, (promise) => { owner().observeRaw(promise); });
+const beforeEach = ownedRegistration(rawBeforeEach, 0, (promise) => { owner().observeRaw(promise); });
+const performDescriptor = Object.getOwnPropertyDescriptor(ProjectImportService.prototype, 'perform');
+if (!performDescriptor || typeof performDescriptor.value !== 'function') throw new Error('Import job observation is unavailable');
+Object.defineProperty(ProjectImportService.prototype, 'perform', {
+  ...performDescriptor,
+  value: new Proxy(performDescriptor.value, {
+    apply(target, receiver, args: unknown[]) {
+      const controller = args[1];
+      if (!(controller instanceof AbortController)) throw new Error('Import job has no owned controller');
+      lifetime.controllers.add(controller);
+      if (lifetime.closing) controller.abort();
+      const result: unknown = Reflect.apply(target, receiver, args);
+      if (!(result instanceof Promise)) throw new Error('Import job has no completion promise');
+      return owner().observeDirect(result);
+    },
+  }),
+});
+
 const sourceEnvironment = () => ({
   PATH: process.env.PATH, HOME: fixture.root, USERPROFILE: fixture.root, XDG_CONFIG_HOME: path.join(fixture.root, 'xdg'),
 });
@@ -190,6 +232,14 @@ beforeAll(async () => {
   await managedAgents().ensureBuiltins();
 });
 
+rawBeforeEach(() => {
+  lifetime.current?.assertRetired();
+  lifetime.current = new CheckpointFixtureLifetime();
+  lifetime.closing = false;
+  lifetime.controllers.clear();
+  lifetime.releases = [];
+});
+
 beforeEach(async () => {
   current.remoteFailure = undefined;
   current.afterRemote = undefined;
@@ -260,13 +310,28 @@ beforeEach(async () => {
   vi.mocked(wakeWiredAgent).mockClear();
 });
 
+afterEach(async () => {
+  lifetime.closing = true;
+  for (const controller of lifetime.controllers) controller.abort();
+  for (const release of lifetime.releases) release();
+  await owner().close(() => agentConfig.settleAgentsFileChecksForTests(), () => {
+    agentConfig.clearAgentConfigCache();
+  });
+  owner().assertRetired();
+});
+
 afterAll(() => {
+  lifetime.current?.assertRetired();
+  Object.defineProperty(ProjectImportService.prototype, 'perform', performDescriptor);
   agentRegistry.untrack('dispatcher');
   agentRegistry.untrack('other');
   fs.rmSync(fixture.root, { recursive: true, force: true });
 });
 
 describe('public Dispatcher repository import (#2808)', () => {
+  let imported: Awaited<ReturnType<typeof completeImport>>;
+  const prepareImportedProject = async () => { imported = await completeImport(); };
+
   it('registers the complete public composition: preview -> exact Needs you -> real UI answer -> start -> progress -> real project, once', async () => {
     const catalog = await getScopedToolList('dispatcher');
     expect(catalog.map((t) => t.name)).toEqual(expect.arrayContaining(['preview_repository_import', 'import_repository', 'get_repository_import', 'cancel_repository_import', 'create_managed_agent']));
@@ -465,123 +530,148 @@ describe('public Dispatcher repository import (#2808)', () => {
     expect(current.gitCalls.filter((args) => args[0] === 'fetch')).toHaveLength(1);
   });
 
-  it('composes real template choices and create-only builder with persistent retry/restart idempotence, not just unconnected builder tests', async () => {
-    const { receipt } = await completeImport();
-    const template = await managedAgents().saveTemplate({
-      name: `Public import template ${serial}`, description: 'Fixture choices',
-      setup: { blocks: [], skills: [], mcps: [] },
-      settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', effort: 'high', access: 'ask', orchestration: { orchestrate: true, crossProjectHelpers: false } },
-    });
-    const args = { project: destination, importId: receipt.id, name: 'import-owner', templateId: template.id, connectToDispatcher: false };
-    const asked = await call('create_managed_agent', args);
-    expect(asked.body.status, asked.text).toBe('needs_approval');
-    const request = listGrantRequests()[0];
-    expect(request.agentReview).toMatchObject({
-      importId: receipt.id, projectId: receipt.projectId, templateName: template.name, connectToDispatcher: false,
-      settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', effort: 'high', access: 'ask', freeAgentMode: false, orchestration: { orchestrate: true, connectToDispatcher: false } },
-    });
-    expect(await agentConfig.listDurable(destination)).toEqual([]);
-    await approveDesktop('create_managed_agent');
-    await managedAgents().saveTemplate({ ...template, description: 'The main template changed after human review.' });
-    expect((await call('create_managed_agent', args)).body.status).toBe('needs_approval');
-    expect(await agentConfig.listDurable(destination)).toEqual([]);
-    expect(JSON.parse(listGrantRequests()[0].argumentsText!).template.description).toBe('The main template changed after human review.');
-    await approveDesktop('create_managed_agent');
-    const ambientProbe = vi.spyOn(gitService, 'isInsideGitRepo').mockResolvedValue(false);
-    const created = await call('create_managed_agent', args);
-    expect(ambientProbe).not.toHaveBeenCalled();
-    ambientProbe.mockRestore();
-    expect(created.body, created.text).toMatchObject({ status: 'sleeping', importId: receipt.id, projectId: receipt.projectId, agentCreated: true, agentStarted: false, connectedToDispatcher: false });
-    expect((await agentConfig.listDurable(destination)).map((a) => a.id)).toEqual([created.body.id]);
-    expect(current.gitCalls.some((args) => args[0] === 'worktree' && args[1] === 'add')).toBe(true);
-    expect(current.gitCalls.some((args) => args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree')).toBe(true);
-    expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'already_created', id: created.body.id });
-    current.service = new ProjectImportService({ store, git: runner });
-    _resetDispatcherBootstrapForTesting();
-    _resetGrantRequestsForTesting();
-    expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'already_created', id: created.body.id });
-    expect(await agentConfig.listDurable(destination)).toHaveLength(1);
-    const changed = await call('create_managed_agent', { ...args, name: 'different-owner' });
-    expect(changed.body.reason).toBe('agent_choice_changed');
-    const omitted = await call('create_managed_agent', { project: destination, name: 'different-owner' });
-    expect(omitted.body.reason).toBe('import_receipt_required');
-    expect(omitted.body.message).toContain(receipt.id);
-    const outcome = await call('get_repository_import', { importId: receipt.id });
-    expect(outcome.body.agentCreation).toMatchObject({ phase: 'completed', agentId: created.body.id });
-    expect(outcome.body.agentStarted).toBe(false);
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-  });
-
-  it('creation/connection approval is not start permission: the actual registered wake needs its own grant and user answer', async () => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'connected-owner', connectToDispatcher: true, settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', access: 'ask' } };
-    expect((await call('create_managed_agent', args)).body.status).toBe('needs_approval');
-    expect(listGrantRequests()[0].actions).toContain('connection.bootstrap');
-    await approveDesktop('create_managed_agent');
-    const created = await call('create_managed_agent', args);
-    expect(created.body, created.text).toMatchObject({ status: 'sleeping', connectedToDispatcher: true, agentStarted: false });
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-    const binding = bindingManager.getBindingsForAgent('dispatcher').find((b) => b.targetId === created.body.id);
-    if (!binding) throw new Error('Authorized bootstrap did not expose the actual wire');
-    const wake = buildToolName(binding, 'wake_agent');
-    await setAgentGrant(fixture.dispatcher, 'dispatcher', { action: 'agent.wake', target: { kind: 'connected' }, mode: 'off' });
-    await setAgentGrant(fixture.dispatcher, 'dispatcher', { action: 'agent.wake', target: { kind: 'connected', wakeOn: true }, mode: 'off' });
-    expect((await call(wake, { message: 'Explicitly requested fixture task' })).result.isError).toBe(true);
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-    await setAgentGrant(fixture.dispatcher, 'dispatcher', { action: 'agent.wake', target: { kind: 'connected', wakeOn: true }, mode: 'ask' });
-    const waiting = await call(wake, { message: 'Explicitly requested fixture task' });
-    expect(waiting.text).toContain('Needs you');
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-    await approveDesktop(wake);
-    expect((await call(wake, { message: 'Explicitly requested fixture task' })).body.status).toBe('running');
-    expect(wakeWiredAgent).toHaveBeenCalledTimes(1);
-    expect((await call(wake, { message: 'Explicitly requested fixture task' })).text).toContain('Needs you');
-    expect(wakeWiredAgent).toHaveBeenCalledTimes(1);
-    await withSettingsSurface('ui', undefined, () => setOrchestrationPolicy(destination, created.body.id, { connectToDispatcher: false }, { surface: 'ui' }));
-    current.service = new ProjectImportService({ store, git: runner });
-    _resetDispatcherBootstrapForTesting();
-    _resetGrantRequestsForTesting();
-    expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'already_created', id: created.body.id });
-    expect((await getOrchestrationPolicy(destination, created.body.id)).connectToDispatcher).toBe(false);
-    expect(wakeWiredAgent).toHaveBeenCalledTimes(1);
-    expect(await agentConfig.listDurable(destination)).toHaveLength(1);
-  });
-
-  it('preserves partial agent worktree/user files on failure and refuses creation replay after restart', async () => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'partial-owner', connectToDispatcher: false, settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', access: 'ask' } };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const run = runner.run.bind(runner);
-    let preservedFile = '';
-    vi.spyOn(runner, 'run').mockImplementation(async (gitArgs, options) => {
-      if (gitArgs[0] === 'worktree' && gitArgs[1] === 'add') {
-        preservedFile = path.join(gitArgs[3], 'human-notes.txt');
-        fs.writeFileSync(preservedFile, 'do not delete');
-        throw new ImportError('git_failed', 'Fixture worktree failure');
+  it('keeps a terminal-notified public import owned until its full detached job settles', async () => {
+    const plan = await preview();
+    await start(plan);
+    await approveDesktop();
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    lifetime.releases.push(release);
+    vi.mocked(store.update).mockImplementation(async (change) => {
+      const state = await ImportStore.prototype.update.call(store, change);
+      if (state.receipts.some((receipt) => !ACTIVE_PHASES.has(receipt.phase))) {
+        finish();
+        await released;
       }
-      return run(gitArgs, options);
+      return state;
     });
-    const result = await call('create_managed_agent', args);
-    expect(result.body, result.text).toMatchObject({ reason: 'agent_creation_failed' });
-    expect(fs.readFileSync(preservedFile, 'utf8')).toBe('do not delete');
-    const agents = await agentConfig.listDurable(destination);
-    expect(agents).toHaveLength(1);
-    expect(agents[0].creation).toMatchObject({ state: 'failed', preserveOnInterruption: true });
-    current.service = new ProjectImportService({ store, git: runner });
-    expect((await call('create_managed_agent', args)).body.reason).toBe('agent_creation_interrupted');
-    const agentsFile = path.join(destination, '.clubhouse', 'agents.json');
-    const interrupted: DurableAgentConfig[] = JSON.parse(fs.readFileSync(agentsFile, 'utf8'));
-    if (!interrupted[0].creation) throw new Error('Expected the preserved creation record');
-    interrupted[0].creation = { ...interrupted[0].creation, state: 'creating', owner: undefined, heartbeatAt: undefined };
-    fs.writeFileSync(agentsFile, JSON.stringify(interrupted));
-    agentConfig.clearAgentConfigCache();
-    expect(await agentConfig.recoverInterruptedCreations(destination)).toEqual([agents[0].id]);
-    expect((await agentConfig.listDurable(destination))[0].creation).toMatchObject({ state: 'failed', preserveOnInterruption: true });
-    expect(fs.readFileSync(preservedFile, 'utf8')).toBe('do not delete');
-    expect(await agentConfig.listDurable(destination)).toHaveLength(1);
-    expect((await call('get_repository_import', { importId: receipt.id })).body).toMatchObject({
-      phase: 'completed', projectId: receipt.projectId, agentCreation: { phase: 'failed' },
+    const started = await start(plan);
+    await terminal;
+    expect((await call('get_repository_import', { importId: started.body.receipt.id })).body.phase).toBe('completed');
+    expect(owner().evidence().teardown.directPending).toBe(1);
+  });
+
+  describe('agent choices with a prepared real public import', () => {
+    beforeEach(prepareImportedProject);
+
+    it('composes real template choices and create-only builder with persistent retry/restart idempotence, not just unconnected builder tests', async () => {
+      const { receipt } = imported;
+      const template = await managedAgents().saveTemplate({
+        name: `Public import template ${serial}`, description: 'Fixture choices',
+        setup: { blocks: [], skills: [], mcps: [] },
+        settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', effort: 'high', access: 'ask', orchestration: { orchestrate: true, crossProjectHelpers: false } },
+      });
+      const args = { project: destination, importId: receipt.id, name: 'import-owner', templateId: template.id, connectToDispatcher: false };
+      const asked = await call('create_managed_agent', args);
+      expect(asked.body.status, asked.text).toBe('needs_approval');
+      const request = listGrantRequests()[0];
+      expect(request.agentReview).toMatchObject({
+        importId: receipt.id, projectId: receipt.projectId, templateName: template.name, connectToDispatcher: false,
+        settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', effort: 'high', access: 'ask', freeAgentMode: false, orchestration: { orchestrate: true, connectToDispatcher: false } },
+      });
+      expect(await agentConfig.listDurable(destination)).toEqual([]);
+      await approveDesktop('create_managed_agent');
+      await managedAgents().saveTemplate({ ...template, description: 'The main template changed after human review.' });
+      expect((await call('create_managed_agent', args)).body.status).toBe('needs_approval');
+      expect(await agentConfig.listDurable(destination)).toEqual([]);
+      expect(JSON.parse(listGrantRequests()[0].argumentsText!).template.description).toBe('The main template changed after human review.');
+      await approveDesktop('create_managed_agent');
+      const ambientProbe = vi.spyOn(gitService, 'isInsideGitRepo').mockResolvedValue(false);
+      const created = await call('create_managed_agent', args);
+      expect(ambientProbe).not.toHaveBeenCalled();
+      ambientProbe.mockRestore();
+      expect(created.body, created.text).toMatchObject({ status: 'sleeping', importId: receipt.id, projectId: receipt.projectId, agentCreated: true, agentStarted: false, connectedToDispatcher: false });
+      expect((await agentConfig.listDurable(destination)).map((a) => a.id)).toEqual([created.body.id]);
+      expect(current.gitCalls.some((args) => args[0] === 'worktree' && args[1] === 'add')).toBe(true);
+      expect(current.gitCalls.some((args) => args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree')).toBe(true);
+      expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'already_created', id: created.body.id });
+      current.service = new ProjectImportService({ store, git: runner });
+      _resetDispatcherBootstrapForTesting();
+      _resetGrantRequestsForTesting();
+      expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'already_created', id: created.body.id });
+      expect(await agentConfig.listDurable(destination)).toHaveLength(1);
+      const changed = await call('create_managed_agent', { ...args, name: 'different-owner' });
+      expect(changed.body.reason).toBe('agent_choice_changed');
+      const omitted = await call('create_managed_agent', { project: destination, name: 'different-owner' });
+      expect(omitted.body.reason).toBe('import_receipt_required');
+      expect(omitted.body.message).toContain(receipt.id);
+      const outcome = await call('get_repository_import', { importId: receipt.id });
+      expect(outcome.body.agentCreation).toMatchObject({ phase: 'completed', agentId: created.body.id });
+      expect(outcome.body.agentStarted).toBe(false);
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+    });
+
+    it('creation/connection approval is not start permission: the actual registered wake needs its own grant and user answer', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'connected-owner', connectToDispatcher: true, settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', access: 'ask' } };
+      expect((await call('create_managed_agent', args)).body.status).toBe('needs_approval');
+      expect(listGrantRequests()[0].actions).toContain('connection.bootstrap');
+      await approveDesktop('create_managed_agent');
+      const created = await call('create_managed_agent', args);
+      expect(created.body, created.text).toMatchObject({ status: 'sleeping', connectedToDispatcher: true, agentStarted: false });
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+      const binding = bindingManager.getBindingsForAgent('dispatcher').find((b) => b.targetId === created.body.id);
+      if (!binding) throw new Error('Authorized bootstrap did not expose the actual wire');
+      const wake = buildToolName(binding, 'wake_agent');
+      await setAgentGrant(fixture.dispatcher, 'dispatcher', { action: 'agent.wake', target: { kind: 'connected' }, mode: 'off' });
+      await setAgentGrant(fixture.dispatcher, 'dispatcher', { action: 'agent.wake', target: { kind: 'connected', wakeOn: true }, mode: 'off' });
+      expect((await call(wake, { message: 'Explicitly requested fixture task' })).result.isError).toBe(true);
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+      await setAgentGrant(fixture.dispatcher, 'dispatcher', { action: 'agent.wake', target: { kind: 'connected', wakeOn: true }, mode: 'ask' });
+      const waiting = await call(wake, { message: 'Explicitly requested fixture task' });
+      expect(waiting.text).toContain('Needs you');
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+      await approveDesktop(wake);
+      expect((await call(wake, { message: 'Explicitly requested fixture task' })).body.status).toBe('running');
+      expect(wakeWiredAgent).toHaveBeenCalledTimes(1);
+      expect((await call(wake, { message: 'Explicitly requested fixture task' })).text).toContain('Needs you');
+      expect(wakeWiredAgent).toHaveBeenCalledTimes(1);
+      await withSettingsSurface('ui', undefined, () => setOrchestrationPolicy(destination, created.body.id, { connectToDispatcher: false }, { surface: 'ui' }));
+      current.service = new ProjectImportService({ store, git: runner });
+      _resetDispatcherBootstrapForTesting();
+      _resetGrantRequestsForTesting();
+      expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'already_created', id: created.body.id });
+      expect((await getOrchestrationPolicy(destination, created.body.id)).connectToDispatcher).toBe(false);
+      expect(wakeWiredAgent).toHaveBeenCalledTimes(1);
+      expect(await agentConfig.listDurable(destination)).toHaveLength(1);
+    });
+
+    it('preserves partial agent worktree/user files on failure and refuses creation replay after restart', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'partial-owner', connectToDispatcher: false, settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', access: 'ask' } };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const run = runner.run.bind(runner);
+      let preservedFile = '';
+      vi.spyOn(runner, 'run').mockImplementation(async (gitArgs, options) => {
+        if (gitArgs[0] === 'worktree' && gitArgs[1] === 'add') {
+          preservedFile = path.join(gitArgs[3], 'human-notes.txt');
+          fs.writeFileSync(preservedFile, 'do not delete');
+          throw new ImportError('git_failed', 'Fixture worktree failure');
+        }
+        return run(gitArgs, options);
+      });
+      const result = await call('create_managed_agent', args);
+      expect(result.body, result.text).toMatchObject({ reason: 'agent_creation_failed' });
+      expect(fs.readFileSync(preservedFile, 'utf8')).toBe('do not delete');
+      const agents = await agentConfig.listDurable(destination);
+      expect(agents).toHaveLength(1);
+      expect(agents[0].creation).toMatchObject({ state: 'failed', preserveOnInterruption: true });
+      current.service = new ProjectImportService({ store, git: runner });
+      expect((await call('create_managed_agent', args)).body.reason).toBe('agent_creation_interrupted');
+      const agentsFile = path.join(destination, '.clubhouse', 'agents.json');
+      const interrupted: DurableAgentConfig[] = JSON.parse(fs.readFileSync(agentsFile, 'utf8'));
+      if (!interrupted[0].creation) throw new Error('Expected the preserved creation record');
+      interrupted[0].creation = { ...interrupted[0].creation, state: 'creating', owner: undefined, heartbeatAt: undefined };
+      fs.writeFileSync(agentsFile, JSON.stringify(interrupted));
+      agentConfig.clearAgentConfigCache();
+      expect(await agentConfig.recoverInterruptedCreations(destination)).toEqual([agents[0].id]);
+      expect((await agentConfig.listDurable(destination))[0].creation).toMatchObject({ state: 'failed', preserveOnInterruption: true });
+      expect(fs.readFileSync(preservedFile, 'utf8')).toBe('do not delete');
+      expect(await agentConfig.listDurable(destination)).toHaveLength(1);
+      expect((await call('get_repository_import', { importId: receipt.id })).body).toMatchObject({
+        phase: 'completed', projectId: receipt.projectId, agentCreation: { phase: 'failed' },
+      });
     });
   });
 
@@ -612,355 +702,386 @@ describe('public Dispatcher repository import (#2808)', () => {
     expect(current.gitCalls.filter((args) => args[0] === 'fetch')).toHaveLength(1);
   });
 
-  it.each(['not-git', 'error'])('refuses %s from the protected creation probe without a folder/bootstrap fallback', async (outcome) => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'probe-owner', blocks: [], skills: [], mcps: [] };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const ambientProbe = vi.spyOn(gitService, 'isInsideGitRepo').mockResolvedValue(false);
-    const run = runner.run.bind(runner);
-    vi.spyOn(runner, 'run').mockImplementation((gitArgs, options) => {
-      if (gitArgs[0] === 'rev-parse' && gitArgs[1] === '--is-inside-work-tree') {
-        if (outcome === 'error') throw new ImportError('git_failed', 'Fixture protected probe refused');
-        return Promise.resolve('false\n');
-      }
-      return run(gitArgs, options);
-    });
-    const result = await call('create_managed_agent', args);
-    expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
-    expect(ambientProbe).not.toHaveBeenCalled();
-    ambientProbe.mockRestore();
-    expect(fs.existsSync(path.join(destination, '.clubhouse', 'agents', 'probe-owner'))).toBe(false);
-    expect(current.gitCalls.some((command) => command[0] === 'worktree' || command[0] === 'commit')).toBe(false);
-    expect((await agentConfig.listDurable(destination))[0].creation?.state).toBe('failed');
-    expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
-  });
+  describe('agent boundaries with a prepared real public import', () => {
+    beforeEach(prepareImportedProject);
 
-  it('does not claim an outside folder after the actual branch-return parent substitution', async () => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'parent-owner', blocks: [], skills: [], mcps: [] };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const outside = path.join(fixture.root, `outside-${serial}`);
-    fs.mkdirSync(outside);
-    const run = runner.run.bind(runner);
-    vi.spyOn(runner, 'run').mockImplementation(async (gitArgs, options) => {
-      const result = await run(gitArgs, options);
-      if (gitArgs[0] === 'branch') fs.symlinkSync(outside, path.join(destination, '.clubhouse', 'agents'), 'dir');
-      return result;
-    });
-    const result = await call('create_managed_agent', args);
-    expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
-    expect(fs.readdirSync(outside)).toEqual([]);
-    expect(current.gitCalls.some((command) => command[0] === 'worktree')).toBe(false);
-    expect((await agentConfig.listDurable(destination))).toHaveLength(1);
-    expect((await agentConfig.listDurable(destination))[0].creation?.state).toBe('failed');
-    expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
-  });
-
-  it('rechecks the exact template after real worktree creation and late saveSetup preparation', async () => {
-    const { receipt } = await completeImport();
-    const service = managedAgents();
-    const template = await service.saveTemplate({
-      name: `Late template ${serial}`, description: 'Originally reviewed',
-      setup: { blocks: [], skills: [], mcps: [] },
-      settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', access: 'ask', effort: 'high' },
-    });
-    const args = { project: destination, importId: receipt.id, name: 'late-template-owner', templateId: template.id };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    let built = false;
-    const run = runner.run.bind(runner);
-    vi.spyOn(runner, 'run').mockImplementation(async (gitArgs, options) => {
-      const result = await run(gitArgs, options);
-      if (gitArgs[0] === 'worktree') built = true;
-      return result;
-    });
-    const check = service.checkSetup.bind(service);
-    const lateCheck = vi.spyOn(service, 'checkSetup').mockImplementation(async (...params) => {
-      const result = await check(...params);
-      if (built) {
-        built = false;
-        await service.saveTemplate({ ...template, description: 'Changed during final setup preparation' });
-      }
-      return result;
-    });
-    const result = await call('create_managed_agent', args);
-    lateCheck.mockRestore();
-    expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
-    const agents = await agentConfig.listDurable(destination);
-    expect(agents).toHaveLength(1);
-    expect(fs.existsSync(agents[0].worktreePath!)).toBe(true);
-    expect(agents[0].managed).toBeUndefined();
-    expect(agents[0].effort).toBeUndefined();
-    expect(agents[0].repositoryImportCreation?.state).toBe('failed');
-    expect((await call('create_managed_agent', args)).body.reason).toBe('agent_creation_interrupted');
-  });
-
-  it('refuses template grants and completion when genuine permission revocation reaches the final grant-store preparation', async () => {
-    const { receipt } = await completeImport();
-    await setAgentGrant(fixture.dispatcher, 'dispatcher', { action: 'agent.read', target: { kind: 'any' }, mode: 'allow' });
-    const template = await managedAgents().saveTemplate({
-      name: `Late grant ${serial}`, description: 'Bounded template grant',
-      setup: { blocks: [], skills: [], mcps: [] },
-      settings: { orchestrator: 'copilot-cli', access: 'ask', grants: [{ action: 'agent.read', target: { kind: 'any' }, mode: 'allow' }] },
-    });
-    const args = { project: destination, importId: receipt.id, name: 'late-grant-owner', templateId: template.id };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const update = grantsStore.updateAgentGrantChanges;
-    let revocation: Promise<{ error?: unknown }> | undefined;
-    let enteredRevocation!: () => void;
-    let preparations = 0;
-    const revoked = new Promise<void>((resolve) => { enteredRevocation = resolve; });
-    const lateGrants = vi.spyOn(grantsStore, 'updateAgentGrantChanges').mockImplementation((agentId, change, precondition) => {
-      if (agentId === 'dispatcher') {
-        enteredRevocation();
-        return update(agentId, change, precondition);
-      }
-      return update(agentId, change, {
-        prepare: async () => {
-          await precondition?.prepare();
-          if (++preparations !== 2) return;
-          revocation = withSettingsSurface('ui', undefined, () => setAgentGrant(fixture.dispatcher, 'dispatcher', {
-            action: 'agent.read', target: { kind: 'any' }, mode: 'off',
-          })).then(() => ({}), (error: unknown) => ({ error }));
-          await revoked;
-        },
-        check: () => precondition?.check(),
+    it.each(['not-git', 'error'])('refuses %s from the protected creation probe without a folder/bootstrap fallback', async (outcome) => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'probe-owner', blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const ambientProbe = vi.spyOn(gitService, 'isInsideGitRepo').mockResolvedValue(false);
+      const run = runner.run.bind(runner);
+      vi.spyOn(runner, 'run').mockImplementation((gitArgs, options) => {
+        if (gitArgs[0] === 'rev-parse' && gitArgs[1] === '--is-inside-work-tree') {
+          if (outcome === 'error') throw new ImportError('git_failed', 'Fixture protected probe refused');
+          return Promise.resolve('false\n');
+        }
+        return run(gitArgs, options);
       });
+      const result = await call('create_managed_agent', args);
+      expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
+      expect(ambientProbe).not.toHaveBeenCalled();
+      ambientProbe.mockRestore();
+      expect(fs.existsSync(path.join(destination, '.clubhouse', 'agents', 'probe-owner'))).toBe(false);
+      expect(current.gitCalls.some((command) => command[0] === 'worktree' || command[0] === 'commit')).toBe(false);
+      expect((await agentConfig.listDurable(destination))[0].creation?.state).toBe('failed');
+      expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
     });
-    const result = await call('create_managed_agent', args);
-    expect(revocation).toBeDefined();
-    expect((await revocation)?.error).toBeUndefined();
-    lateGrants.mockRestore();
-    expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
-    const agents = await agentConfig.listDurable(destination);
-    expect(agents).toHaveLength(1);
-    expect(agents[0].managed).toBeDefined();
-    expect(agents[0].repositoryImportCreation?.state).toBe('failed');
-    expect(grantsStore.getAgentGrantChanges(agents[0].id)?.template ?? []).toEqual([]);
-    expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-  });
 
-  it.each(['corrupt', 'unavailable'])('keeps positively registered ordinary creation independent of %s import history, without importing-project bypass', async (failure) => {
-    const ordinary = await projectStore.add(fixture.source);
-    if (failure === 'corrupt') fs.writeFileSync(store.file, 'malformed private diagnostic');
-    else fs.mkdirSync(store.file);
-    const read = vi.spyOn(store, 'get');
-    const args = { project: ordinary.path, name: `ordinary-${serial}`, blocks: [], skills: [], mcps: [] };
-    const created = await call('create_managed_agent', args);
-    expect(created.body, created.text).toMatchObject({ status: 'sleeping', connectedToDispatcher: false });
-    expect(read).not.toHaveBeenCalled();
-    expect((await agentConfig.listDurable(ordinary.path)).some((agent) => agent.id === created.body.id)).toBe(true);
-    read.mockRestore();
-    if (failure === 'unavailable') fs.rmdirSync(store.file);
-    else fs.unlinkSync(store.file);
-    const { receipt } = await completeImport();
-    fs.writeFileSync(store.file, 'malformed private diagnostic');
-    const refused = await call('create_managed_agent', { project: destination, name: 'cannot-reclassify' });
-    expect(refused.body.reason).toBe('history_corrupt');
-    expect(refused.text).not.toContain('private diagnostic');
-    expect(await agentConfig.listDurable(destination)).toEqual([]);
-    expect(receipt.projectId).toBeDefined();
-  });
+    it('does not claim an outside folder after the actual branch-return parent substitution', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'parent-owner', blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const outside = path.join(fixture.root, `outside-${serial}`);
+      fs.mkdirSync(outside);
+      const run = runner.run.bind(runner);
+      vi.spyOn(runner, 'run').mockImplementation(async (gitArgs, options) => {
+        const result = await run(gitArgs, options);
+        if (gitArgs[0] === 'branch') fs.symlinkSync(outside, path.join(destination, '.clubhouse', 'agents'), 'dir');
+        return result;
+      });
+      const result = await call('create_managed_agent', args);
+      expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
+      expect(fs.readdirSync(outside)).toEqual([]);
+      expect(current.gitCalls.some((command) => command[0] === 'worktree')).toBe(false);
+      expect((await agentConfig.listDurable(destination))).toHaveLength(1);
+      expect((await agentConfig.listDurable(destination))[0].creation?.state).toBe('failed');
+      expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
+    });
 
-  it('retains the actual created id and durable association after final agent-link save failure, then reconciles without creation or reconnection', async () => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'receipt-owner', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const write = ImportStore.prototype.update.bind(store);
-    vi.mocked(store.update).mockImplementation((change) => ImportStore.prototype.update.call(store, (state) => {
-      change(state);
-      if (state.receipts.some((r) => r.agentCreation?.phase === 'completed')) throw new ImportError('history_unavailable', 'Fixture private diagnostic');
-    }));
-    const result = await call('create_managed_agent', args);
-    expect(result.body).toMatchObject({ status: 'partial', reason: 'agent_receipt_save_failed', agentCreated: true, agentStarted: false, connectedToDispatcher: false });
-    expect(result.text).not.toContain('private diagnostic');
-    const agents = await agentConfig.listDurable(destination);
-    expect(agents).toHaveLength(1);
-    expect(result.body.id).toBe(agents[0].id);
-    expect(agents[0].creation).toBeUndefined();
-    expect(agents[0].repositoryImportCreation).toMatchObject({ importId: receipt.id, state: 'completed' });
-    expect(JSON.parse(fs.readFileSync(path.join(destination, '.clubhouse', 'agents.json'), 'utf8'))[0].repositoryImportCreation).toEqual(agents[0].repositoryImportCreation);
-    expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation).toMatchObject({ phase: 'completed', agentId: agents[0].id, receiptSaved: false });
-    expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'partial', id: agents[0].id, agentCreated: true });
-    vi.mocked(store.update).mockImplementation(write);
-    current.service = new ProjectImportService({ store, git: runner });
-    agentConfig.clearAgentConfigCache();
-    _resetDispatcherBootstrapForTesting();
-    _resetGrantRequestsForTesting();
-    const commands = current.gitCalls.length;
-    expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'already_created', id: agents[0].id });
-    expect(current.gitCalls).toHaveLength(commands);
-    expect(await agentConfig.listDurable(destination)).toHaveLength(1);
-    expect((await getOrchestrationPolicy(destination, agents[0].id)).connectToDispatcher).toBe(false);
-    expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === agents[0].id)).toBe(false);
-    expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation).toMatchObject({ phase: 'completed', agentId: agents[0].id });
-    expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.receiptSaved).toBeUndefined();
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-  });
+    it('rechecks the exact template after real worktree creation and late saveSetup preparation', async () => {
+      const { receipt } = imported;
+      const service = managedAgents();
+      const template = await service.saveTemplate({
+        name: `Late template ${serial}`, description: 'Originally reviewed',
+        setup: { blocks: [], skills: [], mcps: [] },
+        settings: { orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', access: 'ask', effort: 'high' },
+      });
+      const args = { project: destination, importId: receipt.id, name: 'late-template-owner', templateId: template.id };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      let built = false;
+      const run = runner.run.bind(runner);
+      vi.spyOn(runner, 'run').mockImplementation(async (gitArgs, options) => {
+        const result = await run(gitArgs, options);
+        if (gitArgs[0] === 'worktree') built = true;
+        return result;
+      });
+      const check = service.checkSetup.bind(service);
+      const lateCheck = vi.spyOn(service, 'checkSetup').mockImplementation(async (...params) => {
+        const result = await check(...params);
+        if (built) {
+          built = false;
+          await service.saveTemplate({ ...template, description: 'Changed during final setup preparation' });
+        }
+        return result;
+      });
+      const result = await call('create_managed_agent', args);
+      lateCheck.mockRestore();
+      expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
+      const agents = await agentConfig.listDurable(destination);
+      expect(agents).toHaveLength(1);
+      expect(fs.existsSync(agents[0].worktreePath!)).toBe(true);
+      expect(agents[0].managed).toBeUndefined();
+      expect(agents[0].effort).toBeUndefined();
+      expect(agents[0].repositoryImportCreation?.state).toBe('failed');
+      expect((await call('create_managed_agent', args)).body.reason).toBe('agent_creation_interrupted');
+    });
 
-  it('residual connection commits keep exact approval live through real directions, policy and final success', async () => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'guarded-connection', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const result = await call('create_managed_agent', args);
-    expect(result.body, result.text).toMatchObject({ status: 'sleeping', connectedToDispatcher: true, agentCreated: true, agentStarted: false });
-    expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(true);
-    expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })?.enabledTools).toContain('wake_agent');
-    expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(true);
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-  });
-
-  it('residual direction commit rechecks revoked connection permission after its actual atomic staging await', async () => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'late-direction', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const connectionFile = path.join(app.getPath('userData'), 'connection-grants.json');
-    const before = fs.existsSync(connectionFile) ? fs.readFileSync(connectionFile, 'utf8') : undefined;
-    const open = fs.promises.open.bind(fs.promises);
-    let revoked = false;
-    const stage = vi.spyOn(fs.promises, 'open').mockImplementation(async (...params) => {
-      const handle = await open(...params);
-      if (String(params[0]).startsWith(connectionFile + '.tmp-')) {
-        const sync = handle.sync.bind(handle);
-        vi.spyOn(handle, 'sync').mockImplementation(async () => {
-          await sync();
-          revoked = true;
-          await withSettingsSurface('ui', undefined, () => setAgentGrant(fixture.dispatcher, 'dispatcher', {
-            action: 'connection.bootstrap', target: { kind: 'created_by_me' }, mode: 'off',
-          }));
+    it('refuses template grants and completion when genuine permission revocation reaches the final grant-store preparation', async () => {
+      const { receipt } = imported;
+      await setAgentGrant(fixture.dispatcher, 'dispatcher', { action: 'agent.read', target: { kind: 'any' }, mode: 'allow' });
+      const template = await managedAgents().saveTemplate({
+        name: `Late grant ${serial}`, description: 'Bounded template grant',
+        setup: { blocks: [], skills: [], mcps: [] },
+        settings: { orchestrator: 'copilot-cli', access: 'ask', grants: [{ action: 'agent.read', target: { kind: 'any' }, mode: 'allow' }] },
+      });
+      const args = { project: destination, importId: receipt.id, name: 'late-grant-owner', templateId: template.id };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      let targetId: string | undefined;
+      const service = managedAgents();
+      const saveSetup = service.saveSetup.bind(service);
+      const completedSetup = vi.spyOn(service, 'saveSetup').mockImplementation(async (...params) => {
+        if (params[0] === destination) {
+          await grantsStore.updateAgentGrantChanges(`unrelated-template-${serial}`, (saved) => saved);
+          expect(revocation).toBeUndefined();
+          expect(preparations).toBe(0);
+        }
+        const saved = await saveSetup(...params);
+        if (params[0] === destination) {
+          targetId = params[1];
+          const committed: DurableAgentConfig[] = JSON.parse(fs.readFileSync(path.join(destination, '.clubhouse', 'agents.json'), 'utf8'));
+          expect(committed.find((agent) => agent.id === targetId)?.managed).toBeDefined();
+        }
+        return saved;
+      });
+      const update = grantsStore.updateAgentGrantChanges;
+      let revocation: Promise<{ error?: unknown }> | undefined;
+      let enteredRevocation!: () => void;
+      let preparations = 0;
+      const revoked = new Promise<void>((resolve) => { enteredRevocation = resolve; });
+      const lateGrants = vi.spyOn(grantsStore, 'updateAgentGrantChanges').mockImplementation((agentId, change, precondition) => {
+        if (agentId === 'dispatcher') {
+          enteredRevocation();
+          return update(agentId, change, precondition);
+        }
+        if (agentId !== targetId) return update(agentId, change, precondition);
+        if (!precondition) throw new Error('The imported template grant must carry its live approval');
+        return update(agentId, change, {
+          prepare: async () => {
+            await precondition.prepare();
+            if (++preparations !== 2) return;
+            revocation = withSettingsSurface('ui', undefined, () => setAgentGrant(fixture.dispatcher, 'dispatcher', {
+              action: 'agent.read', target: { kind: 'any' }, mode: 'off',
+            })).then(() => ({}), (error: unknown) => ({ error }));
+            await revoked;
+          },
+          check: () => precondition.check(),
         });
-      }
-      return handle;
+      });
+      const result = await call('create_managed_agent', args);
+      expect(revocation).toBeDefined();
+      expect((await revocation)?.error).toBeUndefined();
+      lateGrants.mockRestore();
+      completedSetup.mockRestore();
+      expect(result.body).toMatchObject({ status: 'partial', agentStarted: false });
+      const agents = await agentConfig.listDurable(destination);
+      expect(agents).toHaveLength(1);
+      expect(agents[0].managed).toBeDefined();
+      expect(agents[0].repositoryImportCreation?.state).toBe('failed');
+      expect(grantsStore.getAgentGrantChanges(agents[0].id)?.template ?? []).toEqual([]);
+      expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
     });
-    const result = await call('create_managed_agent', args);
-    stage.mockRestore();
-    expect(revoked).toBe(true);
-    expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
-    expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeUndefined();
-    expect(getConnectionDirection({ agentId: result.body.id }, { agentId: 'dispatcher' })).toBeUndefined();
-    expect(fs.existsSync(connectionFile) ? fs.readFileSync(connectionFile, 'utf8') : undefined).toBe(before);
-    expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(false);
-    expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(false);
-    expect((await agentConfig.listDurable(destination))).toHaveLength(1);
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-  });
 
-  it('residual policy commit refuses a changed original caller after post-builder resolveFor preparation and preserves saved directions', async () => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'late-policy', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const setPolicy = policyService.setOrchestrationPolicy;
-    const readDefaults = agentSettings.readProjectAgentDefaults;
-    let connecting = false;
-    let reads = 0;
-    let changed = false;
-    const policy = vi.spyOn(policyService, 'setOrchestrationPolicy').mockImplementation(async (...params) => {
-      connecting = !!params[2] && typeof params[2] === 'object' && 'connectToDispatcher' in params[2] && params[2].connectToDispatcher === true;
-      try { return await setPolicy(...params); } finally { connecting = false; }
+    it.each(['corrupt', 'unavailable'])('keeps positively registered ordinary creation independent of %s import history, without importing-project bypass', async (failure) => {
+      const ordinary = await projectStore.add(fixture.source);
+      const history = fs.readFileSync(store.file);
+      const retainedHistory = store.file + '.prepared';
+      if (failure === 'corrupt') fs.writeFileSync(store.file, 'malformed private diagnostic');
+      else {
+        fs.renameSync(store.file, retainedHistory);
+        fs.mkdirSync(store.file);
+      }
+      const read = vi.spyOn(store, 'get');
+      const args = { project: ordinary.path, name: `ordinary-${serial}`, blocks: [], skills: [], mcps: [] };
+      const created = await call('create_managed_agent', args);
+      expect(created.body, created.text).toMatchObject({ status: 'sleeping', connectedToDispatcher: false });
+      expect(read).not.toHaveBeenCalled();
+      expect((await agentConfig.listDurable(ordinary.path)).some((agent) => agent.id === created.body.id)).toBe(true);
+      read.mockRestore();
+      if (failure === 'unavailable') {
+        fs.rmdirSync(store.file);
+        fs.renameSync(retainedHistory, store.file);
+      } else fs.writeFileSync(store.file, history);
+      const { receipt } = imported;
+      fs.writeFileSync(store.file, 'malformed private diagnostic');
+      const refused = await call('create_managed_agent', { project: destination, name: 'cannot-reclassify' });
+      expect(refused.body.reason).toBe('history_corrupt');
+      expect(refused.text).not.toContain('private diagnostic');
+      expect(await agentConfig.listDurable(destination)).toEqual([]);
+      expect(receipt.projectId).toBeDefined();
     });
-    const preparation = vi.spyOn(agentSettings, 'readProjectAgentDefaults').mockImplementation(async (...params) => {
-      const result = await readDefaults(...params);
-      if (connecting && ++reads === 2) {
-        const original = agentRegistry.get('dispatcher');
-        if (!original) throw new Error('Expected the fixture caller');
-        agentRegistry.register('dispatcher', { ...original, nonce: `changed-policy-${serial}` });
+
+    it('retains the actual created id and durable association after final agent-link save failure, then reconciles without creation or reconnection', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'receipt-owner', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const write = ImportStore.prototype.update.bind(store);
+      vi.mocked(store.update).mockImplementation((change) => ImportStore.prototype.update.call(store, (state) => {
+        change(state);
+        if (state.receipts.some((r) => r.agentCreation?.phase === 'completed')) throw new ImportError('history_unavailable', 'Fixture private diagnostic');
+      }));
+      const result = await call('create_managed_agent', args);
+      expect(result.body).toMatchObject({ status: 'partial', reason: 'agent_receipt_save_failed', agentCreated: true, agentStarted: false, connectedToDispatcher: false });
+      expect(result.text).not.toContain('private diagnostic');
+      const agents = await agentConfig.listDurable(destination);
+      expect(agents).toHaveLength(1);
+      expect(result.body.id).toBe(agents[0].id);
+      expect(agents[0].creation).toBeUndefined();
+      expect(agents[0].repositoryImportCreation).toMatchObject({ importId: receipt.id, state: 'completed' });
+      expect(JSON.parse(fs.readFileSync(path.join(destination, '.clubhouse', 'agents.json'), 'utf8'))[0].repositoryImportCreation).toEqual(agents[0].repositoryImportCreation);
+      expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation).toMatchObject({ phase: 'completed', agentId: agents[0].id, receiptSaved: false });
+      expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'partial', id: agents[0].id, agentCreated: true });
+      vi.mocked(store.update).mockImplementation(write);
+      current.service = new ProjectImportService({ store, git: runner });
+      agentConfig.clearAgentConfigCache();
+      _resetDispatcherBootstrapForTesting();
+      _resetGrantRequestsForTesting();
+      const commands = current.gitCalls.length;
+      expect((await call('create_managed_agent', args)).body).toMatchObject({ status: 'already_created', id: agents[0].id });
+      expect(current.gitCalls).toHaveLength(commands);
+      expect(await agentConfig.listDurable(destination)).toHaveLength(1);
+      expect((await getOrchestrationPolicy(destination, agents[0].id)).connectToDispatcher).toBe(false);
+      expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === agents[0].id)).toBe(false);
+      expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation).toMatchObject({ phase: 'completed', agentId: agents[0].id });
+      expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.receiptSaved).toBeUndefined();
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+    });
+
+    it('residual connection commits keep exact approval live through real directions, policy and final success', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'guarded-connection', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const result = await call('create_managed_agent', args);
+      expect(result.body, result.text).toMatchObject({ status: 'sleeping', connectedToDispatcher: true, agentCreated: true, agentStarted: false });
+      expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(true);
+      expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })?.enabledTools).toContain('wake_agent');
+      expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(true);
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+    });
+
+    it('residual direction commit rechecks revoked connection permission after its actual atomic staging await', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'late-direction', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const connectionFile = path.join(app.getPath('userData'), 'connection-grants.json');
+      const before = fs.existsSync(connectionFile) ? fs.readFileSync(connectionFile, 'utf8') : undefined;
+      const open = fs.promises.open.bind(fs.promises);
+      let revoked = false;
+      const stage = vi.spyOn(fs.promises, 'open').mockImplementation(async (...params) => {
+        const handle = await open(...params);
+        if (String(params[0]).startsWith(connectionFile + '.tmp-')) {
+          const sync = handle.sync.bind(handle);
+          vi.spyOn(handle, 'sync').mockImplementation(async () => {
+            await sync();
+            revoked = true;
+            await withSettingsSurface('ui', undefined, () => setAgentGrant(fixture.dispatcher, 'dispatcher', {
+              action: 'connection.bootstrap', target: { kind: 'created_by_me' }, mode: 'off',
+            }));
+          });
+        }
+        return handle;
+      });
+      const result = await call('create_managed_agent', args);
+      stage.mockRestore();
+      expect(revoked).toBe(true);
+      expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
+      expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeUndefined();
+      expect(getConnectionDirection({ agentId: result.body.id }, { agentId: 'dispatcher' })).toBeUndefined();
+      expect(fs.existsSync(connectionFile) ? fs.readFileSync(connectionFile, 'utf8') : undefined).toBe(before);
+      expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(false);
+      expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(false);
+      expect((await agentConfig.listDurable(destination))).toHaveLength(1);
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+    });
+
+    it('residual policy commit refuses a changed original caller after post-builder resolveFor preparation and preserves saved directions', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'late-policy', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const setPolicy = policyService.setOrchestrationPolicy;
+      const readDefaults = agentSettings.readProjectAgentDefaults;
+      let connecting = false;
+      let reads = 0;
+      let changed = false;
+      const policy = vi.spyOn(policyService, 'setOrchestrationPolicy').mockImplementation(async (...params) => {
+        connecting = !!params[2] && typeof params[2] === 'object' && 'connectToDispatcher' in params[2] && params[2].connectToDispatcher === true;
+        try { return await setPolicy(...params); } finally { connecting = false; }
+      });
+      const preparation = vi.spyOn(agentSettings, 'readProjectAgentDefaults').mockImplementation(async (...params) => {
+        const result = await readDefaults(...params);
+        if (connecting && ++reads === 2) {
+          const original = agentRegistry.get('dispatcher');
+          if (!original) throw new Error('Expected the fixture caller');
+          agentRegistry.register('dispatcher', { ...original, nonce: `changed-policy-${serial}` });
+          changed = true;
+        }
+        return result;
+      });
+      const result = await call('create_managed_agent', args);
+      preparation.mockRestore();
+      policy.mockRestore();
+      expect(changed).toBe(true);
+      expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
+      expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeDefined();
+      expect(getConnectionDirection({ agentId: result.body.id }, { agentId: 'dispatcher' })).toBeDefined();
+      expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(false);
+      expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(false);
+      expect((await agentConfig.listDurable(destination))[0].repositoryImportCreation?.state).toBe('completed');
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+    });
+
+    it('residual final connection inspection cannot return success after the original caller changes', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'late-inspection', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const readPolicy = policyService.getOrchestrationPolicy;
+      let changed = false;
+      const inspection = vi.spyOn(policyService, 'getOrchestrationPolicy').mockImplementation(async (...params) => {
+        const result = await readPolicy(...params);
+        if (!changed && params[0] === destination && result?.connectToDispatcher) {
+          const original = agentRegistry.get('dispatcher');
+          if (!original) throw new Error('Expected the fixture caller');
+          agentRegistry.register('dispatcher', { ...original, nonce: `changed-inspection-${serial}` });
+          changed = true;
+        }
+        return result;
+      });
+      const result = await call('create_managed_agent', args);
+      inspection.mockRestore();
+      expect(changed).toBe(true);
+      expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
+      expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(true);
+      expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeDefined();
+      expect((await agentConfig.listDurable(destination))).toHaveLength(1);
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+    });
+
+    it.each(['backup-write', 'backup-rename'])('residual %s refuses a substituted .clubhouse after main commit without touching outside backup bytes', async (boundary) => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'backup-owner', blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const directory = path.join(destination, '.clubhouse');
+      const mainFile = path.join(directory, 'agents.json');
+      const backupFile = path.join(directory, 'agents.json.bak');
+      const outside = path.join(fixture.root, `outside-backup-${serial}`);
+      const retained = path.join(fixture.root, `retained-clubhouse-${serial}`);
+      fs.mkdirSync(outside);
+      fs.writeFileSync(path.join(outside, 'agents.json.bak'), 'preserve outside backup bytes');
+      fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'preserve unrelated bytes');
+      let changed = false;
+      const substitute = () => {
+        if (changed) return;
+        const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(mainFile, 'utf8'));
+        if (!agents[0]?.branchOwned) return;
+        fs.renameSync(directory, retained);
+        fs.symlinkSync(outside, directory, 'dir');
         changed = true;
-      }
-      return result;
+      };
+      current.afterRename = (_from, to) => {
+        if (boundary === 'backup-write' && to === mainFile) substitute();
+      };
+      current.afterWrite = (file) => {
+        if (boundary === 'backup-rename' && file.startsWith(backupFile + '.tmp.')) substitute();
+      };
+      const result = await call('create_managed_agent', args);
+      current.afterRename = undefined;
+      current.afterWrite = undefined;
+      expect(changed).toBe(true);
+      expect(result.body, result.text).toMatchObject({ status: 'partial', agentStarted: false, reason: 'agent_creation_failed' });
+      expect(fs.readFileSync(path.join(outside, 'agents.json.bak'), 'utf8')).toBe('preserve outside backup bytes');
+      expect(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8')).toBe('preserve unrelated bytes');
+      expect(fs.readdirSync(outside).sort()).toEqual(['agents.json.bak', 'sentinel.txt']);
+      const committed: DurableAgentConfig[] = JSON.parse(fs.readFileSync(path.join(retained, 'agents.json'), 'utf8'));
+      expect(committed).toHaveLength(1);
+      expect(committed[0].branchOwned).toBe(true);
+      expect(committed[0].repositoryImportCreation?.importId).toBe(receipt.id);
+      fs.unlinkSync(directory);
+      fs.renameSync(retained, directory);
+      await agentConfig.settleAgentsFileChecksForTests();
+      expect((await agentConfig.listDurable(destination))[0].branchOwned).toBe(true);
+      expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
     });
-    const result = await call('create_managed_agent', args);
-    preparation.mockRestore();
-    policy.mockRestore();
-    expect(changed).toBe(true);
-    expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
-    expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeDefined();
-    expect(getConnectionDirection({ agentId: result.body.id }, { agentId: 'dispatcher' })).toBeDefined();
-    expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(false);
-    expect(bindingManager.getBindingsForAgent('dispatcher').some((binding) => binding.targetId === result.body.id)).toBe(false);
-    expect((await agentConfig.listDurable(destination))[0].repositoryImportCreation?.state).toBe('completed');
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-  });
-
-  it('residual final connection inspection cannot return success after the original caller changes', async () => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'late-inspection', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const readPolicy = policyService.getOrchestrationPolicy;
-    let changed = false;
-    const inspection = vi.spyOn(policyService, 'getOrchestrationPolicy').mockImplementation(async (...params) => {
-      const result = await readPolicy(...params);
-      if (!changed && params[0] === destination && result?.connectToDispatcher) {
-        const original = agentRegistry.get('dispatcher');
-        if (!original) throw new Error('Expected the fixture caller');
-        agentRegistry.register('dispatcher', { ...original, nonce: `changed-inspection-${serial}` });
-        changed = true;
-      }
-      return result;
-    });
-    const result = await call('create_managed_agent', args);
-    inspection.mockRestore();
-    expect(changed).toBe(true);
-    expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
-    expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(true);
-    expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeDefined();
-    expect((await agentConfig.listDurable(destination))).toHaveLength(1);
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
-  });
-
-  it.each(['backup-write', 'backup-rename'])('residual %s refuses a substituted .clubhouse after main commit without touching outside backup bytes', async (boundary) => {
-    const { receipt } = await completeImport();
-    const args = { project: destination, importId: receipt.id, name: 'backup-owner', blocks: [], skills: [], mcps: [] };
-    await call('create_managed_agent', args);
-    await approveDesktop('create_managed_agent');
-    const directory = path.join(destination, '.clubhouse');
-    const mainFile = path.join(directory, 'agents.json');
-    const backupFile = path.join(directory, 'agents.json.bak');
-    const outside = path.join(fixture.root, `outside-backup-${serial}`);
-    const retained = path.join(fixture.root, `retained-clubhouse-${serial}`);
-    fs.mkdirSync(outside);
-    fs.writeFileSync(path.join(outside, 'agents.json.bak'), 'preserve outside backup bytes');
-    fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'preserve unrelated bytes');
-    let changed = false;
-    const substitute = () => {
-      if (changed) return;
-      const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(mainFile, 'utf8'));
-      if (!agents[0]?.branchOwned) return;
-      fs.renameSync(directory, retained);
-      fs.symlinkSync(outside, directory, 'dir');
-      changed = true;
-    };
-    current.afterRename = (_from, to) => {
-      if (boundary === 'backup-write' && to === mainFile) substitute();
-    };
-    current.afterWrite = (file) => {
-      if (boundary === 'backup-rename' && file.startsWith(backupFile + '.tmp.')) substitute();
-    };
-    const result = await call('create_managed_agent', args);
-    current.afterRename = undefined;
-    current.afterWrite = undefined;
-    expect(changed).toBe(true);
-    expect(result.body, result.text).toMatchObject({ status: 'partial', agentStarted: false, reason: 'agent_creation_failed' });
-    expect(fs.readFileSync(path.join(outside, 'agents.json.bak'), 'utf8')).toBe('preserve outside backup bytes');
-    expect(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8')).toBe('preserve unrelated bytes');
-    expect(fs.readdirSync(outside).sort()).toEqual(['agents.json.bak', 'sentinel.txt']);
-    const committed: DurableAgentConfig[] = JSON.parse(fs.readFileSync(path.join(retained, 'agents.json'), 'utf8'));
-    expect(committed).toHaveLength(1);
-    expect(committed[0].branchOwned).toBe(true);
-    expect(committed[0].repositoryImportCreation?.importId).toBe(receipt.id);
-    fs.unlinkSync(directory);
-    fs.renameSync(retained, directory);
-    await agentConfig.settleAgentsFileChecksForTests();
-    expect((await agentConfig.listDurable(destination))[0].branchOwned).toBe(true);
-    expect((await call('get_repository_import', { importId: receipt.id })).body.agentCreation.phase).toBe('failed');
-    expect(wakeWiredAgent).not.toHaveBeenCalled();
   });
 });
