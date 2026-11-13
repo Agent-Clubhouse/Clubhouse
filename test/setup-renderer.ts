@@ -478,6 +478,7 @@ vi.stubGlobal('clubhouse', {
     saveRetentionConfig: async () => ({ saved: true, trimmed: 0 }),
     clearAllMessages: async () => ({ removed: 0 }),
     estimateTrim: async () => ({ wouldRemove: 0 }),
+    dismissRefusals: async () => true,
     scopeOptions: async () => ({ network: { available: false, reason: 'Network reach needs Annex Network. Turn it on in Settings > Annex Network.' } }),
     previewScope: async (_id: string, scope: unknown) => ({ scope, leaving: [], returning: [] }),
     setScope: async (id: string) => ({ project: { id }, left: [] }),

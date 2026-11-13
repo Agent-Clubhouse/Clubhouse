@@ -68,6 +68,7 @@ export const ANNEX_SHARDS = {
     'annex-v2/error-handling.spec.ts',
     'annex-v2/full-demo.spec.ts',
     'annex-v2/network-channel.spec.ts',
+    'annex-v2/network-group-projects.spec.ts',
     'annex-v2/reachability.spec.ts',
     'annex-v2/settings-page.spec.ts',
   ],

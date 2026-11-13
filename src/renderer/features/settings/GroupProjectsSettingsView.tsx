@@ -5,7 +5,6 @@ import { GroupProjectLocations } from './GroupProjectLocations';
 import { GroupProjectMembersSection } from '../group-projects/GroupProjectMembersSection';
 import { GroupProjectDeliverySection } from '../group-projects/GroupProjectDeliverySection';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
-import { useAnnexStore } from '../../stores/annexStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { DeleteGroupProjectDialog } from './DeleteGroupProjectDialog';
 import { GroupProjectActionsSection } from '../group-projects/GroupProjectActionsSection';
@@ -13,7 +12,7 @@ import {
   SettingsBlock, SettingsPage, SettingsSection,
   settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea,
 } from './SettingsLayout';
-import { GroupProjectScopeEditor, GroupProjectScopeFields, useScopeOptions } from './GroupProjectScopeFields';
+import { GroupProjectRefusals, GroupProjectScopeEditor, GroupProjectScopeFields, hostLine, useScopeOptions } from './GroupProjectScopeFields';
 
 function scopeDescription(scope: GroupProject['scope']): string {
   if (!scope || (scope.reach !== 'local' && scope.reach !== 'network')
@@ -24,7 +23,7 @@ function scopeDescription(scope: GroupProject['scope']): string {
   const level = scope.level === 'app' ? 'App' : `Project (${scope.projectId})`;
   return scope.reach === 'local'
     ? `${level} / This computer: covers ${scope.level === 'app' ? 'this app' : 'that project'} on this machine.`
-    : `${level} / Network: covers your other computers too.`;
+    : `${level} / Network: covers your other computers in your Annex Network too.`;
 }
 
 function MemberCount({ id }: { id: string }) {
@@ -257,8 +256,6 @@ function GroupProjectEditor({ project }: { project: GroupProject }) {
 
 export function GroupProjectsSettingsView() {
   const projects = useGroupProjectStore((s) => s.projects);
-  const fingerprint = useAnnexStore((s) => s.status.fingerprint);
-  const loadStatus = useAnnexStore((s) => s.loadStatus);
   const loaded = useGroupProjectStore((s) => s.loaded);
   const loadError = useGroupProjectStore((s) => s.loadError);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
@@ -267,8 +264,6 @@ export function GroupProjectsSettingsView() {
   const selectedId = useGroupProjectStore((s) => s.directorySelection);
   const setSelectedId = useGroupProjectStore((s) => s.selectDirectoryProject);
   const selected = projects.find((project) => project.id === selectedId);
-
-  useEffect(() => { void loadStatus(); }, [loadStatus]);
 
   useEffect(() => {
     if (!loaded) void loadProjects();
@@ -289,7 +284,7 @@ export function GroupProjectsSettingsView() {
   return (
     <SettingsPage
       title="Group Projects"
-      description="Stored on this machine. This local registry includes group projects that are on no Canvas."
+      description="Group projects on this computer, including network copies and group projects on no canvas."
     >
       <SettingsSection title="Local directory">
         <SettingsBlock>
@@ -316,10 +311,8 @@ export function GroupProjectsSettingsView() {
                       >
                         <span className="block font-medium break-words">{project.name}</span>
                         <MemberCount id={project.id} />
-                        <span id={`group-project-host-${project.id}`} className={`${settingsHelp} block break-words`}>
-                          Host: {!project.host?.machine ? 'This computer' : !fingerprint ? 'Unknown' : project.host.machine.toLowerCase() === fingerprint.toLowerCase() ? 'This computer' : project.host.machine}
-                          {' · '}{project.metadata?.pollingEnabled ? 'Polling on' : 'Polling off'}
-                        </span>
+                        <span id={`group-project-host-${project.id}`} className={`${settingsHelp} block break-words`}>{hostLine(project)}</span>
+                        <span className={`${settingsHelp} block`}>{project.metadata?.pollingEnabled ? 'Polling on' : 'Polling off'}</span>
                         <span id={`group-project-scope-${project.id}`} className={`${settingsHelp} block break-words`}>{scopeDescription(project.scope)}</span>
                       </button>
                     </li>
@@ -330,18 +323,18 @@ export function GroupProjectsSettingsView() {
       </SettingsSection>
       {loaded && !loadError && !retrying && (
         <>
-          {selected && <Fragment key={selected.id}><GroupProjectEditor project={selected} /><GroupProjectScopeEditor project={selected} /><GroupProjectMembersSection groupProjectId={selected.id} /><GroupProjectDeliverySection groupProjectId={selected.id} /><GroupProjectActionsSection groupProjectId={selected.id} /><GroupProjectLocations id={selected.id} /></Fragment>}
+          {selected && <Fragment key={selected.id}>
+            <GroupProjectEditor project={selected} />
+            <GroupProjectRefusals project={selected} />
+            {selected.network?.role !== 'replica' && <GroupProjectScopeEditor project={selected} />}
+            <GroupProjectMembersSection groupProjectId={selected.id} />
+            <GroupProjectDeliverySection groupProjectId={selected.id} />
+            <GroupProjectActionsSection groupProjectId={selected.id} />
+            <GroupProjectLocations id={selected.id} />
+          </Fragment>}
           <CreateGroupProject />
         </>
       )}
-      <SettingsSection title="Local directory limits">
-        <SettingsBlock>
-          <p className={settingsHelp}>
-            Network synchronization and admin grants are not available here.
-            This list is not an authoritative network directory.
-          </p>
-        </SettingsBlock>
-      </SettingsSection>
     </SettingsPage>
   );
 }

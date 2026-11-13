@@ -371,6 +371,60 @@ describe('lead and admin end with membership (#3360)', () => {
   });
 });
 
+describe('a copy of a group project hosted on another machine (#3363)', () => {
+  const SELF = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa';
+  const HOST = 'bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb';
+  const shared = { scope: { level: 'app', reach: 'network' } } as Partial<GroupProject>;
+  const remote = (id: string) => gp(id, { createdAt: '2025-01-01T00:00:00.000Z', host: { machine: HOST }, ...shared } as Partial<GroupProject>);
+
+  /** A copy as a sync leaves it: the host's membership record, under a record whose host is the other computer. */
+  async function seedCopy(id: string, fill: (d: Parameters<Parameters<typeof updateMembership>[1]>[0]) => void): Promise<void> {
+    groupProjectRegistry._setForTesting(gp(id, { createdAt: '2025-01-01T00:00:00.000Z', ...shared }));
+    await updateMembership(id, fill);
+    groupProjectRegistry._setForTesting(remote(id));
+  }
+
+  it('binds only this machine\'s agents the record lists, and never auto-joins or tidies from here', async () => {
+    // The host's record: its own agents (bare ids), one of this machine's, and one gone from here.
+    await seedCopy('gp_remote', (d) => {
+      d.autoJoin = true;
+      d.explicit.push(
+        { address: 'lead', kind: 'durable', addedAt: 'x' },
+        { address: `dev@${SELF}`, kind: 'durable', addedAt: 'x' },
+        { address: `ghost@${SELF}`, kind: 'helper', addedAt: 'x' },
+      );
+    });
+    vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+    await start();
+    // 'lead' here is a different agent from the host's 'lead': not bound; this machine's dev is.
+    expect(membersOf('gp_remote')).toEqual(['dev']);
+    // Nothing removed because this machine doesn't know 'ghost', and no auto-join from local agents.
+    expect((await groupProjectHost.getMembership('gp_remote')).explicit.map((e) => e.address)).toEqual(['lead', `dev@${SELF}`, `ghost@${SELF}`]);
+    vi.restoreAllMocks();
+  });
+
+  it('sends an addition from here to the host with this machine\'s address', async () => {
+    await seedCopy('gp_remote', (d) => { d.autoJoin = true; });
+    vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+    const sent: unknown[] = [];
+    groupProjectHost.setNetworkLink({
+      connected: () => true, isMember: () => true, machineName: () => 'Desk',
+      sync: async () => ({ v: 1, projects: [], unchanged: ['gp_remote'], tombstones: [] }),
+      sendWrites: async (_machine, writes) => {
+        sent.push(...writes);
+        return { v: 1, results: writes.map((w) => ({ id: w.id, status: 'applied' as const, seq: 2 })) };
+      },
+    });
+    await start();
+    await addMember('gp_remote', 'dev');
+    expect(sent).toEqual([expect.objectContaining({
+      groupProjectId: 'gp_remote',
+      write: { op: 'membership', patch: expect.objectContaining({ addExplicit: [expect.objectContaining({ address: `dev@${SELF}`, kind: 'durable' })] }) },
+    })]);
+    vi.restoreAllMocks();
+  });
+});
+
 describe('bindings follow the record', () => {
   it('after a restart the bindings are exactly the record\'s members', async () => {
     groupProjectRegistry._setForTesting(gp('gp1'));

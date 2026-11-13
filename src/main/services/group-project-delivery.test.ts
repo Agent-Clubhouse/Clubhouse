@@ -33,6 +33,8 @@ vi.mock('./group-project-host', () => ({
     resolveMembers: async () => fx.members,
     getMembership: async () => structuredClone(fx.membership),
     inboxFor: async (_id: string, name: string) => `inbox-${name}`,
+    // Host-relative (#3363): a bare address is an agent here; one qualified with another machine isn't.
+    localAgentId: (_project: unknown, address: string) => (address.includes('@') ? null : address),
     readAll: async () => fx.messages,
     readDigest: async () => [...new Set(fx.messages.map((m) => m.topic))].map((topic) => ({ topic, messageCount: 1, newMessageCount: 0, latestTimestamp: '' })),
     updateMembership: async (_id: string, fn: (d: GroupProjectMembership) => GroupProjectMembership | void) => {
