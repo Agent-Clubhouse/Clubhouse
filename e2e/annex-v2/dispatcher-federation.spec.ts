@@ -49,6 +49,7 @@ const identity = async (page: Page) => {
   const state = await page.evaluate(() => window.clubhouse.dispatcher.get());
   const annex = await page.evaluate(() => window.clubhouse.annex.getStatus());
   expect(state.agentId).toBeTruthy(); expect(state.chatAgentId).not.toBe(state.agentId);
+  expect(annex.fingerprint).toMatch(/^(?:[0-9a-f]{2}:){15,31}[0-9a-f]{2}$/i);
   return { controller: state.agentId!, chat: state.chatAgentId!, machine: annex.fingerprint!.toLowerCase() };
 };
 /** Other machines' Dispatchers as Settings › Dispatcher lists them (#3349). */
@@ -142,8 +143,8 @@ async function requestNetwork() {
   fakes = await installFakeClis({ claude: script.fixture });
   const otherCli = await installFakeClis({ claude: script.fixture }); additionalFakes.push(otherCli);
   const here = await desktop('Desk'); const there = await desktop('Laptop', undefined, otherCli);
-  const a = await startController(here, fakes); const b = await startController(there, otherCli);
   await enableAnnexViaPreload(there.window); await enableAnnexViaPreload(here.window);
+  const a = await startController(here, fakes); const b = await startController(there, otherCli);
   let url = '';
   await expect.poll(async () => { url = (await there.window.evaluate(() => window.clubhouse.annex.getStatus())).pairingUrl ?? ''; return !!url; }).toBe(true);
   const pairing = new URL(url); pairing.searchParams.delete('host'); pairing.searchParams.append('host', '127.0.0.1');
