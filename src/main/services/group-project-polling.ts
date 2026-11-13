@@ -57,6 +57,7 @@ const pendingStarts = new Map<string, Set<string>>();
 const deletedProjects = new Set<string>();
 let unsubscribeConnected: (() => void) | null = null;
 let unsubscribeGate: (() => void) | null = null;
+let unsubscribeDeleted: (() => void) | null = null;
 
 function queuePendingStart(agentId: string, projectId: string): void {
   if (deletedProjects.has(projectId)) return;
@@ -95,6 +96,9 @@ let unsubscribeAuth: (() => void) | null = null;
 
 /** A member's access moving arrives here, whichever setting moved it. */
 export function watchPollingForMcp(): void {
+  if (!unsubscribeDeleted) unsubscribeDeleted = groupProjectHost.onChange((event) => {
+    if (event.part === 'deleted') forgetDeletedProjectPolling(event.groupProjectId);
+  });
   if (unsubscribeGate) return;
   unsubscribeGate = onOrchestrationGateChange((id) => {
     if (!isAgentAlive(id)) return;
@@ -372,6 +376,8 @@ export function _resetPollingForTesting(): void {
   unsubscribeConnected = null;
   unsubscribeGate?.();
   unsubscribeGate = null;
+  unsubscribeDeleted?.();
+  unsubscribeDeleted = null;
   unsubscribeAuth?.();
   unsubscribeAuth = null;
   pauseListeners.clear();

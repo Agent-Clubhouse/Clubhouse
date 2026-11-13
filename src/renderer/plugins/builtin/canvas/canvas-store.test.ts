@@ -33,6 +33,17 @@ describe('canvas-store', () => {
     expect(store.getState().canvases).toHaveLength(1);
   });
 
+  it('removes a deleted group project from every live canvas without touching other cards', async () => {
+    await store.getState().loadCanvas(createMockStorage());
+    store.getState().addPluginView('group-project', 'plugin:group-project:group-project', 'Shared', { x: 0, y: 0 }, { groupProjectId: 'gp' });
+    store.getState().addView('agent', { x: 400, y: 0 });
+    store.getState().addCanvas();
+    store.getState().addPluginView('group-project', 'plugin:group-project:group-project', 'Shared', { x: 0, y: 0 }, { groupProjectId: 'gp' });
+    store.getState().removeDeletedGroupProject('gp');
+    expect(store.getState().canvases.flatMap((canvas) => canvas.views).map((view) => view.type)).toEqual(['agent']);
+    expect(store.getState().views).toEqual([]);
+  });
+
   it('saves and loads canvas state round-trip', async () => {
     const storage = createMockStorage();
     await store.getState().loadCanvas(storage);

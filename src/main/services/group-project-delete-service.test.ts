@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  inventory: vi.fn(), canvas: vi.fn(), remove: vi.fn(), delete: vi.fn(), exclusive: vi.fn(), forget: vi.fn(),
+  inventory: vi.fn(), canvas: vi.fn(), remove: vi.fn(), delete: vi.fn(), exclusive: vi.fn(),
 }));
 vi.mock('./group-project-host', () => ({ groupProjectHost: { exclusive: mocks.exclusive, delete: mocks.delete } }));
 vi.mock('./group-project-delete-inventory', () => ({ readGroupProjectDeletionInventory: mocks.inventory }));
 vi.mock('./group-project-canvas-inventory', () => ({ readGroupProjectCanvasInventory: mocks.canvas, removeGroupProjectFromCanvasInventory: mocks.remove }));
 vi.mock('./plugin-storage', () => ({ writeKeyWithinCanvasBarrier: vi.fn() }));
-vi.mock('./group-project-polling', () => ({ forgetDeletedProjectPolling: mocks.forget }));
 import { createLocalGroupProjectDeleteService } from './group-project-delete-service';
 
 const impact = { groupProjectId: 'gp', members: ['Ada'], canvases: ['One', 'Two'], actions: [], grants: [], messages: 2, topics: 1, machines: [], revisions: ['3', 'canvas'] };
@@ -29,7 +28,6 @@ describe('local group project cascade', () => {
     expect(mocks.remove).toHaveBeenCalledBefore(mocks.delete);
     expect(mocks.delete).toHaveBeenCalledWith('gp', { expectedSeq: 3, withinExclusive: true });
     expect(release).toHaveBeenCalledWith('gp');
-    expect(mocks.forget).toHaveBeenCalledWith('gp');
   });
 
   it('does not write or delete if the canvas changes while acquiring the guards', async () => {

@@ -83,6 +83,9 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.ANSWER_AUTO_JOIN_OFFER, withValidatedArgs(
     [stringArg(), booleanArg()], (_event, id, accept) => answerAutoJoinOffer(id as string, accept as boolean),
   ));
+  groupProjectHost.onChange((event) => {
+    if (event.part === 'deleted') broadcastToAllWindows(IPC.GROUP_PROJECT.DELETED, event.groupProjectId);
+  });
 
   ipcMain.handle(IPC.GROUP_PROJECT.LIST, async () => {
     return groupProjectHost.list();
@@ -132,7 +135,6 @@ export function registerGroupProjectHandlers(): void {
     [stringArg(), stringArg()],
     async (event, id, token) => {
       await deletion.confirm(id as string, event.sender.id, token as string);
-      broadcastToAllWindows(IPC.GROUP_PROJECT.DELETED, id);
       appLog('core:group-project', 'info', 'Group project deleted', { meta: { id } });
       return true;
     },

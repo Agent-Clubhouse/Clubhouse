@@ -4,7 +4,6 @@ import { readGroupProjectDeletionInventory } from './group-project-delete-invent
 import { readGroupProjectCanvasInventory, removeGroupProjectFromCanvasInventory } from './group-project-canvas-inventory';
 import { withCanvasWriteBarrier } from './canvas-write-barrier';
 import { writeKeyWithinCanvasBarrier } from './plugin-storage';
-import { forgetDeletedProjectPolling } from './group-project-polling';
 
 /** Build the local cascade; release is supplied by the durable membership source. */
 export function createLocalGroupProjectDeleteService(releaseBindings: (id: string) => void) {
@@ -20,7 +19,6 @@ export function createLocalGroupProjectDeleteService(releaseBindings: (id: strin
       const result = await groupProjectHost.delete(id, { expectedSeq: seq, withinExclusive: true });
       if (!result.deleted) throw new Error('This group project is no longer available on this host.');
       releaseBindings(id);
-      forgetDeletedProjectPolling(id);
     })),
   });
 }
