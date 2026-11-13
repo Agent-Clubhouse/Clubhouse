@@ -867,10 +867,12 @@ describe('connection Open navigation', () => {
     }
     const workspace = screen.getByTestId('canvas-workspace');
     expect(bind).not.toHaveBeenCalled();
-    await act(async () => { dragCanvasView(workspace, 'manual-member', -640, 0); });
+    dragCanvasView(workspace, 'manual-member', -640, 0);
+    await act(async () => {});
     expect(within(workspace).getByTestId('canvas-view-manual-member')).toHaveStyle({ left: '60px', top: '60px' });
     expect(bind).toHaveBeenCalledWith('manual-agent', expect.objectContaining({ targetId: 'gp_actual' }));
-    await act(async () => { dragCanvasView(workspace, 'manual-member', 640, 0); });
+    dragCanvasView(workspace, 'manual-member', 640, 0);
+    await act(async () => {});
     expect(within(workspace).getByTestId('canvas-view-manual-member')).toHaveStyle({ left: '700px', top: '60px' });
     expect(unbind).toHaveBeenCalledWith('manual-agent', 'gp_actual', expect.any(String));
     expect(viewStructure(store.getState().views)).toBe(viewStructure(data.canvases[0].views));
