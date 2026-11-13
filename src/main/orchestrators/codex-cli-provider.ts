@@ -514,9 +514,10 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       if (def.env_vars && def.env_vars.length > 0) {
         args.push('-c', `mcp_servers.${name}.env_vars=[${def.env_vars.map(tomlValue).join(', ')}]`);
       }
-      // Clubhouse's own tools have no MCP annotations, so Codex would ask for
-      // approval and fail under approval policy `never` (#3366). Only the injected
-      // bridge qualifies, not a project server that shares the name.
+      // Under approval policy `never`, Codex fails any MCP call it would ask
+      // about (destructive or unannotated tools, #3366). Approve the injected
+      // bridge only, never a project server that shares the name. Clubhouse
+      // still enforces its own wires, roles and grants on every call.
       if (isInjectedClubhouseBridge(name, def)) {
         args.push('-c', `mcp_servers.${name}.default_tools_approval_mode="approve"`);
       }

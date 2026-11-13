@@ -922,7 +922,7 @@ export function toCodexInput(content: ContentBlock[]): UserInput[] {
 /** One `mcp_servers` entry as Codex's config reads it. */
 export type CodexMcpServer =
   | { command: string; args?: string[]; env?: Record<string, string>; env_vars?: string[]; cwd?: string; default_tools_approval_mode?: 'approve' }
-  | { url: string; http_headers?: Record<string, string>; bearer_token_env_var?: string; default_tools_approval_mode?: 'approve' };
+  | { url: string; http_headers?: Record<string, string>; bearer_token_env_var?: string };
 
 /**
  * Clubhouse MCP server definitions (the bridge, and project servers as
@@ -934,8 +934,11 @@ export type CodexMcpServer =
  * HTTP. Codex has no SSE transport, so SSE servers are skipped and reported.
  *
  * Only the bridge Clubhouse injected (isInjectedClubhouseBridge) gets
- * `default_tools_approval_mode: 'approve'`: its tools carry no MCP annotations,
- * so under approval policy `never` Codex would fail every call (#3366). A
+ * `default_tools_approval_mode: 'approve'` (#3366). Under approval policy
+ * `never`, Codex fails any MCP call it would otherwise ask about, which covers
+ * tools whose annotations mark them destructive or that predate the
+ * annotations (#3375). The approval skips only Codex's transport prompt.
+ * Clubhouse still enforces its own wires, roles and grants on every call. A
  * project server that merely shares the name `clubhouse` keeps Codex's default.
  *
  * Values are passed as written: Codex doesn't expand `${VAR}` in them, and
@@ -976,7 +979,6 @@ export function toCodexMcpServers(servers: Record<string, unknown> | undefined, 
         url: s.url,
         ...(headers && { http_headers: headers }),
         ...(typeof s.bearer_token_env_var === 'string' && { bearer_token_env_var: s.bearer_token_env_var }),
-        ...(isInjectedClubhouseBridge(name, raw) && { default_tools_approval_mode: 'approve' as const }),
       };
     } else {
       skipped.push({ name, reason: type === 'sse' ? 'Codex has no SSE transport' : 'not a stdio or HTTP server' });
