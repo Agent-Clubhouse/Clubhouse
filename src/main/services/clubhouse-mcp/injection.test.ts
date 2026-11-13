@@ -30,7 +30,7 @@ vi.mock('../fs-utils', () => ({
   }),
 }));
 
-import { injectClubhouseMcp, injectTemplateMcpServers, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef, validateMcpServerDef, scrubClubhouseNonce, scrubClubhouseNonceToml } from './injection';
+import { injectClubhouseMcp, injectTemplateMcpServers, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef, validateMcpServerDef, isInjectedClubhouseBridge, getBridgeScriptPath, scrubClubhouseNonce, scrubClubhouseNonceToml } from './injection';
 
 describe('MCP Injection', () => {
   let tmpDir: string;
@@ -680,6 +680,26 @@ describe('MCP Injection', () => {
       expect(() =>
         validateMcpServerDef('test', { command: 'node', shell: true }),
       ).toThrow(/unknown property "shell"/);
+    });
+  });
+
+  describe('isInjectedClubhouseBridge (#3366)', () => {
+    const bridge = { command: 'node', args: [getBridgeScriptPath()] };
+
+    it('is true only for the clubhouse key running this build\'s bridge script', () => {
+      expect(isInjectedClubhouseBridge('clubhouse', bridge)).toBe(true);
+      expect(isInjectedClubhouseBridge('clubhouse', { type: 'stdio', ...bridge })).toBe(true);
+    });
+
+    it('is false for a same-named project server, another name, or a different command or args', () => {
+      expect(isInjectedClubhouseBridge('clubhouse', { command: 'node', args: ['server.js'] })).toBe(false);
+      expect(isInjectedClubhouseBridge('clubhouse', { command: 'node', args: ['/tmp/clubhouse-mcp-bridge.js'] })).toBe(false);
+      expect(isInjectedClubhouseBridge('clubhouse', { url: 'https://x.example.test/mcp' })).toBe(false);
+      expect(isInjectedClubhouseBridge('clubhouse', { command: 'python', args: bridge.args })).toBe(false);
+      expect(isInjectedClubhouseBridge('clubhouse', { command: 'node', args: [...bridge.args, 'x'] })).toBe(false);
+      expect(isInjectedClubhouseBridge('other', bridge)).toBe(false);
+      expect(isInjectedClubhouseBridge('clubhouse', null)).toBe(false);
+      expect(isInjectedClubhouseBridge('clubhouse', undefined)).toBe(false);
     });
   });
 });

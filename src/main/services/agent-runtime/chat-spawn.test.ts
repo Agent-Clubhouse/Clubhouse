@@ -42,6 +42,8 @@ vi.mock('../clubhouse-mcp/injection', () => ({
   injectClubhouseMcp: vi.fn(async () => {}),
   buildClubhouseMcpDef: vi.fn(() => ({ type: 'http', url: 'http://127.0.0.1:4321/mcp' })),
   CLUBHOUSE_NONCE_ENV: 'CLUBHOUSE_HOOK_NONCE',
+  // The mocked bridge def isn't the real bridge script, so nothing is pre-approved (#3366).
+  isInjectedClubhouseBridge: vi.fn(() => false),
 }));
 vi.mock('../agent-mcp-servers', () => ({ resolveAgentMcpServers: vi.fn(async () => ({})) }));
 const agentConfig = vi.hoisted(() => ({ touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));

@@ -364,6 +364,19 @@ export function isClubhouseMcpEntry(entry: unknown): boolean {
 }
 
 /**
+ * Whether a server named `name` is the bridge Clubhouse itself injected: the
+ * `clubhouse` key AND a `node` command running exactly this build's bridge
+ * script. A project `.mcp.json` server that merely borrows the name does not
+ * qualify, so it never inherits the bridge's Codex tool approval (#3366).
+ */
+export function isInjectedClubhouseBridge(name: string, def: unknown): boolean {
+  if (name !== 'clubhouse' || !def || typeof def !== 'object') return false;
+  const obj = def as Record<string, unknown>;
+  const args = obj.args;
+  return obj.command === 'node' && Array.isArray(args) && args.length === 1 && args[0] === getBridgeScriptPath();
+}
+
+/**
  * Strip the Clubhouse MCP entry from a TOML config string.
  * Removes [mcp_servers.clubhouse] and its sub-sections.
  */

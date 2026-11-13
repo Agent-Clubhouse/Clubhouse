@@ -25,6 +25,7 @@ import type {
 } from '../../../shared/chat/events';
 import { COMPACTION_STARTED } from '../../../shared/chat/events';
 import { safeMcpErrorLine } from '../../services/mcp-error-text';
+import { isInjectedClubhouseBridge } from '../../services/clubhouse-mcp/injection';
 import {
   commandApprovalDecisions,
   FILE_CHANGE_APPROVAL_DECISIONS,
@@ -920,7 +921,7 @@ export function toCodexInput(content: ContentBlock[]): UserInput[] {
 
 /** One `mcp_servers` entry as Codex's config reads it. */
 export type CodexMcpServer =
-  | { command: string; args?: string[]; env?: Record<string, string>; env_vars?: string[]; cwd?: string }
+  | { command: string; args?: string[]; env?: Record<string, string>; env_vars?: string[]; cwd?: string; default_tools_approval_mode?: 'approve' }
   | { url: string; http_headers?: Record<string, string>; bearer_token_env_var?: string };
 
 /**
@@ -931,6 +932,14 @@ export type CodexMcpServer =
  * doesn't know, so a raw pass-through fails silently: `headers` is dropped
  * (Codex reads `http_headers`) and an SSE server is treated as streamable
  * HTTP. Codex has no SSE transport, so SSE servers are skipped and reported.
+ *
+ * Only the bridge Clubhouse injected (isInjectedClubhouseBridge) gets
+ * `default_tools_approval_mode: 'approve'` (#3366). Under approval policy
+ * `never`, Codex fails any MCP call it would otherwise ask about, which covers
+ * tools whose annotations mark them destructive or that predate the
+ * annotations (#3375). The approval skips only Codex's transport prompt.
+ * Clubhouse still enforces its own wires, roles and grants on every call. A
+ * project server that merely shares the name `clubhouse` keeps Codex's default.
  *
  * Values are passed as written: Codex doesn't expand `${VAR}` in them, and
  * neither does Clubhouse (checked on the pinned 0.153.4). A relative `cwd`
@@ -962,6 +971,7 @@ export function toCodexMcpServers(servers: Record<string, unknown> | undefined, 
         // Codex keeps a relative cwd as written; resolve it against the
         // agent's directory so it doesn't depend on Codex's own cwd.
         ...(typeof s.cwd === 'string' && { cwd: baseDir && !path.isAbsolute(s.cwd) ? path.resolve(baseDir, s.cwd) : s.cwd }),
+        ...(isInjectedClubhouseBridge(name, raw) && { default_tools_approval_mode: 'approve' as const }),
       };
     } else if (typeof s.url === 'string' && (type === undefined || HTTP_TYPES.has(type))) {
       const headers = stringRecord(s.headers) ?? stringRecord(s.http_headers);
