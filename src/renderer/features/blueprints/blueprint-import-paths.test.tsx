@@ -216,11 +216,11 @@ describe('blueprint import paths', () => {
     for (const output of outputs.slice(1)) expect(output).toEqual(outputs[0]);
   });
 
-  it.each(PATHS)('%s defers a wire to a group project that is not on this machine, and clears the id', async (_name, run) => {
+  it.each(PATHS)('%s defers a wire to a group project that is not on this machine, and retains the reference', async (_name, run) => {
     useGroupProjectStore.setState({ projects: [], loaded: true, loadError: null });
     expect(await run()).toEqual(EXPECTED.filter((w) => w.targetKind !== 'group-project'));
     const canvas = (sink.canvases[0] ?? canvasResults[0]?.canvas) as CanvasInstance;
-    expect(canvas.views.find((v) => v.displayName === 'Board')?.metadata).not.toHaveProperty('groupProjectId');
+    expect(canvas.views.find((v) => v.displayName === 'Board')?.metadata).toHaveProperty('groupProjectId', 'gp-42');
   });
 
   it('reports the wires it defers and skips', async () => {

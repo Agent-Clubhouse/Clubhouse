@@ -142,6 +142,10 @@ function CreationForm({
   const create = useGroupProjectStore((s) => s.create);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const loaded = useGroupProjectStore((s) => s.loaded);
+  const projects = useGroupProjectStore((s) => s.projects);
+  const loadError = useGroupProjectStore((s) => s.loadError);
+  const [selectedId, setSelectedId] = useState('');
+  const selectId = useId();
 
   useEffect(() => {
     if (!loaded) loadProjects();
@@ -177,6 +181,21 @@ function CreationForm({
 
   return (
     <div className="flex flex-col justify-center h-full gap-2 p-4">
+      <label htmlFor={selectId} className="text-[13px] font-medium text-ctp-text">Existing group project</label>
+      {loadError ? (
+        <div role="alert" className="text-xs text-ctp-error">Could not load group projects. <button type="button" onClick={() => void loadProjects()}>Retry</button></div>
+      ) : (
+        <>
+          <select id={selectId} value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text">
+            <option value="">{loaded ? 'Select a group project' : 'Loading group projects...'}</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
+          <Button disabled={!projects.some((project) => project.id === selectedId)} onClick={() => {
+            const project = projects.find((item) => item.id === selectedId);
+            if (project) onUpdateMetadata({ groupProjectId: project.id, name: project.name });
+          }} className="self-start">Add existing</Button>
+        </>
+      )}
       <div className="text-[13px] font-medium text-ctp-text">New group project</div>
       <input
         type="text"
@@ -220,6 +239,10 @@ function ProjectView({
   const ctx = useGroupProjectContext(groupProjectId, isRemote, satelliteId, annex);
 
   useEffect(() => {
+    if (!ctx.loaded) void ctx.loadProjects();
+  }, [ctx.loaded, ctx.loadProjects]);
+
+  useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
@@ -233,7 +256,9 @@ function ProjectView({
 
   return (
     <div ref={containerRef} className="h-full w-full">
-      {isExpanded ? (
+      {ctx.loaded && !ctx.project ? (
+        <div role="status" className="p-4 text-xs text-ctp-subtext1">Group project unavailable. Its reference is retained: {groupProjectId}</div>
+      ) : isExpanded ? (
         <ExpandedProjectView groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />
       ) : (
         <ProjectCard groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />

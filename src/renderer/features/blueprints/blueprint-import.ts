@@ -298,9 +298,8 @@ function mapViewType(type: string): 'agent' | 'anchor' | 'plugin' | 'sticky-note
 export interface ImportOptions {
   /**
    * Group projects that exist on this machine. A group-project widget whose
-   * groupProjectId isn't in it (the blueprint came from another machine) has
-   * the id cleared, so its wires are deferred until the user picks a project
-   * in the widget (#2071). Omitted when it isn't known: ids are kept.
+   * groupProjectId isn't in it is retained as a reference. Its wires are
+   * deferred until the referenced project becomes available.
    */
   groupProjectIds?: ReadonlySet<string>;
 }
@@ -310,7 +309,7 @@ export function importBlueprint(
   existingAgents: Agent[],
   existingProjects: ExistingProject[],
   targetProjectId?: string,
-  options: ImportOptions = {},
+  _options: ImportOptions = {},
 ): ImportResult {
   // 1. Validate
   const validation = validateManifest(manifest);
@@ -432,13 +431,6 @@ export function importBlueprint(
         // Extract plugin info from the type string or metadata
         const pluginWidgetType = (bv.metadata?.pluginWidgetType as string) || bv.type;
         const pluginId = (bv.metadata?.pluginId as string) || bv.type.split(':')[1] || '';
-        const groupProjectId = base.metadata.groupProjectId;
-        if (groupProjectId && options.groupProjectIds && !options.groupProjectIds.has(groupProjectId)) {
-          // Not on this machine: let the widget ask for a project instead of wiring to a dead id.
-          const metadata = { ...base.metadata };
-          delete metadata.groupProjectId;
-          base.metadata = metadata;
-        }
         return {
           ...base,
           type: 'plugin' as const,

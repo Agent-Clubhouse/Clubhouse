@@ -181,9 +181,9 @@ describe('group project ids from another machine (#2071)', () => {
   const alpha = { id: 'agent-a', name: 'Alpha' } as unknown as Agent;
   const board = (r: ReturnType<typeof parseAnyBlueprint>) => r.canvas.views.find((v) => v.displayName === 'Board');
 
-  it('clears an id this machine does not have and defers the wire', () => {
+  it('retains an id this machine does not have and defers the wire', () => {
     const result = parseAnyBlueprint(manifest, { agents: [alpha], projects: [], groupProjectIds: new Set(['gp-here']) });
-    expect(board(result)?.metadata).not.toHaveProperty('groupProjectId');
+    expect(board(result)?.metadata).toHaveProperty('groupProjectId', 'gp-away');
     expect(result.wires.create).toEqual([]);
     expect(result.wires.deferred).toEqual([expect.objectContaining({ reason: 'target_unbound' })]);
   });

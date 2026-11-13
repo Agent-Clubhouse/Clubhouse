@@ -94,6 +94,17 @@ describe('group project creation context', () => {
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
+  it('places an existing group project without creating another record', async () => {
+    useGroupProjectStore.setState({ projects: [{ id: 'gp-existing', name: 'Shared', description: '', instructions: '', createdAt: '', metadata: {} }] });
+    const onUpdateMetadata = vi.fn();
+    const create = vi.spyOn(window.clubhouse.groupProject, 'create');
+    render(<GroupProjectCanvasWidget widgetId="w" api={{ context: { mode: 'app' }, annex: {} } as never} metadata={{}} onUpdateMetadata={onUpdateMetadata} size={{ width: 300, height: 600 }} {...({} as never)} />);
+    await userEvent.selectOptions(screen.getByLabelText('Existing group project'), 'gp-existing');
+    await userEvent.click(screen.getByRole('button', { name: 'Add existing' }));
+    expect(onUpdateMetadata).toHaveBeenCalledWith({ groupProjectId: 'gp-existing', name: 'Shared' });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it.each([
     { mode: 'project' as const, projectId: 'p1', metadata: {}, options: { projectId: 'p1' } },
     { mode: 'app' as const, projectId: undefined, metadata: {}, options: undefined },

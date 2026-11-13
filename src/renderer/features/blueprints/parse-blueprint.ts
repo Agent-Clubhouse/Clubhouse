@@ -100,7 +100,7 @@ export function parseAnyBlueprint(data: unknown, ctx?: ParseContext): ParseResul
       safeCtx.activeProjectId,
       { groupProjectIds: safeCtx.groupProjectIds },
     );
-    const wires = planBlueprintWires(imported.pendingWires, imported.refIdToViewId, imported.canvas.views);
+    const wires = planBlueprintWires(imported.pendingWires, imported.refIdToViewId, imported.canvas.views, safeCtx.groupProjectIds);
     // Deferred wires travel with the canvas, so binding the stub later creates them (#2069).
     const canvas: CanvasInstance = wires.deferred.length
       ? { ...imported.canvas, deferredWires: wires.deferred.map(({ wire, sourceViewId, targetViewId }) => ({ wire, sourceViewId, targetViewId })) }
