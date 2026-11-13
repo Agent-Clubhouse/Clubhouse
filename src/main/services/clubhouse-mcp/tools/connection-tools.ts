@@ -707,7 +707,7 @@ export function registerConnectionTools(): void {
   registerGlobalTool('create_group_project', {
     description:
       'Create a group project (a shared bulletin board) and optionally add members to it. ' +
-      'Members must be you or your helpers; include yourself to join it too. ' +
+      'Top-level durable agents in scope join automatically; the optional members must be you or your helpers. ' +
       'Memberships are saved and come back when Clubhouse restarts.',
     inputSchema: {
       type: 'object',
