@@ -21,6 +21,15 @@ import { cleanSetupInput, cleanTryItOutRequest, type TryItOutResult } from '../.
 import { checkDispatcherBehavior, tryDispatcherPersonality } from '../services/dispatcher/dispatcher-setup';
 import type { DispatcherTeaching } from '../../shared/dispatcher-teaching';
 import { readDispatcherTeaching } from '../services/dispatcher/dispatcher-teaching';
+import { chooseLead, getLeadState, onLeadChanged } from '../services/dispatcher-federation-lead';
+import type { DispatcherLeadState } from '../../shared/dispatcher-lead';
+
+/** A machine id, or null for "no lead". */
+const nullableMachineArg = (value: unknown, argName: string): string | null => {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !value || value.length > 200) throw new Error(`${argName} must be a computer's id or null`);
+  return value;
+};
 
 let registered = false;
 
@@ -108,6 +117,14 @@ export function registerDispatcherHandlers(): void {
 
   // What its chat shows before the first message: the intro and suggestions (#3048).
   ipcMain.handle(IPC.DISPATCHER.GET_TEACHING, (): Promise<DispatcherTeaching> => readDispatcherTeaching());
+
+  // The network-wide lead (#3351). Only Settings sets it: no tool or grant reaches these.
+  ipcMain.handle(IPC.DISPATCHER.GET_LEAD, (): DispatcherLeadState => getLeadState());
+  ipcMain.handle(IPC.DISPATCHER.SET_LEAD, withValidatedArgs(
+    [nullableMachineArg],
+    async (_event, machine): Promise<DispatcherLeadState> => { await chooseLead(machine); return getLeadState(); },
+  ));
+  onLeadChanged(() => broadcastToAllWindows(IPC.DISPATCHER.LEAD_CHANGED, getLeadState()));
 
   let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {

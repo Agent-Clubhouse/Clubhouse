@@ -5,6 +5,7 @@ import { federationReceiver } from '../services/dispatcher-federation-receiver';
 
 import { parseAgentAddress } from '../../shared/agent-address';
 import { federationBindingSource, learnFederationController, localFederationController, watchFederation } from '../services/dispatcher-federation';
+import { learnLeadShare, leadShare, startDispatcherLead } from '../services/dispatcher-federation-lead';
 import { federationDirection } from '../services/dispatcher-federation-policy';
 import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
@@ -427,6 +428,7 @@ let stopWatchingDispatcherWires: (() => void) | null = null;
 let stopWatchingAgentCards: (() => void) | null = null;
 let stopWatchingDispatcherConnections: (() => void) | null = null;
 let stopWatchingFederation: (() => void) | null = null;
+let stopDispatcherLead: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
 
 /**
@@ -469,9 +471,22 @@ export function restorePersistedBindings(): Promise<void> {
         if (peer.role === 'member' && peer.kind !== 'phone') void syncDirectionsWith(peer.fingerprint.toLowerCase());
       }
     }, (machine) => annexClient.isMachineConnected(machine));
+    // A lead change goes to every connected computer member at once (#3351).
+    stopDispatcherLead = startDispatcherLead({
+      push: () => {
+        for (const peer of annexPeers.listPeers()) {
+          if (peer.role === 'member' && peer.kind !== 'phone') void syncDirectionsWith(peer.fingerprint.toLowerCase());
+        }
+      },
+      connected: (machine) => annexClient.isMachineConnected(machine),
+    });
     startAgentCalls({
       remoteDispatcher: federationReceiver,
-      federation: { local: localFederationController, learn: learnFederationController },
+      federation: {
+        local: localFederationController, learn: learnFederationController,
+        // The network-wide lead (#3351) rides the same exchange.
+        extra: { local: leadShare, learn: learnLeadShare },
+      },
       transport: {
         connected: (machine) => annexClient.isMachineConnected(machine),
         post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
@@ -525,6 +540,8 @@ export function _resetHandlersForTesting(): void {
   persistedSourcesRegistered = false;
   stopWatchingFederation?.();
   stopWatchingFederation = null;
+  stopDispatcherLead?.();
+  stopDispatcherLead = null;
   stopWatchingHelperWires?.();
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();

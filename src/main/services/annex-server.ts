@@ -3591,7 +3591,7 @@ async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<vo
   if ('applied' in outcome) {
     const directions = await agentCalls.shareForAnswer(machine);
     if (!publication.current()) { sendJson(ctx.res, 403, { error: 'pairing_changed' }); return; }
-    sendJson(ctx.res, 200, { ...outcome, directions, controller: agentCalls.federationControllerForShare(), epoch: publication.epoch });
+    sendJson(ctx.res, 200, { ...outcome, directions, controller: agentCalls.federationControllerForShare(), extra: agentCalls.federationExtraForShare(), epoch: publication.epoch });
   }
   else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
 }
