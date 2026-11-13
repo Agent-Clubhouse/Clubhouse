@@ -76,6 +76,8 @@ By default it can read, message, wake, put to sleep, reset, rename and set up th
 
 When it links two of your orchestrators, you can say what each may do to the other, for example "let them see each other's status, message and wake each other, nothing else". It sets those switches on the link and reads them back to check. A new link it makes can read, message and wake, with **Clear** and **Compact** off. It never changes switches you set yourself, and never lets one agent put another to sleep. The link's switches are on each agent's **Connections** card under **Manage**.
 
+For a team of agents, ask the Dispatcher to list group projects or open the group project directory. In the directory, create a group project, review who joins, and add it to a canvas if useful. Choose the **Group project lead** built-in role block for an agent you want to coordinate, then give that member the lead grant for the group project. Add the **Group projects** block to participating agents so they know how to use the board. See **Group projects** for scope, membership and notices.
+
 Permission prompts stay with the agent that asked, and an agent's message never counts as your approval. Requests that ask first wait in **Needs you**.
 
 ## Settings

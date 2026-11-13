@@ -3,6 +3,7 @@
  * templates from an export of the maintainer's builder. Check mode reports
  * what differs and writes nothing; --write updates builtin-text/.
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -304,6 +305,17 @@ describe('sync-builtin-text', () => {
     writeDoc('blocks', block('builtin-block-identity', { name: 'Identity', text: 'You are @@AgentName.\r\nSecond line.', order: 0 }));
     syncBuiltinText(exportDir, { textDir, write: true });
     expect(readFileSync(path.join(textDir, 'identity.md'), 'utf8')).toBe('You are @@AgentName.\nSecond line.\n');
+  });
+
+  it('round-trips the shipped built-ins through the export and sync CLIs', () => {
+    const output = path.join(root, 'recreated-export');
+    execFileSync(process.execPath, [path.resolve('scripts/export-builtin-text.mjs'), output]);
+    const cliEnv = { ...process.env };
+    delete cliEnv.VITEST;
+    const checked = execFileSync(process.execPath, [path.resolve('scripts/sync-builtin-text.mjs'), output], { encoding: 'utf8', env: cliEnv });
+    expect(checked).toMatch(/in sync|no differences/i);
+    expect(JSON.parse(readFileSync(path.join(output, 'blocks', 'builtin-block-project-manager.json'), 'utf8')).status).toBe('cut');
+    expect(JSON.parse(readFileSync(path.join(output, 'skills', 'builtin-skill-post-result.json'), 'utf8')).status).toBe('cut');
   });
 
   it('the committed built-in text matches its own manifest exactly', async () => {

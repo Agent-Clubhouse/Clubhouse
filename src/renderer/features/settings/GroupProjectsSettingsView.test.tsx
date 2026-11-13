@@ -47,6 +47,16 @@ describe('GroupProjectsSettingsView', () => {
     await waitFor(() => expect(setPolling).toHaveBeenCalledWith('gp-beta', false));
   });
 
+  it('edits permissions for the selected group project', async () => {
+    const setOwnGrant = vi.spyOn(window.clubhouse.groupProject, 'setOwnGrant');
+    render(<GroupProjectsSettingsView />);
+    await screen.findByRole('list');
+    select('Beta');
+    const wake = await screen.findByLabelText('Wake sleeping members');
+    fireEvent.change(wake, { target: { value: 'allow' } });
+    await waitFor(() => expect(setOwnGrant).toHaveBeenCalledWith('gp-beta', 'wake', 'allow'));
+  });
+
   it('previews the agents who will join and warns about unreadable projects', async () => {
     vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin').mockResolvedValue({
       wouldJoin: [{ agentId: 'ada', name: 'Ada', kind: 'durable', via: 'auto', projectName: 'Work' }],

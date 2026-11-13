@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { HELP_SECTIONS, CHROME_HELP_SECTIONS, DISPATCHER_TOPIC, getHelpSections } from './help-content';
+import { HELP_SECTIONS, CHROME_HELP_SECTIONS, DISPATCHER_TOPIC, GROUP_PROJECT_TOPICS, getHelpSections } from './help-content';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 describe('help-content', () => {
@@ -190,7 +190,7 @@ describe('help-content in the new shell', () => {
 
   it('points only at settings pages that exist', () => {
     const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Smart selection', 'Actions', 'Dispatcher', 'Display & UI', 'External editor', 'Keyboard shortcuts',
-      'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', "What's new"];
+      'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', 'Group Projects', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {
         const page = m[1].split(' > ')[0];
@@ -206,6 +206,15 @@ describe('help-content in the new shell', () => {
     expect(ids.indexOf('agents-dispatcher')).toBe(ids.indexOf('agents-orchestrated-helpers') + 1);
     expect(agentIds(HELP_SECTIONS)).not.toContain('agents-dispatcher');
     expect(DISPATCHER_TOPIC.title).toBe('Dispatcher');
+  });
+
+  it('offers searchable group project help and glossary in the new shell', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    const topics = getHelpSections().flatMap((s) => s.topics);
+    for (const topic of GROUP_PROJECT_TOPICS) expect(topics).toContain(topic);
+    expect(GROUP_PROJECT_TOPICS[0].content).toContain('Switch to notices');
+    expect(GROUP_PROJECT_TOPICS[1].content).toContain('Group project admin');
+    for (const topic of GROUP_PROJECT_TOPICS) expect(topic.content).not.toContain('—');
   });
 
   it('describes what the Dispatcher does today, in plain words (#3053)', () => {

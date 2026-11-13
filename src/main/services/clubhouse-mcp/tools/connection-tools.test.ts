@@ -613,6 +613,13 @@ describe('scoping refusals', () => {
     expect(boundPairs()).toEqual(['durable_otherhelper->gp_1']);
   });
 
+  it('accepts group_project and its legacy project alias, rejecting conflicting references', async () => {
+    await call('create_group_project', { name: 'Raid', members: ['durable_lead'] });
+    expect((await call('add_to_group_project', { group_project: 'Raid', helper: 'h1' })).isError).toBe(false);
+    expect((await call('remove_from_group_project', { project: 'Raid', helper: 'h1' })).isError).toBe(false);
+    expect((await call('add_to_group_project', { group_project: 'Raid', project: 'Elsewhere', helper: 'h1' })).isError).toBe(true);
+  });
+
   it('allows a group project the caller belongs to through a canvas wire', async () => {
     groupProjects.set('gp_canvas', { id: 'gp_canvas', name: 'Canvas GP', description: '', instructions: '', createdAt: '', metadata: {} });
     bindingManager.bind('durable_lead', { targetId: 'gp_canvas', targetKind: 'group-project', label: 'Canvas GP' });

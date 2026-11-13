@@ -86,9 +86,6 @@ partial read records nothing and marks nothing. New group projects are marked
 at creation. So scope affects only new joins, and no existing member is dropped
 silently.
 
-Until #3357 registers its membership policy, "members" are the agents wired to
-the group project, with their projects read from durable agent configs and live
-registrations.
 
 ## Legacy scope inference
 
@@ -179,9 +176,9 @@ just-posted message even if older history has timestamps ahead of the clock.
 - `src/main/services/group-project-storage.test.ts`: real-file crash/failure,
   concurrent-load and in-flight mutation regressions.
 
-Scope management, directory management and network synchronization are
-separate additions. These foundations do not change canvas membership, grants
-or polling.
+The directory, scope controls, grants and network synchronization build on
+these stores. Canvas cards reference a group project; membership is persisted
+independently of those references.
 
 ## Authoritative host and store (#3356)
 
@@ -198,8 +195,7 @@ retention, channel and inbox seeding, flushes and deletion all go through it.
 `group-project-host.guard.test.ts` scans main-process source and fails on any
 registry or board mutation, store module import, or file write under
 `group-projects/` outside the host and its stores. Reads may still use the
-registry and board directly. Remote writes over Annex (#3363) will enter
-through the same methods.
+registry and board directly. Remote writes over Annex enter through the host methods.
 
 Writes to one group project are serialized. Each change gets the next sequence
 number for that group project. The number is saved atomically in
@@ -329,8 +325,7 @@ changes; the message a post adds carries that change's sequence number.
   `@name`, and the lead (an agent granted `group_project.lead` on it). Never its sender, and
   never for `system` posts. By default a member is subscribed to `general`,
   `control` and its own inbox; `subscribe_topic` adds or removes channels,
-  kept in the membership record (`subscriptions`, by address). Members on
-  other machines are left to #3363.
+  kept in the membership record (`subscriptions`, by address). Network members use the network delivery path.
 - **Coalescing.** Posts to one member within 15 seconds of the first become
   one notice: `3 new messages in "general" from "lead", "qa", in group
   project "Release".` with the `read_topic` tool to use. The sender is left
@@ -485,23 +480,52 @@ so the same read markers give the same unread counts on both computers (#1559).
 
 ## Local directory
 
-Settings > Group Projects, also available as **Group Projects** in the command
-palette, lists this machine's local registry, including records on no Canvas.
-This is not an authoritative host, network or membership directory.
+Settings > Group Projects and the command palette open the directory. It lists
+group projects even when no canvas references them. Creation previews the
+top-level durable agents that will auto-join, and defaults to app/local. Scope
+changes preview leavers before applying. A canvas may reference an existing
+group project, and removing a card does not change membership.
 
-Select a record to edit its name, description and instructions through the same
-store and IPC used by Canvas. Instructions retain their whitespace. Legacy or
-missing scope is shown as unresolved, not inferred, until someone sets one.
-Failed loads hide the inventory and offer a retry. Failed writes retain the
-current draft and report that it was not saved.
+Membership permits board reads and posts. Lead and admin are independent,
+per-group-project grants to an agent, each Allow, Ask first or Off. A new group
+project grants neither role automatically. The group project's own `deliver`
+grant defaults to Allow and `wake` to Off. The latter permits a lead's tap to
+wake a sleeping member. The one-time migration gives each old metadata admin
+both agent grants; `rolesMigratedAt` prevents reapplying a person's later edits.
 
-Each record shows its host line ("Host: This computer", "Host: Desk, offline.
-Showing a saved copy, 2 changes wait for it.", "Host: Desk left your network.
-This copy is read-only."), and a copy lists changes its host refused, with
-Clear this list. A copy has no scope editor: only its host changes scope.
+The host owns authoritative state. Network peers keep copies, synchronize by
+sequence number and send writes to the host. While offline, eligible writes wait
+in a bounded outbox and can later be applied or refused; the directory reports
+waiting changes and refusals. A host that leaves the network leaves a read-only
+copy. Only the host can rescope or delete. A tombstone removes a peer's copy on
+catch-up and refuses queued writes.
 
-Creation here defaults to the whole app on this computer, and the person can
-choose a project instead. Selecting a record also shows its scope with Review
-change and Apply. Network reach is shown disabled with its reason. Host state,
-durable membership management, grants, owned Actions, deletion, board viewing
-and Canvas navigation are outside this directory slice.
+## Deletion and recovery
+
+Deletion first inventories the impact and requires confirmation. The host writes
+a durable deleting tombstone before idempotent cleanup removes canvas
+references, bindings and connection guidance. The host then completes removal
+of the record and board. Pending tombstones resume cleanup on startup. Canvas
+writes are filtered against tombstones so a late save cannot restore a deleted
+card. The owned-Action and network cleanup paths extend this cascade.
+
+## Upgrade notes
+
+Legacy scope inference preserves existing membership and only publishes a scope
+when the source inventory is complete. Existing bindings are adopted into the
+membership record. A one-time offer lets a person add all eligible top-level
+durable agents; existing members are not silently evicted. Project-scoped
+records preserve previously bound members during the scope migration. Legacy
+admin metadata becomes lead and admin grants once. Existing polling stays on
+until switched to notices; new group projects use notices.
+
+## Further implementation map
+
+- `src/main/services/group-project-roles.ts`: lead and admin grants and migration.
+- `src/main/services/group-project-delete-service.ts`: confirmation, cleanup and recovery.
+- `src/main/services/group-project-delete-inventory.ts`: deletion impact.
+- `src/main/services/group-project-network.ts` and `src/shared/group-project-network.ts`: host and replica synchronization and protocol.
+- `src/renderer/features/settings/GroupProjectsSettingsView.tsx`: directory and editing.
+- `e2e/group-project-membership.spec.ts`, `group-project-notices.spec.ts`,
+  `group-project-delete.spec.ts` and `e2e/annex-v2/network-group-projects.spec.ts`:
+  membership, notice, deletion and two-desktop coverage. Fake CLIs avoid paid prompts.
