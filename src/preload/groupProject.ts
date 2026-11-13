@@ -19,6 +19,8 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_DELETE, id),
   delete: (id: string, token: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id, token),
+  dismissRefusals: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.DISMISS_REFUSALS, id),
   scopeOptions: (): Promise<GroupProjectScopeOptions> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SCOPE_OPTIONS),
   previewScope: (id: string, scope: GroupProjectScope): Promise<{ scope: GroupProjectScope; leaving: GroupProjectMemberView[]; returning: GroupProjectMemberView[] }> =>
