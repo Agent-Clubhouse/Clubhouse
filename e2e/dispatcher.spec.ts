@@ -7,6 +7,7 @@ import { createDisposableProfile, type DisposableProfile } from './app-profile';
 import { chatFixturePath } from '../src/main/orchestrators/adapters/testing/fake-cli';
 import { buildChatScript, writeChatScript } from '../src/main/orchestrators/adapters/testing/chat-script';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
+import { connectMcp } from './mcp-agent';
 import { launchApp, type ElectronApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
 
@@ -90,36 +91,6 @@ async function writeQuietFixture(dir: string): Promise<string> {
   return file;
 }
 
-/** A minimal MCP client over the bridge, as the agent the credentials belong to. */
-async function connectMcp(env: Record<string, string | null>) {
-  const url = `http://127.0.0.1:${env.CLUBHOUSE_MCP_PORT}/mcp/${env.CLUBHOUSE_AGENT_ID}`;
-  let sessionId: string | null = null;
-  let id = 0;
-  const rpc = async (method: string, params: Record<string, unknown> = {}) => {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Clubhouse-Nonce': env.CLUBHOUSE_HOOK_NONCE ?? '',
-        ...(sessionId && { 'Mcp-Session-Id': sessionId }),
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
-    });
-    sessionId = res.headers.get('mcp-session-id') ?? sessionId;
-    return (await res.json()).result;
-  };
-  await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
-  const toolNames = async (): Promise<string[]> => (await rpc('tools/list')).tools.map((t: { name: string }) => t.name);
-  const callText = async (name: string, args: Record<string, unknown> = {}) => {
-    const result = await rpc('tools/call', { name, arguments: args });
-    return { isError: !!result.isError, text: result.content[0].text as string };
-  };
-  const call = async (name: string, args: Record<string, unknown> = {}) => {
-    const { isError, text } = await callText(name, args);
-    return { isError, body: JSON.parse(text) };
-  };
-  return { toolNames, call, callText };
-}
 
 async function launch(experimental: Record<string, boolean> = {}, files: Record<string, unknown> = {}): Promise<LaunchedApp> {
   app = await launchApp({

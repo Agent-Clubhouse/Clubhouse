@@ -74,6 +74,7 @@ export const ANNEX_SHARDS = {
   2: [
     'annex-v2/chat-across-desktops.spec.ts',
     'annex-v2/dispatcher-federation.spec.ts',
+    'annex-v2/dispatcher-lead-approvals.spec.ts',
     'annex-v2/lifecycle.spec.ts',
     'annex-v2/minimal-test.spec.ts',
     'annex-v2/network-join.spec.ts',
