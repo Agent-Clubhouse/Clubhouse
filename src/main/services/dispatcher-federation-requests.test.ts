@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { captureEvents } from '../telemetry/__test-utils__/event-capture';
+import { recordFederationLimit } from '../telemetry/dispatcher-telemetry';
 import type { AnnexCallContext, AnnexDeliveryStatus, AuthenticatedAnnexOrigin } from '../../shared/annex-delivery';
 import type { FederationRequestEnvelope } from '../../shared/dispatcher-federation-requests';
 vi.mock('electron', () => ({ app: { getPath: () => '', isPackaged: false } }));
@@ -23,7 +25,7 @@ function fixture() {
         }
         return { deliveryId: key };
       }),
-      delivery: (_caller, id) => statuses.get(id), createLocal: vi.fn(async () => {}), present: vi.fn(async () => {}), record: vi.fn(),
+      delivery: (_caller, id) => statuses.get(id), createLocal: vi.fn(async () => {}), present: vi.fn(async () => {}), record: vi.fn(), recordLimit: vi.fn(),
     };
     return { api: createFederatedRequests(deps), deps, self, file: () => structuredClone(file) };
   }
@@ -42,6 +44,19 @@ function fixture() {
 }
 
 describe('federated request delivery and explicit outcomes (#3347, #3346)', () => {
+  it.each(['depth', 'rate'])('emits an identifier-free limit event when the first crossing trips %s without a parent', async (kind) => {
+    const f = fixture();
+    f.a.deps.recordLimit = recordFederationLimit;
+    if (kind === 'rate') await f.a.deps.store.update((file) => { file.crossings.Laptop = Array(FEDERATED_REQUEST_LIMITS.perMinute).fill(f.a.deps.now()); });
+    const capture = captureEvents();
+    try {
+      await expect(f.a.api.crossing('Laptop', { rootId: 'private-first-root', depth: kind === 'depth' ? FEDERATED_REQUEST_LIMITS.depth : 0 }, { message: 'private news' }, 'send_message')).rejects.toThrow(`${kind === 'depth' ? 'depth' : 'rate'} limit`);
+      expect(f.a.file().requests).toEqual([]);
+      expect(f.a.file().news ?? {}).toEqual({});
+      expect(f.a.api.allowed('Laptop', {})).toBe(false);
+      expect(capture.named('clubhouse.dispatcher.federation')).toEqual([expect.objectContaining({ attrs: { 'clubhouse.federation.event': 'limit' } })]);
+    } finally { capture.stop(); }
+  });
   it('keeps accepted and delivered separate from an answer; stores authenticated provenance', async () => {
     const f = fixture(); const sent = await f.offer();
     expect(sent).toMatchObject({ delivery: 'accepted', outcome: 'under_way' });

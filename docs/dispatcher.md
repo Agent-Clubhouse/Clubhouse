@@ -177,3 +177,29 @@ All under the Clubhouse base folder (`~/.clubhouse`, or `.clubhouse-dev` in deve
 | `dispatcher-usage.json` | 31 days of usage, conversations and background work | no |
 | `dispatcher-upkeep.json` | when upkeep last ran | no |
 | `dispatcher-settings.json` (app settings folder) | switch, Behavior, chosen models and what they replaced, personality, setup state | no |
+
+## Federated Dispatchers (#2834)
+
+Each Annex Network computer retains its own Dispatcher controller, grants, memory and work records. Membership derives two directions between hidden controllers; the visible chats are never coordination endpoints. See [Annex Network](annex-network.md), [request and delivery contracts](dispatcher-orchestrator-controls.md#requests-between-controllers), and the [glossary](glossary.md).
+
+| Decision or trigger | Result |
+|---|---|
+| Two computer members publish their controllers | Automatic two-way controller links. Phones and one-to-one pairings do not create these links. |
+| Controller metadata crosses a removal or re-pair | The captured pairing and lifecycle guard rejects it before learning and again at atomic commit. |
+| A remote controller asks for work | The receiving controller triages now, check-in, needs-user or decline, under its own local grants. Remote text never approves a permission. |
+| A correlated result returns | The origin hidden controller triages the result and continues its parent request. A remote subtask answer does not complete the parent. |
+| A computer is offline | Durable delivery waits, with per-item expiry and current authorization checks. Receipts and explicit work outcomes remain separate. |
+| A depth, rate or queue bound trips | The controller link is marked tripped for that pairing and reports the limit. Offline links are marked paused. Removal invalidates queued work and replies. |
+| An authorized project agent sends news or a file | The sender checks `agent.message` on `remote_dispatcher`; the receiver validates membership, hidden-controller target, readiness and bounds. No local Dispatcher work turn is required. |
+| An agent offers a Handoff to a remote Dispatcher | The normal `callTool('offer_handoff')` approval and agreement lifecycle apply, with no automatic acceptance. Its sending agent remains the origin. A source-Dispatcher memory copy grants no participant rights. |
+| A person chooses Lead | A versioned network-wide record converges, including after reconnect. No agent tool or grant changes it. None preserves peer behavior. |
+| A computer follows | Its pane and phone show the lead's live chat, and typed messages go to that conversation. Its earlier local chat remains read-only and separate. Its controller still works locally. |
+| The lead is offline | Followers retain history and bounded waiting messages. There is no automatic election or takeback. Take back changes only this computer; Settings can follow again. |
+| The lead is removed | Members clear the lead and return to peer chats. |
+| A follower raises an approval | The lead and origin show the machine-labelled item. Only a human UI answer can settle it, at the origin while still valid; first answer wins. |
+
+`dispatcher-federation.ts` derives links and binds publications to pairing epochs. `annex-agent-calls.ts` carries durable admission, receipts and retry. `dispatcher-federation-requests.ts` retains triage, reports, causal bounds and controller prompts. `dispatcher-presence.ts` exposes one read-only snapshot for desktop, phone and tools. The lead/follower modules keep shared selection separate from each computer's local following choice; memory is never shared.
+
+`dispatcher-telemetry.ts` records link state transitions, remote triage, delivery/outcome codes and limit trips. Only bounded state codes are recorded, with no raw or hashed identifiers, names, labels, task text, file content or approval text. Tests cover each state and telemetry-off behavior.
+
+The explicit Annex CI shard list includes `e2e/annex-v2/dispatcher-federation.spec.ts`: two real desktops with fake CLIs cover joining, controller requests and correlated reports, offline delivery, fixed-loop limits, removal, direct authorized-agent news/files and normal Handoff agreements. The lead/follower and Ask-first E2E specs cover lead selection, live chat, manual Take back and machine-labelled approvals, using the same token-free MCP kit. These specs run in CI, never against paid models.

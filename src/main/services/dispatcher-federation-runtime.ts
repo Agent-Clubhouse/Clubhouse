@@ -1,7 +1,8 @@
 /** Production adapter: remote work enters the hidden controller under local grants. */
 import { parseAgentAddress, formatAgentAddress } from '../../shared/agent-address';
-import { ATTR } from '../../shared/telemetry/attributes';
 import { tel } from '../telemetry/facade';
+import { recordFederatedRequest, recordFederationLimit } from '../telemetry/dispatcher-telemetry';
+import { watchFederationTelemetry } from './dispatcher-federation-telemetry';
 import { captureControllerPublication, forwardPreparedAgentCall, flushOutbox, getDelivery, type DispatcherAgentCallReceiver } from './annex-agent-calls';
 import { getIdentity } from './annex-identity';
 import { ownPairing } from './annex-network-membership';
@@ -94,10 +95,11 @@ export function startFederatedRequests(): () => void {
       if (shown.outcome !== 'delivered' && shown.outcome !== 'started') throw new Error(shown.error ?? 'The local chat is unavailable.');
     },
     fault: () => tel.exception(Object.assign(new Error('federated_controller_input_unconfirmed'), { stack: undefined }), { origin: 'main', handled: true }),
-    record: (r, event) => tel.event('clubhouse.dispatcher.federation', [ATTR.federationRequest(r.originRequestId), ATTR.federationOrigin(`${r.origin.machineId}/${r.origin.agentId}`),
-      ATTR.federationTarget(`${r.direction === 'incoming' ? getIdentity()?.fingerprint.toLowerCase() : r.machineId}/${r.targetId}`), ATTR.federationDelivery(r.delivery), ATTR.federationOutcome(r.outcome), ATTR.federationEvent(event), ATTR.federationTriage(r.triage ?? 'pending')]),
+    record: recordFederatedRequest,
+    recordLimit: recordFederationLimit,
   });
   requests = instance;
+  const stopTelemetry = watchFederationTelemetry();
   const stopHandoffs = setFederationHandoffObserver(async (record) => {
     if (active && isDispatcherEnabled() && record.from.machine === getIdentity()?.fingerprint.toLowerCase()) {
       await recordFederationHandoff(record, remoteDispatcherLabelFor(record.to.machine) ?? `Dispatcher on ${record.to.machine}`);
@@ -134,7 +136,7 @@ export function startFederatedRequests(): () => void {
     appLog('core:dispatcher', 'warn', 'Federated requests could not be reconciled', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }); };
   const timer = setInterval(reconcile, 5_000); timer.unref(); reconcile();
-  return () => { active = false; clearInterval(timer); stopRouter(); stopHandoffs(); if (requests === instance) requests = undefined; };
+  return () => { active = false; clearInterval(timer); stopRouter(); stopHandoffs(); stopTelemetry(); if (requests === instance) requests = undefined; };
 }
 
 export async function receiveFederatedRequest(request: Parameters<DispatcherAgentCallReceiver['receive']>[0]) {

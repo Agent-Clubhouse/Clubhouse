@@ -14,7 +14,7 @@
  *
  * Safety:
  * - The Dispatcher events carry counts, sizes and closed codes only. Never
- *   message text, page contents, page or agent names, paths or ids, and never
+ *   message text, page contents, page or agent names, paths or raw ids, and never
  *   which of the Dispatcher's agents did the work.
  * - With telemetry off nothing is built or recorded, and callers can skip
  *   measuring with `dispatcherTelemetryActive()`.
@@ -27,6 +27,7 @@ import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { localRecordSalt, readLocalEvents } from './local-control';
 import { hashId } from './ids';
 import type { DispatcherUsageKind } from '../../shared/dispatcher-usage';
+import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
 import type { TokenUsage } from '../../shared/chat';
 
 /** Whether recording would do anything; skip measuring when it wouldn't. */
@@ -289,4 +290,26 @@ export async function readDispatcherControls(limit: number, knownIds: Iterable<s
       ...(typeof detail.code === 'string' && { code: detail.code }),
     };
   });
+}
+
+// Federation records bounded state codes only, with no correlation identities.
+export function recordFederatedRequest(request: Pick<FederatedRequest, 'delivery' | 'outcome' | 'triage'>, event: 'crossing' | 'duplicate' | 'triage'): void {
+  try {
+    if (!isTelemetryActive()) return;
+    tel.event('clubhouse.dispatcher.federation', [ATTR.federationDelivery(request.delivery), ATTR.federationOutcome(request.outcome), ATTR.federationEvent(event), ATTR.federationTriage(request.triage ?? 'pending')]);
+  } catch { /* telemetry-exempt: telemetry cannot change remote work or approval */ }
+}
+
+export function recordFederationLimit(): void {
+  try {
+    if (!isTelemetryActive()) return;
+    tel.event('clubhouse.dispatcher.federation', [ATTR.federationEvent('limit')]);
+  } catch { /* telemetry-exempt: telemetry cannot change limit enforcement */ }
+}
+
+export function recordFederationLink(state: 'active' | 'paused' | 'tripped' | 'unavailable' | 'removed'): void {
+  try {
+    if (!isTelemetryActive()) return;
+    tel.event('clubhouse.dispatcher.federation_link', [ATTR.federationLinkState(state)]);
+  } catch { /* telemetry-exempt: telemetry cannot change membership or links */ }
 }

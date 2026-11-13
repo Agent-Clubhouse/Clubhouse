@@ -6,6 +6,9 @@ import { captureEvents, type EventCapture } from './__test-utils__/event-capture
 import {
   dispatcherTelemetryActive,
   recordDispatcherControl,
+  recordFederatedRequest,
+  recordFederationLink,
+  recordFederationLimit,
   recordDispatcherTurn,
   recordMemoryHealth,
   recordMemoryUpkeep,
@@ -210,5 +213,40 @@ describe('the Dispatcher events are registered and documented', () => {
         expect(line.includes(`\`${short}\``) || line.includes(suffix), `${event.name}: ${key}`).toBe(true);
       }
     }
+  });
+});
+
+
+describe('federation telemetry (#3350)', () => {
+  const request = { originRequestId: 'private-request-id', origin: { machineId: 'private-origin', agentId: 'private-agent', machineName: 'Private machine', agentName: 'Private name' },
+    machineId: 'private-target', targetId: 'private-controller', delivery: 'accepted' as const, outcome: 'under_way' as const, triage: 'now' as const,
+    text: 'Private task content', reason: 'Private report content' };
+  it('does nothing while off and tolerates a failed measurement', () => {
+    recordFederatedRequest(request, 'crossing'); recordFederationLink('active'); recordFederationLimit();
+    capture = captureEvents(); expect(capture.events).toEqual([]);
+    expect(() => recordFederatedRequest(null as unknown as typeof request, 'crossing')).not.toThrow();
+  });
+  it('records every delivery and triage state and a limit trip with no identifiers', () => {
+    capture = captureEvents();
+    for (const delivery of ['accepted', 'delivered', 'refused', 'expired'] as const) recordFederatedRequest({ ...request, delivery }, 'crossing');
+    for (const triage of ['now', 'check_in', 'needs_user', 'decline', 'pending'] as const) recordFederatedRequest({ ...request, triage }, 'triage');
+    for (const outcome of ['under_way', 'waiting_user', 'answered', 'declined', 'failed'] as const) recordFederatedRequest({ ...request, outcome }, 'crossing');
+    recordFederationLimit();
+    expect(capture.named('clubhouse.dispatcher.federation').map((e) => e.attrs['clubhouse.federation.delivery']).slice(0, 4)).toEqual(['accepted', 'delivered', 'refused', 'expired']);
+    expect(capture.named('clubhouse.dispatcher.federation').slice(4, 9).map((e) => e.attrs['clubhouse.federation.triage'])).toEqual(['now', 'check_in', 'needs_user', 'decline', 'pending']);
+    expect(capture.named('clubhouse.dispatcher.federation').slice(9, 14).map((e) => e.attrs['clubhouse.federation.outcome'])).toEqual(['under_way', 'waiting_user', 'answered', 'declined', 'failed']);
+    expect(capture.events.at(-1)?.attrs).toEqual({ 'clubhouse.federation.event': 'limit' });
+    const allowed = ['clubhouse.federation.delivery', 'clubhouse.federation.outcome', 'clubhouse.federation.event', 'clubhouse.federation.triage'];
+    for (const event of capture.events) for (const key of Object.keys(event.attrs)) expect(allowed).toContain(key);
+    const serialized = JSON.stringify(capture.events);
+    for (const privateValue of ['private-request-id', 'private-origin', 'private-agent', 'private-target', 'private-controller', 'Private machine', 'Private name', 'Private task content', 'Private report content']) expect(serialized).not.toContain(privateValue);
+    for (const event of capture.events) for (const key of Object.keys(event.attrs)) expect(getAttributeSpec(key)?.kind).toBe('enum');
+  });
+  it('records link admission, offline pause, resume, unavailable and removal without labels', () => {
+    capture = captureEvents();
+    for (const state of ['active', 'paused', 'active', 'tripped', 'unavailable', 'removed'] as const) recordFederationLink(state);
+    expect(capture.named('clubhouse.dispatcher.federation_link').map((e) => e.attrs['clubhouse.federation.link_state'])).toEqual(['active', 'paused', 'active', 'tripped', 'unavailable', 'removed']);
+    for (const event of capture.events) expect(Object.keys(event.attrs)).toEqual(['clubhouse.federation.link_state']);
+    expect(EVENTS['clubhouse.dispatcher.federation_link'].level).toBe('standard');
   });
 });

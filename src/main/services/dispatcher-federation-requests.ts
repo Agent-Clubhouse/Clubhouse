@@ -84,6 +84,7 @@ export interface FederationRequestDependencies {
   settleLocal?(request: FederatedRequest): void;
   present(request: FederatedRequest, kind: 'triage' | 'needs_user' | 'reply' | 'failure' | 'pause'): Promise<void>;
   fault?(): void;
+  recordLimit(): void;
   record(request: FederatedRequest, event: 'crossing' | 'duplicate' | 'triage'): void;
 }
 const terminal = (o: FederationOutcome) => ['answered', 'declined', 'failed'].includes(o);
@@ -166,6 +167,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       const previous = file.pauseNotices?.[r.machineId];
       if (!previous || deliveryHash(previous.request.epoch) !== deliveryHash(r.epoch)) (file.pauseNotices ??= {})[r.machineId] = { request: { ...r, reason }, localShown: false, peerSent: !informPeer };
     }, () => current(r));
+    d.recordLimit();
     await finishPause(r.machineId);
   }
   async function admit(r: FederatedRequest) {
@@ -263,7 +265,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         if (reason) { file.paused[machine] = reason; (file.pauseEpochs ??= {})[machine] = d.epoch(machine); }
         else file.crossings[machine] = [...recent, d.now()];
       });
-      if (reason) { if (parent) await pause({ ...parent, reason }, reason); throw new Error(reason); }
+      if (reason) { if (parent) await pause({ ...parent, reason }, reason); else d.recordLimit(); throw new Error(reason); }
     },
     async duplicate(machine: string, agent: string, args: Record<string, unknown>) {
       const envelope = parseFederationEnvelope(args.envelope);

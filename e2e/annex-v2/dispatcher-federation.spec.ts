@@ -8,6 +8,7 @@ import { buildChatScript, writeChatScript } from '../../src/main/orchestrators/a
 import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { launchApp, type LaunchedApp } from '../launch';
 import { createDisposableProfile, type DisposableProfile } from '../app-profile';
+import { connectMcp } from '../mcp-agent';
 import { addProject, createDurableAgent } from '../smoke-helpers';
 import { enableAnnexViaPreload } from './helpers';
 
@@ -104,24 +105,8 @@ test('membership creates two-way controller links and presence, pauses offline, 
 
 
 async function mcp(env: Record<string, string | null>) {
-  const url = `http://127.0.0.1:${env.CLUBHOUSE_MCP_PORT}/mcp/${env.CLUBHOUSE_AGENT_ID}`;
-  let session: string | null = null; let id = 0;
-  const rpc = async (method: string, params: Record<string, unknown> = {}) => {
-    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Clubhouse-Nonce': env.CLUBHOUSE_HOOK_NONCE ?? '', ...(session && { 'Mcp-Session-Id': session }) }, body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }) });
-    session = response.headers.get('mcp-session-id') ?? session;
-    const body = await response.json();
-    if (body.error) throw new Error(JSON.stringify(body.error));
-    return body.result;
-  };
-  await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'federation-fixture', version: '1' } });
-  return {
-    names: async (): Promise<string[]> => (await rpc('tools/list')).tools.map((t: { name: string }) => t.name),
-    call: async (name: string, args: Record<string, unknown> = {}) => {
-      const result = await rpc('tools/call', { name, arguments: args });
-      const text = result.content.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('\n');
-      return { isError: !!result.isError, text };
-    },
-  };
+  const client = await connectMcp(env);
+  return { names: () => client.toolNames(), call: (name: string, args: Record<string, unknown> = {}) => client.callText(name, args) };
 }
 /** A report belongs to this agent, and the current bridge must accept a real handshake. */
 async function readyMcp(cli: FakeClis, agentId: string, timeout = 45_000, previousPid?: number) {
@@ -179,6 +164,12 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   test.setTimeout(300_000);
   const { here, a, b, ...network } = await requestNetwork();
   let there = network.there;
+  const fromLaptop = await offerRemote(b.controller, b.localId, 'Request in the other direction.');
+  expect(fromLaptop.isError).toBe(false);
+  const reverse = JSON.parse(fromLaptop.text).request;
+  await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === reverse.id)?.origin.machineName, { timeout: 30_000 }).toBe('Laptop');
+  expect((await a.controller.call('triage_remote_request', { id: reverse.id, choice: 'decline', reason: 'Explicit reverse-direction fixture result.' })).isError).toBe(false);
+  await expect.poll(async () => (await remoteRequests(b.controller)).find((r) => r.id === reverse.id)?.outcome, { timeout: 30_000 }).toBe('declined');
   for (const choice of ['now', 'check_in', 'needs_user', 'decline'] as const) {
     const local = await a.chat.call('start_work', { request: `Remote triage fixture ${choice}` });
     const id = /Request (\S+) is under way/.exec(local.text)![1];
