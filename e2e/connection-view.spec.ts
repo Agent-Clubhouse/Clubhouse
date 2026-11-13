@@ -155,7 +155,7 @@ test('the Connections card creates and restores a two-way connection', async () 
   await openConnections();
   await app.window.getByRole('button', { name: 'Add connection' }).click();
   const picker = app.window.getByTestId('connection-picker');
-  await picker.getByRole('button', { name: /partner/ }).click();
+  await picker.getByRole('button', { name: /^partner\b/ }).click();
   await picker.getByRole('button', { name: 'Add connection', exact: true }).click();
   await expect.poll(async () => (await savedDirections()).filter((d) => [CONDUCTOR, PARTNER].includes(d.from.agentId) && [CONDUCTOR, PARTNER].includes(d.to.agentId)).length).toBe(2);
   await app.window.getByRole('button', { name: 'Close' }).last().click();
