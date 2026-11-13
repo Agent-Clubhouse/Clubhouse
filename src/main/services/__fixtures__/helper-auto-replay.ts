@@ -10,7 +10,7 @@
 import { QUOTA_LOW_PERCENT, QUOTA_NEAR_LIMIT_PERCENT, type QuotaState, type QuotaUnknownReason, type QuotaView } from '../../../shared/helper-routing';
 import type { DecisionQuota } from '../../../shared/telemetry/helper-usage-contract';
 import { AUTO_WEEK_MS, decideAutoProvider, type AutoCandidate, type AutoDecision, type AutoPolicyOptions } from '../helper-auto-policy';
-import { observeHelperBurn, predictHelperBurn, type ForecastEntry } from '../helper-auto-forecast';
+import { observeHelperBurn, predictHelperBurn, summarizeHelperBurn, type BurnCalibration, type ForecastEntry } from '../helper-auto-forecast';
 
 export const HOUR = 60 * 60_000;
 export const DAY = 24 * HOUR;
@@ -161,14 +161,7 @@ export type ForecastReplayEvent =
   | { atMs: number; type: 'decision'; entry: ForecastEntry; baseline?: DecisionQuota }
   | { atMs: number; type: 'quota'; provider: string; quota: QuotaView };
 
-export interface ForecastCalibration {
-  decisions: number;
-  unknown: number;
-  evaluated: number;
-  excluded: number;
-  maeBp?: number;
-  biasBp?: number;
-}
+export type ForecastCalibration = BurnCalibration;
 
 /** Availability time, not quota timestamp, orders events: a delayed read cannot train an earlier decision. */
 export function runForecastReplay(events: readonly ForecastReplayEvent[]): {
@@ -184,28 +177,17 @@ export function runForecastReplay(events: readonly ForecastReplayEvent[]): {
     } else {
       for (const e of entries) {
         if (e.provider !== event.provider) continue;
-        const observation = observeHelperBurn(e, entries, event.quota);
+        const observation = observeHelperBurn(e, entries, event.quota, event.atMs);
         if (observation) e.burnObservation = observation;
       }
     }
   }
-  const errors = new Map<string, number[]>();
   const calibration: Record<string, ForecastCalibration> = {};
+  const now = Math.max(...events.map((event) => event.atMs));
   for (const e of entries) {
     for (const window of ['weekly', 'fiveHour'] as const) {
       const key = `${e.forecast!.key ?? 'unknown_identity'}:${window}`;
-      const c = calibration[key] ??= { decisions: 0, unknown: 0, evaluated: 0, excluded: 0 };
-      c.decisions++;
-      if (e.forecast![window].expectedBp === undefined) c.unknown++;
-      if (e.burnObservation && e.burnObservation.reason !== 'observed') c.excluded++;
-      const error = e.burnObservation?.[window]?.errorBp;
-      if (error === undefined) continue;
-      c.evaluated++;
-      const values = errors.get(key) ?? [];
-      values.push(error);
-      errors.set(key, values);
-      c.maeBp = values.reduce((sum, n) => sum + Math.abs(n), 0) / values.length;
-      c.biasBp = values.reduce((sum, n) => sum + n, 0) / values.length;
+      calibration[key] ??= summarizeHelperBurn(entries, e.forecast!.key, window, now);
     }
   }
   return { entries, calibration };
@@ -222,6 +204,7 @@ export function forecastReplayFixture(start: number, burns: readonly number[], i
     const e: ForecastEntry = {
       decisionId: `forecast-${identity.provider ?? 'claude-code'}-${atMs}`, decidedAtMs: atMs,
       provider: 'claude-code', model: 'opus', effort: 'high', difficulty: 'hard', mappingRevision: 'r1.0',
+      calibration: { revision: '11111111-1111-4111-8111-111111111111', model: 'claude-opus-5-5' },
       spawn: 'started', ...identity,
       forecastRun: { startedMs: atMs, endedMs: atMs + HOUR / 2, usageSamples: 1, usable: true },
     };

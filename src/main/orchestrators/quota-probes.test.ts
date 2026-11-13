@@ -33,6 +33,7 @@ const CODEX_SNAPSHOT = {
 
 describe('Claude get_usage', () => {
   it('the SDK still types the fields read, so a removal fails the typecheck', () => {
+    expectTypeOf<SDKControlGetUsageResponse['subscription_type']>().toEqualTypeOf<string | null>();
     expectTypeOf<SDKControlGetUsageResponse['rate_limits_available']>().toEqualTypeOf<boolean>();
     type Limits = NonNullable<SDKControlGetUsageResponse['rate_limits']>;
     expectTypeOf<NonNullable<Limits['seven_day']>['utilization']>().toEqualTypeOf<number | null>();
@@ -42,7 +43,7 @@ describe('Claude get_usage', () => {
   });
 
   it('reads only the limits it knows, by name', () => {
-    expect(parseClaudeUsage(CLAUDE_REPLY, AS_OF)).toEqual({ kind: 'windows', windows: [
+    expect(parseClaudeUsage(CLAUDE_REPLY, AS_OF)).toEqual({ kind: 'windows', calibrationPlan: 'max', windows: [
       { name: 'week', usedPercent: 41, resetsAt: Date.parse(RESET), asOf: AS_OF },
       { name: 'week_sonnet', asOf: AS_OF },
       { name: 'week:Fable', usedPercent: 13, resetsAt: Date.parse(RESET), asOf: AS_OF },
@@ -51,7 +52,7 @@ describe('Claude get_usage', () => {
 
   it('keeps nothing else from the reply', () => {
     const text = JSON.stringify(parseClaudeUsage(CLAUDE_REPLY, AS_OF));
-    for (const word of ['max', 'cost', 'USD', 'spend', 'credits', 'future']) expect(text).not.toContain(word);
+    for (const word of ['cost', 'USD', 'spend', 'credits', 'future']) expect(text).not.toContain(word);
   });
 
   it('a login with no plan limits is not applicable, not a failure', () => {
@@ -87,7 +88,7 @@ describe('Codex account/rateLimits/read', () => {
   });
 
   it('names a window by its duration, not its position', () => {
-    expect(parseCodexRateLimits(CODEX_SNAPSHOT, AS_OF)).toEqual({ kind: 'windows', windows: [
+    expect(parseCodexRateLimits(CODEX_SNAPSHOT, AS_OF)).toEqual({ kind: 'windows', calibrationPlan: 'pro', windows: [
       { name: 'week', usedPercent: 41, resetsAt: 1_800_400_000_000, asOf: AS_OF },
       { name: '5h', usedPercent: 12, resetsAt: 1_800_010_000_000, asOf: AS_OF },
     ] });
@@ -96,7 +97,7 @@ describe('Codex account/rateLimits/read', () => {
   });
 
   it('keeps nothing else from the snapshot', () => {
-    expect(JSON.stringify(parseCodexRateLimits(CODEX_SNAPSHOT, AS_OF))).not.toContain('pro');
+    expect(parseCodexRateLimits({ ...CODEX_SNAPSHOT, planType: 'secret-unrecognized-plan' }, AS_OF)).not.toHaveProperty('calibrationPlan');
   });
 
   it('a limit the provider says is reached goes on the fullest window; used percent alone never sets it', () => {

@@ -26,7 +26,7 @@ vi.mock('../telemetry/feature-events', () => ({
 }));
 
 import {
-  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, QUOTA_FORCED_READ_BUDGET_MS, _resetProviderQuotaForTesting, classifyStartFailure, forceProviderQuota, isProviderCoolingDown, isProviderCoolingDownNow, noteProviderFailure, peekProviderQuota, providerStartWarning, readProviderQuota, watchSessionQuota,
+  QUOTA_CACHE_MS, QUOTA_FAILURE_BACKOFF_MS, QUOTA_FORCED_READ_BUDGET_MS, _resetProviderQuotaForTesting, classifyStartFailure, forceProviderQuota, isProviderCoolingDown, isProviderCoolingDownNow, noteProviderFailure, peekProviderQuota, peekQuotaCalibrationPlan, providerStartWarning, readProviderQuota, watchSessionQuota,
 } from './provider-quota';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { QUOTA_STALE_MS } from '../../shared/helper-routing';
@@ -49,6 +49,26 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('readProviderQuota', () => {
+  it('keeps bounded plan classes local and starts a new cohort on every plan transition, including changing back', async () => {
+    let plan = 'pro';
+    W.read = async () => ({ ...reading(10), calibrationPlan: plan });
+    await readProviderQuota('claude-code');
+    const first = peekQuotaCalibrationPlan('claude-code')!;
+    expect(first.plan).toBe('pro');
+    expect(first.generation).toMatch(/^[a-f0-9-]{36}$/);
+    expect(peekProviderQuota('claude-code')).not.toHaveProperty('calibrationPlan');
+    await forceProviderQuota('claude-code');
+    expect(peekQuotaCalibrationPlan('claude-code')).toEqual(first);
+    plan = 'plus'; await forceProviderQuota('claude-code');
+    expect(peekQuotaCalibrationPlan('claude-code')?.generation).not.toBe(first.generation);
+    plan = 'pro'; await forceProviderQuota('claude-code');
+    expect(peekQuotaCalibrationPlan('claude-code')?.generation).not.toBe(first.generation);
+    expect(peekQuotaCalibrationPlan('claude-code', NOW + QUOTA_STALE_MS + 1)).toBeUndefined();
+    W.read = async () => { throw new Error('offline'); };
+    await forceProviderQuota('claude-code');
+    expect(peekQuotaCalibrationPlan('claude-code')).toBeUndefined();
+  });
+
   it('a provider that can\'t report is not_supported, and nothing is read', async () => {
     expect(await readProviderQuota('copilot-cli')).toEqual({ state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null });
     expect(await readProviderQuota('nobody')).toMatchObject({ unknownReason: 'not_supported' });
@@ -184,6 +204,7 @@ describe('forceProviderQuota (#2786)', () => {
     await Promise.all([plain, ...forced]);
     expect(read).toHaveBeenCalledTimes(1);
   });
+
 
   it('a provider that can\'t report is not_supported, and nothing is read', async () => {
     expect(await forceProviderQuota('copilot-cli')).toMatchObject({ outcome: 'not_supported', quota: { unknownReason: 'not_supported' } });

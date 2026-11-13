@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+import type { QuotaCalibrationPlan, QuotaCalibrationIdentity } from '../../shared/helper-burn-pressure';
 /**
  * What each CLI says about its plan limits (#2671, docs/helper-auto-routing.md).
  * Read-only: a token-free handshake and one question, never a prompt, and only
@@ -53,6 +55,8 @@ interface Cooldown {
 }
 
 interface QuotaEntry {
+  calibrationPlan?: QuotaCalibrationPlan;
+  calibrationGeneration?: string;
   windows: QuotaWindow[];
   /** The CLI says this login has no plan limits. */
   notApplicable?: boolean;
@@ -93,6 +97,9 @@ function startRead(providerId: string, entry: QuotaEntry): Promise<SettledRead> 
       entry.source = 'cli_query';
       entry.notApplicable = reading.kind === 'not_applicable';
       entry.windows = reading.kind === 'windows' ? reading.windows : [];
+      const plan = reading.kind === 'windows' ? reading.calibrationPlan : undefined;
+      if (plan !== entry.calibrationPlan || !entry.calibrationGeneration) entry.calibrationGeneration = plan ? randomUUID() : undefined;
+      entry.calibrationPlan = plan;
       const view = viewOf(entry, now);
       helperQuotaRead(providerId, view.state, true);
       recordQuotaSample(providerId, view);
@@ -107,6 +114,14 @@ function startRead(providerId: string, entry: QuotaEntry): Promise<SettledRead> 
     })
     .finally(() => { entry.inFlight = undefined; });
   return entry.inFlight;
+}
+
+/** Local-only plan evidence from an already-performed authoritative quota read. Never probes. */
+export function peekQuotaCalibrationPlan(provider: string, now = Date.now()): QuotaCalibrationIdentity | undefined {
+  const entry = entries.get(provider);
+  return entry?.readAt !== undefined && entry.failedAt === undefined && now >= entry.readAt && now - entry.readAt <= QUOTA_STALE_MS
+    && entry.calibrationPlan && entry.calibrationGeneration
+    ? { plan: entry.calibrationPlan, generation: entry.calibrationGeneration } : undefined;
 }
 
 function viewOf(entry: QuotaEntry, now: number, model?: string): QuotaView {

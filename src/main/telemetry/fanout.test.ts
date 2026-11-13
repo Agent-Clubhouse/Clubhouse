@@ -13,6 +13,8 @@ import { createScrubber } from './scrubber';
 import type { SdkDestination } from './destinations/types';
 import { createOtlpExporters } from './destinations/otlp';
 import type { TelemetryRuntime } from './types';
+import { abortPending, beginPending, setLocalSink, setRuntime, tel } from './facade';
+import { passThroughSink } from './__test-utils__/producing-runtime';
 
 const salt = Buffer.alloc(32, 9);
 
@@ -32,6 +34,9 @@ function dest(id: string, kind: string, s: Sink, level: TelemetryLevel, preset: 
 
 let rt: TelemetryRuntime | null = null;
 afterEach(async () => {
+  setRuntime(null);
+  setLocalSink(null);
+  abortPending();
   await rt?.shutdown(1000);
   rt = null;
 });
@@ -71,6 +76,39 @@ const metricNames = (s: Sink) => [
 ].sort();
 
 describe('multi-destination fan-out', () => {
+  it('keeps new forecast identities, empirical bands and error reports local across buffered/live paths and destination filters', async () => {
+    const azure = sink(), otlp = sink(), activity = sink();
+    const recorded: string[] = [];
+    setLocalSink({ ...passThroughSink('standard'), event: (name) => recorded.push(name) });
+    const attrs = [
+      ATTR.helperCalibrationRevisionHash('private-cell-generation'),
+      ATTR.helperCalibrationModelHash('private-canonical-model'),
+      ATTR.helperCalibrationIdentityReason('cached_catalog'),
+      ATTR.helperForecastIntervalMethod('weighted_empirical'),
+      ATTR.helperForecastNominalCoverageBp(8000),
+      ATTR.helperForecastWeeklyLowerBp(100),
+      ATTR.helperForecastWeeklyUpperBp(300),
+      ATTR.helperForecastWeeklyMaeBp(25),
+      ATTR.helperForecastQualification('shadow_proxy_only'),
+    ];
+    beginPending();
+    tel.event('clubhouse.helper.forecast', attrs, { localOnly: true });
+    const r = start([
+      dest('azure', 'azure', azure, 'standard'),
+      dest('otlp', 'otlp', otlp, 'detailed'),
+      dest('activity', 'otlp', activity, 'detailed', 'user_activity'),
+    ]);
+    setRuntime(r);
+    tel.event('clubhouse.helper.forecast', attrs, { localOnly: true });
+    tel.event('clubhouse.ui.feature_used');
+    await r.forceFlush(1000);
+    expect(recorded).toEqual(['clubhouse.helper.forecast', 'clubhouse.helper.forecast', 'clubhouse.ui.feature_used']);
+    for (const destination of [azure, otlp, activity]) {
+      expect(eventNames(destination)).toEqual(['clubhouse.ui.feature_used']);
+      expect(JSON.stringify(destination.logs.getFinishedLogRecords())).not.toContain('private-');
+    }
+  });
+
   it('sends a span to the destination whose filter takes it and not to the other', async () => {
     const a = sink();
     const b = sink();

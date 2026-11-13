@@ -27,6 +27,7 @@ import { probeClaudeModels, type ModelProbeContext } from './model-probes';
 import { cliStateDir, homePath, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry, preserveUnchangedSnapshot } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
+import { isClaudeModelAlias } from './claude-model-aliases';
 
 const TOOL_VERBS: Record<string, string> = {
   Bash: 'Running command',
@@ -50,9 +51,6 @@ const MODEL_OPTIONS = [
   { id: 'sonnet', label: 'Sonnet' },
   { id: 'haiku', label: 'Haiku' },
 ];
-
-/** Aliases Claude Code resolves itself, listed by `initialize` or not. */
-const CLAUDE_MODEL_ALIASES = ['default', 'best', 'opus', 'sonnet', 'haiku', 'fable', 'opusplan'];
 
 const DEFAULT_DURABLE_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Read', 'Write', 'Edit', 'Glob', 'Grep'];
@@ -170,7 +168,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
   override acceptsModel(model: string, list: ModelList): boolean {
     const base = model.replace(/\[1m\]$/i, '').toLowerCase();
     if (base === '') return false;
-    if (CLAUDE_MODEL_ALIASES.includes(base)) return true;
+    if (isClaudeModelAlias(model)) return true;
     return list.models.some((m) => m.id.toLowerCase() === base || m.resolvedId?.toLowerCase() === base);
   }
 
