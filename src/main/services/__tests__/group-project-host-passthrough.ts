@@ -33,6 +33,9 @@ export async function passthroughHostModule() {
     _resetForTesting: vi.fn(() => { memberships.clear(); }),
     selfMachine: vi.fn(() => null),
     isThisMachine: vi.fn(() => true),
+    // Everything is on this machine: addresses are bare agent ids (#3363).
+    memberAddress: vi.fn((_project: unknown, agentId: string) => agentId),
+    localAgentId: vi.fn((_project: unknown, address: string) => address),
     list: vi.fn(async () => registry.list()),
     get: vi.fn(async (id: string) => registry.get(id)),
     create: vi.fn(async (name: string, options?: unknown) => {

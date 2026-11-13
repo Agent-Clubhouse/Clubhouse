@@ -336,6 +336,43 @@ describe('exclusions and preview', () => {
   });
 });
 
+describe('a copy of a group project hosted on another machine (#3363)', () => {
+  const SELF = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa';
+  const HOST = 'bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb';
+  const remote = (id: string) => gp(id, { createdAt: '2025-01-01T00:00:00.000Z', host: { machine: HOST } } as Partial<GroupProject>);
+
+  it('binds only this machine\'s agents the record lists, and never auto-joins or tidies from here', async () => {
+    vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+    groupProjectRegistry._setForTesting(remote('gp_remote'));
+    // The host's record: its own agents (bare ids), one of this machine's, and one gone from here.
+    await groupProjectHost.updateMembership('gp_remote', (d) => {
+      d.autoJoin = true;
+      d.explicit.push(
+        { address: 'lead', kind: 'durable', addedAt: 'x' },
+        { address: `dev@${SELF}`, kind: 'durable', addedAt: 'x' },
+        { address: `ghost@${SELF}`, kind: 'helper', addedAt: 'x' },
+      );
+    });
+    await start();
+    // 'lead' here is a different agent from the host's 'lead': not bound; this machine's dev is.
+    expect(membersOf('gp_remote')).toEqual(['dev']);
+    // Nothing removed because this machine doesn't know 'ghost', and no auto-join from local agents.
+    expect((await groupProjectHost.getMembership('gp_remote')).explicit.map((e) => e.address)).toEqual(['lead', `dev@${SELF}`, `ghost@${SELF}`]);
+    vi.restoreAllMocks();
+  });
+
+  it('records an addition from here with this machine\'s address', async () => {
+    vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+    groupProjectRegistry._setForTesting(remote('gp_remote'));
+    await groupProjectHost.updateMembership('gp_remote', (d) => { d.autoJoin = true; });
+    await start();
+    await addMember('gp_remote', 'dev');
+    expect((await groupProjectHost.getMembership('gp_remote')).explicit.map((e) => e.address)).toEqual([`dev@${SELF}`]);
+    expect(membersOf('gp_remote')).toEqual(['dev']);
+    vi.restoreAllMocks();
+  });
+});
+
 describe('bindings follow the record', () => {
   it('after a restart the bindings are exactly the record\'s members', async () => {
     groupProjectRegistry._setForTesting(gp('gp1'));
