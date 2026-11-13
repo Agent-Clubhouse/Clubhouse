@@ -35,6 +35,26 @@ import { removeAgentChatMedia } from './agent-runtime/chat-media-retention';
 import { legacyClubhouseModeEnabled } from './managed-agents/legacy-migration';
 import { trackOperation } from './main-stall-monitor';
 import { dropGrantRequestsFor } from './grant-requests';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+interface DurableCreationGit {
+  assertCurrent(): Promise<void>;
+  run(args: string[], cwd: string, signal?: AbortSignal): Promise<string>;
+  preserveOnFailure: true;
+}
+
+const creationGit = new AsyncLocalStorage<DurableCreationGit>();
+
+/** Main-private import composition: reuse creation, without admitting repository hooks/filters or PATH executables. */
+export function withDurableCreationGit<T>(git: DurableCreationGit, operation: () => Promise<T>): Promise<T> {
+  return creationGit.run(git, operation);
+}
+
+async function creationInsideGitRepo(projectPath: string): Promise<boolean> {
+  const git = creationGit.getStore();
+  if (!git) return isInsideGitRepo(projectPath);
+  return (await git.run(['rev-parse', '--is-inside-work-tree'], projectPath)).trim() === 'true';
+}
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -42,6 +62,8 @@ import { dropGrantRequestsFor } from './grant-requests';
  * can come from another agent (#2221).
  */
 function execGitFileAsync(args: string[], cwd: string, maxBuffer?: number, signal?: AbortSignal): Promise<string> {
+  const git = creationGit.getStore();
+  if (git) return git.run(args, cwd, signal);
   return new Promise((resolve, reject) => {
     execFile('git', args, { cwd, encoding: 'utf-8', maxBuffer, ...(signal ? { signal } : {}) }, (error, stdout) => {
       if (error) reject(error);
@@ -2263,14 +2285,22 @@ export async function beginDurableCreation(
   const parentProject = await foreignParentProject(projectPath, params);
   const parentAgents = parentProject ? await readAgents(parentProject) : undefined;
 
+  await creationGit.getStore()?.assertCurrent();
   await ensureDir(clubhouseDir(projectPath));
   // The Dispatcher's folder is no repo, so it gets no .gitignore (#2535).
-  if (!isDispatcherPath(projectPath)) await ensureGitignore(projectPath);
+  if (!isDispatcherPath(projectPath)) {
+    await creationGit.getStore()?.assertCurrent();
+    await ensureGitignore(projectPath, creationGit.getStore() ? () => {
+      const ignore = fs.lstatSync(path.join(projectPath, '.gitignore'), { throwIfNoEntry: false });
+      if (ignore && (!ignore.isFile() || ignore.isSymbolicLink() || ignore.nlink !== 1 || ignore.size > 1024 * 1024)) throw new Error('Imported ignore file changed; inspect the preserved state before agent creation.');
+    } : undefined);
+  }
 
   // Access (#2761): the caller's level, else the app's Default access.
   const access = accessForNewAgent(params, projectPath);
   const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
   const agents = await readAgents(projectPath);
+  await creationGit.getStore()?.assertCurrent();
 
   // From here until the record is in the cache there is no await, so two
   // creations in this process cannot both claim the same folder or branch.
@@ -2322,6 +2352,7 @@ export async function beginDurableCreation(
       stage: 'config_created',
       owner: { pid: process.pid, instanceId: INSTANCE_ID },
       heartbeatAt: startedAt,
+      ...(creationGit.getStore()?.preserveOnFailure && { preserveOnInterruption: true }),
     },
   };
 
@@ -2548,6 +2579,15 @@ async function runDurableCreation(
     return ready;
   } catch (err) {
     const cancelled = signal.aborted || err instanceof DurableCreationCancelledError;
+    if (creationGit.getStore()?.preserveOnFailure) {
+      const reason = 'Imported agent creation did not finish. Its record, partial worktree and branch are preserved for inspection. Do not repeat creation or delete user-modified content as recovery.';
+      const failed = await mutateAgentRecord(projectPath, id, (agent) => {
+        const { owner: _owner, heartbeatAt: _beat, ...rest } = agent.creation ?? { startedAt: initial.createdAt, state: 'failed' as const };
+        agent.creation = { ...rest, state: 'failed', stage: 'failed', reason, preserveOnInterruption: true };
+      }, { flush: true });
+      emit('failed', failed ?? undefined, reason);
+      throw err;
+    }
     if (plan) {
       await cleanupPartialWorktree(projectPath, { id, wtPath: plan.wtPath, ownsFolder, branch: plan.branch, branchOwned, branchStartSha });
     }
@@ -2651,6 +2691,19 @@ export async function recoverInterruptedCreations(projectPath: string): Promise<
   const recovered: string[] = [];
   for (const agent of stale) {
     const { id, worktreePath, branch } = agent;
+    if (agent.creation?.preserveOnInterruption) {
+      const reason = 'Imported agent creation was interrupted. Its record, worktree and branch are preserved; inspect and reuse them before any explicit recovery. Creation is not automatically replayed.';
+      const updated = await mutateAgentRecord(projectPath, id, (record) => {
+        if (!isInterruptedCreation(record) || !record.creation) return;
+        const { owner: _owner, heartbeatAt: _beat, ...rest } = record.creation;
+        record.creation = { ...rest, state: 'failed', stage: 'failed', reason };
+      }, { flush: true });
+      if (updated?.creation?.state === 'failed') {
+        recovered.push(id);
+        emitCreationEvent(projectPath, id, 'failed', Date.parse(updated.createdAt) || Date.now(), updated, reason);
+      }
+      continue;
+    }
     appLog('core:agent-config', 'warn', 'Cleaning up an agent creation interrupted by a quit', {
       meta: { projectPath, agentId: id, worktreePath, branch },
     });
@@ -2821,7 +2874,7 @@ async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfi
   const worktreePath = agent.worktreePath;
   if (!worktreePath) return;
   const agentId = agent.id;
-  const hasGit = await isInsideGitRepo(projectPath);
+  const hasGit = await creationInsideGitRepo(projectPath);
   if (hasGit) {
     try {
       await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', '--force', '--', worktreePath], projectPath));

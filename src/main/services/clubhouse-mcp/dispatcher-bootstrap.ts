@@ -51,6 +51,7 @@ export async function createDispatcherManagedAgent(
   grant: ToolGrant,
   create: () => Promise<DurableAgentConfig>,
   extra: Record<string, unknown> = {},
+  scoped?: { assertCurrent(): Promise<void>; preserveOnFailure: true },
 ): Promise<McpToolResult> {
   const connect = args.connectToDispatcher === true;
   const approvalArgs = connect ? {
@@ -88,12 +89,15 @@ export async function createDispatcherManagedAgent(
       const check = checkToolGrant(actorId, grant, args, undefined, await resolveArgTargets(actorId, grant, args));
       if (check.ok === false) {
         if (check.reason !== 'ask_first') throw new BootstrapRefused(check.message);
-        const approval = await askFirst(actorId, TOOL, approvalArgs, check.asks);
-        if (approval.kind === 'asked') {
-          audit('refused', undefined, 'awaiting_approval');
-          return json({ status: 'needs_approval', connectedToDispatcher: false, receipt: { id: receiptId, outcome: 'needs_approval' }, note: approval.text }, true);
+        if (!scoped) {
+          const approval = await askFirst(actorId, TOOL, approvalArgs, check.asks);
+          if (approval.kind === 'asked') {
+            audit('refused', undefined, 'awaiting_approval');
+            return json({ status: 'needs_approval', connectedToDispatcher: false, receipt: { id: receiptId, outcome: 'needs_approval' }, note: approval.text }, true);
+          }
         }
       }
+      await scoped?.assertCurrent();
       config = await create();
       if (connect) {
         const created = config;
@@ -109,11 +113,13 @@ export async function createDispatcherManagedAgent(
         };
         assertTarget(config);
         for (const pair of pairs) if (await isTombstoned(pair)) throw new BootstrapRefused('The user removed this connection. It stays removed.');
+        await scoped?.assertCurrent();
         // Save narrow switches before policy can expose the automatic wires.
         // The guard runs under the store lock, and keeps any user-owned entry.
         written = await setConnectionDirections(pairs.map((p) => ({
           from: { agentId: p.agentId }, to: { agentId: p.targetId }, ...NEW_CONNECTION_SWITCHES,
         })), (current) => { assertTarget(created); return current ? false : undefined; });
+        await scoped?.assertCurrent();
         const saved = await setOrchestrationPolicy(project.path, targetId, { connectToDispatcher: true }, {
           surface: 'dispatcher', actorId, precondition: assertTarget, connectionBootstrap: true,
         });
@@ -149,6 +155,13 @@ export async function createDispatcherManagedAgent(
       return result;
     } catch (err) {
       audit(err instanceof BootstrapRefused ? 'refused' : 'error', config?.id, 'bootstrap_failed');
+      if (scoped) return json({
+        ...extra, status: 'partial', agentCreated: config ? true : 'not_confirmed', agentStarted: false,
+        reason: config ? 'agent_connection_failed' : 'agent_creation_failed',
+        connectedToDispatcher: 'not_confirmed',
+        receipt: { id: receiptId, outcome: 'partial', ...(config && { agentId: config.id }) },
+        error: 'The separate imported-agent creation/connection did not fully finish. The project and any agent, worktree, branch or connection switches are preserved for inspection. Do not repeat creation or silently undo user changes; reuse the existing agent and inspect its connection before a separately authorized wake.',
+      }, true);
       if (!connect) throw err;
       const cleanup: unknown[] = [];
       if (config && config.id !== actorId && !config.parentAgentId && !isDisposedAgent(config)) {

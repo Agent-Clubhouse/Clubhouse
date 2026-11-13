@@ -5,50 +5,8 @@ export const IMPORT_EFFECTS = [
   'Do not create, connect, configure or start an agent.',
 ] as const;
 
-export interface ImportInput {
-  url: string;
-  destination: string;
-  branch?: string;
-}
-
-export interface RemoteIdentity {
-  url: string;
-  defaultBranch: string;
-  branch: string;
-  commit: string;
-  headCommit: string;
-}
-
-export interface ImportPlan extends RemoteIdentity {
-  id: string;
-  agentId: string;
-  destination: string;
-  parent: string;
-  parentIdentity: string;
-  createdAt: number;
-  expiresAt: number;
-  effects: readonly string[];
-}
-
-export type ImportPhase = 'reserved' | 'initializing' | 'fetching' | 'checking_out' | 'cloned' | 'registering'
-  | 'completed' | 'partial' | 'cancelled' | 'interrupted' | 'failed';
-
-export interface ImportReceipt {
-  id: string;
-  plan: ImportPlan;
-  phase: ImportPhase;
-  updatedAt: number;
-  /** Filesystem identity of the directory created exclusively for this import. */
-  directoryIdentity?: string;
-  cloneCompleted: boolean;
-  projectId?: string;
-  gitignore?: 'updated' | 'unchanged' | 'failed';
-  reason?: string;
-  failedAt?: ImportPhase;
-  progress?: number;
-  agentCreated: false;
-  agentStarted: false;
-}
+import type { ImportPhase, ImportPlan, ImportReceipt } from '../../../shared/project-import';
+export type { ImportInput, RemoteIdentity, ImportPlan, ImportPhase, ImportReceipt, ImportStatus } from '../../../shared/project-import';
 
 export interface ImportState {
   version: 1;

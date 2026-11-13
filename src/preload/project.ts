@@ -71,5 +71,8 @@ export const project = {
     ipcRenderer.on(IPC.PROJECT.CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.PROJECT.CHANGED, listener); };
   },
+  listImports: () => typedInvoke((channel, ...args) => ipcRenderer.invoke(channel, ...args), IPC.PROJECT.IMPORT_LIST),
+  cancelImport: (importId: string, destination: string) => typedInvoke(
+    (channel, ...args) => ipcRenderer.invoke(channel, ...args), IPC.PROJECT.IMPORT_CANCEL, importId, destination),
   },
 };

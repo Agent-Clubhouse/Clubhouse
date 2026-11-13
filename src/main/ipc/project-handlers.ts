@@ -18,6 +18,7 @@ import type { IpcResponse } from '../../shared/ipc-types';
 import { applyProjectStateChange, hydrateProjectState, onProjectStateChange } from '../services/project-state-store';
 import { parseProjectStateOp } from '../../shared/project-state';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { registerProjectImportHandlers } from './project-import-handlers';
 
 /** How long project list writes are gathered into one renderer event. */
 export const PROJECTS_CHANGE_DEBOUNCE_MS = 150;
@@ -35,6 +36,7 @@ function forwardProjectChanges(): void {
 }
 
 export function registerProjectHandlers(): void {
+  registerProjectImportHandlers();
   // Pins, inactive marks and activity (#2458). Every window, and Annex, hears each change.
   onProjectStateChange((change) => broadcastToAllWindows(IPC.PROJECT.STATE_CHANGED, change));
   forwardProjectChanges();

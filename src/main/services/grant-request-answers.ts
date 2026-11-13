@@ -47,6 +47,7 @@ export async function answerGrantRequest(requestId: string, allow: boolean, upda
     return answerAppUpdateRequest(requestId, allow, updateMode);
   }
   if (updateMode !== undefined) return { ok: false, error: 'This request is not an update approval.' };
+  assertAuthorized?.();
   // Used up before anything is saved, so a second answer, or the expiry, can't land meanwhile.
   const key = grantRequestKey(requestId);
   const request = takeGrantRequest(requestId, allow);

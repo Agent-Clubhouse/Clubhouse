@@ -645,6 +645,8 @@ export interface DurableAgentCreation {
   owner?: { pid: number; instanceId: string };
   /** Refreshed while the creation runs; a creation whose owner stopped beating is treated as interrupted. */
   heartbeatAt?: string;
+  /** Imported-agent creation preserves partial/user-modified state on failure and restart. */
+  preserveOnInterruption?: true;
 }
 
 /**

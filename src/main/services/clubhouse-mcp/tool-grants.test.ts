@@ -216,6 +216,10 @@ describe('tool grant declarations (#2967)', () => {
       remove_device: device.manage on app
       start_adding_device: device.manage on app
       add_project: project.add on project_arg
+      preview_repository_import: project.add on project_arg
+      import_repository: project.add on project_arg
+      get_repository_import: project.read on all_projects
+      cancel_repository_import: project.add on project_arg
       request_app_update: app.update on app
       get_delivery: agent.read on self
       get_annex_network_settings: settings.app.read on app

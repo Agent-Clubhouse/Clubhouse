@@ -20,15 +20,22 @@ import * as projectStore from '../../project-store';
 import * as agentConfig from '../../agent-config';
 import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
 import { activationFor, managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
-import { applyManagedSettings, createManagedAgent } from '../../managed-agents/agents';
+import { applyManagedSettings, createManagedAgent, prepareManagedAgentCreation } from '../../managed-agents/agents';
 import { previewManagedSetup } from '../../managed-agents/delivery';
 import { discoverManagedAssets } from '../../managed-agents/discovery';
 import { prepareManagedAssetImport, type ManagedAssetImportRequest } from '../../managed-agents/imports';
 import { checkTemplateSettings, ManagedError, ManagedPartCreationError } from '../../managed-agents/service';
 import { withAgentActivity } from '../../agent-transition';
 import { resolveOrchestrator } from '../../agent-system';
-import { getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
-import { callerAccess, withAccess, type AccessLevel } from '../../../../shared/agent-access';
+import { accessForNewAgent, getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
+import { callerAccess, legacyFreeAgentMode, withAccess, type AccessLevel } from '../../../../shared/agent-access';
+import { resolveOrchestrationPolicy } from '../../../../shared/orchestration-policy';
+import type { ImportedAgentReview } from '../../../../shared/project-import';
+import { projectImportService } from '../../project-import/service';
+import { approveImportCall } from '../../project-import/approval';
+import { ImportError } from '../../project-import/types';
+import { callKey } from '../../grant-requests';
+import { withDurableCreationGit } from '../../agent-config';
 import { accessCeilingRefusal } from '../access-ceiling';
 import { isDispatcherAgent } from '../dispatcher-gate';
 import { isCrossProjectEnabled } from '../orchestration-gate';
@@ -223,7 +230,16 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
     } catch (err) {
       // telemetry-exempt: the error reaches the Dispatcher as the tool result
       if (err instanceof ArgError) return fail(err.message);
+      if (err instanceof ImportError) return { ...json({ status: 'refused', reason: err.reason, message: err.message }), isError: true };
       if (err instanceof ManagedPartCreationError) return { ...json({ status: 'partial', receipt: err.receipt, message: err.message, assigned: false, providerLoaded: 'not_confirmed' }), isError: true };
+      if (name === 'create_managed_agent' && args.importId !== undefined) {
+        const reason = err instanceof ManagedError ? err.code : 'operation_failed';
+        appLog('core:mcp', 'warn', 'Imported-agent choices could not be validated', { meta: { callerId, reason } });
+        return { ...json({
+          status: 'refused', operation: 'agent_choices', reason,
+          message: 'The separate imported-agent choices could not be validated. Check import status and template, CLI/model availability and access outside agent messages. Existing project/agent files are preserved; no creation or start is silently retried.',
+        }), isError: true };
+      }
       if (err instanceof ManagedError) return fail(`${err.code}: ${err.message}`);
       appLog('core:mcp', 'warn', `${name} failed`, { meta: { callerId, error: err instanceof Error ? err.message : String(err) } });
       return fail(err instanceof Error ? err.message : String(err));
@@ -640,7 +656,7 @@ export function registerManagedTools(): void {
   describeCallsForAsk('create_managed_agent', (args) => `Create ${String(args.name)} in ${String(args.project)}.${args.connectToDispatcher === true ? ' Connect only that new agent to the Dispatcher controller in both directions. Each direction can read, message and wake, with clear and compact off. Existing user switches stay as they are.' : ''}`);
   tool('create_managed_agent', CREATE_GRANTS.map((g) => ({ ...g, askHandledByTool: true })),
     'Create a durable agent, asleep. connectToDispatcher: true asks for the separate connection.bootstrap permission on only this new agent, Ask first by default. Once connected, its generated wake_agent and send_message tools become available. Without it, ask the user to enable Connect to Dispatcher; an unconnected agent cannot be woken or messaged here. Both connection directions start with read, message and wake on, clear and compact off. Retrying the same connected creation in this app session returns its receipt, not another agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). Explicit settings override the template field by field; omitted settings inherit it. The CLI is settings.orchestrator and its model is settings.model, not top-level arguments or settings.provider. With no CLI in either, the project CLI then the app default applies. managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts. settings.orchestration.connectToDispatcher is not accepted.',
-    { project: PROJECT, name: S, color: S, connectToDispatcher: { type: 'boolean', description: 'Connect only the agent created by this call, with separate approval. Default false.' }, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: {
+    { project: PROJECT, importId: { type: 'string', description: 'For an imported project, its owned import receipt id. Mandatory exact effective-choice human review; persistent no-duplicate creation/recovery link. Omit for unrelated projects.' }, name: S, color: S, connectToDispatcher: { type: 'boolean', description: 'Connect only the agent created by this call, with separate approval. Default false.' }, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: {
       type: 'object',
       description: 'Explicit settings override the template field by field. Confirm the CLI, model, access and orchestration with the user before creation.',
       properties: {
@@ -663,8 +679,16 @@ export function registerManagedTools(): void {
       // Validate without normalizing: callerAccess must still resolve legacy access against the template.
       checkTemplateSettings(settings);
       const project = await resolveProject(requireString(args, 'project'));
+      const importId = optionalString(args, 'importId');
+      const ownedImport = await projectImportService.importForProject(callerId, project);
+      if (ownedImport && importId !== ownedImport) throw new ImportError('import_receipt_required', 'This imported project requires its exact owned importId for safe agent choices and retry recovery. Reuse the existing outcome; additional agents can be created explicitly in the app.');
+      if (importId) {
+        const imported = await projectImportService.projectForAgent(callerId, importId);
+        if (imported.id !== project.id || imported.path !== project.path) throw new ImportError('project_changed', 'Use the real project registered by your import receipt. No agent was created.');
+      }
       const hasSetup = ['blocks', 'skills', 'mcps'].some((k) => args[k] !== undefined);
       const plain = optionalBoolean(args, 'managed') === false;
+      if (importId && plain) throw new ArgError('Imported-agent creation uses the managed builder so repository setup is not adopted. Choose a managed template or build from scratch.');
       if (plain && (hasSetup || args.templateId !== undefined)) throw new ArgError('A plain agent has no template or parts. Leave out templateId, blocks, skills and mcps, or leave out managed: false.');
       const input = {
         name: requireString(args, 'name'),
@@ -697,6 +721,62 @@ export function registerManagedTools(): void {
       input.settings = { ...input.settings, orchestration: { ...input.settings?.orchestration, connectToDispatcher: false } };
       // A plain agent made here gets none of the project's legacy defaults (#3245): say so.
       const legacy = plain ? await legacyDefaultsNotCopied(project.path) : undefined;
+      if (importId) {
+        const creationCall = callKey(callerId, 'create_managed_agent', { ...args, project: project.path }).split('\0');
+        const creationKey = creationCall[creationCall.length - 1];
+        const existing = await projectImportService.agentCreationFor(callerId, importId, creationKey, agentConfig.listDurable);
+        if (existing) return json({
+          status: 'already_created', importId, projectId: project.id, id: existing.id, name: existing.name,
+          agentCreated: true, agentStarted: false,
+          message: 'This import already created its agent. Reuse this id; no agent or connection was recreated. Starting it is a separate requested and authorized wake.',
+        });
+        const prepare = async () => {
+          const prepared = await prepareManagedAgentCreation(project.path, input, checkAccess);
+          const access = accessForNewAgent(prepared.settings, project.path);
+          const { sources: _sources, ...orchestration } = resolveOrchestrationPolicy(prepared.settings.orchestration);
+          prepared.settings = {
+            ...prepared.settings, access, freeAgentMode: legacyFreeAgentMode(access),
+            model: prepared.settings.model ?? 'default', orchestration: { ...orchestration, connectToDispatcher: false },
+          };
+          const template = input.templateId ? await svc().getTemplate(input.templateId) : undefined;
+          const review: ImportedAgentReview = {
+            importId, projectId: project.id, projectPath: project.path, name: input.name,
+            ...(template && { templateId: template.id, templateName: template.name }),
+            settings: prepared.settings, setup: prepared.setup, connectToDispatcher: args.connectToDispatcher === true,
+            effects: [
+              'Create one managed durable agent in its own new worktree using the existing builder. Preserve existing agents and files.',
+              'Save only the reviewed template/parts and effective settings. Do not execute repository hooks, filters, setup, install scripts or agent/provider code.',
+              'Leave the agent asleep. No prompt is sent; first start and managed runtime delivery require a separate requested and authorized wake.',
+              args.connectToDispatcher === true
+                ? 'Separately authorize connection.bootstrap for only this newly created agent. Both directions read, message and wake; clear and compact stay off.'
+                : 'Do not connect the agent to the Dispatcher.',
+            ],
+          };
+          return { prepared, review, template };
+        };
+        const original = await prepare();
+        const { prepared, review } = original;
+        const assertFilesystem = await projectImportService.agentFilesystemGuard(callerId, importId);
+        const approvalArgs = { ...args, project: project.path, review, template: original.template };
+        const approval = await approveImportCall(callerId, 'create_managed_agent', approvalArgs, CREATE_GRANTS, { agentReview: review });
+        if (approval.kind === 'asked') return json({ status: 'needs_approval', importId, projectId: project.id, agentCreated: false, agentStarted: false, message: approval.text });
+        const assertCurrent = async () => {
+          const current = await prepare();
+          if (JSON.stringify(current) !== JSON.stringify(original)) throw new ImportError('agent_choice_changed', 'Template, effective settings or setup changed since human review. Choose and approve again; no further agent effect is authorized.');
+          await projectImportService.projectForAgent(callerId, importId);
+          await approval.assertCurrent();
+          assertFilesystem();
+        };
+        await assertCurrent();
+        return createDispatcherManagedAgent(callerId, args, project, CREATE_GRANTS,
+          () => projectImportService.createAgentOnce(callerId, importId, creationKey, agentConfig.listDurable,
+            async (_importedProject, requestId) => withDurableCreationGit({
+              assertCurrent, preserveOnFailure: true,
+              run: (gitArgs, cwd, signal) => projectImportService.runAgentGit(callerId, importId, gitArgs, cwd, signal, assertCurrent),
+            }, () => asDispatcher(callerId, () => createManagedAgent(project.path, { ...input, creationRequestId: requestId, preserveOnFailure: true }, checkAccess, prepared)))),
+          { importId, projectId: project.id, agentCreated: true, agentStarted: false },
+          { assertCurrent, preserveOnFailure: true });
+      }
       return createDispatcherManagedAgent(callerId, args, project, CREATE_GRANTS,
         () => asDispatcher(callerId, () => createManagedAgent(project.path, input, checkAccess)),
         legacy ? { legacyDefaults: legacy, note: 'This project has legacy agent defaults. They weren\'t copied into the new agent; the user can copy them from the project\'s settings.' } : {});
