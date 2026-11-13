@@ -26,10 +26,11 @@ import {
   keepHeldBinding,
   listSoleOwnedPairs,
 } from '../services/persisted-bindings';
-import { canvasWireBindingSource, setManagedGroupProjects } from '../services/canvas-wire-source';
-import { MCP_BIND_RESTORE, MCP_UNBIND_CANVAS_CLEANUP, type McpUnbindResult } from '../../shared/mcp-unbind';
+import { canvasWireBindingSource } from '../services/canvas-wire-source';
+import { setManagedGroupProjects } from '../services/managed-group-projects';
+import { MCP_BIND_RESTORE, MCP_UNBIND_CANVAS_CLEANUP, type McpBindResult, type McpUnbindResult } from '../../shared/mcp-unbind';
 import {
-  addMember, excludeMember, isMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
+  addMember, excludeMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
 } from '../services/group-project-membership';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
@@ -153,7 +154,7 @@ export function registerMcpBindingHandlers(): void {
 
   ipcMain.handle(IPC.MCP_BINDING.BIND, withValidatedArgs(
     [stringArg(), objectArg<{ targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }>(), stringArg({ optional: true })],
-    (event, agentId, target, cause): void | Promise<void> => {
+    (event, agentId, target, cause): McpBindResult | Promise<McpBindResult> => {
       assertCallerIsAppWindow(event);
       const bindNow = (): void => {
         // Allow binding for sleeping (unregistered) durable agents — the binding
@@ -189,18 +190,21 @@ export function registerMcpBindingHandlers(): void {
           },
         });
       };
-      if (target.targetKind !== 'group-project') return bindNow();
+      if (target.targetKind !== 'group-project') { bindNow(); return undefined; }
       // A group project whose members come from its record (#3357): drawing a
       // wire adds the member, and a stored wire coming back adds no one.
-      return isMembershipManaged(target.targetId).then(async (managed) => {
-        if (!managed) return bindNow();
+      return isMembershipManaged(target.targetId).then(async (managed): Promise<McpBindResult> => {
+        if (!managed) { bindNow(); return undefined; }
         if (cause !== MCP_BIND_RESTORE) {
           await addMember(target.targetId, agentId as string);
           void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
-        } else if (!(await isMember(target.targetId, agentId as string))) {
-          appLog('core:mcp', 'debug', 'Stored group project wire not bound: not a member', { meta: { agentId, targetId: target.targetId } });
+          broadcastBindingsChanged();
+          return undefined;
         }
-        broadcastBindingsChanged();
+        // The record binds every member itself: a restore with no binding is a non-member.
+        if (bindingManager.getBindingsForAgent(agentId as string).some((b) => b.targetId === target.targetId)) return undefined;
+        appLog('core:mcp', 'debug', 'Stored group project wire not bound: not a member', { meta: { agentId, targetId: target.targetId } });
+        return { notMember: true };
       });
     },
   ));

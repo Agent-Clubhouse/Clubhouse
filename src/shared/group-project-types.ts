@@ -75,6 +75,8 @@ export interface GroupProjectMembership {
   autoJoinOffer?: 'pending' | 'accepted' | 'dismissed';
   /** Per-member tool switches (#2084), keyed by address. */
   disabledTools?: Record<string, string[]>;
+  /** A member's wire instructions carried over from canvas wires by migration (#3357), by address. */
+  instructions?: Record<string, Record<string, string>>;
   [extra: string]: unknown;
 }
 
@@ -160,6 +162,13 @@ export interface ResolvedGroupProjectMember {
   via: 'auto' | 'explicit';
   projectId?: string;
   projectName?: string;
+}
+
+/** Who would auto-join a group project with a given scope, shown before creating it (#3357). */
+export interface AutoJoinPreview {
+  wouldJoin: ResolvedGroupProjectMember[];
+  /** Projects in scope whose agents couldn't be read: their agents would join too once readable. */
+  unreadableProjects: Array<{ projectId: string; name: string }>;
 }
 
 /** What the directory shows about one group project's membership. */

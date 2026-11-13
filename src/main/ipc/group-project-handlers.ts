@@ -8,13 +8,13 @@ import { groupProjectRegistry } from '../services/group-project-registry';
 import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
-import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged } from '../services/group-project-membership';
+import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin } from '../services/group-project-membership';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestSinceArg } from './validation';
-import type { DigestSince, GroupProjectCreateOptions } from '../../shared/group-project-types';
+import type { DigestSince, GroupProjectCreateOptions, GroupProjectScope } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
 import { getAgentRuntime } from '../services/agent-runtime';
 import { injectPtyText } from '../services/agent-runtime/pty-input';
@@ -68,6 +68,9 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.LIST_MEMBERS, withValidatedArgs([stringArg()], (_event, id) => describeMembership(id as string)));
   ipcMain.handle(IPC.GROUP_PROJECT.ADD_MEMBER, withValidatedArgs([stringArg(), stringArg()], (_event, id, agentId) => addMember(id as string, agentId as string)));
   ipcMain.handle(IPC.GROUP_PROJECT.EXCLUDE_MEMBER, withValidatedArgs([stringArg(), stringArg()], (_event, id, agentId) => excludeMember(id as string, agentId as string)));
+  ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, withValidatedArgs(
+    [objectArg<GroupProjectScope>()], (_event, scope) => previewAutoJoin(scope as GroupProjectScope),
+  ));
   ipcMain.handle(IPC.GROUP_PROJECT.ANSWER_AUTO_JOIN_OFFER, withValidatedArgs(
     [stringArg(), booleanArg()], (_event, id, accept) => answerAutoJoinOffer(id as string, accept as boolean),
   ));

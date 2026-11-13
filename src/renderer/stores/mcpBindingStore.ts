@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { McpUnbindCause } from '../../shared/mcp-unbind';
+import type { McpBindCause, McpBindResult, McpUnbindCause } from '../../shared/mcp-unbind';
 import { useToastStore } from './toastStore';
 
 export interface McpBindingEntry {
@@ -31,7 +31,8 @@ export interface McpBindingEntry {
 interface McpBindingStoreState {
   bindings: McpBindingEntry[];
   loadBindings: () => Promise<void>;
-  bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => Promise<void>;
+  /** `cause: 'restore'` brings back a stored wire; it never adds a group project member (#3357). */
+  bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }, cause?: McpBindCause) => Promise<McpBindResult>;
   /**
    * Unbind a wire. With `cause: 'canvas-cleanup'` (a card or canvas tab
    * closed, a zone member left) main may keep a binding a persisted source
@@ -57,8 +58,11 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
     }
   },
 
-  bind: async (agentId, target) => {
-    await window.clubhouse.mcpBinding.bind(agentId, target);
+  bind: async (agentId, target, cause) => {
+    const result = cause
+      ? await window.clubhouse.mcpBinding.bind(agentId, target, cause)
+      : await window.clubhouse.mcpBinding.bind(agentId, target);
+    if (result?.notMember) return result;
     // Optimistic update — deduplicate since main process may have already broadcast
     set((state) => {
       const exists = state.bindings.some(
@@ -67,6 +71,7 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
       if (exists) return state;
       return { bindings: [...state.bindings, { agentId, ...target } as McpBindingEntry] };
     });
+    return undefined;
   },
 
   unbind: async (agentId, targetId, cause) => {

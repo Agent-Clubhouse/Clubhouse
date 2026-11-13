@@ -620,6 +620,8 @@ export const IPC = {
     EXCLUDE_MEMBER: 'group-project:exclude-member',
     /** Accept or dismiss "Include every agent in scope" on a migrated group project. */
     ANSWER_AUTO_JOIN_OFFER: 'group-project:answer-auto-join-offer',
+    /** Who would auto-join a group project with a scope, before creating it. Read-only. */
+    PREVIEW_AUTO_JOIN: 'group-project:preview-auto-join',
     /** Main → renderer: a group project's membership changed (its id). */
     MEMBERSHIP_CHANGED: 'group-project:membership-changed',
   },

@@ -28,3 +28,10 @@ export interface McpUnbindResult {
  */
 export const MCP_BIND_RESTORE = 'restore';
 export type McpBindCause = typeof MCP_BIND_RESTORE;
+
+/**
+ * What main answers a bind with. `notMember`: a restore to a group project
+ * whose record doesn't list the agent (#3357). Final: the canvas stops
+ * binding that wire rather than retrying it.
+ */
+export type McpBindResult = { notMember: true } | undefined;

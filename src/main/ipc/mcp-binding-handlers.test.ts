@@ -113,7 +113,6 @@ vi.mock('../services/persisted-bindings', () => ({
 
 vi.mock('../services/canvas-wire-source', () => ({
   canvasWireBindingSource: { id: 'canvas-wires', collect: vi.fn(async () => []) },
-  setManagedGroupProjects: vi.fn(),
 }));
 
 vi.mock('../services/helper-wire-source', () => ({
@@ -140,7 +139,6 @@ vi.mock('../services/group-project-membership', () => ({
   membershipBindingSource: { id: 'group-project-membership', prune: true, collect: vi.fn(async () => []) },
   watchGroupProjectMembership: vi.fn(() => () => undefined),
   isMembershipManaged: vi.fn(async (id: string) => membership.managed.has(id)),
-  isMember: vi.fn(async (id: string, agentId: string) => membership.members.has(`${agentId}>${id}`)),
   addMember: vi.fn(async () => undefined),
   managedGroupProjectIds: vi.fn(async () => membership.managed),
   excludeMember: vi.fn(async () => undefined),
@@ -839,9 +837,15 @@ describe('group project membership gestures (#3357)', () => {
     expect(bindingManager.bind).not.toHaveBeenCalled();
   });
 
-  it('a stored wire coming back adds no one', async () => {
-    await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'agent-1', target, MCP_BIND_RESTORE);
+  it('a stored wire coming back adds no one, and says so for a non-member', async () => {
+    expect(await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'agent-1', target, MCP_BIND_RESTORE)).toEqual({ notMember: true });
     expect(addMember).not.toHaveBeenCalled();
+    expect(bindingManager.bind).not.toHaveBeenCalled();
+  });
+
+  it('a stored wire for a member the record already bound is fine', async () => {
+    vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([{ agentId: 'agent-1', targetId: 'gp_managed', targetKind: 'group-project', label: 'GP' }] as any);
+    expect(await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'agent-1', target, MCP_BIND_RESTORE)).toBeUndefined();
     expect(bindingManager.bind).not.toHaveBeenCalled();
   });
 

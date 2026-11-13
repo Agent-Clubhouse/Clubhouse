@@ -140,6 +140,7 @@ import * as dispatcherGate from '../dispatcher-gate';
 import { forgetMcpCaller, setMcpCallerQuick } from '../mcp-call-gate';
 import { _resetMembershipForTesting, excludeMember, membershipBindingSource } from '../../group-project-membership';
 import { groupProjectHost } from '../../group-project-host';
+import { setManagedGroupProjects } from '../../managed-group-projects';
 
 let root: string;
 let projectPath: string;
@@ -1118,5 +1119,24 @@ describe('names and user removals', () => {
     restart();
     await rebuildPersistedBindings();
     expect(boundPairs()).toEqual(['durable_h1->durable_lead']);
+  });
+});
+
+describe('group projects whose members are a record (#3357)', () => {
+  afterEach(() => setManagedGroupProjects(null));
+
+  it('the orchestrator store no longer holds their legacy memberships', async () => {
+    groupProjects.set('gp_legacy', { id: 'gp_legacy', name: 'Legacy', description: '', instructions: '', createdAt: '2026-01-01T00:00:00.000Z', metadata: {} });
+    fs.mkdirSync(path.dirname(connectionsStorePath(projectPath)), { recursive: true });
+    fs.writeFileSync(connectionsStorePath(projectPath), JSON.stringify({ version: 1, connections: [
+      { ownerId: 'durable_lead', agentId: 'durable_h1', targetId: 'gp_legacy', targetKind: 'group-project', createdAt: '' },
+      { ownerId: 'durable_lead', agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent', createdAt: '' },
+    ] }));
+    const before = await orchestratorConnectionSource.collect();
+    expect((Array.isArray(before) ? before : before.bindings).map(pairKey).sort()).toEqual(['durable_h1->gp_legacy', 'durable_lead->durable_h1']);
+
+    setManagedGroupProjects(async () => new Set(['gp_legacy']));
+    const after = await orchestratorConnectionSource.collect();
+    expect((Array.isArray(after) ? after : after.bindings).map(pairKey)).toEqual(['durable_lead->durable_h1']);
   });
 });

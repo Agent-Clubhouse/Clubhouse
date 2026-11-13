@@ -14,6 +14,8 @@ const fx = vi.hoisted(() => ({
   projects: [] as Array<{ id: string; name: string; path: string }>,
   configs: new Map<string, DurableAgentConfig[]>(),
   quick: new Map<string, { agentId: string; name: string; projectPath: string; startedAt: number; finishedAt?: number }>(),
+  canvasWires: [] as Array<Record<string, unknown>>,
+  canvasUnreadable: false,
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => fx.home } }));
@@ -27,18 +29,31 @@ vi.mock('./agent-config', () => ({
   onAgentConfigChanged: vi.fn(() => () => undefined),
 }));
 vi.mock('./quick-agent-events', () => ({ knownQuickAgents: () => fx.quick }));
+// Every Canvas store, read strictly for migration.
+vi.mock('./canvas-wire-source', () => ({
+  canvasWireBindingSource: {
+    id: 'canvas-wires',
+    collect: async () => fx.canvasWires,
+    inspect: async () => {
+      if (fx.canvasUnreadable) throw new Error('Some Canvas guidance could not be read.');
+      return fx.canvasWires;
+    },
+  },
+}));
 vi.mock('./group-project-bulletin', () => ({
   getBulletinBoard: vi.fn(), ensureInboxChannel: vi.fn(), ensureProjectChannels: vi.fn(), destroyBulletinBoard: vi.fn(),
 }));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { listDurable } from './agent-config';
+import { appLog } from './log-service';
 import {
   _resetPersistedBindingSourcesForTesting, keepHeldBinding, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource,
 } from './persisted-bindings';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
 import {
-  _resetMembershipForTesting, addMember, answerAutoJoinOffer, describeMembership, excludeMember, membershipBindingSource,
+  _resetMembershipForTesting, addMember, answerAutoJoinOffer, previewAutoJoin, describeMembership, excludeMember, membershipBindingSource,
   releaseMembershipBindings, quickMemberName, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
 } from './group-project-membership';
 
@@ -101,6 +116,8 @@ beforeEach(async () => {
     [PROJ_B.path, [agent('other')]],
   ]);
   fx.quick = new Map();
+  fx.canvasWires = [];
+  fx.canvasUnreadable = false;
   groupProjectRegistry._resetForTesting();
   restart();
 });
@@ -236,12 +253,79 @@ describe('migration', () => {
     expect((await getMembership('gp_old')).autoJoinOffer).toBe('accepted');
   });
 
+  it('keeps a customized wire\'s tool switches and instructions across a second restart', async () => {
+    groupProjectRegistry._setForTesting(legacyGp('gp_old'));
+    // A canvas wire with its own switches and instructions, bound at startup.
+    fx.canvasWires = [{
+      agentId: 'lead', targetId: 'gp_old', targetKind: 'group-project', label: 'GP gp_old', agentName: 'lead',
+      disabledTools: ['broadcast', 'shoulder_tap'], instructions: { post_bulletin: 'Post in #release only' },
+    }];
+    bindingManager.bind('lead', { targetId: 'gp_old', targetKind: 'group-project', label: 'GP gp_old', agentName: 'lead' });
+    bindingManager.setDisabledTools('lead', 'gp_old', ['broadcast', 'shoulder_tap']);
+    await start();
+    const record = await getMembership('gp_old');
+    expect(record.disabledTools?.lead).toEqual(['broadcast', 'shoulder_tap']);
+    expect(record.instructions?.lead).toEqual({ post_bulletin: 'Post in #release only' });
+
+    // Second restart: the canvas no longer holds the wire; the record does.
+    restart();
+    await start();
+    const binding = bindingManager.getBindingsForAgent('lead').find((b) => b.targetId === 'gp_old');
+    expect(binding?.disabledTools).toEqual(['broadcast', 'shoulder_tap']);
+    expect(binding?.instructions).toEqual({ post_bulletin: 'Post in #release only' });
+  });
+
+  it('includes members whose wire is only in a Canvas store, not bound', async () => {
+    groupProjectRegistry._setForTesting(legacyGp('gp_old'));
+    fx.canvasWires = [{ agentId: 'dev', targetId: 'gp_old', targetKind: 'group-project', label: 'GP gp_old', agentName: 'dev' }];
+    await start();
+    expect((await getMembership('gp_old')).explicit.map((e) => e.address)).toEqual(['dev']);
+  });
+
+  it('leaves a legacy group project on its wires while a Canvas store cannot be read', async () => {
+    groupProjectRegistry._setForTesting(legacyGp('gp_old'));
+    fx.canvasUnreadable = true;
+    registerPersistedBindingSource(membershipBindingSource);
+    await rebuildPersistedBindings();
+    await vi.waitFor(() => expect(vi.mocked(appLog)).toHaveBeenCalledWith('core:group-project', 'warn', expect.stringContaining('migration deferred'), expect.anything()));
+    expect((await describeMembership('gp_old')).managed).toBe(false);
+
+    // Repaired: the next rebuild migrates.
+    fx.canvasUnreadable = false;
+    await rebuildPersistedBindings();
+    await vi.waitFor(async () => expect((await describeMembership('gp_old')).managed).toBe(true));
+  });
+
   it('dismissing the offer adds no one', async () => {
     groupProjectRegistry._setForTesting(legacyGp('gp_old'));
     await start();
     await answerAutoJoinOffer('gp_old', false);
     expect(membersOf('gp_old')).toEqual([]);
     expect((await describeMembership('gp_old')).autoJoinOffer?.state).toBe('dismissed');
+  });
+});
+
+describe('exclusions and preview', () => {
+  it('records an exclusion even when the agent\'s project cannot be read', async () => {
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    await start();
+    vi.mocked(listDurable).mockRejectedValueOnce(new Error('agents.json unreadable'));
+    await excludeMember('gp1', 'dev');
+    expect((await getMembership('gp1')).excluded.map((e) => e.address)).toEqual(['dev']);
+  });
+
+  it('previews who would auto-join a scope, and which projects could not be read', async () => {
+    fx.configs.delete(PROJ_B.path);
+    vi.mocked(listDurable).mockImplementation(async (p: string) => {
+      if (p === PROJ_B.path) throw new Error('unreadable');
+      return fx.configs.get(p) ?? [];
+    });
+    const app = await previewAutoJoin({ level: 'app', reach: 'local' });
+    expect(app.wouldJoin.map((m) => m.agentId).sort()).toEqual(['dev', 'lead']);
+    expect(app.unreadableProjects).toEqual([{ projectId: PROJ_B.id, name: PROJ_B.name }]);
+    const project = await previewAutoJoin({ level: 'project', projectId: PROJ_A.id, reach: 'local' });
+    expect(project.unreadableProjects).toEqual([]);
+    vi.mocked(listDurable).mockImplementation(async (p: string) => fx.configs.get(p) ?? []);
   });
 });
 
