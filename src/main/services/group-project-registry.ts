@@ -258,6 +258,24 @@ class GroupProjectRegistry {
     return project;
   }
 
+  /**
+   * Store or replace the cached copy of a group project hosted on another
+   * computer (#3363). Never replaces a record of a different host. Only the
+   * host service calls this.
+   */
+  async putReplica(record: GroupProject): Promise<GroupProject> {
+    await this.ensureLoaded();
+    const existing = this.projects.get(record.id);
+    if (existing && (existing.host?.machine ?? null) !== (record.host?.machine ?? null)) {
+      throw new Error(`Group project ${record.id} is held here for another host; its copy was not replaced.`);
+    }
+    const copy: GroupProject = { ...record, metadata: { ...record.metadata } };
+    delete copy.seq;
+    this.projects.set(record.id, copy);
+    this.markDirty();
+    return copy;
+  }
+
   /** Change a record's scope (#3355). Only the host service calls this. */
   async setScope(id: string, scope: GroupProjectScope): Promise<GroupProject | null> {
     await this.ensureLoaded();
