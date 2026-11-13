@@ -1117,7 +1117,7 @@ export const ATTR = {
   federationDelivery: enumAttr('clubhouse.federation.delivery', ['accepted', 'delivered', 'refused', 'expired']),
   federationOutcome: enumAttr('clubhouse.federation.outcome', ['under_way', 'waiting_user', 'answered', 'declined', 'failed']),
   federationEvent: enumAttr('clubhouse.federation.event', ['crossing', 'duplicate', 'triage', 'limit']),
-  federationLinkState: enumAttr('clubhouse.federation.link_state', ['active', 'paused', 'unavailable', 'removed']),
+  federationLinkState: enumAttr('clubhouse.federation.link_state', ['active', 'paused', 'tripped', 'unavailable', 'removed']),
   federationTriage: enumAttr('clubhouse.federation.triage', ['now', 'check_in', 'needs_user', 'decline', 'pending']),
   dispatcherNewsKind: enumAttr('clubhouse.dispatcher.news.kind', ['needs_user', 'answer', 'routine', 'check_in']),
   /** What triage did with it. */

@@ -244,8 +244,8 @@ describe('federation telemetry (#3350)', () => {
   });
   it('records link admission, offline pause, resume, unavailable and removal without labels', () => {
     capture = captureEvents();
-    for (const state of ['active', 'paused', 'active', 'unavailable', 'removed'] as const) recordFederationLink(state);
-    expect(capture.named('clubhouse.dispatcher.federation_link').map((e) => e.attrs['clubhouse.federation.link_state'])).toEqual(['active', 'paused', 'active', 'unavailable', 'removed']);
+    for (const state of ['active', 'paused', 'active', 'tripped', 'unavailable', 'removed'] as const) recordFederationLink(state);
+    expect(capture.named('clubhouse.dispatcher.federation_link').map((e) => e.attrs['clubhouse.federation.link_state'])).toEqual(['active', 'paused', 'active', 'tripped', 'unavailable', 'removed']);
     for (const event of capture.events) expect(Object.keys(event.attrs)).toEqual(['clubhouse.federation.link_state']);
     expect(EVENTS['clubhouse.dispatcher.federation_link'].level).toBe('standard');
   });

@@ -307,7 +307,7 @@ export function recordFederationLimit(): void {
   } catch { /* telemetry-exempt: telemetry cannot change limit enforcement */ }
 }
 
-export function recordFederationLink(state: 'active' | 'paused' | 'unavailable' | 'removed'): void {
+export function recordFederationLink(state: 'active' | 'paused' | 'tripped' | 'unavailable' | 'removed'): void {
   try {
     if (!isTelemetryActive()) return;
     tel.event('clubhouse.dispatcher.federation_link', [ATTR.federationLinkState(state)]);

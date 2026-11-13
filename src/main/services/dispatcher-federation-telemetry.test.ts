@@ -9,7 +9,8 @@ it('follows presence events once per transition, including removal, without poll
   state.changed(); expect(state.record.mock.calls).toEqual([['active']]);
   state.remotes[0].link.state = 'paused'; state.changed(); state.changed();
   state.remotes[0].link.state = 'active'; state.changed();
+  state.remotes[0].link.state = 'tripped'; state.changed(); state.changed();
   state.remotes = []; state.changed();
-  expect(state.record.mock.calls).toEqual([['active'], ['paused'], ['active'], ['removed']]);
+  expect(state.record.mock.calls).toEqual([['active'], ['paused'], ['active'], ['tripped'], ['removed']]);
   stop(); expect(state.stop).toHaveBeenCalledOnce();
 });

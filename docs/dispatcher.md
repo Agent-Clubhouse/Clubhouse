@@ -189,7 +189,7 @@ Each Annex Network computer retains its own Dispatcher controller, grants, memor
 | A remote controller asks for work | The receiving controller triages now, check-in, needs-user or decline, under its own local grants. Remote text never approves a permission. |
 | A correlated result returns | The origin hidden controller triages the result and continues its parent request. A remote subtask answer does not complete the parent. |
 | A computer is offline | Durable delivery waits, with per-item expiry and current authorization checks. Receipts and explicit work outcomes remain separate. |
-| A depth, rate or queue bound trips | The controller link pauses for that pairing and reports the limit. Removal invalidates queued work and replies. |
+| A depth, rate or queue bound trips | The controller link is marked tripped for that pairing and reports the limit. Offline links are marked paused. Removal invalidates queued work and replies. |
 | An authorized project agent sends news or a file | The sender checks `agent.message` on `remote_dispatcher`; the receiver validates membership, hidden-controller target, readiness and bounds. No local Dispatcher work turn is required. |
 | An agent offers a Handoff to a remote Dispatcher | The normal `callTool('offer_handoff')` approval and agreement lifecycle apply, with no automatic acceptance. Its sending agent remains the origin. A source-Dispatcher memory copy grants no participant rights. |
 | A person chooses Lead | A versioned network-wide record converges, including after reconnect. No agent tool or grant changes it. None preserves peer behavior. |

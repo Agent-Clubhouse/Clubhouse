@@ -140,7 +140,7 @@ describe('remote Dispatcher presence (#3349)', () => {
       self: () => ({ machineId: 'here', machineName: 'Here', agentId: 'controller-here', agentName: 'Dispatcher' }),
       authorized: () => true, epoch: () => ({ sender: 'pair-a', receiver: 'pair-b' }),
       send: vi.fn(async (_caller: string, _machine: string, _target: string, _envelope: unknown, _cause: unknown, key: string) => ({ deliveryId: key })),
-      delivery: () => undefined, createLocal: vi.fn(async () => {}), present: vi.fn(async () => {}), record: vi.fn(),
+      delivery: () => undefined, createLocal: vi.fn(async () => {}), present: vi.fn(async () => {}), record: vi.fn(), recordLimit: vi.fn(),
     });
     const stopRouter = setFederationRequestRouter({
       offer: async () => ({ content: [] }), before: async () => {}, cause: () => undefined,
