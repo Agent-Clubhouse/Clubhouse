@@ -2,7 +2,7 @@ import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type {
   AutoJoinPreview, GroupProject, GroupProjectCreateOptions, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
-  GroupProjectScope, GroupProjectScopeOptions,
+  GroupProjectRolesView, GroupProjectScope, GroupProjectScopeOptions,
 } from '../shared/group-project-types';
 
 export const groupProject = {
@@ -69,6 +69,12 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.EXCLUDE_MEMBER, projectId, agentId),
   answerAutoJoinOffer: (projectId: string, accept: boolean): Promise<GroupProjectMembershipView> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.ANSWER_AUTO_JOIN_OFFER, projectId, accept),
+  getRoles: (projectId: string): Promise<GroupProjectRolesView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_ROLES, projectId),
+  setRole: (projectId: string, agentId: string, role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off'): Promise<GroupProjectRolesView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_ROLE, projectId, agentId, role, mode),
+  setOwnGrant: (projectId: string, grant: 'deliver' | 'wake', mode: 'allow' | 'off'): Promise<GroupProjectRolesView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_OWN_GRANT, projectId, grant, mode),
   previewAutoJoin: (scope: GroupProjectScope): Promise<AutoJoinPreview> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, scope),
   onMembershipChanged: (callback: (projectId: string) => void) => {

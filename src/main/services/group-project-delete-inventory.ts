@@ -1,4 +1,4 @@
-import { getProjectAdmins } from '../../shared/group-project-admin';
+import { listGroupProjectRoles } from './group-project-roles';
 import { groupProjectHost } from './group-project-host';
 import { readGroupProjectCanvasInventory } from './group-project-canvas-inventory';
 import type { GroupProjectDeletionInventory } from './group-project-deletion';
@@ -23,9 +23,12 @@ export async function readGroupProjectDeletionInventory(id: string): Promise<Gro
     members: members.map((member) => `${member.name} (${member.address})`).sort(),
     exclusions: membership.excluded.map((entry) => entry.address).sort(),
     canvases: canvas.canvases,
-    // Owned Actions and principal grants are introduced by separate lanes.
+    // Owned Actions are introduced by a separate lane (#3361).
     actions: [],
-    grants: getProjectAdmins(project.metadata).sort(),
+    // Lead and admin grants on it (#3360), which the cascade removes.
+    grants: listGroupProjectRoles(id)
+      .flatMap((h) => [...(h.lead !== 'off' ? [`${h.agentId}: lead (${h.lead})`] : []), ...(h.admin !== 'off' ? [`${h.agentId}: admin (${h.admin})`] : [])])
+      .sort(),
     messages: digest.reduce((count, topic) => count + topic.messageCount, 0),
     topics: digest.length,
     machines: [...machines].sort(),

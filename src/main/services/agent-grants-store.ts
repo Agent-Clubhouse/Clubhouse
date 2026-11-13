@@ -28,6 +28,12 @@ export function getAgentGrantChanges(agentId: string): AgentGrantChanges | undef
   return normalizeGrantChanges(agents[agentId]);
 }
 
+/** Every agent with saved changes: for finding who holds a grant on one target (#3360). */
+export function listAgentsWithGrantChanges(): string[] {
+  const agents = store.get().agents;
+  return agents && typeof agents === 'object' ? Object.keys(agents) : [];
+}
+
 /** Change an agent's saved changes, one write at a time; `fn` gets the current ones. Undefined clears them. */
 export async function updateAgentGrantChanges(
   agentId: string,

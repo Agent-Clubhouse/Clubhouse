@@ -25,7 +25,13 @@ import { updateAgentGrantChanges } from '../agent-grants-store';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { setDispatcherAgent, isDispatcherAgent, isTrackedDispatcher, _resetDispatcherGateForTesting } from './dispatcher-gate';
-import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
+import { GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES } from '../../../shared/group-project-permissions';
+import type { GrantChange } from '../../../shared/agent-grant-changes';
+
+/** Lead and admin of one group project, as a person grants them (#3360). */
+function leadAndAdmin(groupProjectId: string): GrantChange[] {
+  return (['group_project.lead', 'group_project.admin'] as const).map((action) => ({ action, target: { kind: 'group_project', id: groupProjectId }, mode: 'allow' }));
+}
 import { toolGrantDeclarations, type ToolGrant } from './tool-grants';
 import type { ToolGroups } from './tool-registry';
 
@@ -124,20 +130,22 @@ describe('grant check parity (#2968)', () => {
     expect(checkToolGrant('helper', send.grant, {}, { binding: { targetKind: 'agent', targetId: 'orchestrator' } }).ok).toBe(true);
   });
 
-  it('group project and browser wire tools: unchanged for members and admins', () => {
+  it('group project and browser wire tools: members get the board, and only a lead by grant gets the lead tools (#3360)', async () => {
     const tools = registerAll().filter((t) => t.kind === 'group-project' || t.kind === 'browser');
     expect(tools.length).toBeGreaterThan(10);
+    const privileged: ReadonlySet<string> = new Set(GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES);
     const diffs: string[] = [];
     for (const caller of CALLERS) {
-      for (const admin of [false, true]) {
-        const metadata = admin ? { admins: [caller] } : {};
+      for (const lead of [false, true]) {
+        await updateAgentGrantChanges(caller, () => (lead ? { changes: leadAndAdmin('t') } : undefined));
         for (const tool of tools) {
-          const denied = tool.kind === 'group-project' && deniedGroupProjectTools(metadata, caller).has(tool.name);
-          const before = oldGroupAllows(tool.group, caller) && !denied;
-          const wire = { binding: { targetKind: tool.kind as 'group-project' | 'browser', targetId: 't' }, groupMetadata: metadata };
-          const after = before && checkToolGrant(caller, tool.grant, allArgs(tool.grant), wire).ok;
-          if (before !== after) diffs.push(`${caller}${admin ? ' (admin)' : ''}: ${tool.kind}:${tool.name}`);
+          // The admins role no longer gates anything: what used to need it now needs lead (or admin) granted on this group project.
+          const expected = oldGroupAllows(tool.group, caller) && (!(tool.kind === 'group-project' && privileged.has(tool.name)) || lead);
+          const wire = { binding: { targetKind: tool.kind as 'group-project' | 'browser', targetId: 't' }, groupMetadata: { admins: [caller] } };
+          const after = oldGroupAllows(tool.group, caller) && checkToolGrant(caller, tool.grant, allArgs(tool.grant), wire).ok;
+          if (expected !== after) diffs.push(`${caller}${lead ? ' (lead)' : ''}: ${tool.kind}:${tool.name}`);
         }
+        await updateAgentGrantChanges(caller, () => undefined);
       }
     }
     expect(diffs).toEqual([]);
@@ -205,13 +213,21 @@ describe('everyday flows keep working (#2968)', () => {
     expect(ok('helper', 'agent', 'send_file', {}, 'orchestrator')).toBe(true);
   });
 
-  it('group project board tools, for members and admins', () => {
+  it('group project board tools, for members, and lead tools for a lead by grant (#3360)', async () => {
     for (const name of ['read_bulletin', 'read_topic', 'read_message', 'list_members', 'get_project_info', 'post_bulletin']) {
       expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', {}), name).toBe(true);
     }
+    // The old admins role gives nothing now.
     for (const name of ['shoulder_tap', 'broadcast', 'wake_agent', 'clear_topic', 'set_project_info']) {
-      expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', { admins: ['plain'] }), name).toBe(true);
+      expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', { admins: ['plain'] }), name).toBe(false);
     }
+    await updateAgentGrantChanges('plain', () => ({ changes: leadAndAdmin('g') }));
+    for (const name of ['shoulder_tap', 'broadcast', 'wake_agent', 'clear_topic', 'set_project_info']) {
+      expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', {}), name).toBe(true);
+    }
+    // A lead of another group project leads nothing here.
+    expect(ok('plain', 'group-project', 'broadcast', {}, 'other', 'group-project', {})).toBe(false);
+    await updateAgentGrantChanges('plain', () => undefined);
   });
 
   it('canvas wires between agents, and to browsers', () => {

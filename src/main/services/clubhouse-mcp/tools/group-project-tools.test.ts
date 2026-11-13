@@ -30,6 +30,25 @@ vi.mock('fs/promises', () => ({
   }),
 }));
 
+// Lead and admin are grants on one group project (#3360), kept here instead of agent-grants.json.
+const grantFx = vi.hoisted(() => ({ changes: new Map<string, unknown>() }));
+vi.mock('../../agent-grants-store', () => ({
+  getAgentGrantChanges: (id: string) => grantFx.changes.get(id),
+  listAgentsWithGrantChanges: () => [...grantFx.changes.keys()],
+  updateAgentGrantChanges: async (id: string, fn: (current: unknown) => unknown) => {
+    const next = fn(grantFx.changes.get(id));
+    if (next) grantFx.changes.set(id, next); else grantFx.changes.delete(id);
+    return next;
+  },
+}));
+
+/** Make an agent lead and admin of a group project, as a person does on the permissions page. */
+function grantLead(agentId: string, groupProjectId: string): void {
+  grantFx.changes.set(agentId, { changes: (['group_project.lead', 'group_project.admin'] as const).map((action) => (
+    { action, target: { kind: 'group_project', id: groupProjectId }, mode: 'allow', by: 'user' }
+  )) });
+}
+
 vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -89,7 +108,7 @@ import { groupProjectRegistry } from '../../group-project-registry';
 import { agentRegistry } from '../../agent-registry';
 import { clearChatRuntimes, registerChatRuntime } from '../../agent-runtime';
 import { registerGroupProjectTools } from './group-project-tools';
-import { getScopedToolList, callTool, buildToolName } from '../tool-registry';
+import { getScopedToolList, callTool, buildToolName, listToolGrants } from '../tool-registry';
 import type { McpBinding } from '../types';
 import type { AgentRuntime, ChatSessionState } from '../../../../shared/chat';
 
@@ -99,6 +118,7 @@ function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetI
 
 describe('GroupProjectTools', () => {
   beforeEach(() => {
+    grantFx.changes.clear();
     store.clear();
     mockPtyWrite.mockClear();
     mockIsRunning.mockReturnValue(false);
@@ -119,11 +139,19 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
+  it('every group project tool declares the grant action and target it needs (#3360)', () => {
+    const undeclared = listToolGrants().filter((t) => t.kind === 'group-project' && !t.grant).map((t) => t.name);
+    expect(undeclared).toEqual([]);
+    const lead = listToolGrants().filter((t) => t.kind === 'group-project' && JSON.stringify(t.grant).includes('group_project.lead')).map((t) => t.name).sort();
+    expect(lead).toEqual(['broadcast', 'clear_agent', 'clear_topic', 'compact_agent', 'delete_messages', 'nudge_polling', 'shoulder_tap', 'sleep_agent', 'toggle_polling', 'wake_agent']);
+  });
+
   it('exposes all 19 tools to an admin member', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'My Project', description: '', instructions: '',
-      createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+      createdAt: '2020-01-01T00:00:00Z', metadata: {},
     });
+    grantLead('agent-1', 'gp_123');
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -162,8 +190,9 @@ describe('GroupProjectTools', () => {
   it('exposes only the core tools (incl. query_polling) to a non-admin member', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_core', name: 'Core', description: '', instructions: '',
-      createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['someone-else'] },
+      createdAt: '2020-01-01T00:00:00Z', metadata: {},
     });
+    grantLead('someone-else', 'gp_core');
     bindingManager.bind('agent-1', {
       targetId: 'gp_core', targetKind: 'group-project', label: 'Core', agentName: 'robin',
     });
@@ -513,7 +542,7 @@ describe('GroupProjectTools', () => {
 
   it('shoulder_tap and broadcast are available to an admin member', async () => {
     const project = await groupProjectRegistry.create('TapProj');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -531,7 +560,7 @@ describe('GroupProjectTools', () => {
 
   it('shoulder_tap delivers message to target agent', async () => {
     const project = await groupProjectRegistry.create('TapDelivery');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
@@ -569,7 +598,7 @@ describe('GroupProjectTools', () => {
 
   it('broadcast delivers message to all agents except sender', async () => {
     const project = await groupProjectRegistry.create('BroadcastProj');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
@@ -611,7 +640,7 @@ describe('GroupProjectTools', () => {
     ['broadcast', { message: 'Look at this' }],
   ])('%s says which agent sent it', async (tool, args) => {
     const project = await groupProjectRegistry.create(`Sender ${tool}`);
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
     agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'chat' });
     const sendMessage = vi.fn(async () => ({ delivery: 'prompt', messageId: 'm' }));
@@ -751,8 +780,9 @@ describe('GroupProjectTools', () => {
   it('wake_agent, sleep_agent, toggle_polling, nudge_polling are available to an admin (query_polling to all)', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'My Project', description: '', instructions: '',
-      createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+      createdAt: '2020-01-01T00:00:00Z', metadata: {},
     });
+    grantLead('agent-1', 'gp_123');
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -774,7 +804,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent returns error for non-member agent', async () => {
     const project = await groupProjectRegistry.create('WakeProj');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -794,7 +824,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent returns already_running when agent is alive', async () => {
     const project = await groupProjectRegistry.create('WakeRunning');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -827,7 +857,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent spawns sleeping agent and broadcasts waking state', async () => {
     const project = await groupProjectRegistry.create('WakeSpawn');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     // Mock project store and agent config for wake
     mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
@@ -876,7 +906,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent can resume the target agent session', async () => {
     const project = await groupProjectRegistry.create('WakeResume');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
     mockListDurable.mockResolvedValue([
@@ -928,7 +958,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent broadcasts wake_failed when spawn fails', async () => {
     const project = await groupProjectRegistry.create('WakeFail');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
     mockListDurable.mockResolvedValue([
@@ -968,7 +998,7 @@ describe('GroupProjectTools', () => {
 
   it('sleep_agent stops a connected member via agent lifecycle', async () => {
     const project = await groupProjectRegistry.create('SleepAgent');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     agentRegistry.register('agent-2', { projectPath: '/test/proj', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -1010,7 +1040,7 @@ describe('GroupProjectTools', () => {
 
     async function callSleep(args: Record<string, unknown> = {}) {
       const project = await groupProjectRegistry.create('SleepForce');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      grantLead('agent-1', project.id);
       mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
       mockKillAgent.mockImplementation(async () => { mockIsRunning.mockReturnValue(false); });
       for (const [id, agentName] of [['agent-1', 'robin'], ['agent-2', 'falcon']]) {
@@ -1061,7 +1091,7 @@ describe('GroupProjectTools', () => {
 
   it('sleep_agent reports already_sleeping for a sleeping member', async () => {
     const project = await groupProjectRegistry.create('AlreadySleep');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1090,7 +1120,7 @@ describe('GroupProjectTools', () => {
 
   it('toggle_polling(enabled=true) persists the setting and injects start to connected members', async () => {
     const project = await groupProjectRegistry.create('PollToggle');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -1127,7 +1157,8 @@ describe('GroupProjectTools', () => {
 
   it('toggle_polling without enabled flips the current value and injects stop when turning off', async () => {
     const project = await groupProjectRegistry.create('PollFlip');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true, admins: ['agent-1'] } });
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+    grantLead('agent-1', project.id);
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -1186,7 +1217,7 @@ describe('GroupProjectTools', () => {
 
   it('nudge_polling refuses a member the call gate keeps closed, which can\'t poll, and injects nothing', async () => {
     const project = await groupProjectRegistry.create('Nudge off');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
     bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Nudge off' });
     bindingManager.bind('agent-2', { targetId: project.id, targetKind: 'group-project', label: 'Nudge off' });
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
@@ -1202,7 +1233,7 @@ describe('GroupProjectTools', () => {
 
   it('nudge_polling injects a nudge into a connected agent without changing the setting', async () => {
     const project = await groupProjectRegistry.create('PollNudge');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -1237,7 +1268,7 @@ describe('GroupProjectTools', () => {
 
   it('nudge_polling returns error for sleeping agent', async () => {
     const project = await groupProjectRegistry.create('NudgeSleep');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     bindingManager.bind('agent-1', {
       targetId: project.id, targetKind: 'group-project', label: 'NS', agentName: 'robin', targetName: 'NudgeSleep',
@@ -1355,8 +1386,9 @@ describe('GroupProjectTools', () => {
   it('clear_topic and delete_messages are available to an admin (message curation)', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'GP', description: '', instructions: '',
-      createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+      createdAt: '2020-01-01T00:00:00Z', metadata: {},
     });
+    grantLead('agent-1', 'gp_123');
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -1373,7 +1405,7 @@ describe('GroupProjectTools', () => {
 
   it('clear_topic deletes a topic and returns result', async () => {
     const project = await groupProjectRegistry.create('ClearProj');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1407,7 +1439,7 @@ describe('GroupProjectTools', () => {
 
   it('clear_topic rejects system topic', async () => {
     const project = await groupProjectRegistry.create('SysProj');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1427,7 +1459,7 @@ describe('GroupProjectTools', () => {
 
   it('delete_messages removes specific messages by ID', async () => {
     const project = await groupProjectRegistry.create('DelMsgProj');
-    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+    grantLead('agent-1', project.id);
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1469,7 +1501,7 @@ describe('GroupProjectTools', () => {
   describe('set_project_info', () => {
     it('updates description and instructions for an admin', async () => {
       const project = await groupProjectRegistry.create('InfoEditProj');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      grantLead('agent-1', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'IE', agentName: 'lead', targetName: 'InfoEditProj',
       });
@@ -1492,8 +1524,9 @@ describe('GroupProjectTools', () => {
     it('leaves omitted fields unchanged', async () => {
       const project = await groupProjectRegistry.create('PartialProj');
       await groupProjectRegistry.update(project.id, {
-        description: 'orig desc', instructions: 'orig instr', metadata: { admins: ['agent-1'] },
+        description: 'orig desc', instructions: 'orig instr',
       });
+      grantLead('agent-1', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'PP', agentName: 'lead', targetName: 'PartialProj',
       });
@@ -1509,7 +1542,7 @@ describe('GroupProjectTools', () => {
 
     it('is rejected for a non-admin caller (defense in depth)', async () => {
       const project = await groupProjectRegistry.create('GuardProj');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['someone-else'] } });
+      grantLead('someone-else', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'member', targetName: 'GuardProj',
       });
@@ -1525,8 +1558,9 @@ describe('GroupProjectTools', () => {
     it('is hidden from a non-admin’s scoped tool list', () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_hidden', name: 'H', description: '', instructions: '',
-        createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['someone-else'] },
+        createdAt: '2020-01-01T00:00:00Z', metadata: {},
       });
+      grantLead('someone-else', 'gp_hidden');
       bindingManager.bind('agent-1', {
         targetId: 'gp_hidden', targetKind: 'group-project', label: 'H', agentName: 'member',
       });
@@ -1535,10 +1569,10 @@ describe('GroupProjectTools', () => {
     });
   });
 
-  describe('call-time admin check for privileged tools', () => {
-    it('rejects all ten unchecked privileged suffixes for non-admin callers', async () => {
+  describe('call-time lead check for privileged tools (#3360)', () => {
+    it('refuses all ten lead tools, called by name, to a member without the lead grant', async () => {
       const project = await groupProjectRegistry.create('AdminCheckProj');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['someone-else'] } });
+      grantLead('someone-else', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'ACP', agentName: 'member', targetName: 'AdminCheckProj',
       });
@@ -1566,7 +1600,8 @@ describe('GroupProjectTools', () => {
         const toolName = buildToolName(binding, test.suffix);
         const result = await callTool('agent-1', toolName, test.args);
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('admin');
+        // A typed refusal from the grant check: the lead grant on this group project.
+        expect(result.content[0].text).toContain('group_project.lead');
       }
     });
   });
@@ -1574,7 +1609,7 @@ describe('GroupProjectTools', () => {
   describe('clear_agent', () => {
     it('injects /clear into connected agent PTY', async () => {
       const project = await groupProjectRegistry.create('ClearProj');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      grantLead('agent-1', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id,
         targetKind: 'group-project',
@@ -1606,7 +1641,7 @@ describe('GroupProjectTools', () => {
 
     it('returns error when target is not a member', async () => {
       const project = await groupProjectRegistry.create('ClearProj2');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      grantLead('agent-1', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
       });
@@ -1621,7 +1656,7 @@ describe('GroupProjectTools', () => {
 
     it('returns error when target is sleeping', async () => {
       const project = await groupProjectRegistry.create('ClearProj3');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      grantLead('agent-1', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
       });
@@ -1642,7 +1677,7 @@ describe('GroupProjectTools', () => {
   describe('compact_agent', () => {
     it('injects /compact into connected agent PTY', async () => {
       const project = await groupProjectRegistry.create('CompactProj');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      grantLead('agent-1', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id,
         targetKind: 'group-project',
@@ -1674,7 +1709,7 @@ describe('GroupProjectTools', () => {
 
     it('returns error when target is sleeping', async () => {
       const project = await groupProjectRegistry.create('CompactProj2');
-      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      grantLead('agent-1', project.id);
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
       });

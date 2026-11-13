@@ -5,7 +5,7 @@
  * IPC bridge and Zustand stores are used.
  */
 import { useMemo, useCallback } from 'react';
-import type { GroupProject } from '../../../../shared/group-project-types';
+import type { GroupProject, GroupProjectRolesView } from '../../../../shared/group-project-types';
 import type { TopicDigest, BulletinMessage, DigestSince } from '../../../../shared/group-project-types';
 import type { AnnexAPI } from '../../../../shared/plugin-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
@@ -44,6 +44,12 @@ export interface GroupProjectContextValue {
    * remote via the satellite REST proxy.
    */
   setPolling: (groupProjectId: string, enabled: boolean) => Promise<void>;
+
+  /** Lead and admin holders and the group project's own grants (#3360): local IPC, or the satellite that hosts it. */
+  getRoles: (groupProjectId: string) => Promise<GroupProjectRolesView>;
+
+  /** Give an agent lead or admin on the group project, where it lives. */
+  setRole: (groupProjectId: string, agentId: string, role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off') => Promise<GroupProjectRolesView>;
 
   /** Fetch bulletin digest. */
   fetchDigest: (groupProjectId: string, since?: DigestSince) => Promise<TopicDigest[]>;
@@ -156,6 +162,18 @@ export function useGroupProjectContext(
   const loadProjects = useCallback(async () => {
     if (!isRemote) await localLoadProjects();
   }, [isRemote, localLoadProjects]);
+
+  // --- Roles (#3360): kept by the machine that holds the group project ---
+  const getRoles = useCallback(async (gpId: string): Promise<GroupProjectRolesView> => (
+    isRemote && satelliteId
+      ? window.clubhouse.annexClient.gpGetRoles(satelliteId, stripRemotePrefix(gpId))
+      : window.clubhouse.groupProject.getRoles(gpId)
+  ), [isRemote, satelliteId]);
+  const setRole = useCallback(async (gpId: string, agentId: string, role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off'): Promise<GroupProjectRolesView> => (
+    isRemote && satelliteId
+      ? window.clubhouse.annexClient.gpSetRole(satelliteId, stripRemotePrefix(gpId), agentId, role, mode)
+      : window.clubhouse.groupProject.setRole(gpId, agentId, role, mode)
+  ), [isRemote, satelliteId]);
 
   // --- Mutations ---
   const update = useCallback(async (gpId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => {
@@ -283,6 +301,8 @@ export function useGroupProjectContext(
     loadProjects,
     update,
     setPolling,
+    getRoles,
+    setRole,
     fetchDigest,
     fetchTopicMessages,
     fetchAllMessages,

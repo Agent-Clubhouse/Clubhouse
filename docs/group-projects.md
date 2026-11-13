@@ -161,6 +161,7 @@ just-posted message even if older history has timestamps ahead of the clock.
 - `src/main/services/group-project-host.ts`: the one writer; serialization, sequence numbers, membership, tombstones.
 - `src/main/services/group-project-membership.ts`: membership policy and its binding source (#3357).
 - `src/main/services/group-project-delivery.ts`: post notices, coalescing and the rate limit (#3362).
+- `src/main/services/group-project-roles.ts`: lead and admin grants, the group project's own grants, migration (#3360).
 - `src/renderer/features/group-projects/GroupProjectMembersSection.tsx`: members, exclusions and the auto-join offer, for the directory.
 - `src/main/services/group-project-host.test.ts`: real-file ordering, restart, crash and address regressions.
 - `src/main/services/group-project-host.guard.test.ts`: fails any write outside the host.
@@ -322,7 +323,7 @@ Members hear about new posts as notices instead of polling the board.
 changes; the message a post adds carries that change's sequence number.
 
 - **Who.** The members subscribed to the post's topic, members it names as
-  `@name`, and the lead (an admin, until #3360's grants). Never its sender, and
+  `@name`, and the lead (an agent granted `group_project.lead` on it). Never its sender, and
   never for `system` posts. By default a member is subscribed to `general`,
   `control` and its own inbox; `subscribe_topic` adds or removes channels,
   kept in the membership record (`subscriptions`, by address). Members on
@@ -354,6 +355,28 @@ changes; the message a post adds carries that change's sequence number.
 - **Telemetry.** `clubhouse.group.notices`, by `clubhouse.notice.result`:
   `sent`, `coalesced` (messages folded into a notice beyond the first),
   `held_asleep` and `rate_limited`.
+
+## The group project as a principal (#3360)
+
+`src/main/services/group-project-roles.ts`.
+
+- **Lead and admin are grants** on one group project, `{ kind: 'group_project', id }`.
+  - `group_project.lead`: `broadcast`, `shoulder_tap`, `wake_agent`, `sleep_agent`, `clear_agent`, `compact_agent`, `delete_messages`, `clear_topic` and the legacy polling controls.
+  - `group_project.admin`: `set_project_info`, and through the app the record, members, the group project's own grants and its Actions.
+
+  No agent holds either by default, the creator included. They're kept in `agent-grants.json` with every other grant, so the Clubhouse permissions page lists them ("Group project <id>"). The Dispatcher may administer any group project, asking first.
+- **Checked at call time** like every grant. Each group-project tool declares its actions: the lead tools declare `group_project.lead` on the bound group project, beside their `agent.*` action on its members. A member without the grant gets the typed refusal `no_grant` naming `group_project.lead`, including when it calls a tool by name. The `admins` role no longer gates any tool, and joining no longer makes the first member lead.
+- **Its own grants** are what it does by itself, kept in its record's `metadata.grants`:
+  - `deliver`: post notices to members (#3362). On by default.
+  - `wake`: a lead's `shoulder_tap` wakes a sleeping member, with the tap as its first message. Off by default.
+
+  With `wake` off, a tap to a sleeping member reports `not-running` with `refusal: 'group_project_wake_off'`.
+- **Migration.** At startup, each agent in a group project's old `admins` list gets lead and admin (Allow) on it, once: `metadata.rolesMigratedAt` marks it done, so a later change isn't undone.
+- **Delete.** A deleted group project's role grants are removed.
+- **UI.**
+  - `GroupProjectRolesSection` (for the directory) sets each member's lead and admin (Allow, Ask first, Off) and the group project's own grants.
+  - The canvas card's star sets lead.
+  - IPC: `GROUP_PROJECT.GET_ROLES`, `SET_ROLE`, `SET_OWN_GRANT`.
 
 ## Local directory
 

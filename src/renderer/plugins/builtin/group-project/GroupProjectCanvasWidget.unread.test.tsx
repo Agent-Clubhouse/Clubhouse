@@ -42,6 +42,8 @@ vi.mock('./useGroupProjectContext', () => ({
     loadProjects: vi.fn(async () => {}),
     update: vi.fn(async () => {}),
     setPolling: vi.fn(async () => {}),
+    getRoles: vi.fn(async (id: string) => ({ groupProjectId: id, own: { deliver: 'allow', wake: 'off' }, holders: [] })),
+    setRole: vi.fn(async (id: string) => ({ groupProjectId: id, own: { deliver: 'allow', wake: 'off' }, holders: [] })),
     fetchDigest,
     fetchTopicMessages: vi.fn(async () => []),
     fetchAllMessages: vi.fn(async () => []),

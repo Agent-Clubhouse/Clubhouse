@@ -5,6 +5,7 @@ import { readGroupProjectCanvasInventory, removeGroupProjectFromCanvasInventory 
 import { withCanvasWriteBarrier } from './canvas-write-barrier';
 import { writeKeyWithinCanvasBarrier } from './plugin-storage';
 import { purgeGroupProjectGuidance } from './connection-guidance';
+import { purgeGroupProjectRoles } from './group-project-roles';
 import { appLog } from './log-service';
 import { tel } from '../telemetry/facade';
 
@@ -16,6 +17,8 @@ export function createLocalGroupProjectDeleteService(releaseBindings: (id: strin
     const canvas = await readGroupProjectCanvasInventory(id);
     await removeGroupProjectFromCanvasInventory(canvas, id, writeKeyWithinCanvasBarrier);
     await purgeGroupProjectGuidance(id);
+    // Lead and admin grants on it (#3360): the agent grants store, not a host write; safe to rerun.
+    await purgeGroupProjectRoles(id);
     releaseBindings(id);
     await journal.finishDelete(id, { withinExclusive: true });
   };

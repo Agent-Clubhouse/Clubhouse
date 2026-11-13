@@ -162,7 +162,11 @@ test('the Connections card creates and restores a two-way connection', async () 
   await app.window.getByRole('button', { name: 'Add connection' }).click();
   await picker.getByRole('button', { name: /Picker group/ }).click();
   await picker.getByRole('button', { name: 'Add connection', exact: true }).click();
-  await expect.poll(async () => JSON.parse(await fs.promises.readFile(path.join(app!.userDataDir, 'connection-card.json'), 'utf8')).memberships).toEqual(expect.arrayContaining([expect.objectContaining({ agentId: CONDUCTOR, groupId: 'gp_picker' })]));
+  // A group project's members are its membership record (#3357), so the picker adds the member there.
+  await expect.poll(async () => {
+    const view = await app!.window.evaluate(() => window.clubhouse.groupProject.listMembers('gp_picker'));
+    return view.members.map((m) => m.agentId);
+  }).toContain(CONDUCTOR);
   await app.window.getByRole('button', { name: 'Close' }).last().click();
   await app.window.getByRole('button', { name: 'Add connection' }).click();
   await picker.getByRole('button', { name: /Remote partner/ }).click();
