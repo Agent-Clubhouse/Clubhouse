@@ -43,6 +43,7 @@ async function wakeWithTap(agentId: string, message: string): Promise<boolean> {
 export interface ShoulderTapParams {
   projectId: string;
   senderLabel: string;        // "agentName@proj" or "user"
+  senderKind?: 'group_project_action';
   senderAgentId?: string;     // set when the sender is an agent
   targetAgentId: string | null; // null = broadcast to all members
   message: string;
@@ -119,7 +120,7 @@ async function deliverShoulderTap(params: ShoulderTapParams): Promise<ShoulderTa
   const project = await groupProjectRegistry.get(projectId);
   const projectName = project?.name || projectId;
 
-  const replyChannel = await senderReplyChannel(projectId, senderLabel, params.senderAgentId);
+  const replyChannel = params.senderKind === 'group_project_action' ? null : await senderReplyChannel(projectId, senderLabel, params.senderAgentId);
 
   // Find target agents
   const allBindings = bindingManager.getAllBindings();
@@ -161,7 +162,9 @@ async function deliverShoulderTap(params: ShoulderTapParams): Promise<ShoulderTa
           `To acknowledge: body: "TASK_ACK:${taskId}: Working on it"`,
         ]
       : [
-          `This tap was initiated by a human user. No channel reply is required;`,
+          params.senderKind === 'group_project_action'
+            ? `This tap was initiated by a group project Action. No channel reply is required;`
+            : `This tap was initiated by a human user. No channel reply is required;`,
           `if you need to follow up, post a status update to "general".`,
         ];
 

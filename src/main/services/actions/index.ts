@@ -357,7 +357,7 @@ function createEngine(): ActionsEngine {
     wake: async (req) => parseToolResult(await wakeWiredAgent(req)),
     wakeRefusal: (owner, agentId) => rights.checkStep(owner, { kind: 'wake', agentId }),
     groupPost: async (id, topic, text, chain) => { await groupProjectHost.post(id, 'Group project action', topic, text, { chain }); },
-    groupTap: async (id, agentId, text) => (await executeShoulderTap({ projectId: id, senderLabel: 'user', targetAgentId: agentId, message: text })).delivered.length > 0,
+    groupTap: async (id, agentId, text) => (await executeShoulderTap({ projectId: id, senderLabel: 'Group project Action', senderKind: 'group_project_action', targetAgentId: agentId, message: text })).delivered.length > 0,
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
     startQuick: (req) => startActionQuickAgent(req),
