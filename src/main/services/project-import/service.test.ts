@@ -1045,15 +1045,19 @@ describe('cancellation, interruption and unsafe incidental execution', () => {
     expect(await f.service.status('dispatcher', receipt.id)).toMatchObject({ phase: 'partial', projectId: 'proj_done', reason: 'registration_receipt_interrupted' });
   });
 
-  it('does not execute inherited hooks, templates or attribute filters and materializes symlinks inertly', async () => {
-    const f = fixture();
-    const marker = path.join(f.work, 'executed');
-    const hooks = path.join(f.work, 'hooks');
-    fs.mkdirSync(hooks);
-    fs.writeFileSync(path.join(hooks, 'post-checkout'), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
-    const config = path.join(temp.root, '.gitconfig');
-    fs.writeFileSync(config, '', { flag: 'wx', mode: 0o600 });
-    try {
+  describe('inherited hooks, templates and attribute filters', () => {
+    let f: ReturnType<typeof fixture>;
+    let marker: string;
+    let config: string;
+    let commit: string;
+    beforeEach(() => {
+      f = fixture();
+      marker = path.join(f.work, 'executed');
+      const hooks = path.join(f.work, 'hooks');
+      fs.mkdirSync(hooks);
+      fs.writeFileSync(path.join(hooks, 'post-checkout'), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
+      config = path.join(temp.root, '.gitconfig');
+      fs.writeFileSync(config, '', { flag: 'wx', mode: 0o600 });
       const windowsPath = String.raw`C:\Users\fixture\AppData\Local\Temp\hooks`;
       git(f.source, 'config', '--file', config, 'core.hooksPath', windowsPath);
       expect(git(f.source, 'config', '--file', config, '--get', 'core.hooksPath')).toBe(windowsPath);
@@ -1069,7 +1073,11 @@ describe('cancellation, interruption and unsafe incidental execution', () => {
       fs.symlinkSync(marker, path.join(f.source, 'link'));
       git(f.source, 'add', '.');
       git(f.source, '-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '-qm', 'untrusted attributes');
-      const commit = git(f.source, 'rev-parse', 'HEAD');
+      commit = git(f.source, 'rev-parse', 'HEAD');
+    });
+    afterEach(() => { if (config) fs.rmSync(config, { force: true }); });
+
+    it('does not execute inherited configuration and materializes symlinks inertly', async () => {
       const { plan, receipt } = await start(f);
       expect(plan).toMatchObject({ branch: 'trunk', defaultBranch: 'trunk', commit, headCommit: commit });
       const outcome = await finished(f.service, receipt.id);
@@ -1079,9 +1087,7 @@ describe('cancellation, interruption and unsafe incidental execution', () => {
       expect(fs.lstatSync(path.join(f.destination, 'link')).isSymbolicLink()).toBe(false);
       expect(fs.readFileSync(path.join(f.destination, 'readme.txt'), 'utf8')).toBe('hello\n');
       expect(fs.existsSync(path.join(f.destination, '.git', 'hooks', 'post-checkout'))).toBe(false);
-    } finally {
-      fs.unlinkSync(config);
-    }
+    });
   });
 
   describe.each(['.clubhouse', '.ClubHouse', '.clubhouse.'])('repository-provided %s runtime state', (folder) => {

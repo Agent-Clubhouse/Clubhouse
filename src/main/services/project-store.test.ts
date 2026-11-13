@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -106,6 +106,64 @@ describe('registry mutation evidence', () => {
     release(); await settled;
     expect(projectRegistryMutationState().pending).toBe(false);
     expect(projectRegistryMutationState().generation).toBeGreaterThan(before.generation);
+  });
+});
+
+describe('Windows project registry replacement', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const setPlatform = (value: string) => Object.defineProperty(process, 'platform', { ...platform, value });
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    vi.clearAllMocks();
+    setPlatform('win32');
+    mockStoreFile({ version: 1, projects: [{ id: 'proj_retry', name: 'Retry', path: path.join(os.tmpdir(), 'retry-project') }] });
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platform);
+    vi.useRealTimers();
+  });
+
+  it.each(['EPERM', 'EACCES', 'EBUSY'])('retries transient %s with the same staged bytes and rename target', async (code) => {
+    const busy = Object.assign(new Error('temporarily held'), { code });
+    vi.mocked(fsp.rename).mockRejectedValueOnce(busy).mockRejectedValueOnce(busy);
+    const writing = update('proj_retry', { displayName: 'Changed' });
+    await vi.runAllTimersAsync();
+    await expect(writing).resolves.toEqual([expect.objectContaining({ displayName: 'Changed' })]);
+    expect(fsp.rename).toHaveBeenCalledTimes(3);
+    expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+    expect(fsp.unlink).not.toHaveBeenCalled();
+    const staged = vi.mocked(fsp.writeFile).mock.calls[0][0];
+    expect(String(staged)).toContain('projects.json.tmp.');
+    for (const args of vi.mocked(fsp.rename).mock.calls) expect(args).toEqual([staged, STORE_PATH]);
+    expect(projectRegistryMutationState().pending).toBe(false);
+  });
+
+  it('stops after five failed attempts and propagates the original error', async () => {
+    const busy = Object.assign(new Error('still held'), { code: 'EPERM' });
+    vi.mocked(fsp.rename).mockRejectedValue(busy);
+    const failed = expect(update('proj_retry', { displayName: 'Changed' })).rejects.toBe(busy);
+    await vi.runAllTimersAsync();
+    await failed;
+    expect(fsp.rename).toHaveBeenCalledTimes(5);
+    expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+    expect(projectRegistryMutationState().pending).toBe(false);
+  });
+
+  it.each([
+    { platform: 'linux', code: 'EPERM' },
+    { platform: 'darwin', code: 'EBUSY' },
+    { platform: 'win32', code: 'EIO' },
+  ])('does not retry $code on $platform', async ({ platform, code }) => {
+    setPlatform(platform);
+    const error = Object.assign(new Error('rename refused'), { code });
+    vi.mocked(fsp.rename).mockRejectedValue(error);
+    await expect(update('proj_retry', { displayName: 'Changed' })).rejects.toBe(error);
+    expect(fsp.rename).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
