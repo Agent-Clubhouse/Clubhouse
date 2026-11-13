@@ -7,6 +7,7 @@ import { createDisposableProfile, type DisposableProfile } from './app-profile';
 import { chatFixturePath } from '../src/main/orchestrators/adapters/testing/fake-cli';
 import { buildChatScript, writeChatScript } from '../src/main/orchestrators/adapters/testing/chat-script';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
+import { connectMcp } from './mcp-agent';
 import { launchApp, type ElectronApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
 
@@ -90,36 +91,6 @@ async function writeQuietFixture(dir: string): Promise<string> {
   return file;
 }
 
-/** A minimal MCP client over the bridge, as the agent the credentials belong to. */
-async function connectMcp(env: Record<string, string | null>) {
-  const url = `http://127.0.0.1:${env.CLUBHOUSE_MCP_PORT}/mcp/${env.CLUBHOUSE_AGENT_ID}`;
-  let sessionId: string | null = null;
-  let id = 0;
-  const rpc = async (method: string, params: Record<string, unknown> = {}) => {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Clubhouse-Nonce': env.CLUBHOUSE_HOOK_NONCE ?? '',
-        ...(sessionId && { 'Mcp-Session-Id': sessionId }),
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
-    });
-    sessionId = res.headers.get('mcp-session-id') ?? sessionId;
-    return (await res.json()).result;
-  };
-  await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
-  const toolNames = async (): Promise<string[]> => (await rpc('tools/list')).tools.map((t: { name: string }) => t.name);
-  const callText = async (name: string, args: Record<string, unknown> = {}) => {
-    const result = await rpc('tools/call', { name, arguments: args });
-    return { isError: !!result.isError, text: result.content[0].text as string };
-  };
-  const call = async (name: string, args: Record<string, unknown> = {}) => {
-    const { isError, text } = await callText(name, args);
-    return { isError, body: JSON.parse(text) };
-  };
-  return { toolNames, call, callText };
-}
 
 async function launch(experimental: Record<string, boolean> = {}, files: Record<string, unknown> = {}): Promise<LaunchedApp> {
   app = await launchApp({
@@ -446,11 +417,11 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     const refused = await mcp.call(sleepTool);
     expect(refused.isError).toBe(true);
     expect(refused.body).toMatchObject({ status: 'refused', reason: 'mid_turn' });
-    expect((await mcp.call(toolFor(awake, 'get_status')!)).body.running).toBe(true);
+    expect(((await mcp.call(toolFor(awake, 'get_status')!)).body as { running: boolean }).running).toBe(true);
 
     const slept = await mcp.call(sleepTool, { force: true });
-    expect(slept.body.status).toBe('sleeping');
-    expect((await mcp.call(toolFor(awake, 'get_status')!)).body.running).toBe(false);
+    expect((slept.body as { status: string }).status).toBe('sleeping');
+    expect(((await mcp.call(toolFor(awake, 'get_status')!)).body as { running: boolean }).running).toBe(false);
     expect(toolFor(await mcp.toolNames(), 'wake_agent')).toBeTruthy();
   } finally {
     await fs.promises.rm(fixtureDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -472,7 +443,7 @@ test('an Ask-first call waits in Needs you, and goes through once the user allow
 
     // Changing app settings is Ask first for the Dispatcher: the tool is offered, and the call asks.
     expect(await mcp.toolNames()).toContain('set_helper_presets');
-    const { revision } = (await mcp.call('read_helper_presets')).body;
+    const { revision } = (await mcp.call('read_helper_presets')).body as { revision: number };
     const args = { revision, reset: {} };
     const asked = await mcp.callText('set_helper_presets', args);
     expect(asked.isError).toBe(true);
@@ -494,7 +465,7 @@ test('an Ask-first call waits in Needs you, and goes through once the user allow
     const done = await mcp.call('set_helper_presets', args);
     expect(done.isError).toBe(false);
     expect(done.body).toMatchObject({ ok: true });
-    expect((await mcp.callText('set_helper_presets', { revision: done.body.revision, reset: {} })).text).toContain('needs the user\'s approval');
+    expect((await mcp.callText('set_helper_presets', { revision: (done.body as { revision: number }).revision, reset: {} })).text).toContain('needs the user\'s approval');
   } finally {
     await fs.promises.rm(fixtureDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
