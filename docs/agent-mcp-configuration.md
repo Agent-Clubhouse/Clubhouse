@@ -78,6 +78,36 @@ catalog is explicitly unavailable rather than an apparently empty tool list.
 Catalog availability is not authorization: calls still enforce the saved
 direction switches and all existing checks.
 
+## Opening connection targets
+
+**Open** navigates to the target, independently of **Edit** and source-aware
+**Remove**. Agents are resolved by their actual ID across registered projects,
+not by their name or whether their rail card has loaded. An unavailable target
+explains what to restore or repair and offers **Retry Open**.
+
+Group projects open their persisted Canvas representation and reveal its actual
+project node, including on an unvisited Canvas. Multiple representations offer
+a chooser labeled by Home/project, Canvas and node identities; no representation
+explains that no owning Canvas is available. Loaded Canvas edits override saved
+placement, and incomplete or stale lookups are reported rather than guessed.
+If the owning Canvas is already popped out, Open reveals the node in that
+existing window using its own viewport, then focuses the window only after
+the reveal is acknowledged. A closed or unresponsive window offers Retry Open;
+Open never duplicates it or moves it back into the main window.
+The initiating connection stays visible until that acknowledgement or error,
+so a failed reveal can be retried without losing the row.
+Browser and terminal widgets use their existing Canvas route; plugins open an
+enabled contributed tab when one exists. Unsupported targets have a disabled
+Open action with an accessible explanation.
+
+Open does not create Canvases/projects, reconnect inactive wires, or change
+bindings, membership, grants or policy. Canvas navigation uses read-only lookup
+and validated hydration rather than a new-board/recovery path. Normal manual
+Canvas opening, subsequent explicit edits and runtime wake reconciliation keep
+their existing behavior. Unchanged scoped broadcasts do not reconnect saved
+inactive zones; the first structural edit ends navigation-only suppression,
+including when that edit is later reverted.
+
 ## Directional connection guidance
 
 The Connections card's **Edit** and Canvas wire editors share the same

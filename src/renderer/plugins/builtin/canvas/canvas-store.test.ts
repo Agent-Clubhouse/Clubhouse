@@ -1384,14 +1384,22 @@ describe('canvas store: remote then local', () => {
     await new Promise((r) => setTimeout(r, 10));
     // An autosave mid-load: the store still holds the satellite's canvas.
     expect(store.getState().activeCanvasId).toBe('REMOTE-CANVAS');
+    expect(store.getState().dataOrigin).toBe('remote');
     await store.getState().saveCanvas(storage);
     expect(saved()).not.toMatch(/REMOTE-/);
 
     finishActiveRead();
     await loading;
     expect(store.getState().activeCanvasId).not.toBe('REMOTE-CANVAS');
+    expect(store.getState().dataOrigin).toBe('local');
     await store.getState().saveCanvas(storage);
     expect(saved()).not.toMatch(/REMOTE-/);
+    expect(saved()).not.toContain('dataOrigin');
+
+    storage.read = vi.fn(async () => { throw new Error('Permission denied'); });
+    await store.getState().loadCanvas(storage);
+    expect(store.getState().loaded).toBe(false);
+    expect(store.getState().dataOrigin).toBeNull();
   });
 
   it('drops the satellite\'s wires when the local wires file is empty', async () => {

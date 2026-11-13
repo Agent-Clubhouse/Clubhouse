@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { CanvasMembership } from '../shared/canvas-index-types';
+import type { AgentNavigationTarget, CanvasMembership, CanvasNavigationSnapshot, GroupProjectNavigationIndex } from '../shared/canvas-index-types';
+import type { NavigableCanvasTargetKind } from '../shared/canvas-persistence';
 
 export const canvas = {
   canvas: {
@@ -17,5 +18,11 @@ export const canvas = {
   /** The canvases holding an agent's card, read from the persisted stores (Home and the agent's project). */
   getAgentCanvases: (agentId: string, projectId?: string | null) =>
     ipcRenderer.invoke(IPC.CANVAS_CMD.GET_AGENT_CANVASES, agentId, projectId ?? undefined) as Promise<CanvasMembership[]>,
+  getTargetCanvases: (kind: NavigableCanvasTargetKind, targetId: string) =>
+    ipcRenderer.invoke(IPC.CANVAS_CMD.GET_TARGET_CANVASES, kind, targetId) as Promise<GroupProjectNavigationIndex>,
+  readForNavigation: (kind: NavigableCanvasTargetKind, targetId: string, projectId?: string) =>
+    ipcRenderer.invoke(IPC.CANVAS_CMD.READ_FOR_NAVIGATION, kind, targetId, projectId) as Promise<CanvasNavigationSnapshot>,
+  resolveAgentTarget: (agentId: string) =>
+    ipcRenderer.invoke(IPC.CANVAS_CMD.RESOLVE_AGENT_TARGET, agentId) as Promise<AgentNavigationTarget>,
   },
 };

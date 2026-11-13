@@ -5,6 +5,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { ConnectionsCard, agentConnections, connectionMeta } from './ConnectionsCard';
 import type { ConnectionSourceKind } from '../../../../shared/connection-sources';
+import { useProjectStore } from '../../../stores/projectStore';
 import type { ConnectionGuidanceSnapshot } from '../../../../shared/connection-guidance';
 import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
 import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
@@ -85,6 +86,8 @@ describe('agentConnections', () => {
 
 describe('Connections card (#2232)', () => {
   beforeEach(() => {
+    useProjectStore.setState({ projects: [{ id: 'p1', name: 'Project', path: '/project' }] });
+    window.clubhouse.canvas.resolveAgentTarget = vi.fn(async () => ({ project: { id: 'p1', name: 'Project', path: '/project' } }));
     useDispatcherStore.getState().setState(DISPATCHER_OFF);
     useMcpBindingStore.setState({ bindings });
     useAgentStore.setState({
@@ -98,7 +101,7 @@ describe('Connections card (#2232)', () => {
     useAgentStore.setState({ agents: {} } as never);
   });
 
-  it('lists the wires like the Canvases card, read-only without the connection tools', () => {
+  it('lists the wires like the Canvases card, read-only without the connection tools', async () => {
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} />);
     expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('5');
     const rows = screen.getAllByTestId('connection-row');
@@ -106,11 +109,11 @@ describe('Connections card (#2232)', () => {
     expect(rows[0]).toHaveTextContent('impl-ipc');
     expect(rows[0]).toHaveTextContent('helper, two-way');
     expect(screen.queryByTestId('connection-disconnect')).not.toBeInTheDocument();
-    // Only agents in the rail can be opened.
+    // Open resolves target IDs independently of whether a rail card is loaded.
     expect(within(rows[0]).getByTestId('connection-open')).toBeInTheDocument();
-    expect(within(rows[4]).queryByTestId('connection-open')).not.toBeInTheDocument();
+    expect(within(rows[4]).getByTestId('connection-open')).toBeInTheDocument();
     fireEvent.click(within(rows[0]).getByTestId('connection-open'));
-    expect(useAgentStore.getState().activeAgentId).toBe('h1');
+    await waitFor(() => expect(useAgentStore.getState().activeAgentId).toBe('h1'));
   });
 
   it.each(['Dispatcher', 'Rosie'])('distinguishes controller and chat connections named %s without changing ordinary rows or directions', (name) => {

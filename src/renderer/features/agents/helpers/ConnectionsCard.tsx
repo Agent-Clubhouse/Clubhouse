@@ -22,7 +22,7 @@ import type { Agent, DispatcherLink } from '../../../../shared/types';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { CardNote, DetailsCard } from '../details/DetailsCard';
-import { openAgent } from './orchestration-hooks';
+import { ConnectionOpenAction } from './ConnectionOpenAction';
 import { CONNECTION_SOURCE_LABELS, type AgentConnectionSources, type ConnectionPairSources } from '../../../../shared/connection-sources';
 import { ConnectionSourcesDialog } from './ConnectionSourcesDialog';
 import type { ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
@@ -239,7 +239,6 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
       ) : (
         <ul className="flex flex-col" data-testid="connections-list">
           {connections.map((c) => {
-            const openable = c.kind === 'agent' && !!rail[c.id];
             return (
               <li key={c.id}>
                 <div className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md hover:bg-surface-0" data-testid="connection-row">
@@ -257,11 +256,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
                         Disconnect
                       </button>
                     )}
-                    {openable && (
-                      <button type="button" onClick={() => openAgent(rail[c.id].projectId, c.id)} className="text-xs text-ctp-accent hover:underline cursor-pointer" data-testid="connection-open">
-                        Open
-                      </button>
-                    )}
+                    <ConnectionOpenAction targetId={c.id} targetKind={c.kind} name={c.name} projectId={agent.projectId} />
                   </span>
                 </div>
               </li>

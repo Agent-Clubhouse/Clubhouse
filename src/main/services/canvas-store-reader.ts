@@ -20,11 +20,13 @@ import { appLog } from './log-service';
 import {
   REMOVED_CANVAS_VIEW_TYPES,
   findAgentCanvasHits,
+  findTargetCanvasHits,
+  type NavigableCanvasTargetKind,
   type AgentCanvasHit,
   type CanvasInstanceLike,
   type CanvasViewLike,
 } from '../../shared/canvas-persistence';
-import type { CanvasMembership, PersistedCanvasWire } from '../../shared/canvas-index-types';
+import type { CanvasMembership, CanvasNavigationSnapshot, CanvasTargetIndex, PersistedCanvasWire } from '../../shared/canvas-index-types';
 
 const CANVAS_PLUGIN_ID = 'canvas';
 const KEY_INSTANCES = 'canvas-instances';
@@ -163,6 +165,9 @@ function normalizeViews(raw: unknown, strict = false): CanvasViewLike[] | null {
       type: typeof view.type === 'string' ? view.type : undefined,
       agentId: typeof view.agentId === 'string' ? view.agentId : null,
       metadata: view.metadata && typeof view.metadata === 'object' ? view.metadata as Record<string, unknown> : null,
+      pluginWidgetType: typeof view.pluginWidgetType === 'string' ? view.pluginWidgetType : undefined,
+      title: typeof view.title === 'string' ? view.title : undefined,
+      displayName: typeof view.displayName === 'string' ? view.displayName : undefined,
     });
   }
   return views;
@@ -321,4 +326,53 @@ export async function getAgentCanvasMemberships(agentId: string, projectId?: str
   const wanted = locations.filter((l) => l.scope === 'app' || (!!projectId && l.projectId === projectId));
   const snapshots = await Promise.all(wanted.map((location) => readCanvasStore(location)));
   return snapshots.flatMap((s) => toMemberships(s, agentId));
+}
+
+/** A complete, read-only inventory for connection Open, with per-scope failures. */
+export async function getTargetCanvasIndex(kind: NavigableCanvasTargetKind, targetId: string): Promise<CanvasTargetIndex> {
+  let snapshots: CanvasStoreSnapshot[];
+  try {
+    snapshots = await readAllCanvasStores({ strict: true });
+  } catch (error) {
+    // telemetry-exempt: Open surfaces the incomplete inventory with an actionable retry.
+    return { stores: [], error: `Registered projects could not be read. ${errorMessage(error)} Repair the project list and retry Open.` };
+  }
+  return {
+    stores: snapshots.map(({ location, canvases, problems }) => ({
+      scope: location.scope,
+      ...(location.scope === 'project' ? { projectId: location.projectId, projectName: location.projectName } : {}),
+      hits: canvases ? findTargetCanvasHits(canvases, kind, targetId) : [],
+      ...(!canvases && { error: problems.join('; ') || 'Canvas instances could not be read.' }),
+    })),
+  };
+}
+
+/** Re-read the selected store at the load boundary, without recovery, quarantine or default creation. */
+export async function readCanvasForNavigation(projectId?: string): Promise<CanvasNavigationSnapshot> {
+  let kvDir = globalCanvasKvDir();
+  if (projectId !== undefined) {
+    const registered = await projectStore.peekProjectsChecked({ strict: true });
+    if (!registered.readable) throw new Error('Registered projects could not be read. Retry Open after repairing the project list.');
+    const project = registered.projects.find((entry) => entry.id === projectId);
+    if (!project) throw new Error('This Canvas project is no longer registered. Retry Open to find another representation.');
+    if (!(await fsp.stat(project.path)).isDirectory()) throw new Error('This Canvas project folder is unavailable.');
+    kvDir = projectCanvasKvDir(project.path);
+  }
+  const [instances, wires, zones] = await Promise.all([
+    readKvKey(kvDir, KEY_INSTANCES, { strict: true }),
+    readWires(kvDir, { strict: true }),
+    readKvKey(kvDir, 'canvas-zone-wires', { strict: true }),
+  ]);
+  if (instances.status !== 'ok' || !normalizeInstances(instances.value, true)) {
+    throw new Error('The saved Canvas is missing or unreadable. Retry Open to refresh its representations.');
+  }
+  if (!wires.wires) throw new Error(wires.problem || 'Canvas wires could not be read.');
+  if (zones.status === 'unreadable' || (zones.status === 'ok' && !Array.isArray(zones.value))) {
+    throw new Error('Canvas zone wires could not be read. Repair the saved Canvas and retry Open.');
+  }
+  return {
+    canvases: instances.value as unknown[],
+    wires: wires.wires,
+    zoneWires: zones.status === 'ok' ? zones.value as unknown[] : [],
+  };
 }
