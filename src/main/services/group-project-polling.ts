@@ -54,10 +54,12 @@ const DEFERRED_POLLING_DELAY_MS = 3_000;
  * so nothing carries over a restart.
  */
 const pendingStarts = new Map<string, Set<string>>();
+const deletedProjects = new Set<string>();
 let unsubscribeConnected: (() => void) | null = null;
 let unsubscribeGate: (() => void) | null = null;
 
 function queuePendingStart(agentId: string, projectId: string): void {
+  if (deletedProjects.has(projectId)) return;
   let pending = pendingStarts.get(agentId);
   if (!pending) {
     pending = new Set();
@@ -205,6 +207,18 @@ function clearPendingStarts(projectId: string): void {
   }
 }
 
+/** Forget polling state and cancel delayed starts for a permanently deleted project. */
+export function forgetDeletedProjectPolling(projectId: string): void {
+  deletedProjects.add(projectId);
+  clearPendingStarts(projectId);
+  for (const [agentId, projects] of pausedByMcp) {
+    projects.delete(projectId);
+    if (!projects.size) pausedByMcp.delete(agentId);
+  }
+  forgetPollingRuns(projectId);
+  notifyPauseChanged();
+}
+
 /** Send the start message a member missed while asleep, if it still applies. */
 async function flushPendingStarts(agentId: string): Promise<void> {
   const pending = pendingStarts.get(agentId);
@@ -227,6 +241,7 @@ async function flushPendingStarts(agentId: string): Promise<void> {
       meta: { agentId, projectId },
     });
     setTimeout(() => {
+      if (deletedProjects.has(projectId)) return;
       // MCP can go off again in the delay. Held once more, so it isn't lost and isn't sent to no purpose.
       if (!canPoll(agentId)) {
         queuePendingStart(agentId, projectId);
@@ -349,6 +364,7 @@ export async function setProjectPolling(projectId: string, enabled: boolean): Pr
 /** For testing: drop queued starts and the connection listener. */
 export function _resetPollingForTesting(): void {
   pendingStarts.clear();
+  deletedProjects.clear();
   pausedByMcp.clear();
   resuming.clear();
   _resetPollingRunsForTesting();

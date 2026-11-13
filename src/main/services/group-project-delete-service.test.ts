@@ -7,7 +7,7 @@ vi.mock('./group-project-host', () => ({ groupProjectHost: { exclusive: mocks.ex
 vi.mock('./group-project-delete-inventory', () => ({ readGroupProjectDeletionInventory: mocks.inventory }));
 vi.mock('./group-project-canvas-inventory', () => ({ readGroupProjectCanvasInventory: mocks.canvas, removeGroupProjectFromCanvasInventory: mocks.remove }));
 vi.mock('./plugin-storage', () => ({ writeKeyWithinCanvasBarrier: vi.fn() }));
-vi.mock('./group-project-polling-runs', () => ({ forgetPollingRuns: mocks.forget }));
+vi.mock('./group-project-polling', () => ({ forgetDeletedProjectPolling: mocks.forget }));
 import { createLocalGroupProjectDeleteService } from './group-project-delete-service';
 
 const impact = { groupProjectId: 'gp', members: ['Ada'], canvases: ['One', 'Two'], actions: [], grants: [], messages: 2, topics: 1, machines: [], revisions: ['3', 'canvas'] };
