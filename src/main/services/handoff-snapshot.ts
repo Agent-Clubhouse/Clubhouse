@@ -27,7 +27,7 @@ export class HandoffSnapshotError extends Error {
   cleanupFailed = false;
   boundsReport?: { totalBytes: number; fileCount: number; largestFiles: Array<{ path: string; size: number }>; bounds: HandoffTransferBounds };
   constructor(
-    readonly code: 'invalid_repository' | 'unsupported_repository' | 'uncommitted_branch' | 'git_failed' | 'unsafe_entry' | 'source_changed' | 'bounds_exceeded'
+    readonly code: 'not_a_repository' | 'no_commits' | 'invalid_repository' | 'unsupported_repository' | 'uncommitted_branch' | 'git_failed' | 'unsafe_entry' | 'source_changed' | 'bounds_exceeded'
       | 'secret_blocked' | 'hash_mismatch' | 'filesystem_failed' | 'invalid_staging',
     readonly file?: string,
     readonly findings?: HandoffSecretFinding[],
@@ -35,6 +35,12 @@ export class HandoffSnapshotError extends Error {
     super(`Handoff snapshot failed: ${code}${file ? ` (${safeHandoffDiagnosticPath(file)})` : ''}.`);
     this.name = 'HandoffSnapshotError';
     if (file) this.file = safeHandoffDiagnosticPath(file);
+  }
+  get instruction(): string | undefined {
+    if (this.code === 'not_a_repository') return 'Code handoffs require a Git worktree with a commit. Initialize Git and create an initial commit, or send the task as a message.';
+    if (this.code === 'no_commits') return 'Create an initial commit in this Git worktree before preparing or offering a code handoff.';
+    if (this.code === 'uncommitted_branch') return 'Commit your work or use worktree mode.';
+    return undefined;
   }
 }
 
@@ -219,6 +225,11 @@ async function directory(root: string, parent?: SourceRoot): Promise<SourceRoot>
 }
 
 async function repository(context: SnapshotGit): Promise<HandoffWorktreeManifest['repo']> {
+  try { await fs.promises.lstat(path.join(context.root, '.git')); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new HandoffSnapshotError('not_a_repository');
+    throw error;
+  }
   await gitControls(context);
   if (paths(await git(context, ['ls-files', '-v', '-z'])).some((entry) => /^[a-zS] /.test(entry))) {
     throw new HandoffSnapshotError('unsupported_repository');
@@ -226,7 +237,8 @@ async function repository(context: SnapshotGit): Promise<HandoffWorktreeManifest
   const top = await git(context, ['rev-parse', '--show-toplevel']);
   if (!top || await fs.promises.realpath(top.trimEnd()) !== context.root) throw new HandoffSnapshotError('invalid_repository');
   if (await git(context, ['ls-files', '--unmerged', '-z'])) throw new HandoffSnapshotError('unsafe_entry');
-  const base = (await git(context, ['rev-parse', '--verify', 'HEAD^{commit}']))?.trim();
+  const base = (await git(context, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], true))?.trim();
+  if (!base) throw new HandoffSnapshotError('no_commits');
   const branch = (await git(context, ['symbolic-ref', '--quiet', '--short', 'HEAD'], true))?.trim();
   const remote = (await git(context, ['config', '--get', 'remote.origin.url'], true))?.trim() ?? null;
   if (!base || !branch) throw new HandoffSnapshotError('invalid_repository');

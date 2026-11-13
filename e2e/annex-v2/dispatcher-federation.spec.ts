@@ -3,6 +3,8 @@ import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { installFakeClis, type FakeClis } from '../chat-fake-cli';
 import { buildChatScript, writeChatScript } from '../../src/main/orchestrators/adapters/testing/chat-script';
 import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/fake-cli';
@@ -191,6 +193,16 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   }
   // The project agent reaches Laptop directly, without a local start_work call.
   const project = path.join(scratch!, 'direct-sender'); await fs.promises.mkdir(project);
+  // Agreements prepare a real transferable source before offering it. Direct news/files
+  // can use any folder, but this fixture also exercises a handoff and needs a committed HEAD.
+  const git = (...args: string[]) => promisify(execFile)('git', args, { cwd: project });
+  await git('init', '--template=', '-b', 'main');
+  await git('config', 'user.name', 'Fixture'); await git('config', 'user.email', 'fixture@example.invalid');
+  await fs.promises.writeFile(path.join(project, 'work.txt'), 'Federated handoff fixture base\n');
+  await fs.promises.writeFile(path.join(project, '.gitignore'), '.clubhouse/\n');
+  await git('add', '--', 'work.txt', '.gitignore');
+  await git('-c', `core.hooksPath=${path.join(scratch!, 'no-hooks')}`, 'commit', '-qm', 'Fixture base');
+  expect((await git('rev-parse', '--verify', 'HEAD^{commit}')).stdout.trim()).toMatch(/^[0-9a-f]{40,64}$/);
   await addProject(here.electronApp, here.window, project);
   const sender = await createDurableAgent(here.window, { projectName: path.basename(project), name: 'direct-sender', orchestrator: 'claude-code' });
   const direct = await readyMcp(fakes!, sender);

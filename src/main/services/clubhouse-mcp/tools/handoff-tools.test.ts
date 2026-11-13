@@ -124,3 +124,15 @@ it('prepares only the authenticated caller selection, returns frozen results, an
   expect((await call('prepare_handoff', { mode: 'worktree', bounds: { totalBytes: 999999 } })).isError).toBe(true);
   expect(state.snapshot).not.toHaveBeenCalled();
 });
+
+it.each(['prepare_handoff', 'offer_handoff'])('returns actionable repository prerequisites from %s without an offer', async (name) => {
+  const { HandoffSnapshotError } = await import('../../handoff-snapshot');
+  for (const reason of ['not_a_repository', 'no_commits'] as const) {
+    const error = new HandoffSnapshotError(reason);
+    if (name === 'prepare_handoff') state.snapshot.mockRejectedValueOnce(error);
+    else state.ensure.mockRejectedValueOnce(error);
+    const result = await call(name, name === 'prepare_handoff' ? { mode: 'worktree' } : { to: 'Receiver', task: 'Task', brief: 'Work', mode: 'worktree' });
+    expect(JSON.parse(result.content[0].text as string)).toEqual({ ready: false, reason, findings: [], instruction: error.instruction });
+    expect(state.offer).not.toHaveBeenCalled();
+  }
+});

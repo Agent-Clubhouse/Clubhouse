@@ -39,7 +39,7 @@ export function registerHandoffTools(): void {
   }, { group: 'handoffs', grant: READ });
 
   registerGlobalTool('prepare_handoff', {
-    description: 'Freeze your selected branch or worktree files into a hash-verified handoff manifest. Runs secret/path/size checks before any transfer, including the fallback Git bundle. Returns manifest, summary and bounds. Pass summary to offer_handoff.manifest within 15 minutes. check_handoff remains a cheaper read-only preview. Branch mode requires committed work; ignored selections apply to worktree mode. Agents cannot raise limits or override secret blocks.',
+    description: 'Freeze your selected branch or worktree files into a hash-verified handoff manifest. Requires a Git worktree with at least one commit. Runs secret/path/size checks before any transfer, including the fallback Git bundle. Returns manifest, summary and bounds. Pass summary to offer_handoff.manifest within 15 minutes. check_handoff remains a cheaper read-only preview. Branch mode requires committed work; ignored selections apply to worktree mode. Agents cannot raise limits or override secret blocks.',
     inputSchema: { type: 'object', properties: {
       mode: { type: 'string', enum: ['branch', 'worktree'] },
       include: { type: 'object', properties: { tracked_changes: { type: 'boolean' }, untracked: { type: 'boolean' }, ignored: { type: 'array', items: { type: 'string' }, maxItems: 100 } }, additionalProperties: false },
@@ -60,13 +60,13 @@ export function registerHandoffTools(): void {
       // telemetry-exempt: bounded, sanitized preparation findings are returned to the caller
       const { HandoffSnapshotError } = await import('../../handoff-snapshot');
       if (error instanceof HandoffSnapshotError) return text({ ready: false, reason: error.code, findings: error.findings ?? [], ...error.boundsReport,
-        ...(error.code === 'uncommitted_branch' && { instruction: 'Commit your work or use worktree mode.' }) });
+        ...(error.instruction && { instruction: error.instruction }) });
       return text('Handoff preparation is unavailable. Check the registered project, safe selections and storage capacity.', true);
     }
   }, { group: 'handoffs', grant: READ });
 
   registerGlobalTool('offer_handoff', {
-    description: 'Offer a task, brief and code to another agent or a computer’s Dispatcher. Unlike hand_off, which records how an orchestrator took a helper’s work, this starts a durable agreement with a receiver. Needs handoff.offer and an existing connection, or a receiving Dispatcher. Accepting authorizes automatic verified transfer/apply. Keep the returned id; get_handoff shows retained history. A refused or expired offer is terminal: make a new offer to try again.',
+    description: 'Offer a task, brief and code to another agent or a computer’s Dispatcher. Requires a Git worktree with at least one commit. Unlike hand_off, which records how an orchestrator took a helper’s work, this starts a durable agreement with a receiver. Needs handoff.offer and an existing connection, or a receiving Dispatcher. Accepting authorizes automatic verified transfer/apply. Keep the returned id; get_handoff shows retained history. A refused or expired offer is terminal: make a new offer to try again.',
     inputSchema: { type: 'object', properties: {
       to: { type: 'string', description: 'Agent id/name, agent@machine (fingerprint or unambiguous name), or machine:<name> for that computer’s Dispatcher.' },
       task: { type: 'string', description: 'Task title, up to 256 characters.' }, brief: { type: 'string', description: 'Goal, progress, remaining work and verification; up to 16000 characters. Never include secrets.' },
@@ -91,7 +91,7 @@ export function registerHandoffTools(): void {
       // telemetry-exempt: bounded, sanitized preparation findings are returned to the caller
       const { HandoffSnapshotError } = await import('../../handoff-snapshot');
       if (error instanceof HandoffSnapshotError) return text({ ready: false, reason: error.code, findings: error.findings ?? [], ...error.boundsReport,
-        ...(error.code === 'uncommitted_branch' && { instruction: 'Commit your work or use worktree mode.' }) });
+        ...(error.instruction && { instruction: error.instruction }) });
       // telemetry-exempt: never reflect task text, secret values or store paths
       return text('Handoff offer was refused or could not be persisted. Check the target, connection, permissions and secret-free metadata.', true);
     }

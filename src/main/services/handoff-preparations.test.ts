@@ -60,3 +60,11 @@ it('does not publish or retain file bytes after a failed catalog save', async ()
   await expect(prepareCallerHandoff('owner', 'worktree')).rejects.toThrow();
   expect(fs.readdirSync(path.join(state.dir, 'handoff-data', 'prepared'))).toEqual([]);
 }, 30_000);
+
+it.each(['branch', 'worktree'] as const)('explains non-Git and unborn sources before preparing %s handoffs', async (mode) => {
+  state.repo = path.join(state.dir, 'without-history'); fs.mkdirSync(state.repo);
+  await expect(prepareCallerHandoff('owner', mode)).rejects.toMatchObject({ code: 'not_a_repository', instruction: expect.stringContaining('Initialize Git') });
+  await exec('git', ['init', '--template=', '-b', 'main'], { cwd: state.repo });
+  await expect(prepareCallerHandoff('owner', mode)).rejects.toMatchObject({ code: 'no_commits', instruction: expect.stringContaining('initial commit') });
+  expect(fs.readdirSync(path.join(state.dir, 'handoff-data', 'prepared'))).toEqual([]);
+}, 30_000);
