@@ -4,9 +4,9 @@ import { dispatcherProviderControl } from '../../dispatcher-provider-control';
  * Agent-to-Agent MCP Tools — allows linked agents to communicate.
  */
 
-import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
+import { createMessageFile, removeMessageFile } from './message-file';
 import { buildToolName, callTool, canCallWake, keepsFirstToolList, registerGlobalTool } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
@@ -124,25 +124,15 @@ function remoteInputReceipt(result: McpToolResult, sent?: RuntimeSendResult): Ag
 
 // ── File-backed message helpers ─────────────────────────────────────────────
 
-const A2A_MSG_DIR = path.join(app.getPath('temp'), 'clubhouse-a2a-messages');
-
-async function ensureMsgDir(): Promise<void> {
-  await fsp.mkdir(A2A_MSG_DIR, { recursive: true });
+/** Write content privately. The task id is retained only for API compatibility. */
+export async function writeMessageFile(_taskId: string, content: string): Promise<string> {
+  return createMessageFile(content, app.getPath('temp'));
 }
 
-/** Write content to a temp file, return its path. */
-export async function writeMessageFile(taskId: string, content: string): Promise<string> {
-  await ensureMsgDir();
-  const filePath = path.join(A2A_MSG_DIR, `${taskId}.md`);
-  await fsp.writeFile(filePath, content, 'utf-8');
-  return filePath;
-}
-
-/** Schedule cleanup of a message file after a delay (default 5 min). */
+/** Schedule cleanup of this private file and its empty directory (default 5 min). */
 export function scheduleMessageCleanup(filePath: string, delayMs = 5 * 60 * 1000): void {
-  setTimeout(async () => {
-    try { await fsp.unlink(filePath); } catch { /* already gone */ }
-  }, delayMs);
+  const timer = setTimeout(() => { void removeMessageFile(filePath); }, delayMs);
+  timer.unref?.();
 }
 
 /** Register all agent-to-agent tool templates. */
@@ -506,7 +496,7 @@ export function registerAgentTools(): void {
           type: 'string',
           description:
             'Optional filename hint (e.g. "plan.md", "data.json"). ' +
-            'Defaults to <task_id>.md.',
+            'Kept in delivery metadata; Clubhouse generates the private storage name.',
         },
       },
       required: ['content'],
@@ -518,7 +508,7 @@ export function registerAgentTools(): void {
       }
 
       const taskId = optionalString(args, 'task_id') || `t_${Date.now().toString(36)}`;
-      const rawFilename = optionalString(args, 'filename') || `${taskId}.md`;
+      const rawFilename = optionalString(args, 'filename') || 'message.md';
       const filename = path.basename(rawFilename);
 
       const reg = agentRegistry.get(targetId);
@@ -531,10 +521,7 @@ export function registerAgentTools(): void {
       const { senderName, senderLabel, targetName } = senderOf(agentId, targetId);
 
       try {
-        // Write content to temp file
-        await ensureMsgDir();
-        const filePath = path.join(A2A_MSG_DIR, `${taskId}-${filename}`);
-        await fsp.writeFile(filePath, content, 'utf-8');
+        const filePath = await writeMessageFile(taskId, content);
         scheduleMessageCleanup(filePath);
 
         appLog('core:mcp', 'info', 'send_file: file written', {
@@ -545,7 +532,7 @@ export function registerAgentTools(): void {
         if (!runtime) {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }
-        const notice = `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath} — read this file for content from ${senderLabel}.`;
+        const notice = `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath}. Filename hint: ${JSON.stringify(filename)}. Read this file for content from ${senderLabel}.`;
         let sent: RuntimeSendResult | undefined;
         if (runtime.kind === 'pty') {
           // Terminals keep the single fixed-delay Enter this tool has always sent.
