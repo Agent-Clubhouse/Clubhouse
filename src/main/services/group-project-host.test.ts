@@ -425,15 +425,58 @@ describe('group project host: review fixes', () => {
     expect(changes[0]).toMatchObject({ part: 'deleted', project: { id: project.id, name: 'Announced' } });
   });
 
-  it('hides every group project when the tombstones file is corrupt (fails closed)', async () => {
+  it('fails closed when the tombstones file is corrupt: lookups hide, listings refuse rather than answer empty', async () => {
     const project = await groupProjectHost.create('Kept');
     await restart();
     await fsp.writeFile(path.join(dataDir(), 'tombstones.json'), '{corrupt');
-    expect(await groupProjectRegistry.list()).toEqual([]);
+    // An empty list would make binding reconciliation prune every live membership.
+    await expect(groupProjectRegistry.list()).rejects.toThrow('tombstones could not be read');
     expect(groupProjectRegistry.getSync(project.id)).toBeNull();
-    expect(await groupProjectRegistry.peek()).toEqual([]);
+    expect(await groupProjectRegistry.get(project.id)).toBeNull();
+    await expect(groupProjectRegistry.peek()).rejects.toThrow('tombstones could not be read');
+    await expect(groupProjectRegistry.peek({ strict: true })).rejects.toThrow('tombstones could not be read');
     await fsp.writeFile(path.join(dataDir(), 'tombstones.json'), '[]');
     groupProjectRegistry._resetForTesting();
     expect((await groupProjectRegistry.list()).map((p) => p.id)).toEqual([project.id]);
+  });
+});
+
+describe('group project host: #3419 follow-ups', () => {
+  it('leaves no unsaved retention limits in effect when the change fails to save', async () => {
+    const project = await groupProjectHost.create('Limits');
+    for (let i = 0; i < 3; i++) await groupProjectHost.post(project.id, 'a', 'work', `m${i}`);
+    const rename = fs.promises.rename;
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (to === hostFile(project.id)) throw new Error('disk full');
+      await rename(from, to);
+    });
+    await expect(groupProjectHost.setRetention(project.id, 1, 1)).rejects.toThrow('disk full');
+    vi.restoreAllMocks();
+    // A later post must not prune by the unsaved limits.
+    await groupProjectHost.post(project.id, 'a', 'work', 'after');
+    expect(await groupProjectHost.readTopic(project.id, 'work')).toHaveLength(4);
+  });
+
+  it('fails fast, instead of hanging, when a write inside exclusive() omits withinExclusive', async () => {
+    const project = await groupProjectHost.create('Misuse');
+    const outcome = await Promise.race([
+      groupProjectHost.exclusive(project.id, () => groupProjectHost.post(project.id, 'a', 'work', 'queued behind myself')),
+      new Promise<'hang'>((resolve) => setTimeout(() => resolve('hang'), 2000)),
+    ]).catch((err: unknown) => err);
+    expect(outcome).toBeInstanceOf(GroupProjectHostError);
+    expect((outcome as GroupProjectHostError).message).toContain('withinExclusive');
+    // Other group projects aren't held, and the queue is free afterwards.
+    const other = await groupProjectHost.create('Other');
+    await groupProjectHost.exclusive(project.id, () => groupProjectHost.post(other.id, 'a', 'work', 'fine'));
+    expect((await groupProjectHost.post(project.id, 'a', 'work', 'after')).seq).toBeGreaterThan(1);
+  });
+
+  it('also fails fast for a misused write inside exclusivePending()', async () => {
+    const project = await groupProjectHost.create('Pending misuse');
+    await groupProjectHost.beginDelete(project.id);
+    await expect(groupProjectHost.exclusivePending(project.id, () => groupProjectHost.finishDelete(project.id)))
+      .rejects.toThrow('withinExclusive');
+    await expect(groupProjectHost.exclusivePending(project.id, () => groupProjectHost.finishDelete(project.id, { withinExclusive: true })))
+      .resolves.toMatchObject({ state: 'deleted' });
   });
 });

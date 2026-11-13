@@ -284,9 +284,19 @@ class GroupProjectRegistry {
     return this.isHidden(id) ? null : this.projects.get(id) ?? null;
   }
 
+  /**
+   * Rejects while the tombstones can't be read, rather than answering empty:
+   * callers that reconcile bindings treat a failed read as "keep what you have",
+   * where an empty list would prune every live membership.
+   */
   async list(): Promise<GroupProject[]> {
     await this.ensureLoaded();
+    this.assertReadable();
     return this.visible();
+  }
+
+  private assertReadable(): void {
+    if (this.hideAll) throw new Error('Group project tombstones could not be read. Repair group-projects/tombstones.json and restart.');
   }
 
   private visible(): GroupProject[] {
@@ -308,8 +318,12 @@ class GroupProjectRegistry {
 
   /** Navigation and inspection must not load/migrate the registry or schedule a write. */
   async peek(options: { strict?: boolean } = {}): Promise<GroupProject[]> {
-    if (this.loaded && !options.strict) return this.visible();
+    if (this.loaded && !options.strict) {
+      this.assertReadable();
+      return this.visible();
+    }
     const hidden = await readTombstonedIds();
+    if (hidden === 'all') throw new Error('Group project tombstones could not be read. Repair group-projects/tombstones.json and restart.');
     let raw: string;
     try {
       raw = await fsp.readFile(registryPath(), 'utf-8');
@@ -345,7 +359,7 @@ class GroupProjectRegistry {
         instructions: typeof value.instructions === 'string' ? value.instructions : '',
         metadata: value.metadata as Record<string, unknown>,
       };
-    }).filter((project) => hidden !== 'all' && !hidden.has(project.id));
+    }).filter((project) => !hidden.has(project.id));
   }
 
   async update(id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<GroupProject | null> {
