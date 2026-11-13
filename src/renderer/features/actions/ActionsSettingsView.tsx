@@ -96,7 +96,7 @@ export function ActionsSettingsView() {
   const { actions, error, reload } = useActionsList();
   const [filter, setFilter] = useState<Filter>('all');
   const [cardId, setCardId] = useState<string | null>(null);
-  const [form, setForm] = useState<{ action?: ActionView; initial?: Partial<ActionInput> } | null>(null);
+  const [form, setForm] = useState<{ action?: ActionView; initial?: Partial<ActionInput>; groupProjectId?: string } | null>(null);
   const pending = useActionsNav((s) => s.pending);
   const setPending = useActionsNav((s) => s.setPending);
 
@@ -108,7 +108,7 @@ export function ActionsSettingsView() {
     else if (pending.editId) {
       const a = actions.find((x) => x.id === pending.editId);
       if (a) setForm({ action: a });
-    } else setForm({ initial: pending.draft ?? {} });
+    } else setForm({ initial: pending.draft ?? {}, groupProjectId: pending.groupProjectId });
     setPending(null);
   }, [pending, actions, form, setPending]);
 
@@ -166,7 +166,7 @@ export function ActionsSettingsView() {
       {card && (
         <ActionCard action={card} onClose={() => setCardId(null)} onEdit={() => { setCardId(null); setForm({ action: card }); }} />
       )}
-      <ActionForm open={!!form} action={form?.action} initial={form?.initial} onClose={() => setForm(null)} />
+      <ActionForm open={!!form} action={form?.action} initial={form?.initial} initialGroupProjectId={form?.groupProjectId} onClose={() => setForm(null)} />
     </SettingsPage>
   );
 }

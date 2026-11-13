@@ -17,8 +17,8 @@ export function registerActionsHandlers(): void {
   ipcMain.handle(IPC.ACTIONS.LIST, () => actions.listActions());
   ipcMain.handle(IPC.ACTIONS.USAGE, () => actions.actionUsage());
   ipcMain.handle(IPC.ACTIONS.CREATE, withValidatedArgs(
-    [objectArg<Record<string, unknown>>()],
-    (_event, input) => actions.createAction(input, { kind: 'user' }),
+    [objectArg<Record<string, unknown>>(), stringArg({ minLength: 1, maxLength: 200, optional: true })],
+    (_event, input, groupProjectId) => actions.createAction(input, groupProjectId ? { kind: 'group_project', groupProjectId } : { kind: 'user' }),
   ));
   ipcMain.handle(IPC.ACTIONS.UPDATE, withValidatedArgs(
     [stringArg({ minLength: 1, maxLength: 200 }), objectArg<Record<string, unknown>>()],

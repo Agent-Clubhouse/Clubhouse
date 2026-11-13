@@ -11,6 +11,7 @@ import {
   DEVICE_EVENT_KINDS,
   EVENT_LABELS,
   GIT_EVENT_KINDS,
+  GROUP_PROJECT_EVENT_KINDS,
   MAX_ACTION_STEPS,
   MAX_DELAY_MINUTES,
   MIN_ABSENCE_MINUTES,
@@ -43,6 +44,7 @@ import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useAnnexStore } from '../../stores/annexStore';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea } from '../settings/SettingsLayout';
 import { draftCron, draftFrom, draftToInput, emptyStep, newDraft, type ActionDraft, type StepDraft } from './action-draft';
@@ -54,8 +56,10 @@ const STEP_LABELS: Record<ActionStepKind, string> = {
   quick: 'Start a quick agent',
   sleep: 'Put an agent to sleep',
   notify: 'Notify me',
+  group_post: 'Post to the group board',
+  group_tap: 'Tap a group member',
 };
-const STEP_ORDER: ActionStepKind[] = ['wake', 'message', 'quick', 'sleep', 'notify'];
+const STEP_ORDER: ActionStepKind[] = ['wake', 'message', 'quick', 'sleep', 'notify', 'group_post', 'group_tap'];
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const selectClass = settingsInput;
@@ -132,11 +136,13 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
         </select>
         {canRemove && <Button kind="quiet" onClick={onRemove} aria-label={`Remove step ${index + 1}`}>Remove</Button>}
       </div>
-      {(step.kind === 'wake' || step.kind === 'message' || step.kind === 'sleep') && (
+      {(step.kind === 'wake' || step.kind === 'message' || step.kind === 'sleep' || step.kind === 'group_tap') && (
         <Field label="Agent" htmlFor={`${uid}-agent`}>
           <AgentSelect id={`${uid}-agent`} value={step.agentId} onChange={(agentId) => set({ agentId })} agents={agents} projects={projects} placeholder="Pick an agent" />
         </Field>
       )}
+      {step.kind === 'group_post' && <Field label="Topic" htmlFor={`${uid}-topic`}><input id={`${uid}-topic`} className={`${settingsInput} w-full`} value={step.topic} onChange={(e) => set({ topic: e.target.value })} /></Field>}
+      {(step.kind === 'group_post' || step.kind === 'group_tap') && <Field label="Message" htmlFor={`${uid}-group-text`}><textarea id={`${uid}-group-text`} className={`${settingsTextArea} w-full`} value={step.text} onChange={(e) => set({ text: e.target.value })} /></Field>}
       {step.kind === 'quick' && (
         <>
           <Field label="Project" htmlFor={`${uid}-project`}>
@@ -207,12 +213,13 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
   );
 }
 
-export function ActionForm({ open, action, initial, onClose, onSaved }: {
+export function ActionForm({ open, action, initial, initialGroupProjectId, onClose, onSaved }: {
   open: boolean;
   /** Editing this action; otherwise a new one. */
   action?: ActionView;
   /** A pre-filled new action (a starter pattern, or "New action for <agent>"). */
   initial?: Partial<ActionInput>;
+  initialGroupProjectId?: string;
   onClose: () => void;
   onSaved?: (a: ActionView) => void;
 }) {
@@ -226,9 +233,15 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [runNote, setRunNote] = useState<string | null>(null);
+  const [groupOwner, setGroupOwner] = useState('');
   const devices = useAnnexStore((s) => s.devices);
   const loadDevices = useAnnexStore((s) => s.loadDevices);
   const eventIsDevice = DEVICE_EVENT_KINDS.includes(draft.event);
+  const eventIsGroup = GROUP_PROJECT_EVENT_KINDS.includes(draft.event);
+  const eventIsIdle = draft.event === 'agent.idle' || draft.event === 'group_project.board_idle';
+  const groupProjects = useGroupProjectStore((s) => s.projects);
+  const loadGroupProjects = useGroupProjectStore((s) => s.loadProjects);
+  useEffect(() => { if (open) void loadGroupProjects(); }, [open, loadGroupProjects]);
   useEffect(() => {
     if (open && draft.when === 'event' && eventIsDevice) void loadDevices();
   }, [open, draft.when, eventIsDevice, loadDevices]);
@@ -240,7 +253,8 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
     setOpenedDraft(next);
     setError(null);
     setRunNote(null);
-  }, [open, action, initial]);
+    setGroupOwner(action?.owner.kind === 'group_project' ? action.owner.groupProjectId : initialGroupProjectId ?? '');
+  }, [open, action, initial, initialGroupProjectId]);
 
   const set = (patch: Partial<ActionDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const converted = useMemo(() => draftToInput(draft), [draft]);
@@ -248,7 +262,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
   const cron = draft.when === 'schedule' ? draftCron(draft) : '';
   const parsedCron = cron ? parseCron(cron) : null;
   const nextRuns = parsedCron?.ok ? nextCronTimes(parsedCron.spec, Date.now(), 3) : [];
-  const owner: ActionOwner = action?.owner ?? { kind: 'user' };
+  const owner: ActionOwner = action?.owner ?? (groupOwner ? { kind: 'group_project', groupProjectId: groupOwner } : { kind: 'user' });
 
   const save = async () => {
     const result = draftToInput(draft);
@@ -258,7 +272,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
     try {
       const saved = action
         ? await window.clubhouse.actions.update(action.id, result.input)
-        : await window.clubhouse.actions.create(result.input);
+        : groupOwner ? await window.clubhouse.actions.create(result.input, groupOwner) : await window.clubhouse.actions.create(result.input);
       onSaved?.(saved);
       onClose();
     } catch (err) {
@@ -288,7 +302,12 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
   const eventIsApp = APP_EVENT_KINDS.includes(draft.event);
   const projectEvent = draft.event === 'project.added' || draft.event === 'project.removed';
   const networkDevices = devices.filter((d) => d.role === 'member' && (!draft.deviceKind || (d.kind === 'phone' ? 'phone' : 'computer') === draft.deviceKind));
-  const sourceOptions = eventIsDevice ? (
+  const sourceOptions = eventIsGroup ? (
+    <select id={`${uid}-source`} className={`${selectClass} w-full`} value={draft.source} onChange={(e) => set({ source: e.target.value })}>
+      <option value="">Pick a group project</option>
+      {groupProjects.map((p) => <option key={p.id} value={`group_project:${p.id}`}>{p.name}</option>)}
+    </select>
+  ) : eventIsDevice ? (
     <select id={`${uid}-source`} className={`${selectClass} w-full`} value={draft.source} onChange={(e) => set({ source: e.target.value })}>
       <option value="">Any device</option>
       {draft.source.startsWith('device:') && !networkDevices.some((d) => `device:${d.fingerprint.toLowerCase()}` === draft.source) && (
@@ -325,6 +344,10 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
       )}
     >
       <div className="max-h-[65vh] overflow-y-auto pr-1">
+        {!action && <Field label="Owner" htmlFor={`${uid}-owner`}><select id={`${uid}-owner`} className={`${selectClass} w-full`} value={groupOwner} onChange={(e) => setGroupOwner(e.target.value)}>
+          <option value="">You</option>
+          {groupProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select></Field>}
         <Field label="Name" htmlFor={`${uid}-name`}>
           <input id={`${uid}-name`} className={`${settingsInput} w-full`} value={draft.name} placeholder={suggested || 'Suggested from the trigger and steps'}
             onChange={(e) => set({ name: e.target.value })} />
@@ -397,6 +420,10 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
             <Field label="What happens" htmlFor={`${uid}-event`}>
               <select id={`${uid}-event`} className={`${selectClass} w-full`} value={draft.event} onChange={(e) => {
                 const event = e.target.value as ActionEventKind;
+                if (GROUP_PROJECT_EVENT_KINDS.includes(event)) {
+                  set({ event, source: draft.source.startsWith('group_project:') ? draft.source : '', ...(event === 'group_project.board_idle' && { timing: 'delay' }) });
+                  return;
+                }
                 if (DEVICE_EVENT_KINDS.includes(event)) {
                   set({ event, ...(!eventIsDevice && { source: '', deviceKind: '', timing: 'delay', delayUnit: 'seconds', delay: '120' }) });
                   return;
@@ -406,17 +433,19 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
                 set({ event, source: keep, ...(event === 'agent.idle' && { timing: 'delay' }) });
               }}>
                 <optgroup label="Agent">{AGENT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
+                <optgroup label="Group project">{GROUP_PROJECT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
                 <optgroup label="Git">{GIT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
                 <optgroup label="App">{APP_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
                 <optgroup label="Device">{DEVICE_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
               </select>
             </Field>
             {sourceOptions && (
-              <Field label={eventIsDevice ? 'Device' : eventIsGit ? 'Repository' : projectEvent ? 'Project' : 'Agent'} htmlFor={`${uid}-source`}
+              <Field label={eventIsGroup ? 'Group project' : eventIsDevice ? 'Device' : eventIsGit ? 'Repository' : projectEvent ? 'Project' : 'Agent'} htmlFor={`${uid}-source`}
                 help={eventIsGit ? 'An agent means its worktree. A project means its folder and every agent worktree in it.' : undefined}>
                 {sourceOptions}
               </Field>
             )}
+            {draft.event === 'group_project.message_posted' && <Field label="Topic (optional)" htmlFor={`${uid}-topic`}><input id={`${uid}-topic`} className={`${settingsInput} w-full`} value={draft.topic} onChange={(e) => set({ topic: e.target.value })} /></Field>}
             {eventIsDevice && (
               <Field label="Device kind" htmlFor={`${uid}-device-kind`}
                 help="This computer's view only. Devices already connected fire once at launch. Local sleep, network loss and quitting do not report other devices as offline. Detection follows Annex reconnect and heartbeat timing.">
@@ -443,14 +472,14 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
             <Field label="Timing" htmlFor={`${uid}-timing`} help={eventIsDevice
               ? 'Device waits and grouping windows are independent. Delay re-checks the current state; grouping records events. Throttle limits the whole action.'
               : 'Choose no wait, a trailing delay with a re-check, or a fixed grouping window. Throttle is checked when a run starts.'}>
-              <select id={`${uid}-timing`} className={`${selectClass} w-full`} value={draft.source === 'any' ? 'coalesce' : draft.event === 'agent.idle' ? 'delay' : draft.timing}
-                disabled={draft.source === 'any' || draft.event === 'agent.idle'} onChange={(e) => set({ timing: e.target.value as ActionDraft['timing'] })}>
+              <select id={`${uid}-timing`} className={`${selectClass} w-full`} value={draft.source === 'any' ? 'coalesce' : eventIsIdle ? 'delay' : draft.timing}
+                disabled={draft.source === 'any' || eventIsIdle} onChange={(e) => set({ timing: e.target.value as ActionDraft['timing'] })}>
                 <option value="none">Run without waiting</option>
                 <option value="delay">Wait after the latest event</option>
                 <option value="coalesce">Group events from the first event</option>
               </select>
             </Field>
-            {(draft.source === 'any' || draft.timing === 'coalesce') && draft.event !== 'agent.idle' && (
+            {(draft.source === 'any' || draft.timing === 'coalesce') && !eventIsIdle && (
               <Field label={draft.source === 'any' ? draft.event === 'agent.quick_finished' ? 'Group finishes for (seconds)' : 'Group turns for (seconds)' : 'Group events for (seconds)'} htmlFor={`${uid}-coalesce`}
                 help={draft.source === 'any'
                   ? 'Includes durable and quick agents that become readable later. A fixed window from the first event. Later events join without extending it. Excludes the subscriber and Dispatcher-owned agents. Watching activity is allowed by default for the Dispatcher and can be turned off in its Clubhouse permissions. Other agents need agent.watch. Each agent must also be readable. Ask first does not allow unattended runs. Nothing replays after relaunch.'
@@ -460,10 +489,10 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
                   onChange={(e) => set({ coalesceSeconds: e.target.value })} />
               </Field>
             )}
-            {draft.source !== 'any' && (draft.timing === 'delay' || draft.event === 'agent.idle') && <Field
-              label={draft.event === 'agent.idle' ? 'Idle for' : 'Wait first'}
+            {draft.source !== 'any' && (draft.timing === 'delay' || eventIsIdle) && <Field
+              label={eventIsIdle ? 'Idle for' : 'Wait first'}
               htmlFor={`${uid}-delay`}
-              help={draft.event === 'agent.idle'
+              help={eventIsIdle
                 ? 'Counts from the end of its last turn. A new turn resets it, and it runs once per idle stretch.'
                 : 'Each matching event restarts the wait. When it ends, the condition is checked again. If it no longer holds, the run is cancelled. Waits survive relaunch.'}
             >

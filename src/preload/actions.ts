@@ -6,7 +6,7 @@ import type { ActionView, ActionNotice } from '../shared/actions/view';
 export const actions = {
   actions: {
     list: (): Promise<ActionView[]> => ipcRenderer.invoke(IPC.ACTIONS.LIST),
-    create: (input: ActionInput): Promise<ActionView> => ipcRenderer.invoke(IPC.ACTIONS.CREATE, input),
+    create: (input: ActionInput, groupProjectId?: string): Promise<ActionView> => ipcRenderer.invoke(IPC.ACTIONS.CREATE, input, groupProjectId),
     update: (id: string, input: ActionInput): Promise<ActionView> => ipcRenderer.invoke(IPC.ACTIONS.UPDATE, id, input),
     setEnabled: (id: string, enabled: boolean): Promise<ActionView> => ipcRenderer.invoke(IPC.ACTIONS.SET_ENABLED, id, enabled),
     delete: (id: string): Promise<void> => ipcRenderer.invoke(IPC.ACTIONS.DELETE, id),

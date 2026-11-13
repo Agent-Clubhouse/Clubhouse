@@ -134,6 +134,36 @@ const notify: ActionStep = { kind: 'notify', text: 'hi' };
 const weekdays9 = { kind: 'schedule', preset: 'weekdays', cron: '0 9 * * 1-5', missed: 'skip' } as const;
 const user = { kind: 'user' } as const;
 
+describe('group project event triggers', () => {
+  it('removes only the deleted group project’s actions and pending schedules', async () => {
+    const h = setup();
+    h.engine.start();
+    const first = h.engine.create({ trigger: weekdays9, steps: [notify] }, { kind: 'group_project', groupProjectId: 'gp1' });
+    const other = h.engine.create({ trigger: weekdays9, steps: [notify] }, { kind: 'group_project', groupProjectId: 'gp2' });
+    await h.engine.removeGroupProjectActions('gp1');
+    await h.engine.removeGroupProjectActions('gp1');
+    expect(h.engine.get(first.id)).toBeUndefined();
+    expect(h.saved.state.nextAt[first.id]).toBeUndefined();
+    expect(h.engine.get(other.id)).toBeDefined();
+  });
+  it('filters by project and topic, coalesces posts, and resets the idle wait', async () => {
+    const h = setup();
+    h.engine.start();
+    const source = { kind: 'group_project', groupProjectId: 'gp1' } as const;
+    const posts = h.engine.create({ trigger: { kind: 'event', event: 'group_project.message_posted', source: { ...source, topic: 'updates' }, coalesceSeconds: 10 }, steps: [notify] }, user);
+    const idle = h.engine.create({ trigger: { kind: 'event', event: 'group_project.board_idle', source, delaySeconds: 20 }, steps: [notify] }, user);
+    h.event({ type: 'group_project.message_posted', groupProjectId: 'other', topic: 'updates' });
+    h.event({ type: 'group_project.message_posted', groupProjectId: 'gp1', topic: 'updates' });
+    await h.clock.advance(5000);
+    h.event({ type: 'group_project.message_posted', groupProjectId: 'gp1', topic: 'updates' });
+    await h.clock.advance(5000);
+    expect(h.history(posts.id)).toHaveLength(1);
+    expect(h.history(idle.id)).toHaveLength(0);
+    await h.clock.advance(15_000);
+    expect(h.history(idle.id)).toHaveLength(1);
+  });
+});
+
 describe('quick agent Action sources', () => {
   const finish = { type: 'agent.quick_finished', agentId: 'quick', name: 'Review', owner: { kind: 'user' }, projectPath: '/p1', durationMs: 2000, outcome: 'completed' } as const;
 

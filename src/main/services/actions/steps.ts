@@ -55,6 +55,8 @@ export interface StepDeps {
    * never wakes a sleeping agent. Unset: always may.
    */
   wakeRefusal?(owner: ActionOwner, agentId: string): string | null;
+  groupPost?(groupProjectId: string, topic: string, text: string, chain: string[]): Promise<void>;
+  groupTap?(groupProjectId: string, agentId: string, text: string): Promise<boolean>;
   /** For tests: how long sleep waits for a busy turn. */
   sleepWaitMs?: number;
 }
@@ -209,6 +211,16 @@ export function createStepRunner(deps: StepDeps): StepRunner {
   return {
     async run(step, ctx) {
       switch (step.kind) {
+        case 'group_post': {
+          if (ctx.action.owner.kind !== 'group_project' || !deps.groupPost) return fail(step, 'The group project is unavailable.');
+          try { await deps.groupPost(ctx.action.owner.groupProjectId, step.topic, step.text, ctx.chain); return done(step, `Posted to ${step.topic}`); }
+          catch (err) { return fail(step, `Could not post: ${err instanceof Error ? err.message : String(err)}`); }
+        }
+        case 'group_tap': {
+          if (ctx.action.owner.kind !== 'group_project' || !deps.groupTap) return fail(step, 'The group project is unavailable.');
+          try { return await deps.groupTap(ctx.action.owner.groupProjectId, step.agentId, step.text) ? done(step, 'Sent the tap', { agentId: step.agentId }) : fail(step, 'Could not deliver the tap.', step.agentId); }
+          catch (err) { return fail(step, `Could not deliver the tap: ${err instanceof Error ? err.message : String(err)}`, step.agentId); }
+        }
         case 'wake':
           return wakeOrMessage(step, ctx, step.prompt);
         case 'message':

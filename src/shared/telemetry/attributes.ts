@@ -1045,7 +1045,7 @@ export const ATTR = {
 
   // Actions (#2918, #2956). Closed codes and counts only: never an action's name, steps' text, prompts or
   // reasons in words. The action id hash is on the Detailed `clubhouse.action.run_detail` only.
-  actionOwner: enumAttr('clubhouse.action.owner', ['user', 'dispatcher', 'agent', 'app']),
+  actionOwner: enumAttr('clubhouse.action.owner', ['user', 'dispatcher', 'agent', 'group_project', 'app']),
   actionTrigger: enumAttr('clubhouse.action.trigger', ['schedule', 'once', 'event', 'catch_up', 'manual']),
   actionEvent: enumAttr('clubhouse.action.event', ACTION_EVENT_KINDS),
   actionDelayed: boolAttr('clubhouse.action.delayed'),

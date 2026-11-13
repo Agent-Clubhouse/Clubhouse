@@ -54,6 +54,8 @@ export interface RightsFacts {
   /** Paths, for project permissions. */
   agentProjectPath(agentId: string): string | undefined;
   projectPath(projectId: string): string | undefined;
+  /** Host-verified group project policy, unavailable while it is being refreshed. */
+  groupProject?(id: string): { members: ReadonlySet<string>; actions: boolean; deliver: boolean; wake: boolean; projectId?: string } | undefined;
 }
 
 /** The most actions one owner may have. People and Clubhouse have no limit. */
@@ -63,6 +65,7 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
   const ownerName = (owner: ActionOwner): string => {
     if (owner.kind === 'dispatcher') return 'The Dispatcher';
     if (owner.kind === 'agent') return facts.agentName(owner.agentId) ?? 'This agent';
+    if (owner.kind === 'group_project') return 'This group project';
     return 'Clubhouse';
   };
   const ownerId = (owner: ActionOwner): string | undefined =>
@@ -96,7 +99,24 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
 
   return {
     checkStep(owner: ActionOwner, step: ActionStep): string | null {
+      if ((step.kind === 'group_post' || step.kind === 'group_tap') && owner.kind !== 'group_project') return 'Only a group project may run this step.';
       if (owner.kind === 'user' || owner.kind === 'app') return null;
+      if (owner.kind === 'group_project') {
+        const group = facts.groupProject?.(owner.groupProjectId);
+        if (!group) return 'This group project is unavailable on its host.';
+        if (!group.actions) return 'This group project does not have permission to run Actions.';
+        if (step.kind === 'quick') {
+          if (!group.projectId || step.projectId !== group.projectId || (step.worktreeAgentId && !group.members.has(step.worktreeAgentId))) return 'This group project can start quick agents only in its own project and members’ worktrees.';
+          return null;
+        }
+        if (step.kind === 'group_post') return null;
+        if (step.kind === 'notify' || step.kind === 'sleep') return 'This group project does not have permission for that action step.';
+        if (!group.members.has(step.agentId)) return 'This group project can act only on its members.';
+        if ((step.kind === 'message' || step.kind === 'group_tap' || (step.kind === 'wake' && step.prompt)) && !group.deliver) return 'This group project does not have permission to deliver to members.';
+        if (step.kind === 'wake' && !group.wake) return 'This group project does not have permission to wake members.';
+        return null;
+      }
+      if (step.kind === 'group_post' || step.kind === 'group_tap') return 'Only a group project may run this step.';
       if (step.kind === 'notify') return holds(owner, 'user.notify', { kind: 'app' }, 'to notify you');
       const id = ownerId(owner);
       if (step.kind === 'quick') {
@@ -133,10 +153,18 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
 
     checkSource(owner: ActionOwner, trigger: ActionTrigger): string | null {
       if (owner.kind === 'user' || owner.kind === 'app') return null;
+      if (owner.kind === 'group_project') {
+        const group = facts.groupProject?.(owner.groupProjectId);
+        if (!group) return 'This group project is unavailable on its host.';
+        if (!group.actions) return 'This group project does not have permission to run Actions.';
+        return trigger.kind !== 'event' || (trigger.source.kind === 'group_project' && trigger.source.groupProjectId === owner.groupProjectId)
+          ? null : 'This group project can watch only its own board.';
+      }
       if (trigger.kind !== 'event') return null;
       const id = ownerId(owner);
       if (!id) return `${ownerName(owner)} can\u2019t watch that.`;
       const source = trigger.source;
+      if (source.kind === 'group_project') return 'This action cannot watch that group project.';
       if (source.kind === 'device') return holds(owner, 'device.read', { kind: 'app' }, 'to watch devices');
       if (source.kind === 'any') return holds(owner, 'agent.watch', { kind: 'app' }, 'to watch activity across readable agents');
       if (source.kind === 'agent') return holds(owner, 'agent.read', agentTarget(id, source.agentId), 'on that agent');

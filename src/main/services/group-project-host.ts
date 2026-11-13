@@ -38,6 +38,7 @@ import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
+import { publishAppEvent } from './app-event-bus';
 
 export type GroupProjectHostErrorCode = 'not_found' | 'changed' | 'invalid' | 'network_unavailable' | 'out_of_scope';
 
@@ -710,8 +711,10 @@ class GroupProjectHostService {
   // ── Board ────────────────────────────────────────────────────────────────
   // Every write takes `withinExclusive` for use inside `exclusive()`.
 
-  post(id: string, sender: string, topic: string, body: string, options: { withinExclusive?: boolean } = {}): Promise<BulletinMessage> {
-    return this.commit(id, 'board', async ({ reserve }) => getBulletinBoard(id).postMessage(sender, topic, body, await reserve()), options.withinExclusive);
+  async post(id: string, sender: string, topic: string, body: string, options: { withinExclusive?: boolean; chain?: string[] } = {}): Promise<BulletinMessage> {
+    const message = await this.commit(id, 'board', async ({ reserve }) => getBulletinBoard(id).postMessage(sender, topic, body, await reserve()), options.withinExclusive);
+    publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
+    return message;
   }
 
   /** False when there's no such message, or no such group project, as before #3356. */

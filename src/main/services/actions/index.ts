@@ -44,7 +44,7 @@ import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
 import * as projectStore from '../project-store';
 import { startActionQuickAgent } from './quick-routing';
-import { createActionsStorage, createRunHistory } from './actions-store';
+import { createActionsStorage, createRunHistory, purgeStoredGroupProjectActions, storedGroupProjectActions } from './actions-store';
 import { ActionsEngine, type EngineFacts, type EngineObservation } from './engine';
 import { matchProjectRef } from './project-ref';
 import { createGrantRights } from './rights';
@@ -53,6 +53,9 @@ import { actionMessage, createStepRunner, type DispatcherStepDelivery } from './
 import { ActionPresence } from './presence';
 import { devicePresenceOnline } from '../annex-device-presence';
 import { listDevices } from '../annex-devices';
+import { groupProjectRegistry } from '../group-project-registry';
+import { groupProjectHost } from '../group-project-host';
+import { executeShoulderTap } from '../group-project-shoulder-tap';
 
 export { ActionError };
 
@@ -213,6 +216,18 @@ export function observeActions(fn: (o: EngineObservation) => void): () => void {
 }
 
 let engine: ActionsEngine | null = null;
+
+/** For the group-project delete impact check, including startup recovery. */
+export function groupProjectActions(id: string): Array<{ id: string; name: string }> {
+  const actions = engine ? engine.list().filter((a) => a.owner.kind === 'group_project' && a.owner.groupProjectId === id).map(({ id: actionId, name }) => ({ id: actionId, name })) : storedGroupProjectActions(id);
+  return actions.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Idempotent, durable removal before finishing the group-project delete journal. */
+export async function purgeGroupProjectActions(id: string): Promise<void> {
+  if (engine) await engine.removeGroupProjectActions(id);
+  else await purgeStoredGroupProjectActions(id);
+}
 let presence: ActionPresence | null = null;
 let changeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -308,6 +323,16 @@ function createEngine(): ActionsEngine {
     // The live gate for a running agent, else its saved switch (an asleep agent isn't synced to the gate).
     canStartAgents,
     agentAccess: (id) => knownAgent(id)?.access ?? 'ask',
+    groupProject: (id) => {
+      const project = groupProjectRegistry.getSync(id);
+      if (!project || !groupProjectHost.isThisMachine(project.host)) return undefined;
+      const grants = project.metadata.grants as { actions?: unknown; deliver?: unknown; wake?: unknown } | undefined;
+      return {
+        members: new Set(bindingManager.getAllBindings().filter((binding) => binding.targetKind === 'group-project' && binding.targetId === id).map((binding) => binding.agentId)),
+        actions: grants?.actions !== 'off', deliver: grants?.deliver !== 'off', wake: grants?.wake === 'allow',
+        ...(project.scope?.level === 'project' && { projectId: project.scope.projectId }),
+      };
+    },
   });
   const steps = createStepRunner({
     agentExists: facts.agentExists,
@@ -320,6 +345,8 @@ function createEngine(): ActionsEngine {
     },
     wake: async (req) => parseToolResult(await wakeWiredAgent(req)),
     wakeRefusal: (owner, agentId) => rights.checkStep(owner, { kind: 'wake', agentId }),
+    groupPost: async (id, topic, text, chain) => { await groupProjectHost.post(id, 'Group project action', topic, text, { chain }); },
+    groupTap: async (id, agentId, text) => (await executeShoulderTap({ projectId: id, senderLabel: 'user', targetAgentId: agentId, message: text })).delivered.length > 0,
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
     startQuick: (req) => startActionQuickAgent(req),
@@ -363,6 +390,11 @@ let unsubs: Array<() => void> = [];
 export async function startActions(): Promise<void> {
   if (engine) return;
   await refreshProjects();
+  // Load group identities before any saved Action is scheduled. Unknown or
+  // remotely hosted projects fail closed in the rights check.
+  await groupProjectHost.list().catch((err: unknown) => {
+    appLog('core:actions', 'warn', 'Could not load group projects for Actions', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  });
   engine = createEngine();
   presence = createPresence();
   unsubs.push(projectStore.onProjectsChanged(() => { void refreshProjects(); }));

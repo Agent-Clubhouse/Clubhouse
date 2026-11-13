@@ -18,6 +18,12 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 import { createRunHistory, sanitizeActions, settleInterruptedRuns } from './actions-store';
 
 describe('actions store', () => {
+  it('retains a group project owner across reload and rejects missing project ids', () => {
+    const action = { id: 'a', name: 'Check', trigger: { kind: 'once', at: 100 }, steps: [{ kind: 'notify', text: 'Check' }], owner: { kind: 'group_project', groupProjectId: 'gp1' }, enabled: true, overlap: 'skip', createdAt: 1, updatedAt: 1 };
+    expect(sanitizeActions([action, { ...action, id: 'bad', owner: { kind: 'group_project', groupProjectId: '' } }])).toEqual([action]);
+    const run = { id: 'r', actionId: 'a', owner: action.owner, trigger: { kind: 'manual', at: 1 }, chain: [], startedAt: 1, outcome: 'done', steps: [] };
+    expect(migrations.get('action-history.json')!({ runs: { a: [run] } })).toEqual({ version: 1, runs: { a: [run] } });
+  });
   it('retains message delivery settings and expiry receipts across reload', () => {
     const action = {
       id: 'a', name: 'Check', trigger: { kind: 'event', event: 'app.started', source: { kind: 'app' } },

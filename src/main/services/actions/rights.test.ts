@@ -51,6 +51,26 @@ const appStarts: ActionTrigger = { kind: 'event', event: 'app.started', source: 
 const projectAdded = (projectId: string): ActionTrigger => ({ kind: 'event', event: 'project.added', source: { kind: 'project', projectId } });
 const daily: ActionTrigger = { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' };
 
+it('checks the group project’s own grants and membership at each call', () => {
+  let deliver = true, wake = false;
+  const group = { kind: 'group_project', groupProjectId: 'gp1' } as const;
+  const groupRights = createGrantRights({
+    agentName: () => undefined, parentOf: () => undefined, isConnected: () => false, agentProjectId: () => undefined,
+    dispatcherAgentId: () => undefined, canStartAgents: () => false, agentAccess: () => 'ask', grantsOf: () => [], agentProjectPath: () => undefined, projectPath: () => undefined,
+    groupProject: (id) => id === 'gp1' ? { members: new Set(['pm']), actions: true, deliver, wake, projectId: 'p1' } : undefined,
+  });
+  expect(groupRights.checkStep(group, { kind: 'message', agentId: 'pm', text: 'hello' })).toBeNull();
+  expect(groupRights.checkStep(group, { kind: 'message', agentId: 'other', text: 'hello' })).toMatch(/only on its members/);
+  expect(groupRights.checkStep(group, { kind: 'wake', agentId: 'pm' })).toMatch(/wake members/);
+  wake = true;
+  expect(groupRights.checkStep(group, { kind: 'wake', agentId: 'pm' })).toBeNull();
+  deliver = false;
+  expect(groupRights.checkStep(group, { kind: 'wake', agentId: 'pm', prompt: 'hello' })).toMatch(/deliver/);
+  expect(groupRights.checkStep(group, { kind: 'quick', projectId: 'p2', prompt: 'hello' })).toMatch(/only in its own project/);
+  expect(groupRights.checkSource(group, { kind: 'event', event: 'group_project.member_joined', source: { kind: 'group_project', groupProjectId: 'gp1' } })).toBeNull();
+  expect(groupRights.checkSource(group, { kind: 'event', event: 'group_project.member_joined', source: { kind: 'group_project', groupProjectId: 'gp2' } })).toMatch(/only its own board/);
+});
+
 it('reuses device.read for device sources with no unattended Ask first grant', () => {
   const trigger: ActionTrigger = { kind: 'event', event: 'device.online', source: { kind: 'device', deviceKind: 'phone' } };
   expect(rights.checkSource(user, trigger)).toBeNull();

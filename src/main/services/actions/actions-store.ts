@@ -57,8 +57,9 @@ export function sanitizeActions(raw: unknown): Action[] {
     const valid = validateActionInput(item, { allowPastEndsAt: true });
     if (!valid.ok) continue;
     const owner = item.owner as Action['owner'];
-    if (!['user', 'dispatcher', 'agent', 'app'].includes(owner.kind)) continue;
+    if (!['user', 'dispatcher', 'agent', 'group_project', 'app'].includes(owner.kind)) continue;
     if (owner.kind === 'agent' && typeof owner.agentId !== 'string') continue;
+    if (owner.kind === 'group_project' && (typeof owner.groupProjectId !== 'string' || !owner.groupProjectId.trim())) continue;
     out.push({
       id: item.id,
       name: valid.value.name ?? 'Action',
@@ -164,7 +165,23 @@ export function createActionsStorage(): EngineStorage {
       current = { ...current, state };
       actionsStore.save(current).catch(logSaveError('action state'));
     },
+    flush: () => actionsStore.save(current),
   };
+}
+
+/** Recovery before the engine starts: delete the Actions and all pending schedule state atomically. */
+export async function purgeStoredGroupProjectActions(groupProjectId: string): Promise<void> {
+  await actionsStore.update((file) => {
+    const removed = new Set(file.actions.filter((action) => action.owner.kind === 'group_project' && action.owner.groupProjectId === groupProjectId).map((action) => action.id));
+    if (!removed.size) return file;
+    const state = { ...file.state, nextAt: { ...file.state.nextAt }, waits: file.state.waits.filter((wait) => !removed.has(wait.actionId)), lastFiredDate: { ...file.state.lastFiredDate }, throttleStarts: { ...file.state.throttleStarts } };
+    for (const id of removed) { delete state.nextAt[id]; delete state.lastFiredDate[id]; delete state.throttleStarts[id]; }
+    return { ...file, actions: file.actions.filter((action) => !removed.has(action.id)), state };
+  });
+}
+
+export function storedGroupProjectActions(groupProjectId: string): Array<{ id: string; name: string }> {
+  return actionsStore.get().actions.filter((action) => action.owner.kind === 'group_project' && action.owner.groupProjectId === groupProjectId).map(({ id, name }) => ({ id, name }));
 }
 
 // ── History ─────────────────────────────────────────────────────────────────
@@ -184,7 +201,8 @@ function sanitizeRun(raw: unknown): ActionRun | null {
     : [];
   const owner = isObject(raw.owner)
     && (raw.owner.kind === 'user' || raw.owner.kind === 'dispatcher' || raw.owner.kind === 'app'
-      || (raw.owner.kind === 'agent' && typeof raw.owner.agentId === 'string'))
+      || (raw.owner.kind === 'agent' && typeof raw.owner.agentId === 'string')
+      || (raw.owner.kind === 'group_project' && typeof raw.owner.groupProjectId === 'string' && !!raw.owner.groupProjectId.trim()))
     ? raw.owner as Action['owner'] : undefined;
   const trigger = raw.trigger as unknown as ActionRun['trigger'];
   return {

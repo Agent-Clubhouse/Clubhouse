@@ -88,6 +88,7 @@ export interface EngineStorage {
   load(): { actions: Action[]; state: EngineState };
   saveActions(actions: Action[]): void;
   saveState(state: EngineState): void;
+  flush?(): Promise<void>;
 }
 
 export interface RunHistory {
@@ -240,6 +241,8 @@ interface Occurrence {
   agentId?: string;
   device?: NonNullable<ActionRunTrigger['device']>;
   projectId?: string;
+  groupProjectId?: string;
+  topic?: string;
   branch?: string;
   /** For the history line: "release-lead goes to sleep". */
   subject: string;
@@ -249,6 +252,7 @@ interface Occurrence {
 /** Whether two owners are the same person, Dispatcher, agent or Clubhouse. */
 function sameOwner(a: ActionOwner, b: ActionOwner): boolean {
   if (a.kind === 'agent' || b.kind === 'agent') return a.kind === 'agent' && b.kind === 'agent' && a.agentId === b.agentId;
+  if (a.kind === 'group_project' || b.kind === 'group_project') return a.kind === 'group_project' && b.kind === 'group_project' && a.groupProjectId === b.groupProjectId;
   return a.kind === b.kind;
 }
 
@@ -491,7 +495,7 @@ export class ActionsEngine {
       if (s.kind === 'quick') {
         project(s.projectId);
         if (s.worktreeAgentId) agent(s.worktreeAgentId);
-      } else if (s.kind !== 'notify') agent(s.agentId);
+      } else if (s.kind !== 'notify' && s.kind !== 'group_post') agent(s.agentId);
     }
   }
 
@@ -660,6 +664,12 @@ export class ActionsEngine {
       });
     }
     this.persist();
+  }
+
+  /** Delete this project's Actions and wait for durable storage before a deletion journal commits. */
+  async removeGroupProjectActions(groupProjectId: string): Promise<void> {
+    for (const action of this.list()) if (action.owner.kind === 'group_project' && action.owner.groupProjectId === groupProjectId) this.remove(action.id);
+    await this.deps.storage.flush?.();
   }
 
   /** Drop runs waiting behind a running one, recording them as cancelled. */
@@ -907,6 +917,11 @@ export class ActionsEngine {
       case 'helper.finished':
         // "A helper finishes" is about the parent.
         return f.agentExists(event.parentAgentId) ? [agentOcc('helper.finished', event.parentAgentId)] : [];
+      case 'group_project.message_posted':
+        return [{ kind: event.type, groupProjectId: event.groupProjectId, topic: event.topic, subject: 'A group project' }, { kind: 'group_project.board_idle', groupProjectId: event.groupProjectId, subject: 'A group project' }];
+      case 'group_project.member_joined':
+      case 'group_project.member_left':
+        return [{ kind: event.type, groupProjectId: event.groupProjectId, subject: 'A group project' }];
       case 'git.commit':
       case 'git.branch_switched':
       case 'git.remote_updated': {
@@ -935,6 +950,7 @@ export class ActionsEngine {
     // (#2955): it can't satisfy a filter for one branch.
     if (trigger.branch && occ.branch !== trigger.branch) return false;
     const src = trigger.source;
+    if (src.kind === 'group_project') return occ.groupProjectId === src.groupProjectId && (!src.topic || src.topic === occ.topic);
     if (src.kind === 'device') return !!occ.device
       && (!src.deviceId || src.deviceId.toLowerCase() === occ.device.id.toLowerCase())
       && (!src.deviceKind || src.deviceKind === occ.device.kind);
@@ -1046,6 +1062,7 @@ export class ActionsEngine {
     const event: ActionRunEvent = {
       at: this.now(), event: occ.kind,
       source: occ.device ? { kind: 'device', deviceId: occ.device.id, deviceKind: occ.device.kind }
+        : occ.groupProjectId ? { kind: 'group_project', groupProjectId: occ.groupProjectId, ...(occ.topic && { topic: occ.topic }) }
         : occ.agentId ? { kind: 'agent', agentId: occ.agentId }
         : occ.projectId ? { kind: 'project', projectId: occ.projectId } : { kind: 'app' },
       detail: `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`,
