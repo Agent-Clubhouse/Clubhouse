@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { GroupProjectCreateOptions } from '../shared/group-project-types';
+import type { GroupProjectCreateOptions, GroupProjectMembershipView } from '../shared/group-project-types';
 
 export const groupProject = {
   groupProject: {
@@ -50,6 +50,19 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_PAUSED_POLLING, projectId),
   resumePolling: (projectId: string, agentId: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.RESUME_POLLING, projectId, agentId),
+  listMembers: (projectId: string): Promise<GroupProjectMembershipView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.LIST_MEMBERS, projectId),
+  addMember: (projectId: string, agentId: string): Promise<GroupProjectMembershipView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.ADD_MEMBER, projectId, agentId),
+  excludeMember: (projectId: string, agentId: string): Promise<GroupProjectMembershipView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.EXCLUDE_MEMBER, projectId, agentId),
+  answerAutoJoinOffer: (projectId: string, accept: boolean): Promise<GroupProjectMembershipView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.ANSWER_AUTO_JOIN_OFFER, projectId, accept),
+  onMembershipChanged: (callback: (projectId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, projectId: string) => callback(projectId);
+    ipcRenderer.on(IPC.GROUP_PROJECT.MEMBERSHIP_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.GROUP_PROJECT.MEMBERSHIP_CHANGED, listener); };
+  },
   onPausedPollingChanged: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on(IPC.GROUP_PROJECT.PAUSED_POLLING_CHANGED, listener);

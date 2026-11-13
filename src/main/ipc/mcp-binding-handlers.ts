@@ -27,7 +27,10 @@ import {
   listSoleOwnedPairs,
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
-import { MCP_UNBIND_CANVAS_CLEANUP, type McpUnbindResult } from '../../shared/mcp-unbind';
+import { MCP_BIND_RESTORE, MCP_UNBIND_CANVAS_CLEANUP, type McpUnbindResult } from '../../shared/mcp-unbind';
+import {
+  addMember, excludeMember, isMember, isMembershipManaged, membershipBindingSource, watchGroupProjectMembership,
+} from '../services/group-project-membership';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
@@ -149,9 +152,21 @@ export function registerMcpBindingHandlers(): void {
   });
 
   ipcMain.handle(IPC.MCP_BINDING.BIND, withValidatedArgs(
-    [stringArg(), objectArg<{ targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }>()],
-    (event, agentId, target) => {
+    [stringArg(), objectArg<{ targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }>(), stringArg({ optional: true })],
+    async (event, agentId, target, cause) => {
       assertCallerIsAppWindow(event);
+      // A group project whose members come from its record (#3357): drawing a
+      // wire adds the member, and a stored wire coming back adds no one.
+      if (target.targetKind === 'group-project' && await isMembershipManaged(target.targetId)) {
+        if (cause !== MCP_BIND_RESTORE) {
+          await addMember(target.targetId, agentId as string);
+          void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
+        } else if (!(await isMember(target.targetId, agentId as string))) {
+          appLog('core:mcp', 'debug', 'Stored group project wire not bound: not a member', { meta: { agentId, targetId: target.targetId } });
+        }
+        broadcastBindingsChanged();
+        return;
+      }
       // Allow binding for sleeping (unregistered) durable agents — the binding
       // will be stored and used when the agent wakes up and connects to the MCP
       // bridge. This is essential for canvas wire creation: wires can be
@@ -202,6 +217,12 @@ export function registerMcpBindingHandlers(): void {
         });
         return { kept: true };
       }
+      // Deleting a wire to a group project whose members come from its record
+      // excludes the agent there (#3357), so it stays out across restarts.
+      const bound = bindingManager.getBindingsForAgent(agentId as string).find((b) => b.targetId === targetId);
+      const excluding = cause !== MCP_UNBIND_CANVAS_CLEANUP && bound?.targetKind === 'group-project'
+        ? isMembershipManaged(targetId as string).then(async (managed): Promise<void> => { if (managed) await excludeMember(targetId as string, agentId as string); })
+        : Promise.resolve();
       // Allow unbinding for sleeping/exited agents to support cleanup of stale
       // wire definitions without requiring the agent to be running.
       bindingManager.unbind(agentId as string, targetId as string);
@@ -209,7 +230,7 @@ export function registerMcpBindingHandlers(): void {
       // bring this back from a store whose save hasn't landed yet.
       markBindingRemovedByUser(agentId as string, targetId as string);
       appLog('core:mcp', 'info', 'Binding removed', { meta: { agentId, targetId } });
-      return isRemovalUnsaved({ agentId: agentId as string, targetId: targetId as string })
+      return excluding.then(() => isRemovalUnsaved({ agentId: agentId as string, targetId: targetId as string }))
         .then((removalNotSaved) => ({ kept: false, ...(removalNotSaved && { removalNotSaved }) }));
     },
   ));
@@ -444,6 +465,9 @@ export function restorePersistedBindings(): Promise<void> {
     // After the canvas source, so a pair the user also drew stays the user's.
     registerPersistedBindingSource(dispatcherConnectionSource);
     stopWatchingDispatcherConnections = watchDispatcherConnections(() => restorePersistedBindings());
+    // Group project members (#3357): the membership record, not canvas wires.
+    registerPersistedBindingSource(membershipBindingSource);
+    watchGroupProjectMembership();
     // Connection permissions (D129): the store sets each direction's tools, and the user's links are a source.
     startConnectionGrants({
       notify: (from, to, disabledTools) => broadcastToAllWindows(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, from, to, disabledTools),

@@ -141,3 +141,53 @@ export interface BulletinRetentionConfig {
  * was last read.
  */
 export type DigestSince = string | Record<string, string>;
+
+/** How a member came to be in a group project (#3357). */
+export type GroupProjectMemberKind = 'durable' | 'helper' | 'quick';
+
+/**
+ * The membership record of one group project (#3357), kept on its host in
+ * `group-projects/<id>/membership.json`. Members are keyed by address: a bare
+ * agent id on the host machine. Names are display only.
+ */
+export interface GroupProjectMembership {
+  version: 1;
+  /** Every top-level durable agent in scope is a member unless excluded. */
+  autoJoin: boolean;
+  /** Members added by hand: helpers, quick agents for one run, and durable agents outside auto-join. */
+  explicit: Array<{ address: string; kind: GroupProjectMemberKind; addedAt: string; runId?: string; name?: string }>;
+  /** Agents left out. An excluded agent never joins automatically. */
+  excluded: Array<{ address: string; excludedAt: string }>;
+  /**
+   * The one-time "Include every agent in scope" offer of a group project
+   * migrated from canvas wires: shown while pending. Absent on a record that
+   * was never migrated.
+   */
+  autoJoinOffer?: 'pending' | 'accepted' | 'dismissed';
+  /** A member's own tool switches on the group project (#2084): disabled tool suffixes by address. */
+  disabledTools?: Record<string, string[]>;
+}
+
+/** One member as resolved from the record, scope and the agents that exist now. */
+export interface ResolvedGroupProjectMember {
+  agentId: string;
+  /** Display name. A quick agent's carries a run suffix, so two runs with one name stay apart (#1646). */
+  name: string;
+  kind: GroupProjectMemberKind;
+  /** 'auto': joined by being in scope. 'explicit': added by a person or an orchestrator. */
+  via: 'auto' | 'explicit';
+  projectId?: string;
+  projectName?: string;
+}
+
+/** What the directory shows about one group project's membership. */
+export interface GroupProjectMembershipView {
+  groupProjectId: string;
+  /** False for a group project still held by canvas wires (not migrated yet). */
+  managed: boolean;
+  autoJoin: boolean;
+  members: ResolvedGroupProjectMember[];
+  excluded: Array<{ agentId: string; name: string; excludedAt: string }>;
+  /** Pending only on a migrated group project; `wouldJoin` lists who accepting adds. */
+  autoJoinOffer?: { state: 'pending' | 'accepted' | 'dismissed'; wouldJoin: ResolvedGroupProjectMember[] };
+}

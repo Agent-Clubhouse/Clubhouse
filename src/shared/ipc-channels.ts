@@ -612,6 +612,16 @@ export const IPC = {
     RESUME_POLLING: 'group-project:resume-polling',
     /** Main → renderer: those members changed. */
     PAUSED_POLLING_CHANGED: 'group-project:paused-polling-changed',
+    /** Members, exclusions and the auto-join offer, from the membership record (#3357). */
+    LIST_MEMBERS: 'group-project:list-members',
+    /** Add an agent (removes its exclusion). */
+    ADD_MEMBER: 'group-project:add-member',
+    /** Exclude an agent, or drop a helper or quick agent. */
+    EXCLUDE_MEMBER: 'group-project:exclude-member',
+    /** Accept or dismiss "Include every agent in scope" on a migrated group project. */
+    ANSWER_AUTO_JOIN_OFFER: 'group-project:answer-auto-join-offer',
+    /** Main → renderer: a group project's membership changed (its id). */
+    MEMBERSHIP_CHANGED: 'group-project:membership-changed',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',
