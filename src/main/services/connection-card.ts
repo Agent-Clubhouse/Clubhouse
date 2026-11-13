@@ -85,7 +85,7 @@ export async function listConnectionPickerTargets(agentId: string): Promise<Conn
   });
   return { targets: [...locals.filter((target) => target.id !== agentId), ...remote, ...groups.map((group): ConnectionPickerTarget => ({ id: group.id, name: group.name, kind: 'group-project' }))],
     machines: peers.map((peer) => ({ id: peer.fingerprint.toLowerCase(), name: peer.alias, network: peer.role === 'member' && peer.kind !== 'phone' })),
-    ...(annexIdentity.getIdentity()?.fingerprint && { selfMachineId: annexIdentity.getIdentity()!.fingerprint.toLowerCase() }), }; 
+    ...(annexIdentity.getIdentity()?.fingerprint && { selfMachineId: annexIdentity.getIdentity()!.fingerprint.toLowerCase() }), };
 }
 
 /** Bindings saved independently of canvases. */

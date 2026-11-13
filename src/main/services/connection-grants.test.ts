@@ -297,7 +297,17 @@ describe('connections with agents on other machines (#3064)', () => {
       expect(!!direction.link).toBe(kind !== 'user_link');
       expect(!!direction.cardLink).toBe(kind !== 'card_link');
       expect(direction.agentLinks?.some((source) => !source.removedAt)).toBe(kind !== 'tool_link');
+      expect(direction.removedByUser).toBeUndefined();
     }
+  });
+
+  it('fences the last remote card source against agent reconnection', async () => {
+    const at = '2026-01-01T00:00:00.000Z';
+    await putConnectionDirection({ from: A, to: far, disabledTools: [], cardLink: { createdAt: at }, updatedAt: at });
+    await removeSourceAcrossMachines('a', `z@${FAR}`, 'card_link');
+    expect(isBindingRemovedByUser('a', `z@${FAR}`)).toBe(true);
+    expect(getConnectionDirection(A, far)?.removedByUser).toBe(true);
+    await expect(updateAgentNetworkLinks([{ from: A, to: far }], { agentId: 'maker', machineId: FAR }, 'add')).rejects.toThrow('Only the user can reconnect');
   });
 
   it('switches tools on either direction with an agent there, and refuses a direction that isn\'t linked', async () => {

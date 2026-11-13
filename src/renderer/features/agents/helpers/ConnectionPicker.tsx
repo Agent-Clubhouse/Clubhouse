@@ -123,7 +123,7 @@ export function ConnectionPicker({ agentId, agentName, bindings, grants, onClose
             </> : group && <h4 className="text-xs text-ctp-subtext1 mt-2 mb-1">{group}</h4>}
             {targets.map((target) => {
             const connected = targetConnected(agentId, target, bindings, grants);
-            const detail = [target.machineName, target.project, target.online === false ? 'Offline' : ''].filter(Boolean).join(' / ');
+            const detail = [target.machineName ?? (target.kind === 'dispatcher' && !target.machineId ? 'This computer' : undefined), target.project, target.online === false ? 'Offline' : ''].filter(Boolean).join(' / ');
             return <button key={keyOf(target)} type="button" disabled={connected} aria-pressed={selected && keyOf(selected) === keyOf(target) || false} onClick={() => { setSelected(target); setError(''); }}
               className={`w-full text-left rounded px-2 py-1 text-xs text-ctp-text hover:bg-surface-0 disabled:opacity-50 ${target.online === false ? 'opacity-60' : ''}`} data-testid="connection-picker-target">
               <span>{target.name}</span>{detail && <span className="text-ctp-overlay1"> {detail}</span>}{connected && <span className="text-ctp-overlay1"> Connected</span>}

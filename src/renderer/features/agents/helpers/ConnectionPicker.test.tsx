@@ -54,7 +54,7 @@ it('distinguishes malformed, unknown, and non-network addresses', () => {
 it('offers Dispatchers and group projects and saves group membership', async () => {
   const created = vi.fn();
   render(<ConnectionPicker agentId="a" agentName="Alpha" bindings={[]} grants={[]} onClose={vi.fn()} onCreated={created} />);
-  expect(await screen.findByRole('button', { name: 'Dispatcher' })).toBeEnabled();
+  expect(await screen.findByRole('button', { name: /Dispatcher\s*This computer/ })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Group' }));
   expect(screen.getByText('Alpha will join this group project.')).toBeInTheDocument();
   fireEvent.click(within(screen.getByTestId('connection-picker')).getByRole('button', { name: 'Add connection' }));

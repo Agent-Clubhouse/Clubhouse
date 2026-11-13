@@ -724,6 +724,7 @@ export interface WireDirection {
   /** New peers distinguish a user link from agent sources; absent means legacy link. */
   userLink?: boolean;
   cardLink?: boolean;
+  removedByUser?: boolean;
   agentLinks?: Array<{ agentId: string; machineId: string; createdAt: string; name?: string; removedAt?: string; removedByUser?: boolean }>;
   setByAgent?: string;
   toolsProtected?: boolean;
@@ -793,7 +794,7 @@ async function toWire(d: ConnectionDirection, self: string): Promise<WireDirecti
     from: { ...from, ...(fromName && { name: fromName }) },
     to: { ...to, ...(toName && { name: toName }) },
     disabledTools: !d.from.machineId && !d.to.machineId && !localWakeOn(d) ? [...new Set([...d.disabledTools, WAKE_TOOL])] : d.disabledTools, link: !!d.link || !!d.cardLink || !!activeAgentLinks(d).length, userLink: !!d.link, cardLink: !!d.cardLink,
-    agentLinks: d.agentLinks ?? [], ...(d.setByAgent && { setByAgent: d.setByAgent }), ...(toolsProtected !== undefined && { toolsProtected }), updatedAt: d.updatedAt,
+    agentLinks: d.agentLinks ?? [], removedByUser: !!d.removedByUser, ...(d.setByAgent && { setByAgent: d.setByAgent }), ...(toolsProtected !== undefined && { toolsProtected }), updatedAt: d.updatedAt,
   };
 }
 
@@ -952,6 +953,8 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     // An agent-authored update can add its source, but cannot overwrite a person's source or saved switches.
     const agentAuthored = typeof entry.setByAgent === 'string' && agentLinks.some((l) => l.agentId === entry.setByAgent && l.machineId === machine && !l.removedAt);
     const untrustedAgentClaim = typeof entry.setByAgent === 'string' && !agentAuthored;
+    const explicitReconnect = entry.removedByUser === false && !entry.setByAgent && (!!userLink || cardLink);
+    if (current?.removedByUser && !explicitReconnect && agentAuthored) continue;
     let protectUserTools = untrustedAgentClaim || (!!current && (agentAuthored && (current.setByAgent !== entry.setByAgent || !!current.link || !!current.cardLink)));
     let protectedLive: { disabledTools?: string[]; enabledTools?: string[] } | undefined;
     if (untrustedAgentClaim && !current) continue;
@@ -975,6 +978,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
       ...(!from.machineId && !to.machineId && (protectUserTools ? localWakeOn(current, protectedLive?.enabledTools) : !tools.includes(WAKE_TOOL)) && { enabledTools: [WAKE_TOOL] }),
       ...(effectiveUserLink && { link: { createdAt: current?.link?.createdAt ?? updatedAt } }),
       ...(effectiveCardLink && { cardLink: { createdAt: current?.cardLink?.createdAt ?? updatedAt } }),
+      ...((entry.removedByUser === true && !entry.setByAgent) || (current?.removedByUser && !explicitReconnect) ? { removedByUser: true } : {}),
       ...(agentLinks.length && { agentLinks }),
       ...(entry.from.machine.toLowerCase() === machine && typeof entry.toolsProtected === 'boolean' && { agentToolsProtected: entry.toolsProtected }),
       ...(!protectUserTools && agentAuthored && typeof entry.setByAgent === 'string' && entry.setByAgent.length <= 200 && { setByAgent: entry.setByAgent }),

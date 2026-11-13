@@ -182,7 +182,7 @@ export function setConnectionTools(
     // An entry is kept even when empty: "everything on" must not fall back to a source's list.
     return {
       from, to, disabledTools: tools, ...(enabled.length > 0 && { enabledTools: enabled }),
-      ...(current?.link && { link: current.link }), ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), updatedAt: new Date().toISOString(),
+      ...(current?.link && { link: current.link }), ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), ...(current?.removedByUser && { removedByUser: true }), updatedAt: new Date().toISOString(),
     };
   });
 }
@@ -220,7 +220,7 @@ export async function setConnectionDirections(
         from: c.from, to: c.to, disabledTools: [...new Set(c.disabledTools)],
         ...(c.enabledTools.length > 0 && { enabledTools: [...new Set(c.enabledTools)] }),
         ...(options.agentId ? { setByAgent: options.agentId } : { setBy: 'dispatcher' as const }),
-        ...(current?.link && { link: current.link }), ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), updatedAt: now,
+        ...(current?.link && { link: current.link }), ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), ...(current?.removedByUser && { removedByUser: true }), updatedAt: now,
       }];
     });
     const keys = new Set(next.map((d) => directionKey(d.from, d.to)));
@@ -317,11 +317,12 @@ export async function linkConnectionDirections(pairs: readonly Pick<ConnectionDi
       const index = list.findIndex((d) => d && directionKey(d.from, d.to) === key);
       const current = list[index];
       if (current?.link) continue;
+      const timestamp = current?.removedByUser ? new Date(Math.max(Date.parse(now), Date.parse(current.updatedAt) + 1)).toISOString() : now;
       const enabled = current ? current.enabledTools : NEW_CONNECTION_SWITCHES.enabledTools;
       const next: ConnectionDirection = {
         from, to, disabledTools: [...(current?.disabledTools ?? NEW_CONNECTION_SWITCHES.disabledTools)],
         ...(enabled && enabled.length > 0 && { enabledTools: [...enabled] }),
-        link: { createdAt: now }, ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), updatedAt: now,
+        link: { createdAt: timestamp }, ...(current?.agentLinks && { agentLinks: current.agentLinks }), ...(current?.cardLink && { cardLink: current.cardLink }), updatedAt: timestamp,
       };
       if (index >= 0) directions[index] = next;
       else directions.push(next);
@@ -363,6 +364,7 @@ export async function updateAgentNetworkLinks(
       const key = directionKey(pair.from, pair.to);
       const index = directions.findIndex((raw) => { const d = normalizeConnectionDirection(raw); return d && directionKey(d.from, d.to) === key; });
       const current = index < 0 ? undefined : normalizeConnectionDirection(directions[index]) ?? undefined;
+      if (action === 'add' && current?.removedByUser) throw new Error('The user removed this connection. Only the user can reconnect it.');
       const links = current?.agentLinks ?? [];
       const active = activeAgentLinks(current);
       const mine = active.some((l) => l.agentId === owner.agentId && l.machineId === owner.machineId);
@@ -389,6 +391,12 @@ export async function updateAgentNetworkLinks(
     try { listener(d.from, d.to); } catch { /* telemetry-exempt: other listeners still run */ }
   }
   return written;
+}
+
+/** Persist a last-source removal so both endpoints refuse agent reconnections. */
+export function markNetworkDirectionRemovedByUser(from: AgentAddress, to: AgentAddress): Promise<ConnectionDirection | null> {
+  return updateDirection(from, to, (current) => current && !current.link && !current.cardLink && !activeAgentLinks(current).length
+    ? { ...current, removedByUser: true, setByAgent: undefined, updatedAt: new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString() } : UNCHANGED);
 }
 
 /** Remove every agent-created network source on a direction at the user's request. */
@@ -423,8 +431,9 @@ export async function linkCardDirections(changes: readonly DirectionToolsChange[
       const index = directions.findIndex((raw) => { const d = normalizeConnectionDirection(raw); return d && directionKey(d.from, d.to) === key; });
       const current = index < 0 ? undefined : normalizeConnectionDirection(directions[index]) ?? undefined;
       if (current?.link || current?.cardLink || activeAgentLinks(current).length) throw new Error('That direction is already connected.');
-      const next: ConnectionDirection = { ...current, setBy: undefined, setByAgent: undefined, from: change.from, to: change.to,
-        disabledTools: [...new Set(change.disabledTools)], enabledTools: [...new Set(change.enabledTools)], cardLink: { createdAt: now }, updatedAt: now };
+      const timestamp = current?.removedByUser ? new Date(Math.max(Date.parse(now), Date.parse(current.updatedAt) + 1)).toISOString() : now;
+      const next: ConnectionDirection = { ...current, setBy: undefined, setByAgent: undefined, removedByUser: undefined, from: change.from, to: change.to,
+        disabledTools: [...new Set(change.disabledTools)], enabledTools: [...new Set(change.enabledTools)], cardLink: { createdAt: timestamp }, updatedAt: timestamp };
       if (index < 0) directions.push(next); else directions[index] = next;
       written.push(next);
     }
