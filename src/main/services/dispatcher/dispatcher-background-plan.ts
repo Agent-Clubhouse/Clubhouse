@@ -62,7 +62,7 @@ export const UPKEEP_FALLBACK_TEXT = 'Memory upkeep: check the notes in memory/ t
  * A check-in summary shows only when routine news is held for it (dispatcher-triage), so what the
  * check-in finds goes in as routine news first.
  */
-export const CHECK_IN_TEXT = 'Check-in: look at what your connected agents have done since the last check-in, without waking anyone. Report each change the user would want to know with tell_user, kind routine. Then call tell_user once with kind check_in and a one-sentence summary; it shows only when news is waiting for it. Note anything worth keeping in memory. Your check-ins skill has the steps.';
+export const CHECK_IN_TEXT = 'First call list_remote_requests and triage live remote requests held for check_in, using their authenticated origin and your local grants. Check-in: look at what your connected agents have done since the last check-in, without waking anyone. Report each change the user would want to know with tell_user, kind routine. Then call tell_user once with kind check_in and a one-sentence summary; it shows only when news is waiting for it. Note anything worth keeping in memory. Your check-ins skill has the steps.';
 
 /** A hidden Action that should exist: a scheduled one, or an event subscription that tells the Dispatcher. */
 export type BackgroundActionSpec =

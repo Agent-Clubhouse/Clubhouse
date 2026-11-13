@@ -12,6 +12,7 @@ agent:clear_agent readOnly=false destructive=true openWorld=false
 agent:compact_agent readOnly=false destructive=true openWorld=false
 agent:wake_agent readOnly=false destructive=false openWorld=false
 agent:sleep_agent readOnly=false destructive=true openWorld=false
+agent:hand_off_request readOnly=false destructive=false openWorld=false
 browser:navigate readOnly=false destructive=true openWorld=true
 browser:screenshot readOnly=true destructive=false openWorld=true
 browser:get_console readOnly=true destructive=false openWorld=true
@@ -46,6 +47,9 @@ global:get_handoff readOnly=true destructive=false openWorld=false
 global:list_handoffs readOnly=true destructive=false openWorld=false
 global:cancel_handoff readOnly=false destructive=true openWorld=true
 global:call_wire_tool readOnly=false destructive=true openWorld=true
+global:list_remote_requests readOnly=true destructive=false openWorld=false
+global:triage_remote_request readOnly=false destructive=false openWorld=false
+global:report_remote_request readOnly=false destructive=false openWorld=false
 global:notify_user readOnly=false destructive=false openWorld=false
 global:hand_off readOnly=false destructive=false openWorld=false
 global:dispose_helper readOnly=false destructive=true openWorld=false

@@ -149,6 +149,9 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   if (agentRegistry.get(inboxId) && !agentSystem.isAgentStopping(inboxId)) {
     const runtime = getAgentRuntime(inboxId);
     if (!runtime) return { delivered: false, text: `${targetName}'s runtime does not support input.` };
+    if (req.wakeAsReceiver && runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.())) {
+      return { delivered: false, text: 'The receiving controller is not ready for remote input.' };
+    }
     const sent = await runtime.sendMessage(req.text, {
       source: req.messageOptions ? 'action' : 'mcp', taskId: req.taskId, submit: req.submit, routed: req.routed,
       ...(req.messageOptions && { delivery: 'queued', ...req.messageOptions }),

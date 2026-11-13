@@ -36,6 +36,8 @@ const NOT_SETTINGS = new Set([
   'handoffs.json',
   // The parameterized Annex store holds operational outbox/inbox, receipt and status records.
   path.join('services', 'annex-delivery-store.ts'),
+  // Federated requests, outcomes and link pauses are operational delivery history.
+  path.join('services', 'dispatcher-federation-requests.ts'),
   'annex-ports.json',
   // Annex Network membership state (removals, confirmations), kept by Clubhouse: not settings.
   'annex-network.json',
