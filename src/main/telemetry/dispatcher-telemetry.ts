@@ -27,6 +27,7 @@ import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { localRecordSalt, readLocalEvents } from './local-control';
 import { hashId } from './ids';
 import type { DispatcherUsageKind } from '../../shared/dispatcher-usage';
+import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
 import type { TokenUsage } from '../../shared/chat';
 
 /** Whether recording would do anything; skip measuring when it wouldn't. */
@@ -289,4 +290,21 @@ export async function readDispatcherControls(limit: number, knownIds: Iterable<s
       ...(typeof detail.code === 'string' && { code: detail.code }),
     };
   });
+}
+
+// Federation uses hashed correlation identities and closed states, never task text or labels.
+export function recordFederatedRequest(request: Pick<FederatedRequest, 'originRequestId' | 'origin' | 'machineId' | 'targetId' | 'delivery' | 'outcome' | 'triage'>, targetMachine: string, event: 'crossing' | 'duplicate' | 'triage' | 'limit'): void {
+  try {
+    if (!isTelemetryActive()) return;
+    tel.event('clubhouse.dispatcher.federation', [ATTR.federationRequest(request.originRequestId),
+      ATTR.federationOrigin(`${request.origin.machineId}/${request.origin.agentId}`), ATTR.federationTarget(`${targetMachine}/${request.targetId}`),
+      ATTR.federationDelivery(request.delivery), ATTR.federationOutcome(request.outcome), ATTR.federationEvent(event), ATTR.federationTriage(request.triage ?? 'pending')]);
+  } catch { /* telemetry-exempt: telemetry cannot change remote work or approval */ }
+}
+
+export function recordFederationLink(machineId: string, state: 'active' | 'paused' | 'unavailable' | 'removed'): void {
+  try {
+    if (!isTelemetryActive()) return;
+    tel.event('clubhouse.dispatcher.federation_link', [ATTR.federationTarget(machineId), ATTR.federationLinkState(state)]);
+  } catch { /* telemetry-exempt: telemetry cannot change membership or links */ }
 }

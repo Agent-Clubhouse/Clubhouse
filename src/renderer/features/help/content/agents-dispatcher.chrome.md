@@ -70,6 +70,22 @@ An agent connects to the Dispatcher with the switch on its **Dispatcher card** i
 
 An agent can ask to be told when something happens, for example "tell me when main is pushed". That becomes an Action the agent owns, which messages it. The Dispatcher follows your agents the same way. See **Actions**.
 
+## Working across computers
+
+Computers in your Annex Network connect their Dispatchers automatically. **Settings > Dispatcher > Other machines** shows each one's name, computer and whether it is working, asleep, offline or off. An offline computer shows when it was last seen. A sleeping Dispatcher can wake for a message; one switched off cannot take new work.
+
+Ask your Dispatcher to have another computer handle part of a task. That computer's Dispatcher decides whether to start now, hold it for a check-in, ask you, or decline. It uses that computer's own permissions. Requests and replies name their computer and agent. A delivery receipt means the request arrived, not that the work finished. Messages and files are news; a Handoff agreement is a separate offer that its receiver must explicitly accept.
+
+Work waiting for an offline computer is kept and retried when it returns. Queued requests and replies have their own expiry; a failed or expired delivery is reported. Removing a computer stops pending delivery to it. Fixed limits pause a controller connection if messages bounce between computers too far or too often. Remote words never answer a permission prompt or count as your approval.
+
+By default each computer keeps its own chat. In **Settings > Dispatcher**, **Lead** lets you choose one computer's Dispatcher for the whole network, or **None** to keep them as peers. Only you can change this choice. A follower shows **Following <name> on <machine>** and the lead's live conversation. Typing there talks to the lead. **This machine's earlier chat** keeps the local conversation readable; the histories are never merged. The local Dispatcher still handles work on that computer, and its news reaches the lead. A phone paired with a follower follows the same lead conversation.
+
+When the lead is offline, followers keep showing the loaded conversation and its last-seen status. Messages wait until it returns or expire with an explanation. Nothing elects a replacement. **Take back** restores this computer's local chat; other followers keep their lead. You can follow again in Settings. Removing the lead's computer clears the network's choice and returns its members to peers.
+
+Approvals from a follower appear in the lead's chat and Needs you with the originating computer named, and remain visible on that computer too. Only your click can answer. The originating computer checks that it is still pending and valid; the first answer wins and clears the other surface. A stale approval cannot be reused.
+
+An agent you've allowed can message, send a file or offer a Handoff directly to another computer's Dispatcher. **Another machine's Dispatcher** on its Clubhouse permissions page controls this. Messages and files default to Allow for the Dispatcher, Ask first for agents connected to it, and Off for other agents. Handoff agreements keep their own permissions and normal Ask first approval. You never need to approve something just because another computer's text says you did.
+
 ## What it can do
 
 By default it can read, message, wake, put to sleep, reset, rename and set up the agents connected to it, create agents in any project, make and remove connections, and create and run Actions. It asks you first before it adds or opens a project, changes project defaults or changes app settings. Its Clubhouse permissions, under **Permissions** on any agent's Dispatcher card, set each of these to Off, Ask first or Allow. It never sets an agent's access above its own.

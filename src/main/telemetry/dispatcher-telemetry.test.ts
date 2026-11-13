@@ -6,6 +6,8 @@ import { captureEvents, type EventCapture } from './__test-utils__/event-capture
 import {
   dispatcherTelemetryActive,
   recordDispatcherControl,
+  recordFederatedRequest,
+  recordFederationLink,
   recordDispatcherTurn,
   recordMemoryHealth,
   recordMemoryUpkeep,
@@ -210,5 +212,38 @@ describe('the Dispatcher events are registered and documented', () => {
         expect(line.includes(`\`${short}\``) || line.includes(suffix), `${event.name}: ${key}`).toBe(true);
       }
     }
+  });
+});
+
+
+describe('federation telemetry (#3350)', () => {
+  const request = { originRequestId: 'private-request-id', origin: { machineId: 'private-origin', agentId: 'private-agent', machineName: 'Private machine', agentName: 'Private name' },
+    machineId: 'private-target', targetId: 'private-controller', delivery: 'accepted' as const, outcome: 'under_way' as const, triage: 'now' as const,
+    text: 'Private task content', reason: 'Private report content' };
+  it('does nothing while off and tolerates a failed measurement', () => {
+    recordFederatedRequest(request, request.machineId, 'crossing'); recordFederationLink(request.machineId, 'active');
+    capture = captureEvents(); expect(capture.events).toEqual([]);
+    expect(() => recordFederatedRequest(null as unknown as typeof request, '', 'crossing')).not.toThrow();
+  });
+  it('records every delivery and triage state and a limit trip with hashed identities only', () => {
+    capture = captureEvents();
+    for (const delivery of ['accepted', 'delivered', 'refused', 'expired'] as const) recordFederatedRequest({ ...request, delivery }, request.machineId, 'crossing');
+    for (const triage of ['now', 'check_in', 'needs_user', 'decline', 'pending'] as const) recordFederatedRequest({ ...request, triage }, request.machineId, 'triage');
+    for (const outcome of ['under_way', 'waiting_user', 'answered', 'declined', 'failed'] as const) recordFederatedRequest({ ...request, outcome }, request.machineId, 'crossing');
+    recordFederatedRequest(request, request.machineId, 'limit');
+    expect(capture.named('clubhouse.dispatcher.federation').map((e) => e.attrs['clubhouse.federation.delivery']).slice(0, 4)).toEqual(['accepted', 'delivered', 'refused', 'expired']);
+    expect(capture.events.at(-1)?.attrs['clubhouse.federation.event']).toBe('limit');
+    // captureEvents sees typed inputs before the runtime salts and hashes them.
+    for (const event of capture.events) for (const key of ['clubhouse.federation.request', 'clubhouse.federation.origin', 'clubhouse.federation.target']) expect(event.kinds[key]).toBe('hash');
+    const serialized = JSON.stringify(capture.events);
+    for (const privateValue of ['Private machine', 'Private name', 'Private task content', 'Private report content']) expect(serialized).not.toContain(privateValue);
+    for (const event of capture.events) for (const key of Object.keys(event.attrs)) expect(['hash', 'enum']).toContain(getAttributeSpec(key)?.kind);
+  });
+  it('records link admission, offline pause, resume, unavailable and removal without labels', () => {
+    capture = captureEvents();
+    for (const state of ['active', 'paused', 'active', 'unavailable', 'removed'] as const) recordFederationLink('private-machine', state);
+    expect(capture.named('clubhouse.dispatcher.federation_link').map((e) => e.attrs['clubhouse.federation.link_state'])).toEqual(['active', 'paused', 'active', 'unavailable', 'removed']);
+    expect(capture.events.every((event) => event.kinds['clubhouse.federation.target'] === 'hash')).toBe(true);
+    expect(EVENTS['clubhouse.dispatcher.federation_link'].level).toBe('standard');
   });
 });

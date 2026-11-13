@@ -84,7 +84,7 @@ export interface FederationRequestDependencies {
   settleLocal?(request: FederatedRequest): void;
   present(request: FederatedRequest, kind: 'triage' | 'needs_user' | 'reply' | 'failure' | 'pause'): Promise<void>;
   fault?(): void;
-  record(request: FederatedRequest, event: 'crossing' | 'duplicate' | 'triage'): void;
+  record(request: FederatedRequest, event: 'crossing' | 'duplicate' | 'triage' | 'limit'): void;
 }
 const terminal = (o: FederationOutcome) => ['answered', 'declined', 'failed'].includes(o);
 const nextCause = (r: FederatedRequest): AnnexCallContext => ({ rootId: r.cause.rootId, depth: r.cause.depth + 1, parentId: r.id });
@@ -166,6 +166,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       const previous = file.pauseNotices?.[r.machineId];
       if (!previous || deliveryHash(previous.request.epoch) !== deliveryHash(r.epoch)) (file.pauseNotices ??= {})[r.machineId] = { request: { ...r, reason }, localShown: false, peerSent: !informPeer };
     }, () => current(r));
+    d.record(r, 'limit');
     await finishPause(r.machineId);
   }
   async function admit(r: FederatedRequest) {

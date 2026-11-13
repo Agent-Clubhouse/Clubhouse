@@ -659,6 +659,11 @@ Event records from `telemetry/dispatcher-telemetry.ts`: the usage split, memory 
 | `c.dispatcher.memory_health` | after each successful upkeep run, memory as upkeep left it (`measureMemoryHealth` in `dispatcher-upkeep.ts`; archive and history aren't counted) | `c.dispatcher.memory.pages`, `.bytes` (UTF-8), `.topics`, `.agent_pages`, `.timeline_pages`, `.index_bytes` (index.md on disk; the agent edits it directly, so it can be over the cap), `.index_cap_bytes`, `.index_over_cap`, `.unlinked_topics` (no other page, the index included, links to or names it), `.stale_topics` (Updated date, else mtime, at least 30 days old, confirmed or not), `.unconfirmed_topics`, `.conflicting_pages` (pages with open dated conflict notes), `.neglected_pages` (neither read nor updated by the controller in 30 days, including old never-read pages), `.broken_links` (links between pages upkeep couldn't fix), `.missing_sources` (cited files that are gone) | S |
 | `c.dispatcher.news_triage` | each report on its way to the chat (`dispatcher-news.ts`) | `c.dispatcher.news.kind` (`needs_user`/`answer`/`routine`/`check_in`), `.show` (`now`/`check_in`/`later`/`never`), `.reason` (`needs_user`, `answer`, `routine`, `nothing_asked`, `empty`, `duplicate`, `nothing_changed`, or `none` for a check-in shown), `.from_agent`, `.held` (check-ins shown only: held items it took), `.rewrite` and `.rewrite_reason` (always `none` since #3193, which removed the rewrite step; kept so the event's attributes don't change) | S |
 
+| `c.dispatcher.federation` | remote request crossing, duplicate, triage, delivery reconciliation or fixed limit trip | `c.federation.request`, `.origin`, `.target` (salted hashes, never raw identities), `.delivery` (`accepted`/`delivered`/`refused`/`expired`), `.outcome` (`under_way`/`waiting_user`/`answered`/`declined`/`failed`), `.event` (`crossing`/`duplicate`/`triage`/`limit`), `.triage` (`now`/`check_in`/`needs_user`/`decline`/`pending`) | S |
+| `c.dispatcher.federation_link` | one per observed link state transition, including first publication and member removal | `c.federation.target` (salted machine hash), `c.federation.link_state` (`active`/`paused`/`unavailable`/`removed`) | S |
+
+Federation correlation is the exception to the count-only Dispatcher events: only typed hashed identifiers and closed state codes are admitted. No machine label, agent name, request text, report, file content, approval text or pause reason is recorded. Link events follow the existing presence subscription without polling; repeated snapshots with the same link state emit nothing. Request and limit events follow the fixed crossing/queue bounds.
+
 **Volume.** One event per Dispatcher turn, two per upkeep run and one per report. All three are bounded by what the Dispatcher does, which costs tokens, so they aren't capped further.
 
 **Control audit.** The Dispatcher's controls over orchestrators stay `clubhouse.audit.dispatcher_control` (§6.13). Its recorder and reader moved into the same file (`recordDispatcherControl`, `readDispatcherControls`); `dispatcher-audit.ts` is gone.
@@ -1748,7 +1753,7 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 
 **Actions events (§4.17):** `c.action.triggered`, `c.action.wait`, `c.action.overlap`, `c.action.limit_hit`, `c.action.catch_up`, `c.action.run`, `c.action.step`, `c.action.run_detail` (D).
 
-**Dispatcher events (§4.18):** `c.dispatcher.turn`, `c.dispatcher.memory_upkeep`, `c.dispatcher.memory_health`, `c.dispatcher.news_triage`.
+**Dispatcher events (§4.18):** `c.dispatcher.turn`, `c.dispatcher.memory_upkeep`, `c.dispatcher.memory_health`, `c.dispatcher.news_triage`, `c.dispatcher.federation`, `c.dispatcher.federation_link`.
 
 **Metrics:**
 
