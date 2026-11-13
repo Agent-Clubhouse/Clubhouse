@@ -87,6 +87,11 @@ export function registerGroupProjectHandlers(): void {
   groupProjectHost.onChange((event) => {
     if (event.part === 'deleted') broadcastToAllWindows(IPC.GROUP_PROJECT.DELETED, event.groupProjectId);
   });
+  void deletion.recoverPending().catch((err) => {
+    appLog('core:group-project', 'error', 'Failed to recover group project deletions', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
 
   ipcMain.handle(IPC.GROUP_PROJECT.LIST, async () => {
     return groupProjectHost.list();

@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
-const mockDeletion = vi.hoisted(() => ({ preview: vi.fn(), confirm: vi.fn() }));
+const mockDeletion = vi.hoisted(() => ({ preview: vi.fn(), confirm: vi.fn(), recoverPending: vi.fn(async () => {}) }));
 vi.mock('../services/group-project-delete-service', () => ({ createLocalGroupProjectDeleteService: () => mockDeletion }));
 vi.mock('../services/canvas-flush', () => ({ flushOpenCanvases: vi.fn(async () => ({ complete: true })) }));
 vi.mock('electron', () => ({
