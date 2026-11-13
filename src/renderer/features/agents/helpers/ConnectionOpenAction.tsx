@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from '../../../components/Modal';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { usePluginStore } from '../../../plugins/plugin-store';
+import { useGroupProjectStore } from '../../../stores/groupProjectStore';
+import { useUIStore } from '../../../stores/uiStore';
 import {
   beginConnectionNavigationRequest, jumpToConnectionCanvas, lookupConnectionCanvases, openConnectionAgent, openConnectionPlugin,
   pluginNavigationReason, type ConnectionCanvasHit,
@@ -37,12 +39,18 @@ export function ConnectionOpenAction({ targetId, targetKind, name, projectId }: 
         await openConnectionAgent(targetId, controller.signal);
       } else if (targetKind === 'plugin') {
         openConnectionPlugin(targetId, projectId);
+      } else if (targetKind === 'group-project') {
+        const ui = useUIStore.getState();
+        ui.setActiveHost(null);
+        ui.setDispatcherOpen(false);
+        useGroupProjectStore.getState().selectDirectoryProject(targetId);
+        ui.setSettingsContext('app');
+        ui.setSettingsSubPage('group-projects');
+        if (ui.explorerTab !== 'settings') ui.toggleSettings();
       } else {
         const { hits, index } = await lookupConnectionCanvases(targetKind, targetId, controller.signal);
         if (!hits.length) {
-          throw new Error(targetKind === 'group-project'
-            ? 'No owning Canvas is available for this group project. Add its representation to a Canvas explicitly, then retry Open.'
-            : 'No Canvas containing this target is available. This widget has no standalone navigation route; restore its Canvas and retry Open.');
+          throw new Error('No Canvas containing this target is available. This widget has no standalone navigation route; restore its Canvas and retry Open.');
         }
         if (!choice && hits.length > 1) {
           setState({ kind: 'choose', hits });
@@ -63,10 +71,10 @@ export function ConnectionOpenAction({ targetId, targetKind, name, projectId }: 
     <>
       <button type="button" disabled={!!unsupported || state.kind === 'loading'} onClick={() => { void open(); }}
         aria-describedby={descriptionId} aria-busy={state.kind === 'loading'}
-        title={unsupported ?? `Open ${name}`}
+        title={unsupported ?? (targetKind === 'group-project' ? `Open ${name} in directory` : `Open ${name}`)}
         className="text-xs text-ctp-accent hover:underline cursor-pointer disabled:text-ctp-overlay1 disabled:no-underline disabled:cursor-not-allowed"
         data-testid="connection-open">
-        Open
+        {targetKind === 'group-project' ? 'Open in directory' : 'Open'}
       </button>
       <span id={descriptionId} className="sr-only">{unsupported ?? `Open target ${name} (${targetId}), without editing or removing the connection.`}</span>
       <Modal open={state.kind === 'choose' || state.kind === 'error'} onClose={close}
